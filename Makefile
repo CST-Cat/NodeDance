@@ -51,6 +51,7 @@ verify-tools: bootstrap
 verify-ci-evidence:
 	python3 scripts/test/ci-evidence-selftest.py
 	python3 scripts/test/acceptance-s02-selftest.py
+	python3 -m unittest -v scripts.test.test_s03_guest_resources
 	python3 scripts/test/acceptance-s04-selftest.py
 	bash scripts/test/check-tools-host-shell.sh
 
