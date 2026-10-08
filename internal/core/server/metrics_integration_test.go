@@ -12,10 +12,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/agent"
+	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	"github.com/CST-Cat/NodeDance/internal/core/metrics"
 	"github.com/coder/websocket"
 )
@@ -371,5 +373,182 @@ func TestRealAgentMetricsAPIAndDashboardStream(t *testing.T) {
 	}
 	if elapsed := time.Since(closedAt); elapsed > 15*time.Second {
 		t.Fatalf("dashboard logout took %s to close its slow browser stream", elapsed)
+	}
+}
+
+func TestTelemetryPollingAndDashboardPushDoNotExtendIdleSession(t *testing.T) {
+	const idleTimeout = 900 * time.Millisecond
+	core, err := New("metrics-session-expiry", Options{
+		DataDir: filepath.Join(t.TempDir(), "core"), Development: true,
+		PublicOrigin: "http://panel.test", SessionIdleTimeout: idleTimeout,
+		WebSocketCheckInterval: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer core.Close()
+
+	rawSession, _ := seedAdminSession(t, core, "ignored-test-password")
+	enrollment, err := core.agents.CreateEnrollment(context.Background(), "session-expiry-node", "127.0.0.1", sql.NullInt64{Int64: 1, Valid: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readLastSeen := func() (int64, error) {
+		var lastSeen int64
+		err := core.store.DB.QueryRow(`SELECT last_seen_at FROM browser_sessions WHERE token_digest=?`, auth.DigestToken(rawSession)).Scan(&lastSeen)
+		return lastSeen, err
+	}
+	// A user-facing read still counts as activity. The following dashboard
+	// telemetry polls must leave this new activity timestamp unchanged.
+	beforeTouch, err := readLastSeen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	userRead := httptest.NewRequest(http.MethodGet, "http://panel.test/api/v1/auth/me", nil)
+	userRead.AddCookie(&http.Cookie{Name: sessionCookieName, Value: rawSession})
+	userReadResponse := httptest.NewRecorder()
+	core.ServeHTTP(userReadResponse, userRead)
+	if userReadResponse.Code != http.StatusOK {
+		t.Fatalf("explicit authenticated read returned HTTP %d: %s", userReadResponse.Code, userReadResponse.Body.String())
+	}
+	lastSeen, err := readLastSeen()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lastSeen <= beforeTouch {
+		t.Fatalf("explicit authenticated read did not touch the session: before=%d after=%d", beforeTouch, lastSeen)
+	}
+	lastSeenAtStart := lastSeen
+
+	webServer := httptest.NewServer(core)
+	defer webServer.Close()
+	client := &http.Client{Timeout: time.Second}
+	dashboardURL := "ws" + strings.TrimPrefix(webServer.URL, "http") + "/ws/v1/dashboard"
+	wsHeader := http.Header{
+		"Origin": {"http://panel.test"},
+		"Cookie": {sessionCookieName + "=" + rawSession},
+	}
+	connectCtx, cancelConnect := context.WithTimeout(context.Background(), 2*time.Second)
+	dashboard, _, err := websocket.Dial(connectCtx, dashboardURL, &websocket.DialOptions{HTTPHeader: wsHeader})
+	cancelConnect()
+	if err != nil {
+		t.Fatalf("open authenticated dashboard stream: %v", err)
+	}
+	defer dashboard.CloseNow()
+	initialCtx, cancelInitial := context.WithTimeout(context.Background(), time.Second)
+	_, initial, err := dashboard.Read(initialCtx)
+	cancelInitial()
+	if err != nil {
+		t.Fatalf("read initial dashboard node status: %v", err)
+	}
+	var initialMessage dashboardMetricsMessage
+	if err := json.Unmarshal(initial, &initialMessage); err != nil || initialMessage.Type != "node_status" || initialMessage.NodeID != enrollment.NodeID {
+		t.Fatalf("unexpected initial dashboard message %s (decode err %v)", initial, err)
+	}
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), idleTimeout+2*time.Second)
+	defer cancelRead()
+	var pushed atomic.Int64
+	wsClosed := make(chan error, 1)
+	go func() {
+		for {
+			_, _, readErr := dashboard.Read(readCtx)
+			if readErr != nil {
+				wsClosed <- readErr
+				return
+			}
+			pushed.Add(1)
+		}
+	}()
+
+	pushCtx, stopPush := context.WithCancel(context.Background())
+	defer stopPush()
+	go func() {
+		ticker := time.NewTicker(15 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pushCtx.Done():
+				return
+			case <-ticker.C:
+				core.metrics.Notify(enrollment.NodeID)
+			}
+		}
+	}()
+
+	poll := func(path string) (int, error) {
+		request, err := http.NewRequest(http.MethodGet, webServer.URL+path, nil)
+		if err != nil {
+			return 0, err
+		}
+		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: rawSession})
+		response, err := client.Do(request)
+		if err != nil {
+			return 0, err
+		}
+		defer response.Body.Close()
+		return response.StatusCode, nil
+	}
+
+	started := time.Now()
+	deadline := started.Add(idleTimeout + 2*time.Second)
+	successfulPolls := 0
+	unauthorizedAt := time.Time{}
+	for time.Now().Before(deadline) {
+		for _, path := range []string{
+			"/api/v1/nodes",
+			"/api/v1/nodes/" + enrollment.NodeID + "/metrics",
+		} {
+			status, err := poll(path)
+			if err != nil {
+				t.Fatal("continuous telemetry poll:", err)
+			}
+			if status == http.StatusUnauthorized {
+				unauthorizedAt = time.Now()
+				break
+			}
+			if status != http.StatusOK {
+				t.Fatalf("telemetry poll %s returned HTTP %d", path, status)
+			}
+			successfulPolls++
+		}
+		if !unauthorizedAt.IsZero() {
+			break
+		}
+		if successfulPolls >= 4 {
+			observed, err := readLastSeen()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if observed != lastSeenAtStart {
+				t.Fatalf("background telemetry polling extended the session before expiry: started=%d observed=%d", lastSeenAtStart, observed)
+			}
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+	if unauthorizedAt.IsZero() {
+		t.Fatalf("continuous telemetry polling kept the session alive beyond %s", idleTimeout)
+	}
+	if successfulPolls < 4 {
+		t.Fatalf("only %d telemetry reads succeeded before session expiry", successfulPolls)
+	}
+
+	select {
+	case closeErr := <-wsClosed:
+		if websocket.CloseStatus(closeErr) != websocket.StatusPolicyViolation {
+			t.Fatalf("dashboard stream closed with %v, want policy violation after session expiry", closeErr)
+		}
+		if closedAfter := time.Since(unauthorizedAt); closedAfter > time.Second {
+			t.Fatalf("dashboard stream took %s to close after telemetry returned 401", closedAfter)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("dashboard stream stayed open after the polled session expired")
+	}
+	stopPush()
+	if pushed.Load() == 0 {
+		t.Fatal("dashboard stream did not receive any live status pushes during telemetry polling")
+	}
+	if elapsed := time.Since(started); elapsed > idleTimeout+time.Second {
+		t.Fatalf("session expired after %s despite continuous telemetry polling", elapsed)
 	}
 }
