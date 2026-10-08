@@ -17,8 +17,11 @@ import (
 )
 
 const (
-	loadMemoryBytes         = 256 << 20
-	loadRecoveryWaitSeconds = 10
+	loadMemoryBytes          = 256 << 20
+	loadRecoveryWaitSeconds  = 10
+	loadDurationSeconds      = 12
+	loadQuietCPUPercentLimit = 15.0
+	loadBaselineWaitSeconds  = 30
 )
 
 type sampleEvidence struct {
@@ -40,25 +43,29 @@ type loadChecks struct {
 }
 
 type loadEvidence struct {
-	Mode                 string         `json:"mode"`
-	Status               string         `json:"status"`
-	Reason               string         `json:"reason,omitempty"`
-	CPUWorkers           int            `json:"cpuWorkers"`
-	AllocationBytes      uint64         `json:"allocationBytes"`
-	RecoveryWaitSeconds  int            `json:"recoveryWaitSeconds"`
-	Baseline             sampleEvidence `json:"baseline"`
-	DuringLoad           sampleEvidence `json:"duringLoad"`
-	AfterRelease         sampleEvidence `json:"afterRelease"`
-	Checks               loadChecks     `json:"checks"`
-	BaselineCPUPercent   float64        `json:"baselineCpuPercent,omitempty"`
-	DuringCPUPercent     float64        `json:"duringCpuPercent,omitempty"`
-	RecoveredCPUPercent  float64        `json:"recoveredCpuPercent,omitempty"`
-	MemoryUsedDeltaBytes int64          `json:"memoryUsedDeltaBytes,omitempty"`
-	RSSDeltaBytes        int64          `json:"rssDeltaBytes,omitempty"`
+	Mode                 string           `json:"mode"`
+	Status               string           `json:"status"`
+	Reason               string           `json:"reason,omitempty"`
+	CPUWorkers           int              `json:"cpuWorkers"`
+	AllocationBytes      uint64           `json:"allocationBytes"`
+	LoadDurationSeconds  int              `json:"loadDurationSeconds"`
+	RecoveryWaitSeconds  int              `json:"recoveryWaitSeconds"`
+	BaselineWaitSeconds  int              `json:"baselineWaitSeconds"`
+	Baseline             sampleEvidence   `json:"baseline"`
+	BaselineSamples      []sampleEvidence `json:"baselineSamples"`
+	DuringLoad           sampleEvidence   `json:"duringLoad"`
+	AfterRelease         sampleEvidence   `json:"afterRelease"`
+	Checks               loadChecks       `json:"checks"`
+	BaselineCPUPercent   float64          `json:"baselineCpuPercent,omitempty"`
+	DuringCPUPercent     float64          `json:"duringCpuPercent,omitempty"`
+	RecoveredCPUPercent  float64          `json:"recoveredCpuPercent,omitempty"`
+	MemoryUsedDeltaBytes int64            `json:"memoryUsedDeltaBytes,omitempty"`
+	RSSDeltaBytes        int64            `json:"rssDeltaBytes,omitempty"`
 }
 
 func main() {
 	mode := flag.String("mode", "sample", "probe mode: sample or load")
+	agentMarker := flag.String("agent-marker", "", "write this file immediately before starting controlled CPU load")
 	flag.Parse()
 	switch *mode {
 	case "sample":
@@ -68,7 +75,7 @@ func main() {
 		}
 		emit(result)
 	case "load":
-		os.Exit(runLoad())
+		os.Exit(runLoad(*agentMarker))
 	default:
 		fail("unknown probe mode %q", *mode)
 	}
@@ -117,7 +124,7 @@ func capture(collector *metrics.Collector) (sampleEvidence, error) {
 	return result, nil
 }
 
-func runLoad() int {
+func runLoad(agentMarker string) int {
 	collector := metrics.NewCollector()
 	_ = collector.Sample(context.Background()) // CPU's first sample intentionally warms up.
 	time.Sleep(3 * time.Second)
@@ -130,8 +137,21 @@ func runLoad() int {
 		Status:              "NOT_READY",
 		CPUWorkers:          1,
 		AllocationBytes:     loadMemoryBytes,
+		LoadDurationSeconds: loadDurationSeconds,
 		RecoveryWaitSeconds: loadRecoveryWaitSeconds,
 		Baseline:            baseline,
+		BaselineSamples:     []sampleEvidence{baseline},
+	}
+	for evidence.BaselineWaitSeconds < loadBaselineWaitSeconds &&
+		(baseline.Snapshot.CPU.UsagePercent.Value == nil || *baseline.Snapshot.CPU.UsagePercent.Value > loadQuietCPUPercentLimit) {
+		time.Sleep(3 * time.Second)
+		evidence.BaselineWaitSeconds += 3
+		baseline, err = capture(collector)
+		if err != nil {
+			fail("capture quiet load baseline: %v", err)
+		}
+		evidence.Baseline = baseline
+		evidence.BaselineSamples = append(evidence.BaselineSamples, baseline)
 	}
 	if baseline.Snapshot.CPU.UsagePercent.Value == nil || baseline.Snapshot.Memory.Value == nil {
 		evidence.Reason = "CPU or memory baseline is unknown"
@@ -143,7 +163,7 @@ func runLoad() int {
 		emit(evidence)
 		return 2
 	}
-	if *baseline.Snapshot.CPU.UsagePercent.Value > 15 {
+	if *baseline.Snapshot.CPU.UsagePercent.Value > loadQuietCPUPercentLimit {
 		evidence.Reason = "baseline guest CPU usage exceeds the quiet-guest limit"
 		emit(evidence)
 		return 2
@@ -153,6 +173,11 @@ func runLoad() int {
 	allocation := make([]byte, loadMemoryBytes)
 	for offset := 0; offset < len(allocation); offset += 4096 {
 		allocation[offset] = byte(offset / 4096)
+	}
+	if agentMarker != "" {
+		if err := os.WriteFile(agentMarker, []byte(time.Now().UTC().Format(time.RFC3339Nano)+"\n"), 0o600); err != nil {
+			fail("write controlled Agent-load marker: %v", err)
+		}
 	}
 	stop := make(chan struct{})
 	var sink atomic.Uint64
@@ -168,7 +193,7 @@ func runLoad() int {
 			}
 		}
 	}()
-	time.Sleep(3 * time.Second)
+	time.Sleep(loadDurationSeconds * time.Second)
 	evidence.DuringLoad, err = capture(collector)
 	close(stop)
 	runtime.KeepAlive(allocation)
