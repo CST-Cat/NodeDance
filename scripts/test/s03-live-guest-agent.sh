@@ -17,22 +17,54 @@ chmod 700 "$work_dir" "$work_dir/bin" "$work_dir/core"
 core_log="$work_dir/core.log"
 guest_log="$work_dir/guest.log"
 core_pid=""
+core_binary="$work_dir/bin/s03-guest-core-harness"
+core_start_time=""
+core_parent_pid="$$"
+source "$repo_root/scripts/test/s03-core-process-guard.sh"
+
+core_process_is_owned() {
+	[[ -n "$core_pid" && -n "$core_start_time" ]] || return 1
+	local state
+	state="$(s03_core_process_state "$core_pid" "$core_binary" "$core_parent_pid" "$core_start_time" 2>/dev/null)" || return 1
+	[[ "$state" == "RUNNING $core_start_time" ]]
+}
 
 cleanup() {
-	if [[ -n "$core_pid" ]] && kill -0 "$core_pid" 2>/dev/null; then
-		kill -TERM "$core_pid" 2>/dev/null || true
-		wait "$core_pid" 2>/dev/null || true
+	local exit_status=$?
+	trap - EXIT
+	if [[ -n "$core_pid" ]] && ! s03_terminate_core_child \
+		"$core_pid" "$core_binary" "$core_parent_pid" "$core_start_time" "$core_log"; then
+		exit_status=1
 	fi
+	exit "$exit_status"
 }
 trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
 cd "$repo_root"
-GOTOOLCHAIN=local "$go_bin" build -mod=readonly -trimpath -o "$work_dir/bin/s03-guest-core-harness" ./scripts/test/s03-guest-core-harness
+GOTOOLCHAIN=local "$go_bin" build -mod=readonly -trimpath -o "$core_binary" ./scripts/test/s03-guest-core-harness
 NODEDANCE_S03_GUEST_CORE_WORK="$work_dir/core" \
-	"$work_dir/bin/s03-guest-core-harness" >"$core_log" 2>&1 &
+	"$core_binary" >"$core_log" 2>&1 &
 core_pid=$!
+
+for _ in $(seq 1 50); do
+	core_state="$(s03_core_process_state "$core_pid" "$core_binary" "$core_parent_pid" 2>/dev/null)" || core_state="UNKNOWN"
+	case "$core_state" in
+		RUNNING\ *)
+			core_start_time="${core_state#RUNNING }"
+			break
+			;;
+		STARTING\ *|UNKNOWN) sleep 0.1 ;;
+		GONE|ZOMBIE\ *|OTHER\ *) break ;;
+		*) printf 'Invalid Core process state while starting: %s\n' "$core_state" >&2; break ;;
+	esac
+done
+if [[ -z "$core_start_time" ]]; then
+	cat "$core_log" >&2
+	printf 'Could not capture the Core harness PID/start-time/command identity. Evidence: %s\n' "$core_log" >&2
+	exit 1
+fi
 
 manifest_path=""
 for _ in $(seq 1 200); do
@@ -41,7 +73,7 @@ for _ in $(seq 1 200); do
 		manifest_path="$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["manifest"])' "$ready_json")"
 		break
 	fi
-	if ! kill -0 "$core_pid" 2>/dev/null; then
+	if ! core_process_is_owned; then
 		cat "$core_log" >&2
 		printf 'Real TLS Core harness exited before guest enrollment setup. Evidence: %s\n' "$core_log" >&2
 		exit 1
