@@ -135,12 +135,14 @@ Reproduce after the owner-marked Engine is already running with
 every run, including failed runs, under `.artifacts/s04/`.
 
 `TestS04BoundedBatchFitsCurrentS02EnvelopeMirror` also checks a near-maximum
-48 KiB Docker batch embedded in the current S02 Envelope JSON field layout:
-48,281 payload bytes, 48,442 envelope bytes, below the 1 MiB frame limit. The
-mirror is explicitly test-only because this worktree cannot import S02's
-`internal/protocol` package from its sibling worktree. It must be replaced with
-the real `protocol.Envelope` and verified over WSS after S02 is integrated; it
-is not final frame or network-path acceptance evidence.
+actual `protocol.DockerBatch` payload embedded in the current S02 Envelope JSON
+field layout. It uses `protocol.MarshalDockerBatch` and Agent-to-DTO conversion,
+then checks the 64 KiB payload bound and 1 MiB outer-frame ceiling. The outer
+Envelope remains a test-only mirror because this worktree cannot import S02's
+`internal/protocol.Envelope` from its sibling worktree. It must be replaced
+with the real `protocol.Envelope` and verified over WSS after S02 is integrated;
+it is not final frame or network-path acceptance evidence. The current
+component fixture measured 60,388 payload bytes and 60,508 mirror-frame bytes.
 
 The two 100-change runs establish only the isolated Agent-module
 Engine/Discoverer/observer path. They are not the full S04-SUP-01 result because
@@ -148,3 +150,79 @@ they do not traverse the integrated Agent WebSocket, Core persistence, or Core
 observation path. Therefore `S04-SUP-01`, every other original S04 case, and the
 whole-stage repeat gate remain outstanding, and the machine report keeps all
 original S04 cases at `NOT_READY` until the full gate is completed.
+
+## Shared Docker DTO and Core inventory component (not integrated)
+
+This component adds the shared `TypeDocker` / `CapabilityDocker` contract, an
+Agent model adapter, and an in-memory Core store. It deliberately does not edit
+the S02 Envelope, Agent runtime, Core Agent WebSocket/routes, Core database
+migrations, or Web application. It is not Core/Agent end-to-end integration and
+does not change any original S04 machine-case result.
+
+`protocol.DockerBatch.Sequence` is the Agent discovery-cache watermark. The
+transport Envelope sequence is accepted as a separate method argument, and the
+authenticated connection's identity and generation are method arguments from
+Core. Docker containers contain selected Compose identity labels, normalized
+port states, network/IP fields, mounts, health and timestamps; they do not carry
+raw Inspect JSON, environment variables, or arbitrary Docker labels. The DTO
+is strictly decoded, validates its schema and is limited to 64 KiB. A
+`snapshotId` of zero is permitted only for a non-authoritative first snapshot
+chunk, matching a new Agent generation whose first Engine scan cannot run.
+
+The Core store keeps Agent lease status separate from Docker availability and
+snapshot freshness. It buffers full scans until contiguous chunks and a final
+chunk arrive, and replaces inventory only when the first chunk reports
+`available` plus `snapshotFresh=true`. An empty or stale/unavailable report
+updates the Docker health view but keeps old inventory stale. A new connection
+generation also retains old inventory until that trusted scan. Per-resource
+sequence checks and a committed snapshot floor prevent old incremental updates
+from reviving removed IDs. Deltas arriving after a full scan's watermark are
+held and applied after that scan commits, so newer create/delete events win.
+Stale compact container records preserve prior known details when available.
+Incomplete staging has item, byte, pending-change and duration bounds; an
+overflow or invalid sequence discards only staging and leaves active inventory
+untouched. Core's periodic maintenance loop must call `Store.ExpireStaging`;
+`Accept` and `SnapshotAt` also perform lazy expiration.
+
+The first Core component test run failed because the byte-limit test configured
+a one-byte cap before seeding the fixture; the seed itself was correctly
+rejected. The test now seeds under defaults and applies the one-byte cap only to
+the candidate scan. This was a test setup defect, not an implementation failure.
+The corrected component tests exercise unavailable-empty generation restart,
+stale/partial snapshot preservation, successful empty replacement, staged
+interleaved create/delete deltas, invalid chunk ordering, stale snapshot ID
+replay, stale compact placeholder preservation, Agent/Docker status separation,
+generation and Envelope replay rejection, and staging item/byte/time bounds.
+`TestAgentObserverDTOAndCoreStoreRoundTrip` additionally drives the actual
+Agent cache and observer: it sends a zero-ID unavailable empty snapshot, then a
+65-container two-chunk fresh snapshot with cache-generated delete/create deltas
+interleaved between chunks, followed by a health-only Docker failure. Every
+batch traverses `ToProtocolBatch`, `MarshalDockerBatch`,
+`UnmarshalDockerBatch`, and the Core Store. The test verifies that the deltas
+win over the older snapshot watermark and that an old connection generation
+cannot change the new generation's inventory.
+
+Validation command and result (locked Go `1.26.8`):
+
+```text
+GOTOOLCHAIN=local .tools/go1.26.8/bin/go test -race -mod=readonly -count=1 ./internal/protocol ./internal/agent/docker ./internal/core/docker
+PASS: protocol, Agent adapter, and Core inventory component packages
+GOTOOLCHAIN=local .tools/go1.26.8/bin/go vet -mod=readonly ./internal/protocol ./internal/agent/docker ./internal/core/docker
+PASS
+```
+
+The final targeted test, vet, and whitespace-check output is retained at
+`.artifacts/s04/core-shared-store-20261008T182100Z.log`.
+
+A broader `GOTOOLCHAIN=local .tools/go1.26.8/bin/go test -mod=readonly ./...`
+was also attempted. Its Core CLI/server packages cannot compile in this clean
+worktree because `internal/core/webassets` embeds `all:dist` and the Web
+production `dist` directory has not been built. The targeted S04 component
+packages do not depend on that generated frontend asset and pass independently.
+
+The in-memory Core component is not yet connected to the unified SQLite
+migrations or the authenticated Agent connection. It has no persisted
+inventory/lease recovery test and no real Envelope/WSS test. The adapter is not
+called by a running Agent. Therefore these component tests cannot establish
+S04-01 through S04-10, S04-SUP-01, or the whole-stage repeat gate; original case
+states stay `NOT_READY`.

@@ -2,8 +2,12 @@ package docker
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 // This test-only mirror is copied from the frozen S02
@@ -24,41 +28,46 @@ type s02EnvelopeMirror struct {
 const (
 	s02EnvelopeCurrentVersion = 1
 	s02EnvelopeMaxMessageSize = 1 << 20
-	s02EnvelopeHeartbeatType  = "heartbeat"
+	s02EnvelopeDockerType     = protocol.TypeDocker
 )
 
 func TestS04BoundedBatchFitsCurrentS02EnvelopeMirror(t *testing.T) {
-	sequence := ^uint64(0)
-	container := baseContainer("container-id", "", "running")
-	low, high := 0, MaxBatchBytes*2
-	for low < high {
-		middle := low + (high-low+1)/2
-		candidate := cloneContainer(container)
-		candidate.Name = strings.Repeat("n", middle)
-		if containerFitsBatch(candidate) {
-			low = middle
-		} else {
-			high = middle - 1
+	sequence := uint64(8)
+	now := time.Now().UTC()
+	health := Health{Sequence: sequence, Availability: EngineAvailable, EventsConnected: true, SnapshotFresh: true, ObservedAt: now}
+	changes := make([]Change, 0, 7)
+	for index := 0; index < 7; index++ {
+		container := baseContainer(fmt.Sprintf("container-%d", index), fmt.Sprintf("node-%d", index), "running")
+		container.Image = strings.Repeat("i", 1600)
+		container.ImageID = strings.Repeat("d", 1600)
+		container.Compose = &ComposeIdentity{
+			Project: "fixture", Service: "web",
+			WorkingDir: strings.Repeat("w", 1600), ConfigFiles: strings.Repeat("c", 1600),
 		}
+		container.Mounts = []Mount{{Type: "bind", Source: strings.Repeat("s", 1600), Destination: "/data"}}
+		copy := cloneContainer(container)
+		changes = append(changes, Change{
+			Sequence: sequence, Action: ChangeUpsert, ContainerID: copy.ID,
+			Container: &copy, ObservedAt: copy.ObservedAt,
+		})
 	}
-	container.Name = strings.Repeat("n", low)
-	if !containerFitsBatch(container) {
-		t.Fatal("test fixture does not fit the production bounded-record check")
-	}
-	change := snapshotChange(sequence, container)
-	batch := snapshotBatch(sequence, ^uint64(0), 1_000_000, true, []Change{change}, Health{Sequence: sequence, Availability: EngineAvailable, EventsConnected: true, SnapshotFresh: true}, true)
-	batchBytes, err := json.Marshal(batch)
+	batch := snapshotBatch(sequence, 1, 0, true, changes, health, true)
+	dto, err := ToProtocolBatch(batch)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(batchBytes) > MaxBatchBytes {
-		t.Fatalf("production batch exceeds its 48 KiB budget: %d", len(batchBytes))
+	batchBytes, err := protocol.MarshalDockerBatch(dto)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(batchBytes) < MaxBatchBytes-2048 {
-		t.Fatalf("test fixture did not exercise the upper batch budget: %d bytes", len(batchBytes))
+	if len(batchBytes) > protocol.MaxDockerPayloadBytes {
+		t.Fatalf("Docker DTO exceeds its 64 KiB payload budget: %d", len(batchBytes))
+	}
+	if len(batchBytes) < 50<<10 {
+		t.Fatalf("test payload did not exercise the upper DTO bound: %d bytes", len(batchBytes))
 	}
 
-	frame, err := marshalS02EnvelopeMirror(batch)
+	frame, err := marshalS02EnvelopeMirror(sequence, json.RawMessage(batchBytes))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,26 +75,22 @@ func TestS04BoundedBatchFitsCurrentS02EnvelopeMirror(t *testing.T) {
 		t.Fatalf("test frame did not include its outer envelope: frame=%d payload=%d", len(frame), len(batchBytes))
 	}
 	if len(frame) > s02EnvelopeMaxMessageSize {
-		t.Fatalf("48 KiB Docker batch plus the current S02 Envelope exceeds the 1 MiB frame limit: %d", len(frame))
+		t.Fatalf("Docker payload plus the current S02 Envelope exceeds the 1 MiB frame limit: %d", len(frame))
 	}
 	var decoded s02EnvelopeMirror
 	if err := json.Unmarshal(frame, &decoded); err != nil {
 		t.Fatalf("encoded current S02 envelope is invalid JSON: %v", err)
 	}
-	if decoded.Version != s02EnvelopeCurrentVersion || decoded.Type != s02EnvelopeHeartbeatType || decoded.Generation != sequence || decoded.Sequence != sequence || len(decoded.Payload) != len(batchBytes) {
+	if decoded.Version != s02EnvelopeCurrentVersion || decoded.Type != s02EnvelopeDockerType || decoded.Generation != 2 || decoded.Sequence != sequence || len(decoded.Payload) != len(batchBytes) {
 		t.Fatalf("outer envelope fields or embedded batch changed unexpectedly: envelope=%+v payload=%d", decoded, len(decoded.Payload))
 	}
-	t.Logf("component framing contract only: batch=%d bytes envelope=%d bytes max_frame=%d bytes; replace mirror with protocol.Envelope after S02 integration; no WSS acceptance implied", len(batchBytes), len(frame), s02EnvelopeMaxMessageSize)
+	t.Logf("component framing contract only: actual Docker DTO payload=%d bytes envelope=%d bytes max_frame=%d bytes; replace mirror with protocol.Envelope after S02 integration; no WSS acceptance implied", len(batchBytes), len(frame), s02EnvelopeMaxMessageSize)
 }
 
-func marshalS02EnvelopeMirror(batch Batch) ([]byte, error) {
-	payload, err := json.Marshal(batch)
-	if err != nil {
-		return nil, err
-	}
+func marshalS02EnvelopeMirror(sequence uint64, payload json.RawMessage) ([]byte, error) {
 	return json.Marshal(s02EnvelopeMirror{
-		Version: s02EnvelopeCurrentVersion, Type: s02EnvelopeHeartbeatType,
-		Generation: ^uint64(0), Sequence: batch.Sequence,
+		Version: s02EnvelopeCurrentVersion, Type: s02EnvelopeDockerType,
+		Generation: 2, Sequence: sequence,
 		RequestID: "nodedance-s04-component-test-00000001", Payload: payload,
 	})
 }
