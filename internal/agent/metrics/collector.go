@@ -284,49 +284,93 @@ func (c *Collector) collectMemory(ctx context.Context, at time.Time) Metric[Memo
 	return known(value, at)
 }
 
+type networkTopology struct {
+	interfaceByName map[string]net.InterfaceStat
+	factsByName     map[string]interfaceFacts
+	linkByName      map[string]linkMetadata
+	linkErrors      map[string]error
+	masterKinds     map[string]string
+	interfacesErr   error
+}
+
+func (c *Collector) readNetworkTopology(ctx context.Context) networkTopology {
+	interfaces, interfacesErr := c.source.networkInterfaces(ctx)
+	topology := networkTopology{
+		interfaceByName: make(map[string]net.InterfaceStat, len(interfaces)),
+		factsByName:     make(map[string]interfaceFacts, len(interfaces)),
+		linkByName:      make(map[string]linkMetadata, len(interfaces)),
+		linkErrors:      make(map[string]error, len(interfaces)),
+		masterKinds:     make(map[string]string, len(interfaces)),
+		interfacesErr:   interfacesErr,
+	}
+	for _, iface := range interfaces {
+		topology.interfaceByName[iface.Name] = iface
+		topology.factsByName[iface.Name] = gopsutilInterfaceFacts(iface)
+		link, linkErr := c.source.linkMetadata(iface.Name)
+		topology.linkByName[iface.Name] = link
+		topology.linkErrors[iface.Name] = linkErr
+	}
+	for _, link := range topology.linkByName {
+		if link.master == "" {
+			continue
+		}
+		if master, ok := topology.linkByName[link.master]; ok {
+			topology.masterKinds[link.master] = master.kind
+		}
+	}
+	return topology
+}
+
+func (t networkTopology) identity(name string) (string, string) {
+	iface, ok := t.interfaceByName[name]
+	if !ok {
+		return "", "interface_identity_unavailable"
+	}
+	return stableInterfaceIdentity(iface, t.linkByName[name])
+}
+
+func identityAcrossSample(before, after networkTopology, name string) (string, string, bool) {
+	beforeID, beforeReason := before.identity(name)
+	afterID, afterReason := after.identity(name)
+	if beforeReason == "" && afterReason == "" {
+		if beforeID != afterID {
+			return "", "interface_changed_during_sample", false
+		}
+		return afterID, "", true
+	}
+	if (beforeReason == "") != (afterReason == "") {
+		return "", "interface_changed_during_sample", false
+	}
+	if beforeReason == "interface_identity_mismatch" || afterReason == "interface_identity_mismatch" {
+		return "", "interface_identity_mismatch", false
+	}
+	return "", "interface_identity_unavailable", false
+}
+
 func (c *Collector) collectNetwork(ctx context.Context, at time.Time) NetworkSnapshot {
+	before := c.readNetworkTopology(ctx)
 	counters, err := c.source.networkCounters(ctx)
 	if err != nil {
 		c.prevNet = make(map[string]networkCounter)
 		c.prevNetSummaryNames = nil
 		return NetworkSnapshot{Summary: unknown[NetworkRate](reasonFromError(err), at)}
 	}
-	interfaces, interfacesErr := c.source.networkInterfaces(ctx)
-	factsByName := make(map[string]interfaceFacts, len(interfaces))
-	for _, iface := range interfaces {
-		factsByName[iface.Name] = gopsutilInterfaceFacts(iface)
-	}
-	linkByName := make(map[string]linkMetadata, len(interfaces))
-	linkErrors := make(map[string]error, len(interfaces))
-	for _, iface := range interfaces {
-		link, linkErr := c.source.linkMetadata(iface.Name)
-		linkByName[iface.Name] = link
-		linkErrors[iface.Name] = linkErr
-	}
-	masterKinds := make(map[string]string, len(interfaces))
-	for _, link := range linkByName {
-		if link.master == "" {
-			continue
-		}
-		if master, ok := linkByName[link.master]; ok {
-			masterKinds[link.master] = master.kind
-		}
-	}
+	after := c.readNetworkTopology(ctx)
 
 	sort.Slice(counters, func(i, j int) bool { return counters[i].Name < counters[j].Name })
 	current := make(map[string]networkCounter, len(counters))
 	result := NetworkSnapshot{Interfaces: make([]NetworkInterface, 0, len(counters))}
 	eligibleNames := make([]string, 0, len(counters))
-	classificationKnown := interfacesErr == nil
+	classificationKnown := after.interfacesErr == nil
 	for _, counter := range counters {
-		current[counter.Name] = networkCounter{rx: counter.BytesRecv, tx: counter.BytesSent, at: at}
-		facts, factsOK := factsByName[counter.Name]
-		link, linkOK := linkByName[counter.Name]
-		linkErr := linkErrors[counter.Name]
+		identity, identityReason, identityStable := identityAcrossSample(before, after, counter.Name)
+		facts, factsOK := after.factsByName[counter.Name]
+		link, linkOK := after.linkByName[counter.Name]
+		linkErr := after.linkErrors[counter.Name]
 		if !linkOK && linkErr == nil {
 			linkErr = errInvalidData
 		}
-		included, summaryReason, classifiable := classifyInterface(counter.Name, facts, factsOK, link, linkErr, masterKinds[link.master])
+		included, summaryReason, classifiable := classifyInterface(counter.Name, facts, factsOK, link, linkErr, after.masterKinds[link.master])
 		if !classifiable {
 			classificationKnown = false
 		}
@@ -335,16 +379,25 @@ func (c *Collector) collectNetwork(ctx context.Context, at time.Time) NetworkSna
 			up := facts.up
 			item.Up = &up
 		}
-		if previous, ok := c.prevNet[counter.Name]; ok {
-			elapsed := at.Sub(previous.at).Seconds()
-			rate, reason := networkRate(previous.rx, previous.tx, counter.BytesRecv, counter.BytesSent, elapsed)
-			if reason != "" {
-				item.Rate = unknown[NetworkRate](reason, at)
-			} else {
-				item.Rate = known(rate, at)
-			}
+		if !identityStable {
+			item.Rate = unknown[NetworkRate](identityReason, at)
 		} else {
-			item.Rate = unknown[NetworkRate]("warming_up", at)
+			current[counter.Name] = networkCounter{
+				rx: counter.BytesRecv, tx: counter.BytesSent, at: at, identity: identity,
+			}
+			if previous, ok := c.prevNet[counter.Name]; !ok {
+				item.Rate = unknown[NetworkRate]("warming_up", at)
+			} else if previous.identity != identity {
+				item.Rate = unknown[NetworkRate]("interface_changed", at)
+			} else {
+				elapsed := at.Sub(previous.at).Seconds()
+				rate, reason := networkRate(previous.rx, previous.tx, counter.BytesRecv, counter.BytesSent, elapsed)
+				if reason != "" {
+					item.Rate = unknown[NetworkRate](reason, at)
+				} else {
+					item.Rate = known(rate, at)
+				}
+			}
 		}
 		if included {
 			eligibleNames = append(eligibleNames, counter.Name)
@@ -352,8 +405,8 @@ func (c *Collector) collectNetwork(ctx context.Context, at time.Time) NetworkSna
 		result.Interfaces = append(result.Interfaces, item)
 	}
 
-	if interfacesErr != nil {
-		result.Summary = unknown[NetworkRate](reasonFromError(interfacesErr), at)
+	if after.interfacesErr != nil {
+		result.Summary = unknown[NetworkRate](reasonFromError(after.interfacesErr), at)
 	} else if !classificationKnown {
 		result.Summary = unknown[NetworkRate]("topology_unavailable", at)
 	} else if len(eligibleNames) == 0 {
@@ -393,7 +446,7 @@ func (c *Collector) collectNetwork(ctx context.Context, at time.Time) NetworkSna
 	}
 
 	c.prevNet = current
-	if classificationKnown && interfacesErr == nil {
+	if classificationKnown && after.interfacesErr == nil {
 		c.prevNetSummaryNames = append([]string(nil), eligibleNames...)
 	} else {
 		c.prevNetSummaryNames = nil

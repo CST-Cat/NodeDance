@@ -3,6 +3,7 @@ package metrics
 import (
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,9 +11,10 @@ import (
 )
 
 type networkCounter struct {
-	rx uint64
-	tx uint64
-	at time.Time
+	rx       uint64
+	tx       uint64
+	at       time.Time
+	identity string
 }
 
 type interfaceFacts struct {
@@ -96,6 +98,25 @@ func gopsutilInterfaceFacts(iface net.InterfaceStat) interfaceFacts {
 		up:       slices.Contains(iface.Flags, "up"),
 		loopback: slices.Contains(iface.Flags, "loopback"),
 	}
+}
+
+func stableInterfaceIdentity(iface net.InterfaceStat, link linkMetadata) (string, string) {
+	index := iface.Index
+	if link.ifindex > 0 {
+		if index > 0 && index != link.ifindex {
+			return "", "interface_identity_mismatch"
+		}
+		index = link.ifindex
+	}
+	mac := strings.ToLower(strings.TrimSpace(iface.HardwareAddr))
+	if index <= 0 {
+		return "", "interface_identity_unavailable"
+	}
+	identity := strconv.Itoa(index)
+	if mac != "" {
+		identity += "/" + mac
+	}
+	return identity, ""
 }
 
 func masterName(path string) string {
