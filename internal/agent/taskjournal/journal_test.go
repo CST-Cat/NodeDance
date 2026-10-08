@@ -353,38 +353,118 @@ func TestSubprocessKillAndRestartRecovery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			command := exec.Command(binary, "-test.run=^TestJournalCrashChild$")
+			childCtx, cancelChild := context.WithTimeout(context.Background(), 20*time.Second)
+			command := exec.CommandContext(childCtx, binary, "-test.run=^TestJournalCrashChild$")
 			command.Env = append(os.Environ(),
 				"NODEDANCE_JOURNAL_CRASH_STAGE="+stage,
 				"NODEDANCE_JOURNAL_CRASH_DB="+dbPath,
 				"NODEDANCE_JOURNAL_CRASH_MARKER="+marker,
 			)
-			stdout, err := command.StdoutPipe()
+			stdout, childStdout, err := os.Pipe()
 			if err != nil {
+				cancelChild()
 				t.Fatal(err)
 			}
+			command.Stdout = childStdout
 			var stderr bytes.Buffer
 			command.Stderr = &stderr
 			if err := command.Start(); err != nil {
+				_ = stdout.Close()
+				_ = childStdout.Close()
+				cancelChild()
 				t.Fatal(err)
 			}
-			ready, readErr := bufio.NewReader(stdout).ReadString('\n')
-			if readErr != nil || strings.TrimSpace(ready) != "READY" {
-				_ = command.Process.Kill()
-				_ = command.Wait()
-				t.Fatalf("child checkpoint %q, read error %v, stderr %s", ready, readErr, stderr.String())
-			}
-			if stage == "lock-owner" {
-				if _, err := Open(context.Background(), dbPath, "node-test"); !errors.Is(err, ErrJournalInUse) {
-					_ = command.Process.Kill()
-					_ = command.Wait()
-					t.Fatalf("second live Agent Open = %v, want journal-in-use", err)
+			_ = childStdout.Close()
+			waitResult := make(chan error, 1)
+			go func() { waitResult <- command.Wait() }()
+			var childWaitErr error
+			childWaited := false
+			awaitChild := func(timeout time.Duration) (error, bool) {
+				if childWaited {
+					return childWaitErr, true
+				}
+				select {
+				case childWaitErr = <-waitResult:
+					childWaited = true
+					return childWaitErr, true
+				case <-time.After(timeout):
+					return nil, false
 				}
 			}
-			if err := command.Process.Kill(); err != nil {
-				t.Fatal(err)
+			killAndWait := func() (error, bool) {
+				if !childWaited && command.Process != nil {
+					_ = command.Process.Kill()
+				}
+				return awaitChild(5 * time.Second)
 			}
-			if err := command.Wait(); err == nil {
+			readyResult := make(chan struct {
+				line string
+				err  error
+			}, 1)
+			readyReadDone := make(chan struct{})
+			t.Cleanup(func() {
+				if !childWaited {
+					cancelChild()
+					if command.Process != nil {
+						_ = command.Process.Kill()
+					}
+					if _, ok := awaitChild(5 * time.Second); !ok {
+						t.Errorf("child process did not exit after bounded kill")
+					}
+				}
+				_ = stdout.Close()
+				select {
+				case <-readyReadDone:
+				case <-time.After(time.Second):
+					t.Errorf("READY reader did not stop after child cleanup")
+				}
+				cancelChild()
+			})
+			go func() {
+				defer close(readyReadDone)
+				line, readErr := bufio.NewReader(stdout).ReadString('\n')
+				readyResult <- struct {
+					line string
+					err  error
+				}{line: line, err: readErr}
+			}()
+			select {
+			case ready := <-readyResult:
+				if ready.err != nil || strings.TrimSpace(ready.line) != "READY" {
+					_, reaped := killAndWait()
+					if !reaped {
+						t.Fatalf("child did not exit after invalid READY result")
+					}
+					t.Fatalf("child checkpoint %q, read error %v, stderr %s", ready.line, ready.err, stderr.String())
+				}
+			case <-time.After(5 * time.Second):
+				_, reaped := killAndWait()
+				if !reaped {
+					t.Fatalf("child did not exit after READY timeout")
+				}
+				t.Fatalf("child did not emit bounded READY checkpoint, stderr %s", stderr.String())
+			case <-childCtx.Done():
+				_, reaped := killAndWait()
+				if !reaped {
+					t.Fatalf("child did not exit after process context timeout")
+				}
+				t.Fatalf("child process context expired before READY, stderr %s", stderr.String())
+			}
+			if stage == "lock-owner" {
+				openCtx, cancelOpen := context.WithTimeout(context.Background(), 5*time.Second)
+				secondStore, openErr := Open(openCtx, dbPath, "node-test")
+				cancelOpen()
+				if secondStore != nil {
+					_ = secondStore.Close()
+				}
+				if !errors.Is(openErr, ErrJournalInUse) {
+					_, _ = killAndWait()
+					t.Fatalf("second live Agent Open = %v, want journal-in-use", openErr)
+				}
+			}
+			if err, reaped := killAndWait(); !reaped {
+				t.Fatal("child process did not exit after kill within five seconds")
+			} else if err == nil {
 				t.Fatal("killed child unexpectedly exited successfully")
 			}
 
