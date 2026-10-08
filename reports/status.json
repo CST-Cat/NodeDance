@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T15:54:02.781758+00:00",
+  "updated_at": "2026-10-08T16:07:58.657454+00:00",
   "status": "NOT_READY",
   "reason": "当前没有任何阶段报告完成实际验收。",
   "stages": {
@@ -15,8 +15,8 @@
     "S01": {
       "status": "PASS",
       "mode": "full",
-      "run_id": "20261008T155219Z-99761843",
-      "updated_at": "2026-10-08T15:54:02.781758+00:00",
+      "run_id": "20261008T160614Z-f6e6a967",
+      "updated_at": "2026-10-08T16:07:58.657454+00:00",
       "reason": "All twelve original S01 acceptance cases passed in three consecutive full runs."
     },
     "S02": {
