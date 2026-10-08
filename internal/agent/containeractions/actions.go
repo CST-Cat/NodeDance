@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -39,7 +40,12 @@ var (
 	ErrOperationFailed       = errors.New("container action failed")
 	ErrTargetMismatch        = errors.New("Docker Engine returned a different container ID")
 	ErrPreconditionFailed    = errors.New("container action precondition failed")
+	ErrBootIDUnavailable     = errors.New("host boot identity is unavailable")
+	ErrBaselinePersistence   = errors.New("durable pre-mutation baseline could not be confirmed")
+	ErrBaselineUnverifiable  = errors.New("durable execution baseline cannot prove the action result")
+	ErrTaskNotReconcileable  = errors.New("only unknown tasks can be reconciled")
 	dockerIDPattern          = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	bootIDPattern            = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	containerNamePattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 	startedAtLayout          = time.RFC3339Nano
 	defaultOperationLimit    = 30 * time.Second
@@ -105,6 +111,7 @@ type Engine interface {
 type Journal interface {
 	Enqueue(context.Context, taskstate.Identity) (taskjournal.EnqueueResult, error)
 	BeginExecution(context.Context, string) error
+	PrepareMutation(context.Context, string, taskjournal.ExecutionBaseline) error
 	Finish(context.Context, string, taskstate.Status, taskstate.Evidence, taskjournal.Result) error
 	MarkUnknown(context.Context, string) error
 	Get(context.Context, string) (taskjournal.Snapshot, error)
@@ -113,6 +120,7 @@ type Journal interface {
 type Options struct {
 	OperationTimeout    time.Duration
 	VerificationTimeout time.Duration
+	BootIDSource        func(context.Context) (string, error)
 }
 
 type Executor struct {
@@ -120,6 +128,7 @@ type Executor struct {
 	journal             Journal
 	operationTimeout    time.Duration
 	verificationTimeout time.Duration
+	bootIDSource        func(context.Context) (string, error)
 }
 
 func New(engine Engine, journal Journal, options Options) (*Executor, error) {
@@ -132,12 +141,15 @@ func New(engine Engine, journal Journal, options Options) (*Executor, error) {
 	if options.VerificationTimeout == 0 {
 		options.VerificationTimeout = defaultVerificationLimit
 	}
+	if options.BootIDSource == nil {
+		options.BootIDSource = readHostBootID
+	}
 	if options.OperationTimeout < time.Second || options.OperationTimeout > 10*time.Minute ||
 		options.VerificationTimeout < time.Second || options.VerificationTimeout > time.Minute {
 		return nil, errors.New("container action timeouts are outside the supported bounds")
 	}
 	return &Executor{engine: engine, journal: journal, operationTimeout: options.OperationTimeout,
-		verificationTimeout: options.VerificationTimeout}, nil
+		verificationTimeout: options.VerificationTimeout, bootIDSource: options.BootIDSource}, nil
 }
 
 // Execute accepts an idempotent safe intent, durably begins it, performs at
@@ -215,6 +227,28 @@ func (e *Executor) Execute(ctx context.Context, request Request) (taskjournal.Sn
 	if alreadySatisfied(request, before) {
 		return e.finishSucceeded(ctx, task.TaskID, observedState(before), "")
 	}
+	bootCtx, bootCancel := context.WithTimeout(ctx, e.verificationTimeout)
+	bootID, bootErr := e.bootIDSource(bootCtx)
+	bootCancel()
+	if bootErr != nil || !bootIDPattern.MatchString(bootID) {
+		return e.markUnknown(ctx, task.TaskID, ErrBootIDUnavailable)
+	}
+	startedAt, validStartedAt := canonicalStartedAt(before.StartedAt)
+	if !validStartedAt {
+		return e.finishFailed(ctx, task.TaskID, "invalid_inspect")
+	}
+	baseline := taskjournal.ExecutionBaseline{
+		TargetID: before.ID, Action: string(request.Action), HostBootID: bootID,
+		StartedAt: startedAt, RestartCount: before.RestartCount,
+		Running: before.Running, Paused: before.Paused, Restarting: before.Restarting,
+	}
+	baselineCtx, baselineCancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	baselineErr := e.journal.PrepareMutation(baselineCtx, task.TaskID, baseline)
+	baselineCancel()
+	if baselineErr != nil {
+		// A failed/ambiguous SQLite commit does not authorize a Docker write.
+		return e.markUnknown(ctx, task.TaskID, errors.Join(ErrBaselinePersistence, baselineErr))
+	}
 
 	mutationCtx, cancel := context.WithTimeout(ctx, e.operationTimeout)
 	mutationErr := e.mutate(mutationCtx, request)
@@ -250,6 +284,74 @@ func (e *Executor) Execute(ctx context.Context, request Request) (taskjournal.Sn
 		cause = ErrOperationFailed
 	}
 	return e.markUnknown(ctx, task.TaskID, cause)
+}
+
+// Reconcile confirms only a restart postcondition from a verified durable
+// baseline on the same host boot. It never calls the Docker mutation API. A
+// changed StartedAt/RestartCount proves a post-baseline restart-like state
+// change, not that this process issued exactly one restart request; an external
+// actor may have caused the same observation.
+func (e *Executor) Reconcile(ctx context.Context, taskID string) (taskjournal.Snapshot, error) {
+	if ctx == nil || !validText(taskID, taskstate.MaxIdentityBytes) {
+		return taskjournal.Snapshot{}, ErrInvalidRequest
+	}
+	base := context.WithoutCancel(ctx)
+	readCtx, readCancel := context.WithTimeout(base, e.verificationTimeout)
+	task, err := e.journal.Get(readCtx, taskID)
+	readCancel()
+	if err != nil {
+		return taskjournal.Snapshot{}, fmt.Errorf("read task for reconciliation: %w", err)
+	}
+	if task.Status != taskstate.Unknown {
+		if err := statusError(task.Status); err != nil {
+			return task, err
+		}
+		return task, ErrTaskNotReconcileable
+	}
+	if task.ExecutionPhase != taskjournal.ExecutionPhaseMutationMayHaveStarted || task.Baseline == nil ||
+		task.Baseline.TargetID != task.TargetID || task.Baseline.Action != task.Action || task.Action != string(ActionRestart) {
+		return task, errors.Join(ErrOutcomeUnknown, ErrBaselineUnverifiable)
+	}
+	bootCtx, bootCancel := context.WithTimeout(base, e.verificationTimeout)
+	bootID, err := e.bootIDSource(bootCtx)
+	bootCancel()
+	if err != nil || !bootIDPattern.MatchString(bootID) || bootID != task.Baseline.HostBootID {
+		return task, errors.Join(ErrOutcomeUnknown, ErrBaselineUnverifiable)
+	}
+	inspectCtx, inspectCancel := context.WithTimeout(base, e.verificationTimeout)
+	after, inspectErr := e.engine.Inspect(inspectCtx, task.TargetID)
+	inspectCancel()
+	if inspectErr != nil || after.ID != task.TargetID || !validRestartObservation(after) ||
+		!reconciledRestartEvidence(*task.Baseline, after) {
+		return task, errors.Join(ErrOutcomeUnknown, ErrBaselineUnverifiable)
+	}
+	revision := "reconciled_started_at_change"
+	if after.RestartCount > task.Baseline.RestartCount {
+		revision = "reconciled_restart_count_increase"
+	}
+	writeCtx, writeCancel := context.WithTimeout(base, e.verificationTimeout)
+	finishErr := e.journal.Finish(writeCtx, task.TaskID, taskstate.Succeeded, taskstate.Evidence{
+		ExecutionAttempted: task.Evidence.ExecutionAttempted, ExecutionCompleted: true, PostconditionVerified: true,
+	}, taskjournal.Result{Code: taskjournal.ResultVerified, ObservedState: observedState(after), ResourceRevision: revision})
+	writeCancel()
+	return e.readAfterFinish(ctx, task.TaskID, finishErr)
+}
+
+func reconciledRestartEvidence(baseline taskjournal.ExecutionBaseline, after Container) bool {
+	return (after.RestartCount > baseline.RestartCount || startedAtChanged(baseline.StartedAt, after.StartedAt)) &&
+		after.Running && !after.Paused && !after.Restarting
+}
+
+func readHostBootID(context.Context) (string, error) {
+	contents, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return "", ErrBootIDUnavailable
+	}
+	bootID := strings.TrimSpace(string(contents))
+	if !bootIDPattern.MatchString(bootID) {
+		return "", ErrBootIDUnavailable
+	}
+	return bootID, nil
 }
 
 func requestIdentity(request Request) (taskstate.Identity, error) {
@@ -384,6 +486,14 @@ func startedAtChanged(before, after string) bool {
 	oldTime, oldErr := time.Parse(startedAtLayout, before)
 	newTime, newErr := time.Parse(startedAtLayout, after)
 	return oldErr == nil && newErr == nil && !newTime.IsZero() && !oldTime.Equal(newTime)
+}
+
+func canonicalStartedAt(value string) (string, bool) {
+	parsed, err := time.Parse(startedAtLayout, value)
+	if err != nil {
+		return "", false
+	}
+	return parsed.UTC().Format(startedAtLayout), true
 }
 
 func validRestartObservation(container Container) bool {
