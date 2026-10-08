@@ -1,0 +1,12 @@
+.tools/
+.build/
+.artifacts/
+node_modules/
+web/node_modules/
+web/dist/
+internal/core/webassets/dist/
+*.test
+coverage.out
+coverage.html
+__pycache__/
+*.py[cod]

@@ -1,0 +1,101 @@
+{
+  "schema": 1,
+  "stage": "S15",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S15-01": {
+      "status": "NOT_READY",
+      "action": "短暂及持续超限。",
+      "expected": "按持续时间触发。",
+      "environment": "可控指标时钟和真实告警规则。",
+      "evidence_required": "样本时间线、阈值及单次告警时间。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S15-02": {
+      "status": "NOT_READY",
+      "action": "异常持续并多次上报。",
+      "expected": "去重及冷却生效。",
+      "environment": "持续异常指标和三个通知通道接收器。",
+      "evidence_required": "通知总数、cooldown和活动告警ID。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S15-03": {
+      "status": "NOT_READY",
+      "action": "异常恢复后再次发生。",
+      "expected": "生命周期正确。",
+      "environment": "故障-恢复-再故障指标序列。",
+      "evidence_required": "事件ID、恢复记录和再次触发记录。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S15-04": {
+      "status": "NOT_READY",
+      "action": "确认、静默、维护窗口。",
+      "expected": "行为及审计正确。",
+      "environment": "活动告警、管理员操作和维护窗口。",
+      "evidence_required": "抑制结果、解除时刻及审计。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S15-05": {
+      "status": "NOT_READY",
+      "action": "节点失联、旧高负载指标。",
+      "expected": "不把旧值当作当前资源告警。",
+      "environment": "旧高负载指标后切断Agent。",
+      "evidence_required": "stale字段和告警列表。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S15-06": {
+      "status": "NOT_READY",
+      "action": "节点失联导致多个容器未知。",
+      "expected": "下级告警合理抑制。",
+      "environment": "含多容器节点及失联。",
+      "evidence_required": "父子告警数量、关联和抑制原因。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S15-07": {
+      "status": "NOT_READY",
+      "action": "站内、Webhook、SMTP。",
+      "expected": "实际接收内容正确。",
+      "environment": "真实站内记录和受控Webhook/SMTP接收器。",
+      "evidence_required": "接收器原始消息与配置模板比较。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S15-08": {
+      "status": "NOT_READY",
+      "action": "超时、错误响应、认证失败。",
+      "expected": "有界重试，历史可查。",
+      "environment": "故障注入Webhook/SMTP接收端。",
+      "evidence_required": "每次尝试、最终状态和有限重试数。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S15-09": {
+      "status": "NOT_READY",
+      "action": "重启Core。",
+      "expected": "规则、活动告警及投递状态保留。",
+      "environment": "真实持久数据库及投递队列。",
+      "evidence_required": "重启前后规则/告警/task ID。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S15-10": {
+      "status": "NOT_READY",
+      "action": "检查凭据、模板、通知内容。",
+      "expected": "秘密不泄露，模板输入安全。",
+      "environment": "含测试凭据和恶意模板输入。",
+      "evidence_required": "DB/log/通知内容扫描和渲染结果。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

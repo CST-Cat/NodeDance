@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "stage": "S05",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S05-01": {
+      "status": "NOT_READY",
+      "action": "执行全部生命周期操作。",
+      "expected": "Docker实际状态符合结果。",
+      "environment": "隔离真实Docker Engine和全部生命周期fixture。",
+      "evidence_required": "每个操作任务状态及前后Inspect。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-02": {
+      "status": "NOT_READY",
+      "action": "同一请求重复提交十次。",
+      "expected": "一次实际执行。",
+      "environment": "可控重复HTTP请求和真实Engine。",
+      "evidence_required": "十个响应task_id及单次Engine事件/调用。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-03": {
+      "status": "NOT_READY",
+      "action": "同一幂等标识用于不同请求。",
+      "expected": "返回冲突。",
+      "environment": "两个不同请求体共用Idempotency-Key。",
+      "evidence_required": "HTTP冲突响应及未执行的第二操作。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-04": {
+      "status": "NOT_READY",
+      "action": "同时提交停止、重启、删除。",
+      "expected": "冲突串行或拒绝，不互相破坏。",
+      "environment": "并发真实任务和单一容器。",
+      "evidence_required": "锁/任务顺序及最终Inspect。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-05": {
+      "status": "NOT_READY",
+      "action": "Core/Agent在执行前、中、后重启。",
+      "expected": "恢复记录，不盲目重放。",
+      "environment": "可控进程终止及真实Engine任务。",
+      "evidence_required": "每个故障点任务journal与资源状态核对。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-06": {
+      "status": "NOT_READY",
+      "action": "超时、取消、离线提交。",
+      "expected": "状态真实，离线不积压危险操作。",
+      "environment": "任务超时/取消、网络隔离。",
+      "evidence_required": "状态机结果、Agent执行记录及无离线队列证据。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-07": {
+      "status": "NOT_READY",
+      "action": "缺少删除确认、目标发生变化。",
+      "expected": "拒绝。",
+      "environment": "目标ID/版本可变化的真实删除流程。",
+      "evidence_required": "确认参数校验、拒绝响应和资源仍存在。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-08": {
+      "status": "NOT_READY",
+      "action": "重命名独立和Compose容器。",
+      "expected": "独立成功，Compose拒绝。",
+      "environment": "两个真实容器来源。",
+      "evidence_required": "Docker真实名称与拒绝审计。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-09": {
+      "status": "NOT_READY",
+      "action": "TTY、stderr、Unicode、大量日志。",
+      "expected": "内容正确，无协议头污染。",
+      "environment": "nd-log和TTY真实容器。",
+      "evidence_required": "原始Docker日志与浏览器/API字节对照。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-10": {
+      "status": "NOT_READY",
+      "action": "多浏览器订阅统计后全部离开。",
+      "expected": "订阅释放，不长期采集全部容器。",
+      "environment": "真实多客户端实时统计订阅。",
+      "evidence_required": "订阅数、Docker stats调用频率前后对照。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-11": {
+      "status": "NOT_READY",
+      "action": "数据库或Agent任务记录无法写入。",
+      "expected": "写操作拒绝，不先执行再补记录。",
+      "environment": "任务持久层故障注入和真实Docker目标。",
+      "evidence_required": "失败日志及Docker状态未变化。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S05-12": {
+      "status": "NOT_READY",
+      "action": "查看审计。",
+      "expected": "目标、操作、任务、结果完整，秘密脱敏。",
+      "environment": "至少成功、失败和未知任务。",
+      "evidence_required": "审计记录与实际执行记录逐项对照。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

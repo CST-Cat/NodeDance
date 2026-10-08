@@ -1,0 +1,101 @@
+{
+  "schema": 1,
+  "stage": "S11",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S11-01": {
+      "status": "NOT_READY",
+      "action": "修改普通端口、多映射、IPv6、UDP。",
+      "expected": "解析及实际绑定正确。",
+      "environment": "隔离Compose Engine及TCP/UDP/v4/v6端口服务。",
+      "evidence_required": "渲染配置、Engine绑定和探测结果。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S11-02": {
+      "status": "NOT_READY",
+      "action": "修改多文件、变量、长格式端口。",
+      "expected": "最终模型正确。",
+      "environment": "多文件变量覆盖、长格式和YAML anchors fixture。",
+      "evidence_required": "原上下文最终Compose config与差异。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S11-03": {
+      "status": "NOT_READY",
+      "action": "临时校验涉及相对挂载。",
+      "expected": "不因临时路径改变挂载目标。",
+      "environment": "源项目相对bind路径和临时校验目录。",
+      "evidence_required": "临时/正式Mounts目标保持相同。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S11-04": {
+      "status": "NOT_READY",
+      "action": "输入非法配置、缺失变量。",
+      "expected": "原文件及服务不变。",
+      "environment": "真实项目及配置错误样本。",
+      "evidence_required": "文件hash、服务ID和任务拒绝原因。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S11-05": {
+      "status": "NOT_READY",
+      "action": "编辑期间外部修改文件。",
+      "expected": "返回冲突。",
+      "environment": "Web和SSH并发源文件修改。",
+      "evidence_required": "版本冲突响应和外部文件保留。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S11-06": {
+      "status": "NOT_READY",
+      "action": "新端口占用、健康失败。",
+      "expected": "失败并执行恢复。",
+      "environment": "端口占用者与可控不健康Compose服务。",
+      "evidence_required": "任务失败、旧配置/镜像/服务回滚状态。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S11-07": {
+      "status": "NOT_READY",
+      "action": "原镜像标签已变化。",
+      "expected": "使用保留的旧引用恢复。",
+      "environment": "移动标签前后镜像digest不同。",
+      "evidence_required": "回滚时实际镜像ID/digest与旧版本一致。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S11-08": {
+      "status": "NOT_READY",
+      "action": "重启Core/Agent后恢复任务。",
+      "expected": "可识别当前阶段及结果。",
+      "environment": "各部署阶段断电/进程重启注入。",
+      "evidence_required": "持久journal、恢复判定和实际资源。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S11-09": {
+      "status": "NOT_READY",
+      "action": "检查文件权限、备份和日志。",
+      "expected": "权限保留，秘密不泄露。",
+      "environment": "私密env文件和不同mode配置。",
+      "evidence_required": "备份stat、日志/报告秘密扫描。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S11-10": {
+      "status": "NOT_READY",
+      "action": "检查未受影响服务与卷。",
+      "expected": "无误重建、无数据丢失。",
+      "environment": "含依赖服务及持久卷的项目。",
+      "evidence_required": "未受影响Container ID、卷ID及marker前后比对。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

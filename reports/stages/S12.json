@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "stage": "S12",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S12-01": {
+      "status": "NOT_READY",
+      "action": "普通端口重建。",
+      "expected": "新实例与映射正确。",
+      "environment": "真实独立容器和端口修改任务。",
+      "evidence_required": "前后Inspect、端口探测和旧实例保留。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S12-02": {
+      "status": "NOT_READY",
+      "action": "环境、命令、用户、重启策略、资源限制。",
+      "expected": "按重建计划保留。",
+      "environment": "配置覆盖项丰富的独立容器。",
+      "evidence_required": "重建前后完整Inspect差异。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S12-03": {
+      "status": "NOT_READY",
+      "action": "bind、命名卷、匿名卷。",
+      "expected": "使用原数据，不生成空卷替代。",
+      "environment": "三类挂载均有唯一marker。",
+      "evidence_required": "挂载Source/Volume ID和marker一致。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S12-04": {
+      "status": "NOT_READY",
+      "action": "多网络、网络别名、静态IP。",
+      "expected": "正确释放和恢复。",
+      "environment": "至少两个自定义网络。",
+      "evidence_required": "网络连接、alias、IP前后检查。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S12-05": {
+      "status": "NOT_READY",
+      "action": "可写层有测试文件。",
+      "expected": "快照保护后仍存在。",
+      "environment": "无volume遮蔽的容器内marker文件。",
+      "evidence_required": "快照ID/校验及新容器文件hash。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S12-06": {
+      "status": "NOT_READY",
+      "action": "端口冲突、创建失败、健康失败。",
+      "expected": "恢复旧容器及名称。",
+      "environment": "三类可控失败注入。",
+      "evidence_required": "旧容器ID/名称和新冲突资源回收。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S12-07": {
+      "status": "NOT_READY",
+      "action": "空间不足、快照失败。",
+      "expected": "停止旧容器前拒绝。",
+      "environment": "测试快照存储配额和故障模拟。",
+      "evidence_required": "旧容器持续运行及拒绝原因。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S12-08": {
+      "status": "NOT_READY",
+      "action": "Host Network、AutoRemove、不支持的配置。",
+      "expected": "明确拒绝无意义或不安全重建。",
+      "environment": "三种独立容器配置。",
+      "evidence_required": "操作前拒绝和原资源不变。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S12-09": {
+      "status": "NOT_READY",
+      "action": "在中间阶段重启Agent。",
+      "expected": "从记录恢复，不重复破坏资源。",
+      "environment": "重建状态机每个边界的进程重启注入。",
+      "evidence_required": "journal、执行次数和Docker资源ID。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S12-10": {
+      "status": "NOT_READY",
+      "action": "偏好、历史及回滚容器展示。",
+      "expected": "正确关联，备份不冒充主服务。",
+      "environment": "有偏好/历史的真实重建流程。",
+      "evidence_required": "主容器identity与回滚资源UI/API映射。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S12-11": {
+      "status": "NOT_READY",
+      "action": "清理回滚资源。",
+      "expected": "目标明确，默认保留卷。",
+      "environment": "成功/失败后残留的快照和旧容器。",
+      "evidence_required": "确认对象、卷marker及清理审计。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

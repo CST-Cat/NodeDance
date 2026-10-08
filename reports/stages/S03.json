@@ -1,0 +1,92 @@
+{
+  "schema": 1,
+  "stage": "S03",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S03-01": {
+      "status": "NOT_READY",
+      "action": "对照独立/proc、文件系统采样。",
+      "expected": "定义、单位和计算一致。",
+      "environment": "真实Linux Agent及同步独立采样脚本。",
+      "evidence_required": "原始采样、单位换算和对照误差。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S03-02": {
+      "status": "NOT_READY",
+      "action": "控制CPU、内存负载。",
+      "expected": "指标有对应变化。",
+      "environment": "可控压力工具与真实节点。",
+      "evidence_required": "负载前后指标曲线和系统采样。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S03-03": {
+      "status": "NOT_READY",
+      "action": "首次采样、计数重置。",
+      "expected": "不产生假零值或负速率。",
+      "environment": "Agent重启、计数器重置/接口变化场景。",
+      "evidence_required": "采样序列及速率计算结果。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S03-04": {
+      "status": "NOT_READY",
+      "action": "多网卡、多挂载点。",
+      "expected": "分别展示，默认汇总不重复计算。",
+      "environment": "至少两网卡和多个挂载点Linux节点。",
+      "evidence_required": "接口/文件系统明细和汇总计算。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S03-05": {
+      "status": "NOT_READY",
+      "action": "无权限读取某项。",
+      "expected": "该项未知，其余继续。",
+      "environment": "受限权限Agent或隔离测试目录。",
+      "evidence_required": "错误原因、其余指标连续性。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S03-06": {
+      "status": "NOT_READY",
+      "action": "Docker查询卡住。",
+      "expected": "不阻塞主机采集和心跳。",
+      "environment": "测试Docker Engine/Socket延迟注入。",
+      "evidence_required": "指标时间戳、心跳间隔和Docker超时日志。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S03-07": {
+      "status": "NOT_READY",
+      "action": "Agent失联、恢复。",
+      "expected": "数据过期及恢复时间正确。",
+      "environment": "真实网络隔离和恢复。",
+      "evidence_required": "Core stale标记、离线阈值及新样本。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S03-08": {
+      "status": "NOT_READY",
+      "action": "节点重启、系统时间偏移。",
+      "expected": "运行时间与时间异常分别处理。",
+      "environment": "可重启Linux节点及可控时钟偏移。",
+      "evidence_required": "boot/uptime与采集时间线。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S03-SUP-01": {
+      "status": "NOT_READY",
+      "action": "在指定采样频率和持续负载下测量真实 Agent 的采集开销及指标端到端延迟。",
+      "expected": "报告 CPU、RSS、P50/P95/P99 与机器配置；对照预算分析，未达标不得删测或静默放宽。",
+      "environment": "Linux amd64/arm64 实际 Agent、可控主机负载、独立采样器和注明网络条件。",
+      "evidence_required": "原始采样序列、负载参数、计算脚本、P50/P95/P99 和复现命令。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

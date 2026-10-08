@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "stage": "S10",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S10-01": {
+      "status": "NOT_READY",
+      "action": "普通、中文、空格、特殊字符文件名。",
+      "expected": "正确展示及操作。",
+      "environment": "Agent节点测试目录内命名样本。",
+      "evidence_required": "stat/list/rename/download结果。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S10-02": {
+      "status": "NOT_READY",
+      "action": "越界路径、..、逃逸符号链接。",
+      "expected": "按根目录策略拒绝。",
+      "environment": "根目录外测试文件及符号链接。",
+      "evidence_required": "拒绝响应和根外文件未变更。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S10-03": {
+      "status": "NOT_READY",
+      "action": "无权限文件、只读文件系统。",
+      "expected": "明确错误。",
+      "environment": "独立只读测试目录/非特权Agent账号。",
+      "evidence_required": "失败原因和文件原始属性。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S10-04": {
+      "status": "NOT_READY",
+      "action": "上传下载100MiB、1GiB文件。",
+      "expected": "校验一致，内存不随大小线性增长。",
+      "environment": "隔离节点、预生成校验样本和内存监测。",
+      "evidence_required": "SHA-256、吞吐、RSS曲线及增量差≤64MiB。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S10-05": {
+      "status": "NOT_READY",
+      "action": "超限、传输中断、注销。",
+      "expected": "临时文件清理，原文件保留。",
+      "environment": "1GiB上限、断线和Session撤销。",
+      "evidence_required": "temp目录、目标前后hash与传输任务状态。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S10-06": {
+      "status": "NOT_READY",
+      "action": "目标已存在。",
+      "expected": "未明确替换时返回冲突。",
+      "environment": "已有目标文件及无替换请求。",
+      "evidence_required": "冲突状态和目标原hash。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S10-07": {
+      "status": "NOT_READY",
+      "action": "编辑期间外部修改。",
+      "expected": "冲突被检测。",
+      "environment": "浏览器编辑与SSH并发修改。",
+      "evidence_required": "版本标识、409冲突和外部内容保留。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S10-08": {
+      "status": "NOT_READY",
+      "action": "保存后检查内容、所有者、权限。",
+      "expected": "符合预期。",
+      "environment": "Agent测试目录及可控owner/mode。",
+      "evidence_required": "文件hash、stat和原子替换过程。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S10-09": {
+      "status": "NOT_READY",
+      "action": "删除目录或文件。",
+      "expected": "目标确认、审计完整。",
+      "environment": "有子项/空目录及确认参数。",
+      "evidence_required": "二次确认、删除结果和审计目标。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S10-10": {
+      "status": "NOT_READY",
+      "action": "上传、日志与监控同时进行。",
+      "expected": "心跳和控制请求可用。",
+      "environment": "并发1GiB受控上传、日志流、Agent指标。",
+      "evidence_required": "心跳间隔、API延迟与流量曲线。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S10-11": {
+      "status": "NOT_READY",
+      "action": "文本超限或二进制文件。",
+      "expected": "不按普通文本强行编辑。",
+      "environment": "大文本和随机二进制样本。",
+      "evidence_required": "明确拒绝及目标文件hash不变。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "stage": "S17",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S17-01": {
+      "status": "NOT_READY",
+      "action": "干净环境安装。",
+      "expected": "文档足够，不需要隐含修补。",
+      "environment": "Clean ephemeral Linux amd64/arm64 CI environments; user VPS installation is performed by the user after the complete Core/Agent delivery.",
+      "evidence_required": "命令日志、版本、安装前置和服务状态。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-02": {
+      "status": "NOT_READY",
+      "action": "全部阶段回归。",
+      "expected": "全部必测用例PASS。",
+      "environment": "S00-S16完整锁定测试环境。",
+      "evidence_required": "182条原始用例和新增回归的逐项状态。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-03": {
+      "status": "NOT_READY",
+      "action": "在官方 GitHub-hosted Linux amd64、arm64 runner 上实际启动并运行两个架构的产物。",
+      "expected": "不仅交叉编译成功。",
+      "environment": "ubuntu-24.04 and ubuntu-24.04-arm hosted runners; isolated Engine 28/29 matrix where Docker is needed; cross-compilation alone is insufficient.",
+      "evidence_required": "CPU架构、二进制执行、Core/Agent/Engine日志。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-04": {
+      "status": "NOT_READY",
+      "action": "在 CI 中用 Chromium、WebKit、Firefox 完成桌面与 375/768/1440 响应式及触屏仿真主要流程。",
+      "expected": "Web 核心流程可用、无溢出；结果只描述浏览器/视口仿真，不宣称通过真实 iPad/Android。",
+      "environment": "Playwright CI browsers and responsive/touch emulation; physical iPad/Android is outside the required acceptance environment.",
+      "evidence_required": "浏览器版本及流程录像/报告。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-05": {
+      "status": "NOT_READY",
+      "action": "72小时运行、重连、故障恢复。",
+      "expected": "无崩溃、无错误状态积累。",
+      "environment": "至少三真实节点固定负载连续72小时。",
+      "evidence_required": "时间序列、进程重启/内存/WAL和故障日志。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-06": {
+      "status": "NOT_READY",
+      "action": "20节点/200容器负载。",
+      "expected": "延迟及资源指标符合预算。",
+      "environment": "注明真实/仿真节点比例的容量环境。",
+      "evidence_required": "可复现负载脚本、P95、Core/Agent RSS和DB数据。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-07": {
+      "status": "NOT_READY",
+      "action": "备份与新机恢复。",
+      "expected": "身份、配置、偏好、历史完整。",
+      "environment": "停服一致性备份及全新恢复主机。",
+      "evidence_required": "Node/Agent身份、密钥、偏好、历史和文件hash。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-08": {
+      "status": "NOT_READY",
+      "action": "Core升级或迁移失败。",
+      "expected": "旧数据可恢复，不继续破坏。",
+      "environment": "故障注入的迁移/升级和可恢复备份。",
+      "evidence_required": "失败记录、旧版启动、数据库一致性。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-09": {
+      "status": "NOT_READY",
+      "action": "数据保留和清理。",
+      "expected": "到期数据清理，文件增长受控。",
+      "environment": "可控时钟、大量指标/审计数据。",
+      "evidence_required": "清理前后行数、DB/WAL增长与有效记录保留。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-10": {
+      "status": "NOT_READY",
+      "action": "发布包校验、签名、安装和卸载。",
+      "expected": "产物可验证，卸载不默认删除业务数据。",
+      "environment": "独立干净Linux安装环境和正式签名。",
+      "evidence_required": "签名校验、安装服务、卸载后用户业务目录仍在。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-11": {
+      "status": "NOT_READY",
+      "action": "检查公开入口和产物。",
+      "expected": "无测试密钥、秘密、私有数据。",
+      "environment": "发布包、二进制、HTTP路径、日志和镜像。",
+      "evidence_required": "全量secret扫描与匿名接口检查。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S17-12": {
+      "status": "NOT_READY",
+      "action": "对照需求编号。",
+      "expected": "正文、P0、P1、P2无遗漏。",
+      "environment": "原始设计正文、22优先级功能及全部阶段报告。",
+      "evidence_required": "机器校验trace覆盖及逐项验收链接。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

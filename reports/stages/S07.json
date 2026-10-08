@@ -1,0 +1,101 @@
+{
+  "schema": 1,
+  "stage": "S07",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S07-01": {
+      "status": "NOT_READY",
+      "action": "导入已有Compose项目。",
+      "expected": "项目和服务关系正确。",
+      "environment": "已有Compose Engine标签和项目目录。",
+      "evidence_required": "Compose config与NodeDance项目/服务关联。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S07-02": {
+      "status": "NOT_READY",
+      "action": "删除配置文件后查看。",
+      "expected": "显示配置缺失，容器基础管理可用。",
+      "environment": "先登记后移走测试项目配置。",
+      "evidence_required": "缺失状态和仍可操作的容器列表。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S07-03": {
+      "status": "NOT_READY",
+      "action": "在两个目录创建同服务名项目。",
+      "expected": "不串用配置或操作目标。",
+      "environment": "两个隔离目录、相同服务名Compose项目。",
+      "evidence_required": "路径、项目ID及任务目标逐项核对。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S07-04": {
+      "status": "NOT_READY",
+      "action": "多文件、环境文件、profile、相对挂载。",
+      "expected": "执行上下文正确。",
+      "environment": "nd-demo多文件/环境/profile fixture。",
+      "evidence_required": "最终解析配置、容器Mounts和选中服务。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S07-05": {
+      "status": "NOT_READY",
+      "action": "缺少必需环境变量、插件或权限。",
+      "expected": "明确失败，不猜测配置。",
+      "environment": "分别缺变量、Compose插件和权限受限节点。",
+      "evidence_required": "失败原因、无错误写入和无破坏状态。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S07-06": {
+      "status": "NOT_READY",
+      "action": "up/start/stop/restart/down。",
+      "expected": "任务结果与真实资源一致。",
+      "environment": "真实Compose项目和持久卷。",
+      "evidence_required": "任务状态、CLI/Engine实际状态。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S07-07": {
+      "status": "NOT_READY",
+      "action": "down/up前后检查卷内容。",
+      "expected": "数据保留。",
+      "environment": "命名卷内写入唯一标记。",
+      "evidence_required": "操作前后相同数据标记和卷ID。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S07-08": {
+      "status": "NOT_READY",
+      "action": "操作中断、健康检查失败。",
+      "expected": "不报告部署成功。",
+      "environment": "操作中断点和可切换不健康服务。",
+      "evidence_required": "任务结果、恢复状态和健康检查。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S07-09": {
+      "status": "NOT_READY",
+      "action": "配置路径包含特殊字符。",
+      "expected": "参数安全传递，不执行额外命令。",
+      "environment": "空格、引号、分号等测试路径。",
+      "evidence_required": "最终命令参数、路径和无额外进程/文件。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S07-10": {
+      "status": "NOT_READY",
+      "action": "回归全部P0。",
+      "expected": "通信、鉴权、监控、发现、管理、偏好、日志、审计全部通过。",
+      "environment": "真实Core、至少三Agent及Docker/Compose验收环境。",
+      "evidence_required": "13个P0追踪项和关联正文用例逐项PASS。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

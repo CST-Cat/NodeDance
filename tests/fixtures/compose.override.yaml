@@ -1,0 +1,5 @@
+services:
+  web:
+    labels:
+      com.nodedance.fixture.override: "loaded"
+    restart: unless-stopped

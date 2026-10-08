@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "verified_at": "2026-10-08",
+  "go": {
+    "version": "1.26.8",
+    "go_directive": "1.26.0",
+    "archives": {
+      "linux/amd64": {
+        "file": "go1.26.8.linux-amd64.tar.gz",
+        "sha256": "d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
+      },
+      "linux/arm64": {
+        "file": "go1.26.8.linux-arm64.tar.gz",
+        "sha256": "211ffced9dcb9633a55eac6364816ec0ddd951389a740e88fa8b3337971bdda0"
+      }
+    },
+    "source": "https://go.dev/dl/"
+  },
+  "node": {
+    "version": "22.23.3",
+    "archives": {
+      "linux/amd64": {
+        "file": "node-v22.23.3-linux-x64.tar.xz",
+        "sha256": "df450af89261115ef9f9e3830c3eeb2cc9213b63c720b1af623cb5dcbe2e02de"
+      },
+      "linux/arm64": {
+        "file": "node-v22.23.3-linux-arm64.tar.xz",
+        "sha256": "a44aeb94849a299b22df10b9e622ec2f605c2183501bc40590705131de7c740f"
+      }
+    },
+    "source": "https://nodejs.org/dist/"
+  },
+  "pnpm": {
+    "version": "12.10.1",
+    "source": "https://registry.npmjs.org/pnpm",
+    "integrity": "sha512-ukCjfrGjcNYP6oxM8dNkwTvMzvUY6YrSvO6VT1OdONo3RY5YJho/pV4GUjRQ6g//+fSXsTW+QfLBXBZCusrObA==",
+    "package_lock": "tooling/pnpm/package-lock.json",
+    "native_packages": {
+      "linux/amd64": {
+        "name": "@pnpm/exe.linux-x64",
+        "version": "12.10.1",
+        "integrity": "sha512-ZByV0DRgWzGaDSjT5ddRBASdwz+r/qPMYh7o6RGmPQjtRGNFbSl94xY2DcAM8mqCOZJUUDtAXQ+wpBXcdpKlkg==",
+        "tarball": "https://registry.npmjs.org/@pnpm/exe.linux-x64/-/exe.linux-x64-12.10.1.tgz",
+        "binary_sha256": "adff96e05dbb1dcb1143f14b6c34cb76953891da4c3627bf8950eb17db44c2fc"
+      },
+      "linux/arm64": {
+        "name": "@pnpm/exe.linux-arm64",
+        "version": "12.10.1",
+        "integrity": "sha512-oBdMp69ScC9UnniG4qZAQVr2fBDSXjm4yk/72vkEVyrlwS23yMxcRQl7Qdo3sgXPAygY6TWnPRKm4rXzjoyW7w==",
+        "tarball": "https://registry.npmjs.org/@pnpm/exe.linux-arm64/-/exe.linux-arm64-12.10.1.tgz",
+        "binary_sha256": "4690693a2c1cb37eca3004436ccd003bb161fb13706c20bad620b3c43345c72c"
+      }
+    },
+    "install": "npm ci with the checked-in package-lock and lifecycle scripts enabled; pnpm preinstall installs the exact platform native binary before PATH use."
+  },
+  "go_modules": {
+    "github.com/coder/websocket": "v1.8.15",
+    "github.com/moby/moby/client": "v0.6.1",
+    "github.com/shirou/gopsutil/v4": "v4.26.9",
+    "modernc.org/sqlite": "v1.60.1"
+  },
+  "frontend": {
+    "vue": "3.5.43",
+    "typescript": "5.9.3",
+    "vite": "8.3.4",
+    "@vitejs/plugin-vue": "6.0.4",
+    "naive-ui": "2.45.3",
+    "echarts": "6.1.0",
+    "@xterm/xterm": "6.0.0",
+    "@xterm/addon-fit": "0.11.0",
+    "vue-tsc": "3.3.12",
+    "@types/node": "22.20.5"
+  },
+  "compose": {
+    "version": "5.4.0",
+    "release": "https://github.com/docker/compose/releases/tag/v5.4.0",
+    "checksums_asset_sha256": "fa2598b6e5b7b2cecb3f99177fda42e80207c55c875aa8f0112af617895ac0d1",
+    "archives": {
+      "linux/amd64": {
+        "file": "docker-compose-linux-x86_64",
+        "sha256": "837fd1d35bf6a494f41b5b5988269a7be79de337cf1a1a6ff0e45ab51bb4e9be"
+      },
+      "linux/arm64": {
+        "file": "docker-compose-linux-aarch64",
+        "sha256": "fc5d1371f1ec7987e703da94ede49af3fbfb240b83f22991a98511de7bc4b93b"
+      }
+    },
+    "source": "Official Docker Compose GitHub release checksums.txt and release asset metadata."
+  }
+}

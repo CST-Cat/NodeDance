@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "stage": "S01",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S01-01": {
+      "status": "NOT_READY",
+      "action": "无初始化凭据设置密码。",
+      "expected": "拒绝。",
+      "environment": "真实Core临时SQLite目录；未初始化状态。",
+      "evidence_required": "HTTP请求、拒绝状态、数据库前后摘要。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-02": {
+      "status": "NOT_READY",
+      "action": "初始化成功后再次初始化。",
+      "expected": "拒绝，不覆盖管理员。",
+      "environment": "真实Core；先成功初始化，再重复提交。",
+      "evidence_required": "两次响应、管理员哈希前后比对。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-03": {
+      "status": "NOT_READY",
+      "action": "正确密码、错误密码、空密码登录。",
+      "expected": "成功与失败符合规则。",
+      "environment": "真实登录HTTP流程及浏览器Cookie。",
+      "evidence_required": "逐项响应、Session数据库状态和Cookie属性。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-04": {
+      "status": "NOT_READY",
+      "action": "无Session请求所有管理入口。",
+      "expected": "拒绝且无私有数据。",
+      "environment": "枚举全部HTTP、静态私有文件和WebSocket入口。",
+      "evidence_required": "逐入口状态码和响应体扫描。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-05": {
+      "status": "NOT_READY",
+      "action": "注销后复用旧Cookie。",
+      "expected": "API拒绝，既有WebSocket关闭。",
+      "environment": "两个已登录客户端及已建立WebSocket。",
+      "evidence_required": "旧Cookie/API拒绝记录和WebSocket关闭时刻。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-06": {
+      "status": "NOT_READY",
+      "action": "会话过期，WebSocket保持心跳。",
+      "expected": "心跳不能无限延长登录状态。",
+      "environment": "可控短Session TTL、持续心跳客户端。",
+      "evidence_required": "过期时刻、API拒绝与Socket关闭日志。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-07": {
+      "status": "NOT_READY",
+      "action": "修改密码、撤销另一设备。",
+      "expected": "指定旧会话失效。",
+      "environment": "至少两个浏览器设备Session。",
+      "evidence_required": "修改前后Session清单及被撤销设备请求。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-08": {
+      "status": "NOT_READY",
+      "action": "跨站写请求、非法Origin。",
+      "expected": "拒绝。",
+      "environment": "真实Core、跨站CSRF请求和错误Origin WebSocket。",
+      "evidence_required": "HTTP/WebSocket状态及审计。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-09": {
+      "status": "NOT_READY",
+      "action": "达到登录限流阈值。",
+      "expected": "限流生效，不永久锁死管理员。",
+      "environment": "可控时钟/速率配置及失败登录序列。",
+      "evidence_required": "阈值前后响应及等待恢复后的成功登录。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-10": {
+      "status": "NOT_READY",
+      "action": "扫描数据库、日志、静态资源和缓存。",
+      "expected": "无明文密码、Session、私有节点数据。",
+      "environment": "真实Core数据目录及所有响应缓存。",
+      "evidence_required": "扫描命令、匹配结果和脱敏数据样本。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-11": {
+      "status": "NOT_READY",
+      "action": "注入迁移失败、数据库不可写。",
+      "expected": "明确失败，原数据未被破坏。",
+      "environment": "数据库备份、不可写目录和迁移故障注入。",
+      "evidence_required": "故障日志、数据库校验及备份恢复结果。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S01-12": {
+      "status": "NOT_READY",
+      "action": "上传恶意图片、输入HTML展示名称。",
+      "expected": "非法资源拒绝，文本不执行脚本。",
+      "environment": "浏览器安全测试及真实Core。",
+      "evidence_required": "拒绝响应、DOM渲染结果和CSP/控制台记录。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

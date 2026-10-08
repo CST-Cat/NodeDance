@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "stage": "S06",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S06-01": {
+      "status": "NOT_READY",
+      "action": "节点拥有40个容器。",
+      "expected": "卡片不无限增长，详情可看全部。",
+      "environment": "含40个真实或明确标记的测试容器资产。",
+      "evidence_required": "首页卡片DOM/数量及完整列表总数。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-02": {
+      "status": "NOT_READY",
+      "action": "切换视图、分组、搜索、排序。",
+      "expected": "数据与操作目标一致。",
+      "environment": "多个真实节点和容器状态。",
+      "evidence_required": "筛选结果、排序和操作的目标ID。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-03": {
+      "status": "NOT_READY",
+      "action": "修改偏好后重启Core。",
+      "expected": "配置不丢失。",
+      "environment": "真实SQLite数据及Core重启。",
+      "evidence_required": "重启前后偏好数据库和界面顺序。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-04": {
+      "status": "NOT_READY",
+      "action": "Compose服务重建、多副本。",
+      "expected": "服务偏好恢复，实例状态不被合并覆盖。",
+      "environment": "Compose重复部署及至少两个副本。",
+      "evidence_required": "稳定项目/服务身份和各实例容器ID。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-05": {
+      "status": "NOT_READY",
+      "action": "创建同名但身份不同的独立容器。",
+      "expected": "不错误继承旧设置。",
+      "environment": "删除后重新创建的同名容器。",
+      "evidence_required": "旧/新身份指纹及偏好映射结果。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-06": {
+      "status": "NOT_READY",
+      "action": "Agent失联参与汇总。",
+      "expected": "明确标识过期数据，不冒充实时统计。",
+      "environment": "真实Agent断网及旧指标。",
+      "evidence_required": "数据年龄、stale标识和卡片文案。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-07": {
+      "status": "NOT_READY",
+      "action": "回环、通配IP和自定义服务入口。",
+      "expected": "不生成错误访问链接。",
+      "environment": "127.0.0.1、0.0.0.0、::及管理员服务地址。",
+      "evidence_required": "生成链接及浏览器地址解析结果。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-08": {
+      "status": "NOT_READY",
+      "action": "输入HTML别名、恶意链接或图标。",
+      "expected": "文本安全渲染，非法资源拒绝。",
+      "environment": "浏览器XSS和资源URL负向样例。",
+      "evidence_required": "DOM文本、网络请求及CSP日志。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-09": {
+      "status": "NOT_READY",
+      "action": "输入已知样本及缺失分钟。",
+      "expected": "聚合、加权、断线图形正确。",
+      "environment": "固定指标序列和缺口。",
+      "evidence_required": "手算期望与SQLite聚合/图表点比对。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-10": {
+      "status": "NOT_READY",
+      "action": "推进保留时间并清理。",
+      "expected": "到期数据删除，偏好及有效数据保留。",
+      "environment": "可控时钟和真实历史数据库。",
+      "evidence_required": "清理前后行数、时间边界和偏好记录。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-11": {
+      "status": "NOT_READY",
+      "action": "375、768、1440像素视口。",
+      "expected": "核心内容可读、操作可达。",
+      "environment": "Playwright Chromium/WebKit/Firefox in CI at 375, 768 and 1440 CSS-pixel viewports; no physical-device claim.",
+      "evidence_required": "浏览器截图、溢出检查及核心流程记录。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S06-12": {
+      "status": "NOT_READY",
+      "action": "手机触屏尺寸下拖动排序并使用操作菜单。",
+      "expected": "顺序持久保存，目标明确。",
+      "environment": "Playwright touch emulation at mobile viewport; no iPad/Android physical-device requirement.",
+      "evidence_required": "重载前后顺序及明确操作目标。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

@@ -1,0 +1,88 @@
+SHELL := /usr/bin/env bash
+.DEFAULT_GOAL := help
+
+ROOT := $(CURDIR)
+NODEDANCE_TOOL_ROOT ?= $(ROOT)/.tools
+GO_VERSION := 1.26.8
+NODE_VERSION := 22.23.3
+PNPM_VERSION := 12.10.1
+GO_BIN := $(NODEDANCE_TOOL_ROOT)/go$(GO_VERSION)/bin/go
+NODE_BIN := $(NODEDANCE_TOOL_ROOT)/node-v$(NODE_VERSION)/bin
+PNPM_BIN := $(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin
+export PATH := $(GO_BIN:%/go=%):$(NODE_BIN):$(PNPM_BIN):$(PATH)
+export GOTOOLCHAIN := local
+
+.PHONY: help bootstrap deps frontend check build test-stage test-integration test-e2e test-acceptance fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
+
+help:
+	@printf '%s\n' \
+	  'NodeDance S00 development targets:' \
+	  '  make bootstrap' \
+	  '  make check' \
+	  '  make build' \
+	  '  make test-stage STAGE=S00' \
+	  '  make test-integration STAGE=S00' \
+	  '  make test-e2e STAGE=S00' \
+	  '  make test-acceptance' \
+	  '  make fixtures-start ENGINE=29' \
+	  '  make fixtures-create|fixtures-fault|fixtures-clean ENGINE=29 RUN_ID=<id>'
+
+bootstrap:
+	@if [[ "$${NODEDANCE_SKIP_BOOTSTRAP:-0}" != 1 ]]; then ./scripts/bootstrap-tools.sh; fi
+
+deps: bootstrap
+	go mod download all
+	go mod verify
+	pnpm --dir web install --frozen-lockfile
+
+frontend: deps
+	pnpm --dir web run typecheck
+	pnpm --dir web run build
+
+check: frontend
+	./scripts/check-tools.sh
+	go vet ./...
+	go test ./...
+	python3 scripts/verify-requirements.py
+
+build: frontend
+	mkdir -p .build
+	CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags '-X main.version=dev-s00' -o .build/nodedance ./cmd/nodedance
+	CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags '-X main.version=dev-s00' -o .build/nodedance-agent ./cmd/nodedance-agent
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags '-X main.version=dev-s00' -o .build/nodedance-linux-amd64 ./cmd/nodedance
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags '-X main.version=dev-s00' -o .build/nodedance-linux-arm64 ./cmd/nodedance
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags '-X main.version=dev-s00' -o .build/nodedance-agent-linux-amd64 ./cmd/nodedance-agent
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags '-X main.version=dev-s00' -o .build/nodedance-agent-linux-arm64 ./cmd/nodedance-agent
+	@echo 'Build PASS: host, linux/amd64 and linux/arm64 Core and Agent binaries'
+
+test-stage: bootstrap
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-stage STAGE=S00' >&2; exit 2; }
+	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode full
+
+test-integration: bootstrap
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-integration STAGE=S00' >&2; exit 2; }
+	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode integration
+
+test-e2e: bootstrap
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-e2e STAGE=S00' >&2; exit 2; }
+	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode e2e
+
+test-acceptance: bootstrap
+	python3 scripts/acceptance-runner.py
+
+fixtures-start:
+	@test -n "$(ENGINE)" || { echo 'ENGINE is required (28 or 29)' >&2; exit 2; }
+	./scripts/test/dind.sh start "$(ENGINE)"
+
+fixtures-stop:
+	@test -n "$(ENGINE)" || { echo 'ENGINE is required (28 or 29)' >&2; exit 2; }
+	./scripts/test/dind.sh stop "$(ENGINE)"
+
+fixtures-create:
+	./scripts/test/fixtures.sh create "$(RUN_ID)"
+
+fixtures-fault:
+	./scripts/test/fixtures.sh fault "$(RUN_ID)" "$(FAULT)"
+
+fixtures-clean:
+	./scripts/test/fixtures.sh clean "$(RUN_ID)"

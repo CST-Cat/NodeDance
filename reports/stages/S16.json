@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "stage": "S16",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S16-01": {
+      "status": "NOT_READY",
+      "action": "正常升级。",
+      "expected": "新版本运行，身份和配置保留。",
+      "environment": "真实systemd Linux Agent和签名release。",
+      "evidence_required": "版本、设备ID、配置摘要和启动状态。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-02": {
+      "status": "NOT_READY",
+      "action": "错误签名、哈希、架构。",
+      "expected": "替换前拒绝。",
+      "environment": "三种篡改升级包。",
+      "evidence_required": "旧二进制hash仍在及拒绝日志。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-03": {
+      "status": "NOT_READY",
+      "action": "不兼容协议或Core版本。",
+      "expected": "拒绝并说明。",
+      "environment": "不兼容manifest和Core版本。",
+      "evidence_required": "拒绝状态、兼容性原因。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-04": {
+      "status": "NOT_READY",
+      "action": "下载中断、磁盘不足。",
+      "expected": "旧版本继续运行。",
+      "environment": "网络中断及小容量测试分区。",
+      "evidence_required": "旧Agent活性、磁盘和暂存文件。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-05": {
+      "status": "NOT_READY",
+      "action": "新版本退出或无法连接。",
+      "expected": "独立助手回滚。",
+      "environment": "故障新版本systemd Agent和离线Core场景。",
+      "evidence_required": "helper日志、旧hash及重新在线。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-06": {
+      "status": "NOT_READY",
+      "action": "替换前、中、后重启机器。",
+      "expected": "根据持久记录恢复。",
+      "environment": "每个切换边界的真实VM/节点重启。",
+      "evidence_required": "journal阶段、运行版本和设备身份。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-07": {
+      "status": "NOT_READY",
+      "action": "Core不可用。",
+      "expected": "本地仍能执行回滚。",
+      "environment": "断开Core后的本地升级失败。",
+      "evidence_required": "无Core时helper仍恢复旧版本。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-08": {
+      "status": "NOT_READY",
+      "action": "自动窗口、首节点失败。",
+      "expected": "调度正确，后续暂停。",
+      "environment": "至少三台Agent、canary失败注入。",
+      "evidence_required": "批次任务状态和未更新节点版本。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-09": {
+      "status": "NOT_READY",
+      "action": "活动任务及传输期间更新。",
+      "expected": "延后，不强行中断。",
+      "environment": "终端、文件传输及Docker任务进行中。",
+      "evidence_required": "延后原因、任务完整结束再升级。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-10": {
+      "status": "NOT_READY",
+      "action": "重复更新请求。",
+      "expected": "不产生并行替换。",
+      "environment": "并发相同/不同更新请求。",
+      "evidence_required": "单一更新任务及单次二进制切换。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-11": {
+      "status": "NOT_READY",
+      "action": "回滚后检查任务记录和凭据。",
+      "expected": "数据保留，无重新注册。",
+      "environment": "失败更新回滚后的Agent数据库/配置。",
+      "evidence_required": "任务journal、设备身份及凭据摘要。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S16-12": {
+      "status": "NOT_READY",
+      "action": "测试签名和生产签名环境。",
+      "expected": "生产产物不信任测试密钥。",
+      "environment": "隔离测试/生产公钥构建。",
+      "evidence_required": "密钥链验证和测试包生产拒绝。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}

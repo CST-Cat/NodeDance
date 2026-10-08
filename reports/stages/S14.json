@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "stage": "S14",
+  "mode": "initial",
+  "status": "NOT_READY",
+  "run_id": "initial-unexecuted",
+  "updated_at": "2026-10-08T00:00:00+00:00",
+  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "tests": {
+    "S14-01": {
+      "status": "NOT_READY",
+      "action": "HTTP 200、预期外状态。",
+      "expected": "成功及失败正确。",
+      "environment": "受控HTTP服务和Agent节点发起探测。",
+      "evidence_required": "来源节点、HTTP状态和结果时间。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S14-02": {
+      "status": "NOT_READY",
+      "action": "TCP开放、关闭、超时。",
+      "expected": "结果及原因正确。",
+      "environment": "可控TCP监听/拒绝/延迟端点。",
+      "evidence_required": "端口状态、耗时及超时原因。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S14-03": {
+      "status": "NOT_READY",
+      "action": "HTTPS正确与错误证书。",
+      "expected": "验证生效，不默认跳过。",
+      "environment": "可信CA和自签证书HTTPS服务。",
+      "evidence_required": "握手结果及证书校验日志。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S14-04": {
+      "status": "NOT_READY",
+      "action": "连续失败和恢复序列。",
+      "expected": "阈值符合配置。",
+      "environment": "可控服务状态序列和配置阈值。",
+      "evidence_required": "逐次结果与异常/恢复时刻。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S14-05": {
+      "status": "NOT_READY",
+      "action": "目标节点失联。",
+      "expected": "未知，不伪造服务停止。",
+      "environment": "Agent断网期间配置的探测目标。",
+      "evidence_required": "unknown状态、过期时间和无误触发。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S14-06": {
+      "status": "NOT_READY",
+      "action": "多个慢服务同时探测。",
+      "expected": "有并发限制，心跳正常。",
+      "environment": "延迟端点压力集合及真实Agent。",
+      "evidence_required": "并发上限、心跳及内存。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    },
+    "S14-07": {
+      "status": "NOT_READY",
+      "action": "修改、停用、删除探测。",
+      "expected": "调度及历史行为正确。",
+      "environment": "已运行探测配置和数据库历史。",
+      "evidence_required": "调度调用、配置版本和历史记录。",
+      "runs": [],
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+    }
+  }
+}
