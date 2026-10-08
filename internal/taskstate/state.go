@@ -254,6 +254,10 @@ type Evidence struct {
 	ProcessTerminated     bool
 	ActualResultConfirmed bool
 	CancellationConfirmed bool
+	// DeliveryCommitted means Core durably committed an outbound delivery
+	// attempt before writing to the Agent connection. It does not claim that
+	// the Agent received the task or entered its executor.
+	DeliveryCommitted bool
 }
 
 func (e Evidence) validate(status Status, from Status) error {
@@ -286,8 +290,15 @@ func (e Evidence) validate(status Status, from Status) error {
 			return errors.New("canceled requires confirmed cancellation and actual result")
 		}
 	case Unknown:
-		if from != Running {
-			return errors.New("only an interrupted running task can become unknown")
+		switch from {
+		case Running:
+			// The Agent durably recorded execution before entering its executor.
+		case Queued:
+			if !e.DeliveryCommitted {
+				return errors.New("a queued task requires committed Core delivery before it can become unknown")
+			}
+		default:
+			return errors.New("only a running or durably delivered queued task can become unknown")
 		}
 	case Queued:
 		return errors.New("tasks cannot transition back to queued")
@@ -303,7 +314,7 @@ func CanTransition(from, to Status, evidence Evidence) error {
 	}
 	switch from {
 	case Queued:
-		if to != Running && to != Failed && to != Canceled {
+		if to != Running && to != Failed && to != Canceled && to != Unknown {
 			return ErrInvalidStatus
 		}
 	case Running:
