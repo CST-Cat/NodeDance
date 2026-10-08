@@ -150,6 +150,7 @@ const clockOffsetText = computed(() => {
       <article class="metric-card disk-card" data-testid="disk-card">
         <div class="card-heading"><h3>磁盘</h3><span class="status-pill" :data-status="diskState()">{{ statusLabel(diskState()) }}</span></div>
         <p v-if="diskReason()" class="metric-reason">{{ diskReason() }}</p>
+        <p v-if="view.metrics.disk.detailsTruncated" class="metric-reason" data-testid="disk-truncation">磁盘明细已裁剪：{{ view.metrics.disk.truncationReason }}</p>
         <p v-if="view.metrics.disk.mounts.length === 0" class="metric-caption">暂无挂载点数据</p>
         <div v-for="mount in view.metrics.disk.mounts" :key="`${mount.device}:${mount.mountpoint}`" class="mount-row">
           <div class="mount-title"><strong>{{ mount.mountpoint }}</strong><span class="status-pill small" :data-status="metricState(mount.usage, DISK_TTL_MS)">{{ statusLabel(metricState(mount.usage, DISK_TTL_MS)) }}</span></div>
@@ -164,6 +165,7 @@ const clockOffsetText = computed(() => {
         <div class="network-pair"><span>接收</span><strong>{{ formatRate(view.metrics.network.summary.value?.receivedBytesPerSecond) }}</strong></div>
         <div class="network-pair"><span>发送</span><strong>{{ formatRate(view.metrics.network.summary.value?.sentBytesPerSecond) }}</strong></div>
         <p v-if="metricReason(view.metrics.network.summary)" class="metric-reason">{{ metricReason(view.metrics.network.summary) }}</p>
+        <p v-if="view.metrics.network.detailsTruncated" class="metric-reason" data-testid="network-truncation">网卡明细已裁剪：{{ view.metrics.network.truncationReason }}</p>
         <div v-for="iface in view.metrics.network.interfaces" :key="iface.name" class="interface-row">
           <div><strong>{{ iface.name }}</strong><span>{{ iface.includedInSummary ? '已计入汇总' : iface.summaryReason || '未计入汇总' }}</span></div>
           <span>{{ formatRate(iface.rate.value?.receivedBytesPerSecond) }} ↓</span>

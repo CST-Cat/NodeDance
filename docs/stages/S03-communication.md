@@ -1,9 +1,8 @@
-# S03 metrics communication component
+# S03 metrics communication
 
-This document describes the independently reviewable metrics DTO/store and
-dashboard panel. S03 remains **NOT_READY**: the Agent runtime does not send
-`TypeMetrics`, Core has no route or WebSocket wiring for this store, and the
-panel is not mounted in the application.
+This document describes the metrics DTO/store and its current Agent, Core and
+dashboard wiring. S03 remains **NOT_READY** until every original acceptance
+case passes three complete real runs on the required environments.
 
 ## Wire payload
 
@@ -32,13 +31,30 @@ serialized report to 64 KiB.
 
 ## Core store contract
 
-Core calls `BindConnection` only after authenticating the Agent and binding the
-current lease generation. `Accept` requires the authenticated identity,
-connection generation, and monotonically increasing metrics sequence to match
-that binding. A later generation can restart its metrics sequence at one;
-old sockets cannot overwrite it. On connection close, Core can call
-`UnbindConnection(identity, generation)`; an old close cannot unbind a newer
-generation.
+The Agent keeps one Collector for its process lifetime, including socket
+reconnects. A serialized writer gives heartbeat/control messages priority over
+a one-entry replaceable metrics queue, and bounds telemetry writes so a slow
+peer cannot hold heartbeats behind old samples. Run cancellation joins the
+Collector schedules and socket writer before returning.
+
+Core advertises metrics only when the Agent reports the capability. It calls
+`BindConnection` only after authentication and lease generation assignment.
+`Accept` requires that authenticated identity, connection generation and
+monotonic metrics-specific sequence match the binding. A later generation can
+restart its sequence at one; old sockets cannot overwrite it. On close,
+`UnbindConnection(identity, generation)` cannot remove a newer generation.
+Metrics acceptance checks the current heartbeat lease but never updates it.
+
+The authenticated private API provides `GET /api/v1/nodes` for Core node and
+lease state and `GET /api/v1/nodes/{nodeId}/metrics` for the selected node's
+latest report. The older `/api/v1/agents` management list remains available.
+An existing enrollment-pending node returns `node_status` with reason
+`awaiting_agent_registration`; an unknown node ID remains `404`.
+Dashboard updates use the existing session- and Origin-checked
+`/ws/v1/dashboard` stream on the same Core port. Notifications coalesce by
+node and each browser resolves the latest full view at send time. Session
+validity is rechecked before initial and incremental writes; listing, state
+lookup and each WebSocket write have bounded contexts.
 
 `SnapshotAt` receives the trusted current lease separately from the report.
 Core passes `nil` when there is no active authorized online lease, including
@@ -80,7 +96,14 @@ scripts/test/s03-metrics-web.sh
 
 The browser command starts its own local Vite fixture and exercises an offset
 client wall clock, metric expiry without a later update, lease expiry, recovery
-on a replacement view, explicit unknown/error values, and a narrow viewport.
-These checks validate only the DTO/store/panel components; they are not S03
-stage acceptance and do not prove live Agent/Core delivery or the required
-end-to-end latency.
+on a replacement view, explicit unknown/error values, a narrow viewport, and
+delayed node-list/metrics HTTP responses racing newer WebSocket data. The race
+test checks that the displayed value, active generation and lease do not move
+backward.
+The real Core integration test starts a real Agent, waits for a second Linux
+host sample with known CPU/memory and boot ID, reads the private node API,
+receives the real dashboard push, verifies the Agent continues after the
+browser closes, then floods a slow browser while logging out. The last local
+run reached the second sample in about 5.05 seconds. These results do not cover
+all S03 cases or the required three complete rounds; full S03 remains
+NOT_READY.

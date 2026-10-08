@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ func ToProtocolMetrics(snapshot Snapshot) protocol.MetricsSnapshot {
 // Production callers use ToProtocolMetrics so age is captured just before the
 // report is serialized and sent.
 func ToProtocolMetricsAt(snapshot Snapshot, serializedAt time.Time) protocol.MetricsSnapshot {
-	return protocol.MetricsSnapshot{
+	out := protocol.MetricsSnapshot{
 		CollectedAt: snapshot.CollectedAt.UTC(),
 		System: protocol.MetricsSystem{
 			Hostname:        toProtocolMetric(snapshot.System.Hostname, serializedAt),
@@ -51,6 +52,77 @@ func ToProtocolMetricsAt(snapshot Snapshot, serializedAt time.Time) protocol.Met
 		},
 		Uptime: toProtocolUptime(snapshot.Uptime, serializedAt),
 	}
+	return boundProtocolDetails(out)
+}
+
+// boundProtocolDetails keeps resource metrics intact when an unusually large
+// host inventory would exceed the wire limit. The collector sorts details, so
+// truncation is deterministic and explicitly marked in the payload.
+func boundProtocolDetails(snapshot protocol.MetricsSnapshot) protocol.MetricsSnapshot {
+	if len(snapshot.Network.Interfaces) > protocol.MaxMetricsInterfaces {
+		snapshot.Network.Interfaces = snapshot.Network.Interfaces[:protocol.MaxMetricsInterfaces]
+		snapshot.Network.DetailsTruncated = true
+		snapshot.Network.TruncationReason = "interface_limit_exceeded"
+	}
+	if len(snapshot.Disk.Mounts) > protocol.MaxMetricsMounts {
+		snapshot.Disk.Mounts = snapshot.Disk.Mounts[:protocol.MaxMetricsMounts]
+		snapshot.Disk.DetailsTruncated = true
+		snapshot.Disk.TruncationReason = "mount_limit_exceeded"
+	}
+	if metricsPayloadSize(snapshot) <= protocol.MaxMetricsPayloadBytes {
+		return snapshot
+	}
+
+	originalInterfaces := snapshot.Network.Interfaces
+	originalMounts := snapshot.Disk.Mounts
+	low, high := 0, len(originalMounts)
+	for low < high {
+		mid := (low + high + 1) / 2
+		snapshot.Disk.Mounts = originalMounts[:mid]
+		if metricsPayloadSize(snapshot) <= protocol.MaxMetricsPayloadBytes {
+			low = mid
+		} else {
+			high = mid - 1
+		}
+	}
+	snapshot.Disk.Mounts = originalMounts[:low]
+	if low != len(originalMounts) {
+		snapshot.Disk.DetailsTruncated = true
+		snapshot.Disk.TruncationReason = "metrics_payload_limit"
+	}
+	if metricsPayloadSize(snapshot) <= protocol.MaxMetricsPayloadBytes {
+		return snapshot
+	}
+
+	snapshot.Disk.Mounts = nil
+	if len(originalMounts) > 0 {
+		snapshot.Disk.DetailsTruncated = true
+		snapshot.Disk.TruncationReason = "metrics_payload_limit"
+	}
+	low, high = 0, len(originalInterfaces)
+	for low < high {
+		mid := (low + high + 1) / 2
+		snapshot.Network.Interfaces = originalInterfaces[:mid]
+		if metricsPayloadSize(snapshot) <= protocol.MaxMetricsPayloadBytes {
+			low = mid
+		} else {
+			high = mid - 1
+		}
+	}
+	snapshot.Network.Interfaces = originalInterfaces[:low]
+	if low != len(originalInterfaces) {
+		snapshot.Network.DetailsTruncated = true
+		snapshot.Network.TruncationReason = "metrics_payload_limit"
+	}
+	return snapshot
+}
+
+func metricsPayloadSize(snapshot protocol.MetricsSnapshot) int {
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return protocol.MaxMetricsPayloadBytes + 1
+	}
+	return len(encoded)
 }
 
 func toProtocolUptime(metric Metric[Uptime], serializedAt time.Time) protocol.Metric[protocol.Uptime] {

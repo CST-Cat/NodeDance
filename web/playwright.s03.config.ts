@@ -13,7 +13,11 @@ export default defineConfig({
     headless: true,
     trace: 'off',
   },
-  projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
+  projects: [
+    { name: 'chromium', use: { browserName: 'chromium' } },
+    { name: 'webkit', use: { browserName: 'webkit' } },
+    { name: 'firefox', use: { browserName: 'firefox' } },
+  ],
   webServer: {
     command: 'pnpm exec vite --host 127.0.0.1 --port 4187 --strictPort',
     url: 'http://127.0.0.1:4187/tests/fixtures/s03-metrics-panel.html',

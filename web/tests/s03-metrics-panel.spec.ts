@@ -31,16 +31,18 @@ test('metrics panel uses Core time, then expires metrics and lease without anoth
 })
 
 test('metrics panel fits a narrow viewport', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 812 })
   await page.goto('/tests/fixtures/s03-metrics-panel.html')
   await expect(page.getByRole('heading', { name: '实时指标' })).toBeVisible()
-  const widths = await page.evaluate(() => ({
-    viewport: document.documentElement.clientWidth,
-    content: document.documentElement.scrollWidth,
-  }))
-  expect(widths.content).toBeLessThanOrEqual(widths.viewport)
-  await expect(page.getByTestId('disk-card')).toBeVisible()
-  await expect(page.getByTestId('network-card')).toBeVisible()
+  for (const width of [375, 768, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    const widths = await page.evaluate(() => ({
+      viewport: document.documentElement.clientWidth,
+      content: document.documentElement.scrollWidth,
+    }))
+    expect(widths.content).toBeLessThanOrEqual(widths.viewport)
+    await expect(page.getByTestId('disk-card')).toBeVisible()
+    await expect(page.getByTestId('network-card')).toBeVisible()
+  }
 })
 
 test('unknown and failed measurements stay explicit without showing a zero value', async ({ page }) => {

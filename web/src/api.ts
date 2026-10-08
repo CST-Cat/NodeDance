@@ -1,3 +1,5 @@
+import type { MetricsView } from './metrics-contract'
+
 export interface SetupStatus {
   initialized: boolean
   setupHint?: string
@@ -23,6 +25,40 @@ export interface Session {
   remoteAddr: string
   current: boolean
 }
+
+export interface AgentNode {
+  nodeId: string
+  agentId?: string
+  displayName: string
+  status: 'online' | 'offline' | 'revoked' | string
+  generation: number
+  lastSeen?: string
+  leaseValidUntil?: string
+  protocolVersion?: number
+  agentVersion?: string
+  capabilities: string[]
+}
+
+export interface AgentNodesResponse {
+  nodes: AgentNode[]
+  serverTime: string
+}
+
+export interface NodeStatusResponse {
+  type: 'node_status'
+  nodeId: string
+  state: {
+    nodeId: string
+    agentId?: string
+    status: 'online' | 'offline' | string
+    generation: number
+    serverTime: string
+    leaseValidUntil?: string
+    reason?: string
+  }
+}
+
+export type AgentMetricsResponse = MetricsView | NodeStatusResponse
 
 interface AuthResponse {
   user: User
@@ -123,6 +159,9 @@ export const api = {
     return result
   },
   sessions: () => request<{ sessions: Session[] }>('/api/v1/auth/sessions'),
+  agents: () => request<AgentNodesResponse>('/api/v1/agents'),
+  nodes: () => request<AgentNodesResponse>('/api/v1/nodes'),
+  nodeMetrics: (nodeId: string) => request<AgentMetricsResponse>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/metrics`),
   revokeSession: (id: string) => request<void>(`/api/v1/auth/sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   }, true),

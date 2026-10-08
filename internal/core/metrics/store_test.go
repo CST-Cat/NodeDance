@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -254,6 +255,43 @@ func TestMetricsAcceptDoesNotRenewHeartbeatLease(t *testing.T) {
 	view, ok := store.SnapshotAt(testIdentity.NodeID, lease, base.Add(31*time.Second))
 	if !ok || view.NodeStatus != "offline" || view.ActiveGeneration != 0 || !view.LeaseValidUntil.IsZero() {
 		t.Fatalf("metrics update extended the heartbeat lease: %#v, ok=%v", view, ok)
+	}
+}
+
+func TestSlowDashboardSubscriberKeepsEachNodeAndJoins(t *testing.T) {
+	store := NewStore()
+	events, unsubscribe := store.Subscribe()
+	const nodeCount = 128
+	want := make(map[string]struct{}, nodeCount)
+	for index := 0; index < nodeCount; index++ {
+		nodeID := fmt.Sprintf("node-%03d", index)
+		want[nodeID] = struct{}{}
+		store.Notify(nodeID)
+	}
+	// Duplicate updates coalesce while the unbuffered subscriber is not read.
+	for index := 0; index < 10; index++ {
+		store.Notify("node-000")
+	}
+
+	got := make(map[string]struct{}, nodeCount)
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	for len(got) < nodeCount {
+		select {
+		case nodeID := <-events:
+			got[nodeID] = struct{}{}
+		case <-deadline.C:
+			t.Fatalf("slow subscriber lost node notifications: received %d/%d", len(got), nodeCount)
+		}
+	}
+	for nodeID := range want {
+		if _, ok := got[nodeID]; !ok {
+			t.Errorf("slow subscriber did not receive node %q", nodeID)
+		}
+	}
+	unsubscribe()
+	if _, open := <-events; open {
+		t.Fatal("unsubscribe returned while subscriber channel remained open")
 	}
 }
 

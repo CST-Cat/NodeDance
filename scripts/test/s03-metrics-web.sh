@@ -20,4 +20,5 @@ cd "$repo_root/web"
 
 pnpm exec playwright test \
   --config playwright.s03.config.ts \
-  tests/s03-metrics-panel.spec.ts
+  tests/s03-metrics-panel.spec.ts \
+  tests/s03-nodes-dashboard.spec.ts

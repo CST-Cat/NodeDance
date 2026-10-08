@@ -410,6 +410,11 @@ func TestFastSamplerRunsWhileDiskWorkerIsBlocked(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("collector did not stop after context cancellation")
 	}
+	select {
+	case <-collector.Done():
+	case <-time.After(time.Second):
+		t.Fatal("collector scheduler goroutines remained after cancellation")
+	}
 }
 
 func TestCollectorSamplingIntervalsAreLocked(t *testing.T) {

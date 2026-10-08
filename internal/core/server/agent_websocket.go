@@ -12,6 +12,7 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
+	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
@@ -19,16 +20,17 @@ import (
 const agentHelloTimeout = 5 * time.Second
 
 type agentConnection struct {
-	conn         *websocket.Conn
-	cancel       context.CancelFunc
-	agentID      string
-	generation   uint64
-	commands     chan protocol.Envelope
-	leaseUpdates chan time.Time
-	watchMu      sync.Mutex
-	watchCancel  context.CancelFunc
-	watchStopped bool
-	watchDone    chan struct{}
+	conn           *websocket.Conn
+	cancel         context.CancelFunc
+	agentID        string
+	generation     uint64
+	metricsEnabled bool
+	commands       chan protocol.Envelope
+	leaseUpdates   chan time.Time
+	watchMu        sync.Mutex
+	watchCancel    context.CancelFunc
+	watchStopped   bool
+	watchDone      chan struct{}
 }
 
 type agentRead struct {
@@ -104,6 +106,7 @@ func (s *Server) expireAgentLeases(ctx context.Context) {
 		return
 	}
 	for _, lease := range leases {
+		s.metrics.Notify(lease.NodeID)
 		s.closeAgentConnection(lease.AgentID, lease.Generation)
 	}
 }
@@ -140,6 +143,7 @@ func (s *Server) watchAgentLease(connection *agentConnection, identity agents.Id
 				return
 			}
 			if expired {
+				s.metrics.Notify(identity.NodeID)
 				s.closeAgentConnection(identity.AgentID, connection.generation)
 				return
 			}
@@ -350,19 +354,29 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	connectionCtx, connectionCancel := context.WithCancel(r.Context())
+	negotiatedCapabilities := negotiateCapabilities(hello.Capabilities)
 	managed := &agentConnection{conn: conn, cancel: connectionCancel, agentID: identity.AgentID, generation: lease.ConnectionGeneration,
-		commands: make(chan protocol.Envelope, 8), leaseUpdates: make(chan time.Time, 1)}
+		metricsEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
+		commands:       make(chan protocol.Envelope, 8), leaseUpdates: make(chan time.Time, 1)}
 	go s.watchAgentLease(managed, lease.Identity, lease.LastSeenAt)
 	if !s.installAgentConnection(managed, identity.AgentID) {
 		managed.close()
 		s.closeAgentProtocol(conn, websocket.StatusPolicyViolation, "a newer Agent connection is already active")
 		return
 	}
+	metricsIdentity := coremetrics.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID}
+	if err := s.metrics.BindConnection(metricsIdentity, lease.ConnectionGeneration); err != nil {
+		s.closeAgentConnection(identity.AgentID, lease.ConnectionGeneration)
+		s.closeAgentProtocol(conn, websocket.StatusPolicyViolation, "could not bind metrics connection")
+		return
+	}
+	defer s.metrics.UnbindConnection(metricsIdentity, lease.ConnectionGeneration)
+	s.metrics.Notify(identity.NodeID)
 	defer s.detachAgentConnection(identity.AgentID, lease.ConnectionGeneration)
 	welcome := protocol.Welcome{
 		AgentID: lease.AgentID, NodeID: lease.NodeID, Generation: lease.ConnectionGeneration,
 		HeartbeatIntervalSecs: protocol.HeartbeatIntervalSeconds, OfflineAfterSecs: protocol.OfflineAfterSeconds,
-		Capabilities:        negotiateCapabilities(hello.Capabilities),
+		Capabilities:        negotiatedCapabilities,
 		RotationRequestedID: lease.RotationRequestedID, CredentialRotationDone: lease.RotationCommitted,
 	}
 	if err := s.writeAgentEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeWelcome, Generation: lease.ConnectionGeneration, Payload: marshalAgentPayload(welcome)}); err != nil {
@@ -438,10 +452,36 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 				connection.noteHeartbeat(acceptedAt)
+				s.metrics.Notify(identity.NodeID)
 				ack := protocol.HeartbeatAck{AcceptedAt: acceptedAt.UnixNano()}
 				if err := s.writeAgentEnvelope(ctx, connection.conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHeartbeatAck, Generation: connection.generation, Sequence: envelope.Sequence, Payload: marshalAgentPayload(ack)}); err != nil {
 					return
 				}
+			case protocol.TypeMetrics:
+				if !connection.metricsEnabled {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent metrics capability was not negotiated")
+					return
+				}
+				var report protocol.MetricsSnapshot
+				if envelope.Sequence == 0 || decodeAgentPayload(envelope.Payload, &report) != nil || protocol.ValidateAgentMetricsSnapshot(report) != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent metrics report")
+					return
+				}
+				lastSeen, active, err := s.agents.ActiveLeaseLastSeen(ctx, identity.NodeID, connection.generation)
+				if err != nil {
+					return
+				}
+				receivedAt := s.now()
+				if !active || receivedAt.Before(lastSeen) || !receivedAt.Before(lastSeen.Add(s.agentOfflineTimeout)) {
+					continue
+				}
+				metricsIdentity := coremetrics.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID}
+				if err := s.metrics.Accept(metricsIdentity, connection.generation, envelope.Sequence, report, receivedAt); err != nil {
+					// A duplicate or delayed telemetry frame is discarded without
+					// changing heartbeat sequence or validity.
+					continue
+				}
+				s.metrics.Notify(identity.NodeID)
 			case protocol.TypeRotatePrepare:
 				var rotation protocol.RotatePrepare
 				if err := decodeAgentPayload(envelope.Payload, &rotation); err != nil || !validUUID(rotation.RotationID) || !validDeviceCredential(rotation.NewCredential) {
@@ -557,7 +597,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {
@@ -565,6 +605,15 @@ func negotiateCapabilities(reported []string) []string {
 		}
 	}
 	return result
+}
+
+func hasCapability(capabilities []string, wanted string) bool {
+	for _, capability := range capabilities {
+		if capability == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func validRuntimePermissions(value protocol.RuntimePermissions) bool {

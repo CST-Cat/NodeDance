@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -335,13 +336,14 @@ func (s *Server) authenticateRequest(w http.ResponseWriter, r *http.Request, tou
 	return &current, true
 }
 
-func (s *Server) sessionStillValid(id string) bool {
+func (s *Server) sessionStillValid(ctx context.Context, id string) bool {
 	var lastSeen int64
-	if err := s.store.DB.QueryRow(`SELECT last_seen_at FROM browser_sessions WHERE id=?`, id).Scan(&lastSeen); err != nil {
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT last_seen_at FROM browser_sessions WHERE id=?`, id).Scan(&lastSeen); err != nil {
 		return false
 	}
 	last := time.Unix(0, lastSeen)
-	return s.now().Sub(last) < s.idleTimeout && !s.now().Before(last)
+	now := s.now()
+	return now.Sub(last) < s.idleTimeout && !now.Before(last)
 }
 
 func (s *Server) effectiveRemoteAddr(r *http.Request) string {

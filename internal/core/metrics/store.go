@@ -88,12 +88,106 @@ type Store struct {
 	mu       sync.RWMutex
 	bindings map[string]binding
 	latest   map[string]Record
+	nextSub  uint64
+	subs     map[uint64]*subscriber
+}
+
+type subscriber struct {
+	mu      sync.Mutex
+	pending map[string]struct{}
+	wake    chan struct{}
+	out     chan string
+	done    chan struct{}
+	stop    sync.Once
 }
 
 func NewStore() *Store {
 	return &Store{
 		bindings: make(map[string]binding),
 		latest:   make(map[string]Record),
+		subs:     make(map[uint64]*subscriber),
+	}
+}
+
+// Subscribe returns a coalesced node-change stream. A slow browser subscriber
+// retains one pending event per node, and no Agent handler waits for dashboard
+// I/O.
+func (s *Store) Subscribe() (<-chan string, func()) {
+	if s == nil {
+		closed := make(chan string)
+		close(closed)
+		return closed, func() {}
+	}
+	s.mu.Lock()
+	s.nextSub++
+	id := s.nextSub
+	item := &subscriber{pending: make(map[string]struct{}), wake: make(chan struct{}, 1), out: make(chan string), done: make(chan struct{})}
+	s.subs[id] = item
+	go item.run()
+	s.mu.Unlock()
+	return item.out, func() {
+		s.mu.Lock()
+		if existing, ok := s.subs[id]; ok {
+			delete(s.subs, id)
+			existing.stop.Do(func() { close(existing.done) })
+		}
+		s.mu.Unlock()
+		for range item.out {
+		}
+	}
+}
+
+// Notify coalesces repeated node changes. Consumers always resolve the current
+// snapshot at send time.
+func (s *Store) Notify(nodeID string) {
+	if s == nil || nodeID == "" {
+		return
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, item := range s.subs {
+		item.notify(nodeID)
+	}
+}
+
+func (s *subscriber) notify(nodeID string) {
+	s.mu.Lock()
+	s.pending[nodeID] = struct{}{}
+	s.mu.Unlock()
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+}
+
+func (s *subscriber) run() {
+	defer close(s.out)
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-s.wake:
+		}
+		for {
+			s.mu.Lock()
+			var nodeID string
+			for id := range s.pending {
+				nodeID = id
+				break
+			}
+			if nodeID != "" {
+				delete(s.pending, nodeID)
+			}
+			s.mu.Unlock()
+			if nodeID == "" {
+				break
+			}
+			select {
+			case <-s.done:
+				return
+			case s.out <- nodeID:
+			}
+		}
 	}
 }
 
@@ -372,6 +466,8 @@ func mergeNetwork(previous, incoming protocol.MetricsNetwork, elapsed time.Durat
 	out := incoming
 	out.Summary = mergeMetric(previous.Summary, incoming.Summary, elapsed)
 	if len(incoming.Interfaces) == 0 && incoming.Summary.Status != protocol.MetricKnown && len(previous.Interfaces) != 0 {
+		out.DetailsTruncated = previous.DetailsTruncated
+		out.TruncationReason = previous.TruncationReason
 		out.Interfaces = make([]protocol.MetricsInterface, 0, len(previous.Interfaces))
 		for _, previousInterface := range previous.Interfaces {
 			copyInterface := previousInterface

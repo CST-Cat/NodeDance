@@ -52,6 +52,8 @@ export interface MetricsView {
         summaryReason?: string
         rate: Metric<{ receivedBytesPerSecond: number; sentBytesPerSecond: number }>
       }>
+      detailsTruncated?: boolean
+      truncationReason?: string
     }
     disk: {
       status: MetricStatus
@@ -69,6 +71,8 @@ export interface MetricsView {
           usedPercent: number
         }>
       }>
+      detailsTruncated?: boolean
+      truncationReason?: string
     }
     uptime: Metric<{
       seconds: number

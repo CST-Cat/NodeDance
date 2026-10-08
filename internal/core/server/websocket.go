@@ -35,6 +35,8 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close(websocket.StatusNormalClosure, "connection closed")
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	metricsEvents, unsubscribe := s.metrics.Subscribe()
+	defer unsubscribe()
 	readDone := make(chan error, 1)
 	go func() {
 		for {
@@ -46,17 +48,53 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 	ticker := time.NewTicker(s.websocketCheckInterval)
 	defer ticker.Stop()
+	if !s.dashboardSessionStillValid(ctx, current.ID) {
+		_ = conn.Close(websocket.StatusPolicyViolation, "session expired or revoked")
+		return
+	}
+	listCtx, cancelList := context.WithTimeout(ctx, 5*time.Second)
+	nodes, listErr := s.agents.ListNodes(listCtx)
+	cancelList()
+	if listErr != nil {
+		return
+	}
+	for _, node := range nodes {
+		if !s.dashboardSessionStillValid(ctx, current.ID) {
+			_ = conn.Close(websocket.StatusPolicyViolation, "session expired or revoked")
+			return
+		}
+		if err := s.writeDashboardMetricsMessage(ctx, conn, node.NodeID); err != nil {
+			return
+		}
+	}
 	for {
 		select {
 		case <-readDone:
 			return
 		case <-r.Context().Done():
 			return
+		case nodeID, ok := <-metricsEvents:
+			if !ok {
+				return
+			}
+			if !s.dashboardSessionStillValid(ctx, current.ID) {
+				_ = conn.Close(websocket.StatusPolicyViolation, "session expired or revoked")
+				return
+			}
+			if err := s.writeDashboardMetricsMessage(ctx, conn, nodeID); err != nil {
+				return
+			}
 		case <-ticker.C:
-			if !s.sessionStillValid(current.ID) {
+			if !s.dashboardSessionStillValid(ctx, current.ID) {
 				_ = conn.Close(websocket.StatusPolicyViolation, "session expired or revoked")
 				return
 			}
 		}
 	}
+}
+
+func (s *Server) dashboardSessionStillValid(parent context.Context, sessionID string) bool {
+	ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+	defer cancel()
+	return s.sessionStillValid(ctx, sessionID)
 }

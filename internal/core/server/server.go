@@ -15,6 +15,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	"github.com/CST-Cat/NodeDance/internal/core/config"
+	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
 	"github.com/CST-Cat/NodeDance/internal/core/webassets"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -53,6 +54,7 @@ type Server struct {
 	passwordChangeVerifiedHook func()
 	hashSetupPassword          func(string) ([]byte, []byte, error)
 	agents                     *agents.Repository
+	metrics                    *coremetrics.Store
 	agentOfflineTimeout        time.Duration
 	agentSweepInterval         time.Duration
 	agentConnectionsMu         sync.Mutex
@@ -156,6 +158,7 @@ func New(version string, options Options) (*Server, error) {
 		now:                    options.Now,
 		hashSetupPassword:      auth.HashPassword,
 		agents:                 agents.NewRepository(store.DB, options.Now),
+		metrics:                coremetrics.NewStore(),
 		agentOfflineTimeout:    options.AgentOfflineTimeout,
 		agentSweepInterval:     options.AgentSweepInterval,
 		agentConnections:       make(map[string]*agentConnection),

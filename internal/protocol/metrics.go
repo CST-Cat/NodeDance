@@ -89,8 +89,10 @@ type MetricsInterface struct {
 }
 
 type MetricsNetwork struct {
-	Summary    Metric[NetworkRate] `json:"summary"`
-	Interfaces []MetricsInterface  `json:"interfaces"`
+	Summary          Metric[NetworkRate] `json:"summary"`
+	Interfaces       []MetricsInterface  `json:"interfaces"`
+	DetailsTruncated bool                `json:"detailsTruncated,omitempty"`
+	TruncationReason string              `json:"truncationReason,omitempty"`
 }
 
 type DiskUsage struct {
@@ -108,11 +110,13 @@ type MetricsMount struct {
 }
 
 type MetricsDisk struct {
-	Status          MetricStatus   `json:"status"`
-	Reason          string         `json:"reason,omitempty"`
-	SampledAt       time.Time      `json:"sampledAt"`
-	SampleAgeMillis int64          `json:"sampleAgeMillis"`
-	Mounts          []MetricsMount `json:"mounts"`
+	Status           MetricStatus   `json:"status"`
+	Reason           string         `json:"reason,omitempty"`
+	SampledAt        time.Time      `json:"sampledAt"`
+	SampleAgeMillis  int64          `json:"sampleAgeMillis"`
+	Mounts           []MetricsMount `json:"mounts"`
+	DetailsTruncated bool           `json:"detailsTruncated,omitempty"`
+	TruncationReason string         `json:"truncationReason,omitempty"`
 }
 
 type Uptime struct {
@@ -197,6 +201,9 @@ func validateMetricsSnapshot(snapshot MetricsSnapshot, allowStale bool) error {
 	if len(snapshot.Network.Interfaces) > MaxMetricsInterfaces {
 		return fmt.Errorf("metrics report has more than %d network interfaces", MaxMetricsInterfaces)
 	}
+	if err := validateTruncation("network", snapshot.Network.DetailsTruncated, snapshot.Network.TruncationReason); err != nil {
+		return err
+	}
 	for index, iface := range snapshot.Network.Interfaces {
 		if iface.Name == "" || len(iface.Name) > 128 || len(iface.SummaryReason) > 128 {
 			return fmt.Errorf("network.interfaces[%d] has invalid metadata", index)
@@ -221,6 +228,9 @@ func validateMetricsSnapshot(snapshot MetricsSnapshot, allowStale bool) error {
 }
 
 func validateDisk(disk MetricsDisk, allowStale bool) error {
+	if err := validateTruncation("disk", disk.DetailsTruncated, disk.TruncationReason); err != nil {
+		return err
+	}
 	if err := validateSampleAge("disk", disk.SampleAgeMillis); err != nil {
 		return err
 	}
@@ -249,6 +259,16 @@ func validateDisk(disk MetricsDisk, allowStale bool) error {
 				return fmt.Errorf("disk mount %q has an invalid usage value", mount.Mountpoint)
 			}
 		}
+	}
+	return nil
+}
+
+func validateTruncation(name string, truncated bool, reason string) error {
+	if len(reason) > 128 {
+		return fmt.Errorf("%s.truncationReason exceeds 128 bytes", name)
+	}
+	if truncated != (reason != "") {
+		return fmt.Errorf("%s truncation flag and reason are inconsistent", name)
 	}
 	return nil
 }
