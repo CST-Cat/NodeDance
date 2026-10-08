@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -23,6 +24,12 @@ import (
 )
 
 const MaxTaskLogBytes = 16 << 20
+
+const (
+	MaxJournalSnapshotTasks = 10000
+	MaxJournalSnapshotBytes = 16 << 20
+	JournalSnapshotTimeout  = 10 * time.Second
+)
 
 var (
 	ErrIdempotencyConflict = errors.New("idempotency key was already used for a different request")
@@ -52,23 +59,26 @@ type EnqueueResult struct {
 }
 
 type Snapshot struct {
-	TaskID         string
-	NodeID         string
-	TargetID       string
-	ResourceKey    string
-	Action         string
-	Status         taskstate.Status
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	StartedAt      *time.Time
-	FinishedAt     *time.Time
-	Evidence       taskstate.Evidence
-	ExecutionPhase ExecutionPhase
-	Baseline       *ExecutionBaseline
-	Progress       Progress
-	Result         Result
-	LogBytes       int64
-	LogTruncated   bool
+	TaskID            string
+	NodeID            string
+	TargetID          string
+	ResourceKey       string
+	Action            string
+	Status            taskstate.Status
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	StartedAt         *time.Time
+	FinishedAt        *time.Time
+	Evidence          taskstate.Evidence
+	ExecutionPhase    ExecutionPhase
+	Baseline          *ExecutionBaseline
+	Progress          Progress
+	Result            Result
+	IdempotencyKey    string
+	RequestDigest     [sha256.Size]byte
+	DeliveryCommitted bool
+	LogBytes          int64
+	LogTruncated      bool
 }
 
 type ExecutionPhase string
@@ -216,8 +226,8 @@ func initializeSchema(ctx context.Context, db *sql.DB, nodeID string) (string, e
 	if err := db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
 		return "", fmt.Errorf("read task journal schema version: %w", err)
 	}
-	if version > 2 {
-		return "", fmt.Errorf("task journal schema version %d is newer than supported version 2", version)
+	if version > 3 {
+		return "", fmt.Errorf("task journal schema version %d is newer than supported version 3", version)
 	}
 	if version == 1 {
 		journalID, err := readJournalOwner(ctx, db, nodeID)
@@ -227,9 +237,22 @@ func initializeSchema(ctx context.Context, db *sql.DB, nodeID string) (string, e
 		if err := migrateTaskJournalV1ToV2(ctx, db); err != nil {
 			return "", err
 		}
+		if err := migrateTaskJournalV2ToV3(ctx, db); err != nil {
+			return "", err
+		}
 		return journalID, nil
 	}
 	if version == 2 {
+		journalID, err := readJournalOwner(ctx, db, nodeID)
+		if err != nil {
+			return "", err
+		}
+		if err := migrateTaskJournalV2ToV3(ctx, db); err != nil {
+			return "", err
+		}
+		return journalID, nil
+	}
+	if version == 3 {
 		return readJournalOwner(ctx, db, nodeID)
 	}
 	journalID, err := newJournalID()
@@ -266,6 +289,7 @@ func initializeSchema(ctx context.Context, db *sql.DB, nodeID string) (string, e
 			process_terminated INTEGER NOT NULL DEFAULT 0 CHECK(process_terminated IN (0,1)),
 			actual_result_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(actual_result_confirmed IN (0,1)),
 			cancellation_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(cancellation_confirmed IN (0,1)),
+			delivery_committed INTEGER NOT NULL DEFAULT 0 CHECK(delivery_committed IN (0,1)),
 			progress_phase TEXT NOT NULL DEFAULT 'accepted',
 			progress_completed INTEGER NOT NULL DEFAULT 0,
 			progress_total INTEGER NOT NULL DEFAULT 0,
@@ -304,7 +328,7 @@ func initializeSchema(ctx context.Context, db *sql.DB, nodeID string) (string, e
 		_ = tx.Rollback()
 		return "", fmt.Errorf("record task journal owner: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `PRAGMA user_version=2`); err != nil {
+	if _, err := tx.ExecContext(ctx, `PRAGMA user_version=3`); err != nil {
 		_ = tx.Rollback()
 		return "", fmt.Errorf("set task journal schema version: %w", err)
 	}
@@ -312,6 +336,24 @@ func initializeSchema(ctx context.Context, db *sql.DB, nodeID string) (string, e
 		return "", fmt.Errorf("commit task journal schema: %w", err)
 	}
 	return journalID, nil
+}
+
+func migrateTaskJournalV2ToV3(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin task journal v2-to-v3 migration: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE task_journal ADD COLUMN delivery_committed INTEGER NOT NULL DEFAULT 0 CHECK(delivery_committed IN (0,1))`); err != nil {
+		return fmt.Errorf("add durable Core delivery marker: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA user_version=3`); err != nil {
+		return fmt.Errorf("set task journal schema version 3: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit task journal v3 migration: %w", err)
+	}
+	return nil
 }
 
 func readJournalOwner(ctx context.Context, db *sql.DB, nodeID string) (string, error) {
@@ -588,6 +630,17 @@ func (s *Store) JournalID() string {
 // Enqueue commits the safe request summary and deduplication digest before a
 // caller can dispatch it. Payload is hashed but never written to SQLite.
 func (s *Store) Enqueue(ctx context.Context, identity taskstate.Identity) (EnqueueResult, error) {
+	return s.enqueue(ctx, identity, false)
+}
+
+// EnqueueDelivered atomically records that this durable journal received a
+// task which Core had committed for delivery. The marker is local recovery
+// evidence only; it is never included in an Agent report as Core-owned proof.
+func (s *Store) EnqueueDelivered(ctx context.Context, identity taskstate.Identity) (EnqueueResult, error) {
+	return s.enqueue(ctx, identity, true)
+}
+
+func (s *Store) enqueue(ctx context.Context, identity taskstate.Identity, delivered bool) (EnqueueResult, error) {
 	if identity.NodeID != s.nodeID {
 		return EnqueueResult{}, ErrWrongNode
 	}
@@ -615,6 +668,15 @@ func (s *Store) Enqueue(ctx context.Context, identity taskstate.Identity) (Enque
 		if keyErr != nil || byKey.TaskID != byTaskID.TaskID {
 			return EnqueueResult{}, ErrIdempotencyConflict
 		}
+		if delivered {
+			if _, err := tx.ExecContext(ctx, `UPDATE task_journal SET delivery_committed=1,updated_at_ns=CASE WHEN delivery_committed=0 THEN ? ELSE updated_at_ns END WHERE node_id=? AND task_id=?`, s.now().UTC().UnixNano(), identity.NodeID, byTaskID.TaskID); err != nil {
+				return EnqueueResult{}, fmt.Errorf("persist Core-delivered task marker: %w", err)
+			}
+			byTaskID, err = loadByTaskID(ctx, tx, identity.NodeID, byTaskID.TaskID)
+			if err != nil {
+				return EnqueueResult{}, fmt.Errorf("read Core-delivered task marker: %w", err)
+			}
+		}
 		if err := tx.Commit(); err != nil {
 			return EnqueueResult{}, fmt.Errorf("commit task ID lookup: %w", err)
 		}
@@ -623,6 +685,15 @@ func (s *Store) Enqueue(ctx context.Context, identity taskstate.Identity) (Enque
 	if keyErr == nil {
 		if byKey.RequestDigest != digest {
 			return EnqueueResult{}, ErrIdempotencyConflict
+		}
+		if delivered {
+			if _, err := tx.ExecContext(ctx, `UPDATE task_journal SET delivery_committed=1,updated_at_ns=CASE WHEN delivery_committed=0 THEN ? ELSE updated_at_ns END WHERE node_id=? AND task_id=?`, s.now().UTC().UnixNano(), identity.NodeID, byKey.TaskID); err != nil {
+				return EnqueueResult{}, fmt.Errorf("persist Core-delivered task marker: %w", err)
+			}
+			byKey, err = loadByIdempotency(ctx, tx, identity.NodeID, identity.IdempotencyKey)
+			if err != nil {
+				return EnqueueResult{}, fmt.Errorf("read Core-delivered task marker: %w", err)
+			}
 		}
 		if err := tx.Commit(); err != nil {
 			return EnqueueResult{}, fmt.Errorf("commit idempotent task lookup: %w", err)
@@ -638,10 +709,14 @@ func (s *Store) Enqueue(ctx context.Context, identity taskstate.Identity) (Enque
 		return EnqueueResult{}, fmt.Errorf("check active resource claim: %w", err)
 	}
 	now := s.now().UTC().UnixNano()
+	deliveredValue := 0
+	if delivered {
+		deliveredValue = 1
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO task_journal (
-		task_id,node_id,idempotency_key,request_digest,target_id,resource_key,action,status,created_at_ns,updated_at_ns
-	) VALUES(?,?,?,?,?,?,?,?,?,?)`, identity.TaskID, identity.NodeID, identity.IdempotencyKey, digest[:], identity.TargetID,
-		identity.ResourceKey, identity.Action, taskstate.Queued, now, now)
+		task_id,node_id,idempotency_key,request_digest,target_id,resource_key,action,status,created_at_ns,updated_at_ns,delivery_committed
+	) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, identity.TaskID, identity.NodeID, identity.IdempotencyKey, digest[:], identity.TargetID,
+		identity.ResourceKey, identity.Action, taskstate.Queued, now, now, deliveredValue)
 	if err != nil {
 		return EnqueueResult{}, fmt.Errorf("persist queued task before dispatch: %w", err)
 	}
@@ -870,22 +945,24 @@ func (s *Store) MarkUnknown(ctx context.Context, taskID string) error {
 		return err
 	}
 	now := s.now().UTC().UnixNano()
-	if _, err := tx.ExecContext(ctx, `UPDATE task_journal SET status='unknown',updated_at_ns=?,finished_at_ns=NULL,result_code=? WHERE node_id=? AND task_id=? AND status='running'`, now, ResultUncertain, s.nodeID, taskID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE task_journal SET status='unknown',updated_at_ns=?,finished_at_ns=NULL,result_code=?,progress_phase=? WHERE node_id=? AND task_id=? AND status='running'`, now, ResultUncertain, PhaseReconciling, s.nodeID, taskID); err != nil {
 		return fmt.Errorf("persist unknown task state: %w", err)
 	}
 	return tx.Commit()
 }
 
 // RecoverInterrupted must be called only after the old Agent process is known
-// to be stopped. It never replays work: running tasks become unknown, and their
-// resource claims stay held until actual Engine state is queried and confirmed.
+// to be stopped. It never replays work: running tasks and Core-delivered queued
+// tasks become unknown, and their resource claims stay held until actual Engine
+// state is queried and confirmed. A legacy queued row without the v3 delivery
+// marker remains queued because the old journal cannot prove Core dispatch.
 func (s *Store) RecoverInterrupted(ctx context.Context) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin interrupted-task recovery: %w", err)
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE task_journal SET status='unknown',result_code=?,progress_phase=?,updated_at_ns=?,finished_at_ns=NULL WHERE node_id=? AND status='running'`, ResultUncertain, PhaseReconciling, s.now().UTC().UnixNano(), s.nodeID)
+	result, err := tx.ExecContext(ctx, `UPDATE task_journal SET status='unknown',result_code=?,progress_phase=?,updated_at_ns=?,finished_at_ns=NULL WHERE node_id=? AND (status='running' OR (status='queued' AND delivery_committed=1))`, ResultUncertain, PhaseReconciling, s.now().UTC().UnixNano(), s.nodeID)
 	if err != nil {
 		return 0, fmt.Errorf("mark interrupted tasks unknown: %w", err)
 	}
@@ -897,6 +974,64 @@ func (s *Store) RecoverInterrupted(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("commit interrupted-task recovery: %w", err)
 	}
 	return count, nil
+}
+
+// SnapshotAll reads one bounded, consistent SQLite read snapshot. It does not
+// page a changing live table with LIMIT/OFFSET: callers receive a frozen
+// in-memory candidate and may split it into wire pages only after this method
+// completes. On any limit, deadline, decode, or commit error it returns no
+// partial snapshot, so absence is never inferred from incomplete history.
+func (s *Store) SnapshotAll(ctx context.Context) ([]Snapshot, error) {
+	bounded, cancel := context.WithTimeout(ctx, JournalSnapshotTimeout)
+	defer cancel()
+	tx, err := s.db.BeginTx(bounded, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin consistent task journal snapshot: %w", err)
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(bounded, `SELECT `+snapshotColumns+` FROM task_journal WHERE node_id=? ORDER BY task_id LIMIT ?`, s.nodeID, MaxJournalSnapshotTasks+1)
+	if err != nil {
+		return nil, fmt.Errorf("query consistent task journal snapshot: %w", err)
+	}
+	snapshots := make([]Snapshot, 0, 128)
+	var estimatedBytes int
+	for rows.Next() {
+		if len(snapshots) >= MaxJournalSnapshotTasks {
+			_ = rows.Close()
+			return nil, errors.New("task journal snapshot exceeds record limit")
+		}
+		entry, err := scanLoaded(rows)
+		if err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("decode task journal snapshot: %w", err)
+		}
+		encoded, err := json.Marshal(entry.Snapshot)
+		if err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("measure task journal snapshot: %w", err)
+		}
+		estimatedBytes += len(encoded)
+		if estimatedBytes > MaxJournalSnapshotBytes {
+			_ = rows.Close()
+			return nil, errors.New("task journal snapshot exceeds byte limit")
+		}
+		snapshots = append(snapshots, entry.Snapshot)
+		if err := bounded.Err(); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("task journal snapshot deadline: %w", err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("read task journal snapshot: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close task journal snapshot: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("finish consistent task journal snapshot: %w", err)
+	}
+	return snapshots, nil
 }
 
 func (s *Store) Get(ctx context.Context, taskID string) (Snapshot, error) {
@@ -934,7 +1069,7 @@ const snapshotColumns = `task_id,node_id,target_id,resource_key,action,status,cr
 	execution_attempted,execution_completed,failure_confirmed,postcondition_verified,process_terminated,actual_result_confirmed,cancellation_confirmed,
 	progress_phase,progress_completed,progress_total,result_code,observed_state,resource_revision,execution_phase,baseline_verified,
 	baseline_target_id,baseline_action,baseline_host_boot_id,baseline_started_at,baseline_restart_count,baseline_running,baseline_paused,baseline_restarting,
-	request_digest,length(task_log),log_truncated,idempotency_key`
+	request_digest,length(task_log),log_truncated,idempotency_key,delivery_committed`
 
 func scanLoaded(scanner rowScanner) (loaded, error) {
 	var entry loaded
@@ -945,20 +1080,23 @@ func scanLoaded(scanner rowScanner) (loaded, error) {
 	var phase string
 	var progressCompleted, progressTotal uint64
 	var code, observed, revision, executionPhase string
-	var baselineVerified, baselineRunning, baselinePaused, baselineRestarting int
+	var baselineVerified, baselineRunning, baselinePaused, baselineRestarting, deliveryCommitted int
 	var baselineTarget, baselineAction, baselineBootID, baselineStartedAt string
 	var baselineRestartCount int
 	var digest []byte
 	if err := scanner.Scan(&entry.TaskID, &entry.NodeID, &entry.TargetID, &entry.ResourceKey, &entry.Action, &status, &createdNS, &updatedNS, &startedNS, &finishedNS,
 		&attempted, &completed, &failed, &verified, &terminated, &actual, &canceled, &phase, &progressCompleted, &progressTotal, &code, &observed, &revision,
 		&executionPhase, &baselineVerified, &baselineTarget, &baselineAction, &baselineBootID, &baselineStartedAt, &baselineRestartCount,
-		&baselineRunning, &baselinePaused, &baselineRestarting, &digest, &entry.LogBytes, &entry.LogTruncated, &entry.idempotencyKey); err != nil {
+		&baselineRunning, &baselinePaused, &baselineRestarting, &digest, &entry.LogBytes, &entry.LogTruncated, &entry.idempotencyKey, &deliveryCommitted); err != nil {
 		return loaded{}, err
 	}
 	if len(digest) != sha256.Size {
 		return loaded{}, errors.New("invalid stored task request digest")
 	}
 	copy(entry.RequestDigest[:], digest)
+	entry.Snapshot.RequestDigest = entry.RequestDigest
+	entry.Snapshot.IdempotencyKey = entry.idempotencyKey
+	entry.Snapshot.DeliveryCommitted = deliveryCommitted != 0
 	entry.Status = taskstate.Status(status)
 	entry.CreatedAt = time.Unix(0, createdNS).UTC()
 	entry.UpdatedAt = time.Unix(0, updatedNS).UTC()

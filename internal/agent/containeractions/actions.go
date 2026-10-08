@@ -6,7 +6,6 @@ package containeractions
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,20 +14,21 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 	"github.com/containerd/errdefs"
 )
 
-type Action string
+type Action = protocol.TaskAction
 
 const (
-	ActionStart   Action = "start"
-	ActionStop    Action = "stop"
-	ActionRestart Action = "restart"
-	ActionPause   Action = "pause"
-	ActionResume  Action = "resume"
-	ActionDelete  Action = "delete"
-	ActionRename  Action = "rename"
+	ActionStart   = protocol.TaskStart
+	ActionStop    = protocol.TaskStop
+	ActionRestart = protocol.TaskRestart
+	ActionPause   = protocol.TaskPause
+	ActionResume  = protocol.TaskResume
+	ActionDelete  = protocol.TaskDelete
+	ActionRename  = protocol.TaskRename
 )
 
 var (
@@ -43,10 +43,10 @@ var (
 	ErrBootIDUnavailable     = errors.New("host boot identity is unavailable")
 	ErrBaselinePersistence   = errors.New("durable pre-mutation baseline could not be confirmed")
 	ErrBaselineUnverifiable  = errors.New("durable execution baseline cannot prove the action result")
+	ErrRunningUnconfirmed    = errors.New("durable running state could not be confirmed")
 	ErrTaskNotReconcileable  = errors.New("only unknown tasks can be reconciled")
 	dockerIDPattern          = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	bootIDPattern            = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-	containerNamePattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 	startedAtLayout          = time.RFC3339Nano
 	defaultOperationLimit    = 30 * time.Second
 	defaultVerificationLimit = 5 * time.Second
@@ -65,16 +65,6 @@ type Request struct {
 	NewName              string
 	DeleteConfirmed      bool
 	DeleteConfirmationID string
-}
-
-// safeIntent is intentionally byte-for-byte shape-compatible with
-// internal/core/tasks.Intent. Do not add arbitrary payloads, inspect output, or
-// secret-bearing values here.
-type safeIntent struct {
-	Action          Action `json:"action"`
-	ContainerID     string `json:"container_id"`
-	NewName         string `json:"new_name,omitempty"`
-	DeleteConfirmed bool   `json:"delete_confirmed,omitempty"`
 }
 
 // Container is a small sanitized projection of the Docker Inspect response.
@@ -157,6 +147,15 @@ func New(engine Engine, journal Journal, options Options) (*Executor, error) {
 // unknown journal entry is never replayed; unknown entries retain their claim
 // until a separate reconciliation flow resolves them.
 func (e *Executor) Execute(ctx context.Context, request Request) (taskjournal.Snapshot, error) {
+	return e.ExecuteObserved(ctx, request, nil)
+}
+
+// ExecuteObserved is Execute with a notification hook for the durable running
+// transition. The hook runs only after BeginExecution has committed and a
+// bounded journal read confirms the persisted running state and evidence. It
+// must be quick and nonblocking; taskrunner uses it only to enqueue a report
+// wake-up hint.
+func (e *Executor) ExecuteObserved(ctx context.Context, request Request, onRunning func(taskjournal.Snapshot)) (taskjournal.Snapshot, error) {
 	if ctx == nil {
 		return taskjournal.Snapshot{}, ErrInvalidRequest
 	}
@@ -189,6 +188,9 @@ func (e *Executor) Execute(ctx context.Context, request Request) (taskjournal.Sn
 		if readErr != nil {
 			return task, fmt.Errorf("begin container action: %w", err)
 		}
+		if latest.Status == taskstate.Running && latest.Evidence.ExecutionAttempted && onRunning != nil {
+			onRunning(latest)
+		}
 		if stateErr := statusError(latest.Status); stateErr != nil {
 			return latest, stateErr
 		}
@@ -196,6 +198,23 @@ func (e *Executor) Execute(ctx context.Context, request Request) (taskjournal.Sn
 			return latest, nil
 		}
 		return latest, fmt.Errorf("begin container action: %w", err)
+	}
+	// BeginExecution returning nil means its SQLite commit succeeded. Confirm
+	// the durable row before notifying Core or crossing into any Engine call.
+	// If the row cannot be read or does not carry the committed running proof,
+	// keep the outcome conservative and do not mutate Docker.
+	runningCtx, runningCancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	running, runningErr := e.journal.Get(runningCtx, task.TaskID)
+	runningCancel()
+	if runningErr != nil || running.Status != taskstate.Running || !running.Evidence.ExecutionAttempted {
+		cause := ErrRunningUnconfirmed
+		if runningErr != nil {
+			cause = errors.Join(cause, runningErr)
+		}
+		return e.markUnknown(ctx, task.TaskID, cause)
+	}
+	if onRunning != nil {
+		onRunning(running)
 	}
 
 	preflightCtx, preflightCancel := context.WithTimeout(ctx, e.verificationTimeout)
@@ -355,41 +374,29 @@ func readHostBootID(context.Context) (string, error) {
 }
 
 func requestIdentity(request Request) (taskstate.Identity, error) {
-	if !dockerIDPattern.MatchString(request.ContainerID) || !validText(request.TaskID, taskstate.MaxIdentityBytes) ||
+	if !protocol.IsFullContainerID(request.ContainerID) || !validText(request.TaskID, taskstate.MaxIdentityBytes) ||
 		!validText(request.NodeID, taskstate.MaxIdentityBytes) || !validText(request.IdempotencyKey, taskstate.MaxIdempotencyKeyBytes) {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
 	if strings.TrimSpace(request.TaskID) != request.TaskID || strings.TrimSpace(request.NodeID) != request.NodeID {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
-	switch request.Action {
-	case ActionStart, ActionStop, ActionRestart, ActionPause, ActionResume:
-		if request.NewName != "" || request.DeleteConfirmed || request.DeleteConfirmationID != "" {
-			return taskstate.Identity{}, ErrInvalidRequest
-		}
-	case ActionDelete:
-		if !request.DeleteConfirmed || request.DeleteConfirmationID != request.ContainerID || request.NewName != "" {
-			return taskstate.Identity{}, ErrInvalidRequest
-		}
-	case ActionRename:
-		if !containerNamePattern.MatchString(request.NewName) || request.DeleteConfirmed || request.DeleteConfirmationID != "" {
-			return taskstate.Identity{}, ErrInvalidRequest
-		}
-	default:
+	intent := protocol.TaskIntent{Action: request.Action, ContainerID: request.ContainerID,
+		NewName: request.NewName, DeleteConfirmed: request.DeleteConfirmed}
+	if err := protocol.ValidateTaskIntent(intent); err != nil {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
-	payload, err := json.Marshal(safeIntent{Action: request.Action, ContainerID: request.ContainerID,
-		NewName: request.NewName, DeleteConfirmed: request.DeleteConfirmed})
+	if request.Action == ActionDelete {
+		if request.DeleteConfirmationID != request.ContainerID {
+			return taskstate.Identity{}, ErrInvalidRequest
+		}
+	} else if request.DeleteConfirmationID != "" {
+		return taskstate.Identity{}, ErrInvalidRequest
+	}
+	identity, err := protocol.TaskIdentity(request.TaskID, request.NodeID, request.IdempotencyKey, intent)
 	if err != nil {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
-	canonical, err := taskstate.CanonicalJSON(payload)
-	if err != nil {
-		return taskstate.Identity{}, ErrInvalidRequest
-	}
-	resourceKey := "docker-container:" + request.ContainerID
-	identity := taskstate.Identity{TaskID: request.TaskID, NodeID: request.NodeID, IdempotencyKey: request.IdempotencyKey,
-		TargetID: request.ContainerID, ResourceKey: resourceKey, Action: string(request.Action), Payload: canonical}
 	if _, err := taskstate.RequestDigest(identity); err != nil {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}

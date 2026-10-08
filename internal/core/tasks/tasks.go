@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	_ "embed"
 	"encoding/hex"
@@ -14,11 +15,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 )
 
@@ -45,8 +46,6 @@ var (
 	ErrNotDelivered         = errors.New("task has not been durably marked for delivery")
 )
 
-var dockerIDPattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
-
 // SchemaSQL is a standalone, intentionally unregistered migration fragment.
 // Production storage migration registration is owned by the integration
 // layer. New never applies this SQL implicitly.
@@ -70,28 +69,23 @@ func SchemaStatements() []string {
 	return statements
 }
 
-type Action string
+type Action = protocol.TaskAction
 
 const (
-	ActionStart   Action = "start"
-	ActionStop    Action = "stop"
-	ActionRestart Action = "restart"
-	ActionPause   Action = "pause"
-	ActionResume  Action = "resume"
-	ActionDelete  Action = "delete"
-	ActionRename  Action = "rename"
+	ActionStart   = protocol.TaskStart
+	ActionStop    = protocol.TaskStop
+	ActionRestart = protocol.TaskRestart
+	ActionPause   = protocol.TaskPause
+	ActionResume  = protocol.TaskResume
+	ActionDelete  = protocol.TaskDelete
+	ActionRename  = protocol.TaskRename
 )
 
 // Intent is the complete allowlisted, non-secret S05 container command. No
 // arbitrary JSON or freeform error field is persisted. Credentials for future
 // registry or other secret-bearing actions need a separate encrypted,
 // one-use transport contract before those actions are added here.
-type Intent struct {
-	Action          Action `json:"action"`
-	ContainerID     string `json:"container_id"`
-	NewName         string `json:"new_name,omitempty"`
-	DeleteConfirmed bool   `json:"delete_confirmed,omitempty"`
-}
+type Intent = protocol.TaskIntent
 
 type EnqueueRequest struct {
 	TaskID         string
@@ -189,11 +183,34 @@ type AgentConnection struct {
 // AgentTask is a typed summary from the Agent journal. The caller must derive
 // terminal evidence from a fresh Docker inspection before applying it.
 type AgentTask struct {
-	TaskID   string
-	Status   taskstate.Status
-	Evidence Evidence
-	Progress Progress
-	Result   Result
+	TaskID         string
+	NodeID         string
+	JournalID      string
+	TargetID       string
+	IdempotencyKey string
+	RequestDigest  [sha256.Size]byte
+	Status         taskstate.Status
+	Evidence       Evidence
+	Progress       Progress
+	Result         Result
+}
+
+// AgentTaskFromProtocol converts a bounded wire report to the Core's typed
+// transaction input. DeliveryCommitted is intentionally absent from the wire
+// DTO and therefore cannot be supplied here; applyAgentReportTx loads that
+// Core-owned evidence from the durable task row.
+func AgentTaskFromProtocol(report protocol.TaskReport) (AgentTask, error) {
+	digest, err := protocol.ParseDigest(report.RequestDigest)
+	if err != nil {
+		return AgentTask{}, err
+	}
+	return AgentTask{
+		TaskID: report.TaskID, NodeID: report.NodeID, JournalID: report.JournalID, TargetID: report.TargetID,
+		IdempotencyKey: report.IdempotencyKey, RequestDigest: digest, Status: report.Status,
+		Evidence: report.Evidence.TaskStateEvidence(),
+		Progress: Progress{Phase: ProgressPhase(report.Progress.Phase), Completed: report.Progress.Completed, Total: report.Progress.Total},
+		Result:   Result{Code: ResultCode(report.Result.Code), ObservedState: report.Result.ObservedState, ResourceRevision: report.Result.ResourceRevision},
+	}, nil
 }
 
 type JournalObservation struct {
@@ -216,8 +233,6 @@ type Page struct {
 	Tasks      []Task
 	NextCursor *Cursor
 }
-
-var containerNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 
 func New(db *sql.DB, options Options) (*Store, error) {
 	if db == nil {
@@ -247,8 +262,13 @@ func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueRes
 	if err != nil {
 		return EnqueueResult{}, err
 	}
-	identity := taskstate.Identity{TaskID: request.TaskID, NodeID: request.NodeID, IdempotencyKey: request.IdempotencyKey,
-		TargetID: request.Intent.ContainerID, ResourceKey: resourceKey, Action: string(request.Intent.Action), Payload: payload}
+	identity, err := protocol.TaskIdentity(request.TaskID, request.NodeID, request.IdempotencyKey, request.Intent)
+	if err != nil {
+		return EnqueueResult{}, fmt.Errorf("build canonical task identity: %w", err)
+	}
+	if identity.ResourceKey != resourceKey || string(identity.Payload) != string(payload) {
+		return EnqueueResult{}, ErrInvalidRequest
+	}
 	digest, err := taskstate.RequestDigest(identity)
 	if err != nil {
 		return EnqueueResult{}, fmt.Errorf("validate task identity: %w", err)
@@ -804,7 +824,10 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 	if err != nil {
 		return Task{}, lookupError(err)
 	}
-	if task.DispatchJournalID != connection.JournalID {
+	if task.DispatchJournalID != connection.JournalID || report.NodeID != connection.NodeID ||
+		report.JournalID != connection.JournalID || report.TargetID != task.Intent.ContainerID ||
+		report.IdempotencyKey != task.IdempotencyKey ||
+		subtle.ConstantTimeCompare(report.RequestDigest[:], task.RequestDigest[:]) != 1 || report.Evidence.DeliveryCommitted {
 		return Task{}, ErrTaskStateConflict
 	}
 	if !validProgress(report.Progress) {
@@ -860,16 +883,30 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 			task.StartedAt = timePtr(now)
 			from = taskstate.Running
 		case status == taskstate.Unknown:
-			// An Agent's own unknown record can only follow its durable running
-			// journal entry. Missing Core acknowledgement alone is handled by the
-			// separate queued->unknown DeliveryCommitted path.
-			if err := persistNonterminalTx(ctx, tx, task, taskstate.Queued, taskstate.Running, merged, report.Progress, Result{}, now, true); err != nil {
-				return Task{}, err
+			if report.Evidence.ExecutionAttempted {
+				// A real Agent execution record may have lost its running ACK. Preserve
+				// that evidence as the intermediate status transition.
+				if err := persistNonterminalTx(ctx, tx, task, taskstate.Queued, taskstate.Running, merged, report.Progress, Result{}, now, true); err != nil {
+					return Task{}, err
+				}
+				task.Status = taskstate.Running
+				task.Evidence = merged
+				task.StartedAt = timePtr(now)
+				from = taskstate.Running
+			} else {
+				// Core's committed dispatch marker proves only that the task may have
+				// reached Agent. It is Core-owned and is read from the durable row,
+				// never manufactured from an Agent report.
+				if err := taskstate.CanTransition(taskstate.Queued, taskstate.Unknown, task.Evidence); err != nil {
+					return Task{}, err
+				}
+				report.Result = Result{Code: ResultUncertain}
+				report.Progress.Phase = PhaseReconciling
+				if err := persistNonterminalTx(ctx, tx, task, taskstate.Queued, taskstate.Unknown, task.Evidence, report.Progress, report.Result, now, false); err != nil {
+					return Task{}, err
+				}
+				return loadByTaskID(ctx, tx, connection.NodeID, report.TaskID)
 			}
-			task.Status = taskstate.Running
-			task.Evidence = merged
-			task.StartedAt = timePtr(now)
-			from = taskstate.Running
 		case taskstate.IsTerminal(status) && (status == taskstate.Failed || status == taskstate.Canceled) && !merged.ExecutionAttempted:
 			if err := taskstate.CanTransition(taskstate.Queued, status, merged); err != nil {
 				return Task{}, err
@@ -1184,34 +1221,14 @@ func remoteIP(value string) net.IP {
 }
 
 func validateIntent(intent Intent, composeManaged bool) (string, []byte, string, error) {
-	if !dockerIDPattern.MatchString(intent.ContainerID) {
-		return "", nil, "", ErrInvalidRequest
+	if composeManaged && intent.Action == ActionRename {
+		return "", nil, "", ErrManagedRename
 	}
-	switch intent.Action {
-	case ActionStart, ActionStop, ActionRestart, ActionPause, ActionResume:
-		if intent.NewName != "" || intent.DeleteConfirmed {
-			return "", nil, "", ErrInvalidRequest
-		}
-	case ActionDelete:
-		if !intent.DeleteConfirmed || intent.NewName != "" {
-			return "", nil, "", ErrInvalidRequest
-		}
-	case ActionRename:
-		if composeManaged {
-			return "", nil, "", ErrManagedRename
-		}
-		if !containerNamePattern.MatchString(intent.NewName) || intent.DeleteConfirmed {
-			return "", nil, "", ErrInvalidRequest
-		}
-	default:
+	if err := protocol.ValidateTaskIntent(intent); err != nil {
 		return "", nil, "", ErrInvalidRequest
 	}
 	resourceKey := "docker-container:" + intent.ContainerID
-	encoded, err := json.Marshal(intent)
-	if err != nil {
-		return "", nil, "", fmt.Errorf("encode typed safe task intent: %w", err)
-	}
-	canonical, err := taskstate.CanonicalJSON(encoded)
+	canonical, err := protocol.CanonicalTaskIntent(intent)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("canonicalize typed safe task intent: %w", err)
 	}
