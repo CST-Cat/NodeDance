@@ -41,4 +41,4 @@ export GOTOOLCHAIN=local
 "$go_bin" test -mod=readonly -race -count=1 -v ./internal/agent/metrics 2>&1 | tee "$output_dir/go-test.log"
 "$go_bin" vet -mod=readonly ./internal/agent/metrics 2>&1 | tee "$output_dir/go-vet.log"
 
-printf 'S03 standalone collector checks exited successfully; inspect the log for skipped live checks before reporting PASS. Logs: %s\n' "$output_dir"
+printf 'Deterministic collector checks exited successfully. Live host tests are opt-in and remain NOT_READY until scripts/test/s03-live-collector.sh runs them. Logs: %s\n' "$output_dir"

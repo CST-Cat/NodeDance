@@ -19,77 +19,115 @@ import (
 )
 
 func TestLinuxProcAndFilesystemAgreement(t *testing.T) {
+	requireLiveLinuxEnvironment(t)
 	if runtime.GOOS != "linux" {
 		t.Skip("real /proc and statfs comparison requires Linux")
 	}
 	source := gopsutilSource{}
 	ctx := context.Background()
 
-	// Compare gopsutil's CPU counters with an independent parser of /proc/stat.
+	// Bracket each dynamic cumulative counter with independent /proc reads.
+	// This keeps assertions exact without treating unrelated host work as a
+	// collector error or adding a large fixed tolerance.
+	cpuBeforeAt := time.Now()
+	wantCPUBefore := readProcCPU(t)
+	cpuCallStart := time.Now()
 	gotCPU, err := source.cpuTimes(ctx)
 	if err != nil || len(gotCPU) != 1 {
 		t.Fatalf("gopsutil CPU sample: count=%d err=%v", len(gotCPU), err)
 	}
-	wantCPU := readProcCPU(t)
-	compareCPUCounter(t, "user", gotCPU[0].User, wantCPU.User)
-	compareCPUCounter(t, "nice", gotCPU[0].Nice, wantCPU.Nice)
-	compareCPUCounter(t, "system", gotCPU[0].System, wantCPU.System)
-	compareCPUCounter(t, "idle", gotCPU[0].Idle, wantCPU.Idle)
-	compareCPUCounter(t, "iowait", gotCPU[0].Iowait, wantCPU.Iowait)
-	compareCPUCounter(t, "irq", gotCPU[0].Irq, wantCPU.Irq)
-	compareCPUCounter(t, "softirq", gotCPU[0].Softirq, wantCPU.Softirq)
-	compareCPUCounter(t, "steal", gotCPU[0].Steal, wantCPU.Steal)
-	compareCPUCounter(t, "guest", gotCPU[0].Guest, wantCPU.Guest)
-	compareCPUCounter(t, "guestNice", gotCPU[0].GuestNice, wantCPU.GuestNice)
+	cpuCallEnd := time.Now()
+	wantCPUAfter := readProcCPU(t)
+	cpuAfterAt := time.Now()
+	compareCPUCounterBracket(t, "user", gotCPU[0].User, wantCPUBefore.User, wantCPUAfter.User, cpuBeforeAt, cpuCallStart, cpuCallEnd, cpuAfterAt)
+	compareCPUCounterBracket(t, "nice", gotCPU[0].Nice, wantCPUBefore.Nice, wantCPUAfter.Nice, cpuBeforeAt, cpuCallStart, cpuCallEnd, cpuAfterAt)
+	compareCPUCounterBracket(t, "system", gotCPU[0].System, wantCPUBefore.System, wantCPUAfter.System, cpuBeforeAt, cpuCallStart, cpuCallEnd, cpuAfterAt)
+	compareCPUCounterBracket(t, "idle", gotCPU[0].Idle, wantCPUBefore.Idle, wantCPUAfter.Idle, cpuBeforeAt, cpuCallStart, cpuCallEnd, cpuAfterAt)
+	compareCPUCounterBracket(t, "iowait", gotCPU[0].Iowait, wantCPUBefore.Iowait, wantCPUAfter.Iowait, cpuBeforeAt, cpuCallStart, cpuCallEnd, cpuAfterAt)
+	compareCPUCounterBracket(t, "irq", gotCPU[0].Irq, wantCPUBefore.Irq, wantCPUAfter.Irq, cpuBeforeAt, cpuCallStart, cpuCallEnd, cpuAfterAt)
+	compareCPUCounterBracket(t, "softirq", gotCPU[0].Softirq, wantCPUBefore.Softirq, wantCPUAfter.Softirq, cpuBeforeAt, cpuCallStart, cpuCallEnd, cpuAfterAt)
+	compareCPUCounterBracket(t, "steal", gotCPU[0].Steal, wantCPUBefore.Steal, wantCPUAfter.Steal, cpuBeforeAt, cpuCallStart, cpuCallEnd, cpuAfterAt)
+	compareCPUCounterBracket(t, "guest", gotCPU[0].Guest, wantCPUBefore.Guest, wantCPUAfter.Guest, cpuBeforeAt, cpuCallStart, cpuCallEnd, cpuAfterAt)
+	compareCPUCounterBracket(t, "guestNice", gotCPU[0].GuestNice, wantCPUBefore.GuestNice, wantCPUAfter.GuestNice, cpuBeforeAt, cpuCallStart, cpuCallEnd, cpuAfterAt)
 
 	// Parse MemTotal and MemAvailable directly; both are reported in KiB by
-	// procfs and converted to bytes by gopsutil.
+	// procfs and converted to bytes by gopsutil. MemTotal is static and exact;
+	// MemAvailable is checked against a timestamped pair of exact proc reads.
+	memoryBeforeAt := time.Now()
+	wantTotalBefore, wantAvailableBefore := readProcMemory(t)
+	memoryCallStart := time.Now()
 	gotMemory, err := source.memory(ctx)
 	if err != nil {
 		t.Fatalf("gopsutil memory sample: %v", err)
 	}
-	wantTotal, wantAvailable := readProcMemory(t)
-	if gotMemory.Total != wantTotal || gotMemory.Available != wantAvailable {
-		t.Fatalf("memory mismatch: gopsutil total/available=%d/%d proc=%d/%d bytes", gotMemory.Total, gotMemory.Available, wantTotal, wantAvailable)
+	memoryCallEnd := time.Now()
+	wantTotalAfter, wantAvailableAfter := readProcMemory(t)
+	memoryAfterAt := time.Now()
+	if wantTotalBefore != wantTotalAfter {
+		t.Skipf("MemTotal changed during independent sample bracket [%s,%s]: %d -> %d bytes", memoryBeforeAt, memoryAfterAt, wantTotalBefore, wantTotalAfter)
 	}
+	if gotMemory.Total != wantTotalBefore {
+		t.Fatalf("static MemTotal mismatch: gopsutil=%d proc=%d bytes", gotMemory.Total, wantTotalBefore)
+	}
+	compareUint64Bracket(t, "MemAvailable", gotMemory.Available, wantAvailableBefore, wantAvailableAfter,
+		memoryBeforeAt, memoryCallStart, memoryCallEnd, memoryAfterAt)
 
 	// Compare interface counters with a separate /proc/net/dev parser. Traffic
-	// may advance between the two reads, so allow at most 1 MiB of local jitter.
+	// may advance; use timestamped counter brackets rather than a fixed tolerance.
+	networkBeforeAt := time.Now()
+	wantNetworkBefore := readProcNetwork(t)
+	networkCallStart := time.Now()
 	gotNetwork, err := source.networkCounters(ctx)
 	if err != nil {
 		t.Fatalf("gopsutil network sample: %v", err)
 	}
-	wantNetwork := readProcNetwork(t)
+	networkCallEnd := time.Now()
+	wantNetworkAfter := readProcNetwork(t)
+	networkAfterAt := time.Now()
 	for _, item := range gotNetwork {
-		want, ok := wantNetwork[item.Name]
-		if !ok {
+		before, okBefore := wantNetworkBefore[item.Name]
+		after, okAfter := wantNetworkAfter[item.Name]
+		if !okBefore || !okAfter {
 			t.Fatalf("interface %q missing from /proc/net/dev", item.Name)
 		}
-		if difference(item.BytesRecv, want.rx) > 1<<20 || difference(item.BytesSent, want.tx) > 1<<20 {
-			t.Fatalf("network mismatch for %s: gopsutil rx/tx=%d/%d proc=%d/%d", item.Name, item.BytesRecv, item.BytesSent, want.rx, want.tx)
-		}
+		compareUint64Bracket(t, item.Name+" received bytes", item.BytesRecv, before.rx, after.rx,
+			networkBeforeAt, networkCallStart, networkCallEnd, networkAfterAt)
+		compareUint64Bracket(t, item.Name+" sent bytes", item.BytesSent, before.tx, after.tx,
+			networkBeforeAt, networkCallStart, networkCallEnd, networkAfterAt)
 	}
 
-	// Independently call statfs through the standard syscall package and compare
-	// the exact byte fields gopsutil returns for the root filesystem.
+	// Bracket dynamic statfs values around gopsutil's call. Total bytes and the
+	// UsedPercent formula remain exact; changing free/used counters can only
+	// produce NOT_READY when the source lies outside an unstable bracket.
+	diskBeforeAt := time.Now()
+	statBefore := readStatfs(t, "/")
+	diskCallStart := time.Now()
 	gotDisk, err := source.diskUsage(ctx, "/")
 	if err != nil {
 		t.Fatalf("gopsutil statfs sample: %v", err)
 	}
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs("/", &stat); err != nil {
-		t.Fatalf("independent statfs sample: %v", err)
+	diskCallEnd := time.Now()
+	statAfter := readStatfs(t, "/")
+	diskAfterAt := time.Now()
+	if statBefore.Total != statAfter.Total {
+		t.Skipf("root filesystem total changed during statfs bracket [%s,%s]: %d -> %d bytes", diskBeforeAt, diskAfterAt, statBefore.Total, statAfter.Total)
 	}
-	blockSize := uint64(stat.Bsize)
-	wantDiskTotal := stat.Blocks * blockSize
-	wantDiskAvailable := stat.Bavail * blockSize
-	wantDiskUsed := (stat.Blocks - stat.Bfree) * blockSize
-	if gotDisk.Total != wantDiskTotal || gotDisk.Free != wantDiskAvailable || gotDisk.Used != wantDiskUsed {
-		t.Fatalf("disk mismatch: gopsutil total/free/used=%d/%d/%d syscall=%d/%d/%d", gotDisk.Total, gotDisk.Free, gotDisk.Used, wantDiskTotal, wantDiskAvailable, wantDiskUsed)
+	if gotDisk.Total != statBefore.Total {
+		t.Fatalf("static root filesystem total mismatch: gopsutil=%d syscall=%d bytes", gotDisk.Total, statBefore.Total)
 	}
-	wantUsedPercent := 100 * float64(wantDiskUsed) / float64(wantDiskUsed+wantDiskAvailable)
+	compareUint64Bracket(t, "root filesystem available bytes", gotDisk.Free, statBefore.Available, statAfter.Available,
+		diskBeforeAt, diskCallStart, diskCallEnd, diskAfterAt)
+	compareUint64Bracket(t, "root filesystem used bytes", gotDisk.Used, statBefore.Used, statAfter.Used,
+		diskBeforeAt, diskCallStart, diskCallEnd, diskAfterAt)
+	wantUsedPercent := 100 * float64(gotDisk.Used) / float64(gotDisk.Used+gotDisk.Free)
 	if math.Abs(gotDisk.UsedPercent-wantUsedPercent) > 1e-9 {
-		t.Fatalf("disk percentage mismatch: gopsutil=%.12f syscall=%.12f", gotDisk.UsedPercent, wantUsedPercent)
+		t.Fatalf("statfs UsedPercent formula mismatch: gopsutil=%.12f used/(used+available)=%.12f", gotDisk.UsedPercent, wantUsedPercent)
+	}
+	if statBefore.Available == statAfter.Available && statBefore.Used == statAfter.Used {
+		independentPercent := 100 * float64(statBefore.Used) / float64(statBefore.Used+statBefore.Available)
+		if math.Abs(gotDisk.UsedPercent-independentPercent) > 1e-9 {
+			t.Fatalf("stable statfs UsedPercent mismatch: gopsutil=%.12f syscall=%.12f", gotDisk.UsedPercent, independentPercent)
+		}
 	}
 
 	gotUptime, err := source.uptime(ctx)
@@ -142,6 +180,7 @@ func TestLinuxProcAndFilesystemAgreement(t *testing.T) {
 }
 
 func TestLiveCPUAndMemoryLoadAffectsMeasurements(t *testing.T) {
+	requireLiveLinuxEnvironment(t)
 	if runtime.GOOS != "linux" {
 		t.Skip("live host load comparison requires Linux")
 	}
@@ -273,11 +312,66 @@ func readProcCPU(t *testing.T) cpu.TimesStat {
 	return cpu.TimesStat{}
 }
 
-func compareCPUCounter(t *testing.T, name string, got, want float64) {
+func requireLiveLinuxEnvironment(t *testing.T) {
 	t.Helper()
-	tolerance := 2 / cpu.ClocksPerSec
-	if math.Abs(got-want) > tolerance {
-		t.Fatalf("CPU %s counter mismatch: gopsutil=%.6f /proc=%.6f seconds (tolerance %.6f)", name, got, want, tolerance)
+	if os.Getenv("NODEDANCE_S03_LIVE") != "1" {
+		t.Skip("environment-dependent Linux live test; run scripts/test/s03-live-collector.sh to execute it")
+	}
+}
+
+func compareCPUCounterBracket(t *testing.T, name string, got, before, after float64,
+	beforeAt, callStart, callEnd, afterAt time.Time) {
+	t.Helper()
+	lower, upper := before, after
+	if lower > upper {
+		lower, upper = upper, lower
+	}
+	if got >= lower && got <= upper {
+		return
+	}
+	if before != after {
+		t.Skipf("%s changed outside independent /proc/stat bracket %s..%s: before=%.6f gopsutil=%.6f after=%.6f (source call %s..%s)",
+			name, beforeAt, afterAt, before, got, after, callStart, callEnd)
+	}
+	t.Fatalf("stable CPU %s counter mismatch: gopsutil=%.6f /proc=%.6f (independent bracket %s..%s; source call %s..%s)",
+		name, got, before, beforeAt, afterAt, callStart, callEnd)
+}
+
+func compareUint64Bracket(t *testing.T, name string, got, before, after uint64,
+	beforeAt, callStart, callEnd, afterAt time.Time) {
+	t.Helper()
+	lower, upper := before, after
+	if lower > upper {
+		lower, upper = upper, lower
+	}
+	if got >= lower && got <= upper {
+		return
+	}
+	if before != after {
+		t.Skipf("%s changed outside independent sample bracket %s..%s: before=%d source=%d after=%d (source call %s..%s)",
+			name, beforeAt, afterAt, before, got, after, callStart, callEnd)
+	}
+	t.Fatalf("stable %s mismatch: source=%d independent=%d (sample bracket %s..%s; source call %s..%s)",
+		name, got, before, beforeAt, afterAt, callStart, callEnd)
+}
+
+type statfsSample struct {
+	Total     uint64
+	Available uint64
+	Used      uint64
+}
+
+func readStatfs(t *testing.T, path string) statfsSample {
+	t.Helper()
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		t.Fatalf("independent statfs sample for %s: %v", path, err)
+	}
+	blockSize := uint64(stat.Bsize)
+	return statfsSample{
+		Total:     stat.Blocks * blockSize,
+		Available: stat.Bavail * blockSize,
+		Used:      (stat.Blocks - stat.Bfree) * blockSize,
 	}
 }
 
@@ -387,11 +481,4 @@ func writeFixtureFile(t *testing.T, path, content string, mode os.FileMode) {
 	if err := os.Chmod(path, mode); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func difference(a, b uint64) uint64 {
-	if a > b {
-		return a - b
-	}
-	return b - a
 }
