@@ -69,6 +69,61 @@ var migrations = []Migration{{
 			remote_addr TEXT NOT NULL
 		)`,
 	},
+}, {
+	Version: 2,
+	SQL: []string{
+		`ALTER TABLE audit_entries ADD COLUMN target_kind TEXT`,
+		`ALTER TABLE audit_entries ADD COLUMN target_id TEXT`,
+		`CREATE INDEX audit_entries_target ON audit_entries(target_kind, target_id)`,
+		`CREATE TABLE nodes (
+			id TEXT PRIMARY KEY,
+			display_name TEXT NOT NULL,
+			status TEXT NOT NULL CHECK (status IN ('pending', 'online', 'offline', 'revoked')),
+			connection_generation INTEGER NOT NULL DEFAULT 0 CHECK (connection_generation >= 0),
+			last_seen_at INTEGER,
+			heartbeat_sequence INTEGER NOT NULL DEFAULT 0 CHECK (heartbeat_sequence >= 0),
+			protocol_version INTEGER,
+			agent_version TEXT,
+			capabilities_json TEXT NOT NULL DEFAULT '[]',
+			runtime_os TEXT,
+			runtime_architecture TEXT,
+			effective_uid INTEGER,
+			effective_gid INTEGER,
+			supplementary_groups_json TEXT NOT NULL DEFAULT '[]',
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
+		`CREATE TABLE agent_devices (
+			id TEXT PRIMARY KEY,
+			node_id TEXT NOT NULL UNIQUE REFERENCES nodes(id),
+			credential_digest BLOB NOT NULL UNIQUE CHECK (length(credential_digest) = 32),
+			pending_credential_digest BLOB UNIQUE CHECK (pending_credential_digest IS NULL OR length(pending_credential_digest) = 32),
+			pending_rotation_id TEXT,
+			rotation_requested_id TEXT,
+			revoked_at INTEGER,
+			created_at INTEGER NOT NULL,
+			CHECK (pending_credential_digest IS NULL OR pending_credential_digest != credential_digest),
+			CHECK ((pending_credential_digest IS NULL) = (pending_rotation_id IS NULL))
+		)`,
+		`CREATE INDEX agent_devices_node ON agent_devices(node_id)`,
+		`CREATE TABLE agent_credential_verifiers (
+			digest BLOB PRIMARY KEY CHECK (length(digest) = 32),
+			agent_id TEXT NOT NULL REFERENCES agent_devices(id) ON DELETE CASCADE,
+			state TEXT NOT NULL CHECK (state IN ('active', 'pending')),
+			UNIQUE(agent_id, state)
+		)`,
+		`CREATE INDEX agent_credential_verifiers_agent ON agent_credential_verifiers(agent_id)`,
+		`CREATE TABLE agent_enrollments (
+			token_digest BLOB PRIMARY KEY CHECK (length(token_digest) = 32),
+			node_id TEXT NOT NULL REFERENCES nodes(id),
+			request_id TEXT,
+			expires_at INTEGER NOT NULL,
+			consumed_at INTEGER,
+			created_at INTEGER NOT NULL
+		)`,
+		`CREATE INDEX agent_enrollments_node ON agent_enrollments(node_id)`,
+		`CREATE INDEX nodes_status_seen ON nodes(status, last_seen_at)`,
+	},
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {

@@ -9,12 +9,15 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	"github.com/CST-Cat/NodeDance/internal/core/config"
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
 	"github.com/CST-Cat/NodeDance/internal/core/webassets"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 type Options struct {
@@ -26,6 +29,8 @@ type Options struct {
 	LoginMaxAttempts       int
 	LoginLockoutDuration   time.Duration
 	WebSocketCheckInterval time.Duration
+	AgentOfflineTimeout    time.Duration
+	AgentSweepInterval     time.Duration
 	Now                    func() time.Time
 }
 
@@ -47,6 +52,17 @@ type Server struct {
 	loginVerifiedHook          func()
 	passwordChangeVerifiedHook func()
 	hashSetupPassword          func(string) ([]byte, []byte, error)
+	agents                     *agents.Repository
+	agentOfflineTimeout        time.Duration
+	agentSweepInterval         time.Duration
+	agentConnectionsMu         sync.Mutex
+	agentConnections           map[string]*agentConnection
+	agentLifecycleMu           sync.Mutex
+	agentClosing               bool
+	agentContext               context.Context
+	agentCancel                context.CancelFunc
+	agentWait                  sync.WaitGroup
+	agentLeaseWatchers         map[string]*agentConnection
 }
 
 type session struct {
@@ -87,6 +103,21 @@ func New(version string, options Options) (*Server, error) {
 	if options.WebSocketCheckInterval <= 0 || options.WebSocketCheckInterval > 30*time.Second {
 		return nil, errors.New("WebSocket session check interval must be between 0 and 30 seconds")
 	}
+	if options.AgentOfflineTimeout == 0 {
+		options.AgentOfflineTimeout = time.Duration(protocol.OfflineAfterSeconds) * time.Second
+	}
+	if options.AgentOfflineTimeout <= 0 || options.AgentOfflineTimeout > 30*time.Second {
+		return nil, errors.New("Agent offline timeout must be greater than zero and no more than 30 seconds")
+	}
+	if !options.Development && options.AgentOfflineTimeout != time.Duration(protocol.OfflineAfterSeconds)*time.Second {
+		return nil, errors.New("Agent offline timeout override is accepted only in --dev mode")
+	}
+	if options.AgentSweepInterval == 0 {
+		options.AgentSweepInterval = time.Second
+	}
+	if options.AgentSweepInterval <= 0 || options.AgentSweepInterval > options.AgentOfflineTimeout {
+		return nil, errors.New("Agent offline sweep interval must be positive and no greater than its timeout")
+	}
 	if options.Now == nil {
 		options.Now = time.Now
 	}
@@ -124,6 +155,11 @@ func New(version string, options Options) (*Server, error) {
 		websocketCheckInterval: options.WebSocketCheckInterval,
 		now:                    options.Now,
 		hashSetupPassword:      auth.HashPassword,
+		agents:                 agents.NewRepository(store.DB, options.Now),
+		agentOfflineTimeout:    options.AgentOfflineTimeout,
+		agentSweepInterval:     options.AgentSweepInterval,
+		agentConnections:       make(map[string]*agentConnection),
+		agentLeaseWatchers:     make(map[string]*agentConnection),
 	}
 	s.csrfKey, err = loadOrCreateSigningKey(store.Dir)
 	if err != nil {
@@ -134,10 +170,33 @@ func New(version string, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := s.agents.MarkAllOffline(context.Background()); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	s.agentContext, s.agentCancel = context.WithCancel(context.Background())
+	s.agentWait.Add(1)
+	go s.agentOfflineSweeper()
 	return s, nil
 }
 
 func (s *Server) Close() error {
+	s.agentLifecycleMu.Lock()
+	s.agentClosing = true
+	if s.agentCancel != nil {
+		s.agentCancel()
+	}
+	s.agentLifecycleMu.Unlock()
+	s.agentConnectionsMu.Lock()
+	for agentID, connection := range s.agentConnections {
+		connection.close()
+		delete(s.agentConnections, agentID)
+	}
+	s.agentConnectionsMu.Unlock()
+	s.agentWait.Wait()
+	if s.agents != nil {
+		_ = s.agents.MarkAllOffline(context.Background())
+	}
 	return s.store.Close()
 }
 
@@ -212,6 +271,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handlePublicImage(w, r)
+		return
+	case "/api/v1/agents/enroll":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.secureAgentRequest(r) {
+			http.Error(w, "secure Agent transport required", http.StatusUpgradeRequired)
+			return
+		}
+		s.handleAgentEnroll(w, r)
+		return
+	case "/api/v1/agents/identity":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.secureAgentRequest(r) {
+			http.Error(w, "secure Agent transport required", http.StatusUpgradeRequired)
+			return
+		}
+		s.handleAgentIdentity(w, r)
+		return
+	case "/ws/v1/agent":
+		s.handleAgentWebSocket(w, r)
 		return
 	}
 
