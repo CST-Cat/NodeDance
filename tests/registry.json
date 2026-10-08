@@ -17,8 +17,8 @@
           "id": "S00-02",
           "action": "使用 Go 1.26、Node.js 22 构建。",
           "expected": "构建通过，无隐式工具链升级。",
-      "environment": "Go 1.26.8、Node 22.23.3、锁文件安装的 pnpm 12.10.1 native ELF、TypeScript 5.9.3、vue-tsc 3.3.12，GOTOOLCHAIN=local。",
-      "evidence": "go/node/pnpm/typecheck工具版本、pnpm及平台native npm integrity和SHA-256、ELF格式、无Node PATH直接执行、go env GOTOOLCHAIN、依赖锁和构建日志。"
+          "environment": "Go 1.26.8、Node 22.23.3、锁文件安装的 pnpm 12.10.1 native ELF、TypeScript 5.9.3、vue-tsc 3.3.12，GOTOOLCHAIN=local。",
+          "evidence": "go/node/pnpm/typecheck工具版本、pnpm及平台native npm integrity和SHA-256、ELF格式、无Node PATH直接执行、go env GOTOOLCHAIN、依赖锁和构建日志。"
         },
         {
           "id": "S00-03",
@@ -59,8 +59,8 @@
           "id": "S00-08",
           "action": "清理测试环境。",
           "expected": "仅清理本项目测试资源。",
-      "environment": "Each run uses a locked-digest Engine 28 or 29 dind over a dedicated Unix socket; includes an nd-log fixture that writes separate UTF-8 stdout/stderr markers; records actual host Docker CLI/Engine, nested Engine, and locally locked Compose plugin; separate control-suite sentinel; host non-suite containers snapshotted before/after. GitHub CI matrix runs both architectures and both engines.",
-      "evidence": "fixture创建/故障/恢复/清理命令；实际CLI/宿主Engine/测试Engine/Compose版本、插件路径与SHA；从原始json-file日志验证stdout、stderr、UTF-8标记；哨兵保留；宿主daemon非测试容器清理前后ID/name/state相同。"
+          "environment": "Each run uses a locked-digest Engine 28 or 29 dind over a dedicated Unix socket; includes an nd-log fixture that writes separate UTF-8 stdout/stderr markers; records actual host Docker CLI/Engine, nested Engine, and locally locked Compose plugin; separate control-suite sentinel; host non-suite containers snapshotted before/after. GitHub CI matrix runs both architectures and both engines.",
+          "evidence": "fixture创建/故障/恢复/清理命令；实际CLI/宿主Engine/测试Engine/Compose版本、插件路径与SHA；从原始json-file日志验证stdout、stderr、UTF-8标记；哨兵保留；宿主daemon非测试容器清理前后ID/name/state相同。"
         }
       ]
     },
@@ -176,7 +176,7 @@
           "id": "S02-03",
           "action": "Agent重启。",
           "expected": "使用原身份重新连接。",
-          "environment": "真实systemd Agent及持久凭据目录。",
+          "environment": "GitHub-hosted Linux amd64/arm64; real Agent restart with retained private credentials and a separate disposable CI systemd manager run as the explicitly selected OS user.",
           "evidence": "重启前后Agent/Node ID一致及连接日志。"
         },
         {
@@ -225,15 +225,87 @@
           "id": "S02-10",
           "action": "关闭全部浏览器。",
           "expected": "Agent仍正常连接及上报。",
-          "environment": "Core、Agent及断开的所有浏览器会话。",
-          "evidence": "连续指标/心跳记录和浏览器连接数。"
+          "environment": "Real Core, Agent and two authenticated administrator dashboard WebSockets; close every browser connection before comparing the same Agent generation and persisted heartbeat sequence.",
+          "evidence": "Dashboard WebSocket handshake/close counts, heartbeat_sequence and generation before and after browser close, and actual Agent process log."
         },
         {
           "id": "S02-11",
           "action": "检查Agent进程监听端口。",
           "expected": "无新增管理监听端口。",
-          "environment": "运行Agent的Linux节点。",
-          "evidence": "ss/lsof监听快照及Agent PID归属。"
+          "environment": "GitHub-hosted Linux amd64/arm64; compile and launch nodedance-agent CLI against a real Core, then map that PID’s /proc file-descriptor socket inodes to tcp/tcp6 listener tables.",
+          "evidence": "Compiler version and command, child PID, established outbound WSS, per-PID listener inode scan and empty listener result."
+        }
+      ],
+      "supplemental_tests": [
+        {
+          "id": "S02-SUP-01",
+          "action": "用同协议版本Agent发送语法正确但Core未知的能力字符串。",
+          "expected": "正常握手；未知能力不协商，也不导致整个Agent被拒绝。",
+          "environment": "真实Core WSS与受控协议客户端。",
+          "evidence": "HELLO能力集合、WELCOME协商集合及连接状态。"
+        },
+        {
+          "id": "S02-SUP-02",
+          "action": "Core仅保存pending轮换摘要时停止Agent并执行身份恢复。",
+          "expected": "旧active凭据与本地pending凭据均保留；重连后完成同一轮换。",
+          "environment": "真实Core/Agent，控制HELLO到达时点及Agent停止。",
+          "evidence": "Core摘要状态、本地配置轮换前后摘要和重连代际。"
+        },
+        {
+          "id": "S02-SUP-03",
+          "action": "Core已提交凭据轮换但WELCOME丢失，然后以普通Agent run重启并再请求一次轮换。",
+          "expected": "Agent先用pending凭据读取active身份，持久晋升后以新凭据连接；第二次轮换成功且不留旧rotation ID。",
+          "environment": "真实Core/Agent与仅丢弃一次WELCOME的TLS代理。",
+          "evidence": "丢失WELCOME、Core active摘要、本地凭据状态、重启连接generation及第二次轮换结果。"
+        },
+        {
+          "id": "S02-SUP-04",
+          "action": "在隔离Linux CI systemd manager中保留字面路径参数探针，并调用agent.InstallSystemd安装本次编译的真实nodedance-agent，以nobody运行、连接真实TLS Core后执行systemctl restart。",
+          "expected": "预存固定unit或enabled link时拒绝安装；特殊路径按原字面到达且无shell解释；真实CLI以nobody运行并完成Core身份注册和Heartbeat；重启后MainPID变化、generation增加、node/device身份及credential摘要保持且新generation继续Heartbeat；错误用户或配置归属仍拒绝。",
+          "environment": "GitHub-hosted Linux root/systemd runner；本次make build生成的Agent CLI、真实TLS Core和隔离工作目录；真实systemctl执行；不依赖用户VPS且不在开发宿主机安装服务。",
+          "evidence": "原参数探针捕获、unit/LoadState预检、实际MainPID及/proc EUID/可执行文件、Core nodeId/agentId/generation/heartbeat序列、重启前后credential摘要比较，以及只清理本测试unit/文件的结果；私有配置和凭据不得上传。"
+        },
+        {
+          "id": "S02-SUP-05",
+          "action": "通过真实WSS在默认离线期限前1ms及精确期限时发送主机Heartbeat。",
+          "expected": "期限前接受；精确期限的帧拒绝且连接离线，序号和租约不被刷新。",
+          "environment": "真实TLS/WSS Core；仅在边界测试中注入可控Core时钟，生产30秒阈值另由SUP-06实测。",
+          "evidence": "逐帧generation/sequence/ACK、期限时间、最后有效上报和最终离线状态。"
+        },
+        {
+          "id": "S02-SUP-06",
+          "action": "使用生产默认5秒Agent心跳及30秒Core失联阈值，断开真实Agent WebSocket并等待离线恢复。",
+          "expected": "测得心跳间隔约5秒；Core从最后有效心跳开始在不超过30秒内标记离线，网络恢复后建立新generation。",
+          "environment": "真实Core与三Agent TLS/WSS运行；使用默认生产时钟和阈值，不用虚拟时钟缩短此项。",
+          "evidence": "带UTC时间戳的心跳序号/最后有效上报、网络故障时间、实际offline updated_at、期限差和恢复generation。"
+        },
+        {
+          "id": "S02-SUP-07",
+          "action": "在Core提交一次性注册后丢弃HTTP响应，Agent重启并仅凭预先持久化设备凭据恢复身份。",
+          "expected": "恢复原Agent/Node身份；enroll token不重放、不返回第二身份，Core仅存摘要。",
+          "environment": "真实Core API/Agent与仅丢弃一次注册响应的TLS代理。",
+          "evidence": "HTTP响应丢失、设备凭据身份查询结果、节点/设备数量及数据库摘要检查。"
+        },
+        {
+          "id": "S02-SUP-08",
+          "action": "暂停离线状态持久化清理，在有效租约deadline前1ms和精确deadline查询真实Core Agent API。",
+          "expected": "deadline前仍返回online；精确deadline返回offline并提供leaseValidUntil，即使SQLite状态仍暂时为online；迟到Heartbeat被拒绝。",
+          "environment": "真实TLS/WSS Core和受认证HTTP API；逻辑时钟仅用于瞬间到达生产默认30秒边界；关闭同步列表清理并将后台清理周期设为30秒。",
+          "evidence": "两次API serverTime/status/leaseValidUntil、deadline前WSS ACK、exact-deadline持久状态/generation、迟到帧拒绝和租约清理仍异步的断言日志。"
+        },
+        {
+          "id": "S02-SUP-09",
+          "action": "执行快速断开、认证重连，再执行真实Agent进程重连。",
+          "expected": "普通断开期间保留当前lease watcher；每次更高generation接管时立即取消并join旧watcher；每个Agent最多保留一个watcher。",
+          "environment": "真实Core/Agent WSS与同一设备凭据的受控网络关闭/重连。",
+          "evidence": "断开前后connection generation、旧watcher done信号、按Agent统计的当前watcher数及Core.Close后join结果。"
+        },
+        {
+          "id": "S02-SUP-10",
+          "action": "断开真实Core/Agent WSS后关闭Core进程。",
+          "expected": "普通断开后lease watcher继续运行；Core.Close取消并join它，返回前清空watcher owner。",
+          "environment": "真实Core HTTPS/WSS、设备认证及单Agent租约；测试数据限定在私有临时目录。",
+          "evidence": "活动generation、断开后watchDone未关闭、Core.Close返回、watchDone关闭及owner map清空断言。"
         }
       ]
     },

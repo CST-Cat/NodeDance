@@ -134,15 +134,13 @@ Reproduce after the owner-marked Engine is already running with
 `./scripts/test/s04-docker-p95-dind.sh 28` or `... 29`. The harness retains
 every run, including failed runs, under `.artifacts/s04/`.
 
-`TestS04BoundedBatchFitsCurrentS02EnvelopeMirror` also checks a near-maximum
-actual `protocol.DockerBatch` payload embedded in the current S02 Envelope JSON
-field layout. It uses `protocol.MarshalDockerBatch` and Agent-to-DTO conversion,
-then checks the 64 KiB payload bound and 1 MiB outer-frame ceiling. The outer
-Envelope remains a test-only mirror because this worktree cannot import S02's
-`internal/protocol.Envelope` from its sibling worktree. It must be replaced
-with the real `protocol.Envelope` and verified over WSS after S02 is integrated;
-it is not final frame or network-path acceptance evidence. The current
-component fixture measured 60,388 payload bytes and 60,508 mirror-frame bytes.
+`TestS04BoundedBatchFitsCurrentS02Envelope` checks a near-maximum actual
+`protocol.DockerBatch` payload embedded in the real S02 `protocol.Envelope`. It
+uses `protocol.MarshalDockerBatch` and Agent-to-DTO conversion, then checks the
+64 KiB payload bound and 1 MiB outer-frame ceiling. This is component-level
+JSON framing only: it does not traverse the Agent runtime, Core persistence, or
+WSS and is not final network-path acceptance evidence. The fixture measured
+60,388 payload bytes and 60,508 envelope bytes.
 
 The two 100-change runs establish only the isolated Agent-module
 Engine/Discoverer/observer path. They are not the full S04-SUP-01 result because
