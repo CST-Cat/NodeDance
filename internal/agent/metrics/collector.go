@@ -414,5 +414,11 @@ func sameStrings(left, right []string) bool {
 func cloneDiskSnapshot(in DiskSnapshot) DiskSnapshot {
 	out := in
 	out.Mounts = append([]DiskMount(nil), in.Mounts...)
+	for index := range out.Mounts {
+		if value := out.Mounts[index].Usage.Value; value != nil {
+			usageCopy := *value
+			out.Mounts[index].Usage.Value = &usageCopy
+		}
+	}
 	return out
 }
