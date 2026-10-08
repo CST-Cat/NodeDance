@@ -307,7 +307,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/") {
-		current, ok := s.authenticateRequest(w, r, true)
+		// The node dashboard polls these two read-only telemetry endpoints in
+		// the background. They still require a live session, but polling must
+		// not keep an otherwise idle browser session alive indefinitely.
+		current, ok := s.authenticateRequest(w, r, !isMetricsTelemetryRead(r))
 		if !ok {
 			http.Error(w, "authentication required", http.StatusUnauthorized)
 			return
@@ -346,6 +349,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.assets.ServeHTTP(w, r)
+}
+
+func isMetricsTelemetryRead(r *http.Request) bool {
+	if r == nil || r.Method != http.MethodGet {
+		return false
+	}
+	if r.URL.Path == "/api/v1/nodes" {
+		return true
+	}
+	if !strings.HasPrefix(r.URL.Path, "/api/v1/nodes/") || !strings.HasSuffix(r.URL.Path, "/metrics") {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/nodes/"), "/")
+	return len(parts) == 2 && parts[1] == "metrics" && validUUID(parts[0])
 }
 
 func (s *Server) setSecurityHeaders(w http.ResponseWriter) {
