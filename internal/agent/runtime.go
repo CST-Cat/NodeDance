@@ -21,11 +21,12 @@ import (
 )
 
 const (
-	connectTimeout       = 10 * time.Second
-	rotationAckTimeout   = 5 * time.Second
-	heartbeatAckTimeout  = 15 * time.Second
-	minimumReconnectWait = time.Second
-	maximumReconnectWait = 30 * time.Second
+	connectTimeout          = 10 * time.Second
+	rotationAckTimeout      = 5 * time.Second
+	heartbeatAckTimeout     = 15 * time.Second
+	minimumReconnectWait    = time.Second
+	maximumReconnectWait    = 30 * time.Second
+	maximumReconnectAttempt = 5
 )
 
 var errReconnectAfterRotation = errors.New("credential rotation acknowledged")
@@ -34,6 +35,26 @@ type socketRead struct {
 	typeID websocket.MessageType
 	data   []byte
 	err    error
+}
+
+// reconnectBackoff tracks failed connection attempts. A validated WELCOME
+// starts a fresh retry sequence, even if the connection later drops.
+type reconnectBackoff struct {
+	attempt int
+}
+
+func (b *reconnectBackoff) connected() {
+	b.attempt = 0
+}
+
+func (b *reconnectBackoff) failed() {
+	if b.attempt < maximumReconnectAttempt {
+		b.attempt++
+	}
+}
+
+func (b reconnectBackoff) delay() time.Duration {
+	return reconnectDelay(b.attempt)
 }
 
 func DefaultConfigPath() (string, error) {
@@ -71,7 +92,8 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		cancelCollector()
 		<-collector.Done()
 	}()
-	for attempt := 0; ; attempt++ {
+	var backoff reconnectBackoff
+	for {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
@@ -79,15 +101,21 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		if err != nil {
 			return fmt.Errorf("reload Agent credentials: %w", err)
 		}
-		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates)
+		established := false
+		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates, func() {
+			established = true
+		})
+		if established {
+			backoff.connected()
+		}
 		if errors.Is(connectionErr, errReconnectAfterRotation) {
-			attempt = -1
+			backoff.connected()
 			continue
 		}
 		if ctx.Err() != nil {
 			return nil
 		}
-		delay := reconnectDelay(attempt)
+		delay := backoff.delay()
 		if stderr != nil {
 			fmt.Fprintf(stderr, "Agent connection unavailable; retrying in %s (%s)\n", delay, safeConnectionError(connectionErr))
 		}
@@ -100,10 +128,11 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 			return nil
 		case <-timer.C:
 		}
+		backoff.failed()
 	}
 }
 
-func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot) error {
+func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, onEstablished func()) error {
 	credential := config.Credential
 	pendingCredentialAlreadyActive := false
 	if config.PendingCredential != "" {
@@ -172,6 +201,9 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	var welcome protocol.Welcome
 	if err := decodeSocketPayload(envelope.Payload, &welcome); err != nil || !validWelcome(config, envelope.Generation, welcome) {
 		return errors.New("Core welcome is invalid")
+	}
+	if onEstablished != nil {
+		onEstablished()
 	}
 	if welcome.CredentialRotationDone || pendingCredentialAlreadyActive {
 		if credential != config.PendingCredential || config.PendingCredential == "" || config.PendingRotationID == "" {
@@ -478,6 +510,19 @@ func agentWebSocketURL(server string) (string, error) {
 }
 
 func reconnectDelay(attempt int) time.Duration {
+	minimum, maximum := reconnectDelayRange(attempt)
+	width := maximum - minimum
+	if width <= 0 {
+		return minimum
+	}
+	value, err := rand.Int(rand.Reader, big.NewInt(int64(width)+1))
+	if err != nil {
+		return minimum + width/2
+	}
+	return minimum + time.Duration(value.Int64())
+}
+
+func reconnectDelayRange(attempt int) (time.Duration, time.Duration) {
 	base := minimumReconnectWait
 	for index := 0; index < attempt && base < maximumReconnectWait; index++ {
 		base *= 2
@@ -486,14 +531,15 @@ func reconnectDelay(attempt int) time.Duration {
 		}
 	}
 	spread := int64(base / 5)
-	if spread <= 0 {
-		return base
+	minimum := base - time.Duration(spread)
+	if minimum < minimumReconnectWait {
+		minimum = minimumReconnectWait
 	}
-	value, err := rand.Int(rand.Reader, big.NewInt(spread*2+1))
-	if err != nil {
-		return base
+	maximum := base + time.Duration(spread)
+	if maximum > maximumReconnectWait {
+		maximum = maximumReconnectWait
 	}
-	return base - time.Duration(spread) + time.Duration(value.Int64())
+	return minimum, maximum
 }
 
 func resetTimer(timer *time.Timer, duration time.Duration) {
