@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -44,6 +43,9 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	flags.SetOutput(stderr)
 	listenFlag := flags.String("listen", "", "IP:port to listen on")
 	configFlag := flags.String("config", "", "path to config JSON file")
+	dataDirFlag := flags.String("data-dir", "", "path to Core data directory")
+	publicOriginFlag := flags.String("public-origin", "", "public HTTPS origin used for browser Origin validation")
+	trustedProxiesFlag := flags.String("trusted-proxies", "", "comma-separated trusted proxy IPs or CIDRs")
 	dev := flags.Bool("dev", false, "development mode; requires a loopback address")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -56,8 +58,8 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	if configPath == "" {
 		if value, ok := lookup("NODEDANCE_CONFIG"); ok && value != "" {
 			configPath = value
-		} else if home, err := os.UserConfigDir(); err == nil {
-			configPath = filepath.Join(home, "nodedance", "config.json")
+		} else if configHome, err := os.UserConfigDir(); err == nil {
+			configPath = config.DefaultConfigPath(configHome)
 		}
 	}
 	fileConfig, err := config.Load(configPath)
@@ -65,6 +67,14 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 		return err
 	}
 	envListen, _ := lookup("NODEDANCE_LISTEN")
+	envDataDir, _ := lookup("NODEDANCE_DATA_DIR")
+	dataDir := config.ResolveDataDir(config.Sources{
+		CLIDataDir:  *dataDirFlag,
+		EnvDataDir:  envDataDir,
+		Config:      fileConfig,
+		XDGDataHome: lookupValue(lookup, "XDG_DATA_HOME"),
+		UserHome:    userHome(),
+	})
 	listen, err := config.ResolveListen(config.Sources{
 		CLIListen: *listenFlag,
 		EnvListen: envListen,
@@ -80,11 +90,45 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	} else if err := config.ValidateListen(listen); err != nil {
 		return err
 	}
-
-	serverInstance, err := server.New(version)
+	publicOrigin := firstNonEmpty(*publicOriginFlag, lookupValue(lookup, "NODEDANCE_PUBLIC_ORIGIN"), fileConfig.PublicOrigin)
+	if err := config.ValidatePublicOrigin(publicOrigin, *dev); err != nil {
+		return err
+	}
+	trustedProxyValues := fileConfig.TrustedProxies
+	if value := firstNonEmpty(*trustedProxiesFlag, lookupValue(lookup, "NODEDANCE_TRUSTED_PROXIES")); value != "" {
+		trustedProxyValues = splitCSV(value)
+	}
+	if _, err := config.ParseTrustedProxies(trustedProxyValues); err != nil {
+		return err
+	}
+	idleTimeout, loginMaxAttempts, loginLockout, err := config.RuntimeValues(fileConfig, *dev)
 	if err != nil {
 		return err
 	}
+	websocketCheckInterval, err := config.RuntimeWebSocketCheckInterval(fileConfig, *dev)
+	if err != nil {
+		return err
+	}
+
+	listener, err := net.Listen("tcp", listen)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", listen, err)
+	}
+	defer listener.Close()
+	serverInstance, err := server.New(version, server.Options{
+		DataDir:                dataDir,
+		Development:            *dev,
+		PublicOrigin:           publicOrigin,
+		TrustedProxies:         trustedProxyValues,
+		SessionIdleTimeout:     idleTimeout,
+		LoginMaxAttempts:       loginMaxAttempts,
+		LoginLockoutDuration:   loginLockout,
+		WebSocketCheckInterval: websocketCheckInterval,
+	})
+	if err != nil {
+		return err
+	}
+	defer serverInstance.Close()
 	httpServer := &http.Server{
 		Addr:              listen,
 		Handler:           serverInstance,
@@ -94,11 +138,10 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	serveCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	serveErr := make(chan error, 1)
-	listener, err := net.Listen("tcp", listen)
-	if err != nil {
-		return fmt.Errorf("listen on %s: %w", listen, err)
-	}
 	fmt.Fprintf(stdout, "NodeDance listening on http://%s\n", listen)
+	if credentialPath, ok := serverInstance.SetupCredentialPath(); ok {
+		fmt.Fprintf(stdout, "First-run setup credential file: %s\n", credentialPath)
+	}
 	go func() { serveErr <- httpServer.Serve(listener) }()
 	select {
 	case <-serveCtx.Done():
@@ -118,7 +161,38 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "NodeDance - unified Linux server and container management")
-	fmt.Fprintln(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--dev]")
+	fmt.Fprintln(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--dev]")
 	fmt.Fprintln(w, "       nodedance version")
 	fmt.Fprintln(w, "Default listen address: 127.0.0.1:8180")
+}
+
+func lookupValue(lookup LookupEnv, name string) string {
+	value, _ := lookup(name)
+	return value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func splitCSV(value string) []string {
+	items := strings.Split(value, ",")
+	result := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
+func userHome() string {
+	home, _ := os.UserHomeDir()
+	return home
 }

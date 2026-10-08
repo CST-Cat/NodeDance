@@ -2,7 +2,7 @@
 
 本文是项目当前执行基线，正式名称 **NodeDance**，默认端口 **127.0.0.1:8180**。它替代旧方案中的 NodeDeck 品牌和 3080 示例端口。全部功能都必须完成；P0/P1/P2 只规定顺序，不是删减范围。此文、[原始设计底稿](design-source.md)、[用户授权修订](plan-amendments.md)、[需求追踪](requirements.json)和[182项规范验收登记表](../tests/registry.json)共同构成可审阅计划。
 
-项目当前从 S00 开始。正文中的命令、接口和结果是待实现契约；仅在带有实际运行报告且结果为 `PASS` 时，才表示该检查已通过。源码、工作流、模拟数据、截图和旧报告本身都不能代替本次实际验收。
+当前代码包含 S00 基础与 S01 Core 存储、管理员认证、Session、审计和登录外观；Agent 注册及后续 S02–S17 仍未实现。正文中的命令、接口和结果是待实现契约；仅在带有本次实际运行报告且结果为 `PASS` 时，才表示该检查已通过。源码、工作流、模拟数据、截图和旧报告本身都不能代替本次实际验收。
 
 ## 1. 项目目标与范围
 
@@ -59,7 +59,7 @@ NodeDance 是面向单管理员的多节点 Linux 服务器与 Docker 容器统�
 | `/ws/v1/dashboard` | 浏览器实时推送 |
 | `/ws/v1/streams/*` | 受控日志、终端等数据流 |
 
-S00 只允许健康接口，不开放管理数据、API 或 WebSocket。每增加入口必须补鉴权测试。浏览器 Session 与 Agent 设备凭据相互独立。WebSocket 的来源、Session、撤销和有效期必须由服务器检查。默认只有登录页主动公开的信息可匿名读取；不得在 HTML、静态资源、API、缓存或日志暴露节点、IP、容器和指标。
+S00 只允许健康接口，不开放管理数据、API 或 WebSocket；从 S01 起，匿名接口限于初始化状态、CSRF challenge、健康状态和登录页明确公开的外观。其他管理数据、API 与浏览器 WebSocket 都必须由服务端 Session 检查。每增加入口必须补鉴权测试。浏览器 Session 与 Agent 设备凭据相互独立。WebSocket 的来源、Session、撤销和有效期必须由服务器检查。不得在 HTML、静态资源、API、缓存或日志暴露节点、IP、容器和指标。
 
 Docker Engine 是 Docker 当前状态的唯一事实来源；别名、顺序、图标和备注属于 NodeDance 展示偏好。未知、过期和采集失败均不能写成零值。Agent 失联后容器信息必须标过期，Agent 在线与 Docker 可用分别判断。所有写操作先通过 Core 鉴权和 Agent 能力检查；同一资源的冲突写操作串行。断线后非幂等操作不得盲目重放。
 
@@ -79,6 +79,9 @@ make build
 make test-stage STAGE=S00
 make test-integration STAGE=S00
 make test-e2e STAGE=S00
+make test-stage STAGE=S01
+make test-integration STAGE=S01
+make test-e2e STAGE=S01
 make test-acceptance
 ```
 

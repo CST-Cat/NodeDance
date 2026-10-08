@@ -1,4 +1,4 @@
-name: NodeDance S00 acceptance
+name: NodeDance stage acceptance
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: nodedance-s00-${{ github.workflow }}-${{ github.ref }}
+  group: nodedance-stages-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -67,4 +67,54 @@ jobs:
             reports/stages/S00.json
             reports/status.json
             .artifacts/logs/acceptance/
+            .artifacts/stage-runs/
+
+  s01:
+    name: S01 / ubuntu-24.04 / Chromium, WebKit, Firefox
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      NODEDANCE_TEST_RUNNER: ubuntu-24.04
+      NODEDANCE_PLAYWRIGHT_PROJECTS: chromium,webkit,firefox
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize fresh S01 evidence without checkout-time results
+        run: rm -f reports/stages/S01.json reports/status.json && python3 scripts/ci_evidence.py --stage S01 initialize
+
+      - name: Install and verify locked Go, Node, native pnpm and Compose tools
+        run: make verify-tools
+
+      - name: Verify per-run report and artifact safeguards
+        run: make verify-ci-evidence
+
+      - name: Install locked project dependencies
+        run: make deps
+
+      - name: Install browsers for locked Playwright
+        run: make playwright-install
+
+      - name: Run checks, dual-architecture builds and three full S01 acceptance passes
+        run: make test-stage STAGE=S01
+
+      - name: Attach current GitHub run metadata to S01 report
+        if: always()
+        run: python3 scripts/ci_evidence.py --stage S01 annotate
+
+      - name: Prepare evidence directories
+        if: always()
+        run: mkdir -p reports/stages .artifacts/logs/acceptance-s01 .artifacts/stage-runs
+
+      - name: Preserve structured reports and sanitized acceptance logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s01-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            reports/stages/S01.json
+            reports/status.json
+            .artifacts/logs/acceptance-s01/
             .artifacts/stage-runs/

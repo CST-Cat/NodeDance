@@ -157,11 +157,107 @@ def test_workflow_upload_is_hidden_file_aware_and_allowlisted():
     require(not any(".tools" in path or ".build" in path or "node_modules" in path
                     for path in paths), "artifact allowlist contains tool/build caches")
 
+    s01_start = workflow.index("rm -f reports/stages/S01.json reports/status.json && python3 scripts/ci_evidence.py --stage S01 initialize")
+    s01_positions = [workflow.index(value, s01_start) for value in (
+        "rm -f reports/stages/S01.json reports/status.json && python3 scripts/ci_evidence.py --stage S01 initialize",
+        "run: make verify-tools",
+        "run: make verify-ci-evidence",
+        "run: make deps",
+        "run: make playwright-install",
+        "run: make test-stage STAGE=S01",
+        "python3 scripts/ci_evidence.py --stage S01 annotate",
+        "uses: actions/upload-artifact@",
+    )]
+    require(s01_positions == sorted(s01_positions), "S01 workflow is missing isolated fresh evidence, locked browser install, or final report steps")
+    s01_upload_start = workflow.index("name: nodedance-s01-")
+    s01_upload = workflow[s01_upload_start:]
+    path_index = next((i for i, line in enumerate(s01_upload.splitlines())
+                       if re.match(r"\s+path:\s*\|\s*$", line)), None)
+    require(path_index is not None, "S01 artifact upload has no explicit path allowlist")
+    s01_lines = s01_upload.splitlines()
+    s01_paths = []
+    for line in s01_lines[path_index + 1:]:
+        if not line.startswith("            "):
+            break
+        s01_paths.append(line.strip())
+    expected_s01 = {
+        "reports/stages/S01.json",
+        "reports/status.json",
+        ".artifacts/logs/acceptance-s01/",
+        ".artifacts/stage-runs/",
+    }
+    require(set(s01_paths) == expected_s01 and len(s01_paths) == len(expected_s01),
+            f"S01 artifact paths differ from the explicit safe evidence allowlist: {s01_paths}")
+    require(not any("work-s01" in path or "test-results" in path or "playwright-report" in path
+                    or ".tools" in path or ".build" in path or "node_modules" in path
+                    for path in s01_paths), "S01 artifact allowlist includes private work data or caches")
+    makefile = (ROOT / "Makefile").read_text()
+    require("playwright-install: deps" in makefile
+            and "pnpm --dir web exec playwright install --with-deps $(PLAYWRIGHT_BROWSERS)" in makefile
+            and "PLAYWRIGHT_BROWSERS ?= chromium webkit firefox" in makefile,
+            "Playwright browser installation is not routed through the locked Make PATH/version")
+    require(len(re.findall(r"^\s+- runner: ubuntu-24\.04$", workflow, re.M)) == 2
+            and len(re.findall(r"^\s+- runner: ubuntu-24\.04-arm$", workflow, re.M)) == 2
+            and "matrix:\n        include:" in workflow
+            and workflow.count("engine: '28'") == 2 and workflow.count("engine: '29'") == 2,
+            "S01 CI changes removed the original four S00 runner/engine combinations")
+
+
+def test_s01_marker_and_report_are_isolated_from_s00():
+    metadata_s00 = EVIDENCE.metadata_from_values(
+        run_id="100", run_attempt="1", sha="b" * 40,
+        job="s00", runner="ubuntu-24.04", engine="28",
+    )
+    metadata_s01 = EVIDENCE.metadata_from_values(
+        run_id="100", run_attempt="1", sha="b" * 40,
+        job="s01", runner="ubuntu-24.04", engine="not-applicable", stage="S01",
+    )
+    with tempfile.TemporaryDirectory(prefix="nodedance-ci-stage-isolation-") as temporary:
+        root = pathlib.Path(temporary)
+        status_path = root / "reports/status.json"
+        s00_report = root / "reports/stages/S00.json"
+        s01_report = root / "reports/stages/S01.json"
+        s00_marker = root / ".artifacts/ci-evidence/current-job.json"
+        s01_marker = root / ".artifacts/ci-evidence/S01/current-job.json"
+        EVIDENCE.initialize(s00_report, status_path, s00_marker, metadata=metadata_s00)
+        s00_marker_before = s00_marker.read_text()
+        s01_cases = EVIDENCE.stage_cases(stage="S01")
+        initialized = EVIDENCE.initialize(
+            s01_report, status_path, s01_marker, metadata=metadata_s01, stage="S01",
+        )
+        require(initialized["stage"] == "S01" and set(initialized["tests"]) == {case["id"] for case in s01_cases},
+                "S01 initialization did not list every original S01 case")
+        require(initialized["status"] == "NOT_READY" and all(not item["runs"] for item in initialized["tests"].values()),
+                "S01 initialization inherited test outcomes")
+        require(s00_marker.read_text() == s00_marker_before and s01_marker.is_file(),
+                "S01 initialization mutated or reused the S00 marker")
+
+        stale_s01 = dict(initialized)
+        stale_s01.update({
+            "run_id": "stale-pass", "mode": "full", "status": "PASS",
+            "updated_at": (dt.datetime.fromisoformat(metadata_s01["initialized_at"])
+                           - dt.timedelta(seconds=1)).isoformat(),
+        })
+        stale_s01["tests"] = {
+            case["id"]: {"status": "PASS", "runs": [
+                {"attempt": number, "status": "PASS"} for number in (1, 2, 3)
+            ]} for case in s01_cases
+        }
+        s01_report.write_text(json.dumps(stale_s01))
+        replaced = EVIDENCE.annotate(
+            s01_report, status_path, s01_marker, metadata=metadata_s01, stage="S01",
+        )
+        require(replaced["status"] == "NOT_READY" and replaced["run_id"] == "ci-" + metadata_s01["job_key"],
+                "S01 annotate accepted a stale PASS")
+        require(s00_marker.read_text() == s00_marker_before,
+                "S01 annotate mutated the S00 marker")
+
 
 def main():
     test_stale_pass_is_replaced_and_current_status_is_preserved()
+    test_s01_marker_and_report_are_isolated_from_s00()
     test_workflow_upload_is_hidden_file_aware_and_allowlisted()
-    print("CI evidence safeguards PASS: stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
+    print("CI evidence safeguards PASS: S00/S01 marker isolation, stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
 
 
 if __name__ == "__main__":

@@ -4,15 +4,23 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestHealthIsPublicAndContainsNoPrivateData(t *testing.T) {
-	s, err := New("test")
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	s, err := New("test", Options{DataDir: filepath.Join(t.TempDir(), "data"), Development: true})
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func TestHealthIsPublicAndContainsNoPrivateData(t *testing.T) {
+	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, r)
@@ -32,25 +40,25 @@ func TestHealthIsPublicAndContainsNoPrivateData(t *testing.T) {
 }
 
 func TestManagementEntrypointsAreAbsent(t *testing.T) {
-	s, err := New("test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, path := range []string{"/api/v1/nodes", "/api/v1/auth/login", "/ws/v1/agent", "/ws/v1/dashboard"} {
+	s := newTestServer(t)
+	for _, path := range []string{"/api/v1/nodes", "/api/v1/nodes/1/containers", "/ws/v1/agent", "/ws/v1/dashboard"} {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, r)
-		if w.Code != http.StatusNotFound {
-			t.Errorf("%s status=%d, want 404", path, w.Code)
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("%s status=%d, want 401", path, w.Code)
 		}
+	}
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/auth/login", nil)
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET /api/v1/auth/login status=%d, want 405", w.Code)
 	}
 }
 
 func TestEmbeddedHomeIsServed(t *testing.T) {
-	s, err := New("test")
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := newTestServer(t)
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	s.ServeHTTP(w, r)

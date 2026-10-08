@@ -39,7 +39,7 @@
           "action": "将端口改为18180。",
           "expected": "Web、API、WebSocket使用配置端口。",
           "environment": "隔离端口18180；CLI、环境变量、配置文件分别验证优先级。",
-          "evidence": "每种来源的绑定地址、HTTP响应；未实现的私有API/WS路径必须为404。"
+          "evidence": "每种来源的绑定地址、HTTP响应；未登录的私有API/WS路径必须为401且不含私有数据。"
         },
         {
           "id": "S00-06",

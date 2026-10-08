@@ -108,7 +108,7 @@ def main():
     if args.stage not in {stage["id"] for stage in REGISTRY["stages"]}:
         parser.error(f"{args.stage} is absent from tests/registry.json")
 
-    if args.stage != "S00":
+    if args.stage not in {"S00", "S01"}:
         return not_ready_report(
             args.stage, args.mode,
             f"{args.stage} is outside the S00 implementation milestone; its implementation and executable acceptance checks are not present. This report lists every original case individually. A previous report cannot satisfy a current run.",
@@ -120,8 +120,8 @@ def main():
         if code := preflight(args.stage, args.mode):
             return code
     repeat = 3 if args.mode == "full" else 1
-    command = [sys.executable, "scripts/acceptance-s00.py", "--mode", args.mode,
-               "--repeat", str(repeat)]
+    acceptance = "scripts/acceptance-s00.py" if args.stage == "S00" else "scripts/acceptance-s01.py"
+    command = [sys.executable, acceptance, "--mode", args.mode, "--repeat", str(repeat)]
     return subprocess.run(command, cwd=ROOT).returncode
 
 

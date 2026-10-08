@@ -48,8 +48,17 @@ for stage in REGISTRY["stages"]:
                     case_errors.append(f"{case_id} is not PASS in all three current runs")
             elif sid == "S00" and report.get("mode") == "full" and case.get("status") != "PASS" and case.get("status") != "FAIL" and case.get("status") != "NOT_READY":
                 case_errors.append(f"{case_id} has invalid S00 full-run status")
+            elif sid == "S01" and report.get("mode") == "full":
+                case_status = case.get("status")
+                if case_status not in {"PASS", "FAIL", "NOT_READY"}:
+                    case_errors.append(f"{case_id} has invalid S01 full-run status")
+                elif case_status == "PASS" and ([item.get("attempt") for item in attempts] != [1, 2, 3] or any(item.get("status") != "PASS" for item in attempts)):
+                    case_errors.append(f"{case_id} is PASS without three current executions")
+                elif case_status in {"FAIL", "NOT_READY"} and attempts and any(item.get("status") not in {"PASS", "FAIL", "NOT_READY"} for item in attempts):
+                    case_errors.append(f"{case_id} has an invalid S01 run status")
             elif sid != "S00" and (case.get("status") != "NOT_READY" or attempts):
-                case_errors.append(f"{case_id} has an impossible non-S00 result in the current S00 milestone")
+                if sid != "S01":
+                    case_errors.append(f"{case_id} has an impossible non-S00/S01 result in the current implementation milestone")
         if case_errors:
             statuses[sid] = {"status": "FAIL", "reason": "; ".join(case_errors)}
         elif result.returncode == 0 and report.get("status") != "PASS":

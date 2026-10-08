@@ -57,7 +57,8 @@
     "github.com/coder/websocket": "v1.8.15",
     "github.com/moby/moby/client": "v0.6.1",
     "github.com/shirou/gopsutil/v4": "v4.26.9",
-    "modernc.org/sqlite": "v1.60.1"
+    "modernc.org/sqlite": "v1.60.1",
+    "golang.org/x/crypto": "v0.57.0"
   },
   "frontend": {
     "vue": "3.5.43",
@@ -69,7 +70,8 @@
     "@xterm/xterm": "6.0.0",
     "@xterm/addon-fit": "0.11.0",
     "vue-tsc": "3.3.12",
-    "@types/node": "22.20.5"
+    "@types/node": "22.20.5",
+    "@playwright/test": "1.64.0"
   },
   "compose": {
     "version": "5.4.0",

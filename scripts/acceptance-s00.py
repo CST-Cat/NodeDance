@@ -24,6 +24,7 @@ S00_CASES = next(item["tests"] for item in REGISTRY["stages"] if item["id"] == "
 ARTIFACTS = ROOT / ".artifacts"
 LOGS = ARTIFACTS / "logs" / "acceptance"
 WORKTREES = ARTIFACTS / "worktrees"
+WORKDATA = ARTIFACTS / "work-s00"
 REPORT = ROOT / "reports" / "stages" / "S00.json"
 STATUSES = ROOT / "reports" / "status.json"
 RUN_ID = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
@@ -40,6 +41,13 @@ def now():
 
 def attempt_dir():
     return LOGS / RUN_ID / f"attempt-{CURRENT_ATTEMPT}"
+
+
+def work_attempt_dir():
+    path = WORKDATA / RUN_ID / f"attempt-{CURRENT_ATTEMPT}"
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(path, 0o700)
+    return path
 
 
 def log_command(label, argv, *, env=None, cwd=ROOT, timeout=900):
@@ -129,8 +137,8 @@ def assert_http_bundle(port, *, expected_title=b"NodeDance", require_root=True):
     # S00 must not accidentally expose unauthenticated management resources.
     for path in ("/api/v1/nodes", "/api/v1/nodes/1/containers", "/ws/v1/agent", "/ws/v1/dashboard"):
         status, _, _ = http_get(port, path)
-        if status != 404:
-            raise RuntimeError(f"unimplemented unauthenticated route {path} must return 404, got {status}")
+        if status != 401:
+            raise RuntimeError(f"private unauthenticated route {path} must return 401, got {status}")
 
 
 def case_01():
@@ -181,7 +189,10 @@ def case_02():
     with pnpm_binary.open("rb") as stream:
         if stream.read(4) != b"\x7fELF":
             raise RuntimeError(f"locked pnpm is not a directly executable native ELF: {pnpm_binary}")
-    isolated_env = {"HOME": str(ARTIFACTS / RUN_ID / "case-02-empty-home"), "PATH": "/nonexistent"}
+    isolated_home = work_attempt_dir() / "case-02-empty-home"
+    isolated_home.mkdir(parents=True, exist_ok=True)
+    isolated_env = {"HOME": str(isolated_home), "XDG_DATA_HOME": str(isolated_home / ".local" / "share"),
+                    "PATH": "/nonexistent"}
     isolated_pnpm = subprocess.check_output([str(pnpm_binary), "--version"], text=True, env=isolated_env).strip()
     if isolated_pnpm != lock["pnpm"]["version"]:
         raise RuntimeError(f"pnpm native executable requires Node/PATH or has wrong version: {isolated_pnpm}")
@@ -236,9 +247,10 @@ def case_03():
 
 
 def case_04():
-    home = ARTIFACTS / RUN_ID / "case-04-home"
+    home = work_attempt_dir() / "case-04-home"
     home.mkdir(parents=True, exist_ok=True)
-    env = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"), "PATH": ""}
+    env = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"),
+           "XDG_DATA_HOME": str(home / ".local" / "share"), "PATH": ""}
     log = attempt_dir() / "case-04-server.log"
     process = start_server([str(ROOT / ".build/nodedance")], env, log)
     try:
@@ -247,7 +259,7 @@ def case_04():
     finally:
         close_server(process)
     return {"command": "nodedance (no args)", "listen": "127.0.0.1:8180",
-            "http": "root=200/no redirect; health=200; management and websocket routes=404",
+            "http": "root=200/no redirect; health=200; private management and websocket routes=401 unauthenticated",
             "log": str(log.relative_to(ROOT))}
 
 
@@ -269,12 +281,13 @@ def run_bound_server(argv, env, port, label, *, expect_start=True):
 
 
 def case_05():
-    home = attempt_dir() / "case-05-home"
+    home = work_attempt_dir() / "case-05-home"
     config_dir = home / ".config" / "nodedance"
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / "config.json"
     config_path.write_text(json.dumps({"listen": "127.0.0.1:18182"}))
-    common = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"), "PATH": os.environ["PATH"]}
+    common = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"),
+              "XDG_DATA_HOME": str(home / ".local" / "share"), "PATH": os.environ["PATH"]}
     logs = []
 
     # CLI overrides environment and file; 18180 is the documented example.
@@ -287,9 +300,10 @@ def case_05():
     env = common | {"NODEDANCE_CONFIG": str(config_path)}
     logs.append(run_bound_server([str(ROOT / ".build/nodedance")], env, 18182, "case-05-config"))
     # Default is selected when all sources are absent (also tested by S00-04).
-    default_home = attempt_dir() / "case-05-default-home"
+    default_home = work_attempt_dir() / "case-05-default-home"
     default_home.mkdir(parents=True, exist_ok=True)
-    env = {"HOME": str(default_home), "XDG_CONFIG_HOME": str(default_home / ".config"), "PATH": os.environ["PATH"]}
+    env = {"HOME": str(default_home), "XDG_CONFIG_HOME": str(default_home / ".config"),
+           "XDG_DATA_HOME": str(default_home / ".local" / "share"), "PATH": os.environ["PATH"]}
     logs.append(run_bound_server([str(ROOT / ".build/nodedance")], env, 8180, "case-05-default"))
     # --dev permits loopback and rejects a wildcard/public bind.
     env = common.copy()
@@ -330,8 +344,13 @@ http.server.HTTPServer(("127.0.0.1",8180),Handler).serve_forever()
                     raise NotReady("could not bind/verify the isolated 8180 sentinel holder")
                 time.sleep(0.05)
         core_env = os.environ.copy()
-        core_env["HOME"] = str(attempt_dir() / "case-06-home")
+        core_home = work_attempt_dir() / "case-06-home"
+        core_env["HOME"] = str(core_home)
         core_env["XDG_CONFIG_HOME"] = str(pathlib.Path(core_env["HOME"]) / ".config")
+        core_env["XDG_DATA_HOME"] = str(pathlib.Path(core_env["HOME"]) / ".local" / "share")
+        for key in ("NODEDANCE_CONFIG", "NODEDANCE_DATA_DIR", "NODEDANCE_LISTEN",
+                    "NODEDANCE_PUBLIC_ORIGIN", "NODEDANCE_TRUSTED_PROXIES"):
+            core_env.pop(key, None)
         pathlib.Path(core_env["HOME"]).mkdir(parents=True, exist_ok=True)
         process = start_server([str(ROOT / ".build/nodedance")], core_env, log)
         code = process.wait(timeout=5)
@@ -353,12 +372,13 @@ http.server.HTTPServer(("127.0.0.1",8180),Handler).serve_forever()
 
 
 def case_07():
-    home = attempt_dir() / "case-07-home"
+    home = work_attempt_dir() / "case-07-home"
     empty_path = attempt_dir() / "empty-path"
     home.mkdir(parents=True, exist_ok=True)
     empty_path.mkdir(parents=True, exist_ok=True)
-    log = ARTIFACTS / RUN_ID / "case-07-server.log"
-    env = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"), "PATH": str(empty_path)}
+    log = attempt_dir() / "case-07-server.log"
+    env = {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config"),
+           "XDG_DATA_HOME": str(home / ".local" / "share"), "PATH": str(empty_path)}
     process = start_server([str(ROOT / ".build/nodedance")], env, log)
     try:
         wait_http(8180, process)
@@ -450,6 +470,7 @@ def main():
     for repeat_index in range(1, args.repeat + 1):
         global CURRENT_ATTEMPT
         CURRENT_ATTEMPT = repeat_index
+        work_attempt_dir()
         print(f"S00 acceptance run {repeat_index}/{args.repeat} ({args.mode})", flush=True)
         this_run = {}
         for test_id in selected:

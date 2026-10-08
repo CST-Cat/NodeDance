@@ -12,19 +12,19 @@ PNPM_BIN := $(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin
 export PATH := $(GO_BIN:%/go=%):$(NODE_BIN):$(PNPM_BIN):$(PATH)
 export GOTOOLCHAIN := local
 
-.PHONY: help bootstrap deps frontend verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
+.PHONY: help bootstrap deps frontend playwright-install verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
 
 help:
 	@printf '%s\n' \
-	  'NodeDance S00 development targets:' \
+	  'NodeDance development targets:' \
 	  '  make bootstrap' \
 	  '  make verify-tools' \
 	  '  make verify-ci-evidence' \
 	  '  make check' \
 	  '  make build' \
-	  '  make test-stage STAGE=S00' \
-	  '  make test-integration STAGE=S00' \
-	  '  make test-e2e STAGE=S00' \
+	  '  make test-stage STAGE=S00|S01' \
+	  '  make test-integration STAGE=S00|S01' \
+	  '  make test-e2e STAGE=S00|S01' \
 	  '  make test-acceptance' \
 	  '  make fixtures-start ENGINE=29' \
 	  '  make fixtures-create|fixtures-fault|fixtures-clean ENGINE=29 RUN_ID=<id>'
@@ -40,6 +40,10 @@ deps: bootstrap
 frontend: deps
 	pnpm --dir web run typecheck
 	pnpm --dir web run build
+
+PLAYWRIGHT_BROWSERS ?= chromium webkit firefox
+playwright-install: deps
+	pnpm --dir web exec playwright install --with-deps $(PLAYWRIGHT_BROWSERS)
 
 verify-tools: bootstrap
 	./scripts/check-tools.sh
@@ -64,15 +68,15 @@ build: frontend
 	@echo 'Build PASS: host, linux/amd64 and linux/arm64 Core and Agent binaries'
 
 test-stage: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-stage STAGE=S00' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-stage STAGE=S00 or STAGE=S01' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode full
 
 test-integration: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-integration STAGE=S00' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-integration STAGE=S00 or STAGE=S01' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode integration
 
 test-e2e: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-e2e STAGE=S00' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-e2e STAGE=S00 or STAGE=S01' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode e2e
 
 test-acceptance: bootstrap

@@ -1,119 +1,1024 @@
 {
   "schema": 1,
   "stage": "S01",
-  "mode": "initial",
-  "status": "NOT_READY",
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "mode": "full",
+  "run_id": "20261008T155219Z-99761843",
+  "updated_at": "2026-10-08T15:54:02.781758+00:00",
+  "status": "PASS",
+  "repeat_required": 3,
+  "repeat_requested": 3,
+  "verification_status": "PASS",
   "tests": {
     "S01-01": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "无初始化凭据设置密码。",
       "expected": "拒绝。",
       "environment": "真实Core临时SQLite目录；未初始化状态。",
       "evidence_required": "HTTP请求、拒绝状态、数据库前后摘要。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 0.084,
+          "details": {
+            "public_setup_status": {
+              "initialized": false,
+              "setupHint": "Read the one-time setup credential from the local file path printed by nodedance serve."
+            },
+            "missing_credential_status": 401,
+            "admin_rows_after": 0,
+            "valid_local_credential_preserved": true,
+            "sqlite": "isolated private work directory"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 0.068,
+          "details": {
+            "public_setup_status": {
+              "initialized": false,
+              "setupHint": "Read the one-time setup credential from the local file path printed by nodedance serve."
+            },
+            "missing_credential_status": 401,
+            "admin_rows_after": 0,
+            "valid_local_credential_preserved": true,
+            "sqlite": "isolated private work directory"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 0.065,
+          "details": {
+            "public_setup_status": {
+              "initialized": false,
+              "setupHint": "Read the one-time setup credential from the local file path printed by nodedance serve."
+            },
+            "missing_credential_status": 401,
+            "admin_rows_after": 0,
+            "valid_local_credential_preserved": true,
+            "sqlite": "isolated private work directory"
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-02": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "初始化成功后再次初始化。",
       "expected": "拒绝，不覆盖管理员。",
       "environment": "真实Core；先成功初始化，再重复提交。",
       "evidence_required": "两次响应、管理员哈希前后比对。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 0.258,
+          "details": {
+            "first_setup": 201,
+            "repeat_setup": 409,
+            "admin_verifier_unchanged": true,
+            "initial_session_exists": true,
+            "password_used": "redacted"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 0.248,
+          "details": {
+            "first_setup": 201,
+            "repeat_setup": 409,
+            "admin_verifier_unchanged": true,
+            "initial_session_exists": true,
+            "password_used": "redacted"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 0.246,
+          "details": {
+            "first_setup": 201,
+            "repeat_setup": 409,
+            "admin_verifier_unchanged": true,
+            "initial_session_exists": true,
+            "password_used": "redacted"
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-03": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "正确密码、错误密码、空密码登录。",
       "expected": "成功与失败符合规则。",
       "environment": "真实登录HTTP流程及浏览器Cookie。",
       "evidence_required": "逐项响应、Session数据库状态和Cookie属性。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 0.958,
+          "details": {
+            "wrong_password": 401,
+            "empty_password": 401,
+            "correct_password": 200,
+            "session_rows": 1,
+            "stored_session_and_csrf_are_digests": true,
+            "session_cookie": "HttpOnly; SameSite=Strict",
+            "csrf_cookie": "SameSite=Strict; readable for header"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 0.901,
+          "details": {
+            "wrong_password": 401,
+            "empty_password": 401,
+            "correct_password": 200,
+            "session_rows": 1,
+            "stored_session_and_csrf_are_digests": true,
+            "session_cookie": "HttpOnly; SameSite=Strict",
+            "csrf_cookie": "SameSite=Strict; readable for header"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 0.909,
+          "details": {
+            "wrong_password": 401,
+            "empty_password": 401,
+            "correct_password": 200,
+            "session_rows": 1,
+            "stored_session_and_csrf_are_digests": true,
+            "session_cookie": "HttpOnly; SameSite=Strict",
+            "csrf_cookie": "SameSite=Strict; readable for header"
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-04": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "无Session请求所有管理入口。",
       "expected": "拒绝且无私有数据。",
       "environment": "枚举全部HTTP、静态私有文件和WebSocket入口。",
       "evidence_required": "逐入口状态码和响应体扫描。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 0.073,
+          "details": {
+            "unauthenticated_private_routes": {
+              "/api/v1/auth/me": 401,
+              "/api/v1/auth/logout": 401,
+              "/api/v1/auth/password": 401,
+              "/api/v1/auth/sessions": 401,
+              "/api/v1/auth/sessions/0123456789abcdef0123456789abcdef": 401,
+              "/api/v1/settings/appearance": 401,
+              "/api/v1/settings/appearance/avatar": 401,
+              "/api/v1/settings/appearance/background": 401,
+              "/api/v1/agents": 401,
+              "/api/v1/nodes": 401,
+              "/api/v1/tasks": 401,
+              "/api/v1/admin/private": 401,
+              "/api/v1/public/appearance/avatar": 404,
+              "/ws/v1/dashboard": 401,
+              "/ws/v1/agent": 401,
+              "/ws/v1/streams/logs": 401
+            },
+            "settings": {
+              "status": 303,
+              "location": "/login"
+            },
+            "no_private_response_markers": true
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 0.074,
+          "details": {
+            "unauthenticated_private_routes": {
+              "/api/v1/auth/me": 401,
+              "/api/v1/auth/logout": 401,
+              "/api/v1/auth/password": 401,
+              "/api/v1/auth/sessions": 401,
+              "/api/v1/auth/sessions/0123456789abcdef0123456789abcdef": 401,
+              "/api/v1/settings/appearance": 401,
+              "/api/v1/settings/appearance/avatar": 401,
+              "/api/v1/settings/appearance/background": 401,
+              "/api/v1/agents": 401,
+              "/api/v1/nodes": 401,
+              "/api/v1/tasks": 401,
+              "/api/v1/admin/private": 401,
+              "/api/v1/public/appearance/avatar": 404,
+              "/ws/v1/dashboard": 401,
+              "/ws/v1/agent": 401,
+              "/ws/v1/streams/logs": 401
+            },
+            "settings": {
+              "status": 303,
+              "location": "/login"
+            },
+            "no_private_response_markers": true
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 0.081,
+          "details": {
+            "unauthenticated_private_routes": {
+              "/api/v1/auth/me": 401,
+              "/api/v1/auth/logout": 401,
+              "/api/v1/auth/password": 401,
+              "/api/v1/auth/sessions": 401,
+              "/api/v1/auth/sessions/0123456789abcdef0123456789abcdef": 401,
+              "/api/v1/settings/appearance": 401,
+              "/api/v1/settings/appearance/avatar": 401,
+              "/api/v1/settings/appearance/background": 401,
+              "/api/v1/agents": 401,
+              "/api/v1/nodes": 401,
+              "/api/v1/tasks": 401,
+              "/api/v1/admin/private": 401,
+              "/api/v1/public/appearance/avatar": 404,
+              "/ws/v1/dashboard": 401,
+              "/ws/v1/agent": 401,
+              "/ws/v1/streams/logs": 401
+            },
+            "settings": {
+              "status": 303,
+              "location": "/login"
+            },
+            "no_private_response_markers": true
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-05": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "注销后复用旧Cookie。",
       "expected": "API拒绝，既有WebSocket关闭。",
       "environment": "两个已登录客户端及已建立WebSocket。",
       "evidence_required": "旧Cookie/API拒绝记录和WebSocket关闭时刻。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 0.491,
+          "details": {
+            "logout": 204,
+            "old_cookie_api": 401,
+            "websocket_close": "close-frame",
+            "websocket_close_seconds": 0.069,
+            "close_status_code": 1008,
+            "heartbeat_pings": 1,
+            "heartbeat_pongs": 1,
+            "two_independent_clients": true,
+            "server_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-05-core.log"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 0.498,
+          "details": {
+            "logout": 204,
+            "old_cookie_api": 401,
+            "websocket_close": "close-frame",
+            "websocket_close_seconds": 0.07,
+            "close_status_code": 1008,
+            "heartbeat_pings": 1,
+            "heartbeat_pongs": 1,
+            "two_independent_clients": true,
+            "server_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-05-core.log"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 0.499,
+          "details": {
+            "logout": 204,
+            "old_cookie_api": 401,
+            "websocket_close": "close-frame",
+            "websocket_close_seconds": 0.07,
+            "close_status_code": 1008,
+            "heartbeat_pings": 1,
+            "heartbeat_pongs": 1,
+            "two_independent_clients": true,
+            "server_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-05-core.log"
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-06": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "会话过期，WebSocket保持心跳。",
       "expected": "心跳不能无限延长登录状态。",
       "environment": "可控短Session TTL、持续心跳客户端。",
       "evidence_required": "过期时刻、API拒绝与Socket关闭日志。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 3.274,
+          "details": {
+            "configured_idle_timeout": "3s (--dev only)",
+            "heartbeat": "client ping every 200ms",
+            "expired_session_api": 401,
+            "websocket_close": "close-frame",
+            "close_seconds": 3.001,
+            "close_status_code": 1008,
+            "heartbeat_pings": 12,
+            "heartbeat_pongs": 12,
+            "socket_did_not_touch_session_activity": true
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 3.253,
+          "details": {
+            "configured_idle_timeout": "3s (--dev only)",
+            "heartbeat": "client ping every 200ms",
+            "expired_session_api": 401,
+            "websocket_close": "close-frame",
+            "close_seconds": 3.001,
+            "close_status_code": 1008,
+            "heartbeat_pings": 12,
+            "heartbeat_pongs": 12,
+            "socket_did_not_touch_session_activity": true
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 3.25,
+          "details": {
+            "configured_idle_timeout": "3s (--dev only)",
+            "heartbeat": "client ping every 200ms",
+            "expired_session_api": 401,
+            "websocket_close": "close-frame",
+            "close_seconds": 3.001,
+            "close_status_code": 1008,
+            "heartbeat_pings": 12,
+            "heartbeat_pongs": 12,
+            "socket_did_not_touch_session_activity": true
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-07": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "修改密码、撤销另一设备。",
       "expected": "指定旧会话失效。",
       "environment": "至少两个浏览器设备Session。",
       "evidence_required": "修改前后Session清单及被撤销设备请求。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 0.861,
+          "details": {
+            "sessions_before": 2,
+            "other_device_revoke": 204,
+            "revoked_device_api": 401,
+            "password_change": 204,
+            "session_rows_after_password_change": 0,
+            "old_primary_cookie": 401,
+            "old_third_cookie": 401
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 0.891,
+          "details": {
+            "sessions_before": 2,
+            "other_device_revoke": 204,
+            "revoked_device_api": 401,
+            "password_change": 204,
+            "session_rows_after_password_change": 0,
+            "old_primary_cookie": 401,
+            "old_third_cookie": 401
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 0.893,
+          "details": {
+            "sessions_before": 2,
+            "other_device_revoke": 204,
+            "revoked_device_api": 401,
+            "password_change": 204,
+            "session_rows_after_password_change": 0,
+            "old_primary_cookie": 401,
+            "old_third_cookie": 401
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-08": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "跨站写请求、非法Origin。",
       "expected": "拒绝。",
       "environment": "真实Core、跨站CSRF请求和错误Origin WebSocket。",
       "evidence_required": "HTTP/WebSocket状态及审计。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 0.399,
+          "details": {
+            "cross_origin_write": 403,
+            "wrong_csrf": 403,
+            "invalid_origin_websocket": 403,
+            "appearance_unchanged": true,
+            "audit_events": [
+              {
+                "action": "setup",
+                "outcome": "succeeded",
+                "remote_addr": "127.0.0.1"
+              },
+              {
+                "action": "login",
+                "outcome": "rejected",
+                "remote_addr": "127.0.0.1"
+              }
+            ],
+            "audit_allowlist_only": true
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 0.419,
+          "details": {
+            "cross_origin_write": 403,
+            "wrong_csrf": 403,
+            "invalid_origin_websocket": 403,
+            "appearance_unchanged": true,
+            "audit_events": [
+              {
+                "action": "setup",
+                "outcome": "succeeded",
+                "remote_addr": "127.0.0.1"
+              },
+              {
+                "action": "login",
+                "outcome": "rejected",
+                "remote_addr": "127.0.0.1"
+              }
+            ],
+            "audit_allowlist_only": true
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 0.407,
+          "details": {
+            "cross_origin_write": 403,
+            "wrong_csrf": 403,
+            "invalid_origin_websocket": 403,
+            "appearance_unchanged": true,
+            "audit_events": [
+              {
+                "action": "setup",
+                "outcome": "succeeded",
+                "remote_addr": "127.0.0.1"
+              },
+              {
+                "action": "login",
+                "outcome": "rejected",
+                "remote_addr": "127.0.0.1"
+              }
+            ],
+            "audit_allowlist_only": true
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-09": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "达到登录限流阈值。",
       "expected": "限流生效，不永久锁死管理员。",
       "environment": "可控时钟/速率配置及失败登录序列。",
       "evidence_required": "阈值前后响应及等待恢复后的成功登录。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 4.955,
+          "details": {
+            "failed_login_statuses": [
+              401,
+              401,
+              401
+            ],
+            "blocked_correct_password_status": 429,
+            "attempt_threshold": 3,
+            "cooldown_seconds": 4,
+            "successful_login_after_cooldown": 200,
+            "production_default_attempts": 5,
+            "production_default_lockout": "15m"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 4.952,
+          "details": {
+            "failed_login_statuses": [
+              401,
+              401,
+              401
+            ],
+            "blocked_correct_password_status": 429,
+            "attempt_threshold": 3,
+            "cooldown_seconds": 4,
+            "successful_login_after_cooldown": 200,
+            "production_default_attempts": 5,
+            "production_default_lockout": "15m"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 4.965,
+          "details": {
+            "failed_login_statuses": [
+              401,
+              401,
+              401
+            ],
+            "blocked_correct_password_status": 429,
+            "attempt_threshold": 3,
+            "cooldown_seconds": 4,
+            "successful_login_after_cooldown": 200,
+            "production_default_attempts": 5,
+            "production_default_lockout": "15m"
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-10": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "扫描数据库、日志、静态资源和缓存。",
       "expected": "无明文密码、Session、私有节点数据。",
       "environment": "真实Core数据目录及所有响应缓存。",
       "evidence_required": "扫描命令、匹配结果和脱敏数据样本。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 0.225,
+          "details": {
+            "scanned_files": [
+              "internal/core/webassets/dist/assets/index-DL4ZseQN.css",
+              "internal/core/webassets/dist/assets/index-DtatbY-X.js",
+              "internal/core/webassets/dist/index.html"
+            ],
+            "private_data_scanned": [
+              "SQLite",
+              "SQLite WAL",
+              "SQLite SHM",
+              "Core log"
+            ],
+            "known_plaintext_matches": [],
+            "session_storage": "SHA-256 token digest only",
+            "csrf_storage": "SHA-256 session-bound digest only",
+            "response_cache_control": "no-store",
+            "audit_fields": [
+              "id",
+              "occurred_at",
+              "action",
+              "outcome",
+              "actor_id",
+              "remote_addr"
+            ],
+            "audit_rows": 1,
+            "complete_run_artifact_scan": {
+              "files_scanned": 250,
+              "sensitive_values_checked": 193,
+              "categories": [
+                "acceptance_logs",
+                "embedded_frontend",
+                "private_work",
+                "uploaded_stage_logs"
+              ],
+              "allowed_setup_credential_files": 9,
+              "allowed_setup_credential_paths": [
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-11-migration-data/setup-credential.txt"
+              ],
+              "files_scanned_by_category": {
+                "acceptance_logs": 63,
+                "uploaded_stage_logs": 28,
+                "private_work": 156,
+                "embedded_frontend": 3
+              },
+              "uploaded_evidence_files_scanned": 91,
+              "uploaded_evidence_plaintext_matches": 0,
+              "plaintext_matches": 0,
+              "matching_paths": [],
+              "matching_categories": []
+            }
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 0.24,
+          "details": {
+            "scanned_files": [
+              "internal/core/webassets/dist/assets/index-DL4ZseQN.css",
+              "internal/core/webassets/dist/assets/index-DtatbY-X.js",
+              "internal/core/webassets/dist/index.html"
+            ],
+            "private_data_scanned": [
+              "SQLite",
+              "SQLite WAL",
+              "SQLite SHM",
+              "Core log"
+            ],
+            "known_plaintext_matches": [],
+            "session_storage": "SHA-256 token digest only",
+            "csrf_storage": "SHA-256 session-bound digest only",
+            "response_cache_control": "no-store",
+            "audit_fields": [
+              "id",
+              "occurred_at",
+              "action",
+              "outcome",
+              "actor_id",
+              "remote_addr"
+            ],
+            "audit_rows": 1,
+            "complete_run_artifact_scan": {
+              "files_scanned": 250,
+              "sensitive_values_checked": 193,
+              "categories": [
+                "acceptance_logs",
+                "embedded_frontend",
+                "private_work",
+                "uploaded_stage_logs"
+              ],
+              "allowed_setup_credential_files": 9,
+              "allowed_setup_credential_paths": [
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-11-migration-data/setup-credential.txt"
+              ],
+              "files_scanned_by_category": {
+                "acceptance_logs": 63,
+                "uploaded_stage_logs": 28,
+                "private_work": 156,
+                "embedded_frontend": 3
+              },
+              "uploaded_evidence_files_scanned": 91,
+              "uploaded_evidence_plaintext_matches": 0,
+              "plaintext_matches": 0,
+              "matching_paths": [],
+              "matching_categories": []
+            }
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 0.221,
+          "details": {
+            "scanned_files": [
+              "internal/core/webassets/dist/assets/index-DL4ZseQN.css",
+              "internal/core/webassets/dist/assets/index-DtatbY-X.js",
+              "internal/core/webassets/dist/index.html"
+            ],
+            "private_data_scanned": [
+              "SQLite",
+              "SQLite WAL",
+              "SQLite SHM",
+              "Core log"
+            ],
+            "known_plaintext_matches": [],
+            "session_storage": "SHA-256 token digest only",
+            "csrf_storage": "SHA-256 session-bound digest only",
+            "response_cache_control": "no-store",
+            "audit_fields": [
+              "id",
+              "occurred_at",
+              "action",
+              "outcome",
+              "actor_id",
+              "remote_addr"
+            ],
+            "audit_rows": 1,
+            "complete_run_artifact_scan": {
+              "files_scanned": 250,
+              "sensitive_values_checked": 193,
+              "categories": [
+                "acceptance_logs",
+                "embedded_frontend",
+                "private_work",
+                "uploaded_stage_logs"
+              ],
+              "allowed_setup_credential_files": 9,
+              "allowed_setup_credential_paths": [
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-11-migration-data/setup-credential.txt"
+              ],
+              "files_scanned_by_category": {
+                "acceptance_logs": 63,
+                "uploaded_stage_logs": 28,
+                "private_work": 156,
+                "embedded_frontend": 3
+              },
+              "uploaded_evidence_files_scanned": 91,
+              "uploaded_evidence_plaintext_matches": 0,
+              "plaintext_matches": 0,
+              "matching_paths": [],
+              "matching_categories": []
+            },
+            "complete_run_artifact_scan_note": "Generated acceptance logs, private work files, and embedded frontend assets were scanned for every known test secret."
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-11": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "注入迁移失败、数据库不可写。",
       "expected": "明确失败，原数据未被破坏。",
       "environment": "数据库备份、不可写目录和迁移故障注入。",
       "evidence_required": "故障日志、数据库校验及备份恢复结果。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 0.126,
+          "details": {
+            "migration_failure_exit": 1,
+            "migration_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-11-migration-core.log",
+            "recovery_health": 200,
+            "recovered_schema_version": 1,
+            "preserved_original_row_after_recovery": "original-data-survives",
+            "migration_original_row": "original-data-survives",
+            "sqlite_integrity": "ok",
+            "unwritable_core_user": "nobody",
+            "unwritable_exit": 1,
+            "protected_sentinel_unchanged": true,
+            "unwritable_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-11-unwritable.log"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 0.125,
+          "details": {
+            "migration_failure_exit": 1,
+            "migration_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-11-migration-core.log",
+            "recovery_health": 200,
+            "recovered_schema_version": 1,
+            "preserved_original_row_after_recovery": "original-data-survives",
+            "migration_original_row": "original-data-survives",
+            "sqlite_integrity": "ok",
+            "unwritable_core_user": "nobody",
+            "unwritable_exit": 1,
+            "protected_sentinel_unchanged": true,
+            "unwritable_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-11-unwritable.log"
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 0.124,
+          "details": {
+            "migration_failure_exit": 1,
+            "migration_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-11-migration-core.log",
+            "recovery_health": 200,
+            "recovered_schema_version": 1,
+            "preserved_original_row_after_recovery": "original-data-survives",
+            "migration_original_row": "original-data-survives",
+            "sqlite_integrity": "ok",
+            "unwritable_core_user": "nobody",
+            "unwritable_exit": 1,
+            "protected_sentinel_unchanged": true,
+            "unwritable_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-11-unwritable.log"
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     },
     "S01-12": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "上传恶意图片、输入HTML展示名称。",
       "expected": "非法资源拒绝，文本不执行脚本。",
       "environment": "浏览器安全测试及真实Core。",
       "evidence_required": "拒绝响应、DOM渲染结果和CSP/控制台记录。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 23.272,
+          "details": {
+            "projects": {
+              "chromium": {
+                "status": "PASS",
+                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-12-chromium-playwright.log",
+                "real_core": true,
+                "real_browser": true,
+                "direct_http_svg_and_html_upload_rejected": true
+              },
+              "webkit": {
+                "status": "PASS",
+                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-12-webkit-playwright.log",
+                "real_core": true,
+                "real_browser": true,
+                "direct_http_svg_and_html_upload_rejected": true
+              },
+              "firefox": {
+                "status": "PASS",
+                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-12-firefox-playwright.log",
+                "real_core": true,
+                "real_browser": true,
+                "direct_http_svg_and_html_upload_rejected": true
+              }
+            },
+            "viewport_and_touch_emulation": "browser spec includes 390x844 responsive login backdrop",
+            "ui_svg_rejection_and_direct_core_http_svg_html_rejection": true
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "duration_seconds": 22.651,
+          "details": {
+            "projects": {
+              "chromium": {
+                "status": "PASS",
+                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-12-chromium-playwright.log",
+                "real_core": true,
+                "real_browser": true,
+                "direct_http_svg_and_html_upload_rejected": true
+              },
+              "webkit": {
+                "status": "PASS",
+                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-12-webkit-playwright.log",
+                "real_core": true,
+                "real_browser": true,
+                "direct_http_svg_and_html_upload_rejected": true
+              },
+              "firefox": {
+                "status": "PASS",
+                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-12-firefox-playwright.log",
+                "real_core": true,
+                "real_browser": true,
+                "direct_http_svg_and_html_upload_rejected": true
+              }
+            },
+            "viewport_and_touch_emulation": "browser spec includes 390x844 responsive login backdrop",
+            "ui_svg_rejection_and_direct_core_http_svg_html_rejection": true
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "duration_seconds": 22.41,
+          "details": {
+            "projects": {
+              "chromium": {
+                "status": "PASS",
+                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-12-chromium-playwright.log",
+                "real_core": true,
+                "real_browser": true,
+                "direct_http_svg_and_html_upload_rejected": true
+              },
+              "webkit": {
+                "status": "PASS",
+                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-12-webkit-playwright.log",
+                "real_core": true,
+                "real_browser": true,
+                "direct_http_svg_and_html_upload_rejected": true
+              },
+              "firefox": {
+                "status": "PASS",
+                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-12-firefox-playwright.log",
+                "real_core": true,
+                "real_browser": true,
+                "direct_http_svg_and_html_upload_rejected": true
+              }
+            },
+            "viewport_and_touch_emulation": "browser spec includes 390x844 responsive login backdrop",
+            "ui_svg_rejection_and_direct_core_http_svg_html_rejection": true
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "All three current consecutive executions passed."
     }
-  }
+  },
+  "evidence_root": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843",
+  "artifact_scan": {
+    "files_scanned": 250,
+    "sensitive_values_checked": 193,
+    "categories": [
+      "acceptance_logs",
+      "embedded_frontend",
+      "private_work",
+      "uploaded_stage_logs"
+    ],
+    "allowed_setup_credential_files": 9,
+    "allowed_setup_credential_paths": [
+      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-01-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-04-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-11-migration-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-01-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-04-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-11-migration-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-01-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-04-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-11-migration-data/setup-credential.txt"
+    ],
+    "files_scanned_by_category": {
+      "acceptance_logs": 63,
+      "uploaded_stage_logs": 28,
+      "private_work": 156,
+      "embedded_frontend": 3
+    },
+    "uploaded_evidence_files_scanned": 91,
+    "uploaded_evidence_plaintext_matches": 0,
+    "plaintext_matches": 0,
+    "matching_paths": [],
+    "matching_categories": []
+  },
+  "reason": "All twelve original S01 acceptance cases passed in three consecutive full runs."
 }

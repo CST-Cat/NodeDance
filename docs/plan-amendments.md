@@ -26,3 +26,9 @@
 ## S00 CI 结构
 
 S00 workflow 使用官方 GitHub-hosted `ubuntu-24.04` 与 `ubuntu-24.04-arm` runner，并把 Engine 28/29 作为独立矩阵维度。每个工作组合执行 `make test-stage STAGE=S00`，该目标先运行 `make check` 和双架构 Core/Agent 构建，再将8项原始 S00 用例连续运行三遍。CI 报告和本地报告的状态区分明确；本地尚无 GitHub Actions 运行时，不能声称 Actions 已通过。
+
+## S01 CI 与浏览器证据
+
+S01 的三个浏览器项目由 Playwright 精确版本锁定；CI 在具备浏览器二进制的 runner 上逐项运行 Chromium、WebKit、Firefox。每个项目都由独立临时 Core/SQLite 数据目录承载，执行 S01-12 setup/login/外观/Session/改密流程及绕过前端文件选择器的真实 HTTP 恶意 SVG/HTML 上传。单个浏览器缺失时保留其他已执行证据，但该浏览器和完整阶段必须是 `NOT_READY`，不能由另外的浏览器替代。
+
+S01-01 至 S01-11 均启动真实 Core 进程并操作真实 SQLite。S01-11 先验证迁移冲突回滚及原行保留，再解除冲突，在同一目录恢复启动；不可写目录测试用不同非 root 用户启动 Core，不能用 root 用户仅 chmod 目录后假设不可写。短 Session/限流/Socket 检查参数仅在 `--dev` 测试配置启用，不改变生产默认值。完整 S01 本机或 CI 报告均要求原12项连续三轮；没有浏览器的本机运行可记录 HTTP/SQLite 结果，但整体必须保持 `NOT_READY`。
