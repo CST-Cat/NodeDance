@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -180,6 +181,297 @@ func TestUnknownRetainsResourceUntilVerifiedResolution(t *testing.T) {
 	if _, err := store.Enqueue(context.Background(), blocked); err != nil {
 		t.Fatalf("verified terminal result did not release resource: %v", err)
 	}
+}
+
+func TestPrepareMutationPersistsOnlyValidatedSafeBaseline(t *testing.T) {
+	store, path := openTestStore(t)
+	identity := testIdentity("task-baseline", "key-baseline")
+	if _, err := store.Enqueue(context.Background(), identity); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.BeginExecution(context.Background(), identity.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	baseline := ExecutionBaseline{TargetID: identity.TargetID, Action: identity.Action,
+		HostBootID: "00000000-0000-4000-8000-000000000001", StartedAt: "2026-10-08T09:00:00Z", RestartCount: 3,
+		Running: true}
+	secret := baseline
+	secret.StartedAt = "raw-inspect-secret"
+	if err := store.PrepareMutation(context.Background(), identity.TaskID, secret); !errors.Is(err, ErrInvalidBaseline) {
+		t.Fatalf("raw Inspect data was accepted as baseline: %v", err)
+	}
+	if err := store.PrepareMutation(context.Background(), identity.TaskID, baseline); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := store.Get(context.Background(), identity.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ExecutionPhase != ExecutionPhaseMutationMayHaveStarted || snapshot.Baseline == nil || *snapshot.Baseline != baseline {
+		t.Fatalf("persisted baseline = phase %q baseline %+v, want %+v", snapshot.ExecutionPhase, snapshot.Baseline, baseline)
+	}
+	if err := store.PrepareMutation(context.Background(), identity.TaskID, baseline); !errors.Is(err, ErrBaselineAlreadySet) {
+		t.Fatalf("second baseline prepare = %v, want already-set", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []string{path, path + "-wal", path + "-shm"} {
+		data, readErr := os.ReadFile(candidate)
+		if errors.Is(readErr, os.ErrNotExist) {
+			continue
+		}
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if bytes.Contains(data, []byte("raw-inspect-secret")) {
+			t.Fatalf("raw Inspect payload secret found in %s", filepath.Base(candidate))
+		}
+	}
+}
+
+func TestPrepareMutationFailureRollsBackPhaseAndBaseline(t *testing.T) {
+	store, _ := openTestStore(t)
+	identity := testIdentity("task-baseline-fail", "key-baseline-fail")
+	if _, err := store.Enqueue(context.Background(), identity); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.BeginExecution(context.Background(), identity.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`CREATE TRIGGER reject_baseline BEFORE UPDATE OF execution_phase ON task_journal
+		WHEN NEW.execution_phase='mutation_may_have_started' BEGIN SELECT RAISE(ABORT,'injected failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	baseline := ExecutionBaseline{TargetID: identity.TargetID, Action: identity.Action,
+		HostBootID: "00000000-0000-4000-8000-000000000001", StartedAt: "0001-01-01T00:00:00Z", RestartCount: 0}
+	if err := store.PrepareMutation(context.Background(), identity.TaskID, baseline); err == nil {
+		t.Fatal("injected baseline transaction failure was ignored")
+	}
+	snapshot, err := store.Get(context.Background(), identity.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.ExecutionPhase != ExecutionPhaseNone || snapshot.Baseline != nil || snapshot.Status != taskstate.Running {
+		t.Fatalf("failed baseline transaction partially changed task: %+v", snapshot)
+	}
+	blocked := testIdentity("task-baseline-blocked", "key-baseline-blocked")
+	if _, err := store.Enqueue(context.Background(), blocked); !errors.Is(err, ErrResourceBusy) {
+		t.Fatalf("failed baseline unexpectedly released claim: %v", err)
+	}
+}
+
+func TestPrepareMutationRejectsNoncanonicalOrMismatchedBaseline(t *testing.T) {
+	store, _ := openTestStore(t)
+	identity := testIdentity("task-baseline-invalid", "key-baseline-invalid")
+	if _, err := store.Enqueue(context.Background(), identity); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.BeginExecution(context.Background(), identity.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	valid := ExecutionBaseline{TargetID: identity.TargetID, Action: identity.Action,
+		HostBootID: "00000000-0000-4000-8000-000000000001", StartedAt: "2026-10-08T10:00:00Z", RestartCount: 0}
+	invalidCases := []ExecutionBaseline{}
+	wrongTarget := valid
+	wrongTarget.TargetID = "another-target"
+	invalidCases = append(invalidCases, wrongTarget)
+	wrongBoot := valid
+	wrongBoot.HostBootID = "not-a-boot-id"
+	invalidCases = append(invalidCases, wrongBoot)
+	noncanonicalTime := valid
+	noncanonicalTime.StartedAt = "2026-10-08T11:00:00+01:00"
+	invalidCases = append(invalidCases, noncanonicalTime)
+	negativeRestartCount := valid
+	negativeRestartCount.RestartCount = -1
+	invalidCases = append(invalidCases, negativeRestartCount)
+	invalidPausedState := valid
+	invalidPausedState.Paused = true
+	invalidCases = append(invalidCases, invalidPausedState)
+	for index, invalid := range invalidCases {
+		if err := store.PrepareMutation(context.Background(), identity.TaskID, invalid); !errors.Is(err, ErrInvalidBaseline) {
+			t.Fatalf("invalid baseline %d error = %v, want invalid-baseline", index, err)
+		}
+	}
+	snapshot, err := store.Get(context.Background(), identity.TaskID)
+	if err != nil || snapshot.ExecutionPhase != ExecutionPhaseNone || snapshot.Baseline != nil {
+		t.Fatalf("invalid baseline attempts changed task: %+v %v", snapshot, err)
+	}
+}
+
+func TestV1MigrationPreservesRowsAndLegacyRunningBecomesUnknownWithoutBaseline(t *testing.T) {
+	path := filepath.Join(privateTempDir(t), "agent", "tasks.sqlite")
+	if err := os.Mkdir(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	createV1Fixture(t, path, false, 1)
+	store, err := Open(context.Background(), path, "node-test")
+	if err != nil {
+		t.Fatalf("migrate v1 journal: %v", err)
+	}
+	defer store.Close()
+	var version int
+	if err := store.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 2 {
+		t.Fatalf("schema version = %d, error %v; want 2", version, err)
+	}
+	if store.JournalID() != strings.Repeat("0", 64) {
+		t.Fatalf("migration changed journal identity: %q", store.JournalID())
+	}
+	snapshot, err := store.Get(context.Background(), "legacy-running")
+	if err != nil || snapshot.Status != taskstate.Running || snapshot.TaskID != "legacy-running" ||
+		snapshot.TargetID != "container-test" || snapshot.ResourceKey != "container-test" || snapshot.Action != "restart" ||
+		!snapshot.Evidence.ExecutionAttempted || snapshot.StartedAt == nil || snapshot.Baseline != nil || snapshot.ExecutionPhase != ExecutionPhaseNone {
+		t.Fatalf("migrated legacy running task = %+v, %v", snapshot, err)
+	}
+	var claims int
+	if err := store.db.QueryRow(`SELECT count(*) FROM active_resource_claims WHERE task_id='legacy-running'`).Scan(&claims); err != nil || claims != 1 {
+		t.Fatalf("legacy claim count = %d, error %v; want retained claim", claims, err)
+	}
+	recovered, err := store.RecoverInterrupted(context.Background())
+	if err != nil || recovered != 1 {
+		t.Fatalf("recover legacy running task = %d, %v", recovered, err)
+	}
+	snapshot, err = store.Get(context.Background(), "legacy-running")
+	if err != nil || snapshot.Status != taskstate.Unknown || snapshot.Baseline != nil || snapshot.ExecutionPhase != ExecutionPhaseNone {
+		t.Fatalf("recovered legacy task = %+v, %v; must remain unknown without synthesized baseline", snapshot, err)
+	}
+	if err := store.BeginExecution(context.Background(), snapshot.TaskID); err == nil {
+		t.Fatal("migrated/recovered legacy task was eligible for replay")
+	}
+}
+
+func TestV1MigrationFailureRollsBackAndFutureVersionIsRejected(t *testing.T) {
+	t.Run("transaction rollback", func(t *testing.T) {
+		path := filepath.Join(privateTempDir(t), "agent", "tasks.sqlite")
+		if err := os.Mkdir(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		createV1Fixture(t, path, true, 1)
+		if store, err := Open(context.Background(), path, "node-test"); err == nil {
+			_ = store.Close()
+			t.Fatal("malformed v1 schema unexpectedly migrated")
+		}
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		var version int
+		if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 1 {
+			t.Fatalf("failed migration changed version to %d: %v", version, err)
+		}
+		columns := tableColumns(t, db)
+		if columns["execution_phase"] || !columns["baseline_verified"] {
+			t.Fatalf("failed migration was not rolled back atomically; columns=%v", columns)
+		}
+		var status string
+		if err := db.QueryRow(`SELECT status FROM task_journal WHERE task_id='legacy-running'`).Scan(&status); err != nil || status != "running" {
+			t.Fatalf("legacy row changed after migration failure: status=%q err=%v", status, err)
+		}
+	})
+
+	t.Run("future version", func(t *testing.T) {
+		path := filepath.Join(privateTempDir(t), "agent", "tasks.sqlite")
+		if err := os.Mkdir(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`PRAGMA user_version=77`); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if store, err := Open(context.Background(), path, "node-test"); err == nil {
+			_ = store.Close()
+			t.Fatal("future schema version unexpectedly opened")
+		}
+		db, err = sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer db.Close()
+		var version int
+		if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 77 {
+			t.Fatalf("future version changed to %d: %v", version, err)
+		}
+		if columns := tableColumns(t, db); len(columns) != 0 {
+			t.Fatalf("future schema was modified: columns=%v", columns)
+		}
+	})
+}
+
+func createV1Fixture(t *testing.T, path string, conflictingColumn bool, version int) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyExtra := ""
+	if conflictingColumn {
+		legacyExtra = `, baseline_verified INTEGER NOT NULL DEFAULT 0`
+	}
+	statements := []string{
+		`CREATE TABLE journal_owner(id INTEGER PRIMARY KEY CHECK(id=1),node_id TEXT NOT NULL,journal_id TEXT NOT NULL)`,
+		`CREATE TABLE task_journal(task_id TEXT PRIMARY KEY,node_id TEXT NOT NULL,idempotency_key TEXT NOT NULL,request_digest BLOB NOT NULL CHECK(length(request_digest)=32),target_id TEXT NOT NULL,resource_key TEXT NOT NULL,action TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('queued','running','succeeded','failed','timed_out','canceled','unknown')),created_at_ns INTEGER NOT NULL,updated_at_ns INTEGER NOT NULL,started_at_ns INTEGER,finished_at_ns INTEGER,execution_attempted INTEGER NOT NULL DEFAULT 0 CHECK(execution_attempted IN (0,1)),execution_completed INTEGER NOT NULL DEFAULT 0 CHECK(execution_completed IN (0,1)),failure_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(failure_confirmed IN (0,1)),postcondition_verified INTEGER NOT NULL DEFAULT 0 CHECK(postcondition_verified IN (0,1)),process_terminated INTEGER NOT NULL DEFAULT 0 CHECK(process_terminated IN (0,1)),actual_result_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(actual_result_confirmed IN (0,1)),cancellation_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(cancellation_confirmed IN (0,1)),progress_phase TEXT NOT NULL DEFAULT 'accepted',progress_completed INTEGER NOT NULL DEFAULT 0,progress_total INTEGER NOT NULL DEFAULT 0,result_code TEXT NOT NULL DEFAULT '',observed_state TEXT NOT NULL DEFAULT '',resource_revision TEXT NOT NULL DEFAULT '',task_log BLOB NOT NULL DEFAULT X'',log_truncated INTEGER NOT NULL DEFAULT 0 CHECK(log_truncated IN (0,1))` + strings.TrimSpace(legacyExtra) + `,UNIQUE(node_id,idempotency_key))`,
+		`CREATE INDEX task_journal_resource_status ON task_journal(node_id,resource_key,status)`,
+		`CREATE TABLE active_resource_claims(node_id TEXT NOT NULL,resource_key TEXT NOT NULL,task_id TEXT NOT NULL UNIQUE REFERENCES task_journal(task_id) ON DELETE CASCADE,PRIMARY KEY(node_id,resource_key))`,
+		`INSERT INTO journal_owner VALUES(1,'node-test','` + strings.Repeat("0", 64) + `')`,
+		`PRAGMA user_version=` + fmt.Sprint(version),
+	}
+	for _, statement := range statements {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("create v1 fixture: %v", err)
+		}
+	}
+	identity := testIdentity("legacy-running", "legacy-key")
+	digest, err := taskstate.RequestDigest(identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().UnixNano()
+	if _, err := db.Exec(`INSERT INTO task_journal(task_id,node_id,idempotency_key,request_digest,target_id,resource_key,action,status,created_at_ns,updated_at_ns,started_at_ns,execution_attempted)
+		VALUES(?,?,?,?,?,?,?,'running',?,?,?,1)`, identity.TaskID, identity.NodeID, identity.IdempotencyKey, digest[:], identity.TargetID, identity.ResourceKey, identity.Action, now, now, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO active_resource_claims VALUES(?,?,?)`, identity.NodeID, identity.ResourceKey, identity.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func tableColumns(t *testing.T, db *sql.DB) map[string]bool {
+	t.Helper()
+	rows, err := db.Query(`PRAGMA table_info(task_journal)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	columns := make(map[string]bool)
+	for rows.Next() {
+		var ordinal, notNull, primaryKey int
+		var name, kind string
+		var defaultValue any
+		if err := rows.Scan(&ordinal, &name, &kind, &notNull, &defaultValue, &primaryKey); err != nil {
+			t.Fatal(err)
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return columns
 }
 
 func TestBoundedRedactedLogsAndTypedProgress(t *testing.T) {

@@ -1,10 +1,14 @@
 package containeractions
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +21,7 @@ import (
 
 const testContainerID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 const dockerZeroStartedAt = "0001-01-01T00:00:00Z"
+const testBootID = "00000000-0000-4000-8000-000000000001"
 
 type fakeEngine struct {
 	mu                   sync.Mutex
@@ -32,7 +37,58 @@ type fakeEngine struct {
 	continueStart        chan struct{}
 }
 
+type crashBoundaryEngine struct {
+	fake      *fakeEngine
+	stage     string
+	statePath string
+}
+
+func (e crashBoundaryEngine) Inspect(ctx context.Context, id string) (Container, error) {
+	return e.fake.Inspect(ctx, id)
+}
+func (e crashBoundaryEngine) Start(ctx context.Context, id string) error {
+	return e.fake.Start(ctx, id)
+}
+func (e crashBoundaryEngine) Stop(ctx context.Context, id string) error { return e.fake.Stop(ctx, id) }
+func (e crashBoundaryEngine) Restart(ctx context.Context, id string) error {
+	if e.stage == "before-mutation" {
+		fmt.Println("READY")
+		for {
+			time.Sleep(time.Hour)
+		}
+	}
+	if err := e.fake.Restart(ctx, id); err != nil {
+		return err
+	}
+	container, err := e.fake.Inspect(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(e.statePath, []byte(fmt.Sprintf("%s\n%d\n", container.StartedAt, e.fake.calls(ActionRestart))), 0o600); err != nil {
+		return err
+	}
+	fmt.Println("READY")
+	for {
+		time.Sleep(time.Hour)
+	}
+}
+func (e crashBoundaryEngine) Pause(ctx context.Context, id string) error {
+	return e.fake.Pause(ctx, id)
+}
+func (e crashBoundaryEngine) Resume(ctx context.Context, id string) error {
+	return e.fake.Resume(ctx, id)
+}
+func (e crashBoundaryEngine) Remove(ctx context.Context, id string) error {
+	return e.fake.Remove(ctx, id)
+}
+func (e crashBoundaryEngine) Rename(ctx context.Context, id, name string) error {
+	return e.fake.Rename(ctx, id, name)
+}
+
 func newFakeEngine(container Container) *fakeEngine {
+	if container.StartedAt == "" {
+		container.StartedAt = dockerZeroStartedAt
+	}
 	return &fakeEngine{
 		containers:     map[string]Container{container.ID: container},
 		inspectErrors:  make(map[int]error),
@@ -157,11 +213,20 @@ func newTestExecutor(t *testing.T, engine Engine) (*Executor, *taskjournal.Store
 			t.Errorf("close task journal: %v", err)
 		}
 	})
-	executor, err := New(engine, store, Options{OperationTimeout: 3 * time.Second, VerificationTimeout: 2 * time.Second})
+	executor, err := New(engine, store, Options{OperationTimeout: 3 * time.Second, VerificationTimeout: 2 * time.Second,
+		BootIDSource: func(context.Context) (string, error) { return testBootID, nil }})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return executor, store
+}
+
+type baselineFailJournal struct {
+	*taskjournal.Store
+}
+
+func (journal baselineFailJournal) PrepareMutation(context.Context, string, taskjournal.ExecutionBaseline) error {
+	return errors.New("injected baseline commit failure")
 }
 
 func request(action Action) Request {
@@ -221,7 +286,366 @@ func TestAllLifecycleActionsUseJournalAndVerifyFreshEngineState(t *testing.T) {
 			if err != nil || stored.Status != taskstate.Succeeded {
 				t.Fatalf("persisted task = %+v, %v", stored, err)
 			}
+			if stored.ExecutionPhase != taskjournal.ExecutionPhaseResultPersisted || stored.Baseline == nil || stored.Baseline.HostBootID != testBootID {
+				t.Fatalf("durable execution proof = phase %q baseline %+v", stored.ExecutionPhase, stored.Baseline)
+			}
 		})
+	}
+}
+
+func TestBaselinePersistenceFailurePreventsDockerMutation(t *testing.T) {
+	engine := newFakeEngine(Container{ID: testContainerID, Name: "/nd-test"})
+	baseExecutor, store := newTestExecutor(t, engine)
+	executor, err := New(engine, baselineFailJournal{Store: store}, Options{
+		OperationTimeout: baseExecutor.operationTimeout, VerificationTimeout: baseExecutor.verificationTimeout,
+		BootIDSource: func(context.Context) (string, error) { return testBootID, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := executor.Execute(context.Background(), request(ActionStart))
+	if !errors.Is(err, ErrOutcomeUnknown) || task.Status != taskstate.Unknown {
+		t.Fatalf("Execute() = status %s, error %v; want unknown", task.Status, err)
+	}
+	if engine.calls(ActionStart) != 0 {
+		t.Fatalf("Docker Start was called %d times after baseline persistence failed", engine.calls(ActionStart))
+	}
+	stored, err := store.Get(context.Background(), task.TaskID)
+	if err != nil || stored.ExecutionPhase != taskjournal.ExecutionPhaseNone || stored.Baseline != nil {
+		t.Fatalf("failed baseline write changed durable proof: %+v, %v", stored, err)
+	}
+	if _, err := executor.Execute(context.Background(), request(ActionStart)); !errors.Is(err, ErrOutcomeUnknown) {
+		t.Fatalf("duplicate unknown action error = %v", err)
+	}
+	if engine.calls(ActionStart) != 0 {
+		t.Fatal("unknown action was replayed after baseline write failure")
+	}
+}
+
+func TestExecutorCanonicalizesValidDockerStartedAtBeforePersistence(t *testing.T) {
+	for _, input := range []string{
+		"2026-10-08T11:00:00.000000000+01:00",
+		"2026-10-08T10:00:00.000000000Z",
+	} {
+		t.Run(input, func(t *testing.T) {
+			container := Container{ID: testContainerID, Name: "/nd-test", StartedAt: input}
+			engine := newFakeEngine(container)
+			executor, store := newTestExecutor(t, engine)
+			task, err := executor.Execute(context.Background(), request(ActionStart))
+			if err != nil || task.Status != taskstate.Succeeded {
+				t.Fatalf("Execute with legal Docker timestamp %q = %s, %v", input, task.Status, err)
+			}
+			stored, err := store.Get(context.Background(), task.TaskID)
+			if err != nil || stored.Baseline == nil || stored.Baseline.StartedAt != "2026-10-08T10:00:00Z" {
+				t.Fatalf("stored canonical baseline = %+v, %v", stored.Baseline, err)
+			}
+		})
+	}
+	if _, ok := canonicalStartedAt("not-a-docker-time"); ok {
+		t.Fatal("invalid Docker timestamp was accepted for a durable baseline")
+	}
+}
+
+func TestBootIDSourceReceivesBoundedPreMutationContext(t *testing.T) {
+	engine := newFakeEngine(Container{ID: testContainerID, Name: "/nd-test"})
+	_, store := newTestExecutor(t, engine)
+	executor, err := New(engine, store, Options{OperationTimeout: 3 * time.Second, VerificationTimeout: time.Second,
+		BootIDSource: func(ctx context.Context) (string, error) {
+			<-ctx.Done()
+			return "", ctx.Err()
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	task, err := executor.Execute(context.Background(), request(ActionStart))
+	if !errors.Is(err, ErrOutcomeUnknown) || task.Status != taskstate.Unknown {
+		t.Fatalf("Execute with stalled boot source = %s, %v; want unknown", task.Status, err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Fatalf("boot source was not bounded: %s", elapsed)
+	}
+	if engine.calls(ActionStart) != 0 {
+		t.Fatalf("Docker Start called %d times without a boot identity", engine.calls(ActionStart))
+	}
+}
+
+func TestReconcileRestartRequiresSameBootAndFreshPostcondition(t *testing.T) {
+	t.Run("same boot with new start evidence", func(t *testing.T) {
+		engine := newFakeEngine(runningContainer())
+		engine.noOpRestart = true
+		executor, store := newTestExecutor(t, engine)
+		req := request(ActionRestart)
+		task, err := executor.Execute(context.Background(), req)
+		if !errors.Is(err, ErrOutcomeUnknown) || task.Status != taskstate.Unknown || task.Baseline == nil {
+			t.Fatalf("Execute() = %+v, %v; want unknown with durable baseline", task, err)
+		}
+		engine.mu.Lock()
+		container := engine.containers[testContainerID]
+		container.StartedAt = "2026-10-08T08:00:00Z" // wall clock moved backward
+		engine.containers[testContainerID] = container
+		engine.mu.Unlock()
+		resolved, err := executor.Reconcile(context.Background(), req.TaskID)
+		if err != nil || resolved.Status != taskstate.Succeeded || resolved.Result.ResourceRevision != "reconciled_started_at_change" {
+			t.Fatalf("Reconcile() = status %s revision %q, error %v", resolved.Status, resolved.Result.ResourceRevision, err)
+		}
+		if engine.calls(ActionRestart) != 1 {
+			t.Fatalf("reconciliation replayed restart, calls=%d", engine.calls(ActionRestart))
+		}
+		if _, err := store.Get(context.Background(), req.TaskID); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("unchanged postcondition remains unknown", func(t *testing.T) {
+		engine := newFakeEngine(runningContainer())
+		engine.noOpRestart = true
+		executor, _ := newTestExecutor(t, engine)
+		req := request(ActionRestart)
+		if _, err := executor.Execute(context.Background(), req); !errors.Is(err, ErrOutcomeUnknown) {
+			t.Fatal(err)
+		}
+		resolved, err := executor.Reconcile(context.Background(), req.TaskID)
+		if !errors.Is(err, ErrOutcomeUnknown) || resolved.Status != taskstate.Unknown {
+			t.Fatalf("Reconcile() = status %s error %v; want unknown", resolved.Status, err)
+		}
+		if engine.calls(ActionRestart) != 1 {
+			t.Fatalf("reconciliation replayed restart, calls=%d", engine.calls(ActionRestart))
+		}
+	})
+
+	t.Run("boot mismatch remains unknown", func(t *testing.T) {
+		engine := newFakeEngine(runningContainer())
+		executor, _ := newTestExecutor(t, engine)
+		req := request(ActionRestart)
+		engine.noOpRestart = true
+		if _, err := executor.Execute(context.Background(), req); !errors.Is(err, ErrOutcomeUnknown) {
+			t.Fatal(err)
+		}
+		executor.bootIDSource = func(context.Context) (string, error) { return "00000000-0000-4000-8000-000000000002", nil }
+		resolved, err := executor.Reconcile(context.Background(), req.TaskID)
+		if !errors.Is(err, ErrOutcomeUnknown) || resolved.Status != taskstate.Unknown {
+			t.Fatalf("Reconcile() = status %s error %v; want unknown", resolved.Status, err)
+		}
+		if engine.inspectCalls != 2 || engine.calls(ActionRestart) != 1 {
+			t.Fatalf("boot mismatch should not inspect or replay: inspect=%d restart=%d", engine.inspectCalls, engine.calls(ActionRestart))
+		}
+	})
+}
+
+func TestContainerActionCrashChild(t *testing.T) {
+	stage := os.Getenv("NODEDANCE_ACTION_CRASH_STAGE")
+	if stage == "" {
+		return
+	}
+	path := os.Getenv("NODEDANCE_ACTION_CRASH_DB")
+	statePath := os.Getenv("NODEDANCE_ACTION_CRASH_STATE")
+	state, err := os.ReadFile(statePath)
+	if err != nil {
+		t.Fatalf("read child container state: %v", err)
+	}
+	fields := strings.Split(strings.TrimSpace(string(state)), "\n")
+	if len(fields) != 2 {
+		t.Fatalf("invalid child state fixture %q", state)
+	}
+	restarted, err := strconv.Atoi(fields[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := taskjournal.Open(context.Background(), path, "node-test")
+	if err != nil {
+		t.Fatalf("child open: %v", err)
+	}
+	container := runningContainer()
+	container.StartedAt, container.RestartCount = fields[0], restarted
+	fake := newFakeEngine(container)
+	engine := crashBoundaryEngine{fake: fake, stage: stage, statePath: statePath}
+	executor, err := New(engine, store, Options{OperationTimeout: 3 * time.Second, VerificationTimeout: 2 * time.Second,
+		BootIDSource: func(context.Context) (string, error) { return testBootID, nil }})
+	if err != nil {
+		t.Fatalf("child executor: %v", err)
+	}
+	if _, err := executor.Execute(context.Background(), request(ActionRestart)); err != nil {
+		t.Fatalf("child Execute: %v", err)
+	}
+	t.Fatal("crash boundary returned without parent SIGKILL")
+}
+
+func TestSIGKILLBeforeAndAfterDockerMutationIsNeverReplayed(t *testing.T) {
+	for _, stage := range []string{"before-mutation", "after-mutation"} {
+		t.Run(stage, func(t *testing.T) {
+			parent := t.TempDir()
+			if err := os.Chmod(parent, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			statePath := parent + "/container-state"
+			originalStartedAt := "2026-10-08T09:00:00Z"
+			if err := os.WriteFile(statePath, []byte(originalStartedAt+"\n0\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			dbPath := parent + "/journal.sqlite"
+			killActionChildAtReady(t, stage, dbPath, statePath)
+
+			store, err := taskjournal.Open(context.Background(), dbPath, "node-test")
+			if err != nil {
+				t.Fatalf("reopen journal after SIGKILL: %v", err)
+			}
+			defer store.Close()
+			if recovered, err := store.RecoverInterrupted(context.Background()); err != nil || recovered != 1 {
+				t.Fatalf("recover child task = %d, %v", recovered, err)
+			}
+			task, err := store.Get(context.Background(), "task-1")
+			if err != nil || task.Status != taskstate.Unknown || task.Baseline == nil || task.ExecutionPhase != taskjournal.ExecutionPhaseMutationMayHaveStarted {
+				t.Fatalf("recovered proof = %+v, %v", task, err)
+			}
+			persisted, err := os.ReadFile(statePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fields := strings.Split(strings.TrimSpace(string(persisted)), "\n")
+			if len(fields) != 2 {
+				t.Fatalf("invalid persisted container state %q", persisted)
+			}
+			callCount, err := strconv.Atoi(fields[1])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stage == "before-mutation" && (fields[0] != originalStartedAt || callCount != 0) {
+				t.Fatalf("pre-mutation SIGKILL changed resource: %q", persisted)
+			}
+			if stage == "after-mutation" && (fields[0] == originalStartedAt || callCount != 1) {
+				t.Fatalf("post-mutation SIGKILL did not persist changed resource: %q", persisted)
+			}
+
+			observed := runningContainer()
+			observed.StartedAt = fields[0]
+			observed.RestartCount = callCount
+			recoveryEngine := newFakeEngine(observed)
+			executor, err := New(recoveryEngine, store, Options{OperationTimeout: 3 * time.Second, VerificationTimeout: 2 * time.Second,
+				BootIDSource: func(context.Context) (string, error) { return testBootID, nil }})
+			if err != nil {
+				t.Fatal(err)
+			}
+			resolved, reconcileErr := executor.Reconcile(context.Background(), "task-1")
+			if stage == "before-mutation" {
+				if !errors.Is(reconcileErr, ErrOutcomeUnknown) || resolved.Status != taskstate.Unknown {
+					t.Fatalf("unchanged pre-mutation recovery = %s, %v; want unknown", resolved.Status, reconcileErr)
+				}
+				if _, err := executor.Execute(context.Background(), request(ActionRestart)); !errors.Is(err, ErrOutcomeUnknown) {
+					t.Fatalf("unknown restart was eligible for replay: %v", err)
+				}
+			} else if reconcileErr != nil || resolved.Status != taskstate.Succeeded {
+				t.Fatalf("post-mutation recovery = %s, %v; want verified success", resolved.Status, reconcileErr)
+			}
+			if recoveryEngine.calls(ActionRestart) != 0 {
+				t.Fatalf("reconciliation issued %d restart mutations", recoveryEngine.calls(ActionRestart))
+			}
+		})
+	}
+}
+
+func killActionChildAtReady(t *testing.T, stage, dbPath, statePath string) {
+	t.Helper()
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	childCtx, cancelChild := context.WithTimeout(context.Background(), 20*time.Second)
+	command := exec.CommandContext(childCtx, binary, "-test.run=^TestContainerActionCrashChild$")
+	command.Env = append(os.Environ(), "NODEDANCE_ACTION_CRASH_STAGE="+stage,
+		"NODEDANCE_ACTION_CRASH_DB="+dbPath, "NODEDANCE_ACTION_CRASH_STATE="+statePath)
+	stdout, childStdout, err := os.Pipe()
+	if err != nil {
+		cancelChild()
+		t.Fatal(err)
+	}
+	command.Stdout = childStdout
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	if err := command.Start(); err != nil {
+		_ = stdout.Close()
+		_ = childStdout.Close()
+		cancelChild()
+		t.Fatal(err)
+	}
+	_ = childStdout.Close()
+	waitResult := make(chan error, 1)
+	go func() { waitResult <- command.Wait() }()
+	readyResult := make(chan struct {
+		line string
+		err  error
+	}, 1)
+	readyReadDone := make(chan struct{})
+	go func() {
+		defer close(readyReadDone)
+		line, readErr := bufio.NewReader(stdout).ReadString('\n')
+		readyResult <- struct {
+			line string
+			err  error
+		}{line: line, err: readErr}
+	}()
+	childWaited := false
+	var childWaitErr error
+	awaitChild := func(timeout time.Duration) bool {
+		if childWaited {
+			return true
+		}
+		select {
+		case childWaitErr = <-waitResult:
+			childWaited = true
+			return true
+		case <-time.After(timeout):
+			return false
+		}
+	}
+	killChild := func() bool {
+		if !childWaited && command.Process != nil {
+			_ = command.Process.Kill()
+		}
+		return awaitChild(5 * time.Second)
+	}
+	t.Cleanup(func() {
+		if !childWaited {
+			cancelChild()
+			if command.Process != nil {
+				_ = command.Process.Kill()
+			}
+			if !awaitChild(5 * time.Second) {
+				t.Errorf("child process did not exit after bounded kill")
+			}
+		}
+		_ = stdout.Close()
+		select {
+		case <-readyReadDone:
+		case <-time.After(time.Second):
+			t.Errorf("READY reader did not stop after child cleanup")
+		}
+		cancelChild()
+	})
+	select {
+	case ready := <-readyResult:
+		if ready.err != nil || strings.TrimSpace(ready.line) != "READY" {
+			if !killChild() {
+				t.Fatal("child did not exit after invalid READY result")
+			}
+			t.Fatalf("child checkpoint %q error %v stderr %s", ready.line, ready.err, stderr.String())
+		}
+	case <-time.After(5 * time.Second):
+		if !killChild() {
+			t.Fatal("child did not exit after bounded READY timeout")
+		}
+		t.Fatalf("child did not emit READY: %s", stderr.String())
+	case <-childCtx.Done():
+		if !killChild() {
+			t.Fatal("child did not exit after process timeout")
+		}
+		t.Fatalf("child context expired before READY: %s", stderr.String())
+	}
+	if !killChild() {
+		t.Fatal("child did not exit after SIGKILL within five seconds")
+	}
+	if childWaitErr == nil {
+		t.Fatal("SIGKILLed child exited successfully")
 	}
 }
 
@@ -334,6 +758,11 @@ func TestRestartStartedAtChangeAcceptsClockMovingBackward(t *testing.T) {
 	}
 	if startedAtChanged("not-a-time", "2026-10-08T09:00:00Z") || startedAtChanged("2026-10-08T10:00:00Z", dockerZeroStartedAt) {
 		t.Fatal("invalid or zero post-restart StartedAt must not prove a new start")
+	}
+	baseline := taskjournal.ExecutionBaseline{StartedAt: "2026-10-08T10:00:00Z", RestartCount: 2}
+	equivalentInstant := Container{Running: true, StartedAt: "2026-10-08T11:00:00.000000000+01:00", RestartCount: 2}
+	if reconciledRestartEvidence(baseline, equivalentInstant) {
+		t.Fatal("equivalent instants with different timestamp encodings must not prove a restart")
 	}
 }
 
