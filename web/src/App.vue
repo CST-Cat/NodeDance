@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ApiError, api, type Appearance, type Session, type User } from './api'
+import NodesDashboard from './components/NodesDashboard.vue'
 
-type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings'
+type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes'
 type ImageKind = 'avatar' | 'background'
 
 const screen = ref<Screen>('loading')
@@ -307,7 +308,9 @@ onMounted(() => {
       </a>
       <div class="topbar-right">
         <span class="system-label"><span class="status-dot"></span> 本地管理</span>
-        <button v-if="screen === 'settings'" class="quiet-button" type="button" :disabled="busy" @click="logout">
+        <button v-if="screen === 'settings'" class="quiet-button" type="button" @click="screen = 'nodes'">节点监控</button>
+        <button v-if="screen === 'nodes'" class="quiet-button" type="button" @click="screen = 'settings'">账户设置</button>
+        <button v-if="screen === 'settings' || screen === 'nodes'" class="quiet-button" type="button" :disabled="busy" @click="logout">
           退出登录
         </button>
       </div>
@@ -400,6 +403,8 @@ onMounted(() => {
         <p class="privacy-note"><span aria-hidden="true">◈</span> 此连接使用安全会话保护。</p>
       </section>
     </section>
+
+    <NodesDashboard v-else-if="screen === 'nodes'" />
 
     <section v-else class="settings-layout">
       <aside class="settings-sidebar">

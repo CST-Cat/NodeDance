@@ -53,6 +53,7 @@ type Collector struct {
 	diskPoller *diskPoller
 	startOnce  sync.Once
 	updates    chan Snapshot
+	done       chan struct{}
 }
 
 func NewCollector() *Collector {
@@ -71,6 +72,7 @@ func newCollector(source collectorSource, now func() time.Time, diskTimeout time
 		now:        now,
 		prevNet:    make(map[string]networkCounter),
 		latestDisk: DiskSnapshot{State: StateUnknown, Reason: "not_sampled"},
+		done:       make(chan struct{}),
 	}
 	c.diskPoller = newDiskPoller(source, diskTimeout, now)
 	return c
@@ -115,10 +117,29 @@ func (c *Collector) SampleDisk(ctx context.Context) DiskSnapshot {
 func (c *Collector) Start(ctx context.Context) <-chan Snapshot {
 	c.startOnce.Do(func() {
 		c.updates = make(chan Snapshot, 1)
-		go c.runFast(ctx)
-		go c.runDisk(ctx)
+		var loops sync.WaitGroup
+		loops.Add(2)
+		go func() {
+			defer loops.Done()
+			c.runFast(ctx)
+		}()
+		go func() {
+			defer loops.Done()
+			c.runDisk(ctx)
+		}()
+		go func() {
+			loops.Wait()
+			close(c.done)
+		}()
 	})
 	return c.updates
+}
+
+// Done closes after both periodic sampler loops have exited. A timed-out
+// context-ignoring disk syscall may remain isolated inside the single bounded
+// disk poller, but no scheduler or fast-sampler goroutine survives shutdown.
+func (c *Collector) Done() <-chan struct{} {
+	return c.done
 }
 
 func (c *Collector) runFast(ctx context.Context) {

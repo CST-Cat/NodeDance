@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
@@ -63,6 +64,13 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	if strings.TrimSpace(version) == "" {
 		version = "dev"
 	}
+	collector := hostmetrics.NewCollector()
+	collectorCtx, cancelCollector := context.WithCancel(ctx)
+	metricUpdates := collector.Start(collectorCtx)
+	defer func() {
+		cancelCollector()
+		<-collector.Done()
+	}()
 	for attempt := 0; ; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return nil
@@ -71,7 +79,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		if err != nil {
 			return fmt.Errorf("reload Agent credentials: %w", err)
 		}
-		connectionErr := runConnection(ctx, configPath, config, version)
+		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates)
 		if errors.Is(connectionErr, errReconnectAfterRotation) {
 			attempt = -1
 			continue
@@ -95,7 +103,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	}
 }
 
-func runConnection(ctx context.Context, configPath string, config Config, version string) error {
+func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot) error {
 	credential := config.Credential
 	pendingCredentialAlreadyActive := false
 	if config.PendingCredential != "" {
@@ -142,7 +150,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
-		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1"},
+		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics},
 		Permissions:  permissions,
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
@@ -180,7 +188,10 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	reads := make(chan socketRead, 1)
 	go socketReadLoop(connectionCtx, conn, reads)
 	if welcome.RotationRequestedID != "" {
-		if err := prepareRotation(connectionCtx, conn, reads, configPath, config, welcome.Generation, welcome.RotationRequestedID); err != nil {
+		if err := prepareRotation(connectionCtx, conn, reads, configPath, config, welcome.Generation, welcome.RotationRequestedID,
+			func(ctx context.Context, envelope protocol.Envelope) error {
+				return writeSocketEnvelope(ctx, conn, envelope)
+			}); err != nil {
 			return err
 		}
 		return errReconnectAfterRotation
@@ -190,17 +201,27 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		// reconnect once more using the now-active local credential.
 		return errReconnectAfterRotation
 	}
-	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath)
+	if !containsCapability(welcome.Capabilities, protocol.CapabilityMetrics) {
+		metricUpdates = nil
+	}
+	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates)
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string) error {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
 	defer ackTimer.Stop()
+	writer := newSocketEnvelopeWriter(ctx, conn)
+	defer func() {
+		if !writer.closeAndWait() && returnErr == nil {
+			returnErr = errors.New("Agent WebSocket writer did not stop")
+		}
+	}()
 	var sentSequence, acknowledgedSequence uint64
+	var metricsSequence uint64
 	for {
 		select {
 		case <-ctx.Done():
@@ -211,8 +232,27 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			sentSequence++
 			envelope := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHeartbeat,
 				Generation: generation, Sequence: sentSequence, Payload: encodePayload(protocol.Heartbeat{})}
-			if err := writeSocketEnvelope(ctx, conn, envelope); err != nil {
+			if err := writer.send(ctx, envelope); err != nil {
 				return errors.New("send Agent heartbeat failed")
+			}
+		case snapshot, ok := <-metricUpdates:
+			if !ok {
+				metricUpdates = nil
+				continue
+			}
+			metricsSequence++
+			wireMetrics := hostmetrics.ToProtocolMetrics(snapshot)
+			payload, err := protocol.MarshalMetricsSnapshot(wireMetrics)
+			if err != nil {
+				// Invalid detail never blocks the independent heartbeat loop. The
+				// converter bounds detail lists and reports any truncation.
+				continue
+			}
+			writer.offerMetrics(protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeMetrics,
+				Generation: generation, Sequence: metricsSequence, Payload: payload})
+		case err := <-writer.failures:
+			if err != nil {
+				return errors.New("Agent WebSocket writer failed")
 			}
 		case message := <-reads:
 			if message.err != nil {
@@ -241,7 +281,7 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				if err != nil {
 					return fmt.Errorf("reload Agent credentials for rotation: %w", err)
 				}
-				if err := prepareRotation(ctx, conn, reads, configPath, currentConfig, generation, envelope.RequestID); err != nil {
+				if err := prepareRotation(ctx, conn, reads, configPath, currentConfig, generation, envelope.RequestID, writer.send); err != nil {
 					return err
 				}
 				return errReconnectAfterRotation
@@ -254,7 +294,8 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	}
 }
 
-func prepareRotation(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, configPath string, config Config, generation uint64, rotationID string) error {
+func prepareRotation(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, configPath string, config Config, generation uint64, rotationID string,
+	send func(context.Context, protocol.Envelope) error) error {
 	if !isUUID(rotationID) {
 		return errors.New("Core credential rotation ID is invalid")
 	}
@@ -274,7 +315,7 @@ func prepareRotation(ctx context.Context, conn *websocket.Conn, reads <-chan soc
 		}
 	}
 	rotation := protocol.RotatePrepare{RotationID: rotationID, NewCredential: config.PendingCredential}
-	if err := writeSocketEnvelope(ctx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeRotatePrepare,
+	if err := send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeRotatePrepare,
 		Generation: generation, RequestID: rotationID, Payload: encodePayload(rotation)}); err != nil {
 		return errors.New("send credential rotation prepare failed")
 	}
@@ -327,13 +368,26 @@ func socketReadLoop(ctx context.Context, conn *websocket.Conn, messages chan<- s
 }
 
 func writeSocketEnvelope(ctx context.Context, conn *websocket.Conn, envelope protocol.Envelope) error {
+	return writeSocketEnvelopeWithTimeout(ctx, conn, envelope, 5*time.Second)
+}
+
+func writeSocketEnvelopeWithTimeout(ctx context.Context, conn *websocket.Conn, envelope protocol.Envelope, timeout time.Duration) error {
 	data, err := json.Marshal(envelope)
 	if err != nil {
 		return err
 	}
-	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	writeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return conn.Write(writeCtx, websocket.MessageText, data)
+}
+
+func containsCapability(capabilities []string, wanted string) bool {
+	for _, capability := range capabilities {
+		if capability == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeSocketEnvelope(raw []byte) (protocol.Envelope, error) {
