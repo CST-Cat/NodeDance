@@ -12,6 +12,7 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
+	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
@@ -25,6 +26,8 @@ type agentConnection struct {
 	agentID        string
 	generation     uint64
 	metricsEnabled bool
+	dockerEnabled  bool
+	dockerFrames   chan dockerFrame
 	commands       chan protocol.Envelope
 	leaseUpdates   chan time.Time
 	watchMu        sync.Mutex
@@ -357,7 +360,11 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	negotiatedCapabilities := negotiateCapabilities(hello.Capabilities)
 	managed := &agentConnection{conn: conn, cancel: connectionCancel, agentID: identity.AgentID, generation: lease.ConnectionGeneration,
 		metricsEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
+		dockerEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
 		commands:       make(chan protocol.Envelope, 8), leaseUpdates: make(chan time.Time, 1)}
+	if managed.dockerEnabled {
+		managed.dockerFrames = make(chan dockerFrame, 16)
+	}
 	go s.watchAgentLease(managed, lease.Identity, lease.LastSeenAt)
 	if !s.installAgentConnection(managed, identity.AgentID) {
 		managed.close()
@@ -369,6 +376,13 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.closeAgentConnection(identity.AgentID, lease.ConnectionGeneration)
 		s.closeAgentProtocol(conn, websocket.StatusPolicyViolation, "could not bind metrics connection")
 		return
+	}
+	if managed.dockerEnabled {
+		if err := s.bindDockerConnection(ctx, coredocker.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID}, lease.ConnectionGeneration); err != nil {
+			s.closeAgentConnection(identity.AgentID, lease.ConnectionGeneration)
+			s.closeAgentProtocol(conn, websocket.StatusInternalError, "could not bind Docker inventory connection")
+			return
+		}
 	}
 	defer s.metrics.UnbindConnection(metricsIdentity, lease.ConnectionGeneration)
 	s.metrics.Notify(identity.NodeID)
@@ -400,6 +414,20 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 			}
 		}
 	}()
+	dockerFailures := make(chan error, 1)
+	var dockerWorkerDone chan struct{}
+	if connection.dockerEnabled {
+		workerCtx, cancelWorker := context.WithCancel(ctx)
+		dockerWorkerDone = make(chan struct{})
+		go func() {
+			defer close(dockerWorkerDone)
+			s.runDockerFrames(workerCtx, connection, coredocker.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID}, dockerFailures)
+		}()
+		defer func() {
+			cancelWorker()
+			<-dockerWorkerDone
+		}()
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -409,6 +437,11 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				continue
 			}
 			if err := s.writeAgentEnvelope(ctx, connection.conn, command); err != nil {
+				return
+			}
+		case err := <-dockerFailures:
+			if err != nil {
+				s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not process Docker inventory")
 				return
 			}
 		case message := <-readMessages:
@@ -482,6 +515,25 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					continue
 				}
 				s.metrics.Notify(identity.NodeID)
+			case protocol.TypeDocker:
+				if !connection.dockerEnabled || envelope.Sequence == 0 {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent Docker capability was not negotiated")
+					return
+				}
+				batch, err := protocol.UnmarshalDockerBatch(envelope.Payload)
+				if err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent Docker inventory")
+					return
+				}
+				frame := dockerFrame{sequence: envelope.Sequence, batch: batch}
+				select {
+				case connection.dockerFrames <- frame:
+				default:
+					// A lost ordered chunk invalidates the current snapshot. Force a
+					// reconnect so the Agent starts a fresh full inventory scan.
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Docker inventory queue overflow")
+					return
+				}
 			case protocol.TypeRotatePrepare:
 				var rotation protocol.RotatePrepare
 				if err := decodeAgentPayload(envelope.Payload, &rotation); err != nil || !validUUID(rotation.RotationID) || !validDeviceCredential(rotation.NewCredential) {
@@ -597,7 +649,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {

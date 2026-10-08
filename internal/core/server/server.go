@@ -15,6 +15,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	"github.com/CST-Cat/NodeDance/internal/core/config"
+	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
 	"github.com/CST-Cat/NodeDance/internal/core/webassets"
@@ -55,6 +56,8 @@ type Server struct {
 	hashSetupPassword          func(string) ([]byte, []byte, error)
 	agents                     *agents.Repository
 	metrics                    *coremetrics.Store
+	dockerMu                   sync.Mutex
+	docker                     *coredocker.Store
 	agentOfflineTimeout        time.Duration
 	agentSweepInterval         time.Duration
 	agentConnectionsMu         sync.Mutex
@@ -159,6 +162,7 @@ func New(version string, options Options) (*Server, error) {
 		hashSetupPassword:      auth.HashPassword,
 		agents:                 agents.NewRepository(store.DB, options.Now),
 		metrics:                coremetrics.NewStore(),
+		docker:                 coredocker.NewStore(),
 		agentOfflineTimeout:    options.AgentOfflineTimeout,
 		agentSweepInterval:     options.AgentSweepInterval,
 		agentConnections:       make(map[string]*agentConnection),
@@ -176,6 +180,17 @@ func New(version string, options Options) (*Server, error) {
 	if err := s.agents.MarkAllOffline(context.Background()); err != nil {
 		_ = store.Close()
 		return nil, err
+	}
+	savedDocker, err := loadDockerNodes(context.Background(), store.DB)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	for _, saved := range savedDocker {
+		if err := s.docker.RestoreStale(saved); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
 	}
 	s.agentContext, s.agentCancel = context.WithCancel(context.Background())
 	s.agentWait.Add(1)
@@ -356,6 +371,9 @@ func isMetricsTelemetryRead(r *http.Request) bool {
 		return false
 	}
 	if r.URL.Path == "/api/v1/nodes" {
+		return true
+	}
+	if _, _, ok := dockerRoute(r.URL.Path); ok {
 		return true
 	}
 	if !strings.HasPrefix(r.URL.Path, "/api/v1/nodes/") || !strings.HasSuffix(r.URL.Path, "/metrics") {

@@ -148,6 +148,25 @@ func TestSnapshotFailureLeavesLastKnownInventoryUntouched(t *testing.T) {
 	}
 }
 
+func TestSafeErrorRedactsRawEngineResponseAndKeepsFailureClass(t *testing.T) {
+	secretBody := errors.New("client version 1.12 is too old; minimum supported API version is 1.44; Authorization: Bearer test-secret-credential; PASSWORD=fixture-password; Env=PRIVATE_VALUE")
+	got := safeError(secretBody)
+	if got != "Docker Engine API version is incompatible" {
+		t.Fatalf("API incompatibility reason=%q", got)
+	}
+	for _, secret := range []string{"test-secret-credential", "fixture-password", "PRIVATE_VALUE", "Authorization"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("safe Engine reason leaked %q: %q", secret, got)
+		}
+	}
+	if got := safeError(errors.New("permission denied while opening /private/docker.sock password=secret")); got != "Docker Engine socket permission denied" {
+		t.Fatalf("permission failure lost its safe class: %q", got)
+	}
+	if got := safeError(errors.New("connection refused; secret=private-value")); got != "Docker Engine unavailable" {
+		t.Fatalf("unavailable failure lost its safe class: %q", got)
+	}
+}
+
 func TestDeleteEventAndInFlightOlderSnapshotCannotResurrectContainer(t *testing.T) {
 	cache := newStateCache(func() time.Time { return time.Now().UTC() })
 	container := baseContainer("stable-id", "before-rename", "running")

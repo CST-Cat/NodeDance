@@ -127,6 +127,21 @@ func TestTaskStateTransitionProofs(t *testing.T) {
 	if err := CanTransition(Running, Unknown, Evidence{}); err != nil {
 		t.Fatalf("running to unknown: %v", err)
 	}
+	if err := CanTransition(Queued, Unknown, Evidence{}); !errors.Is(err, ErrInvalidStatus) {
+		t.Fatalf("queued without committed delivery became unknown: %v", err)
+	}
+	if err := CanTransition(Queued, Unknown, Evidence{DeliveryCommitted: true}); err != nil {
+		t.Fatalf("durably delivered queued task did not become unknown: %v", err)
+	}
+	if err := CanTransition(Unknown, Running, Evidence{DeliveryCommitted: true, ExecutionAttempted: true}); err == nil {
+		t.Fatal("unknown task was replayed into running after committed delivery")
+	}
+	if err := CanTransition(Unknown, Succeeded, Evidence{DeliveryCommitted: true, PostconditionVerified: true}); err == nil {
+		t.Fatal("committed delivery was mistaken for execution-completed proof")
+	}
+	if err := CanTransition(Unknown, Succeeded, Evidence{ExecutionAttempted: true, ExecutionCompleted: true, PostconditionVerified: true}); err != nil {
+		t.Fatalf("verified outcome after queued delivery: %v", err)
+	}
 	if err := CanTransition(Queued, Failed, Evidence{FailureConfirmed: true, ActualResultConfirmed: true}); err != nil {
 		t.Fatalf("confirmed failure before executor: %v", err)
 	}

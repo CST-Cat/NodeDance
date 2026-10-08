@@ -130,6 +130,14 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 		s.adminGetNodeMetrics(w, r, parts[0])
 		return
 	}
+	if nodeID, containerID, ok := dockerRoute(r.URL.Path); ok {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.adminGetNodeContainers(w, r, nodeID, containerID)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/agents/") {
 		s.adminAgentAction(w, r, current)
 		return

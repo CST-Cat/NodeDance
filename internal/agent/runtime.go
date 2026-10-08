@@ -15,17 +15,19 @@ import (
 	"strings"
 	"time"
 
+	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
 
 const (
-	connectTimeout       = 10 * time.Second
-	rotationAckTimeout   = 5 * time.Second
-	heartbeatAckTimeout  = 15 * time.Second
-	minimumReconnectWait = time.Second
-	maximumReconnectWait = 30 * time.Second
+	connectTimeout          = 10 * time.Second
+	rotationAckTimeout      = 5 * time.Second
+	heartbeatAckTimeout     = 15 * time.Second
+	minimumReconnectWait    = time.Second
+	maximumReconnectWait    = 30 * time.Second
+	maximumReconnectAttempt = 5
 )
 
 var errReconnectAfterRotation = errors.New("credential rotation acknowledged")
@@ -34,6 +36,26 @@ type socketRead struct {
 	typeID websocket.MessageType
 	data   []byte
 	err    error
+}
+
+// reconnectBackoff tracks failed connection attempts. A validated WELCOME
+// starts a fresh retry sequence, even if the connection later drops.
+type reconnectBackoff struct {
+	attempt int
+}
+
+func (b *reconnectBackoff) connected() {
+	b.attempt = 0
+}
+
+func (b *reconnectBackoff) failed() {
+	if b.attempt < maximumReconnectAttempt {
+		b.attempt++
+	}
+}
+
+func (b reconnectBackoff) delay() time.Duration {
+	return reconnectDelay(b.attempt)
 }
 
 func DefaultConfigPath() (string, error) {
@@ -71,7 +93,8 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		cancelCollector()
 		<-collector.Done()
 	}()
-	for attempt := 0; ; attempt++ {
+	var backoff reconnectBackoff
+	for {
 		if err := ctx.Err(); err != nil {
 			return nil
 		}
@@ -79,15 +102,21 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		if err != nil {
 			return fmt.Errorf("reload Agent credentials: %w", err)
 		}
-		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates)
+		established := false
+		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates, func() {
+			established = true
+		})
+		if established {
+			backoff.connected()
+		}
 		if errors.Is(connectionErr, errReconnectAfterRotation) {
-			attempt = -1
+			backoff.connected()
 			continue
 		}
 		if ctx.Err() != nil {
 			return nil
 		}
-		delay := reconnectDelay(attempt)
+		delay := backoff.delay()
 		if stderr != nil {
 			fmt.Fprintf(stderr, "Agent connection unavailable; retrying in %s (%s)\n", delay, safeConnectionError(connectionErr))
 		}
@@ -100,10 +129,11 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 			return nil
 		case <-timer.C:
 		}
+		backoff.failed()
 	}
 }
 
-func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot) error {
+func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, onEstablished func()) error {
 	credential := config.Credential
 	pendingCredentialAlreadyActive := false
 	if config.PendingCredential != "" {
@@ -150,7 +180,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
-		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics},
+		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityDocker},
 		Permissions:  permissions,
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
@@ -172,6 +202,9 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	var welcome protocol.Welcome
 	if err := decodeSocketPayload(envelope.Payload, &welcome); err != nil || !validWelcome(config, envelope.Generation, welcome) {
 		return errors.New("Core welcome is invalid")
+	}
+	if onEstablished != nil {
+		onEstablished()
 	}
 	if welcome.CredentialRotationDone || pendingCredentialAlreadyActive {
 		if credential != config.PendingCredential || config.PendingCredential == "" || config.PendingRotationID == "" {
@@ -204,12 +237,13 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	if !containsCapability(welcome.Capabilities, protocol.CapabilityMetrics) {
 		metricUpdates = nil
 	}
-	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates)
+	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates,
+		containsCapability(welcome.Capabilities, protocol.CapabilityDocker))
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -220,6 +254,40 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			returnErr = errors.New("Agent WebSocket writer did not stop")
 		}
 	}()
+	var dockerDone <-chan error
+	if dockerEnabled {
+		var engine agentdocker.Engine
+		createdEngine, err := agentdocker.NewSDKEngine(os.Getenv("DOCKER_HOST"))
+		if err != nil {
+			engine = unavailableDockerEngine{err: errors.New("Docker Engine host must be a local unix socket")}
+		} else {
+			engine = createdEngine
+		}
+		observer := &socketDockerObserver{writer: writer, generation: generation}
+		discoverer, err := agentdocker.NewDiscoverer(engine, observer, agentdocker.Options{})
+		if err == nil {
+			dockerCtx, cancelDocker := context.WithCancel(ctx)
+			dockerResult := make(chan error, 1)
+			dockerFinished := make(chan struct{})
+			dockerDone = dockerResult
+			go func() {
+				dockerResult <- discoverer.Run(dockerCtx)
+				close(dockerFinished)
+			}()
+			// This defer is installed after the writer's join, so LIFO ordering
+			// stops and joins Docker observation before the socket writer closes.
+			defer func() {
+				cancelDocker()
+				select {
+				case <-dockerFinished:
+				case <-time.After(5 * time.Second):
+					if returnErr == nil {
+						returnErr = errors.New("Agent Docker observer did not stop")
+					}
+				}
+			}()
+		}
+	}
 	var sentSequence, acknowledgedSequence uint64
 	var metricsSequence uint64
 	for {
@@ -254,6 +322,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			if err != nil {
 				return errors.New("Agent WebSocket writer failed")
 			}
+		case err := <-dockerDone:
+			if err != nil {
+				return errors.New("Agent Docker observer stopped unexpectedly")
+			}
+			dockerDone = nil
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -478,6 +551,19 @@ func agentWebSocketURL(server string) (string, error) {
 }
 
 func reconnectDelay(attempt int) time.Duration {
+	minimum, maximum := reconnectDelayRange(attempt)
+	width := maximum - minimum
+	if width <= 0 {
+		return minimum
+	}
+	value, err := rand.Int(rand.Reader, big.NewInt(int64(width)+1))
+	if err != nil {
+		return minimum + width/2
+	}
+	return minimum + time.Duration(value.Int64())
+}
+
+func reconnectDelayRange(attempt int) (time.Duration, time.Duration) {
 	base := minimumReconnectWait
 	for index := 0; index < attempt && base < maximumReconnectWait; index++ {
 		base *= 2
@@ -486,14 +572,15 @@ func reconnectDelay(attempt int) time.Duration {
 		}
 	}
 	spread := int64(base / 5)
-	if spread <= 0 {
-		return base
+	minimum := base - time.Duration(spread)
+	if minimum < minimumReconnectWait {
+		minimum = minimumReconnectWait
 	}
-	value, err := rand.Int(rand.Reader, big.NewInt(spread*2+1))
-	if err != nil {
-		return base
+	maximum := base + time.Duration(spread)
+	if maximum > maximumReconnectWait {
+		maximum = maximumReconnectWait
 	}
-	return base - time.Duration(spread) + time.Duration(value.Int64())
+	return minimum, maximum
 }
 
 func resetTimer(timer *time.Timer, duration time.Duration) {

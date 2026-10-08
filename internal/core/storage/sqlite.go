@@ -124,6 +124,26 @@ var migrations = []Migration{{
 		`CREATE INDEX agent_enrollments_node ON agent_enrollments(node_id)`,
 		`CREATE INDEX nodes_status_seen ON nodes(status, last_seen_at)`,
 	},
+}, {
+	Version: 3,
+	SQL: []string{
+		`CREATE TABLE docker_node_state (
+			node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+			agent_id TEXT NOT NULL,
+			generation INTEGER NOT NULL CHECK (generation > 0),
+			health_json TEXT,
+			health_received_at INTEGER NOT NULL,
+			stale_reason TEXT NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
+		`CREATE TABLE docker_containers (
+			node_id TEXT NOT NULL REFERENCES docker_node_state(node_id) ON DELETE CASCADE,
+			container_id TEXT NOT NULL,
+			record_json TEXT NOT NULL,
+			PRIMARY KEY(node_id, container_id)
+		)`,
+		`CREATE INDEX docker_containers_node ON docker_containers(node_id, container_id)`,
+	},
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {

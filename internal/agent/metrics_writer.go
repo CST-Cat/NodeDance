@@ -12,7 +12,11 @@ import (
 const (
 	controlWriteTimeout = 5 * time.Second
 	metricWriteTimeout  = time.Second
+	dockerWriteTimeout  = 2 * time.Second
+	maxDockerWriteBurst  = 8
 )
+
+var errDockerWriterQueueFull = errors.New("Agent Docker frame queue is full")
 
 type envelopeWrite struct {
 	envelope protocol.Envelope
@@ -28,6 +32,7 @@ type socketEnvelopeWriter struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
 	high     chan envelopeWrite
+	docker   chan protocol.Envelope
 	metrics  chan protocol.Envelope
 	failures chan error
 	done     chan struct{}
@@ -38,10 +43,27 @@ func newSocketEnvelopeWriter(ctx context.Context, conn *websocket.Conn) *socketE
 	w := &socketEnvelopeWriter{
 		conn: conn, ctx: writerCtx, cancel: cancel,
 		high: make(chan envelopeWrite, 8), metrics: make(chan protocol.Envelope, 1),
+		docker:   make(chan protocol.Envelope, 16),
 		failures: make(chan error, 1), done: make(chan struct{}),
 	}
 	go w.run()
 	return w
+}
+
+// offerDocker preserves FIFO ordering and never overwrites a snapshot chunk.
+// If the bounded queue fills, the observer treats this batch as lost and asks
+// the discoverer for a new authoritative full snapshot.
+func (w *socketEnvelopeWriter) offerDocker(ctx context.Context, envelope protocol.Envelope) error {
+	select {
+	case w.docker <- envelope:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.ctx.Done():
+		return errors.New("Agent socket writer stopped")
+	default:
+		return errDockerWriterQueueFull
+	}
 }
 
 // closeAndWait cancels queued work and joins the single socket writer before
@@ -98,6 +120,7 @@ func (w *socketEnvelopeWriter) offerMetrics(envelope protocol.Envelope) {
 
 func (w *socketEnvelopeWriter) run() {
 	defer close(w.done)
+	dockerBurst := 0
 	for {
 		select {
 		case <-w.ctx.Done():
@@ -112,13 +135,35 @@ func (w *socketEnvelopeWriter) run() {
 			continue
 		default:
 		}
+		// Snapshot/event frames remain FIFO, but an always-nonempty Docker
+		// queue must not starve the latest coalesced host metrics sample.
+		if dockerBurst >= maxDockerWriteBurst {
+			select {
+			case envelope := <-w.metrics:
+				w.write(envelope, nil, metricWriteTimeout)
+				dockerBurst = 0
+				continue
+			default:
+			}
+		}
+		select {
+		case envelope := <-w.docker:
+			w.write(envelope, nil, dockerWriteTimeout)
+			dockerBurst++
+			continue
+		default:
+		}
 		select {
 		case <-w.ctx.Done():
 			return
 		case request := <-w.high:
 			w.write(request.envelope, request.result, controlWriteTimeout)
+		case envelope := <-w.docker:
+			w.write(envelope, nil, dockerWriteTimeout)
+			dockerBurst++
 		case envelope := <-w.metrics:
 			w.write(envelope, nil, metricWriteTimeout)
+			dockerBurst = 0
 		}
 	}
 }

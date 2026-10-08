@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -59,22 +60,16 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 		t.Fatalf("refusing to install over an existing or loaded service (LoadState=%q, err=%v)", strings.TrimSpace(loadState), err)
 	}
 
-	binaryPath := strings.TrimSpace(os.Getenv("NODEDANCE_TEST_AGENT_BINARY"))
-	if binaryPath == "" {
+	compiledBinaryPath := strings.TrimSpace(os.Getenv("NODEDANCE_TEST_AGENT_BINARY"))
+	if compiledBinaryPath == "" {
 		t.Fatal("NODEDANCE_TEST_AGENT_BINARY must point to the compiled NodeDance Agent CLI")
 	}
-	binaryPath, err = filepath.Abs(binaryPath)
+	compiledBinaryPath, err = filepath.Abs(compiledBinaryPath)
 	if err != nil {
 		t.Fatalf("resolve compiled Agent path: %v", err)
 	}
-	if info, err := os.Stat(binaryPath); err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+	if info, err := os.Stat(compiledBinaryPath); err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
 		t.Fatalf("compiled Agent CLI is not an executable regular file: %v", err)
-	}
-	versionCtx, cancelVersion := context.WithTimeout(testCtx, 10*time.Second)
-	versionOutput, err := exec.CommandContext(versionCtx, binaryPath, "version").CombinedOutput()
-	cancelVersion()
-	if err != nil || !strings.Contains(string(versionOutput), "NodeDance Agent ") {
-		t.Fatalf("configured Agent path is not the compiled NodeDance CLI: %v", err)
 	}
 
 	serviceUser, err := user.Lookup("nobody")
@@ -90,47 +85,36 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 		t.Fatal("nobody service account has an invalid primary GID")
 	}
 
-	workRoot, err := systemdS02WorkRoot()
+	work, err := os.MkdirTemp("/var/tmp", "nodedance-s02-systemd-agent-")
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create private systemd fixture under /var/tmp: %v", err)
 	}
-	rootInfo, err := os.Lstat(workRoot)
-	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-		t.Fatalf("S02 private evidence root is not a real directory: %v", err)
+	if err := os.Chmod(work, 0o711); err != nil {
+		_ = os.RemoveAll(work)
+		t.Fatalf("allow the selected service account to traverse its private fixture root: %v", err)
 	}
-	rootStat, ok := rootInfo.Sys().(*syscall.Stat_t)
-	if !ok {
-		t.Fatal("cannot identify owner of S02 private evidence root")
-	}
-	allowedOwner := os.Geteuid()
-	if sudoUID := strings.TrimSpace(os.Getenv("SUDO_UID")); sudoUID != "" {
-		if parsed, parseErr := strconv.Atoi(sudoUID); parseErr == nil {
-			allowedOwner = parsed
-		}
-	}
-	if int(rootStat.Uid) != 0 && int(rootStat.Uid) != allowedOwner {
-		t.Fatal("S02 private evidence root is owned by neither root nor the invoking CI user")
-	}
-	oldRootMode := rootInfo.Mode().Perm()
-	if err := os.Chmod(workRoot, 0o711); err != nil {
-		t.Fatalf("temporarily allow the service account to traverse the private evidence root: %v", err)
-	}
-	var work string
 	preserveWork := false
 	t.Cleanup(func() {
 		if work != "" && !preserveWork {
 			_ = os.RemoveAll(work)
 		}
-		if err := os.Chmod(workRoot, oldRootMode); err != nil {
-			t.Errorf("restore private evidence root permissions: %v", err)
-		}
 	})
-	work, err = os.MkdirTemp(workRoot, "systemd-agent-connect-")
-	if err != nil {
-		t.Fatal(err)
+	if info, err := os.Lstat(work); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf("private /var/tmp fixture is not a real directory: %v", err)
 	}
-	if err := os.Chmod(work, 0o711); err != nil {
-		t.Fatalf("prepare service-traversable private test directory: %v", err)
+	binaryPath := filepath.Join(work, "nodedance-agent")
+	compiledBinary, err := os.ReadFile(compiledBinaryPath)
+	if err != nil {
+		t.Fatalf("read compiled Agent CLI into private fixture: %v", err)
+	}
+	if err := os.WriteFile(binaryPath, compiledBinary, 0o755); err != nil {
+		t.Fatalf("copy compiled Agent CLI into private fixture: %v", err)
+	}
+	versionCtx, cancelVersion := context.WithTimeout(testCtx, 10*time.Second)
+	versionOutput, err := exec.CommandContext(versionCtx, binaryPath, "version").CombinedOutput()
+	cancelVersion()
+	if err != nil || !strings.Contains(string(versionOutput), "NodeDance Agent ") {
+		t.Fatalf("configured Agent path is not the compiled NodeDance CLI: %v", err)
 	}
 
 	certificate, rootPEM, err := makeAgentTestCertificate()
@@ -211,6 +195,21 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 	if err := os.Chmod(configPath, 0o600); err != nil {
 		t.Fatal("enforce private Agent credential file permissions")
 	}
+	serviceGroups := []int{serviceGID}
+	if groupIDs, groupErr := serviceUser.GroupIds(); groupErr == nil {
+		for _, value := range groupIDs {
+			if groupID, parseErr := strconv.Atoi(value); parseErr == nil {
+				serviceGroups = appendUniqueInt(serviceGroups, groupID)
+			}
+		}
+	}
+	diagnostics := systemdAgentDiagnostics{
+		systemctl: systemctl, sourceBinary: compiledBinaryPath, binaryPath: binaryPath,
+		configPath: configPath, caPath: caPath, serviceUID: serviceUID,
+		serviceGroups: serviceGroups, secrets: []string{config.Credential},
+	}
+	t.Logf("service-user path access before systemd start (component names omitted):\n%s",
+		strings.Join(diagnostics.pathAccessSummary(), "\n"))
 
 	// InstallSystemd has a fixed production unit path. The preflight above and
 	// this final absence check make the destructive boundary explicit; cleanup
@@ -235,7 +234,7 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if output, err := exec.CommandContext(cleanupCtx, systemctl, "disable", "--now", agent.AgentUnitName).CombinedOutput(); err != nil {
-			t.Errorf("stop and disable test-owned Agent service: %s", strings.TrimSpace(string(output)))
+			t.Errorf("stop and disable test-owned Agent service: %s", strings.TrimSpace(diagnostics.sanitize(string(output))))
 			_, _ = exec.CommandContext(cleanupCtx, systemctl, "kill", "--signal=SIGKILL", "--kill-whom=all", agent.AgentUnitName).CombinedOutput()
 		}
 		if active, err := runSystemdCommand(systemctl, "is-active", agent.AgentUnitName); err == nil && strings.TrimSpace(active) == "active" {
@@ -249,7 +248,7 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 			return
 		}
 		if output, err := exec.CommandContext(cleanupCtx, systemctl, "daemon-reload").CombinedOutput(); err != nil {
-			t.Errorf("reload systemd after removing test-owned unit: %s", strings.TrimSpace(string(output)))
+			t.Errorf("reload systemd after removing test-owned unit: %s", strings.TrimSpace(diagnostics.sanitize(string(output))))
 			preserveWork = true
 			return
 		}
@@ -267,15 +266,17 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 		}
 	}
 	if installErr != nil {
-		t.Fatalf("install and start real NodeDance Agent systemd service: %v", installErr)
+		safeError := diagnostics.sanitize(installErr.Error())
+		t.Fatalf("install and start real NodeDance Agent systemd service: %s\n%s", safeError, diagnostics.failure("install/start failed", 0))
 	}
 	if !unitReferencesTestFilesMustRead(t, unitPath, binaryPath, configPath) {
 		t.Fatal("installed systemd unit does not reference the compiled Agent and private config")
 	}
 
-	firstPID := waitForSystemdMainPID(t, systemctl, 20*time.Second)
-	assertSystemdAgentProcess(t, firstPID, serviceUID, binaryPath)
-	firstGeneration := waitForAgentGenerationAndHeartbeat(t, core, config.NodeID, 0, 20*time.Second)
+	firstPID := waitForSystemdMainPID(t, diagnostics, 20*time.Second)
+	assertSystemdAgentProcess(t, firstPID, serviceUID, binaryPath, diagnostics)
+	firstGeneration := waitForAgentGenerationAndHeartbeat(t, core, config.NodeID, 0, 20*time.Second, diagnostics)
+	assertSystemdAgentStillCurrent(t, diagnostics, firstPID, 0, serviceUID, binaryPath)
 	firstDigest := readAgentCredentialDigest(t, core, config.AgentID)
 	if !bytes.Equal(firstDigest, auth.DigestToken(config.Credential)) {
 		t.Fatal("Core credential verifier does not match the enrolled Agent credential")
@@ -283,14 +284,20 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 	t.Logf("real systemd Agent connected: pid=%d uid=%d node=%s agent=%s generation=%d heartbeat=%d", firstPID, serviceUID, config.NodeID, config.AgentID, firstGeneration, heartbeatSequenceForNode(t, core, config.NodeID))
 
 	restartCtx, cancelRestart := context.WithTimeout(testCtx, 30*time.Second)
+	restartsBeforeManualRestart, stateErr := systemdAgentRestartCount(systemctl)
+	if stateErr != nil {
+		cancelRestart()
+		t.Fatalf("read systemd restart counter before explicit restart: %v\n%s", stateErr, diagnostics.failure("cannot read systemd automatic restart count", firstPID))
+	}
 	restartOutput, restartErr := exec.CommandContext(restartCtx, systemctl, "restart", agent.AgentUnitName).CombinedOutput()
 	cancelRestart()
 	if restartErr != nil {
-		t.Fatalf("restart actual Agent service: %s", strings.TrimSpace(string(restartOutput)))
+		t.Fatalf("restart actual Agent service: %s\n%s", strings.TrimSpace(diagnostics.sanitize(string(restartOutput))), diagnostics.failure("systemctl restart command failed", firstPID))
 	}
-	secondPID := waitForSystemdMainPIDDifferent(t, systemctl, firstPID, 20*time.Second)
-	assertSystemdAgentProcess(t, secondPID, serviceUID, binaryPath)
-	secondGeneration := waitForAgentGenerationAndHeartbeat(t, core, config.NodeID, firstGeneration, 20*time.Second)
+	secondPID := waitForSystemdMainPIDDifferent(t, diagnostics, firstPID, restartsBeforeManualRestart, 20*time.Second)
+	assertSystemdAgentProcess(t, secondPID, serviceUID, binaryPath, diagnostics)
+	secondGeneration := waitForAgentGenerationAndHeartbeat(t, core, config.NodeID, firstGeneration, 20*time.Second, diagnostics)
+	assertSystemdAgentStillCurrent(t, diagnostics, secondPID, restartsBeforeManualRestart, serviceUID, binaryPath)
 	secondDigest := readAgentCredentialDigest(t, core, config.AgentID)
 	if secondGeneration <= firstGeneration || !bytes.Equal(firstDigest, secondDigest) || !bytes.Equal(secondDigest, auth.DigestToken(config.Credential)) {
 		t.Fatal("systemd restart did not preserve the same Core device identity and credential")
@@ -309,27 +316,6 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 		t.Fatal("Core did not retain the same online node/device identity after restart")
 	}
 	t.Logf("systemd restart preserved identity: old_pid=%d new_pid=%d uid=%d node=%s agent=%s generation=%d heartbeat=%d", firstPID, secondPID, serviceUID, config.NodeID, config.AgentID, secondGeneration, heartbeatSequenceForNode(t, core, config.NodeID))
-}
-
-func systemdS02WorkRoot() (string, error) {
-	_, source, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", errors.New("resolve S02 systemd test source directory")
-	}
-	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "..", "..", ".."))
-	artifactRoot := filepath.Join(repositoryRoot, ".artifacts")
-	artifactInfo, err := os.Lstat(artifactRoot)
-	if err != nil || !artifactInfo.IsDir() || artifactInfo.Mode()&os.ModeSymlink != 0 {
-		if err != nil {
-			return "", fmt.Errorf("inspect S02 artifact directory: %w", err)
-		}
-		return "", errors.New("S02 artifact directory must be a real directory")
-	}
-	workRoot := filepath.Join(repositoryRoot, ".artifacts", "work-s02")
-	if err := os.MkdirAll(workRoot, 0o700); err != nil {
-		return "", fmt.Errorf("create S02 private systemd work root: %w", err)
-	}
-	return filepath.Abs(workRoot)
 }
 
 func runSystemdCommand(systemctl string, args ...string) (string, error) {
@@ -356,36 +342,89 @@ func unitReferencesTestFilesMustRead(t *testing.T, unitPath, binaryPath, configP
 	return unitReferencesTestFiles(contents, binaryPath, configPath)
 }
 
-func waitForSystemdMainPID(t *testing.T, systemctl string, timeout time.Duration) int {
-	return waitForSystemdMainPIDAfter(t, systemctl, 0, timeout)
+func waitForSystemdMainPID(t *testing.T, diagnostics systemdAgentDiagnostics, timeout time.Duration) int {
+	return waitForSystemdMainPIDAfter(t, diagnostics, 0, 0, timeout)
 }
 
-func waitForSystemdMainPIDDifferent(t *testing.T, systemctl string, oldPID int, timeout time.Duration) int {
-	return waitForSystemdMainPIDAfter(t, systemctl, oldPID, timeout)
+func waitForSystemdMainPIDDifferent(t *testing.T, diagnostics systemdAgentDiagnostics, oldPID int, expectedRestarts uint64, timeout time.Duration) int {
+	return waitForSystemdMainPIDAfter(t, diagnostics, oldPID, expectedRestarts, timeout)
 }
 
-func waitForSystemdMainPIDAfter(t *testing.T, systemctl string, oldPID int, timeout time.Duration) int {
+func waitForSystemdMainPIDAfter(t *testing.T, diagnostics systemdAgentDiagnostics, oldPID int, expectedRestarts uint64, timeout time.Duration) int {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		value, err := runSystemdCommand(systemctl, "show", agent.AgentUnitName, "-p", "MainPID", "--value")
-		if err == nil {
-			pid, parseErr := strconv.Atoi(strings.TrimSpace(value))
-			if parseErr == nil && pid > 1 && pid != oldPID {
-				return pid
-			}
+		state, err := readSystemdUnitSnapshot(diagnostics.systemctl)
+		if err == nil && state.Restarts != expectedRestarts {
+			t.Fatalf("systemd automatic restart count=%d, want %d\n%s", state.Restarts, expectedRestarts, diagnostics.failure("systemd automatically restarted the Agent before its health checks passed", state.MainPID))
+		}
+		if err == nil && state.Active == "active" && state.Sub == "running" && state.MainPID > 1 && state.MainPID != oldPID {
+			return state.MainPID
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("systemd did not report a new NodeDance Agent MainPID within %s", timeout)
+	t.Fatalf("systemd did not report a new NodeDance Agent MainPID within %s\n%s", timeout, diagnostics.failure("systemd did not report a new MainPID", 0))
 	return 0
 }
 
-func assertSystemdAgentProcess(t *testing.T, pid, expectedUID int, binaryPath string) {
+type systemdUnitSnapshot struct {
+	Active   string
+	Sub      string
+	MainPID  int
+	Restarts uint64
+}
+
+func readSystemdUnitSnapshot(systemctl string) (systemdUnitSnapshot, error) {
+	output, err := runSystemdCommand(systemctl, "show", agent.AgentUnitName,
+		"-p", "ActiveState", "-p", "SubState", "-p", "MainPID", "-p", "NRestarts")
+	if err != nil {
+		return systemdUnitSnapshot{}, errors.New("systemctl show failed")
+	}
+	return parseSystemdUnitSnapshot(output)
+}
+
+func parseSystemdUnitSnapshot(output string) (systemdUnitSnapshot, error) {
+	values := make(map[string]string, 4)
+	for _, line := range strings.Split(output, "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			values[key] = value
+		}
+	}
+	mainPID, pidErr := strconv.Atoi(values["MainPID"])
+	restarts, restartErr := strconv.ParseUint(values["NRestarts"], 10, 64)
+	if values["ActiveState"] == "" || values["SubState"] == "" || pidErr != nil || restartErr != nil {
+		return systemdUnitSnapshot{}, errors.New("systemd show omitted required service state fields")
+	}
+	return systemdUnitSnapshot{Active: values["ActiveState"], Sub: values["SubState"], MainPID: mainPID, Restarts: restarts}, nil
+}
+
+func validateSystemdAgentState(state systemdUnitSnapshot, expectedPID int, expectedRestarts uint64) error {
+	if state.Active != "active" || state.Sub != "running" {
+		return fmt.Errorf("systemd state is %s/%s, want active/running", state.Active, state.Sub)
+	}
+	if state.MainPID <= 1 || expectedPID > 1 && state.MainPID != expectedPID {
+		return fmt.Errorf("systemd MainPID=%d, want %d", state.MainPID, expectedPID)
+	}
+	if state.Restarts != expectedRestarts {
+		return fmt.Errorf("systemd automatic restart count=%d, want %d", state.Restarts, expectedRestarts)
+	}
+	return nil
+}
+
+func systemdAgentRestartCount(systemctl string) (uint64, error) {
+	snapshot, err := readSystemdUnitSnapshot(systemctl)
+	if err != nil {
+		return 0, err
+	}
+	return snapshot.Restarts, nil
+}
+
+func assertSystemdAgentProcess(t *testing.T, pid, expectedUID int, binaryPath string, diagnostics systemdAgentDiagnostics) {
 	t.Helper()
 	status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
 	if err != nil {
-		t.Fatalf("read actual Agent process status: %v", err)
+		t.Fatalf("read actual Agent process status: %v\n%s", err, diagnostics.failure("MainPID /proc status disappeared", pid))
 	}
 	var effectiveUID int
 	for _, line := range strings.Split(string(status), "\n") {
@@ -402,20 +441,32 @@ func assertSystemdAgentProcess(t *testing.T, pid, expectedUID int, binaryPath st
 		}
 	}
 	if effectiveUID != expectedUID {
-		t.Fatalf("systemd Agent effective UID=%d, want selected service UID=%d", effectiveUID, expectedUID)
+		t.Fatalf("systemd Agent effective UID=%d, want selected service UID=%d\n%s", effectiveUID, expectedUID, diagnostics.failure("MainPID effective UID mismatch", pid))
 	}
 	actualExe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
 	if err != nil {
-		t.Fatalf("resolve actual systemd Agent executable: %v", err)
+		t.Fatalf("resolve actual systemd Agent executable: %v\n%s", err, diagnostics.failure("MainPID executable link disappeared", pid))
 	}
 	actualExe, _ = filepath.EvalSymlinks(actualExe)
 	expectedExe, _ := filepath.EvalSymlinks(binaryPath)
 	if actualExe != expectedExe {
-		t.Fatalf("systemd MainPID executable %q does not match compiled NodeDance Agent %q", actualExe, expectedExe)
+		t.Fatalf("systemd MainPID executable %q does not match configured compiled NodeDance Agent\n%s", actualExe, diagnostics.failure("MainPID executable mismatch", pid))
 	}
 }
 
-func waitForAgentGenerationAndHeartbeat(t *testing.T, core *Server, nodeID string, greaterThan uint64, timeout time.Duration) uint64 {
+func assertSystemdAgentStillCurrent(t *testing.T, diagnostics systemdAgentDiagnostics, expectedPID int, expectedRestarts uint64, expectedUID int, binaryPath string) {
+	t.Helper()
+	state, err := readSystemdUnitSnapshot(diagnostics.systemctl)
+	if err != nil {
+		t.Fatalf("read systemd state after Core heartbeat: %v\n%s", err, diagnostics.failure("cannot verify service after Core heartbeat", expectedPID))
+	}
+	if err := validateSystemdAgentState(state, expectedPID, expectedRestarts); err != nil {
+		t.Fatalf("systemd service changed after Core heartbeat: %v\n%s", err, diagnostics.failure("service no longer matches the verified MainPID after Core heartbeat", state.MainPID))
+	}
+	assertSystemdAgentProcess(t, state.MainPID, expectedUID, binaryPath, diagnostics)
+}
+
+func waitForAgentGenerationAndHeartbeat(t *testing.T, core *Server, nodeID string, greaterThan uint64, timeout time.Duration, diagnostics systemdAgentDiagnostics) uint64 {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -429,8 +480,346 @@ func waitForAgentGenerationAndHeartbeat(t *testing.T, core *Server, nodeID strin
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("real systemd Agent did not establish a new online Core lease and heartbeat within %s", timeout)
+	t.Fatalf("real systemd Agent did not establish a new online Core lease and heartbeat within %s\n%s", timeout, diagnostics.failure("Core did not observe a new online lease and heartbeat", 0))
 	return 0
+}
+
+const maxSystemdDiagnosticBytes = 12 * 1024
+
+type boundedDiagnosticBuffer struct {
+	bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func (b *boundedDiagnosticBuffer) Write(value []byte) (int, error) {
+	length := len(value)
+	remaining := b.limit - b.Len()
+	if remaining > 0 {
+		if remaining > length {
+			remaining = length
+		}
+		_, _ = b.Buffer.Write(value[:remaining])
+	}
+	if remaining < length {
+		b.truncated = true
+	}
+	return length, nil
+}
+
+type systemdAgentDiagnostics struct {
+	systemctl     string
+	sourceBinary  string
+	binaryPath    string
+	configPath    string
+	caPath        string
+	serviceUID    int
+	serviceGroups []int
+	secrets       []string
+}
+
+func (d systemdAgentDiagnostics) failure(reason string, pid int) string {
+	var output strings.Builder
+	fmt.Fprintf(&output, "\n--- bounded systemd failure diagnostics: %s ---\n", reason)
+	if pid > 1 {
+		if status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid)); err == nil {
+			for _, line := range strings.Split(string(status), "\n") {
+				if strings.HasPrefix(line, "State:") || strings.HasPrefix(line, "Uid:") || strings.HasPrefix(line, "Gid:") {
+					fmt.Fprintf(&output, "proc %s\n", line)
+				}
+			}
+		} else {
+			output.WriteString("proc status: unavailable (process exited or became inaccessible)\n")
+		}
+	}
+	show := runDiagnosticCommand(d.systemctl, []string{"show", agent.AgentUnitName, "-p", "ActiveState", "-p", "SubState", "-p", "ExecMainStatus", "-p", "ExecMainCode", "-p", "MainPID", "-p", "NRestarts"}, 5*time.Second)
+	output.WriteString("systemctl show:\n")
+	output.WriteString(d.sanitize(show.output))
+	if show.truncated {
+		output.WriteString("\n[systemctl output truncated at the diagnostic limit]\n")
+	}
+	if show.err != nil {
+		fmt.Fprintf(&output, "systemctl show exit: %v\n", show.err)
+	}
+	journal := runDiagnosticCommand("journalctl", []string{"-u", agent.AgentUnitName, "-n", "30", "--no-pager", "-o", "json"}, 5*time.Second)
+	output.WriteString("journalctl selected unit messages (max 20, sanitized):\n")
+	output.WriteString(sanitizeSystemdJournal(journal.output, d.sourceBinary, d.binaryPath, d.configPath, d.caPath, d.secrets))
+	if journal.truncated {
+		output.WriteString("\n[journalctl output truncated at the diagnostic limit]\n")
+	}
+	if journal.err != nil {
+		fmt.Fprintf(&output, "journalctl exit: %v\n", journal.err)
+	}
+	output.WriteString("service-user path access (component names omitted):\n")
+	output.WriteString(strings.Join(d.pathAccessSummary(), "\n"))
+	output.WriteByte('\n')
+	return output.String()
+}
+
+func (d systemdAgentDiagnostics) sanitize(value string) string {
+	return sanitizeSystemdDiagnostic(value, d.sourceBinary, d.binaryPath, d.configPath, d.caPath, d.secrets)
+}
+
+func (d systemdAgentDiagnostics) pathAccessSummary() []string {
+	return systemdPathAccessSummary(d.sourceBinary, d.binaryPath, d.configPath, d.caPath, d.serviceUID, d.serviceGroups)
+}
+
+type diagnosticCommandResult struct {
+	output    string
+	err       error
+	truncated bool
+}
+
+func runDiagnosticCommand(program string, args []string, timeout time.Duration) diagnosticCommandResult {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	buffer := &boundedDiagnosticBuffer{limit: maxSystemdDiagnosticBytes}
+	command := exec.CommandContext(ctx, program, args...)
+	command.Stdout = buffer
+	command.Stderr = buffer
+	err := command.Run()
+	return diagnosticCommandResult{output: buffer.String(), err: err, truncated: buffer.truncated}
+}
+
+var diagnosticAssignmentPattern = regexp.MustCompile(`(?i)(\b(?:bearer|token|credential|password|authorization|cookie|csrf)\b\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;]+)`)
+var diagnosticJSONSecretPattern = regexp.MustCompile(`(?i)(["']?(?:token|credential|password|authorization|cookie|csrf)["']?\s*:\s*)("[^"]*"|'[^']*'|[^\s,;]+)`)
+
+func sanitizeSystemdDiagnostic(value, sourceBinary, binaryPath, configPath, caPath string, secrets []string) string {
+	for _, privateValue := range append([]string{sourceBinary, binaryPath, configPath, caPath}, secrets...) {
+		if privateValue != "" {
+			value = strings.ReplaceAll(value, privateValue, "[REDACTED_PATH_OR_SECRET]")
+		}
+	}
+	value = diagnosticAssignmentPattern.ReplaceAllString(value, "$1[REDACTED]")
+	value = diagnosticJSONSecretPattern.ReplaceAllString(value, "$1[REDACTED]")
+	if len(value) > maxSystemdDiagnosticBytes {
+		value = value[:maxSystemdDiagnosticBytes] + "\n[diagnostic output truncated]\n"
+	}
+	return value
+}
+
+func sanitizeSystemdJournal(value, sourceBinary, binaryPath, configPath, caPath string, secrets []string) string {
+	var output strings.Builder
+	decoder := json.NewDecoder(strings.NewReader(value))
+	count := 0
+	for count < 20 {
+		var entry map[string]any
+		if err := decoder.Decode(&entry); err != nil {
+			break
+		}
+		unit, _ := entry["_SYSTEMD_UNIT"].(string)
+		managerUnit, _ := entry["UNIT"].(string)
+		if unit != agent.AgentUnitName && managerUnit != agent.AgentUnitName {
+			continue
+		}
+		comm, _ := entry["_COMM"].(string)
+		identifier, _ := entry["SYSLOG_IDENTIFIER"].(string)
+		if comm != "systemd" && comm != "nodedance-agent" && comm != "env" &&
+			identifier != "systemd" && identifier != "nodedance-agent" && identifier != "env" {
+			continue
+		}
+		message, _ := entry["MESSAGE"].(string)
+		if message == "" {
+			continue
+		}
+		message = sanitizeSystemdDiagnostic(message, sourceBinary, binaryPath, configPath, caPath, secrets)
+		if len(message) > 600 {
+			message = message[:600] + "[message truncated]"
+		}
+		message = strings.Map(func(r rune) rune {
+			if r == '\n' || r == '\r' || r == '\t' || r >= 0x20 {
+				return r
+			}
+			return -1
+		}, message)
+		fmt.Fprintf(&output, "%s\n", message)
+		count++
+	}
+	if output.Len() == 0 {
+		output.WriteString("no bounded messages for this unit were available\n")
+	}
+	if output.Len() > maxSystemdDiagnosticBytes {
+		return output.String()[:maxSystemdDiagnosticBytes] + "\n[diagnostic output truncated]\n"
+	}
+	return output.String()
+}
+
+func servicePathAccess(label, path string, required os.FileMode, serviceUID int, serviceGroups []int) []string {
+	if path == "" {
+		return []string{label + ": path not set"}
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return []string{label + ": absolute path resolution failed"}
+	}
+	clean := filepath.Clean(absolute)
+	components := strings.Split(strings.TrimPrefix(clean, string(os.PathSeparator)), string(os.PathSeparator))
+	current := string(os.PathSeparator)
+	lines := make([]string, 0, len(components)+1)
+	for index, component := range components {
+		if component != "" {
+			current = filepath.Join(current, component)
+		}
+		info, statErr := os.Lstat(current)
+		if statErr != nil {
+			lines = append(lines, fmt.Sprintf("%s component=%d stat=unavailable", label, index))
+			break
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			lines = append(lines, fmt.Sprintf("%s component=%d owner=unavailable", label, index))
+			continue
+		}
+		mode := info.Mode().Perm()
+		isFinal := index == len(components)-1
+		need := os.FileMode(0o1)
+		if !isFinal || info.IsDir() {
+			need = 0o1
+		} else {
+			need = required
+		}
+		available := effectivePermission(mode, int(stat.Uid), int(stat.Gid), serviceUID, serviceGroups)
+		okAccess := available&need == need
+		kind := "file"
+		if info.IsDir() {
+			kind = "dir"
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			kind = "symlink"
+		}
+		lines = append(lines, fmt.Sprintf("%s component=%d kind=%s mode=%04o owner=%d:%d required=%03o service-access=%t", label, index, kind, mode, stat.Uid, stat.Gid, need, okAccess))
+	}
+	return lines
+}
+
+func systemdPathAccessSummary(sourceBinary, binaryPath, configPath, caPath string, serviceUID int, serviceGroups []int) []string {
+	var lines []string
+	for _, item := range []struct {
+		label string
+		path  string
+		mode  os.FileMode
+	}{
+		{label: "compiled-source", path: sourceBinary, mode: 0o5},
+		{label: "service-binary", path: binaryPath, mode: 0o5},
+		{label: "agent-config", path: configPath, mode: 0o4},
+		{label: "test-ca", path: caPath, mode: 0o4},
+		{label: "former-artifact-work-root", path: systemdS02ArtifactWorkRoot(), mode: 0o5},
+	} {
+		lines = append(lines, servicePathAccess(item.label, item.path, item.mode, serviceUID, serviceGroups)...)
+	}
+	return lines
+}
+
+func effectivePermission(mode os.FileMode, ownerUID, ownerGID, serviceUID int, serviceGroups []int) os.FileMode {
+	if ownerUID == serviceUID {
+		return (mode >> 6) & 0o7
+	}
+	for _, groupID := range serviceGroups {
+		if ownerGID == groupID {
+			return (mode >> 3) & 0o7
+		}
+	}
+	return mode & 0o7
+}
+
+func appendUniqueInt(values []int, value int) []int {
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func systemdS02ArtifactWorkRoot() string {
+	_, source, _, ok := runtime.Caller(0)
+	if !ok {
+		return ""
+	}
+	if absolute, err := filepath.Abs(source); err == nil {
+		source = absolute
+	}
+	repositoryRoot := filepath.Clean(filepath.Join(filepath.Dir(source), "..", "..", ".."))
+	return filepath.Join(repositoryRoot, ".artifacts", "work-s02")
+}
+
+func TestSystemdDiagnosticRedactionAndBounds(t *testing.T) {
+	secret := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	privatePath := "/private/agent.json"
+	input := "Bearer " + secret + " credential=" + secret + " path=" + privatePath + ` {"token":"` + secret + `"}`
+	redacted := sanitizeSystemdDiagnostic(input, "/private/source", "/private/binary", privatePath, "/private/ca.pem", []string{secret})
+	if strings.Contains(redacted, secret) || strings.Contains(redacted, privatePath) || strings.Contains(redacted, "/private/binary") {
+		t.Fatal("systemd diagnostic sanitizer retained a credential or private path")
+	}
+	if !strings.Contains(redacted, "[REDACTED_PATH_OR_SECRET]") || !strings.Contains(redacted, "[REDACTED]") {
+		t.Fatal("systemd diagnostic sanitizer did not mark redactions")
+	}
+
+	buffer := &boundedDiagnosticBuffer{limit: 8}
+	if written, err := buffer.Write([]byte("0123456789")); err != nil || written != 10 {
+		t.Fatalf("bounded diagnostic buffer write = %d, %v; want consumed 10 bytes", written, err)
+	}
+	if got := buffer.String(); got != "01234567" || !buffer.truncated {
+		t.Fatalf("bounded diagnostic buffer retained %q; want at most 8 bytes", got)
+	}
+
+	journal := strings.Join([]string{
+		`{"_SYSTEMD_UNIT":"nodedance-agent.service","_COMM":"nodedance-agent","MESSAGE":"` + strings.Repeat("x", 590) + secret + `"}`,
+		`{"_SYSTEMD_UNIT":"init.scope","UNIT":"nodedance-agent.service","_COMM":"systemd","MESSAGE":"nodedance-agent.service: Main process exited, status=1/FAILURE"}`,
+		`{"_SYSTEMD_UNIT":"nodedance-agent.service","_COMM":"env","MESSAGE":"env: failed to execute Agent CLI: Permission denied"}`,
+		`{"_SYSTEMD_UNIT":"other.service","_COMM":"other-agent","MESSAGE":"` + secret + `"}`,
+	}, "\n")
+	filtered := sanitizeSystemdJournal(journal, "/private/source", "/private/binary", privatePath, "/private/ca.pem", []string{secret})
+	if strings.Contains(filtered, secret) || strings.Contains(filtered, "other-agent") ||
+		!strings.Contains(filtered, "Main process exited") || !strings.Contains(filtered, "Permission denied") {
+		t.Fatal("systemd journal filter retained an unrelated message or failed to redact a credential")
+	}
+
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	privateFile := filepath.Join(directory, "agent.json")
+	if err := os.WriteFile(privateFile, []byte("private"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	serviceUID := os.Geteuid() + 10000
+	paths := servicePathAccess("private-fixture", privateFile, 0o4, serviceUID, nil)
+	joinedPaths := strings.Join(paths, "\n")
+	if !strings.Contains(joinedPaths, "service-access=false") || strings.Contains(joinedPaths, directory) || strings.Contains(joinedPaths, privateFile) {
+		t.Fatal("service-user path diagnostics did not report inaccessible ancestors without exposing paths")
+	}
+}
+
+func TestSystemdSnapshotAndAgentStateValidation(t *testing.T) {
+	state, err := parseSystemdUnitSnapshot("ActiveState=active\nSubState=running\nMainPID=1234\nNRestarts=2\n")
+	if err != nil {
+		t.Fatalf("parse complete systemd snapshot: %v", err)
+	}
+	if err := validateSystemdAgentState(state, 1234, 2); err != nil {
+		t.Fatalf("accept expected active Agent state: %v", err)
+	}
+
+	for _, test := range []struct {
+		name  string
+		state systemdUnitSnapshot
+		pid   int
+		rests uint64
+	}{
+		{name: "automatic restart", state: systemdUnitSnapshot{Active: "active", Sub: "running", MainPID: 1235, Restarts: 3}, pid: 1234, rests: 2},
+		{name: "PID changed", state: systemdUnitSnapshot{Active: "active", Sub: "running", MainPID: 1235, Restarts: 2}, pid: 1234, rests: 2},
+		{name: "failed", state: systemdUnitSnapshot{Active: "failed", Sub: "failed", MainPID: 0, Restarts: 2}, pid: 1234, rests: 2},
+		{name: "auto-restart substate", state: systemdUnitSnapshot{Active: "activating", Sub: "auto-restart", MainPID: 0, Restarts: 2}, pid: 1234, rests: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateSystemdAgentState(test.state, test.pid, test.rests); err == nil {
+				t.Fatal("accepted a changed or non-running systemd Agent state")
+			}
+		})
+	}
+	if _, err := parseSystemdUnitSnapshot("ActiveState=active\nMainPID=1234\nNRestarts=0\n"); err == nil {
+		t.Fatal("accepted a systemd snapshot missing the SubState field")
+	}
 }
 
 func readAgentCredentialDigest(t *testing.T, core *Server, agentID string) []byte {

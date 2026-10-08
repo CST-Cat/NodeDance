@@ -39,6 +39,9 @@ import (
 // Agent runtimes. The local TLS proxy has two controlled faults only: it can
 // drop one already-committed enrollment response and one WELCOME frame.
 func TestRealAgentEnrollmentReconnectRotationAndRevocation(t *testing.T) {
+	// S02's real Agent runtime test must never discover the developer host's
+	// business Docker daemon now that Docker discovery is negotiated by default.
+	t.Setenv("DOCKER_HOST", "unix:///nonexistent/nodedance-s02-test-docker.sock")
 	root := filepath.Join("..", "..", "..", ".artifacts", "work-s02")
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		t.Fatal(err)
@@ -1268,28 +1271,34 @@ func TestRealAgentLeaseWatcherShutdown(t *testing.T) {
 }
 
 type agentTestProxy struct {
-	current            *atomic.Pointer[Server]
-	coreURL            string
-	proxyURL           string
-	rootPEM            []byte
-	dropNextEnrollment atomic.Bool
-	droppedEnrollment  atomic.Bool
-	holdNextIdentity   atomic.Bool
-	holdNextHello      atomic.Bool
-	droppedWelcome     chan droppedWelcomeEvent
-	identityHeld       chan struct{}
-	helloHeld          chan struct{}
-	releaseHello       chan struct{}
-	releaseIdentity    chan struct{}
-	dropWelcomeMu      sync.Mutex
-	dropWelcomeTarget  *dropWelcomeTarget
-	networkDown        atomic.Bool
-	connectionAttempts atomic.Uint64
-	dashboardOpened    atomic.Uint64
-	dashboardClosed    atomic.Uint64
-	tunnelMu           sync.Mutex
-	tunnels            map[uint64]context.CancelFunc
-	nextTunnelID       uint64
+	current                         *atomic.Pointer[Server]
+	coreURL                         string
+	proxyURL                        string
+	rootPEM                         []byte
+	dropNextEnrollment              atomic.Bool
+	droppedEnrollment               atomic.Bool
+	holdNextIdentity                atomic.Bool
+	holdNextHello                   atomic.Bool
+	droppedWelcome                  chan droppedWelcomeEvent
+	identityHeld                    chan struct{}
+	helloHeld                       chan struct{}
+	releaseHello                    chan struct{}
+	releaseIdentity                 chan struct{}
+	dropWelcomeMu                   sync.Mutex
+	dropWelcomeTarget               *dropWelcomeTarget
+	networkDown                     atomic.Bool
+	connectionAttempts              atomic.Uint64
+	dashboardOpened                 atomic.Uint64
+	dashboardClosed                 atomic.Uint64
+	dropDockerChunk                 atomic.Bool
+	blockReconnectAfterDroppedChunk atomic.Bool
+	droppedDockerChunk              chan struct{}
+	dockerChunks                    atomic.Uint64
+	dropDockerMessages              atomic.Bool
+	droppedDockerMessages           atomic.Uint64
+	tunnelMu                        sync.Mutex
+	tunnels                         map[uint64]context.CancelFunc
+	nextTunnelID                    uint64
 }
 
 type dropWelcomeTarget struct {
@@ -1309,7 +1318,17 @@ func newAgentTestProxy(t *testing.T, current *atomic.Pointer[Server], coreURL st
 	t.Helper()
 	return &agentTestProxy{current: current, coreURL: coreURL, rootPEM: rootPEM,
 		droppedWelcome: make(chan droppedWelcomeEvent, 1), identityHeld: make(chan struct{}, 1), helloHeld: make(chan struct{}, 1),
-		releaseHello: make(chan struct{}, 1), releaseIdentity: make(chan struct{}), tunnels: make(map[uint64]context.CancelFunc)}
+		releaseHello: make(chan struct{}, 1), releaseIdentity: make(chan struct{}), tunnels: make(map[uint64]context.CancelFunc),
+		droppedDockerChunk: make(chan struct{}, 1)}
+}
+
+func (p *agentTestProxy) dropNextDockerSnapshotChunk() {
+	p.dropDockerChunk.Store(true)
+}
+
+func (p *agentTestProxy) dropNextDockerSnapshotChunkAndBlockReconnect() {
+	p.blockReconnectAfterDroppedChunk.Store(true)
+	p.dropDockerChunk.Store(true)
 }
 
 func (p *agentTestProxy) dropCommittedRotationWelcome(agentID, nodeID string, afterGeneration uint64) {
@@ -1424,6 +1443,30 @@ func (p *agentTestProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) 
 			messageType, data, err := downstream.Read(ctx)
 			if err != nil {
 				return
+			}
+			var envelope protocol.Envelope
+			if messageType == websocket.MessageText && json.Unmarshal(data, &envelope) == nil && envelope.Type == protocol.TypeDocker {
+				if p.dropDockerMessages.Load() {
+					p.droppedDockerMessages.Add(1)
+					continue
+				}
+				var batch protocol.DockerBatch
+				if json.Unmarshal(envelope.Payload, &batch) == nil && batch.FullSnapshot {
+					p.dockerChunks.Add(1)
+					if batch.SnapshotIndex == 0 && !batch.SnapshotFinal && p.dropDockerChunk.CompareAndSwap(true, false) {
+						if err := upstream.Write(ctx, messageType, data); err != nil {
+							return
+						}
+						if p.blockReconnectAfterDroppedChunk.CompareAndSwap(true, false) {
+							p.networkDown.Store(true)
+						}
+						select {
+						case p.droppedDockerChunk <- struct{}{}:
+						default:
+						}
+						return
+					}
+				}
 			}
 			if isHelloMessage(data) && p.holdNextHello.CompareAndSwap(true, false) {
 				select {

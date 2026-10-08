@@ -48,6 +48,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 	ticker := time.NewTicker(s.websocketCheckInterval)
 	defer ticker.Stop()
+	dockerFingerprints := make(map[string]dockerPushFingerprint)
 	if !s.dashboardSessionStillValid(ctx, current.ID) {
 		_ = conn.Close(websocket.StatusPolicyViolation, "session expired or revoked")
 		return
@@ -66,6 +67,15 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if err := s.writeDashboardMetricsMessage(ctx, conn, node.NodeID); err != nil {
 			return
 		}
+		if !s.dashboardSessionStillValid(ctx, current.ID) {
+			_ = conn.Close(websocket.StatusPolicyViolation, "session expired or revoked")
+			return
+		}
+		fingerprint, _, err := s.writeDashboardDockerMessage(ctx, conn, node.NodeID, nil)
+		if err != nil {
+			return
+		}
+		dockerFingerprints[node.NodeID] = fingerprint
 	}
 	for {
 		select {
@@ -84,6 +94,15 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if err := s.writeDashboardMetricsMessage(ctx, conn, nodeID); err != nil {
 				return
 			}
+			if !s.dashboardSessionStillValid(ctx, current.ID) {
+				_ = conn.Close(websocket.StatusPolicyViolation, "session expired or revoked")
+				return
+			}
+			fingerprint, _, err := s.writeDashboardDockerMessage(ctx, conn, nodeID, dockerFingerprintPointer(dockerFingerprints, nodeID))
+			if err != nil {
+				return
+			}
+			dockerFingerprints[nodeID] = fingerprint
 		case <-ticker.C:
 			if !s.dashboardSessionStillValid(ctx, current.ID) {
 				_ = conn.Close(websocket.StatusPolicyViolation, "session expired or revoked")
@@ -91,6 +110,14 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func dockerFingerprintPointer(fingerprints map[string]dockerPushFingerprint, nodeID string) *dockerPushFingerprint {
+	previous, ok := fingerprints[nodeID]
+	if !ok {
+		return nil
+	}
+	return &previous
 }
 
 func (s *Server) dashboardSessionStillValid(parent context.Context, sessionID string) bool {

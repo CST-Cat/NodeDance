@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { api, type AgentNode, type AgentNodesResponse, type NodeStatusResponse } from '../api'
+import { api, type AgentNode, type AgentNodesResponse, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import MetricsPanel from './MetricsPanel.vue'
 
@@ -15,6 +15,7 @@ interface NodeClock {
 const nodes = ref<AgentNode[]>([])
 const selectedNodeID = ref('')
 const views = ref<Record<string, MetricsView>>({})
+const dockerViews = ref<Record<string, DockerInventory>>({})
 const clocks = ref<Record<string, NodeClock>>({})
 const nodeReasons = ref<Record<string, string>>({})
 const busy = ref(true)
@@ -31,6 +32,55 @@ let latestNodeListServerTime = Number.NEGATIVE_INFINITY
 
 const selectedNode = computed(() => nodes.value.find((node) => node.nodeId === selectedNodeID.value) ?? null)
 const selectedView = computed(() => views.value[selectedNodeID.value] ?? null)
+const selectedDocker = computed(() => dockerViews.value[selectedNodeID.value] ?? null)
+
+function dockerAvailabilityText(inventory: DockerInventory): string {
+  if (inventory.dockerAvailability === 'available') {
+    if (inventory.health?.errorKind === 'api_incompatible') return 'Docker API 不兼容'
+    if (dockerIsStale(inventory)) return '数据过期'
+    if (inventory.health?.reason) return 'Engine 状态异常'
+    return 'Engine 正常'
+  }
+  if (inventory.dockerAvailability === 'unavailable') return 'Docker 不可用'
+  return '等待 Docker 状态'
+}
+
+function dockerStatusReason(inventory: DockerInventory): string {
+  return inventory.health?.reason || inventory.staleReason || ''
+}
+
+function dockerIsStale(inventory: DockerInventory): boolean {
+  if (inventory.dataStale || !inventory.agentOnline) return true
+  const clock = clocks.value[inventory.nodeId]
+  const node = nodes.value.find((item) => item.nodeId === inventory.nodeId)
+  return !clock || clock.status !== 'online' ||
+    clock.generation !== inventory.activeGeneration ||
+    Boolean(node?.agentId && inventory.agentId !== node.agentId) ||
+    elapsed.value - clock.startedAt >= remainingLease(clock)
+}
+
+function containerHealthText(container: DockerInventory['containers'][number]['container']): string {
+  if (!container.healthcheckConfigured || container.health === 'none') return '未配置健康检查'
+  const labels: Record<string, string> = {
+    healthy: '健康', unhealthy: '异常', starting: '启动中', unknown: '未知',
+  }
+  return labels[container.health] ?? container.health
+}
+
+function portText(port: DockerInventory['containers'][number]['container']['ports'][number]): string {
+  const published = Array.isArray(port.published) ? port.published : []
+  const configured = Array.isArray(port.configured) ? port.configured : []
+  if (published.length > 0) {
+    return published.map((binding) => {
+      const host = binding.ip || '*'
+      const formattedHost = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
+      return `${formattedHost}:${binding.port} → ${port.containerPort}/${port.protocol}`
+    }).join('，')
+  }
+  if (configured.length > 0) return `${port.containerPort}/${port.protocol}（配置映射，当前未发布）`
+  if (port.exposed) return `${port.containerPort}/${port.protocol}（仅声明）`
+  return `${port.containerPort}/${port.protocol}`
+}
 
 function remainingLease(clock: NodeClock): number {
   if (!clock.leaseValidUntil) return 0
@@ -126,7 +176,7 @@ async function refreshNodes() {
   busy.value = false
   if (!selectedNodeID.value) return
   const node = merged.find((item) => item.nodeId === selectedNodeID.value)
-  if (node?.agentId) await loadMetrics(node)
+  if (node?.agentId) await Promise.all([loadMetrics(node), loadContainers(node)])
 }
 
 async function loadMetrics(node: AgentNode) {
@@ -135,6 +185,54 @@ async function loadMetrics(node: AgentNode) {
     acceptMetricsResponse(result)
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '无法加载主机指标。'
+  }
+}
+
+async function loadContainers(node: AgentNode) {
+  try {
+    const result = await api.nodeContainers(node.nodeId)
+    acceptDockerResponse(result)
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : '无法加载 Docker 容器。'
+  }
+}
+
+function acceptDockerResponse(result: DockerInventoryMessage) {
+  const containers = Array.isArray(result.inventory?.containers) ? result.inventory.containers : []
+  result = {
+    ...result,
+    inventory: {
+      ...result.inventory,
+      containers: containers.map((record) => ({
+        ...record,
+        container: {
+          ...record.container,
+          ports: Array.isArray(record.container?.ports) ? record.container.ports.map((port) => ({
+            ...port,
+            configured: Array.isArray(port.configured) ? port.configured : [],
+            published: Array.isArray(port.published) ? port.published : [],
+          })) : [],
+        },
+      })),
+    },
+  }
+  const previous = dockerViews.value[result.nodeId]
+  if (previous) {
+    if (result.inventory.activeGeneration < previous.activeGeneration) return
+    if (result.inventory.activeGeneration === previous.activeGeneration) {
+      const incomingTime = Date.parse(result.inventory.serverTime)
+      const previousTime = Date.parse(previous.serverTime)
+      if (Number.isFinite(incomingTime) && Number.isFinite(previousTime) && incomingTime < previousTime) return
+      if (incomingTime === previousTime && incomingTime > 0) {
+        const incomingSequence = Math.max(0, ...result.inventory.containers.map((item) => item.sequence))
+        const previousSequence = Math.max(0, ...previous.containers.map((item) => item.sequence))
+        if (incomingSequence < previousSequence) return
+      }
+    }
+  }
+  dockerViews.value = { ...dockerViews.value, [result.nodeId]: result.inventory }
+  if (setClock(result.nodeId, result.state.status, result.state.serverTime, result.state.leaseValidUntil, result.state.generation)) {
+    setNodeReason(result.nodeId, result.state.reason)
   }
 }
 
@@ -164,9 +262,23 @@ function acceptMetricsResponse(result: MetricsView | NodeStatusResponse) {
 		const previousTime = Date.parse(previousClock.serverTime)
 		if (Number.isFinite(incomingTime) && Number.isFinite(previousTime) && incomingTime < previousTime) return
 	}
-  views.value = { ...views.value, [result.nodeId]: result }
-  setNodeReason(result.nodeId)
-  setClock(result.nodeId, result.nodeStatus, result.serverTime, result.leaseValidUntil, result.activeGeneration)
+  const normalized: MetricsView = {
+    ...result,
+    metrics: {
+      ...result.metrics,
+      network: {
+        ...result.metrics.network,
+        interfaces: Array.isArray(result.metrics.network?.interfaces) ? result.metrics.network.interfaces : [],
+      },
+      disk: {
+        ...result.metrics.disk,
+        mounts: Array.isArray(result.metrics.disk?.mounts) ? result.metrics.disk.mounts : [],
+      },
+    },
+  }
+  views.value = { ...views.value, [normalized.nodeId]: normalized }
+  setNodeReason(normalized.nodeId)
+  setClock(normalized.nodeId, normalized.nodeStatus, normalized.serverTime, normalized.leaseValidUntil, normalized.activeGeneration)
 }
 
 function isNodeStatusResponse(result: MetricsView | NodeStatusResponse): result is NodeStatusResponse {
@@ -191,6 +303,10 @@ function acceptSocketMessage(raw: string) {
     if (setClock(value.nodeId, value.state.status, value.state.serverTime, value.state.leaseValidUntil, value.state.generation)) {
       setNodeReason(value.nodeId, value.state.reason)
     }
+    return
+  }
+  if (value.type === 'node_containers') {
+    acceptDockerResponse(event as DockerInventoryMessage)
   }
 }
 
@@ -239,7 +355,7 @@ function chooseNode(node: AgentNode) {
   selectedNodeID.value = node.nodeId
   error.value = ''
   if (node.agentId) {
-    void loadMetrics(node)
+    void Promise.all([loadMetrics(node), loadContainers(node)])
   } else {
     setNodeReason(node.nodeId, 'awaiting_agent_registration')
   }
@@ -309,6 +425,44 @@ onBeforeUnmount(() => {
           <span class="node-detail-status" :data-online="nodeIsOnline(selectedNode)">{{ isPendingRegistration(selectedNode) ? '等待注册' : nodeIsOnline(selectedNode) ? '在线' : '离线' }}</span>
         </div>
         <div v-else class="metrics-waiting"><h2>选择一个节点</h2><p>节点的实时与最近指标会显示在这里。</p></div>
+
+        <section v-if="selectedNode" class="docker-panel" aria-labelledby="docker-title" data-testid="docker-inventory">
+          <header class="docker-heading">
+            <div><span class="eyebrow">CONTAINER INVENTORY</span><h2 id="docker-title">Docker 容器</h2></div>
+            <span v-if="selectedDocker" class="docker-state" :data-available="selectedDocker.dockerAvailability" :data-stale="dockerIsStale(selectedDocker)">
+              {{ dockerAvailabilityText(selectedDocker) }}
+            </span>
+          </header>
+          <p v-if="!selectedDocker" class="docker-empty">正在读取此节点的 Docker 状态。</p>
+          <p v-else-if="selectedDocker.dockerAvailability === 'unavailable'" class="docker-empty">
+            Agent 仍可在线采集主机指标；Docker Engine 当前不可用。{{ dockerStatusReason(selectedDocker) ? `原因：${dockerStatusReason(selectedDocker)}` : '' }}
+          </p>
+          <p v-else-if="selectedDocker && dockerStatusReason(selectedDocker)" class="docker-empty" data-testid="docker-health-reason">
+            Docker Engine 当前不能提供完整容器状态，下面保留最近已知容器并标记为过期。原因：{{ dockerStatusReason(selectedDocker) }}
+          </p>
+          <p v-if="selectedDocker && selectedDocker.containers.length === 0" class="docker-empty">
+            {{ dockerIsStale(selectedDocker) ? '当前没有可确认的容器列表，等待完整扫描。' : '此节点没有容器。' }}
+          </p>
+          <div v-if="selectedDocker && selectedDocker.containers.length > 0" class="docker-list">
+            <article v-for="record in selectedDocker.containers" :key="record.container.id" class="docker-row" :data-container-id="record.container.id" :data-stale="dockerIsStale(selectedDocker) || record.container.stale">
+              <div class="docker-row-title">
+                <div class="docker-container-copy"><strong>{{ record.container.name || record.container.id.slice(0, 12) }}</strong><small>{{ record.container.image || '未知镜像' }}<template v-if="record.container.compose"> · {{ record.container.compose.project }}/{{ record.container.compose.service }}</template></small></div>
+                <span class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span>
+              </div>
+              <div class="docker-row-meta">
+                <span :data-health="record.container.health">健康：{{ containerHealthText(record.container) }}</span>
+                <span v-if="dockerIsStale(selectedDocker) || record.container.stale" class="container-stale">
+                  过期数据<template v-if="record.container.unavailableReason">：{{ record.container.unavailableReason }}</template>
+                </span>
+                <span v-else>更新于 {{ new Date(record.receivedAt).toLocaleTimeString() }}</span>
+              </div>
+              <div v-if="(record.container.ports ?? []).length" class="container-ports" aria-label="容器端口">
+                <span v-for="(port, index) in (record.container.ports ?? [])" :key="`${port.containerPort}-${port.protocol}-${index}`">{{ portText(port) }}</span>
+              </div>
+              <p v-if="record.container.unavailableReason" class="container-reason">{{ record.container.unavailableReason }}</p>
+            </article>
+          </div>
+        </section>
       </main>
     </div>
   </section>
@@ -341,6 +495,23 @@ onBeforeUnmount(() => {
 .metrics-waiting p { max-width: 440px; color: #9aabc1; font-size: 12px; line-height: 1.7; }
 .node-detail-status { margin-top: 12px; border: 1px solid rgba(171, 196, 232, .15); border-radius: 999px; padding: 6px 11px; color: #ffb4aa; font-size: 10px; }
 .node-detail-status[data-online='true'] { color: #9ce0b7; }
+.docker-panel { margin-top: 20px; border: 1px solid rgba(171, 196, 232, .13); border-radius: 12px; padding: clamp(14px, 2vw, 20px); background: rgba(9, 17, 29, .46); }
+.docker-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.docker-heading h2 { margin: 4px 0 0; font-size: 17px; }
+.docker-state, .container-state { border: 1px solid rgba(171, 196, 232, .16); border-radius: 999px; padding: 5px 9px; color: #aebbd0; font-size: 10px; white-space: nowrap; }
+.docker-state[data-available='available'][data-stale='false'], .container-state[data-running='true'] { color: #9ce0b7; border-color: rgba(121, 214, 156, .24); }
+.docker-state[data-available='unavailable'], .docker-state[data-stale='true'], .container-stale { color: #ffc1b8; border-color: rgba(255, 129, 116, .25); }
+.docker-list { display: grid; gap: 9px; }
+.docker-row { min-width: 0; border: 1px solid rgba(171, 196, 232, .1); border-radius: 9px; padding: 12px; background: rgba(18, 29, 45, .68); }
+.docker-row[data-stale='true'] { border-color: rgba(255, 176, 129, .22); }
+.docker-row-title { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.docker-container-copy { display: grid; min-width: 0; gap: 4px; }
+.docker-container-copy strong { overflow-wrap: anywhere; font-size: 12px; }
+.docker-container-copy small { overflow-wrap: anywhere; color: #93a4bb; font-size: 10px; }
+.docker-row-meta { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-top: 9px; color: #a5b3c8; font-size: 10px; }
+.container-ports { display: grid; gap: 4px; margin-top: 8px; color: #8dc9ff; font-size: 10px; overflow-wrap: anywhere; }
+.container-reason, .docker-empty { color: #9aabc1; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+.container-reason { margin: 8px 0 0; }
 @media (max-width: 760px) { .nodes-layout { grid-template-columns: minmax(0, 1fr); } .node-list { max-height: 270px; overflow: auto; } }
 @media (max-width: 480px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } }
 </style>
