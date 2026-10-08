@@ -47,7 +47,7 @@ func newFixtureSource() *fixtureSource {
 	return &fixtureSource{
 		logicalCPUs:  4,
 		memorySample: &mem.VirtualMemoryStat{Total: 1000, Available: 400},
-		interfaces:   []gnet.InterfaceStat{{Name: "eth0", Flags: []string{"up"}}},
+		interfaces:   []gnet.InterfaceStat{{Name: "eth0", Index: 2, HardwareAddr: "02:00:00:00:00:02", Flags: []string{"up"}}},
 		links:        map[string]linkMetadata{"eth0": {ifindex: 2, iflink: 2}},
 		partitions:   []disk.PartitionStat{{Device: "/dev/test", Mountpoint: "/", Fstype: "ext4"}},
 		diskUsageFunc: func(context.Context, string) (*disk.UsageStat, error) {
@@ -137,8 +137,8 @@ func TestCollectorFirstSampleResetAndNetworkSummaryNoDuplication(t *testing.T) {
 		{CPU: "cpu", User: 5, Idle: 5},
 	}
 	source.interfaces = []gnet.InterfaceStat{
-		{Name: "eth0", Flags: []string{"up"}},
-		{Name: "veth42", Flags: []string{"up"}},
+		{Name: "eth0", Index: 2, HardwareAddr: "02:00:00:00:00:02", Flags: []string{"up"}},
+		{Name: "veth42", Index: 4, HardwareAddr: "02:00:00:00:00:04", Flags: []string{"up"}},
 	}
 	source.links["veth42"] = linkMetadata{ifindex: 4, iflink: 9, kind: "veth"}
 	source.networkSamples = [][]gnet.IOCountersStat{
@@ -192,9 +192,9 @@ func TestCollectorFirstSampleResetAndNetworkSummaryNoDuplication(t *testing.T) {
 func TestNetworkSummaryCountsBondMasterOnceAndKeepsPerInterfaceRates(t *testing.T) {
 	source := newFixtureSource()
 	source.interfaces = []gnet.InterfaceStat{
-		{Name: "bond0", Flags: []string{"up"}},
-		{Name: "eth0", Flags: []string{"up"}},
-		{Name: "eth1", Flags: []string{"up"}},
+		{Name: "bond0", Index: 7, HardwareAddr: "02:00:00:00:00:07", Flags: []string{"up"}},
+		{Name: "eth0", Index: 2, HardwareAddr: "02:00:00:00:00:02", Flags: []string{"up"}},
+		{Name: "eth1", Index: 3, HardwareAddr: "02:00:00:00:00:03", Flags: []string{"up"}},
 	}
 	source.links = map[string]linkMetadata{
 		"bond0": {ifindex: 7, iflink: 7, kind: "bond"},
@@ -240,6 +240,177 @@ func TestNetworkSummaryCountsBondMasterOnceAndKeepsPerInterfaceRates(t *testing.
 		if item.Rate.State != StateOK || item.Rate.Value == nil {
 			t.Errorf("interface %s rate should remain available in details: %+v", item.Name, item.Rate)
 		}
+	}
+}
+
+func TestNetworkCounterIdentityChangeResetsBaseline(t *testing.T) {
+	tests := []struct {
+		name     string
+		newIndex int
+		newMAC   string
+	}{
+		{name: "ifindex changed", newIndex: 3, newMAC: "02:00:00:00:00:02"},
+		{name: "MAC changed", newIndex: 2, newMAC: "02:00:00:00:00:03"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			source := newFixtureSource()
+			source.networkSamples = [][]gnet.IOCountersStat{
+				{{Name: "eth0", BytesRecv: 100, BytesSent: 200}},
+				{{Name: "eth0", BytesRecv: 1_000, BytesSent: 2_000}},
+				{{Name: "eth0", BytesRecv: 1_500, BytesSent: 3_000}},
+			}
+			at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+			collector := newCollector(source, func() time.Time { return at }, time.Second)
+			ctx := context.Background()
+
+			first := collector.Sample(ctx)
+			if got := first.Network.Interfaces[0].Rate; got.State != StateUnknown || got.Reason != "warming_up" {
+				t.Fatalf("first rate = %+v, want warming_up", got)
+			}
+
+			source.interfaces = []gnet.InterfaceStat{{
+				Name: "eth0", Index: test.newIndex, HardwareAddr: test.newMAC, Flags: []string{"up"},
+			}}
+			source.links = map[string]linkMetadata{
+				"eth0": {ifindex: test.newIndex, iflink: test.newIndex},
+			}
+			at = at.Add(5 * time.Second)
+			changed := collector.Sample(ctx)
+			if got := changed.Network.Interfaces[0].Rate; got.State != StateUnknown || got.Reason != "interface_changed" {
+				t.Fatalf("changed-identity rate = %+v, want unknown interface_changed", got)
+			}
+			if got := changed.Network.Summary; got.State != StateUnknown || got.Reason != "interface_changed" {
+				t.Fatalf("changed-identity summary = %+v, want unknown interface_changed", got)
+			}
+
+			at = at.Add(5 * time.Second)
+			recovered := collector.Sample(ctx)
+			if got := recovered.Network.Interfaces[0].Rate; got.State != StateOK || got.Value == nil {
+				t.Fatalf("rate after new identity baseline = %+v, want known", got)
+			}
+			if got := recovered.Network.Interfaces[0].Rate.Value.ReceivedBytesPerSecond; got != 100 {
+				t.Fatalf("rate after new identity baseline RX = %.1f, want 100 bytes/s", got)
+			}
+		})
+	}
+}
+
+func TestNetworkCounterWithoutMACUsesStableIfindex(t *testing.T) {
+	source := newFixtureSource()
+	source.interfaces = []gnet.InterfaceStat{{Name: "tun0", Index: 11, Flags: []string{"up"}}}
+	source.links = map[string]linkMetadata{"tun0": {ifindex: 11, iflink: 11, kind: "tunnel"}}
+	source.networkSamples = [][]gnet.IOCountersStat{
+		{{Name: "tun0", BytesRecv: 100, BytesSent: 200}},
+		{{Name: "tun0", BytesRecv: 600, BytesSent: 1_200}},
+	}
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	collector := newCollector(source, func() time.Time { return at }, time.Second)
+	ctx := context.Background()
+	_ = collector.Sample(ctx)
+	at = at.Add(5 * time.Second)
+	snapshot := collector.Sample(ctx)
+
+	if got := snapshot.Network.Interfaces[0].Rate; got.State != StateOK || got.Value == nil {
+		t.Fatalf("interface without MAC rate = %+v, want known from stable ifindex", got)
+	}
+	if got := snapshot.Network.Interfaces[0].Rate.Value.ReceivedBytesPerSecond; got != 100 {
+		t.Fatalf("interface without MAC RX rate = %.1f, want 100 bytes/s", got)
+	}
+}
+
+type replacingTopologySource struct {
+	*fixtureSource
+	currentInterface gnet.InterfaceStat
+	currentLink      linkMetadata
+	nextInterface    gnet.InterfaceStat
+	nextLink         linkMetadata
+	replaceAfterRead bool
+}
+
+func (s *replacingTopologySource) networkInterfaces(context.Context) ([]gnet.InterfaceStat, error) {
+	return []gnet.InterfaceStat{s.currentInterface}, nil
+}
+
+func (s *replacingTopologySource) linkMetadata(name string) (linkMetadata, error) {
+	if name != s.currentInterface.Name {
+		return linkMetadata{}, errors.New("unexpected interface name")
+	}
+	return s.currentLink, nil
+}
+
+func (s *replacingTopologySource) networkCounters(ctx context.Context) ([]gnet.IOCountersStat, error) {
+	counters, err := s.fixtureSource.networkCounters(ctx)
+	if err == nil && s.replaceAfterRead {
+		s.currentInterface = s.nextInterface
+		s.currentLink = s.nextLink
+		s.replaceAfterRead = false
+	}
+	return counters, err
+}
+
+func TestNetworkIdentityReplacementDuringCounterReadDoesNotSeedMixedBaseline(t *testing.T) {
+	base := newFixtureSource()
+	base.networkSamples = [][]gnet.IOCountersStat{
+		{{Name: "eth0", BytesRecv: 100, BytesSent: 200}},
+		{{Name: "eth0", BytesRecv: 1_000, BytesSent: 2_000}},
+		{{Name: "eth0", BytesRecv: 1_500, BytesSent: 3_000}},
+	}
+	source := &replacingTopologySource{
+		fixtureSource: base,
+		currentInterface: gnet.InterfaceStat{
+			Name: "eth0", Index: 2, HardwareAddr: "02:00:00:00:00:02", Flags: []string{"up"},
+		},
+		currentLink:      linkMetadata{ifindex: 2, iflink: 2},
+		nextInterface:    gnet.InterfaceStat{Name: "eth0", Index: 3, HardwareAddr: "02:00:00:00:00:03", Flags: []string{"up"}},
+		nextLink:         linkMetadata{ifindex: 3, iflink: 3},
+		replaceAfterRead: true,
+	}
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	collector := newCollector(source, func() time.Time { return at }, time.Second)
+	ctx := context.Background()
+
+	first := collector.Sample(ctx)
+	if got := first.Network.Interfaces[0].Rate; got.State != StateUnknown || got.Reason != "interface_changed_during_sample" {
+		t.Fatalf("sample spanning replacement = %+v, want unknown interface_changed_during_sample", got)
+	}
+	at = at.Add(5 * time.Second)
+	second := collector.Sample(ctx)
+	if got := second.Network.Interfaces[0].Rate; got.State != StateUnknown || got.Reason != "warming_up" {
+		t.Fatalf("first stable sample after replacement = %+v, want warming_up baseline", got)
+	}
+	at = at.Add(5 * time.Second)
+	third := collector.Sample(ctx)
+	if got := third.Network.Interfaces[0].Rate; got.State != StateOK || got.Value == nil {
+		t.Fatalf("second stable sample after replacement = %+v, want known", got)
+	}
+	if got := third.Network.Interfaces[0].Rate.Value.ReceivedBytesPerSecond; got != 100 {
+		t.Fatalf("post-replacement RX = %.1f, want 100 bytes/s (not mixed baseline rate)", got)
+	}
+}
+
+func TestNetworkTopologyReadFailureKeepsKnownInterfaceRateButUnknownSummary(t *testing.T) {
+	source := newFixtureSource()
+	source.networkSamples = [][]gnet.IOCountersStat{
+		{{Name: "eth0", BytesRecv: 100, BytesSent: 200}},
+		{{Name: "eth0", BytesRecv: 600, BytesSent: 1_200}},
+	}
+	source.linkErrors = map[string]error{"eth0": os.ErrPermission}
+	at := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
+	collector := newCollector(source, func() time.Time { return at }, time.Second)
+	ctx := context.Background()
+	_ = collector.Sample(ctx)
+	at = at.Add(5 * time.Second)
+	snapshot := collector.Sample(ctx)
+
+	if got := snapshot.Network.Interfaces[0].Rate; got.State != StateOK || got.Value == nil {
+		t.Fatalf("interface rate with topology metadata failure = %+v, want known from stable ifindex/MAC", got)
+	}
+	if got := snapshot.Network.Interfaces[0].Rate.Value.ReceivedBytesPerSecond; got != 100 {
+		t.Fatalf("interface RX rate = %.1f, want 100 bytes/s", got)
+	}
+	if got := snapshot.Network.Summary; got.State != StateUnknown || got.Reason != "topology_unavailable" {
+		t.Fatalf("summary with topology metadata failure = %+v, want unknown topology_unavailable", got)
 	}
 }
 
