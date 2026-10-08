@@ -135,10 +135,10 @@
     },
     "S02-SUP-04": {
       "status": "NOT_READY",
-      "action": "在隔离Linux CI systemd manager 中用显式服务用户启动包含空格、$、%、引号的ExecStart路径。",
-      "expected": "参数按原字面到达，无shell解释；Agent使用选定OS用户，验证拒绝错误所有权配置。",
-      "environment": "GitHub-hosted Linux runner；actual systemd执行和systemd-analyze辅助校验；不依赖用户VPS。",
-      "evidence_required": "实际systemctl启动结果、捕获参数精确比较、服务进程UID及不匹配所有权拒绝。",
+      "action": "在隔离Linux CI systemd manager中保留字面路径参数探针，并调用agent.InstallSystemd安装本次编译的真实nodedance-agent，以nobody运行、连接真实TLS Core后执行systemctl restart。",
+      "expected": "预存固定unit或enabled link时拒绝安装；特殊路径按原字面到达且无shell解释；真实CLI以nobody运行并完成Core身份注册和Heartbeat；重启后MainPID变化、generation增加、node/device身份及credential摘要保持且新generation继续Heartbeat；错误用户或配置归属仍拒绝。",
+      "environment": "GitHub-hosted Linux root/systemd runner；本次make build生成的Agent CLI、真实TLS Core和隔离工作目录；真实systemctl执行；不依赖用户VPS且不在开发宿主机安装服务。",
+      "evidence_required": "原参数探针捕获、unit/LoadState预检、实际MainPID及/proc EUID/可执行文件、Core nodeId/agentId/generation/heartbeat序列、重启前后credential摘要比较，以及只清理本测试unit/文件的结果；私有配置和凭据不得上传。",
       "runs": [],
       "reason": "尚无本次S02验收运行结果；不得将初始模板视为测试证据。"
     },
