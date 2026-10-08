@@ -78,6 +78,16 @@ func testConnection(journal string) AgentConnection {
 	return AgentConnection{NodeID: testNodeID, ConnectionGeneration: 7, JournalID: journal}
 }
 
+func bindAgentReport(task Task, connection AgentConnection, report AgentTask) AgentTask {
+	report.TaskID = task.TaskID
+	report.NodeID = task.NodeID
+	report.JournalID = connection.JournalID
+	report.TargetID = task.Intent.ContainerID
+	report.IdempotencyKey = task.IdempotencyKey
+	report.RequestDigest = task.RequestDigest
+	return report
+}
+
 func TestEnqueuePersistsIntentAuditAndClaimBeforeDelivery(t *testing.T) {
 	fixture := openTestDB(t, "", time.Now().UTC())
 	request := defaultRequest()
@@ -117,6 +127,63 @@ func TestEnqueuePersistsIntentAuditAndClaimBeforeDelivery(t *testing.T) {
 	}
 	if _, ok, err := fixture.store.ClaimNext(context.Background(), connection, request.ActorID, request.RemoteAddr); err != nil || ok {
 		t.Fatalf("sent task was automatically replayed: ok=%t err=%v", ok, err)
+	}
+}
+
+func TestAgentReportIdentityMustMatchStoredTaskInsideSQLiteTransaction(t *testing.T) {
+	fixture := openTestDB(t, "", time.Now().UTC())
+	accepted, err := fixture.store.Enqueue(context.Background(), defaultRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := testConnection(strings.Repeat("a", 64))
+	if _, err := fixture.store.ObserveAgentConnection(context.Background(), connection); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := fixture.store.ClaimNext(context.Background(), connection, sql.NullInt64{}, "unknown"); err != nil || !ok {
+		t.Fatalf("claim: %t %v", ok, err)
+	}
+	base := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Running,
+		Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting}})
+	tests := []struct {
+		name   string
+		mutate func(*AgentTask)
+	}{
+		{"node", func(report *AgentTask) { report.NodeID = "other-node" }},
+		{"journal", func(report *AgentTask) { report.JournalID = strings.Repeat("b", 64) }},
+		{"target", func(report *AgentTask) { report.TargetID = strings.Repeat("c", 64) }},
+		{"idempotency-key", func(report *AgentTask) { report.IdempotencyKey = "other-key" }},
+		{"digest", func(report *AgentTask) { report.RequestDigest[0] ^= 0xff }},
+		{"agent-cannot-claim-core-delivery", func(report *AgentTask) { report.Evidence.DeliveryCommitted = true }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			report := base
+			test.mutate(&report)
+			if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{report}, false); !errors.Is(err, ErrTaskStateConflict) {
+				t.Fatalf("mismatched identity was accepted: %v", err)
+			}
+			task, err := fixture.store.Get(context.Background(), testNodeID, accepted.Task.TaskID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if task.Status != taskstate.Queued || task.Evidence.ExecutionAttempted {
+				t.Fatalf("rejected report mutated durable task: %+v", task)
+			}
+			var auditCount, claimCount int
+			if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_audit_events WHERE task_id=? AND event='agent_status'`, task.TaskID).Scan(&auditCount); err != nil {
+				t.Fatal(err)
+			}
+			if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_resource_claims WHERE task_id=?`, task.TaskID).Scan(&claimCount); err != nil {
+				t.Fatal(err)
+			}
+			if auditCount != 0 || claimCount != 1 {
+				t.Fatalf("rejected report changed audit/claim: %d/%d", auditCount, claimCount)
+			}
+		})
+	}
+	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{base}, false); err != nil {
+		t.Fatalf("valid bound report rejected after identity failures: %v", err)
 	}
 }
 
@@ -406,8 +473,8 @@ func TestOnlyProofVerifiedTerminalResultReleasesClaim(t *testing.T) {
 	if _, ok, err := fixture.store.ClaimNext(context.Background(), connection, sql.NullInt64{}, "unknown"); err != nil || !ok {
 		t.Fatalf("claim: %t %v", ok, err)
 	}
-	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{{TaskID: accepted.Task.TaskID,
-		Status: taskstate.Running, Progress: Progress{Phase: PhaseExecuting}}}, false); !errors.Is(err, taskstate.ErrInvalidStatus) {
+	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{bindAgentReport(accepted.Task, connection, AgentTask{
+		Status: taskstate.Running, Progress: Progress{Phase: PhaseExecuting}})}, false); !errors.Is(err, taskstate.ErrInvalidStatus) {
 		t.Fatalf("running report without Agent execution evidence accepted: %v", err)
 	}
 	unchanged, err := fixture.store.Get(context.Background(), testNodeID, accepted.Task.TaskID)
@@ -417,12 +484,12 @@ func TestOnlyProofVerifiedTerminalResultReleasesClaim(t *testing.T) {
 	if unchanged.Status != taskstate.Queued || unchanged.Evidence.ExecutionAttempted {
 		t.Fatalf("failed running report partially changed durable state: %+v", unchanged)
 	}
-	started := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Running, Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting}}
+	started := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Running, Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting}})
 	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{started}, false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{{TaskID: accepted.Task.TaskID, Status: taskstate.Succeeded,
-		Evidence: Evidence{ExecutionAttempted: true, ExecutionCompleted: true}, Progress: Progress{Phase: PhaseVerifying, Completed: 1, Total: 1}, Result: Result{Code: ResultVerified, ObservedState: "running"}}}, false); !errors.Is(err, taskstate.ErrInvalidStatus) {
+	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Succeeded,
+		Evidence: Evidence{ExecutionAttempted: true, ExecutionCompleted: true}, Progress: Progress{Phase: PhaseVerifying, Completed: 1, Total: 1}, Result: Result{Code: ResultVerified, ObservedState: "running"}})}, false); !errors.Is(err, taskstate.ErrInvalidStatus) {
 		t.Fatalf("unverified operation became successful: %v", err)
 	}
 	if _, err := fixture.store.Get(context.Background(), testNodeID, accepted.Task.TaskID); err != nil {
@@ -432,9 +499,9 @@ func TestOnlyProofVerifiedTerminalResultReleasesClaim(t *testing.T) {
 	if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_resource_claims WHERE task_id=?`, accepted.Task.TaskID).Scan(&claimCount); err != nil || claimCount != 1 {
 		t.Fatalf("unverified result released claim: count=%d err=%v", claimCount, err)
 	}
-	finished := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Succeeded,
+	finished := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Succeeded,
 		Evidence: Evidence{ExecutionAttempted: true, ExecutionCompleted: true, PostconditionVerified: true},
-		Progress: Progress{Phase: PhaseVerifying, Completed: 1, Total: 1}, Result: Result{Code: ResultVerified, ObservedState: "running", ResourceRevision: "sha256.abc123"}}
+		Progress: Progress{Phase: PhaseVerifying, Completed: 1, Total: 1}, Result: Result{Code: ResultVerified, ObservedState: "running", ResourceRevision: "sha256.abc123"}})
 	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{finished}, false); err != nil {
 		t.Fatal(err)
 	}
@@ -463,9 +530,9 @@ func TestVerifiedTerminalMayArriveBeforeRunningAckWithoutInventedEvidence(t *tes
 	if _, ok, err := fixture.store.ClaimNext(context.Background(), connection, sql.NullInt64{}, "unknown"); err != nil || !ok {
 		t.Fatalf("claim: %t %v", ok, err)
 	}
-	terminal := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Succeeded,
+	terminal := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Succeeded,
 		Evidence: Evidence{ExecutionAttempted: true, ExecutionCompleted: true, PostconditionVerified: true},
-		Progress: Progress{Phase: PhaseVerifying, Completed: 1, Total: 1}, Result: Result{Code: ResultVerified, ObservedState: "running"}}
+		Progress: Progress{Phase: PhaseVerifying, Completed: 1, Total: 1}, Result: Result{Code: ResultVerified, ObservedState: "running"}})
 	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{terminal}, false); err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +555,7 @@ func TestVerifiedTerminalMayArriveBeforeRunningAckWithoutInventedEvidence(t *tes
 	}
 }
 
-func TestQueuedTaskReportedUnknownRequiresAgentExecutionEvidence(t *testing.T) {
+func TestQueuedDeliveredTaskReportedUnknownUsesCoreDeliveryEvidenceOnly(t *testing.T) {
 	fixture := openTestDB(t, "", time.Now().UTC())
 	accepted, err := fixture.store.Enqueue(context.Background(), defaultRequest())
 	if err != nil {
@@ -501,17 +568,21 @@ func TestQueuedTaskReportedUnknownRequiresAgentExecutionEvidence(t *testing.T) {
 	if _, ok, err := fixture.store.ClaimNext(context.Background(), connection, sql.NullInt64{}, "unknown"); err != nil || !ok {
 		t.Fatalf("claim: %t %v", ok, err)
 	}
-	report := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Unknown,
-		Progress: Progress{Phase: PhaseReconciling}, Result: Result{Code: ResultUncertain}}
-	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{report}, false); !errors.Is(err, taskstate.ErrInvalidStatus) {
-		t.Fatalf("Agent unknown report fabricated a prior execution attempt: %v", err)
+	report := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Unknown,
+		Progress: Progress{Phase: PhaseReconciling}, Result: Result{Code: ResultUncertain}})
+	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{report}, false); err != nil {
+		t.Fatalf("durably dispatched queued task did not become unknown without invented execution evidence: %v", err)
 	}
 	task, err := fixture.store.Get(context.Background(), testNodeID, accepted.Task.TaskID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Status != taskstate.Queued || task.Evidence.ExecutionAttempted {
-		t.Fatalf("rejected unknown report changed task: %+v", task)
+	if task.Status != taskstate.Unknown || task.Evidence.ExecutionAttempted || !task.Evidence.DeliveryCommitted {
+		t.Fatalf("unknown report did not preserve only Core delivery evidence: %+v", task)
+	}
+	var claims int
+	if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_resource_claims WHERE task_id=?`, task.TaskID).Scan(&claims); err != nil || claims != 1 {
+		t.Fatalf("unknown task claim was released: claims=%d err=%v", claims, err)
 	}
 }
 
@@ -528,7 +599,7 @@ func TestAgentQueuedJournalEntryIsAcknowledgedWithoutReplay(t *testing.T) {
 	if _, ok, err := fixture.store.ClaimNext(context.Background(), connection, sql.NullInt64{}, "unknown"); err != nil || !ok {
 		t.Fatalf("claim: %t %v", ok, err)
 	}
-	report := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Queued, Progress: Progress{Phase: PhaseAccepted}}
+	report := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Queued, Progress: Progress{Phase: PhaseAccepted}})
 	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{report}, true); err != nil {
 		t.Fatalf("Agent's durable queued entry was rejected: %v", err)
 	}
@@ -558,9 +629,9 @@ func TestNonterminalAgentReportsCannotPersistResultPayloads(t *testing.T) {
 		t.Fatalf("claim: %t %v", ok, err)
 	}
 	secret := "token_DO_NOT_PERSIST_7e1811"
-	maliciousRunning := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Running,
+	maliciousRunning := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Running,
 		Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting, Completed: 1, Total: 2},
-		Result: Result{Code: ResultCode(secret), ObservedState: secret, ResourceRevision: secret}}
+		Result: Result{Code: ResultCode(secret), ObservedState: secret, ResourceRevision: secret}})
 	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{maliciousRunning}, false); !errors.Is(err, ErrTaskStateConflict) {
 		t.Fatalf("running report carried an arbitrary result payload: %v", err)
 	}
@@ -582,13 +653,13 @@ func TestNonterminalAgentReportsCannotPersistResultPayloads(t *testing.T) {
 		t.Fatalf("rejected report wrote audit/result data: agentAudits=%d secretRows=%d", agentAudits, secretRows)
 	}
 
-	validRunning := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Running,
-		Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting, Completed: 1, Total: 2}}
+	validRunning := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Running,
+		Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting, Completed: 1, Total: 2}})
 	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{validRunning}, false); err != nil {
 		t.Fatalf("valid running progress rejected: %v", err)
 	}
-	maliciousUnknown := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Unknown,
-		Progress: Progress{Phase: PhaseReconciling}, Result: Result{Code: ResultUncertain, ObservedState: secret}}
+	maliciousUnknown := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Unknown,
+		Progress: Progress{Phase: PhaseReconciling}, Result: Result{Code: ResultUncertain, ObservedState: secret}})
 	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{maliciousUnknown}, false); !errors.Is(err, ErrTaskStateConflict) {
 		t.Fatalf("unknown report carried terminal observations: %v", err)
 	}
@@ -605,13 +676,13 @@ func TestNonterminalAgentReportsCannotPersistResultPayloads(t *testing.T) {
 	if secretRows != 0 {
 		t.Fatalf("rejected unknown payload leaked secret into task result fields: %d", secretRows)
 	}
-	validProgress := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Running,
-		Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting, Completed: 2, Total: 2}}
+	validProgress := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Running,
+		Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting, Completed: 2, Total: 2}})
 	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{validProgress}, false); err != nil {
 		t.Fatalf("valid running progress update rejected: %v", err)
 	}
-	validUnknown := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Unknown,
-		Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseReconciling}, Result: Result{Code: ResultUncertain}}
+	validUnknown := bindAgentReport(accepted.Task, connection, AgentTask{Status: taskstate.Unknown,
+		Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseReconciling}, Result: Result{Code: ResultUncertain}})
 	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{validUnknown}, false); err != nil {
 		t.Fatalf("contract-valid unknown report rejected: %v", err)
 	}
@@ -679,7 +750,7 @@ func TestChangedJournalBlocksAbsentTaskInferenceUntilVerifiedResolution(t *testi
 	if _, ok, err := fixture.store.ClaimNext(context.Background(), oldConnection, sql.NullInt64{}, "unknown"); err != nil || !ok {
 		t.Fatalf("claim: %t %v", ok, err)
 	}
-	started := AgentTask{TaskID: accepted.Task.TaskID, Status: taskstate.Running, Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting}}
+	started := bindAgentReport(accepted.Task, oldConnection, AgentTask{Status: taskstate.Running, Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting}})
 	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), oldConnection, []AgentTask{started}, false); err != nil {
 		t.Fatal(err)
 	}

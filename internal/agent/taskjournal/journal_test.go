@@ -123,6 +123,112 @@ func TestEnqueueIdempotencyTenConcurrentRequestsAndResourceConflict(t *testing.T
 	}
 }
 
+func TestDeliveredQueuedRecoveryBecomesUnknownAndKeepsClaim(t *testing.T) {
+	store, _ := openTestStore(t)
+	identity := testIdentity("task-delivered-before-run", "key-delivered-before-run")
+	delivered, err := store.EnqueueDelivered(context.Background(), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delivered.Task.Status != taskstate.Queued || !delivered.Task.DeliveryCommitted {
+		t.Fatalf("durable delivery marker missing: %+v", delivered.Task)
+	}
+	if recovered, err := store.RecoverInterrupted(context.Background()); err != nil || recovered != 1 {
+		t.Fatalf("recover queued delivered row = %d, %v; want 1", recovered, err)
+	}
+	got, err := store.Get(context.Background(), identity.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != taskstate.Unknown || !got.DeliveryCommitted || got.Evidence.ExecutionAttempted || got.Result.Code != ResultUncertain {
+		t.Fatalf("recovered row claimed execution or lost delivery marker: %+v", got)
+	}
+	var claims int
+	if err := store.db.QueryRow(`SELECT count(*) FROM active_resource_claims WHERE task_id=?`, identity.TaskID).Scan(&claims); err != nil || claims != 1 {
+		t.Fatalf("unknown recovery released resource claim: claims=%d err=%v", claims, err)
+	}
+	if err := store.BeginExecution(context.Background(), identity.TaskID); err == nil {
+		t.Fatal("unknown delivered task was eligible for execution replay")
+	}
+}
+
+func TestV2UpgradeDoesNotInventDeliveryForLegacyQueuedRows(t *testing.T) {
+	store, path := openTestStore(t)
+	identity := testIdentity("legacy-v2-queued", "legacy-v2-key")
+	if _, err := store.Enqueue(context.Background(), identity); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE task_journal DROP COLUMN delivery_committed`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version=2`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	upgraded, err := Open(context.Background(), path, "node-test")
+	if err != nil {
+		t.Fatalf("upgrade v2 journal: %v", err)
+	}
+	defer upgraded.Close()
+	var version int
+	if err := upgraded.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 3 {
+		t.Fatalf("upgraded schema version = %d err=%v", version, err)
+	}
+	got, err := upgraded.Get(context.Background(), identity.TaskID)
+	if err != nil || got.Status != taskstate.Queued || got.DeliveryCommitted {
+		t.Fatalf("v2 row was falsely marked delivered: %+v err=%v", got, err)
+	}
+	if recovered, err := upgraded.RecoverInterrupted(context.Background()); err != nil || recovered != 0 {
+		t.Fatalf("legacy queued row incorrectly became unknown: recovered=%d err=%v", recovered, err)
+	}
+}
+
+func TestSnapshotAllReturnsOneBoundedCandidateWithIdentityFields(t *testing.T) {
+	store, _ := openTestStore(t)
+	for index := 0; index < 40; index++ {
+		identity := testIdentity(fmt.Sprintf("snapshot-task-%02d", index), fmt.Sprintf("snapshot-key-%02d", index))
+		identity.TargetID = fmt.Sprintf("container-%02d", index)
+		identity.ResourceKey = identity.TargetID
+		if _, err := store.EnqueueDelivered(context.Background(), identity); err != nil {
+			t.Fatal(err)
+		}
+	}
+	snapshot, err := store.SnapshotAll(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot) != 40 {
+		t.Fatalf("snapshot returned %d records, want 40", len(snapshot))
+	}
+	seen := make(map[string]struct{}, len(snapshot))
+	for _, row := range snapshot {
+		if _, duplicate := seen[row.TaskID]; duplicate {
+			t.Fatalf("snapshot duplicated task %q", row.TaskID)
+		}
+		seen[row.TaskID] = struct{}{}
+		if !row.DeliveryCommitted || row.IdempotencyKey == "" || row.RequestDigest == ([32]byte{}) {
+			t.Fatalf("snapshot omitted durable identity: %+v", row)
+		}
+	}
+	newIdentity := testIdentity("snapshot-after-freeze", "snapshot-after-freeze-key")
+	newIdentity.TargetID, newIdentity.ResourceKey = "container-new", "container-new"
+	if _, err := store.EnqueueDelivered(context.Background(), newIdentity); err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot) != 40 {
+		t.Fatalf("candidate changed after it was returned: %d", len(snapshot))
+	}
+}
+
 func TestEnqueueChecksTaskIDAndIdempotencyKeyTogether(t *testing.T) {
 	store, _ := openTestStore(t)
 	first := testIdentity("task-a", "key-a")
@@ -311,8 +417,8 @@ func TestV1MigrationPreservesRowsAndLegacyRunningBecomesUnknownWithoutBaseline(t
 	}
 	defer store.Close()
 	var version int
-	if err := store.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 2 {
-		t.Fatalf("schema version = %d, error %v; want 2", version, err)
+	if err := store.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil || version != 3 {
+		t.Fatalf("schema version = %d, error %v; want 3", version, err)
 	}
 	if store.JournalID() != strings.Repeat("0", 64) {
 		t.Fatalf("migration changed journal identity: %q", store.JournalID())
