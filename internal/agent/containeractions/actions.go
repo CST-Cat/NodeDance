@@ -1,0 +1,484 @@
+// Package containeractions executes the allowlisted Docker container lifecycle
+// operations. It owns no transport and never accepts a client-provided Compose
+// classification. Every mutation is preceded by a durable Agent journal begin
+// and followed by a fresh Docker inspect.
+package containeractions
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
+	"github.com/CST-Cat/NodeDance/internal/taskstate"
+	"github.com/containerd/errdefs"
+)
+
+type Action string
+
+const (
+	ActionStart   Action = "start"
+	ActionStop    Action = "stop"
+	ActionRestart Action = "restart"
+	ActionPause   Action = "pause"
+	ActionResume  Action = "resume"
+	ActionDelete  Action = "delete"
+	ActionRename  Action = "rename"
+)
+
+var (
+	ErrInvalidRequest        = errors.New("invalid container action request")
+	ErrComposeRename         = errors.New("Compose-managed containers cannot be renamed")
+	ErrDeleteRunning         = errors.New("running containers must be stopped by a separate task before deletion")
+	ErrOutcomeUnknown        = errors.New("container action outcome is unknown and must be reconciled")
+	ErrTaskInProgress        = errors.New("container action is already in progress")
+	ErrOperationFailed       = errors.New("container action failed")
+	ErrTargetMismatch        = errors.New("Docker Engine returned a different container ID")
+	ErrPreconditionFailed    = errors.New("container action precondition failed")
+	dockerIDPattern          = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	containerNamePattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
+	startedAtLayout          = time.RFC3339Nano
+	defaultOperationLimit    = 30 * time.Second
+	defaultVerificationLimit = 5 * time.Second
+)
+
+// Request is a typed, non-secret action. DeleteConfirmationID is an ephemeral
+// confirmation binding; it must equal ContainerID and is deliberately omitted
+// from the persisted canonical intent because Core's digest contract contains
+// only action, container_id, new_name, and delete_confirmed.
+type Request struct {
+	TaskID               string
+	NodeID               string
+	IdempotencyKey       string
+	Action               Action
+	ContainerID          string
+	NewName              string
+	DeleteConfirmed      bool
+	DeleteConfirmationID string
+}
+
+// safeIntent is intentionally byte-for-byte shape-compatible with
+// internal/core/tasks.Intent. Do not add arbitrary payloads, inspect output, or
+// secret-bearing values here.
+type safeIntent struct {
+	Action          Action `json:"action"`
+	ContainerID     string `json:"container_id"`
+	NewName         string `json:"new_name,omitempty"`
+	DeleteConfirmed bool   `json:"delete_confirmed,omitempty"`
+}
+
+// Container is a small sanitized projection of the Docker Inspect response.
+// ComposeManaged is derived only inside the Docker SDK adapter from real
+// Inspect labels; it is never accepted in Request.
+type Container struct {
+	ID             string
+	Name           string
+	Running        bool
+	Paused         bool
+	Restarting     bool
+	StartedAt      string
+	RestartCount   int
+	ComposeManaged bool
+}
+
+// Engine contains only the lifecycle calls this component is allowed to make.
+// Remove has no options so implementations must keep force and volume removal
+// disabled.
+type Engine interface {
+	Inspect(context.Context, string) (Container, error)
+	Start(context.Context, string) error
+	Stop(context.Context, string) error
+	Restart(context.Context, string) error
+	Pause(context.Context, string) error
+	Resume(context.Context, string) error
+	Remove(context.Context, string) error
+	Rename(context.Context, string, string) error
+}
+
+// Journal is the durable execution boundary provided by the existing Agent
+// task journal. Enqueue must persist the intent before BeginExecution; callers
+// must not invoke a Docker mutation unless BeginExecution succeeds.
+type Journal interface {
+	Enqueue(context.Context, taskstate.Identity) (taskjournal.EnqueueResult, error)
+	BeginExecution(context.Context, string) error
+	Finish(context.Context, string, taskstate.Status, taskstate.Evidence, taskjournal.Result) error
+	MarkUnknown(context.Context, string) error
+	Get(context.Context, string) (taskjournal.Snapshot, error)
+}
+
+type Options struct {
+	OperationTimeout    time.Duration
+	VerificationTimeout time.Duration
+}
+
+type Executor struct {
+	engine              Engine
+	journal             Journal
+	operationTimeout    time.Duration
+	verificationTimeout time.Duration
+}
+
+func New(engine Engine, journal Journal, options Options) (*Executor, error) {
+	if engine == nil || journal == nil {
+		return nil, errors.New("container action engine and journal are required")
+	}
+	if options.OperationTimeout == 0 {
+		options.OperationTimeout = defaultOperationLimit
+	}
+	if options.VerificationTimeout == 0 {
+		options.VerificationTimeout = defaultVerificationLimit
+	}
+	if options.OperationTimeout < time.Second || options.OperationTimeout > 10*time.Minute ||
+		options.VerificationTimeout < time.Second || options.VerificationTimeout > time.Minute {
+		return nil, errors.New("container action timeouts are outside the supported bounds")
+	}
+	return &Executor{engine: engine, journal: journal, operationTimeout: options.OperationTimeout,
+		verificationTimeout: options.VerificationTimeout}, nil
+}
+
+// Execute accepts an idempotent safe intent, durably begins it, performs at
+// most one Docker mutation, then verifies actual Engine state. A running or
+// unknown journal entry is never replayed; unknown entries retain their claim
+// until a separate reconciliation flow resolves them.
+func (e *Executor) Execute(ctx context.Context, request Request) (taskjournal.Snapshot, error) {
+	if ctx == nil {
+		return taskjournal.Snapshot{}, ErrInvalidRequest
+	}
+	identity, err := requestIdentity(request)
+	if err != nil {
+		return taskjournal.Snapshot{}, err
+	}
+	enqueued, err := e.journal.Enqueue(ctx, identity)
+	if err != nil {
+		return taskjournal.Snapshot{}, err
+	}
+	task := enqueued.Task
+	switch task.Status {
+	case taskstate.Succeeded, taskstate.Failed, taskstate.TimedOut, taskstate.Canceled:
+		return task, nil
+	case taskstate.Unknown:
+		return task, ErrOutcomeUnknown
+	case taskstate.Running:
+		return task, ErrTaskInProgress
+	case taskstate.Queued:
+		// Queued means no executor boundary was crossed. Competing duplicate
+		// callers race on this SQLite transition; only its winner may proceed.
+	default:
+		return task, ErrInvalidRequest
+	}
+	if err := e.journal.BeginExecution(ctx, task.TaskID); err != nil {
+		readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+		latest, readErr := e.journal.Get(readCtx, task.TaskID)
+		cancel()
+		if readErr != nil {
+			return task, fmt.Errorf("begin container action: %w", err)
+		}
+		if stateErr := statusError(latest.Status); stateErr != nil {
+			return latest, stateErr
+		}
+		if latest.Status == taskstate.Succeeded || latest.Status == taskstate.Failed || latest.Status == taskstate.TimedOut || latest.Status == taskstate.Canceled {
+			return latest, nil
+		}
+		return latest, fmt.Errorf("begin container action: %w", err)
+	}
+
+	preflightCtx, preflightCancel := context.WithTimeout(ctx, e.verificationTimeout)
+	before, err := e.engine.Inspect(preflightCtx, request.ContainerID)
+	preflightCancel()
+	if err != nil {
+		if isNotFound(err) && request.Action == ActionDelete {
+			return e.finishSucceeded(ctx, task.TaskID, "missing", "")
+		}
+		return e.finishFailed(ctx, task.TaskID, "inspect_failed")
+	}
+	if before.ID != request.ContainerID {
+		return e.finishFailed(ctx, task.TaskID, "target_mismatch")
+	}
+	if request.Action == ActionRestart && !validRestartObservation(before) {
+		return e.finishFailed(ctx, task.TaskID, "invalid_inspect")
+	}
+
+	if err := checkPreconditions(request, before); err != nil {
+		if errors.Is(err, ErrComposeRename) {
+			return e.finishFailed(ctx, task.TaskID, "compose_managed")
+		}
+		if errors.Is(err, ErrDeleteRunning) {
+			return e.finishFailed(ctx, task.TaskID, "running")
+		}
+		return e.finishFailed(ctx, task.TaskID, "invalid_state")
+	}
+
+	if alreadySatisfied(request, before) {
+		return e.finishSucceeded(ctx, task.TaskID, observedState(before), "")
+	}
+
+	mutationCtx, cancel := context.WithTimeout(ctx, e.operationTimeout)
+	mutationErr := e.mutate(mutationCtx, request)
+	cancel()
+
+	verifyCtx, verifyCancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	after, inspectErr := e.engine.Inspect(verifyCtx, request.ContainerID)
+	verifyCancel()
+	if request.Action == ActionDelete && isNotFound(inspectErr) {
+		return e.finishSucceeded(context.WithoutCancel(ctx), task.TaskID, "missing", "")
+	}
+	if inspectErr != nil {
+		return e.markUnknown(ctx, task.TaskID, ErrOutcomeUnknown)
+	}
+	if after.ID != request.ContainerID {
+		return e.markUnknown(ctx, task.TaskID, ErrTargetMismatch)
+	}
+	if actionVerified(request, before, after) {
+		revision := ""
+		if request.Action == ActionRestart {
+			if startedAtChanged(before.StartedAt, after.StartedAt) {
+				revision = "started_at_changed"
+			} else {
+				revision = "restart_count_increased"
+			}
+		}
+		return e.finishSucceeded(context.WithoutCancel(ctx), task.TaskID, observedState(after), revision)
+	}
+	// Do not persist the SDK's free-form error. A request error and a missing
+	// postcondition are both uncertain: the call may have reached the daemon.
+	cause := ErrOutcomeUnknown
+	if mutationErr != nil {
+		cause = ErrOperationFailed
+	}
+	return e.markUnknown(ctx, task.TaskID, cause)
+}
+
+func requestIdentity(request Request) (taskstate.Identity, error) {
+	if !dockerIDPattern.MatchString(request.ContainerID) || !validText(request.TaskID, taskstate.MaxIdentityBytes) ||
+		!validText(request.NodeID, taskstate.MaxIdentityBytes) || !validText(request.IdempotencyKey, taskstate.MaxIdempotencyKeyBytes) {
+		return taskstate.Identity{}, ErrInvalidRequest
+	}
+	if strings.TrimSpace(request.TaskID) != request.TaskID || strings.TrimSpace(request.NodeID) != request.NodeID {
+		return taskstate.Identity{}, ErrInvalidRequest
+	}
+	switch request.Action {
+	case ActionStart, ActionStop, ActionRestart, ActionPause, ActionResume:
+		if request.NewName != "" || request.DeleteConfirmed || request.DeleteConfirmationID != "" {
+			return taskstate.Identity{}, ErrInvalidRequest
+		}
+	case ActionDelete:
+		if !request.DeleteConfirmed || request.DeleteConfirmationID != request.ContainerID || request.NewName != "" {
+			return taskstate.Identity{}, ErrInvalidRequest
+		}
+	case ActionRename:
+		if !containerNamePattern.MatchString(request.NewName) || request.DeleteConfirmed || request.DeleteConfirmationID != "" {
+			return taskstate.Identity{}, ErrInvalidRequest
+		}
+	default:
+		return taskstate.Identity{}, ErrInvalidRequest
+	}
+	payload, err := json.Marshal(safeIntent{Action: request.Action, ContainerID: request.ContainerID,
+		NewName: request.NewName, DeleteConfirmed: request.DeleteConfirmed})
+	if err != nil {
+		return taskstate.Identity{}, ErrInvalidRequest
+	}
+	canonical, err := taskstate.CanonicalJSON(payload)
+	if err != nil {
+		return taskstate.Identity{}, ErrInvalidRequest
+	}
+	resourceKey := "docker-container:" + request.ContainerID
+	identity := taskstate.Identity{TaskID: request.TaskID, NodeID: request.NodeID, IdempotencyKey: request.IdempotencyKey,
+		TargetID: request.ContainerID, ResourceKey: resourceKey, Action: string(request.Action), Payload: canonical}
+	if _, err := taskstate.RequestDigest(identity); err != nil {
+		return taskstate.Identity{}, ErrInvalidRequest
+	}
+	return identity, nil
+}
+
+func validText(value string, maximum int) bool {
+	return value != "" && len(value) <= maximum && strings.TrimSpace(value) == value && !strings.ContainsAny(value, "\x00\r\n")
+}
+
+func checkPreconditions(request Request, current Container) error {
+	if request.Action == ActionRename && current.ComposeManaged {
+		return ErrComposeRename
+	}
+	if request.Action == ActionDelete && (current.Running || current.Paused || current.Restarting) {
+		return ErrDeleteRunning
+	}
+	if request.Action == ActionStart && current.Running && current.Paused {
+		return ErrPreconditionFailed
+	}
+	if request.Action == ActionPause && !current.Running {
+		return ErrPreconditionFailed
+	}
+	if request.Action == ActionResume && !current.Paused && !current.Running {
+		return ErrPreconditionFailed
+	}
+	return nil
+}
+
+func alreadySatisfied(request Request, current Container) bool {
+	switch request.Action {
+	case ActionStart:
+		return current.Running && !current.Paused && !current.Restarting
+	case ActionStop:
+		return !current.Running && !current.Paused && !current.Restarting
+	case ActionPause:
+		return current.Running && current.Paused
+	case ActionResume:
+		return current.Running && !current.Paused && !current.Restarting
+	case ActionDelete:
+		return false
+	case ActionRename:
+		return canonicalName(current.Name) == request.NewName
+	default:
+		return false
+	}
+}
+
+func (e *Executor) mutate(ctx context.Context, request Request) error {
+	switch request.Action {
+	case ActionStart:
+		return e.engine.Start(ctx, request.ContainerID)
+	case ActionStop:
+		return e.engine.Stop(ctx, request.ContainerID)
+	case ActionRestart:
+		return e.engine.Restart(ctx, request.ContainerID)
+	case ActionPause:
+		return e.engine.Pause(ctx, request.ContainerID)
+	case ActionResume:
+		return e.engine.Resume(ctx, request.ContainerID)
+	case ActionDelete:
+		return e.engine.Remove(ctx, request.ContainerID)
+	case ActionRename:
+		return e.engine.Rename(ctx, request.ContainerID, request.NewName)
+	default:
+		return ErrInvalidRequest
+	}
+}
+
+func actionVerified(request Request, before, after Container) bool {
+	switch request.Action {
+	case ActionStart, ActionResume:
+		return after.Running && !after.Paused && !after.Restarting
+	case ActionStop:
+		return !after.Running && !after.Paused && !after.Restarting
+	case ActionPause:
+		return after.Running && after.Paused
+	case ActionRename:
+		return canonicalName(after.Name) == request.NewName
+	case ActionRestart:
+		if !after.Running || after.Paused || after.Restarting {
+			return false
+		}
+		if !validRestartObservation(before) || !validRestartObservation(after) {
+			return false
+		}
+		return startedAtChanged(before.StartedAt, after.StartedAt) || after.RestartCount > before.RestartCount
+	default:
+		return false
+	}
+}
+
+func startedAtChanged(before, after string) bool {
+	oldTime, oldErr := time.Parse(startedAtLayout, before)
+	newTime, newErr := time.Parse(startedAtLayout, after)
+	return oldErr == nil && newErr == nil && !newTime.IsZero() && !oldTime.Equal(newTime)
+}
+
+func validRestartObservation(container Container) bool {
+	startedAt, err := time.Parse(startedAtLayout, container.StartedAt)
+	if err != nil || container.RestartCount < 0 {
+		return false
+	}
+	if (container.Running || container.Paused || container.Restarting) && startedAt.IsZero() {
+		return false
+	}
+	if container.Paused && !container.Running {
+		return false
+	}
+	return true
+}
+
+func canonicalName(name string) string { return strings.TrimPrefix(name, "/") }
+
+func observedState(container Container) string {
+	if container.Restarting {
+		return "restarting"
+	}
+	if container.Paused {
+		return "paused"
+	}
+	if container.Running {
+		return "running"
+	}
+	return "stopped"
+}
+
+func (e *Executor) finishSucceeded(ctx context.Context, taskID, state, revision string) (taskjournal.Snapshot, error) {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	defer cancel()
+	err := e.journal.Finish(writeCtx, taskID, taskstate.Succeeded, taskstate.Evidence{
+		ExecutionAttempted: true, ExecutionCompleted: true, PostconditionVerified: true,
+	}, taskjournal.Result{Code: taskjournal.ResultVerified, ObservedState: state, ResourceRevision: revision})
+	return e.readAfterFinish(ctx, taskID, err)
+}
+
+func (e *Executor) finishFailed(ctx context.Context, taskID, state string) (taskjournal.Snapshot, error) {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	defer cancel()
+	err := e.journal.Finish(writeCtx, taskID, taskstate.Failed, taskstate.Evidence{
+		ExecutionAttempted: true, ExecutionCompleted: true, FailureConfirmed: true, ActualResultConfirmed: true,
+	}, taskjournal.Result{Code: taskjournal.ResultFailed, ObservedState: state})
+	return e.readAfterFinish(ctx, taskID, err)
+}
+
+func (e *Executor) readAfterFinish(ctx context.Context, taskID string, finishErr error) (taskjournal.Snapshot, error) {
+	readCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	defer cancel()
+	task, readErr := e.journal.Get(readCtx, taskID)
+	if finishErr != nil {
+		return task, fmt.Errorf("persist container action result: %w", finishErr)
+	}
+	if readErr != nil {
+		return taskjournal.Snapshot{}, fmt.Errorf("read container action result: %w", readErr)
+	}
+	return task, nil
+}
+
+func (e *Executor) markUnknown(ctx context.Context, taskID string, cause error) (taskjournal.Snapshot, error) {
+	base := context.WithoutCancel(ctx)
+	writeCtx, cancel := context.WithTimeout(base, e.verificationTimeout)
+	markErr := e.journal.MarkUnknown(writeCtx, taskID)
+	cancel()
+	readCtx, readCancel := context.WithTimeout(base, e.verificationTimeout)
+	task, readErr := e.journal.Get(readCtx, taskID)
+	readCancel()
+	if markErr != nil {
+		return task, fmt.Errorf("%w: persist uncertain task state: %v", ErrOutcomeUnknown, markErr)
+	}
+	if readErr != nil {
+		return taskjournal.Snapshot{}, fmt.Errorf("%w: read task journal: %v", ErrOutcomeUnknown, readErr)
+	}
+	if cause != nil {
+		return task, errors.Join(ErrOutcomeUnknown, cause)
+	}
+	return task, ErrOutcomeUnknown
+}
+
+func statusError(status taskstate.Status) error {
+	switch status {
+	case taskstate.Running:
+		return ErrTaskInProgress
+	case taskstate.Unknown:
+		return ErrOutcomeUnknown
+	case taskstate.Queued:
+		return nil
+	default:
+		return nil
+	}
+}
+
+func isNotFound(err error) bool {
+	return err != nil && errdefs.IsNotFound(err)
+}
