@@ -1,6 +1,8 @@
 package containeractions
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -235,6 +237,310 @@ func TestDINDLifecycleActions(t *testing.T) {
 	}
 	t.Logf("DIND fixture evidence: version=%s suite=%s main=%s compose=%s never_started=%s no_restart=%s volume=%s socket=%s",
 		version, suite, mainID, composeID, neverStartedID, noRestartID, volumeName, filepath.Join(root, "socket", "docker.sock"))
+}
+
+// TestDINDRestartSIGKILLRecoveryNeverReplays kills the isolated executor at
+// both sides of a real Engine restart. It only uses uniquely labeled fixtures
+// in the marked nested daemon and never stops that daemon or prunes resources.
+func TestDINDRestartSIGKILLRecoveryNeverReplays(t *testing.T) {
+	root := os.Getenv("NODEDANCE_S05_DIND_ROOT")
+	if root == "" {
+		t.Skip("set NODEDANCE_S05_DIND_ROOT to a marked NodeDance DIND v28 or v29 directory")
+	}
+	root, version, image := requireOwnedDIND(t, root)
+	socketPath := filepath.Join(root, "socket", "docker.sock")
+	socket := "unix://" + socketPath
+	if got := dockerCommand(t, socket, "version", "--format", "{{.Server.Version}}"); !strings.HasPrefix(got, version+".") {
+		t.Fatalf("DIND server version %q does not match owner marker version %s", got, version)
+	}
+	// Bound the entire two-stage DIND recovery case, including fixture setup.
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	defer cancel()
+	if _, err := dockerCommandResultContext(ctx, socket, "image", "inspect", image); err != nil {
+		if _, pullErr := dockerCommandResultContext(ctx, socket, "pull", image); pullErr != nil {
+			t.Fatalf("pull locked fixture image into owned DIND: %v", pullErr)
+		}
+	}
+	random := make([]byte, 6)
+	if _, err := rand.Read(random); err != nil {
+		t.Fatal(err)
+	}
+	runID := hex.EncodeToString(random)
+	suite := "nodedance-s05-action-sigkill-" + runID
+	label := "io.nodedance.suite=" + suite
+	baseName := "nd-s05-kill-" + version + "-" + runID
+	var containerIDs []string
+	t.Cleanup(func() {
+		for _, id := range containerIDs {
+			cleanupOwnedDINDContainer(t, socket, id, label)
+		}
+	})
+	engine, err := NewSDKEngine(socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+
+	for _, stage := range []string{"before-mutation", "after-mutation"} {
+		id := createDINDContainer(t, ctx, socket, image, baseName+"-"+stage, label)
+		containerIDs = append(containerIDs, id)
+		baseline, err := engine.Inspect(ctx, id)
+		if err != nil {
+			t.Fatalf("inspect %s crash fixture: %v", stage, err)
+		}
+		journalDir := t.TempDir()
+		if err := os.Chmod(journalDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		dbPath := filepath.Join(journalDir, "agent.sqlite")
+		taskID := "dind-crash-" + version + "-" + strings.ReplaceAll(stage, "-", "_")
+		killDINDActionChildAtReady(t, ctx, root, stage, dbPath, id, taskID)
+
+		journal, err := taskjournal.Open(ctx, dbPath, "dind-crash-"+version)
+		if err != nil {
+			t.Fatalf("reopen journal after %s SIGKILL: %v", stage, err)
+		}
+		if recovered, err := journal.RecoverInterrupted(ctx); err != nil || recovered != 1 {
+			_ = journal.Close()
+			t.Fatalf("recover %s task = %d, %v", stage, recovered, err)
+		}
+		recovered, err := journal.Get(ctx, taskID)
+		if err != nil || recovered.Status != taskstate.Unknown || recovered.Baseline == nil ||
+			recovered.ExecutionPhase != taskjournal.ExecutionPhaseMutationMayHaveStarted {
+			_ = journal.Close()
+			t.Fatalf("recovered %s task = %+v, %v", stage, recovered, err)
+		}
+		if stage == "after-mutation" {
+			waitForDINDRestartEvidence(t, ctx, engine, id, baseline)
+		}
+		executor := newDINDExecutor(t, engine, journal)
+		reconciled, reconcileErr := executor.Reconcile(ctx, taskID)
+		if stage == "before-mutation" {
+			if !errors.Is(reconcileErr, ErrOutcomeUnknown) || reconciled.Status != taskstate.Unknown {
+				_ = journal.Close()
+				t.Fatalf("unchanged real container after pre-mutation SIGKILL = %s, %v; want unknown", reconciled.Status, reconcileErr)
+			}
+			duplicate, duplicateErr := executor.Execute(ctx, Request{TaskID: taskID, NodeID: "dind-crash-" + version,
+				IdempotencyKey: taskID, Action: ActionRestart, ContainerID: id})
+			if !errors.Is(duplicateErr, ErrOutcomeUnknown) || duplicate.Status != taskstate.Unknown {
+				_ = journal.Close()
+				t.Fatalf("real unknown restart duplicate = %s, %v; want unknown without replay", duplicate.Status, duplicateErr)
+			}
+			current, inspectErr := engine.Inspect(ctx, id)
+			if inspectErr != nil || current.StartedAt != baseline.StartedAt || current.RestartCount != baseline.RestartCount {
+				_ = journal.Close()
+				t.Fatalf("pre-mutation SIGKILL changed real Docker state: before=%+v after=%+v err=%v", baseline, current, inspectErr)
+			}
+		} else {
+			if reconcileErr != nil || reconciled.Status != taskstate.Succeeded {
+				_ = journal.Close()
+				t.Fatalf("real Docker post-mutation reconciliation = %s, %v; want succeeded", reconciled.Status, reconcileErr)
+			}
+			current, inspectErr := engine.Inspect(ctx, id)
+			if inspectErr != nil || (!startedAtChanged(baseline.StartedAt, current.StartedAt) && current.RestartCount <= baseline.RestartCount) {
+				_ = journal.Close()
+				t.Fatalf("post-mutation SIGKILL lacks real restart evidence: before=%+v after=%+v err=%v", baseline, current, inspectErr)
+			}
+		}
+		_ = journal.Close()
+		t.Logf("DIND SIGKILL evidence: engine=%s suite=%s stage=%s container=%s task=%s socket=%s result=%s",
+			version, suite, stage, id, taskID, socketPath, reconciled.Status)
+	}
+}
+
+func waitForDINDRestartEvidence(t *testing.T, ctx context.Context, engine Engine, id string, before Container) {
+	t.Helper()
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		current, err := engine.Inspect(ctx, id)
+		if err == nil && current.Running && !current.Paused && !current.Restarting &&
+			(startedAtChanged(before.StartedAt, current.StartedAt) || current.RestartCount > before.RestartCount) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("wait for post-restart Docker state: %v", ctx.Err())
+		case <-deadline.C:
+			t.Fatalf("real DIND restart postcondition did not appear: before=%+v last=%+v err=%v", before, current, err)
+		case <-ticker.C:
+		}
+	}
+}
+
+type dindCrashRestartEngine struct {
+	Engine
+	stage string
+}
+
+func (e dindCrashRestartEngine) Restart(ctx context.Context, id string) error {
+	if e.stage == "before-mutation" {
+		fmt.Println("READY")
+		for {
+			time.Sleep(time.Hour)
+		}
+	}
+	if err := e.Engine.Restart(ctx, id); err != nil {
+		return err
+	}
+	fmt.Println("READY")
+	for {
+		time.Sleep(time.Hour)
+	}
+}
+
+func TestDINDActionCrashBoundaryChild(t *testing.T) {
+	stage := os.Getenv("NODEDANCE_DIND_ACTION_CRASH_STAGE")
+	if stage == "" {
+		return
+	}
+	socket := os.Getenv("NODEDANCE_DIND_ACTION_CRASH_SOCKET")
+	id := os.Getenv("NODEDANCE_DIND_ACTION_CRASH_ID")
+	dbPath := os.Getenv("NODEDANCE_DIND_ACTION_CRASH_DB")
+	taskID := os.Getenv("NODEDANCE_DIND_ACTION_CRASH_TASK")
+	version := os.Getenv("NODEDANCE_DIND_ACTION_CRASH_VERSION")
+	journal, err := taskjournal.Open(context.Background(), dbPath, "dind-crash-"+version)
+	if err != nil {
+		t.Fatalf("child open journal: %v", err)
+	}
+	engine, err := NewSDKEngine(socket)
+	if err != nil {
+		t.Fatalf("child SDK engine: %v", err)
+	}
+	executor, err := New(dindCrashRestartEngine{Engine: engine, stage: stage}, journal,
+		Options{OperationTimeout: 45 * time.Second, VerificationTimeout: 10 * time.Second})
+	if err != nil {
+		t.Fatalf("child executor: %v", err)
+	}
+	_, err = executor.Execute(context.Background(), Request{TaskID: taskID, NodeID: "dind-crash-" + version,
+		IdempotencyKey: taskID, Action: ActionRestart, ContainerID: id})
+	if err != nil {
+		t.Fatalf("child Execute: %v", err)
+	}
+	t.Fatal("DIND crash checkpoint returned without parent SIGKILL")
+}
+
+func killDINDActionChildAtReady(t *testing.T, parentCtx context.Context, root, stage, dbPath, containerID, taskID string) {
+	t.Helper()
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := strings.TrimPrefix(filepath.Base(root), "v")
+	// One SDK request is bounded by 30s. Allow 10s for Go test startup and
+	// SQLite/boot-ID preflight before declaring a missing READY checkpoint.
+	childCtx, cancelChild := context.WithTimeout(parentCtx, 50*time.Second)
+	command := exec.CommandContext(childCtx, binary, "-test.run=^TestDINDActionCrashBoundaryChild$")
+	command.Env = append(os.Environ(), "NODEDANCE_DIND_ACTION_CRASH_STAGE="+stage,
+		"NODEDANCE_DIND_ACTION_CRASH_SOCKET=unix://"+filepath.Join(root, "socket", "docker.sock"),
+		"NODEDANCE_DIND_ACTION_CRASH_ID="+containerID, "NODEDANCE_DIND_ACTION_CRASH_DB="+dbPath,
+		"NODEDANCE_DIND_ACTION_CRASH_TASK="+taskID, "NODEDANCE_DIND_ACTION_CRASH_VERSION="+version)
+	stdout, childStdout, err := os.Pipe()
+	if err != nil {
+		cancelChild()
+		t.Fatal(err)
+	}
+	command.Stdout = childStdout
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	if err := command.Start(); err != nil {
+		_ = stdout.Close()
+		_ = childStdout.Close()
+		cancelChild()
+		t.Fatal(err)
+	}
+	_ = childStdout.Close()
+	waitResult := make(chan error, 1)
+	go func() { waitResult <- command.Wait() }()
+	readyResult := make(chan struct {
+		line string
+		err  error
+	}, 1)
+	readyReaderDone := make(chan struct{})
+	go func() {
+		defer close(readyReaderDone)
+		line, readErr := bufio.NewReader(stdout).ReadString('\n')
+		readyResult <- struct {
+			line string
+			err  error
+		}{line: line, err: readErr}
+	}()
+	childWaited := false
+	var waitErr error
+	awaitChild := func(timeout time.Duration) bool {
+		if childWaited {
+			return true
+		}
+		select {
+		case waitErr = <-waitResult:
+			childWaited = true
+			return true
+		case <-time.After(timeout):
+			return false
+		}
+	}
+	kill := func() bool {
+		if !childWaited && command.Process != nil {
+			_ = command.Process.Kill()
+		}
+		return awaitChild(5 * time.Second)
+	}
+	t.Cleanup(func() {
+		if !childWaited {
+			cancelChild()
+			if command.Process != nil {
+				_ = command.Process.Kill()
+			}
+			if !awaitChild(5 * time.Second) {
+				t.Errorf("DIND crash child did not exit after bounded kill")
+			}
+		}
+		_ = stdout.Close()
+		select {
+		case <-readyReaderDone:
+		case <-time.After(time.Second):
+			t.Errorf("DIND READY reader did not stop")
+		}
+		cancelChild()
+	})
+	readyStartedAt := time.Now()
+	select {
+	case ready := <-readyResult:
+		if ready.err != nil || strings.TrimSpace(ready.line) != "READY" {
+			if !kill() {
+				t.Fatal("DIND crash child did not exit after invalid READY")
+			}
+			t.Fatalf("DIND child checkpoint %q error=%v stderr=%s", ready.line, ready.err, stderr.String())
+		}
+		t.Logf("DIND child reached %s checkpoint in %s (SDK HTTP request limit 30s)", stage, time.Since(readyStartedAt).Round(time.Millisecond))
+	case <-time.After(40 * time.Second):
+		if !kill() {
+			t.Fatal("DIND crash child did not exit after READY timeout")
+		}
+		t.Fatalf("DIND crash child did not emit READY: %s", stderr.String())
+	case <-childCtx.Done():
+		if !kill() {
+			t.Fatal("DIND crash child did not exit after process timeout")
+		}
+		t.Fatalf("DIND crash child context expired: %s", stderr.String())
+	}
+	if !kill() {
+		t.Fatal("DIND crash child did not exit within five seconds after SIGKILL")
+	}
+	if waitErr == nil {
+		t.Fatal("SIGKILLed DIND child exited successfully")
+	}
+}
+
+func newDINDExecutor(t *testing.T, engine Engine, journal Journal) *Executor {
+	t.Helper()
+	executor, err := New(engine, journal, Options{OperationTimeout: 45 * time.Second, VerificationTimeout: 10 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return executor
 }
 
 type lostRestartAckEngine struct{ Engine }

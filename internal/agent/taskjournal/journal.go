@@ -34,6 +34,8 @@ var (
 	ErrInvalidResult       = errors.New("invalid task result")
 	ErrJournalInUse        = errors.New("task journal is already owned by another Agent process")
 	ErrWrongNode           = errors.New("task journal belongs to another node")
+	ErrInvalidBaseline     = errors.New("invalid durable execution baseline")
+	ErrBaselineAlreadySet  = errors.New("task already has a durable execution baseline")
 )
 
 type Store struct {
@@ -50,21 +52,45 @@ type EnqueueResult struct {
 }
 
 type Snapshot struct {
-	TaskID       string
-	NodeID       string
+	TaskID         string
+	NodeID         string
+	TargetID       string
+	ResourceKey    string
+	Action         string
+	Status         taskstate.Status
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
+	Evidence       taskstate.Evidence
+	ExecutionPhase ExecutionPhase
+	Baseline       *ExecutionBaseline
+	Progress       Progress
+	Result         Result
+	LogBytes       int64
+	LogTruncated   bool
+}
+
+type ExecutionPhase string
+
+const (
+	ExecutionPhaseNone                   ExecutionPhase = "none"
+	ExecutionPhaseMutationMayHaveStarted ExecutionPhase = "mutation_may_have_started"
+	ExecutionPhaseResultPersisted        ExecutionPhase = "result_persisted"
+)
+
+// ExecutionBaseline contains only the sanitized Docker facts needed to
+// reconcile a lifecycle operation after an Agent crash. It intentionally has
+// no raw Inspect payload, labels, environment, command, or error text.
+type ExecutionBaseline struct {
 	TargetID     string
-	ResourceKey  string
 	Action       string
-	Status       taskstate.Status
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	StartedAt    *time.Time
-	FinishedAt   *time.Time
-	Evidence     taskstate.Evidence
-	Progress     Progress
-	Result       Result
-	LogBytes     int64
-	LogTruncated bool
+	HostBootID   string
+	StartedAt    string
+	RestartCount int
+	Running      bool
+	Paused       bool
+	Restarting   bool
 }
 
 type ProgressPhase string
@@ -190,22 +216,21 @@ func initializeSchema(ctx context.Context, db *sql.DB, nodeID string) (string, e
 	if err := db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
 		return "", fmt.Errorf("read task journal schema version: %w", err)
 	}
-	if version > 1 {
-		return "", fmt.Errorf("task journal schema version %d is newer than supported version 1", version)
+	if version > 2 {
+		return "", fmt.Errorf("task journal schema version %d is newer than supported version 2", version)
 	}
 	if version == 1 {
-		var owner string
-		var journalID string
-		if err := db.QueryRowContext(ctx, `SELECT node_id,journal_id FROM journal_owner WHERE id=1`).Scan(&owner, &journalID); err != nil {
-			return "", fmt.Errorf("read task journal owner: %w", err)
+		journalID, err := readJournalOwner(ctx, db, nodeID)
+		if err != nil {
+			return "", err
 		}
-		if owner != nodeID {
-			return "", ErrWrongNode
-		}
-		if !validJournalID(journalID) {
-			return "", errors.New("task journal ID is invalid")
+		if err := migrateTaskJournalV1ToV2(ctx, db); err != nil {
+			return "", err
 		}
 		return journalID, nil
+	}
+	if version == 2 {
+		return readJournalOwner(ctx, db, nodeID)
 	}
 	journalID, err := newJournalID()
 	if err != nil {
@@ -247,6 +272,16 @@ func initializeSchema(ctx context.Context, db *sql.DB, nodeID string) (string, e
 			result_code TEXT NOT NULL DEFAULT '',
 			observed_state TEXT NOT NULL DEFAULT '',
 			resource_revision TEXT NOT NULL DEFAULT '',
+			execution_phase TEXT NOT NULL DEFAULT 'none' CHECK(execution_phase IN ('none','mutation_may_have_started','result_persisted')),
+			baseline_verified INTEGER NOT NULL DEFAULT 0 CHECK(baseline_verified IN (0,1)),
+			baseline_target_id TEXT NOT NULL DEFAULT '',
+			baseline_action TEXT NOT NULL DEFAULT '',
+			baseline_host_boot_id TEXT NOT NULL DEFAULT '',
+			baseline_started_at TEXT NOT NULL DEFAULT '',
+			baseline_restart_count INTEGER NOT NULL DEFAULT -1 CHECK(baseline_restart_count >= -1),
+			baseline_running INTEGER NOT NULL DEFAULT 0 CHECK(baseline_running IN (0,1)),
+			baseline_paused INTEGER NOT NULL DEFAULT 0 CHECK(baseline_paused IN (0,1)),
+			baseline_restarting INTEGER NOT NULL DEFAULT 0 CHECK(baseline_restarting IN (0,1)),
 			task_log BLOB NOT NULL DEFAULT X'',
 			log_truncated INTEGER NOT NULL DEFAULT 0 CHECK(log_truncated IN (0,1)),
 			UNIQUE(node_id, idempotency_key)
@@ -269,7 +304,7 @@ func initializeSchema(ctx context.Context, db *sql.DB, nodeID string) (string, e
 		_ = tx.Rollback()
 		return "", fmt.Errorf("record task journal owner: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `PRAGMA user_version=1`); err != nil {
+	if _, err := tx.ExecContext(ctx, `PRAGMA user_version=2`); err != nil {
 		_ = tx.Rollback()
 		return "", fmt.Errorf("set task journal schema version: %w", err)
 	}
@@ -277,6 +312,53 @@ func initializeSchema(ctx context.Context, db *sql.DB, nodeID string) (string, e
 		return "", fmt.Errorf("commit task journal schema: %w", err)
 	}
 	return journalID, nil
+}
+
+func readJournalOwner(ctx context.Context, db *sql.DB, nodeID string) (string, error) {
+	var owner string
+	var journalID string
+	if err := db.QueryRowContext(ctx, `SELECT node_id,journal_id FROM journal_owner WHERE id=1`).Scan(&owner, &journalID); err != nil {
+		return "", fmt.Errorf("read task journal owner: %w", err)
+	}
+	if owner != nodeID {
+		return "", ErrWrongNode
+	}
+	if !validJournalID(journalID) {
+		return "", errors.New("task journal ID is invalid")
+	}
+	return journalID, nil
+}
+
+func migrateTaskJournalV1ToV2(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin task journal v1-to-v2 migration: %w", err)
+	}
+	defer tx.Rollback()
+	statements := []string{
+		`ALTER TABLE task_journal ADD COLUMN execution_phase TEXT NOT NULL DEFAULT 'none' CHECK(execution_phase IN ('none','mutation_may_have_started','result_persisted'))`,
+		`ALTER TABLE task_journal ADD COLUMN baseline_verified INTEGER NOT NULL DEFAULT 0 CHECK(baseline_verified IN (0,1))`,
+		`ALTER TABLE task_journal ADD COLUMN baseline_target_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE task_journal ADD COLUMN baseline_action TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE task_journal ADD COLUMN baseline_host_boot_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE task_journal ADD COLUMN baseline_started_at TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE task_journal ADD COLUMN baseline_restart_count INTEGER NOT NULL DEFAULT -1 CHECK(baseline_restart_count >= -1)`,
+		`ALTER TABLE task_journal ADD COLUMN baseline_running INTEGER NOT NULL DEFAULT 0 CHECK(baseline_running IN (0,1))`,
+		`ALTER TABLE task_journal ADD COLUMN baseline_paused INTEGER NOT NULL DEFAULT 0 CHECK(baseline_paused IN (0,1))`,
+		`ALTER TABLE task_journal ADD COLUMN baseline_restarting INTEGER NOT NULL DEFAULT 0 CHECK(baseline_restarting IN (0,1))`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate task journal schema to v2: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA user_version=2`); err != nil {
+		return fmt.Errorf("set task journal schema version 2: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit task journal v2 migration: %w", err)
+	}
+	return nil
 }
 
 func newJournalID() (string, error) {
@@ -602,6 +684,82 @@ func (s *Store) BeginExecution(ctx context.Context, taskID string) error {
 	return tx.Commit()
 }
 
+// PrepareMutation durably binds a sanitized preflight observation to a running
+// task before the caller may issue its Docker write. The persisted phase means
+// a mutation may have started after this commit; it does not claim that an
+// Engine request was sent or completed.
+func (s *Store) PrepareMutation(ctx context.Context, taskID string, baseline ExecutionBaseline) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin durable execution baseline: %w", err)
+	}
+	defer tx.Rollback()
+	var status, targetID, action, phase string
+	if err := tx.QueryRowContext(ctx, `SELECT status,target_id,action,execution_phase FROM task_journal WHERE node_id=? AND task_id=?`, s.nodeID, taskID).
+		Scan(&status, &targetID, &action, &phase); err != nil {
+		return taskLookupError(err)
+	}
+	if taskstate.Status(status) != taskstate.Running {
+		return taskstate.ErrInvalidStatus
+	}
+	if phase != string(ExecutionPhaseNone) {
+		return ErrBaselineAlreadySet
+	}
+	if err := validateExecutionBaseline(targetID, action, baseline); err != nil {
+		return err
+	}
+	now := s.now().UTC().UnixNano()
+	result, err := tx.ExecContext(ctx, `UPDATE task_journal SET execution_phase=?,baseline_verified=1,
+		baseline_target_id=?,baseline_action=?,baseline_host_boot_id=?,baseline_started_at=?,baseline_restart_count=?,
+		baseline_running=?,baseline_paused=?,baseline_restarting=?,progress_phase=?,updated_at_ns=?
+		WHERE node_id=? AND task_id=? AND status='running' AND execution_phase='none'`,
+		ExecutionPhaseMutationMayHaveStarted, baseline.TargetID, baseline.Action, baseline.HostBootID, baseline.StartedAt,
+		baseline.RestartCount, boolInt(baseline.Running), boolInt(baseline.Paused), boolInt(baseline.Restarting),
+		PhaseExecuting, now, s.nodeID, taskID)
+	if err != nil {
+		return fmt.Errorf("persist durable execution baseline: %w", err)
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return ErrBaselineAlreadySet
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit durable execution baseline: %w", err)
+	}
+	return nil
+}
+
+func validateExecutionBaseline(targetID, action string, baseline ExecutionBaseline) error {
+	if baseline.TargetID != targetID || baseline.Action != action ||
+		!safeToken(baseline.TargetID, taskstate.MaxIdentityBytes) || !safeToken(baseline.Action, taskstate.MaxActionBytes) ||
+		!validBootID(baseline.HostBootID) || baseline.RestartCount < 0 ||
+		(baseline.Paused && !baseline.Running) {
+		return ErrInvalidBaseline
+	}
+	startedAt, err := time.Parse(time.RFC3339Nano, baseline.StartedAt)
+	if err != nil || startedAt.UTC().Format(time.RFC3339Nano) != baseline.StartedAt {
+		return ErrInvalidBaseline
+	}
+	return nil
+}
+
+func validBootID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for index, char := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			if char != '-' {
+				return false
+			}
+			continue
+		}
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Store) UpdateProgress(ctx context.Context, taskID string, progress Progress) error {
 	if !validProgress(progress) {
 		return ErrInvalidProgress
@@ -684,9 +842,9 @@ func (s *Store) Finish(ctx context.Context, taskID string, status taskstate.Stat
 	now := s.now().UTC().UnixNano()
 	if _, err := tx.ExecContext(ctx, `UPDATE task_journal SET status=?,updated_at_ns=?,finished_at_ns=?,
 		execution_attempted=?,execution_completed=?,failure_confirmed=?,postcondition_verified=?,process_terminated=?,actual_result_confirmed=?,cancellation_confirmed=?,
-		result_code=?,observed_state=?,resource_revision=? WHERE node_id=? AND task_id=?`, status, now, now,
+		execution_phase=?,result_code=?,observed_state=?,resource_revision=? WHERE node_id=? AND task_id=?`, status, now, now,
 		boolInt(merged.ExecutionAttempted), boolInt(merged.ExecutionCompleted), boolInt(merged.FailureConfirmed), boolInt(merged.PostconditionVerified), boolInt(merged.ProcessTerminated), boolInt(merged.ActualResultConfirmed), boolInt(merged.CancellationConfirmed),
-		result.Code, result.ObservedState, result.ResourceRevision, s.nodeID, taskID); err != nil {
+		ExecutionPhaseResultPersisted, result.Code, result.ObservedState, result.ResourceRevision, s.nodeID, taskID); err != nil {
 		return fmt.Errorf("persist verified task result: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM active_resource_claims WHERE task_id=?`, taskID); err != nil {
@@ -774,7 +932,9 @@ type rowScanner interface {
 
 const snapshotColumns = `task_id,node_id,target_id,resource_key,action,status,created_at_ns,updated_at_ns,started_at_ns,finished_at_ns,
 	execution_attempted,execution_completed,failure_confirmed,postcondition_verified,process_terminated,actual_result_confirmed,cancellation_confirmed,
-	progress_phase,progress_completed,progress_total,result_code,observed_state,resource_revision,request_digest,length(task_log),log_truncated,idempotency_key`
+	progress_phase,progress_completed,progress_total,result_code,observed_state,resource_revision,execution_phase,baseline_verified,
+	baseline_target_id,baseline_action,baseline_host_boot_id,baseline_started_at,baseline_restart_count,baseline_running,baseline_paused,baseline_restarting,
+	request_digest,length(task_log),log_truncated,idempotency_key`
 
 func scanLoaded(scanner rowScanner) (loaded, error) {
 	var entry loaded
@@ -784,10 +944,15 @@ func scanLoaded(scanner rowScanner) (loaded, error) {
 	var attempted, completed, failed, verified, terminated, actual, canceled int
 	var phase string
 	var progressCompleted, progressTotal uint64
-	var code, observed, revision string
+	var code, observed, revision, executionPhase string
+	var baselineVerified, baselineRunning, baselinePaused, baselineRestarting int
+	var baselineTarget, baselineAction, baselineBootID, baselineStartedAt string
+	var baselineRestartCount int
 	var digest []byte
 	if err := scanner.Scan(&entry.TaskID, &entry.NodeID, &entry.TargetID, &entry.ResourceKey, &entry.Action, &status, &createdNS, &updatedNS, &startedNS, &finishedNS,
-		&attempted, &completed, &failed, &verified, &terminated, &actual, &canceled, &phase, &progressCompleted, &progressTotal, &code, &observed, &revision, &digest, &entry.LogBytes, &entry.LogTruncated, &entry.idempotencyKey); err != nil {
+		&attempted, &completed, &failed, &verified, &terminated, &actual, &canceled, &phase, &progressCompleted, &progressTotal, &code, &observed, &revision,
+		&executionPhase, &baselineVerified, &baselineTarget, &baselineAction, &baselineBootID, &baselineStartedAt, &baselineRestartCount,
+		&baselineRunning, &baselinePaused, &baselineRestarting, &digest, &entry.LogBytes, &entry.LogTruncated, &entry.idempotencyKey); err != nil {
 		return loaded{}, err
 	}
 	if len(digest) != sha256.Size {
@@ -812,6 +977,15 @@ func scanLoaded(scanner rowScanner) (loaded, error) {
 	}
 	entry.Progress = Progress{Phase: ProgressPhase(phase), Completed: progressCompleted, Total: progressTotal}
 	entry.Result = Result{Code: ResultCode(code), ObservedState: observed, ResourceRevision: revision}
+	entry.ExecutionPhase = ExecutionPhase(executionPhase)
+	if baselineVerified != 0 && (entry.ExecutionPhase == ExecutionPhaseMutationMayHaveStarted || entry.ExecutionPhase == ExecutionPhaseResultPersisted) {
+		baseline := ExecutionBaseline{TargetID: baselineTarget, Action: baselineAction, HostBootID: baselineBootID,
+			StartedAt: baselineStartedAt, RestartCount: baselineRestartCount,
+			Running: baselineRunning != 0, Paused: baselinePaused != 0, Restarting: baselineRestarting != 0}
+		if validateExecutionBaseline(entry.TargetID, entry.Action, baseline) == nil {
+			entry.Baseline = &baseline
+		}
+	}
 	return entry, nil
 }
 
