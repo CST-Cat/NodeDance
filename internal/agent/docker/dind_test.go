@@ -30,7 +30,8 @@ func TestDINDEventLifetimeAndReconnectSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverVersion := verifyOwnedDIND(t, repoRoot, socket)
+	dindRoot := s04DINDRoot(t, repoRoot)
+	serverVersion := verifyOwnedDIND(t, dindRoot, socket)
 	t.Logf("owned DIND server=%s socket=%s", serverVersion, socket)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 75*time.Second)
@@ -155,19 +156,19 @@ func TestDINDEventLifetimeAndReconnectSnapshot(t *testing.T) {
 		if engineStopped {
 			restartCtx, restartCancel := context.WithTimeout(context.Background(), 75*time.Second)
 			defer restartCancel()
-			if output, restartErr := runDINDHarness(restartCtx, repoRoot, "start", engineNumber); restartErr != nil {
+			if output, restartErr := runDINDHarness(restartCtx, dindRoot, "start", engineNumber); restartErr != nil {
 				t.Errorf("restore owned DIND after failed outage test: %v\n%s", restartErr, output)
 			}
 		}
 	})
-	if output, err := runDINDHarness(ctx, repoRoot, "stop", engineNumber); err != nil {
+	if output, err := runDINDHarness(ctx, dindRoot, "stop", engineNumber); err != nil {
 		t.Fatalf("stop owned DIND for Engine outage test: %v\n%s", err, output)
 	}
 	engineStopped = true
 	waitDIND(t, discoverer, id, func(item Container, health Health) bool {
 		return item.Stale && item.UnavailableReason != "" && item.State == "exited" && health.Availability == EngineUnavailable
 	}, 10*time.Second, "offline Engine retains and marks the last-known container stale")
-	if output, err := runDINDHarness(ctx, repoRoot, "start", engineNumber); err != nil {
+	if output, err := runDINDHarness(ctx, dindRoot, "start", engineNumber); err != nil {
 		t.Fatalf("restart owned DIND after Engine outage: %v\n%s", err, output)
 	}
 	engineStopped = false
@@ -218,7 +219,7 @@ func TestDINDInventoryMatchesOwnedFixtures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	version := verifyOwnedDIND(t, repoRoot, socket)
+	version := verifyOwnedDIND(t, s04DINDRoot(t, repoRoot), socket)
 	t.Logf("owned DIND server=%s fixture=%s", version, runID)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -394,7 +395,7 @@ func TestDIND100ExternalChangesConvergenceP95(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	serverVersion := verifyOwnedDIND(t, repoRoot, socket)
+	serverVersion := verifyOwnedDIND(t, s04DINDRoot(t, repoRoot), socket)
 	if !strings.HasPrefix(serverVersion, wantedEngine+".") {
 		t.Fatalf("requested Engine %s but owned marker reports %s", wantedEngine, serverVersion)
 	}
@@ -819,6 +820,23 @@ func runDINDHarness(ctx context.Context, repoRoot, action, engine string) (strin
 		return string(output), fmt.Errorf("DIND %s %s: %w", action, engine, err)
 	}
 	return string(output), nil
+}
+
+func s04DINDRoot(t *testing.T, repoRoot string) string {
+	t.Helper()
+	configured := os.Getenv("NODEDANCE_S04_DIND_ROOT")
+	if configured == "" {
+		return repoRoot
+	}
+	root, err := filepath.Abs(configured)
+	if err != nil {
+		t.Fatalf("resolve configured S04 DIND root: %v", err)
+	}
+	expected := filepath.Join(filepath.Dir(repoRoot), "NodeDance-s04")
+	if root != expected {
+		t.Fatalf("refusing S04 DIND root outside the designated sibling fixture worktree: %s", root)
+	}
+	return root
 }
 
 func waitDIND(t *testing.T, discoverer *Discoverer, id string, condition func(Container, Health) bool, timeout time.Duration, description string) {

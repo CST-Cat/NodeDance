@@ -365,7 +365,7 @@ func TestMigrationVersionTwoExtendsAuditWithTypedTargets(t *testing.T) {
 		t.Fatalf("audit columns=%v want %v", columns, want)
 	}
 	var version int
-	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 2 {
+	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&version); err != nil || version != 3 {
 		t.Fatalf("migration version=%d err=%v", version, err)
 	}
 }

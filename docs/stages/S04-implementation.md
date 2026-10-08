@@ -149,7 +149,7 @@ observation path. Therefore `S04-SUP-01`, every other original S04 case, and the
 whole-stage repeat gate remain outstanding, and the machine report keeps all
 original S04 cases at `NOT_READY` until the full gate is completed.
 
-## Shared Docker DTO and Core inventory component (not integrated)
+## Shared Docker DTO and Core inventory component (historical pre-integration baseline)
 
 This component adds the shared `TypeDocker` / `CapabilityDocker` contract, an
 Agent model adapter, and an in-memory Core store. It deliberately does not edit
@@ -224,3 +224,64 @@ inventory/lease recovery test and no real Envelope/WSS test. The adapter is not
 called by a running Agent. Therefore these component tests cannot establish
 S04-01 through S04-10, S04-SUP-01, or the whole-stage repeat gate; original case
 states stay `NOT_READY`.
+
+## Integrated Agent, Core, SQLite, API, and dashboard path (stage not accepted)
+
+The component described above is now connected to the Agent runtime and Core.
+This records implementation scope and focused checks only; it does not change
+the original S04 case results or substitute for the formal three-round runner.
+
+The Agent advertises `agent.docker.v1` only on a negotiated Core connection.
+Its Docker discovery worker uses the local Engine SDK and sends bounded,
+generation-bound `TypeDocker` envelopes. Snapshot chunks and event deltas use a
+bounded FIFO queue, so a full-snapshot chunk cannot be coalesced away. The
+single WebSocket writer keeps control traffic ahead of data and sends a pending
+host-metrics sample after at most eight Docker frames. A queue overflow closes
+the Agent connection so that it will reconnect and send a complete scan.
+Docker unavailability is reported by the discovery worker without stopping the
+Agent heartbeat or host metrics.
+
+Core accepts Docker frames only for the authenticated Agent/Node identity and
+current connection generation. It validates the generation before validating
+or mutating a batch, so a queued frame from an older generation cannot stale or
+replace a newer inventory. It stages multi-chunk scans privately and exposes
+them only after the complete trusted snapshot is accepted. Database writes use
+a candidate store and SQLite transaction before the candidate is adopted; a
+failed write preserves the last committed inventory and marks it stale. Startup
+hydrates the last safe inventory as stale until a new complete snapshot. Schema
+migration v3 adds the Docker health and selected container-record tables. Raw
+Inspect JSON, arbitrary labels, and environment values are not persisted.
+
+The authenticated, no-touch admin GET routes are
+`GET /api/v1/nodes/{node_id}/containers` and
+`GET /api/v1/nodes/{node_id}/containers/{container_id}`. The authenticated
+dashboard WebSocket sends an initial Docker view and later sends only when the
+inventory revision, generation, Agent lease, Docker availability, event
+stream, snapshot freshness, or stale state changes. It rechecks Session validity
+for updates and closes revoked sessions. The dashboard keeps last-known rows
+visible during Engine or Agent loss, marks them stale, and derives local lease
+expiry from Core server time and the monotonic performance clock. Ping
+availability is distinct from snapshot health: for example, an API-incompatible
+Engine can be reachable while its inventory is stale. Engine error details use
+stable allowlisted codes/reasons so response bodies and credentials are not
+stored or forwarded.
+
+Focused validation recorded for this integration:
+
+| Check | Result | Scope |
+|---|---|---|
+| Core API-incompatibility secret-injection chain with real Moby SDK, Agent, TLS Core, SQLite, and authenticated API | `PASS` | Injected Authorization/token/password/Env markers were absent from persisted health/container rows, API output, and Agent stderr; Agent heartbeat and known host metrics continued to advance while the reachable Engine's snapshot was stale with `api_incompatible`. |
+| Dashboard Playwright Chromium specs | `PASS`, 4/4 | Includes stale history on API incompatibility, full multi-chunk rendering, generation mismatch, port truthfulness, and responsive viewports. |
+| Focused package race regression | `PASS` | `GOTOOLCHAIN=local .tools/go1.26.8/bin/go test -race -mod=readonly -count=1 ./internal/protocol ./internal/agent ./internal/agent/docker ./internal/core/docker ./internal/core/storage ./internal/core/agents ./internal/core/server`; all seven packages passed, Core server in 107.358 s. |
+
+The safe-error test and real API-incompatibility chain are mapped into the S04
+API compatibility acceptance work, but the formal runner still needs an
+explicit required mapping for all of its branches. The following formal
+coverage remains outstanding and must keep the original case rows at
+`NOT_READY`: real external pause/unpause/rename/delete convergence through the
+Core API for S04-02; a real scan failing after it has begun for S04-07; duplicate
+and out-of-order insertion over the authenticated WSS path for S04-09; and all
+original S04 cases repeated three times against the required Engine matrix.
+The API-incompatibility path must also remain distinct from Engine ping
+unavailability in UI and test evidence. No dashboard or component test alone
+establishes the full acceptance gate.

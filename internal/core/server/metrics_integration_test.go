@@ -495,11 +495,16 @@ func TestTelemetryPollingAndDashboardPushDoNotExtendIdleSession(t *testing.T) {
 	successfulPolls := 0
 	unauthorizedAt := time.Time{}
 	for time.Now().Before(deadline) {
-		for _, path := range []string{
-			"/api/v1/nodes",
-			"/api/v1/nodes/" + enrollment.NodeID + "/metrics",
+		for _, item := range []struct {
+			path string
+			want int
+		}{
+			{path: "/api/v1/nodes", want: http.StatusOK},
+			{path: "/api/v1/nodes/" + enrollment.NodeID + "/metrics", want: http.StatusOK},
+			{path: "/api/v1/nodes/" + enrollment.NodeID + "/containers", want: http.StatusOK},
+			{path: "/api/v1/nodes/" + enrollment.NodeID + "/containers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", want: http.StatusNotFound},
 		} {
-			status, err := poll(path)
+			status, err := poll(item.path)
 			if err != nil {
 				t.Fatal("continuous telemetry poll:", err)
 			}
@@ -507,8 +512,8 @@ func TestTelemetryPollingAndDashboardPushDoNotExtendIdleSession(t *testing.T) {
 				unauthorizedAt = time.Now()
 				break
 			}
-			if status != http.StatusOK {
-				t.Fatalf("telemetry poll %s returned HTTP %d", path, status)
+			if status != item.want {
+				t.Fatalf("telemetry poll %s returned HTTP %d, want %d", item.path, status, item.want)
 			}
 			successfulPolls++
 		}

@@ -41,7 +41,7 @@ func TestHealthIsPublicAndContainsNoPrivateData(t *testing.T) {
 
 func TestManagementEntrypointsAreAbsent(t *testing.T) {
 	s := newTestServer(t)
-	for _, path := range []string{"/api/v1/nodes", "/api/v1/nodes/1/containers", "/ws/v1/agent", "/ws/v1/dashboard"} {
+	for _, path := range []string{"/api/v1/nodes", "/api/v1/nodes/00000000-0000-4000-8000-000000000001/containers", "/api/v1/nodes/00000000-0000-4000-8000-000000000001/containers/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "/ws/v1/agent", "/ws/v1/dashboard"} {
 		r := httptest.NewRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
 		s.ServeHTTP(w, r)

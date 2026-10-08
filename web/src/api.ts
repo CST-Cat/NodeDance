@@ -60,6 +60,72 @@ export interface NodeStatusResponse {
 
 export type AgentMetricsResponse = MetricsView | NodeStatusResponse
 
+export interface DockerPortBinding {
+  ip?: string
+  port?: string
+}
+
+export interface DockerPort {
+  containerPort: number
+  protocol: string
+  exposed: boolean
+  configured: DockerPortBinding[]
+  published: DockerPortBinding[]
+}
+
+export interface DockerContainer {
+  id: string
+  name: string
+  image: string
+  imageId: string
+  state: string
+  running: boolean
+  paused: boolean
+  restarting: boolean
+  health: string
+  healthcheckConfigured: boolean
+  healthReason?: string
+  unavailableReason?: string
+  stale: boolean
+  createdAt?: string
+  startedAt?: string
+  finishedAt?: string
+  restartCount: number
+  ports: DockerPort[]
+  observedAt: string
+  compose?: { project: string; service: string }
+}
+
+export interface DockerContainerRecord {
+  container: DockerContainer
+  generation: number
+  sequence: number
+  receivedAt: string
+}
+
+export interface DockerInventory {
+  agentId: string
+  nodeId: string
+  agentOnline: boolean
+  activeGeneration: number
+  leaseValidUntil?: string
+  dockerAvailability: 'unknown' | 'available' | 'unavailable'
+  dockerEventsConnected: boolean
+  dockerSnapshotFresh: boolean
+  dataStale: boolean
+  staleReason?: string
+  health?: { errorKind?: string; reason?: string }
+  containers: DockerContainerRecord[]
+  serverTime: string
+}
+
+export interface DockerInventoryMessage {
+  type: 'node_containers'
+  nodeId: string
+  state: NodeStatusResponse['state']
+  inventory: DockerInventory
+}
+
 interface AuthResponse {
   user: User
   csrfToken: string
@@ -162,6 +228,11 @@ export const api = {
   agents: () => request<AgentNodesResponse>('/api/v1/agents'),
   nodes: () => request<AgentNodesResponse>('/api/v1/nodes'),
   nodeMetrics: (nodeId: string) => request<AgentMetricsResponse>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/metrics`),
+  nodeContainers: (nodeId: string) => request<DockerInventoryMessage>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/containers`),
+  nodeContainer: (nodeId: string, containerId: string) =>
+    request<{ type: 'node_container'; nodeId: string; container: DockerContainerRecord }>(
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}`,
+    ),
   revokeSession: (id: string) => request<void>(`/api/v1/auth/sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   }, true),

@@ -40,6 +40,67 @@ func TestUnavailableEmptySnapshotAfterAgentRestartPreservesInventory(t *testing.
 	}
 }
 
+func TestPersistentNodeCloneAndRestartHydrationRemainStaleUntilNewSnapshot(t *testing.T) {
+	source := readyStore(t, protocol.DockerContainer{ID: "container-a", Name: "last-good", Image: "image:v1", State: "running", Health: protocol.DockerHealthNone})
+	saved, ok := source.PersistentNode(testIdentity.NodeID)
+	if !ok || len(saved.Containers) != 1 || saved.Generation != 1 {
+		t.Fatalf("safe persistence snapshot is incomplete: %+v", saved)
+	}
+
+	candidate := source.Clone()
+	if err := candidate.BindConnection(testIdentity, 2); err != nil {
+		t.Fatal(err)
+	}
+	original, _ := source.SnapshotAt(testIdentity.NodeID, ptrLease(1), testNow.Add(time.Second))
+	staged, _ := candidate.SnapshotAt(testIdentity.NodeID, ptrLease(2), testNow.Add(time.Second))
+	if original.DataStale || !staged.DataStale || len(staged.Containers) != 1 || !staged.Containers[0].Container.Stale {
+		t.Fatalf("candidate mutation leaked before persistence or did not preserve stale inventory: original=%+v candidate=%+v", original, staged)
+	}
+
+	restarted := NewStore()
+	if err := restarted.RestoreStale(saved); err != nil {
+		t.Fatal(err)
+	}
+	hydrated, ok := restarted.SnapshotAt(testIdentity.NodeID, ptrLease(1), testNow.Add(2*time.Second))
+	if !ok || hydrated.AgentOnline || !hydrated.DataStale || len(hydrated.Containers) != 1 || !hydrated.Containers[0].Container.Stale {
+		t.Fatalf("restart hydration advertised historical inventory as current: %+v", hydrated)
+	}
+	if err := restarted.BindConnection(testIdentity, 2); err != nil {
+		t.Fatal(err)
+	}
+	awaiting, _ := restarted.SnapshotAt(testIdentity.NodeID, ptrLease(2), testNow.Add(3*time.Second))
+	if !awaiting.AgentOnline || !awaiting.DataStale || len(awaiting.Containers) != 1 {
+		t.Fatalf("new Agent connection cleared stale state without a full snapshot: %+v", awaiting)
+	}
+}
+
+func TestHealthKeepaliveRefreshesFreshnessWithoutContainerRevision(t *testing.T) {
+	store := readyStore(t, protocol.DockerContainer{ID: "keepalive-container", Name: "steady", Image: "image:v1", State: "running", Health: protocol.DockerHealthNone})
+	revision := store.Revision(testIdentity.NodeID)
+	firstKeepaliveAt := testNow.Add(5 * time.Second)
+	healthbeat := health(11, protocol.DockerAvailabilityAvailable, true, true)
+	lastSuccess := firstKeepaliveAt
+	lastSnapshot := testNow
+	healthbeat.LastSuccessAt = &lastSuccess
+	healthbeat.LastSnapshotAt = &lastSnapshot
+	healthbeat.ObservedAt = firstKeepaliveAt
+	batch := protocol.DockerBatch{Sequence: 11, Health: &healthbeat}
+	if err := store.Accept(testIdentity, 1, 2, batch, firstKeepaliveAt); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Revision(testIdentity.NodeID); got != revision {
+		t.Fatalf("health keepalive changed visible inventory revision: before=%d after=%d", revision, got)
+	}
+	saved, ok := store.PersistentNode(testIdentity.NodeID)
+	if !ok || !saved.HealthReceived.Equal(firstKeepaliveAt) || saved.Health == nil || saved.Health.Sequence != 11 {
+		t.Fatalf("health keepalive was not retained independently of container revision: %+v", saved)
+	}
+	view, ok := store.SnapshotAt(testIdentity.NodeID, ptrLease(1), testNow.Add(20*time.Second))
+	if !ok || view.DataStale || len(view.Containers) != 1 || view.Containers[0].Container.Stale {
+		t.Fatalf("fresh Core receive-time lease was lost during unchanged Docker health: %+v", view)
+	}
+}
+
 func TestOnlyTrustedCompleteCurrentGenerationSnapshotDeletesMissingAssets(t *testing.T) {
 	store := readyStore(t,
 		protocol.DockerContainer{ID: "id-a", Name: "a", State: "running", Health: protocol.DockerHealthNone},
@@ -341,6 +402,11 @@ func assertOnlyOld(t *testing.T, store *Store) {
 
 func onlineLease(generation uint64) Lease {
 	return Lease{Identity: testIdentity, Generation: generation, ValidUntil: testNow.Add(time.Hour), Status: LeaseOnline}
+}
+
+func ptrLease(generation uint64) *Lease {
+	lease := onlineLease(generation)
+	return &lease
 }
 
 func snapshot(sequence, snapshotID uint64, index int, final bool, changes []protocol.DockerChange, health *protocol.DockerHealth) protocol.DockerBatch {
