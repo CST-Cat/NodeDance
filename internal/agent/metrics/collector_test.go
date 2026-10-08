@@ -311,6 +311,50 @@ func TestDiskPollerTimeoutHasOneOutstandingScanAndRecovers(t *testing.T) {
 	t.Fatal("disk worker did not recover after the blocked operation returned")
 }
 
+func TestDiskSnapshotsCopyUsageValuesAcrossReturns(t *testing.T) {
+	collector := newCollector(newFixtureSource(), time.Now, time.Second)
+	returned := collector.SampleDisk(context.Background())
+	if len(returned.Mounts) != 1 || returned.Mounts[0].Usage.Value == nil {
+		t.Fatalf("fixture disk sample is unavailable: %+v", returned)
+	}
+	expected := *returned.Mounts[0].Usage.Value
+	externalValue := returned.Mounts[0].Usage.Value
+
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		close(started)
+		for value := uint64(1); value <= 10_000; value++ {
+			externalValue.TotalBytes = value
+			externalValue.AvailableBytes = value + 1
+			externalValue.UsedBytes = value + 2
+			externalValue.UsedPercent = float64(value)
+			runtime.Gosched()
+		}
+	}()
+	<-started
+	for iteration := 0; iteration < 100; iteration++ {
+		snapshot := collector.Sample(context.Background())
+		if snapshot.Disk.Mounts[0].Usage.Value == nil {
+			t.Fatal("collector snapshot lost a known disk usage value")
+		}
+	}
+	<-finished
+
+	stored := collector.Sample(context.Background()).Disk
+	if got := *stored.Mounts[0].Usage.Value; got != expected {
+		t.Fatalf("mutating SampleDisk's returned value changed the stored snapshot: got=%+v want=%+v", got, expected)
+	}
+	stored.Mounts[0].Usage.Value.TotalBytes = 0
+	stored.Mounts[0].Usage.Value.AvailableBytes = 0
+	stored.Mounts[0].Usage.Value.UsedBytes = 0
+	stored.Mounts[0].Usage.Value.UsedPercent = 0
+	if got := *collector.Sample(context.Background()).Disk.Mounts[0].Usage.Value; got != expected {
+		t.Fatalf("mutating Sample's returned value changed the stored snapshot: got=%+v want=%+v", got, expected)
+	}
+}
+
 func TestDiskPollerSequentialSamplesAndCanceledContextsLeaveNoIdleWorker(t *testing.T) {
 	baselineGoroutines := runtime.NumGoroutine()
 	for collectorNumber := 0; collectorNumber < 30; collectorNumber++ {
