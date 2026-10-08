@@ -65,7 +65,7 @@ func run() error {
 	if err := os.MkdirAll(work, 0o700); err != nil {
 		return err
 	}
-	coreListener, err := net.Listen("tcp", "0.0.0.0:0")
+	coreListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
 	}
