@@ -90,14 +90,17 @@ def systemd_command(attempt_dir):
     env = os.environ.copy()
     env["GOTOOLCHAIN"] = "local"
     env["NODEDANCE_TEST_SYSTEMD"] = "1"
-    command = [go, "test", "-json", "-count=1", "./internal/agent", "-run",
-               "^TestSystemd(ExecStartUsesLiteralSpecialPathsOnRunningManager|InstallRejectsConfigOwnedByDifferentUser)$"]
+    agent_binary = (ROOT / ".build/nodedance-agent").resolve()
+    env["NODEDANCE_TEST_AGENT_BINARY"] = str(agent_binary)
+    tests = "^(TestSystemd(ExecStartUsesLiteralSpecialPathsOnRunningManager|InstallRejectsConfigOwnedByDifferentUser)|TestSystemdAgentInstallConnectRestart)$"
+    command = [go, "test", "-json", "-count=1", "./internal/agent", "./internal/core/server", "-run", tests]
     if os.geteuid() != 0:
         sudo = shutil.which("sudo")
         if not sudo:
             return None, "sudo is unavailable for the isolated systemd manager test"
         command = [sudo, "--non-interactive", "env", f"PATH={env.get('PATH', '')}",
-                   "GOTOOLCHAIN=local", "NODEDANCE_TEST_SYSTEMD=1", go, *command[1:]]
+                   "GOTOOLCHAIN=local", "NODEDANCE_TEST_SYSTEMD=1",
+                   f"NODEDANCE_TEST_AGENT_BINARY={agent_binary}", go, *command[1:]]
     return command, env
 
 
@@ -192,7 +195,11 @@ def run_attempt(attempt, report, mode):
         # The subprocess command is run with root only for this disposable CI
         # manager test. Normal Core/Agent acceptance stays unprivileged.
         status_code, sys_seen = run_json(sys_command, systemd_log, env=sys_env, case_logs=systemd_case_logs)
-        required_systemd = {"TestSystemdExecStartUsesLiteralSpecialPathsOnRunningManager", "TestSystemdInstallRejectsConfigOwnedByDifferentUser"}
+        required_systemd = {
+            "TestSystemdExecStartUsesLiteralSpecialPathsOnRunningManager",
+            "TestSystemdInstallRejectsConfigOwnedByDifferentUser",
+            "TestSystemdAgentInstallConnectRestart",
+        }
         # These package tests do not carry S02 names, so also inspect their JSON
         # events from the preserved raw log.
         passed = set()
@@ -210,9 +217,9 @@ def run_attempt(attempt, report, mode):
             status, reason = "PASS", ""
             all_case_logs[systemd_id].write_text("Actual systemd manager run and explicit-user ownership test passed.\n" + systemd_log.read_text())
         elif failed or status_code != 0:
-            status, reason = "FAIL", "Actual systemd manager or service-user verification failed."
+            status, reason = "FAIL", "Actual systemd manager, service-user, or Core-connected Agent restart verification failed."
         else:
-            status, reason = "NOT_READY", "Actual systemd manager tests were skipped or did not emit both required results."
+            status, reason = "NOT_READY", "Actual systemd manager tests were skipped or did not emit all required results."
     report["tests"][systemd_id]["runs"].append({
         "attempt": attempt, "status": status,
         "evidence": str((all_case_logs[systemd_id] if all_case_logs[systemd_id].exists() else systemd_log).relative_to(ROOT)),
