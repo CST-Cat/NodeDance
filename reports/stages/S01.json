@@ -2,8 +2,8 @@
   "schema": 1,
   "stage": "S01",
   "mode": "full",
-  "run_id": "20261008T155219Z-99761843",
-  "updated_at": "2026-10-08T15:54:02.781758+00:00",
+  "run_id": "20261008T160614Z-f6e6a967",
+  "updated_at": "2026-10-08T16:07:58.657454+00:00",
   "status": "PASS",
   "repeat_required": 3,
   "repeat_requested": 3,
@@ -19,7 +19,7 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 0.084,
+          "duration_seconds": 0.068,
           "details": {
             "public_setup_status": {
               "initialized": false,
@@ -35,7 +35,7 @@
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 0.068,
+          "duration_seconds": 0.063,
           "details": {
             "public_setup_status": {
               "initialized": false,
@@ -51,7 +51,7 @@
         {
           "attempt": 3,
           "status": "PASS",
-          "duration_seconds": 0.065,
+          "duration_seconds": 0.083,
           "details": {
             "public_setup_status": {
               "initialized": false,
@@ -77,7 +77,7 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 0.258,
+          "duration_seconds": 0.249,
           "details": {
             "first_setup": 201,
             "repeat_setup": 409,
@@ -90,7 +90,7 @@
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 0.248,
+          "duration_seconds": 0.243,
           "details": {
             "first_setup": 201,
             "repeat_setup": 409,
@@ -103,7 +103,7 @@
         {
           "attempt": 3,
           "status": "PASS",
-          "duration_seconds": 0.246,
+          "duration_seconds": 0.258,
           "details": {
             "first_setup": 201,
             "repeat_setup": 409,
@@ -126,7 +126,7 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 0.958,
+          "duration_seconds": 0.898,
           "details": {
             "wrong_password": 401,
             "empty_password": 401,
@@ -141,7 +141,7 @@
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 0.901,
+          "duration_seconds": 0.9,
           "details": {
             "wrong_password": 401,
             "empty_password": 401,
@@ -156,7 +156,7 @@
         {
           "attempt": 3,
           "status": "PASS",
-          "duration_seconds": 0.909,
+          "duration_seconds": 0.952,
           "details": {
             "wrong_password": 401,
             "empty_password": 401,
@@ -181,7 +181,7 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 0.073,
+          "duration_seconds": 0.072,
           "details": {
             "unauthenticated_private_routes": {
               "/api/v1/auth/me": 401,
@@ -212,7 +212,7 @@
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 0.074,
+          "duration_seconds": 0.07,
           "details": {
             "unauthenticated_private_routes": {
               "/api/v1/auth/me": 401,
@@ -284,7 +284,7 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 0.491,
+          "duration_seconds": 0.522,
           "details": {
             "logout": 204,
             "old_cookie_api": 401,
@@ -294,14 +294,14 @@
             "heartbeat_pings": 1,
             "heartbeat_pongs": 1,
             "two_independent_clients": true,
-            "server_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-05-core.log"
+            "server_log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-1/s01-05-core.log"
           },
           "reason": ""
         },
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 0.498,
+          "duration_seconds": 0.497,
           "details": {
             "logout": 204,
             "old_cookie_api": 401,
@@ -311,24 +311,24 @@
             "heartbeat_pings": 1,
             "heartbeat_pongs": 1,
             "two_independent_clients": true,
-            "server_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-05-core.log"
+            "server_log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-2/s01-05-core.log"
           },
           "reason": ""
         },
         {
           "attempt": 3,
           "status": "PASS",
-          "duration_seconds": 0.499,
+          "duration_seconds": 0.506,
           "details": {
             "logout": 204,
             "old_cookie_api": 401,
             "websocket_close": "close-frame",
-            "websocket_close_seconds": 0.07,
+            "websocket_close_seconds": 0.069,
             "close_status_code": 1008,
             "heartbeat_pings": 1,
             "heartbeat_pongs": 1,
             "two_independent_clients": true,
-            "server_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-05-core.log"
+            "server_log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-3/s01-05-core.log"
           },
           "reason": ""
         }
@@ -345,7 +345,7 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 3.274,
+          "duration_seconds": 3.265,
           "details": {
             "configured_idle_timeout": "3s (--dev only)",
             "heartbeat": "client ping every 200ms",
@@ -362,7 +362,7 @@
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 3.253,
+          "duration_seconds": 3.25,
           "details": {
             "configured_idle_timeout": "3s (--dev only)",
             "heartbeat": "client ping every 200ms",
@@ -379,7 +379,7 @@
         {
           "attempt": 3,
           "status": "PASS",
-          "duration_seconds": 3.25,
+          "duration_seconds": 3.255,
           "details": {
             "configured_idle_timeout": "3s (--dev only)",
             "heartbeat": "client ping every 200ms",
@@ -406,7 +406,7 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 0.861,
+          "duration_seconds": 0.876,
           "details": {
             "sessions_before": 2,
             "other_device_revoke": 204,
@@ -421,7 +421,7 @@
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 0.891,
+          "duration_seconds": 0.885,
           "details": {
             "sessions_before": 2,
             "other_device_revoke": 204,
@@ -436,7 +436,7 @@
         {
           "attempt": 3,
           "status": "PASS",
-          "duration_seconds": 0.893,
+          "duration_seconds": 0.902,
           "details": {
             "sessions_before": 2,
             "other_device_revoke": 204,
@@ -461,7 +461,7 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 0.399,
+          "duration_seconds": 0.416,
           "details": {
             "cross_origin_write": 403,
             "wrong_csrf": 403,
@@ -486,7 +486,7 @@
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 0.419,
+          "duration_seconds": 0.423,
           "details": {
             "cross_origin_write": 403,
             "wrong_csrf": 403,
@@ -511,7 +511,7 @@
         {
           "attempt": 3,
           "status": "PASS",
-          "duration_seconds": 0.407,
+          "duration_seconds": 0.417,
           "details": {
             "cross_origin_write": 403,
             "wrong_csrf": 403,
@@ -546,7 +546,7 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 4.955,
+          "duration_seconds": 4.99,
           "details": {
             "failed_login_statuses": [
               401,
@@ -565,7 +565,7 @@
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 4.952,
+          "duration_seconds": 4.966,
           "details": {
             "failed_login_statuses": [
               401,
@@ -584,7 +584,7 @@
         {
           "attempt": 3,
           "status": "PASS",
-          "duration_seconds": 4.965,
+          "duration_seconds": 4.972,
           "details": {
             "failed_login_statuses": [
               401,
@@ -613,7 +613,7 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 0.225,
+          "duration_seconds": 0.227,
           "details": {
             "scanned_files": [
               "internal/core/webassets/dist/assets/index-DL4ZseQN.css",
@@ -640,7 +640,7 @@
             ],
             "audit_rows": 1,
             "complete_run_artifact_scan": {
-              "files_scanned": 250,
+              "files_scanned": 252,
               "sensitive_values_checked": 193,
               "categories": [
                 "acceptance_logs",
@@ -650,23 +650,23 @@
               ],
               "allowed_setup_credential_files": 9,
               "allowed_setup_credential_paths": [
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-01-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-04-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-11-migration-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-01-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-04-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-11-migration-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-01-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-04-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-11-migration-data/setup-credential.txt"
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-11-migration-data/setup-credential.txt"
               ],
               "files_scanned_by_category": {
                 "acceptance_logs": 63,
-                "uploaded_stage_logs": 28,
+                "uploaded_stage_logs": 30,
                 "private_work": 156,
                 "embedded_frontend": 3
               },
-              "uploaded_evidence_files_scanned": 91,
+              "uploaded_evidence_files_scanned": 93,
               "uploaded_evidence_plaintext_matches": 0,
               "plaintext_matches": 0,
               "matching_paths": [],
@@ -678,7 +678,7 @@
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 0.24,
+          "duration_seconds": 0.255,
           "details": {
             "scanned_files": [
               "internal/core/webassets/dist/assets/index-DL4ZseQN.css",
@@ -705,7 +705,7 @@
             ],
             "audit_rows": 1,
             "complete_run_artifact_scan": {
-              "files_scanned": 250,
+              "files_scanned": 252,
               "sensitive_values_checked": 193,
               "categories": [
                 "acceptance_logs",
@@ -715,23 +715,23 @@
               ],
               "allowed_setup_credential_files": 9,
               "allowed_setup_credential_paths": [
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-01-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-04-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-11-migration-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-01-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-04-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-11-migration-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-01-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-04-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-11-migration-data/setup-credential.txt"
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-11-migration-data/setup-credential.txt"
               ],
               "files_scanned_by_category": {
                 "acceptance_logs": 63,
-                "uploaded_stage_logs": 28,
+                "uploaded_stage_logs": 30,
                 "private_work": 156,
                 "embedded_frontend": 3
               },
-              "uploaded_evidence_files_scanned": 91,
+              "uploaded_evidence_files_scanned": 93,
               "uploaded_evidence_plaintext_matches": 0,
               "plaintext_matches": 0,
               "matching_paths": [],
@@ -743,7 +743,7 @@
         {
           "attempt": 3,
           "status": "PASS",
-          "duration_seconds": 0.221,
+          "duration_seconds": 0.231,
           "details": {
             "scanned_files": [
               "internal/core/webassets/dist/assets/index-DL4ZseQN.css",
@@ -770,7 +770,7 @@
             ],
             "audit_rows": 1,
             "complete_run_artifact_scan": {
-              "files_scanned": 250,
+              "files_scanned": 252,
               "sensitive_values_checked": 193,
               "categories": [
                 "acceptance_logs",
@@ -780,23 +780,23 @@
               ],
               "allowed_setup_credential_files": 9,
               "allowed_setup_credential_paths": [
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-01-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-04-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-11-migration-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-01-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-04-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-11-migration-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-01-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-04-data/setup-credential.txt",
-                ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-11-migration-data/setup-credential.txt"
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-11-migration-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-01-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-04-data/setup-credential.txt",
+                ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-11-migration-data/setup-credential.txt"
               ],
               "files_scanned_by_category": {
                 "acceptance_logs": 63,
-                "uploaded_stage_logs": 28,
+                "uploaded_stage_logs": 30,
                 "private_work": 156,
                 "embedded_frontend": 3
               },
-              "uploaded_evidence_files_scanned": 91,
+              "uploaded_evidence_files_scanned": 93,
               "uploaded_evidence_plaintext_matches": 0,
               "plaintext_matches": 0,
               "matching_paths": [],
@@ -819,10 +819,10 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 0.126,
+          "duration_seconds": 0.127,
           "details": {
             "migration_failure_exit": 1,
-            "migration_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-11-migration-core.log",
+            "migration_log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-1/s01-11-migration-core.log",
             "recovery_health": 200,
             "recovered_schema_version": 1,
             "preserved_original_row_after_recovery": "original-data-survives",
@@ -831,17 +831,17 @@
             "unwritable_core_user": "nobody",
             "unwritable_exit": 1,
             "protected_sentinel_unchanged": true,
-            "unwritable_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-11-unwritable.log"
+            "unwritable_log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-1/s01-11-unwritable.log"
           },
           "reason": ""
         },
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 0.125,
+          "duration_seconds": 0.129,
           "details": {
             "migration_failure_exit": 1,
-            "migration_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-11-migration-core.log",
+            "migration_log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-2/s01-11-migration-core.log",
             "recovery_health": 200,
             "recovered_schema_version": 1,
             "preserved_original_row_after_recovery": "original-data-survives",
@@ -850,7 +850,7 @@
             "unwritable_core_user": "nobody",
             "unwritable_exit": 1,
             "protected_sentinel_unchanged": true,
-            "unwritable_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-11-unwritable.log"
+            "unwritable_log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-2/s01-11-unwritable.log"
           },
           "reason": ""
         },
@@ -860,7 +860,7 @@
           "duration_seconds": 0.124,
           "details": {
             "migration_failure_exit": 1,
-            "migration_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-11-migration-core.log",
+            "migration_log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-3/s01-11-migration-core.log",
             "recovery_health": 200,
             "recovered_schema_version": 1,
             "preserved_original_row_after_recovery": "original-data-survives",
@@ -869,7 +869,7 @@
             "unwritable_core_user": "nobody",
             "unwritable_exit": 1,
             "protected_sentinel_unchanged": true,
-            "unwritable_log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-11-unwritable.log"
+            "unwritable_log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-3/s01-11-unwritable.log"
           },
           "reason": ""
         }
@@ -886,26 +886,26 @@
         {
           "attempt": 1,
           "status": "PASS",
-          "duration_seconds": 23.272,
+          "duration_seconds": 23.219,
           "details": {
             "projects": {
               "chromium": {
                 "status": "PASS",
-                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-12-chromium-playwright.log",
+                "log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-1/s01-12-chromium-playwright.log",
                 "real_core": true,
                 "real_browser": true,
                 "direct_http_svg_and_html_upload_rejected": true
               },
               "webkit": {
                 "status": "PASS",
-                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-12-webkit-playwright.log",
+                "log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-1/s01-12-webkit-playwright.log",
                 "real_core": true,
                 "real_browser": true,
                 "direct_http_svg_and_html_upload_rejected": true
               },
               "firefox": {
                 "status": "PASS",
-                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-1/s01-12-firefox-playwright.log",
+                "log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-1/s01-12-firefox-playwright.log",
                 "real_core": true,
                 "real_browser": true,
                 "direct_http_svg_and_html_upload_rejected": true
@@ -919,26 +919,26 @@
         {
           "attempt": 2,
           "status": "PASS",
-          "duration_seconds": 22.651,
+          "duration_seconds": 22.957,
           "details": {
             "projects": {
               "chromium": {
                 "status": "PASS",
-                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-12-chromium-playwright.log",
+                "log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-2/s01-12-chromium-playwright.log",
                 "real_core": true,
                 "real_browser": true,
                 "direct_http_svg_and_html_upload_rejected": true
               },
               "webkit": {
                 "status": "PASS",
-                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-12-webkit-playwright.log",
+                "log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-2/s01-12-webkit-playwright.log",
                 "real_core": true,
                 "real_browser": true,
                 "direct_http_svg_and_html_upload_rejected": true
               },
               "firefox": {
                 "status": "PASS",
-                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-2/s01-12-firefox-playwright.log",
+                "log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-2/s01-12-firefox-playwright.log",
                 "real_core": true,
                 "real_browser": true,
                 "direct_http_svg_and_html_upload_rejected": true
@@ -952,26 +952,26 @@
         {
           "attempt": 3,
           "status": "PASS",
-          "duration_seconds": 22.41,
+          "duration_seconds": 23.092,
           "details": {
             "projects": {
               "chromium": {
                 "status": "PASS",
-                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-12-chromium-playwright.log",
+                "log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-3/s01-12-chromium-playwright.log",
                 "real_core": true,
                 "real_browser": true,
                 "direct_http_svg_and_html_upload_rejected": true
               },
               "webkit": {
                 "status": "PASS",
-                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-12-webkit-playwright.log",
+                "log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-3/s01-12-webkit-playwright.log",
                 "real_core": true,
                 "real_browser": true,
                 "direct_http_svg_and_html_upload_rejected": true
               },
               "firefox": {
                 "status": "PASS",
-                "log": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843/attempt-3/s01-12-firefox-playwright.log",
+                "log": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967/attempt-3/s01-12-firefox-playwright.log",
                 "real_core": true,
                 "real_browser": true,
                 "direct_http_svg_and_html_upload_rejected": true
@@ -986,9 +986,9 @@
       "reason": "All three current consecutive executions passed."
     }
   },
-  "evidence_root": ".artifacts/logs/acceptance-s01/20261008T155219Z-99761843",
+  "evidence_root": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967",
   "artifact_scan": {
-    "files_scanned": 250,
+    "files_scanned": 252,
     "sensitive_values_checked": 193,
     "categories": [
       "acceptance_logs",
@@ -998,23 +998,23 @@
     ],
     "allowed_setup_credential_files": 9,
     "allowed_setup_credential_paths": [
-      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-01-data/setup-credential.txt",
-      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-04-data/setup-credential.txt",
-      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-1/s01-11-migration-data/setup-credential.txt",
-      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-01-data/setup-credential.txt",
-      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-04-data/setup-credential.txt",
-      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-2/s01-11-migration-data/setup-credential.txt",
-      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-01-data/setup-credential.txt",
-      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-04-data/setup-credential.txt",
-      ".artifacts/work-s01/20261008T155219Z-99761843/attempt-3/s01-11-migration-data/setup-credential.txt"
+      ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-01-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-04-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-1/s01-11-migration-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-01-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-04-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-2/s01-11-migration-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-01-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-04-data/setup-credential.txt",
+      ".artifacts/work-s01/20261008T160614Z-f6e6a967/attempt-3/s01-11-migration-data/setup-credential.txt"
     ],
     "files_scanned_by_category": {
       "acceptance_logs": 63,
-      "uploaded_stage_logs": 28,
+      "uploaded_stage_logs": 30,
       "private_work": 156,
       "embedded_frontend": 3
     },
-    "uploaded_evidence_files_scanned": 91,
+    "uploaded_evidence_files_scanned": 93,
     "uploaded_evidence_plaintext_matches": 0,
     "plaintext_matches": 0,
     "matching_paths": [],

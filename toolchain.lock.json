@@ -71,7 +71,7 @@
     "@xterm/addon-fit": "0.11.0",
     "vue-tsc": "3.3.12",
     "@types/node": "22.20.5",
-    "@playwright/test": "1.64.0"
+    "@playwright/test": "1.63.0"
   },
   "compose": {
     "version": "5.4.0",
