@@ -754,6 +754,7 @@ func (c *stateCache) setPingResult(err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	before := cloneHealth(c.health)
+	beforeSequence := c.sequence
 	when := c.now()
 	c.health.ObservedAt = when
 	if err == nil {
@@ -763,14 +764,20 @@ func (c *stateCache) setPingResult(err error) {
 			c.health.ErrorKind = ""
 			c.health.Reason = ""
 		}
-		c.finishHealthMutation(before)
-		return
+	} else {
+		c.health.Availability = EngineUnavailable
+		c.health.SnapshotFresh = false
+		c.health.ErrorKind = classifyError(err)
+		c.health.Reason = safeError(err)
 	}
-	c.health.Availability = EngineUnavailable
-	c.health.SnapshotFresh = false
-	c.health.ErrorKind = classifyError(err)
-	c.health.Reason = safeError(err)
 	c.finishHealthMutation(before)
+	// A health result doubles as a bounded freshness lease. Advance the
+	// discovery watermark even when the Engine state is unchanged so Core can
+	// refresh its receive-time lease without refreshing container revisions.
+	if c.sequence == beforeSequence {
+		c.sequence++
+	}
+	c.health.Sequence = c.sequence
 }
 
 func (c *stateCache) setEventStatus(connected bool, err error) {
@@ -910,12 +917,16 @@ func safeError(err error) string {
 	if err == nil {
 		return ""
 	}
-	const max = 512
-	value := strings.TrimSpace(err.Error())
-	if len(value) > max {
-		value = value[:max] + "…"
+	switch classifyError(err) {
+	case "permission_denied":
+		return "Docker Engine socket permission denied"
+	case "api_incompatible":
+		return "Docker Engine API version is incompatible"
+	case "engine_unavailable":
+		return "Docker Engine unavailable"
+	default:
+		return "Docker Engine request failed"
 	}
-	return value
 }
 
 func containerFitsBatch(container Container) bool {

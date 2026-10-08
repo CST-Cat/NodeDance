@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
@@ -179,7 +180,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
-		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics},
+		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityDocker},
 		Permissions:  permissions,
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
@@ -236,12 +237,13 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	if !containsCapability(welcome.Capabilities, protocol.CapabilityMetrics) {
 		metricUpdates = nil
 	}
-	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates)
+	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates,
+		containsCapability(welcome.Capabilities, protocol.CapabilityDocker))
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -252,6 +254,40 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			returnErr = errors.New("Agent WebSocket writer did not stop")
 		}
 	}()
+	var dockerDone <-chan error
+	if dockerEnabled {
+		var engine agentdocker.Engine
+		createdEngine, err := agentdocker.NewSDKEngine(os.Getenv("DOCKER_HOST"))
+		if err != nil {
+			engine = unavailableDockerEngine{err: errors.New("Docker Engine host must be a local unix socket")}
+		} else {
+			engine = createdEngine
+		}
+		observer := &socketDockerObserver{writer: writer, generation: generation}
+		discoverer, err := agentdocker.NewDiscoverer(engine, observer, agentdocker.Options{})
+		if err == nil {
+			dockerCtx, cancelDocker := context.WithCancel(ctx)
+			dockerResult := make(chan error, 1)
+			dockerFinished := make(chan struct{})
+			dockerDone = dockerResult
+			go func() {
+				dockerResult <- discoverer.Run(dockerCtx)
+				close(dockerFinished)
+			}()
+			// This defer is installed after the writer's join, so LIFO ordering
+			// stops and joins Docker observation before the socket writer closes.
+			defer func() {
+				cancelDocker()
+				select {
+				case <-dockerFinished:
+				case <-time.After(5 * time.Second):
+					if returnErr == nil {
+						returnErr = errors.New("Agent Docker observer did not stop")
+					}
+				}
+			}()
+		}
+	}
 	var sentSequence, acknowledgedSequence uint64
 	var metricsSequence uint64
 	for {
@@ -286,6 +322,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			if err != nil {
 				return errors.New("Agent WebSocket writer failed")
 			}
+		case err := <-dockerDone:
+			if err != nil {
+				return errors.New("Agent Docker observer stopped unexpectedly")
+			}
+			dockerDone = nil
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")

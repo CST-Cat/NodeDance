@@ -98,6 +98,17 @@ type ContainerRecord struct {
 	ReceivedAt time.Time                `json:"receivedAt"`
 }
 
+// PersistedNode is the safe, normalized state Core may retain between restarts.
+// It intentionally excludes transport staging buffers and raw Engine data.
+type PersistedNode struct {
+	Identity       Identity
+	Generation     uint64
+	Health         *protocol.DockerHealth
+	HealthReceived time.Time
+	StaleReason    string
+	Containers     []ContainerRecord
+}
+
 // View keeps Agent connection state and Docker Engine state separate. A node
 // can therefore be online while Docker is unavailable or its inventory stale.
 type View struct {
@@ -149,6 +160,7 @@ type nodeState struct {
 	health         *protocol.DockerHealth
 	healthReceived time.Time
 	staleReason    string
+	revision       uint64
 }
 
 type queuedChange struct {
@@ -184,6 +196,132 @@ func NewStoreWithOptions(options Options) *Store {
 		options:  options.withDefaults(),
 		bindings: make(map[string]binding),
 		nodes:    make(map[string]*nodeState),
+	}
+}
+
+// Clone returns an independent snapshot suitable for write-ahead persistence:
+// callers may apply to the clone, commit its PersistentNode in SQLite, and
+// publish it only after the database transaction succeeds.
+func (s *Store) Clone() *Store {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	clone := &Store{options: s.options, bindings: make(map[string]binding, len(s.bindings)), nodes: make(map[string]*nodeState, len(s.nodes))}
+	for nodeID, value := range s.bindings {
+		clone.bindings[nodeID] = value
+	}
+	for nodeID, value := range s.nodes {
+		clone.nodes[nodeID] = cloneNodeState(value)
+	}
+	return clone
+}
+
+// PersistentNode returns a deep copy of the last accepted safe inventory.
+func (s *Store) PersistentNode(nodeID string) (PersistedNode, bool) {
+	if s == nil || nodeID == "" {
+		return PersistedNode{}, false
+	}
+	s.mu.RLock()
+	state := s.nodes[nodeID]
+	if state == nil {
+		s.mu.RUnlock()
+		return PersistedNode{}, false
+	}
+	copy := cloneNodeStateForView(state)
+	result := PersistedNode{
+		Identity: state.identity, Generation: state.generation,
+		HealthReceived: state.healthReceived, StaleReason: state.staleReason,
+		Containers: make([]ContainerRecord, 0, len(state.containers)),
+	}
+	if state.health != nil {
+		health := cloneDockerHealth(*state.health)
+		result.Health = &health
+	}
+	for _, record := range copy.containers {
+		result.Containers = append(result.Containers, record)
+	}
+	s.mu.RUnlock()
+	sort.Slice(result.Containers, func(i, j int) bool { return result.Containers[i].Container.ID < result.Containers[j].Container.ID })
+	return result, true
+}
+
+// Revision changes only when externally visible safe state changes.
+func (s *Store) Revision(nodeID string) uint64 {
+	if s == nil {
+		return 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if state := s.nodes[nodeID]; state != nil {
+		return state.revision
+	}
+	return 0
+}
+
+// RestoreStale hydrates the last safe inventory after Core restart. It does
+// not bind a connection or claim that the historical Agent/Docker state is
+// still current.
+func (s *Store) RestoreStale(saved PersistedNode) error {
+	if s == nil || !validIdentity(saved.Identity) || saved.Generation == 0 {
+		return ErrInvalidIdentity
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.nodes[saved.Identity.NodeID]; exists {
+		return ErrIdentityMismatch
+	}
+	state := &nodeState{
+		identity: saved.Identity, generation: saved.Generation,
+		containers:       make(map[string]ContainerRecord, len(saved.Containers)),
+		resourceSequence: make(map[string]uint64, len(saved.Containers)),
+		healthReceived:   saved.HealthReceived, staleReason: "core_restarted",
+		revision: 1,
+	}
+	if saved.Health != nil {
+		health := cloneDockerHealth(*saved.Health)
+		health.SnapshotFresh = false
+		health.Reason = firstReason(health.Reason, "core_restarted")
+		state.health = &health
+	}
+	for _, record := range saved.Containers {
+		id := record.Container.ID
+		if id == "" || strings.TrimSpace(id) != id || len(id) > maxDockerIdentityBytes {
+			return ErrInvalidBatch
+		}
+		if _, duplicate := state.containers[id]; duplicate {
+			return ErrInvalidBatch
+		}
+		record = cloneRecord(record)
+		record.Container.Stale = true
+		record.Container.UnavailableReason = "core_restarted"
+		state.containers[id] = record
+		state.resourceSequence[id] = record.Sequence
+	}
+	s.nodes[saved.Identity.NodeID] = state
+	return nil
+}
+
+// MarkStale keeps the accepted inventory while making an in-memory failure
+// visible when a persistence transaction fails.
+func (s *Store) MarkStale(nodeID, reason string) {
+	if s == nil || reason == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.nodes[nodeID]
+	if state == nil {
+		return
+	}
+	state.staleReason = reason
+	state.revision++
+	for id, record := range state.containers {
+		record = cloneRecord(record)
+		record.Container.Stale = true
+		record.Container.UnavailableReason = reason
+		state.containers[id] = record
 	}
 }
 
@@ -237,6 +375,7 @@ func (s *Store) BindConnection(identity Identity, generation uint64) error {
 			record.Container.UnavailableReason = state.staleReason
 			state.containers[id] = cloneRecord(record)
 		}
+		state.revision++
 	}
 	s.bindings[identity.NodeID] = binding{identity: identity, generation: generation}
 	return nil
@@ -256,6 +395,36 @@ func (s *Store) UnbindConnection(identity Identity, generation uint64) bool {
 	}
 	delete(s.bindings, identity.NodeID)
 	return true
+}
+
+// ValidateConnection reports whether identity and generation are still the
+// authenticated, active Docker connection for its node. Core uses this before
+// validating payload contents so malformed frames queued on an older socket
+// cannot change the current generation's visible state.
+func (s *Store) ValidateConnection(identity Identity, generation uint64) error {
+	if s == nil || !validIdentity(identity) || generation == 0 {
+		return ErrInvalidIdentity
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	active, ok := s.bindings[identity.NodeID]
+	if !ok {
+		return ErrConnectionUnknown
+	}
+	if active.identity != identity {
+		return ErrIdentityMismatch
+	}
+	if generation < active.generation {
+		return ErrStaleGeneration
+	}
+	if generation != active.generation {
+		return ErrGenerationMismatch
+	}
+	state := s.nodes[identity.NodeID]
+	if state == nil || state.identity != identity || state.generation != generation {
+		return ErrGenerationMismatch
+	}
+	return nil
 }
 
 // Accept applies one already-decoded TypeDocker payload. identity and the
@@ -455,6 +624,7 @@ func (s *Store) acceptIncrementalLocked(state *nodeState, batch protocol.DockerB
 	}
 	if !stateEngineAvailable(state) {
 		state.staleReason = "docker_engine_unavailable"
+		state.revision++
 		return nil
 	}
 	for _, item := range changes {
@@ -462,6 +632,7 @@ func (s *Store) acceptIncrementalLocked(state *nodeState, batch protocol.DockerB
 			return err
 		}
 	}
+	state.revision++
 	return nil
 }
 
@@ -567,6 +738,7 @@ func (s *Store) commitSnapshotLocked(state *nodeState, stage *snapshotStage, rec
 	if state.health != nil && !state.health.EventsConnected {
 		state.staleReason = "docker_events_disconnected"
 	}
+	state.revision++
 	return nil
 }
 
@@ -680,6 +852,8 @@ func (s *Store) applyHealthLocked(state *nodeState, incoming *protocol.DockerHea
 		return
 	}
 	health := cloneDockerHealth(*incoming)
+	previousReason := state.staleReason
+	changed := state.health == nil || !equivalentHealthView(*state.health, health)
 	state.health = &health
 	state.healthReceived = receivedAt
 	if health.Availability != protocol.DockerAvailabilityAvailable {
@@ -689,6 +863,21 @@ func (s *Store) applyHealthLocked(state *nodeState, incoming *protocol.DockerHea
 	} else if !health.EventsConnected {
 		state.staleReason = "docker_events_disconnected"
 	}
+	if state.staleReason != previousReason {
+		changed = true
+	}
+	if changed {
+		state.revision++
+	}
+}
+
+// equivalentHealthView ignores Agent wall-clock timestamps that advance on
+// health keepalives. Core tracks receive time separately for freshness, while
+// visible state revisions stay stable so heartbeats do not republish every
+// container to each dashboard client.
+func equivalentHealthView(left, right protocol.DockerHealth) bool {
+	return left.Availability == right.Availability && left.EventsConnected == right.EventsConnected && left.SnapshotFresh == right.SnapshotFresh &&
+		left.ErrorKind == right.ErrorKind && left.Reason == right.Reason
 }
 
 func applyChange(state *nodeState, item queuedChange) error {
@@ -799,6 +988,44 @@ func cloneNodeStateForView(state *nodeState) *nodeState {
 	}
 	for id, record := range state.containers {
 		copy.containers[id] = cloneRecord(record)
+	}
+	return copy
+}
+
+func cloneNodeState(state *nodeState) *nodeState {
+	copy := cloneNodeStateForView(state)
+	copy.lastEnvelopeSequence = state.lastEnvelopeSequence
+	copy.lastDataSequence = state.lastDataSequence
+	copy.snapshotFloor = state.snapshotFloor
+	copy.lastSnapshotID = state.lastSnapshotID
+	copy.lastSnapshotSequence = state.lastSnapshotSequence
+	copy.revision = state.revision
+	copy.resourceSequence = make(map[string]uint64, len(state.resourceSequence))
+	for id, sequence := range state.resourceSequence {
+		copy.resourceSequence[id] = sequence
+	}
+	copy.queued = make([]queuedChange, len(state.queued))
+	for index, item := range state.queued {
+		copy.queued[index] = item
+		copy.queued[index].change = cloneDockerChange(item.change)
+	}
+	copy.queuedBytes = state.queuedBytes
+	if state.stage != nil {
+		stage := *state.stage
+		stage.items = make(map[string]protocol.DockerContainer, len(state.stage.items))
+		for id, container := range state.stage.items {
+			stage.items[id] = cloneDockerContainer(container)
+		}
+		stage.pending = make([]queuedChange, len(state.stage.pending))
+		for index, item := range state.stage.pending {
+			stage.pending[index] = item
+			stage.pending[index].change = cloneDockerChange(item.change)
+		}
+		copy.stage = &stage
+	}
+	if state.ignored != nil {
+		ignored := *state.ignored
+		copy.ignored = &ignored
 	}
 	return copy
 }
