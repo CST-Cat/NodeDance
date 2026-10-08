@@ -703,7 +703,7 @@ def case_10():
         if b"password" in private_body.lower() and b"passwordHash" in private_body:
             raise RuntimeError("private user response disclosed a password field")
         audit_columns = [row[1] for row in db_query(core.data_dir, "PRAGMA table_info(audit_entries)")]
-        if audit_columns != ["id", "occurred_at", "action", "outcome", "actor_id", "remote_addr"]:
+        if audit_columns != ["id", "occurred_at", "action", "outcome", "actor_id", "remote_addr", "target_kind", "target_id"]:
             raise RuntimeError(f"audit table has unexpected free-form fields: {audit_columns}")
         return {"scanned_files": [str(path.relative_to(ROOT)) for path in static_files],
                 "private_data_scanned": ["SQLite", "SQLite WAL", "SQLite SHM", "Core log"],
@@ -756,9 +756,9 @@ def case_11():
     recovery_db.close()
     with Core("s01-11-migration-recovery", data_dir=migration_dir) as recovered:
         recovery_status, _, _ = Client(recovered).request("GET", "/api/v1/health")
-        recovery_version = db_query(migration_dir, "SELECT max(version) FROM schema_migrations")[0][0]
+        recovery_versions = [row[0] for row in db_query(migration_dir, "SELECT version FROM schema_migrations ORDER BY version")]
         recovery_row = db_query(migration_dir, "SELECT sentinel FROM migration_conflict_preserved")[0][0]
-        if recovery_status != 200 or recovery_version != 1 or recovery_row != "original-data-survives":
+        if recovery_status != 200 or recovery_versions != [1, 2] or recovery_row != "original-data-survives":
             raise RuntimeError("Core did not recover on the repaired original data directory")
 
     deny_parent = pathlib.Path(tempfile.mkdtemp(prefix="nodedance-s01-unwritable-"))
@@ -817,7 +817,7 @@ def case_11():
         if sentinel.read_text() != "keep-this-original-file\n" or (deny_dir / "nodedance.sqlite").exists():
             raise RuntimeError("unprivileged database startup changed the protected directory")
         return {"migration_failure_exit": migration_code, "migration_log": str(failed.log_path.relative_to(ROOT)),
-                "recovery_health": recovery_status, "recovered_schema_version": recovery_version,
+                "recovery_health": recovery_status, "recovered_schema_versions": recovery_versions,
                 "preserved_original_row_after_recovery": recovery_row,
                 "migration_original_row": preserved, "sqlite_integrity": integrity,
                 "unwritable_core_user": "nobody", "unwritable_exit": unwritable_code,

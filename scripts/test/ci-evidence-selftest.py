@@ -191,6 +191,42 @@ def test_workflow_upload_is_hidden_file_aware_and_allowlisted():
     require(not any("work-s01" in path or "test-results" in path or "playwright-report" in path
                     or ".tools" in path or ".build" in path or "node_modules" in path
                     for path in s01_paths), "S01 artifact allowlist includes private work data or caches")
+
+    s02_start = workflow.index("name: S02 /")
+    s02_positions = [workflow.index(value, s02_start) for value in (
+        "name: S02 /",
+        "rm -f reports/stages/S02.json && python3 scripts/ci_evidence.py --stage S02 initialize",
+        "run: make verify-tools",
+        "run: make verify-ci-evidence",
+        "run: make deps",
+        "run: make test-stage STAGE=S02",
+        "python3 scripts/ci_evidence.py --stage S02 annotate",
+        "uses: actions/upload-artifact@",
+    )]
+    require(s02_positions == sorted(s02_positions), "S02 workflow is missing fresh evidence, locked tools, full acceptance, or final report steps")
+    s02_job = workflow[s02_start:]
+    require("ubuntu-24.04" in s02_job and "ubuntu-24.04-arm" in s02_job
+            and "NODEDANCE_SYSTEMD_ACCEPTANCE: '1'" in s02_job,
+            "S02 CI must exercise both GitHub-hosted Linux architectures and the disposable systemd manager test")
+    s02_path_index = next((i for i, line in enumerate(s02_job.splitlines())
+                           if re.match(r"\s+path:\s*\|\s*$", line)), None)
+    require(s02_path_index is not None, "S02 artifact upload has no explicit path allowlist")
+    s02_lines = s02_job.splitlines()
+    s02_paths = []
+    for line in s02_lines[s02_path_index + 1:]:
+        if not line.startswith("            "):
+            break
+        s02_paths.append(line.strip())
+    expected_s02 = {
+        "reports/stages/S02.json",
+        "reports/status.json",
+        ".artifacts/logs/acceptance-s02/",
+        ".artifacts/stage-runs/",
+    }
+    require(set(s02_paths) == expected_s02 and len(s02_paths) == len(expected_s02),
+            f"S02 artifact paths differ from the explicit evidence allowlist: {s02_paths}")
+    require(not any("work-s02" in path or ".tools" in path or ".build" in path or "node_modules" in path
+                    for path in s02_paths), "S02 artifact allowlist includes private work data or caches")
     makefile = (ROOT / "Makefile").read_text()
     require("playwright-install: deps" in makefile
             and "pnpm --dir web exec playwright install --with-deps $(PLAYWRIGHT_BROWSERS)" in makefile
@@ -253,11 +289,43 @@ def test_s01_marker_and_report_are_isolated_from_s00():
                 "S01 annotate mutated the S00 marker")
 
 
+def test_s02_marker_and_report_are_isolated_from_s00_s01():
+    metadata_s02 = EVIDENCE.metadata_from_values(
+        run_id="101", run_attempt="1", sha="c" * 40,
+        job="s02", runner="ubuntu-24.04-arm", engine="not-applicable", stage="S02",
+    )
+    with tempfile.TemporaryDirectory(prefix="nodedance-ci-s02-isolation-") as temporary:
+        root = pathlib.Path(temporary)
+        status_path = root / "reports/status.json"
+        s02_report = root / "reports/stages/S02.json"
+        s02_marker = root / ".artifacts/ci-evidence/S02/current-job.json"
+        s02_cases = EVIDENCE.stage_cases(stage="S02")
+        initialized = EVIDENCE.initialize(
+            s02_report, status_path, s02_marker, metadata=metadata_s02, stage="S02",
+        )
+        require(initialized["stage"] == "S02" and set(initialized["tests"]) == {case["id"] for case in s02_cases},
+                "S02 initialization omitted an original or supplemental acceptance case")
+        require(initialized["status"] == "NOT_READY" and all(not item["runs"] for item in initialized["tests"].values()),
+                "S02 initialization inherited previous test results")
+        stale = dict(initialized)
+        stale.update({"run_id": "stale-s02-pass", "mode": "full", "status": "PASS",
+                      "updated_at": (dt.datetime.fromisoformat(metadata_s02["initialized_at"])
+                                     - dt.timedelta(seconds=1)).isoformat()})
+        stale["tests"] = {case["id"]: {"status": "PASS", "runs": [
+            {"attempt": number, "status": "PASS"} for number in (1, 2, 3)
+        ]} for case in s02_cases}
+        s02_report.write_text(json.dumps(stale))
+        replaced = EVIDENCE.annotate(s02_report, status_path, s02_marker, metadata=metadata_s02, stage="S02")
+        require(replaced["status"] == "NOT_READY" and replaced["run_id"] == "ci-" + metadata_s02["job_key"],
+                "S02 annotate accepted a stale PASS")
+
+
 def main():
     test_stale_pass_is_replaced_and_current_status_is_preserved()
     test_s01_marker_and_report_are_isolated_from_s00()
+    test_s02_marker_and_report_are_isolated_from_s00_s01()
     test_workflow_upload_is_hidden_file_aware_and_allowlisted()
-    print("CI evidence safeguards PASS: S00/S01 marker isolation, stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
+    print("CI evidence safeguards PASS: S00/S01/S02 marker isolation, stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
 
 
 if __name__ == "__main__":
