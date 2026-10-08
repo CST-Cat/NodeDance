@@ -12,12 +12,14 @@ PNPM_BIN := $(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin
 export PATH := $(GO_BIN:%/go=%):$(NODE_BIN):$(PNPM_BIN):$(PATH)
 export GOTOOLCHAIN := local
 
-.PHONY: help bootstrap deps frontend check build test-stage test-integration test-e2e test-acceptance fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
+.PHONY: help bootstrap deps frontend verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
 
 help:
 	@printf '%s\n' \
 	  'NodeDance S00 development targets:' \
 	  '  make bootstrap' \
+	  '  make verify-tools' \
+	  '  make verify-ci-evidence' \
 	  '  make check' \
 	  '  make build' \
 	  '  make test-stage STAGE=S00' \
@@ -39,8 +41,14 @@ frontend: deps
 	pnpm --dir web run typecheck
 	pnpm --dir web run build
 
-check: frontend
+verify-tools: bootstrap
 	./scripts/check-tools.sh
+
+verify-ci-evidence:
+	python3 scripts/test/ci-evidence-selftest.py
+	bash scripts/test/check-tools-host-shell.sh
+
+check: frontend verify-tools verify-ci-evidence
 	go vet ./...
 	go test ./...
 	python3 scripts/verify-requirements.py

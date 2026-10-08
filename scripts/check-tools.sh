@@ -6,7 +6,15 @@ EXPECTED_GO="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["
 EXPECTED_NODE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["node"]["version"])' "$LOCK")"
 EXPECTED_PNPM="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["pnpm"]["version"])' "$LOCK")"
 EXPECTED_COMPOSE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["compose"]["version"])' "$LOCK")"
+GO_BIN="$ROOT/.tools/go$EXPECTED_GO/bin/go"
+NODE_BIN="$ROOT/.tools/node-v$EXPECTED_NODE/bin/node"
 PNPM_BIN="$ROOT/.tools/pnpm/node_modules/.bin/pnpm"
+[[ -x "$GO_BIN" ]] || { echo "locked Go binary is missing: $GO_BIN (run make bootstrap)" >&2; exit 1; }
+[[ -x "$NODE_BIN" ]] || { echo "locked Node.js binary is missing: $NODE_BIN (run make bootstrap)" >&2; exit 1; }
+export PATH="$(dirname "$GO_BIN"):$(dirname "$NODE_BIN"):$ROOT/.tools/pnpm/node_modules/.bin:$PATH"
+export GOTOOLCHAIN=local
+[[ "$(command -v go)" == "$GO_BIN" ]] || { echo "locked Go is not first on PATH: $(command -v go)" >&2; exit 1; }
+[[ "$(command -v node)" == "$NODE_BIN" ]] || { echo "locked Node.js is not first on PATH: $(command -v node)" >&2; exit 1; }
 PNPM_EXPECTED_SHA="$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d["pnpm"]["native_packages"]["linux/"+sys.argv[2]]["binary_sha256"])' "$LOCK" "$(go env GOARCH)")"
 python3 - "$PNPM_BIN" <<'PY' || { echo 'locked pnpm must be installed as a native ELF before checks run' >&2; exit 1; }
 import pathlib,sys
