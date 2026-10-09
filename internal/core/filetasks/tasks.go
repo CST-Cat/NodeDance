@@ -307,7 +307,7 @@ func (s *Store) transition(ctx context.Context, nodeID, taskID string, to taskst
 	}
 	now := s.now().UTC()
 	from := task.Status
-	if taskstate.IsTerminal(from) || (from != taskstate.Queued && from != taskstate.Running) {
+	if taskstate.IsTerminal(from) || (from != taskstate.Queued && from != taskstate.Running && from != taskstate.Unknown) {
 		return ErrStateConflict
 	}
 	if to == taskstate.Running {
@@ -325,7 +325,7 @@ func (s *Store) transition(ctx context.Context, nodeID, taskID string, to taskst
 	if to != taskstate.Succeeded && to != taskstate.Failed && to != taskstate.Canceled && to != taskstate.Unknown {
 		return ErrInvalidRequest
 	}
-	if resultCode == "verified" && to != taskstate.Succeeded || (resultCode == "not_dispatched" || resultCode == "not_committed" || resultCode == "agent_rejected") && to != taskstate.Failed ||
+	if (resultCode == "verified" || resultCode == "state_verified") && to != taskstate.Succeeded || (resultCode == "not_dispatched" || resultCode == "not_committed" || resultCode == "agent_rejected") && to != taskstate.Failed ||
 		(resultCode == "result_pending" || resultCode == "mutation_uncertain") && to != taskstate.Unknown ||
 		(resultCode == "canceled_before_dispatch" || resultCode == "cancel_confirmed") && to != taskstate.Canceled {
 		return ErrInvalidRequest
@@ -334,7 +334,8 @@ func (s *Store) transition(ctx context.Context, nodeID, taskID string, to taskst
 		return ErrStateConflict
 	}
 	if to == taskstate.Canceled && (from == taskstate.Queued && (task.DispatchStartedAt != nil || resultCode != "canceled_before_dispatch") ||
-		from == taskstate.Running && resultCode != "cancel_confirmed" || from != taskstate.Queued && from != taskstate.Running) {
+		(from == taskstate.Running || from == taskstate.Unknown) && resultCode != "cancel_confirmed" ||
+		from != taskstate.Queued && from != taskstate.Running && from != taskstate.Unknown) {
 		return ErrStateConflict
 	}
 	// A terminal Agent response is the first available evidence of execution
@@ -398,13 +399,13 @@ func fileTaskEvidence(from, to taskstate.Status, resultCode string, dispatched b
 	case taskstate.Succeeded:
 		return taskstate.Evidence{ExecutionAttempted: true, ExecutionCompleted: true, PostconditionVerified: true, ActualResultConfirmed: true}
 	case taskstate.Failed:
-		return taskstate.Evidence{ExecutionAttempted: from == taskstate.Running || resultCode == "agent_rejected" || resultCode == "not_committed",
-			ExecutionCompleted: from == taskstate.Running || resultCode == "agent_rejected" || resultCode == "not_committed",
+		return taskstate.Evidence{ExecutionAttempted: from == taskstate.Running || from == taskstate.Unknown || resultCode == "agent_rejected" || resultCode == "not_committed",
+			ExecutionCompleted: from == taskstate.Running || from == taskstate.Unknown || resultCode == "agent_rejected" || resultCode == "not_committed",
 			FailureConfirmed:   true, ActualResultConfirmed: true}
 	case taskstate.Unknown:
 		return taskstate.Evidence{ExecutionAttempted: from == taskstate.Running, DeliveryCommitted: from == taskstate.Queued && dispatched}
 	case taskstate.Canceled:
-		return taskstate.Evidence{ExecutionAttempted: from == taskstate.Running, ProcessTerminated: from == taskstate.Running,
+		return taskstate.Evidence{ExecutionAttempted: from == taskstate.Running || from == taskstate.Unknown, ProcessTerminated: from == taskstate.Running || from == taskstate.Unknown,
 			CancellationConfirmed: true, ActualResultConfirmed: true}
 	default:
 		return taskstate.Evidence{}
@@ -465,6 +466,29 @@ func (s *Store) Get(ctx context.Context, nodeID, taskID string) (Task, error) {
 		return Task{}, fmt.Errorf("read durable file task: %w", err)
 	}
 	return task, nil
+}
+
+func (s *Store) ReconciliationCandidates(ctx context.Context, nodeID string, limit int) ([]Task, error) {
+	if ctx == nil || !canonicalUUID.MatchString(nodeID) || limit < 1 || limit > 10000 {
+		return nil, ErrInvalidRequest
+	}
+	rows, err := s.db.QueryContext(ctx, taskSelect+` WHERE node_id=? AND status='unknown' ORDER BY created_at_ns,task_id LIMIT ?`, nodeID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unknown file tasks for reconciliation: %w", err)
+	}
+	defer rows.Close()
+	tasks := make([]Task, 0, limit)
+	for rows.Next() {
+		task, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read unknown file tasks for reconciliation: %w", err)
+	}
+	return tasks, nil
 }
 
 func (s *Store) List(ctx context.Context, nodeID string, limit int, after *coretasks.Cursor) (Page, error) {
@@ -600,7 +624,7 @@ func validRequest(request CreateRequest) bool {
 
 func isResultCode(value string) bool {
 	switch value {
-	case "verified", "agent_rejected", "result_pending", "not_dispatched", "not_committed", "mutation_uncertain", "canceled_before_dispatch", "cancel_confirmed":
+	case "verified", "state_verified", "agent_rejected", "result_pending", "not_dispatched", "not_committed", "mutation_uncertain", "canceled_before_dispatch", "cancel_confirmed":
 		return true
 	default:
 		return false

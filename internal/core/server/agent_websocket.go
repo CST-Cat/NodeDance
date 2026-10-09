@@ -41,6 +41,7 @@ type agentConnection struct {
 	imagesEnabled            bool
 	terminalEnabled          bool
 	filesEnabled             bool
+	fileJournalEnabled       bool
 	imageResponseMu          sync.Mutex
 	imageResponses           map[string]chan protocol.ImageListResponse
 	composeEditorEnabled     bool
@@ -67,6 +68,8 @@ type agentConnection struct {
 	fileTombstones           map[string]struct{}
 	fileTombstoneOrder       []string
 	fileCancelAcks           map[string]chan protocol.FileCancelAck
+	fileJournalMu            sync.Mutex
+	fileJournalQueries       map[string]map[string]struct{}
 	rebuildPlanMu            sync.Mutex
 	rebuildPlanWaiters       map[string]rebuildPlanWaiter
 	leaseUpdates             chan time.Time
@@ -468,12 +471,13 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		stagedUpdateTaskID: hello.UpdateTaskID,
 		updateBaseURL:      s.agentUpdateOrigin(r),
 		streamEnabled:      hasCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams), nodeID: identity.NodeID,
-		composeEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityCompose),
-		imagesEnabled:   hasCapability(negotiatedCapabilities, protocol.CapabilityImages),
-		terminalEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityTerminal),
-		filesEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityFiles),
-		imageResponses:  make(map[string]chan protocol.ImageListResponse),
-		taskSignal:      make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
+		composeEnabled:     hasCapability(negotiatedCapabilities, protocol.CapabilityCompose),
+		imagesEnabled:      hasCapability(negotiatedCapabilities, protocol.CapabilityImages),
+		terminalEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityTerminal),
+		filesEnabled:       hasCapability(negotiatedCapabilities, protocol.CapabilityFiles),
+		fileJournalEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityFiles) && hasCapability(negotiatedCapabilities, protocol.CapabilityFileJournal),
+		imageResponses:     make(map[string]chan protocol.ImageListResponse),
+		taskSignal:         make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		composeEditorEnabled:     hasCapability(negotiatedCapabilities, protocol.CapabilityComposeEditor),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
 		commands: make(chan protocol.Envelope, 32), leaseUpdates: make(chan time.Time, 1)}
@@ -491,6 +495,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		managed.fileTransfers = make(map[string]*coreFileTransfer)
 		managed.fileTombstones = make(map[string]struct{})
 		managed.fileCancelAcks = make(map[string]chan protocol.FileCancelAck)
+		managed.fileJournalQueries = make(map[string]map[string]struct{})
 	}
 	go s.watchAgentLease(managed, lease.Identity, lease.LastSeenAt)
 	if !s.installAgentConnection(managed, identity.AgentID) {
@@ -533,6 +538,9 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnection, identity agents.Identity) {
+	if connection.fileJournalEnabled {
+		go s.reconcileUnknownFileTasks(ctx, connection)
+	}
 	if connection.composeEnabled && connection.composeEditorEnabled {
 		go s.reconcileUnknownComposeEditorOperations(ctx, connection)
 	}
@@ -756,7 +764,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid or unpersisted Agent Compose response")
 					return
 				}
-			case protocol.TypeFileResponse, protocol.TypeFileChunk, protocol.TypeFileCancelAck:
+			case protocol.TypeFileResponse, protocol.TypeFileChunk, protocol.TypeFileCancelAck, protocol.TypeFileJournalReply:
 				if !connection.filesEnabled {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent file service was not negotiated")
 					return
@@ -927,7 +935,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}, protocol.CapabilityImages: {}, protocol.CapabilityTerminal: {}, protocol.CapabilityFiles: {}, protocol.CapabilityComposeEditor: {}, protocol.CapabilityProbes: {}, protocol.CapabilityAgentUpdatesPreparedAck: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}, protocol.CapabilityImages: {}, protocol.CapabilityTerminal: {}, protocol.CapabilityFiles: {}, protocol.CapabilityFileJournal: {}, protocol.CapabilityComposeEditor: {}, protocol.CapabilityProbes: {}, protocol.CapabilityAgentUpdatesPreparedAck: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {
