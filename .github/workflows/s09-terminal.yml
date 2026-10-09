@@ -37,7 +37,7 @@ jobs:
       - name: Start this job's owned Engine 28 or 29 DIND
         run: ./scripts/test/dind.sh start "${NODEDANCE_TEST_ENGINE}"
 
-      - name: Run real host PTY, Core authorization, and Docker Exec component checks
+      - name: Run live Core-Agent-browser host PTY, Core authorization, and Docker Exec checks
         run: mkdir -p .artifacts/s09 && set -o pipefail && make test-terminal-component 2>&1 | tee ".artifacts/s09/terminal-component-engine-${NODEDANCE_TEST_ENGINE}.log"
 
       - name: Run responsive terminal keyboard and exact-target UI checks
