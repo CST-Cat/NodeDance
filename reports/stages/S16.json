@@ -5,7 +5,7 @@
   "status": "NOT_READY",
   "run_id": "s16-local-20261009T053703Z",
   "updated_at": "2026-10-09T05:37:30Z",
-  "reason": "本地 make test-s16 候选检查通过；随后改进 SQLite campaign 顺序/架构约束，并运行受影响 Core/Store 定向测试通过。完整候选命令尚未在最终提交上由 GitHub Actions 执行；真实 systemd 多 Agent 更新、节点重启和生产签名密钥链证据缺失，不能把 S16 标记为 PASS。",
+  "reason": "本地候选实现及受影响定向测试通过；最终代码提交 b5c8e41621f85556dde96f591f8cd23e420003bf 的 GitHub Actions 完整 S16 focused suite 通过。真实 systemd 多 Agent 更新、节点重启和生产签名密钥链证据仍缺失，因此整体阶段保持 NOT_READY。",
   "tests": {
     "S16-01": {
       "status": "NOT_READY",
@@ -251,12 +251,23 @@
       "result": "serial campaign 仅在前一个 Agent 版本已确认后释放下一节点；失败暂停后续节点，自动 campaign 过滤不兼容架构。"
     },
     "git_diff_check": "PASS",
-    "log_artifacts": [],
+    "log_artifacts": [
+      "GitHub Actions artifact nodedance-s16-candidate-37889592761-1: .artifacts/logs/s16/candidate.log"
+    ],
     "github_actions": {
       "workflow": ".github/workflows/s16-candidate.yml",
-      "status": "PENDING_PUSH",
-      "workflow_url": "https://github.com/CST-Cat/NodeDance/actions/workflows/s16-candidate.yml",
-      "note": "推送最终候选提交后触发；候选日志、Playwright 工件和逐项 NOT_READY 报告由 workflow 上传。"
+      "status": "PASS",
+      "run_id": "37889592761",
+      "url": "https://github.com/CST-Cat/NodeDance/actions/runs/37889592761",
+      "head_sha": "b5c8e41621f85556dde96f591f8cd23e420003bf",
+      "artifact": "nodedance-s16-candidate-37889592761-1",
+      "artifact_contents": [
+        "reports/stages/S16.json",
+        ".artifacts/logs/s16/candidate.log",
+        "web/test-results/",
+        "web/playwright-report/"
+      ],
+      "note": "完整 workflow 所有步骤通过；CI 使用受控 Linux runner 和 Chromium，不替代真实 systemd 多 Agent 阶段验收。"
     }
   },
   "out_of_scope_inherited_check": {
