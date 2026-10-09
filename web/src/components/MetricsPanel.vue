@@ -164,10 +164,15 @@ const clockOffsetText = computed(() => {
         <div class="card-heading"><h3>网络</h3><span class="status-pill" :data-status="metricState(view.metrics.network.summary)">{{ statusLabel(metricState(view.metrics.network.summary)) }}</span></div>
         <div class="network-pair"><span>接收</span><strong>{{ formatRate(view.metrics.network.summary.value?.receivedBytesPerSecond) }}</strong></div>
         <div class="network-pair"><span>发送</span><strong>{{ formatRate(view.metrics.network.summary.value?.sentBytesPerSecond) }}</strong></div>
-        <p v-if="metricReason(view.metrics.network.summary)" class="metric-reason">{{ metricReason(view.metrics.network.summary) }}</p>
+        <p v-if="metricReason(view.metrics.network.summary)" class="metric-reason" data-testid="network-reason">{{ metricReason(view.metrics.network.summary) }}</p>
         <p v-if="view.metrics.network.detailsTruncated" class="metric-reason" data-testid="network-truncation">网卡明细已裁剪：{{ view.metrics.network.truncationReason }}</p>
-        <div v-for="iface in view.metrics.network.interfaces" :key="iface.name" class="interface-row">
-          <div><strong>{{ iface.name }}</strong><span>{{ iface.includedInSummary ? '已计入汇总' : iface.summaryReason || '未计入汇总' }}</span></div>
+        <div v-for="iface in view.metrics.network.interfaces" :key="iface.name" class="interface-row" data-testid="network-interface" :data-interface-name="iface.name">
+          <div>
+            <strong>{{ iface.name }}</strong>
+            <span>{{ iface.includedInSummary ? '已计入汇总' : iface.summaryReason || '未计入汇总' }}</span>
+            <span class="status-pill small" :data-status="metricState(iface.rate)" :data-testid="`interface-rate-status-${iface.name}`">{{ statusLabel(metricState(iface.rate)) }}</span>
+            <span v-if="metricReason(iface.rate)" class="metric-reason" :data-testid="`interface-rate-reason-${iface.name}`">{{ metricReason(iface.rate) }}</span>
+          </div>
           <span>{{ formatRate(iface.rate.value?.receivedBytesPerSecond) }} ↓</span>
           <span>{{ formatRate(iface.rate.value?.sentBytesPerSecond) }} ↑</span>
         </div>
@@ -177,10 +182,10 @@ const clockOffsetText = computed(() => {
     <footer class="metrics-footer">
       <div><span>Agent 采集</span><strong>{{ formatTime(view.collectedAt) }}</strong></div>
       <div><span>Core 接收</span><strong>{{ formatTime(view.receivedAt) }}</strong></div>
-      <div><span>时钟偏移</span><strong>{{ clockOffsetText }}</strong></div>
+      <div><span>时钟偏移</span><strong data-testid="clock-offset">{{ clockOffsetText }}</strong></div>
       <div><span>运行时间</span><strong>{{ formatUptime(view.metrics.uptime.value?.seconds) }}</strong></div>
-      <div><span>启动 ID</span><strong class="boot-id">{{ view.metrics.uptime.value?.bootId ?? view.bootId ?? '未知' }}</strong></div>
-      <div><span>连接代际 / 指标序号</span><strong>{{ view.generation }} / {{ view.sequence }}</strong></div>
+      <div><span>启动 ID</span><strong class="boot-id" data-testid="boot-id">{{ view.metrics.uptime.value?.bootId ?? view.bootId ?? '未知' }}</strong></div>
+      <div><span>连接代际 / 指标序号</span><strong data-testid="sample-identity" :data-generation="view.generation" :data-active-generation="view.activeGeneration" :data-sequence="view.sequence">{{ view.generation }} / {{ view.sequence }}</strong></div>
       <div><span>系统 / 架构</span><strong>{{ view.metrics.system.os.value ?? '未知' }} · {{ view.metrics.system.architecture.value ?? '未知' }}</strong></div>
       <div><span>内核版本</span><strong>{{ view.metrics.system.kernelVersion.value ?? '未知' }}</strong></div>
     </footer>

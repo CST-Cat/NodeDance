@@ -44,6 +44,7 @@ type manifest struct {
 type readyMessage struct {
 	CoreURL     string `json:"coreUrl"`
 	GuestURL    string `json:"guestUrl"`
+	PublicOrigin string `json:"publicOrigin"`
 	ControlURL  string `json:"controlUrl"`
 	Manifest    string `json:"manifest"`
 	NodeID      string `json:"nodeId"`
@@ -72,6 +73,13 @@ func run() error {
 	port := coreListener.Addr().(*net.TCPAddr).Port
 	guestURL := fmt.Sprintf("https://10.0.2.2:%d", port)
 	coreURL := fmt.Sprintf("https://127.0.0.1:%d", port)
+	publicOrigin := strings.TrimSpace(os.Getenv("NODEDANCE_S03_PUBLIC_ORIGIN"))
+	if publicOrigin == "" {
+		publicOrigin = guestURL
+	} else if publicOrigin != "http://127.0.0.1:4187" {
+		_ = coreListener.Close()
+		return errors.New("browser PublicOrigin must be the exact host loopback origin http://127.0.0.1:4187")
+	}
 	caPEM, certPEM, keyPEM, err := createTestCertificates()
 	if err != nil {
 		_ = coreListener.Close()
@@ -88,7 +96,7 @@ func run() error {
 	}
 
 	core, err := coreserver.New("s03-guest-test", coreserver.Options{
-		DataDir: filepath.Join(work, "core-data"), Development: true, PublicOrigin: guestURL,
+		DataDir: filepath.Join(work, "core-data"), Development: true, PublicOrigin: publicOrigin,
 		AgentOfflineTimeout: 8 * time.Second, AgentSweepInterval: 250 * time.Millisecond,
 	})
 	if err != nil {
@@ -127,7 +135,7 @@ func run() error {
 	var csrf struct {
 		Token string `json:"token"`
 	}
-	if err := doJSON(client, http.MethodGet, coreURL+"/api/v1/auth/csrf", nil, guestURL, "", &csrf); err != nil {
+	if err := doJSON(client, http.MethodGet, coreURL+"/api/v1/auth/csrf", nil, publicOrigin, "", &csrf); err != nil {
 		return fmt.Errorf("issue setup CSRF token: %w", err)
 	}
 	var setup struct {
@@ -135,7 +143,7 @@ func run() error {
 	}
 	if err := doJSON(client, http.MethodPost, coreURL+"/api/v1/auth/setup", map[string]string{
 		"credential": strings.TrimSpace(string(setupCredential)), "password": adminPassword, "displayName": adminName,
-	}, guestURL, csrf.Token, &setup); err != nil {
+	}, publicOrigin, csrf.Token, &setup); err != nil {
 		return fmt.Errorf("initialize temporary Core admin: %w", err)
 	}
 	if setup.CSRFToken == "" {
@@ -146,7 +154,7 @@ func run() error {
 		Token  string `json:"token"`
 	}
 	if err := doJSON(client, http.MethodPost, coreURL+"/api/v1/agents/enrollments",
-		map[string]string{"displayName": "s03-clock-reboot-guest"}, guestURL, setup.CSRFToken, &enrollment); err != nil {
+		map[string]string{"displayName": "s03-clock-reboot-guest"}, publicOrigin, setup.CSRFToken, &enrollment); err != nil {
 		return fmt.Errorf("create guest Agent enrollment: %w", err)
 	}
 	if enrollment.NodeID == "" || enrollment.Token == "" {
@@ -181,7 +189,7 @@ func run() error {
 			http.Error(w, "cannot create metrics request", http.StatusInternalServerError)
 			return
 		}
-		request.Header.Set("Origin", guestURL)
+		request.Header.Set("Origin", publicOrigin)
 		response, err := client.Do(request)
 		if err != nil {
 			http.Error(w, "Core metrics query failed", http.StatusBadGateway)
@@ -212,7 +220,7 @@ func run() error {
 		return err
 	}
 	ready, _ := json.Marshal(readyMessage{
-		CoreURL: coreURL, GuestURL: guestURL, ControlURL: controlURL,
+		CoreURL: coreURL, GuestURL: guestURL, PublicOrigin: publicOrigin, ControlURL: controlURL,
 		Manifest: manifestPath, NodeID: enrollment.NodeID, Certificate: caPath,
 	})
 	fmt.Printf("READY %s\n", ready)

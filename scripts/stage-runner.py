@@ -108,7 +108,7 @@ def main():
     if args.stage not in {stage["id"] for stage in REGISTRY["stages"]}:
         parser.error(f"{args.stage} is absent from tests/registry.json")
 
-    if args.stage not in {"S00", "S01", "S02", "S04"}:
+    if args.stage not in {"S00", "S01", "S02", "S03", "S04"}:
         return not_ready_report(
             args.stage, args.mode,
             f"{args.stage} implementation and executable acceptance checks are not present in this checkout. This report lists every original case individually. A previous report cannot satisfy a current run.",
@@ -124,6 +124,7 @@ def main():
         "S00": "scripts/acceptance-s00.py",
         "S01": "scripts/acceptance-s01.py",
         "S02": "scripts/acceptance-s02.py",
+        "S03": "scripts/acceptance-s03.py",
         "S04": "scripts/acceptance-s04.py",
     }[args.stage]
     command = [sys.executable, acceptance, "--mode", args.mode, "--repeat", str(repeat)]

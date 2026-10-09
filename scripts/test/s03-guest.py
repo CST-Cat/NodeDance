@@ -12,6 +12,7 @@ import platform
 import re
 import shlex
 import shutil
+import signal
 import socket
 import stat
 import subprocess
@@ -83,7 +84,7 @@ LOCKED_PACKAGES = {
     "initramfs-tools-core": "0.142ubuntu25.8",
     "util-linux": "2.39.3-9ubuntu6.6",
 }
-QEMU_TIMEOUT_SECONDS = 240
+QEMU_TIMEOUT_SECONDS = 360
 GUEST_MEMORY_MIB = 2048
 
 
@@ -243,6 +244,19 @@ def build_privilege_helper(arch, output, log_path):
     env.update({"GOTOOLCHAIN": "local", "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0"})
     logged_command([go, "build", "-mod=readonly", "-trimpath", "-ldflags=-s -w",
                     "-o", str(output), "./scripts/test/s03-privilege-helper"],
+                   log_path, timeout=180, env=env)
+    output.chmod(0o755)
+    return {"go_version": command_output([go, "version"]),
+            "binary_sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+            "architecture": arch}
+
+
+def build_docker_stall_fixture(arch, output, log_path):
+    go = go_binary()
+    env = os.environ.copy()
+    env.update({"GOTOOLCHAIN": "local", "GOOS": "linux", "GOARCH": arch, "CGO_ENABLED": "0"})
+    logged_command([go, "build", "-mod=readonly", "-trimpath", "-ldflags=-s -w",
+                    "-o", str(output), "./scripts/test/s03-docker-stall-fixture"],
                    log_path, timeout=180, env=env)
     output.chmod(0o755)
     return {"go_version": command_output([go, "version"]),
@@ -440,6 +454,31 @@ start_guest_agent() {
   fi
   /usr/local/bin/s03-privilege-helper assert-owner 65534 65534 600 \
     "$agent_config" || fatal "guest Agent config owner/mode is invalid"
+  docker_stall_enabled=0
+  if [ -f "$MARKER" ]; then
+    unset DOCKER_HOST
+  else
+    docker_fixture=/usr/local/bin/s03-docker-stall-fixture
+    [ -x "$docker_fixture" ] || fatal "locked Docker stall fixture is missing"
+    /bin/busybox mkdir -m 700 -p /run/s03-docker-stall || fatal "cannot create private Docker fixture state"
+    "$docker_fixture" --socket /run/s03-docker.sock --state-dir /run/s03-docker-stall \
+      >/run/s03-docker-stall.log 2>&1 &
+    docker_fixture_pid=$!
+    i=0
+    while [ ! -S /run/s03-docker.sock ] && kill -0 "$docker_fixture_pid" 2>/dev/null && [ "$i" -lt 10 ]; do
+      "$BB" sleep 1
+      i=$((i + 1))
+    done
+    if [ ! -S /run/s03-docker.sock ]; then
+      "$BB" cat /run/s03-docker-stall.log
+      fatal "guest-local Docker API fixture did not create its owned Unix socket"
+    fi
+    /usr/local/bin/s03-privilege-helper assert-owner 65534 65534 600 \
+      /run/s03-docker.sock || fatal "Docker fixture socket ownership/mode is invalid"
+    DOCKER_HOST=unix:///run/s03-docker.sock
+    export DOCKER_HOST
+    docker_stall_enabled=1
+  fi
   /usr/local/bin/s03-privilege-helper exec 65534 65534 \
     /usr/local/bin/nodedance-agent run --config "$agent_config" >/run/agent.log 2>&1 &
   agent_pid=$!
@@ -467,15 +506,50 @@ start_guest_agent() {
   fi
   printf 'S03:AGENT_PROCESS_IDENTITY pid=%s uid=%s gid=%s\n' \
     "$agent_pid" "$process_uid" "$process_gid"
-  i=0
-  while [ "$i" -lt 12 ]; do
-    if ! kill -0 "$agent_pid" 2>/dev/null; then
+  if [ "$docker_stall_enabled" -eq 1 ]; then
+    i=0
+    while [ ! -f /run/s03-docker-stall/list-started ] && kill -0 "$agent_pid" 2>/dev/null && [ "$i" -lt 20 ]; do
+      "$BB" sleep 1
+      i=$((i + 1))
+    done
+    if [ ! -f /run/s03-docker-stall/list-started ]; then
+      "$BB" cat /run/s03-docker-stall.log
       "$BB" cat /run/agent.log
-      fatal "guest Agent exited before initial metrics were sent"
+      fatal "real Agent Docker SDK did not start its first container-list query"
     fi
-    "$BB" sleep 1
-    i=$((i + 1))
-  done
+    say "S03:AGENT_DOCKER_QUERY_STARTED $($BB date -u +%s)"
+    i=0
+    while [ ! -f /run/s03-docker-stall/list-cancelled ] && kill -0 "$agent_pid" 2>/dev/null && [ "$i" -lt 20 ]; do
+      "$BB" sleep 1
+      i=$((i + 1))
+    done
+    if [ ! -f /run/s03-docker-stall/list-cancelled ]; then
+      "$BB" cat /run/s03-docker-stall.log
+      "$BB" cat /run/agent.log
+      fatal "real Docker SDK request did not observe its bounded context cancellation"
+    fi
+    say "S03:AGENT_DOCKER_QUERY_CANCELLED $($BB date -u +%s)"
+    i=0
+    while [ "$i" -lt 12 ]; do
+      if ! kill -0 "$agent_pid" 2>/dev/null; then
+        "$BB" cat /run/agent.log
+        fatal "Agent stopped during Docker stall isolation observation"
+      fi
+      "$BB" sleep 1
+      i=$((i + 1))
+    done
+    say S03:AGENT_DOCKER_QUERY_OBSERVED
+  else
+    i=0
+    while [ "$i" -lt 12 ]; do
+      if ! kill -0 "$agent_pid" 2>/dev/null; then
+        "$BB" cat /run/agent.log
+        fatal "guest Agent exited before initial metrics were sent"
+      fi
+      "$BB" sleep 1
+      i=$((i + 1))
+    done
+  fi
   say S03:AGENT_INITIAL_WAIT_DONE
 }
 
@@ -552,6 +626,8 @@ if [ -f /etc/nodedance/server-url ]; then
   if wait "$load_pid"; then load_status=0; else load_status=$?; fi
   "$BB" rm -f /run/s03-agent-load-active
   say S03:AGENT_LOAD_RELEASED
+  "$BB" sleep 12
+  say S03:AGENT_LOAD_RECOVERY_SETTLED
 else
   if "$PROBE" --mode load >/run/s03-load.json 2>/run/s03-load-error; then load_status=0; else load_status=$?; fi
 fi
@@ -949,7 +1025,8 @@ def extract_kernel_and_initrd(image, round_dir, log_path):
 
 
 def build_guest_initrd(arch, initrd_source, probe, round_dir, log_path,
-                       agent_binary=None, agent_manifest=None, privilege_helper_binary=None):
+                       agent_binary=None, agent_manifest=None, privilege_helper_binary=None,
+                       docker_stall_fixture_binary=None):
     unpacked = round_dir / "unpacked-initrd"
     logged_command(["unmkinitramfs", str(initrd_source), str(unpacked)],
                    log_path, timeout=120)
@@ -1001,6 +1078,11 @@ def build_guest_initrd(arch, initrd_source, probe, round_dir, log_path,
         helper_path = root / "usr/local/bin/s03-privilege-helper"
         shutil.copyfile(privilege_helper_binary, helper_path)
         helper_path.chmod(0o755)
+        if docker_stall_fixture_binary is None:
+            raise GuestFailure("real Agent guest integration requires the pinned Docker stall fixture")
+        docker_fixture_path = root / "usr/local/bin/s03-docker-stall-fixture"
+        shutil.copyfile(docker_stall_fixture_binary, docker_fixture_path)
+        docker_fixture_path.chmod(0o755)
 
     entries = ["."]
     for current, directories, files in os.walk(root, followlinks=False):
@@ -1163,9 +1245,41 @@ def phase_at(events):
         return "load_recovery"
     if "AGENT_LOAD_ACTIVE" in events:
         return "controlled_load"
+    if "AGENT_INITIAL_WAIT_DONE" in events:
+        # The Docker SDK stall is deliberately the first Agent request. Keep
+        # the bounded stall phase visible through its 12s observation, then
+        # restore the quiet pre-load baseline phase.
+        return "agent_initial"
+    if "AGENT_DOCKER_QUERY_OBSERVED" in events or "AGENT_DOCKER_QUERY_CANCELLED" in events:
+        return "docker_query_stalled"
+    if "AGENT_DOCKER_QUERY_STARTED" in events:
+        return "docker_query_stall_active"
     if "AGENT_STARTED" in events:
         return "agent_initial"
     return "before_agent"
+
+
+def publish_browser_phase(serial_log, events=None, *, guest_finished=False, guest_exit_code=None):
+    phase_path = os.environ.get("NODEDANCE_S03_PHASE_FILE", "").strip()
+    if not phase_path:
+        return
+    if events is None:
+        events, _ = serial_events(serial_log)
+    path = pathlib.Path(phase_path)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    payload = {
+        "phase": phase_at(events),
+        "events": sorted(events),
+        "eventValues": events,
+        "updatedAtUTC": utc_now(),
+        "guestFinished": guest_finished,
+    }
+    if guest_exit_code is not None:
+        payload["guestExitCode"] = guest_exit_code
+    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+    temporary.chmod(0o600)
+    os.replace(temporary, path)
 
 
 def wait_for_guest(qemu, serial_log, log_path, control_url=None, states_log=None):
@@ -1173,18 +1287,21 @@ def wait_for_guest(qemu, serial_log, log_path, control_url=None, states_log=None
     states = []
     next_poll = 0.0
     while time.monotonic() < deadline:
+        events, _ = serial_events(serial_log)
+        publish_browser_phase(serial_log, events)
         now = time.monotonic()
         if control_url and now >= next_poll:
             next_poll = now + 0.4
             payload = control_state(control_url)
             if payload is not None:
-                item = {"observedAtUTC": utc_now(), "phase": phase_at(serial_events(serial_log)[0]), "api": payload}
+                item = {"observedAtUTC": utc_now(), "phase": phase_at(events), "api": payload}
                 states.append(item)
                 if states_log is not None:
                     with states_log.open("a", encoding="utf-8") as stream:
                         stream.write(json.dumps(item, ensure_ascii=False) + "\n")
         if qemu.poll() is not None:
             events, data = serial_events(serial_log)
+            publish_browser_phase(serial_log, events, guest_finished=True, guest_exit_code=qemu.returncode)
             if "DONE" not in events:
                 raise GuestFailure(f"guest QEMU exited before the initramfs test finished (exit {qemu.returncode}): {data[-2000:]}")
             return events, states
@@ -1193,6 +1310,7 @@ def wait_for_guest(qemu, serial_log, log_path, control_url=None, states_log=None
             raise GuestFailure(f"guest initramfs reported an error: {events['ERROR']}")
         if "DONE" in events:
             if not control_url:
+                publish_browser_phase(serial_log, events, guest_finished=True, guest_exit_code=0)
                 return events, states
             reboot_fields = events.get("REBOOT_POST", "").split()
             if len(reboot_fields) == 6:
@@ -1214,9 +1332,11 @@ def wait_for_guest(qemu, serial_log, log_path, control_url=None, states_log=None
                         uptime.get("bootId") == expected_boot
                     )
                 if recovered:
+                    publish_browser_phase(serial_log, events, guest_finished=True, guest_exit_code=0)
                     return events, states
         time.sleep(0.2)
     events, data = serial_events(serial_log)
+    publish_browser_phase(serial_log, events, guest_finished=True, guest_exit_code=124)
     raise GuestFailure(f"minimal Linux guest did not finish within {QEMU_TIMEOUT_SECONDS}s; events={sorted(events)}; serial tail={data[-2500:]}")
 
 
@@ -1252,7 +1372,10 @@ def analyze_guest_agent_core(events, states, round_dir):
             return None
         return metric["value"]
 
-    initial = [sample for sample in samples if sample.get("phase") == "agent_initial"]
+    # Once the isolated fixture became the first Agent Engine query, the
+    # post-cancel stall-observation interval is still a quiet pre-load
+    # baseline. Preserve it even though it has a dedicated Docker phase.
+    initial = [sample for sample in samples if sample.get("phase") in {"agent_initial", "docker_query_stalled"}]
     baseline_cpu = [float(value) for sample in initial
                     if (value := known_metric(sample, "cpu", "usagePercent")) is not None]
     baseline_memory = [int(value["usedBytes"]) for sample in initial
@@ -1442,7 +1565,10 @@ def analyze_guest_agent_core(events, states, round_dir):
         "reason": "" if boot_change_pass else "Core did not report the new guest boot ID and prior boot ID on a higher live Agent generation",
     }
 
-    initial_first = [sample for sample in samples if sample.get("phase") == "agent_initial" and
+    initial_agent_fields = events.get("AGENT_STARTED", "").split()
+    initial_boot_id = initial_agent_fields[0] if len(initial_agent_fields) == 3 else ""
+    initial_first = [sample for sample in samples if initial_boot_id and
+                     sample["view"].get("bootId") == initial_boot_id and
                      int(sample["view"].get("generation", 0) or 0) == 1 and
                      int(sample["view"].get("sequence", 0) or 0) == 1]
     restarted_first = [sample for sample in post_reboot if int(sample["view"].get("sequence", 0) or 0) == 1]
@@ -1725,6 +1851,64 @@ def analyze_guest_agent_core(events, states, round_dir):
         "reason": "" if multi_pass else "Core did not receive two live guest interfaces, non-duplicated summary totals, and all expected known mount usages",
     }
 
+    docker_started = events.get("AGENT_DOCKER_QUERY_STARTED", "").split()
+    docker_cancelled = events.get("AGENT_DOCKER_QUERY_CANCELLED", "").split()
+    docker_start_unix = int(docker_started[0]) if len(docker_started) == 1 and docker_started[0].isdigit() else None
+    docker_cancel_unix = int(docker_cancelled[0]) if len(docker_cancelled) == 1 and docker_cancelled[0].isdigit() else None
+    docker_cancel_seconds = (docker_cancel_unix - docker_start_unix
+                             if docker_start_unix is not None and docker_cancel_unix is not None else None)
+    docker_active = [sample for sample in samples if sample.get("phase") == "docker_query_stall_active"]
+    docker_observed = [sample for sample in samples if sample.get("phase") == "docker_query_stalled"]
+
+    def current_online_metrics(sample):
+        view = sample.get("view", {})
+        generation = int(view.get("generation", 0) or 0)
+        active_generation = int(view.get("activeGeneration", 0) or 0)
+        cpu = view.get("metrics", {}).get("cpu", {}).get("usagePercent", {})
+        return (view.get("nodeStatus") == "online" and generation > 0 and
+                generation == active_generation and cpu.get("status") == "known")
+
+    active_sequences = sorted({int(sample["view"].get("sequence", 0) or 0)
+                               for sample in docker_active if current_online_metrics(sample)})
+    observed_sequences = sorted({int(sample["view"].get("sequence", 0) or 0)
+                                 for sample in docker_observed if current_online_metrics(sample)})
+    stall_states = []
+    for item in states:
+        if item.get("phase") not in {"docker_query_stall_active", "docker_query_stalled"}:
+            continue
+        view, state = state_view(item.get("api"))
+        if view is not None and state is not None:
+            stall_states.append({"observedAtUTC": item.get("observedAtUTC"),
+                                 "phase": item.get("phase"), "status": state.get("status"),
+                                 "generation": view.get("generation"),
+                                 "activeGeneration": view.get("activeGeneration"),
+                                 "sequence": view.get("sequence"),
+                                 "leaseValidUntil": state.get("leaseValidUntil")})
+    lease_deadlines = [timestamp_unix(item.get("leaseValidUntil")) for item in stall_states
+                       if item.get("status") == "online" and
+                       item.get("generation") == item.get("activeGeneration")]
+    lease_deadlines = [value for value in lease_deadlines if value is not None]
+    heartbeat_advanced = len(lease_deadlines) >= 2 and max(lease_deadlines) > min(lease_deadlines)
+    docker_stall_pass = bool(
+        docker_cancel_seconds is not None and 0 < docker_cancel_seconds <= 20 and
+        active_sequences and observed_sequences and
+        min(active_sequences) > 0 and max(observed_sequences) > min(active_sequences) and
+        len(observed_sequences) >= 2 and heartbeat_advanced and stall_states and
+        all(item["status"] == "online" and item["generation"] == item["activeGeneration"]
+            for item in stall_states)
+    )
+    checks["agent_docker_stall_isolation"] = {
+        "status": "PASS" if docker_stall_pass else "FAIL",
+        "real_sdk_container_list_started": len(docker_started) == 1,
+        "request_cancelled_seconds_after_observed_start": docker_cancel_seconds,
+        "active_stall_sequences": active_sequences,
+        "post_cancel_observation_sequences": observed_sequences,
+        "heartbeat_lease_advanced": heartbeat_advanced,
+        "core_states_during_stall": stall_states,
+        "reason": "" if docker_stall_pass else
+        "the real Docker SDK list stall did not cancel within 20s while Core retained the same online Agent generation, advancing host metrics, and renewed heartbeat lease",
+    }
+
     evidence = {
         "status": "PASS" if all(check["status"] == "PASS" for check in checks.values()) else "FAIL",
         "checks": checks,
@@ -1801,12 +1985,36 @@ def check_guest_clock_and_reboot(events, round_dir):
         checks.append("collector boot ID did not match raw proc boot ID around clock correction")
     if reboot_sample.get("rawBootId") != reboot_after_id:
         checks.append("post-reboot collector boot ID did not match the new raw proc boot ID")
-    if abs(float(before_sample.get("rawUptimeSeconds", -999)) - before_uptime) > 2:
-        checks.append("pre-clock collector uptime did not match raw proc uptime")
-    if abs(float(after_sample.get("rawUptimeSeconds", -999)) - after_uptime) > 2:
-        checks.append("post-clock collector uptime did not match raw proc uptime")
-    if abs(float(reboot_sample.get("rawUptimeSeconds", -999)) - reboot_after_uptime) > 2:
-        checks.append("post-reboot collector uptime did not match raw proc uptime")
+
+    uptime_comparisons = {}
+    for name, sample in (("pre_clock", before_sample), ("post_clock", after_sample), ("post_reboot", reboot_sample)):
+        metric = sample.get("snapshot", {}).get("uptime", {})
+        value = metric.get("value") or {}
+        try:
+            collector_seconds = float(value["seconds"])
+            proc_seconds = float(sample["rawUptimeSeconds"])
+            difference = abs(collector_seconds - proc_seconds)
+        except (KeyError, TypeError, ValueError):
+            collector_seconds = None
+            proc_seconds = None
+            difference = None
+        uptime_comparisons[name] = {
+            "collectorSeconds": collector_seconds,
+            "rawProcUptimeSeconds": proc_seconds,
+            "absoluteDifferenceSeconds": difference,
+            "maxDifferenceSeconds": 1.1,
+            "passed": difference is not None and difference <= 1.1,
+            "collectorSampledAt": metric.get("sampledAt", ""),
+            "rawProcCaptureAt": sample.get("capturedAtUtc", ""),
+            "rawProcCaptureUnixNano": sample.get("capturedUnixNano"),
+        }
+    for name, description in (
+        ("pre_clock", "pre-clock collector uptime did not match the paired raw proc uptime"),
+        ("post_clock", "post-clock collector uptime did not match the paired raw proc uptime"),
+        ("post_reboot", "post-reboot collector uptime did not match the paired raw proc uptime"),
+    ):
+        if not uptime_comparisons[name]["passed"]:
+            checks.append(description)
 
     clock_evidence = {
         "clock_before": {"boot_id": before_id, "uptime_seconds": before_uptime, "wall_unix_seconds": before_wall},
@@ -1814,6 +2022,7 @@ def check_guest_clock_and_reboot(events, round_dir):
         "clock_target_unix_seconds": target_wall,
         "reboot_before": {"boot_id": reboot_before_id, "uptime_seconds": reboot_before_uptime, "wall_unix_seconds": reboot_before_wall},
         "reboot_after": {"boot_id": reboot_after_id, "uptime_seconds": reboot_after_uptime, "wall_unix_seconds": reboot_after_wall},
+        "collector_proc_uptime_agreement": uptime_comparisons,
         "checks": {"passed": not checks, "failures": checks},
         "collector_evidence": {
             "before_clock": "before-clock-shift.json",
@@ -1827,7 +2036,8 @@ def check_guest_clock_and_reboot(events, round_dir):
 
 
 def run_guest_round(arch, lock, image, probe, qemu_binary, round_dir, round_number,
-                    agent_manifest=None, agent_binary=None, privilege_helper_binary=None):
+                    agent_manifest=None, agent_binary=None, privilege_helper_binary=None,
+                    docker_stall_fixture_binary=None):
     round_dir.mkdir(parents=True, exist_ok=True)
     round_dir.chmod(0o700)
     log_path = round_dir / "commands.log"
@@ -1836,7 +2046,8 @@ def run_guest_round(arch, lock, image, probe, qemu_binary, round_dir, round_numb
                     str(overlay)], log_path, timeout=60)
     kernel, original_initrd = extract_kernel_and_initrd(image, round_dir, log_path)
     initrd, kernel_info = build_guest_initrd(arch, original_initrd, probe, round_dir, log_path,
-                                            agent_binary, agent_manifest, privilege_helper_binary)
+                                            agent_binary, agent_manifest, privilege_helper_binary,
+                                            docker_stall_fixture_binary)
     qemu_log = round_dir / "qemu.log"
     serial_log = round_dir / "serial.log"
     serial_log.touch()
@@ -1871,9 +2082,10 @@ def run_guest_round(arch, lock, image, probe, qemu_binary, round_dir, round_numb
                     },
                     "full_stage_cases": {"S03-02": "NOT_READY", "S03-03": "NOT_READY",
                                          "S03-04": "NOT_READY", "S03-05": "NOT_READY",
-                                         "S03-08": "NOT_READY"},
+                                         "S03-06": "NOT_READY", "S03-08": "NOT_READY"},
                     "covered_guest_behaviors": [
                         "quiet minimal Linux guest controlled CPU and resident-memory load/recovery",
+                        "real pinned Moby SDK container-list request stalls on an owned guest-local Unix fixture, is context-cancelled, while Core keeps the Agent generation online, host metric sequences advance, and the heartbeat lease renews",
                         "real test-NIC MAC identity replacement on a fixed-ifindex interface; Core marked the old rate stale with interface_changed and then accepted fresh rates",
                         "real guest-only wall-clock correction while preserving boot ID and increasing uptime",
                         "real in-guest kernel reboot with boot ID change and uptime restart",
@@ -1882,6 +2094,7 @@ def run_guest_round(arch, lock, image, probe, qemu_binary, round_dir, round_numb
                     ],
                     "pending_stage_behaviors": {
                         "S03-02": ["dashboard display of this guest's load/recovery and three consecutive stage runs"],
+                        "S03-06": ["dashboard display of the real Docker inventory as stale/unknown while the Agent host metrics and heartbeat remain live, plus three consecutive stage runs"],
                         "S03-08": ["dashboard display of clock-offset and reboot changes, plus three consecutive stage runs"],
                     },
                 }
@@ -1892,7 +2105,12 @@ def run_guest_round(arch, lock, image, probe, qemu_binary, round_dir, round_numb
                 return result
             finally:
                 stop_qemu(qemu, monitor_path, qemu_log)
+def _interrupt_for_owned_cleanup(signum, _frame):
+    raise KeyboardInterrupt(f"received signal {signum}; stopping the owned QEMU guest")
+
+
 def main():
+    signal.signal(signal.SIGTERM, _interrupt_for_owned_cleanup)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rounds", type=int, default=1, help="fresh guest overlays to test (default: 1)")
     parser.add_argument("--agent-core-manifest", help="run the locked Agent inside the guest and send its live metrics to this Core harness")
@@ -1927,6 +2145,7 @@ def main():
             "agent_interface_identity_replacement": "NOT_READY",
             "agent_permission_partial_failure_recovery": "NOT_READY",
             "agent_multinet_mount_summary": "NOT_READY",
+            "agent_docker_stall_isolation": "NOT_READY",
         },
         "stage_cases": {
             "S03-02": {
@@ -1937,12 +2156,17 @@ def main():
             "S03-03": {
                 "status": "NOT_READY",
                 "covered_guest_behavior": ["initial and rebooted Agent warm-up reports reach Core as unknown/stale before fresh nonnegative network rates"],
-                "pending": ["independent network-counter reset or interface disappearance/reappearance with per-interface evidence"],
+                "pending": ["force the deterministic counter-decrease/reset formula test in the acceptance runner; verify first-sample and same-ifindex MAC-replacement states in the live dashboard; complete three consecutive full runs"],
             },
             "S03-04": {
                 "status": "NOT_READY",
                 "covered_guest_behavior": ["a real guest exposes two interfaces and a tmpfs mount; Core receives interface details, aggregate sum, and filesystem stats"],
                 "pending": ["browser renders the guest interface/mount details and three consecutive stage runs"],
+            },
+            "S03-06": {
+                "status": "NOT_READY",
+                "covered_guest_behavior": ["a real pinned Moby SDK Docker query is stalled on the private guest-local Unix fixture, context-cancelled, while the same Core/Agent generation stays online and its host metrics and heartbeat lease advance"],
+                "pending": ["browser must show Docker inventory stale/unknown while host metrics and heartbeat remain live; three consecutive full runs and the second architecture remain"],
             },
             "S03-08": {
                 "status": "NOT_READY",
@@ -1966,6 +2190,7 @@ def main():
         agent_manifest = load_agent_manifest(args.agent_core_manifest) if args.agent_core_manifest else None
         agent_binary = None
         privilege_helper_binary = None
+        docker_stall_fixture_binary = None
         image, image_info = verify_image(WORK_ROOT / "cache" / "noble-release-20260814",
                                          arch, run_dir / "setup.log")
         summary["image"] = image_info
@@ -1977,6 +2202,9 @@ def main():
             privilege_helper_binary = run_dir / "s03-privilege-helper"
             summary["privilege_helper"] = build_privilege_helper(
                 arch, privilege_helper_binary, run_dir / "privilege-helper-build.log")
+            docker_stall_fixture_binary = run_dir / "s03-docker-stall-fixture"
+            summary["docker_stall_fixture"] = build_docker_stall_fixture(
+                arch, docker_stall_fixture_binary, run_dir / "docker-stall-fixture-build.log")
             summary["agent_core_target"] = {
                 "server_url": agent_manifest["serverUrl"],
                 "control_url": agent_manifest["controlUrl"],
@@ -1988,7 +2216,8 @@ def main():
             result = run_guest_round(arch, lock, image, run_dir / "s03-probe",
                                      summary["toolchain"]["qemu_binary"],
                                      run_dir / f"round-{round_number:02d}", round_number,
-                                     agent_manifest, agent_binary, privilege_helper_binary)
+                                     agent_manifest, agent_binary, privilege_helper_binary,
+                                     docker_stall_fixture_binary)
             summary["rounds"].append(result)
         host_wall_after = time.time()
         host_monotonic_after = time.monotonic()
@@ -2014,7 +2243,8 @@ def main():
             check_names = ("agent_load_response", "agent_clock_offset_core",
                            "agent_network_stale_recovery_core", "agent_reboot_boot_generation_core",
                            "agent_first_sample_reset", "agent_interface_identity_replacement",
-                           "agent_multinet_mount_summary", "agent_permission_partial_failure_recovery")
+                           "agent_multinet_mount_summary", "agent_permission_partial_failure_recovery",
+                           "agent_docker_stall_isolation")
             for check_name in check_names:
                 statuses = [round_result.get("guest_agent_core_probe", {}).get("checks", {}).get(check_name, {}).get("status", "NOT_READY")
                             for round_result in summary["rounds"]]
@@ -2029,7 +2259,7 @@ def main():
             summary["reason"] = "one or more isolated guest component probes were not ready"
         else:
             summary["guest_probe_status"] = "PASS"
-            summary["reason"] = "isolated guest component probes passed; original S03-02/S03-08 remain NOT_READY pending Agent/Core integration"
+            summary["reason"] = "isolated guest component probes passed; original S03 cases remain NOT_READY pending full browser/three-run/two-architecture acceptance"
     except NotReady as error:
         summary["guest_probe_status"] = "NOT_READY"
         summary["reason"] = str(error)
