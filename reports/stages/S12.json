@@ -3,9 +3,9 @@
   "stage": "S12",
   "mode": "candidate",
   "status": "NOT_READY",
-  "run_id": "37888355148-s12-engine-and-ui",
-  "updated_at": "2026-10-09T08:05:19+00:00",
-  "reason": "S12 candidate and responsive UI checks are recorded; Engine 28/29 DIND and Chromium evidence covers the existing lifecycle and UI cases. S12-02 rich Config/HostConfig/network preservation now has a focused local owner-marked Engine 29.7.2 run. Other report-listed acceptance gaps remain, so the complete stage stays NOT_READY.",
+  "run_id": "20261009T083740Z-s12-preference-migration-live",
+  "updated_at": "2026-10-09T08:38:04+00:00",
+  "reason": "S12 candidate and responsive UI checks remain partial. A focused real HTTPS Core/SQLite plus registered Agent WSS task-result candidate now covers the preference migration API path using a protocol fixture; it does not execute a Docker rebuild. The complete S12 remains NOT_READY because normative Engine, Agent executor, UI/history, failure/recovery and other listed cases remain incomplete.",
   "tests": {
     "S12-01": {
       "status": "NOT_READY",
@@ -440,7 +440,7 @@
       "environment": "有偏好/历史的真实重建流程。",
       "evidence_required": "主容器identity与回滚资源UI/API映射。",
       "runs": [],
-      "reason": "Replaceable preference migration interface and memory adapter pass; production S06 persistent preference storage and complete authenticated UI/API migration remain unavailable.",
+      "reason": "The default Core is backed by the S06 SQLite preference repository. One focused candidate passed through the authenticated HTTPS preference/task APIs, a registered device-credential Agent WSS task journal/dispatch/report, SQLite identity move on verified succeeded result, and identity preservation on failed/rollback result. Its WSS protocol peer supplied deterministic Engine inventory and result evidence; it did not run the Agent rebuild executor or Docker Engine, and it does not verify historical metric or rollback-resource UI mapping. Normative S12-10 remains NOT_READY.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -461,6 +461,14 @@
           "status": "PASS",
           "test": "TestMemoryStoreDoesNotOverwriteConflictingReplacementPreferences",
           "command": "focused_go_component_tests"
+        },
+        {
+          "status": "PASS",
+          "test": "TestS12RebuildPreferenceMigrationHTTPSAgentWSSEndToEnd",
+          "run_id": "20261009T083740Z-s12-preference-migration-live",
+          "command": ".tools/go1.26.8/bin/go test -mod=readonly -timeout=2m -count=1 -v ./internal/core/server -run '^TestS12RebuildPreferenceMigrationHTTPSAgentWSSEndToEnd$'",
+          "artifact": ".artifacts/s12/preference-migration-live-20261009T083740Z.log",
+          "scope": "Real HTTPS Core and production SQLite under testing.T.TempDir; Admin API enrollment/preference/task/result calls; registered bearer-credential Agent WSS Hello, full task journal, actual Core dispatch and TaskReport consumer; failed report retained old identity, verified succeeded report moved every preference field. Test-owned inventory/result protocol fixture only; no Agent.Run rebuild executor, Docker Engine/DIND, browser UI/history, or actual rollback resource display."
         }
       ]
     },
@@ -520,7 +528,7 @@
     "docker_engine_28": "PASS in isolated owner-marked GitHub Actions DIND: Engine 28.5.2; local dedicated Engine remains NOT_READY",
     "docker_engine_29": "PASS in isolated owner-marked GitHub Actions DIND for the previous lifecycle cases; local dedicated Engine 29.7.2 rich-config Inspect comparison also passed in run 20261009T080444Z-24111. Other S12 cases remain NOT_READY.",
     "playwright": "chromium",
-    "production_preference_store": "NOT_READY: S06 persistent store not present",
+    "production_preference_store": "PASS: the default Core uses SQLiteMigrator and the authenticated API/WSS preference identity candidate passed once; this does not complete S12-10 Engine/UI acceptance.",
     "ci_run": "37888355148",
     "ci_commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
     "local_s12_rich_config_engine29": "PASS: dedicated owner-marked Engine 29.7.2 run 20261009T080444Z-24111; exact temporary daemon container/network/data resources were removed after evidence collection."
@@ -598,6 +606,17 @@
         "test-owned containers, volumes, networks, snapshot and local DIND fixture were cleaned"
       ],
       "scope": "One focused Engine 29.7.2 rich-config candidate run; Engine 28 rich-config comparison and remaining S12 acceptance gaps are not covered."
+    },
+    {
+      "name": "s12_live_preference_migration_candidate",
+      "status": "PASS",
+      "command": ".tools/go1.26.8/bin/go test -mod=readonly -timeout=2m -count=1 -v ./internal/core/server -run '^TestS12RebuildPreferenceMigrationHTTPSAgentWSSEndToEnd$'",
+      "run_id": "20261009T083740Z-s12-preference-migration-live",
+      "artifact": ".artifacts/s12/preference-migration-live-20261009T083740Z.log",
+      "results": [
+        "TestS12RebuildPreferenceMigrationHTTPSAgentWSSEndToEnd: PASS"
+      ],
+      "scope": "One focused compile-and-test run covering Core Admin HTTPS API, production SQLite preferences, registered Agent WSS task journal/dispatch/result processing, failed identity retention and verified-success identity migration. Test protocol peer supplies fixtures; not actual Engine/rebuild execution."
     }
   ]
 }

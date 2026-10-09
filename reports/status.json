@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-09T08:25:41+00:00",
+  "updated_at": "2026-10-09T08:38:04+00:00",
   "status": "NOT_READY",
   "reason": "S00/S01 保留按旧三轮政策产生的历史 PASS，S03 的本地重复运行也保留为历史证据；这些报告未在新规则下重跑。当前单次完整运行政策下，S02–S17 尚未全部完成规范验收，项目总体保持 NOT_READY。",
   "stages": {
@@ -88,9 +88,9 @@
     "S12": {
       "status": "NOT_READY",
       "mode": "candidate",
-      "run_id": "37888355148-s12-engine-and-ui",
-      "updated_at": "2026-10-09T06:09:52+00:00",
-      "reason": "受控独立容器重建候选及 Engine/UI 证据已记录；SQLite 偏好迁移现已接入默认 Core wiring 并有针对性测试。其余 S12 端口、配置/资源保留、失败恢复等规范缺项仍未全部验证，保持 NOT_READY。"
+      "run_id": "20261009T083740Z-s12-preference-migration-live",
+      "updated_at": "2026-10-09T08:38:04+00:00",
+      "reason": "S12-10 的 Core HTTPS/SQLite/注册 Agent WSS preference migration 候选通过一次；测试 peer 提供任务结果协议样本，没有执行 Agent rebuild executor 或 Docker Engine。S12-10 及其他列出的规范缺项仍未完成。"
     },
     "S13": {
       "status": "NOT_READY",
