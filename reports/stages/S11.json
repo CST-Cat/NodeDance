@@ -4,8 +4,8 @@
   "mode": "candidate-checks",
   "status": "NOT_READY",
   "run_id": "s11-engine-only-37887672834",
-  "updated_at": "2026-10-09T07:55:23Z",
-  "reason": "S11-07 的 mutable image tag 漂移真实 Engine 场景已在 Engine 29.7.2 通过；S11-01、04、06、08、09、10 及完整 Core-Agent-Engine E2E 仍有明确缺失场景，因此阶段保持 NOT_READY。",
+  "updated_at": "2026-10-09T07:58:05Z",
+  "reason": "S11-07 的 Engine 29.7.2 mutable image tag 漂移场景通过，但 Engine 28.5.2 覆盖仍待执行；S11-01、04、06、08、09、10 及完整 Core-Agent-Engine E2E 也有明确缺失场景，因此阶段保持 NOT_READY。",
   "tests": {
     "S11-01": {
       "status": "NOT_READY",
@@ -293,7 +293,7 @@
       ]
     },
     "S11-07": {
-      "status": "PASS",
+      "status": "NOT_READY",
       "action": "原镜像标签已变化。",
       "expected": "使用保留的旧引用恢复。",
       "environment": "移动标签前后镜像digest不同。",
@@ -343,8 +343,8 @@
           }
         }
       ],
-      "reason": "固定镜像后移动 mutable tag 的 focused 真实 Engine 场景在 Engine 29.7.2 通过。S11 阶段仍因其他用例和完整 Core-Agent-Engine 链路缺少验收证据而保持 NOT_READY。",
-      "acceptance_evidence_missing": "",
+      "reason": "Engine 29.7.2 的 focused tag-drift 真实 Engine 用例通过；Engine 28.5.2 的相同用例尚未执行，因此 S11-07 仍为 NOT_READY。其他 S11 用例及完整 Core-Agent-Engine 链路也仍有缺失证据。",
+      "acceptance_evidence_missing": "在 Engine 28.5.2 上执行 pin 后移动 mutable tag 的真实 Engine 用例，并验证回滚容器 ImageID 等于 pin 前的原 ImageID。",
       "component_tests_passed": [
         "TestRollbackOverrideUsesPinnedImageAndNeverIncludesVolumes"
       ],
@@ -358,7 +358,9 @@
         "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS（固定引用回滚路径）",
         "TestDINDComposeEditorRollbackSurvivesMutableTagDrift：Engine 29.7.2 PASS；pin 后移动 mutable tag，真实端口冲突回滚到原 ImageID。"
       ],
-      "remaining_integration_tests": [],
+      "remaining_integration_tests": [
+        "Engine 28.5.2：运行 TestDINDComposeEditorRollbackSurvivesMutableTagDrift 并核对 pin、移动标签及回滚后的实际 ImageID。"
+      ],
       "latest_local_attempt": {
         "run_id": "s11-local-20261009-1-engine29",
         "status": "PASS",
