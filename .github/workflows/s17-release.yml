@@ -69,10 +69,28 @@ jobs:
       - name: Install and verify locked build tools
         run: make verify-tools
 
+      - name: Build the embedded frontend
+        run: make frontend
+
       - name: Run signed bundle, architecture, install, and uninstall tests
         env:
           GO_BIN: ${{ github.workspace }}/.tools/go1.26.8/bin/go
         run: scripts/test/s17-release-selftest.sh
+
+      - name: Build and run native Core and Agent binaries
+        env:
+          GO_BIN: ${{ github.workspace }}/.tools/go1.26.8/bin/go
+          NODEDANCE_S17_EXPECT_ARCH: ${{ matrix.architecture }}
+          NODEDANCE_S17_REPORT_PATH: ${{ runner.temp }}/nodedance-s17-runtime-smoke/report.txt
+        run: scripts/test/s17-runtime-smoke.sh
+
+      - name: Preserve native runtime smoke evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s17-runtime-${{ matrix.architecture }}
+          if-no-files-found: ignore
+          path: ${{ runner.temp }}/nodedance-s17-runtime-smoke/report.txt
 
       - name: Check patch formatting
         run: git diff --check
