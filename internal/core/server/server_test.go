@@ -74,7 +74,7 @@ func TestEmbeddedHomeIsServed(t *testing.T) {
 
 func TestFreshCoreStartsWithOperationalRetentionIndexes(t *testing.T) {
 	s := newTestServer(t)
-	for _, index := range []string{"core_task_audit_events_retention", "core_tasks_retention", "compose_operations_retention", "compose_editor_operations_retention"} {
+	for _, index := range []string{"core_task_audit_events_retention", "core_tasks_retention", "compose_operations_retention", "compose_editor_operations_retention", "file_write_tasks_retention"} {
 		var count int
 		if err := s.store.DB.QueryRowContext(context.Background(), `SELECT count(*) FROM sqlite_master WHERE type='index' AND name=?`, index).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("fresh Core startup retention index %q present=%d err=%v", index, count, err)

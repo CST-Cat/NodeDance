@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	corefiletasks "github.com/CST-Cat/NodeDance/internal/core/filetasks"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
@@ -26,20 +28,24 @@ type containerActionRequest struct {
 }
 
 type taskView struct {
-	TaskID                 string              `json:"taskId"`
-	NodeID                 string              `json:"nodeId"`
-	TargetID               string              `json:"targetId"`
-	Action                 protocol.TaskAction `json:"action"`
-	Status                 taskstate.Status    `json:"status"`
-	DeliveryState          string              `json:"deliveryState"`
-	ReconciliationRequired bool                `json:"reconciliationRequired"`
-	Progress               taskProgressView    `json:"progress"`
-	Result                 taskResultView      `json:"result"`
-	CreatedAt              string              `json:"createdAt"`
-	UpdatedAt              string              `json:"updatedAt"`
-	StartedAt              *string             `json:"startedAt,omitempty"`
-	FinishedAt             *string             `json:"finishedAt,omitempty"`
-	CancelRequested        bool                `json:"cancelRequested,omitempty"`
+	TaskID                 string           `json:"taskId"`
+	NodeID                 string           `json:"nodeId"`
+	TargetID               string           `json:"targetId"`
+	Action                 string           `json:"action"`
+	Kind                   string           `json:"kind,omitempty"`
+	Operation              string           `json:"operation,omitempty"`
+	TargetPath             string           `json:"targetPath,omitempty"`
+	NewPath                string           `json:"newPath,omitempty"`
+	Status                 taskstate.Status `json:"status"`
+	DeliveryState          string           `json:"deliveryState"`
+	ReconciliationRequired bool             `json:"reconciliationRequired"`
+	Progress               taskProgressView `json:"progress"`
+	Result                 taskResultView   `json:"result"`
+	CreatedAt              string           `json:"createdAt"`
+	UpdatedAt              string           `json:"updatedAt"`
+	StartedAt              *string          `json:"startedAt,omitempty"`
+	FinishedAt             *string          `json:"finishedAt,omitempty"`
+	CancelRequested        bool             `json:"cancelRequested,omitempty"`
 }
 
 type taskProgressView struct {
@@ -93,6 +99,13 @@ func (s *Server) handleTaskAPI(w http.ResponseWriter, r *http.Request, current *
 }
 
 func (s *Server) handleCancelUndeliveredTask(w http.ResponseWriter, r *http.Request, current *session, nodeID, taskID string) {
+	if _, err := s.fileTasks.Get(r.Context(), nodeID, taskID); err == nil {
+		http.Error(w, "file task cannot be canceled after delivery may have started", http.StatusConflict)
+		return
+	} else if !isFileTaskMissing(err) {
+		http.Error(w, "file task cancellation could not be read", http.StatusInternalServerError)
+		return
+	}
 	currentTask, lookupErr := s.tasks.Get(r.Context(), nodeID, taskID)
 	if errors.Is(lookupErr, coretasks.ErrTaskNotFound) {
 		http.NotFound(w, r)
@@ -137,7 +150,20 @@ func (s *Server) handleTaskAudit(w http.ResponseWriter, r *http.Request, nodeID,
 	}
 	events, err := s.tasks.AuditEvents(r.Context(), nodeID, taskID)
 	if errors.Is(err, coretasks.ErrTaskNotFound) {
-		http.NotFound(w, r)
+		fileEvents, fileErr := s.fileTasks.AuditEvents(r.Context(), nodeID, taskID)
+		if isFileTaskMissing(fileErr) {
+			http.NotFound(w, r)
+			return
+		}
+		if fileErr != nil {
+			http.Error(w, "task audit lookup failed", http.StatusInternalServerError)
+			return
+		}
+		items := make([]taskAuditEventView, 0, len(fileEvents))
+		for _, event := range fileEvents {
+			items = append(items, toFileTaskAuditView(event))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"events": items})
 		return
 	}
 	if err != nil {
@@ -278,7 +304,16 @@ func (s *Server) handleTaskLookup(w http.ResponseWriter, r *http.Request, nodeID
 	}
 	task, err := s.tasks.Get(r.Context(), nodeID, taskID)
 	if errors.Is(err, coretasks.ErrTaskNotFound) {
-		http.NotFound(w, r)
+		fileTask, fileErr := s.fileTasks.Get(r.Context(), nodeID, taskID)
+		if isFileTaskMissing(fileErr) {
+			http.NotFound(w, r)
+			return
+		}
+		if fileErr != nil {
+			http.Error(w, "task lookup failed", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, toFileTaskView(fileTask))
 		return
 	}
 	if err != nil {
@@ -321,13 +356,41 @@ func (s *Server) handleTaskList(w http.ResponseWriter, r *http.Request, nodeID s
 		http.Error(w, "task list failed", http.StatusInternalServerError)
 		return
 	}
-	items := make([]taskView, 0, len(page.Tasks))
+	filePage, err := s.fileTasks.List(r.Context(), nodeID, limit, after)
+	if err != nil {
+		http.Error(w, "task list failed", http.StatusInternalServerError)
+		return
+	}
+	type listedTask struct {
+		view      taskView
+		createdAt time.Time
+		taskID    string
+	}
+	merged := make([]listedTask, 0, len(page.Tasks)+len(filePage.Tasks))
 	for _, task := range page.Tasks {
-		items = append(items, toTaskView(task))
+		merged = append(merged, listedTask{view: toTaskView(task), createdAt: task.CreatedAt, taskID: task.TaskID})
+	}
+	for _, task := range filePage.Tasks {
+		merged = append(merged, listedTask{view: toFileTaskView(task), createdAt: task.CreatedAt, taskID: task.TaskID})
+	}
+	sort.Slice(merged, func(i, j int) bool {
+		if merged[i].createdAt.Equal(merged[j].createdAt) {
+			return merged[i].taskID > merged[j].taskID
+		}
+		return merged[i].createdAt.After(merged[j].createdAt)
+	})
+	hasMore := len(merged) > limit || page.NextCursor != nil || filePage.NextCursor != nil
+	if len(merged) > limit {
+		merged = merged[:limit]
+	}
+	items := make([]taskView, 0, len(merged))
+	for _, item := range merged {
+		items = append(items, item.view)
 	}
 	var next string
-	if page.NextCursor != nil {
-		data, err := json.Marshal(page.NextCursor)
+	if hasMore && len(merged) != 0 {
+		last := merged[len(merged)-1]
+		data, err := json.Marshal(&coretasks.Cursor{CreatedAtNS: last.createdAt.UnixNano(), TaskID: last.taskID})
 		if err != nil {
 			http.Error(w, "task list failed", http.StatusInternalServerError)
 			return
@@ -392,7 +455,7 @@ func (s *Server) writeTaskStoreError(w http.ResponseWriter, err error) {
 }
 
 func toTaskView(task coretasks.Task) taskView {
-	view := taskView{TaskID: task.TaskID, NodeID: task.NodeID, TargetID: task.Intent.ContainerID, Action: task.Intent.Action,
+	view := taskView{TaskID: task.TaskID, NodeID: task.NodeID, TargetID: task.Intent.ContainerID, Action: string(task.Intent.Action),
 		Status: task.Status, DeliveryState: task.DeliveryState, ReconciliationRequired: task.ReconciliationRequired,
 		Progress:  taskProgressView{Phase: string(task.Progress.Phase), Completed: task.Progress.Completed, Total: task.Progress.Total},
 		Result:    taskResultView{Code: string(task.Result.Code), ObservedState: task.Result.ObservedState, ResourceRevision: task.Result.ResourceRevision},
@@ -406,6 +469,54 @@ func toTaskView(task coretasks.Task) taskView {
 		view.FinishedAt = &value
 	}
 	return view
+}
+
+func toFileTaskView(task corefiletasks.Task) taskView {
+	view := taskView{TaskID: task.TaskID, NodeID: task.NodeID, TargetID: task.TargetPath, Action: "file_" + task.Operation,
+		Kind: "file", Operation: task.Operation, TargetPath: task.TargetPath, NewPath: task.NewPath,
+		Status: task.Status, DeliveryState: "ready", ReconciliationRequired: task.Status == taskstate.Unknown,
+		Progress: taskProgressView{Phase: "accepted"}, Result: taskResultView{Code: task.ResultCode},
+		CreatedAt: task.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: task.UpdatedAt.UTC().Format(time.RFC3339Nano)}
+	if task.DispatchStartedAt != nil {
+		view.DeliveryState = "sent"
+	}
+	if taskstate.IsTerminal(task.Status) {
+		view.DeliveryState = "done"
+	} else if task.Status == taskstate.Unknown {
+		view.DeliveryState = "needs_reconciliation"
+	}
+	if task.Status == taskstate.Running {
+		view.Progress.Phase = "executing"
+	}
+	if task.StartedAt != nil {
+		value := task.StartedAt.UTC().Format(time.RFC3339Nano)
+		view.StartedAt = &value
+	}
+	if task.FinishedAt != nil {
+		value := task.FinishedAt.UTC().Format(time.RFC3339Nano)
+		view.FinishedAt = &value
+	}
+	return view
+}
+
+func isFileTaskMissing(err error) bool {
+	return errors.Is(err, corefiletasks.ErrNotFound) || errors.Is(err, corefiletasks.ErrInvalidRequest)
+}
+
+func toFileTaskAuditView(event corefiletasks.Event) taskAuditEventView {
+	item := taskAuditEventView{ID: event.ID, Event: event.Event, RemoteAddr: event.RemoteAddr,
+		OccurredAt: event.OccurredAt.UTC().Format(time.RFC3339Nano)}
+	if event.FromStatus.Valid {
+		item.FromStatus = event.FromStatus.String
+	}
+	if event.ToStatus.Valid {
+		item.ToStatus = event.ToStatus.String
+	}
+	if event.ActorID.Valid {
+		actorID := event.ActorID.Int64
+		item.ActorID = &actorID
+	}
+	return item
 }
 
 func containerActionRoute(path string) (nodeID, containerID string, ok bool) {

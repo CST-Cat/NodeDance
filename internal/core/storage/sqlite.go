@@ -12,6 +12,7 @@ import (
 
 	corecompose "github.com/CST-Cat/NodeDance/internal/core/compose"
 	corecomposeedit "github.com/CST-Cat/NodeDance/internal/core/composeedit"
+	corefiletasks "github.com/CST-Cat/NodeDance/internal/core/filetasks"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 
 	_ "modernc.org/sqlite"
@@ -429,6 +430,9 @@ var migrations = []Migration{{
 		`CREATE INDEX alert_windows_retention ON alert_windows(ends_at, disabled_at)`,
 		`CREATE INDEX agent_update_tasks_retention ON agent_update_tasks(status, updated_at, id)`,
 	},
+}, {
+	Version: 12,
+	SQL:     corefiletasks.SchemaStatements(),
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {
