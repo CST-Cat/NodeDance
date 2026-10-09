@@ -149,6 +149,11 @@ func (s *Service) Deploy(ctx context.Context, request DeployRequest) (Deployment
 	if err != nil {
 		return DeploymentResult{}, err
 	}
+	if request.FileRoot != "" {
+		if err := preflightRemoteFileRoot(ctx, remote, preflight, artifact, request.FileRoot); err != nil {
+			return DeploymentResult{}, fmt.Errorf("target file-root preflight failed before Agent enrollment: %w", err)
+		}
+	}
 	enrollment := Enrollment{}
 	if preflight.ExistingConfig {
 		if preflight.NodeID == "" {

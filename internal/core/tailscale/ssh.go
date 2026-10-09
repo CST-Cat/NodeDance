@@ -447,6 +447,54 @@ exit 31
 
 type Enrollment struct{ NodeID, Token string }
 
+// preflightRemoteFileRoot runs the Agent's exact filesystem validator on the
+// target before Core creates a one-time enrollment identity. The binary is
+// the already signature-verified artifact selected for this target's platform;
+// its digest is checked again after transfer. The path is transported as
+// base64 data and passed to the validator as one process argument.
+func preflightRemoteFileRoot(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, fileRoot string) error {
+	if err := validateFileRootRequest(fileRoot); err != nil {
+		return err
+	}
+	if fileRoot == "" {
+		return nil
+	}
+	if remote == nil {
+		return errors.New("SSH target is unavailable for file-root validation")
+	}
+	if preflight.OS != "linux" || preflight.Arch != artifact.Arch || artifact.OS != "linux" || len(artifact.Bytes) == 0 || len(artifact.Bytes) > maxAgentArtifactSize {
+		return errors.New("signed Agent artifact does not match the preflight OS and architecture")
+	}
+	if HashSignedPayload(artifact.Bytes) != artifact.SHA256 {
+		return errors.New("signed Agent artifact digest is inconsistent")
+	}
+	mode := "/bin/sh -s"
+	if preflight.UseSudo {
+		mode = "sudo -n /bin/sh -s"
+	}
+	if preflight.UID != 0 && !preflight.UseSudo {
+		return errors.New("root or non-interactive sudo permissions are required")
+	}
+	encodedArtifact := base64.StdEncoding.EncodeToString(artifact.Bytes)
+	encodedFileRoot := base64.StdEncoding.EncodeToString([]byte(fileRoot))
+	script := fmt.Sprintf(`set -eu
+umask 077
+TMP="$(mktemp -d /tmp/nodedance-file-root-check.XXXXXX)"
+cleanup() { rm -rf -- "$TMP"; }
+trap cleanup EXIT HUP INT TERM
+printf '%%s' '%s' | base64 -d > "$TMP/nodedance-agent"
+actual="$(sha256sum "$TMP/nodedance-agent" | awk '{print $1}')"
+[ "$actual" = '%s' ] || { echo 'Agent SHA-256 mismatch during file-root preflight' >&2; exit 21; }
+chmod 0700 "$TMP/nodedance-agent"
+FILE_ROOT="$(printf '%%s' '%s' | base64 -d)"
+"$TMP/nodedance-agent" validate-file-root --file-root "$FILE_ROOT" --state-dir /var/lib/nodedance-agent
+`, encodedArtifact, artifact.SHA256, encodedFileRoot)
+	if _, err := remote.Run(ctx, mode, []byte(script)); err != nil {
+		return fmt.Errorf("validate the selected file root on the target: %w", err)
+	}
+	return nil
+}
+
 func InstallRemote(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, coreURL string, enrollment Enrollment) error {
 	return InstallRemoteWithFileRootOptions(ctx, remote, preflight, artifact, coreURL, enrollment, "", false)
 }
