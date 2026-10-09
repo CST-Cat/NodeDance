@@ -5,6 +5,7 @@ import (
 	"time"
 
 	corealerts "github.com/CST-Cat/NodeDance/internal/core/alerts"
+	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
@@ -30,6 +31,11 @@ func (s *Server) evaluateAlerts(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	probeConfigs, err := s.probes.List(ctx)
+	if err != nil {
+		return err
+	}
+	probesByNode := groupAlertProbeConfigsByNode(probeConfigs)
 	samples := make([]corealerts.Sample, 0, len(nodes)*8)
 	for _, node := range nodes {
 		if node.Status == "pending" || node.Status == "revoked" || node.NodeID == "" {
@@ -99,18 +105,7 @@ func (s *Server) evaluateAlerts(ctx context.Context) error {
 				samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindContainerState, SubjectID: container.ID, Known: true, State: state, Health: health, ObservedAt: sampleObserved(container.ObservedAt, now)})
 			}
 		}
-		probeConfigs, err := s.probes.List(ctx)
-		if err != nil {
-			return err
-		}
-		for _, probe := range probeConfigs {
-			if probe.NodeID != node.NodeID {
-				continue
-			}
-			known := probe.Status == protocol.ProbeResultHealthy || probe.Status == protocol.ProbeResultUnhealthy
-			probeAt, _ := time.Parse(time.RFC3339Nano, probe.LastCheckedAt)
-			samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindProbeState, SubjectID: probe.ID, Known: known, State: probe.Status, ObservedAt: sampleObserved(probeAt, now)})
-		}
+		samples = append(samples, alertProbeSamples(node.NodeID, node.DisplayName, probesByNode[node.NodeID], now)...)
 	}
 	rules, err := s.alerts.ListRules(ctx, "")
 	if err != nil {
@@ -128,6 +123,24 @@ func (s *Server) evaluateAlerts(ctx context.Context) error {
 		}
 	}
 	return s.alerts.Evaluate(ctx, samples)
+}
+
+func groupAlertProbeConfigsByNode(configs []coreprobes.Config) map[string][]coreprobes.Config {
+	byNode := make(map[string][]coreprobes.Config)
+	for _, config := range configs {
+		byNode[config.NodeID] = append(byNode[config.NodeID], config)
+	}
+	return byNode
+}
+
+func alertProbeSamples(nodeID, nodeName string, configs []coreprobes.Config, fallback time.Time) []corealerts.Sample {
+	samples := make([]corealerts.Sample, 0, len(configs))
+	for _, probe := range configs {
+		known := probe.Status == protocol.ProbeResultHealthy || probe.Status == protocol.ProbeResultUnhealthy
+		probeAt, _ := time.Parse(time.RFC3339Nano, probe.LastCheckedAt)
+		samples = append(samples, corealerts.Sample{NodeID: nodeID, NodeName: nodeName, Kind: corealerts.KindProbeState, SubjectID: probe.ID, Known: known, State: probe.Status, ObservedAt: sampleObserved(probeAt, fallback)})
+	}
+	return samples
 }
 
 func sampleObserved(sampledAt, fallback time.Time) time.Time {
