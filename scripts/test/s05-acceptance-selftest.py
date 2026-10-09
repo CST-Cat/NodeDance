@@ -59,8 +59,8 @@ def main() -> int:
             "product stream UI responsive evidence verifier is unavailable")
 
     fresh = {
-        "stage": "S05", "mode": "full", "run_id": "fresh-test-run", "repeat_required": 3,
-        "repeat_requested": 3, "status": "NOT_READY", "tests": {
+        "stage": "S05", "mode": "full", "run_id": "fresh-test-run", "repeat_required": 1,
+        "repeat_requested": 1, "status": "NOT_READY", "tests": {
             case_id: {"status": "NOT_READY", "runs": []} for case_id in registry_ids
         },
     }
@@ -148,8 +148,8 @@ def main() -> int:
                 "same-generation retry must not prove Agent reconnection")
 
     runner_source = (ROOT / "scripts/acceptance-s05.py").read_text(encoding="utf-8")
-    require("args.repeat != 3" in runner_source and "for engine in (28, 29)" in runner_source,
-            "full runner must require three attempts on both locked Engines")
+    require("args.repeat != 1" in runner_source and "for engine in (28, 29)" in runner_source,
+            "full runner must require one complete run on both locked Engines")
     require("s05-task-journal.py" in runner_source and "standard-and-race" in runner_source,
             "standard and race journal component suites are not mandatory runner steps")
     require("verify_fixture_manifest(log_path)" in runner_source,
@@ -215,7 +215,7 @@ def main() -> int:
             not sanitizer.has_secret(clean_json["note"]), "sanitizer did not redact nested secrets")
     require("S05-01" in json.loads((ROOT / "tests/registry.json").read_text())["stages"][5]["tests"][0]["id"],
             "registry stage ordering changed unexpectedly")
-    print("S05 acceptance safeguards PASS: fresh 12-case report, 3x2 engine runner, component checks, owner-only cleanup and sanitized upload allowlist")
+    print("S05 acceptance safeguards PASS: fresh 12-case report, single-run dual-engine runner, component checks, owner-only cleanup and sanitized upload allowlist")
     return 0
 
 

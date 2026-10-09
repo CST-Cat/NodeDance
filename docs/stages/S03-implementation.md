@@ -1,6 +1,6 @@
 # S03 standalone collector implementation
 
-This note documents the collector owned by `internal/agent/metrics`. It does not mark the S03 stage complete: the shared protocol, Agent/Core integration, live API/UI, Docker-probe isolation, network disconnect/recovery, clock-shift/reboot guest, and three full acceptance rounds remain outside this worktree or still need execution. The normative cases and stage report remain unchanged.
+This note documents the collector owned by `internal/agent/metrics`. It does not mark the S03 stage complete: the shared protocol, Agent/Core integration, live API/UI, Docker-probe isolation, network disconnect/recovery, clock-shift/reboot guest, and the complete S03 acceptance run remain outside this worktree or still need execution. The normative cases and stage report remain unchanged.
 
 ## Samples and calculations
 

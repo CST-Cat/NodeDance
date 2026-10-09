@@ -2,7 +2,7 @@
 
 This document describes the metrics DTO/store and its current Agent, Core and
 dashboard wiring. S03 remains **NOT_READY** until every original acceptance
-case passes three complete real runs on the required environments.
+case passes one complete real run on the required environments.
 
 ## Wire payload
 

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	corecompose "github.com/CST-Cat/NodeDance/internal/core/compose"
+	corecomposeedit "github.com/CST-Cat/NodeDance/internal/core/composeedit"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 
 	_ "modernc.org/sqlite"
@@ -200,6 +202,12 @@ var migrations = []Migration{{
 		)`,
 		`CREATE INDEX metrics_hour_retention ON metrics_hour(bucket_at)`,
 	},
+}, {
+	Version: 6,
+	SQL:     corecompose.SchemaStatements(),
+}, {
+	Version: 7,
+	SQL:     corecomposeedit.SchemaStatements(),
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {

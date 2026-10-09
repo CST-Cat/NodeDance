@@ -121,7 +121,7 @@ def main():
     if args.stage != "S10" and args.mode != "full":
         if code := preflight(args.stage, args.mode):
             return code
-    repeat = 3 if args.mode == "full" else 1
+    repeat = 1
     if args.stage == "S08":
         command = [sys.executable, "scripts/acceptance-s08.py", "--mode", args.mode, "--repeat", str(repeat)]
         return subprocess.run(command, cwd=ROOT).returncode

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sync"
 
+	agentcomposeedit "github.com/CST-Cat/NodeDance/internal/agent/composeedit"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
@@ -18,7 +19,10 @@ type EnvelopeWriter interface {
 }
 
 type Bridge struct {
-	manager  *Manager
+	manager *Manager
+	editor  interface {
+		Execute(context.Context, protocol.ComposeRequest) (protocol.ComposeResponse, error)
+	}
 	active   chan struct{}
 	mu       sync.Mutex
 	projects map[string]*sync.Mutex
@@ -32,6 +36,20 @@ func NewBridge(manager *Manager) (*Bridge, error) {
 		return nil, errors.New("Compose manager is required")
 	}
 	return &Bridge{manager: manager, active: make(chan struct{}, maxComposeOperations), projects: make(map[string]*sync.Mutex), requests: make(map[string]struct{})}, nil
+}
+
+func NewBridgeWithEditor(manager *Manager, editor interface {
+	Execute(context.Context, protocol.ComposeRequest) (protocol.ComposeResponse, error)
+}) (*Bridge, error) {
+	bridge, err := NewBridge(manager)
+	if err != nil {
+		return nil, err
+	}
+	if editor == nil {
+		return nil, errors.New("Compose editor manager is required")
+	}
+	bridge.editor = editor
+	return bridge, nil
 }
 
 func (b *Bridge) Run(ctx context.Context, writer EnvelopeWriter, commands <-chan protocol.Envelope, generation uint64) (returnErr error) {
@@ -59,6 +77,9 @@ func (b *Bridge) Run(ctx context.Context, writer EnvelopeWriter, commands <-chan
 			if err := b.start(ctx, writer, generation, request); err != nil {
 				if errors.Is(err, errComposeBridgeBusy) {
 					response := protocol.ComposeResponse{OperationID: request.OperationID, Status: "failed", ErrorCode: "agent_busy"}
+					if isEditorAction(request.Action) {
+						response.Editor = &protocol.ComposeEditorResult{}
+					}
 					payload, marshalErr := json.Marshal(response)
 					if marshalErr != nil {
 						return marshalErr
@@ -115,13 +136,36 @@ func (b *Bridge) start(parent context.Context, writer EnvelopeWriter, generation
 		}
 		projectLock.Lock()
 		defer projectLock.Unlock()
-		response, err := b.manager.Execute(parent, request)
+		var response protocol.ComposeResponse
+		var err error
+		if isEditorAction(request.Action) {
+			if b.editor == nil {
+				response, err = protocol.ComposeResponse{}, errors.New("Compose editor is unavailable")
+			} else {
+				response, err = b.editor.Execute(parent, request)
+			}
+		} else {
+			response, err = b.manager.Execute(parent, request)
+		}
 		if err != nil {
 			status := "failed"
 			if errors.Is(err, ErrOutcomeUnknown) {
 				status = "unknown"
 			}
+			if errors.Is(err, agentcomposeedit.ErrRollbackFailed) {
+				status = "unknown"
+			}
+			if errors.Is(err, agentcomposeedit.ErrResultUnknown) {
+				status = "unknown"
+			}
+			editorResult := response.Editor
 			response = protocol.ComposeResponse{OperationID: request.OperationID, Status: status, ErrorCode: errorCode(err)}
+			if isEditorAction(request.Action) {
+				if editorResult == nil {
+					editorResult = &protocol.ComposeEditorResult{}
+				}
+				response.Editor = editorResult
+			}
 		}
 		if protocol.ValidateComposeResponse(response, request) != nil {
 			return
@@ -138,6 +182,24 @@ func (b *Bridge) start(parent context.Context, writer EnvelopeWriter, generation
 
 func errorCode(err error) string {
 	switch {
+	case errors.Is(err, agentcomposeedit.ErrSourceConflict):
+		return "source_conflict"
+	case errors.Is(err, agentcomposeedit.ErrPortOccupied):
+		return "port_occupied"
+	case errors.Is(err, agentcomposeedit.ErrRollbackFailed):
+		return "rollback_unconfirmed"
+	case errors.Is(err, agentcomposeedit.ErrResultUnknown):
+		return "result_pending"
+	case errors.Is(err, agentcomposeedit.ErrHealthFailed):
+		return "health_failed"
+	case errors.Is(err, agentcomposeedit.ErrRemoveServiceUnsupported):
+		return "service_removal_unsupported"
+	case errors.Is(err, agentcomposeedit.ErrSourceWrite):
+		return "source_write_failed"
+	case errors.Is(err, agentcomposeedit.ErrComposeApplyFailed):
+		return "deployment_failed"
+	case errors.Is(err, agentcomposeedit.ErrInvalidSource):
+		return "invalid_compose_source"
 	case errors.Is(err, ErrProjectNotFound):
 		return "project_not_found"
 	case errors.Is(err, ErrConfigMissing):
@@ -151,4 +213,8 @@ func errorCode(err error) string {
 	default:
 		return "engine_error"
 	}
+}
+
+func isEditorAction(action protocol.ComposeAction) bool {
+	return action == protocol.ComposeEditRead || action == protocol.ComposeEditPreview || action == protocol.ComposeEditApply || action == protocol.ComposeEditStatus
 }

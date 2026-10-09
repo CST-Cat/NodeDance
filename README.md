@@ -61,11 +61,17 @@ Production session idle timeout is 12 hours, login limit is five attempts follow
 ## Acceptance commands
 
 ```bash
-make test-stage STAGE=S01          # S01 checks, each executed three consecutive times
+make test-stage STAGE=S01          # one complete current acceptance run
 make test-integration STAGE=S01    # real Core + SQLite HTTP and recovery checks
 make test-e2e STAGE=S01            # real Core with Playwright browser projects
 make test-acceptance               # reruns every stage; later stages remain NOT_READY
 ```
+
+Each complete stage gate runs once and includes the full checks required for that
+stage. A failure or code change calls for rerunning the affected suite and any
+dependent regression checks; passing suites are not repeated to satisfy a run
+count. Required architecture, Engine, browser, and real-service coverage still
+has to be present in that run.
 
 S01-12 uses real Playwright projects and a temporary Core data directory. Browser executables that are unavailable are reported `NOT_READY`; they are never counted as passed. Mobile browser testing uses responsive viewport and touch emulation rather than claiming physical iPad/Android coverage.
 

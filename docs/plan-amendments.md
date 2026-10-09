@@ -1,6 +1,6 @@
 # 对总体实施计划的已授权修订
 
-本文记录用户后续明确的环境要求变更；原始182个 `Sxx-yy` 编号全部保留，只有下列验证环境和说明发生变化。未列出的功能、失败恢复、连续三次完整验收和阶段门槛均按 [plan.md](plan.md) 及 [registry.json](../tests/registry.json) 执行。
+本文记录后续明确的环境要求变更；原始182个 `Sxx-yy` 编号全部保留。此文早期修订曾要求连续三次验收，该要求已被后续用户明确的单次完整运行规则取代；当前所有阶段以 [plan.md](plan.md) 和 [registry.json](../tests/registry.json) 为准。失败或代码变更后仅重跑受影响测试套件。
 
 ## CI、主控机/被控机和用户部署时机
 
@@ -31,4 +31,4 @@ S00 workflow 使用官方 GitHub-hosted `ubuntu-24.04` 与 `ubuntu-24.04-arm` ru
 
 S01 的三个浏览器项目由 Playwright 精确版本锁定；CI 在具备浏览器二进制的 runner 上逐项运行 Chromium、WebKit、Firefox。每个项目都由独立临时 Core/SQLite 数据目录承载，执行 S01-12 setup/login/外观/Session/改密流程及绕过前端文件选择器的真实 HTTP 恶意 SVG/HTML 上传。单个浏览器缺失时保留其他已执行证据，但该浏览器和完整阶段必须是 `NOT_READY`，不能由另外的浏览器替代。
 
-S01-01 至 S01-11 均启动真实 Core 进程并操作真实 SQLite。S01-11 先验证迁移冲突回滚及原行保留，再解除冲突，在同一目录恢复启动；不可写目录测试用不同非 root 用户启动 Core，不能用 root 用户仅 chmod 目录后假设不可写。短 Session/限流/Socket 检查参数仅在 `--dev` 测试配置启用，不改变生产默认值。完整 S01 本机或 CI 报告均要求原12项连续三轮；没有浏览器的本机运行可记录 HTTP/SQLite 结果，但整体必须保持 `NOT_READY`。
+S01-01 至 S01-11 均启动真实 Core 进程并操作真实 SQLite。S01-11 先验证迁移冲突回滚及原行保留，再解除冲突，在同一目录恢复启动；不可写目录测试用不同非 root 用户启动 Core，不能用 root 用户仅 chmod 目录后假设不可写。短 Session/限流/Socket 检查参数仅在 `--dev` 测试配置启用，不改变生产默认值。完整 S01 本机或 CI 报告要求原12项在一次完整运行中全部通过；没有浏览器的本机运行可记录 HTTP/SQLite 结果，但整体必须保持 `NOT_READY`。

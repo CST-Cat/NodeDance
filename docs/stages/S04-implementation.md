@@ -4,6 +4,10 @@ This file records implementation decisions, review findings, rejected work, and
 reproducible evidence. It does not override the fixed acceptance case IDs or
 their machine status in [`reports/stages/S04.json`](../../reports/stages/S04.json).
 No original S04 case is marked `PASS` by this module-only work.
+The three-run entries below are historical test evidence from the former gate;
+the current gate is one complete current run on each required Engine/architecture
+matrix. Historical checks are retained and are not being rerun for this policy
+change.
 
 ## Review 1 — rejected: Docker event request context ended at handshake
 

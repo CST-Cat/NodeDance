@@ -17,6 +17,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	corecompose "github.com/CST-Cat/NodeDance/internal/core/compose"
+	corecomposeedit "github.com/CST-Cat/NodeDance/internal/core/composeedit"
 	"github.com/CST-Cat/NodeDance/internal/core/config"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
@@ -67,6 +68,7 @@ type Server struct {
 	dashboardPreferences       *dashboard.Repository
 	tasks                      *coretasks.Store
 	composeOps                 *corecompose.Store
+	composeEditorOps           *corecomposeedit.Store
 	imageAuthMu                sync.Mutex
 	imageAuth                  map[string]pendingImageCredential
 	dockerMu                   sync.Mutex
@@ -204,6 +206,15 @@ func New(version string, options Options) (*Server, error) {
 	if _, err := s.composeOps.RecoverUnfinished(context.Background()); err != nil {
 		_ = store.Close()
 		return nil, fmt.Errorf("recover unfinished Compose operations: %w", err)
+	}
+	s.composeEditorOps, err = corecomposeedit.NewStore(store.DB, corecomposeedit.Options{Now: options.Now})
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("initialize Compose editor operation store: %w", err)
+	}
+	if _, err := s.composeEditorOps.RecoverUnfinished(context.Background()); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("recover unfinished Compose editor operations: %w", err)
 	}
 	s.tasks, err = coretasks.New(store.DB, coretasks.Options{Now: options.Now})
 	if err != nil {

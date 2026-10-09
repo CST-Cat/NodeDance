@@ -45,7 +45,7 @@ jobs:
       - name: Verify per-run report and artifact safeguards
         run: make verify-ci-evidence
 
-      - name: Run checks, dual-architecture builds and three full S00 acceptance passes
+      - name: Run checks, dual-architecture builds and full S00 acceptance
         run: make test-stage STAGE=S00
 
       - name: Attach current GitHub run metadata to S00 report
@@ -95,7 +95,7 @@ jobs:
       - name: Install browsers for locked Playwright
         run: make playwright-install
 
-      - name: Run checks, dual-architecture builds and three full S01 acceptance passes
+      - name: Run checks, dual-architecture builds and full S01 acceptance
         run: make test-stage STAGE=S01
 
       - name: Attach current GitHub run metadata to S01 report
@@ -148,7 +148,7 @@ jobs:
       - name: Install locked project dependencies
         run: make deps
 
-      - name: Run checks, dual-architecture builds and three full S02 acceptance passes
+      - name: Run checks, dual-architecture builds and full S02 acceptance
         run: make test-stage STAGE=S02
 
       - name: Attach current GitHub run metadata to S02 report
@@ -224,8 +224,8 @@ jobs:
           make check
           make build
 
-      - name: Run three complete S03 guest and browser acceptance passes
-        run: python3 scripts/acceptance-s03.py --mode full --repeat 3 --ci-runner '${{ matrix.runner }}'
+      - name: Run one complete S03 guest and browser acceptance
+        run: python3 scripts/acceptance-s03.py --mode full --repeat 1 --ci-runner '${{ matrix.runner }}'
 
       - name: Attach current GitHub run metadata to S03 report
         if: always()
@@ -381,7 +381,7 @@ jobs:
       - name: Install locked Chromium browser for the real embedded UI test
         run: make playwright-install PLAYWRIGHT_BROWSERS=chromium
 
-      - name: Run checks, dual-architecture builds and three full S04 acceptance passes
+      - name: Run checks, dual-architecture builds and full S04 acceptance
         run: make test-stage STAGE=S04
 
       - name: Attach current GitHub run metadata to S04 report

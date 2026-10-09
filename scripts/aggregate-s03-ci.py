@@ -55,11 +55,11 @@ def _run_ids(value) -> list[int]:
 
 
 def _validate_attempt_checks(report: dict, *, runner: str) -> dict[int, dict[str, dict]]:
-    """Require the exact checks emitted by the real three-run S03 acceptance."""
+    """Require the exact checks emitted by one complete real S03 acceptance run."""
     checks = report.get("checks")
-    _require(isinstance(checks, list) and len(checks) == 3
+    _require(isinstance(checks, list) and len(checks) == 1
              and all(isinstance(attempt, dict) for attempt in checks)
-             and _run_ids(checks) == [1, 2, 3],
+             and _run_ids(checks) == [1],
              f"{runner} full acceptance checks are missing, duplicated, or out of order")
     by_attempt = {}
     for attempt in checks:
@@ -98,9 +98,9 @@ def validate_shard(report: dict, *, runner: str, run_id: str,
     _require(report.get("verification_status") == "NOT_READY",
              f"{runner} shard claims overall verification before aggregation")
     _require(report.get("local_verification_status") == "PASS",
-             f"{runner} local three-run verification did not pass")
-    _require(report.get("repeat_required") == 3 and report.get("repeat_requested") == 3,
-             f"{runner} report does not require exactly three full runs")
+             f"{runner} local full-run verification did not pass")
+    _require(report.get("repeat_required") == 1 and report.get("repeat_requested") == 1,
+             f"{runner} report does not describe exactly one full run")
 
     ci = report.get("ci")
     _require(isinstance(ci, dict), f"{runner} report has not been annotated by GitHub Actions")
@@ -147,11 +147,11 @@ def validate_shard(report: dict, *, runner: str, run_id: str,
                  and case.get("local_status") == "PASS",
                  f"{runner} {case_id} did not pass")
         runs = case.get("runs")
-        _require(isinstance(runs, list) and len(runs) == 3
+        _require(isinstance(runs, list) and len(runs) == 1
                  and all(isinstance(item, dict) for item in runs)
-                 and _run_ids(runs) == [1, 2, 3]
+                 and _run_ids(runs) == [1]
                  and all(item.get("status") == "PASS" for item in runs),
-                 f"{runner} {case_id} lacks three current passing runs")
+                 f"{runner} {case_id} lacks its current passing run")
         for item in runs:
             attempt_number = item["attempt"]
             evidence = item.get("evidence")
@@ -237,8 +237,8 @@ def aggregate_reports(amd64_report: dict, arm64_report: dict, *,
     result["local_verification_status"] = "PASS"
     result["updated_at"] = now()
     result["reason"] = (
-        "All original and supplemental S03 cases passed three consecutive real Core-Agent-guest-browser "
-        "runs on both required GitHub-hosted architectures in the same current workflow run and commit."
+        "All original and supplemental S03 cases passed one complete real Core-Agent-guest-browser "
+        "run on both required GitHub-hosted architectures in the same current workflow run and commit."
     )
     result["ci_runner"] = None
     result["ci_architecture"] = None

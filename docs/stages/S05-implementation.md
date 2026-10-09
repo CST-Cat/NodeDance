@@ -132,8 +132,8 @@ The following review findings were corrected before component approval:
   TaskID already bound to another task conflicts. A two-task cross-collision
   regression test exercises this rule.
 
-The component runner passed three consecutive standard and race-instrumented
-runs, and `go vet -mod=readonly` passed for both owned Go packages. The latest
+Historical note: The component runner passed three standard and race-instrumented
+runs under the former repeated-run policy; this is preserved historical evidence, not a current stage gate. `go vet -mod=readonly` passed for both owned Go packages. The latest
 local evidence is `.artifacts/work-s05/20261008T172416Z-2012296/report.json`;
 runner logs and reports stay in ignored local work files and are not committed.
 These checks approve only the isolated component. The formal S05 phase and all
@@ -145,5 +145,5 @@ Core/Agent integration and real Docker execution/postcondition tests.
 S05 still needs the Core task/audit persistence path, Agent task delivery and
 journal integration, Docker lifecycle execution with fresh postcondition
 inspection, timeout/cancel/process termination confirmation, and the real
-Engine suites for all twelve normative cases. It also needs the original
-three-run acceptance gate and regression checks before the phase can pass.
+Engine suites for all twelve normative cases. The current gate is one complete
+full acceptance run plus regression checks for any affected suites.

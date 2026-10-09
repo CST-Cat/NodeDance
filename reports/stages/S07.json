@@ -5,7 +5,7 @@
   "status": "NOT_READY",
   "run_id": "e52d2dce36004ecf843f13845041b571",
   "updated_at": "2026-10-09T03:50:21.348877+00:00",
-  "reason": "可审阅的 Compose 候选已实现，但 S07 未通过正式验收：生产 SQLite migration v6 尚未由集成 owner 注册；ComposeProjects 尚未挂入 S06 应用 shell；本地没有带 NodeDance owner marker 的 DIND，因此 Engine 28/29 真实验收未执行；S07-10 的全部 P0 与三次完整验收仍未完成。所有正式 S07 用例保持 NOT_READY。",
+  "reason": "S07 remains NOT_READY: integration now registers the Compose schema as v6 and mounts Compose projects in the S06 dashboard shell, but real Engine 28/29 acceptance and complete P0/S07 required-case acceptance have not been executed. Historical candidate checks below retain their original scope.",
   "tests": {
     "S07-01": {
       "status": "NOT_READY",
@@ -134,7 +134,7 @@
         "detail": "ComposeProjects 是独立响应式页面；按文件所有权未修改 App.vue 或 NodesDashboard.vue，需由 S06 owner 挂入导航/节点入口。"
       },
       {
-        "command": "S07 full/integration/e2e 和三次完整验收",
+        "command": "S07 full/integration/e2e 和一次完整验收",
         "status": "NOT_READY",
         "detail": "S00-S06 前置与全部 P0 尚未集中集成验收；本次组件测试没有覆盖正式阶段全套用例。"
       }
@@ -150,6 +150,15 @@
       "由 S06 owner 将 ComposeProjects.vue 接入应用 shell 的导航或节点详情入口。",
       "在 GitHub Actions 上执行 Engine 28 与 29 的真实 Compose 生命周期、profiles、两副本、特殊路径、named volume down/up 验收。",
       "集中集成阶段核对 S05 持久任务接口、Core-Agent 重启后的只读结果核验以及完整 P0 回归。"
+    ]
+  },
+  "acceptance_policy_note": "Acceptance policy text was updated to one complete run; this report remains NOT_READY and was not rerun, so its existing implementation/integration blockers are unchanged.",
+  "integration_update": {
+    "status": "NOT_READY",
+    "note": "In the integrated branch, S06 dashboard/history remains migration v5, S07 Compose schema is registered as v6, and the S06 dashboard shell is present. This supersedes only the isolated candidate findings that production migration registration and shell integration were pending; it does not establish Engine 28/29 or complete P0/S07 acceptance.",
+    "remaining_acceptance_gaps": [
+      "real Engine 28/29 S07 acceptance",
+      "complete P0 and S07 required-case acceptance"
     ]
   }
 }

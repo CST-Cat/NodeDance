@@ -65,8 +65,8 @@ func TestVersionFourDatabaseUpgradesToDashboardAndHistorySchemaOnReopen(t *testi
 		t.Fatal("reopen v4 database with current migrations:", err)
 	}
 	defer upgraded.Close()
-	if err := upgraded.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 5 {
-		t.Fatalf("reopened database migration version=%d err=%v; want v5", version, err)
+	if err := upgraded.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 7 {
+		t.Fatalf("reopened database migration version=%d err=%v; want v7", version, err)
 	}
 	for _, table := range []string{"dashboard_preferences", "dashboard_settings", "metrics_minute", "metrics_hour"} {
 		var count int
@@ -185,6 +185,16 @@ func TestOpenEnablesWALAndRestrictsPermissions(t *testing.T) {
 	var mode string
 	if err := store.DB.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil || mode != "wal" {
 		t.Fatalf("journal_mode=%q err=%v", mode, err)
+	}
+	var schemaVersion int
+	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schemaVersion); err != nil || schemaVersion != 7 {
+		t.Fatalf("schema version=%d err=%v, want integration schema version 7", schemaVersion, err)
+	}
+	for _, table := range []string{"compose_projects", "compose_operations", "compose_editor_operations", "compose_editor_events"} {
+		var count int
+		if err := store.DB.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
+			t.Errorf("table %q present=%d err=%v", table, count, err)
+		}
 	}
 	for path, want := range map[string]os.FileMode{dir: 0o700, filepath.Join(dir, "nodedance.sqlite"): 0o600} {
 		info, err := os.Stat(path)

@@ -43,7 +43,7 @@ jobs:
           scripts/test/dind.sh start 28
           scripts/test/dind.sh start 29
 
-      - name: Run fresh S05 checks and three real attempts on both engines
+      - name: Run fresh S05 checks once on both engines
         run: make test-stage STAGE=S05
 
       - name: Attach GitHub run metadata to S05 evidence

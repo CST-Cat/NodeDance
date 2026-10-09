@@ -442,10 +442,8 @@ def main():
     parser.add_argument("--mode", choices=("full", "integration", "e2e"), required=True)
     parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
-    if args.repeat < 1 or args.repeat > 3:
-        parser.error("--repeat must be 1..3")
-    if args.mode == "full" and args.repeat != 3:
-        parser.error("full stage acceptance must run three consecutive times")
+    if args.repeat != 1:
+        parser.error("acceptance runs once; rerun the affected suite after a failure or code change")
 
     selected = list(CASES)
     if args.mode == "integration":
@@ -455,7 +453,7 @@ def main():
 
     report = {
         "schema": 1, "stage": "S00", "mode": args.mode, "run_id": RUN_ID,
-        "updated_at": now(), "status": "NOT_READY", "repeat_required": 3,
+        "updated_at": now(), "status": "NOT_READY", "repeat_required": 1,
         "repeat_requested": args.repeat, "verification_status": "NOT_RUN", "tests": {},
         "evidence_root": f".artifacts/logs/acceptance/{RUN_ID}",
     }
@@ -500,30 +498,30 @@ def main():
     for test_id in selected:
         record = report["tests"][test_id]
         statuses = [attempt["status"] for attempt in record["runs"]]
-        if statuses and all(item == "PASS" for item in statuses) and args.mode == "full" and args.repeat == 3:
+        if statuses and all(item == "PASS" for item in statuses) and args.mode == "full":
             record["status"] = "PASS"
-            record["reason"] = "All three current consecutive executions passed."
+            record["reason"] = "The current complete full acceptance run passed."
         elif "FAIL" in statuses:
             record["status"] = "FAIL"
         elif any(item == "NOT_READY" for item in statuses):
             record["status"] = "NOT_READY"
         else:
             record["status"] = "NOT_READY"
-            record["reason"] = "This mode does not satisfy the full-stage three-run requirement."
+            record["reason"] = "This mode does not execute the complete full-stage acceptance set."
 
     statuses = [report["tests"][test_id]["status"] for test_id in CASES]
     selected_attempts = [attempt["status"] for test_id in selected
                          for attempt in report["tests"][test_id]["runs"]]
     report["verification_status"] = "PASS" if selected_attempts and all(item == "PASS" for item in selected_attempts) else "FAIL"
-    if args.mode == "full" and args.repeat == 3 and all(status == "PASS" for status in statuses):
+    if args.mode == "full" and all(status == "PASS" for status in statuses):
         report["status"] = "PASS"
-        report["reason"] = "All eight original S00 acceptance cases passed in three consecutive full runs."
+        report["reason"] = "All eight original S00 acceptance cases passed in this complete full run."
     elif "FAIL" in statuses:
         report["status"] = "FAIL"
         report["reason"] = "At least one current S00 required acceptance case failed."
     else:
         report["status"] = "NOT_READY"
-        report["reason"] = "Required S00 cases were not run or the three-consecutive full acceptance threshold was not met."
+        report["reason"] = "Required S00 cases were not run or one or more cases remain incomplete."
     report["updated_at"] = now()
     write_reports(report)
     print(f"S00 {report['status']}: report={REPORT.relative_to(ROOT)} evidence={report['evidence_root']}", flush=True)

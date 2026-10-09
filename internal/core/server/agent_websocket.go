@@ -37,6 +37,7 @@ type agentConnection struct {
 	filesEnabled             bool
 	imageResponseMu          sync.Mutex
 	imageResponses           map[string]chan protocol.ImageListResponse
+	composeEditorEnabled     bool
 	taskSignal               chan struct{}
 	taskMu                   sync.RWMutex
 	taskJournalID            string
@@ -428,6 +429,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		filesEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityFiles),
 		imageResponses:  make(map[string]chan protocol.ImageListResponse),
 		taskSignal:      make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
+		composeEditorEnabled:     hasCapability(negotiatedCapabilities, protocol.CapabilityComposeEditor),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
 		commands: make(chan protocol.Envelope, 32), leaseUpdates: make(chan time.Time, 1)}
 	if managed.dockerEnabled {
@@ -479,6 +481,9 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnection, identity agents.Identity) {
+	if connection.composeEnabled && connection.composeEditorEnabled {
+		go s.reconcileUnknownComposeEditorOperations(ctx, connection)
+	}
 	readMessages := make(chan agentRead, 1)
 	go func() {
 		for {
@@ -804,7 +809,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}, protocol.CapabilityImages: {}, protocol.CapabilityTerminal: {}, protocol.CapabilityFiles: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}, protocol.CapabilityImages: {}, protocol.CapabilityTerminal: {}, protocol.CapabilityFiles: {}, protocol.CapabilityComposeEditor: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {
