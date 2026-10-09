@@ -1,12 +1,14 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestServer(t *testing.T) *Server {
@@ -67,5 +69,82 @@ func TestEmbeddedHomeIsServed(t *testing.T) {
 	}
 	if w.Code >= 300 && w.Code < 400 {
 		t.Fatalf("home unexpectedly redirected: %d %s", w.Code, w.Header().Get("Location"))
+	}
+}
+
+func TestFreshCoreStartsWithOperationalRetentionIndexes(t *testing.T) {
+	s := newTestServer(t)
+	for _, index := range []string{"core_task_audit_events_retention", "core_tasks_retention", "compose_operations_retention", "compose_editor_operations_retention"} {
+		var count int
+		if err := s.store.DB.QueryRowContext(context.Background(), `SELECT count(*) FROM sqlite_master WHERE type='index' AND name=?`, index).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("fresh Core startup retention index %q present=%d err=%v", index, count, err)
+		}
+	}
+}
+
+func TestNonMetricHistoryRetentionWorkerCleansAndShutdownWaits(t *testing.T) {
+	ctx := context.Background()
+	clock := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	s, err := New("retention-worker", Options{
+		DataDir: filepath.Join(t.TempDir(), "data"), Development: true,
+		NonMetricHistoryRetention: 90 * 24 * time.Hour,
+		HistoryRetentionInterval:  10 * time.Millisecond,
+		Now:                       func() time.Time { return clock },
+	})
+	if err != nil {
+		t.Fatal("start Core:", err)
+	}
+	old := clock.Add(-91 * 24 * time.Hour).Unix()
+	if _, err := s.store.DB.ExecContext(ctx, `INSERT INTO audit_entries(occurred_at,action,outcome,remote_addr) VALUES(?,'login','succeeded','unknown')`, old); err != nil {
+		_ = s.Close()
+		t.Fatal("insert expired audit entry:", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var count int
+		if err := s.store.DB.QueryRowContext(ctx, `SELECT count(*) FROM audit_entries WHERE occurred_at=?`, old).Scan(&count); err != nil {
+			_ = s.Close()
+			t.Fatal(err)
+		}
+		if count == 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	var count int
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT count(*) FROM audit_entries WHERE occurred_at=?`, old).Scan(&count); err != nil || count != 0 {
+		_ = s.Close()
+		t.Fatalf("retention worker did not delete expired entry: count=%d err=%v", count, err)
+	}
+
+	failedOld := clock.Add(-100 * 24 * time.Hour).Unix()
+	if _, err := s.store.DB.ExecContext(ctx, `INSERT INTO audit_entries(occurred_at,action,outcome,remote_addr) VALUES(?,'login','succeeded','unknown')`, failedOld); err != nil {
+		_ = s.Close()
+		t.Fatal("insert second expired audit entry:", err)
+	}
+	if _, err := s.store.DB.ExecContext(ctx, `CREATE TRIGGER fail_retention_audit BEFORE DELETE ON audit_entries BEGIN SELECT RAISE(ABORT,'injected cleanup failure'); END`); err != nil {
+		_ = s.Close()
+		t.Fatal("install failure trigger:", err)
+	}
+	time.Sleep(30 * time.Millisecond)
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT count(*) FROM audit_entries WHERE occurred_at=?`, failedOld).Scan(&count); err != nil || count != 1 {
+		_ = s.Close()
+		t.Fatalf("failed cleanup falsely removed or changed history: count=%d err=%v", count, err)
+	}
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))
+	if w.Code != http.StatusOK {
+		_ = s.Close()
+		t.Fatalf("cleanup failure made Core unavailable: health status=%d body=%q", w.Code, w.Body.String())
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatal("close Core after retention worker:", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Core shutdown did not wait for the retention worker to stop")
 	}
 }

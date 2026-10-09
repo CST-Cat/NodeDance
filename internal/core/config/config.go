@@ -19,17 +19,19 @@ const DefaultListen = "127.0.0.1:8180"
 const DefaultSessionIdleTimeout = 12 * time.Hour
 const DefaultLoginMaxAttempts = 5
 const DefaultLoginLockoutDuration = 15 * time.Minute
+const DefaultNonMetricHistoryRetentionDays = 90
 
 type File struct {
-	Listen                 string   `json:"listen"`
-	DataDir                string   `json:"data_dir"`
-	PublicOrigin           string   `json:"public_origin"`
-	TrustedProxies         []string `json:"trusted_proxies"`
-	SessionIdleTimeout     string   `json:"session_idle_timeout"`
-	LoginMaxAttempts       int      `json:"login_max_attempts"`
-	LoginLockoutDuration   string   `json:"login_lockout_duration"`
-	WebSocketCheckInterval string   `json:"websocket_check_interval"`
-	MaxFileTransferBytes   int64    `json:"max_file_transfer_bytes"`
+	Listen                        string   `json:"listen"`
+	DataDir                       string   `json:"data_dir"`
+	PublicOrigin                  string   `json:"public_origin"`
+	TrustedProxies                []string `json:"trusted_proxies"`
+	SessionIdleTimeout            string   `json:"session_idle_timeout"`
+	LoginMaxAttempts              int      `json:"login_max_attempts"`
+	LoginLockoutDuration          string   `json:"login_lockout_duration"`
+	WebSocketCheckInterval        string   `json:"websocket_check_interval"`
+	MaxFileTransferBytes          int64    `json:"max_file_transfer_bytes"`
+	NonMetricHistoryRetentionDays int      `json:"non_metric_history_retention_days"`
 }
 
 type Sources struct {
@@ -228,6 +230,28 @@ func RuntimeFileTransferLimit(file File, envValue, cliValue string) (int64, erro
 	return protocol.DefaultFileLimit, nil
 }
 
+// RuntimeNonMetricHistoryRetentionDays applies CLI > environment > config >
+// default precedence. Metric minute/hour retention is managed separately.
+func RuntimeNonMetricHistoryRetentionDays(file File, envValue, cliValue string) (int, error) {
+	for _, candidate := range []string{cliValue, envValue} {
+		if strings.TrimSpace(candidate) == "" {
+			continue
+		}
+		value, err := strconv.Atoi(strings.TrimSpace(candidate))
+		if err != nil || value < 1 || value > 3650 {
+			return 0, errors.New("history retention days must be between 1 and 3650")
+		}
+		return value, nil
+	}
+	if file.NonMetricHistoryRetentionDays == 0 {
+		return DefaultNonMetricHistoryRetentionDays, nil
+	}
+	if file.NonMetricHistoryRetentionDays < 1 || file.NonMetricHistoryRetentionDays > 3650 {
+		return 0, errors.New("non_metric_history_retention_days must be between 1 and 3650")
+	}
+	return file.NonMetricHistoryRetentionDays, nil
+}
+
 func DefaultConfigPath(home string) string {
 	if home == "" {
 		return ""
@@ -270,6 +294,9 @@ func Load(path string) (File, error) {
 		return File{}, fmt.Errorf("config %q: %w", path, err)
 	}
 	if _, _, _, err := RuntimeValues(value, true); err != nil {
+		return File{}, fmt.Errorf("config %q: %w", path, err)
+	}
+	if _, err := RuntimeNonMetricHistoryRetentionDays(value, "", ""); err != nil {
 		return File{}, fmt.Errorf("config %q: %w", path, err)
 	}
 	return value, nil

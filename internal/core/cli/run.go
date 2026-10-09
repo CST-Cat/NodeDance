@@ -45,6 +45,7 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	configFlag := flags.String("config", "", "path to config JSON file")
 	dataDirFlag := flags.String("data-dir", "", "path to Core data directory")
 	maxFileBytesFlag := flags.String("max-file-bytes", "", "maximum single file transfer size in bytes (default 1073741824)")
+	historyRetentionDaysFlag := flags.String("history-retention-days", "", "non-metric task, event, and audit history retention in days (default 90)")
 	publicOriginFlag := flags.String("public-origin", "", "public HTTPS origin used for browser Origin validation")
 	trustedProxiesFlag := flags.String("trusted-proxies", "", "comma-separated trusted proxy IPs or CIDRs")
 	dev := flags.Bool("dev", false, "development mode; requires a loopback address")
@@ -115,6 +116,10 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	if err != nil {
 		return err
 	}
+	historyRetentionDays, err := config.RuntimeNonMetricHistoryRetentionDays(fileConfig, lookupValue(lookup, "NODEDANCE_HISTORY_RETENTION_DAYS"), *historyRetentionDaysFlag)
+	if err != nil {
+		return err
+	}
 
 	listener, err := net.Listen("tcp", listen)
 	if err != nil {
@@ -131,6 +136,7 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 		LoginLockoutDuration:       loginLockout,
 		WebSocketCheckInterval:     websocketCheckInterval,
 		FileTransferLimit:          fileTransferLimit,
+		NonMetricHistoryRetention:  time.Duration(historyRetentionDays) * 24 * time.Hour,
 		AgentUpdatePublicKeyBase64: firstNonEmpty(*updatePublicKey, lookupValue(lookup, "NODEDANCE_AGENT_UPDATE_PUBLIC_KEY")),
 	})
 	if err != nil {
@@ -169,7 +175,7 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "NodeDance - unified Linux server and container management")
-	fmt.Fprintln(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--max-file-bytes bytes] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--dev]")
+	fmt.Fprintln(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--max-file-bytes bytes] [--history-retention-days days] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--dev]")
 	fmt.Fprintln(w, "       nodedance version")
 	fmt.Fprintln(w, "Default listen address: 127.0.0.1:8180")
 }

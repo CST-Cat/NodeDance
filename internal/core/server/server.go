@@ -29,6 +29,7 @@ import (
 	corehistory "github.com/CST-Cat/NodeDance/internal/core/history"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
+	coreretention "github.com/CST-Cat/NodeDance/internal/core/retention"
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	coreupdates "github.com/CST-Cat/NodeDance/internal/core/updates"
@@ -37,18 +38,20 @@ import (
 )
 
 type Options struct {
-	DataDir                string
-	Development            bool
-	PublicOrigin           string
-	TrustedProxies         []string
-	SessionIdleTimeout     time.Duration
-	LoginMaxAttempts       int
-	LoginLockoutDuration   time.Duration
-	WebSocketCheckInterval time.Duration
-	AgentOfflineTimeout    time.Duration
-	AgentSweepInterval     time.Duration
-	FileTransferLimit      int64
-	Now                    func() time.Time
+	DataDir                   string
+	Development               bool
+	PublicOrigin              string
+	TrustedProxies            []string
+	SessionIdleTimeout        time.Duration
+	LoginMaxAttempts          int
+	LoginLockoutDuration      time.Duration
+	WebSocketCheckInterval    time.Duration
+	AgentOfflineTimeout       time.Duration
+	AgentSweepInterval        time.Duration
+	FileTransferLimit         int64
+	NonMetricHistoryRetention time.Duration
+	HistoryRetentionInterval  time.Duration
+	Now                       func() time.Time
 	// PreferenceMigrator overrides the production SQLite-backed S06 display-
 	// preference identity migration. NopMigrator is available for explicit
 	// disabled/test configurations only.
@@ -104,6 +107,8 @@ type Server struct {
 	containerStreamSlots       chan struct{}
 	terminals                  *terminalStreamManager
 	fileTransferLimit          int64
+	nonMetricHistoryRetention  time.Duration
+	historyRetentionInterval   time.Duration
 	preferenceMigrator         coreprefs.Migrator
 }
 
@@ -153,6 +158,18 @@ func New(version string, options Options) (*Server, error) {
 	}
 	if options.FileTransferLimit < 1 || options.FileTransferLimit > protocol.MaxFileSize {
 		return nil, errors.New("file transfer limit is outside the protocol hard limit")
+	}
+	if options.NonMetricHistoryRetention == 0 {
+		options.NonMetricHistoryRetention = time.Duration(coreretention.DefaultDays) * 24 * time.Hour
+	}
+	if options.NonMetricHistoryRetention < 24*time.Hour || options.NonMetricHistoryRetention > time.Duration(coreretention.MaxDays)*24*time.Hour {
+		return nil, errors.New("non-metric history retention must be between 1 and 3650 days")
+	}
+	if options.HistoryRetentionInterval == 0 {
+		options.HistoryRetentionInterval = 6 * time.Hour
+	}
+	if options.HistoryRetentionInterval <= 0 || options.HistoryRetentionInterval > 24*time.Hour {
+		return nil, errors.New("history retention interval must be positive and no greater than 24 hours")
 	}
 	if options.AgentOfflineTimeout <= 0 || options.AgentOfflineTimeout > 30*time.Second {
 		return nil, errors.New("Agent offline timeout must be greater than zero and no more than 30 seconds")
@@ -224,6 +241,8 @@ func New(version string, options Options) (*Server, error) {
 		containerStreamSlots:       make(chan struct{}, 64),
 		terminals:                  newTerminalStreamManager(),
 		fileTransferLimit:          options.FileTransferLimit,
+		nonMetricHistoryRetention:  options.NonMetricHistoryRetention,
+		historyRetentionInterval:   options.HistoryRetentionInterval,
 		preferenceMigrator:         options.PreferenceMigrator,
 		agentUpdatePublicKey:       updatePublicKey,
 		agentUpdatePublicKeyBase64: strings.TrimSpace(options.AgentUpdatePublicKeyBase64),
@@ -288,6 +307,11 @@ func New(version string, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("clean expired metric history: %w", err)
 	}
+	if _, err := coreretention.Cleanup(context.Background(), store.DB, options.Now(), options.NonMetricHistoryRetention); err != nil {
+		// This transaction is all-or-nothing. Let the Core remain available and
+		// report maintenance failures explicitly instead of claiming a purge.
+		log.Printf("NodeDance non-metric history retention cleanup failed: %v", err)
+	}
 	if err := s.agents.MarkAllOffline(context.Background()); err != nil {
 		_ = store.Close()
 		return nil, err
@@ -315,7 +339,7 @@ func New(version string, options Options) (*Server, error) {
 	s.agentWait.Add(1)
 	go s.agentOfflineSweeper()
 	s.agentWait.Add(1)
-	go s.metricHistoryRetentionWorker()
+	go s.historyRetentionWorker()
 	s.agentWait.Add(1)
 	go s.serviceProbeScheduler()
 	s.agentWait.Add(1)
@@ -327,9 +351,9 @@ func New(version string, options Options) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) metricHistoryRetentionWorker() {
+func (s *Server) historyRetentionWorker() {
 	defer s.agentWait.Done()
-	ticker := time.NewTicker(6 * time.Hour)
+	ticker := time.NewTicker(s.historyRetentionInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -338,6 +362,9 @@ func (s *Server) metricHistoryRetentionWorker() {
 		case <-ticker.C:
 			if err := s.history.Cleanup(s.agentContext, s.now()); err != nil {
 				log.Printf("NodeDance metric-history retention cleanup failed: %v", err)
+			}
+			if _, err := coreretention.Cleanup(s.agentContext, s.store.DB, s.now(), s.nonMetricHistoryRetention); err != nil {
+				log.Printf("NodeDance non-metric history retention cleanup failed: %v", err)
 			}
 		}
 	}
