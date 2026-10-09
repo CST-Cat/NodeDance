@@ -105,6 +105,9 @@ jobs:
       - name: Run real Compose source edit, affected-service, volume and rollback acceptance
         run: scripts/test/s11-compose-editor-dind.sh '${{ matrix.engine }}'
 
+      - name: Run S11-07 rollback after a mutable image tag moves
+        run: scripts/test/s11-compose-editor-dind.sh '${{ matrix.engine }}' rollback-tag-drift
+
       - name: Clean only the marked Engine ${{ matrix.engine }} fixture
         if: always()
         run: |

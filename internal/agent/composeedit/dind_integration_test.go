@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -332,6 +333,312 @@ volumes:
 	conflictAfter, err := os.ReadFile(config)
 	if err != nil || string(conflictAfter) != string(conflictingSource) {
 		t.Fatalf("stale editor overwrote the external source change: err=%v source=%s", err, conflictAfter)
+	}
+}
+
+// TestDINDComposeEditorRollbackSurvivesMutableTagDrift runs one real Engine
+// rollback scenario. The command-runner wrapper is test-only: once Manager has
+// tagged the running image ID with its rollback alias, the wrapper moves the
+// source image tag before the failing Compose deployment reaches the Engine.
+func TestDINDComposeEditorRollbackSurvivesMutableTagDrift(t *testing.T) {
+	dindRoot := os.Getenv("NODEDANCE_S11_DIND_ROOT")
+	fixtureRoot := os.Getenv("NODEDANCE_S11_FIXTURE_ROOT")
+	if strings.TrimSpace(dindRoot) == "" || strings.TrimSpace(fixtureRoot) == "" {
+		t.Skip("NOT_READY: set NODEDANCE_S11_DIND_ROOT and NODEDANCE_S11_FIXTURE_ROOT to a job-owned DIND fixture")
+	}
+	root, err := filepath.Abs(dindRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	socket := filepath.Join(root, "socket", "docker.sock")
+	markerBytes, err := os.ReadFile(filepath.Join(root, "owner.json"))
+	if err != nil {
+		t.Fatalf("DIND owner marker is required: %v", err)
+	}
+	var marker struct {
+		Suite         string `json:"suite"`
+		Socket        string `json:"socket"`
+		ServerVersion string `json:"server_version"`
+	}
+	if err := json.Unmarshal(markerBytes, &marker); err != nil || marker.Suite != "nodedance-s00-dind" || filepath.Clean(marker.Socket) != socket {
+		t.Fatalf("DIND owner marker does not identify this dedicated socket: %+v err=%v", marker, err)
+	}
+	if !strings.HasPrefix(marker.ServerVersion, "28.") && !strings.HasPrefix(marker.ServerVersion, "29.") {
+		t.Fatalf("expected Engine 28 or 29, got %q", marker.ServerVersion)
+	}
+	if info, err := os.Stat(socket); err != nil || info.Mode()&os.ModeSocket == 0 {
+		t.Fatalf("dedicated DIND socket is unavailable: %v", err)
+	}
+
+	repoRoot, err := findRepositoryRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureBase, err := filepath.Abs(fixtureRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allowedBase := filepath.Join(repoRoot, ".artifacts", "fixtures")
+	if !isWithin(allowedBase, fixtureBase) || fixtureBase == allowedBase {
+		t.Fatalf("test fixture must be a unique child of %s, got %s", allowedBase, fixtureBase)
+	}
+	if _, err := os.Lstat(fixtureBase); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("run-scoped S11 fixture already exists; preserving it: %s (stat error: %v)", fixtureBase, err)
+	}
+	if err := os.MkdirAll(fixtureBase, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runID := strings.TrimSpace(os.Getenv("NODEDANCE_S11_RUN_ID"))
+	if runID == "" {
+		runID = fmt.Sprintf("local-%d", time.Now().UnixNano())
+	}
+	suite := "nodedance-s11-tag-drift-" + safeRunSuffix(runID)
+	ownerPath := filepath.Join(fixtureBase, ".nodedance-s11-owner.json")
+	owner, _ := json.Marshal(map[string]string{"suite": suite, "run_id": runID, "path": fixtureBase})
+	if err := os.WriteFile(ownerPath, owner, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fixtureDir := filepath.Join(fixtureBase, "project")
+	if err := os.MkdirAll(fixtureDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	dockerHost := "unix://" + socket
+	engine, err := agentdocker.NewSDKEngine(dockerHost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	baseRunner := agentcompose.ExecRunner{DockerHost: dockerHost}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	if err := engine.Ping(ctx); err != nil {
+		t.Fatalf("dedicated Docker Engine is not available: %v", err)
+	}
+	images := readLockedImages(t, repoRoot)
+	projectName := "nd-s11-tag-drift-" + safeRunSuffix(runID)
+	if len(projectName) > 55 {
+		projectName = projectName[:55]
+	}
+	oldPort := findAvailablePublishedPort(t, ctx, baseRunner, dockerHost, fixtureDir, suite, images["nginx"])
+	blockedPort := findAvailablePublishedPort(t, ctx, baseRunner, dockerHost, fixtureDir, suite, images["nginx"])
+	if _, err := baseRunner.Run(ctx, fixtureDir, []string{"pull", images["busybox"]}, dockerHost); err != nil {
+		t.Fatalf("pull the locked replacement image for tag drift: %v", err)
+	}
+	imageID := inspectImageID(t, ctx, baseRunner, fixtureDir, dockerHost, images["nginx"])
+	replacementID := inspectImageID(t, ctx, baseRunner, fixtureDir, dockerHost, images["busybox"])
+	if imageID == replacementID {
+		t.Fatalf("tag-drift fixture requires two distinct locked images, got %s", imageID)
+	}
+	mutableTag := "nodedance.test/s11-tag-drift-" + safeRunSuffix(runID) + ":original"
+	mutableTagCreated := false
+	config := filepath.Join(fixtureDir, "compose.yaml")
+	composeSource := fmt.Sprintf(`services:
+  web:
+    image: %s
+    ports:
+      - "127.0.0.1:%d:80/tcp"
+    labels:
+      io.nodedance.test: "true"
+      io.nodedance.suite: %s
+`, mutableTag, oldPort, suite)
+	if err := os.WriteFile(config, []byte(composeSource), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ref := protocol.ComposeProjectRef{Name: projectName, WorkingDirectory: fixtureDir, ConfigFiles: []string{config}}
+	ref.Key = protocol.ComposeProjectKey(ref.Name, ref.WorkingDirectory, ref.ConfigFiles)
+	composePrefix := []string{"compose", "--project-name", projectName, "--project-directory", fixtureDir, "-f", config}
+	cleanupSafe := false
+	blocker := "nd-s11-tag-drift-blocker-" + safeRunSuffix(runID)
+	var driftRunner *mutableTagDriftRunner
+	t.Cleanup(func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		removeOwnedContainer(t, cleanupCtx, baseRunner, fixtureDir, dockerHost, blocker, suite)
+		if cleanupSafe {
+			_, cleanupErr := baseRunner.Run(cleanupCtx, fixtureDir, append(append([]string(nil), composePrefix...), "down", "--volumes", "--remove-orphans"), dockerHost)
+			if cleanupErr != nil {
+				t.Errorf("owned tag-drift Compose fixture cleanup failed; fixture preserved: %v", cleanupErr)
+				return
+			}
+		}
+		mutableTagID := imageID
+		if driftRunner != nil && driftRunner.TagMoved {
+			mutableTagID = replacementID
+		}
+		if mutableTagCreated {
+			removeOwnedImageTag(t, cleanupCtx, baseRunner, fixtureDir, dockerHost, mutableTag, mutableTagID)
+		}
+		if driftRunner != nil && driftRunner.PinnedAlias != "" {
+			removeOwnedImageTag(t, cleanupCtx, baseRunner, fixtureDir, dockerHost, driftRunner.PinnedAlias, imageID)
+		}
+		data, readErr := os.ReadFile(ownerPath)
+		var check map[string]string
+		if readErr == nil && json.Unmarshal(data, &check) == nil && check["suite"] == suite && check["path"] == fixtureBase {
+			if err := os.RemoveAll(fixtureBase); err != nil {
+				t.Errorf("remove only the marked S11 tag-drift fixture: %v", err)
+			}
+		} else {
+			t.Errorf("S11 fixture owner marker changed; preserving %s", fixtureBase)
+		}
+	})
+
+	if existing := inspectImageIDForRunner(ctx, baseRunner, fixtureDir, dockerHost, mutableTag); existing != "" {
+		t.Fatalf("refusing to overwrite pre-existing mutable test tag %s (image %s)", mutableTag, existing)
+	}
+	if _, err := baseRunner.Run(ctx, fixtureDir, []string{"image", "tag", imageID, mutableTag}, dockerHost); err != nil {
+		t.Fatalf("create owner-scoped mutable image tag: %v", err)
+	}
+	mutableTagCreated = true
+	cleanupSafe = true
+	if _, err := baseRunner.Run(ctx, fixtureDir, append(append([]string(nil), composePrefix...), "up", "--detach"), dockerHost); err != nil {
+		t.Fatalf("start mutable-tag Compose fixture on real Engine: %v", err)
+	}
+	ids, err := engine.ListAll(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original agentdocker.Container
+	for _, id := range ids {
+		item, inspectErr := engine.Inspect(ctx, id)
+		if inspectErr != nil {
+			t.Fatal(inspectErr)
+		}
+		if item.Compose != nil && item.Compose.Project == projectName && item.Compose.Service == "web" && item.Running {
+			original = item
+			break
+		}
+	}
+	if original.ID == "" || original.ImageID != imageID {
+		t.Fatalf("fixture did not start with the expected original image: id=%q expected=%q actual=%q", original.ID, imageID, original.ImageID)
+	}
+
+	if _, err := baseRunner.Run(ctx, fixtureDir, []string{"run", "--detach", "--name", blocker, "--label", "io.nodedance.test=true", "--label", "io.nodedance.suite=" + suite, "-p", fmt.Sprintf("127.0.0.1:%d:80", blockedPort), images["nginx"]}, dockerHost); err != nil {
+		t.Fatalf("create uniquely labelled blocker on the requested new port: %v", err)
+	}
+	managerRead := newEditorManager(t, engine, baseRunner, fixtureBase, dockerHost)
+	readRequest := protocol.ComposeRequest{OperationID: "s11-tag-drift-read-" + safeRunSuffix(runID), Action: protocol.ComposeEditRead, Project: ref, Editor: &protocol.ComposeEditorInput{}}
+	read, err := managerRead.Execute(ctx, readRequest)
+	if err != nil {
+		t.Fatalf("read Compose source before tag-drift operation: %v", err)
+	}
+	versions := make(map[string]string, len(read.Editor.Files))
+	for _, file := range read.Editor.Files {
+		versions[file.Path] = file.Version
+	}
+	operationID := "s11-tag-drift-apply-" + safeRunSuffix(runID)
+	input := protocol.ComposeEditorInput{ExpectedVersions: versions, PortEdits: []protocol.ComposePortEdit{{File: config, Service: "web", Target: 80, Protocol: "tcp", OldHostIP: "127.0.0.1", OldPublished: uint16(oldPort), NewHostIP: "127.0.0.1", NewPublished: uint16(blockedPort)}}}
+	driftRunner = &mutableTagDriftRunner{base: baseRunner, mutableTag: mutableTag, replacementRef: images["busybox"], expectedPinnedImageID: imageID}
+	manager := newEditorManager(t, engine, driftRunner, fixtureBase, dockerHost)
+	request := protocol.ComposeRequest{OperationID: operationID, Action: protocol.ComposeEditApply, Project: ref, Editor: &input}
+	result, applyErr := manager.Execute(ctx, request)
+	if !driftRunner.TagMoved || driftRunner.PinnedAlias == "" || driftRunner.PinImageID != imageID {
+		t.Fatalf("test runner did not move the source tag only after pinning the original image: moved=%t alias=%q pin=%q", driftRunner.TagMoved, driftRunner.PinnedAlias, driftRunner.PinImageID)
+	}
+	if !errors.Is(applyErr, agentcomposeedit.ErrPortOccupied) || result.Editor == nil || !result.Editor.RollbackConfirmed {
+		t.Fatalf("forced deployment failure did not produce a confirmed rollback: result=%+v err=%v", result.Editor, applyErr)
+	}
+	if driftRunner.PinnedImageIDAfterDrift != imageID || driftRunner.MovedTagImageID != replacementID {
+		t.Fatalf("image identities during forced tag drift differ: pinned=%s mutable=%s original=%s replacement=%s", driftRunner.PinnedImageIDAfterDrift, driftRunner.MovedTagImageID, imageID, replacementID)
+	}
+	currentTagID := inspectImageID(t, ctx, baseRunner, fixtureDir, dockerHost, mutableTag)
+	if currentTagID != replacementID {
+		t.Fatalf("mutable tag did not remain moved after rollback: got=%s want=%s", currentTagID, replacementID)
+	}
+	rollbackID, _, _ := findComposeServiceIDs(t, ctx, engine, projectName)
+	if rollbackID == "" {
+		t.Fatal("rollback left no live Compose web container")
+	}
+	rolledBack, err := engine.Inspect(ctx, rollbackID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rolledBack.ImageID != imageID {
+		t.Fatalf("rollback followed moved mutable tag instead of pinned original image: container=%s actual=%s original=%s", rollbackID, rolledBack.ImageID, imageID)
+	}
+	if rolledBack.ImageID != driftRunner.PinnedImageIDAfterDrift {
+		t.Fatalf("rollback image differs from pinned alias image: container=%s pinned=%s", rolledBack.ImageID, driftRunner.PinnedImageIDAfterDrift)
+	}
+	if !hasPublishedPort(rolledBack, 80, uint16(oldPort), "tcp", "127.0.0.1") || hasPublishedPort(rolledBack, 80, uint16(blockedPort), "tcp", "127.0.0.1") {
+		t.Fatalf("rollback restored image but not source port mapping: %+v", rolledBack.Ports)
+	}
+	rollbackAliasID := inspectImageID(t, ctx, baseRunner, fixtureDir, dockerHost, driftRunner.PinnedAlias)
+	if rollbackAliasID != imageID {
+		t.Fatalf("pinned rollback alias changed unexpectedly: alias=%s actual=%s original=%s", driftRunner.PinnedAlias, rollbackAliasID, imageID)
+	}
+}
+
+type mutableTagDriftRunner struct {
+	base                    agentcomposeedit.Runner
+	mutableTag              string
+	replacementRef          string
+	expectedPinnedImageID   string
+	PinnedAlias             string
+	PinImageID              string
+	PinnedImageIDAfterDrift string
+	MovedTagImageID         string
+	TagMoved                bool
+}
+
+func (r *mutableTagDriftRunner) Run(ctx context.Context, directory string, args []string, dockerHost string) ([]byte, error) {
+	if len(args) >= 4 && args[0] == "image" && args[1] == "tag" && strings.HasPrefix(args[3], "nodedance-rollback:") {
+		if existing := inspectImageIDForRunner(ctx, r.base, directory, dockerHost, args[3]); existing != "" {
+			return nil, fmt.Errorf("refusing to overwrite pre-existing rollback image alias %s", args[3])
+		}
+		output, err := r.base.Run(ctx, directory, args, dockerHost)
+		if err == nil {
+			r.PinImageID, r.PinnedAlias = args[2], args[3]
+		}
+		return output, err
+	}
+	joined := strings.Join(args, " ")
+	if !r.TagMoved && r.PinnedAlias != "" && len(args) > 1 && args[0] == "compose" && slices.Contains(args, "up") && !strings.Contains(joined, "rollback.override.yaml") {
+		pinnedID := inspectImageIDForRunner(ctx, r.base, directory, dockerHost, r.PinnedAlias)
+		if pinnedID != r.expectedPinnedImageID {
+			return nil, fmt.Errorf("rollback pin %s resolved to %s, expected %s", r.PinnedAlias, pinnedID, r.expectedPinnedImageID)
+		}
+		if _, err := r.base.Run(ctx, directory, []string{"image", "tag", r.replacementRef, r.mutableTag}, dockerHost); err != nil {
+			return nil, fmt.Errorf("move mutable image tag after rollback pin: %w", err)
+		}
+		r.PinnedImageIDAfterDrift = inspectImageIDForRunner(ctx, r.base, directory, dockerHost, r.PinnedAlias)
+		r.MovedTagImageID = inspectImageIDForRunner(ctx, r.base, directory, dockerHost, r.mutableTag)
+		if r.PinnedImageIDAfterDrift != r.expectedPinnedImageID || r.MovedTagImageID == r.expectedPinnedImageID {
+			return nil, fmt.Errorf("test setup did not create a distinct pinned-image/tag split: pinned=%s mutable=%s expected=%s", r.PinnedImageIDAfterDrift, r.MovedTagImageID, r.expectedPinnedImageID)
+		}
+		r.TagMoved = true
+	}
+	return r.base.Run(ctx, directory, args, dockerHost)
+}
+
+func inspectImageID(t *testing.T, ctx context.Context, runner agentcomposeedit.Runner, directory, dockerHost, reference string) string {
+	t.Helper()
+	id := inspectImageIDForRunner(ctx, runner, directory, dockerHost, reference)
+	if id == "" {
+		t.Fatalf("could not resolve image ID for %q", reference)
+	}
+	return id
+}
+
+func inspectImageIDForRunner(ctx context.Context, runner agentcomposeedit.Runner, directory, dockerHost, reference string) string {
+	output, err := runner.Run(ctx, directory, []string{"image", "inspect", "--format", "{{.Id}}", reference}, dockerHost)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+func removeOwnedImageTag(t *testing.T, ctx context.Context, runner agentcomposeedit.Runner, directory, dockerHost, reference, expectedID string) {
+	t.Helper()
+	actualID := inspectImageIDForRunner(ctx, runner, directory, dockerHost, reference)
+	if actualID == "" {
+		return
+	}
+	if actualID != expectedID {
+		t.Errorf("preserving image tag %s because it no longer points to this run's image: actual=%s expected=%s", reference, actualID, expectedID)
+		return
+	}
+	if _, err := runner.Run(ctx, directory, []string{"image", "rm", reference}, dockerHost); err != nil {
+		t.Errorf("remove only this run's verified image tag %s: %v", reference, err)
 	}
 }
 
