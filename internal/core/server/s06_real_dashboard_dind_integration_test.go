@@ -29,6 +29,33 @@ const (
 	s06DINDContainer = 40
 )
 
+func validS06RunID(runID string) bool {
+	return runID != "" && runID != "." && runID != ".." && !strings.ContainsAny(runID, "/\\")
+}
+
+func TestS06RunIDValidation(t *testing.T) {
+	tests := []struct {
+		name  string
+		runID string
+		valid bool
+	}{
+		{name: "github run and attempt", runID: "37920028742-1", valid: true},
+		{name: "hyphenated run", runID: "ci-run-1", valid: true},
+		{name: "empty", runID: "", valid: false},
+		{name: "current directory", runID: ".", valid: false},
+		{name: "parent directory", runID: "..", valid: false},
+		{name: "forward slash", runID: "run/attempt", valid: false},
+		{name: "backslash", runID: "run\\attempt", valid: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := validS06RunID(test.runID); got != test.valid {
+				t.Fatalf("validS06RunID(%q) = %t, want %t", test.runID, got, test.valid)
+			}
+		})
+	}
+}
+
 // TestS06RealDashboardOwnedDINDResponsiveAndTouch covers only the real
 // Engine-backed S06 dashboard, responsive browser, and touch reorder cases.
 // Its browser serves the embedded Core assets and uses the real authenticated
@@ -349,7 +376,7 @@ func requireOwnedS06DIND(t *testing.T) (root, runRoot, endpoint, runID, engineVe
 	if err != nil {
 		t.Fatal("resolve NodeDance workspace root:", err)
 	}
-	if !strings.ContainsAny(runID, "/\\") || runID == "." || runID == ".." {
+	if !validS06RunID(runID) {
 		t.Fatal("S06 DIND run ID is not a single safe path component")
 	}
 	runRoot, err = filepath.Abs(configuredRoot)
