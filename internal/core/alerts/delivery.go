@@ -3,6 +3,7 @@ package alerts
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"net/smtp"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type Sender struct {
@@ -128,7 +130,11 @@ func (s *Sender) sendSMTP(ctx context.Context, config ChannelConfig, secret, pay
 	if err != nil {
 		return errors.New("SMTP message was rejected")
 	}
-	message := "From: " + from.String() + "\r\nTo: " + to.String() + "\r\nSubject: NodeDance alert notification\r\nMIME-Version: 1.0\r\nContent-Type: application/json; charset=utf-8\r\n\r\n" + payload + "\r\n"
+	body, err := smtpNotificationText(payload)
+	if err != nil {
+		return errors.New("SMTP notification payload is invalid")
+	}
+	message := "From: " + from.String() + "\r\nTo: " + to.String() + "\r\nSubject: NodeDance alert notification\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" + body + "\r\n"
 	if _, err := io.WriteString(writer, message); err != nil {
 		_ = writer.Close()
 		return errors.New("SMTP message write failed")
@@ -140,6 +146,49 @@ func (s *Sender) sendSMTP(ctx context.Context, config ChannelConfig, secret, pay
 		return errors.New("SMTP server did not confirm delivery")
 	}
 	return nil
+}
+
+func smtpNotificationText(payload string) (string, error) {
+	var notification Notification
+	if err := json.Unmarshal([]byte(payload), &notification); err != nil {
+		return "", err
+	}
+	lines := []string{
+		"Event: " + escapeSMTPText(notification.Event),
+		"Alert ID: " + escapeSMTPText(notification.AlertID),
+		"Rule: " + escapeSMTPText(notification.RuleName),
+		"Node: " + escapeSMTPText(notification.NodeName),
+		"Node ID: " + escapeSMTPText(notification.NodeID),
+		"Subject ID: " + escapeSMTPText(notification.SubjectID),
+		"Severity: " + escapeSMTPText(notification.Severity),
+		"Occurred at: " + escapeSMTPText(notification.OccurredAt.UTC().Format(time.RFC3339Nano)),
+		"",
+		"Message:",
+		escapeSMTPText(notification.Message),
+	}
+	return strings.Join(lines, "\r\n"), nil
+}
+
+// SMTP values are plain-text body content. Escape line breaks and control
+// characters so an untrusted notification value cannot mimic another header
+// or add SMTP DATA commands; ordinary Unicode text remains readable.
+func escapeSMTPText(value string) string {
+	var out strings.Builder
+	for _, r := range value {
+		switch {
+		case r == '\r':
+			out.WriteString(`\r`)
+		case r == '\n':
+			out.WriteString(`\n`)
+		case r == '\t':
+			out.WriteString(`\t`)
+		case unicode.IsControl(r):
+			fmt.Fprintf(&out, `\u%04x`, r)
+		default:
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }
 
 func isLoopbackHost(host string) bool {

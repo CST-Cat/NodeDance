@@ -142,7 +142,7 @@ export interface AlertRule {
 }
 export interface AlertChannel {
   id: string; name: string; kind: 'webhook' | 'smtp'; enabled: boolean; hasSecret: boolean; revision: number
-  config: { webhookUrl?: string; smtpHost?: string; smtpPort?: number; smtpFrom?: string; smtpTo?: string; smtpUsername?: string }
+  config: { webhookUrl?: string; messageTemplate?: string; smtpHost?: string; smtpPort?: number; smtpFrom?: string; smtpTo?: string; smtpUsername?: string }
 }
 export interface AlertItem {
   id: string; ruleId: string; ruleName: string; nodeId: string; nodeName: string; subjectId?: string

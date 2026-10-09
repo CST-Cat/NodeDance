@@ -65,7 +65,8 @@ func TestAlertAPISessionCSRFDeliveryAndAuditing(t *testing.T) {
 		core.ServeHTTP(w, r)
 		return w
 	}
-	channelPayload := map[string]any{"name": "local S15 webhook", "kind": "webhook", "config": map[string]any{"webhookUrl": "http://127.0.0.1:1/hooks"}, "enabled": true}
+	template := "{{severity}} {{ruleName}} on {{nodeName}}: {{message}}"
+	channelPayload := map[string]any{"name": "local S15 webhook", "kind": "webhook", "config": map[string]any{"webhookUrl": "http://127.0.0.1:1/hooks", "messageTemplate": template}, "enabled": true}
 	if got := request(http.MethodPost, "/api/v1/alerts/channels", channelPayload, false); got.Code != http.StatusForbidden {
 		t.Fatalf("channel write without CSRF status=%d", got.Code)
 	}
@@ -78,6 +79,17 @@ func TestAlertAPISessionCSRFDeliveryAndAuditing(t *testing.T) {
 	}
 	if err := json.Unmarshal(createdChannel.Body.Bytes(), &channelReply); err != nil || channelReply.Channel.ID == "" {
 		t.Fatalf("invalid channel response: %+v err=%v", channelReply, err)
+	}
+	if channelReply.Channel.Config.MessageTemplate != template {
+		t.Fatalf("channel API did not preserve message template: %q", channelReply.Channel.Config.MessageTemplate)
+	}
+	invalidTemplate := map[string]any{"name": "invalid template", "kind": "webhook", "config": map[string]any{"webhookUrl": "http://127.0.0.1:1/hooks", "messageTemplate": "{{unknownField}}"}, "enabled": true}
+	if got := request(http.MethodPost, "/api/v1/alerts/channels", invalidTemplate, true); got.Code != http.StatusBadRequest {
+		t.Fatalf("unknown channel template field status=%d body=%s", got.Code, got.Body.String())
+	}
+	listedChannels := request(http.MethodGet, "/api/v1/alerts/channels", nil, false)
+	if listedChannels.Code != http.StatusOK || !bytes.Contains(listedChannels.Body.Bytes(), []byte(template)) {
+		t.Fatalf("channel list did not expose persisted template: status=%d body=%s", listedChannels.Code, listedChannels.Body.String())
 	}
 	rulePayload := map[string]any{"name": "node unavailable", "kind": "node_offline", "nodeId": enrollment.NodeID, "severity": "critical", "durationSeconds": 0, "cooldownSeconds": 60, "channelIds": []string{channelReply.Channel.ID}, "enabled": true}
 	createdRule := request(http.MethodPost, "/api/v1/alerts/rules", rulePayload, true)
@@ -95,8 +107,8 @@ func TestAlertAPISessionCSRFDeliveryAndAuditing(t *testing.T) {
 		t.Fatalf("rule list response status=%d body=%s", list.Code, list.Body.String())
 	}
 	var auditCount int
-	if err := core.store.DB.QueryRow(`SELECT count(*) FROM audit_entries WHERE action IN ('alert_rule_save','alert_channel_save')`).Scan(&auditCount); err != nil || auditCount != 2 {
-		t.Fatalf("alert writes not audited: count=%d err=%v", auditCount, err)
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM audit_entries WHERE action IN ('alert_rule_save','alert_channel_save')`).Scan(&auditCount); err != nil || auditCount != 3 {
+		t.Fatalf("accepted and rejected alert writes not audited: count=%d err=%v", auditCount, err)
 	}
 	keyInfo, err := os.Stat(filepath.Join(dataDir, alertEncryptionKeyName))
 	if err != nil {
