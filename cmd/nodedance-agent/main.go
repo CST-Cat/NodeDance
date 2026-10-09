@@ -44,6 +44,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runAgent(ctx, args[1:], stderr)
 	case "install-systemd":
 		return runInstallSystemd(ctx, args[1:], stdout, stderr)
+	case "validate-file-root":
+		return runValidateFileRoot(args[1:], stdout, stderr)
 	case "update-helper":
 		return runUpdateHelper(ctx, args[1:], stdout, stderr)
 	default:
@@ -57,9 +59,30 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, "  nodedance-agent enroll --server https://core.example --token-stdin [--ca-file path] [--config path]")
 	fmt.Fprintln(output, "  nodedance-agent recover [--config path]")
 	fmt.Fprintln(output, "  nodedance-agent run [--config path]")
+	fmt.Fprintln(output, "  nodedance-agent validate-file-root --file-root <absolute-directory> [--state-dir <path>]")
 	fmt.Fprintln(output, "  nodedance-agent install-systemd --user <service-user> [--config path] [--file-root absolute-directory] [--no-file-root] [--supplementary-group <gid>] [--enable]")
 	fmt.Fprintln(output, "  nodedance-agent update-helper supervise --state-dir <path> --config <path>")
 	fmt.Fprintln(output, "The Agent never accepts inbound management connections. Enrollment tokens are read only from stdin.")
+}
+
+// runValidateFileRoot is a read-only target-side preflight for SSH deployment.
+// It deliberately calls the same validator used by foreground and systemd
+// Agent startup without creating configuration or consuming enrollment.
+func runValidateFileRoot(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("validate-file-root", stderr)
+	fileRoot := flags.String("file-root", "", "absolute existing host directory exposed to the Agent file manager")
+	stateDir := flags.String("state-dir", "/var/lib/nodedance-agent", "private Agent state directory")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected validate-file-root arguments: %v", flags.Args())
+	}
+	if _, err := agent.ValidateFileRoot(*fileRoot, *stateDir); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "Agent file root is valid")
+	return nil
 }
 
 func runEnroll(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {

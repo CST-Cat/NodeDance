@@ -16,6 +16,7 @@
 - SSH 预检检查真实 Docker socket 的类型、mode、数字 UID/GID 和既有 Agent UID。`root:docker 0660` 会把 socket 数字 GID 配入 systemd `SupplementaryGroups`，并在安装前再次核对 socket 元数据。`0600 root:root` 等无法安全授权的配置会在创建凭据或启动服务前拒绝。owner 权限仅在已有 `nodedance-agent` UID 与 socket owner UID 相同时允许，安装脚本还会复核 UID。Docker socket 不存在时明确报告容器能力 unavailable。
 - SSH 部署与本地 `install-systemd` 使用同一 Agent unit 生成器。默认 `ProtectSystem=strict`、`ProtectHome=tmpfs`，只允许写入 Agent 私有状态目录；主机文件服务默认关闭，也不声明 `agent.files.v1`。
 - 管理员可以在 SSH 部署表单中填写可选绝对 file root，或本地执行 `nodedance-agent install-systemd --file-root /absolute/directory`。安装器要求目录已存在，拒绝根目录、广泛或受保护系统目录、Agent 状态目录重叠及任何符号链接路径；精确 root 通过 systemd `BindPaths` 暴露。其余 `/home` 内容保持不可见，其他文件系统仍受 strict 只读沙箱约束。SSH 表单提供单独的“即使目标机已有配置，也明确禁用”选项。
+- SSH 部署在 Core 创建一次性注册凭据之前，先把已验签的目标架构 Agent 暂存到被控机，用 artifact SHA-256 复核后调用同一 `validate-file-root` Go 校验器。目标目录不存在、路径含符号链接或与实际 `/var/lib/nodedance-agent` 状态目录冲突时，预检失败并清理临时文件；Core 不创建节点身份，也不把注册凭据交给安装脚本。之后 `install-systemd` 仍会重复校验，避免仅依赖早期预检。
 - SSH 请求中的目录先做绝对路径/控制字符和受保护目录检查，再以 base64 数据交给目标安装脚本；远端不把原始用户路径插入 shell 源码，而是解码到变量并作为引号包裹的 CLI 参数。实际文件写权限仍由目标机 Agent UID/GID、ACL 和挂载权限决定。
 - 重装时，新显式 `fileRoot` 覆盖旧值；未传值时只从 NodeDance unit 中持久的 file-root marker 保留旧值。对应 `Environment=NODEDANCE_AGENT_FILE_ROOT=...` 行保留可读路径，便于管理员检查。`--no-file-root` 与 SSH 表单中的显式禁用选项会删除旧配置。无 marker 的旧 unit 默认不启用主机文件能力。
 
