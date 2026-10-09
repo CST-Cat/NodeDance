@@ -28,14 +28,16 @@ const (
 )
 
 type memoryEngine struct {
-	mu             sync.Mutex
-	containers     map[string]Container
-	images         map[string]string
-	imageLabels    map[string]map[string]string
-	root           string
-	failNewStart   bool
-	removed        []string
-	removedVolumes bool
+	mu                sync.Mutex
+	containers        map[string]Container
+	images            map[string]string
+	imageLabels       map[string]map[string]string
+	root              string
+	failNewStart      bool
+	removed           []string
+	removedVolumes    bool
+	networkIDs        map[string]string
+	mutateNewNetworks func(map[string]*network.EndpointSettings)
 }
 
 func newMemoryEngine(t *testing.T, failNewStart bool) *memoryEngine {
@@ -62,7 +64,8 @@ func newMemoryEngine(t *testing.T, failNewStart bool) *memoryEngine {
 		Mounts:         []container.MountPoint{{Type: mount.TypeVolume, Name: "nd-volume-id", Destination: "/data", RW: true}},
 	}
 	return &memoryEngine{containers: map[string]Container{base.ID: base}, images: make(map[string]string),
-		imageLabels: make(map[string]map[string]string), root: root, failNewStart: failNewStart}
+		imageLabels: make(map[string]map[string]string), root: root, failNewStart: failNewStart,
+		networkIDs: make(map[string]string)}
 }
 
 func (e *memoryEngine) Inspect(_ context.Context, id string) (Container, error) {
@@ -155,6 +158,9 @@ func (e *memoryEngine) DisconnectNetwork(_ context.Context, name, id string) err
 	}
 	for networkName, endpoint := range item.Networks {
 		if networkName == name || endpoint != nil && endpoint.NetworkID == name {
+			if endpoint != nil && endpoint.NetworkID != "" {
+				e.networkIDs[networkName] = endpoint.NetworkID
+			}
 			delete(item.Networks, networkName)
 		}
 	}
@@ -203,6 +209,9 @@ func (e *memoryEngine) Create(_ context.Context, name string, config *container.
 		if err != nil {
 			return "", err
 		}
+		if copyEndpoint.NetworkID == "" {
+			copyEndpoint.NetworkID = e.networkIDs[key]
+		}
 		endpointCopy[key] = &copyEndpoint
 	}
 	port, _ := network.ParsePort("80/tcp")
@@ -224,6 +233,26 @@ func (e *memoryEngine) Start(_ context.Context, id string) error {
 		return errors.New("injected replacement start failure")
 	}
 	item.Running, item.Paused, item.Restarting, item.State = true, false, false, "running"
+	for name, endpoint := range item.Networks {
+		if endpoint == nil {
+			continue
+		}
+		if endpoint.NetworkID == "" {
+			endpoint.NetworkID = e.networkIDs[name]
+		}
+		endpoint.EndpointID = "endpoint-" + id[:12] + "-" + name
+		if endpoint.IPAMConfig != nil {
+			if endpoint.IPAMConfig.IPv4Address.IsValid() {
+				endpoint.IPAddress = endpoint.IPAMConfig.IPv4Address
+			}
+			if endpoint.IPAMConfig.IPv6Address.IsValid() {
+				endpoint.GlobalIPv6Address = endpoint.IPAMConfig.IPv6Address
+			}
+		}
+	}
+	if id == rebuildNewID && e.mutateNewNetworks != nil {
+		e.mutateNewNetworks(item.Networks)
+	}
 	e.containers[id] = item
 	return nil
 }
@@ -435,12 +464,12 @@ func TestExecuteRebuildPreservesMultipleNetworksAliasesAndStaticAddresses(t *tes
 	original.HostConfig.NetworkMode = container.NetworkMode("nd-blue")
 	original.Networks = map[string]*network.EndpointSettings{
 		"nd-blue": {
-			NetworkID: "network-blue-id", Aliases: []string{"nd-web", "blue-web"},
+			NetworkID: "network-blue-id", EndpointID: "old-blue-endpoint", Aliases: []string{"nd-web", "blue-web", rebuildOriginalID[:12]},
 			IPAddress:  netip.MustParseAddr("172.28.1.10"),
-			IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr("172.28.1.10")},
+			IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr("172.28.1.10"), IPv6Address: netip.MustParseAddr("2001:db8:28::10")},
 		},
 		"nd-green": {
-			NetworkID: "network-green-id", Aliases: []string{"nd-web", "green-web"},
+			NetworkID: "network-green-id", EndpointID: "old-green-endpoint", Aliases: []string{"nd-web", "green-web"},
 			IPAddress:  netip.MustParseAddr("172.29.1.10"),
 			IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr("172.29.1.10")},
 		},
@@ -470,9 +499,117 @@ func TestExecuteRebuildPreservesMultipleNetworksAliasesAndStaticAddresses(t *tes
 		if !contains(endpoint.Aliases, wantAlias) || !contains(endpoint.Aliases, "nd-web") {
 			t.Fatalf("aliases for %s were not retained: %+v", name, endpoint.Aliases)
 		}
-		if endpoint.IPAddress.IsValid() {
-			t.Fatalf("runtime address was copied as endpoint configuration for %s: %s", name, endpoint.IPAddress)
+		if contains(endpoint.Aliases, rebuildOriginalID[:12]) {
+			t.Fatalf("replacement retained an Engine-derived old short-ID alias for %s: %+v", name, endpoint.Aliases)
 		}
+		if endpoint.EndpointID == "" || endpoint.IPAddress.String() != want {
+			t.Fatalf("live endpoint for %s was not assigned its requested address: %+v", name, endpoint)
+		}
+		if name == "nd-blue" && endpoint.GlobalIPv6Address.String() != "2001:db8:28::10" {
+			t.Fatalf("live IPv6 endpoint for %s was not assigned its requested address: %+v", name, endpoint)
+		}
+	}
+}
+
+func TestVerifyNetworkAttachmentsIgnoresEngineDerivedShortIDAndDNSNames(t *testing.T) {
+	oldShortID, newShortID := rebuildOriginalID[:12], rebuildNewID[:12]
+	want := map[string]*network.EndpointSettings{"nd-blue": {
+		NetworkID: "network-blue-id", EndpointID: "old-endpoint", Aliases: []string{"nd-web", oldShortID},
+		DNSNames: []string{"nd-web", oldShortID},
+	}}
+	actual := map[string]*network.EndpointSettings{"nd-blue": {
+		NetworkID: "network-blue-id", EndpointID: "new-endpoint", Aliases: []string{"nd-web", newShortID},
+		DNSNames: []string{"nd-web", newShortID},
+	}}
+	if !verifyNetworkAttachments(want, actual, true, rebuildOriginalID) {
+		t.Fatalf("Engine-derived old short ID or changed DNSNames were treated as configured aliases: want=%+v actual=%+v", want, actual)
+	}
+}
+
+func TestExecuteRebuildRollsBackOnRuntimeNetworkMismatch(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(map[string]*network.EndpointSettings)
+	}{
+		{name: "missing endpoint", mutate: func(networks map[string]*network.EndpointSettings) { delete(networks, "nd-blue") }},
+		{name: "wrong assigned static address", mutate: func(networks map[string]*network.EndpointSettings) {
+			networks["nd-blue"].IPAddress = netip.MustParseAddr("172.28.1.99")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			engine := newMemoryEngine(t, false)
+			engine.mu.Lock()
+			original := engine.containers[rebuildOriginalID]
+			original.HostConfig.NetworkMode = container.NetworkMode("nd-blue")
+			original.Networks = map[string]*network.EndpointSettings{
+				"nd-blue": {
+					NetworkID: "network-blue-id", EndpointID: "old-endpoint-id",
+					Aliases: []string{"nd-web", "blue-web"}, IPAddress: netip.MustParseAddr("172.28.1.10"),
+					IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr("172.28.1.10")},
+				},
+			}
+			engine.containers[rebuildOriginalID] = original
+			engine.mu.Unlock()
+			engine.mutateNewNetworks = tc.mutate
+
+			manager, _, _ := setupManager(t, engine)
+			request := rebuildRequest("task-rebuild-network-mismatch", "key-rebuild-network-mismatch",
+				protocol.TaskRebuild, rebuildOriginalID, protocol.RebuildSpec{})
+			got, err := manager.ExecuteObserved(context.Background(), request, nil)
+			if err != nil || got.Status != taskstate.Failed || got.Result.ObservedState != "restored:network_verification_failed" {
+				t.Fatalf("network mismatch result = %+v, err=%v", got, err)
+			}
+			old, err := engine.Inspect(context.Background(), rebuildOriginalID)
+			if err != nil || old.Name != "/nd-web" || !old.Running || len(old.Networks) != 1 {
+				t.Fatalf("original container was not restored: %+v, err=%v", old, err)
+			}
+			endpoint := old.Networks["nd-blue"]
+			if endpoint == nil || endpoint.NetworkID != "network-blue-id" || endpoint.IPAddress.String() != "172.28.1.10" ||
+				endpoint.IPAMConfig == nil || endpoint.IPAMConfig.IPv4Address.String() != "172.28.1.10" {
+				t.Fatalf("original network endpoint was not restored: %+v", endpoint)
+			}
+			if _, err := engine.Inspect(context.Background(), rebuildNewID); !errors.Is(err, errdefs.ErrNotFound) {
+				t.Fatalf("failed replacement remains after compensating rollback: %v", err)
+			}
+		})
+	}
+}
+
+func TestStoppedRebuildVerifiesConfiguredNetworksWithoutRuntimeIP(t *testing.T) {
+	engine := newMemoryEngine(t, false)
+	engine.mu.Lock()
+	original := engine.containers[rebuildOriginalID]
+	original.Running, original.State = false, "exited"
+	original.HostConfig.NetworkMode = container.NetworkMode("nd-blue")
+	original.Networks = map[string]*network.EndpointSettings{
+		"nd-blue": {
+			NetworkID: "network-blue-id", Aliases: []string{"nd-web", "blue-web"},
+			IPAddress:  netip.MustParseAddr("172.28.1.10"),
+			IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: netip.MustParseAddr("172.28.1.10")},
+		},
+	}
+	engine.containers[rebuildOriginalID] = original
+	engine.mu.Unlock()
+
+	manager, _, _ := setupManager(t, engine)
+	request := rebuildRequest("task-rebuild-stopped-network", "key-rebuild-stopped-network",
+		protocol.TaskRebuild, rebuildOriginalID, protocol.RebuildSpec{})
+	got, err := manager.ExecuteObserved(context.Background(), request, nil)
+	if err != nil || got.Status != taskstate.Succeeded {
+		t.Fatalf("stopped rebuild = %+v, err=%v", got, err)
+	}
+	replacement, err := engine.Inspect(context.Background(), got.Result.ResourceRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := replacement.Networks["nd-blue"]
+	if endpoint == nil || endpoint.NetworkID != "network-blue-id" || endpoint.IPAMConfig == nil ||
+		endpoint.IPAMConfig.IPv4Address.String() != "172.28.1.10" || !contains(endpoint.Aliases, "blue-web") {
+		t.Fatalf("stopped replacement lost configured network settings: %+v", endpoint)
+	}
+	if replacement.Running || endpoint.EndpointID != "" || endpoint.IPAddress.IsValid() {
+		t.Fatalf("stopped replacement unexpectedly requires or has runtime endpoint state: %+v", replacement)
 	}
 }
 

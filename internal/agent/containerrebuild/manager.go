@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -28,6 +30,8 @@ const (
 	defaultHealthPoll       = time.Second
 	maxStopTimeout          = 30
 )
+
+var ErrNetworkVerificationFailed = errors.New("rebuilt container network attachments could not be verified")
 
 type Options struct {
 	OperationTimeout time.Duration
@@ -340,6 +344,9 @@ func (m *Manager) runForward(ctx context.Context, record *Record, initial Contai
 			newContainer, err = m.engine.Inspect(ctx, record.NewID)
 			if err != nil || newContainer.Running || !portsConfigured(newContainer, record.Spec, current) {
 				return ErrPortVerificationFailed
+			}
+			if !verifyNetworkAttachments(record.Networks, newContainer.Networks, false, record.OriginalID) {
+				return ErrNetworkVerificationFailed
 			}
 		}
 		if err := m.setPhase(ctx, record, PhaseVerified, 6, 6); err != nil {
@@ -681,6 +688,13 @@ func createConfig(current Container, spec protocol.RebuildSpec, taskID, snapshot
 		if err != nil {
 			return nil, nil, nil, ErrUnsupportedConfiguration
 		}
+		configuredAliases := make([]string, 0, len(copyEndpoint.Aliases))
+		for _, alias := range copyEndpoint.Aliases {
+			if !isOriginalContainerIDAlias(alias, current.ID) {
+				configuredAliases = append(configuredAliases, alias)
+			}
+		}
+		copyEndpoint.Aliases = configuredAliases
 		clearEndpointRuntimeFields(&copyEndpoint)
 		endpoints[name] = &copyEndpoint
 	}
@@ -701,6 +715,7 @@ func clearEndpointRuntimeFields(endpoint *network.EndpointSettings) {
 	endpoint.IPv6Gateway = netip.Addr{}
 	endpoint.IPPrefixLen = 0
 	endpoint.GlobalIPv6PrefixLen = 0
+	endpoint.DNSNames = nil
 }
 
 func (m *Manager) waitHealthyAndPorts(ctx context.Context, record *Record) error {
@@ -721,6 +736,9 @@ func (m *Manager) waitHealthyAndPorts(ctx context.Context, record *Record) error
 			if oldErr != nil || !portsConfigured(current, record.Spec, original) {
 				return ErrPortVerificationFailed
 			}
+			if !verifyNetworkAttachments(record.Networks, current.Networks, true, record.OriginalID) {
+				return ErrNetworkVerificationFailed
+			}
 			return nil
 		}
 		select {
@@ -729,6 +747,81 @@ func (m *Manager) waitHealthyAndPorts(ctx context.Context, record *Record) error
 		case <-ticker.C:
 		}
 	}
+}
+
+// verifyNetworkAttachments checks the replacement against the network
+// configuration captured before the rebuild. Runtime aliases such as
+// DNSNames are intentionally ignored: Docker derives them from the new
+// container identity. Configured aliases, IPAM requests, and network identity
+// remain part of the expected configuration.
+func verifyNetworkAttachments(want, actual map[string]*network.EndpointSettings, requireRuntime bool, originalContainerID string) bool {
+	if len(want) != len(actual) {
+		return false
+	}
+	for name, expected := range want {
+		found, ok := actual[name]
+		if !ok || expected == nil || found == nil {
+			return false
+		}
+		if expected.NetworkID != "" && found.NetworkID != "" && found.NetworkID != expected.NetworkID {
+			return false
+		}
+		for _, alias := range expected.Aliases {
+			if isOriginalContainerIDAlias(alias, originalContainerID) {
+				continue
+			}
+			if !containsAlias(found.Aliases, alias) {
+				return false
+			}
+		}
+		if !equalEndpointIPAM(expected.IPAMConfig, found.IPAMConfig) ||
+			!slices.Equal(expected.Links, found.Links) ||
+			!maps.Equal(expected.DriverOpts, found.DriverOpts) ||
+			expected.GwPriority != found.GwPriority {
+			return false
+		}
+		if requireRuntime {
+			if expected.NetworkID != "" && found.NetworkID == "" {
+				return false
+			}
+			if expected.EndpointID != "" && found.EndpointID == "" {
+				return false
+			}
+			if expected.IPAMConfig != nil {
+				if expected.IPAMConfig.IPv4Address.IsValid() && found.IPAddress != expected.IPAMConfig.IPv4Address {
+					return false
+				}
+				if expected.IPAMConfig.IPv6Address.IsValid() && found.GlobalIPv6Address != expected.IPAMConfig.IPv6Address {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+func isOriginalContainerIDAlias(alias, containerID string) bool {
+	return alias == containerID || len(alias) == 12 && strings.HasPrefix(containerID, alias)
+}
+
+func equalEndpointIPAM(left, right *network.EndpointIPAMConfig) bool {
+	if left == nil {
+		return right == nil || (!right.IPv4Address.IsValid() && !right.IPv6Address.IsValid() && len(right.LinkLocalIPs) == 0)
+	}
+	if right == nil {
+		return !left.IPv4Address.IsValid() && !left.IPv6Address.IsValid() && len(left.LinkLocalIPs) == 0
+	}
+	return left.IPv4Address == right.IPv4Address && left.IPv6Address == right.IPv6Address &&
+		slices.Equal(left.LinkLocalIPs, right.LinkLocalIPs)
+}
+
+func containsAlias(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
 }
 
 func portsConfigured(current Container, spec protocol.RebuildSpec, original Container) bool {
@@ -978,6 +1071,8 @@ func sanitizedCode(err error) string {
 		return "health_check_failed"
 	case errors.Is(err, ErrPortVerificationFailed):
 		return "port_verification_failed"
+	case errors.Is(err, ErrNetworkVerificationFailed):
+		return "network_verification_failed"
 	case errors.Is(err, ErrRecordConflict):
 		return "resource_conflict"
 	default:

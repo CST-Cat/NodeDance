@@ -267,8 +267,9 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 	}
 	for name, wantIP := range map[string]netip.Addr{networkName: staticIPA, networkName2: staticIPB} {
 		endpoint := replacement.Networks[name]
-		if endpoint == nil || endpoint.IPAMConfig == nil || endpoint.IPAMConfig.IPv4Address != wantIP {
-			t.Fatalf("replacement lost requested static address for %s: %+v want=%s", name, endpoint, wantIP)
+		if endpoint == nil || endpoint.NetworkID == "" || endpoint.EndpointID == "" || endpoint.IPAMConfig == nil ||
+			endpoint.IPAMConfig.IPv4Address != wantIP || endpoint.IPAddress != wantIP {
+			t.Fatalf("replacement lost its live network endpoint or requested static address for %s: %+v want=%s", name, endpoint, wantIP)
 		}
 	}
 	for _, path := range markerPaths {
@@ -562,11 +563,11 @@ func assertRebuildPreservesRichInspectConfig(t *testing.T, before, after Contain
 		t.Fatalf("real Engine rebuild changed HostConfig beyond the requested port binding:\nbefore=%s\nafter=%s", beforeJSON, afterJSON)
 	}
 
-	beforeNetworks, err := normalizedDindNetworks(before.Networks)
+	beforeNetworks, err := normalizedDindNetworks(before.Networks, before.ID)
 	if err != nil {
 		t.Fatalf("copy pre-rebuild network configuration: %v", err)
 	}
-	afterNetworks, err := normalizedDindNetworks(after.Networks)
+	afterNetworks, err := normalizedDindNetworks(after.Networks, after.ID)
 	if err != nil {
 		t.Fatalf("copy post-rebuild network configuration: %v", err)
 	}
@@ -577,7 +578,7 @@ func assertRebuildPreservesRichInspectConfig(t *testing.T, before, after Contain
 	}
 }
 
-func normalizedDindNetworks(source map[string]*network.EndpointSettings) (map[string]*network.EndpointSettings, error) {
+func normalizedDindNetworks(source map[string]*network.EndpointSettings, containerID string) (map[string]*network.EndpointSettings, error) {
 	result := make(map[string]*network.EndpointSettings, len(source))
 	for name, endpoint := range source {
 		if endpoint == nil {
@@ -588,10 +589,17 @@ func normalizedDindNetworks(source map[string]*network.EndpointSettings) (map[st
 			return nil, err
 		}
 		clearEndpointRuntimeFields(&copyEndpoint)
-		// Docker derives DNSNames from endpoint aliases plus each container's
-		// current short ID. A replacement necessarily gets another ID; configured
-		// aliases are compared separately and remain part of EndpointSettings.
+		// Docker derives DNSNames and may expose the container short ID in
+		// Aliases. Those identity-derived names change across a rebuild; compare
+		// only aliases that were configured independently of the old container ID.
 		copyEndpoint.DNSNames = nil
+		configuredAliases := make([]string, 0, len(copyEndpoint.Aliases))
+		for _, alias := range copyEndpoint.Aliases {
+			if !isOriginalContainerIDAlias(alias, containerID) {
+				configuredAliases = append(configuredAliases, alias)
+			}
+		}
+		copyEndpoint.Aliases = configuredAliases
 		result[name] = &copyEndpoint
 	}
 	return result, nil
