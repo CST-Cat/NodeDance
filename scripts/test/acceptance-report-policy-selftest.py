@@ -54,29 +54,40 @@ def main():
         "stage": "S06", "status": "NOT_READY", "repeat_required": 1, "repeat_requested": 1,
         "candidate_status": "PASS",
     }
-    s06_pass = {"status": "PASS", "runs": [{"attempt": 1, "status": "PASS", "test_name": "TestS06PreferencePersistenceAcrossCoreRestart"}]}
+    s06_tests = POLICY.S06_PARTIAL_CASE_TESTS
+    s06_pass = {
+        case_id: {"status": "PASS", "runs": [{"attempt": 1, "status": "PASS", "test_name": test_name}]}
+        for case_id, test_name in s06_tests.items()
+    }
     s06_other = {"status": "NOT_READY", "runs": []}
-    require(POLICY.s06_partial_case_is_valid(partial_s06, "S06-03", s06_pass),
-            "the single current S06-03 PASS was rejected")
-    require(POLICY.s06_partial_case_is_valid(partial_s06, "S06-01", s06_other),
+    for case_id, case in s06_pass.items():
+        require(POLICY.s06_partial_case_is_valid(partial_s06, case_id, case),
+                f"the single current {case_id} PASS was rejected")
+    require(POLICY.s06_partial_case_is_valid(partial_s06, "S06-02", s06_other),
             "an unexecuted S06 case was rejected")
-    require(not POLICY.s06_partial_case_is_valid(partial_s06, "S06-04", s06_pass),
-            "a non-S06-03 PASS was accepted in a partial report")
-    three_s06_runs = dict(s06_pass, runs=[{"attempt": attempt, "status": "PASS"} for attempt in (1, 2, 3)])
+    require(not POLICY.s06_partial_case_is_valid(partial_s06, "S06-04", s06_pass["S06-01"]),
+            "a non-eligible S06 PASS was accepted in a partial report")
+    wrong_test_name = {"status": "PASS", "runs": [{"attempt": 1, "status": "PASS", "test_name": "TestS06UnrelatedMock"}]}
+    require(not POLICY.s06_partial_case_is_valid(partial_s06, "S06-11", wrong_test_name),
+            "unrelated test evidence was accepted for S06-11")
+    three_s06_runs = {"status": "PASS", "runs": [
+        {"attempt": attempt, "status": "PASS", "test_name": s06_tests["S06-03"]}
+        for attempt in (1, 2, 3)
+    ]}
     require(not POLICY.s06_partial_case_is_valid(partial_s06, "S06-03", three_s06_runs),
             "repeated S06-03 attempts bypassed the one-run rule")
-    require(not POLICY.s06_partial_case_is_valid(dict(partial_s06, status="PASS"), "S06-03", s06_pass),
+    require(not POLICY.s06_partial_case_is_valid(dict(partial_s06, status="PASS"), "S06-03", s06_pass["S06-03"]),
             "partial S06 evidence incorrectly completed the full stage")
     failed_candidate = dict(partial_s06, status="FAIL", candidate_status="FAIL")
-    require(POLICY.s06_partial_case_is_valid(failed_candidate, "S06-03", s06_pass),
+    require(POLICY.s06_partial_case_is_valid(failed_candidate, "S06-03", s06_pass["S06-03"]),
             "a failed responsive candidate was hidden by an S06-03 PASS")
-    s06_fail = {"status": "FAIL", "runs": [{"attempt": 1, "status": "FAIL"}]}
+    s06_fail = {"status": "FAIL", "runs": [{"attempt": 1, "status": "FAIL", "test_name": s06_tests["S06-11"]}]}
     failed_preference = dict(partial_s06, status="FAIL")
-    require(POLICY.s06_partial_case_is_valid(failed_preference, "S06-03", s06_fail),
-            "an executed S06-03 failure was rejected as partial evidence")
-    require(not POLICY.s06_partial_case_is_valid(partial_s06, "S06-03", s06_fail),
-            "an S06-03 failure was hidden behind NOT_READY")
-    print("Acceptance report policy PASS: single-run S06-03 partial evidence preserves failures, current single runs, and annotated legacy S00/S01 evidence")
+    require(POLICY.s06_partial_case_is_valid(failed_preference, "S06-11", s06_fail),
+            "an executed S06-11 failure was rejected as partial evidence")
+    require(not POLICY.s06_partial_case_is_valid(partial_s06, "S06-11", s06_fail),
+            "an S06-11 failure was hidden behind NOT_READY")
+    print("Acceptance report policy PASS: named one-run S06 partial cases preserve failures; other cases remain NOT_READY; annotated legacy S00/S01 evidence remains valid")
 
 
 if __name__ == "__main__":

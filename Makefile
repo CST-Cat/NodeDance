@@ -12,7 +12,7 @@ PNPM_BIN := $(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin
 export PATH := $(GO_BIN:%/go=%):$(NODE_BIN):$(PNPM_BIN):$(PATH)
 export GOTOOLCHAIN := local
 
-.PHONY: help bootstrap deps frontend playwright-install playwright-install-candidate verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-terminal-component test-terminal-browser test-s06 test-s06-preferences test-s11-go test-s11-ui test-s14 test-s15 test-s16 test-candidate-s06 test-candidate-s11 test-candidate-s14 test-candidate-s15 test-candidate-s16 test-candidate-s17 agent-release fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
+.PHONY: help bootstrap deps frontend playwright-install playwright-install-candidate verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-terminal-component test-terminal-browser test-s06 test-s06-preferences test-s06-real-browser test-s11-go test-s11-ui test-s14 test-s15 test-s16 test-candidate-s06 test-candidate-s11 test-candidate-s14 test-candidate-s15 test-candidate-s16 test-candidate-s17 agent-release fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
 
 help:
 	@printf '%s\n' \
@@ -122,7 +122,10 @@ test-s06: deps
 test-s06-preferences: frontend
 	go test -json -race -count=1 -timeout=120s ./internal/core/server -run '^TestS06PreferencePersistenceAcrossCoreRestart$$'
 
-test-candidate-s06: frontend test-s06-preferences playwright-install-candidate test-s06
+test-s06-real-browser: frontend playwright-install-candidate
+	go test -json -race -count=1 -timeout=240s ./internal/core/server -run '^TestS06RealDashboardOwnedDINDResponsiveAndTouch$$'
+
+test-candidate-s06: frontend test-s06-preferences playwright-install-candidate test-s06-real-browser test-s06
 
 test-s11-ui: deps
 	pnpm --dir web run test:s11-ui

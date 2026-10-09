@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from acceptance_candidates import (  # noqa: E402
     CANDIDATE_TARGETS,
     REGISTRY,
+    S06_CASE_TESTS,
     build_candidate_report,
     candidate_command,
     run_candidate_stage,
@@ -81,9 +82,10 @@ class CandidateRunnerTests(unittest.TestCase):
 
             def runner(command, *, cwd, stdout, stderr, text, timeout):
                 calls.append(command)
-                stdout.write(json.dumps({"Action": "run", "Test": "TestS06PreferencePersistenceAcrossCoreRestart"}) + "\n")
-                stdout.write(json.dumps({"Action": "pass", "Test": "TestS06PreferencePersistenceAcrossCoreRestart", "Elapsed": 0.5}) + "\n")
-                stdout.write("S06 Playwright candidate passed once\n")
+                for test_name in S06_CASE_TESTS.values():
+                    stdout.write(json.dumps({"Action": "run", "Test": test_name}) + "\n")
+                    stdout.write(json.dumps({"Action": "pass", "Test": test_name, "Elapsed": 0.5}) + "\n")
+                stdout.write("S06 real Engine browser and responsive candidate passed once\n")
                 return SimpleNamespace(returncode=0)
 
             result = run_candidate_stage(
@@ -105,15 +107,17 @@ class CandidateRunnerTests(unittest.TestCase):
             self.assertEqual(len(report["candidate_checks"]), 1)
             self.assertEqual(report["candidate_checks"][0]["invocations"], 1)
             self.assertEqual(set(report["tests"]), {f"S06-{number:02d}" for number in range(1, 13)})
-            self.assertEqual(report["tests"]["S06-03"]["status"], "PASS")
-            self.assertEqual(report["tests"]["S06-03"]["runs"], [{
-                "attempt": 1,
-                "status": "PASS",
-                "test_name": "TestS06PreferencePersistenceAcrossCoreRestart",
-                "evidence": ".artifacts/logs/acceptance-s06/s06-one-run/candidate.log",
-            }])
-            other_cases = [case for case_id, case in report["tests"].items() if case_id != "S06-03"]
-            self.assertEqual(len(other_cases), 11)
+            for case_id, test_name in S06_CASE_TESTS.items():
+                with self.subTest(case=case_id):
+                    self.assertEqual(report["tests"][case_id]["status"], "PASS")
+                    self.assertEqual(report["tests"][case_id]["runs"], [{
+                        "attempt": 1,
+                        "status": "PASS",
+                        "test_name": test_name,
+                        "evidence": ".artifacts/logs/acceptance-s06/s06-one-run/candidate.log",
+                    }])
+            other_cases = [case for case_id, case in report["tests"].items() if case_id not in S06_CASE_TESTS]
+            self.assertEqual(len(other_cases), 8)
             self.assertTrue(all(case["status"] == "NOT_READY" and case["runs"] == [] for case in other_cases))
             self.assertTrue(all(s06_partial_case_is_valid(report, case_id, case) for case_id, case in report["tests"].items()))
 
@@ -158,6 +162,49 @@ class CandidateRunnerTests(unittest.TestCase):
             self.assertEqual(result, 1)
             self.assertEqual(report["status"], "FAIL")
             self.assertEqual(report["tests"]["S06-03"]["status"], "FAIL")
+            self.assertTrue(all(s06_partial_case_is_valid(report, case_id, case) for case_id, case in report["tests"].items()))
+
+    def test_s06_real_dashboard_case_failure_is_reported_without_claiming_other_cases(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+
+            def runner(command, *, stdout, **kwargs):
+                test_name = S06_CASE_TESTS["S06-11"]
+                stdout.write(json.dumps({"Action": "run", "Test": test_name}) + "\n")
+                stdout.write(json.dumps({"Action": "fail", "Test": test_name, "Elapsed": 0.5}) + "\n")
+                return SimpleNamespace(returncode=1)
+
+            result = run_candidate_stage(
+                "S06", "full", root=root, registry=s06_registry_fixture(), command_runner=runner,
+                run_id="s06-responsive-failed", updated_at="2026-10-08T00:00:00+00:00",
+            )
+            report = json.loads((root / "reports/stages/S06.json").read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertEqual(report["status"], "FAIL")
+            self.assertEqual(report["tests"]["S06-11"]["status"], "FAIL")
+            self.assertEqual(report["tests"]["S06-11"]["runs"][0]["test_name"], S06_CASE_TESTS["S06-11"])
+            self.assertTrue(all(s06_partial_case_is_valid(report, case_id, case) for case_id, case in report["tests"].items()))
+
+    def test_s06_owned_dind_skip_remains_not_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+
+            def runner(command, *, stdout, **kwargs):
+                test_name = S06_CASE_TESTS["S06-11"]
+                stdout.write(json.dumps({"Action": "run", "Test": test_name}) + "\n")
+                stdout.write(json.dumps({"Action": "skip", "Test": test_name, "Elapsed": 0.0}) + "\n")
+                return SimpleNamespace(returncode=0)
+
+            result = run_candidate_stage(
+                "S06", "full", root=root, registry=s06_registry_fixture(), command_runner=runner,
+                run_id="s06-owned-dind-skipped", updated_at="2026-10-08T00:00:00+00:00",
+            )
+            report = json.loads((root / "reports/stages/S06.json").read_text(encoding="utf-8"))
+            self.assertEqual(result, 2)
+            self.assertEqual(report["status"], "NOT_READY")
+            self.assertEqual(report["candidate_status"], "PASS")
+            self.assertEqual(report["tests"]["S06-11"]["status"], "NOT_READY")
+            self.assertEqual(report["tests"]["S06-11"]["runs"], [])
             self.assertTrue(all(s06_partial_case_is_valid(report, case_id, case) for case_id, case in report["tests"].items()))
 
     def test_s06_browser_candidate_failure_keeps_failure_status_with_preference_pass(self) -> None:

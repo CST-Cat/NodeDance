@@ -14,9 +14,11 @@ concurrency:
 
 jobs:
   candidate:
-    name: S06 / HTTPS preference restart / responsive dashboard Chromium
+    name: S06 / Engine 29 / Core-Agent dashboard and touch browser acceptance
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
+    env:
+      S06_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -27,7 +29,17 @@ jobs:
       - name: Run candidate runner contract tests
         run: python3 scripts/test/test_acceptance_candidates.py
 
-      - name: Run S06 candidates once and verify only S06-03 is reported PASS
+      - name: Start this run's owner-marked Engine 29 DIND
+        shell: bash
+        run: |
+          set -euo pipefail
+          scripts/test/s06-dind.sh start "$S06_RUN_ID"
+          dind_root="$GITHUB_WORKSPACE/.artifacts/s06/dind/v29/$S06_RUN_ID"
+          printf 'NODEDANCE_S06_RUN_ID=%s\n' "$S06_RUN_ID" >> "$GITHUB_ENV"
+          printf 'NODEDANCE_S06_DIND_ROOT=%s\n' "$dind_root" >> "$GITHUB_ENV"
+          printf 'NODEDANCE_S06_DIND_HOST=unix://%s/socket/docker.sock\n' "$dind_root" >> "$GITHUB_ENV"
+
+      - name: Run S06 candidates once and verify exact partial evidence
         shell: bash
         run: |
           set -euo pipefail
@@ -50,23 +62,49 @@ jobs:
           assert checks[0]["status"] == "PASS", checks[0]
           assert checks[0]["command"] == ["make", "test-candidate-s06"], checks[0]
           assert len(report["tests"]) == 12, len(report["tests"])
-          preference = report["tests"]["S06-03"]
-          assert preference["status"] == "PASS", preference
-          assert len(preference["runs"]) == 1, preference["runs"]
-          assert preference["runs"][0]["attempt"] == 1, preference["runs"]
-          assert preference["runs"][0]["status"] == "PASS", preference["runs"]
-          assert preference["runs"][0]["test_name"] == "TestS06PreferencePersistenceAcrossCoreRestart", preference["runs"]
-          other_cases = {case_id: case for case_id, case in report["tests"].items() if case_id != "S06-03"}
-          assert len(other_cases) == 11, len(other_cases)
+          exact_tests = {
+              "S06-01": "TestS06RealDashboardOwnedDINDResponsiveAndTouch/S06-01_fused_overview_caps_at_four_and_detail_has_all_40",
+              "S06-03": "TestS06PreferencePersistenceAcrossCoreRestart",
+              "S06-11": "TestS06RealDashboardOwnedDINDResponsiveAndTouch/S06-11_embedded_page_has_no_overflow_at_375_768_1440",
+              "S06-12": "TestS06RealDashboardOwnedDINDResponsiveAndTouch/S06-12_touch_reorder_persists_through_authenticated_core_api",
+          }
+          for case_id, test_name in exact_tests.items():
+              case = report["tests"][case_id]
+              assert case["status"] == "PASS", (case_id, case)
+              assert len(case["runs"]) == 1, (case_id, case["runs"])
+              assert case["runs"][0]["attempt"] == 1, (case_id, case["runs"])
+              assert case["runs"][0]["status"] == "PASS", (case_id, case["runs"])
+              assert case["runs"][0]["test_name"] == test_name, (case_id, case["runs"])
+          other_cases = {case_id: case for case_id, case in report["tests"].items() if case_id not in exact_tests}
+          assert len(other_cases) == 8, len(other_cases)
           assert all(case["status"] == "NOT_READY" and not case["runs"] for case in other_cases.values())
           evidence = Path(checks[0]["evidence"])
           assert evidence.is_file(), str(evidence)
-          preference_evidence = Path(preference["runs"][0]["evidence"])
-          assert preference_evidence == evidence, (preference_evidence, evidence)
+          for case_id in exact_tests:
+              case_evidence = Path(report["tests"][case_id]["runs"][0]["evidence"])
+              assert case_evidence == evidence, (case_id, case_evidence, evidence)
           candidate_log = evidence.read_text()
           assert "S06-03_PREFERENCE_RESTART_PASS target=container visible=false pinned=true api_fields_verified=true sqlite_fields_verified=true restart_same_data_dir=true" in candidate_log
-          print("S06-03 real persistence PASS once; responsive candidate PASS once; 11 other normative cases remain NOT_READY; stage NOT_READY")
+          for marker in [
+              "S06-01_REAL_BROWSER_PASS baseline=0 engine_owned_containers=40 featured_cards=4 detail_rows=40 api_inventory=40 exact_run_ids=true",
+              "S06-11_REAL_BROWSER_PASS embedded_core=true widths=375,768,1440 overview_and_docker_detail_checked=true overflows=0",
+              "S06-12_REAL_TOUCH_REORDER_PASS pointer_type=touch",
+              "S06_FIXTURE_CLEANUP_PASS removed=40 owner_marked=true baseline_retained=0 foreign_resources_touched=0",
+          ]:
+              assert marker in candidate_log, marker
+          evidence_dir = Path(".artifacts/s06/evidence/v29") / "${{ github.run_id }}-${{ github.run_attempt }}"
+          screenshots = sorted(evidence_dir.glob("*.png"))
+          assert len(screenshots) == 7, (evidence_dir, len(screenshots))
+          print("S06-01/-03/-11/-12 real evidence PASS once; eight unexecuted normative cases remain NOT_READY; stage NOT_READY")
           PY
+
+      - name: Remove only this run's owner-marked Engine 29 and data
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker=".artifacts/s06/dind/v29/$S06_RUN_ID/owner.json"
+          if [[ -f "$marker" ]]; then scripts/test/s06-dind.sh clean "$S06_RUN_ID" --purge-data; fi
 
       - name: Preserve S06 report, runner logs and browser evidence
         if: always()
@@ -80,5 +118,7 @@ jobs:
             reports/status.json
             .artifacts/logs/s06/
             .artifacts/logs/acceptance-s06/
+            .artifacts/s06/evidence/
+            .artifacts/s06/dind/
             web/test-results/
             web/playwright-report/

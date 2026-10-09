@@ -23,6 +23,13 @@ CANDIDATE_TARGETS = {
 }
 TIMEOUT_SECONDS = 2400
 S06_PREFERENCE_TEST = "TestS06PreferencePersistenceAcrossCoreRestart"
+S06_DASHBOARD_TEST = "TestS06RealDashboardOwnedDINDResponsiveAndTouch"
+S06_CASE_TESTS = {
+    "S06-01": f"{S06_DASHBOARD_TEST}/S06-01_fused_overview_caps_at_four_and_detail_has_all_40",
+    "S06-03": S06_PREFERENCE_TEST,
+    "S06-11": f"{S06_DASHBOARD_TEST}/S06-11_embedded_page_has_no_overflow_at_375_768_1440",
+    "S06-12": f"{S06_DASHBOARD_TEST}/S06-12_touch_reorder_persists_through_authenticated_core_api",
+}
 
 
 def timestamp() -> str:
@@ -119,8 +126,8 @@ def build_candidate_report(
     return report
 
 
-def _s06_preference_outcome(log_path: pathlib.Path) -> str:
-    """Return the exact Go test event result from the combined S06 candidate log."""
+def _s06_test_outcome(log_path: pathlib.Path, test_name: str, *, process_failed: bool) -> str:
+    """Return one exact Go test event result from the combined S06 candidate log."""
     started = False
     try:
         lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -131,36 +138,50 @@ def _s06_preference_outcome(log_path: pathlib.Path) -> str:
             event = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if event.get("Test") != S06_PREFERENCE_TEST:
+        if event.get("Test") != test_name:
             continue
-        started = True
-        if event.get("Action") == "pass":
+        action = event.get("Action")
+        if action == "run":
+            started = True
+        elif action == "pass":
             return "PASS"
-        if event.get("Action") == "fail":
+        elif action == "fail":
             return "FAIL"
-        if event.get("Action") == "skip":
+        elif action == "skip":
             return "NOT_READY"
-    return "FAIL" if started else "NOT_READY"
+    return "FAIL" if started and process_failed else "NOT_READY"
 
 
-def _add_s06_preference_evidence(report: dict, log_path: pathlib.Path, root: pathlib.Path) -> None:
-    case = report["tests"].get("S06-03")
+def _add_s06_case_evidence(
+    report: dict,
+    case_id: str,
+    test_name: str,
+    log_path: pathlib.Path,
+    root: pathlib.Path,
+    *,
+    process_failed: bool,
+) -> None:
+    case = report["tests"].get(case_id)
     if case is None:
-        raise ValueError("S06 registry is missing normative case S06-03")
-    outcome = _s06_preference_outcome(log_path)
+        raise ValueError(f"S06 registry is missing normative case {case_id}")
+    outcome = _s06_test_outcome(log_path, test_name, process_failed=process_failed)
     evidence = str(log_path.relative_to(root))
     if outcome == "NOT_READY":
         return
     case["status"] = outcome
-    case["reason"] = (
-        "The real HTTPS/Core restart integration test passed, including authenticated API reads and direct SQLite row comparison."
-        if outcome == "PASS"
-        else "The real HTTPS/Core restart integration test ran but failed; see the exact test event in candidate evidence."
+    descriptions = {
+        "S06-01": "The real Engine 29, registered Agent, Core API, and embedded browser verified the 4-card overview and exact 40-container detail inventory.",
+        "S06-03": "The real HTTPS/Core restart integration test passed, including authenticated API reads and direct SQLite row comparison.",
+        "S06-11": "The embedded real Core page passed desktop, tablet, and mobile viewport checks for both overview and Docker detail.",
+        "S06-12": "Chromium touch input reordered real Engine containers through authenticated preference writes; reload, Core API, and SQLite all agreed.",
+    }
+    case["reason"] = descriptions[case_id] if outcome == "PASS" else (
+        f"The exact real S06 test {test_name} ran but failed; inspect its named Go test event in candidate evidence."
     )
     case["runs"] = [{
         "attempt": 1,
         "status": outcome,
-        "test_name": S06_PREFERENCE_TEST,
+        "test_name": test_name,
         "evidence": evidence,
     }]
 
@@ -220,20 +241,31 @@ def run_candidate_stage(
         registry=registry,
     )
     if stage == "S06":
-        _add_s06_preference_evidence(report, log_path, root)
+        for case_id, test_name in S06_CASE_TESTS.items():
+            _add_s06_case_evidence(
+                report,
+                case_id,
+                test_name,
+                log_path,
+                root,
+                process_failed=check["status"] == "FAIL",
+            )
         report["repeat_required"] = 1
         report["repeat_requested"] = 1
-        preference_status = report["tests"]["S06-03"]["status"]
-        if check["status"] == "FAIL" or preference_status == "FAIL":
+        executed_failures = [
+            case_id for case_id in S06_CASE_TESTS
+            if report["tests"][case_id]["status"] == "FAIL"
+        ]
+        if check["status"] == "FAIL" or executed_failures:
             report["status"] = "FAIL"
             report["reason"] = (
-                "An executed S06 candidate failed. Inspect candidate_checks and S06-03 evidence; the remaining normative cases are NOT_READY."
+                "An executed S06 candidate or named real acceptance test failed. Inspect candidate_checks and exact per-case evidence; unexecuted normative cases remain NOT_READY."
             )
         else:
             report["status"] = "NOT_READY"
             report["reason"] = (
-                "S06-03 passed its exact real HTTPS/Core/SQLite persistence test and the responsive-browser candidate passed once. "
-                "The other 11 normative S06 cases remain NOT_READY; the stage is therefore NOT_READY."
+                "The currently executable S06 cases are recorded individually from their exact real test events; "
+                "all other normative cases remain NOT_READY, so the full stage remains NOT_READY."
             )
     report_path = root / REPORTS / f"{stage}.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)

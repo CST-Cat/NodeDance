@@ -34,8 +34,16 @@ def pass_runs_are_valid(stage, report, runs):
     )
 
 
+S06_PARTIAL_CASE_TESTS = {
+    "S06-01": "TestS06RealDashboardOwnedDINDResponsiveAndTouch/S06-01_fused_overview_caps_at_four_and_detail_has_all_40",
+    "S06-03": "TestS06PreferencePersistenceAcrossCoreRestart",
+    "S06-11": "TestS06RealDashboardOwnedDINDResponsiveAndTouch/S06-11_embedded_page_has_no_overflow_at_375_768_1440",
+    "S06-12": "TestS06RealDashboardOwnedDINDResponsiveAndTouch/S06-12_touch_reorder_persists_through_authenticated_core_api",
+}
+
+
 def s06_partial_case_is_valid(report, case_id, case):
-    """Validate the sole independently executable S06 case without hiding failures."""
+    """Validate the explicitly executed S06 slices without hiding failures."""
     stage_status = report.get("status")
     candidate_status = report.get("candidate_status")
     if report.get("stage") != "S06" or stage_status not in {"NOT_READY", "FAIL"}:
@@ -48,11 +56,12 @@ def s06_partial_case_is_valid(report, case_id, case):
     runs = case.get("runs")
     if not isinstance(runs, list):
         return False
-    if case_id != "S06-03":
+    if case_id not in S06_PARTIAL_CASE_TESTS:
         return status == "NOT_READY" and not runs
     if status == "PASS":
         return (
             pass_runs_are_valid("S06", report, runs)
+            and runs[0].get("test_name") == S06_PARTIAL_CASE_TESTS[case_id]
             and (stage_status == "NOT_READY" and candidate_status == "PASS"
                  or stage_status == "FAIL" and candidate_status == "FAIL")
         )
@@ -62,6 +71,7 @@ def s06_partial_case_is_valid(report, case_id, case):
             and isinstance(runs[0], dict)
             and runs[0].get("attempt") == 1
             and runs[0].get("status") == "FAIL"
+            and runs[0].get("test_name") == S06_PARTIAL_CASE_TESTS[case_id]
             and stage_status == "FAIL"
         )
     return status == "NOT_READY" and not runs and (
