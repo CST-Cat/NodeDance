@@ -91,6 +91,8 @@ test('paused containers offer resume without start, and restarting containers ca
   await page.route(`**/api/v1/nodes/${nodeID}/tasks/${acceptedTask.taskId}`, (route) => route.fulfill({ json: acceptedTask }))
 
   await page.goto('/tests/fixtures/s03-nodes-dashboard.html')
+  await page.getByRole('button', { name: 'Docker 详情' }).click()
+  await expect(page.getByTestId('docker-inventory')).toBeVisible()
   const pausedRow = page.locator(`article[data-container-id="${pausedID}"]`)
   await expect(pausedRow).toBeVisible()
   await expect(pausedRow.getByRole('button', { name: '恢复' })).toBeVisible()
