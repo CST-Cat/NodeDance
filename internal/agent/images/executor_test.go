@@ -105,6 +105,11 @@ func (f *fakeEngine) Remove(_ context.Context, id string) error {
 }
 
 func openImageJournal(t *testing.T) *taskjournal.Store {
+	journal, _ := openImageJournalWithPath(t)
+	return journal
+}
+
+func openImageJournalWithPath(t *testing.T) (*taskjournal.Store, string) {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.Chmod(root, 0o700); err != nil {
@@ -117,12 +122,13 @@ func openImageJournal(t *testing.T) *taskjournal.Store {
 	if err := os.Chmod(directory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	journal, err := taskjournal.Open(context.Background(), filepath.Join(directory, "tasks.sqlite"), imageTestNodeID)
+	journalPath := filepath.Join(directory, "tasks.sqlite")
+	journal, err := taskjournal.Open(context.Background(), journalPath, imageTestNodeID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = journal.Close() })
-	return journal
+	return journal, journalPath
 }
 
 func enqueueImageDispatch(t *testing.T, journal *taskjournal.Store, intent protocol.TaskIntent, key string, auth *protocol.RegistryCredentials) protocol.TaskDispatch {

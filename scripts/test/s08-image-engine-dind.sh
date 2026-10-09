@@ -32,11 +32,21 @@ GO_VERSION="$(GOTOOLCHAIN=local "$GO_BIN" version)"
 ARTIFACT_DIR="$ROOT/.artifacts/s08"
 mkdir -p "$ARTIFACT_DIR"
 ARTIFACT="$ARTIFACT_DIR/image-engine${ENGINE}-${RUN_ID}.log"
-set -o pipefail
-{
-  echo "S08 real image Engine run=$RUN_ID engine=$ENGINE started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  NODEDANCE_S08_DIND_ROOT="$DIND_ROOT" NODEDANCE_S08_RUN_ID="$RUN_ID" GOTOOLCHAIN=local \
-    "$GO_BIN" test -mod=readonly -count=1 -timeout=8m -v ./internal/agent/images -run '^TestDINDImageManagementRealEngine$'
-  echo "S08 real image Engine run=$RUN_ID engine=$ENGINE finished=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-} 2>&1 | tee "$ARTIFACT"
+AUTH_USER="nodedance-s08-user-$RUN_ID"
+AUTH_PASSWORD="nodedance-s08-password-$RUN_ID"
+echo "S08 real image Engine run=$RUN_ID engine=$ENGINE started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$ARTIFACT"
+set +e
+NODEDANCE_S08_DIND_ROOT="$DIND_ROOT" NODEDANCE_S08_RUN_ID="$RUN_ID" \
+  NODEDANCE_S08_REGISTRY_USER="$AUTH_USER" NODEDANCE_S08_REGISTRY_PASSWORD="$AUTH_PASSWORD" GOTOOLCHAIN=local \
+  "$GO_BIN" test -mod=readonly -count=1 -timeout=8m -v ./internal/agent/images -run '^TestDINDImageManagementRealEngine$' \
+  >> "$ARTIFACT" 2>&1
+TEST_STATUS=$?
+set -e
+echo "S08 real image Engine run=$RUN_ID engine=$ENGINE finished=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$ARTIFACT"
+if grep -Fq -- "$AUTH_USER" "$ARTIFACT" || grep -Fq -- "$AUTH_PASSWORD" "$ARTIFACT" || grep -Fq -- "$AUTH_PASSWORD-wrong" "$ARTIFACT"; then
+  echo "S08 credential canary appeared in test output; details withheld; inspect the protected run artifact: $ARTIFACT" >&2
+  exit 1
+fi
+cat "$ARTIFACT"
+[[ "$TEST_STATUS" == 0 ]] || exit "$TEST_STATUS"
 echo "S08 DIND evidence: $ARTIFACT"
