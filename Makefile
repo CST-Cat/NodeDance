@@ -22,9 +22,9 @@ help:
 	  '  make verify-ci-evidence' \
 	  '  make check' \
 	  '  make build' \
-	  '  make test-stage STAGE=S00|S01|S02' \
-	  '  make test-integration STAGE=S00|S01|S02' \
-	  '  make test-e2e STAGE=S00|S01|S02' \
+	  '  make test-stage STAGE=S00|S01|S02|S04' \
+	  '  make test-integration STAGE=S00|S01|S02|S04' \
+	  '  make test-e2e STAGE=S00|S01|S02|S04' \
 	  '  make test-acceptance' \
 	  '  make fixtures-start ENGINE=29' \
 	  '  make fixtures-create|fixtures-fault|fixtures-clean ENGINE=29 RUN_ID=<id>'
@@ -51,6 +51,7 @@ verify-tools: bootstrap
 verify-ci-evidence:
 	python3 scripts/test/ci-evidence-selftest.py
 	python3 scripts/test/acceptance-s02-selftest.py
+	python3 scripts/test/acceptance-s04-selftest.py
 	bash scripts/test/check-tools-host-shell.sh
 
 check: frontend verify-tools verify-ci-evidence

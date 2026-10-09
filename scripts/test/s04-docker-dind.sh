@@ -2,6 +2,12 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+DIND_ROOT="${NODEDANCE_S04_DIND_ROOT:-$ROOT}"
+if [[ "$DIND_ROOT" != "$ROOT" ]]; then
+  DIND_ROOT="$(realpath -m "$DIND_ROOT")"
+  EXPECTED_DIND_ROOT="$(dirname "$ROOT")/NodeDance-s04"
+  [[ "$DIND_ROOT" == "$EXPECTED_DIND_ROOT" ]] || { echo 'S04 DIND NOT_READY: configured DIND root is not the designated sibling fixture worktree' >&2; exit 3; }
+fi
 ENGINE="${1:-28}"
 [[ "$ENGINE" == 28 || "$ENGINE" == 29 ]] || { echo 'usage: s04-docker-dind.sh 28|29' >&2; exit 2; }
 
@@ -18,8 +24,8 @@ ARTIFACT="$ARTIFACT_DIR/dind-engine${ENGINE}-${RUN_ID}.log"
 set -o pipefail
 {
   echo "S04 DIND run=$RUN_ID engine=$ENGINE started=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  "$ROOT/scripts/test/dind.sh" start "$ENGINE"
-  NODEDANCE_S04_DIND_HOST="unix://$ROOT/.artifacts/dind/v$ENGINE/socket/docker.sock" \
+  "$DIND_ROOT/scripts/test/dind.sh" start "$ENGINE"
+  NODEDANCE_S04_DIND_ROOT="$DIND_ROOT" NODEDANCE_S04_DIND_HOST="unix://$DIND_ROOT/.artifacts/dind/v$ENGINE/socket/docker.sock" \
     GOTOOLCHAIN=local "$GO_BIN" test -race -mod=readonly -timeout=90s -count=1 -v \
       ./internal/agent/docker -run '^TestDINDEventLifetimeAndReconnectSnapshot$'
   echo "S04 DIND run=$RUN_ID engine=$ENGINE finished=$(date -u +%Y-%m-%dT%H:%M:%SZ)"

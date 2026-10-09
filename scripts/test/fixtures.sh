@@ -3,19 +3,25 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$ROOT/scripts/docker-test-config.sh"
+DIND_ROOT="${NODEDANCE_S04_DIND_ROOT:-$ROOT}"
+if [[ "$DIND_ROOT" != "$ROOT" ]]; then
+  DIND_ROOT="$(realpath -m "$DIND_ROOT")"
+  EXPECTED_DIND_ROOT="$(dirname "$ROOT")/NodeDance-s04"
+  [[ "$DIND_ROOT" == "$EXPECTED_DIND_ROOT" ]] || { echo 'FIXTURE NOT_READY: configured S04 DIND root is not the designated sibling fixture worktree' >&2; exit 3; }
+fi
 LOCK="$ROOT/test-images.lock.json"
 ACTION="${1:-}"
 RUN_ID="${2:-}"
 [[ "$ACTION" =~ ^(create|fault|reset|clean|status)$ ]] || { echo 'usage: fixtures.sh create|fault|reset|clean|status RUN_ID [FAULT]' >&2; exit 2; }
 [[ "$RUN_ID" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$ ]] || { echo 'RUN_ID must be a unique 1-32 character alphanumeric/hyphen ID' >&2; exit 2; }
-TEST_ROOT="$ROOT/.artifacts/fixtures/$RUN_ID"
+TEST_ROOT="$DIND_ROOT/.artifacts/fixtures/$RUN_ID"
 HOST="${NODEDANCE_TEST_DOCKER_HOST:-}"
 MARKER=""
 
 not_ready() { echo "FIXTURE $ACTION NOT_READY: $*" >&2; exit 3; }
 [[ "$HOST" == unix://* ]] || not_ready 'NODEDANCE_TEST_DOCKER_HOST must point at the dedicated dind Unix socket'
 SOCKET="${HOST#unix://}"
-case "$(realpath -m "$SOCKET")" in "$ROOT"/.artifacts/dind/v*/socket/docker.sock) ;; *) not_ready 'socket is outside this repository .artifacts/dind tree' ;; esac
+case "$(realpath -m "$SOCKET")" in "$DIND_ROOT"/.artifacts/dind/v*/socket/docker.sock) ;; *) not_ready 'socket is outside the designated S04 .artifacts/dind tree' ;; esac
 [[ -S "$SOCKET" ]] || not_ready "dedicated test socket does not exist: $SOCKET"
 ENGINE_DIR="$(dirname "$(dirname "$SOCKET")")"
 MARKER="$ENGINE_DIR/owner.json"
@@ -148,8 +154,8 @@ print("28" if v.startswith("28.") else "29" if v.startswith("29.") else "unsuppo
 PY
 )"
         [[ "$engine" != unsupported ]] || not_ready 'only the locked Engine 28/29 dind test daemons can be stopped by this fixture command'
-        "$ROOT/scripts/test/dind.sh" stop "$engine"
-        "$ROOT/scripts/test/dind.sh" start "$engine"
+        "$DIND_ROOT/scripts/test/dind.sh" stop "$engine"
+        "$DIND_ROOT/scripts/test/dind.sh" start "$engine"
         export DOCKER_HOST="$HOST"
         echo "FAULT RECOVERED: dedicated daemon restarted; fixture data root preserved for $RUN_ID"
         ;;

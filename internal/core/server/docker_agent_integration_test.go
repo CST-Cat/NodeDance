@@ -31,6 +31,11 @@ const s04BusyboxImage = "busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b45978
 func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	root, endpoint, engineVersion := requireOwnedS04DIND(t)
 	t.Setenv("DOCKER_HOST", endpoint)
+	baselineOutput, err := runS04DockerCLI(endpoint, "container", "ls", "--all", "--quiet", "--no-trunc")
+	if err != nil {
+		t.Fatalf("list pre-test containers on the exact owned Engine: %v", err)
+	}
+	baselineIDs := strings.Fields(baselineOutput)
 	workRoot := filepath.Join(root, ".artifacts", "work-s04")
 	if err := os.MkdirAll(workRoot, 0o700); err != nil {
 		t.Fatal(err)
@@ -95,6 +100,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}
 	composeID := composeIDLines[0]
 	containerIDs = append(containerIDs, composeID)
+	expectedInventoryIDs := append(append([]string(nil), baselineIDs...), containerIDs...)
 
 	certificate, rootPEM, err := makeAgentTestCertificate()
 	if err != nil {
@@ -180,7 +186,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 
 	proxy.networkDown.Store(false)
 	waitForAgentStatusWithin(t, core, config.NodeID, "online", firstGeneration, 30*time.Second)
-	inventory := waitForDockerInventoryContains(t, coreHTTP.URL, rootPEM, session, config.NodeID, containerIDs, 45*time.Second)
+	inventory := waitForDockerInventoryContains(t, coreHTTP.URL, rootPEM, session, config.NodeID, expectedInventoryIDs, 45*time.Second)
 	if got := proxy.dockerChunks.Load(); got < 3 {
 		t.Fatalf("Core-Agent path did not carry multiple Docker snapshot frames: observed %d", got)
 	}
@@ -188,11 +194,11 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 		t.Fatalf("snapshot reconnect did not use a newer Core generation: before=%d after=%d", firstGeneration, generation)
 	}
 	var committedRows int
-	if err := core.store.DB.QueryRow(`SELECT count(*) FROM docker_containers WHERE node_id=?`, config.NodeID).Scan(&committedRows); err != nil || committedRows < 200 {
-		t.Fatalf("final complete snapshot was not atomically committed: rows=%d err=%v", committedRows, err)
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM docker_containers WHERE node_id=?`, config.NodeID).Scan(&committedRows); err != nil || committedRows != len(expectedInventoryIDs) {
+		t.Fatalf("final complete snapshot differs from pre-test Engine baseline plus owned fixtures: rows=%d expected=%d err=%v", committedRows, len(expectedInventoryIDs), err)
 	}
 
-	if inventory.Inventory == nil || len(inventory.Inventory.Containers) != 201 {
+	if inventory.Inventory == nil || !sameS04StringSet(dockerViewContainerIDs(*inventory.Inventory), expectedInventoryIDs) {
 		t.Fatalf("private Core container inventory did not expose the committed Agent snapshot: count=%d", inventoryCount(inventory))
 	}
 	var composeRecord *coredocker.ContainerRecord
@@ -211,7 +217,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	dashboard := openS04Dashboard(t, coreHTTP.URL, rootPEM, session)
 	defer dashboard.CloseNow()
 	initialPush := readS04DashboardInventory(t, dashboard, config.NodeID, 15*time.Second)
-	if len(initialPush.Containers) != len(inventory.Inventory.Containers) || len(initialPush.Containers) != 201 {
+	if len(initialPush.Containers) != len(inventory.Inventory.Containers) || !sameS04StringSet(dockerViewContainerIDs(initialPush), expectedInventoryIDs) {
 		t.Fatalf("Dashboard initial push does not contain the committed inventory: API=%d WebSocket=%d", len(inventory.Inventory.Containers), len(initialPush.Containers))
 	}
 	dashboardEvents, stopDashboardReader := startS04DashboardReader(dashboard)
@@ -226,17 +232,19 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}
 	eventID = strings.TrimSpace(eventID)
 	containerIDs = append(containerIDs, eventID)
+	expectedInventoryIDs = append(expectedInventoryIDs, eventID)
 	pushed := waitForS04DashboardInventory(t, dashboardEvents, config.NodeID, func(view coredocker.View) bool {
 		return dockerViewContains(view, eventID)
 	}, 10*time.Second)
-	if len(pushed.Containers) < 201 {
-		t.Fatalf("Dashboard event push did not converge to the new external container: count=%d", len(pushed.Containers))
+	if !sameS04StringSet(dockerViewContainerIDs(pushed), expectedInventoryIDs) {
+		t.Fatalf("Dashboard event push did not preserve the baseline and owned inventory: got=%v want=%v", dockerViewContainerIDs(pushed), sortedStrings(expectedInventoryIDs))
 	}
 	if record, err := waitForS04ContainerRecordAPI(coreHTTP.URL, rootPEM, session, config.NodeID, eventID, func(record coredocker.ContainerRecord) bool {
 		return record.Container.State == "created" && !record.Container.Running
 	}, 10*time.Second); err != nil || record.Container.ID != eventID {
 		t.Fatalf("created external independent container was not available via private API: record=%+v err=%v", record, err)
 	}
+	t.Logf("S04-02 external lifecycle API observed create container=%s state=created", eventID)
 	if _, err := runS04DockerCLI(endpoint, "container", "start", eventID); err != nil {
 		t.Fatalf("external start: %v", err)
 	}
@@ -245,6 +253,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}, 10*time.Second); err != nil {
 		t.Fatalf("Core did not apply external start event: %v", err)
 	}
+	t.Logf("S04-02 external lifecycle API observed start container=%s state=running", eventID)
 	if _, err := runS04DockerCLI(endpoint, "container", "pause", eventID); err != nil {
 		t.Fatalf("external pause: %v", err)
 	}
@@ -253,14 +262,29 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}, 10*time.Second); err != nil {
 		t.Fatalf("Core did not apply external pause event: %v", err)
 	}
+	t.Logf("S04-02 external lifecycle API observed pause container=%s state=paused", eventID)
+	proxy.replayNextDockerChangeOutOfOrderAndDuplicate()
 	if _, err := runS04DockerCLI(endpoint, "container", "unpause", eventID); err != nil {
 		t.Fatalf("external unpause: %v", err)
+	}
+	var replayEvidence dockerReplayEvidence
+	select {
+	case replayEvidence = <-proxy.dockerReplayResults:
+	case <-time.After(10 * time.Second):
+		t.Fatal("authenticated Agent WSS proxy did not inject an older Docker frame and duplicate after a newer event")
+	}
+	if replayEvidence.OlderSequence == 0 || replayEvidence.NewerSequence <= replayEvidence.OlderSequence ||
+		replayEvidence.OlderState != "paused" || replayEvidence.NewerState != "running" || replayEvidence.DuplicateWrites != 1 {
+		t.Fatalf("WSS replay injection did not carry paused→running newer-then-older and duplicate frames: %+v", replayEvidence)
 	}
 	if _, err := waitForS04ContainerRecordAPI(coreHTTP.URL, rootPEM, session, config.NodeID, eventID, func(record coredocker.ContainerRecord) bool {
 		return record.Container.State == "running" && !record.Container.Paused
 	}, 10*time.Second); err != nil {
 		t.Fatalf("Core did not apply external unpause event: %v", err)
 	}
+	t.Logf("S04-09 authenticated WSS accepted newer frame seq=%d state=%s, then ignored older seq=%d state=%s and duplicate; Core API remained running",
+		replayEvidence.NewerSequence, replayEvidence.NewerState, replayEvidence.OlderSequence, replayEvidence.OlderState)
+	t.Logf("S04-02 external lifecycle API observed unpause container=%s state=running", eventID)
 	if _, err := runS04DockerCLI(endpoint, "container", "stop", "--time", "0", eventID); err != nil {
 		t.Fatalf("external stop: %v", err)
 	}
@@ -269,6 +293,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}, 10*time.Second); err != nil {
 		t.Fatalf("Core did not apply external stop event: %v", err)
 	}
+	t.Logf("S04-02 external lifecycle API observed stop container=%s state=exited", eventID)
 	renamedEvent := eventName + "-renamed"
 	if _, err := runS04DockerCLI(endpoint, "container", "rename", eventID, renamedEvent); err != nil {
 		t.Fatalf("external rename: %v", err)
@@ -278,6 +303,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}, 10*time.Second); err != nil || record.Container.Name != renamedEvent {
 		t.Fatalf("Core did not apply external rename event: record=%+v err=%v", record, err)
 	}
+	t.Logf("S04-02 external lifecycle API observed rename container=%s name=%s", eventID, renamedEvent)
 	if _, err := runS04DockerCLI(endpoint, "container", "rm", "--force", eventID); err != nil {
 		t.Fatalf("external delete: %v", err)
 	}
@@ -285,10 +311,12 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	containerIDs = removeS04FixtureID(containerIDs, eventID)
+	expectedInventoryIDs = removeS04FixtureID(expectedInventoryIDs, eventID)
 	if _, err := waitForS04DashboardInventoryAbsent(t, dashboardEvents, config.NodeID, eventID, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
-	waitForDockerInventoryContains(t, coreHTTP.URL, rootPEM, session, config.NodeID, containerIDs, 10*time.Second)
+	t.Logf("S04-02 external lifecycle API observed delete container=%s absent from API and dashboard", eventID)
+	waitForDockerInventoryContains(t, coreHTTP.URL, rootPEM, session, config.NodeID, expectedInventoryIDs, 10*time.Second)
 	// Interrupt a second multi-chunk snapshot after a complete inventory has
 	// committed. This proves that the incomplete replacement does not erase or
 	// partially publish the last authoritative rows.
@@ -306,23 +334,23 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}, "Agent did not enter the blocked reconnect after the replacement snapshot was interrupted")
 	partialGeneration := generationForNode(t, core, config.NodeID)
 	partialView := waitForS04DockerView(t, core, config.NodeID, 5*time.Second, func(view coredocker.View) bool {
-		return view.ActiveGeneration == partialGeneration && view.DataStale && len(view.Containers) == len(containerIDs)
+		return view.ActiveGeneration == partialGeneration && view.DataStale && len(view.Containers) == len(expectedInventoryIDs)
 	}, "incomplete replacement snapshot retains the old inventory as stale")
-	if got := dockerViewContainerIDs(partialView); strings.Join(got, ",") != strings.Join(sortedStrings(containerIDs), ",") {
-		t.Fatalf("incomplete replacement snapshot changed the prior committed container IDs: got=%v want=%v", got, sortedStrings(containerIDs))
+	if got := dockerViewContainerIDs(partialView); strings.Join(got, ",") != strings.Join(sortedStrings(expectedInventoryIDs), ",") {
+		t.Fatalf("incomplete replacement snapshot changed the prior committed container IDs: got=%v want=%v", got, sortedStrings(expectedInventoryIDs))
 	}
 	var retainedRows int
-	if err := core.store.DB.QueryRow(`SELECT count(*) FROM docker_containers WHERE node_id=?`, config.NodeID).Scan(&retainedRows); err != nil || retainedRows != len(containerIDs) {
-		t.Fatalf("incomplete replacement snapshot changed persisted inventory rows: got=%d want=%d err=%v", retainedRows, len(containerIDs), err)
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM docker_containers WHERE node_id=?`, config.NodeID).Scan(&retainedRows); err != nil || retainedRows != len(expectedInventoryIDs) {
+		t.Fatalf("incomplete replacement snapshot changed persisted inventory rows: got=%d want=%d err=%v", retainedRows, len(expectedInventoryIDs), err)
 	}
 	t.Logf("incomplete replacement snapshot retained %d previously committed IDs and SQLite rows as stale at generation=%d", retainedRows, partialGeneration)
 	proxy.networkDown.Store(false)
 	waitForAgentStatusWithin(t, core, config.NodeID, "online", partialGeneration, 30*time.Second)
 	recoveredView := waitForS04DockerView(t, core, config.NodeID, 30*time.Second, func(view coredocker.View) bool {
-		return view.AgentOnline && view.DockerAvailability == "available" && view.DockerSnapshotFresh && !view.DataStale && len(view.Containers) == len(containerIDs)
+		return view.AgentOnline && view.DockerAvailability == "available" && view.DockerSnapshotFresh && !view.DataStale && len(view.Containers) == len(expectedInventoryIDs)
 	}, "complete replacement snapshot restores the retained inventory")
-	if got := dockerViewContainerIDs(recoveredView); strings.Join(got, ",") != strings.Join(sortedStrings(containerIDs), ",") {
-		t.Fatalf("recovered replacement snapshot changed the authoritative container IDs: got=%v want=%v", got, sortedStrings(containerIDs))
+	if got := dockerViewContainerIDs(recoveredView); strings.Join(got, ",") != strings.Join(sortedStrings(expectedInventoryIDs), ",") {
+		t.Fatalf("recovered replacement snapshot changed the authoritative container IDs: got=%v want=%v", got, sortedStrings(expectedInventoryIDs))
 	}
 	sequenceBeforeDrop := heartbeatSequenceForNode(t, core, config.NodeID)
 	droppedBefore := proxy.droppedDockerMessages.Load()
@@ -549,6 +577,8 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 	var pingRequests atomic.Int64
 	var eventRequests atomic.Int64
 	var otherRequests atomic.Int64
+	var partialScanSuccessfulInspects atomic.Int64
+	var partialScanInspectFailures atomic.Int64
 	engineHTTP := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/_ping"):
@@ -567,17 +597,38 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 			<-r.Context().Done()
 		case strings.Contains(r.URL.Path, "/containers/json"):
 			call := listRequests.Add(1)
+			partialScanSuccessfulInspects.Store(0)
 			w.Header().Set("Content-Type", "application/json")
-			if call == 1 {
-				_ = json.NewEncoder(w).Encode([]map[string]any{{
-					"Id": strings.Repeat("a", 64), "Names": []string{"/s04-redaction-fixture"},
+			entries := []map[string]any{{
+				"Id": strings.Repeat("a", 64), "Names": []string{"/s04-redaction-fixture"},
+				"Image": "busybox:fixture", "State": "running", "Status": "Up",
+			}}
+			if call > 1 {
+				entries = append(entries, map[string]any{
+					"Id": strings.Repeat("b", 64), "Names": []string{"/s04-partial-inspect-failure"},
 					"Image": "busybox:fixture", "State": "running", "Status": "Up",
-				}})
+				})
+			}
+			_ = json.NewEncoder(w).Encode(entries)
+		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			if strings.Contains(r.URL.Path, strings.Repeat("b", 64)) && listRequests.Load() > 1 {
+				deadline := time.Now().Add(3 * time.Second)
+				for partialScanSuccessfulInspects.Load() == 0 && time.Now().Before(deadline) {
+					select {
+					case <-r.Context().Done():
+						return
+					case <-time.After(5 * time.Millisecond):
+					}
+				}
+				partialScanInspectFailures.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"message": responseMessage})
 				return
 			}
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": responseMessage})
-		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			if strings.Contains(r.URL.Path, strings.Repeat("a", 64)) && listRequests.Load() > 1 {
+				partialScanSuccessfulInspects.Add(1)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"Id": strings.Repeat("a", 64), "Name": "/s04-redaction-fixture", "Image": "sha256:fixture",
@@ -703,6 +754,10 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 		t.Fatalf("real Docker SDK API incompatibility was not safely reported: ping=%d events=%d list=%d other=%d availability=%v errorKind=%v reason=%q snapshotFresh=%v",
 			pingRequests.Load(), eventRequests.Load(), listRequests.Load(), otherRequests.Load(), observed["availability"], observed["errorKind"], reasonForLog, observed["snapshotFresh"])
 	}
+	if partialScanSuccessfulInspects.Load() < 1 || partialScanInspectFailures.Load() < 1 {
+		t.Fatalf("S04-07 did not fail a multi-container scan after a successful Inspect: successful_inspects=%d injected_failures=%d list_requests=%d",
+			partialScanSuccessfulInspects.Load(), partialScanInspectFailures.Load(), listRequests.Load())
+	}
 
 	var savedHealth string
 	if err := core.store.DB.QueryRow(`SELECT health_json FROM docker_node_state WHERE node_id=?`, config.NodeID).Scan(&savedHealth); err != nil {
@@ -731,6 +786,16 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 			t.Fatalf("injected Docker error leaked through persisted/API/log field: %s", field)
 		}
 	}
+	var apiMessage dashboardDockerMessage
+	if err := json.Unmarshal(apiBody, &apiMessage); err != nil || apiMessage.Inventory == nil || len(apiMessage.Inventory.Containers) != 1 ||
+		apiMessage.Inventory.Containers[0].Container.ID != strings.Repeat("a", 64) || !apiMessage.Inventory.Containers[0].Container.Stale {
+		t.Fatalf("S04-07 failed partial scan did not retain exactly the last committed stale inventory: err=%v count=%d", err, inventoryCount(apiMessage))
+	}
+	var uncommittedIDCount int
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM docker_containers WHERE node_id=? AND container_id=?`,
+		config.NodeID, strings.Repeat("b", 64)).Scan(&uncommittedIDCount); err != nil || uncommittedIDCount != 0 {
+		t.Fatalf("S04-07 incomplete scan committed an inspected-prefix/new container row: count=%d err=%v", uncommittedIDCount, err)
+	}
 	if !strings.Contains(string(apiBody), "Docker Engine API version is incompatible") || !strings.Contains(savedHealth, "Docker Engine API version is incompatible") || !strings.Contains(savedContainer, "Docker Engine API version is incompatible") {
 		t.Fatal("safe API incompatibility reason was not retained in health/container SQLite rows and the authenticated inventory API")
 	}
@@ -752,8 +817,9 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 		metrics.Metrics.Uptime.Status != protocol.MetricKnown || metrics.Metrics.Uptime.Value == nil {
 		t.Fatal("two fresh samples with known memory and uptime metrics did not remain live while Docker API was incompatible")
 	}
-	t.Logf("real Moby SDK incompatibility response crossed Agent→authenticated WSS→Core SQLite/API; Engine ping=available, snapshot stale, error_kind=api_incompatible, heartbeat=%d→%d, metrics=%d→%d with memory/uptime known, listRequests=%d; injected response secrets absent from health/container SQLite/API/Agent logs",
-		heartbeatBefore, heartbeatSequenceForNode(t, core, config.NodeID), metricsBefore, metrics.Sequence, listRequests.Load())
+	t.Logf("S04-07 partial full scan failed after %d successful Inspect(s); prior committed inventory remained exactly one stale row and the uncommitted second ID was absent; S04-08 Moby SDK API incompatibility crossed Agent→authenticated WSS→Core SQLite/API with Engine ping=available, snapshot stale, error_kind=api_incompatible, heartbeat=%d→%d, metrics=%d→%d with memory/uptime known, listRequests=%d inspectFailures=%d; injected response secrets absent from health/container SQLite/API/Agent logs",
+		partialScanSuccessfulInspects.Load(), heartbeatBefore, heartbeatSequenceForNode(t, core, config.NodeID), metricsBefore, metrics.Sequence,
+		listRequests.Load(), partialScanInspectFailures.Load())
 }
 
 func TestRealDockerAgentCoreExternalStateChangeP95(t *testing.T) {
@@ -1130,10 +1196,10 @@ func TestRealAgentDockerDINDStopAndSocketPermissionRecovery(t *testing.T) {
 	finalView := waitForS04DockerView(t, core, config.NodeID, 40*time.Second, func(view coredocker.View) bool {
 		return view.AgentOnline && view.DockerAvailability == "available" && view.DockerSnapshotFresh && !view.DataStale && dockerViewContains(view, fixtureID)
 	}, "full Docker resync after restoring socket permissions")
-	if len(finalView.Containers) != 1 {
-		t.Fatalf("socket permission recovery changed the stopped inventory: count=%d", len(finalView.Containers))
+	if !sameS04StringSet(s04DockerViewContainerIDs(finalView), expectedIDs) {
+		t.Fatalf("socket permission recovery changed the stopped inventory: got=%v want=%v", s04DockerViewContainerIDs(finalView), sortedStrings(expectedIDs))
 	}
-	t.Logf("socket DAC recovery preserved the exact stopped asset; final availability=%s stale=%t generation=%d", finalView.DockerAvailability, finalView.DataStale, finalView.ActiveGeneration)
+	t.Logf("socket DAC recovery preserved the exact stopped inventory (%d IDs); final availability=%s stale=%t generation=%d", len(finalView.Containers), finalView.DockerAvailability, finalView.DataStale, finalView.ActiveGeneration)
 }
 
 func s04DockerViewContainerIDs(view coredocker.View) []string {
@@ -1586,11 +1652,21 @@ func waitForS04DockerStaleEvent(t *testing.T, events <-chan s04DashboardRead, no
 			if !ok || event.err != nil {
 				t.Fatalf("dashboard closed while waiting for expired Docker freshness: %v", event.err)
 			}
-			if event.view.NodeID != nodeID || !event.view.DataStale || !event.view.AgentOnline || event.view.StaleReason != "docker_health_stale" {
-				t.Fatalf("unexpected Docker inventory push while waiting for health lease expiry: online=%t stale=%t reason=%q", event.view.AgentOnline, event.view.DataStale, event.view.StaleReason)
+			if event.view.NodeID != nodeID {
+				continue
 			}
 			if event.view.ServerTime.Before(staleAfter) {
-				t.Fatalf("Core advertised Docker health stale before its 15-second receive-time lease expired: serverTime=%s validUntil=%s", event.view.ServerTime.Format(time.RFC3339Nano), staleAfter.Format(time.RFC3339Nano))
+				if event.view.StaleReason == "docker_health_stale" {
+					t.Fatalf("Core advertised Docker health stale before its 15-second receive-time lease expired: serverTime=%s validUntil=%s", event.view.ServerTime.Format(time.RFC3339Nano), staleAfter.Format(time.RFC3339Nano))
+				}
+				// Dashboard delivery may still contain earlier, already-bounded
+				// state transitions from the reconnect/recovery sequence. Judge
+				// the health-lease contract by the Core's server time, not by when
+				// this test happens to drain those queued frames.
+				continue
+			}
+			if !event.view.DataStale || !event.view.AgentOnline || event.view.StaleReason != "docker_health_stale" {
+				t.Fatalf("unexpected Docker inventory state after health lease expiry: serverTime=%s online=%t stale=%t reason=%q", event.view.ServerTime.Format(time.RFC3339Nano), event.view.AgentOnline, event.view.DataStale, event.view.StaleReason)
 			}
 			return event.view
 		case <-timer.C:
