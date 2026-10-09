@@ -1,6 +1,7 @@
 package composeedit_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -282,8 +283,15 @@ volumes:
 		t.Fatalf("reload source before occupied-port attempt: %v", err)
 	}
 	currentVersions := map[string]string{}
+	expectedRollbackSource := ""
 	for _, file := range current.Editor.Files {
 		currentVersions[file.Path] = file.Version
+		if file.Path == config {
+			expectedRollbackSource = file.Content
+		}
+	}
+	if expectedRollbackSource == "" {
+		t.Fatal("pre-transaction editor read omitted the Compose source")
 	}
 	occupiedInput := protocol.ComposeEditorInput{ExpectedVersions: currentVersions, PortEdits: []protocol.ComposePortEdit{{File: config, Service: "web", Target: 80, Protocol: "tcp", OldHostIP: "127.0.0.1", OldPublished: uint16(newPort), NewHostIP: "127.0.0.1", NewPublished: uint16(blockPort)}}}
 	occupiedRequest := protocol.ComposeRequest{OperationID: "s11-occupied-" + safeRunSuffix(runID), Action: protocol.ComposeEditApply, Project: ref, EnvFiles: []string{envFile}, Profiles: []string{"monitoring"}, Editor: &occupiedInput}
@@ -292,8 +300,9 @@ volumes:
 		t.Fatalf("occupied port did not produce a confirmed rollback: result=%+v err=%v", failedResult.Editor, err)
 	}
 	rolledBack, err := os.ReadFile(config)
-	if err != nil || !strings.Contains(string(rolledBack), fmt.Sprintf("published: %d", newPort)) {
-		t.Fatalf("occupied-port transaction did not restore Compose source: err=%v source=%s", err, rolledBack)
+	sourceRestored := err == nil && bytes.Equal(rolledBack, []byte(expectedRollbackSource))
+	if !sourceRestored {
+		t.Fatalf("occupied-port transaction did not restore the exact pre-transaction Compose source: err=%v contents_match=%t", err, sourceRestored)
 	}
 	rollbackWeb, rollbackDB, rollbackMonitor := findComposeServiceIDs(t, ctx, engine, ref.Name)
 	if rollbackWeb == "" || rollbackDB != databaseBefore || rollbackMonitor != monitorBefore || !hasPublishedPort(containersOrInspect(t, ctx, engine, rollbackWeb), 80, uint16(newPort), "tcp", "127.0.0.1") {
