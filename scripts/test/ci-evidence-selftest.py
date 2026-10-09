@@ -19,6 +19,13 @@ def require(condition, message):
         raise AssertionError(message)
 
 
+def workflow_command_position(workflow, alternatives, message):
+    positions = [position for command in alternatives
+                 if (position := workflow.find(command)) >= 0]
+    require(bool(positions), message)
+    return min(positions)
+
+
 def test_stale_pass_is_replaced_and_current_status_is_preserved():
     metadata = EVIDENCE.metadata_from_values(
         run_id="37796591007", run_attempt="2", sha="a" * 40,
@@ -158,17 +165,39 @@ def test_workflow_upload_is_hidden_file_aware_and_allowlisted():
                     for path in paths), "artifact allowlist contains tool/build caches")
 
     s01_start = workflow.index("rm -f reports/stages/S01.json reports/status.json && python3 scripts/ci_evidence.py --stage S01 initialize")
-    s01_positions = [workflow.index(value, s01_start) for value in (
+    s01_end = workflow.index("  s02:", s01_start)
+    s01_job = workflow[s01_start:s01_end]
+    s01_acceptance_position = s01_job.index("run: make test-stage STAGE=S01")
+    s01_before_acceptance = s01_job[:s01_acceptance_position]
+    if "make build" in s01_before_acceptance:
+        s01_build_position = s01_before_acceptance.index("make build")
+    else:
+        s01_frontend_position = workflow_command_position(
+            s01_before_acceptance, ("make frontend",),
+            "S01 workflow does not build embedded frontend assets before acceptance",
+        )
+        s01_core_binary_position = workflow_command_position(
+            s01_before_acceptance, (".build/nodedance",),
+            "S01 workflow does not build the local Core executable before acceptance",
+        )
+        require(s01_frontend_position < s01_core_binary_position,
+                "S01 embedded frontend must be built before the local Core executable")
+        s01_build_position = s01_frontend_position
+    s01_browser_position = workflow_command_position(
+        s01_before_acceptance,
+        ("pnpm --dir web exec playwright install --with-deps chromium webkit firefox",
+         "make playwright-install"),
+        "S01 workflow does not install the locked Playwright browsers before acceptance",
+    )
+    s01_positions = [s01_job.index(value) for value in (
         "rm -f reports/stages/S01.json reports/status.json && python3 scripts/ci_evidence.py --stage S01 initialize",
-        "run: make verify-tools",
+        "make verify-tools",
         "run: make verify-ci-evidence",
-        "run: make deps",
-        "run: make playwright-install",
-        "run: make test-stage STAGE=S01",
+    )] + [s01_build_position, s01_browser_position, s01_acceptance_position] + [s01_job.index(value) for value in (
         "python3 scripts/ci_evidence.py --stage S01 annotate",
         "uses: actions/upload-artifact@",
     )]
-    require(s01_positions == sorted(s01_positions), "S01 workflow is missing isolated fresh evidence, locked browser install, or final report steps")
+    require(s01_positions == sorted(s01_positions), "S01 workflow is missing isolated fresh evidence, embedded/Core build, locked browser install, acceptance, or final report steps")
     s01_upload_start = workflow.index("name: nodedance-s01-")
     s01_upload = workflow[s01_upload_start:]
     path_index = next((i for i, line in enumerate(s01_upload.splitlines())
@@ -191,6 +220,59 @@ def test_workflow_upload_is_hidden_file_aware_and_allowlisted():
     require(not any("work-s01" in path or "test-results" in path or "playwright-report" in path
                     or ".tools" in path or ".build" in path or "node_modules" in path
                     for path in s01_paths), "S01 artifact allowlist includes private work data or caches")
+
+    s05_workflow = (ROOT / ".github/workflows/s05-acceptance.yml").read_text()
+    s05_start = s05_workflow.index("rm -f reports/stages/S05.json && python3 scripts/ci_evidence.py --stage S05 initialize")
+    s05_job = s05_workflow[s05_start:]
+    s05_acceptance_position = s05_job.index("run: make test-stage STAGE=S05")
+    s05_before_acceptance = s05_job[:s05_acceptance_position]
+    s05_frontend_position = workflow_command_position(
+        s05_before_acceptance, ("make frontend", "make build"),
+        "S05 workflow does not build the locked embedded frontend before acceptance",
+    )
+    s05_browser_position = workflow_command_position(
+        s05_before_acceptance,
+        ("pnpm --dir web exec playwright install --with-deps chromium webkit firefox",
+         "make playwright-install"),
+        "S05 workflow does not install the locked Playwright browsers before acceptance",
+    )
+    s05_positions = [s05_job.index(value) for value in (
+        "rm -f reports/stages/S05.json && python3 scripts/ci_evidence.py --stage S05 initialize",
+        "make verify-tools",
+        "run: make verify-ci-evidence",
+    )] + [s05_frontend_position, s05_browser_position] + [s05_job.index(value) for value in (
+        "scripts/test/dind.sh start 28",
+        "scripts/test/dind.sh start 29",
+    )] + [s05_acceptance_position] + [s05_job.index(value) for value in (
+        "python3 scripts/ci_evidence.py --stage S05 annotate",
+        "python3 scripts/test/s05-sanitize-evidence.py",
+        "uses: actions/upload-artifact@",
+    )]
+    require(s05_positions == sorted(s05_positions), "S05 workflow is missing isolated fresh evidence, frontend/browser prerequisites, owned Engine setup, acceptance, sanitization, or final report steps")
+    s05_upload_start = s05_workflow.index("name: nodedance-s05-")
+    s05_upload = s05_workflow[s05_upload_start:]
+    require(re.search(r"^\s+include-hidden-files:\s+true\s*$", s05_upload, re.M) is not None,
+            "S05 artifact upload does not include hidden .artifacts evidence")
+    s05_lines = s05_upload.splitlines()
+    s05_path_index = next((i for i, line in enumerate(s05_lines)
+                           if re.match(r"\s+path:\s*\|\s*$", line)), None)
+    require(s05_path_index is not None, "S05 artifact upload has no explicit path allowlist")
+    s05_paths = []
+    for line in s05_lines[s05_path_index + 1:]:
+        if not line.startswith("            "):
+            break
+        s05_paths.append(line.strip())
+    expected_s05 = {
+        "reports/stages/S05.json",
+        "reports/status.json",
+        "reports/evidence-s05-redaction.json",
+        ".artifacts/logs/acceptance-s05/",
+        ".artifacts/work-s05/",
+    }
+    require(set(s05_paths) == expected_s05 and len(s05_paths) == len(expected_s05),
+            f"S05 artifact paths differ from the explicit evidence allowlist: {s05_paths}")
+    require(not any(".tools" in path or ".build" in path or "node_modules" in path
+                    for path in s05_paths), "S05 artifact allowlist contains tool/build caches")
 
     s02_start = workflow.index("name: S02 /")
     s02_positions = [workflow.index(value, s02_start) for value in (
@@ -542,7 +624,7 @@ def main():
     test_s03_workflow_matrix_and_artifact_allowlist()
     test_s03_aggregate_job_requires_both_current_shards()
     test_s04_workflow_matrix_and_artifact_allowlist()
-    print("CI evidence safeguards PASS: S00/S01/S02/S03/S04 marker isolation, stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
+    print("CI evidence safeguards PASS: S00/S01/S02/S03/S04/S05 workflow order, marker isolation, stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
 
 
 if __name__ == "__main__":
