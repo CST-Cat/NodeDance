@@ -12,11 +12,13 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	agentcompose "github.com/CST-Cat/NodeDance/internal/agent/compose"
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
+	agentfiles "github.com/CST-Cat/NodeDance/internal/agent/files"
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
 	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -107,6 +109,13 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 			}
 		}()
 	}
+	fileService, fileErr := openAgentFileService()
+	if fileErr != nil && stderr != nil {
+		fmt.Fprintln(stderr, "Agent file service unavailable; monitoring and task execution remain active")
+	}
+	if fileService != nil {
+		defer fileService.Close()
+	}
 	var backoff reconnectBackoff
 	for {
 		if err := ctx.Err(); err != nil {
@@ -119,7 +128,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		established := false
 		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates, taskBridge, func() {
 			established = true
-		})
+		}, fileService)
 		if established {
 			backoff.connected()
 		}
@@ -147,7 +156,11 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	}
 }
 
-func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, taskBridge *taskBridgeRuntime, onEstablished func()) error {
+func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, taskBridge *taskBridgeRuntime, onEstablished func(), fileServices ...*agentfiles.Service) error {
+	var fileService *agentfiles.Service
+	if len(fileServices) > 0 {
+		fileService = fileServices[0]
+	}
 	credential := config.Credential
 	pendingCredentialAlreadyActive := false
 	if config.PendingCredential != "" {
@@ -217,6 +230,9 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	if composeAvailable {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityCompose)
 	}
+	if fileService != nil {
+		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles)
+	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
 		return errors.New("send Agent hello failed")
 	}
@@ -275,18 +291,21 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		_ = streamBridge.Close()
 		streamBridge = nil
 	}
+	if !containsCapability(welcome.Capabilities, protocol.CapabilityFiles) {
+		fileService = nil
+	}
 	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates,
 		containsCapability(welcome.Capabilities, protocol.CapabilityDocker), taskBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityTaskBridge),
 		containsCapability(welcome.Capabilities, protocol.CapabilityImages), streamBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams), composeBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityCompose),
-		containsCapability(welcome.Capabilities, protocol.CapabilityTerminal), config.Shell)
+		containsCapability(welcome.Capabilities, protocol.CapabilityTerminal), config.Shell, fileService)
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell string) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell string, fileServices ...*agentfiles.Service) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -442,6 +461,32 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			}
 		}()
 	}
+	var fileMessages chan protocol.Envelope
+	var fileBridgeDone <-chan error
+	if len(fileServices) > 0 && fileServices[0] != nil {
+		fileMessages = make(chan protocol.Envelope, 16)
+		fileCtx, cancelFile := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		finished := make(chan struct{})
+		fileBridgeDone = done
+		bridge := newAgentFileBridge(fileServices[0], generation, writer)
+		go func() {
+			defer close(finished)
+			done <- bridge.run(fileCtx, fileMessages)
+		}()
+		defer func() {
+			cancelFile()
+			timer := time.NewTimer(6 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-finished:
+			case <-timer.C:
+				if returnErr == nil {
+					returnErr = errors.New("Agent file bridge did not stop")
+				}
+			}
+		}()
+	}
 	var dockerDone <-chan error
 	if dockerEnabled {
 		var engine agentdocker.Engine
@@ -544,6 +589,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				return fmt.Errorf("Agent image bridge stopped unexpectedly: %w", err)
 			}
 			imageBridgeDone = nil
+		case err := <-fileBridgeDone:
+			if err != nil {
+				return fmt.Errorf("Agent file bridge stopped unexpectedly: %w", err)
+			}
+			fileBridgeDone = nil
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -649,6 +699,15 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 					return nil
 				default:
 					return errors.New("Core terminal command queue overflow")
+				}
+			case protocol.TypeFileRequest, protocol.TypeFileCancel:
+				if fileMessages == nil || envelope.Sequence != 0 || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
+					return errors.New("Core file request is invalid or was not negotiated")
+				}
+				select {
+				case fileMessages <- envelope:
+				default:
+					return errors.New("Agent file control queue is full")
 				}
 			case protocol.TypeProtocolError:
 				return errors.New("Core rejected Agent protocol message")
@@ -904,4 +963,20 @@ func safeConnectionError(err error) string {
 		message = message[:180]
 	}
 	return message
+}
+
+func openAgentFileService() (*agentfiles.Service, error) {
+	root := strings.TrimSpace(os.Getenv("NODEDANCE_AGENT_FILE_ROOT"))
+	if root == "" {
+		root = "/"
+	}
+	limit := protocol.DefaultFileLimit
+	if configured := strings.TrimSpace(os.Getenv("NODEDANCE_AGENT_MAX_FILE_BYTES")); configured != "" {
+		parsed, err := strconv.ParseInt(configured, 10, 64)
+		if err != nil || parsed < 1 || parsed > protocol.MaxFileSize {
+			return nil, errors.New("Agent file transfer limit is invalid")
+		}
+		limit = parsed
+	}
+	return agentfiles.New(root, limit)
 }

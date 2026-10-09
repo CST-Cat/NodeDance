@@ -34,6 +34,7 @@ type agentConnection struct {
 	composeEnabled           bool
 	imagesEnabled            bool
 	terminalEnabled          bool
+	filesEnabled             bool
 	imageResponseMu          sync.Mutex
 	imageResponses           map[string]chan protocol.ImageListResponse
 	taskSignal               chan struct{}
@@ -54,6 +55,10 @@ type agentConnection struct {
 	streamTombstoneOrder     []string
 	composeMu                sync.Mutex
 	composeWaiters           map[string]composeWaiter
+	fileMu                   sync.Mutex
+	fileTransfers            map[string]*coreFileTransfer
+	fileTombstones           map[string]struct{}
+	fileTombstoneOrder       []string
 	leaseUpdates             chan time.Time
 	watchMu                  sync.Mutex
 	watchCancel              context.CancelFunc
@@ -78,6 +83,7 @@ func (c *agentConnection) close() {
 		_ = c.conn.CloseNow()
 	}
 	c.closeBrowserStreams()
+	c.closeFileTransfers()
 	c.stopLeaseWatch()
 }
 
@@ -419,6 +425,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		composeEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityCompose),
 		imagesEnabled:   hasCapability(negotiatedCapabilities, protocol.CapabilityImages),
 		terminalEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityTerminal),
+		filesEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityFiles),
 		imageResponses:  make(map[string]chan protocol.ImageListResponse),
 		taskSignal:      make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
@@ -432,6 +439,10 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	if managed.composeEnabled {
 		managed.composeWaiters = make(map[string]composeWaiter)
+	}
+	if managed.filesEnabled {
+		managed.fileTransfers = make(map[string]*coreFileTransfer)
+		managed.fileTombstones = make(map[string]struct{})
 	}
 	go s.watchAgentLease(managed, lease.Identity, lease.LastSeenAt)
 	if !s.installAgentConnection(managed, identity.AgentID) {
@@ -688,6 +699,15 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid or unpersisted Agent Compose response")
 					return
 				}
+			case protocol.TypeFileResponse, protocol.TypeFileChunk:
+				if !connection.filesEnabled {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent file service was not negotiated")
+					return
+				}
+				if err := s.handleAgentFileMessage(connection, envelope); err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent file transfer frame")
+					return
+				}
 			case protocol.TypeHello:
 				s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent hello is only valid at connection start")
 				return
@@ -784,7 +804,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}, protocol.CapabilityImages: {}, protocol.CapabilityTerminal: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}, protocol.CapabilityImages: {}, protocol.CapabilityTerminal: {}, protocol.CapabilityFiles: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {

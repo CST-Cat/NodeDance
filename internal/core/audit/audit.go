@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"net"
+	"net/url"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -14,6 +16,7 @@ type TargetKind string
 const (
 	TargetNode              TargetKind = "node"
 	TargetAgent             TargetKind = "agent"
+	TargetFile              TargetKind = "file"
 	TargetTerminalHost      TargetKind = "terminal_host"
 	TargetTerminalContainer TargetKind = "terminal_container"
 )
@@ -43,6 +46,7 @@ var actions = map[string]struct{}{
 	"agent_revoke": {}, "agent_rotation_request": {},
 	"agent_rotation_prepare": {}, "agent_rotation_commit": {},
 	"compose_operation": {}, "terminal_start": {}, "terminal_end": {},
+	"file_mkdir": {}, "file_rename": {}, "file_delete": {}, "file_save_text": {}, "file_upload": {},
 }
 
 var outcomes = map[string]struct{}{
@@ -69,20 +73,22 @@ func Record(ctx context.Context, execer Execer, event Event) error {
 			if !targetIDPattern.MatchString(event.Target.ID) {
 				return errors.New("audit target ID must be a canonical UUID")
 			}
-			targetKind, targetID = string(event.Target.Kind), event.Target.ID
 		case TargetTerminalHost:
 			if !targetIDPattern.MatchString(event.Target.ID) {
 				return errors.New("host terminal audit target ID must be a canonical node UUID")
 			}
-			targetKind, targetID = string(event.Target.Kind), event.Target.ID
 		case TargetTerminalContainer:
 			if !containerIDPattern.MatchString(event.Target.ID) {
 				return errors.New("container terminal audit target ID must be a full Docker ID")
 			}
-			targetKind, targetID = string(event.Target.Kind), event.Target.ID
+		case TargetFile:
+			if !validFileTarget(event.Target.ID) {
+				return errors.New("audit file target is invalid")
+			}
 		default:
 			return errors.New("audit target kind is not allowlisted")
 		}
+		targetKind, targetID = string(event.Target.Kind), event.Target.ID
 	}
 	if event.OccurredAt.IsZero() {
 		event.OccurredAt = time.Now()
@@ -93,6 +99,28 @@ func Record(ctx context.Context, execer Execer, event Event) error {
 	_, err := execer.ExecContext(ctx, `INSERT INTO audit_entries(occurred_at, action, outcome, actor_id, remote_addr, target_kind, target_id)
 		VALUES(?, ?, ?, ?, ?, ?, ?)`, event.OccurredAt.Unix(), event.Action, event.Outcome, nullableActor(event.ActorID), event.RemoteAddr, targetKind, targetID)
 	return err
+}
+
+// FileTarget builds a safe, exact-target audit identifier. Paths are URL
+// escaped so control characters and Unicode cannot forge additional log
+// records; the format is node UUID : transfer UUID : escaped path/target.
+func FileTarget(nodeID, transferID, path string) string {
+	return nodeID + ":" + transferID + ":" + url.QueryEscape(path)
+}
+
+func validFileTarget(value string) bool {
+	if len(value) == 0 || len(value) > 25000 {
+		return false
+	}
+	parts := strings.SplitN(value, ":", 3)
+	if len(parts) != 3 || !targetIDPattern.MatchString(parts[0]) || !targetIDPattern.MatchString(parts[1]) || parts[2] == "" {
+		return false
+	}
+	decoded, err := url.QueryUnescape(parts[2])
+	if err != nil || len(decoded) == 0 || len(decoded) > 8192 || strings.ContainsRune(decoded, '\x00') {
+		return false
+	}
+	return true
 }
 
 func nullableActor(actor sql.NullInt64) any {

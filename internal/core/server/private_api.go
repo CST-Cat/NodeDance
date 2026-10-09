@@ -146,6 +146,9 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 	if s.handleComposeAPI(w, r, current) {
 		return
 	}
+	if s.handleFilesAPI(w, r, current) {
+		return
+	}
 	if nodeID, containerID, ok := dockerRoute(r.URL.Path); ok {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -188,6 +191,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, current *s
 	if s.terminals != nil {
 		s.terminals.closeBrowserSession(s, current.ID, "browser Session logged out")
 	}
+	s.closeFileTransfersForSession(current.ID)
 	s.clearCookies(w)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -274,6 +278,7 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request, cu
 	if s.terminals != nil {
 		s.terminals.closeAll(s, "administrator password changed")
 	}
+	s.closeAllFileTransfers(errors.New("administrator password changed"))
 	s.clearCookies(w)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -346,6 +351,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request, cur
 	if s.terminals != nil {
 		s.terminals.closeBrowserSession(s, id, "browser Session revoked")
 	}
+	s.closeFileTransfersForSession(id)
 	if id == current.ID {
 		s.clearCookies(w)
 	}

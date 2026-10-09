@@ -11,14 +11,15 @@ import (
 )
 
 const (
-	controlWriteTimeout   = 5 * time.Second
-	metricWriteTimeout    = time.Second
-	dockerWriteTimeout    = 2 * time.Second
-	streamWriteTimeout    = time.Second
-	terminalWriteTimeout  = 2 * time.Second
-	maxDockerWriteBurst   = 8
-	maxStreamWriteBurst   = 4
-	maxTerminalWriteBurst = 8
+	controlWriteTimeout    = 5 * time.Second
+	metricWriteTimeout     = time.Second
+	dockerWriteTimeout     = 2 * time.Second
+	streamWriteTimeout     = time.Second
+	terminalWriteTimeout   = 2 * time.Second
+	maxDockerWriteBurst    = 8
+	maxStreamWriteBurst    = 4
+	maxTerminalWriteBurst  = 8
+	maxFileWriteBurst      = 4
 )
 
 var (
@@ -46,6 +47,7 @@ type socketEnvelopeWriter struct {
 	docker                chan protocol.Envelope
 	streams               chan protocol.Envelope
 	terminal              chan protocol.Envelope
+	files                 chan protocol.Envelope
 	metrics               chan protocol.Envelope
 	streamFailures        chan struct{}
 	streamFailureMu       sync.Mutex
@@ -62,13 +64,32 @@ func newSocketEnvelopeWriter(ctx context.Context, conn *websocket.Conn) *socketE
 		conn: conn, ctx: writerCtx, cancel: cancel,
 		high: make(chan envelopeWrite, 8), metrics: make(chan protocol.Envelope, 1),
 		docker: make(chan protocol.Envelope, 16), streams: make(chan protocol.Envelope, 32),
-		terminal:       make(chan protocol.Envelope, 16),
+		terminal: make(chan protocol.Envelope, 16), files: make(chan protocol.Envelope, 8),
 		streamFailures: make(chan struct{}, 1), failedStreams: make(map[string]error),
 		pendingStreamFailures: make(map[string]error),
 		failures:              make(chan error, 1), done: make(chan struct{}),
 	}
 	go w.run()
 	return w
+}
+
+// offerFile is a separate bounded queue for bulk file data. It is lower
+// priority than control, Docker state, and interactive streams, so uploads or
+// downloads cannot monopolize the heartbeat WebSocket writer.
+func (w *socketEnvelopeWriter) offerFile(ctx context.Context, envelope protocol.Envelope) error {
+	if w == nil || w.files == nil {
+		return errors.New("Agent file writer is unavailable")
+	}
+	select {
+	case w.files <- envelope:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.ctx.Done():
+		return errors.New("Agent file writer stopped")
+	default:
+		return errors.New("Agent file writer queue is full")
+	}
 }
 
 // offerStream keeps log and on-demand stats data in a separate low-priority,
@@ -240,6 +261,7 @@ func (w *socketEnvelopeWriter) run() {
 	dockerBurst := 0
 	streamBurst := 0
 	terminalBurst := 0
+	fileBurst := 0
 	for {
 		select {
 		case <-w.ctx.Done():
@@ -304,6 +326,33 @@ func (w *socketEnvelopeWriter) run() {
 			}
 			streamBurst = 0
 		}
+		if fileBurst >= maxFileWriteBurst {
+			select {
+			case envelope := <-w.docker:
+				w.write(envelope, nil, dockerWriteTimeout, false)
+				dockerBurst++
+				streamBurst = 0
+				fileBurst = 0
+				continue
+			default:
+			}
+			select {
+			case envelope := <-w.streams:
+				w.writeStream(envelope)
+				streamBurst++
+				fileBurst = 0
+				continue
+			default:
+			}
+			select {
+			case envelope := <-w.metrics:
+				w.write(envelope, nil, metricWriteTimeout, false)
+				fileBurst = 0
+				continue
+			default:
+			}
+			fileBurst = 0
+		}
 		select {
 		case envelope := <-w.docker:
 			w.write(envelope, nil, dockerWriteTimeout, false)
@@ -321,19 +370,28 @@ func (w *socketEnvelopeWriter) run() {
 			w.write(envelope, nil, dockerWriteTimeout, false)
 			dockerBurst++
 			streamBurst = 0
+			terminalBurst = 0
+			fileBurst = 0
 		case envelope := <-w.streams:
 			w.writeStream(envelope)
 			streamBurst++
 			terminalBurst = 0
+			fileBurst = 0
 		case envelope := <-w.terminal:
 			w.write(envelope, nil, terminalWriteTimeout, false)
 			terminalBurst++
 			streamBurst = 0
+			fileBurst = 0
+		case envelope := <-w.files:
+			w.write(envelope, nil, streamWriteTimeout, false)
+			fileBurst++
+			terminalBurst = 0
 		case envelope := <-w.metrics:
 			w.write(envelope, nil, metricWriteTimeout, false)
 			dockerBurst = 0
 			streamBurst = 0
 			terminalBurst = 0
+			fileBurst = 0
 		}
 	}
 }

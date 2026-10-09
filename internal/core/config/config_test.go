@@ -133,3 +133,30 @@ func TestWebSocketCheckIntervalIsBoundedAndTestOnly(t *testing.T) {
 		t.Fatal("interval over the 30 second close bound was accepted")
 	}
 }
+
+func TestRuntimeFileTransferLimitPrecedenceAndHardBound(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		file File
+		env  string
+		cli  string
+		want int64
+	}{
+		{name: "default", want: 1 << 30},
+		{name: "config", file: File{MaxFileTransferBytes: 2 << 30}, want: 2 << 30},
+		{name: "environment overrides config", file: File{MaxFileTransferBytes: 2 << 30}, env: "3", want: 3},
+		{name: "CLI overrides environment", env: "3", cli: "4", want: 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := RuntimeFileTransferLimit(test.file, test.env, test.cli)
+			if err != nil || got != test.want {
+				t.Fatalf("limit=%d err=%v, want %d", got, err, test.want)
+			}
+		})
+	}
+	for _, value := range []string{"0", "-1", "not-a-number", "17179869185"} {
+		if _, err := RuntimeFileTransferLimit(File{}, value, ""); err == nil {
+			t.Errorf("invalid transfer limit %q was accepted", value)
+		}
+	}
+}

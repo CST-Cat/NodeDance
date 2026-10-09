@@ -22,11 +22,11 @@ help:
 	  '  make verify-ci-evidence' \
 	  '  make check' \
 	  '  make build' \
-	  '  make test-stage STAGE=S00|S01|S02|S03|S04|S05|S08|S09' \
+	  '  make test-stage STAGE=S00|S01|S02|S03|S04|S05|S08|S10' \
 	  '  make test-terminal-component [NODEDANCE_S09_DIND_SOCKET=...]' \
 	  '  make test-terminal-browser' \
-	  '  make test-integration STAGE=S00|S01|S02|S03|S04|S05|S08|S09' \
-	  '  make test-e2e STAGE=S00|S01|S02|S03|S04|S05|S08|S09' \
+	  '  make test-integration STAGE=S00|S01|S02|S03|S04|S05|S08|S10' \
+	  '  make test-e2e STAGE=S00|S01|S02|S03|S04|S05|S08|S10' \
 	  '  make test-acceptance' \
 	  '  make fixtures-start ENGINE=29' \
 	  '  make fixtures-create|fixtures-fault|fixtures-clean ENGINE=29 RUN_ID=<id>'
@@ -77,15 +77,15 @@ build: frontend
 	@echo 'Build PASS: host, linux/amd64 and linux/arm64 Core and Agent binaries'
 
 test-stage: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-stage STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05 or STAGE=S08' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-stage STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05, STAGE=S08 or STAGE=S10' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode full
 
 test-integration: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-integration STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05 or STAGE=S08' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-integration STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05, STAGE=S08 or STAGE=S10' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode integration
 
 test-e2e: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-e2e STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05 or STAGE=S08' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-e2e STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05, STAGE=S08 or STAGE=S10' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode e2e
 
 test-acceptance: bootstrap
