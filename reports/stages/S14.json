@@ -4,8 +4,8 @@
   "mode": "candidate",
   "status": "NOT_READY",
   "run_id": "s14-local-20261009T044600Z",
-  "updated_at": "2026-10-09T04:48:13+00:00",
-  "reason": "S14 候选自动化检查曾在旧规则下记录三次本地成功；当前单次验收规则下仍为 NOT_READY，因为真实远端 Agent/DNS/TCP 超时与证书环境、Agent lease 离线/恢复、慢探测时心跳/RSS、完整独立节点交互记录尚未执行。",
+  "updated_at": "2026-10-09T08:08:58+00:00",
+  "reason": "本地真实Agent/Core loopback现已覆盖HTTP阈值、WebSocket lease失联、node_offline和重连恢复；S14整体仍为NOT_READY，因为独立被控节点上的DNS/TCP超时与证书环境、真实Agent慢探测心跳/RSS及完整外部节点证据尚未执行。",
   "environment": {
     "os_arch": "Linux arm64",
     "go": "go1.26.8",
@@ -22,7 +22,7 @@
       "go test -count=1 ./internal/protocol ./internal/agent/probes ./internal/core/probes ./internal/core/server (S14-focused tests)",
       "pnpm --dir web run test:s14 (Chromium at 375, 768, and 1440 CSS pixel viewports)"
     ],
-    "log_artifacts": "Not persisted for local attempts. The GitHub Actions workflow uploads one complete log per attempt.",
+    "log_artifacts": "Historical local full make test-s14 attempts were not persisted; this focused lifecycle run is persisted under focused_candidate_evidence. GitHub Actions uploads one complete log for each workflow run.",
     "historical_attempt_count_under_previous_policy": 3,
     "historical_attempt_statuses_under_previous_policy": [
       "PASS",
@@ -39,7 +39,7 @@
       "expected": "成功及失败正确。",
       "environment": "受控HTTP服务和Agent节点发起探测。",
       "evidence_required": "来源节点、HTTP状态和结果时间。",
-      "candidate_coverage": "TestExecutorHTTPStatusHTTPSVerificationAndTCP; TestRealAgentServiceProbeExecutesFromEnrolledNode",
+      "candidate_coverage": "TestExecutorHTTPStatusHTTPSVerificationAndTCP; TestRealAgentServiceProbeLifecycle (real enrolled Agent/Core HTTP loopback fixture)",
       "runs": [
         {
           "run_id": "s14-local-20261009T044600Z",
@@ -67,9 +67,18 @@
           "persisted_console_log": false,
           "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
           "attempt": 3
+        },
+        {
+          "run_id": "s14-lifecycle-20261009T080742Z",
+          "status": "PASS",
+          "command": "go test -run '^TestRealAgentServiceProbeLifecycle$' -count=1 -v ./internal/core/server",
+          "result": "One focused real Core/Agent loopback lifecycle run passed in 70.14s; assertions verified three HTTP 503 failures, two HTTP 204 recoveries, lease-expiry unknown/node_offline with cleared counters/no pending runs, and same-Agent reconnect with two fresh successes.",
+          "persisted_console_log": true,
+          "log_artifact": ".artifacts/stage-runs/s14-real-agent-probe-lifecycle-20261009-after-frontend.log",
+          "note": "Local candidate loopback evidence only. The normative status remains NOT_READY because external-node evidence is still outstanding."
         }
       ],
-      "reason": "本地受控HTTP与进程内真实Agent/Core loopback检查通过；独立被控节点及其外部受控HTTP目标记录仍缺失。"
+      "reason": "本地受控HTTP fixture及真实Agent/Core loopback已核验三次503和后续204结果；独立被控节点及其外部受控HTTP目标记录仍缺失。"
     },
     "S14-02": {
       "status": "NOT_READY",
@@ -153,7 +162,7 @@
       "expected": "阈值符合配置。",
       "environment": "可控服务状态序列和配置阈值。",
       "evidence_required": "逐次结果与异常/恢复时刻。",
-      "candidate_coverage": "TestProbeConfigRunHistoryThresholdsAndRevision (three failed results and two successful results)",
+      "candidate_coverage": "TestProbeConfigRunHistoryThresholdsAndRevision; TestRealAgentServiceProbeLifecycle (real Agent/Core 503×3→unhealthy, 204×2→healthy lifecycle)",
       "runs": [
         {
           "run_id": "s14-local-20261009T044600Z",
@@ -181,9 +190,18 @@
           "persisted_console_log": false,
           "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
           "attempt": 3
+        },
+        {
+          "run_id": "s14-lifecycle-20261009T080742Z",
+          "status": "PASS",
+          "command": "go test -run '^TestRealAgentServiceProbeLifecycle$' -count=1 -v ./internal/core/server",
+          "result": "One focused real Core/Agent loopback lifecycle run passed in 70.14s; assertions verified three HTTP 503 failures, two HTTP 204 recoveries, lease-expiry unknown/node_offline with cleared counters/no pending runs, and same-Agent reconnect with two fresh successes.",
+          "persisted_console_log": true,
+          "log_artifact": ".artifacts/stage-runs/s14-real-agent-probe-lifecycle-20261009-after-frontend.log",
+          "note": "Local candidate loopback evidence only. The normative status remains NOT_READY because external-node evidence is still outstanding."
         }
       ],
-      "reason": "Core状态阈值单测通过；由受控服务驱动的完整Agent/Core连续状态及恢复序列未执行。"
+      "reason": "本地真实Agent/Core loopback和受控HTTP服务已完整驱动三次失败、异常状态、两次成功及恢复；独立被控节点及其外部受控服务的规范证据仍缺失。"
     },
     "S14-05": {
       "status": "NOT_READY",
@@ -191,7 +209,7 @@
       "expected": "未知，不伪造服务停止。",
       "environment": "Agent断网期间配置的探测目标。",
       "evidence_required": "unknown状态、过期时间和无误触发。",
-      "candidate_coverage": "TestOfflineNodeMakesProbeUnknownWithoutCountingFailure; TestOfflineProbeSchedulerDefersWithoutPendingRunsOrDuplicateHistory",
+      "candidate_coverage": "TestOfflineNodeMakesProbeUnknownWithoutCountingFailure; TestOfflineProbeSchedulerDefersWithoutPendingRunsOrDuplicateHistory; TestRealAgentServiceProbeLifecycle (real WebSocket lease expiry, node_offline, and same-Agent reconnect)",
       "runs": [
         {
           "run_id": "s14-local-20261009T044600Z",
@@ -219,9 +237,18 @@
           "persisted_console_log": false,
           "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
           "attempt": 3
+        },
+        {
+          "run_id": "s14-lifecycle-20261009T080742Z",
+          "status": "PASS",
+          "command": "go test -run '^TestRealAgentServiceProbeLifecycle$' -count=1 -v ./internal/core/server",
+          "result": "One focused real Core/Agent loopback lifecycle run passed in 70.14s; assertions verified three HTTP 503 failures, two HTTP 204 recoveries, lease-expiry unknown/node_offline with cleared counters/no pending runs, and same-Agent reconnect with two fresh successes.",
+          "persisted_console_log": true,
+          "log_artifact": ".artifacts/stage-runs/s14-real-agent-probe-lifecycle-20261009-after-frontend.log",
+          "note": "Local candidate loopback evidence only. The normative status remains NOT_READY because external-node evidence is still outstanding."
         }
       ],
-      "reason": "Core存储及调度测试验证unknown、node_offline历史、计数清零、重复离线不重复历史且无pending run；真实Agent websocket断线、lease过期和恢复未执行。"
+      "reason": "真实Agent/Core loopback已验证Agent停止、Core lease过期、节点offline、探测unknown/node_offline、计数清零、无pending run及同一身份重连恢复；独立远端节点验收证据仍缺失。"
     },
     "S14-06": {
       "status": "NOT_READY",
@@ -318,5 +345,22 @@
     "integration_version": 8,
     "status": "NOT_READY",
     "note": "This integration keeps versions 1–5 unchanged, registers S06 dashboard at v5, Compose at v6, Compose Editor at v7, and appends S14 service-probe tables at v8. The isolated candidate migration number is not applied directly."
+  },
+  "focused_candidate_evidence": {
+    "run_id": "s14-lifecycle-20261009T080742Z",
+    "status": "PASS",
+    "command": "go test -run '^TestRealAgentServiceProbeLifecycle$' -count=1 -v ./internal/core/server",
+    "started_at": "2026-10-09T08:07:42Z",
+    "duration_seconds": 70.14,
+    "environment": "Linux arm64, Go 1.26.8; local controlled HTTP fixture, real in-process Core HTTPS/WebSocket server, enrolled Agent process, SQLite; development lease timeout 8s with the production Agent heartbeat cadence.",
+    "result": "HTTP 503 results 1–3 moved the Core probe to unhealthy; result 4 was 204 and kept unhealthy with one consecutive success; result 5 was 204 and restored healthy. Canceling the Agent led the real Core lease path to mark the node offline and the probe unknown/node_offline, clear counters, write one offline history row, and leave no pending run. Restarting the same enrolled Agent produced two fresh 204 results and restored healthy.",
+    "log_artifact": ".artifacts/stage-runs/s14-real-agent-probe-lifecycle-20261009-after-frontend.log",
+    "normative_status_note": "Candidate loopback evidence only; S14-04 and S14-05 remain NOT_READY pending the plan-required independent node/environment evidence."
+  },
+  "setup_preflight": {
+    "outcome": "setup_failure_before_tests",
+    "command": "go test -run '^TestRealAgentServiceProbeLifecycle$' -count=1 -v ./internal/core/server",
+    "result": "The first launch did not enter tests because this isolated worktree had no embedded webassets dist directory (pattern all:dist: no matching files found). `make frontend` then completed typecheck and build; the single focused integration run above passed.",
+    "log_artifact": ".artifacts/stage-runs/s14-real-agent-probe-lifecycle-20261009.log"
   }
 }
