@@ -3,11 +3,14 @@ package composeedit_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -334,6 +337,186 @@ volumes:
 	if err != nil || string(conflictAfter) != string(conflictingSource) {
 		t.Fatalf("stale editor overwrote the external source change: err=%v source=%s", err, conflictAfter)
 	}
+
+	// Compose's required interpolation must reject an empty/missing variable
+	// before either preview or apply can alter source files or Engine resources.
+	missingEnvFile := filepath.Join(fixtureDir, "missing-required.env")
+	if err := os.WriteFile(missingEnvFile, []byte("SAFE_FIXTURE_VALUE=compose-env-secret-sentinel\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("S11_SECRET", "")
+	missingSourceHash := sha256.Sum256(conflictAfter)
+	missingSourceHashHex := hex.EncodeToString(missingSourceHash[:])
+	missingBefore := composeServiceStates(t, ctx, engine, ref.Name)
+	if len(missingBefore) != 3 {
+		t.Fatalf("required-variable fixture expected three existing services before rejection, got %+v", missingBefore)
+	}
+	missingReadRequest := protocol.ComposeRequest{
+		OperationID: "s11-missing-env-read-" + safeRunSuffix(runID),
+		Action:      protocol.ComposeEditRead,
+		Project:     ref,
+		EnvFiles:    []string{missingEnvFile},
+		Profiles:    []string{"monitoring"},
+		Editor:      &protocol.ComposeEditorInput{},
+	}
+	missingRead, err := manager.Execute(ctx, missingReadRequest)
+	if err != nil {
+		t.Fatalf("read sources for missing required environment variable case: %v", err)
+	}
+	missingVersions := make(map[string]string, len(missingRead.Editor.Files))
+	for _, file := range missingRead.Editor.Files {
+		missingVersions[file.Path] = file.Version
+	}
+	missingPort := findAvailablePublishedPortDifferentFrom(t, ctx, runner, dockerHost, fixtureDir, suite, images["nginx"], newPort)
+	missingInput := protocol.ComposeEditorInput{
+		ExpectedVersions: missingVersions,
+		PortEdits: []protocol.ComposePortEdit{{
+			File: config, Service: "web", Target: 80, Protocol: "tcp",
+			OldHostIP: "127.0.0.1", OldPublished: uint16(newPort),
+			NewHostIP: "127.0.0.1", NewPublished: uint16(missingPort),
+		}},
+	}
+	for _, action := range []protocol.ComposeAction{protocol.ComposeEditPreview, protocol.ComposeEditApply} {
+		request := protocol.ComposeRequest{
+			OperationID: "s11-missing-env-" + string(action) + "-" + safeRunSuffix(runID),
+			Action:      action,
+			Project:     ref,
+			EnvFiles:    []string{missingEnvFile},
+			Profiles:    []string{"monitoring"},
+			Editor:      &missingInput,
+		}
+		if _, err := manager.Execute(ctx, request); !errors.Is(err, agentcomposeedit.ErrInvalidSource) {
+			t.Fatalf("%s accepted a missing required Compose variable: %v", action, err)
+		} else if !strings.Contains(err.Error(), "current-compose-config-quiet") {
+			t.Fatalf("%s failed at an unexpected preflight stage for the missing required variable: %v", action, err)
+		} else if strings.Contains(err.Error(), "compose-env-secret-sentinel") || strings.Contains(err.Error(), "top-secret-s11-value") {
+			t.Fatalf("%s exposed environment content in its bounded diagnostic: %v", action, err)
+		}
+		currentSource, readErr := os.ReadFile(config)
+		currentHash := sha256.Sum256(currentSource)
+		if readErr != nil || hex.EncodeToString(currentHash[:]) != missingSourceHashHex {
+			t.Fatalf("%s changed the Compose source after required-variable rejection: read_err=%v before=%s after=%s", action, readErr, missingSourceHashHex, hex.EncodeToString(currentHash[:]))
+		}
+		missingAfter := composeServiceStates(t, ctx, engine, ref.Name)
+		if !sameComposeServiceStates(missingBefore, missingAfter) {
+			t.Fatalf("%s recreated or changed existing Compose services after required-variable rejection: before=%+v after=%+v", action, missingBefore, missingAfter)
+		}
+	}
+}
+
+// TestComposeEditorRejectsMissingRequiredEnvironmentVariable uses the locked
+// Compose CLI with a read-only fake Engine; config resolution itself requires no
+// daemon and must reject before the editor asks the Engine to inspect a project.
+func TestComposeEditorRejectsMissingRequiredEnvironmentVariable(t *testing.T) {
+	repoRoot, err := findRepositoryRoot()
+	if err != nil {
+		t.Skip("repository toolchain fixture is unavailable")
+	}
+	dockerPath, err := exec.LookPath("docker")
+	if err != nil {
+		t.Skip("Docker CLI is unavailable")
+	}
+	pluginDir := filepath.Join(repoRoot, ".tools", "docker", "cli-plugins")
+	if _, err := os.Stat(filepath.Join(pluginDir, "docker-compose")); err != nil {
+		t.Skip("locked Docker Compose plugin is unavailable")
+	}
+	dockerConfig := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dockerConfig, "config.json"), []byte(fmt.Sprintf("{\"cliPluginsExtraDirs\":[%q]}\n", pluginDir)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_CONFIG", dockerConfig)
+	t.Setenv("ND_S11_REQUIRED", "")
+	projectDir := t.TempDir()
+	config := filepath.Join(projectDir, "compose.yaml")
+	envFile := filepath.Join(projectDir, "missing.env")
+	original := []byte("services:\n  web:\n    image: nginx:alpine\n    environment:\n      REQUIRED_VALUE: ${ND_S11_REQUIRED:?compose-required-secret-sentinel}\n      SAFE_VALUE: ${ND_S11_SAFE}\n")
+	if err := os.WriteFile(config, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(envFile, []byte("ND_S11_SAFE=compose-env-secret-sentinel\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	project := protocol.ComposeProjectRef{Name: "nd-s11-missing-env", WorkingDirectory: projectDir, ConfigFiles: []string{config}}
+	project.Key = protocol.ComposeProjectKey(project.Name, project.WorkingDirectory, project.ConfigFiles)
+	engine := &composeEditorCallCounter{}
+	dockerHost := "unix://" + filepath.Join(projectDir, "unavailable.sock")
+	manager, err := agentcomposeedit.NewManager(engine, agentcompose.ExecRunner{DockerPath: dockerPath, DockerHost: dockerHost}, agentcomposeedit.OSFileStore{}, agentcomposeedit.Options{DockerHost: dockerHost, BackupDir: filepath.Join(t.TempDir(), "transactions")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	readRequest := protocol.ComposeRequest{OperationID: "s11-missing-env-read", Action: protocol.ComposeEditRead, Project: project, EnvFiles: []string{envFile}, Editor: &protocol.ComposeEditorInput{}}
+	read, err := manager.Execute(context.Background(), readRequest)
+	if err != nil {
+		t.Fatalf("read the missing-variable source context: %v", err)
+	}
+	versions := make(map[string]string, len(read.Editor.Files))
+	for _, file := range read.Editor.Files {
+		versions[file.Path] = file.Version
+	}
+	input := &protocol.ComposeEditorInput{ExpectedVersions: versions, Files: []protocol.ComposeSourceFile{{Path: config, Content: string(original) + "# proposed change\n"}}}
+	request := protocol.ComposeRequest{OperationID: "s11-missing-env-preview", Action: protocol.ComposeEditPreview, Project: project, EnvFiles: []string{envFile}, Editor: input}
+	for _, action := range []protocol.ComposeAction{protocol.ComposeEditPreview, protocol.ComposeEditApply} {
+		request.Action = action
+		request.OperationID = "s11-missing-env-" + string(action)
+		if _, err := manager.Execute(context.Background(), request); !errors.Is(err, agentcomposeedit.ErrInvalidSource) {
+			t.Fatalf("%s accepted missing required variable: %v", action, err)
+		} else if !strings.Contains(err.Error(), "current-compose-config-quiet") {
+			t.Fatalf("%s failed at an unexpected preflight stage for the missing required variable: %v", action, err)
+		} else if strings.Contains(err.Error(), "compose-required-secret-sentinel") || strings.Contains(err.Error(), "compose-env-secret-sentinel") {
+			t.Fatalf("%s exposed Compose diagnostics or environment contents: %v", action, err)
+		}
+		current, readErr := os.ReadFile(config)
+		if readErr != nil || !bytes.Equal(current, original) {
+			t.Fatalf("%s changed source after required-variable rejection: err=%v", action, readErr)
+		}
+		if engine.calls != 0 {
+			t.Fatalf("%s queried project resources before required-variable validation: Engine calls=%d", action, engine.calls)
+		}
+	}
+}
+
+type composeEditorCallCounter struct{ calls int }
+
+func (engine *composeEditorCallCounter) ListAll(context.Context) ([]string, error) {
+	engine.calls++
+	return nil, nil
+}
+
+func (engine *composeEditorCallCounter) Inspect(context.Context, string) (agentdocker.Container, error) {
+	engine.calls++
+	return agentdocker.Container{}, errors.New("no containers are expected before compose preflight")
+}
+
+type composeServiceState struct {
+	id              string
+	state           string
+	running, paused bool
+	restarting      bool
+}
+
+func composeServiceStates(t *testing.T, ctx context.Context, engine agentcomposeedit.Engine, project string) map[string]composeServiceState {
+	t.Helper()
+	states := make(map[string]composeServiceState)
+	for _, item := range engineContainers(t, ctx, engine) {
+		if item.Compose == nil || item.Compose.Project != project {
+			continue
+		}
+		states[item.Compose.Service] = composeServiceState{id: item.ID, state: item.State, running: item.Running, paused: item.Paused, restarting: item.Restarting}
+	}
+	return states
+}
+
+func sameComposeServiceStates(before, after map[string]composeServiceState) bool {
+	if len(before) != len(after) {
+		return false
+	}
+	for service, previous := range before {
+		current, ok := after[service]
+		if !ok || current != previous {
+			return false
+		}
+	}
+	return true
 }
 
 // TestDINDComposeEditorRollbackSurvivesMutableTagDrift runs one real Engine
