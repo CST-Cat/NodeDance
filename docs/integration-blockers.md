@@ -35,6 +35,6 @@ S09 remains visible through the generic stage runner, which reports `NOT_READY` 
 - Focused Go suite: S16 prepared-ACK/helper paths, S12 SQLite preference migration, S15 no-healthcheck alert handling, S01 migration-version compatibility, integration schema v10, and package compilation passed.
 - `go build ./cmd/nodedance ./cmd/nodedance-agent ./cmd/nodedance-release`: passed.
 - Core smoke on `127.0.0.1:18180`: `/api/v1/health` and embedded `/` returned HTTP 200; Ctrl-C stopped Core and released the port. The smoke exposed a missing WaitGroup increment for `serviceProbeScheduler`; that shutdown fix is in commit `ff723cd` and the same start/health/stop path passed afterward.
-- S04 DIND trace and physical/user-owned server, iPad, and Android testing were not run. These remain `NOT_READY`; responsive browser CSS checks are retained in the existing candidate reports.
+- The S04 owned-DIND trace and real Core-to-Agent-to-managed-node end-to-end evidence remain outstanding, so the affected formal cases stay `NOT_READY`. Responsive layouts have browser checks at multiple CSS viewport widths; physical iPad and Android devices are not release-acceptance requirements.
 
 The isolated stage reports remain the source of per-case evidence and are intentionally preserved. Current formal acceptance uses one meaningful complete run; previous repeated runs remain historical evidence only.
