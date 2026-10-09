@@ -21,18 +21,25 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
+      - name: Build embedded frontend assets required by Core packages
+        run: |
+          mkdir -p .artifacts/s11
+          make frontend 2>&1 | tee .artifacts/s11/frontend.log
+
       - name: Run focused S11 Go tests and vet
         run: |
           mkdir -p .artifacts/s11
           make test-s11-go 2>&1 | tee .artifacts/s11/go-focused.log
 
-      - name: Preserve Go component report
+      - name: Preserve frontend build and Go component reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: nodedance-s11-go-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: warn
-          path: .artifacts/s11/go-focused.log
+          path: |
+            .artifacts/s11/frontend.log
+            .artifacts/s11/go-focused.log
 
   responsive-editor:
     name: S11 / responsive Compose editor / Chromium
