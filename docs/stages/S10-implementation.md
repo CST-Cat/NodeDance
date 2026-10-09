@@ -105,10 +105,52 @@ checks and the Chromium/WebKit/Firefox mock browser suite. The local focused
 Chromium suite passed. Local Firefox/WebKit startup did not complete in this
 environment; their results remain pending the clean Actions runner.
 
-The following remain `NOT_READY` unless a report records a real execution:
+## Isolated live Core-Agent-host API slice
 
-- Real browser-to-Core-to-Agent-to-target filesystem integration.
+`TestRealAgentHostFilesAPIEndToEnd` runs the actual TLS Core, public authenticated
+Agent enrollment API, Agent HTTPS enrollment, Agent WSS connection, and host
+filesystem service. It uses `testing.T.TempDir()` and sets
+`NODEDANCE_AGENT_FILE_ROOT` to only the child directory `host-file-root`;
+Core data, Agent state, and a root-external canary are siblings outside that
+file root. The test runs no real VPS, Docker daemon, systemd service, or user
+business directory.
+
+The focused command is:
+
+```bash
+go test -v -count=1 -run '^TestRealAgentHostFilesAPIEndToEnd$' ./internal/core/server
+```
+
+The run covers the protected Core API with an actual registered Agent: upload,
+list, stat, rename, and download of a Chinese/spaced filename with SHA-256
+comparison; text read followed by an external host write and a stale edit that
+must return HTTP 409 without replacing the external bytes; `..` and an
+escaping symlink that must not read the root-external canary; and delete with
+CSRF and exact-path confirmation plus a persisted audit target containing the
+node, task, and escaped exact path. A missing CSRF header and a mismatched
+delete confirmation leave the file intact. The test verifies Core download
+spools and Agent upload temporaries are gone, stops its Agent/Core, removes
+only the test-owned TempDir, and verifies that directory is absent. Go's own
+TempDir cleanup remains registered as a fallback on early test failure.
+
+The first execution failed because the test incorrectly required an escaping
+symlink to return HTTP 400. The real Agent refused the symlink, but Go's
+`os.Root` confinement error currently maps to the generic file `unavailable`
+code (HTTP 503). The assertion was narrowed to require a rejected response and
+an unchanged outside-root canary; it did not alter production error mapping.
+The focused test then passed once. The first failure and corrected pass are
+both retained in the current stage report and local test logs.
+
+This bounded local integration supplies live evidence for S10-01, S10-02,
+and S10-07, plus file-branch evidence for S10-09 (directory deletion remains
+untested). The full stage stays `NOT_READY`: the test uses a small
+fixture, runs the Agent as the current test account, and does not cover large
+transfer memory use or the systemd sandbox.
+
+The following remain `NOT_READY` until a report records the required evidence:
+
 - 100 MiB and 1 GiB transfer SHA-256 and RSS-delta measurement (≤64 MiB).
 - Real target read/write permissions for the administrator-selected file root
   and its Linux UID/GID/ACL setup.
 - Read-only filesystem and non-root owner-preservation cases on a real target.
+- Full S10 browser-to-Core-to-Agent workflow and remaining negative cases.

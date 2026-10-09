@@ -29,12 +29,20 @@ CORE_TESTS = (
     "TestFileRoutesRequireAdministratorSession|TestLogoutCancelsSessionBoundFileTransfer|"
     "TestRevocationClosesStalledUploadBodyAndCancelsAgentTransfer|"
     "TestCanceledDispatchedFileWriteReturnsUnknownAndCancelsAgent|"
-    "TestCoreReconcilesAgentFileJournalResults"
+    "TestCoreReconcilesAgentFileJournalResults|TestRealAgentHostFilesAPIEndToEnd"
 )
+LIVE_FILE_CASES = {"S10-01", "S10-02", "S10-07", "S10-09"}
+LIVE_FILE_PARTIAL_CASES = {"S10-09"}
 NOT_READY = (
-    "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, "
+    "A bounded real TLS/Core-WebSocket/Agent/host-file-root slice passed in an automatically cleaned TempDir. "
+    "The 100 MiB/1 GiB RSS comparison, "
     "installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation "
-    "cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
+    "cases remain unverified; this slice does not establish installed target-host behavior."
+)
+NO_LIVE_RUN = (
+    "No real Core-Agent-host filesystem run was included in this runner mode. "
+    "The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, "
+    "read-only filesystem, and owner-preservation cases remain unverified."
 )
 
 
@@ -62,30 +70,59 @@ def run(label: str, command: list[str], timeout: int = 600) -> dict[str, object]
     return check
 
 
-def save_report(checks: list[dict[str, object]]) -> None:
+def save_report(checks: list[dict[str, object]], mode: str) -> None:
     failed = any(check["status"] != "PASS" for check in checks)
     stage_status = "FAIL" if failed else "NOT_READY"
-    reason = "S10 component check failed; inspect the recorded log." if failed else NOT_READY
+    live_check = next((check for check in checks if check["name"].startswith("go-core-session-")), None)
+    live_pass = bool(live_check and live_check["status"] == "PASS")
+    reason = "S10 focused check failed; inspect the recorded log." if failed else NOT_READY if live_pass else NO_LIVE_RUN
+    previous = json.loads(REPORT.read_text(encoding="utf-8")) if REPORT.is_file() else {}
+    attempt_history = list(previous.get("focused_attempt_history", []))
+    if live_check:
+        attempt_history.append({
+            "run_id": RUN_ID,
+            "status": live_check["status"],
+            "command": live_check["command"],
+            "evidence": live_check["evidence"],
+            "recorded_at": timestamp(),
+        })
     tests = {}
     for case in STAGE.get("tests", []):
-        tests[case["id"]] = {
+        case_status = "PASS" if live_pass and case["id"] in LIVE_FILE_CASES - LIVE_FILE_PARTIAL_CASES else "NOT_READY"
+        item = {
             "status": "NOT_READY",
             "action": case["action"],
             "expected": case["expected"],
             "environment": case["environment"],
             "evidence_required": case["evidence"],
             "runs": [],
-            "reason": reason if failed else NOT_READY,
         }
+        item["status"] = case_status
+        if live_pass and case["id"] in LIVE_FILE_CASES:
+            if case["id"] in LIVE_FILE_PARTIAL_CASES:
+                item["reason"] = "The real Agent file-delete branch and exact audit target passed; empty and non-empty directory deletion remain unverified."
+            else:
+                item["reason"] = "The focused real HTTPS/Core-WebSocket/registered-Agent test passed against an isolated host file root."
+            item["runs"] = [{
+                "run_id": RUN_ID,
+                "status": "PASS",
+                "command": live_check["command"],
+                "evidence": live_check["evidence"],
+                "recorded_at": timestamp(),
+            }]
+        else:
+            item["reason"] = reason
+        tests[case["id"]] = item
     report = {
         "schema": 1,
         "stage": "S10",
-        "mode": "component-and-mock-e2e",
+        "mode": mode,
         "status": stage_status,
         "run_id": RUN_ID,
         "updated_at": timestamp(),
         "reason": reason,
         "checks": checks,
+        "focused_attempt_history": attempt_history,
         "tests": tests,
     }
     REPORT.parent.mkdir(parents=True, exist_ok=True)
@@ -138,7 +175,7 @@ def main() -> int:
             checks.append(run(f"playwright-{attempt}", browser_command, timeout=300))
             if checks[-1]["status"] != "PASS":
                 break
-    save_report(checks)
+    save_report(checks, args.mode)
     return 1 if any(check["status"] != "PASS" for check in checks) else 0
 
 
