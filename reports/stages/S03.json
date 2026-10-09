@@ -1,92 +1,5104 @@
 {
   "schema": 1,
   "stage": "S03",
-  "mode": "initial",
+  "mode": "full",
+  "run_id": "20261008T214321Z-02157879",
+  "updated_at": "2026-10-09T01:09:07.836642+00:00",
   "status": "NOT_READY",
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "reason": "All nine original and supplemental S03 cases passed three consecutive real local runs; the overall stage remains NOT_READY until both architecture GitHub Actions gates pass. Pending gates: ubuntu-24.04, ubuntu-24.04-arm",
+  "repeat_required": 3,
+  "repeat_requested": 3,
+  "verification_status": "NOT_READY",
+  "evidence_root": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879",
+  "environment": {
+    "go": "go version go1.26.8 linux/arm64",
+    "goarch": "aarch64",
+    "guest_probe_enabled": true,
+    "web_engines": [
+      "chromium",
+      "webkit",
+      "firefox"
+    ],
+    "ci_runner": null
+  },
+  "checks": [
+    {
+      "attempt": 1,
+      "results": [
+        {
+          "name": "guest_resource_safety",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/guest-resource-safety.log",
+          "reason": "",
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "-v",
+            "scripts.test.test_s03_guest_resources"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "metrics_race",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/metrics-race.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-race",
+            "-count=1",
+            "./internal/agent/metrics",
+            "./internal/core/metrics",
+            "./internal/protocol"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "linux_proc_filesystem",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/linux-proc-filesystem.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-count=1",
+            "-v",
+            "./internal/agent/metrics",
+            "-run",
+            "^TestLinuxProcAndFilesystemAgreement$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "real_core_agent_api_stream",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/real-core-agent-api-stream.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-race",
+            "-count=1",
+            "./internal/core/server",
+            "-run",
+            "^TestRealAgentMetricsAPIAndDashboardStream$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "counter_reset_formula",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/counter-reset-formula.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-count=1",
+            "./internal/agent/metrics",
+            "-run",
+            "^TestNetworkRateFirstSampleResetAndUnits$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "docker_sdk_stall_fixture",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/docker-sdk-stall-fixture.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-race",
+            "-count=1",
+            "./scripts/test/s03-docker-stall-fixture",
+            "-run",
+            "^TestPinnedSDKListTimeoutLeavesPingUsable$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "real_browser_guest_dashboard",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-summary.json",
+          "reason": "",
+          "command": [
+            "bash",
+            "scripts/test/s03-live-guest-agent.sh"
+          ],
+          "exit_code": 0,
+          "engines": [
+            {
+              "engine": "chromium",
+              "status": "PASS",
+              "reason": "",
+              "distinct_samples": 41,
+              "duplicate_snapshot_deliveries": 53,
+              "dom_sample_count": 55,
+              "sample_to_dom_pairs": 36,
+              "unmatched_samples": 5,
+              "latency_stats": {
+                "count": 36,
+                "p50Millis": 174,
+                "p95Millis": 5566,
+                "p99Millis": 38402,
+                "maxMillis": 38402,
+                "minMillis": 134
+              },
+              "load_stats": {
+                "baselineCPUMedianPercent": 15.805785123966928,
+                "duringCPUPeakPercent": 62.006403415154715,
+                "afterReleaseCPUMedianPercent": 8.333333333333313,
+                "baselineUsedBytesMedian": 206295040,
+                "duringUsedBytesPeak": 483950592,
+                "afterReleaseUsedBytesMedian": 216322048
+              },
+              "viewports": [
+                {
+                  "width": 375,
+                  "scrollWidth": 375,
+                  "clientWidth": 375
+                },
+                {
+                  "width": 768,
+                  "scrollWidth": 768,
+                  "clientWidth": 768
+                },
+                {
+                  "width": 1440,
+                  "scrollWidth": 1440,
+                  "clientWidth": 1440
+                }
+              ],
+              "assertions": {
+                "realAgentCPUAndMemory": true,
+                "initialUnknownNotZero": true,
+                "interfacesAndMounts": true,
+                "controlledLoadAndRecovery": true,
+                "interfaceIdentityReset": true,
+                "permissionFailureAndRecovery": true,
+                "dockerStallDoesNotBlockAgent": true,
+                "guestClockCorrection": true,
+                "networkOfflineAndRecovery": true,
+                "realReboot": true
+              },
+              "evidence": ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-chromium.json"
+            },
+            {
+              "engine": "webkit",
+              "status": "PASS",
+              "reason": "",
+              "distinct_samples": 41,
+              "duplicate_snapshot_deliveries": 53,
+              "dom_sample_count": 55,
+              "sample_to_dom_pairs": 36,
+              "unmatched_samples": 5,
+              "latency_stats": {
+                "count": 36,
+                "p50Millis": 178,
+                "p95Millis": 5566,
+                "p99Millis": 38410,
+                "maxMillis": 38410,
+                "minMillis": 136
+              },
+              "load_stats": {
+                "baselineCPUMedianPercent": 15.805785123966928,
+                "duringCPUPeakPercent": 62.006403415154715,
+                "afterReleaseCPUMedianPercent": 8.333333333333313,
+                "baselineUsedBytesMedian": 206295040,
+                "duringUsedBytesPeak": 483950592,
+                "afterReleaseUsedBytesMedian": 216322048
+              },
+              "viewports": [
+                {
+                  "width": 375,
+                  "scrollWidth": 375,
+                  "clientWidth": 375
+                },
+                {
+                  "width": 768,
+                  "scrollWidth": 768,
+                  "clientWidth": 768
+                },
+                {
+                  "width": 1440,
+                  "scrollWidth": 1440,
+                  "clientWidth": 1440
+                }
+              ],
+              "assertions": {
+                "realAgentCPUAndMemory": true,
+                "initialUnknownNotZero": true,
+                "interfacesAndMounts": true,
+                "controlledLoadAndRecovery": true,
+                "interfaceIdentityReset": true,
+                "permissionFailureAndRecovery": true,
+                "dockerStallDoesNotBlockAgent": true,
+                "guestClockCorrection": true,
+                "networkOfflineAndRecovery": true,
+                "realReboot": true
+              },
+              "evidence": ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-webkit.json"
+            },
+            {
+              "engine": "firefox",
+              "status": "PASS",
+              "reason": "",
+              "distinct_samples": 41,
+              "duplicate_snapshot_deliveries": 53,
+              "dom_sample_count": 55,
+              "sample_to_dom_pairs": 36,
+              "unmatched_samples": 5,
+              "latency_stats": {
+                "count": 36,
+                "p50Millis": 177,
+                "p95Millis": 5570,
+                "p99Millis": 38405,
+                "maxMillis": 38405,
+                "minMillis": 135
+              },
+              "load_stats": {
+                "baselineCPUMedianPercent": 15.805785123966928,
+                "duringCPUPeakPercent": 62.006403415154715,
+                "afterReleaseCPUMedianPercent": 8.333333333333313,
+                "baselineUsedBytesMedian": 206295040,
+                "duringUsedBytesPeak": 483950592,
+                "afterReleaseUsedBytesMedian": 216322048
+              },
+              "viewports": [
+                {
+                  "width": 375,
+                  "scrollWidth": 375,
+                  "clientWidth": 375
+                },
+                {
+                  "width": 768,
+                  "scrollWidth": 768,
+                  "clientWidth": 768
+                },
+                {
+                  "width": 1440,
+                  "scrollWidth": 1440,
+                  "clientWidth": 1440
+                }
+              ],
+              "assertions": {
+                "realAgentCPUAndMemory": true,
+                "initialUnknownNotZero": true,
+                "interfacesAndMounts": true,
+                "controlledLoadAndRecovery": true,
+                "interfaceIdentityReset": true,
+                "permissionFailureAndRecovery": true,
+                "dockerStallDoesNotBlockAgent": true,
+                "guestClockCorrection": true,
+                "networkOfflineAndRecovery": true,
+                "realReboot": true
+              },
+              "evidence": ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-firefox.json"
+            }
+          ]
+        },
+        {
+          "name": "isolated_guest_cpu_memory",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "reason": "",
+            "evidence": "cpu-memory-load.json",
+            "load_exit_code": "0"
+          }
+        },
+        {
+          "name": "isolated_guest_clock_reboot",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "reason": "",
+            "evidence": "guest-clock-reboot.json"
+          }
+        },
+        {
+          "name": "isolated_guest_agent_load_response",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "baseline_cpu_percent": [
+              27.526881720430108,
+              12.124352331606204,
+              8.401639344262293,
+              10.461538461538444,
+              10.461538461538444,
+              16.787564766839402,
+              15.805785123966928,
+              66.15886833514692,
+              65.2081109925294
+            ],
+            "during_load_cpu_percent": [
+              65.2081109925294,
+              59.02173913043472,
+              58.29787234042565,
+              62.006403415154715,
+              14.895833333333313,
+              3.7411526794742103
+            ],
+            "after_release_cpu_percent": [
+              3.7411526794742103,
+              8.333333333333313,
+              2.7300303336704426
+            ],
+            "baseline_used_bytes": [
+              202702848,
+              202944512,
+              203972608,
+              203972608,
+              204230656,
+              204230656,
+              206295040,
+              206807040,
+              331444224,
+              459436032
+            ],
+            "during_load_used_bytes": [
+              459436032,
+              483950592,
+              482865152,
+              325963776,
+              218574848,
+              218673152
+            ],
+            "after_release_used_bytes": [
+              218673152,
+              216322048,
+              216322048
+            ],
+            "baseline_cpu_median_percent": 15.805785123966928,
+            "during_load_cpu_peak_percent": 65.2081109925294,
+            "baseline_memory_median_bytes": 204230656,
+            "during_load_memory_peak_bytes": 483950592,
+            "recovered_cpu_percent": 2.7300303336704426,
+            "recovered_memory_bytes": 216322048
+          }
+        },
+        {
+          "name": "isolated_guest_clock_offset_core",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "pre_clock_offset_ms": [
+              30149.084628,
+              29206.483625,
+              29308.176193,
+              29586.305649,
+              29366.008737,
+              29418.800499,
+              29199.770489,
+              29178.957661,
+              29231.320402
+            ],
+            "post_clock_offset_ms": [
+              -3569863.698139,
+              -3570264.316042,
+              -3570264.316042,
+              -3566435.417871,
+              -3570277.532268,
+              -3570248.106567,
+              -3570248.106567,
+              -3570248.106567
+            ],
+            "raw_guest_clock": {
+              "boot_id_before": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+              "boot_id_after": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+              "wall_before_unix": 1791495967,
+              "wall_target_unix": 1791499567,
+              "wall_after_unix": 1791499567,
+              "wall_delta_seconds": 3600,
+              "valid": true,
+              "highest_pre_clock_generation": 1,
+              "correlated_core_samples": [
+                {
+                  "phase": "permission_recovery",
+                  "bootId": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+                  "generation": 2,
+                  "sequence": 6,
+                  "collectedAt": "2026-10-08T22:46:07.0698504Z",
+                  "receivedAt": "2026-10-08T14:46:37.206152261-07:00",
+                  "serverTime": "2026-10-08T21:46:37.610053111Z",
+                  "clockOffsetMs": -3569863.698139,
+                  "measuredOffsetMs": -3569863.6980056763
+                },
+                {
+                  "phase": "permission_recovery",
+                  "bootId": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+                  "generation": 2,
+                  "sequence": 7,
+                  "collectedAt": "2026-10-08T22:46:12.069637376Z",
+                  "receivedAt": "2026-10-08T14:46:41.805321334-07:00",
+                  "serverTime": "2026-10-08T21:46:42.065076909Z",
+                  "clockOffsetMs": -3570264.316042,
+                  "measuredOffsetMs": -3570264.3160820007
+                },
+                {
+                  "phase": "network_isolated",
+                  "bootId": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+                  "generation": 2,
+                  "sequence": 7,
+                  "collectedAt": "2026-10-08T22:46:12.069637376Z",
+                  "receivedAt": "2026-10-08T14:46:41.805321334-07:00",
+                  "serverTime": "2026-10-08T21:46:45.300685331Z",
+                  "clockOffsetMs": -3570264.316042,
+                  "measuredOffsetMs": -3570264.3160820007
+                },
+                {
+                  "phase": "network_recovery",
+                  "bootId": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+                  "generation": 4,
+                  "sequence": 1,
+                  "collectedAt": "2026-10-08T22:46:37.067228048Z",
+                  "receivedAt": "2026-10-08T14:47:10.631810177-07:00",
+                  "serverTime": "2026-10-08T21:47:10.780383801Z",
+                  "clockOffsetMs": -3566435.417871,
+                  "measuredOffsetMs": -3566435.4181289673
+                },
+                {
+                  "phase": "network_recovery",
+                  "bootId": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+                  "generation": 4,
+                  "sequence": 2,
+                  "collectedAt": "2026-10-08T22:46:42.067263008Z",
+                  "receivedAt": "2026-10-08T14:47:11.78973074-07:00",
+                  "serverTime": "2026-10-08T21:47:11.99564243Z",
+                  "clockOffsetMs": -3570277.532268,
+                  "measuredOffsetMs": -3570277.532815933
+                },
+                {
+                  "phase": "network_recovery",
+                  "bootId": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+                  "generation": 4,
+                  "sequence": 3,
+                  "collectedAt": "2026-10-08T22:46:47.0688892Z",
+                  "receivedAt": "2026-10-08T14:47:16.820782633-07:00",
+                  "serverTime": "2026-10-08T21:47:16.851198259Z",
+                  "clockOffsetMs": -3570248.106567,
+                  "measuredOffsetMs": -3570248.106956482
+                },
+                {
+                  "phase": "network_recovered",
+                  "bootId": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+                  "generation": 4,
+                  "sequence": 3,
+                  "collectedAt": "2026-10-08T22:46:47.0688892Z",
+                  "receivedAt": "2026-10-08T14:47:16.820782633-07:00",
+                  "serverTime": "2026-10-08T21:47:17.66202096Z",
+                  "clockOffsetMs": -3570248.106567,
+                  "measuredOffsetMs": -3570248.106956482
+                },
+                {
+                  "phase": "pre_reboot",
+                  "bootId": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+                  "generation": 4,
+                  "sequence": 3,
+                  "collectedAt": "2026-10-08T22:46:47.0688892Z",
+                  "receivedAt": "2026-10-08T14:47:16.820782633-07:00",
+                  "serverTime": "2026-10-08T21:47:18.067558892Z",
+                  "clockOffsetMs": -3570248.106567,
+                  "measuredOffsetMs": -3570248.106956482
+                }
+              ]
+            },
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_network_stale_recovery_core",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "isolated_offline_samples": 1,
+            "generation_before_isolation": 0,
+            "recovered_generations": [
+              4,
+              4,
+              4,
+              4
+            ],
+            "recovery_sequences": [
+              1,
+              2,
+              3,
+              3
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_reboot_boot_generation_core",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "old_boot_id": "c20d5dfe-a223-406f-8e7a-a78a525ad3e3",
+            "new_boot_id": "414b7361-bfb5-45a2-a72e-17eb5c08485f",
+            "generation_before_reboot": 4,
+            "post_reboot_generation": 6,
+            "post_reboot_sequences": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_agent_first_sample_reset",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "initial_unknown_reports": 2,
+            "restart_first_reports": 1,
+            "restart_fresh_reports": 5,
+            "known_network_rate_values_checked": 30,
+            "all_network_rates_nonnegative": true,
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_interface_identity_replacement",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "test_nic_from_fixed_mac": "eth0",
+            "event_fields": [
+              "eth0",
+              "2",
+              "52:54:00:00:00:02",
+              "2",
+              "02:ff:00:00:00:03"
+            ],
+            "changed_samples": [
+              {
+                "phase": "interface_replacement",
+                "generation": 1,
+                "sequence": 17,
+                "rate_status": "stale",
+                "rate_reason": "interface_changed",
+                "rate_value": {
+                  "receivedBytesPerSecond": 0,
+                  "sentBytesPerSecond": 0
+                }
+              }
+            ],
+            "recovered_samples": [
+              {
+                "phase": "interface_replacement_recovered",
+                "generation": 1,
+                "sequence": 19,
+                "rate_status": "known",
+                "rate_reason": "",
+                "rate_value": {
+                  "receivedBytesPerSecond": 0,
+                  "sentBytesPerSecond": 0
+                }
+              }
+            ],
+            "replacement_interface": "eth0",
+            "ifindex_before": "2",
+            "ifindex_after": "2",
+            "mac_before": "52:54:00:00:00:02",
+            "mac_after": "02:ff:00:00:00:03",
+            "identity_event_valid": true,
+            "recovered_after_change": [
+              {
+                "phase": "interface_replacement_recovered",
+                "generation": 1,
+                "sequence": 19,
+                "rate_status": "known",
+                "rate_reason": "",
+                "rate_value": {
+                  "receivedBytesPerSecond": 0,
+                  "sentBytesPerSecond": 0
+                }
+              }
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_multiple_interfaces_mounts",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "samples_checked": 1,
+            "sample_evidence": [
+              {
+                "phase": "post_reboot",
+                "generation": 6,
+                "sequence": 6,
+                "interface_names": [
+                  "eth0",
+                  "eth1"
+                ],
+                "primary_nic_from_mac": "eth1",
+                "test_nic_from_mac": "eth0",
+                "included_interfaces": 2,
+                "network_summary_matches_sum": true,
+                "mountpoints": [
+                  "/",
+                  "/mnt",
+                  "/mnt/second"
+                ],
+                "required_mounts_known": true
+              }
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_permission_partial_failure_recovery",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "fault_reports": [
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 1,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1838227456,
+                  "usedBytes": 216838144,
+                  "usedPercent": 10.551397678010863
+                },
+                "memoryAgeMillis": 5838,
+                "cpuStatus": "stale",
+                "networkStatus": "stale",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 2,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1838227456,
+                  "usedBytes": 216838144,
+                  "usedPercent": 10.551397678010863
+                },
+                "memoryAgeMillis": 10284,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 3,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied; sample_expired",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1838227456,
+                  "usedBytes": 216838144,
+                  "usedPercent": 10.551397678010863
+                },
+                "memoryAgeMillis": 15540,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              }
+            ],
+            "last_known_memory_before_fault": {
+              "totalBytes": 2055065600,
+              "availableBytes": 1838227456,
+              "usedBytes": 216838144,
+              "usedPercent": 10.551397678010863
+            },
+            "last_known_memory_age_millis_before_fault": 4619,
+            "fault_memory_ages_millis": [
+              10284,
+              15540
+            ],
+            "fault_memory_age_increased": true,
+            "remaining_metrics_live_during_fault": [
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 2,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1838227456,
+                  "usedBytes": 216838144,
+                  "usedPercent": 10.551397678010863
+                },
+                "memoryAgeMillis": 10284,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 3,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied; sample_expired",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1838227456,
+                  "usedBytes": 216838144,
+                  "usedPercent": 10.551397678010863
+                },
+                "memoryAgeMillis": 15540,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              }
+            ],
+            "recovered_memory_reports": [
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 4,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1851432960,
+                  "usedBytes": 203632640,
+                  "usedPercent": 9.908814589665653
+                },
+                "memoryAgeMillis": 451,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 5,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1851432960,
+                  "usedBytes": 203632640,
+                  "usedPercent": 9.908814589665653
+                },
+                "memoryAgeMillis": 308,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 6,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1851432960,
+                  "usedBytes": 203632640,
+                  "usedPercent": 9.908814589665653
+                },
+                "memoryAgeMillis": 951,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 7,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1851432960,
+                  "usedBytes": 203632640,
+                  "usedPercent": 9.908814589665653
+                },
+                "memoryAgeMillis": 421,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              }
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_docker_stall",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "real_sdk_container_list_started": true,
+            "request_cancelled_seconds_after_observed_start": 9,
+            "active_stall_sequences": [
+              2
+            ],
+            "post_cancel_observation_sequences": [
+              2,
+              3,
+              4,
+              5
+            ],
+            "heartbeat_lease_advanced": true,
+            "core_states_during_stall": [
+              {
+                "observedAtUTC": "2026-10-08T21:44:38.365151+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:44:44.993266357Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:38.768544+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:44:44.993266357Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:39.172058+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:44:44.993266357Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:39.575501+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:44:44.993266357Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:39.979163+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:44:44.993266357Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:40.383110+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:44:44.993266357Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:40.787154+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:44:44.993266357Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:41.190627+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:44:44.993266357Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:41.593979+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:44:44.993266357Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:41.999886+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:44.993266357Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:42.403383+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:42.807497+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:43.210827+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:43.614426+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:44.020296+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:44.424490+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:44.828592+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:45.236789+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:45.640572+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:46.044828+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:46.448798+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:46.852850+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:50.047794304Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:47.256747+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:47.660290+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:48.063827+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:48.467390+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:48.870903+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:49.274454+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:49.678143+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:50.081782+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:50.485297+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:50.888795+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:51.292344+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:51.696641+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:44:55.043292743Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:52.100775+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:52.504413+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:52.908640+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:53.313124+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:53.717080+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:54.121150+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:54.524701+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:54.928320+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:55.332947+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:55.737407+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:56.141199+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:56.545364+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:56.949272+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:45:00.0441492Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:57.353085+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:45:05.043246462Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:57.757367+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:45:05.043246462Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:58.161402+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:45:05.043246462Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:58.565011+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:45:05.043246462Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:58.968664+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:45:05.043246462Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:44:59.372219+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:45:05.043246462Z"
+              }
+            ],
+            "reason": ""
+          }
+        }
+      ]
+    },
+    {
+      "attempt": 2,
+      "results": [
+        {
+          "name": "guest_resource_safety",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/guest-resource-safety.log",
+          "reason": "",
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "-v",
+            "scripts.test.test_s03_guest_resources"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "metrics_race",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/metrics-race.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-race",
+            "-count=1",
+            "./internal/agent/metrics",
+            "./internal/core/metrics",
+            "./internal/protocol"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "linux_proc_filesystem",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/linux-proc-filesystem.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-count=1",
+            "-v",
+            "./internal/agent/metrics",
+            "-run",
+            "^TestLinuxProcAndFilesystemAgreement$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "real_core_agent_api_stream",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/real-core-agent-api-stream.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-race",
+            "-count=1",
+            "./internal/core/server",
+            "-run",
+            "^TestRealAgentMetricsAPIAndDashboardStream$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "counter_reset_formula",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/counter-reset-formula.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-count=1",
+            "./internal/agent/metrics",
+            "-run",
+            "^TestNetworkRateFirstSampleResetAndUnits$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "docker_sdk_stall_fixture",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/docker-sdk-stall-fixture.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-race",
+            "-count=1",
+            "./scripts/test/s03-docker-stall-fixture",
+            "-run",
+            "^TestPinnedSDKListTimeoutLeavesPingUsable$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "real_browser_guest_dashboard",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-summary.json",
+          "reason": "",
+          "command": [
+            "bash",
+            "scripts/test/s03-live-guest-agent.sh"
+          ],
+          "exit_code": 0,
+          "engines": [
+            {
+              "engine": "chromium",
+              "status": "PASS",
+              "reason": "",
+              "distinct_samples": 41,
+              "duplicate_snapshot_deliveries": 53,
+              "dom_sample_count": 55,
+              "sample_to_dom_pairs": 36,
+              "unmatched_samples": 5,
+              "latency_stats": {
+                "count": 36,
+                "p50Millis": 178,
+                "p95Millis": 4767,
+                "p99Millis": 38381,
+                "maxMillis": 38381,
+                "minMillis": 135
+              },
+              "load_stats": {
+                "baselineCPUMedianPercent": 18.322981366459622,
+                "duringCPUPeakPercent": 60.427807486630996,
+                "afterReleaseCPUMedianPercent": 8.847736625514399,
+                "baselineUsedBytesMedian": 210911232,
+                "duringUsedBytesPeak": 485183488,
+                "afterReleaseUsedBytesMedian": 213532672
+              },
+              "viewports": [
+                {
+                  "width": 375,
+                  "scrollWidth": 375,
+                  "clientWidth": 375
+                },
+                {
+                  "width": 768,
+                  "scrollWidth": 768,
+                  "clientWidth": 768
+                },
+                {
+                  "width": 1440,
+                  "scrollWidth": 1440,
+                  "clientWidth": 1440
+                }
+              ],
+              "assertions": {
+                "realAgentCPUAndMemory": true,
+                "initialUnknownNotZero": true,
+                "interfacesAndMounts": true,
+                "controlledLoadAndRecovery": true,
+                "interfaceIdentityReset": true,
+                "permissionFailureAndRecovery": true,
+                "dockerStallDoesNotBlockAgent": true,
+                "guestClockCorrection": true,
+                "networkOfflineAndRecovery": true,
+                "realReboot": true
+              },
+              "evidence": ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-chromium.json"
+            },
+            {
+              "engine": "webkit",
+              "status": "PASS",
+              "reason": "",
+              "distinct_samples": 41,
+              "duplicate_snapshot_deliveries": 53,
+              "dom_sample_count": 55,
+              "sample_to_dom_pairs": 36,
+              "unmatched_samples": 5,
+              "latency_stats": {
+                "count": 36,
+                "p50Millis": 181,
+                "p95Millis": 4766,
+                "p99Millis": 38382,
+                "maxMillis": 38382,
+                "minMillis": 139
+              },
+              "load_stats": {
+                "baselineCPUMedianPercent": 18.322981366459622,
+                "duringCPUPeakPercent": 60.427807486630996,
+                "afterReleaseCPUMedianPercent": 8.847736625514399,
+                "baselineUsedBytesMedian": 210911232,
+                "duringUsedBytesPeak": 485183488,
+                "afterReleaseUsedBytesMedian": 213532672
+              },
+              "viewports": [
+                {
+                  "width": 375,
+                  "scrollWidth": 375,
+                  "clientWidth": 375
+                },
+                {
+                  "width": 768,
+                  "scrollWidth": 768,
+                  "clientWidth": 768
+                },
+                {
+                  "width": 1440,
+                  "scrollWidth": 1440,
+                  "clientWidth": 1440
+                }
+              ],
+              "assertions": {
+                "realAgentCPUAndMemory": true,
+                "initialUnknownNotZero": true,
+                "interfacesAndMounts": true,
+                "controlledLoadAndRecovery": true,
+                "interfaceIdentityReset": true,
+                "permissionFailureAndRecovery": true,
+                "dockerStallDoesNotBlockAgent": true,
+                "guestClockCorrection": true,
+                "networkOfflineAndRecovery": true,
+                "realReboot": true
+              },
+              "evidence": ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-webkit.json"
+            },
+            {
+              "engine": "firefox",
+              "status": "PASS",
+              "reason": "",
+              "distinct_samples": 41,
+              "duplicate_snapshot_deliveries": 53,
+              "dom_sample_count": 55,
+              "sample_to_dom_pairs": 36,
+              "unmatched_samples": 5,
+              "latency_stats": {
+                "count": 36,
+                "p50Millis": 183,
+                "p95Millis": 4785,
+                "p99Millis": 38396,
+                "maxMillis": 38396,
+                "minMillis": 139
+              },
+              "load_stats": {
+                "baselineCPUMedianPercent": 18.322981366459622,
+                "duringCPUPeakPercent": 60.427807486630996,
+                "afterReleaseCPUMedianPercent": 8.847736625514399,
+                "baselineUsedBytesMedian": 210911232,
+                "duringUsedBytesPeak": 485183488,
+                "afterReleaseUsedBytesMedian": 213532672
+              },
+              "viewports": [
+                {
+                  "width": 375,
+                  "scrollWidth": 375,
+                  "clientWidth": 375
+                },
+                {
+                  "width": 768,
+                  "scrollWidth": 768,
+                  "clientWidth": 768
+                },
+                {
+                  "width": 1440,
+                  "scrollWidth": 1440,
+                  "clientWidth": 1440
+                }
+              ],
+              "assertions": {
+                "realAgentCPUAndMemory": true,
+                "initialUnknownNotZero": true,
+                "interfacesAndMounts": true,
+                "controlledLoadAndRecovery": true,
+                "interfaceIdentityReset": true,
+                "permissionFailureAndRecovery": true,
+                "dockerStallDoesNotBlockAgent": true,
+                "guestClockCorrection": true,
+                "networkOfflineAndRecovery": true,
+                "realReboot": true
+              },
+              "evidence": ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-firefox.json"
+            }
+          ]
+        },
+        {
+          "name": "isolated_guest_cpu_memory",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "reason": "",
+            "evidence": "cpu-memory-load.json",
+            "load_exit_code": "0"
+          }
+        },
+        {
+          "name": "isolated_guest_clock_reboot",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "reason": "",
+            "evidence": "guest-clock-reboot.json"
+          }
+        },
+        {
+          "name": "isolated_guest_agent_load_response",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "baseline_cpu_percent": [
+              26.7650158061117,
+              11.862643080124856,
+              10.216718266253878,
+              8.521560574948662,
+              8.521560574948662,
+              19.811320754717002,
+              18.322981366459622,
+              66.1621621621621,
+              64.95071193866372
+            ],
+            "during_load_cpu_percent": [
+              64.95071193866372,
+              60.33934252386007,
+              59.33831376734256,
+              60.427807486630996,
+              6.218144750254827,
+              3.7525354969573925
+            ],
+            "after_release_cpu_percent": [
+              3.7525354969573925,
+              8.847736625514399,
+              3.951367781155025
+            ],
+            "baseline_used_bytes": [
+              208433152,
+              209195008,
+              209195008,
+              209682432,
+              210403328,
+              210403328,
+              210911232,
+              210911232,
+              344322048,
+              468959232
+            ],
+            "during_load_used_bytes": [
+              468959232,
+              485183488,
+              483897344,
+              251465728,
+              216211456,
+              216211456
+            ],
+            "after_release_used_bytes": [
+              216211456,
+              213532672,
+              213532672
+            ],
+            "baseline_cpu_median_percent": 18.322981366459622,
+            "during_load_cpu_peak_percent": 64.95071193866372,
+            "baseline_memory_median_bytes": 210403328,
+            "during_load_memory_peak_bytes": 485183488,
+            "recovered_cpu_percent": 3.951367781155025,
+            "recovered_memory_bytes": 213532672
+          }
+        },
+        {
+          "name": "isolated_guest_clock_offset_core",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "pre_clock_offset_ms": [
+              29810.448662,
+              28896.529141,
+              28781.024499,
+              28993.357526,
+              28949.90625,
+              28816.790952,
+              28753.761895,
+              28791.499372,
+              28761.004544
+            ],
+            "post_clock_offset_ms": [
+              -3570073.956956,
+              -3570313.41678,
+              -3570313.41678,
+              -3566538.620509,
+              -3570353.55579,
+              -3570295.264327,
+              -3570295.264327,
+              -3570295.264327
+            ],
+            "raw_guest_clock": {
+              "boot_id_before": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+              "boot_id_after": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+              "wall_before_unix": 1791496276,
+              "wall_target_unix": 1791499876,
+              "wall_after_unix": 1791499876,
+              "wall_delta_seconds": 3600,
+              "valid": true,
+              "highest_pre_clock_generation": 1,
+              "correlated_core_samples": [
+                {
+                  "phase": "permission_recovery",
+                  "bootId": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+                  "generation": 2,
+                  "sequence": 6,
+                  "collectedAt": "2026-10-08T22:51:16.094406208Z",
+                  "receivedAt": "2026-10-08T14:51:46.020449252-07:00",
+                  "serverTime": "2026-10-08T21:51:46.182662635Z",
+                  "clockOffsetMs": -3570073.956956,
+                  "measuredOffsetMs": -3570073.9569664
+                },
+                {
+                  "phase": "permission_recovery",
+                  "bootId": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+                  "generation": 2,
+                  "sequence": 7,
+                  "collectedAt": "2026-10-08T22:51:21.09274872Z",
+                  "receivedAt": "2026-10-08T14:51:50.77933194-07:00",
+                  "serverTime": "2026-10-08T21:51:51.039787118Z",
+                  "clockOffsetMs": -3570313.41678,
+                  "measuredOffsetMs": -3570313.416957855
+                },
+                {
+                  "phase": "network_isolated",
+                  "bootId": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+                  "generation": 2,
+                  "sequence": 7,
+                  "collectedAt": "2026-10-08T22:51:21.09274872Z",
+                  "receivedAt": "2026-10-08T14:51:50.77933194-07:00",
+                  "serverTime": "2026-10-08T21:51:53.869410339Z",
+                  "clockOffsetMs": -3570313.41678,
+                  "measuredOffsetMs": -3570313.416957855
+                },
+                {
+                  "phase": "network_recovery",
+                  "bootId": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+                  "generation": 4,
+                  "sequence": 1,
+                  "collectedAt": "2026-10-08T22:51:46.093690176Z",
+                  "receivedAt": "2026-10-08T14:52:19.555069667-07:00",
+                  "serverTime": "2026-10-08T21:52:19.760770284Z",
+                  "clockOffsetMs": -3566538.620509,
+                  "measuredOffsetMs": -3566538.6209487915
+                },
+                {
+                  "phase": "network_recovery",
+                  "bootId": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+                  "generation": 4,
+                  "sequence": 2,
+                  "collectedAt": "2026-10-08T22:51:51.09354432Z",
+                  "receivedAt": "2026-10-08T14:52:20.73998853-07:00",
+                  "serverTime": "2026-10-08T21:52:20.981662529Z",
+                  "clockOffsetMs": -3570353.55579,
+                  "measuredOffsetMs": -3570353.55591774
+                },
+                {
+                  "phase": "network_recovery",
+                  "bootId": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+                  "generation": 4,
+                  "sequence": 3,
+                  "collectedAt": "2026-10-08T22:51:56.091628768Z",
+                  "receivedAt": "2026-10-08T14:52:25.796364441-07:00",
+                  "serverTime": "2026-10-08T21:52:25.834212237Z",
+                  "clockOffsetMs": -3570295.264327,
+                  "measuredOffsetMs": -3570295.264005661
+                },
+                {
+                  "phase": "network_recovered",
+                  "bootId": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+                  "generation": 4,
+                  "sequence": 3,
+                  "collectedAt": "2026-10-08T22:51:56.091628768Z",
+                  "receivedAt": "2026-10-08T14:52:25.796364441-07:00",
+                  "serverTime": "2026-10-08T21:52:26.238317856Z",
+                  "clockOffsetMs": -3570295.264327,
+                  "measuredOffsetMs": -3570295.264005661
+                },
+                {
+                  "phase": "pre_reboot",
+                  "bootId": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+                  "generation": 4,
+                  "sequence": 3,
+                  "collectedAt": "2026-10-08T22:51:56.091628768Z",
+                  "receivedAt": "2026-10-08T14:52:25.796364441-07:00",
+                  "serverTime": "2026-10-08T21:52:26.642687438Z",
+                  "clockOffsetMs": -3570295.264327,
+                  "measuredOffsetMs": -3570295.264005661
+                }
+              ]
+            },
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_network_stale_recovery_core",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "isolated_offline_samples": 1,
+            "generation_before_isolation": 0,
+            "recovered_generations": [
+              4,
+              4,
+              4,
+              4
+            ],
+            "recovery_sequences": [
+              1,
+              2,
+              3,
+              3
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_reboot_boot_generation_core",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "old_boot_id": "fc16889f-05c2-438d-9530-2de6bb5e15e9",
+            "new_boot_id": "319b8a8f-a7e5-4eed-93ba-928a91275f16",
+            "generation_before_reboot": 4,
+            "post_reboot_generation": 6,
+            "post_reboot_sequences": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_agent_first_sample_reset",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "initial_unknown_reports": 2,
+            "restart_first_reports": 1,
+            "restart_fresh_reports": 5,
+            "known_network_rate_values_checked": 30,
+            "all_network_rates_nonnegative": true,
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_interface_identity_replacement",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "test_nic_from_fixed_mac": "eth0",
+            "event_fields": [
+              "eth0",
+              "2",
+              "52:54:00:00:00:02",
+              "2",
+              "02:ff:00:00:00:03"
+            ],
+            "changed_samples": [
+              {
+                "phase": "interface_replacement",
+                "generation": 1,
+                "sequence": 17,
+                "rate_status": "stale",
+                "rate_reason": "interface_changed",
+                "rate_value": {
+                  "receivedBytesPerSecond": 0,
+                  "sentBytesPerSecond": 0
+                }
+              }
+            ],
+            "recovered_samples": [
+              {
+                "phase": "interface_replacement_recovered",
+                "generation": 1,
+                "sequence": 19,
+                "rate_status": "known",
+                "rate_reason": "",
+                "rate_value": {
+                  "receivedBytesPerSecond": 0,
+                  "sentBytesPerSecond": 0
+                }
+              }
+            ],
+            "replacement_interface": "eth0",
+            "ifindex_before": "2",
+            "ifindex_after": "2",
+            "mac_before": "52:54:00:00:00:02",
+            "mac_after": "02:ff:00:00:00:03",
+            "identity_event_valid": true,
+            "recovered_after_change": [
+              {
+                "phase": "interface_replacement_recovered",
+                "generation": 1,
+                "sequence": 19,
+                "rate_status": "known",
+                "rate_reason": "",
+                "rate_value": {
+                  "receivedBytesPerSecond": 0,
+                  "sentBytesPerSecond": 0
+                }
+              }
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_multiple_interfaces_mounts",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "samples_checked": 1,
+            "sample_evidence": [
+              {
+                "phase": "post_reboot",
+                "generation": 6,
+                "sequence": 6,
+                "interface_names": [
+                  "eth0",
+                  "eth1"
+                ],
+                "primary_nic_from_mac": "eth1",
+                "test_nic_from_mac": "eth0",
+                "included_interfaces": 2,
+                "network_summary_matches_sum": true,
+                "mountpoints": [
+                  "/",
+                  "/mnt",
+                  "/mnt/second"
+                ],
+                "required_mounts_known": true
+              }
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_permission_partial_failure_recovery",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "fault_reports": [
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 1,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1841532928,
+                  "usedBytes": 213532672,
+                  "usedPercent": 10.390552593552245
+                },
+                "memoryAgeMillis": 5068,
+                "cpuStatus": "stale",
+                "networkStatus": "stale",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 2,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1841532928,
+                  "usedBytes": 213532672,
+                  "usedPercent": 10.390552593552245
+                },
+                "memoryAgeMillis": 9517,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 3,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1841532928,
+                  "usedBytes": 213532672,
+                  "usedPercent": 10.390552593552245
+                },
+                "memoryAgeMillis": 14371,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              }
+            ],
+            "last_known_memory_before_fault": {
+              "totalBytes": 2055065600,
+              "availableBytes": 1841532928,
+              "usedBytes": 213532672,
+              "usedPercent": 10.390552593552245
+            },
+            "last_known_memory_age_millis_before_fault": 3845,
+            "fault_memory_ages_millis": [
+              9517,
+              14371
+            ],
+            "fault_memory_age_increased": true,
+            "remaining_metrics_live_during_fault": [
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 2,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1841532928,
+                  "usedBytes": 213532672,
+                  "usedPercent": 10.390552593552245
+                },
+                "memoryAgeMillis": 9517,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 3,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1841532928,
+                  "usedBytes": 213532672,
+                  "usedPercent": 10.390552593552245
+                },
+                "memoryAgeMillis": 14371,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              }
+            ],
+            "recovered_memory_reports": [
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 4,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1847787520,
+                  "usedBytes": 207278080,
+                  "usedPercent": 10.086202601026459
+                },
+                "memoryAgeMillis": 469,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 5,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1847787520,
+                  "usedBytes": 207278080,
+                  "usedPercent": 10.086202601026459
+                },
+                "memoryAgeMillis": 317,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 6,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1847787520,
+                  "usedBytes": 207278080,
+                  "usedPercent": 10.086202601026459
+                },
+                "memoryAgeMillis": 568,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 7,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1847787520,
+                  "usedBytes": 207278080,
+                  "usedPercent": 10.086202601026459
+                },
+                "memoryAgeMillis": 436,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              }
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_docker_stall",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "real_sdk_container_list_started": true,
+            "request_cancelled_seconds_after_observed_start": 6,
+            "active_stall_sequences": [
+              2
+            ],
+            "post_cancel_observation_sequences": [
+              2,
+              3,
+              4,
+              5
+            ],
+            "heartbeat_lease_advanced": true,
+            "core_states_during_stall": [
+              {
+                "observedAtUTC": "2026-10-08T21:49:48.945564+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:49:54.763236617Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:49.349139+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:49:54.763236617Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:49.752632+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:49:54.763236617Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:50.156260+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:49:54.763236617Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:50.560316+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:49:54.763236617Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:50.964257+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:49:54.763236617Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:51.367910+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:49:54.763236617Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:51.774863+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:54.763236617Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:52.179204+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:52.582823+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:52.986933+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:53.390983+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:53.794404+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:54.197918+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:54.601447+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:55.007024+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:55.412380+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:55.815841+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:56.219439+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:56.623594+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:49:59.841698616Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:57.027138+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:57.430583+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:57.834192+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:58.237616+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:58.640911+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:59.044512+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:59.448036+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:49:59.851510+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:00.254992+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:00.659007+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:01.062684+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:01.466309+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:50:04.832727121Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:01.872300+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:02.275893+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:02.680122+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:03.083456+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:03.489069+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:03.892789+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:04.296981+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:04.701455+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:05.105667+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:05.509875+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:05.914026+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:06.318102+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:06.721685+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:50:09.825467587Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:07.125470+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:50:14.839762639Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:07.529373+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:50:14.839762639Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:07.933995+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:50:14.839762639Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:08.337603+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:50:14.839762639Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:08.741273+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:50:14.839762639Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:50:09.144735+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:50:14.839762639Z"
+              }
+            ],
+            "reason": ""
+          }
+        }
+      ]
+    },
+    {
+      "attempt": 3,
+      "results": [
+        {
+          "name": "guest_resource_safety",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/guest-resource-safety.log",
+          "reason": "",
+          "command": [
+            "/usr/bin/python3",
+            "-m",
+            "unittest",
+            "-v",
+            "scripts.test.test_s03_guest_resources"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "metrics_race",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/metrics-race.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-race",
+            "-count=1",
+            "./internal/agent/metrics",
+            "./internal/core/metrics",
+            "./internal/protocol"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "linux_proc_filesystem",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/linux-proc-filesystem.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-count=1",
+            "-v",
+            "./internal/agent/metrics",
+            "-run",
+            "^TestLinuxProcAndFilesystemAgreement$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "real_core_agent_api_stream",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/real-core-agent-api-stream.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-race",
+            "-count=1",
+            "./internal/core/server",
+            "-run",
+            "^TestRealAgentMetricsAPIAndDashboardStream$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "counter_reset_formula",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/counter-reset-formula.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-count=1",
+            "./internal/agent/metrics",
+            "-run",
+            "^TestNetworkRateFirstSampleResetAndUnits$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "docker_sdk_stall_fixture",
+          "status": "PASS",
+          "evidence": ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/docker-sdk-stall-fixture.jsonl",
+          "reason": "",
+          "command": [
+            "/home/ubuntu/codex-use/NodeDance/.tools/go1.26.8/bin/go",
+            "test",
+            "-json",
+            "-mod=readonly",
+            "-race",
+            "-count=1",
+            "./scripts/test/s03-docker-stall-fixture",
+            "-run",
+            "^TestPinnedSDKListTimeoutLeavesPingUsable$"
+          ],
+          "exit_code": 0
+        },
+        {
+          "name": "real_browser_guest_dashboard",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-summary.json",
+          "reason": "",
+          "command": [
+            "bash",
+            "scripts/test/s03-live-guest-agent.sh"
+          ],
+          "exit_code": 0,
+          "engines": [
+            {
+              "engine": "chromium",
+              "status": "PASS",
+              "reason": "",
+              "distinct_samples": 41,
+              "duplicate_snapshot_deliveries": 52,
+              "dom_sample_count": 54,
+              "sample_to_dom_pairs": 36,
+              "unmatched_samples": 5,
+              "latency_stats": {
+                "count": 36,
+                "p50Millis": 192,
+                "p95Millis": 5208,
+                "p99Millis": 36118,
+                "maxMillis": 36118,
+                "minMillis": 126
+              },
+              "load_stats": {
+                "baselineCPUMedianPercent": 13.920163766632554,
+                "duringCPUPeakPercent": 61.324786324786295,
+                "afterReleaseCPUMedianPercent": 8.865979381443275,
+                "baselineUsedBytesMedian": 205086720,
+                "duringUsedBytesPeak": 480116736,
+                "afterReleaseUsedBytesMedian": 215195648
+              },
+              "viewports": [
+                {
+                  "width": 375,
+                  "scrollWidth": 375,
+                  "clientWidth": 375
+                },
+                {
+                  "width": 768,
+                  "scrollWidth": 768,
+                  "clientWidth": 768
+                },
+                {
+                  "width": 1440,
+                  "scrollWidth": 1440,
+                  "clientWidth": 1440
+                }
+              ],
+              "assertions": {
+                "realAgentCPUAndMemory": true,
+                "initialUnknownNotZero": true,
+                "interfacesAndMounts": true,
+                "controlledLoadAndRecovery": true,
+                "interfaceIdentityReset": true,
+                "permissionFailureAndRecovery": true,
+                "dockerStallDoesNotBlockAgent": true,
+                "guestClockCorrection": true,
+                "networkOfflineAndRecovery": true,
+                "realReboot": true
+              },
+              "evidence": ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-chromium.json"
+            },
+            {
+              "engine": "webkit",
+              "status": "PASS",
+              "reason": "",
+              "distinct_samples": 41,
+              "duplicate_snapshot_deliveries": 52,
+              "dom_sample_count": 54,
+              "sample_to_dom_pairs": 36,
+              "unmatched_samples": 5,
+              "latency_stats": {
+                "count": 36,
+                "p50Millis": 195,
+                "p95Millis": 5327,
+                "p99Millis": 36129,
+                "maxMillis": 36129,
+                "minMillis": 130
+              },
+              "load_stats": {
+                "baselineCPUMedianPercent": 13.920163766632554,
+                "duringCPUPeakPercent": 61.324786324786295,
+                "afterReleaseCPUMedianPercent": 8.865979381443275,
+                "baselineUsedBytesMedian": 205086720,
+                "duringUsedBytesPeak": 480116736,
+                "afterReleaseUsedBytesMedian": 215195648
+              },
+              "viewports": [
+                {
+                  "width": 375,
+                  "scrollWidth": 375,
+                  "clientWidth": 375
+                },
+                {
+                  "width": 768,
+                  "scrollWidth": 768,
+                  "clientWidth": 768
+                },
+                {
+                  "width": 1440,
+                  "scrollWidth": 1440,
+                  "clientWidth": 1440
+                }
+              ],
+              "assertions": {
+                "realAgentCPUAndMemory": true,
+                "initialUnknownNotZero": true,
+                "interfacesAndMounts": true,
+                "controlledLoadAndRecovery": true,
+                "interfaceIdentityReset": true,
+                "permissionFailureAndRecovery": true,
+                "dockerStallDoesNotBlockAgent": true,
+                "guestClockCorrection": true,
+                "networkOfflineAndRecovery": true,
+                "realReboot": true
+              },
+              "evidence": ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-webkit.json"
+            },
+            {
+              "engine": "firefox",
+              "status": "PASS",
+              "reason": "",
+              "distinct_samples": 41,
+              "duplicate_snapshot_deliveries": 52,
+              "dom_sample_count": 54,
+              "sample_to_dom_pairs": 36,
+              "unmatched_samples": 5,
+              "latency_stats": {
+                "count": 36,
+                "p50Millis": 195,
+                "p95Millis": 5196,
+                "p99Millis": 36126,
+                "maxMillis": 36126,
+                "minMillis": 141
+              },
+              "load_stats": {
+                "baselineCPUMedianPercent": 13.920163766632554,
+                "duringCPUPeakPercent": 61.324786324786295,
+                "afterReleaseCPUMedianPercent": 8.865979381443275,
+                "baselineUsedBytesMedian": 205086720,
+                "duringUsedBytesPeak": 480116736,
+                "afterReleaseUsedBytesMedian": 215195648
+              },
+              "viewports": [
+                {
+                  "width": 375,
+                  "scrollWidth": 375,
+                  "clientWidth": 375
+                },
+                {
+                  "width": 768,
+                  "scrollWidth": 768,
+                  "clientWidth": 768
+                },
+                {
+                  "width": 1440,
+                  "scrollWidth": 1440,
+                  "clientWidth": 1440
+                }
+              ],
+              "assertions": {
+                "realAgentCPUAndMemory": true,
+                "initialUnknownNotZero": true,
+                "interfacesAndMounts": true,
+                "controlledLoadAndRecovery": true,
+                "interfaceIdentityReset": true,
+                "permissionFailureAndRecovery": true,
+                "dockerStallDoesNotBlockAgent": true,
+                "guestClockCorrection": true,
+                "networkOfflineAndRecovery": true,
+                "realReboot": true
+              },
+              "evidence": ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-firefox.json"
+            }
+          ]
+        },
+        {
+          "name": "isolated_guest_cpu_memory",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "reason": "",
+            "evidence": "cpu-memory-load.json",
+            "load_exit_code": "0"
+          }
+        },
+        {
+          "name": "isolated_guest_clock_reboot",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "reason": "",
+            "evidence": "guest-clock-reboot.json"
+          }
+        },
+        {
+          "name": "isolated_guest_agent_load_response",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "baseline_cpu_percent": [
+              28.919491525423727,
+              11.271975180972058,
+              9.19305413687437,
+              10.849539406345961,
+              10.849539406345961,
+              18.834547346514015,
+              13.920163766632554,
+              66.88382193268188,
+              64.89707475622971
+            ],
+            "during_load_cpu_percent": [
+              64.89707475622971,
+              61.324786324786295,
+              58.37780149413024,
+              59.893048128342265,
+              9.48012232415906,
+              3.748733535967571
+            ],
+            "after_release_cpu_percent": [
+              3.748733535967571,
+              8.865979381443275,
+              4.352226720647775
+            ],
+            "baseline_used_bytes": [
+              201797632,
+              202268672,
+              202784768,
+              202776576,
+              203288576,
+              203288576,
+              205094912,
+              205086720,
+              336642048,
+              463859712
+            ],
+            "during_load_used_bytes": [
+              463859712,
+              480116736,
+              480116736,
+              268705792,
+              218058752,
+              218058752
+            ],
+            "after_release_used_bytes": [
+              218058752,
+              215195648,
+              214937600
+            ],
+            "baseline_cpu_median_percent": 13.920163766632554,
+            "during_load_cpu_peak_percent": 64.89707475622971,
+            "baseline_memory_median_bytes": 203288576,
+            "during_load_memory_peak_bytes": 480116736,
+            "recovered_cpu_percent": 4.352226720647775,
+            "recovered_memory_bytes": 214937600
+          }
+        },
+        {
+          "name": "isolated_guest_clock_offset_core",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "pre_clock_offset_ms": [
+              29584.786222,
+              28603.091837,
+              28437.232834,
+              28760.638371,
+              28589.328826,
+              28687.882497,
+              28455.177884,
+              28476.167398,
+              28453.772206
+            ],
+            "post_clock_offset_ms": [
+              -3570916.868734,
+              -3571226.358211,
+              -3571226.358211,
+              -3566242.483918,
+              -3571196.676355,
+              -3571266.377772,
+              -3571266.377772,
+              -3571266.377772
+            ],
+            "raw_guest_clock": {
+              "boot_id_before": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+              "boot_id_after": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+              "wall_before_unix": 1791496587,
+              "wall_target_unix": 1791500187,
+              "wall_after_unix": 1791500187,
+              "wall_delta_seconds": 3600,
+              "valid": true,
+              "highest_pre_clock_generation": 1,
+              "correlated_core_samples": [
+                {
+                  "phase": "permission_recovery",
+                  "bootId": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+                  "generation": 2,
+                  "sequence": 6,
+                  "collectedAt": "2026-10-08T22:56:27.08380232Z",
+                  "receivedAt": "2026-10-08T14:56:56.166933586-07:00",
+                  "serverTime": "2026-10-08T21:56:56.475290326Z",
+                  "clockOffsetMs": -3570916.868734,
+                  "measuredOffsetMs": -3570916.8689250946
+                },
+                {
+                  "phase": "permission_recovery",
+                  "bootId": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+                  "generation": 2,
+                  "sequence": 7,
+                  "collectedAt": "2026-10-08T22:56:32.083848208Z",
+                  "receivedAt": "2026-10-08T14:57:00.857489997-07:00",
+                  "serverTime": "2026-10-08T21:57:00.928057505Z",
+                  "clockOffsetMs": -3571226.358211,
+                  "measuredOffsetMs": -3571226.3588905334
+                },
+                {
+                  "phase": "network_isolated",
+                  "bootId": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+                  "generation": 2,
+                  "sequence": 7,
+                  "collectedAt": "2026-10-08T22:56:32.083848208Z",
+                  "receivedAt": "2026-10-08T14:57:00.857489997-07:00",
+                  "serverTime": "2026-10-08T21:57:04.160696857Z",
+                  "clockOffsetMs": -3571226.358211,
+                  "measuredOffsetMs": -3571226.3588905334
+                },
+                {
+                  "phase": "network_recovery",
+                  "bootId": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+                  "generation": 4,
+                  "sequence": 1,
+                  "collectedAt": "2026-10-08T22:56:57.08305632Z",
+                  "receivedAt": "2026-10-08T14:57:30.840572402-07:00",
+                  "serverTime": "2026-10-08T21:57:30.865226499Z",
+                  "clockOffsetMs": -3566242.483918,
+                  "measuredOffsetMs": -3566242.483854294
+                },
+                {
+                  "phase": "network_recovery",
+                  "bootId": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+                  "generation": 4,
+                  "sequence": 2,
+                  "collectedAt": "2026-10-08T22:57:02.08212768Z",
+                  "receivedAt": "2026-10-08T14:57:30.885451325-07:00",
+                  "serverTime": "2026-10-08T21:57:31.274703684Z",
+                  "clockOffsetMs": -3571196.676355,
+                  "measuredOffsetMs": -3571196.676015854
+                },
+                {
+                  "phase": "network_recovery",
+                  "bootId": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+                  "generation": 4,
+                  "sequence": 3,
+                  "collectedAt": "2026-10-08T22:57:07.083449808Z",
+                  "receivedAt": "2026-10-08T14:57:35.817072036-07:00",
+                  "serverTime": "2026-10-08T21:57:36.132477785Z",
+                  "clockOffsetMs": -3571266.377772,
+                  "measuredOffsetMs": -3571266.3769721985
+                },
+                {
+                  "phase": "network_recovered",
+                  "bootId": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+                  "generation": 4,
+                  "sequence": 3,
+                  "collectedAt": "2026-10-08T22:57:07.083449808Z",
+                  "receivedAt": "2026-10-08T14:57:35.817072036-07:00",
+                  "serverTime": "2026-10-08T21:57:36.536651532Z",
+                  "clockOffsetMs": -3571266.377772,
+                  "measuredOffsetMs": -3571266.3769721985
+                },
+                {
+                  "phase": "pre_reboot",
+                  "bootId": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+                  "generation": 4,
+                  "sequence": 3,
+                  "collectedAt": "2026-10-08T22:57:07.083449808Z",
+                  "receivedAt": "2026-10-08T14:57:35.817072036-07:00",
+                  "serverTime": "2026-10-08T21:57:36.9410542Z",
+                  "clockOffsetMs": -3571266.377772,
+                  "measuredOffsetMs": -3571266.3769721985
+                }
+              ]
+            },
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_network_stale_recovery_core",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "isolated_offline_samples": 1,
+            "generation_before_isolation": 0,
+            "recovered_generations": [
+              4,
+              4,
+              4,
+              4
+            ],
+            "recovery_sequences": [
+              1,
+              2,
+              3,
+              3
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_reboot_boot_generation_core",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "old_boot_id": "1ecbbcd5-2684-420f-9737-31cb17d01b06",
+            "new_boot_id": "c5094873-2f7a-4031-9f50-6cffeba19429",
+            "generation_before_reboot": 4,
+            "post_reboot_generation": 6,
+            "post_reboot_sequences": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_agent_first_sample_reset",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "initial_unknown_reports": 2,
+            "restart_first_reports": 1,
+            "restart_fresh_reports": 5,
+            "known_network_rate_values_checked": 30,
+            "all_network_rates_nonnegative": true,
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_interface_identity_replacement",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "test_nic_from_fixed_mac": "eth0",
+            "event_fields": [
+              "eth0",
+              "2",
+              "52:54:00:00:00:02",
+              "2",
+              "02:ff:00:00:00:03"
+            ],
+            "changed_samples": [
+              {
+                "phase": "interface_replacement",
+                "generation": 1,
+                "sequence": 17,
+                "rate_status": "stale",
+                "rate_reason": "interface_changed",
+                "rate_value": {
+                  "receivedBytesPerSecond": 0,
+                  "sentBytesPerSecond": 0
+                }
+              }
+            ],
+            "recovered_samples": [
+              {
+                "phase": "interface_replacement_recovered",
+                "generation": 1,
+                "sequence": 19,
+                "rate_status": "known",
+                "rate_reason": "",
+                "rate_value": {
+                  "receivedBytesPerSecond": 22.003281903913038,
+                  "sentBytesPerSecond": 14.002088484308295
+                }
+              }
+            ],
+            "replacement_interface": "eth0",
+            "ifindex_before": "2",
+            "ifindex_after": "2",
+            "mac_before": "52:54:00:00:00:02",
+            "mac_after": "02:ff:00:00:00:03",
+            "identity_event_valid": true,
+            "recovered_after_change": [
+              {
+                "phase": "interface_replacement_recovered",
+                "generation": 1,
+                "sequence": 19,
+                "rate_status": "known",
+                "rate_reason": "",
+                "rate_value": {
+                  "receivedBytesPerSecond": 22.003281903913038,
+                  "sentBytesPerSecond": 14.002088484308295
+                }
+              }
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_multiple_interfaces_mounts",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "samples_checked": 1,
+            "sample_evidence": [
+              {
+                "phase": "post_reboot",
+                "generation": 6,
+                "sequence": 6,
+                "interface_names": [
+                  "eth0",
+                  "eth1"
+                ],
+                "primary_nic_from_mac": "eth1",
+                "test_nic_from_mac": "eth0",
+                "included_interfaces": 2,
+                "network_summary_matches_sum": true,
+                "mountpoints": [
+                  "/",
+                  "/mnt",
+                  "/mnt/second"
+                ],
+                "required_mounts_known": true
+              }
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_permission_partial_failure_recovery",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "fault_reports": [
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 1,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1839611904,
+                  "usedBytes": 215453696,
+                  "usedPercent": 10.484030096168219
+                },
+                "memoryAgeMillis": 5054,
+                "cpuStatus": "stale",
+                "networkStatus": "stale",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 2,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1839611904,
+                  "usedBytes": 215453696,
+                  "usedPercent": 10.484030096168219
+                },
+                "memoryAgeMillis": 9903,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 3,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1839611904,
+                  "usedBytes": 215453696,
+                  "usedPercent": 10.484030096168219
+                },
+                "memoryAgeMillis": 14755,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              }
+            ],
+            "last_known_memory_before_fault": {
+              "totalBytes": 2055065600,
+              "availableBytes": 1839611904,
+              "usedBytes": 215453696,
+              "usedPercent": 10.484030096168219
+            },
+            "last_known_memory_age_millis_before_fault": 4240,
+            "fault_memory_ages_millis": [
+              9903,
+              14755
+            ],
+            "fault_memory_age_increased": true,
+            "remaining_metrics_live_during_fault": [
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 2,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1839611904,
+                  "usedBytes": 215453696,
+                  "usedPercent": 10.484030096168219
+                },
+                "memoryAgeMillis": 9903,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 3,
+                "nodeStatus": "online",
+                "memoryStatus": "stale",
+                "memoryReason": "permission_denied",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1839611904,
+                  "usedBytes": 215453696,
+                  "usedPercent": 10.484030096168219
+                },
+                "memoryAgeMillis": 14755,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              }
+            ],
+            "recovered_memory_reports": [
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 4,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1845583872,
+                  "usedBytes": 209481728,
+                  "usedPercent": 10.193432657332204
+                },
+                "memoryAgeMillis": 294,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 5,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1845583872,
+                  "usedBytes": 209481728,
+                  "usedPercent": 10.193432657332204
+                },
+                "memoryAgeMillis": 551,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 6,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1845583872,
+                  "usedBytes": 209481728,
+                  "usedPercent": 10.193432657332204
+                },
+                "memoryAgeMillis": 814,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              },
+              {
+                "generation": 2,
+                "activeGeneration": 2,
+                "sequence": 7,
+                "nodeStatus": "online",
+                "memoryStatus": "known",
+                "memoryReason": "",
+                "memoryValue": {
+                  "totalBytes": 2055065600,
+                  "availableBytes": 1845583872,
+                  "usedBytes": 209481728,
+                  "usedPercent": 10.193432657332204
+                },
+                "memoryAgeMillis": 267,
+                "cpuStatus": "known",
+                "networkStatus": "known",
+                "uptimeStatus": "known"
+              }
+            ],
+            "reason": ""
+          }
+        },
+        {
+          "name": "isolated_guest_docker_stall",
+          "status": "PASS",
+          "evidence": ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+          "reason": "",
+          "guest_run_status": "PASS",
+          "details": {
+            "status": "PASS",
+            "real_sdk_container_list_started": true,
+            "request_cancelled_seconds_after_observed_start": 7,
+            "active_stall_sequences": [
+              2
+            ],
+            "post_cancel_observation_sequences": [
+              2,
+              3,
+              4,
+              5
+            ],
+            "heartbeat_lease_advanced": true,
+            "core_states_during_stall": [
+              {
+                "observedAtUTC": "2026-10-08T21:54:58.847591+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:55:04.658629988Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:54:59.251007+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:55:04.658629988Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:54:59.655012+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:55:04.658629988Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:00.058645+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:55:04.658629988Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:00.462077+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:55:04.658629988Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:00.865711+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:55:04.658629988Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:01.269290+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 1,
+                "leaseValidUntil": "2026-10-08T21:55:04.658629988Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:01.673845+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:04.658629988Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:02.077416+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:02.481035+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:02.884680+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:03.289369+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:03.692980+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:04.096455+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:04.499934+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:04.908355+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:05.312822+00:00",
+                "phase": "docker_query_stall_active",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:05.716426+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:06.120008+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 2,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:06.525205+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:09.760811106Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:06.928936+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:07.332404+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:07.735862+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:08.139560+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:08.543203+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:08.946855+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:09.350558+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:09.754103+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:10.157597+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:10.561074+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:10.964583+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:11.370743+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 3,
+                "leaseValidUntil": "2026-10-08T21:55:14.7609864Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:11.774522+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:12.177969+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:12.581420+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:12.984928+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:13.388887+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:13.792700+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:14.196265+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:14.599826+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:15.003504+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:15.407084+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:15.810679+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:16.214175+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:16.619339+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 4,
+                "leaseValidUntil": "2026-10-08T21:55:19.761005927Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:17.023657+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:55:24.758776311Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:17.427138+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:55:24.758776311Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:17.830684+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:55:24.758776311Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:18.234224+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:55:24.758776311Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:18.638909+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:55:24.758776311Z"
+              },
+              {
+                "observedAtUTC": "2026-10-08T21:55:19.042389+00:00",
+                "phase": "docker_query_stalled",
+                "status": "online",
+                "generation": 1,
+                "activeGeneration": 1,
+                "sequence": 5,
+                "leaseValidUntil": "2026-10-08T21:55:24.758776311Z"
+              }
+            ],
+            "reason": ""
+          }
+        }
+      ]
+    }
+  ],
   "tests": {
     "S03-01": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "对照独立/proc、文件系统采样。",
       "expected": "定义、单位和计算一致。",
       "environment": "真实Linux Agent及同步独立采样脚本。",
       "evidence_required": "原始采样、单位换算和对照误差。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/linux-proc-filesystem.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/real-core-agent-api-stream.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "linux_proc_filesystem",
+              "status": "PASS"
+            },
+            {
+              "name": "real_core_agent_api_stream",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/linux-proc-filesystem.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/real-core-agent-api-stream.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "linux_proc_filesystem",
+              "status": "PASS"
+            },
+            {
+              "name": "real_core_agent_api_stream",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/linux-proc-filesystem.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/real-core-agent-api-stream.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "linux_proc_filesystem",
+              "status": "PASS"
+            },
+            {
+              "name": "real_core_agent_api_stream",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        }
+      ],
+      "reason": "All three current local full acceptance runs passed.",
+      "local_status": "PASS"
     },
     "S03-02": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "控制CPU、内存负载。",
       "expected": "指标有对应变化。",
       "environment": "可控压力工具与真实节点。",
       "evidence_required": "负载前后指标曲线和系统采样。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_cpu_memory",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_agent_load_response",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_cpu_memory",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_agent_load_response",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_cpu_memory",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_agent_load_response",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        }
+      ],
+      "reason": "All three current local full acceptance runs passed.",
+      "local_status": "PASS"
     },
     "S03-03": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "首次采样、计数重置。",
       "expected": "不产生假零值或负速率。",
       "environment": "Agent重启、计数器重置/接口变化场景。",
       "evidence_required": "采样序列及速率计算结果。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/counter-reset-formula.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "counter_reset_formula",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_agent_first_sample_reset",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_interface_identity_replacement",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/counter-reset-formula.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "counter_reset_formula",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_agent_first_sample_reset",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_interface_identity_replacement",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/counter-reset-formula.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "counter_reset_formula",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_agent_first_sample_reset",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_interface_identity_replacement",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        }
+      ],
+      "reason": "All three current local full acceptance runs passed.",
+      "local_status": "PASS"
     },
     "S03-04": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "多网卡、多挂载点。",
       "expected": "分别展示，默认汇总不重复计算。",
       "environment": "至少两网卡和多个挂载点Linux节点。",
       "evidence_required": "接口/文件系统明细和汇总计算。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_multiple_interfaces_mounts",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_multiple_interfaces_mounts",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_multiple_interfaces_mounts",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        }
+      ],
+      "reason": "All three current local full acceptance runs passed.",
+      "local_status": "PASS"
     },
     "S03-05": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "无权限读取某项。",
       "expected": "该项未知，其余继续。",
       "environment": "受限权限Agent或隔离测试目录。",
       "evidence_required": "错误原因、其余指标连续性。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_permission_partial_failure_recovery",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_permission_partial_failure_recovery",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_permission_partial_failure_recovery",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        }
+      ],
+      "reason": "All three current local full acceptance runs passed.",
+      "local_status": "PASS"
     },
     "S03-06": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "Docker查询卡住。",
       "expected": "不阻塞主机采集和心跳。",
       "environment": "测试Docker Engine/Socket延迟注入。",
       "evidence_required": "指标时间戳、心跳间隔和Docker超时日志。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/docker-sdk-stall-fixture.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "docker_sdk_stall_fixture",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_docker_stall",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/docker-sdk-stall-fixture.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "docker_sdk_stall_fixture",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_docker_stall",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/docker-sdk-stall-fixture.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "docker_sdk_stall_fixture",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_docker_stall",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        }
+      ],
+      "reason": "All three current local full acceptance runs passed.",
+      "local_status": "PASS"
     },
     "S03-07": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "Agent失联、恢复。",
       "expected": "数据过期及恢复时间正确。",
       "environment": "真实网络隔离和恢复。",
       "evidence_required": "Core stale标记、离线阈值及新样本。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/real-core-agent-api-stream.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_core_agent_api_stream",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_network_stale_recovery_core",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/real-core-agent-api-stream.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_core_agent_api_stream",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_network_stale_recovery_core",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/real-core-agent-api-stream.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_core_agent_api_stream",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_network_stale_recovery_core",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        }
+      ],
+      "reason": "All three current local full acceptance runs passed.",
+      "local_status": "PASS"
     },
     "S03-08": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "节点重启、系统时间偏移。",
       "expected": "运行时间与时间异常分别处理。",
       "environment": "可重启Linux节点及可控时钟偏移。",
       "evidence_required": "boot/uptime与采集时间线。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/real-core-agent-api-stream.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json",
+            ".artifacts/work-s03/20261008T214352Z-90201196/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_core_agent_api_stream",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_clock_reboot",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_clock_offset_core",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_reboot_boot_generation_core",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/real-core-agent-api-stream.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json",
+            ".artifacts/work-s03/20261008T214903Z-906e93c2/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_core_agent_api_stream",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_clock_reboot",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_clock_offset_core",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_reboot_boot_generation_core",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/metrics-race.jsonl",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/real-core-agent-api-stream.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json",
+            ".artifacts/work-s03/20261008T215412Z-cc5d8600/summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_core_agent_api_stream",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_clock_reboot",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_clock_offset_core",
+              "status": "PASS"
+            },
+            {
+              "name": "isolated_guest_reboot_boot_generation_core",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        }
+      ],
+      "reason": "All three current local full acceptance runs passed.",
+      "local_status": "PASS"
     },
     "S03-SUP-01": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "在指定采样频率和持续负载下测量真实 Agent 的采集开销及指标端到端延迟。",
       "expected": "报告 CPU、RSS、P50/P95/P99 与机器配置；对照预算分析，未达标不得删测或静默放宽。",
       "environment": "Linux amd64/arm64 实际 Agent、可控主机负载、独立采样器和注明网络条件。",
       "evidence_required": "原始采样序列、负载参数、计算脚本、P50/P95/P99 和复现命令。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-1/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214345Z-2560343/browser/engine-summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-2/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T214856Z-2571220/browser/engine-summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        },
+        {
+          "attempt": 3,
+          "status": "PASS",
+          "evidence": [
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/guest-resource-safety.log",
+            ".artifacts/logs/acceptance-s03/20261008T214321Z-02157879/attempt-3/metrics-race.jsonl",
+            ".artifacts/work-s03/guest-agent/20261008T215405Z-2581937/browser/engine-summary.json"
+          ],
+          "partial_checks": [
+            {
+              "name": "guest_resource_safety",
+              "status": "PASS"
+            },
+            {
+              "name": "metrics_race",
+              "status": "PASS"
+            },
+            {
+              "name": "real_browser_guest_dashboard",
+              "status": "PASS"
+            }
+          ],
+          "reason": ""
+        }
+      ],
+      "reason": "All three current local full acceptance runs passed.",
+      "local_status": "PASS"
     }
-  }
+  },
+  "ci_gates": {
+    "required": [
+      {
+        "runner": "ubuntu-24.04",
+        "architecture": "amd64",
+        "status": "NOT_RUN"
+      },
+      {
+        "runner": "ubuntu-24.04-arm",
+        "architecture": "arm64",
+        "status": "NOT_RUN"
+      }
+    ]
+  },
+  "local_verification_status": "PASS"
 }
