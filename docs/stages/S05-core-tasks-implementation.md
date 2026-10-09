@@ -79,4 +79,4 @@ Run the owned component and state-machine tests with the pinned Go binary:
 /path/to/go1.26.8/bin/go vet -mod=readonly ./internal/taskstate ./internal/core/tasks ./internal/agent/taskjournal
 ```
 
-These component checks do not exercise a real Agent WebSocket or Docker Engine and do not count as one of the required three end-to-end S05 runs. The twelve normative S05 case IDs remain `NOT_READY` until the server, Agent delivery, real Docker operations, postcondition inspection, failure recovery, routes, and acceptance evidence are integrated.
+These component checks do not exercise a real Agent WebSocket or Docker Engine and do not count as the required complete end-to-end S05 run. The twelve normative S05 case IDs remain `NOT_READY` until the server, Agent delivery, real Docker operations, postcondition inspection, failure recovery, routes, and acceptance evidence are integrated.

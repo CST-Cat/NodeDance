@@ -10,14 +10,16 @@
       "mode": "full",
       "run_id": "20261008T144457Z-743ef84a",
       "updated_at": "2026-10-08T14:49:26.329301+00:00",
-      "reason": "All eight original S00 acceptance cases passed in three consecutive full runs."
+      "reason": "All eight original S00 acceptance cases passed in three consecutive full runs.",
+      "historical_acceptance_policy_note": "Historical PASS recorded under the former three-consecutive-run acceptance rule. Preserved as historical evidence; not rerun under the current single-complete-run rule."
     },
     "S01": {
       "status": "PASS",
       "mode": "full",
       "run_id": "20261008T160614Z-f6e6a967",
       "updated_at": "2026-10-08T16:07:58.657454+00:00",
-      "reason": "All twelve original S01 acceptance cases passed in three consecutive full runs."
+      "reason": "All twelve original S01 acceptance cases passed in three consecutive full runs.",
+      "historical_acceptance_policy_note": "Historical PASS recorded under the former three-consecutive-run acceptance rule. Preserved as historical evidence; not rerun under the current single-complete-run rule."
     },
     "S02": {
       "status": "NOT_READY",
@@ -29,7 +31,8 @@
       "mode": "full",
       "run_id": "20261008T214321Z-02157879",
       "updated_at": "2026-10-09T01:09:07.836642+00:00",
-      "reason": "All nine original and supplemental S03 cases passed three consecutive real local runs; the overall stage remains NOT_READY until both architecture GitHub Actions gates pass. Pending gates: ubuntu-24.04, ubuntu-24.04-arm"
+      "reason": "All nine original and supplemental S03 cases passed three consecutive real local runs; the overall stage remains NOT_READY until both architecture GitHub Actions gates pass. Pending gates: ubuntu-24.04, ubuntu-24.04-arm",
+      "historical_acceptance_policy_note": "The recorded three local runs were produced under the former acceptance policy and remain historical evidence; the current S03 gate is one complete run on each required architecture plus both GitHub Actions gates."
     },
     "S04": {
       "status": "NOT_READY",
@@ -49,7 +52,8 @@
     "S07": {
       "status": "NOT_READY",
       "reason": "Compose 候选已实现；生产 v6 migration、S06 shell 入口、真实 Engine 28/29 与完整 P0/S07 验收待集成。详见 reports/stages/S07.json。",
-      "updated_at": "2026-10-09T03:50:21.348877+00:00"
+      "updated_at": "2026-10-09T03:50:21.348877+00:00",
+      "acceptance_policy_note": "Acceptance policy text was updated to one complete run; this report remains NOT_READY and was not rerun, so its existing implementation/integration blockers are unchanged."
     },
     "S08": {
       "status": "NOT_READY",

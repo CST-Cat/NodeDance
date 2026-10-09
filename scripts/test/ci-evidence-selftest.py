@@ -35,7 +35,7 @@ def test_stale_pass_is_replaced_and_current_status_is_preserved():
             "run_id": "20261008T144457Z-743ef84a",
             "updated_at": "2026-01-01T00:00:00+00:00", "status": "PASS",
             "tests": {case["id"]: {"status": "PASS", "runs": [
-                {"attempt": attempt, "status": "PASS"} for attempt in (1, 2, 3)
+                {"attempt": attempt, "status": "PASS"} for attempt in (1,)
             ]}
                       for case in cases},
         }
@@ -91,7 +91,7 @@ def test_stale_pass_is_replaced_and_current_status_is_preserved():
         })
         fresh["tests"] = {
             case["id"]: {"status": "PASS", "runs": [
-                {"attempt": attempt, "status": "PASS"} for attempt in (1, 2, 3)
+                {"attempt": attempt, "status": "PASS"} for attempt in (1,)
             ]}
             for case in cases
         }
@@ -277,7 +277,7 @@ def test_s01_marker_and_report_are_isolated_from_s00():
         })
         stale_s01["tests"] = {
             case["id"]: {"status": "PASS", "runs": [
-                {"attempt": number, "status": "PASS"} for number in (1, 2, 3)
+                {"attempt": number, "status": "PASS"} for number in (1,)
             ]} for case in s01_cases
         }
         s01_report.write_text(json.dumps(stale_s01))
@@ -313,7 +313,7 @@ def test_s02_marker_and_report_are_isolated_from_s00_s01():
                       "updated_at": (dt.datetime.fromisoformat(metadata_s02["initialized_at"])
                                      - dt.timedelta(seconds=1)).isoformat()})
         stale["tests"] = {case["id"]: {"status": "PASS", "runs": [
-            {"attempt": number, "status": "PASS"} for number in (1, 2, 3)
+            {"attempt": number, "status": "PASS"} for number in (1,)
         ]} for case in s02_cases}
         s02_report.write_text(json.dumps(stale))
         replaced = EVIDENCE.annotate(s02_report, status_path, s02_marker, metadata=metadata_s02, stage="S02")
@@ -370,7 +370,7 @@ def test_s04_marker_and_report_are_isolated_from_s00_s01_s02():
                       "updated_at": (dt.datetime.fromisoformat(metadata_s04["initialized_at"])
                                      - dt.timedelta(seconds=1)).isoformat()})
         stale["tests"] = {case["id"]: {"status": "PASS", "runs": [
-            {"attempt": number, "status": "PASS"} for number in (1, 2, 3)
+            {"attempt": number, "status": "PASS"} for number in (1,)
         ]} for case in cases}
         s04_report.write_text(json.dumps(stale))
         replaced = EVIDENCE.annotate(s04_report, status_path, s04_marker,
@@ -446,12 +446,12 @@ def test_s03_workflow_matrix_and_artifact_allowlist():
         "qemu-utils=1:8.2.2+ds-0ubuntu1.18",
         "sudo modprobe nbd max_part=8",
         "run: |\n          make check\n          make build",
-        "scripts/acceptance-s03.py --mode full --repeat 3 --ci-runner",
+        "scripts/acceptance-s03.py --mode full --repeat 1 --ci-runner",
         "python3 scripts/ci_evidence.py --stage S03 annotate",
         "uses: actions/upload-artifact@",
     )]
     require(positions == sorted(positions),
-            "S03 workflow is missing the locked guest/browser prerequisites, real three-run acceptance, or final report upload")
+            "S03 workflow is missing the locked guest/browser prerequisites, one complete real acceptance run, or final report upload")
     require("ubuntu-24.04" in s03_job and "ubuntu-24.04-arm" in s03_job
             and "qemu-package: qemu-system-x86" in s03_job
             and "qemu-package: qemu-system-arm" in s03_job,

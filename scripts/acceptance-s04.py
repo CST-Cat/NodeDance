@@ -263,7 +263,7 @@ def make_initial_report(mode: str, repeat: int, engine: str) -> dict:
     return {
         "schema": 1, "stage": "S04", "mode": "full" if mode == "full" else mode,
         "status": "NOT_READY", "run_id": RUN_ID, "updated_at": timestamp(),
-        "repeat_required": 3, "repeat_requested": repeat,
+        "repeat_required": 1, "repeat_requested": repeat,
         "verification_status": "NOT_READY", "engine": engine,
         "commit": commit,
         "tests": cases,
@@ -594,7 +594,7 @@ CURRENT_REPORT: dict
 
 def main() -> int:
     if len(sys.argv) != 5 or sys.argv[1] != "--mode" or sys.argv[3] != "--repeat":
-        print("usage: acceptance-s04.py --mode full|integration|e2e --repeat 1|3", file=sys.stderr)
+        print("usage: acceptance-s04.py --mode full|integration|e2e --repeat 1", file=sys.stderr)
         return 2
     mode, repeat_text = sys.argv[2], sys.argv[4]
     if mode not in {"full", "integration", "e2e"}:
@@ -603,10 +603,10 @@ def main() -> int:
     try:
         repeat = int(repeat_text)
     except ValueError:
-        print("repeat must be 1 or 3", file=sys.stderr)
+        print("repeat must be 1", file=sys.stderr)
         return 2
-    if repeat not in {1, 3} or (mode == "full" and repeat != 3):
-        print("full mode requires exactly three attempts; integration/e2e use one", file=sys.stderr)
+    if repeat != 1:
+        print("acceptance runs once; rerun the affected suite after a failure or code change", file=sys.stderr)
         return 2
     engine = os.environ.get("NODEDANCE_TEST_ENGINE", "")
     if engine not in {"28", "29"}:
@@ -655,11 +655,11 @@ def main() -> int:
     elif attempt_not_ready or not all_case_runs_pass or mode != "full":
         CURRENT_REPORT["status"] = "NOT_READY"
         CURRENT_REPORT["verification_status"] = "NOT_READY"
-        CURRENT_REPORT["reason"] = "The full S04 gate requires all 11 cases to pass in three complete attempts on each required CI Engine/architecture matrix."
+        CURRENT_REPORT["reason"] = "The full S04 gate requires all 11 cases to pass in this run on each required CI Engine/architecture matrix."
     else:
         CURRENT_REPORT["status"] = "PASS"
         CURRENT_REPORT["verification_status"] = "PASS"
-        CURRENT_REPORT["reason"] = "All original S04 cases and S04-SUP-01 passed in three complete real Engine/Agent/Core/browser attempts."
+        CURRENT_REPORT["reason"] = "All original S04 cases and S04-SUP-01 passed in this complete real Engine/Agent/Core/browser run."
     CURRENT_REPORT["updated_at"] = timestamp()
     save_report(CURRENT_REPORT)
     print(f"S04: {CURRENT_REPORT['status']}; report=reports/stages/S04.json; evidence={ATTEMPT_ROOT.relative_to(ROOT)}", flush=True)

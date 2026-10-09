@@ -92,5 +92,5 @@ owner's `internal/core/storage/sqlite.go`.
    service keeps two Engine instances.
 4. Integrate Core/Agent operation journaling and read-only reconciliation for
    actions whose outcome cannot be proved from an inventory snapshot.
-5. Run the full original S07 and P0 acceptance sets three consecutive times;
+5. Run the full original S07 and P0 acceptance sets once; rerun affected suites only after a failure or code change;
    component tests and DIND lifecycle checks alone cannot pass S07-10.

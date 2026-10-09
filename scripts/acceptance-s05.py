@@ -3,7 +3,7 @@
 
 The report keeps every normative S05 case. Cases without an integrated
 Core/Agent/Engine proof remain NOT_READY even when related component tests
-pass. A three-run report is never upgraded to PASS while any case is missing.
+pass. A full-run report is never upgraded to PASS while any case is missing.
 """
 
 from __future__ import annotations
@@ -50,8 +50,8 @@ FORMAL_SUPPLEMENTAL_MARKERS = {
     "S05-06-QUEUED-CANCEL-OFFLINE": "S05_S06_CASE queued_cancel=not_dispatched repeated_delete=same_result docker_unchanged=true offline_post=503 no_rows=true reconnect_no_backlog=true delivered_timeout=unknown_result_pending no_replay=true verified=true",
 }
 CURRENT_CORE_GAPS = {
-    "S05-06": "The Core+Agent+Engine test now covers safe undelivered cancellation, offline rejection, and a delivered deadline followed by Agent-journal plus real-Engine reconciliation. It is not accepted until the final code passes the exact fixture suite three times on both locked Engines; the current run exposed an S04 inventory loss and stopped before timeout assertions.",
-    "S05-11": "The Core+Agent+Engine test now injects a Core task-row failure and an Agent task-journal INSERT failure, checking durable unknown/audit/claim and no Docker mutation. It is not accepted until that exact suite passes three times on both locked Engines; the current run is blocked earlier by the S04 inventory loss.",
+    "S05-06": "The Core+Agent+Engine test now covers safe undelivered cancellation, offline rejection, and a delivered deadline followed by Agent-journal plus real-Engine reconciliation. It is not accepted until the final code passes the exact fixture suite once on both locked Engines; the current run exposed an S04 inventory loss and stopped before timeout assertions.",
+    "S05-11": "The Core+Agent+Engine test now injects a Core task-row failure and an Agent task-journal INSERT failure, checking durable unknown/audit/claim and no Docker mutation. It is not accepted until that exact suite passes once on both locked Engines; the current run is blocked earlier by the S04 inventory loss.",
 }
 
 
@@ -361,10 +361,8 @@ def main() -> int:
     parser.add_argument("--mode", choices=("full", "integration", "e2e"), required=True)
     parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
-    if args.repeat < 1 or args.repeat > 3:
-        parser.error("--repeat must be 1..3")
-    if args.mode == "full" and args.repeat != 3:
-        parser.error("full S05 acceptance requires exactly three consecutive attempts")
+    if args.repeat != 1:
+        parser.error("acceptance runs once; rerun the affected suite after a failure or code change")
 
     EVIDENCE_ROOT.mkdir(parents=True, exist_ok=False, mode=0o700)
     go_bin = os.environ.get("NODEDANCE_GO_BIN", str(ROOT / ".tools/go1.26.8/bin/go"))
@@ -392,7 +390,7 @@ def main() -> int:
         report = {
             "schema": 1, "stage": "S05", "mode": args.mode, "run_id": RUN_ID, "updated_at": now(),
             "status": "FAIL" if component_code else "NOT_READY",
-            "verification_status": "FAIL" if component_code else "NOT_READY", "repeat_required": 3,
+            "verification_status": "FAIL" if component_code else "NOT_READY", "repeat_required": 1,
             "repeat_requested": args.repeat, "reason": str(error), "tests": {case["id"]: case_record(case) for case in CASES},
             "environment": {"host": platform.platform(), "architecture": platform.machine()},
             "evidence_root": str(EVIDENCE_ROOT.relative_to(ROOT)),
@@ -406,7 +404,7 @@ def main() -> int:
         "schema": 1, "stage": "S05", "mode": args.mode, "run_id": RUN_ID,
         "source_revision": subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.strip(),
         "implementation_tree_sha256": source_digest(), "updated_at": now(),
-        "status": "NOT_READY", "verification_status": "NOT_RUN", "repeat_required": 3,
+        "status": "NOT_READY", "verification_status": "NOT_RUN", "repeat_required": 1,
         "repeat_requested": args.repeat, "reason": "Acceptance attempts are running.",
         "environment": {"go": go_version, "node": node_version, "architecture": platform.machine(),
                         "dind_root": str(dind_root), "engines": {str(key): engines[key][0] for key in engines}},
@@ -419,7 +417,7 @@ def main() -> int:
     playwright_env = os.environ.copy()
     playwright_env["PATH"] = str(ROOT / ".tools/node-v22.23.3/bin") + os.pathsep + str(ROOT / ".tools/pnpm/node_modules/.bin") + os.pathsep + playwright_env.get("PATH", "")
     playwright_command = ["pnpm", "--dir", "web", "exec", "playwright", "test", "--config=playwright.s03.config.ts",
-                          "web/tests/s05-container-actions.spec.ts", "--repeat-each=3"]
+                          "web/tests/s05-container-actions.spec.ts"]
     playwright_code, playwright_log = run_command("paused-ui-playwright", playwright_command, env=playwright_env, timeout=180)
     report["supplemental_checks"].append({"id": "S05-UI-PAUSE-STATE", "status": "PASS" if playwright_code == 0 else "FAIL",
                                           "command": playwright_command, "evidence": str(playwright_log.relative_to(ROOT))})
@@ -602,15 +600,15 @@ def main() -> int:
                 record["runs"].append({"attempt": attempt, "status": status, "engine_runs": evidence,
                                         "reason": "" if status == "PASS" else "At least one required per-engine real integration or delete-confirmation test failed."})
             statuses = [item["status"] for item in record["runs"]]
-            if statuses and all(value == "PASS" for value in statuses) and args.mode == "full" and args.repeat == 3:
+            if statuses and all(value == "PASS" for value in statuses) and args.mode == "full":
                 record["status"] = "PASS"
-                record["reason"] = "The exact acceptance assertion passed three times on both locked owned Engines 28 and 29."
+                record["reason"] = "The exact acceptance assertion passed on both locked owned Engines 28 and 29 in this run."
             elif "FAIL" in statuses:
                 record["status"] = "FAIL"
                 record["reason"] = "At least one final-code real integration attempt failed."
             else:
                 record["status"] = "NOT_READY"
-                record["reason"] = "The full three-attempt two-engine requirement was not met."
+                record["reason"] = "The complete two-engine acceptance requirement was not met."
         else:
             reason = CURRENT_CORE_GAPS.get(case_id, "No full-scope integrated proof is currently mapped to this normative acceptance case.")
             record["reason"] = reason
@@ -651,10 +649,10 @@ def main() -> int:
         report["status"] = "FAIL"
         report["verification_status"] = "FAIL"
         report["reason"] = "A current S05 integration or supplemental browser check failed; the failed attempt is preserved."
-    elif args.mode == "full" and args.repeat == 3 and all(value == "PASS" for value in statuses):
+    elif args.mode == "full" and all(value == "PASS" for value in statuses):
         report["status"] = "PASS"
         report["verification_status"] = "PASS"
-        report["reason"] = "All original S05-01 through S05-12 cases passed three final-code attempts on both locked Engines."
+        report["reason"] = "All original S05-01 through S05-12 cases passed in this final-code run on both locked Engines."
     else:
         report["status"] = "NOT_READY"
         report["verification_status"] = "NOT_READY"

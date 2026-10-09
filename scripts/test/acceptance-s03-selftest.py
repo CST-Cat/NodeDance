@@ -43,16 +43,16 @@ def make_checks(attempt, *, status="PASS", omitted=()):
 def make_report():
     return {
         "schema": 1, "stage": "S03", "mode": "full", "run_id": "selftest",
-        "repeat_required": 3, "repeat_requested": 3, "status": "NOT_READY",
+        "repeat_required": 1, "repeat_requested": 1, "status": "NOT_READY",
         "evidence_root": ".artifacts/selftest", "tests": {
             case_id: {"status": "NOT_READY", "runs": []} for case_id in acceptance.CASE_IDS
         },
-        "checks": [{"attempt": attempt, "results": make_checks(attempt)} for attempt in (1, 2, 3)],
+        "checks": [{"attempt": 1, "results": make_checks(1)}],
         "ci_gates": acceptance.ci_gates_template(),
     }
 
 
-def test_per_attempt_and_three_run_statuses():
+def test_per_attempt_and_single_run_statuses():
     passed = make_checks(1)
     for case_id in acceptance.CASE_IDS:
         result = acceptance.derive_case_attempt(passed, case_id, 1)
@@ -67,23 +67,25 @@ def test_per_attempt_and_three_run_statuses():
         require(failed["status"] == "FAIL", f"{case_id} hid a failed supporting check")
 
     require(acceptance.summarize_case_runs([
-        {"attempt": i, "status": "PASS"} for i in (1, 2, 3)
-    ]) == "PASS", "three local passes did not aggregate to PASS")
+        {"attempt": 1, "status": "PASS"}
+    ]) == "PASS", "one complete local pass did not aggregate to PASS")
     require(acceptance.summarize_case_runs([
-        {"attempt": i, "status": "PASS"} for i in (1, 2)
-    ]) == "NOT_READY", "fewer than three runs were incorrectly promoted")
+        {"attempt": attempt, "status": "PASS"} for attempt in (1, 2, 3)
+    ]) == "NOT_READY", "repeated attempts were accepted under the single-run policy")
+    require(acceptance.summarize_case_runs([]) == "NOT_READY",
+            "missing current run was incorrectly promoted")
     require(acceptance.summarize_case_runs([
-        {"attempt": i, "status": "PASS" if i < 3 else "FAIL"} for i in (1, 2, 3)
-    ]) == "FAIL", "a failed current attempt was hidden")
+        {"attempt": 1, "status": "FAIL"}
+    ]) == "FAIL", "a failed current run was hidden")
 
 
 def test_architecture_gate_controls_overall_status():
     report = acceptance.finalize_report(make_report())
     require(report["local_verification_status"] == "PASS", "all local case runs were not recorded as passing")
     require(report["status"] == "NOT_READY", "local evidence incorrectly passed the overall stage without GitHub gates")
-    require(all(case["status"] == "PASS" and len(case["runs"]) == 3
+    require(all(case["status"] == "PASS" and len(case["runs"]) == 1
                 and all(run["status"] == "PASS" for run in case["runs"])
-                for case in report["tests"].values()), "original cases do not report local three-run PASS")
+                for case in report["tests"].values()), "original cases do not report local full-run PASS")
     require([gate["status"] for gate in report["ci_gates"]["required"]] == ["NOT_RUN", "NOT_RUN"],
             "fresh report claims an architecture gate ran")
 
@@ -107,7 +109,7 @@ def test_browser_evidence_is_compact_and_size_bounded():
     require(len(serialized.encode("utf-8")) < 1024 * 1024, "compact S03 report exceeded the 1 MiB limit")
     browser_checks = [check for attempt in report["checks"] for check in attempt["results"]
                       if check["name"] == "real_browser_guest_dashboard"]
-    require(len(browser_checks) == 3, "expected one compact browser check per local attempt")
+    require(len(browser_checks) == 1, "expected one compact browser check in the complete local run")
     for check in browser_checks:
         require(len(check["engines"]) == 3, "compact report omitted a browser engine")
         for engine in check["engines"]:
@@ -122,7 +124,7 @@ def test_browser_evidence_is_compact_and_size_bounded():
 
 
 if __name__ == "__main__":
-    test_per_attempt_and_three_run_statuses()
+    test_per_attempt_and_single_run_statuses()
     test_architecture_gate_controls_overall_status()
     test_browser_evidence_is_compact_and_size_bounded()
     print("S03 report derivation self-test: PASS")

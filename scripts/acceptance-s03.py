@@ -99,8 +99,8 @@ def summarize_case_runs(runs):
     statuses = [item.get("status") for item in runs]
     if "FAIL" in statuses:
         return "FAIL"
-    if ([item.get("attempt") for item in runs] == [1, 2, 3]
-            and statuses == ["PASS", "PASS", "PASS"]):
+    if ([item.get("attempt") for item in runs] == [1]
+            and statuses == ["PASS"]):
         return "PASS"
     return "NOT_READY"
 
@@ -185,7 +185,7 @@ def reconcile_report(report):
         record["local_status"] = local_status
         record["status"] = local_status
         if local_status == "PASS":
-            record["reason"] = "All three current local full acceptance runs passed."
+            record["reason"] = "The current complete local acceptance run passed."
         elif local_status == "FAIL":
             record["reason"] = "At least one current supporting check for this original S03 case failed."
         else:
@@ -228,7 +228,7 @@ def finalize_report(report, *, any_failure=False, ci_runner=None):
         report["status"] = "PASS"
         report["verification_status"] = "PASS"
         report["reason"] = (
-            "All nine original and supplemental S03 cases passed three consecutive real runs on both "
+            "All nine original and supplemental S03 cases passed in one complete real run on both "
             "required GitHub Actions architectures."
         )
     else:
@@ -237,14 +237,14 @@ def finalize_report(report, *, any_failure=False, ci_runner=None):
         if local_status == "PASS":
             pending = [item["runner"] for item in report["ci_gates"]["required"] if item.get("status") != "PASS"]
             report["reason"] = (
-                "All nine original and supplemental S03 cases passed three consecutive real local runs; "
+                "All nine original and supplemental S03 cases passed in one complete real local run; "
                 "the overall stage remains NOT_READY until both architecture GitHub Actions gates pass. "
                 "Pending gates: " + ", ".join(pending)
             )
         else:
             report["reason"] = (
-                "S03 local acceptance is incomplete because one or more original cases lack three passing "
-                "full runs; both ubuntu-24.04/amd64 and ubuntu-24.04-arm/arm64 GitHub Actions gates are also required."
+                "S03 local acceptance is incomplete because one or more original cases lack a passing "
+                "full run; both ubuntu-24.04/amd64 and ubuntu-24.04-arm/arm64 GitHub Actions gates are also required."
             )
     return report
 
@@ -320,7 +320,7 @@ def record_check(checks, name, status, evidence, reason="", **extra):
     return item
 
 
-def run_attempt(attempt, repeat, go_bin, base_env):
+def run_attempt(attempt, go_bin, base_env):
     attempt_dir = EVIDENCE_ROOT / f"attempt-{attempt}"
     attempt_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
     checks = []
@@ -505,12 +505,10 @@ def main():
     parser.add_argument("--ci-runner", choices=tuple(CI_RUNNERS),
                         help="record this full-run result as one required GitHub architecture gate")
     args = parser.parse_args()
-    if args.repeat < 1 or args.repeat > 3:
-        parser.error("--repeat must be 1..3")
-    if args.mode == "full" and args.repeat != 3:
-        parser.error("full S03 acceptance must request three consecutive runs")
-    if args.ci_runner and (args.mode != "full" or args.repeat != 3):
-        parser.error("--ci-runner requires --mode full --repeat 3")
+    if args.repeat != 1:
+        parser.error("acceptance runs once; rerun the affected suite after a failure or code change")
+    if args.ci_runner and args.mode != "full":
+        parser.error("--ci-runner requires --mode full")
     if args.ci_runner:
         configured_runner = os.environ.get("NODEDANCE_TEST_RUNNER", "").strip()
         if configured_runner and configured_runner != args.ci_runner:
@@ -530,7 +528,7 @@ def main():
     report = {
         "schema": 1, "stage": "S03", "mode": args.mode, "run_id": RUN_ID,
         "updated_at": timestamp(), "status": "NOT_READY", "reason": "required end-to-end S03 cases are incomplete",
-        "repeat_required": 3, "repeat_requested": args.repeat, "verification_status": "NOT_READY",
+        "repeat_required": 1, "repeat_requested": args.repeat, "verification_status": "NOT_READY",
         "local_verification_status": "NOT_READY", "ci_gates": ci_gates_template(),
         "evidence_root": str(EVIDENCE_ROOT.relative_to(ROOT)),
         "environment": {"go": go_version, "goarch": platform.machine(),
@@ -547,7 +545,7 @@ def main():
     any_failure = False
     for attempt in range(1, args.repeat + 1):
         print(f"S03 acceptance attempt {attempt}/{args.repeat} ({args.mode})", flush=True)
-        checks, case_results, failed = run_attempt(attempt, args.repeat, go_bin, env)
+        checks, case_results, failed = run_attempt(attempt, go_bin, env)
         report["checks"].append({"attempt": attempt, "results": checks})
         any_failure = any_failure or failed
         for case_id in CASE_IDS:

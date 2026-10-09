@@ -571,5 +571,6 @@
     }
   },
   "evidence_root": ".artifacts/logs/acceptance/20261008T144457Z-743ef84a",
-  "reason": "All eight original S00 acceptance cases passed in three consecutive full runs."
+  "reason": "All eight original S00 acceptance cases passed in three consecutive full runs.",
+  "historical_acceptance_policy_note": "Historical PASS recorded under the former three-consecutive-run acceptance rule. Preserved as historical evidence; not rerun under the current single-complete-run rule."
 }

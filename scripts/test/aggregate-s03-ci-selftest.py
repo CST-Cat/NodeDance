@@ -46,7 +46,7 @@ def shard(runner, architecture):
     full_checks = []
     test_records = {case_id: {"status": "PASS", "local_status": "PASS", "runs": []}
                     for case_id in AGGREGATOR.CASE_IDS}
-    for attempt in (1, 2, 3):
+    for attempt in (1,):
         check_results = [
             {
                 "name": name,
@@ -76,8 +76,8 @@ def shard(runner, architecture):
         "status": "NOT_READY",
         "verification_status": "NOT_READY",
         "local_verification_status": "PASS",
-        "repeat_required": 3,
-        "repeat_requested": 3,
+        "repeat_required": 1,
+        "repeat_requested": 1,
         "evidence_root": evidence_root,
         "environment": {
             "go": "go version go1.26.8 linux/" + architecture,
@@ -170,21 +170,21 @@ def test_missing_stale_or_mismatched_shards_are_rejected():
     rejected(changed)
 
     changed = copy.deepcopy(base)
-    changed["checks"][1]["results"] = [
-        item for item in changed["checks"][1]["results"] if item["name"] != "metrics_race"
+    changed["checks"][0]["results"] = [
+        item for item in changed["checks"][0]["results"] if item["name"] != "metrics_race"
     ]
     rejected(changed)
 
     changed = copy.deepcopy(base)
     case_id = next(iter(changed["tests"]))
-    changed["tests"][case_id]["runs"][1]["partial_checks"] = [
-        item for item in changed["tests"][case_id]["runs"][1]["partial_checks"]
+    changed["tests"][case_id]["runs"][0]["partial_checks"] = [
+        item for item in changed["tests"][case_id]["runs"][0]["partial_checks"]
         if item["name"] != "metrics_race"
     ]
     rejected(changed)
 
     changed = copy.deepcopy(base)
-    changed["checks"][2]["results"].append({
+    changed["checks"][0]["results"].append({
         "name": "unexpected_check", "status": "PASS", "evidence": ".artifacts/extra.json"
     })
     rejected(changed)
@@ -247,8 +247,8 @@ def test_cli_reads_both_reports_and_writes_atomically():
         # A current, otherwise successful report must not survive if one full
         # attempt omits a required named check. The previously written PASS is
         # preserved byte-for-byte, rather than being replaced or recreated.
-        arm64["checks"][1]["results"] = [
-            item for item in arm64["checks"][1]["results"] if item["name"] != "metrics_race"
+        arm64["checks"][0]["results"] = [
+            item for item in arm64["checks"][0]["results"] if item["name"] != "metrics_race"
         ]
         arm64_path.write_text(json.dumps(arm64), encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()):
@@ -260,8 +260,8 @@ def test_cli_reads_both_reports_and_writes_atomically():
 
         arm64 = shard("ubuntu-24.04-arm", "arm64")
         case_id = next(iter(arm64["tests"]))
-        arm64["tests"][case_id]["runs"][1]["partial_checks"] = [
-            item for item in arm64["tests"][case_id]["runs"][1]["partial_checks"]
+        arm64["tests"][case_id]["runs"][0]["partial_checks"] = [
+            item for item in arm64["tests"][case_id]["runs"][0]["partial_checks"]
             if item["name"] != "metrics_race"
         ]
         arm64_path.write_text(json.dumps(arm64), encoding="utf-8")
@@ -283,7 +283,7 @@ def main():
     test_aggregate_both_current_architectures()
     test_missing_stale_or_mismatched_shards_are_rejected()
     test_cli_reads_both_reports_and_writes_atomically()
-    print("S03 CI aggregation safeguards PASS: same-run SHA/attempt, both unique architecture gates, complete three-run evidence, fail-closed report write")
+    print("S03 CI aggregation safeguards PASS: same-run SHA/attempt, both unique architecture gates, complete single-run evidence, fail-closed report write")
 
 
 if __name__ == "__main__":

@@ -5100,5 +5100,6 @@
       }
     ]
   },
-  "local_verification_status": "PASS"
+  "local_verification_status": "PASS",
+  "historical_acceptance_policy_note": "The recorded three local runs were produced under the former acceptance policy and remain historical evidence; the current S03 gate is one complete run on each required architecture plus both GitHub Actions gates."
 }

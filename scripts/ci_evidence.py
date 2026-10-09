@@ -120,8 +120,8 @@ def not_ready_report(metadata, registry_path=REGISTRY_PATH, stage="S00"):
         "run_id": "ci-" + metadata["job_key"],
         "updated_at": now(),
         "status": "NOT_READY",
-        "repeat_required": 3,
-        "repeat_requested": 3,
+        "repeat_required": 1,
+        "repeat_requested": 1,
         "verification_status": "NOT_READY",
         "reason": reason,
         "ci": metadata,
@@ -200,7 +200,7 @@ def report_is_current(report, marker, registry_path=REGISTRY_PATH, stage="S00"):
     if report["status"] == "PASS":
         return all(
             case.get("status") == "PASS"
-            and [run.get("attempt") for run in case.get("runs", [])] == [1, 2, 3]
+            and [run.get("attempt") for run in case.get("runs", [])] == [1]
             and all(run.get("status") == "PASS" for run in case.get("runs", []))
             for case in cases.values()
         )

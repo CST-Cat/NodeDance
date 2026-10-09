@@ -129,14 +129,14 @@ def save_report(report):
     STATUSES.write_text(json.dumps(overall, ensure_ascii=False, indent=2) + "\n")
 
 
-def evaluate_results(case_statuses, process_exit_codes, race_pass, full_three_run=False):
+def evaluate_results(case_statuses, process_exit_codes, race_pass, full_acceptance=False):
     """Fail the stage if the parent Go process failed after named tests passed."""
     process_failed = any(code != 0 for code in process_exit_codes)
     case_failed = any(status == "FAIL" for status in case_statuses)
     if process_failed or case_failed or not race_pass:
         return "FAIL", "FAIL"
     verification = "PASS" if case_statuses and all(status == "PASS" for status in case_statuses) else "NOT_READY"
-    if full_three_run and verification == "PASS":
+    if full_acceptance and verification == "PASS":
         return "PASS", verification
     return "NOT_READY", verification
 
@@ -259,15 +259,13 @@ def main():
     parser.add_argument("--mode", choices=("full", "integration", "e2e"), required=True)
     parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
-    if args.repeat < 1 or args.repeat > 3:
-        parser.error("--repeat must be 1..3")
-    if args.mode == "full" and args.repeat != 3:
-        parser.error("full S02 acceptance must run three consecutive times")
+    if args.repeat != 1:
+        parser.error("acceptance runs once; rerun the affected suite after a failure or code change")
 
     report = {
         "schema": 1, "stage": "S02", "mode": args.mode,
         "run_id": RUN_ID, "updated_at": timestamp(), "status": "NOT_READY",
-        "repeat_required": 3, "repeat_requested": args.repeat,
+        "repeat_required": 1, "repeat_requested": args.repeat,
         "verification_status": "NOT_RUN", "tests": {case["id"]: make_case_record(case) for case in CASES},
         "evidence_root": str(ATTEMPT_ROOT.relative_to(ROOT)),
         "environment": {"go": subprocess.run(["go", "version"], cwd=ROOT, capture_output=True, text=True).stdout.strip(),
@@ -280,28 +278,28 @@ def main():
         print(f"S02 real acceptance run {attempt}/{args.repeat} ({args.mode})", flush=True)
         all_codes.append(run_attempt(attempt, report, args.mode))
     race_pass = True
-    if args.mode == "full" and args.repeat == 3:
+    if args.mode == "full":
         race_pass = run_race_check(report)
 
     for case in CASES:
         record = report["tests"][case["id"]]
         statuses = [item["status"] for item in record["runs"]]
-        if len(statuses) == 3 and all(item == "PASS" for item in statuses):
-            record["status"], record["reason"] = "PASS", "All three current consecutive real acceptance runs passed."
+        if len(statuses) == 1 and all(item == "PASS" for item in statuses):
+            record["status"], record["reason"] = "PASS", "The current complete real acceptance run passed."
         elif "FAIL" in statuses:
             record["status"], record["reason"] = "FAIL", "At least one current S02 acceptance execution failed."
         else:
-            record["status"], record["reason"] = "NOT_READY", "Required S02 evidence is missing, skipped, or has fewer than three consecutive full runs."
+            record["status"], record["reason"] = "NOT_READY", "Required S02 evidence is missing, skipped, or incomplete."
     case_statuses = [report["tests"][case["id"]]["status"] for case in CASES]
-    full_three_run = args.mode == "full" and args.repeat == 3 and race_pass
+    full_acceptance = args.mode == "full" and race_pass
     report["status"], report["verification_status"] = evaluate_results(
-        case_statuses, all_codes, race_pass, full_three_run=full_three_run)
+        case_statuses, all_codes, race_pass, full_acceptance=full_acceptance)
     if report["status"] == "PASS":
-        report["reason"] = "All original and supplemental S02 cases passed three consecutive real runs, parent test processes exited successfully, and race checks passed."
+        report["reason"] = "All original and supplemental S02 cases passed in this complete real run; parent test processes exited successfully and race checks passed."
     elif report["status"] == "FAIL":
         report["reason"] = "At least one required case, parent test process, or race check failed; passing subtests do not override a failing parent process."
     else:
-        report["reason"] = "A required case or systemd check is missing/skipped, or three full consecutive runs were not completed."
+        report["reason"] = "A required case or systemd check is missing, skipped, or incomplete."
     report["updated_at"] = timestamp()
     save_report(report)
     print(f"S02 {report['status']}: report={REPORT.relative_to(ROOT)} evidence={report['evidence_root']}", flush=True)

@@ -2093,15 +2093,15 @@ def run_guest_round(arch, lock, image, probe, qemu_binary, round_dir, round_numb
                         "restricted unprivileged real Agent denied access to a copied live /proc/meminfo view while other live metrics continue and recover",
                     ],
                     "pending_stage_behaviors": {
-                        "S03-02": ["dashboard display of this guest's load/recovery and three consecutive stage runs"],
-                        "S03-06": ["dashboard display of the real Docker inventory as stale/unknown while the Agent host metrics and heartbeat remain live, plus three consecutive stage runs"],
-                        "S03-08": ["dashboard display of clock-offset and reboot changes, plus three consecutive stage runs"],
+                        "S03-02": ["dashboard display of this guest's load/recovery and one complete stage run"],
+                        "S03-06": ["dashboard display of the real Docker inventory as stale/unknown while the Agent host metrics and heartbeat remain live, plus one complete stage run"],
+                        "S03-08": ["dashboard display of clock-offset and reboot changes, plus one complete stage run"],
                     },
                 }
                 if agent_manifest is not None:
                     result["guest_agent_core_probe"] = analyze_guest_agent_core(events, states, round_dir)
                     result["full_stage_cases"]["S03-07"] = "NOT_READY"
-                    result["pending_stage_behaviors"]["S03-07"] = ["browser stale/offline display and recovery for this isolated guest, plus three consecutive stage runs"]
+                    result["pending_stage_behaviors"]["S03-07"] = ["browser stale/offline display and recovery for this isolated guest, plus one complete stage run"]
                 return result
             finally:
                 stop_qemu(qemu, monitor_path, qemu_log)
@@ -2151,32 +2151,32 @@ def main():
             "S03-02": {
                 "status": "NOT_READY",
                 "covered_guest_behavior": ["controlled CPU/resident-memory increase and recovery in the minimal Linux guest, with actual Agent samples accepted by Core"],
-                "pending": ["browser display of the guest load/recovery and three consecutive stage runs"],
+                "pending": ["browser display of the guest load/recovery and one complete stage run"],
             },
             "S03-03": {
                 "status": "NOT_READY",
                 "covered_guest_behavior": ["initial and rebooted Agent warm-up reports reach Core as unknown/stale before fresh nonnegative network rates"],
-                "pending": ["force the deterministic counter-decrease/reset formula test in the acceptance runner; verify first-sample and same-ifindex MAC-replacement states in the live dashboard; complete three consecutive full runs"],
+                "pending": ["force the deterministic counter-decrease/reset formula test in the acceptance runner; verify first-sample and same-ifindex MAC-replacement states in the live dashboard; complete one full run"],
             },
             "S03-04": {
                 "status": "NOT_READY",
                 "covered_guest_behavior": ["a real guest exposes two interfaces and a tmpfs mount; Core receives interface details, aggregate sum, and filesystem stats"],
-                "pending": ["browser renders the guest interface/mount details and three consecutive stage runs"],
+                "pending": ["browser renders the guest interface/mount details and one complete stage run"],
             },
             "S03-06": {
                 "status": "NOT_READY",
                 "covered_guest_behavior": ["a real pinned Moby SDK Docker query is stalled on the private guest-local Unix fixture, context-cancelled, while the same Core/Agent generation stays online and its host metrics and heartbeat lease advance"],
-                "pending": ["browser must show Docker inventory stale/unknown while host metrics and heartbeat remain live; three consecutive full runs and the second architecture remain"],
+                "pending": ["browser must show Docker inventory stale/unknown while host metrics and heartbeat remain live; one full run and the second architecture remain"],
             },
             "S03-08": {
                 "status": "NOT_READY",
                 "covered_guest_behavior": ["guest-only clock correction and reboot with raw boot_id/uptime plus actual Core clock offset, boot ID, and new generation"],
-                "pending": ["browser display through the clock correction/reboot and three consecutive stage runs"],
+                "pending": ["browser display through the clock correction/reboot and one complete stage run"],
             },
             "S03-07": {
                 "status": "NOT_READY",
                 "covered_guest_behavior": ["real guest network isolation produced Core stale/offline; restored Agent reported a higher generation and known samples"],
-                "pending": ["dashboard stale/offline/recovery display and three consecutive stage runs"],
+                "pending": ["dashboard stale/offline/recovery display and one complete stage run"],
             },
         },
         "rounds": [],
@@ -2259,7 +2259,7 @@ def main():
             summary["reason"] = "one or more isolated guest component probes were not ready"
         else:
             summary["guest_probe_status"] = "PASS"
-            summary["reason"] = "isolated guest component probes passed; original S03 cases remain NOT_READY pending full browser/three-run/two-architecture acceptance"
+            summary["reason"] = "isolated guest component probes passed; original S03 cases remain NOT_READY pending full browser/single-run/two-architecture acceptance"
     except NotReady as error:
         summary["guest_probe_status"] = "NOT_READY"
         summary["reason"] = str(error)

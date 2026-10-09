@@ -51,6 +51,7 @@ verify-tools: bootstrap
 	./scripts/check-tools.sh
 
 verify-ci-evidence:
+	python3 scripts/test/acceptance-report-policy-selftest.py
 	python3 scripts/test/ci-evidence-selftest.py
 	python3 scripts/test/acceptance-s02-selftest.py
 	python3 scripts/test/acceptance-s03-selftest.py
