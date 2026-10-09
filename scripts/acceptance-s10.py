@@ -147,8 +147,8 @@ def main() -> int:
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--project", action="append", choices=("chromium", "webkit", "firefox"))
     args = parser.parse_args()
-    if not 1 <= args.repeat <= 3:
-        parser.error("--repeat must be between 1 and 3")
+    if args.repeat != 1:
+        parser.error("--repeat must be 1; rerun only after a failure or relevant code change")
 
     checks: list[dict[str, object]] = []
     web_assets_built = False
