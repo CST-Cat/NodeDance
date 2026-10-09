@@ -70,6 +70,37 @@ def main() -> int:
             "fresh S05 report fixture is invalid")
     require(acceptance.verify_fixture_manifest.__name__ == "verify_fixture_manifest",
             "fixture manifest verifier is unavailable")
+    with tempfile.TemporaryDirectory(prefix="s05-restart-fixture-manifest-") as temp_dir:
+        manifest_path = pathlib.Path(temp_dir) / "restart.log"
+        suite = "nd-s05-restart-selftest"
+        fixtures = {
+            "main": "a" * 64,
+            "compose": "b" * 64,
+            "lifecycle": "c" * 64,
+        }
+        lines = [
+            f"S05_FIXTURE suite={suite} kind={kind} id={container_id} name={suite}-{kind}"
+            for kind, container_id in fixtures.items()
+        ]
+        lines.extend((
+            f"S05_FIXTURE_SYNC suite={suite} strategy=real_agent_reconnect previous_generation=1 snapshot_generation=2 verified=true",
+            f"S05_FIXTURE_CLEANUP suite={suite} id={fixtures['lifecycle']} removed_by_task=true verified_absent=true",
+            f"S05_FIXTURE_MANIFEST suite={suite} expected_present=2 expected_deleted=1 unexpected=0 verified=true",
+            f"S05_FIXTURE_CLEANUP suite={suite} kind=main id={fixtures['main']} removed=true verified_absent=true",
+            f"S05_FIXTURE_CLEANUP suite={suite} kind=compose id={fixtures['compose']} removed=true verified_absent=true",
+            f"S05_FIXTURE_MANIFEST_CLEANUP suite={suite} expected_ids=3 remaining_ids=0 verified=true",
+        ))
+        manifest_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        require(acceptance.verify_fixture_manifest(manifest_path)["verified"],
+                "real restart integration fixture shape must prove main, Compose, task-deleted lifecycle, and final cleanup")
+        missing_task_delete = [line.replace("removed_by_task=true", "removed=true") for line in lines]
+        manifest_path.write_text("\n".join(missing_task_delete) + "\n", encoding="utf-8")
+        require(not acceptance.verify_fixture_manifest(manifest_path)["verified"],
+                "lifecycle absence without explicit task-delete evidence must fail closed")
+        missing_inventory = [line for line in lines if "expected_present=2" not in line]
+        manifest_path.write_text("\n".join(missing_inventory) + "\n", encoding="utf-8")
+        require(not acceptance.verify_fixture_manifest(manifest_path)["verified"],
+                "missing pre-teardown live inventory must fail closed")
     require(acceptance.verify_process_recovery_manifest.__name__ == "verify_process_recovery_manifest",
             "Core/Agent process recovery manifest verifier is unavailable")
     require(acceptance.verify_stream_fixture_manifest.__name__ == "verify_stream_fixture_manifest",
@@ -163,6 +194,18 @@ def main() -> int:
                                  encoding="utf-8")
         require(not acceptance.verify_core_task_persistence_failure_evidence(evidence_path)["verified"],
                 "partial Core task/audit rollback evidence must fail closed")
+        evidence_path.write_text(marker.replace("resource_claims_unchanged=true", "resource_claims_unchanged=false") + "\n",
+                                 encoding="utf-8")
+        require(not acceptance.verify_core_task_persistence_failure_evidence(evidence_path)["verified"],
+                "Core persistence evidence without resource-claim rollback must fail closed")
+        evidence_path.write_text(
+            "S05_EVIDENCE core_task_insert_failure=500 task_rows_unchanged=true "
+            "docker_started_at_unchanged=true docker_start_count_unchanged=true "
+            "docker_events_unchanged=true verified=true\n",
+            encoding="utf-8",
+        )
+        require(not acceptance.verify_core_task_persistence_failure_evidence(evidence_path)["verified"],
+                "historical Core marker without audit-row and resource-claim evidence must not pass S05-11")
 
     runner_source = (ROOT / "scripts/acceptance-s05.py").read_text(encoding="utf-8")
     require("args.repeat != 1" in runner_source and "for engine in (28, 29)" in runner_source,

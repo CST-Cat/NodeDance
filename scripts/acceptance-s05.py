@@ -140,21 +140,44 @@ def verify_engine(dind_root: pathlib.Path, engine: int) -> tuple[str, str]:
 
 def verify_fixture_manifest(log_path: pathlib.Path) -> dict[str, object]:
     text = log_path.read_text(encoding="utf-8", errors="replace")
-    created = re.findall(r"S05_FIXTURE suite=(\S+) kind=(main|compose) id=([0-9a-f]{64}) name=(\S+)", text)
+    created = re.findall(r"S05_FIXTURE suite=(\S+) kind=(\S+) id=([0-9a-f]{64}) name=(\S+)", text)
     cleanup = re.findall(r"S05_FIXTURE_CLEANUP suite=(\S+) (?:kind=(\S+) )?id=([0-9a-f]{64}) [^\n]*verified_absent=true", text)
+    deleted_by_task = re.findall(
+        r"S05_FIXTURE_CLEANUP suite=(\S+) id=([0-9a-f]{64}) removed_by_task=true verified_absent=true", text
+    )
+    inventory = re.findall(
+        r"S05_FIXTURE_MANIFEST suite=(\S+) expected_present=(\d+) expected_deleted=(\d+) unexpected=(\d+) verified=true",
+        text,
+    )
     final = re.findall(r"S05_FIXTURE_MANIFEST_CLEANUP suite=(\S+) expected_ids=(\d+) remaining_ids=(\d+) verified=true", text)
-    if len(created) != 2 or {kind for _, kind, _, _ in created} != {"main", "compose"}:
-        return {"verified": False, "reason": "expected exactly one explicitly recorded main and Compose fixture"}
+    kinds = {kind for _, kind, _, _ in created}
+    if len(created) != 3 or kinds != {"main", "compose", "lifecycle"}:
+        return {"verified": False, "reason": "expected exactly one explicitly recorded main, Compose, and lifecycle fixture"}
     suites = {suite for suite, _, _, _ in created}
     ids = {container_id for _, _, container_id, _ in created}
     cleanup_ids = {container_id for suite, _, container_id in cleanup if suite in suites}
-    if len(suites) != 1 or cleanup_ids != ids:
+    ids_by_kind = {kind: container_id for _, kind, container_id, _ in created}
+    task_deleted_ids = {container_id for suite, container_id in deleted_by_task if suite in suites}
+    teardown_cleanup_ids = {
+        container_id for suite, kind, container_id in cleanup
+        if suite in suites and kind in {"main", "compose"}
+    }
+    if (len(suites) != 1 or len(ids) != 3 or len(cleanup) != 3 or cleanup_ids != ids or
+            {suite for suite, _, _ in cleanup} != suites or
+            len(deleted_by_task) != 1 or task_deleted_ids != {ids_by_kind.get("lifecycle")} or
+            teardown_cleanup_ids != {ids_by_kind.get("main"), ids_by_kind.get("compose")}):
         return {"verified": False, "reason": "cleanup records do not cover every created full fixture ID", "created_ids": sorted(ids), "cleanup_ids": sorted(cleanup_ids)}
+    matching_inventory = [entry for entry in inventory if entry[0] in suites]
+    if (len(matching_inventory) != 1 or
+            tuple(int(value) for value in matching_inventory[0][1:]) != (2, 1, 0)):
+        return {"verified": False, "reason": "pre-teardown suite inventory did not prove two retained fixtures and one task-deleted lifecycle fixture",
+                "created_ids": sorted(ids)}
     matching_final = [entry for entry in final if entry[0] in suites]
     if len(matching_final) != 1 or int(matching_final[0][1]) != len(ids) or int(matching_final[0][2]) != 0:
         return {"verified": False, "reason": "final suite inventory did not prove every manifest item absent", "created_ids": sorted(ids)}
     return {"verified": True, "suite": next(iter(suites)), "created_ids": sorted(ids),
-            "cleanup_ids": sorted(cleanup_ids), "expected_ids": len(ids), "remaining_ids": 0}
+            "cleanup_ids": sorted(cleanup_ids), "task_deleted_ids": sorted(task_deleted_ids),
+            "expected_ids": len(ids), "remaining_ids": 0}
 
 
 def verify_process_recovery_manifest(log_path: pathlib.Path, *, core: bool) -> dict[str, object]:
