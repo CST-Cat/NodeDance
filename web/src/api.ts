@@ -153,6 +153,23 @@ export interface AlertDelivery {
   status: string; attempts: number; maxAttempts: number; nextAttemptAt?: string; deliveredAt?: string; httpStatus?: number; lastError?: string; createdAt: string
 }
 
+export interface AgentUpdateManifest {
+  formatVersion: number; version: string; os: string; architecture: string; sha256: string; size: number
+  minProtocol: number; maxProtocol: number; coreMinVersion?: string; coreMaxVersion?: string; signature: string
+}
+export interface AgentUpdateRelease { id: string; version: string; os: string; architecture: string; manifest: AgentUpdateManifest; createdAt: string }
+export interface AgentUpdateTask {
+  id: string; batchId: string; batchNumber: number; nodeId: string; releaseId: string; version?: string
+  mode: 'manual' | 'automatic'; status: string; reason?: string; createdAt: string; updatedAt: string
+}
+export interface AgentUpdateSettings {
+  autoEnabled: boolean; windowStartMinute: number; windowEndMinute: number; batchSize: number; releaseId?: string
+  campaignDate?: string; campaignPaused: boolean; lastError?: string
+}
+export interface AgentUpdateOverview {
+  releases: AgentUpdateRelease[]; tasks: AgentUpdateTask[]; settings: AgentUpdateSettings; nodes: AgentNode[]
+}
+
 export interface NodeStatusResponse {
   type: 'node_status'
   nodeId: string
@@ -416,6 +433,14 @@ export const api = {
   createAlertWindow: (payload: Omit<AlertWindow, 'id'>) => request<{ window: AlertWindow }>('/api/v1/alerts/windows', { method: 'POST', body: JSON.stringify(payload) }, true),
   deleteAlertWindow: (id: string) => request<void>(`/api/v1/alerts/windows/${encodeURIComponent(id)}`, { method: 'DELETE' }, true),
   alertDeliveries: () => request<{ deliveries: AlertDelivery[] }>('/api/v1/alerts/deliveries'),
+  agentUpdates: () => request<AgentUpdateOverview>('/api/v1/updates'),
+  uploadAgentRelease: (manifest: File, artifact: File) => {
+    const form = new FormData(); form.append('manifest', manifest); form.append('artifact', artifact)
+    return request<{ id: string; version: string; architecture: string }>('/api/v1/updates/releases', { method: 'POST', body: form }, true)
+  },
+  requestAgentUpdate: (nodeId: string, releaseId: string) => request<AgentUpdateTask>(`/api/v1/updates/nodes/${encodeURIComponent(nodeId)}/update`, { method: 'POST', body: JSON.stringify({ releaseId }) }, true),
+  saveAgentUpdateSettings: (settings: AgentUpdateSettings) => request<{ settings: AgentUpdateSettings }>('/api/v1/updates/settings', { method: 'PUT', body: JSON.stringify(settings) }, true),
+  resumeAgentUpdateCampaign: () => request<void>('/api/v1/updates/campaign/resume', { method: 'POST' }, true),
   createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload, idempotencyKey: string) =>
     request<{ taskId: string; status: ContainerTask['status'] }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,

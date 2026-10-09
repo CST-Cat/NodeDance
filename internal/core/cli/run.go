@@ -47,6 +47,7 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	publicOriginFlag := flags.String("public-origin", "", "public HTTPS origin used for browser Origin validation")
 	trustedProxiesFlag := flags.String("trusted-proxies", "", "comma-separated trusted proxy IPs or CIDRs")
 	dev := flags.Bool("dev", false, "development mode; requires a loopback address")
+	updatePublicKey := flags.String("agent-update-public-key", "", "trusted Ed25519 Agent release public key (base64)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -116,14 +117,15 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	}
 	defer listener.Close()
 	serverInstance, err := server.New(version, server.Options{
-		DataDir:                dataDir,
-		Development:            *dev,
-		PublicOrigin:           publicOrigin,
-		TrustedProxies:         trustedProxyValues,
-		SessionIdleTimeout:     idleTimeout,
-		LoginMaxAttempts:       loginMaxAttempts,
-		LoginLockoutDuration:   loginLockout,
-		WebSocketCheckInterval: websocketCheckInterval,
+		DataDir:                    dataDir,
+		Development:                *dev,
+		PublicOrigin:               publicOrigin,
+		TrustedProxies:             trustedProxyValues,
+		SessionIdleTimeout:         idleTimeout,
+		LoginMaxAttempts:           loginMaxAttempts,
+		LoginLockoutDuration:       loginLockout,
+		WebSocketCheckInterval:     websocketCheckInterval,
+		AgentUpdatePublicKeyBase64: firstNonEmpty(*updatePublicKey, lookupValue(lookup, "NODEDANCE_AGENT_UPDATE_PUBLIC_KEY")),
 	})
 	if err != nil {
 		return err

@@ -15,6 +15,7 @@ import (
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
+	coreupdates "github.com/CST-Cat/NodeDance/internal/core/updates"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
@@ -32,6 +33,8 @@ type agentConnection struct {
 	dockerEnabled            bool
 	taskEnabled              bool
 	probeEnabled             bool
+	updateEnabled            bool
+	updateBaseURL            string
 	streamEnabled            bool
 	taskSignal               chan struct{}
 	taskMu                   sync.RWMutex
@@ -390,6 +393,8 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		dockerEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
 		taskEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge),
 		probeEnabled:   hasCapability(negotiatedCapabilities, protocol.CapabilityProbes),
+		updateEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityAgentUpdates),
+		updateBaseURL:  s.agentUpdateOrigin(r),
 		streamEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams), nodeID: identity.NodeID,
 		taskSignal: make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
@@ -431,6 +436,9 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.writeAgentEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeWelcome, Generation: lease.ConnectionGeneration, Payload: marshalAgentPayload(welcome)}); err != nil {
 		return
+	}
+	if s.updates != nil {
+		_ = s.updates.ReconcileVersion(ctx, identity.NodeID, hello.AgentVersion)
 	}
 	s.runAgentConnection(connectionCtx, managed, lease.Identity)
 }
@@ -643,6 +651,26 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not persist Agent service probe result")
 					return
 				}
+			case protocol.TypeAgentUpdateReport:
+				if !connection.updateEnabled || envelope.Sequence != 0 {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent update capability was not negotiated")
+					return
+				}
+				var report protocol.AgentUpdateReport
+				if decodeAgentPayload(envelope.Payload, &report) != nil || !validUUID(report.TaskID) || envelope.RequestID != report.TaskID ||
+					(report.Status != "prepared" && report.Status != "rejected" && report.Status != "failed") {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent update report")
+					return
+				}
+				if err := s.updates.Report(ctx, report.TaskID, identity.NodeID, report.Status, report.Reason); err != nil && !errors.Is(err, coreupdates.ErrNotFound) {
+					s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not persist Agent update report")
+					return
+				}
+				outcome := "succeeded"
+				if report.Status == "failed" || report.Status == "rejected" {
+					outcome = "failed"
+				}
+				s.auditUpdate(nil, nil, "agent_update_status", outcome, identity.NodeID)
 			case protocol.TypeHello:
 				s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent hello is only valid at connection start")
 				return
@@ -738,7 +766,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityProbes: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityProbes: {}, protocol.CapabilityAgentUpdates: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {

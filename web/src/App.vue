@@ -4,8 +4,9 @@ import { ApiError, api, type Appearance, type Session, type User } from './api'
 import NodesDashboard from './components/NodesDashboard.vue'
 import TailscaleDiscovery from './components/TailscaleDiscovery.vue'
 import AlertCenter from './components/AlertCenter.vue'
+import AgentUpdates from './components/AgentUpdates.vue'
 
-type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'alerts'
+type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'alerts' | 'updates'
 type ImageKind = 'avatar' | 'background'
 
 const screen = ref<Screen>('loading')
@@ -314,9 +315,11 @@ onMounted(() => {
         <button v-if="screen === 'nodes'" class="quiet-button" type="button" @click="screen = 'settings'">账户设置</button>
         <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery'" class="quiet-button" type="button" @click="screen = 'alerts'">告警中心</button>
         <button v-if="screen === 'alerts'" class="quiet-button" type="button" @click="screen = 'nodes'">返回监控</button>
+        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'alerts'" class="quiet-button" type="button" @click="screen = 'updates'">Agent 更新</button>
+        <button v-if="screen === 'updates'" class="quiet-button" type="button" @click="screen = 'nodes'">返回监控</button>
         <button v-if="screen === 'nodes' || screen === 'settings'" class="quiet-button" type="button" @click="screen = 'discovery'">发现节点</button>
         <button v-if="screen === 'discovery'" class="quiet-button" type="button" @click="screen = 'nodes'">返回监控</button>
-        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'alerts'" class="quiet-button" type="button" :disabled="busy" @click="logout">
+        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'alerts' || screen === 'updates'" class="quiet-button" type="button" :disabled="busy" @click="logout">
           退出登录
         </button>
       </div>
@@ -413,6 +416,8 @@ onMounted(() => {
     <NodesDashboard v-else-if="screen === 'nodes'" />
 
     <AlertCenter v-else-if="screen === 'alerts'" />
+
+    <AgentUpdates v-else-if="screen === 'updates'" />
 
     <TailscaleDiscovery v-else-if="screen === 'discovery'" @back="screen = 'nodes'" />
 

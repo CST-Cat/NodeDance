@@ -45,6 +45,8 @@ var actions = map[string]struct{}{
 	"alert_defaults_create": {}, "alert_rule_save": {}, "alert_rule_delete": {},
 	"alert_channel_save": {}, "alert_channel_delete": {}, "alert_channel_test": {},
 	"alert_window_create": {}, "alert_window_delete": {}, "alert_acknowledge": {}, "alert_silence": {},
+	"agent_update_release_upload": {}, "agent_update_request": {}, "agent_update_settings": {}, "agent_update_campaign_resume": {},
+	"agent_update_status": {},
 }
 
 var outcomes = map[string]struct{}{

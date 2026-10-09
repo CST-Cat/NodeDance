@@ -44,6 +44,9 @@ type browserSessionView struct {
 }
 
 func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, current *session) {
+	if s.handleAgentUpdateAPI(w, r, current) {
+		return
+	}
 	if s.handleTailscaleAPI(w, r, current) {
 		return
 	}

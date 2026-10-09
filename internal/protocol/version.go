@@ -17,14 +17,16 @@ const (
 )
 
 const (
-	TypeHello          = "hello"
-	TypeWelcome        = "welcome"
-	TypeHeartbeat      = "heartbeat"
-	TypeHeartbeatAck   = "heartbeat_ack"
-	TypeRotateRequest  = "rotate_request"
-	TypeRotatePrepare  = "rotate_prepare"
-	TypeRotateAccepted = "rotate_accepted"
-	TypeProtocolError  = "error"
+	TypeHello             = "hello"
+	TypeWelcome           = "welcome"
+	TypeHeartbeat         = "heartbeat"
+	TypeHeartbeatAck      = "heartbeat_ack"
+	TypeRotateRequest     = "rotate_request"
+	TypeRotatePrepare     = "rotate_prepare"
+	TypeRotateAccepted    = "rotate_accepted"
+	TypeProtocolError     = "error"
+	TypeAgentUpdate       = "agent_update"
+	TypeAgentUpdateReport = "agent_update_report"
 )
 
 // Envelope is the only top-level JSON shape accepted on the Agent channel.
