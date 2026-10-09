@@ -136,6 +136,9 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 	if s.handleTaskAPI(w, r, current) {
 		return
 	}
+	if s.handleComposeAPI(w, r, current) {
+		return
+	}
 	if nodeID, containerID, ok := dockerRoute(r.URL.Path); ok {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

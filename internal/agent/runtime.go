@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	agentcompose "github.com/CST-Cat/NodeDance/internal/agent/compose"
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -193,6 +194,10 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	if streamBridge != nil {
 		defer streamBridge.Close()
 	}
+	composeBridge, closeComposeBridge, composeAvailable := newSDKComposeBridge()
+	if closeComposeBridge != nil {
+		defer closeComposeBridge()
+	}
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
@@ -204,6 +209,9 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	}
 	if streamBridge != nil {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityContainerStreams)
+	}
+	if composeAvailable {
+		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityCompose)
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
 		return errors.New("send Agent hello failed")
@@ -266,12 +274,13 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates,
 		containsCapability(welcome.Capabilities, protocol.CapabilityDocker), taskBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityTaskBridge), streamBridge,
-		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams))
+		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams), composeBridge,
+		containsCapability(welcome.Capabilities, protocol.CapabilityCompose))
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled bool) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -328,6 +337,31 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			case <-timer.C:
 				if returnErr == nil {
 					returnErr = errors.New("Agent container stream bridge did not stop")
+				}
+			}
+		}()
+	}
+	var composeMessages chan protocol.Envelope
+	var composeBridgeDone <-chan error
+	if composeBridge != nil && composeBridgeEnabled {
+		composeMessages = make(chan protocol.Envelope, 16)
+		composeCtx, cancelCompose := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		finished := make(chan struct{})
+		composeBridgeDone = done
+		go func() {
+			defer close(finished)
+			done <- composeBridge.Run(composeCtx, composeWriterAdapter{writer: writer}, composeMessages, generation)
+		}()
+		defer func() {
+			cancelCompose()
+			timer := time.NewTimer(6 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-finished:
+			case <-timer.C:
+				if returnErr == nil {
+					returnErr = errors.New("Agent Compose bridge did not stop")
 				}
 			}
 		}()
@@ -424,6 +458,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				return err
 			}
 			streamBridgeDone = nil
+		case err := <-composeBridgeDone:
+			if err != nil {
+				return fmt.Errorf("Agent Compose bridge stopped unexpectedly: %w", err)
+			}
+			composeBridgeDone = nil
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -480,6 +519,25 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 						// A local queue limit affects only this stream. Do not let a
 						// burst of open requests tear down the Agent heartbeat socket.
 						go streamBridge.reject(ctx, writer, generation, envelope.RequestID, "stream_limit")
+					}
+				}
+			case protocol.TypeComposeRequest:
+				if composeMessages == nil || envelope.Sequence != 0 || envelope.RequestID == "" || envelope.Generation != generation {
+					return errors.New("Core Compose request is invalid or was not negotiated")
+				}
+				var request protocol.ComposeRequest
+				if decodeSocketPayload(envelope.Payload, &request) != nil || request.OperationID != envelope.RequestID || protocol.ValidateComposeRequest(request) != nil {
+					return errors.New("Core Compose request failed validation")
+				}
+				select {
+				case composeMessages <- envelope:
+				case <-ctx.Done():
+					return nil
+				default:
+					response := protocol.ComposeResponse{OperationID: request.OperationID, Status: "failed", ErrorCode: "agent_busy"}
+					if err := writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeComposeResponse,
+						Generation: generation, RequestID: request.OperationID, Payload: encodePayload(response)}); err != nil {
+						return err
 					}
 				}
 			case protocol.TypeProtocolError:

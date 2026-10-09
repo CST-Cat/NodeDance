@@ -40,10 +40,12 @@ var actions = map[string]struct{}{
 	"agent_enrollment_create": {}, "agent_enrollment_consume": {},
 	"agent_revoke": {}, "agent_rotation_request": {},
 	"agent_rotation_prepare": {}, "agent_rotation_commit": {},
+	"compose_operation": {},
 }
 
 var outcomes = map[string]struct{}{
 	"succeeded": {}, "rejected": {}, "rate_limited": {}, "failed": {},
+	"accepted": {}, "timed_out": {}, "unknown": {},
 }
 
 var targetIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
