@@ -19,15 +19,16 @@ import (
 const imageTestNodeID = "b738a2d2-a255-4912-9e2e-26f974ac2529"
 
 type fakeEngine struct {
-	mu          sync.Mutex
-	images      map[string]Image
-	refs        map[string][]string
-	pulls       int
-	removes     int
-	pullErr     error
-	authSeen    string
-	waitPull    bool
-	pullStarted chan struct{}
+	mu           sync.Mutex
+	images       map[string]Image
+	refs         map[string][]string
+	pulls        int
+	removes      int
+	pullErr      error
+	pullProgress []PullProgress
+	authSeen     string
+	waitPull     bool
+	pullStarted  chan struct{}
 }
 
 func newFakeEngine() *fakeEngine {
@@ -72,7 +73,13 @@ func (f *fakeEngine) Pull(ctx context.Context, ref, auth string, report func(Pul
 		return ctx.Err()
 	}
 	if report != nil {
-		report(PullProgress{Completed: 2, Total: 4})
+		progress := f.pullProgress
+		if len(progress) == 0 {
+			progress = []PullProgress{{Completed: 2, Total: 4}}
+		}
+		for _, value := range progress {
+			report(value)
+		}
 	}
 	if failure != nil {
 		return failure
@@ -177,6 +184,26 @@ func TestPullUsesEphemeralCredentialsAndVerifiesEngineState(t *testing.T) {
 	entry, err := journal.Get(context.Background(), task.TaskID)
 	if err != nil || entry.Status != taskstate.Succeeded {
 		t.Fatalf("durable pull journal = %+v, err=%v", entry, err)
+	}
+}
+
+func TestPullPersistsLatestProgressBeforeFastCompletion(t *testing.T) {
+	journal := openImageJournal(t)
+	engine := newFakeEngine()
+	engine.pullProgress = []PullProgress{{Completed: 1, Total: 8}, {Completed: 6, Total: 8}}
+	executor, err := NewExecutor(engine, journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := "alpine:latest"
+	intent := protocol.TaskIntent{Action: protocol.TaskImagePull, ContainerID: protocol.ImageTargetKey("pull:" + ref), ImageReference: ref}
+	dispatch := enqueueImageDispatch(t, journal, intent, "pull-fast-progress", nil)
+	task, err := executor.ExecuteImage(context.Background(), dispatch, nil)
+	if err != nil || task.Status != taskstate.Succeeded {
+		t.Fatalf("fast pull task = %+v, err=%v", task, err)
+	}
+	if task.Progress.Completed != 6 || task.Progress.Total != 8 {
+		t.Fatalf("completed pull lost its latest byte progress: %+v", task.Progress)
 	}
 }
 

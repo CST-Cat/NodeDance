@@ -235,7 +235,7 @@
           "result": "Real generated Registry manifest pulled through SDK; Registry manifest digest matched Engine RepoDigest and Config ID. Missing manifest task was failed with missing_after_pull and confirmed absent by both SDK Inspect and Docker CLI image inspect."
         }
       ],
-      "reason": "NOT_READY: real Engine pull emitted completed=0,total=0 and the persisted progress callback did not observe positive total. No heartbeat/metrics integration was running during the transfer."
+      "reason": "Source follow-up adds real progressDetail byte decoding, per-layer monotonic aggregation, a final durable progress flush, and a hard positive-progress assertion during the owner-marked slow Engine pull. These changes are not yet verified by GitHub Actions; this case remains NOT_READY. Heartbeat/metrics continuity is also unverified."
     },
     "S08-07": {
       "status": "NOT_READY",

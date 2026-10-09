@@ -533,6 +533,10 @@ func TestDINDImageManagementRealEngine(t *testing.T) {
 			cancelPull(nil)
 			t.Fatalf("Agent task was not durably running at the mid-transfer cancellation point: task=%+v err=%v", running, err)
 		}
+		if running.Progress.Total == 0 || running.Progress.Completed == 0 || running.Progress.Completed > running.Progress.Total {
+			cancelPull(nil)
+			t.Fatalf("real slow Engine pull did not persist valid positive byte progress before cancellation: progress=%+v transfer=%+v", running.Progress, transfer)
+		}
 		cancelPull(taskstate.ErrCancellationRequested)
 
 		var outcome pullResult
@@ -546,8 +550,12 @@ func TestDINDImageManagementRealEngine(t *testing.T) {
 			t.Fatalf("real cancellation was not confirmed by the Agent task state: status=%s state=%s evidence=%+v err=%v",
 				outcome.task.Status, outcome.task.Result.ObservedState, outcome.task.Evidence, outcome.err)
 		}
+		if outcome.task.Progress.Total == 0 || outcome.task.Progress.Completed == 0 || outcome.task.Progress.Completed > outcome.task.Progress.Total {
+			t.Fatalf("canceled task did not retain valid positive byte progress: progress=%+v", outcome.task.Progress)
+		}
 		journalTask, err := journal.Get(ctx, cancelDispatch.TaskID)
-		if err != nil || journalTask.Status != taskstate.Canceled || journalTask.Result.ObservedState != "absent_after_cancel" {
+		if err != nil || journalTask.Status != taskstate.Canceled || journalTask.Result.ObservedState != "absent_after_cancel" ||
+			journalTask.Progress.Total == 0 || journalTask.Progress.Completed == 0 || journalTask.Progress.Completed > journalTask.Progress.Total {
 			t.Fatalf("durable Agent journal did not retain the confirmed cancellation: task=%+v err=%v", journalTask, err)
 		}
 
@@ -578,8 +586,9 @@ func TestDINDImageManagementRealEngine(t *testing.T) {
 			!strings.Contains(strings.ToLower(err.Error()), "no such image") {
 			t.Fatalf("Docker CLI did not confirm image absence after cancellation: err=%v", err)
 		}
-		t.Logf("real pull canceled after %d/%d layer bytes; task=%s, active Registry transfers=%d, canceled transfers=%d, SDK and CLI both confirmed image absent",
-			transfer.BytesSent, len(largeFixture.LayerBytes), outcome.task.Status, transfer.ActiveBlobGETs, transfer.CanceledBlobGETs)
+		t.Logf("real pull canceled after %d/%d Registry layer bytes; Agent task retained SDK progress %d/%d; task=%s, active Registry transfers=%d, canceled transfers=%d, SDK and CLI both confirmed image absent",
+			transfer.BytesSent, len(largeFixture.LayerBytes), outcome.task.Progress.Completed, outcome.task.Progress.Total,
+			outcome.task.Status, transfer.ActiveBlobGETs, transfer.CanceledBlobGETs)
 	})
 }
 

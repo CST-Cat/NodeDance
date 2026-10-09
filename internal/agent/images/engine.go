@@ -11,6 +11,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
+	"github.com/moby/moby/api/types/jsonstream"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 )
@@ -118,8 +119,7 @@ func (e *SDKEngine) Pull(ctx context.Context, ref, authHeader string, report fun
 		return errors.New("Docker image pull request failed")
 	}
 	defer response.Close()
-	layerCurrent := make(map[string]int64)
-	layerTotals := make(map[string]int64)
+	layers := make(map[string]pullLayerProgress)
 	for message, streamErr := range response.JSONMessages(ctx) {
 		if streamErr != nil {
 			if ctx.Err() != nil {
@@ -136,27 +136,74 @@ func (e *SDKEngine) Pull(ctx context.Context, ref, authHeader string, report fun
 			}
 			return errors.New("Docker registry rejected the image pull")
 		}
-		if message.Progress == nil || message.ID == "" || message.Progress.Current < 0 || message.Progress.Total < 0 {
+		if progress, changed := observePullProgress(layers, message); changed && report != nil {
+			report(progress)
+		}
+	}
+	// JSONMessages has consumed the full stream and already surfaced decode,
+	// transport, cancellation, and Engine errorDetail failures. The SDK's
+	// response.Wait method consumes that same one-shot body and is an alternate
+	// to JSONMessages, not a second completion check.
+	return nil
+}
+
+type pullLayerProgress struct {
+	completed uint64
+	total     uint64
+}
+
+// observePullProgress uses only Docker's progressDetail byte counters. Status
+// text, duplicate messages, and stale counters cannot create or reverse byte
+// progress. A missing total stays unknown until Docker supplies one.
+func observePullProgress(layers map[string]pullLayerProgress, message jsonstream.Message) (PullProgress, bool) {
+	if message.Progress == nil || message.ID == "" || message.Progress.Current < 0 || message.Progress.Total < 0 {
+		return PullProgress{}, false
+	}
+	current, total := uint64(message.Progress.Current), uint64(message.Progress.Total)
+	if total > 0 && current > total {
+		return PullProgress{}, false
+	}
+
+	previous := layers[message.ID]
+	next := previous
+	if total > next.total {
+		if next.total == 0 && next.completed > total {
+			// A current value observed before its denominator was known cannot
+			// be used if it conflicts with the now-known layer size.
+			next.completed = 0
+		}
+		next.total = total
+	}
+	if current > next.completed && (next.total == 0 || current <= next.total) {
+		next.completed = current
+	}
+	if next == previous {
+		return PullProgress{}, false
+	}
+	layers[message.ID] = next
+
+	var progress PullProgress
+	for _, layer := range layers {
+		// A layer whose total is unknown cannot contribute to a truthful
+		// aggregate denominator yet.
+		if layer.total == 0 {
 			continue
 		}
-		layerCurrent[message.ID] = message.Progress.Current
-		layerTotals[message.ID] = message.Progress.Total
-		var currentBytes, totalBytes int64
-		for id, value := range layerTotals {
-			totalBytes += value
-			currentBytes += layerCurrent[id]
+		if layer.total > ^uint64(0)-progress.Total || layer.completed > ^uint64(0)-progress.Completed {
+			return PullProgress{}, false
 		}
-		if report != nil {
-			report(PullProgress{Completed: uint64(max(0, currentBytes)), Total: uint64(max(0, totalBytes))})
-		}
+		progress.Total += layer.total
+		progress.Completed += layer.completed
 	}
-	if err := response.Wait(ctx); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return errors.New("Docker image pull did not complete")
+	if progress.Total == 0 {
+		return PullProgress{}, false
 	}
-	return nil
+	if progress.Completed > progress.Total {
+		// This should be impossible after validating each layer. Keep the
+		// invariant explicit in case the representation changes later.
+		return PullProgress{}, false
+	}
+	return progress, true
 }
 
 func (e *SDKEngine) ContainersUsing(ctx context.Context, imageID string) ([]string, error) {

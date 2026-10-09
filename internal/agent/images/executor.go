@@ -129,24 +129,43 @@ func (e *Executor) pull(ctx context.Context, dispatch protocol.TaskDispatch, _ t
 	}
 	operationCtx, operationCancel := context.WithTimeout(ctx, e.operationTimeout)
 	progressAt := time.Time{}
-	var last taskjournal.Progress
-	pullErr := e.engine.Pull(operationCtx, ref, authHeader, func(value PullProgress) {
-		progress := taskjournal.Progress{Phase: taskjournal.PhaseExecuting, Completed: value.Completed, Total: value.Total}
-		if progress.Total > 0 && progress.Completed > progress.Total {
-			progress.Completed = progress.Total
-		}
-		now := time.Now()
-		if progress == last || !progressAt.IsZero() && now.Sub(progressAt) < 250*time.Millisecond {
+	var latest taskjournal.Progress
+	var persisted taskjournal.Progress
+	hasLatest, hasPersisted := false, false
+	persistProgress := func(force bool) {
+		if !hasLatest || hasPersisted && latest == persisted {
 			return
 		}
+		now := time.Now()
+		if !force && !progressAt.IsZero() && now.Sub(progressAt) < 250*time.Millisecond {
+			return
+		}
+		progress := latest
 		writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-		_ = e.journal.UpdateProgress(writeCtx, dispatch.TaskID, progress)
+		writeErr := e.journal.UpdateProgress(writeCtx, dispatch.TaskID, progress)
 		cancel()
-		progressAt, last = now, progress
+		if writeErr != nil {
+			return
+		}
+		progressAt, persisted, hasPersisted = now, progress, true
 		if onProgress != nil {
 			onProgress()
 		}
+	}
+	pullErr := e.engine.Pull(operationCtx, ref, authHeader, func(value PullProgress) {
+		// Total zero means Docker has not supplied an aggregate byte count.
+		// Invalid samples are discarded rather than manufacturing a capped value.
+		if value.Total == 0 || value.Completed > value.Total {
+			return
+		}
+		latest = taskjournal.Progress{Phase: taskjournal.PhaseExecuting, Completed: value.Completed, Total: value.Total}
+		hasLatest = true
+		persistProgress(false)
 	})
+	// The last Engine update can arrive within the throttle window. Flush the
+	// most recent observed counters before finalizing the task so a fast pull
+	// does not leave only an earlier or zero snapshot in the durable journal.
+	persistProgress(true)
 	operationCancel()
 	authHeader = ""
 	verifyCtx, verifyCancel = context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
