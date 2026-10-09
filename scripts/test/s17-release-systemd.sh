@@ -34,13 +34,42 @@ finally:
     sock.close()
 PY
 
-WORK="$(mktemp -d "${RUNNER_TEMP:-/tmp}/nodedance-s17-systemd.XXXXXXXX")"
-chmod 755 "$WORK"
 SUFFIX="${GITHUB_RUN_ID:-local}-$$"
 VERSION="v0.0.0-s17.${GITHUB_RUN_NUMBER:-1}"
-PREFIX="/opt/nodedance-s17-${SUFFIX}"
+[[ "$SUFFIX" =~ ^[A-Za-z0-9][A-Za-z0-9.-]{0,63}$ ]] || {
+  echo 'S17-10 SYSTEMD NOT_READY: unsafe run-owned prefix suffix' >&2
+  exit 2
+}
+WORK="$(mktemp -d "${RUNNER_TEMP:-/tmp}/nodedance-s17-systemd.XXXXXXXX")"
+chmod 755 "$WORK"
+PREFIX_PARENT="/opt/nodedance-s17-${SUFFIX}"
+PREFIX="$PREFIX_PARENT/release"
 MARKER="$DATA_DIR/s17-release-marker-${SUFFIX}"
 DATA_OWNED=1
+PREFIX_PARENT_OWNED=0
+remove_owned_prefix_parent() {
+  [[ "$PREFIX_PARENT_OWNED" == 1 ]] || return 0
+  if ! sudo python3 - "$PREFIX_PARENT" "$SUFFIX" <<'PY'
+import os,stat,sys
+path,suffix=sys.argv[1:]
+expected=os.path.join("/opt", "nodedance-s17-"+suffix)
+try:
+    info=os.lstat(path)
+except OSError:
+    raise SystemExit(1)
+if path != expected or not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) & 0o022:
+    raise SystemExit(1)
+PY
+  then
+    echo 'preserving the S17 prefix parent because its exact run ownership or safe directory mode changed' >&2
+    return 1
+  fi
+  if ! sudo rmdir -- "$PREFIX_PARENT"; then
+    echo 'preserving the non-empty S17 prefix parent after cleanup' >&2
+    return 1
+  fi
+  PREFIX_PARENT_OWNED=0
+}
 cleanup() {
   set +e
   if sudo test -f "$PREFIX/release-manifest.json"; then
@@ -51,6 +80,7 @@ cleanup() {
     if getent passwd nodedance >/dev/null 2>&1; then sudo userdel nodedance >/dev/null 2>&1; fi
     if getent group nodedance >/dev/null 2>&1 && ! getent passwd nodedance >/dev/null 2>&1; then sudo groupdel nodedance >/dev/null 2>&1; fi
   fi
+  remove_owned_prefix_parent
   rm -rf -- "$WORK"
 }
 trap cleanup EXIT
@@ -75,6 +105,35 @@ GOOS=linux GOARCH="$ARCH" CGO_ENABLED=0 "$GO_BIN" build -trimpath -buildvcs=fals
   --output "$WORK/release.tar.gz"
 python3 "$ROOT/scripts/release/operations.py" verify --bundle "$WORK/release.tar.gz" --public-key-file "$WORK/keys/public.key"
 
+if sudo test -e "$PREFIX_PARENT" || sudo test -L "$PREFIX_PARENT" || sudo test -e "$PREFIX" || sudo test -L "$PREFIX"; then
+  echo 'refusing to touch a pre-existing S17 release prefix parent or prefix on this runner' >&2
+  exit 2
+fi
+python3 - <<'PY'
+import os,stat
+path="/opt"
+try:
+    info=os.lstat(path)
+except OSError as error:
+    raise SystemExit(f"S17-10 SYSTEMD NOT_READY: cannot inspect trusted /opt parent: {error}")
+if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) & 0o022:
+    raise SystemExit("S17-10 SYSTEMD NOT_READY: /opt must be a root-owned directory not writable by group or others")
+PY
+sudo mkdir -- "$PREFIX_PARENT"
+PREFIX_PARENT_OWNED=1
+sudo chown root:root -- "$PREFIX_PARENT"
+sudo chmod 755 -- "$PREFIX_PARENT"
+sudo python3 - "$PREFIX_PARENT" "$SUFFIX" <<'PY'
+import os,stat,sys
+path,suffix=sys.argv[1:]
+expected=os.path.join("/opt", "nodedance-s17-"+suffix)
+try:
+    info=os.lstat(path)
+except OSError as error:
+    raise SystemExit(f"S17-10 SYSTEMD NOT_READY: cannot inspect owned prefix parent: {error}")
+if path != expected or not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) != 0o755:
+    raise SystemExit("S17-10 SYSTEMD NOT_READY: owned prefix parent failed its exact root-owned mode check")
+PY
 sudo "$ROOT/scripts/release/install.sh" --bundle "$WORK/release.tar.gz" \
   --public-key-file "$WORK/keys/public.key" --prefix "$PREFIX"
 active=0
@@ -103,4 +162,5 @@ fi
   echo 'uninstall removed Core business data' >&2
   exit 1
 }
+remove_owned_prefix_parent
 echo 'S17-10 real Core/systemd install-health-uninstall-data-preservation PASS'
