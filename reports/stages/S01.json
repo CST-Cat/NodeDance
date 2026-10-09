@@ -65,7 +65,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-02": {
       "status": "PASS",
@@ -114,7 +114,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-03": {
       "status": "PASS",
@@ -169,7 +169,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-04": {
       "status": "PASS",
@@ -272,7 +272,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-05": {
       "status": "PASS",
@@ -333,7 +333,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-06": {
       "status": "PASS",
@@ -394,7 +394,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-07": {
       "status": "PASS",
@@ -449,7 +449,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-08": {
       "status": "PASS",
@@ -534,7 +534,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-09": {
       "status": "PASS",
@@ -601,7 +601,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-10": {
       "status": "PASS",
@@ -807,7 +807,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-11": {
       "status": "PASS",
@@ -874,7 +874,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     },
     "S01-12": {
       "status": "PASS",
@@ -983,7 +983,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current consecutive executions passed."
+      "reason": "Historical evidence only: this case's recorded PASS belongs to the former repeated-run report; it has not been rerun under the current acceptance policy."
     }
   },
   "evidence_root": ".artifacts/logs/acceptance-s01/20261008T160614Z-f6e6a967",
@@ -1020,6 +1020,6 @@
     "matching_paths": [],
     "matching_categories": []
   },
-  "reason": "All twelve original S01 acceptance cases passed in three consecutive full runs.",
+  "reason": "Historical PASS under the former repeated-run policy: all 12 original acceptance cases are recorded as passing. This report is preserved as historical evidence and has not been rerun under the current policy.",
   "historical_acceptance_policy_note": "Historical PASS recorded under the former three-consecutive-run acceptance rule. Preserved as historical evidence; not rerun under the current single-complete-run rule."
 }

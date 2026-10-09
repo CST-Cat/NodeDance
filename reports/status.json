@@ -3,14 +3,14 @@
   "run_id": "initial-unexecuted",
   "updated_at": "2026-10-09T08:38:04+00:00",
   "status": "NOT_READY",
-  "reason": "S00/S01 保留按旧三轮政策产生的历史 PASS，S03 的本地重复运行也保留为历史证据；这些报告未在新规则下重跑。当前单次完整运行政策下，S02–S17 尚未全部完成规范验收，项目总体保持 NOT_READY。",
+  "reason": "S00/S01 的 PASS 与 S03 的本地结果都是旧重复运行规则下的历史证据，未按当前规则重跑，不计为当前验收通过。当前不要求连续多轮；每个适用验收套件和环境矩阵完成一次完整运行即可。S03 仍缺必需架构各一次当前完整运行及两项 GitHub Actions gate；S02–S17 尚未全部完成规范验收，项目总体保持 NOT_READY。",
   "stages": {
     "S00": {
       "status": "PASS",
       "mode": "full",
       "run_id": "20261008T144457Z-743ef84a",
       "updated_at": "2026-10-08T14:49:26.329301+00:00",
-      "reason": "Historical PASS under the former three-consecutive-run policy: all eight original S00 cases passed in three full runs.",
+      "reason": "Historical PASS under the former repeated-run policy: all eight original cases are recorded as passing. This report is preserved as historical evidence and has not been rerun under the current policy.",
       "historical_acceptance_policy_note": "Historical PASS recorded under the former three-consecutive-run acceptance rule. Preserved as historical evidence; not rerun under the current single-complete-run rule."
     },
     "S01": {
@@ -18,7 +18,7 @@
       "mode": "full",
       "run_id": "20261008T160614Z-f6e6a967",
       "updated_at": "2026-10-08T16:07:58.657454+00:00",
-      "reason": "Historical PASS under the former three-consecutive-run policy: all twelve original S01 cases passed in three full runs.",
+      "reason": "Historical PASS under the former repeated-run policy: all twelve original cases are recorded as passing. This report is preserved as historical evidence and has not been rerun under the current policy.",
       "historical_acceptance_policy_note": "Historical PASS recorded under the former three-consecutive-run acceptance rule. Preserved as historical evidence; not rerun under the current single-complete-run rule."
     },
     "S02": {
@@ -31,7 +31,7 @@
       "mode": "full",
       "run_id": "20261008T214321Z-02157879",
       "updated_at": "2026-10-09T01:09:07.836642+00:00",
-      "reason": "Historical local evidence under the former three-consecutive-run policy: all nine original and supplemental S03 cases passed three runs. This is not the current gate; S03 remains NOT_READY pending one current complete run on each architecture and both GitHub Actions gates (ubuntu-24.04, ubuntu-24.04-arm).",
+      "reason": "The local results are historical evidence from the former repeated-run policy and have not been rerun under the current policy. S03 remains NOT_READY pending one current complete run on each required architecture and both GitHub Actions gates (ubuntu-24.04, ubuntu-24.04-arm).",
       "historical_acceptance_policy_note": "The recorded three local runs were produced under the former acceptance policy and remain historical evidence; the current S03 gate is one complete run on each required architecture plus both GitHub Actions gates."
     },
     "S04": {

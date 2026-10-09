@@ -5,7 +5,7 @@
   "run_id": "20261008T214321Z-02157879",
   "updated_at": "2026-10-09T01:09:07.836642+00:00",
   "status": "NOT_READY",
-  "reason": "All nine original and supplemental S03 cases passed three consecutive real local runs; the overall stage remains NOT_READY until both architecture GitHub Actions gates pass. Pending gates: ubuntu-24.04, ubuntu-24.04-arm",
+  "reason": "The local results are historical evidence from the former repeated-run policy and have not been rerun under the current policy. S03 remains NOT_READY pending one current complete run on each required architecture and both GitHub Actions gates (ubuntu-24.04, ubuntu-24.04-arm).",
   "repeat_required": 3,
   "repeat_requested": 3,
   "verification_status": "NOT_READY",
@@ -4193,7 +4193,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current local full acceptance runs passed.",
+      "reason": "Historical local evidence only: this case's recorded PASS runs belong to the former repeated-run report; it has not been rerun under the current acceptance policy.",
       "local_status": "PASS"
     },
     "S03-02": {
@@ -4306,7 +4306,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current local full acceptance runs passed.",
+      "reason": "Historical local evidence only: this case's recorded PASS runs belong to the former repeated-run report; it has not been rerun under the current acceptance policy.",
       "local_status": "PASS"
     },
     "S03-03": {
@@ -4434,7 +4434,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current local full acceptance runs passed.",
+      "reason": "Historical local evidence only: this case's recorded PASS runs belong to the former repeated-run report; it has not been rerun under the current acceptance policy.",
       "local_status": "PASS"
     },
     "S03-04": {
@@ -4532,7 +4532,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current local full acceptance runs passed.",
+      "reason": "Historical local evidence only: this case's recorded PASS runs belong to the former repeated-run report; it has not been rerun under the current acceptance policy.",
       "local_status": "PASS"
     },
     "S03-05": {
@@ -4630,7 +4630,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current local full acceptance runs passed.",
+      "reason": "Historical local evidence only: this case's recorded PASS runs belong to the former repeated-run report; it has not been rerun under the current acceptance policy.",
       "local_status": "PASS"
     },
     "S03-06": {
@@ -4743,7 +4743,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current local full acceptance runs passed.",
+      "reason": "Historical local evidence only: this case's recorded PASS runs belong to the former repeated-run report; it has not been rerun under the current acceptance policy.",
       "local_status": "PASS"
     },
     "S03-07": {
@@ -4856,7 +4856,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current local full acceptance runs passed.",
+      "reason": "Historical local evidence only: this case's recorded PASS runs belong to the former repeated-run report; it has not been rerun under the current acceptance policy.",
       "local_status": "PASS"
     },
     "S03-08": {
@@ -4999,7 +4999,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current local full acceptance runs passed.",
+      "reason": "Historical local evidence only: this case's recorded PASS runs belong to the former repeated-run report; it has not been rerun under the current acceptance policy.",
       "local_status": "PASS"
     },
     "S03-SUP-01": {
@@ -5082,7 +5082,7 @@
           "reason": ""
         }
       ],
-      "reason": "All three current local full acceptance runs passed.",
+      "reason": "Historical local evidence only: this case's recorded PASS runs belong to the former repeated-run report; it has not been rerun under the current acceptance policy.",
       "local_status": "PASS"
     }
   },
