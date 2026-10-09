@@ -16,6 +16,18 @@ def require(condition, message):
 
 
 def main():
+    integration_source = (ROOT / "internal/core/server/agent_integration_test.go").read_text()
+    runner_source = (ROOT / "scripts/acceptance-s02.py").read_text()
+    require("func TestRealAgentCoreCloseDrainsAgentProxyTunnels" in integration_source and
+            't.Run("S02-07"' in integration_source,
+            "S02-07 lacks a focused real Agent/Core/proxy shutdown case")
+    require("closeS02CoreWithin(t, core, proxy, 5*time.Second)" in integration_source and
+            "waitForAgentProxyTunnelCount(t, proxy, 0" in integration_source and
+            "activeTunnels := proxy.activeTunnelCount()" in integration_source,
+            "Core.Close must have a bounded wait and assert the WSS proxy copy handlers drain")
+    require('"-run", "^TestRealAgent"' in runner_source,
+            "the S02 runner must execute the focused real Core-close test in each attempt")
+
     all_pass = ["PASS", "PASS"]
     status, verification = ACCEPTANCE.evaluate_results(all_pass, [0], True, full_acceptance=True)
     require((status, verification) == ("PASS", "PASS"), "clean single-run acceptance did not pass")
