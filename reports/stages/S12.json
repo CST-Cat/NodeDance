@@ -4,8 +4,8 @@
   "mode": "candidate",
   "status": "NOT_READY",
   "run_id": "37888355148-s12-engine-and-ui",
-  "updated_at": "2026-10-09T05:25:22+00:00",
-  "reason": "S12 候选与响应式 UI 已实现。GitHub Actions run 37888355148 的 Engine 28/29 真实 DIND 生命周期及 Chromium UI 均通过；S12-03 与 S12-05 已有规定的真实 Engine 证据。S12-01 缺少端口连通性探测，S12-02、S12-04、S12-06 至 S12-11 仍有报告中列明的完整验收缺口，且 S06 生产持久偏好存储尚未接入。",
+  "updated_at": "2026-10-09T06:09:52+00:00",
+  "reason": "S12 candidate and responsive UI checks are recorded; Engine 28/29 DIND and Chromium evidence covers S12-03/S12-05. Production SQLite preference migration is now wired into the default Core and has focused adapter tests. Other S12 cases still have documented gaps, so the stage remains NOT_READY.",
   "tests": {
     "S12-01": {
       "status": "NOT_READY",

@@ -3,7 +3,7 @@
   "run_id": "initial-unexecuted",
   "updated_at": "2026-10-09T05:32:00.407770+00:00",
   "status": "NOT_READY",
-  "reason": "当前没有任何阶段报告完成实际验收。",
+  "reason": "S00/S01 保留按旧三轮政策产生的历史 PASS，S03 的本地重复运行也保留为历史证据；这些报告未在新规则下重跑。当前单次完整运行政策下，S02–S17 尚未全部完成规范验收，项目总体保持 NOT_READY。",
   "stages": {
     "S00": {
       "status": "PASS",
@@ -23,8 +23,8 @@
     },
     "S02": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "reason": "Agent 身份、主动连接及心跳实现已在整合基线中；S02-07 新增 TLS WSS 代理恢复和 Core 限时关闭/双向复制退出回归。整合分支尚未执行一次完整 S02 规范验收，因此保持 NOT_READY。",
+      "updated_at": "2026-10-09T06:09:52+00:00"
     },
     "S03": {
       "status": "NOT_READY",
@@ -36,25 +36,25 @@
     },
     "S04": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "reason": "Docker 全量发现与状态同步实现已在整合基线中；精确容器 ID 库存追踪已接入 Core/SQLite/API/Dashboard 测试，并映射到 S04-01。该 owned DIND trace 尚未在整合分支执行，完整 S04 保持 NOT_READY。",
+      "updated_at": "2026-10-09T06:09:52+00:00"
     },
     "S05": {
-      "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "status": "FAIL",
+      "reason": "既有候选完整运行报告记录 make check preflight FAIL（run_id dc55d299d91b4ba9b60af0751edbe38c），必测案例未启动；整合分支 focused tests 通过，但尚未重跑完整 S05，因此保留 FAIL 并要求后续定向修复/完整验收。",
+      "updated_at": "2026-10-09T06:09:52+00:00"
     },
     "S06": {
       "status": "NOT_READY",
       "mode": "implementation",
       "run_id": "s06-implementation-20261009T033745Z",
-      "updated_at": "2026-10-09T03:37:45.050584+00:00",
-      "reason": "S06 implementation checks pass, but formal acceptance remains pending: no real Docker Engine/DIND S06 run, real-Core browser integration, dependent S04/S05 acceptance, or three consecutive complete stage runs were recorded."
+      "updated_at": "2026-10-09T06:09:52+00:00",
+      "reason": "S06 实现及仪表盘候选检查已有记录；真实 Engine/DIND、实时 Core 浏览器集成和依赖 S04/S05 的完整规范验收尚未完成，因此保持 NOT_READY。当前规则要求一次完整验收运行，不要求连续多轮。"
     },
     "S07": {
       "status": "NOT_READY",
-      "reason": "S07 remains NOT_READY: integration now registers Compose schema v6 and mounts Compose projects in the S06 shell; real Engine 28/29 and full P0/S07 acceptance remain unexecuted. See reports/stages/S07.json.",
-      "updated_at": "2026-10-09T03:50:21.348877+00:00",
+      "reason": "Compose 项目管理和迁移 v6 已集成；真实 Engine 28/29 完整验收及完整 P0/S07 规范套件尚未执行，保持 NOT_READY。",
+      "updated_at": "2026-10-09T06:09:52+00:00",
       "acceptance_policy_note": "Acceptance policy text was updated to one complete run; this report remains NOT_READY and was not rerun, so its existing implementation/integration blockers are unchanged."
     },
     "S08": {
@@ -68,8 +68,8 @@
       "status": "NOT_READY",
       "mode": "component",
       "run_id": "s09-component-77538a401154",
-      "updated_at": "2026-10-09T04:08:15.068+00:00",
-      "reason": "S09 component checks are underway: host PTY and real Docker Exec passed against marker-verified isolated Engine 28/29, including foreground sleep Ctrl-C/exit with non-running ExecInspect; the browser viewport checks are mocked. The full Core-Agent-browser lifecycle acceptance and three consecutive full-stage runs remain unexecuted, so S09 is NOT_READY."
+      "updated_at": "2026-10-09T06:09:52+00:00",
+      "reason": "终端组件、真实 Engine PTY/Exec 与响应式 UI 候选检查已有记录；实时 Core-Agent-浏览器撤销、断线、重启、过期和终端关闭链路尚未完成一次完整 S09 验收，因此保持 NOT_READY。"
     },
     "S10": {
       "status": "NOT_READY",
@@ -89,28 +89,28 @@
       "status": "NOT_READY",
       "mode": "candidate",
       "run_id": "37888355148-s12-engine-and-ui",
-      "updated_at": "2026-10-09T05:25:22+00:00",
-      "reason": "Engine 28/29 隔离 DIND 与响应式 Chromium CI 已通过；S12-03、S12-05 具备完整证据。其余 S12 用例仍有缺口，且 S06 生产持久偏好存储尚未接入。详见 reports/stages/S12.json。"
+      "updated_at": "2026-10-09T06:09:52+00:00",
+      "reason": "受控独立容器重建候选及 Engine/UI 证据已记录；SQLite 偏好迁移现已接入默认 Core wiring 并有针对性测试。其余 S12 端口、配置/资源保留、失败恢复等规范缺项仍未全部验证，保持 NOT_READY。"
     },
     "S13": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "reason": "Tailscale 发现和 SSH 辅助部署候选实现已集成；真实 Tailnet、SSH 主机、签名产物及 systemd Agent 安装验收缺失，保持 NOT_READY。",
+      "updated_at": "2026-10-09T06:09:52+00:00"
     },
     "S14": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "reason": "HTTP/HTTPS/TCP 探测候选实现已集成；现有本地运行记录属于历史证据，不作为当前多轮门槛。真实远端 Agent、DNS/TCP/证书故障、lease 恢复和慢探测资源用例仍缺，保持 NOT_READY。",
+      "updated_at": "2026-10-09T06:09:52+00:00"
     },
     "S15": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "reason": "告警规则、生命周期和通知候选实现已集成，并修正无 Docker healthcheck 时健康规则按 unknown 跳过；独立 Agent 端到端故障/恢复、生产 SMTP/TLS 和服务进程重启证据缺失，保持 NOT_READY。",
+      "updated_at": "2026-10-09T06:09:52+00:00"
     },
     "S16": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "reason": "签名 Agent 更新、滚动调度及 prepared-ACK 交接已集成；候选 GitHub Actions 和本地 focused tests 已有通过记录，但真实 systemd 多 Agent 更新、节点重启与生产签名密钥链仍未验收，保持 NOT_READY。",
+      "updated_at": "2026-10-09T06:09:52+00:00"
     },
     "S17": {
       "status": "NOT_READY",

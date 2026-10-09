@@ -525,7 +525,7 @@ func (s *Store) Evaluate(ctx context.Context, samples []Sample) error {
 			}
 			continue
 		}
-		if !sample.Known {
+		if !conditionKnown(rule, sample) {
 			if err := resetRuleState(ctx, tx, rule.ID, rule.SubjectID); err != nil {
 				return err
 			}
@@ -613,6 +613,17 @@ func conditionBad(r Rule, s Sample) bool {
 	}
 	return false
 }
+
+func conditionKnown(r Rule, s Sample) bool {
+	if !s.Known {
+		return false
+	}
+	if r.Kind == KindContainerState && (r.ExpectedState == "healthy" || r.ExpectedState == "unhealthy") {
+		return s.Health != "" && s.Health != "none"
+	}
+	return true
+}
+
 func resetRuleState(ctx context.Context, tx *sql.Tx, ruleID, subject string) error {
 	_, e := tx.ExecContext(ctx, `DELETE FROM alert_rule_state WHERE rule_id=? AND subject_id=?`, ruleID, subject)
 	return e

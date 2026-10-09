@@ -4,8 +4,8 @@
   "mode": "implementation",
   "status": "NOT_READY",
   "run_id": "s06-implementation-20261009T033745Z",
-  "updated_at": "2026-10-09T03:37:45.050584+00:00",
-  "reason": "S06 implementation checks pass, but formal acceptance remains pending: no real Docker Engine/DIND S06 run, real-Core browser integration, dependent S04/S05 acceptance, or three consecutive complete stage runs were recorded.",
+  "updated_at": "2026-10-09T06:09:52+00:00",
+  "reason": "S06 implementation checks pass, but formal acceptance remains NOT_READY: real Docker Engine/DIND coverage, real-Core browser integration, and dependent S04/S05 acceptance remain incomplete. Current policy requires one complete stage run, not consecutive repetitions.",
   "tests": {
     "S06-01": {
       "status": "NOT_READY",

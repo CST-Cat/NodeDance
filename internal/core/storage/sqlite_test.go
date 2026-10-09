@@ -187,10 +187,10 @@ func TestOpenEnablesWALAndRestrictsPermissions(t *testing.T) {
 		t.Fatalf("journal_mode=%q err=%v", mode, err)
 	}
 	var schemaVersion int
-	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schemaVersion); err != nil || schemaVersion != 9 {
-		t.Fatalf("schema version=%d err=%v, want integration schema version 9", schemaVersion, err)
+	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schemaVersion); err != nil || schemaVersion != 10 {
+		t.Fatalf("schema version=%d err=%v, want integration schema version 10", schemaVersion, err)
 	}
-	for _, table := range []string{"compose_projects", "compose_operations", "compose_editor_operations", "compose_editor_events", "service_probes", "service_probe_runs", "alert_rules", "alert_rule_state", "alerts", "alert_events", "alert_channels", "alert_deliveries", "alert_windows"} {
+	for _, table := range []string{"compose_projects", "compose_operations", "compose_editor_operations", "compose_editor_events", "service_probes", "service_probe_runs", "alert_rules", "alert_rule_state", "alerts", "alert_events", "alert_channels", "alert_deliveries", "alert_windows", "agent_update_releases", "agent_update_settings", "agent_update_tasks"} {
 		var count int
 		if err := store.DB.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
 			t.Errorf("table %q present=%d err=%v", table, count, err)

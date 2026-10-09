@@ -226,14 +226,14 @@ The in-memory Core component is not yet connected to the unified SQLite
 migrations or the authenticated Agent connection. It has no persisted
 inventory/lease recovery test and no real Envelope/WSS test. The adapter is not
 called by a running Agent. Therefore these component tests cannot establish
-S04-01 through S04-10, S04-SUP-01, or the whole-stage repeat gate; original case
-states stay `NOT_READY`.
+S04-01 through S04-10, S04-SUP-01, or one complete S04 acceptance run; original
+case states stay `NOT_READY`.
 
 ## Integrated Agent, Core, SQLite, API, and dashboard path (stage not accepted)
 
 The component described above is now connected to the Agent runtime and Core.
 This records implementation scope and focused checks only; it does not change
-the original S04 case results or substitute for the formal three-round runner.
+the original S04 case results or substitute for one complete S04 acceptance run.
 
 The Agent advertises `agent.docker.v1` only on a negotiated Core connection.
 Its Docker discovery worker uses the local Engine SDK and sends bounded,
@@ -284,8 +284,10 @@ explicit required mapping for all of its branches. The following formal
 coverage remains outstanding and must keep the original case rows at
 `NOT_READY`: real external pause/unpause/rename/delete convergence through the
 Core API for S04-02; a real scan failing after it has begun for S04-07; duplicate
-and out-of-order insertion over the authenticated WSS path for S04-09; and all
-original S04 cases repeated three times against the required Engine matrix.
+and out-of-order insertion over the authenticated WSS path for S04-09; and one
+complete S04 acceptance run with measured evidence against the required Engine
+28/29 matrix. That complete run and Engine matrix evidence have not yet been
+recorded.
 The API-incompatibility path must also remain distinct from Engine ping
 unavailability in UI and test evidence. No dashboard or component test alone
 establishes the full acceptance gate.

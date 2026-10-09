@@ -373,7 +373,7 @@ var migrations = []Migration{{
 		`CREATE INDEX alert_windows_active ON alert_windows(starts_at, ends_at, kind, scope_type, scope_id)`,
 	},
 }, {
-	Version: 7,
+	Version: 10,
 	SQL: []string{
 		`CREATE TABLE agent_update_releases (
 			id TEXT PRIMARY KEY,

@@ -4,8 +4,8 @@
   "mode": "component",
   "status": "NOT_READY",
   "run_id": "s09-component-77538a401154",
-  "updated_at": "2026-10-09T04:08:15.068+00:00",
-  "reason": "S09 component checks are underway: host PTY and real Docker Exec passed against marker-verified isolated Engine 28/29, including foreground sleep Ctrl-C/exit with non-running ExecInspect; the browser viewport checks are mocked. The full Core-Agent-browser lifecycle acceptance and three consecutive full-stage runs remain unexecuted, so S09 is NOT_READY.",
+  "updated_at": "2026-10-09T06:09:52+00:00",
+  "reason": "S09 component checks include host PTY and real Docker Exec on marker-verified isolated Engine 28/29; browser viewport checks use route stubs. Full Core-Agent-browser lifecycle acceptance has not been completed in one full-stage run, so S09 remains NOT_READY.",
   "tests": {
     "S09-01": {
       "status": "NOT_READY",

@@ -6,6 +6,7 @@
   "run_id": "s16-local-20261009T053703Z",
   "updated_at": "2026-10-09T05:52:53Z",
   "reason": "基线代码提交 b5c8e41621f85556dde96f591f8cd23e420003bf 的 GitHub Actions 完整 S16 focused suite 通过；后续 prepared-report handoff 修复的受影响 Agent/helper/Core update 测试及 go vet 通过。真实 systemd 多 Agent 更新、节点重启和生产签名密钥链证据仍缺失，因此整体阶段保持 NOT_READY。",
+  "integration_migration": "S16 isolated candidate migration v7 was appended as integration migration v10; integration migrations v1-v9 remain unchanged.",
   "tests": {
     "S16-01": {
       "status": "NOT_READY",

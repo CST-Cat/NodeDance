@@ -105,5 +105,5 @@ host sample with known CPU/memory and boot ID, reads the private node API,
 receives the real dashboard push, verifies the Agent continues after the
 browser closes, then floods a slow browser while logging out. The last local
 run reached the second sample in about 5.05 seconds. These results do not cover
-all S03 cases or the required three complete rounds; full S03 remains
-NOT_READY.
+all S03 cases or the required complete acceptance run on each architecture;
+full S03 remains NOT_READY.

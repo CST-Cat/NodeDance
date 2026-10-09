@@ -1307,6 +1307,25 @@ func runS04DockerCLI(endpoint string, args ...string) (string, error) {
 	return string(output), nil
 }
 
+func s04EngineContainerIDs(endpoint string, filters ...string) ([]string, error) {
+	args := []string{"container", "ls", "--all", "--quiet", "--no-trunc"}
+	args = append(args, filters...)
+	output, err := runS04DockerCLI(endpoint, args...)
+	if err != nil {
+		return nil, err
+	}
+	ids := strings.Fields(output)
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if _, duplicate := seen[id]; duplicate {
+			return nil, fmt.Errorf("Engine returned duplicate container ID %q", id)
+		}
+		seen[id] = struct{}{}
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
 func runS04DINDScript(root, action, engine string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -1740,6 +1759,27 @@ func sortedStrings(values []string) []string {
 	result := append([]string(nil), values...)
 	sort.Strings(result)
 	return result
+}
+
+func s04StoredContainerIDs(t *testing.T, core *Server, nodeID string) []string {
+	t.Helper()
+	rows, err := core.store.DB.Query(`SELECT container_id FROM docker_containers WHERE node_id=? ORDER BY container_id`, nodeID)
+	if err != nil {
+		t.Fatalf("query persisted Docker inventory IDs: %v", err)
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			t.Fatalf("scan persisted Docker inventory ID: %v", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate persisted Docker inventory IDs: %v", err)
+	}
+	return ids
 }
 
 func waitForCondition(t *testing.T, timeout time.Duration, condition func() bool, failure string) {

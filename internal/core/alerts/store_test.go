@@ -303,6 +303,46 @@ func TestOfflineSuppressionAcknowledgementWindowsAndDefaults(t *testing.T) {
 	}
 }
 
+func TestContainerHealthRuleSkipsNoHealthcheckButStateRuleStillEvaluates(t *testing.T) {
+	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
+	store, db := newTestStore(t, &now)
+	containerID := strings.Repeat("a", 64)
+	healthRule, err := store.SaveRule(context.Background(), "", RuleInput{
+		Name: "expected healthy", Kind: KindContainerState, NodeID: testNodeID, SubjectID: containerID,
+		Severity: SeverityWarning, ExpectedState: "healthy", Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runningRule, err := store.SaveRule(context.Background(), "", RuleInput{
+		Name: "expected running", Kind: KindContainerState, NodeID: testNodeID, SubjectID: containerID,
+		Severity: SeverityWarning, ExpectedState: "running", Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluate(t, store, now, Sample{NodeID: testNodeID, NodeName: "test node", Kind: KindContainerState,
+		SubjectID: containerID, Known: true, State: "stopped", Health: "none", ObservedAt: now})
+	active, err := store.ListAlerts(context.Background(), true, 10)
+	if err != nil || len(active) != 1 || active[0].RuleID != runningRule.ID {
+		t.Fatalf("no-healthcheck sample should skip health rule but evaluate running rule: alerts=%#v err=%v", active, err)
+	}
+	var healthRuleStateCount int
+	if err := db.DB.QueryRow(`SELECT count(*) FROM alert_rule_state WHERE rule_id=? AND subject_id=?`, healthRule.ID, containerID).Scan(&healthRuleStateCount); err != nil {
+		t.Fatal(err)
+	}
+	if healthRuleStateCount != 0 {
+		t.Fatalf("no-healthcheck sample retained health-rule duration state: count=%d", healthRuleStateCount)
+	}
+	now = now.Add(time.Second)
+	evaluate(t, store, now, Sample{NodeID: testNodeID, NodeName: "test node", Kind: KindContainerState,
+		SubjectID: containerID, Known: true, State: "running", Health: "none", ObservedAt: now})
+	active, err = store.ListAlerts(context.Background(), true, 10)
+	if err != nil || len(active) != 0 {
+		t.Fatalf("running state did not resolve the expected-running alert: alerts=%#v err=%v", active, err)
+	}
+}
+
 func TestSilenceWindowAndOfflineMetricRemainUnknown(t *testing.T) {
 	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 	store, _ := newTestStore(t, &now)

@@ -4,8 +4,8 @@
   "mode": "initial",
   "status": "NOT_READY",
   "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "updated_at": "2026-10-09T06:09:52+00:00",
+  "reason": "S04 implementation is integrated; exact Engine container ID tracing through Agent WSS, Core/SQLite/API/Dashboard is wired to S04-01. No owned Engine 28/29 full S04 acceptance run has been recorded on this integration branch, so the stage remains NOT_READY.",
   "tests": {
     "S04-01": {
       "status": "NOT_READY",
@@ -106,5 +106,13 @@
       "runs": [],
       "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     }
+  },
+  "integration_trace": {
+    "status": "NOT_READY",
+    "implementation_commit": "41a6318",
+    "test": "TestRealAgentDockerInventoryTraceOnOwnedDIND",
+    "acceptance_case": "S04-01",
+    "executed_on_integration_branch": false,
+    "reason": "Requires the owned DIND Engine fixture; package compilation was verified, but the real trace was not run."
   }
 }
