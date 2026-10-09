@@ -101,6 +101,12 @@ if any(line not in unit.splitlines() for line in expected):
     raise SystemExit("Core systemd unit is missing a required account, loopback, or data-directory setting")
 if "0.0.0.0" in unit or "--dev" in unit:
     raise SystemExit("Core systemd unit exposed the development listener")
+custom_prefix=Path("/usr/local/lib/nodedance-s17-selftest/release")
+custom_unit=module.render_core_unit(module.validate_prefix(custom_prefix)).decode()
+custom_exec=(f"ExecStart={custom_prefix}/nodedance serve --listen 127.0.0.1:8180 "
+             "--data-dir /var/lib/nodedance")
+if custom_exec not in custom_unit.splitlines():
+    raise SystemExit("Core systemd unit did not honor the supported custom release prefix")
 output.write_text(unit)
 PY
 if command -v systemd-analyze >/dev/null 2>&1 && getent passwd nodedance >/dev/null 2>&1; then

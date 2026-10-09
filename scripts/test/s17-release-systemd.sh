@@ -42,7 +42,11 @@ VERSION="v0.0.0-s17.${GITHUB_RUN_NUMBER:-1}"
 }
 WORK="$(mktemp -d "${RUNNER_TEMP:-/tmp}/nodedance-s17-systemd.XXXXXXXX")"
 chmod 755 "$WORK"
-PREFIX_PARENT="/opt/nodedance-s17-${SUFFIX}"
+# The release installer supports a custom --prefix. Keep this real systemd
+# test independent from /opt, whose permissions vary across hosted runners,
+# while still installing below a trusted, system-owned filesystem location.
+PREFIX_BASE="/usr/local/lib"
+PREFIX_PARENT="$PREFIX_BASE/nodedance-s17-${SUFFIX}"
 PREFIX="$PREFIX_PARENT/release"
 MARKER="$DATA_DIR/s17-release-marker-${SUFFIX}"
 DATA_OWNED=1
@@ -52,7 +56,7 @@ remove_owned_prefix_parent() {
   if ! sudo python3 - "$PREFIX_PARENT" "$SUFFIX" <<'PY'
 import os,stat,sys
 path,suffix=sys.argv[1:]
-expected=os.path.join("/opt", "nodedance-s17-"+suffix)
+expected=os.path.join("/usr/local/lib", "nodedance-s17-"+suffix)
 try:
     info=os.lstat(path)
 except OSError:
@@ -109,15 +113,18 @@ if sudo test -e "$PREFIX_PARENT" || sudo test -L "$PREFIX_PARENT" || sudo test -
   echo 'refusing to touch a pre-existing S17 release prefix parent or prefix on this runner' >&2
   exit 2
 fi
-python3 - <<'PY'
-import os,stat
-path="/opt"
-try:
-    info=os.lstat(path)
-except OSError as error:
-    raise SystemExit(f"S17-10 SYSTEMD NOT_READY: cannot inspect trusted /opt parent: {error}")
-if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) & 0o022:
-    raise SystemExit("S17-10 SYSTEMD NOT_READY: /opt must be a root-owned directory not writable by group or others")
+sudo python3 - "$PREFIX_BASE" <<'PY'
+import os,stat,sys
+base=sys.argv[1]
+if base != "/usr/local/lib":
+    raise SystemExit("S17-10 SYSTEMD NOT_READY: unexpected trusted prefix base")
+for path in ("/usr", "/usr/local", base):
+    try:
+        info=os.lstat(path)
+    except OSError as error:
+        raise SystemExit(f"S17-10 SYSTEMD NOT_READY: cannot inspect trusted prefix base {path}: {error}")
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or stat.S_IMODE(info.st_mode) & 0o022:
+        raise SystemExit(f"S17-10 SYSTEMD NOT_READY: trusted prefix base {path} must be root-owned and not writable by group or others")
 PY
 sudo mkdir -- "$PREFIX_PARENT"
 PREFIX_PARENT_OWNED=1
