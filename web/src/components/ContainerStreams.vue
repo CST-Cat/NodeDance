@@ -34,7 +34,7 @@ const logDecoders = { stdout: new TextDecoder(), stderr: new TextDecoder() }
 let pendingLogChunks: string[] = []
 let pendingLogLength = 0
 let pendingLogBytes = 0
-const logFlushTimer = setInterval(flushLogBuffer, 50)
+let logFlushTimer: ReturnType<typeof setInterval> | undefined
 const statsTime = computed(() => statsSnapshot.value?.observed_at ? new Date(statsSnapshot.value.observed_at).toLocaleTimeString() : '等待采样')
 
 const LOG_TEXT_LIMIT = 256 * 1024
@@ -122,6 +122,19 @@ function flushLogBuffer() {
   }
 }
 
+function startLogFlush() {
+  if (logFlushTimer !== undefined) return
+  logFlushTimer = setInterval(flushLogBuffer, 50)
+}
+
+function stopLogFlush() {
+  if (logFlushTimer !== undefined) {
+    clearInterval(logFlushTimer)
+    logFlushTimer = undefined
+  }
+  flushLogBuffer()
+}
+
 function acceptStats(frame: ContainerStatsFrame) {
   if (!frame.snapshot || frame.snapshot.container_id !== props.containerId) {
     fail('stats', '实时统计返回了其他容器的数据。')
@@ -167,6 +180,7 @@ function open(kind: ContainerStreamKind) {
     return
   }
   sockets[kind] = socket
+  if (kind === 'logs') startLogFlush()
   socket.onmessage = (event) => {
     let envelope: ContainerStreamEnvelope
     try {
@@ -215,7 +229,10 @@ function open(kind: ContainerStreamKind) {
   socket.onclose = () => {
     if (sockets[kind] !== socket) return
     delete sockets[kind]
-    if (kind === 'logs') flushLogDecoders()
+    if (kind === 'logs') {
+      flushLogDecoders()
+      stopLogFlush()
+    }
     if (expectedClose.has(kind)) {
       expectedClose.delete(kind)
       if (stateFor(kind).value !== 'error') stateFor(kind).value = 'idle'
@@ -231,6 +248,7 @@ function open(kind: ContainerStreamKind) {
 function close(kind: ContainerStreamKind) {
   const socket = sockets[kind]
   if (!socket) {
+    if (kind === 'logs') stopLogFlush()
     stateFor(kind).value = 'idle'
     errorFor(kind).value = ''
     return
@@ -238,6 +256,10 @@ function close(kind: ContainerStreamKind) {
   expectedClose.add(kind)
   stateFor(kind).value = 'idle'
   errorFor(kind).value = ''
+  if (kind === 'logs') {
+    flushLogDecoders()
+    stopLogFlush()
+  }
   socket.close(1000, 'user closed stream')
 }
 
@@ -275,8 +297,7 @@ function blockIOMetric(metricValue: { state: string; value?: { read_bytes_per_se
 
 onBeforeUnmount(() => {
   for (const kind of ['logs', 'stats'] as const) close(kind)
-  clearInterval(logFlushTimer)
-  flushLogBuffer()
+  stopLogFlush()
 })
 </script>
 

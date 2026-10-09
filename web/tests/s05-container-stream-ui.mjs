@@ -46,6 +46,13 @@ async function setupDashboard(context, containerId) {
   return { page, row }
 }
 
+async function expectLogFlushIntervals(page, expected, phase) {
+  await page.waitForFunction((count) => window.__nodedanceLogFlushIntervalCount?.() === count, expected, { timeout: 5_000 })
+  const actual = await page.evaluate(() => window.__nodedanceLogFlushIntervalCount?.() ?? -1)
+  if (actual !== expected) throw new Error(`${phase}: active log flush intervals=${actual}, want ${expected}`)
+  return actual
+}
+
 async function openUIStream(page, row, kind) {
   const buttonName = kind === 'logs' ? '查看日志' : '实时统计'
   const stateTestId = kind === 'logs' ? 'stream-log-state' : 'stream-stats-state'
@@ -113,6 +120,24 @@ async function closeUIStream(page, row, kind) {
 async function main() {
   browser = await chromium.launch({ headless: true })
   const context = await browser.newContext({ ignoreHTTPSErrors: true, viewport: { width: 390, height: 844 } })
+  await context.addInitScript(() => {
+    const activeFlushIntervals = new Set()
+    const originalSetInterval = window.setInterval.bind(window)
+    const originalClearInterval = window.clearInterval.bind(window)
+    window.setInterval = (handler, timeout, ...args) => {
+      const id = originalSetInterval(handler, timeout, ...args)
+      if (timeout === 50) activeFlushIntervals.add(id)
+      return id
+    }
+    window.clearInterval = (id) => {
+      activeFlushIntervals.delete(id)
+      originalClearInterval(id)
+    }
+    Object.defineProperty(window, '__nodedanceLogFlushIntervalCount', {
+      configurable: false,
+      value: () => activeFlushIntervals.size,
+    })
+  })
   await context.addCookies([{ name: 'nodedance_session', value: config.session, url: config.url,
     secure: true, httpOnly: true, sameSite: 'Strict' }])
 
@@ -128,6 +153,12 @@ async function main() {
   if (wrongContainer !== 404) throw new Error(`wrong-container stream status=${wrongContainer}, want 404`)
 
   const logsView = await setupDashboard(context, config.logContainerId)
+  const idleContainerRows = await logsView.page.locator('.docker-row').count()
+  const idleStreamRows = await logsView.page.locator('[data-testid="container-streams"]').count()
+  if (idleContainerRows < 3 || idleStreamRows !== idleContainerRows) {
+    throw new Error(`expected multiple idle container stream rows, containers=${idleContainerRows} streamRows=${idleStreamRows}`)
+  }
+  const idleLogFlushIntervals = await expectLogFlushIntervals(logsView.page, 0, 'idle container rows')
   const responsive = await logsView.row.locator('[data-testid="container-streams"]').evaluate((element) => ({
     width: element.clientWidth, scrollWidth: element.scrollWidth,
   }))
@@ -135,12 +166,15 @@ async function main() {
     throw new Error(`stream controls overflow at 390x844: ${JSON.stringify(responsive)}`)
   }
   const logsReady = await openUIStream(logsView.page, logsView.row, 'logs')
+  const openedLogFlushIntervals = await expectLogFlushIntervals(logsView.page, 1, 'one active log stream')
   fs.writeFileSync(config.logStartPath, 'browser subscribed to live log stream\n', { mode: 0o600 })
   const logs = await waitForLogs(logsView.page, logsView.row, 512 * 1024, '你好')
   await closeUIStream(logsView.page, logsView.row, 'logs')
+  const closedLogFlushIntervals = await expectLogFlushIntervals(logsView.page, 0, 'closed log stream')
 
   const ttyView = await setupDashboard(context, config.ttyContainerId)
   const ttyReady = await openUIStream(ttyView.page, ttyView.row, 'logs')
+  const ttyLogFlushIntervals = await expectLogFlushIntervals(ttyView.page, 1, 'TTY log stream')
   await ttyView.page.waitForFunction((containerId) => {
     const output = document.querySelector(`.docker-row[data-container-id="${containerId}"] [data-testid="stream-log-output"]`)
     return output?.textContent?.includes('TTY-raw-你好') === true && output?.getAttribute('data-channels') === 'stdout'
@@ -149,6 +183,13 @@ async function main() {
     bytes: Number(output.getAttribute('data-bytes') ?? 0), channels: output.getAttribute('data-channels'), text: output.textContent,
   }))
   await closeUIStream(ttyView.page, ttyView.row, 'logs')
+  const ttyClosedFlushIntervals = await expectLogFlushIntervals(ttyView.page, 0, 'closed TTY log stream')
+  await openUIStream(ttyView.page, ttyView.row, 'logs')
+  const beforeUnmountFlushIntervals = await expectLogFlushIntervals(ttyView.page, 1, 'log stream before unmount')
+  await ttyView.page.getByRole('button', { name: '账户设置' }).click()
+  await ttyView.page.getByRole('button', { name: '节点监控' }).waitFor({ state: 'visible', timeout: 10_000 })
+  await ttyView.page.locator('.nodes-dashboard').waitFor({ state: 'detached', timeout: 10_000 })
+  const unmountedFlushIntervals = await expectLogFlushIntervals(ttyView.page, 0, 'Dashboard unmount')
 
   const statsView1 = await setupDashboard(context, config.statsContainerId)
   const statsView2 = await setupDashboard(context, config.statsContainerId)
@@ -191,7 +232,9 @@ async function main() {
   await browser.close()
   browser = undefined
   process.stdout.write(`${JSON.stringify({ unauthorized, crossOrigin, wrongNode, wrongContainer, responsive,
-    logsReady, logs, ttyReady, tty, statsReady1, firstSamples, statsReady2, sharedCounter,
+    idleContainerRows, idleStreamRows, idleLogFlushIntervals, logsReady, openedLogFlushIntervals,
+    logs, closedLogFlushIntervals, ttyReady, ttyLogFlushIntervals, tty, ttyClosedFlushIntervals,
+    beforeUnmountFlushIntervals, unmountedFlushIntervals, statsReady1, firstSamples, statsReady2, sharedCounter,
     samplesBeforeHeartbeatWait, samplesAfterHeartbeatWait, samplesAfterFirstLeft, retainedCounter, stoppedCounter,
     statsFields, reopenedReady, reopenedSamples, reopenedCounter, finalCounter })}\n`)
 }
