@@ -31,14 +31,11 @@ jobs:
       - name: Install and verify locked tools
         run: make verify-tools
 
-      - name: Install locked web dependencies
-        run: make deps
+      - name: Install locked web dependencies and build the embedded frontend
+        run: make frontend
 
       - name: Start this job's owned Engine 28 or 29 DIND
         run: ./scripts/test/dind.sh start "${NODEDANCE_TEST_ENGINE}"
-
-      - name: Build embedded frontend assets for Core Go tests
-        run: pnpm --dir web run build
 
       - name: Run real host PTY, Core authorization, and Docker Exec component checks
         run: mkdir -p .artifacts/s09 && set -o pipefail && make test-terminal-component 2>&1 | tee ".artifacts/s09/terminal-component-engine-${NODEDANCE_TEST_ENGINE}.log"
