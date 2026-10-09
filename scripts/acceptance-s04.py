@@ -21,7 +21,7 @@ STAGE = next(stage for stage in REGISTRY["stages"] if stage["id"] == "S04")
 CASES = STAGE.get("tests", []) + STAGE.get("supplemental_tests", [])
 CASE_BY_ID = {case["id"]: case for case in CASES}
 CASE_TESTS = {
-    "S04-01": ("TestDINDInventoryMatchesOwnedFixtures", "TestRealDockerAgentCoreMultiChunkSnapshotReconnect"),
+    "S04-01": ("TestDINDInventoryMatchesOwnedFixtures", "TestRealDockerAgentCoreMultiChunkSnapshotReconnect", "TestRealAgentDockerInventoryTraceOnOwnedDIND"),
     "S04-02": ("TestDINDEventLifetimeAndReconnectSnapshot", "TestRealDockerAgentCoreMultiChunkSnapshotReconnect"),
     "S04-03": ("TestDINDInventoryMatchesOwnedFixtures", "TestRealDockerAgentCoreMultiChunkSnapshotReconnect", "TestRealDockerAgentCoreBrowserP95"),
     "S04-04": ("TestDINDInventoryMatchesOwnedFixtures", "TestRealDockerAgentCoreMultiChunkSnapshotReconnect", "TestRealDockerAgentCoreBrowserP95"),

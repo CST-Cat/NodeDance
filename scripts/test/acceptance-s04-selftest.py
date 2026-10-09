@@ -47,6 +47,8 @@ def test_original_case_mapping_and_redaction():
             "S04-08 must run the real Agent/Core API incompatibility redaction fixture")
     require("TestRealDockerAgentCoreMultiChunkSnapshotReconnect" in ACCEPTANCE.CASE_TESTS["S04-02"],
             "S04-02 must exercise external pause/unpause/rename/delete through the real Core API")
+    require("TestRealAgentDockerInventoryTraceOnOwnedDIND" in ACCEPTANCE.CASE_TESTS["S04-01"],
+            "S04-01 must trace exact owned Engine IDs through Agent WSS snapshots into the final Core view")
     require("TestRealAgentDockerAPIIncompatibilitySecretRedaction" in ACCEPTANCE.CASE_TESTS["S04-07"],
             "S04-07 must include the real Agent/Core API fixture that fails after a successful Inspect")
     require("TestRealDockerAgentCoreMultiChunkSnapshotReconnect" in ACCEPTANCE.CASE_TESTS["S04-09"],

@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -1163,12 +1164,14 @@ func TestRealAgentDockerDINDStopAndSocketPermissionRecovery(t *testing.T) {
 	if err := setOwnedS04DINDSocketMode(owner, 0); err != nil {
 		t.Fatalf("restrict only the owned DIND socket for DAC fault: %v", err)
 	}
-	probe := exec.Command("docker", "--host", endpoint, "info", "--format", "{{.ServerVersion}}")
-	probeOutput, probeErr := probe.CombinedOutput()
-	if probeErr == nil || !strings.Contains(strings.ToLower(string(probeOutput)), "permission denied") {
-		t.Fatalf("same-uid DAC probe did not prove the test Agent identity is denied: exit=%v output=%q", probeErr, strings.TrimSpace(string(probeOutput)))
+	probeErr := dialUnixSocketForDACProbe(socketPath)
+	if !errors.Is(probeErr, syscall.EACCES) && !errors.Is(probeErr, syscall.EPERM) {
+		t.Fatalf("same-uid Unix socket connect did not prove the test Agent identity is denied: uid=%d gid=%d socket=%q mode=%#o err=%v",
+			os.Geteuid(), os.Getegid(), socketPath, socketMode(socketPath), probeErr)
 	}
-	t.Logf("socket DAC proof: real Agent/test UID=%d, exact DIND socket mode=%#o, Docker API denied with permission denied", os.Geteuid(), 0)
+	groups, groupsErr := os.Getgroups()
+	t.Logf("socket DAC proof: Agent and probe run in-process as uid=%d gid=%d groups=%v groups_error=%v; exact DIND socket mode=%#o denied connect with %v",
+		os.Geteuid(), os.Getegid(), groups, groupsErr, socketMode(socketPath), probeErr)
 	heartbeatBeforeDAC := heartbeatSequenceForNode(t, core, config.NodeID)
 	metricsBeforeDAC := metricSequenceForNode(t, core, config.NodeID)
 	previousGeneration := generationForNode(t, core, config.NodeID)
@@ -1193,6 +1196,47 @@ func TestRealAgentDockerDINDStopAndSocketPermissionRecovery(t *testing.T) {
 		t.Fatalf("socket permission recovery changed the stopped inventory: count=%d", len(finalView.Containers))
 	}
 	t.Logf("socket DAC recovery preserved the exact stopped asset; final availability=%s stale=%t generation=%d", finalView.DockerAvailability, finalView.DataStale, finalView.ActiveGeneration)
+}
+
+func dialUnixSocketForDACProbe(path string) error {
+	conn, err := net.DialTimeout("unix", path, 3*time.Second)
+	if err != nil {
+		return err
+	}
+	return conn.Close()
+}
+
+func socketMode(path string) os.FileMode {
+	info, err := os.Stat(path)
+	if err != nil {
+		return 0
+	}
+	return info.Mode().Perm()
+}
+
+func TestS04UnixSocketDACProbeUsesConnectErrno(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("Unix socket DAC probe requires a non-root test identity")
+	}
+	path := filepath.Join(t.TempDir(), "docker.sock")
+	listener, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal("create Unix socket DAC fixture:", err)
+	}
+	defer listener.Close()
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatal("set accessible socket mode:", err)
+	}
+	if err := dialUnixSocketForDACProbe(path); err != nil {
+		t.Fatalf("same-identity probe unexpectedly failed before denial: %v", err)
+	}
+	if err := os.Chmod(path, 0); err != nil {
+		t.Fatal("remove all socket access bits:", err)
+	}
+	err = dialUnixSocketForDACProbe(path)
+	if !errors.Is(err, syscall.EACCES) && !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("same-identity Unix socket probe did not return a DAC errno: mode=%#o err=%v", socketMode(path), err)
+	}
 }
 
 func s04DockerViewContainerIDs(view coredocker.View) []string {
