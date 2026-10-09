@@ -39,6 +39,14 @@ jobs:
       - name: Run real Registry pull, digest, list, reference and delete acceptance
         run: scripts/test/s08-image-engine-dind.sh '${{ matrix.engine }}' "$S08_RUN_ID"
 
+      - name: Run authenticated Core API to Agent and Registry acceptance on the same Engine
+        run: NODEDANCE_S08_TEST_PACKAGE=./internal/core/server scripts/test/s08-image-engine-dind.sh '${{ matrix.engine }}' "$S08_RUN_ID"
+
+      - name: Verify both real Engine evidence logs are retained
+        run: |
+          test -s ".artifacts/s08/image-engine${{ matrix.engine }}-$S08_RUN_ID.log"
+          test -s ".artifacts/s08/core-image-auth-engine${{ matrix.engine }}-$S08_RUN_ID.log"
+
       - name: Remove only this run's marked Engine ${{ matrix.engine }}
         if: always()
         run: |
