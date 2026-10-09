@@ -4,8 +4,8 @@
   "mode": "candidate-checks",
   "status": "NOT_READY",
   "run_id": "s11-engine-only-37887672834",
-  "updated_at": "2026-10-09T05:17:20Z",
-  "reason": "本地 focused Go/vet、锁定前端构建、响应式 Chromium 组件测试及 Engine 28/29 DIND Compose 编辑候选检查均有通过证据；S11-01/04/06/07/08/09/10 仍有明确缺失子场景，完整 Core-Agent-Engine E2E 未执行，因此完整阶段保持 NOT_READY。",
+  "updated_at": "2026-10-09T07:55:23Z",
+  "reason": "S11-07 的 mutable image tag 漂移真实 Engine 场景已在 Engine 29.7.2 通过；S11-01、04、06、08、09、10 及完整 Core-Agent-Engine E2E 仍有明确缺失场景，因此阶段保持 NOT_READY。",
   "tests": {
     "S11-01": {
       "status": "NOT_READY",
@@ -293,7 +293,7 @@
       ]
     },
     "S11-07": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "原镜像标签已变化。",
       "expected": "使用保留的旧引用恢复。",
       "environment": "移动标签前后镜像digest不同。",
@@ -320,10 +320,31 @@
               "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
             }
           ]
+        },
+        {
+          "run_id": "s11-local-20261009-1-engine29",
+          "commit": "4953940cae3b0ba1b1bc174669d7dec9ccd7a89d",
+          "test": "TestDINDComposeEditorRollbackSurvivesMutableTagDrift",
+          "status": "PASS",
+          "scope": "测试专用 Runner 在 Manager 固定旧镜像 ID 后，将原 mutable tag 移到 busybox 镜像；真实 Compose apply 因被占用端口失败，确认回滚后容器仍运行固定的原镜像。",
+          "environment": "Local isolated worktree based on a1482f9; reused the existing owner-marked S04 Docker-in-Docker Engine 29.7.2 via explicit socket override without starting, stopping, or cleaning that Engine; locked Compose 5.4.0; the S11 fixture used its own exact suite labels and cleanup.",
+          "command": "scripts/test/s11-compose-editor-dind.sh 29 rollback-tag-drift",
+          "evidence": {
+            "log": ".artifacts/s11/engine-29-rollback-tag-drift.log",
+            "original_image_id": "sha256:cbad6347cca28a6ee7b08793856bc6fcb2c2c7a377a62a5e6d785895c4194ac1",
+            "replacement_image_id": "sha256:ad4f11f7c85f87c0a6d6c0fe492ad53f9cdcff6e8c88b881360c70eff701c67b",
+            "assertions": [
+              "rollback alias still resolved to original image ID after mutable tag moved",
+              "deployment returned ErrPortOccupied and RollbackConfirmed=true",
+              "live rollback container ImageID matched the original pinned ImageID",
+              "mutable source tag still resolved to the replacement image ID after rollback",
+              "exact fixture containers, fixture directory, mutable tag and rollback alias were cleaned"
+            ]
+          }
         }
       ],
-      "reason": "Engine 28/29 真实端口回滚路径通过，恢复使用事务创建的固定镜像引用；测试没有在 pin 后移动原镜像 tag，尚未证明 tag 漂移时仍恢复到原 image ID/digest。",
-      "acceptance_evidence_missing": "修改源 image tag 后，Engine 实际恢复的旧 image ID/digest 与 pin 前记录相同。",
+      "reason": "固定镜像后移动 mutable tag 的 focused 真实 Engine 场景在 Engine 29.7.2 通过。S11 阶段仍因其他用例和完整 Core-Agent-Engine 链路缺少验收证据而保持 NOT_READY。",
+      "acceptance_evidence_missing": "",
       "component_tests_passed": [
         "TestRollbackOverrideUsesPinnedImageAndNeverIncludesVolumes"
       ],
@@ -334,11 +355,17 @@
         "scope": "TestDINDComposeEditorRealEngine 执行了固定镜像回滚；未注入 tag 变化。"
       },
       "integration_tests_passed": [
-        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS（固定引用回滚路径）"
+        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS（固定引用回滚路径）",
+        "TestDINDComposeEditorRollbackSurvivesMutableTagDrift：Engine 29.7.2 PASS；pin 后移动 mutable tag，真实端口冲突回滚到原 ImageID。"
       ],
-      "remaining_integration_tests": [
-        "回滚期间移动镜像 tag 并核对旧 image ID/digest"
-      ]
+      "remaining_integration_tests": [],
+      "latest_local_attempt": {
+        "run_id": "s11-local-20261009-1-engine29",
+        "status": "PASS",
+        "engine": "29.7.2",
+        "test": "TestDINDComposeEditorRollbackSurvivesMutableTagDrift",
+        "log": ".artifacts/s11/engine-29-rollback-tag-drift.log"
+      }
     },
     "S11-08": {
       "status": "NOT_READY",
