@@ -142,6 +142,24 @@ export interface ContainerTask {
   finishedAt?: string
 }
 
+export interface TaskAuditEvent {
+  id: number
+  event: string
+  fromStatus?: string
+  toStatus?: string
+  actorId?: number
+  remoteAddress: string
+  occurredAt: string
+}
+
+export type ContainerTaskAction = ContainerTask['action']
+export interface CreateContainerTaskPayload {
+  action: ContainerTaskAction
+  newName?: string
+  deleteConfirmed?: boolean
+  deleteConfirmationId?: string
+}
+
 interface AuthResponse {
   user: User
   csrfToken: string
@@ -247,7 +265,8 @@ export const api = {
   nodeContainers: (nodeId: string) => request<DockerInventoryMessage>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/containers`),
   nodeTasks: (nodeId: string) => request<{ tasks: ContainerTask[]; nextCursor: string }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks?limit=50`),
   nodeTask: (nodeId: string, taskId: string) => request<ContainerTask>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}`),
-  createContainerTask: (nodeId: string, containerId: string, payload: { action: ContainerTask['action'] }, idempotencyKey: string) =>
+  nodeTaskAudit: (nodeId: string, taskId: string) => request<{ events: TaskAuditEvent[] }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}/audit`),
+  createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload, idempotencyKey: string) =>
     request<{ taskId: string; status: ContainerTask['status'] }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,
       { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),

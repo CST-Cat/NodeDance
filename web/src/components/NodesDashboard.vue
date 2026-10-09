@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
+import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type ContainerTaskAction, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse, type TaskAuditEvent } from '../api'
 import type { MetricsView } from '../metrics-contract'
+import ContainerStreams from './ContainerStreams.vue'
 import MetricsPanel from './MetricsPanel.vue'
 
 interface NodeClock {
@@ -21,6 +22,10 @@ const nodeReasons = ref<Record<string, string>>({})
 const taskViews = ref<Record<string, ContainerTask>>({})
 const taskSubmitting = ref<Record<string, boolean>>({})
 const taskErrors = ref<Record<string, string>>({})
+const taskAuditViews = ref<Record<string, TaskAuditEvent[]>>({})
+const taskAuditVisible = ref<Record<string, boolean>>({})
+const taskAuditLoading = ref<Record<string, boolean>>({})
+const taskAuditErrors = ref<Record<string, string>>({})
 const busy = ref(true)
 const error = ref('')
 const elapsed = ref(0)
@@ -231,20 +236,56 @@ function taskStatusLabel(task: ContainerTask): string {
   return `执行失败：${task.result.code || '原因未分类'}`
 }
 
-async function restartContainer(container: DockerInventory['containers'][number]['container']) {
+async function toggleTaskAudit(task: ContainerTask) {
+  const showing = Boolean(taskAuditVisible.value[task.taskId])
+  taskAuditVisible.value = { ...taskAuditVisible.value, [task.taskId]: !showing }
+  if (showing || taskAuditViews.value[task.taskId] || taskAuditLoading.value[task.taskId]) return
+  taskAuditLoading.value = { ...taskAuditLoading.value, [task.taskId]: true }
+  try {
+    const response = await api.nodeTaskAudit(task.nodeId, task.taskId)
+    taskAuditViews.value = { ...taskAuditViews.value, [task.taskId]: response.events }
+  } catch (reason) {
+    taskAuditErrors.value = { ...taskAuditErrors.value, [task.taskId]: reason instanceof Error ? reason.message : '无法读取任务审计记录。' }
+  } finally {
+    taskAuditLoading.value = { ...taskAuditLoading.value, [task.taskId]: false }
+  }
+}
+
+async function submitContainerAction(container: DockerInventory['containers'][number]['container'], action: ContainerTaskAction) {
   const node = selectedNode.value
   const inventory = selectedDocker.value
   if (!node || !inventory || !node.agentId || dockerIsStale(inventory) || container.stale || taskSubmitting.value[container.id]) return
+
+  let payload: { action: ContainerTaskAction; newName?: string; deleteConfirmed?: boolean; deleteConfirmationId?: string } = { action }
+  if (action === 'rename') {
+    if (container.compose) return
+    const newName = window.prompt('输入新的独立容器名称', container.name)
+    if (newName === null) return
+    payload = { action, newName: newName.trim() }
+  } else if (action === 'delete') {
+    if (container.running || container.paused) {
+      taskErrors.value = { ...taskErrors.value, [container.id]: '请先单独停止容器，再提交删除任务。' }
+      return
+    }
+    const confirmation = window.prompt(`删除不会删除数据卷。请输入完整容器 ID 以确认：\n${container.id}`)
+    if (confirmation === null) return
+    if (confirmation.trim() !== container.id) {
+      taskErrors.value = { ...taskErrors.value, [container.id]: '删除未提交：确认内容必须与当前完整容器 ID 完全一致。' }
+      return
+    }
+    payload = { action, deleteConfirmed: true, deleteConfirmationId: confirmation.trim() }
+  }
+
   taskSubmitting.value = { ...taskSubmitting.value, [container.id]: true }
   const errors = { ...taskErrors.value }
   delete errors[container.id]
   taskErrors.value = errors
   try {
-    const accepted = await api.createContainerTask(node.nodeId, container.id, { action: 'restart' }, crypto.randomUUID())
+    const accepted = await api.createContainerTask(node.nodeId, container.id, payload, crypto.randomUUID())
     const current = await api.nodeTask(node.nodeId, accepted.taskId)
     taskViews.value = { ...taskViews.value, [current.taskId]: current }
   } catch (reason) {
-    taskErrors.value = { ...taskErrors.value, [container.id]: reason instanceof Error ? reason.message : '无法创建容器重启任务。' }
+    taskErrors.value = { ...taskErrors.value, [container.id]: reason instanceof Error ? reason.message : '无法创建容器操作任务。' }
   } finally {
     taskSubmitting.value = { ...taskSubmitting.value, [container.id]: false }
   }
@@ -520,14 +561,39 @@ onBeforeUnmount(() => {
               </div>
               <p v-if="record.container.unavailableReason" class="container-reason">{{ record.container.unavailableReason }}</p>
               <div class="container-task-actions">
-                <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="restartContainer(record.container)">
-                  {{ taskSubmitting[record.container.id] ? '正在提交…' : '重启容器' }}
-                </button>
+                <button v-if="record.container.paused" class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'resume')">恢复</button>
+                <template v-else-if="record.container.running">
+                  <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'stop')">停止</button>
+                  <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'restart')">重启容器</button>
+                  <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'pause')">暂停</button>
+                </template>
+                <button v-else class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'start')">启动</button>
+                <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id] || Boolean(record.container.compose)" :title="record.container.compose ? 'Compose 项目容器不能通过实际重命名修改服务身份' : '重命名独立容器'" @click="submitContainerAction(record.container, 'rename')">重命名</button>
+                <button class="container-action container-action-danger" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id] || record.container.running || record.container.paused || record.container.restarting" :title="record.container.running || record.container.paused || record.container.restarting ? '请先确认容器已停止' : '删除容器并保留数据卷'" @click="submitContainerAction(record.container, 'delete')">删除</button>
+                <span v-if="taskSubmitting[record.container.id]" class="container-task-status" role="status">正在提交任务…</span>
                 <span v-if="taskForContainer(record.container.id)" class="container-task-status" :data-status="taskForContainer(record.container.id)?.status" role="status">
                   {{ taskStatusLabel(taskForContainer(record.container.id)!) }}
                 </span>
+                <button v-if="taskForContainer(record.container.id)" class="container-action" type="button" @click="toggleTaskAudit(taskForContainer(record.container.id)!)">
+                  {{ taskAuditVisible[taskForContainer(record.container.id)!.taskId] ? '隐藏审计' : '查看审计' }}
+                </button>
                 <span v-if="taskErrors[record.container.id]" class="container-task-error" role="alert">{{ taskErrors[record.container.id] }}</span>
+                <span v-if="taskAuditErrors[taskForContainer(record.container.id)?.taskId || '']" class="container-task-error" role="alert">{{ taskAuditErrors[taskForContainer(record.container.id)?.taskId || ''] }}</span>
+                <ol v-if="taskForContainer(record.container.id) && taskAuditVisible[taskForContainer(record.container.id)!.taskId]" class="container-task-audit" aria-label="容器任务审计">
+                  <li v-if="taskAuditLoading[taskForContainer(record.container.id)!.taskId]">正在读取审计记录…</li>
+                  <li v-for="event in (taskAuditViews[taskForContainer(record.container.id)!.taskId] ?? [])" :key="event.id">
+                    <span>{{ event.event }}<template v-if="event.toStatus"> · {{ event.fromStatus || '开始' }} → {{ event.toStatus }}</template></span>
+                    <time :datetime="event.occurredAt">{{ new Date(event.occurredAt).toLocaleString() }}</time>
+                  </li>
+                </ol>
               </div>
+              <ContainerStreams
+                v-if="selectedNode && selectedDocker"
+                :node-id="selectedNode.nodeId"
+                :container-id="record.container.id"
+                :disabled="dockerIsStale(selectedDocker) || record.container.stale"
+                :stats-available="record.container.running && !record.container.paused && !record.container.restarting"
+              />
             </article>
           </div>
         </section>
@@ -583,8 +649,12 @@ onBeforeUnmount(() => {
 .container-task-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .container-action { min-height: 34px; border: 1px solid rgba(141, 201, 255, .25); border-radius: 7px; padding: 6px 10px; color: #cce6ff; background: rgba(62, 119, 170, .16); font: inherit; font-size: 10px; cursor: pointer; }
 .container-action:hover:not(:disabled) { background: rgba(62, 119, 170, .3); }
+.container-action-danger { border-color: rgba(255, 129, 116, .3); color: #ffc1b8; background: rgba(184, 77, 72, .1); }
 .container-action:disabled { opacity: .48; cursor: not-allowed; }
 .container-task-status, .container-task-error { color: #a8bdd7; font-size: 10px; overflow-wrap: anywhere; }
+.container-task-audit { flex-basis: 100%; margin: 4px 0 0; padding: 8px 8px 8px 26px; border: 1px solid rgba(171, 196, 232, .1); border-radius: 7px; color: #a8bdd7; font-size: 10px; }
+.container-task-audit li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; padding: 3px 0; }
+.container-task-audit time { color: #8193aa; }
 .container-task-status[data-status='succeeded'] { color: #9ce0b7; }
 .container-task-status[data-status='failed'], .container-task-status[data-status='unknown'], .container-task-status[data-status='timed_out'], .container-task-error { color: #ffc1b8; }
 @media (max-width: 760px) { .nodes-layout { grid-template-columns: minmax(0, 1fr); } .node-list { max-height: 270px; overflow: auto; } }
