@@ -160,3 +160,38 @@ func TestRuntimeFileTransferLimitPrecedenceAndHardBound(t *testing.T) {
 		}
 	}
 }
+
+func TestRuntimeNonMetricHistoryRetentionPrecedenceAndBounds(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		file File
+		env  string
+		cli  string
+		want int
+	}{
+		{name: "default", want: DefaultNonMetricHistoryRetentionDays},
+		{name: "config", file: File{NonMetricHistoryRetentionDays: 30}, want: 30},
+		{name: "environment overrides config", file: File{NonMetricHistoryRetentionDays: 30}, env: "60", want: 60},
+		{name: "CLI overrides environment", env: "60", cli: "120", want: 120},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := RuntimeNonMetricHistoryRetentionDays(test.file, test.env, test.cli)
+			if err != nil || got != test.want {
+				t.Fatalf("retention days=%d err=%v, want %d", got, err, test.want)
+			}
+		})
+	}
+	for _, value := range []string{"0", "-1", "3651", "nope"} {
+		if _, err := RuntimeNonMetricHistoryRetentionDays(File{}, value, ""); err == nil {
+			t.Errorf("invalid environment retention %q was accepted", value)
+		}
+	}
+	for _, value := range []int{0, -1, 3651} {
+		if value == 0 { // zero means the documented default in JSON config.
+			continue
+		}
+		if _, err := RuntimeNonMetricHistoryRetentionDays(File{NonMetricHistoryRetentionDays: value}, "", ""); err == nil {
+			t.Errorf("invalid config retention %d was accepted", value)
+		}
+	}
+}

@@ -414,6 +414,21 @@ var migrations = []Migration{{
 		`CREATE INDEX agent_update_tasks_batch ON agent_update_tasks(batch_id, batch_number, status)`,
 		`CREATE UNIQUE INDEX agent_update_tasks_active_node ON agent_update_tasks(node_id) WHERE status IN ('queued','deferred','dispatched','prepared')`,
 	},
+}, {
+	Version: 11,
+	SQL: []string{
+		`CREATE INDEX audit_entries_retention ON audit_entries(occurred_at, id)`,
+		`CREATE INDEX core_task_audit_events_retention ON core_task_audit_events(occurred_at_ns, id)`,
+		`CREATE INDEX core_tasks_retention ON core_tasks(status, finished_at_ns, task_id)`,
+		`CREATE INDEX compose_operations_retention ON compose_operations(status, updated_at, operation_id)`,
+		`CREATE INDEX compose_editor_operations_retention ON compose_editor_operations(status, updated_at, operation_id)`,
+		`CREATE INDEX service_probe_runs_retention ON service_probe_runs(status, completed_at, checked_at)`,
+		`CREATE INDEX alerts_retention ON alerts(status, resolved_at, id)`,
+		`CREATE INDEX alert_events_retention ON alert_events(occurred_at, alert_id, id)`,
+		`CREATE INDEX alert_deliveries_retention ON alert_deliveries(status, created_at, alert_id, event_id)`,
+		`CREATE INDEX alert_windows_retention ON alert_windows(ends_at, disabled_at)`,
+		`CREATE INDEX agent_update_tasks_retention ON agent_update_tasks(status, updated_at, id)`,
+	},
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {
