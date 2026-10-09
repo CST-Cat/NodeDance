@@ -7,15 +7,22 @@ ENGINE="${1:-}"
 DIND_ROOT="${NODEDANCE_S12_DIND_ROOT:-$ROOT/.artifacts/dind/v$ENGINE}"
 DIND_ROOT="$(realpath -m "$DIND_ROOT")"
 EXPECTED_ROOT="$(realpath -m "$ROOT/.artifacts/dind/v$ENGINE")"
-[[ "$DIND_ROOT" == "$EXPECTED_ROOT" ]] || { echo "S12 DIND NOT_READY: expected this checkout's marked fixture at $EXPECTED_ROOT" >&2; exit 3; }
+RICH_CONFIG_ROOT="$(realpath -m "$ROOT/.artifacts/dind/s12-rich-config-v$ENGINE")"
+[[ "$DIND_ROOT" == "$EXPECTED_ROOT" || "$DIND_ROOT" == "$RICH_CONFIG_ROOT" ]] || {
+  echo "S12 DIND NOT_READY: expected this checkout's marked fixture at $EXPECTED_ROOT or its S12 rich-config fixture at $RICH_CONFIG_ROOT" >&2
+  exit 3
+}
 [[ -f "$DIND_ROOT/owner.json" ]] || { echo 'S12 DIND NOT_READY: owner marker is missing' >&2; exit 3; }
-python3 - "$DIND_ROOT/owner.json" "$ENGINE" "$DIND_ROOT/socket/docker.sock" <<'PY'
+python3 - "$DIND_ROOT/owner.json" "$ENGINE" "$DIND_ROOT/socket/docker.sock" "$DIND_ROOT" "$ROOT" <<'PY'
 import json,sys
 owner=json.load(open(sys.argv[1]))
 assert owner.get("suite")=="nodedance-s00-dind"
 assert owner.get("socket")==sys.argv[3]
 assert owner.get("host_daemon")
 assert owner.get("server_version", "").startswith(sys.argv[2]+".")
+if sys.argv[4] != sys.argv[5]+"/.artifacts/dind/v"+sys.argv[2]:
+    assert owner.get("container_name")=="nodedance-s12-rich-config-dind-v"+sys.argv[2]
+    assert owner.get("network_name")=="nodedance-s12-rich-config-net-v"+sys.argv[2]
 PY
 
 GO_BIN="$ROOT/.tools/go1.26.8/bin/go"
