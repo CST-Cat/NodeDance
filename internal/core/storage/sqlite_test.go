@@ -6,8 +6,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
+	"github.com/CST-Cat/NodeDance/internal/core/backup"
 	_ "modernc.org/sqlite"
 )
 
@@ -81,6 +83,122 @@ func TestVersionFourDatabaseUpgradesToDashboardAndHistorySchemaOnReopen(t *testi
 	}
 	if mode != "monitor" || grouping != "node" || sorting != "custom" || featured != 4 || fields != `["state","ports","health"]` {
 		t.Fatalf("unexpected migrated dashboard defaults: mode=%q group=%q sort=%q featured=%d fields=%q", mode, grouping, sorting, featured, fields)
+	}
+}
+
+func TestBackupRestoresV10DatabaseAfterV11MigrationCollision(t *testing.T) {
+	ctx := context.Background()
+	dataDir := filepath.Join(t.TempDir(), "pre-upgrade-core-data")
+	legacy, err := OpenWithMigrations(ctx, dataDir, migrations[:10])
+	if err != nil {
+		t.Fatal("open v10 database:", err)
+	}
+	defer legacy.Close()
+	if _, err := legacy.DB.ExecContext(ctx, `PRAGMA wal_autocheckpoint=0`); err != nil {
+		t.Fatal("disable automatic WAL checkpoint:", err)
+	}
+	const nodeID = "00000000-0000-4000-8000-0000000000a1"
+	if _, err := legacy.DB.ExecContext(ctx, `INSERT INTO nodes(id, display_name, status, created_at, updated_at)
+		VALUES(?, 'retained recovery node', 'offline', 100, 200)`, nodeID); err != nil {
+		t.Fatal("insert retained v10 row:", err)
+	}
+	walPath := filepath.Join(dataDir, "nodedance.sqlite-wal")
+	walInfo, err := os.Stat(walPath)
+	if err != nil || walInfo.Size() == 0 {
+		t.Fatalf("v10 fixture did not retain committed data in SQLite WAL: info=%v err=%v", walInfo, err)
+	}
+	for name, contents := range map[string][]byte{
+		"alert-channel-encryption.key": []byte("0123456789abcdef0123456789abcdef"),
+		"csrf-signing.key":             []byte("fedcba9876543210fedcba9876543210"),
+	} {
+		if err := os.WriteFile(filepath.Join(dataDir, name), contents, 0o600); err != nil {
+			t.Fatalf("write required backup file %s: %v", name, err)
+		}
+	}
+	archive := filepath.Join(t.TempDir(), "pre-upgrade-core-data.backup")
+	if err := backup.Create(ctx, dataDir, archive); err != nil {
+		t.Fatalf("create pre-upgrade backup from live WAL database: %v", err)
+	}
+
+	// Collide with the fourth v11 index so the first three index statements
+	// execute inside the migration transaction before SQLite rejects the name.
+	if _, err := legacy.DB.ExecContext(ctx, `CREATE INDEX compose_operations_retention ON compose_operations(status)`); err != nil {
+		t.Fatal("inject v11 index-name collision:", err)
+	}
+	type ledgerEntry struct {
+		version   int
+		appliedAt int64
+	}
+	readLedger := func(db *sql.DB) []ledgerEntry {
+		t.Helper()
+		rows, err := db.QueryContext(ctx, `SELECT version, applied_at FROM schema_migrations ORDER BY version`)
+		if err != nil {
+			t.Fatal("read schema migration ledger:", err)
+		}
+		defer rows.Close()
+		var entries []ledgerEntry
+		for rows.Next() {
+			var entry ledgerEntry
+			if err := rows.Scan(&entry.version, &entry.appliedAt); err != nil {
+				t.Fatal("scan schema migration ledger:", err)
+			}
+			entries = append(entries, entry)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatal("iterate schema migration ledger:", err)
+		}
+		return entries
+	}
+	ledgerBefore := readLedger(legacy.DB)
+	if len(ledgerBefore) != 10 || ledgerBefore[len(ledgerBefore)-1].version != 10 {
+		t.Fatalf("fixture schema ledger = %+v; want versions 1 through 10", ledgerBefore)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal("close v10 store before upgrade attempt:", err)
+	}
+
+	if _, err := Open(ctx, dataDir); err == nil {
+		t.Fatal("current schema unexpectedly opened despite the v11 index-name collision")
+	}
+
+	check, err := sql.Open("sqlite", filepath.Join(dataDir, "nodedance.sqlite"))
+	if err != nil {
+		t.Fatal("open database to inspect failed upgrade:", err)
+	}
+	check.SetMaxOpenConns(1)
+	var retainedName string
+	if err := check.QueryRowContext(ctx, `SELECT display_name FROM nodes WHERE id=?`, nodeID).Scan(&retainedName); err != nil || retainedName != "retained recovery node" {
+		t.Fatalf("retained row after failed migration = %q, err=%v", retainedName, err)
+	}
+	ledgerAfter := readLedger(check)
+	if !slices.Equal(ledgerAfter, ledgerBefore) {
+		t.Fatalf("schema ledger changed after failed v11 migration: before=%+v after=%+v", ledgerBefore, ledgerAfter)
+	}
+	for _, index := range []string{"audit_entries_retention", "core_task_audit_events_retention", "core_tasks_retention"} {
+		var count int
+		if err := check.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='index' AND name=?`, index).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("partial v11 index %q survived failed migration: count=%d err=%v", index, count, err)
+		}
+	}
+	if err := check.Close(); err != nil {
+		t.Fatal("close failed-upgrade inspection database:", err)
+	}
+
+	restoredDir := filepath.Join(t.TempDir(), "recovered-core-data")
+	if err := backup.Restore(ctx, archive, restoredDir); err != nil {
+		t.Fatalf("restore pre-upgrade backup to fresh directory: %v", err)
+	}
+	recovered, err := Open(ctx, restoredDir)
+	if err != nil {
+		t.Fatalf("open restored pre-upgrade database with current migrations: %v", err)
+	}
+	defer recovered.Close()
+	if err := recovered.DB.QueryRowContext(ctx, `SELECT display_name FROM nodes WHERE id=?`, nodeID).Scan(&retainedName); err != nil || retainedName != "retained recovery node" {
+		t.Fatalf("retained row after recovery = %q, err=%v", retainedName, err)
+	}
+	var currentVersion int
+	if err := recovered.DB.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&currentVersion); err != nil || currentVersion != migrations[len(migrations)-1].Version {
+		t.Fatalf("restored schema version=%d err=%v; want current version %d", currentVersion, err, migrations[len(migrations)-1].Version)
 	}
 }
 
