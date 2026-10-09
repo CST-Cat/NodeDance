@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -232,18 +233,30 @@ func (r *sshRemote) Run(ctx context.Context, command string, input []byte) ([]by
 	}
 }
 
-type boundedOutput struct{ bytes.Buffer }
+type boundedOutput struct {
+	mu     sync.Mutex
+	buffer bytes.Buffer
+}
 
 func (b *boundedOutput) Write(data []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	original := len(data)
-	if b.Len() >= 64<<10 {
+	if b.buffer.Len() >= 64<<10 {
 		return original, nil
 	}
-	if len(data) > (64<<10)-b.Len() {
-		data = data[:(64<<10)-b.Len()]
+	if len(data) > (64<<10)-b.buffer.Len() {
+		data = data[:(64<<10)-b.buffer.Len()]
 	}
-	_, _ = b.Buffer.Write(data)
+	_, _ = b.buffer.Write(data)
 	return original, nil
+}
+
+func (b *boundedOutput) Bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return bytes.Clone(b.buffer.Bytes())
 }
 
 type Preflight struct {
