@@ -204,6 +204,10 @@ volumes:
 	if err != nil || strings.TrimSpace(string(seedOutput)) != "OK" {
 		t.Fatalf("seed named-volume fixture data: %v", err)
 	}
+	webBefore, databaseBefore, monitorBefore := findComposeServiceIDs(t, ctx, engine, ref.Name)
+	if webBefore == "" || databaseBefore == "" || monitorBefore == "" {
+		t.Fatalf("fixture services were not discovered before editing: web=%q database=%q monitor=%q", webBefore, databaseBefore, monitorBefore)
+	}
 
 	operationID := "s11-preview-" + safeRunSuffix(runID)
 	readRequest := protocol.ComposeRequest{OperationID: operationID, Action: protocol.ComposeEditRead, Project: ref,
@@ -248,17 +252,13 @@ volumes:
 	if result, err := manager.Execute(ctx, applyRequest); err != nil || !result.Verified {
 		t.Fatalf("apply and verify real service port change: result=%+v err=%v", result.Editor, err)
 	}
-	webID, databaseID, monitorID := findComposeServiceIDs(t, ctx, engine, ref.Name)
-	if webID == "" || databaseID == "" || monitorID == "" {
-		t.Fatalf("fixture services were not discovered: web=%q database=%q monitor=%q", webID, databaseID, monitorID)
-	}
 	volumeOutput, err := runner.Run(ctx, fixtureDir, append(append([]string(nil), composePrefix...), "exec", "-T", "database", "redis-cli", "get", "nodedance:s11"), dockerHost)
 	if err != nil || strings.TrimSpace(string(volumeOutput)) != "persisted-value" {
 		t.Fatalf("named-volume service became unavailable: %v", err)
 	}
 	webAfter, dbAfter, monitorAfter := findComposeServiceIDs(t, ctx, engine, ref.Name)
-	if webAfter == webID || dbAfter != databaseID || monitorAfter != monitorID {
-		t.Fatalf("affected-only recreate failed: web %s->%s, database %s->%s, optional %s->%s", webID, webAfter, databaseID, dbAfter, monitorID, monitorAfter)
+	if webAfter == "" || dbAfter == "" || monitorAfter == "" || webAfter == webBefore || dbAfter != databaseBefore || monitorAfter != monitorBefore {
+		t.Fatalf("affected-only recreate failed: web %s->%s, database %s->%s, optional %s->%s", webBefore, webAfter, databaseBefore, dbAfter, monitorBefore, monitorAfter)
 	}
 	containers := engineContainers(t, ctx, engine)
 	web := containers[webAfter]
@@ -296,7 +296,7 @@ volumes:
 		t.Fatalf("occupied-port transaction did not restore Compose source: err=%v source=%s", err, rolledBack)
 	}
 	rollbackWeb, rollbackDB, rollbackMonitor := findComposeServiceIDs(t, ctx, engine, ref.Name)
-	if rollbackWeb == "" || rollbackDB != databaseID || rollbackMonitor != monitorID || !hasPublishedPort(containersOrInspect(t, ctx, engine, rollbackWeb), 80, uint16(newPort), "tcp", "127.0.0.1") {
+	if rollbackWeb == "" || rollbackDB != databaseBefore || rollbackMonitor != monitorBefore || !hasPublishedPort(containersOrInspect(t, ctx, engine, rollbackWeb), 80, uint16(newPort), "tcp", "127.0.0.1") {
 		t.Fatalf("occupied-port rollback did not leave live resources consistent: web=%s db=%s monitor=%s", rollbackWeb, rollbackDB, rollbackMonitor)
 	}
 
