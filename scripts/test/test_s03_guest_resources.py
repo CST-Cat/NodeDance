@@ -1,4 +1,6 @@
+import ast
 import pathlib
+import re
 import sys
 import tempfile
 import unittest
@@ -22,6 +24,17 @@ from s03_guest_resources import (  # noqa: E402
     verify_mount_identity,
     verify_qemu_nbd_owner,
 )
+
+
+def guest_initramfs_script():
+    path = pathlib.Path(__file__).resolve().with_name("s03-guest.py")
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                isinstance(target, ast.Name) and target.id == "INITRAMFS_SCRIPT"
+                for target in node.targets):
+            return ast.literal_eval(node.value)
+    raise AssertionError("S03 guest initramfs script was not found")
 
 
 def make_sysfs(root, *, pid="0", size="0", child="43:1"):
@@ -328,6 +341,37 @@ class GuestResourceOwnershipTests(unittest.TestCase):
         target.chmod(0o644)
         with self.assertRaises(OwnershipLost):
             read_private_pidfile(target)
+
+
+class GuestRebootShutdownFixtureTests(unittest.TestCase):
+    def test_agent_is_stopped_and_reaped_before_both_root_unmounts(self):
+        script = guest_initramfs_script()
+        stop_function = re.search(r"(?ms)^stop_guest_agent\(\) \{.*?^\}", script)
+        self.assertIsNotNone(stop_function, "guest Agent shutdown helper is missing")
+        helper = stop_function.group(0)
+        self.assertIn('kill -TERM "$agent_pid"', helper,
+                      "guest shutdown must request a graceful Agent stop")
+        self.assertIn('[ "$i" -lt 10 ]', helper,
+                      "graceful Agent shutdown must be bounded")
+        self.assertIn('kill -KILL "$agent_pid"', helper,
+                      "guest shutdown must have a bounded forced-stop fallback")
+        self.assertIn('wait "$agent_pid"', helper,
+                      "guest shutdown must reap the Agent before unmount")
+
+        unmounts = list(re.finditer(
+            r'^\s*"\$BB" umount /mnt \|\| fatal ".*guest root filesystem.*"$',
+            script, re.MULTILINE))
+        self.assertEqual(len(unmounts), 2, "expected pre- and post-reboot root unmounts")
+        for unmount in unmounts:
+            prefix = script[:unmount.start()]
+            stop = re.search(r"(?m)^\s*stop_guest_agent S03:AGENT_STOPPED_(?:BEFORE_REBOOT|AFTER_PROBE)$",
+                             prefix)
+            self.assertIsNotNone(stop, "root filesystem was unmounted before stopping the Agent")
+            self.assertIn('"$BB" sync', prefix[stop.end():],
+                          "guest disk must be synced after Agent journals close")
+        self.assertEqual(len(re.findall(
+            r"(?m)^\s*stop_guest_agent S03:AGENT_STOPPED_(?:BEFORE_REBOOT|AFTER_PROBE)$",
+            script)), 2, "both guest shutdown paths must report their Agent stop")
 
 
 if __name__ == "__main__":

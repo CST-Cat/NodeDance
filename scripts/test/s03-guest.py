@@ -364,6 +364,28 @@ fatal() {
   "$BB" sync
   wait_forever
 }
+stop_guest_agent() {
+  stop_event="$1"
+  [ -n "${agent_pid:-}" ] || return 0
+  if kill -0 "$agent_pid" 2>/dev/null; then
+    kill -TERM "$agent_pid" 2>/dev/null || true
+    i=0
+    agent_state=
+    while [ "$i" -lt 10 ]; do
+      agent_state=$("$BB" awk '{print $3}' "/proc/$agent_pid/stat" 2>/dev/null)
+      case "$agent_state" in Z|X) break ;; esac
+      "$BB" sleep 1
+      i=$((i + 1))
+    done
+    case "$agent_state" in
+      Z|X) ;;
+      *) kill -KILL "$agent_pid" 2>/dev/null || true ;;
+    esac
+  fi
+  wait "$agent_pid" 2>/dev/null || true
+  say "$stop_event"
+  agent_pid=
+}
 
 "$BB" mkdir -p /dev /proc /sys /mnt /run
 "$BB" mknod -m 600 /dev/console c 5 1 2>/dev/null || true
@@ -606,6 +628,7 @@ if [ -f "$MARKER" ]; then
     "$after_boot_id" "$after_uptime" "$after_wall"
   if ! run_sample AFTER_REBOOT /run/s03-after-reboot.json; then fatal "post-reboot sample failed"; fi
   "$BB" rm -f "$MARKER"
+  stop_guest_agent S03:AGENT_STOPPED_AFTER_PROBE
   "$BB" sync
   "$BB" umount /mnt/second || fatal "cannot unmount secondary filesystem after reboot"
   "$BB" umount /mnt || fatal "cannot unmount guest root filesystem after reboot"
@@ -749,6 +772,7 @@ reboot_before_wall=$("$BB" date -u +%s)
 printf 'S03:REBOOT_PRE %s %s %s\n' \
   "$reboot_before_boot" "$reboot_before_uptime" "$reboot_before_wall"
 "$BB" printf '%s %s %s\n' "$reboot_before_boot" "$reboot_before_uptime" "$reboot_before_wall" >"$MARKER"
+stop_guest_agent S03:AGENT_STOPPED_BEFORE_REBOOT
 "$BB" sync
 "$BB" umount /mnt/second || fatal "cannot unmount secondary filesystem before reboot"
 "$BB" umount /mnt || fatal "cannot unmount guest root filesystem before reboot"
