@@ -149,6 +149,57 @@ var migrations = []Migration{{
 }, {
 	Version: 4,
 	SQL:     coretasks.SchemaStatements(),
+}, {
+	Version: 5,
+	SQL: []string{
+		`CREATE TABLE dashboard_preferences (
+			node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+			target_kind TEXT NOT NULL CHECK (target_kind IN ('node', 'container', 'compose_service')),
+			identity_key TEXT NOT NULL,
+			alias TEXT NOT NULL DEFAULT '',
+			icon TEXT NOT NULL DEFAULT '',
+			notes TEXT NOT NULL DEFAULT '',
+			service_url TEXT NOT NULL DEFAULT '',
+			sort_order INTEGER NOT NULL DEFAULT 0,
+			visible INTEGER NOT NULL DEFAULT 1 CHECK (visible IN (0, 1)),
+			pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+			updated_at INTEGER NOT NULL,
+			PRIMARY KEY(node_id, target_kind, identity_key)
+		)`,
+		`CREATE TABLE dashboard_settings (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			view_mode TEXT NOT NULL CHECK (view_mode IN ('monitor', 'manage')),
+			group_by TEXT NOT NULL CHECK (group_by IN ('node', 'compose', 'state', 'none')),
+			sort_by TEXT NOT NULL CHECK (sort_by IN ('custom', 'name', 'state')),
+			featured_limit INTEGER NOT NULL CHECK (featured_limit BETWEEN 1 AND 20),
+			custom_fields_json TEXT NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
+		`INSERT INTO dashboard_settings(id, view_mode, group_by, sort_by, featured_limit, custom_fields_json, updated_at)
+			VALUES(1, 'monitor', 'node', 'custom', 4, '["state","ports","health"]', 0)`,
+		`CREATE TABLE metrics_minute (
+			node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+			metric_key TEXT NOT NULL,
+			bucket_at INTEGER NOT NULL,
+			sample_count INTEGER NOT NULL CHECK (sample_count > 0),
+			sample_sum REAL NOT NULL,
+			minimum REAL NOT NULL,
+			maximum REAL NOT NULL,
+			PRIMARY KEY(node_id, metric_key, bucket_at)
+		)`,
+		`CREATE INDEX metrics_minute_retention ON metrics_minute(bucket_at)`,
+		`CREATE TABLE metrics_hour (
+			node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+			metric_key TEXT NOT NULL,
+			bucket_at INTEGER NOT NULL,
+			sample_count INTEGER NOT NULL CHECK (sample_count > 0),
+			sample_sum REAL NOT NULL,
+			minimum REAL NOT NULL,
+			maximum REAL NOT NULL,
+			PRIMARY KEY(node_id, metric_key, bucket_at)
+		)`,
+		`CREATE INDEX metrics_hour_retention ON metrics_hour(bucket_at)`,
+	},
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {

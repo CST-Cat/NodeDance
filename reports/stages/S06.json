@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "stage": "S06",
-  "mode": "initial",
+  "mode": "implementation",
   "status": "NOT_READY",
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "run_id": "s06-implementation-20261009T033745Z",
+  "updated_at": "2026-10-09T03:37:45.050584+00:00",
+  "reason": "S06 implementation checks pass, but formal acceptance remains pending: no real Docker Engine/DIND S06 run, real-Core browser integration, dependent S04/S05 acceptance, or three consecutive complete stage runs were recorded.",
   "tests": {
     "S06-01": {
       "status": "NOT_READY",
@@ -14,7 +14,7 @@
       "environment": "含40个真实或明确标记的测试容器资产。",
       "evidence_required": "首页卡片DOM/数量及完整列表总数。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Component browser fixture verifies 40 rows and four featured cards, but the required real Engine/Core inventory run was not recorded."
     },
     "S06-02": {
       "status": "NOT_READY",
@@ -23,7 +23,7 @@
       "environment": "多个真实节点和容器状态。",
       "evidence_required": "筛选结果、排序和操作的目标ID。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Component fixture verifies search and view controls; multi-node real Core/Docker grouping and operation-target integration remain unverified."
     },
     "S06-03": {
       "status": "NOT_READY",
@@ -32,7 +32,7 @@
       "environment": "真实SQLite数据及Core重启。",
       "evidence_required": "重启前后偏好数据库和界面顺序。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "SQLite preference persistence/reopen and v4-to-v5 migration tests pass; the required browser preference save across a Core process restart remains unverified."
     },
     "S06-04": {
       "status": "NOT_READY",
@@ -41,7 +41,7 @@
       "environment": "Compose重复部署及至少两个副本。",
       "evidence_required": "稳定项目/服务身份和各实例容器ID。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Stable Compose service identity has unit coverage; real Compose rebuild and multi-replica Engine behavior remain unverified without DIND acceptance evidence."
     },
     "S06-05": {
       "status": "NOT_READY",
@@ -50,7 +50,7 @@
       "environment": "删除后重新创建的同名容器。",
       "evidence_required": "旧/新身份指纹及偏好映射结果。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Full container-ID identity has unit coverage; same-name real Engine recreation and browser mapping remain unverified."
     },
     "S06-06": {
       "status": "NOT_READY",
@@ -59,7 +59,7 @@
       "environment": "真实Agent断网及旧指标。",
       "evidence_required": "数据年龄、stale标识和卡片文案。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Stale display logic is implemented; real Agent disconnection and recovery acceptance was not run."
     },
     "S06-07": {
       "status": "NOT_READY",
@@ -68,7 +68,7 @@
       "environment": "127.0.0.1、0.0.0.0、::及管理员服务地址。",
       "evidence_required": "生成链接及浏览器地址解析结果。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Service URL validation is covered by Core tests and existing port rendering remains; real Core/browser address-resolution matrix was not run."
     },
     "S06-08": {
       "status": "NOT_READY",
@@ -77,7 +77,7 @@
       "environment": "浏览器XSS和资源URL负向样例。",
       "evidence_required": "DOM文本、网络请求及CSP日志。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Unsafe URL validation and safe Vue text rendering are implemented; the required preference-specific browser XSS/network check against real Core remains unverified."
     },
     "S06-09": {
       "status": "NOT_READY",
@@ -86,7 +86,7 @@
       "environment": "固定指标序列和缺口。",
       "evidence_required": "手算期望与SQLite聚合/图表点比对。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Known-only samples, gaps, weighted aggregation and half-open boundaries pass SQLite/API tests; chart gap rendering is implemented but not independently asserted in browser acceptance."
     },
     "S06-10": {
       "status": "NOT_READY",
@@ -95,7 +95,7 @@
       "environment": "可控时钟和真实历史数据库。",
       "evidence_required": "清理前后行数、时间边界和偏好记录。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Cleanup, preference preservation, no double counting and v4-to-v5 reopen pass tests; full retained-range/time-boundary stage evidence is not complete."
     },
     "S06-11": {
       "status": "NOT_READY",
@@ -104,7 +104,7 @@
       "environment": "Playwright Chromium/WebKit/Firefox in CI at 375, 768 and 1440 CSS-pixel viewports; no physical-device claim.",
       "evidence_required": "浏览器截图、溢出检查及核心流程记录。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "375/768/1440 overflow checks passed in Chromium, WebKit and Firefox against an API-stubbed fixture; full real-Core workflow evidence is pending."
     },
     "S06-12": {
       "status": "NOT_READY",
@@ -113,7 +113,44 @@
       "environment": "Playwright touch emulation at mobile viewport; no iPad/Android physical-device requirement.",
       "evidence_required": "重载前后顺序及明确操作目标。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Playwright touch-mode pointer reorder and fixture persistence passed in Chromium, WebKit and Firefox; real SQLite/Core persistence and complete stage acceptance remain pending."
     }
-  }
+  },
+  "implementation_checks": [
+    {
+      "command": "go test -count=1 ./internal/core/server ./internal/core/history ./internal/core/dashboard ./internal/core/storage",
+      "status": "PASS",
+      "scope": "Real Core/SQLite API, history, preferences and storage tests."
+    },
+    {
+      "command": "go test -count=1 ./internal/core/storage -run '^TestVersionFourDatabaseUpgradesToDashboardAndHistorySchemaOnReopen$'",
+      "status": "PASS",
+      "scope": "Explicit v4-to-v5 migration and reopen."
+    },
+    {
+      "command": "pnpm --dir web typecheck",
+      "status": "PASS",
+      "scope": "Locked Node 22.23.3 and pnpm 12.10.1."
+    },
+    {
+      "command": "pnpm --dir web build",
+      "status": "PASS",
+      "scope": "Vite production bundle; large-chunk advisory only."
+    },
+    {
+      "command": "pnpm --dir web exec playwright test --config playwright.s03.config.ts tests/s06-dashboard.spec.ts",
+      "status": "PASS",
+      "projects": [
+        "chromium",
+        "webkit",
+        "firefox"
+      ],
+      "scope": "API-stubbed browser component test, including 40-container inventory, four featured cards, search, preference ordering fixture and 375/768/1440 responsive overflow."
+    },
+    {
+      "command": "git diff --check",
+      "status": "PASS",
+      "scope": "No whitespace errors."
+    }
+  ]
 }

@@ -549,6 +549,12 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					// changing heartbeat sequence or validity.
 					continue
 				}
+				if err := s.history.AppendSnapshot(ctx, identity.NodeID, report, receivedAt); err != nil {
+					// Do not silently create a hole in durable history after Core has
+					// accepted the live sample. A reconnect can resume when SQLite is
+					// available; the missing interval remains an explicit chart gap.
+					return
+				}
 				s.metrics.Notify(identity.NodeID)
 			case protocol.TypeDocker:
 				if !connection.dockerEnabled || envelope.Sequence == 0 {
