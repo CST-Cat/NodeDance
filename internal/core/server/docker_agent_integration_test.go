@@ -237,6 +237,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}, 10*time.Second); err != nil || record.Container.ID != eventID {
 		t.Fatalf("created external independent container was not available via private API: record=%+v err=%v", record, err)
 	}
+	t.Logf("S04-02 external lifecycle API observed create container=%s state=created", eventID)
 	if _, err := runS04DockerCLI(endpoint, "container", "start", eventID); err != nil {
 		t.Fatalf("external start: %v", err)
 	}
@@ -245,6 +246,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}, 10*time.Second); err != nil {
 		t.Fatalf("Core did not apply external start event: %v", err)
 	}
+	t.Logf("S04-02 external lifecycle API observed start container=%s state=running", eventID)
 	if _, err := runS04DockerCLI(endpoint, "container", "pause", eventID); err != nil {
 		t.Fatalf("external pause: %v", err)
 	}
@@ -253,14 +255,29 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}, 10*time.Second); err != nil {
 		t.Fatalf("Core did not apply external pause event: %v", err)
 	}
+	t.Logf("S04-02 external lifecycle API observed pause container=%s state=paused", eventID)
+	proxy.replayNextDockerChangeOutOfOrderAndDuplicate()
 	if _, err := runS04DockerCLI(endpoint, "container", "unpause", eventID); err != nil {
 		t.Fatalf("external unpause: %v", err)
+	}
+	var replayEvidence dockerReplayEvidence
+	select {
+	case replayEvidence = <-proxy.dockerReplayResults:
+	case <-time.After(10 * time.Second):
+		t.Fatal("authenticated Agent WSS proxy did not inject an older Docker frame and duplicate after a newer event")
+	}
+	if replayEvidence.OlderSequence == 0 || replayEvidence.NewerSequence <= replayEvidence.OlderSequence ||
+		replayEvidence.OlderState != "paused" || replayEvidence.NewerState != "running" || replayEvidence.DuplicateWrites != 1 {
+		t.Fatalf("WSS replay injection did not carry paused→running newer-then-older and duplicate frames: %+v", replayEvidence)
 	}
 	if _, err := waitForS04ContainerRecordAPI(coreHTTP.URL, rootPEM, session, config.NodeID, eventID, func(record coredocker.ContainerRecord) bool {
 		return record.Container.State == "running" && !record.Container.Paused
 	}, 10*time.Second); err != nil {
 		t.Fatalf("Core did not apply external unpause event: %v", err)
 	}
+	t.Logf("S04-09 authenticated WSS accepted newer frame seq=%d state=%s, then ignored older seq=%d state=%s and duplicate; Core API remained running",
+		replayEvidence.NewerSequence, replayEvidence.NewerState, replayEvidence.OlderSequence, replayEvidence.OlderState)
+	t.Logf("S04-02 external lifecycle API observed unpause container=%s state=running", eventID)
 	if _, err := runS04DockerCLI(endpoint, "container", "stop", "--time", "0", eventID); err != nil {
 		t.Fatalf("external stop: %v", err)
 	}
@@ -269,6 +286,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}, 10*time.Second); err != nil {
 		t.Fatalf("Core did not apply external stop event: %v", err)
 	}
+	t.Logf("S04-02 external lifecycle API observed stop container=%s state=exited", eventID)
 	renamedEvent := eventName + "-renamed"
 	if _, err := runS04DockerCLI(endpoint, "container", "rename", eventID, renamedEvent); err != nil {
 		t.Fatalf("external rename: %v", err)
@@ -278,6 +296,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}, 10*time.Second); err != nil || record.Container.Name != renamedEvent {
 		t.Fatalf("Core did not apply external rename event: record=%+v err=%v", record, err)
 	}
+	t.Logf("S04-02 external lifecycle API observed rename container=%s name=%s", eventID, renamedEvent)
 	if _, err := runS04DockerCLI(endpoint, "container", "rm", "--force", eventID); err != nil {
 		t.Fatalf("external delete: %v", err)
 	}
@@ -288,6 +307,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	if _, err := waitForS04DashboardInventoryAbsent(t, dashboardEvents, config.NodeID, eventID, 10*time.Second); err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("S04-02 external lifecycle API observed delete container=%s absent from API and dashboard", eventID)
 	waitForDockerInventoryContains(t, coreHTTP.URL, rootPEM, session, config.NodeID, containerIDs, 10*time.Second)
 	// Interrupt a second multi-chunk snapshot after a complete inventory has
 	// committed. This proves that the incomplete replacement does not erase or
@@ -549,6 +569,8 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 	var pingRequests atomic.Int64
 	var eventRequests atomic.Int64
 	var otherRequests atomic.Int64
+	var partialScanSuccessfulInspects atomic.Int64
+	var partialScanInspectFailures atomic.Int64
 	engineHTTP := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/_ping"):
@@ -567,17 +589,38 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 			<-r.Context().Done()
 		case strings.Contains(r.URL.Path, "/containers/json"):
 			call := listRequests.Add(1)
+			partialScanSuccessfulInspects.Store(0)
 			w.Header().Set("Content-Type", "application/json")
-			if call == 1 {
-				_ = json.NewEncoder(w).Encode([]map[string]any{{
-					"Id": strings.Repeat("a", 64), "Names": []string{"/s04-redaction-fixture"},
+			entries := []map[string]any{{
+				"Id": strings.Repeat("a", 64), "Names": []string{"/s04-redaction-fixture"},
+				"Image": "busybox:fixture", "State": "running", "Status": "Up",
+			}}
+			if call > 1 {
+				entries = append(entries, map[string]any{
+					"Id": strings.Repeat("b", 64), "Names": []string{"/s04-partial-inspect-failure"},
 					"Image": "busybox:fixture", "State": "running", "Status": "Up",
-				}})
+				})
+			}
+			_ = json.NewEncoder(w).Encode(entries)
+		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			if strings.Contains(r.URL.Path, strings.Repeat("b", 64)) && listRequests.Load() > 1 {
+				deadline := time.Now().Add(3 * time.Second)
+				for partialScanSuccessfulInspects.Load() == 0 && time.Now().Before(deadline) {
+					select {
+					case <-r.Context().Done():
+						return
+					case <-time.After(5 * time.Millisecond):
+					}
+				}
+				partialScanInspectFailures.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]string{"message": responseMessage})
 				return
 			}
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{"message": responseMessage})
-		case strings.Contains(r.URL.Path, "/containers/") && strings.HasSuffix(r.URL.Path, "/json"):
+			if strings.Contains(r.URL.Path, strings.Repeat("a", 64)) && listRequests.Load() > 1 {
+				partialScanSuccessfulInspects.Add(1)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"Id": strings.Repeat("a", 64), "Name": "/s04-redaction-fixture", "Image": "sha256:fixture",
@@ -586,6 +629,7 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 				"HostConfig":      map[string]any{"NetworkMode": "bridge", "PortBindings": map[string]any{}},
 				"NetworkSettings": map[string]any{"Ports": map[string]any{}, "Networks": map[string]any{}},
 			})
+			return
 		default:
 			otherRequests.Add(1)
 			http.NotFound(w, r)
@@ -703,6 +747,10 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 		t.Fatalf("real Docker SDK API incompatibility was not safely reported: ping=%d events=%d list=%d other=%d availability=%v errorKind=%v reason=%q snapshotFresh=%v",
 			pingRequests.Load(), eventRequests.Load(), listRequests.Load(), otherRequests.Load(), observed["availability"], observed["errorKind"], reasonForLog, observed["snapshotFresh"])
 	}
+	if partialScanSuccessfulInspects.Load() < 1 || partialScanInspectFailures.Load() < 1 {
+		t.Fatalf("S04-07 did not fail a multi-container scan after a successful Inspect: successful_inspects=%d injected_failures=%d list_requests=%d",
+			partialScanSuccessfulInspects.Load(), partialScanInspectFailures.Load(), listRequests.Load())
+	}
 
 	var savedHealth string
 	if err := core.store.DB.QueryRow(`SELECT health_json FROM docker_node_state WHERE node_id=?`, config.NodeID).Scan(&savedHealth); err != nil {
@@ -740,6 +788,16 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 	if agentLog.String() != "" {
 		t.Fatalf("unexpected Agent logs during steady WSS Docker API failure")
 	}
+	var apiMessage dashboardDockerMessage
+	if err := json.Unmarshal(apiBody, &apiMessage); err != nil || apiMessage.Inventory == nil || len(apiMessage.Inventory.Containers) != 1 ||
+		apiMessage.Inventory.Containers[0].Container.ID != strings.Repeat("a", 64) || !apiMessage.Inventory.Containers[0].Container.Stale {
+		t.Fatalf("S04-07 failed partial scan did not retain exactly the last committed stale inventory: err=%v count=%d", err, inventoryCount(apiMessage))
+	}
+	var uncommittedIDCount int
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM docker_containers WHERE node_id=? AND container_id=?`,
+		config.NodeID, strings.Repeat("b", 64)).Scan(&uncommittedIDCount); err != nil || uncommittedIDCount != 0 {
+		t.Fatalf("S04-07 incomplete scan committed an inspected-prefix/new container row: count=%d err=%v", uncommittedIDCount, err)
+	}
 	heartbeatBefore := heartbeatSequenceForNode(t, core, config.NodeID)
 	metricsBefore := metricSequenceForNode(t, core, config.NodeID)
 	waitForCondition(t, 15*time.Second, func() bool {
@@ -752,8 +810,9 @@ func TestRealAgentDockerAPIIncompatibilitySecretRedaction(t *testing.T) {
 		metrics.Metrics.Uptime.Status != protocol.MetricKnown || metrics.Metrics.Uptime.Value == nil {
 		t.Fatal("two fresh samples with known memory and uptime metrics did not remain live while Docker API was incompatible")
 	}
-	t.Logf("real Moby SDK incompatibility response crossed Agent→authenticated WSS→Core SQLite/API; Engine ping=available, snapshot stale, error_kind=api_incompatible, heartbeat=%d→%d, metrics=%d→%d with memory/uptime known, listRequests=%d; injected response secrets absent from health/container SQLite/API/Agent logs",
-		heartbeatBefore, heartbeatSequenceForNode(t, core, config.NodeID), metricsBefore, metrics.Sequence, listRequests.Load())
+	t.Logf("S04-07 partial full scan failed after %d successful Inspect(s); prior committed inventory remained exactly one stale row and the uncommitted second ID was absent; S04-08 Moby SDK API incompatibility crossed Agent→authenticated WSS→Core SQLite/API with Engine ping=available, snapshot stale, error_kind=api_incompatible, heartbeat=%d→%d, metrics=%d→%d with memory/uptime known, listRequests=%d inspectFailures=%d; injected response secrets absent from health/container SQLite/API/Agent logs",
+		partialScanSuccessfulInspects.Load(), heartbeatBefore, heartbeatSequenceForNode(t, core, config.NodeID), metricsBefore, metrics.Sequence,
+		listRequests.Load(), partialScanInspectFailures.Load())
 }
 
 func TestRealDockerAgentCoreExternalStateChangeP95(t *testing.T) {
