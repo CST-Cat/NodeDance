@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type ContainerTaskAction, type DashboardPreference, type DashboardSettings, type DockerInventory, type DockerInventoryMessage, type MetricHistory, type NodeStatusResponse, type TaskAuditEvent } from '../api'
+import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type ContainerTaskAction, type DashboardPreference, type DashboardSettings, type DockerContainer, type DockerInventory, type DockerInventoryMessage, type MetricHistory, type NodeStatusResponse, type TaskAuditEvent } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import ContainerStreams from './ContainerStreams.vue'
 import HistoricalMetrics from './HistoricalMetrics.vue'
 import ImagesPanel from './ImagesPanel.vue'
 import MetricsPanel from './MetricsPanel.vue'
 import PreferenceEditor from './PreferenceEditor.vue'
+import TerminalConsole from './TerminalConsole.vue'
 
 interface NodeClock {
   status: string
@@ -77,6 +78,7 @@ const selectedNodeTitle = computed(() => selectedNodePreference.value?.alias || 
 const selectedTasks = computed(() => Object.values(taskViews.value).filter((task) => task.nodeId === selectedNodeID.value)
   .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)))
 const historyResolution = computed(() => historyRange.value === '1y' ? 'hour' : 'minute')
+const activeTerminal = ref<{ nodeId: string; targetKind: 'host' | 'container'; containerId?: string; targetLabel: string } | null>(null)
 
 function preferenceForContainer(record: DockerInventory['containers'][number]): DashboardPreference | undefined {
   const identity = preferenceIdentities.value[selectedNodeID.value]?.[record.container.id]
@@ -765,6 +767,14 @@ function chooseNode(node: AgentNode) {
   }
 }
 
+function openHostTerminal(node: AgentNode) {
+  activeTerminal.value = { nodeId: node.nodeId, targetKind: 'host', targetLabel: `${node.displayName} · 主机终端` }
+}
+
+function openContainerTerminal(node: AgentNode, container: DockerContainer) {
+  activeTerminal.value = { nodeId: node.nodeId, targetKind: 'container', containerId: container.id, targetLabel: `${node.displayName} · ${container.name || container.id.slice(0, 12)}` }
+}
+
 function isPendingRegistration(node: AgentNode): boolean {
   return node.status === 'pending' || !node.agentId
 }
@@ -875,6 +885,11 @@ onBeforeUnmount(() => {
         </div>
         <div v-else-if="!selectedNode" class="metrics-waiting"><h2>选择一个节点</h2><p>节点的实时与最近指标会显示在这里。</p></div>
 
+        <div v-if="selectedNode && activeSection === 'docker'" class="node-terminal-entry">
+          <div><strong>主机终端</strong><small>通过已连接 Agent 打开目标节点的配置 shell。</small></div>
+          <button type="button" :disabled="!nodeIsOnline(selectedNode)" @click="openHostTerminal(selectedNode)">打开终端</button>
+        </div>
+
         <section v-if="selectedNode && activeSection === 'docker'" class="docker-panel" aria-labelledby="docker-title" data-testid="docker-inventory">
           <header class="docker-heading">
             <div><span class="eyebrow">CONTAINER INVENTORY</span><h2 id="docker-title">Docker 容器</h2></div>
@@ -905,7 +920,10 @@ onBeforeUnmount(() => {
               <div v-if="dashboardSettings.groupBy !== 'none'" class="container-group-label">{{ containerGroupName(record) }}</div>
               <div class="docker-row-title">
                 <div class="docker-container-copy"><strong>{{ containerTitle(record) }}</strong><small><template v-if="dashboardSettings.customFields.includes('image')">{{ record.container.image || '未知镜像' }}</template><template v-if="record.container.compose"> · {{ record.container.compose.project }}/{{ record.container.compose.service }}</template><template v-if="preferenceForContainer(record)?.notes"> · {{ preferenceForContainer(record)?.notes }}</template></small></div>
-                <span v-if="dashboardSettings.customFields.includes('state')" class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span>
+                <div class="container-actions">
+                  <span v-if="dashboardSettings.customFields.includes('state')" class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span>
+                  <button type="button" :disabled="!record.container.running || record.container.stale || dockerIsStale(selectedDocker) || !nodeIsOnline(selectedNode)" @click="openContainerTerminal(selectedNode, record.container)">控制台</button>
+                </div>
               </div>
               <div class="docker-row-meta">
                 <span v-if="dashboardSettings.customFields.includes('health')" :data-health="record.container.health">健康：{{ containerHealthText(record.container) }}</span>
@@ -1005,6 +1023,7 @@ onBeforeUnmount(() => {
         </section>
       </main>
     </div>
+    <TerminalConsole v-if="activeTerminal" v-bind="activeTerminal" @close="activeTerminal = null" />
   </section>
 </template>
 
@@ -1065,6 +1084,12 @@ onBeforeUnmount(() => {
 .metrics-waiting p { max-width: 440px; color: #9aabc1; font-size: 12px; line-height: 1.7; }
 .node-detail-status { margin-top: 12px; border: 1px solid rgba(171, 196, 232, .15); border-radius: 999px; padding: 6px 11px; color: #ffb4aa; font-size: 10px; }
 .node-detail-status[data-online='true'] { color: #9ce0b7; }
+.node-terminal-entry { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; border: 1px solid rgba(121, 214, 156, .18); border-radius: 10px; padding: 12px 14px; background: rgba(31, 89, 62, .1); }
+.node-terminal-entry > div { display: grid; gap: 4px; }
+.node-terminal-entry strong { color: #cfe9d7; font-size: 11px; }
+.node-terminal-entry small { color: #94aa9d; font-size: 10px; line-height: 1.5; }
+.node-terminal-entry button, .container-actions button { min-height: 34px; border: 1px solid rgba(121, 214, 156, .28); border-radius: 7px; padding: 6px 10px; color: #a9e7bd; background: rgba(73, 152, 99, .12); font-size: 10px; white-space: nowrap; cursor: pointer; }
+.node-terminal-entry button:disabled, .container-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .docker-panel { margin-top: 20px; border: 1px solid rgba(171, 196, 232, .13); border-radius: 12px; padding: clamp(14px, 2vw, 20px); background: rgba(9, 17, 29, .46); }
 .docker-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
 .docker-heading h2 { margin: 4px 0 0; font-size: 17px; }
@@ -1084,6 +1109,7 @@ onBeforeUnmount(() => {
 .docker-row { min-width: 0; border: 1px solid rgba(171, 196, 232, .1); border-radius: 9px; padding: 12px; background: rgba(18, 29, 45, .68); }
 .docker-row[data-stale='true'] { border-color: rgba(255, 176, 129, .22); }
 .docker-row-title { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.container-actions { display: flex; align-items: center; gap: 8px; }
 .docker-container-copy { display: grid; min-width: 0; gap: 4px; }
 .docker-container-copy strong { overflow-wrap: anywhere; font-size: 12px; }
 .docker-container-copy small { overflow-wrap: anywhere; color: #93a4bb; font-size: 10px; }
@@ -1126,5 +1152,5 @@ onBeforeUnmount(() => {
 .preference-separation-note { margin-top: 12px; }
 @media (max-width: 760px) { .nodes-layout { grid-template-columns: minmax(0, 1fr); } .node-list { max-height: 270px; overflow: auto; } }
 @media (max-width: 900px) { .fused-overview { grid-template-columns: minmax(0,1fr); } .node-settings-status { grid-template-columns: repeat(2,minmax(0,1fr)); } .dashboard-settings-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
-@media (max-width: 560px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } .dashboard-tabs { margin-right: -12px; padding-right: 12px; } .featured-container-list { grid-template-columns: minmax(0,1fr); } .host-summary-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } .host-summary-metrics > div { padding: 6px; } .section-toolbar { align-items: flex-start; flex-direction: column; } .history-controls { width: 100%; } .history-controls label { flex: 1; } .docker-view-controls label, .docker-view-controls input, .docker-view-controls select { width: 100%; } .node-settings-status, .dashboard-settings-grid { grid-template-columns: minmax(0,1fr); } .docker-row-title { align-items: flex-start; } }
+@media (max-width: 560px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } .dashboard-tabs { margin-right: -12px; padding-right: 12px; } .featured-container-list { grid-template-columns: minmax(0,1fr); } .host-summary-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } .host-summary-metrics > div { padding: 6px; } .section-toolbar { align-items: flex-start; flex-direction: column; } .history-controls { width: 100%; } .history-controls label { flex: 1; } .docker-view-controls label, .docker-view-controls input, .docker-view-controls select { width: 100%; } .node-settings-status, .dashboard-settings-grid { grid-template-columns: minmax(0,1fr); } .docker-row-title { align-items: flex-start; flex-wrap: wrap; } .node-terminal-entry { align-items: flex-start; flex-direction: column; } .node-terminal-entry button { width: 100%; min-height: 42px; } .container-actions { width: 100%; justify-content: space-between; } .container-actions button { min-height: 42px; flex: 1; } }
 </style>

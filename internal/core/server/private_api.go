@@ -47,6 +47,10 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 	if s.handleDashboardSettingsAPI(w, r) || s.handleNodeDashboardAPI(w, r) {
 		return
 	}
+	if nodeID, ok := terminalRoute(r.URL.Path); ok {
+		s.createTerminal(w, r, current, nodeID)
+		return
+	}
 	switch r.URL.Path {
 	case "/api/v1/auth/me":
 		if r.Method != http.MethodGet {
@@ -181,6 +185,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, current *s
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
+	if s.terminals != nil {
+		s.terminals.closeBrowserSession(s, current.ID, "browser Session logged out")
+	}
 	s.clearCookies(w)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -264,6 +271,9 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request, cu
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
+	if s.terminals != nil {
+		s.terminals.closeAll(s, "administrator password changed")
+	}
 	s.clearCookies(w)
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -332,6 +342,9 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request, cur
 	if err := tx.Commit(); err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
+	}
+	if s.terminals != nil {
+		s.terminals.closeBrowserSession(s, id, "browser Session revoked")
 	}
 	if id == current.ID {
 		s.clearCookies(w)

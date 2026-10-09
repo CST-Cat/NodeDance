@@ -1,10 +1,22 @@
 package agent
 
 import (
+	"errors"
 	"strconv"
 	"testing"
 	"time"
+
+	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
 )
+
+func TestTerminalSafeErrorPreservesSessionLimit(t *testing.T) {
+	if got := terminalSafeError("open", agentterminal.ErrSessionLimit); got != "node terminal session limit reached" {
+		t.Fatalf("session limit error mapped to %q", got)
+	}
+	if got := terminalSafeError("open", errors.New("unrelated provider error")); got != "could not open terminal for this target" {
+		t.Fatalf("provider error exposed or mapped unexpectedly: %q", got)
+	}
+}
 
 func TestReconnectDelayRangeHasDeterministicBounds(t *testing.T) {
 	tests := []struct {

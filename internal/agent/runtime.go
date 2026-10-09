@@ -18,6 +18,7 @@ import (
 	agentcompose "github.com/CST-Cat/NodeDance/internal/agent/compose"
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
+	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
@@ -201,7 +202,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
-		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityDocker},
+		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityDocker, protocol.CapabilityTerminal},
 		Permissions:  permissions,
 	}
 	if taskBridge != nil {
@@ -279,12 +280,13 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		containsCapability(welcome.Capabilities, protocol.CapabilityTaskBridge),
 		containsCapability(welcome.Capabilities, protocol.CapabilityImages), streamBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams), composeBridge,
-		containsCapability(welcome.Capabilities, protocol.CapabilityCompose))
+		containsCapability(welcome.Capabilities, protocol.CapabilityCompose),
+		containsCapability(welcome.Capabilities, protocol.CapabilityTerminal), config.Shell)
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled bool) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell string) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -295,6 +297,51 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			returnErr = errors.New("Agent WebSocket writer did not stop")
 		}
 	}()
+	var terminalFrames chan protocol.TerminalFrame
+	if terminalEnabled {
+		manager := agentterminal.NewManager(agentterminal.NewSystemProvider(hostShell, os.Getenv("DOCKER_HOST")))
+		terminalFrames = make(chan protocol.TerminalFrame, 64)
+		terminalCtx, cancelTerminal := context.WithCancel(ctx)
+		terminalDone := make(chan struct{})
+		go func() {
+			defer close(terminalDone)
+			for {
+				select {
+				case <-terminalCtx.Done():
+					manager.CloseAll()
+					return
+				case frame := <-terminalFrames:
+					err := manager.Handle(terminalCtx, frame, func(out protocol.TerminalFrame) error {
+						if err := protocol.ValidateTerminalFrame(out, true); err != nil {
+							return err
+						}
+						payload, err := json.Marshal(out)
+						if err != nil {
+							return err
+						}
+						return writer.offerTerminal(terminalCtx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTerminalFrame, Generation: generation, Payload: payload})
+					})
+					if err != nil {
+						response := protocol.TerminalFrame{StreamID: frame.StreamID, Action: protocol.TerminalActionError, Message: terminalSafeError(frame.Action, err)}
+						payload, marshalErr := json.Marshal(response)
+						if marshalErr == nil {
+							_ = writer.offerTerminal(terminalCtx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTerminalFrame, Generation: generation, Payload: payload})
+						}
+					}
+				}
+			}
+		}()
+		defer func() {
+			cancelTerminal()
+			select {
+			case <-terminalDone:
+			case <-time.After(5 * time.Second):
+				if returnErr == nil {
+					returnErr = errors.New("Agent terminal sessions did not stop")
+				}
+			}
+		}()
+	}
 	var taskMessages chan protocol.Envelope
 	var taskBridgeDone <-chan error
 	if taskBridge != nil && taskBridgeEnabled {
@@ -588,6 +635,21 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 							protocol.ImageListResponse{Page: request.Page, ErrorCode: "engine_unavailable", Images: []protocol.ImageSummary{}})
 					}()
 				}
+			case protocol.TypeTerminalFrame:
+				if !terminalEnabled || terminalFrames == nil {
+					return errors.New("Core requested terminal without negotiated capability")
+				}
+				var frame protocol.TerminalFrame
+				if envelope.Sequence != 0 || decodeSocketPayload(envelope.Payload, &frame) != nil || protocol.ValidateTerminalFrame(frame, false) != nil {
+					return errors.New("Core terminal frame is invalid")
+				}
+				select {
+				case terminalFrames <- frame:
+				case <-ctx.Done():
+					return nil
+				default:
+					return errors.New("Core terminal command queue overflow")
+				}
 			case protocol.TypeProtocolError:
 				return errors.New("Core rejected Agent protocol message")
 			default:
@@ -595,6 +657,16 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			}
 		}
 	}
+}
+
+func terminalSafeError(action string, err error) string {
+	if errors.Is(err, agentterminal.ErrSessionLimit) {
+		return "node terminal session limit reached"
+	}
+	if action == protocol.TerminalActionOpen {
+		return "could not open terminal for this target"
+	}
+	return "terminal operation failed"
 }
 
 func prepareRotation(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, configPath string, config Config, generation uint64, rotationID string,

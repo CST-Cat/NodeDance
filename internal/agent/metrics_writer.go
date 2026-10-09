@@ -11,18 +11,21 @@ import (
 )
 
 const (
-	controlWriteTimeout = 5 * time.Second
-	metricWriteTimeout  = time.Second
-	dockerWriteTimeout  = 2 * time.Second
-	streamWriteTimeout  = time.Second
-	maxDockerWriteBurst = 8
-	maxStreamWriteBurst = 4
+	controlWriteTimeout   = 5 * time.Second
+	metricWriteTimeout    = time.Second
+	dockerWriteTimeout    = 2 * time.Second
+	streamWriteTimeout    = time.Second
+	terminalWriteTimeout  = 2 * time.Second
+	maxDockerWriteBurst   = 8
+	maxStreamWriteBurst   = 4
+	maxTerminalWriteBurst = 8
 )
 
 var (
 	errDockerWriterQueueFull   = errors.New("Agent Docker frame queue is full")
 	errStreamWriterQueueFull   = errors.New("Agent container stream queue is full")
 	errStreamWriterUnavailable = errors.New("Agent container stream writer is unavailable")
+	errTerminalWriterQueueFull = errors.New("Agent terminal output queue is full")
 )
 
 type envelopeWrite struct {
@@ -42,6 +45,7 @@ type socketEnvelopeWriter struct {
 	high                  chan envelopeWrite
 	docker                chan protocol.Envelope
 	streams               chan protocol.Envelope
+	terminal              chan protocol.Envelope
 	metrics               chan protocol.Envelope
 	streamFailures        chan struct{}
 	streamFailureMu       sync.Mutex
@@ -58,6 +62,7 @@ func newSocketEnvelopeWriter(ctx context.Context, conn *websocket.Conn) *socketE
 		conn: conn, ctx: writerCtx, cancel: cancel,
 		high: make(chan envelopeWrite, 8), metrics: make(chan protocol.Envelope, 1),
 		docker: make(chan protocol.Envelope, 16), streams: make(chan protocol.Envelope, 32),
+		terminal:       make(chan protocol.Envelope, 16),
 		streamFailures: make(chan struct{}, 1), failedStreams: make(map[string]error),
 		pendingStreamFailures: make(map[string]error),
 		failures:              make(chan error, 1), done: make(chan struct{}),
@@ -87,6 +92,21 @@ func (w *socketEnvelopeWriter) offerStream(ctx context.Context, envelope protoco
 		return errStreamWriterUnavailable
 	default:
 		return errStreamWriterQueueFull
+	}
+}
+
+// offerTerminal preserves terminal output order in a bounded queue. A saturated
+// browser cannot grow Agent memory or hold heartbeat writes behind terminal IO.
+func (w *socketEnvelopeWriter) offerTerminal(ctx context.Context, envelope protocol.Envelope) error {
+	select {
+	case w.terminal <- envelope:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.ctx.Done():
+		return errors.New("Agent socket writer stopped")
+	default:
+		return errTerminalWriterQueueFull
 	}
 }
 
@@ -219,6 +239,7 @@ func (w *socketEnvelopeWriter) run() {
 	defer close(w.done)
 	dockerBurst := 0
 	streamBurst := 0
+	terminalBurst := 0
 	for {
 		select {
 		case <-w.ctx.Done():
@@ -243,6 +264,26 @@ func (w *socketEnvelopeWriter) run() {
 				continue
 			default:
 			}
+		}
+		if terminalBurst >= maxTerminalWriteBurst {
+			select {
+			case envelope := <-w.metrics:
+				w.write(envelope, nil, metricWriteTimeout, false)
+				terminalBurst = 0
+				dockerBurst = 0
+				continue
+			default:
+			}
+			select {
+			case envelope := <-w.docker:
+				w.write(envelope, nil, dockerWriteTimeout, false)
+				dockerBurst++
+				terminalBurst = 0
+				streamBurst = 0
+				continue
+			default:
+			}
+			terminalBurst = 0
 		}
 		if streamBurst >= maxStreamWriteBurst {
 			select {
@@ -283,10 +324,16 @@ func (w *socketEnvelopeWriter) run() {
 		case envelope := <-w.streams:
 			w.writeStream(envelope)
 			streamBurst++
+			terminalBurst = 0
+		case envelope := <-w.terminal:
+			w.write(envelope, nil, terminalWriteTimeout, false)
+			terminalBurst++
+			streamBurst = 0
 		case envelope := <-w.metrics:
 			w.write(envelope, nil, metricWriteTimeout, false)
 			dockerBurst = 0
 			streamBurst = 0
+			terminalBurst = 0
 		}
 	}
 }

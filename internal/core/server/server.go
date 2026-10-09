@@ -81,6 +81,7 @@ type Server struct {
 	agentWait                  sync.WaitGroup
 	agentLeaseWatchers         map[string]*agentConnection
 	containerStreamSlots       chan struct{}
+	terminals                  *terminalStreamManager
 }
 
 type session struct {
@@ -184,6 +185,7 @@ func New(version string, options Options) (*Server, error) {
 		agentConnections:       make(map[string]*agentConnection),
 		agentLeaseWatchers:     make(map[string]*agentConnection),
 		containerStreamSlots:   make(chan struct{}, 64),
+		terminals:              newTerminalStreamManager(),
 	}
 	s.composeOps, err = corecompose.NewStore(store.DB, corecompose.Options{Now: options.Now})
 	if err != nil {
@@ -252,6 +254,9 @@ func (s *Server) metricHistoryRetentionWorker() {
 }
 
 func (s *Server) Close() error {
+	if s.terminals != nil {
+		s.terminals.closeAll(s, "Core shutdown")
+	}
 	s.agentLifecycleMu.Lock()
 	s.agentClosing = true
 	if s.agentCancel != nil {
