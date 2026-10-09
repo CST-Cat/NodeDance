@@ -6,6 +6,11 @@ const replacementID = 'b'.repeat(64)
 const serverTime = '2026-10-08T18:00:00.000Z'
 const leaseValidUntil = '2026-10-08T18:00:30.000Z'
 
+async function openDockerDetails(page: import('@playwright/test').Page) {
+  await page.getByRole('button', { name: 'Docker 详情' }).click()
+  await expect(page.getByTestId('docker-inventory')).toBeVisible()
+}
+
 test('responsive rebuild wizard previews risks and submits the reviewed port plan', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.addInitScript(() => {
@@ -82,6 +87,7 @@ test('responsive rebuild wizard previews risks and submits the reviewed port pla
   await page.route(`**/api/v1/nodes/${nodeID}/tasks/${task.taskId}`, (route) => route.fulfill({ json: task }))
 
   await page.goto('/tests/fixtures/s03-nodes-dashboard.html')
+  await openDockerDetails(page)
   const row = page.locator(`article[data-container-id="${containerID}"]`)
   await expect(row.getByRole('button', { name: '受控重建' })).toBeVisible()
   await row.getByRole('button', { name: '受控重建' }).click()
@@ -117,6 +123,7 @@ test('responsive rebuild wizard previews risks and submits the reviewed port pla
   inventory.containers.push({ container: { ...container, id: containerID, name: 'nodedance-rb-test', running: false, state: 'exited' },
     generation: 1, sequence: 2, receivedAt: serverTime })
   await page.reload()
+  await openDockerDetails(page)
   const replacementRow = page.locator(`article[data-container-id="${replacementID}"]`)
   const rollbackRow = page.locator(`article[data-container-id="${containerID}"]`)
   await expect(replacementRow.getByText('已验证完成：running')).toBeVisible()
@@ -182,6 +189,7 @@ test('failed restored rebuild offers explicit cleanup without touching the origi
   })
   await page.route(`**/api/v1/nodes/${nodeID}/tasks/${cleanupTask.taskId}`, (route) => route.fulfill({ json: cleanupTask }))
   await page.goto('/tests/fixtures/s03-nodes-dashboard.html')
+  await openDockerDetails(page)
   const row = page.locator(`article[data-container-id="${containerID}"]`)
   const cleanup = row.getByRole('button', { name: '清理重建遗留资源' })
   await expect(cleanup).toBeVisible()
