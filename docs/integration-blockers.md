@@ -13,7 +13,7 @@ The integration database migrations are append-only: v1–v5 remain unchanged, C
 |---|---|---|
 | S02 | Added TLS/WSS proxy recovery and bounded Core shutdown coverage for S02-07. | No complete S02 specification run on the integration branch. |
 | S04 | Added exact Engine container ID tracking through the Agent WebSocket snapshot into Core/SQLite/API/Dashboard; wired the trace test into S04-01. | Owned DIND Engine 28/29 trace was not run here; no full S04 acceptance evidence. |
-| S05 | Durable task bridge is present through the S06 candidate ancestry. | The preserved candidate report records a `make check` preflight `FAIL` before any S05 case ran; the integrated branch has focused checks but no complete S05 run. |
+| S05 | Durable task bridge is present through the S06 candidate ancestry; the current integrated migration compatibility test passes. | The historical `make check` preflight failure is preserved, but no complete S05 normative run has been performed; S05 remains `NOT_READY`. |
 | S06 | Dashboard candidate is present. | No real Engine/DIND S06 run, real-Core browser integration, or complete dependent S04/S05 evidence. |
 | S07 | Compose project management is present on integration migration v6. | Full Engine 28/29 and complete P0/S07 acceptance evidence is outstanding. |
 | S08 | Image management is present. | No controlled Registry and real Engine acceptance evidence for this integration branch. |

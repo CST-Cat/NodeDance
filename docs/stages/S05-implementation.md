@@ -140,6 +140,10 @@ These checks approve only the isolated component. The formal S05 phase and all
 twelve normative `S05-01` through `S05-12` cases remain `NOT_READY` pending the
 Core/Agent integration and real Docker execution/postcondition tests.
 
+## Current integrated-baseline evidence
+
+The earlier full S05 attempt `dc55d299d91b4ba9b60af0751edbe38c` stopped in `make check` before any normative case ran: the migration test expected schema version 3 while the integrated schema was v4. The later `a7b5d34` change made that assertion accept version 3 or later. On integrated baseline `94d47cad9b9ef1a4be84550b8c7d3887688f6603`, the exact focused command `go test ./internal/core/agents -run '^TestMigrationVersionTwoExtendsAuditWithTypedTargets$' -count=1` passed once; its log is `.artifacts/s05/migration-typed-target-current.log`. This is candidate evidence only. The old preflight failure remains recorded, all normative S05-01..12 cases remain `NOT_READY`, and no full S05 acceptance run was performed.
+
 ## Outstanding phase work
 
 S05 still needs the Core task/audit persistence path, Agent task delivery and

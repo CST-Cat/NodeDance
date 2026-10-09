@@ -40,9 +40,9 @@
       "updated_at": "2026-10-09T06:09:52+00:00"
     },
     "S05": {
-      "status": "FAIL",
-      "reason": "既有候选完整运行报告记录 make check preflight FAIL（run_id dc55d299d91b4ba9b60af0751edbe38c），必测案例未启动；整合分支 focused tests 通过，但尚未重跑完整 S05，因此保留 FAIL 并要求后续定向修复/完整验收。",
-      "updated_at": "2026-10-09T06:09:52+00:00"
+      "status": "NOT_READY",
+      "reason": "The historical make check preflight failure is retained in reports/stages/S05.json. The corrected migration compatibility test passes on the current baseline, but no complete S05 normative acceptance run has been performed.",
+      "updated_at": "2026-10-09T08:25:31+00:00"
     },
     "S06": {
       "status": "NOT_READY",
