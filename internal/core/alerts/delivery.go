@@ -3,6 +3,7 @@ package alerts
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +20,10 @@ import (
 type Sender struct {
 	HTTPClient *http.Client
 	Timeout    time.Duration
+	// smtpRootCAs is intentionally package-private. Production delivery always
+	// uses the system trust roots; tests can add a local fixture CA without
+	// weakening certificate or hostname verification.
+	smtpRootCAs *x509.CertPool
 }
 
 func NewSender() *Sender {
@@ -67,6 +72,9 @@ func (s *Sender) sendWebhook(ctx context.Context, target, secret, payload string
 }
 
 func (s *Sender) sendSMTP(ctx context.Context, config ChannelConfig, secret, payload string) error {
+	if config.SMTPSecurityMode != SMTPSecurityLegacy && config.SMTPSecurityMode != SMTPSecuritySTARTTLS && config.SMTPSecurityMode != SMTPSecurityImplicitTLS {
+		return errors.New("unsupported SMTP security mode")
+	}
 	addr := net.JoinHostPort(config.SMTPHost, fmt.Sprint(config.SMTPPort))
 	timeout := s.Timeout
 	if timeout <= 0 {
@@ -86,20 +94,33 @@ func (s *Sender) sendSMTP(ctx context.Context, config ChannelConfig, secret, pay
 	if err := conn.SetDeadline(deadline); err != nil {
 		return errors.New("SMTP connection setup failed")
 	}
-	client, err := smtp.NewClient(conn, config.SMTPHost)
+	clientConn := net.Conn(conn)
+	tlsActive := false
+	if config.SMTPSecurityMode == SMTPSecurityImplicitTLS {
+		tlsConn := tls.Client(conn, s.smtpTLSConfig(config.SMTPHost))
+		if err := tlsConn.HandshakeContext(dialCtx); err != nil {
+			return errors.New("SMTP TLS negotiation failed")
+		}
+		clientConn = tlsConn
+		tlsActive = true
+	}
+	client, err := smtp.NewClient(clientConn, config.SMTPHost)
 	if err != nil {
 		return errors.New("SMTP server handshake failed")
 	}
 	defer client.Close()
-	tlsActive := false
-	if ok, _ := client.Extension("STARTTLS"); ok {
-		if err := client.StartTLS(&tls.Config{MinVersion: tls.VersionTLS12, ServerName: config.SMTPHost}); err != nil {
-			return errors.New("SMTP TLS negotiation failed")
+	if config.SMTPSecurityMode != SMTPSecurityImplicitTLS {
+		if hasSTARTTLS, _ := client.Extension("STARTTLS"); hasSTARTTLS {
+			if err := client.StartTLS(s.smtpTLSConfig(config.SMTPHost)); err != nil {
+				return errors.New("SMTP TLS negotiation failed")
+			}
+			tlsActive = true
+		} else if config.SMTPSecurityMode == SMTPSecuritySTARTTLS {
+			return errors.New("SMTP server does not support required STARTTLS")
 		}
-		tlsActive = true
 	}
 	if !tlsActive && !isLoopbackHost(config.SMTPHost) {
-		return errors.New("remote SMTP requires STARTTLS")
+		return errors.New("remote SMTP requires TLS")
 	}
 	if config.SMTPUsername != "" || secret != "" {
 		if !tlsActive && !isLoopbackHost(config.SMTPHost) {
@@ -146,6 +167,14 @@ func (s *Sender) sendSMTP(ctx context.Context, config ChannelConfig, secret, pay
 		return errors.New("SMTP server did not confirm delivery")
 	}
 	return nil
+}
+
+func (s *Sender) smtpTLSConfig(serverName string) *tls.Config {
+	config := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: serverName}
+	if s != nil && s.smtpRootCAs != nil {
+		config.RootCAs = s.smtpRootCAs
+	}
+	return config
 }
 
 func smtpNotificationText(payload string) (string, error) {

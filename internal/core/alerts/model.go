@@ -29,6 +29,10 @@ const (
 
 	ChannelWebhook = "webhook"
 	ChannelSMTP    = "smtp"
+
+	SMTPSecurityLegacy      = ""
+	SMTPSecuritySTARTTLS    = "starttls"
+	SMTPSecurityImplicitTLS = "implicit_tls"
 )
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
@@ -111,13 +115,14 @@ type Event struct {
 }
 
 type ChannelConfig struct {
-	WebhookURL      string `json:"webhookUrl,omitempty"`
-	MessageTemplate string `json:"messageTemplate,omitempty"`
-	SMTPHost        string `json:"smtpHost,omitempty"`
-	SMTPPort        int    `json:"smtpPort,omitempty"`
-	SMTPFrom        string `json:"smtpFrom,omitempty"`
-	SMTPTo          string `json:"smtpTo,omitempty"`
-	SMTPUsername    string `json:"smtpUsername,omitempty"`
+	WebhookURL       string `json:"webhookUrl,omitempty"`
+	MessageTemplate  string `json:"messageTemplate,omitempty"`
+	SMTPHost         string `json:"smtpHost,omitempty"`
+	SMTPPort         int    `json:"smtpPort,omitempty"`
+	SMTPFrom         string `json:"smtpFrom,omitempty"`
+	SMTPTo           string `json:"smtpTo,omitempty"`
+	SMTPUsername     string `json:"smtpUsername,omitempty"`
+	SMTPSecurityMode string `json:"smtpSecurityMode,omitempty"`
 }
 
 type Channel struct {
@@ -257,10 +262,13 @@ func ValidateChannel(input ChannelInput) error {
 		if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
 			return errors.New("webhook URL must be an HTTP(S) URL without embedded credentials")
 		}
-		if input.Config.SMTPHost != "" || input.Config.SMTPPort != 0 || input.Config.SMTPFrom != "" || input.Config.SMTPTo != "" || input.Config.SMTPUsername != "" {
+		if input.Config.SMTPHost != "" || input.Config.SMTPPort != 0 || input.Config.SMTPFrom != "" || input.Config.SMTPTo != "" || input.Config.SMTPUsername != "" || input.Config.SMTPSecurityMode != "" {
 			return errors.New("webhook channel cannot contain SMTP settings")
 		}
 	case ChannelSMTP:
+		if input.Config.SMTPSecurityMode != SMTPSecurityLegacy && input.Config.SMTPSecurityMode != SMTPSecuritySTARTTLS && input.Config.SMTPSecurityMode != SMTPSecurityImplicitTLS {
+			return errors.New("SMTP security mode must be starttls or implicit_tls")
+		}
 		if strings.TrimSpace(input.Config.SMTPHost) == "" || len(input.Config.SMTPHost) > 253 || input.Config.SMTPPort < 1 || input.Config.SMTPPort > 65535 {
 			return errors.New("SMTP host and port are required")
 		}
