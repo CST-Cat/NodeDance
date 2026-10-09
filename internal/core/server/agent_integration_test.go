@@ -542,10 +542,9 @@ func TestRealAgentEnrollmentReconnectRotationAndRevocation(t *testing.T) {
 		for index := range running {
 			oldGenerations[index] = generationForNode(t, core, running[index].identity.NodeID)
 		}
+		waitForAgentProxyTunnelCount(t, proxy, agentCount, 3*time.Second, "all three Agent WSS tunnels before Core restart")
 		current.Store(nil)
-		if err := core.Close(); err != nil {
-			t.Fatal(err)
-		}
+		closeS02CoreWithin(t, core, proxy, 5*time.Second)
 		restarted, err = New("integration-restarted", Options{DataDir: dataDir, PublicOrigin: "https://panel.test"})
 		if err != nil {
 			t.Fatal(err)
@@ -1159,6 +1158,190 @@ func TestRealAgentLeaseDeadlineOverWSS(t *testing.T) {
 		}
 		t.Logf("WSS heartbeat sequence 2 accepted at deadline-1ms; sequence 3 at exact deadline rejected, final status=%s generation=%d", status, generation)
 	})
+}
+
+func TestRealAgentCoreCloseDrainsAgentProxyTunnels(t *testing.T) {
+	t.Run("S02-07", func(t *testing.T) {
+		t.Setenv("DOCKER_HOST", "unix:///nonexistent/nodedance-s02-close-test-docker.sock")
+		workRoot := filepath.Join("..", "..", "..", ".artifacts", "work-s02")
+		if err := os.MkdirAll(workRoot, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		work, err := os.MkdirTemp(workRoot, "core-close-proxy-tunnels-*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		work, err = filepath.Abs(work)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(work, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := os.RemoveAll(work); err != nil {
+				t.Errorf("remove Core-close fixture directory: %v", err)
+			}
+		})
+		certificate, rootPEM, err := makeAgentTestCertificate()
+		if err != nil {
+			t.Fatal(err)
+		}
+		caPath := filepath.Join(work, "trusted-ca.pem")
+		if err := os.WriteFile(caPath, rootPEM, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		core, err := New("agent-close", Options{DataDir: filepath.Join(work, "core"), PublicOrigin: "https://panel.test"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var current atomic.Pointer[Server]
+		current.Store(core)
+		coreHTTP := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			active := current.Load()
+			if active == nil {
+				http.Error(w, "Core restarting", http.StatusServiceUnavailable)
+				return
+			}
+			active.ServeHTTP(w, r)
+		}))
+		coreHTTP.TLS = &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
+		coreHTTP.StartTLS()
+		proxy := newAgentTestProxy(t, &current, coreHTTP.URL, rootPEM)
+		proxyServer := httptest.NewUnstartedServer(proxy)
+		proxyServer.TLS = &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
+		proxyServer.StartTLS()
+		proxy.proxyURL = proxyServer.URL
+
+		const agentCount = 3
+		type runningAgent struct {
+			configPath string
+			identity   agent.Config
+			cancel     context.CancelFunc
+			done       chan error
+		}
+		running := make([]runningAgent, agentCount)
+		coreClosed := false
+		coreCloseStarted := false
+		t.Cleanup(func() {
+			current.Store(nil)
+			proxy.closeAgentTunnels()
+			for index := range running {
+				if running[index].cancel != nil {
+					running[index].cancel()
+				}
+			}
+			for index := range running {
+				if running[index].done == nil {
+					continue
+				}
+				select {
+				case <-running[index].done:
+				case <-time.After(3 * time.Second):
+					t.Errorf("Agent %d did not stop after Core-close fixture cleanup", index+1)
+				}
+			}
+			if !coreClosed && !coreCloseStarted {
+				closed := make(chan error, 1)
+				go func() { closed <- core.Close() }()
+				select {
+				case err := <-closed:
+					if err != nil {
+						t.Errorf("close Core during fixture cleanup: %v", err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Error("Core did not close within the bounded fixture-cleanup deadline")
+				}
+			}
+			closeS02HTTPServerWithin(t, proxyServer, "Agent WSS proxy", 3*time.Second)
+			closeS02HTTPServerWithin(t, coreHTTP, "Core HTTPS", 3*time.Second)
+		})
+
+		for index := range running {
+			enrollment, err := core.agents.CreateEnrollment(context.Background(), fmt.Sprintf("close-test-%d", index), "127.0.0.1", sql.NullInt64{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			configPath := filepath.Join(work, fmt.Sprintf("agent-%d", index), "agent.json")
+			if err := agent.Enroll(context.Background(), proxyServer.URL, caPath, false, strings.NewReader(enrollment.Token), configPath); err != nil {
+				t.Fatalf("enroll real Agent %d through WSS proxy: %v", index+1, err)
+			}
+			config, err := agent.LoadConfig(configPath)
+			if err != nil {
+				t.Fatalf("load real Agent %d identity: %v", index+1, err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			running[index] = runningAgent{configPath: configPath, identity: config, cancel: cancel, done: make(chan error, 1)}
+			go func(item *runningAgent) {
+				item.done <- agent.Run(ctx, item.configPath, "close-test", &agentTestLog{})
+			}(&running[index])
+		}
+		for index := range running {
+			waitForAgentStatus(t, core, running[index].identity.NodeID, "online", 0)
+		}
+		waitForAgentProxyTunnelCount(t, proxy, agentCount, 5*time.Second, "three established outbound Agent WSS tunnels")
+		for index := range running {
+			t.Logf("S02-07 Core-close fixture Agent %d id=%s node=%s generation=%d", index+1,
+				running[index].identity.AgentID, running[index].identity.NodeID, generationForNode(t, core, running[index].identity.NodeID))
+		}
+		current.Store(nil)
+		coreCloseStarted = true
+		closeS02CoreWithin(t, core, proxy, 5*time.Second)
+		coreClosed = true
+		waitForAgentProxyTunnelCount(t, proxy, 0, 3*time.Second, "all WSS proxy copy handlers after Core.Close")
+		t.Logf("S02-07 Core.Close returned and all proxy tunnels/copy handlers exited; three Agent runtimes remained independently cancellable")
+	})
+}
+
+func closeS02CoreWithin(t *testing.T, core *Server, proxy *agentTestProxy, timeout time.Duration) {
+	t.Helper()
+	closed := make(chan error, 1)
+	started := time.Now()
+	go func() { closed <- core.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatalf("Core.Close returned an error: %v", err)
+		}
+	case <-time.After(timeout):
+		activeTunnels := proxy.activeTunnelCount()
+		proxy.closeAgentTunnels()
+		select {
+		case err := <-closed:
+			t.Fatalf("Core.Close exceeded %s with %d proxy tunnels; it completed with error %v only after forced tunnel cancellation", timeout, activeTunnels, err)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("Core.Close exceeded %s and remained blocked after canceling %d proxy tunnels", timeout, activeTunnels)
+		}
+	}
+	waitForAgentProxyTunnelCount(t, proxy, 0, 3*time.Second, "Core.Close to drain Agent proxy tunnels")
+	t.Logf("Core.Close completed in %s and drained all Agent proxy tunnels", time.Since(started).Round(time.Millisecond))
+}
+
+func waitForAgentProxyTunnelCount(t *testing.T, proxy *agentTestProxy, want int, timeout time.Duration, description string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if got := proxy.activeTunnelCount(); got == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("%s: active Agent proxy tunnels=%d, expected=%d", description, proxy.activeTunnelCount(), want)
+}
+
+func closeS02HTTPServerWithin(t *testing.T, server *httptest.Server, description string, timeout time.Duration) {
+	t.Helper()
+	server.CloseClientConnections()
+	closed := make(chan struct{})
+	go func() {
+		server.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(timeout):
+		t.Errorf("%s still had HTTP handlers after %s", description, timeout)
+	}
 }
 
 func TestRealAgentLeaseWatcherShutdown(t *testing.T) {

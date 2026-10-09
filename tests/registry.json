@@ -204,8 +204,8 @@
           "id": "S02-07",
           "action": "断网后恢复、Core重启。",
           "expected": "按退避重连，进入新的同步代际。",
-          "environment": "真实网络故障注入和Core进程重启。",
-          "evidence": "重试时间线、generation及重新同步记录。"
+          "environment": "三个真实Agent经TLS代理运行；注入网络中断并重启Core。",
+          "evidence": "重试时间线、generation及重新同步记录；Core关闭限时完成，WSS代理隧道及双向复制goroutine全部退出后再启动新Core。"
         },
         {
           "id": "S02-08",
