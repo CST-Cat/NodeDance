@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -470,6 +472,236 @@ networks:
 		t.Fatalf("named volume data was not preserved across editor apply: before=%q after=%q err=%v", markerBefore, markerAfter, err)
 	}
 	t.Logf("S11 Core HTTPS/WSS Engine %s verified apply: project=%s web=%s->%s port=%d->%d data=%s volume=%s marker=%s", dindMarker.ServerVersion, projectName, webBeforeID, webAfterID, oldPort, newPort, dataAfterID, volumeAfter, strings.TrimSpace(string(markerAfter)))
+
+	if os.Getenv("NODEDANCE_S11_HEALTH_ROLLBACK") == "1" {
+		t.Run("health_rollback", func(t *testing.T) {
+			s11RunCoreAgentHealthRollback(t, admin, engine, runner, setupCtx, enrollment.NodeID,
+				project.Ref.Key, projectName, projectDir, configPath, composePrefix, dockerHost,
+				dindMarker.ServerVersion, suite, webAfterID, dataAfterID, volumeAfter,
+				strings.TrimSpace(string(markerAfter)), newPort)
+		})
+	}
+}
+
+func s11RunCoreAgentHealthRollback(
+	t *testing.T,
+	admin s11HTTPSAdminClient,
+	engine *agentdocker.SDKEngine,
+	runner agentcompose.ExecRunner,
+	ctx context.Context,
+	nodeID, projectKey, projectName, projectDir, configPath string,
+	composePrefix []string,
+	dockerHost, engineVersion, suite string,
+	webBeforeID, dataBeforeID, volumeBefore, markerBefore string,
+	publishedPort uint16,
+) {
+	t.Helper()
+	webBefore, err := engine.Inspect(ctx, webBeforeID)
+	if err != nil || !webBefore.Running || webBefore.HealthcheckConfigured || webBefore.ImageID == "" {
+		t.Fatalf("pre-failure web service must be running, use its concrete locked image, and have no healthcheck: service=%+v err=%v", webBefore, err)
+	}
+	if actual, ok := s11PublishedPort(webBefore, 80, "tcp", "127.0.0.1"); !ok || actual != publishedPort {
+		t.Fatalf("pre-failure web service has unexpected published port: expected=%d actual=%d found=%t", publishedPort, actual, ok)
+	}
+	if dataBeforeID == "" || volumeBefore == "" || markerBefore == "" {
+		t.Fatal("pre-failure unrelated data service and named-volume marker are required")
+	}
+
+	baseEditorPath := "/api/v1/nodes/" + nodeID + "/compose/projects/" + projectKey + "/editor"
+	sourceResponse := admin.request(t, http.MethodGet, baseEditorPath+"/source", nil, "")
+	if sourceResponse.status != http.StatusOK {
+		t.Fatalf("read pre-failure Compose source through authenticated HTTPS API: HTTP %d: %s", sourceResponse.status, sourceResponse.body)
+	}
+	var source struct {
+		Files []protocol.ComposeSourceFile `json:"files"`
+	}
+	if err := json.Unmarshal(sourceResponse.body, &source); err != nil || len(source.Files) != 1 || filepath.Clean(source.Files[0].Path) != filepath.Clean(configPath) || source.Files[0].Version == "" {
+		t.Fatalf("pre-failure source response did not bind the exact versioned Compose file: files=%+v err=%v", source.Files, err)
+	}
+	originalSource := source.Files[0].Content
+	if originalSource == "" || strings.Contains(originalSource, "healthcheck:") {
+		t.Fatal("pre-failure Compose source is empty or unexpectedly already defines a healthcheck")
+	}
+	const unhealthyHealthcheck = "    healthcheck:\n      test: [\"CMD-SHELL\", \"exit 1\"]\n      interval: 1s\n      timeout: 1s\n      retries: 1\n      start_period: 0s\n"
+	beforeData, afterData, foundData := strings.Cut(originalSource, "  data:\n")
+	if !foundData || strings.Contains(beforeData, "healthcheck:") {
+		t.Fatal("cannot safely add an unhealthy healthcheck only to the web service")
+	}
+	proposedSource := beforeData + unhealthyHealthcheck + "  data:\n" + afterData
+	if strings.Count(proposedSource, "healthcheck:") != 1 || !strings.Contains(proposedSource, "exit 1") {
+		t.Fatal("proposed Compose edit does not contain exactly one deliberately failing web healthcheck")
+	}
+	sourceDigest := func(value string) string {
+		sum := sha256.Sum256([]byte(value))
+		return hex.EncodeToString(sum[:])
+	}
+	originalSourceDigest := sourceDigest(originalSource)
+
+	input := protocol.ComposeEditorInput{
+		ExpectedVersions: map[string]string{source.Files[0].Path: source.Files[0].Version},
+		Files:            []protocol.ComposeSourceFile{{Path: configPath, Content: proposedSource}},
+	}
+	previewResponse := admin.request(t, http.MethodPost, baseEditorPath+"/preview", map[string]any{"editor": input}, "")
+	if previewResponse.status != http.StatusOK {
+		t.Fatalf("preview unhealthy healthcheck edit through HTTPS API: HTTP %d: %s", previewResponse.status, previewResponse.body)
+	}
+	var preview protocol.ComposeEditorResult
+	if err := json.Unmarshal(previewResponse.body, &preview); err != nil || len(preview.AffectedServices) != 1 || preview.AffectedServices[0] != "web" {
+		t.Fatalf("healthcheck preview must isolate only web: affected=%+v err=%v", preview.AffectedServices, err)
+	}
+
+	eventCtx, cancelEvents := context.WithCancel(ctx)
+	defer cancelEvents()
+	eventStream, err := engine.OpenEvents(eventCtx)
+	if err != nil {
+		t.Fatalf("subscribe to the owner-marked Engine before unhealthy deployment: %v", err)
+	}
+	defer eventStream.Close()
+	unhealthyReplacement := make(chan string, 1)
+	go func() {
+		for {
+			select {
+			case event, ok := <-eventStream.Events:
+				if !ok {
+					return
+				}
+				if event.Action != "health_status: unhealthy" || event.ContainerID == "" {
+					continue
+				}
+				item, inspectErr := engine.Inspect(eventCtx, event.ContainerID)
+				if inspectErr != nil || item.Compose == nil || item.Compose.Project != projectName || item.Compose.Service != "web" || !item.HealthcheckConfigured || item.Health != agentdocker.HealthUnhealthy {
+					continue
+				}
+				select {
+				case unhealthyReplacement <- item.ID:
+				default:
+				}
+				return
+			case <-eventCtx.Done():
+				return
+			}
+		}
+	}()
+	// Give the streaming GET time to establish on the Engine before the edit
+	// starts. The independent health-event assertion below fails closed if the
+	// event was missed or the replacement never became unhealthy.
+	time.Sleep(250 * time.Millisecond)
+
+	runSuffix := s11SafeRunSuffix(os.Getenv("NODEDANCE_S11_RUN_ID"))
+	if runSuffix == "" {
+		t.Fatal("S11 run identifier is required for the health rollback operation")
+	}
+	idempotencyKey := "s11-health-rollback-" + runSuffix
+	applyResponse := admin.request(t, http.MethodPost, baseEditorPath+"/apply", map[string]any{"editor": input}, idempotencyKey)
+	if applyResponse.status != http.StatusAccepted {
+		t.Fatalf("submit unhealthy healthcheck edit through authenticated HTTPS API: HTTP %d: %s", applyResponse.status, applyResponse.body)
+	}
+	var operation struct {
+		OperationID string                 `json:"operationId"`
+		Status      corecomposeedit.Status `json:"status"`
+		Verified    bool                   `json:"verified"`
+	}
+	if err := json.Unmarshal(applyResponse.body, &operation); err != nil || operation.OperationID == "" {
+		t.Fatalf("decode unhealthy-edit operation response: operation=%+v err=%v", operation, err)
+	}
+	operationPath := "/api/v1/nodes/" + nodeID + "/compose/editor/operations/" + operation.OperationID
+	deadline := time.Now().Add(4 * time.Minute)
+	var failedOperation struct {
+		OperationID       string                 `json:"operationId"`
+		Status            corecomposeedit.Status `json:"status"`
+		ErrorCode         string                 `json:"errorCode"`
+		Verified          bool                   `json:"verified"`
+		AffectedServices  []string               `json:"affectedServices"`
+		RollbackConfirmed bool                   `json:"rollbackConfirmed"`
+	}
+	for time.Now().Before(deadline) {
+		response := admin.request(t, http.MethodGet, operationPath, nil, "")
+		if response.status != http.StatusOK {
+			t.Fatalf("read persisted unhealthy rollback operation returned HTTP %d: %s", response.status, response.body)
+		}
+		if err := json.Unmarshal(response.body, &failedOperation); err != nil {
+			t.Fatalf("decode persisted unhealthy rollback operation: %v", err)
+		}
+		if failedOperation.Status == corecomposeedit.StatusFailed {
+			break
+		}
+		if failedOperation.Status == corecomposeedit.StatusUnknown || failedOperation.Status == corecomposeedit.StatusSucceeded {
+			t.Fatalf("unhealthy deployment reached unexpected terminal state: %+v", failedOperation)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if failedOperation.OperationID != operation.OperationID || failedOperation.Status != corecomposeedit.StatusFailed || failedOperation.ErrorCode != "health_failed" || failedOperation.Verified || !failedOperation.RollbackConfirmed || len(failedOperation.AffectedServices) != 1 || failedOperation.AffectedServices[0] != "web" {
+		t.Fatalf("Core did not persist the expected failed, confirmed, web-only rollback: %+v", failedOperation)
+	}
+	var unhealthyID string
+	select {
+	case unhealthyID = <-unhealthyReplacement:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Engine did not report an actually unhealthy replacement web container before rollback")
+	}
+	if unhealthyID == "" || unhealthyID == webBeforeID {
+		t.Fatalf("Engine unhealthy event did not identify a replacement container: before=%s unhealthy=%s", webBeforeID, unhealthyID)
+	}
+
+	restoredBytes, err := os.ReadFile(configPath)
+	if err != nil || string(restoredBytes) != originalSource || sourceDigest(string(restoredBytes)) != originalSourceDigest {
+		t.Fatalf("health-failed transaction did not byte-for-byte restore pre-edit Compose source: err=%v expected_sha256=%s actual_sha256=%s", err, originalSourceDigest, sourceDigest(string(restoredBytes)))
+	}
+	restoredSourceResponse := admin.request(t, http.MethodGet, baseEditorPath+"/source", nil, "")
+	if restoredSourceResponse.status != http.StatusOK {
+		t.Fatalf("read restored Compose source through Core API: HTTP %d: %s", restoredSourceResponse.status, restoredSourceResponse.body)
+	}
+	var restoredSource struct {
+		Files []protocol.ComposeSourceFile `json:"files"`
+	}
+	if err := json.Unmarshal(restoredSourceResponse.body, &restoredSource); err != nil || len(restoredSource.Files) != 1 || restoredSource.Files[0].Content != originalSource {
+		t.Fatalf("Core source API did not expose the exact pre-edit file after rollback: files=%+v err=%v", restoredSource.Files, err)
+	}
+
+	webAfterID, dataAfterID := s11ComposeServiceIDs(ctx, engine, projectName)
+	if webAfterID == "" || webAfterID == webBeforeID || dataAfterID != dataBeforeID {
+		t.Fatalf("health rollback must recreate only web and preserve the unrelated data service: web=%s->%s data=%s->%s", webBeforeID, webAfterID, dataBeforeID, dataAfterID)
+	}
+	webAfter, err := engine.Inspect(ctx, webAfterID)
+	if err != nil || !webAfter.Running || webAfter.ImageID != webBefore.ImageID || webAfter.HealthcheckConfigured || webAfter.Health != agentdocker.HealthNone {
+		t.Fatalf("health rollback did not restore the old running image/service configuration: before=%+v after=%+v err=%v", webBefore, webAfter, err)
+	}
+	portAfter, portFound := s11PublishedPort(webAfter, 80, "tcp", "127.0.0.1")
+	if !portFound || portAfter != publishedPort {
+		t.Fatalf("health rollback did not restore the previous actual web port: expected=%d actual=%d found=%t", publishedPort, portAfter, portFound)
+	}
+	dataAfter, err := engine.Inspect(ctx, dataAfterID)
+	if err != nil {
+		t.Fatalf("inspect unrelated data service after rollback: %v", err)
+	}
+	volumeAfter := s11NamedVolumeAt(dataAfter, "/data")
+	markerAfter, markerErr := runner.Run(ctx, projectDir, append(append([]string(nil), composePrefix...), "exec", "-T", "data", "cat", "/data/marker"), dockerHost)
+	if dataAfterID != dataBeforeID || volumeAfter != volumeBefore || markerErr != nil || strings.TrimSpace(string(markerAfter)) != markerBefore {
+		t.Fatalf("health rollback changed unrelated persistent service or volume: data=%s->%s volume=%s->%s marker=%q->%q err=%v", dataBeforeID, dataAfterID, volumeBefore, volumeAfter, markerBefore, strings.TrimSpace(string(markerAfter)), markerErr)
+	}
+
+	evidence := map[string]any{
+		"schema": 1, "case": "S11-06", "test": "TestDINDComposeEditorCoreAgentHTTPS/health_rollback",
+		"engine_version": engineVersion, "project": projectName, "operation_id": operation.OperationID,
+		"operation_status": failedOperation.Status, "error_code": failedOperation.ErrorCode,
+		"rollback_confirmed": failedOperation.RollbackConfirmed, "verified": failedOperation.Verified,
+		"affected_services": failedOperation.AffectedServices, "unhealthy_replacement_id": unhealthyID,
+		"unhealthy_replacement_health": agentdocker.HealthUnhealthy, "unhealthy_replacement_healthcheck_configured": true,
+		"source_sha256_before": originalSourceDigest, "source_sha256_after": sourceDigest(string(restoredBytes)),
+		"image_id_before": webBefore.ImageID, "image_id_after": webAfter.ImageID,
+		"web_container_id_before": webBeforeID, "web_container_id_after": webAfterID,
+		"web_port_before": publishedPort, "web_port_after": portAfter,
+		"web_running_after": webAfter.Running, "web_healthcheck_after": webAfter.HealthcheckConfigured,
+		"data_container_id_before": dataBeforeID, "data_container_id_after": dataAfterID,
+		"volume_name_before": volumeBefore, "volume_name_after": volumeAfter,
+		"volume_marker_before": markerBefore, "volume_marker_after": strings.TrimSpace(string(markerAfter)),
+		"suite": suite,
+	}
+	encodedEvidence, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatalf("encode S11 health rollback evidence marker: %v", err)
+	}
+	t.Logf("S11_HEALTH_ROLLBACK_PASS %s", encodedEvidence)
 }
 
 type s11HTTPSAdminClient struct {

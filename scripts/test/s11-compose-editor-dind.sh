@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENGINE="${1:-}"
 TEST_CASE="${2:-all}"
-[[ "$ENGINE" == 28 || "$ENGINE" == 29 ]] || { echo 'usage: s11-compose-editor-dind.sh ENGINE(28|29) [all|core-agent|rollback-tag-drift]' >&2; exit 2; }
-[[ "$TEST_CASE" == all || "$TEST_CASE" == rollback-tag-drift || "$TEST_CASE" == core-agent ]] || { echo 'S11 NOT_READY: unsupported focused test case' >&2; exit 2; }
+[[ "$ENGINE" == 28 || "$ENGINE" == 29 ]] || { echo 'usage: s11-compose-editor-dind.sh ENGINE(28|29) [all|core-agent|health-rollback|rollback-tag-drift]' >&2; exit 2; }
+[[ "$TEST_CASE" == all || "$TEST_CASE" == rollback-tag-drift || "$TEST_CASE" == core-agent || "$TEST_CASE" == health-rollback ]] || { echo 'S11 NOT_READY: unsupported focused test case' >&2; exit 2; }
 
 DIND_ROOT="${NODEDANCE_S11_DIND_ROOT:-$ROOT/.artifacts/dind/v$ENGINE}"
 DIND_ROOT="$(realpath -m "$DIND_ROOT")"
@@ -23,6 +23,11 @@ elif [[ "$TEST_CASE" == core-agent ]]; then
   FIXTURE_NAME+="-core-agent"
   LOG_NAME="engine-${ENGINE}-core-agent.log"
   TEST_PATTERN='^TestDINDComposeEditorCoreAgentHTTPS$'
+  TEST_PACKAGE='./internal/core/server'
+elif [[ "$TEST_CASE" == health-rollback ]]; then
+  FIXTURE_NAME+="-health-rollback"
+  LOG_NAME="engine-${ENGINE}-health-rollback.log"
+  TEST_PATTERN='^TestDINDComposeEditorCoreAgentHTTPS$/^health_rollback$'
   TEST_PACKAGE='./internal/core/server'
 fi
 FIXTURE_ROOT="$ROOT/.artifacts/fixtures/$FIXTURE_NAME"
@@ -62,6 +67,9 @@ export NODEDANCE_S11_ENGINE="$ENGINE"
 export NODEDANCE_S11_RUN_ID="${RUN_SUFFIX}-engine${ENGINE}"
 export DOCKER_HOST="unix://$DIND_ROOT/socket/docker.sock"
 export GOTOOLCHAIN=local
+if [[ "$TEST_CASE" == health-rollback ]]; then
+  export NODEDANCE_S11_HEALTH_ROLLBACK=1
+fi
 
 "$GO_BIN" test -count=1 -timeout=12m -run "$TEST_PATTERN" -v "$TEST_PACKAGE" \
   2>&1 | tee "$ROOT/.artifacts/s11/$LOG_NAME"

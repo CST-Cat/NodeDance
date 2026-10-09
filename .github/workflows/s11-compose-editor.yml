@@ -108,6 +108,20 @@ jobs:
       - name: Run real Core HTTPS API to enrolled Agent WSS to Compose Engine acceptance
         run: scripts/test/s11-compose-editor-dind.sh '${{ matrix.engine }}' core-agent
 
+      - name: Run S11-06 real unhealthy-service rollback through Core, Agent and Engine
+        run: scripts/test/s11-compose-editor-dind.sh '${{ matrix.engine }}' health-rollback
+
+      - name: Record exact S11-06 per-engine marker; keep the stage NOT_READY
+        run: >-
+          python3 scripts/test/s11-health-rollback-report.py
+          --engine '${{ matrix.engine }}'
+          --log '.artifacts/s11/engine-${{ matrix.engine }}-health-rollback.log'
+          --run-id '${{ github.run_id }}'
+          --run-attempt '${{ github.run_attempt }}'
+          --commit '${{ github.sha }}'
+          --run-url '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          --artifact 'nodedance-s11-engine${{ matrix.engine }}-${{ github.run_id }}-${{ github.run_attempt }}/engine-${{ matrix.engine }}-health-rollback.log'
+
       - name: Run S11-07 rollback after a mutable image tag moves
         run: scripts/test/s11-compose-editor-dind.sh '${{ matrix.engine }}' rollback-tag-drift
 
@@ -124,4 +138,6 @@ jobs:
           name: nodedance-s11-engine${{ matrix.engine }}-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: warn
           include-hidden-files: true
-          path: .artifacts/s11/
+          path: |
+            reports/stages/S11.json
+            .artifacts/s11/

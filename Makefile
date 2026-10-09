@@ -133,6 +133,7 @@ test-s11-ui: deps
 test-candidate-s11: frontend playwright-install-candidate test-s11-go test-s11-ui
 
 test-s11-go: verify-tools
+	python3 scripts/test/s11-health-rollback-report-selftest.py
 	go test -count=1 -timeout=180s ./internal/agent/composeedit ./internal/agent/compose ./internal/protocol ./internal/core/compose ./internal/core/composeedit ./internal/core/storage ./internal/core/server
 	go vet ./internal/agent/composeedit ./internal/agent/compose ./internal/protocol ./internal/core/compose ./internal/core/composeedit ./internal/core/storage ./internal/core/server
 
