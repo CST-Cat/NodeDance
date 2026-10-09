@@ -143,6 +143,32 @@ def test_outer_timeout_kills_and_joins_child_process_group():
     require(elapsed < 8, f"outer process timeout exceeded bounded termination grace: {elapsed:.2f}s")
 
 
+def test_multichunk_snapshot_asserts_exact_baseline_and_owned_ids():
+    source = (ROOT / "internal/core/server/docker_agent_integration_test.go").read_text()
+    start = source.index("func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(")
+    end = source.find("\nfunc ", start + 1)
+    test_source = source[start:end if end >= 0 else None]
+    for marker in (
+        "NODEDANCE_S04_FIXTURE_RUN_ID",
+        '"label=io.nodedance.suite="+fixtureRunID',
+        "sameS04StringSet(engineBaselineIDs, baselineIDs)",
+        "expectedInventoryIDs := append(append([]string(nil), baselineIDs...), containerIDs...)",
+        "sameS04StringSet(engineFixtureIDs, expectedInventoryIDs)",
+        "sameS04StringSet(inventoryContainerIDs(inventory), expectedInventoryIDs)",
+        "sameS04StringSet(s04DockerViewContainerIDs(initialPush), expectedInventoryIDs)",
+        "s04StoredContainerIDs(t, core, config.NodeID)",
+        "if got := dockerViewContainerIDs(recoveredView); !sameS04StringSet(got, expectedInventoryIDs)",
+    ):
+        require(marker in test_source, f"multi-chunk acceptance lacks exact baseline/owned ID assertion: {marker}")
+    for stale_assertion in (
+        "len(inventory.Inventory.Containers) != 201",
+        "len(pushed.Containers) < 201",
+        "committedRows < 200",
+    ):
+        require(stale_assertion not in test_source,
+                f"multi-chunk acceptance still assumes only its own containers: {stale_assertion}")
+
+
 def main():
     test_named_test_process_status_is_fail_closed()
     test_original_case_mapping_and_redaction()
@@ -151,7 +177,8 @@ def main():
     test_cleanup_and_engine_failure_cannot_leave_a_case_passing()
     test_unreaped_process_group_blocks_fixture_deletion()
     test_outer_timeout_kills_and_joins_child_process_group()
-    print("S04 acceptance safeguards PASS: required case branches mapped, named/parent/cleanup failures fail closed, bounded process groups, secrets redacted")
+    test_multichunk_snapshot_asserts_exact_baseline_and_owned_ids()
+    print("S04 acceptance safeguards PASS: required case branches mapped, exact multi-chunk inventory, named/parent/cleanup failures fail closed, bounded process groups, secrets redacted")
 
 
 if __name__ == "__main__":
