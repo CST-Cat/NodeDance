@@ -10,6 +10,7 @@ import MetricsPanel from './MetricsPanel.vue'
 import PreferenceEditor from './PreferenceEditor.vue'
 import TerminalConsole from './TerminalConsole.vue'
 import NodeFiles from './NodeFiles.vue'
+import NodeServiceProbes from './NodeServiceProbes.vue'
 
 interface NodeClock {
   status: string
@@ -998,6 +999,7 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
+
         <ImagesPanel v-if="selectedNode && activeSection === 'images'" :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" />
 
         <section v-if="selectedNode && activeSection === 'files'" class="section-panel" aria-label="节点文件管理">
@@ -1048,6 +1050,8 @@ onBeforeUnmount(() => {
           </div>
           <p class="preference-separation-note">别名、图标、备注和顺序仅保存在 NodeDance SQLite 中。容器运行状态、健康状态和端口始终读取 Docker Engine。</p>
         </section>
+        <NodeServiceProbes v-if="selectedNode" :key="selectedNode.nodeId" :node-id="selectedNode.nodeId"
+          :node-name="selectedNode.displayName" :node-online="nodeIsOnline(selectedNode)" />
       </main>
     </div>
     <TerminalConsole v-if="activeTerminal" v-bind="activeTerminal" @close="activeTerminal = null" />

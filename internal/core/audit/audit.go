@@ -47,6 +47,7 @@ var actions = map[string]struct{}{
 	"agent_rotation_prepare": {}, "agent_rotation_commit": {},
 	"compose_operation": {}, "terminal_start": {}, "terminal_end": {},
 	"file_mkdir": {}, "file_rename": {}, "file_delete": {}, "file_save_text": {}, "file_upload": {},
+	"probe_create": {}, "probe_update": {}, "probe_enable": {}, "probe_disable": {}, "probe_delete": {},
 }
 
 var outcomes = map[string]struct{}{

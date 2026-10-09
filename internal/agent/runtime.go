@@ -20,6 +20,7 @@ import (
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	agentfiles "github.com/CST-Cat/NodeDance/internal/agent/files"
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
+	agentprobes "github.com/CST-Cat/NodeDance/internal/agent/probes"
 	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
@@ -215,7 +216,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
-		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityDocker, protocol.CapabilityTerminal},
+		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityDocker, protocol.CapabilityTerminal, protocol.CapabilityProbes},
 		Permissions:  permissions,
 	}
 	if taskBridge != nil {
@@ -303,12 +304,13 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		containsCapability(welcome.Capabilities, protocol.CapabilityImages), streamBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams), composeBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityCompose),
-		containsCapability(welcome.Capabilities, protocol.CapabilityTerminal), config.Shell, fileService)
+		containsCapability(welcome.Capabilities, protocol.CapabilityTerminal), config.Shell, config.NodeID,
+		containsCapability(welcome.Capabilities, protocol.CapabilityProbes), fileService)
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell string, fileServices ...*agentfiles.Service) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell, nodeID string, probesEnabled bool, fileServices ...*agentfiles.Service) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -490,6 +492,32 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			}
 		}()
 	}
+	var probeMessages chan protocol.Envelope
+	var probeBridgeDone <-chan error
+	if probesEnabled {
+		probeMessages = make(chan protocol.Envelope, 64)
+		probeCtx, cancelProbe := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		finished := make(chan struct{})
+		probeBridgeDone = done
+		bridge := agentprobes.NewBridge(agentprobes.NewExecutor())
+		go func() {
+			defer close(finished)
+			done <- bridge.Run(probeCtx, writer, generation, nodeID, probeMessages)
+		}()
+		defer func() {
+			cancelProbe()
+			timer := time.NewTimer(6 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-finished:
+			case <-timer.C:
+				if returnErr == nil {
+					returnErr = errors.New("Agent service probe bridge did not stop")
+				}
+			}
+		}()
+	}
 	var dockerDone <-chan error
 	if dockerEnabled {
 		var engine agentdocker.Engine
@@ -597,6 +625,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				return fmt.Errorf("Agent file bridge stopped unexpectedly: %w", err)
 			}
 			fileBridgeDone = nil
+		case err := <-probeBridgeDone:
+			if err != nil {
+				return fmt.Errorf("Agent service probe bridge stopped unexpectedly: %w", err)
+			}
+			probeBridgeDone = nil
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -712,6 +745,15 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				case fileMessages <- envelope:
 				default:
 					return errors.New("Agent file control queue is full")
+				}
+			case protocol.TypeProbeDispatch:
+				if probeMessages == nil || envelope.Sequence != 0 {
+					return errors.New("Core sent service probe work without a negotiated probe capability")
+				}
+				select {
+				case probeMessages <- envelope:
+				default:
+					return errors.New("Core service probe queue exceeded its bound")
 				}
 			case protocol.TypeProtocolError:
 				return errors.New("Core rejected Agent protocol message")

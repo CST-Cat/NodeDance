@@ -19,11 +19,12 @@ import (
 	corecompose "github.com/CST-Cat/NodeDance/internal/core/compose"
 	corecomposeedit "github.com/CST-Cat/NodeDance/internal/core/composeedit"
 	"github.com/CST-Cat/NodeDance/internal/core/config"
-	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	coreprefs "github.com/CST-Cat/NodeDance/internal/core/containerprefs"
+	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	corehistory "github.com/CST-Cat/NodeDance/internal/core/history"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
+	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/core/webassets"
@@ -75,6 +76,7 @@ type Server struct {
 	composeEditorOps           *corecomposeedit.Store
 	imageAuthMu                sync.Mutex
 	imageAuth                  map[string]pendingImageCredential
+	probes                     *coreprobes.Store
 	dockerMu                   sync.Mutex
 	docker                     *coredocker.Store
 	agentOfflineTimeout        time.Duration
@@ -230,6 +232,7 @@ func New(version string, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("initialize durable Core task store: %w", err)
 	}
+	s.probes = coreprobes.New(store.DB, options.Now)
 	s.csrfKey, err = loadOrCreateSigningKey(store.Dir)
 	if err != nil {
 		_ = store.Close()
@@ -247,6 +250,14 @@ func New(version string, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := s.probes.MarkAllNodesUnknown(context.Background(), options.Now()); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("mark service probes unknown during startup: %w", err)
+	}
+	if err := s.probes.RecoverPending(context.Background(), options.Now()); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("recover pending service probes: %w", err)
+	}
 	savedDocker, err := loadDockerNodes(context.Background(), store.DB)
 	if err != nil {
 		_ = store.Close()
@@ -263,6 +274,7 @@ func New(version string, options Options) (*Server, error) {
 	go s.agentOfflineSweeper()
 	s.agentWait.Add(1)
 	go s.metricHistoryRetentionWorker()
+	go s.serviceProbeScheduler()
 	return s, nil
 }
 
@@ -454,6 +466,90 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.assets.ServeHTTP(w, r)
+}
+
+func (s *Server) serviceProbeScheduler() {
+	defer s.agentWait.Done()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		if err := s.dispatchDueServiceProbes(s.agentContext); err != nil && s.agentContext.Err() != nil {
+			return
+		}
+		select {
+		case <-s.agentContext.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *Server) dispatchDueServiceProbes(ctx context.Context) error {
+	now := s.now().UTC()
+	if err := s.probes.ExpirePending(ctx, now); err != nil {
+		return err
+	}
+	due, err := s.probes.Due(ctx, now, 64)
+	if err != nil {
+		return err
+	}
+	for _, candidate := range due {
+		connection := s.agentConnectionForNode(candidate.NodeID)
+		if connection == nil {
+			// Do not claim an executable run for an offline Agent. Persist the
+			// state transition once and defer the next check by the probe interval.
+			if err := s.probes.MarkNodeUnknown(ctx, candidate.NodeID, now); err != nil {
+				return err
+			}
+			continue
+		}
+		generation := connection.generation
+		config, run, claimed, err := s.probes.Claim(ctx, candidate.ID, generation, now)
+		if err != nil {
+			return err
+		}
+		if !claimed {
+			continue
+		}
+		unknown := func(code string) error {
+			return s.probes.Complete(ctx, protocol.ProbeReport{ProbeID: run.ProbeID, RunID: run.RunID,
+				NodeID: run.NodeID, Status: protocol.ProbeResultUnknown, ErrorCode: code}, generation, s.now())
+		}
+		if !connection.probeEnabled {
+			if err := unknown("capability_unavailable"); err != nil && !errors.Is(err, coreprobes.ErrRunState) {
+				return err
+			}
+			continue
+		}
+		dispatch := protocol.ProbeDispatch{ProbeID: config.ID, RunID: run.RunID, NodeID: config.NodeID,
+			Kind: config.Kind, Target: config.Target, ExpectedHTTPStatus: config.ExpectedHTTPStatus,
+			IntervalSeconds: config.IntervalSeconds, TimeoutSeconds: config.TimeoutSeconds}
+		payload, err := json.Marshal(dispatch)
+		if err != nil {
+			return err
+		}
+		command := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeProbeDispatch,
+			Generation: generation, RequestID: run.RunID, Payload: payload}
+		select {
+		case connection.commands <- command:
+		default:
+			if err := unknown("dispatch_unavailable"); err != nil && !errors.Is(err, coreprobes.ErrRunState) {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Server) agentConnectionForNode(nodeID string) *agentConnection {
+	s.agentConnectionsMu.Lock()
+	defer s.agentConnectionsMu.Unlock()
+	for _, connection := range s.agentConnections {
+		if connection.nodeID == nodeID {
+			return connection
+		}
+	}
+	return nil
 }
 
 func isMetricsTelemetryRead(r *http.Request) bool {

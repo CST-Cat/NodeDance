@@ -14,7 +14,8 @@
     "test:e2e": "playwright test",
     "test:s10": "playwright test --config playwright.s10.config.ts",
     "test:s11-ui": "playwright test -c playwright.s11.config.ts",
-    "test:s13": "playwright test --config=playwright.s13.config.ts"
+    "test:s13": "playwright test --config=playwright.s13.config.ts",
+    "test:s14": "playwright test --config=playwright.s14.config.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",

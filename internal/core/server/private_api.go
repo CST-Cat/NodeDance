@@ -54,6 +54,9 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 	if s.handleTailscaleAPI(w, r, current) {
 		return
 	}
+	if s.handleProbeAPI(w, r, current) {
+		return
+	}
 	switch r.URL.Path {
 	case "/api/v1/auth/me":
 		if r.Method != http.MethodGet {

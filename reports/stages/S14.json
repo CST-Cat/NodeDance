@@ -1,11 +1,35 @@
 {
   "schema": 1,
   "stage": "S14",
-  "mode": "initial",
+  "mode": "candidate",
   "status": "NOT_READY",
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "run_id": "s14-local-20261009T044600Z",
+  "updated_at": "2026-10-09T04:48:13+00:00",
+  "reason": "三次连续本地make test-s14候选检查均通过。真实远端Agent/DNS/TCP超时与证书环境、Agent lease离线/恢复、慢探测时心跳/RSS、完整独立节点交互记录未执行，因此不把阶段标记为PASS。",
+  "environment": {
+    "os_arch": "Linux arm64",
+    "go": "go1.26.8",
+    "node": "v22.23.3 (locked project toolchain)",
+    "pnpm": "12.10.1",
+    "browser": "Playwright Chromium (locked Playwright 1.63.0)",
+    "docker_engine_used": false,
+    "scope": "local HTTP/TLS/TCP fixtures, in-process Core and real enrolled Agent process, Core SQLite, responsive browser UI"
+  },
+  "candidate_suite": {
+    "command": "make test-s14",
+    "consecutive_attempts": 3,
+    "attempt_statuses": [
+      "PASS",
+      "PASS",
+      "PASS"
+    ],
+    "checks_per_attempt": [
+      "go test -race -count=1 ./internal/protocol ./internal/agent/probes ./internal/core/probes ./internal/core/server (S14-focused tests)",
+      "go test -count=1 ./internal/protocol ./internal/agent/probes ./internal/core/probes ./internal/core/server (S14-focused tests)",
+      "pnpm --dir web run test:s14 (Chromium at 375, 768, and 1440 CSS pixel viewports)"
+    ],
+    "log_artifacts": "Not persisted for local attempts. The GitHub Actions workflow uploads one complete log per attempt."
+  },
   "tests": {
     "S14-01": {
       "status": "NOT_READY",
@@ -13,8 +37,37 @@
       "expected": "成功及失败正确。",
       "environment": "受控HTTP服务和Agent节点发起探测。",
       "evidence_required": "来源节点、HTTP状态和结果时间。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestExecutorHTTPStatusHTTPSVerificationAndTCP; TestRealAgentServiceProbeExecutesFromEnrolledNode",
+      "runs": [
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 1
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 2
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 3
+        }
+      ],
+      "reason": "本地受控HTTP与进程内真实Agent/Core loopback检查通过；独立被控节点及其外部受控HTTP目标记录仍缺失。"
     },
     "S14-02": {
       "status": "NOT_READY",
@@ -22,8 +75,37 @@
       "expected": "结果及原因正确。",
       "environment": "可控TCP监听/拒绝/延迟端点。",
       "evidence_required": "端口状态、耗时及超时原因。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestExecutorHTTPStatusHTTPSVerificationAndTCP; TestTCPDialTimeoutIsReportedAsUnknownFailureCode (timeout uses a controlled dialer)",
+      "runs": [
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 1
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 2
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 3
+        }
+      ],
+      "reason": "本地监听/关闭端口检查通过，但超时由可控dialer模拟；真实被控节点对延迟TCP目标的完整端到端结果未执行。"
     },
     "S14-03": {
       "status": "NOT_READY",
@@ -31,8 +113,37 @@
       "expected": "验证生效，不默认跳过。",
       "environment": "可信CA和自签证书HTTPS服务。",
       "evidence_required": "握手结果及证书校验日志。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestExecutorHTTPStatusHTTPSVerificationAndTCP (local trusted-root and self-signed TLS fixtures)",
+      "runs": [
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 1
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 2
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 3
+        }
+      ],
+      "reason": "本地TLS fixture验证显式信任根和自签证书拒绝；独立Agent节点及实际CA/证书部署环境未执行。"
     },
     "S14-04": {
       "status": "NOT_READY",
@@ -40,8 +151,37 @@
       "expected": "阈值符合配置。",
       "environment": "可控服务状态序列和配置阈值。",
       "evidence_required": "逐次结果与异常/恢复时刻。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestProbeConfigRunHistoryThresholdsAndRevision (three failed results and two successful results)",
+      "runs": [
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 1
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 2
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 3
+        }
+      ],
+      "reason": "Core状态阈值单测通过；由受控服务驱动的完整Agent/Core连续状态及恢复序列未执行。"
     },
     "S14-05": {
       "status": "NOT_READY",
@@ -49,8 +189,37 @@
       "expected": "未知，不伪造服务停止。",
       "environment": "Agent断网期间配置的探测目标。",
       "evidence_required": "unknown状态、过期时间和无误触发。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestOfflineNodeMakesProbeUnknownWithoutCountingFailure; TestOfflineProbeSchedulerDefersWithoutPendingRunsOrDuplicateHistory",
+      "runs": [
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 1
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 2
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 3
+        }
+      ],
+      "reason": "Core存储及调度测试验证unknown、node_offline历史、计数清零、重复离线不重复历史且无pending run；真实Agent websocket断线、lease过期和恢复未执行。"
     },
     "S14-06": {
       "status": "NOT_READY",
@@ -58,8 +227,37 @@
       "expected": "有并发限制，心跳正常。",
       "environment": "延迟端点压力集合及真实Agent。",
       "evidence_required": "并发上限、心跳及内存。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestBridgeLimitsConcurrentRequestsAndReportsCapacityAsUnknown",
+      "runs": [
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 1
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 2
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 3
+        }
+      ],
+      "reason": "Agent bridge本地测试验证四个并发槽位及capacity结果；真实运行Agent心跳、RSS与多慢服务压测未执行。"
     },
     "S14-07": {
       "status": "NOT_READY",
@@ -67,8 +265,56 @@
       "expected": "调度及历史行为正确。",
       "environment": "已运行探测配置和数据库历史。",
       "evidence_required": "调度调用、配置版本和历史记录。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestProbeConfigRunHistoryThresholdsAndRevision; TestProbeDisableDeleteAndPendingRecovery; TestProbeAPIIsSessionCSRFProtectedAndAudited",
+      "runs": [
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 1
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 2
+        },
+        {
+          "run_id": "s14-local-20261009T044600Z",
+          "status": "PASS",
+          "command": "make test-s14",
+          "result": "Race Go tests, ordinary Go tests, and Chromium responsive UI test all exited successfully.",
+          "persisted_console_log": false,
+          "note": "Local tool output was observed during execution but not saved as a log artifact; the GitHub Actions workflow stores each of its three complete run logs.",
+          "attempt": 3
+        }
+      ],
+      "reason": "Core存储/API覆盖revision、停用、软删除、历史、CSRF和审计；独立节点完整用户操作与重连回归未执行。"
     }
+  },
+  "additional_checks": [
+    {
+      "status": "PASS",
+      "command": "make frontend",
+      "result": "Vue typecheck and Vite production build passed with locked Node/pnpm tools."
+    },
+    {
+      "status": "PASS",
+      "command": "go vet ./internal/protocol ./internal/agent/probes ./internal/core/probes ./internal/core/server",
+      "result": "No vet diagnostics."
+    }
+  ],
+  "historical_acceptance_policy_note": "The preserved local candidate evidence records three complete runs under the former acceptance policy. The current policy requires one complete run; the active S14 workflow now runs the candidate suite once. Historical attempt records remain unchanged and are not treated as a current formal PASS.",
+  "integration_migration": {
+    "candidate_branch_version": 5,
+    "integration_version": 8,
+    "status": "NOT_READY",
+    "note": "This integration keeps versions 1–5 unchanged, registers S06 dashboard at v5, Compose at v6, Compose Editor at v7, and appends S14 service-probe tables at v8. The isolated candidate migration number is not applied directly."
   }
 }
