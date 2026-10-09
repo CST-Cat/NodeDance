@@ -85,9 +85,12 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 		t.Fatal("nobody service account has an invalid primary GID")
 	}
 
-	work, err := os.MkdirTemp("/var/tmp", "nodedance-s02-systemd-agent-")
+	// Keep the fixture outside /tmp and /var/tmp: the production unit uses
+	// PrivateTmp=true, and placing ReadWritePaths beneath a private tmp mount
+	// makes systemd fail namespace setup before the Agent can start.
+	work, err := os.MkdirTemp("/var/lib", "nodedance-s02-systemd-agent-")
 	if err != nil {
-		t.Fatalf("create private systemd fixture under /var/tmp: %v", err)
+		t.Fatalf("create private systemd fixture under /var/lib: %v", err)
 	}
 	if err := os.Chmod(work, 0o711); err != nil {
 		_ = os.RemoveAll(work)
@@ -100,7 +103,7 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 		}
 	})
 	if info, err := os.Lstat(work); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		t.Fatalf("private /var/tmp fixture is not a real directory: %v", err)
+		t.Fatalf("private /var/lib fixture is not a real directory: %v", err)
 	}
 	binaryPath, err := stageSystemdTestAgentBinary(compiledBinaryPath, work)
 	if err != nil {
