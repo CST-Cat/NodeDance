@@ -388,6 +388,10 @@ def test_s04_workflow_matrix_and_artifact_allowlist():
     positions = [s04_job.index(value) for value in (
         "rm -f reports/stages/S04.json && python3 scripts/ci_evidence.py --stage S04 initialize",
         "run: make verify-tools",
+        "Prepare isolated S04 DIND sibling fixture worktree",
+        'git worktree add --detach "$fixture_root" "$GITHUB_SHA"',
+        '[[ "$actual_root" == "$expected_root" && "$actual_sha" == "$GITHUB_SHA" ]]',
+        'printf \'NODEDANCE_S04_DIND_ROOT=%s\\n\' "$fixture_root" >> "$GITHUB_ENV"',
         "run: make verify-ci-evidence",
         "run: make deps",
         "make playwright-install PLAYWRIGHT_BROWSERS=chromium",
@@ -396,6 +400,16 @@ def test_s04_workflow_matrix_and_artifact_allowlist():
         "uses: actions/upload-artifact@",
     )]
     require(positions == sorted(positions), "S04 CI workflow is missing isolated evidence, locked tools, real browser install, full acceptance, or final report step")
+    require('fixture_root="$(dirname "$GITHUB_WORKSPACE")/NodeDance-s04"' in s04_job
+            and 'expected_root="$(realpath -m "$GITHUB_WORKSPACE/../NodeDance-s04")"' in s04_job
+            and '[[ "$fixture_root" == "$expected_root" ]]' in s04_job,
+            "S04 DIND worktree is not constrained to the exact sibling fixture path")
+    require('actual_sha="$(git -C "$fixture_root" rev-parse HEAD)"' in s04_job
+            and '[[ "$actual_root" == "$expected_root" && "$actual_sha" == "$GITHUB_SHA" ]]' in s04_job,
+            "S04 DIND worktree is not verified against the current checkout SHA")
+    require('compose_bin="$GITHUB_WORKSPACE/.tools/docker/cli-plugins/docker-compose"' in s04_job
+            and 'expected_compose="$(cat "$GITHUB_WORKSPACE/docker-compose.version")"' in s04_job,
+            "S04 fixtures do not explicitly verify the locked Compose tool from the main checkout")
     require("ubuntu-24.04" in s04_job and "ubuntu-24.04-arm" in s04_job
             and "engine: '28'" in s04_job and "engine: '29'" in s04_job,
             "S04 CI must cover GitHub-hosted amd64/arm64 and Docker Engine 28/29")
