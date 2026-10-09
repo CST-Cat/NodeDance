@@ -22,9 +22,9 @@ help:
 	  '  make verify-ci-evidence' \
 	  '  make check' \
 	  '  make build' \
-	  '  make test-stage STAGE=S00|S01|S02' \
-	  '  make test-integration STAGE=S00|S01|S02' \
-	  '  make test-e2e STAGE=S00|S01|S02' \
+	  '  make test-stage STAGE=S00|S01|S02|S03|S04|S05' \
+	  '  make test-integration STAGE=S00|S01|S02|S03|S04|S05' \
+	  '  make test-e2e STAGE=S00|S01|S02|S03|S04|S05' \
 	  '  make test-acceptance' \
 	  '  make fixtures-start ENGINE=29' \
 	  '  make fixtures-create|fixtures-fault|fixtures-clean ENGINE=29 RUN_ID=<id>'
@@ -51,8 +51,12 @@ verify-tools: bootstrap
 verify-ci-evidence:
 	python3 scripts/test/ci-evidence-selftest.py
 	python3 scripts/test/acceptance-s02-selftest.py
+	python3 scripts/test/acceptance-s03-selftest.py
+	python3 scripts/test/aggregate-s03-ci-selftest.py
 	python3 -m unittest -v scripts.test.test_s03_guest_resources
 	bash scripts/test/test_s03_core_process_guard.sh
+	python3 scripts/test/acceptance-s04-selftest.py
+	python3 scripts/test/s05-acceptance-selftest.py
 	bash scripts/test/check-tools-host-shell.sh
 
 check: frontend verify-tools verify-ci-evidence
@@ -71,15 +75,15 @@ build: frontend
 	@echo 'Build PASS: host, linux/amd64 and linux/arm64 Core and Agent binaries'
 
 test-stage: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-stage STAGE=S00, STAGE=S01 or STAGE=S02' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-stage STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04 or STAGE=S05' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode full
 
 test-integration: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-integration STAGE=S00, STAGE=S01 or STAGE=S02' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-integration STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04 or STAGE=S05' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode integration
 
 test-e2e: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-e2e STAGE=S00, STAGE=S01 or STAGE=S02' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-e2e STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04 or STAGE=S05' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode e2e
 
 test-acceptance: bootstrap

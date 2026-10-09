@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -13,14 +14,21 @@ const (
 	controlWriteTimeout = 5 * time.Second
 	metricWriteTimeout  = time.Second
 	dockerWriteTimeout  = 2 * time.Second
-	maxDockerWriteBurst  = 8
+	streamWriteTimeout  = time.Second
+	maxDockerWriteBurst = 8
+	maxStreamWriteBurst = 4
 )
 
-var errDockerWriterQueueFull = errors.New("Agent Docker frame queue is full")
+var (
+	errDockerWriterQueueFull   = errors.New("Agent Docker frame queue is full")
+	errStreamWriterQueueFull   = errors.New("Agent container stream queue is full")
+	errStreamWriterUnavailable = errors.New("Agent container stream writer is unavailable")
+)
 
 type envelopeWrite struct {
 	envelope protocol.Envelope
 	result   chan error
+	stream   bool
 }
 
 // socketEnvelopeWriter serializes all post-handshake writes. Control messages
@@ -28,14 +36,20 @@ type envelopeWrite struct {
 // A metrics write has a short deadline so a slow peer cannot hold heartbeat
 // traffic behind an obsolete telemetry frame.
 type socketEnvelopeWriter struct {
-	conn     *websocket.Conn
-	ctx      context.Context
-	cancel   context.CancelFunc
-	high     chan envelopeWrite
-	docker   chan protocol.Envelope
-	metrics  chan protocol.Envelope
-	failures chan error
-	done     chan struct{}
+	conn                  *websocket.Conn
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	high                  chan envelopeWrite
+	docker                chan protocol.Envelope
+	streams               chan protocol.Envelope
+	metrics               chan protocol.Envelope
+	streamFailures        chan struct{}
+	streamFailureMu       sync.Mutex
+	failedStreams         map[string]error
+	pendingStreamFailures map[string]error
+	failedStreamOrder     []string
+	failures              chan error
+	done                  chan struct{}
 }
 
 func newSocketEnvelopeWriter(ctx context.Context, conn *websocket.Conn) *socketEnvelopeWriter {
@@ -43,11 +57,94 @@ func newSocketEnvelopeWriter(ctx context.Context, conn *websocket.Conn) *socketE
 	w := &socketEnvelopeWriter{
 		conn: conn, ctx: writerCtx, cancel: cancel,
 		high: make(chan envelopeWrite, 8), metrics: make(chan protocol.Envelope, 1),
-		docker:   make(chan protocol.Envelope, 16),
-		failures: make(chan error, 1), done: make(chan struct{}),
+		docker: make(chan protocol.Envelope, 16), streams: make(chan protocol.Envelope, 32),
+		streamFailures: make(chan struct{}, 1), failedStreams: make(map[string]error),
+		pendingStreamFailures: make(map[string]error),
+		failures:              make(chan error, 1), done: make(chan struct{}),
 	}
 	go w.run()
 	return w
+}
+
+// offerStream keeps log and on-demand stats data in a separate low-priority,
+// strictly bounded queue. A slow peer fails only the requested stream.
+func (w *socketEnvelopeWriter) offerStream(ctx context.Context, envelope protocol.Envelope) error {
+	if w == nil || w.streams == nil {
+		return errStreamWriterUnavailable
+	}
+	w.streamFailureMu.Lock()
+	_, failed := w.failedStreams[envelope.RequestID]
+	w.streamFailureMu.Unlock()
+	if failed {
+		return errStreamWriterUnavailable
+	}
+	select {
+	case w.streams <- envelope:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.ctx.Done():
+		return errStreamWriterUnavailable
+	default:
+		return errStreamWriterQueueFull
+	}
+}
+
+func (w *socketEnvelopeWriter) sendStreamTerminal(ctx context.Context, envelope protocol.Envelope) error {
+	request := envelopeWrite{envelope: envelope, result: make(chan error, 1), stream: true}
+	select {
+	case w.high <- request:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.ctx.Done():
+		return errStreamWriterUnavailable
+	}
+	select {
+	case err := <-request.result:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.ctx.Done():
+		return errStreamWriterUnavailable
+	}
+}
+
+func (w *socketEnvelopeWriter) takeStreamFailures() map[string]error {
+	w.streamFailureMu.Lock()
+	defer w.streamFailureMu.Unlock()
+	failed := w.pendingStreamFailures
+	w.pendingStreamFailures = make(map[string]error)
+	return failed
+}
+
+func (w *socketEnvelopeWriter) clearStreamFailure(requestID string) {
+	w.streamFailureMu.Lock()
+	delete(w.failedStreams, requestID)
+	w.streamFailureMu.Unlock()
+}
+
+func (w *socketEnvelopeWriter) markStreamFailure(requestID string, err error) {
+	if requestID == "" {
+		return
+	}
+	w.streamFailureMu.Lock()
+	if _, exists := w.failedStreams[requestID]; exists {
+		w.streamFailureMu.Unlock()
+		return
+	}
+	w.failedStreams[requestID] = err
+	w.pendingStreamFailures[requestID] = err
+	w.failedStreamOrder = append(w.failedStreamOrder, requestID)
+	if len(w.failedStreamOrder) > 128 {
+		oldest := w.failedStreamOrder[0]
+		w.failedStreamOrder = w.failedStreamOrder[1:]
+		delete(w.failedStreams, oldest)
+	}
+	w.streamFailureMu.Unlock()
+	select {
+	case w.streamFailures <- struct{}{}:
+	default:
+	}
 }
 
 // offerDocker preserves FIFO ordering and never overwrites a snapshot chunk.
@@ -121,6 +218,7 @@ func (w *socketEnvelopeWriter) offerMetrics(envelope protocol.Envelope) {
 func (w *socketEnvelopeWriter) run() {
 	defer close(w.done)
 	dockerBurst := 0
+	streamBurst := 0
 	for {
 		select {
 		case <-w.ctx.Done():
@@ -131,7 +229,7 @@ func (w *socketEnvelopeWriter) run() {
 		// selecting a queued metrics frame while a heartbeat is already ready.
 		select {
 		case request := <-w.high:
-			w.write(request.envelope, request.result, controlWriteTimeout)
+			w.write(request.envelope, request.result, controlWriteTimeout, request.stream)
 			continue
 		default:
 		}
@@ -140,16 +238,36 @@ func (w *socketEnvelopeWriter) run() {
 		if dockerBurst >= maxDockerWriteBurst {
 			select {
 			case envelope := <-w.metrics:
-				w.write(envelope, nil, metricWriteTimeout)
+				w.write(envelope, nil, metricWriteTimeout, false)
 				dockerBurst = 0
 				continue
 			default:
 			}
 		}
+		if streamBurst >= maxStreamWriteBurst {
+			select {
+			case envelope := <-w.metrics:
+				w.write(envelope, nil, metricWriteTimeout, false)
+				streamBurst = 0
+				dockerBurst = 0
+				continue
+			default:
+			}
+			select {
+			case envelope := <-w.docker:
+				w.write(envelope, nil, dockerWriteTimeout, false)
+				dockerBurst++
+				streamBurst = 0
+				continue
+			default:
+			}
+			streamBurst = 0
+		}
 		select {
 		case envelope := <-w.docker:
-			w.write(envelope, nil, dockerWriteTimeout)
+			w.write(envelope, nil, dockerWriteTimeout, false)
 			dockerBurst++
+			streamBurst = 0
 			continue
 		default:
 		}
@@ -157,26 +275,49 @@ func (w *socketEnvelopeWriter) run() {
 		case <-w.ctx.Done():
 			return
 		case request := <-w.high:
-			w.write(request.envelope, request.result, controlWriteTimeout)
+			w.write(request.envelope, request.result, controlWriteTimeout, request.stream)
 		case envelope := <-w.docker:
-			w.write(envelope, nil, dockerWriteTimeout)
+			w.write(envelope, nil, dockerWriteTimeout, false)
 			dockerBurst++
+			streamBurst = 0
+		case envelope := <-w.streams:
+			w.writeStream(envelope)
+			streamBurst++
 		case envelope := <-w.metrics:
-			w.write(envelope, nil, metricWriteTimeout)
+			w.write(envelope, nil, metricWriteTimeout, false)
 			dockerBurst = 0
+			streamBurst = 0
 		}
 	}
 }
 
-func (w *socketEnvelopeWriter) write(envelope protocol.Envelope, result chan error, timeout time.Duration) {
+func (w *socketEnvelopeWriter) writeStream(envelope protocol.Envelope) {
+	w.streamFailureMu.Lock()
+	_, alreadyFailed := w.failedStreams[envelope.RequestID]
+	w.streamFailureMu.Unlock()
+	if alreadyFailed {
+		return
+	}
+	err := writeSocketEnvelopeWithTimeout(w.ctx, w.conn, envelope, streamWriteTimeout)
+	if err == nil {
+		return
+	}
+	w.markStreamFailure(envelope.RequestID, err)
+}
+
+func (w *socketEnvelopeWriter) write(envelope protocol.Envelope, result chan error, timeout time.Duration, stream bool) {
 	err := writeSocketEnvelopeWithTimeout(w.ctx, w.conn, envelope, timeout)
 	if result != nil {
 		result <- err
 	}
 	if err != nil {
-		select {
-		case w.failures <- err:
-		default:
+		if stream {
+			w.markStreamFailure(envelope.RequestID, err)
+		} else {
+			select {
+			case w.failures <- err:
+			default:
+			}
 		}
 	}
 }

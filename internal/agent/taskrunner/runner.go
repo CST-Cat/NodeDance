@@ -90,6 +90,7 @@ type Runner struct {
 	activeTasks       map[string]struct{}
 	work              chan taskJob
 	reportHints       chan string
+	reportWake        chan struct{}
 	queuedReports     map[string]struct{}
 	pendingReports    map[string]uint64
 	snapshotDirty     bool
@@ -136,6 +137,7 @@ func New(nodeID string, journal Journal, executor Executor, options Options) (*R
 		activeTasks:   make(map[string]struct{}),
 		work:          make(chan taskJob, options.Workers+options.QueueCapacity),
 		reportHints:   make(chan string, options.ReportQueueCapacity),
+		reportWake:    make(chan struct{}, 1),
 		queuedReports: make(map[string]struct{}), pendingReports: make(map[string]uint64),
 		snapshotDirty: true, snapshotRevisions: make(map[string]snapshotRevision),
 		reportRevision: 1, joinDone: make(chan struct{}),
@@ -258,6 +260,17 @@ func (r *Runner) AvailableCapacity() int {
 	}
 	return capacity
 }
+
+func (r *Runner) CapacityLimit() int {
+	return r.options.Workers + r.options.QueueCapacity
+}
+
+// ReportsChanged is a coalesced, nonblocking wake signal for the currently
+// attached transport. The SQLite journal remains the source of truth; callers
+// must DrainReports after a wake and use a complete snapshot when requested.
+// The signal is process-lifetime state and is intentionally not tied to one
+// WebSocket generation.
+func (r *Runner) ReportsChanged() <-chan struct{} { return r.reportWake }
 
 // AcceptDispatch durably writes task identity and receipt before it returns an
 // acknowledgement. Queue admission is reserved first, so full capacity never
@@ -679,6 +692,10 @@ func (r *Runner) notify(taskID string) {
 	default:
 		r.snapshotDirty = true
 		delete(r.queuedReports, taskID)
+	}
+	select {
+	case r.reportWake <- struct{}{}:
+	default:
 	}
 	r.mu.Unlock()
 }

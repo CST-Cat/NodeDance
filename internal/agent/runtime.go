@@ -93,6 +93,18 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		cancelCollector()
 		<-collector.Done()
 	}()
+	taskBridge, bridgeErr := openTaskBridge(ctx, configPath, config.NodeID)
+	if bridgeErr != nil {
+		if stderr != nil {
+			fmt.Fprintln(stderr, "Agent task bridge unavailable; host monitoring remains active")
+		}
+	} else if taskBridge != nil {
+		defer func() {
+			if err := taskBridge.close(); err != nil && stderr != nil {
+				fmt.Fprintln(stderr, "Agent task bridge shutdown did not fully complete")
+			}
+		}()
+	}
 	var backoff reconnectBackoff
 	for {
 		if err := ctx.Err(); err != nil {
@@ -103,7 +115,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 			return fmt.Errorf("reload Agent credentials: %w", err)
 		}
 		established := false
-		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates, func() {
+		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates, taskBridge, func() {
 			established = true
 		})
 		if established {
@@ -133,7 +145,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	}
 }
 
-func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, onEstablished func()) error {
+func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, taskBridge *taskBridgeRuntime, onEstablished func()) error {
 	credential := config.Credential
 	pendingCredentialAlreadyActive := false
 	if config.PendingCredential != "" {
@@ -177,11 +189,21 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	connectionCtx, cancelConnection := context.WithCancel(ctx)
 	defer cancelConnection()
 	defer conn.CloseNow()
+	streamBridge, _ := newSDKContainerStreamBridge(os.Getenv("DOCKER_HOST"))
+	if streamBridge != nil {
+		defer streamBridge.Close()
+	}
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
 		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityDocker},
 		Permissions:  permissions,
+	}
+	if taskBridge != nil {
+		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityTaskBridge)
+	}
+	if streamBridge != nil {
+		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityContainerStreams)
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
 		return errors.New("send Agent hello failed")
@@ -237,13 +259,19 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	if !containsCapability(welcome.Capabilities, protocol.CapabilityMetrics) {
 		metricUpdates = nil
 	}
+	if !containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams) && streamBridge != nil {
+		_ = streamBridge.Close()
+		streamBridge = nil
+	}
 	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates,
-		containsCapability(welcome.Capabilities, protocol.CapabilityDocker))
+		containsCapability(welcome.Capabilities, protocol.CapabilityDocker), taskBridge,
+		containsCapability(welcome.Capabilities, protocol.CapabilityTaskBridge), streamBridge,
+		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams))
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -254,6 +282,56 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			returnErr = errors.New("Agent WebSocket writer did not stop")
 		}
 	}()
+	var taskMessages chan protocol.Envelope
+	var taskBridgeDone <-chan error
+	if taskBridge != nil && taskBridgeEnabled {
+		taskMessages = make(chan protocol.Envelope, 64)
+		taskCtx, cancelTask := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		finished := make(chan struct{})
+		taskBridgeDone = done
+		go func() {
+			defer close(finished)
+			done <- runTaskBridgeSession(taskCtx, writer, taskBridge.runner, generation, taskBridge.nodeID, taskBridge.journal.JournalID(), taskMessages)
+		}()
+		defer func() {
+			cancelTask()
+			timer := time.NewTimer(6 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-finished:
+			case <-timer.C:
+				if returnErr == nil {
+					returnErr = errors.New("Agent task bridge did not stop")
+				}
+			}
+		}()
+	}
+	var streamMessages chan protocol.Envelope
+	var streamBridgeDone <-chan error
+	if streamBridge != nil && streamBridgeEnabled {
+		streamMessages = make(chan protocol.Envelope, 16)
+		streamCtx, cancelStream := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		finished := make(chan struct{})
+		streamBridgeDone = done
+		go func() {
+			defer close(finished)
+			done <- streamBridge.run(streamCtx, writer, streamMessages, generation)
+		}()
+		defer func() {
+			cancelStream()
+			timer := time.NewTimer(6 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-finished:
+			case <-timer.C:
+				if returnErr == nil {
+					returnErr = errors.New("Agent container stream bridge did not stop")
+				}
+			}
+		}()
+	}
 	var dockerDone <-chan error
 	if dockerEnabled {
 		var engine agentdocker.Engine
@@ -322,11 +400,30 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			if err != nil {
 				return errors.New("Agent WebSocket writer failed")
 			}
+		case <-writer.streamFailures:
+			if streamBridge != nil {
+				// A single bounded notification may represent several failed
+				// streams. Drain the durable pending set so a full notification
+				// channel can never leave a browser stream hanging indefinitely.
+				for requestID := range writer.takeStreamFailures() {
+					go streamBridge.fail(ctx, writer, generation, requestID, "slow_consumer")
+				}
+			}
 		case err := <-dockerDone:
 			if err != nil {
 				return errors.New("Agent Docker observer stopped unexpectedly")
 			}
 			dockerDone = nil
+		case err := <-taskBridgeDone:
+			if err != nil {
+				return fmt.Errorf("Agent task bridge stopped unexpectedly: %w", err)
+			}
+			taskBridgeDone = nil
+		case err := <-streamBridgeDone:
+			if err != nil {
+				return err
+			}
+			streamBridgeDone = nil
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -358,6 +455,33 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 					return err
 				}
 				return errReconnectAfterRotation
+			case protocol.TypeTaskJournalStatus, protocol.TypeTaskSnapshotRequest, protocol.TypeTaskDispatch,
+				protocol.TypeTaskReconcile, protocol.TypeTaskReportAck:
+				if taskMessages == nil {
+					return errors.New("Core sent task work without a negotiated task bridge")
+				}
+				select {
+				case taskMessages <- envelope:
+				default:
+					return errors.New("Agent task control queue is full")
+				}
+			case protocol.TypeContainerStreamOpen, protocol.TypeContainerStreamClose:
+				if streamMessages == nil || envelope.Sequence != 0 || protocol.ValidateContainerStreamEnvelope(envelope, generation) != nil {
+					return errors.New("Core container stream request is invalid or was not negotiated")
+				}
+				if envelope.Type == protocol.TypeContainerStreamClose {
+					// Cancellation must not depend on spare command-queue capacity.
+					streamBridge.stop(envelope.RequestID)
+				}
+				select {
+				case streamMessages <- envelope:
+				default:
+					if envelope.Type == protocol.TypeContainerStreamOpen {
+						// A local queue limit affects only this stream. Do not let a
+						// burst of open requests tear down the Agent heartbeat socket.
+						go streamBridge.reject(ctx, writer, generation, envelope.RequestID, "stream_limit")
+					}
+				}
 			case protocol.TypeProtocolError:
 				return errors.New("Core rejected Agent protocol message")
 			default:

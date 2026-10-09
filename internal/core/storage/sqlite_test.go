@@ -45,6 +45,45 @@ func TestMigrationsAreOrderedAndAtomic(t *testing.T) {
 	_ = db.Close()
 }
 
+func TestVersionFourDatabaseUpgradesToDashboardAndHistorySchemaOnReopen(t *testing.T) {
+	ctx := context.Background()
+	directory := filepath.Join(t.TempDir(), "core-data")
+	versionFour, err := OpenWithMigrations(ctx, directory, migrations[:4])
+	if err != nil {
+		t.Fatal("open v4 database:", err)
+	}
+	var version int
+	if err := versionFour.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 4 {
+		t.Fatalf("initial database migration version=%d err=%v; want v4", version, err)
+	}
+	if err := versionFour.Close(); err != nil {
+		t.Fatal("close v4 database:", err)
+	}
+
+	upgraded, err := Open(ctx, directory)
+	if err != nil {
+		t.Fatal("reopen v4 database with current migrations:", err)
+	}
+	defer upgraded.Close()
+	if err := upgraded.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 5 {
+		t.Fatalf("reopened database migration version=%d err=%v; want v5", version, err)
+	}
+	for _, table := range []string{"dashboard_preferences", "dashboard_settings", "metrics_minute", "metrics_hour"} {
+		var count int
+		if err := upgraded.DB.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("v5 table %q count=%d err=%v", table, count, err)
+		}
+	}
+	var mode, grouping, sorting, fields string
+	var featured int
+	if err := upgraded.DB.QueryRow(`SELECT view_mode, group_by, sort_by, featured_limit, custom_fields_json FROM dashboard_settings WHERE id=1`).Scan(&mode, &grouping, &sorting, &featured, &fields); err != nil {
+		t.Fatal("read migrated default dashboard settings:", err)
+	}
+	if mode != "monitor" || grouping != "node" || sorting != "custom" || featured != 4 || fields != `["state","ports","health"]` {
+		t.Fatalf("unexpected migrated dashboard defaults: mode=%q group=%q sort=%q featured=%d fields=%q", mode, grouping, sorting, featured, fields)
+	}
+}
+
 func TestMigrationListValidatedBeforeAnyDDL(t *testing.T) {
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "invalid-list.sqlite"))
 	if err != nil {

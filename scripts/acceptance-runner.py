@@ -56,6 +56,21 @@ for stage in REGISTRY["stages"]:
                     case_errors.append(f"{case_id} is PASS without three current executions")
                 elif case_status in {"FAIL", "NOT_READY"} and attempts and any(item.get("status") not in {"PASS", "FAIL", "NOT_READY"} for item in attempts):
                     case_errors.append(f"{case_id} has an invalid S01 run status")
+            elif sid == "S03":
+                case_status = case.get("status")
+                repeat_requested = report.get("repeat_requested")
+                if case_status not in {"PASS", "FAIL", "NOT_READY"}:
+                    case_errors.append(f"{case_id} has an invalid S03 status")
+                elif not isinstance(repeat_requested, int) or not 1 <= repeat_requested <= 3:
+                    case_errors.append("S03 report has an invalid repeat_requested value")
+                elif [item.get("attempt") for item in attempts] != list(range(1, repeat_requested + 1)):
+                    case_errors.append(f"{case_id} does not list every current S03 attempt")
+                elif any(item.get("status") not in {"PASS", "FAIL", "NOT_READY"} for item in attempts):
+                    case_errors.append(f"{case_id} has an invalid S03 attempt status")
+                elif case_status == "PASS" and (repeat_requested != 3 or any(item.get("status") != "PASS" for item in attempts)):
+                    case_errors.append(f"{case_id} is PASS without three current consecutive executions")
+                elif case_status == "NOT_READY" and any(item.get("status") == "PASS" for item in attempts):
+                    case_errors.append(f"{case_id} hides a current PASS execution behind NOT_READY")
             elif sid != "S00" and (case.get("status") != "NOT_READY" or attempts):
                 if sid != "S01":
                     case_errors.append(f"{case_id} has an impossible non-S00/S01 result in the current implementation milestone")

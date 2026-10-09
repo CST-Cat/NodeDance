@@ -124,6 +124,83 @@ export interface DockerInventoryMessage {
   nodeId: string
   state: NodeStatusResponse['state']
   inventory: DockerInventory
+  preferenceIdentities?: Record<string, string>
+}
+
+export interface DashboardPreference {
+  nodeId: string
+  targetKind: 'node' | 'container' | 'compose_service'
+  identity: string
+  alias: string
+  icon: string
+  notes: string
+  serviceUrl: string
+  sortOrder: number
+  visible: boolean
+  pinned: boolean
+}
+
+export interface DashboardSettings {
+  viewMode: 'monitor' | 'manage'
+  groupBy: 'node' | 'compose' | 'state' | 'none'
+  sortBy: 'custom' | 'name' | 'state'
+  featuredLimit: number
+  customFields: string[]
+}
+
+export interface MetricHistoryPoint {
+  bucketAt: string
+  value: number
+  samples: number
+  minimum: number
+  maximum: number
+}
+
+export interface MetricHistorySeries {
+  key: string
+  points: MetricHistoryPoint[]
+}
+
+export interface MetricHistory {
+  nodeId: string
+  resolution: 'minute' | 'hour'
+  from: string
+  to: string
+  series: MetricHistorySeries[]
+}
+
+export interface ContainerTask {
+  taskId: string
+  nodeId: string
+  targetId: string
+  action: 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'delete' | 'rename'
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'canceled' | 'unknown'
+  deliveryState: string
+  reconciliationRequired: boolean
+  progress: { phase: string; completed: number; total: number }
+  result: { code?: string; observedState?: string; resourceRevision?: string }
+  createdAt: string
+  updatedAt: string
+  startedAt?: string
+  finishedAt?: string
+}
+
+export interface TaskAuditEvent {
+  id: number
+  event: string
+  fromStatus?: string
+  toStatus?: string
+  actorId?: number
+  remoteAddress: string
+  occurredAt: string
+}
+
+export type ContainerTaskAction = ContainerTask['action']
+export interface CreateContainerTaskPayload {
+  action: ContainerTaskAction
+  newName?: string
+  deleteConfirmed?: boolean
+  deleteConfirmationId?: string
 }
 
 interface AuthResponse {
@@ -229,6 +306,24 @@ export const api = {
   nodes: () => request<AgentNodesResponse>('/api/v1/nodes'),
   nodeMetrics: (nodeId: string) => request<AgentMetricsResponse>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/metrics`),
   nodeContainers: (nodeId: string) => request<DockerInventoryMessage>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/containers`),
+  dashboardSettings: () => request<DashboardSettings>('/api/v1/dashboard/settings'),
+  saveDashboardSettings: (settings: DashboardSettings) => request<void>('/api/v1/dashboard/settings', {
+    method: 'PUT', body: JSON.stringify(settings),
+  }, true),
+  nodePreferences: (nodeId: string) => request<{ preferences: DashboardPreference[] }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/preferences`),
+  saveNodePreference: (nodeId: string, preference: DashboardPreference) => request<void>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/preferences`, { method: 'PUT', body: JSON.stringify(preference) }, true),
+  nodeHistory: (nodeId: string, resolution: 'minute' | 'hour', from: Date, to: Date) => {
+    const query = new URLSearchParams({ resolution, from: from.toISOString(), to: to.toISOString() })
+    return request<MetricHistory>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/history?${query}`)
+  },
+  nodeTasks: (nodeId: string) => request<{ tasks: ContainerTask[]; nextCursor: string }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks?limit=50`),
+  nodeTask: (nodeId: string, taskId: string) => request<ContainerTask>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}`),
+  nodeTaskAudit: (nodeId: string, taskId: string) => request<{ events: TaskAuditEvent[] }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}/audit`),
+  createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload, idempotencyKey: string) =>
+    request<{ taskId: string; status: ContainerTask['status'] }>(
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,
+      { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
   nodeContainer: (nodeId: string, containerId: string) =>
     request<{ type: 'node_container'; nodeId: string; container: DockerContainerRecord }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}`,

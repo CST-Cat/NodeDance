@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -15,9 +17,12 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	"github.com/CST-Cat/NodeDance/internal/core/config"
+	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
+	corehistory "github.com/CST-Cat/NodeDance/internal/core/history"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
+	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/core/webassets"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
@@ -56,6 +61,9 @@ type Server struct {
 	hashSetupPassword          func(string) ([]byte, []byte, error)
 	agents                     *agents.Repository
 	metrics                    *coremetrics.Store
+	history                    *corehistory.Store
+	dashboardPreferences       *dashboard.Repository
+	tasks                      *coretasks.Store
 	dockerMu                   sync.Mutex
 	docker                     *coredocker.Store
 	agentOfflineTimeout        time.Duration
@@ -68,6 +76,7 @@ type Server struct {
 	agentCancel                context.CancelFunc
 	agentWait                  sync.WaitGroup
 	agentLeaseWatchers         map[string]*agentConnection
+	containerStreamSlots       chan struct{}
 }
 
 type session struct {
@@ -162,11 +171,19 @@ func New(version string, options Options) (*Server, error) {
 		hashSetupPassword:      auth.HashPassword,
 		agents:                 agents.NewRepository(store.DB, options.Now),
 		metrics:                coremetrics.NewStore(),
+		history:                &corehistory.Store{DB: store.DB},
+		dashboardPreferences:   &dashboard.Repository{DB: store.DB, Now: options.Now},
 		docker:                 coredocker.NewStore(),
 		agentOfflineTimeout:    options.AgentOfflineTimeout,
 		agentSweepInterval:     options.AgentSweepInterval,
 		agentConnections:       make(map[string]*agentConnection),
 		agentLeaseWatchers:     make(map[string]*agentConnection),
+		containerStreamSlots:   make(chan struct{}, 64),
+	}
+	s.tasks, err = coretasks.New(store.DB, coretasks.Options{Now: options.Now})
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("initialize durable Core task store: %w", err)
 	}
 	s.csrfKey, err = loadOrCreateSigningKey(store.Dir)
 	if err != nil {
@@ -176,6 +193,10 @@ func New(version string, options Options) (*Server, error) {
 	if err := s.ensureSetupState(); err != nil {
 		_ = store.Close()
 		return nil, err
+	}
+	if err := s.history.Cleanup(context.Background(), options.Now()); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("clean expired metric history: %w", err)
 	}
 	if err := s.agents.MarkAllOffline(context.Background()); err != nil {
 		_ = store.Close()
@@ -195,7 +216,25 @@ func New(version string, options Options) (*Server, error) {
 	s.agentContext, s.agentCancel = context.WithCancel(context.Background())
 	s.agentWait.Add(1)
 	go s.agentOfflineSweeper()
+	s.agentWait.Add(1)
+	go s.metricHistoryRetentionWorker()
 	return s, nil
+}
+
+func (s *Server) metricHistoryRetentionWorker() {
+	defer s.agentWait.Done()
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.agentContext.Done():
+			return
+		case <-ticker.C:
+			if err := s.history.Cleanup(s.agentContext, s.now()); err != nil {
+				log.Printf("NodeDance metric-history retention cleanup failed: %v", err)
+			}
+		}
+	}
 }
 
 func (s *Server) Close() error {
@@ -314,6 +353,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/ws/v1/agent":
 		s.handleAgentWebSocket(w, r)
+		return
+	case "/ws/v1/streams/logs", "/ws/v1/streams/stats":
+		s.handleContainerStreamWebSocket(w, r)
 		return
 	}
 

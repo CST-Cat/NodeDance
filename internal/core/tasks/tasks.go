@@ -24,9 +24,10 @@ import (
 )
 
 const (
-	DefaultLeaseTTL = 30 * time.Second
-	MaxPageSize     = 100
-	MaxJournalTasks = 10000
+	DefaultLeaseTTL       = 30 * time.Second
+	MaxPageSize           = 100
+	MaxJournalTasks       = 10000
+	MaxAuditEventsPerTask = 512
 )
 
 var (
@@ -99,6 +100,13 @@ type EnqueueRequest struct {
 	ActorID        sql.NullInt64
 	RemoteAddr     string
 }
+
+// EnqueueGate is evaluated only after Store has checked both the idempotency
+// key and task ID inside the write transaction. It supplies trusted,
+// connection-scoped acceptance facts for a genuinely new row. release is held
+// until the task, audit, and resource claim transaction commits or rolls back.
+// A retry or conflict never invokes the gate.
+type EnqueueGate func(context.Context) (composeManaged bool, release func(), err error)
 
 type Options struct {
 	LeaseTTL time.Duration
@@ -234,6 +242,18 @@ type Page struct {
 	NextCursor *Cursor
 }
 
+// AuditEvent is the allowlisted, secret-free history of one durable task.
+// It deliberately excludes request payloads, credentials, and free-form errors.
+type AuditEvent struct {
+	ID         int64
+	Event      string
+	FromStatus sql.NullString
+	ToStatus   sql.NullString
+	ActorID    sql.NullInt64
+	OccurredAt time.Time
+	RemoteAddr string
+}
+
 func New(db *sql.DB, options Options) (*Store, error) {
 	if db == nil {
 		return nil, errors.New("Core task database is nil")
@@ -251,6 +271,16 @@ func New(db *sql.DB, options Options) (*Store, error) {
 }
 
 func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueResult, error) {
+	return s.EnqueueWithGate(ctx, request, func(context.Context) (bool, func(), error) {
+		return request.ComposeManaged, nil, nil
+	})
+}
+
+// EnqueueWithGate performs idempotency lookup before evaluating new-task
+// readiness. The gate remains held through commit, so callers can pin a
+// synchronized Agent connection while the durable acceptance transaction is
+// committed without rejecting safe retries during journal synchronization.
+func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gate EnqueueGate) (EnqueueResult, error) {
 	if request.TaskID == "" {
 		var err error
 		request.TaskID, err = newTaskID()
@@ -258,7 +288,7 @@ func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueRes
 			return EnqueueResult{}, fmt.Errorf("generate task ID: %w", err)
 		}
 	}
-	intentJSON, payload, resourceKey, err := validateIntent(request.Intent, request.ComposeManaged)
+	intentJSON, payload, resourceKey, err := validateIntent(request.Intent, false)
 	if err != nil {
 		return EnqueueResult{}, err
 	}
@@ -283,6 +313,12 @@ func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueRes
 	if err != nil {
 		return EnqueueResult{}, fmt.Errorf("begin durable task acceptance: %w", err)
 	}
+	var releaseGate func()
+	defer func() {
+		if releaseGate != nil {
+			releaseGate()
+		}
+	}()
 	defer tx.Rollback()
 
 	byKey, keyErr := loadByIdempotency(ctx, tx, request.NodeID, request.IdempotencyKey)
@@ -313,6 +349,17 @@ func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueRes
 			return EnqueueResult{}, fmt.Errorf("commit idempotent task lookup: %w", err)
 		}
 		return EnqueueResult{Task: byKey, Created: false}, nil
+	}
+
+	composeManaged := request.ComposeManaged
+	if gate != nil {
+		composeManaged, releaseGate, err = gate(ctx)
+		if err != nil {
+			return EnqueueResult{}, err
+		}
+	}
+	if composeManaged && request.Intent.Action == ActionRename {
+		return EnqueueResult{}, ErrManagedRename
 	}
 
 	now := s.now().UTC()
@@ -411,6 +458,53 @@ func (s *Store) ClaimNext(ctx context.Context, connection AgentConnection, actor
 	task.Evidence.DeliveryCommitted = true
 	task.UpdatedAt = time.Unix(0, nowNS).UTC()
 	return task, true, nil
+}
+
+// CancelUndelivered safely cancels only a queued task that Core has not
+// committed for Agent delivery. Once delivery may have occurred, the outcome
+// is uncertain and cancellation requires Agent-side termination evidence.
+// Repeating cancellation of the same proven-not-dispatched result is safe.
+func (s *Store) CancelUndelivered(ctx context.Context, nodeID, taskID string, actorID sql.NullInt64, remoteAddr string) (Task, error) {
+	if ctx == nil || !validTaskIdentifier(nodeID) || !validTaskIdentifier(taskID) {
+		return Task{}, ErrInvalidRequest
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Task{}, fmt.Errorf("begin queued task cancellation: %w", err)
+	}
+	defer tx.Rollback()
+	task, err := loadByTaskID(ctx, tx, nodeID, taskID)
+	if err != nil {
+		return Task{}, lookupError(err)
+	}
+	if task.Status == taskstate.Canceled && task.Result.Code == ResultCanceled && task.Result.ObservedState == "not_dispatched" &&
+		task.Evidence.CancellationConfirmed && task.Evidence.ActualResultConfirmed && !task.Evidence.DeliveryCommitted {
+		if err := tx.Commit(); err != nil {
+			return Task{}, fmt.Errorf("commit repeated queued task cancellation read: %w", err)
+		}
+		return task, nil
+	}
+	if task.Status != taskstate.Queued || task.DeliveryState != "ready" || task.Evidence.DeliveryCommitted || task.ReconciliationRequired {
+		return Task{}, ErrNotDelivered
+	}
+	evidence := mergeEvidence(task.Evidence, Evidence{CancellationConfirmed: true, ActualResultConfirmed: true})
+	if err := taskstate.CanTransition(taskstate.Queued, taskstate.Canceled, evidence); err != nil {
+		return Task{}, err
+	}
+	result := Result{Code: ResultCanceled, ObservedState: "not_dispatched"}
+	now := s.now().UTC()
+	if err := finishTaskTx(ctx, tx, task, taskstate.Canceled, evidence, result, task.Progress, now); err != nil {
+		return Task{}, err
+	}
+	if err := writeAudit(ctx, tx, nodeID, taskID, "task_resolved", taskstate.Queued, taskstate.Canceled, actorID, remoteAddr, now.UnixNano()); err != nil {
+		return Task{}, fmt.Errorf("audit safe queued task cancellation: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Task{}, fmt.Errorf("commit safe queued task cancellation: %w", err)
+	}
+	return loadByTaskID(ctx, s.db, nodeID, taskID)
 }
 
 func (s *Store) ObserveAgentConnection(ctx context.Context, connection AgentConnection) (JournalObservation, error) {
@@ -763,6 +857,61 @@ func (s *Store) Get(ctx context.Context, nodeID, taskID string) (Task, error) {
 	return task, nil
 }
 
+// ReconciliationCandidates returns only Agent-reported unknown tasks whose
+// durable dispatch journal still matches this authenticated connection. Tasks
+// inferred missing from a complete snapshot set reconciliation_required and
+// are deliberately excluded: an absent journal entry is not proof that the
+// Agent can safely inspect or replay it.
+func (s *Store) ReconciliationCandidates(ctx context.Context, connection AgentConnection, limit int) ([]Task, error) {
+	if ctx == nil || !validConnection(connection) || limit < 1 || limit > MaxPageSize {
+		return nil, ErrInvalidRequest
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin task reconciliation candidate snapshot: %w", err)
+	}
+	defer tx.Rollback()
+	if err := requireOnlineConnection(ctx, tx, connection, s.now().UTC(), s.leaseTTL); err != nil {
+		return nil, err
+	}
+	journalID, review, err := readAgentJournal(ctx, tx, connection.NodeID)
+	if err != nil {
+		return nil, fmt.Errorf("read Agent journal identity for reconciliation: %w", err)
+	}
+	if review {
+		return nil, ErrReconciliationNeeded
+	}
+	if journalID != connection.JournalID {
+		return nil, ErrJournalChanged
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT `+taskColumns+` FROM core_tasks
+		WHERE node_id=? AND dispatch_journal_id=? AND status='unknown' AND reconciliation_required=0
+		ORDER BY updated_at_ns,task_id LIMIT ?`, connection.NodeID, connection.JournalID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("query Agent-reported unknown tasks for reconciliation: %w", err)
+	}
+	tasks := make([]Task, 0, limit)
+	for rows.Next() {
+		task, err := scanTask(rows)
+		if err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("read Agent-reported unknown tasks for reconciliation: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close Agent reconciliation candidate query: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit task reconciliation candidate snapshot: %w", err)
+	}
+	return tasks, nil
+}
+
 func (s *Store) List(ctx context.Context, nodeID string, limit int, after *Cursor) (Page, error) {
 	if nodeID == "" || limit < 1 || limit > MaxPageSize {
 		return Page{}, ErrInvalidRequest
@@ -800,6 +949,41 @@ func (s *Store) List(ctx context.Context, nodeID string, limit int, after *Curso
 		return Page{}, fmt.Errorf("read Core task page: %w", err)
 	}
 	return page, nil
+}
+
+// AuditEvents returns the bounded sanitized audit trail for an existing task.
+// The node and task predicates are both required so task IDs cannot expose
+// another node's audit records.
+func (s *Store) AuditEvents(ctx context.Context, nodeID, taskID string) ([]AuditEvent, error) {
+	if ctx == nil || nodeID == "" || taskID == "" {
+		return nil, ErrInvalidRequest
+	}
+	if _, err := s.Get(ctx, nodeID, taskID); err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,event,from_status,to_status,actor_id,occurred_at_ns,remote_addr
+		FROM core_task_audit_events WHERE node_id=? AND task_id=? ORDER BY id LIMIT ?`, nodeID, taskID, MaxAuditEventsPerTask+1)
+	if err != nil {
+		return nil, fmt.Errorf("read durable task audit events: %w", err)
+	}
+	defer rows.Close()
+	events := make([]AuditEvent, 0, 8)
+	for rows.Next() {
+		var event AuditEvent
+		var occurredAtNS int64
+		if err := rows.Scan(&event.ID, &event.Event, &event.FromStatus, &event.ToStatus, &event.ActorID, &occurredAtNS, &event.RemoteAddr); err != nil {
+			return nil, fmt.Errorf("decode durable task audit event: %w", err)
+		}
+		if len(events) == MaxAuditEventsPerTask {
+			return nil, errors.New("durable task audit history exceeds its bound")
+		}
+		event.OccurredAt = time.Unix(0, occurredAtNS).UTC()
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate durable task audit events: %w", err)
+	}
+	return events, nil
 }
 
 func (s *Store) reconciliationTaskIDs(ctx context.Context, nodeID string) []string {
@@ -1190,7 +1374,7 @@ func readAgentJournalState(ctx context.Context, q interface {
 }
 
 func writeAudit(ctx context.Context, tx *sql.Tx, nodeID, taskID, event string, from, to taskstate.Status, actor sql.NullInt64, remote string, occurred int64) error {
-	if remote == "" || remoteIP(remote) != nil {
+	if remote == "" || remoteIP(remote) == nil {
 		remote = "unknown"
 	}
 	var fromValue, toValue any

@@ -44,6 +44,9 @@ type browserSessionView struct {
 }
 
 func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, current *session) {
+	if s.handleDashboardSettingsAPI(w, r) || s.handleNodeDashboardAPI(w, r) {
+		return
+	}
 	switch r.URL.Path {
 	case "/api/v1/auth/me":
 		if r.Method != http.MethodGet {
@@ -128,6 +131,9 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 			return
 		}
 		s.adminGetNodeMetrics(w, r, parts[0])
+		return
+	}
+	if s.handleTaskAPI(w, r, current) {
 		return
 	}
 	if nodeID, containerID, ok := dockerRoute(r.URL.Path); ok {

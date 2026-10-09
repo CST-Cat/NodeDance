@@ -171,3 +171,236 @@ jobs:
             reports/status.json
             .artifacts/logs/acceptance-s02/
             .artifacts/stage-runs/
+
+  s03:
+    name: S03 / ${{ matrix.runner }} / real Core-Agent-guest-browser
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            qemu-package: qemu-system-x86
+          - runner: ubuntu-24.04-arm
+            qemu-package: qemu-system-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    env:
+      NODEDANCE_TEST_RUNNER: ${{ matrix.runner }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize fresh S03 evidence
+        run: rm -f reports/stages/S03.json && python3 scripts/ci_evidence.py --stage S03 initialize
+
+      - name: Install and verify locked Go, Node, native pnpm and Compose tools
+        run: make verify-tools
+
+      - name: Verify report safeguards and acceptance self-tests
+        run: make verify-ci-evidence
+
+      - name: Install locked project dependencies
+        run: make deps
+
+      - name: Install browsers for locked Playwright
+        run: make playwright-install
+
+      - name: Install architecture-matched locked QEMU and NBD support
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --allow-downgrades \
+            qemu-utils=1:8.2.2+ds-0ubuntu1.18 \
+            ubuntu-keyring=2023.11.28.1 \
+            gpgv=2.4.4-2ubuntu17.6 \
+            cpio=2.15+dfsg-1ubuntu2.1 \
+            gzip=1.12-1ubuntu3.2 \
+            initramfs-tools-core=0.142ubuntu25.8 \
+            util-linux=2.39.3-9ubuntu6.6 \
+            '${{ matrix.qemu-package }}=1:8.2.2+ds-0ubuntu1.18'
+          sudo modprobe nbd max_part=8
+
+      - name: Run checks and dual-architecture release builds
+        run: |
+          make check
+          make build
+
+      - name: Run three complete S03 guest and browser acceptance passes
+        run: python3 scripts/acceptance-s03.py --mode full --repeat 3 --ci-runner '${{ matrix.runner }}'
+
+      - name: Attach current GitHub run metadata to S03 report
+        if: always()
+        run: python3 scripts/ci_evidence.py --stage S03 annotate
+
+      - name: Prepare S03 evidence directories
+        if: always()
+        run: mkdir -p reports/stages .artifacts/logs/acceptance-s03
+
+      - name: Preserve S03 reports and guest, round and test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            reports/stages/S03.json
+            reports/status.json
+            .artifacts/logs/acceptance-s03/
+            .artifacts/work-s03/guest-agent/**/browser/engine-*.json
+            .artifacts/work-s03/guest-agent/**/browser/guest-phase.json
+            .artifacts/work-s03/guest-agent/**/browser/playwright.log
+            .artifacts/work-s03/*/summary.json
+            .artifacts/work-s03/*/round-*/serial.log
+            .artifacts/work-s03/*/round-*/commands.log
+            .artifacts/work-s03/*/round-*/agent-core-states.jsonl
+            .artifacts/work-s03/*/round-*/guest-clock-reboot.json
+            .artifacts/work-s03/*/round-*/cpu-memory-load.json
+
+  s03-aggregate:
+    name: S03 / validate amd64 + arm64 shard reports
+    needs: s03
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NODEDANCE_TEST_RUNNER: ubuntu-24.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize fresh aggregate report metadata
+        run: rm -f reports/stages/S03.json && python3 scripts/ci_evidence.py --stage S03 initialize
+
+      - name: Download current amd64 S03 shard
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04
+          path: .artifacts/s03-ci-shards/amd64
+
+      - name: Download current arm64 S03 shard
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04-arm
+          path: .artifacts/s03-ci-shards/arm64
+
+      - name: Test fail-closed S03 report aggregation
+        run: python3 scripts/test/aggregate-s03-ci-selftest.py
+
+      - name: Combine only matching current-run architecture reports
+        run: |
+          python3 scripts/aggregate-s03-ci.py \
+            --amd64-report .artifacts/s03-ci-shards/amd64/reports/stages/S03.json \
+            --arm64-report .artifacts/s03-ci-shards/arm64/reports/stages/S03.json \
+            --run-id '${{ github.run_id }}' \
+            --run-attempt '${{ github.run_attempt }}' \
+            --sha '${{ github.sha }}' \
+            --amd64-artifact 'nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04' \
+            --arm64-artifact 'nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04-arm' \
+            --output reports/stages/S03.json
+
+      - name: Attach aggregate GitHub run metadata
+        if: always()
+        run: python3 scripts/ci_evidence.py --stage S03 annotate
+
+      - name: Preserve aggregate report and both shard reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s03-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: |
+            reports/stages/S03.json
+            reports/status.json
+            .artifacts/s03-ci-shards/amd64/reports/stages/S03.json
+            .artifacts/s03-ci-shards/arm64/reports/stages/S03.json
+
+  s04:
+    name: S04 / ${{ matrix.runner }} / Engine ${{ matrix.engine }} / real Core-Agent-browser
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            engine: '28'
+          - runner: ubuntu-24.04
+            engine: '29'
+          - runner: ubuntu-24.04-arm
+            engine: '28'
+          - runner: ubuntu-24.04-arm
+            engine: '29'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    env:
+      NODEDANCE_TEST_ENGINE: ${{ matrix.engine }}
+      NODEDANCE_TEST_RUNNER: ${{ matrix.runner }}
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize fresh S04 evidence
+        run: rm -f reports/stages/S04.json && python3 scripts/ci_evidence.py --stage S04 initialize
+
+      - name: Install and verify locked Go, Node, native pnpm and Compose tools
+        run: make verify-tools
+
+      - name: Prepare isolated S04 DIND sibling fixture worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_root="$(dirname "$GITHUB_WORKSPACE")/NodeDance-s04"
+          expected_root="$(realpath -m "$GITHUB_WORKSPACE/../NodeDance-s04")"
+          [[ "$fixture_root" == "$expected_root" ]]
+          [[ ! -e "$fixture_root" && ! -L "$fixture_root" ]] || {
+            echo "refusing pre-existing S04 fixture worktree path: $fixture_root" >&2
+            exit 1
+          }
+          git worktree add --detach "$fixture_root" "$GITHUB_SHA"
+          actual_root="$(realpath -- "$fixture_root")"
+          actual_sha="$(git -C "$fixture_root" rev-parse HEAD)"
+          [[ "$actual_root" == "$expected_root" && "$actual_sha" == "$GITHUB_SHA" ]]
+          [[ -x "$fixture_root/scripts/test/dind.sh" && -f "$fixture_root/test-images.lock.json" ]]
+
+          compose_bin="$GITHUB_WORKSPACE/.tools/docker/cli-plugins/docker-compose"
+          [[ -x "$compose_bin" ]]
+          expected_compose="$(cat "$GITHUB_WORKSPACE/docker-compose.version")"
+          actual_compose="$("$compose_bin" version --short | sed 's/^v//')"
+          [[ "$actual_compose" == "$expected_compose" ]] || {
+            echo "locked Compose plugin mismatch: expected $expected_compose, found $actual_compose" >&2
+            exit 1
+          }
+          printf 'NODEDANCE_S04_DIND_ROOT=%s\n' "$fixture_root" >> "$GITHUB_ENV"
+          printf 'S04 DIND fixture root verified: %s at %s; Compose %s from main checkout\n' \
+            "$fixture_root" "$actual_sha" "$actual_compose"
+
+      - name: Verify per-run report and artifact safeguards
+        run: make verify-ci-evidence
+
+      - name: Install locked project dependencies
+        run: make deps
+
+      - name: Install locked Chromium browser for the real embedded UI test
+        run: make playwright-install PLAYWRIGHT_BROWSERS=chromium
+
+      - name: Run checks, dual-architecture builds and three full S04 acceptance passes
+        run: make test-stage STAGE=S04
+
+      - name: Attach current GitHub run metadata to S04 report
+        if: always()
+        run: python3 scripts/ci_evidence.py --stage S04 annotate
+
+      - name: Prepare S04 evidence directories
+        if: always()
+        run: mkdir -p reports/stages .artifacts/logs/acceptance-s04 .artifacts/stage-runs
+
+      - name: Preserve structured reports and sanitized per-case logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s04-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.runner }}-engine-${{ matrix.engine }}
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            reports/stages/S04.json
+            reports/status.json
+            .artifacts/logs/acceptance-s04/
+            .artifacts/stage-runs/

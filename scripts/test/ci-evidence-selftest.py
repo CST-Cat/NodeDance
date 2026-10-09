@@ -232,10 +232,11 @@ def test_workflow_upload_is_hidden_file_aware_and_allowlisted():
             and "pnpm --dir web exec playwright install --with-deps $(PLAYWRIGHT_BROWSERS)" in makefile
             and "PLAYWRIGHT_BROWSERS ?= chromium webkit firefox" in makefile,
             "Playwright browser installation is not routed through the locked Make PATH/version")
-    require(len(re.findall(r"^\s+- runner: ubuntu-24\.04$", workflow, re.M)) == 2
-            and len(re.findall(r"^\s+- runner: ubuntu-24\.04-arm$", workflow, re.M)) == 2
-            and "matrix:\n        include:" in workflow
-            and workflow.count("engine: '28'") == 2 and workflow.count("engine: '29'") == 2,
+    s00_workflow = workflow[workflow.index("jobs:"):workflow.index("  s01:")]
+    require(len(re.findall(r"^\s+- runner: ubuntu-24\.04$", s00_workflow, re.M)) == 2
+            and len(re.findall(r"^\s+- runner: ubuntu-24\.04-arm$", s00_workflow, re.M)) == 2
+            and "matrix:\n        include:" in s00_workflow
+            and s00_workflow.count("engine: '28'") == 2 and s00_workflow.count("engine: '29'") == 2,
             "S01 CI changes removed the original four S00 runner/engine combinations")
 
 
@@ -320,12 +321,228 @@ def test_s02_marker_and_report_are_isolated_from_s00_s01():
                 "S02 annotate accepted a stale PASS")
 
 
+def test_s04_marker_and_report_are_isolated_from_s00_s01_s02():
+    metadata_s04 = EVIDENCE.metadata_from_values(
+        run_id="102", run_attempt="1", sha="d" * 40,
+        job="s04", runner="ubuntu-24.04-arm", engine="29", stage="S04",
+    )
+    with tempfile.TemporaryDirectory(prefix="nodedance-ci-s04-isolation-") as temporary:
+        root = pathlib.Path(temporary)
+        status_path = root / "reports/status.json"
+        s00_report, s01_report, s02_report = (root / f"reports/stages/{stage}.json"
+                                              for stage in ("S00", "S01", "S02"))
+        s04_report = root / "reports/stages/S04.json"
+        s00_marker = root / ".artifacts/ci-evidence/current-job.json"
+        s01_marker = root / ".artifacts/ci-evidence/S01/current-job.json"
+        s02_marker = root / ".artifacts/ci-evidence/S02/current-job.json"
+        s04_marker = root / ".artifacts/ci-evidence/S04/current-job.json"
+        metadata_s00 = EVIDENCE.metadata_from_values(
+            run_id="102", run_attempt="1", sha="d" * 40,
+            job="s00", runner="ubuntu-24.04", engine="28",
+        )
+        metadata_s01 = EVIDENCE.metadata_from_values(
+            run_id="102", run_attempt="1", sha="d" * 40,
+            job="s01", runner="ubuntu-24.04", engine="not-applicable", stage="S01",
+        )
+        metadata_s02 = EVIDENCE.metadata_from_values(
+            run_id="102", run_attempt="1", sha="d" * 40,
+            job="s02", runner="ubuntu-24.04", engine="not-applicable", stage="S02",
+        )
+        for stage_report, marker, metadata, stage in (
+            (s00_report, s00_marker, metadata_s00, "S00"),
+            (s01_report, s01_marker, metadata_s01, "S01"),
+            (s02_report, s02_marker, metadata_s02, "S02"),
+        ):
+            EVIDENCE.initialize(stage_report, status_path, marker, metadata=metadata, stage=stage)
+        markers_before = [path.read_text() for path in (s00_marker, s01_marker, s02_marker)]
+        cases = EVIDENCE.stage_cases(stage="S04")
+        initialized = EVIDENCE.initialize(
+            s04_report, status_path, s04_marker, metadata=metadata_s04, stage="S04",
+        )
+        require(initialized["stage"] == "S04" and set(initialized["tests"]) == {case["id"] for case in cases},
+                "S04 initialization omitted an original or supplemental case")
+        require(initialized["status"] == "NOT_READY" and all(not item["runs"] for item in initialized["tests"].values()),
+                "S04 initialization inherited test outcomes")
+        require([path.read_text() for path in (s00_marker, s01_marker, s02_marker)] == markers_before
+                and s04_marker.is_file(), "S04 initialization changed or reused an earlier-stage marker")
+        stale = dict(initialized)
+        stale.update({"run_id": "stale-s04-pass", "mode": "full", "status": "PASS",
+                      "updated_at": (dt.datetime.fromisoformat(metadata_s04["initialized_at"])
+                                     - dt.timedelta(seconds=1)).isoformat()})
+        stale["tests"] = {case["id"]: {"status": "PASS", "runs": [
+            {"attempt": number, "status": "PASS"} for number in (1, 2, 3)
+        ]} for case in cases}
+        s04_report.write_text(json.dumps(stale))
+        replaced = EVIDENCE.annotate(s04_report, status_path, s04_marker,
+                                     metadata=metadata_s04, stage="S04")
+        require(replaced["status"] == "NOT_READY" and replaced["run_id"] == "ci-" + metadata_s04["job_key"],
+                "S04 annotate accepted a stale PASS")
+        require([path.read_text() for path in (s00_marker, s01_marker, s02_marker)] == markers_before,
+                "S04 annotate mutated an earlier-stage marker")
+
+
+def test_s04_workflow_matrix_and_artifact_allowlist():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+    s04_start = workflow.index("name: S04 /")
+    s04_job = workflow[s04_start:]
+    positions = [s04_job.index(value) for value in (
+        "rm -f reports/stages/S04.json && python3 scripts/ci_evidence.py --stage S04 initialize",
+        "run: make verify-tools",
+        "Prepare isolated S04 DIND sibling fixture worktree",
+        'git worktree add --detach "$fixture_root" "$GITHUB_SHA"',
+        '[[ "$actual_root" == "$expected_root" && "$actual_sha" == "$GITHUB_SHA" ]]',
+        'printf \'NODEDANCE_S04_DIND_ROOT=%s\\n\' "$fixture_root" >> "$GITHUB_ENV"',
+        "run: make verify-ci-evidence",
+        "run: make deps",
+        "make playwright-install PLAYWRIGHT_BROWSERS=chromium",
+        "run: make test-stage STAGE=S04",
+        "python3 scripts/ci_evidence.py --stage S04 annotate",
+        "uses: actions/upload-artifact@",
+    )]
+    require(positions == sorted(positions), "S04 CI workflow is missing isolated evidence, locked tools, real browser install, full acceptance, or final report step")
+    require('fixture_root="$(dirname "$GITHUB_WORKSPACE")/NodeDance-s04"' in s04_job
+            and 'expected_root="$(realpath -m "$GITHUB_WORKSPACE/../NodeDance-s04")"' in s04_job
+            and '[[ "$fixture_root" == "$expected_root" ]]' in s04_job,
+            "S04 DIND worktree is not constrained to the exact sibling fixture path")
+    require('actual_sha="$(git -C "$fixture_root" rev-parse HEAD)"' in s04_job
+            and '[[ "$actual_root" == "$expected_root" && "$actual_sha" == "$GITHUB_SHA" ]]' in s04_job,
+            "S04 DIND worktree is not verified against the current checkout SHA")
+    require('compose_bin="$GITHUB_WORKSPACE/.tools/docker/cli-plugins/docker-compose"' in s04_job
+            and 'expected_compose="$(cat "$GITHUB_WORKSPACE/docker-compose.version")"' in s04_job,
+            "S04 fixtures do not explicitly verify the locked Compose tool from the main checkout")
+    require("ubuntu-24.04" in s04_job and "ubuntu-24.04-arm" in s04_job
+            and "engine: '28'" in s04_job and "engine: '29'" in s04_job,
+            "S04 CI must cover GitHub-hosted amd64/arm64 and Docker Engine 28/29")
+    upload_start = s04_job.index("name: nodedance-s04-")
+    upload = s04_job[upload_start:]
+    lines = upload.splitlines()
+    path_index = next((index for index, line in enumerate(lines)
+                       if re.match(r"\s+path:\s*\|\s*$", line)), None)
+    require(path_index is not None, "S04 artifact upload has no explicit path allowlist")
+    paths = []
+    for line in lines[path_index + 1:]:
+        if not line.startswith("            "):
+            break
+        paths.append(line.strip())
+    expected = {
+        "reports/stages/S04.json", "reports/status.json",
+        ".artifacts/logs/acceptance-s04/", ".artifacts/stage-runs/",
+    }
+    require(set(paths) == expected and len(paths) == len(expected),
+            f"S04 artifact paths differ from the explicit safe evidence allowlist: {paths}")
+    require(not any("work-s04" in path or ".tools" in path or ".build" in path or "node_modules" in path
+                    for path in paths), "S04 artifact allowlist includes private test work data or build caches")
+
+
+def test_s03_workflow_matrix_and_artifact_allowlist():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+    s03_job = workflow[workflow.index("  s03:"):workflow.index("  s04:")]
+    positions = [s03_job.index(value) for value in (
+        "rm -f reports/stages/S03.json && python3 scripts/ci_evidence.py --stage S03 initialize",
+        "run: make verify-tools",
+        "run: make verify-ci-evidence",
+        "run: make deps",
+        "run: make playwright-install",
+        "qemu-utils=1:8.2.2+ds-0ubuntu1.18",
+        "sudo modprobe nbd max_part=8",
+        "run: |\n          make check\n          make build",
+        "scripts/acceptance-s03.py --mode full --repeat 3 --ci-runner",
+        "python3 scripts/ci_evidence.py --stage S03 annotate",
+        "uses: actions/upload-artifact@",
+    )]
+    require(positions == sorted(positions),
+            "S03 workflow is missing the locked guest/browser prerequisites, real three-run acceptance, or final report upload")
+    require("ubuntu-24.04" in s03_job and "ubuntu-24.04-arm" in s03_job
+            and "qemu-package: qemu-system-x86" in s03_job
+            and "qemu-package: qemu-system-arm" in s03_job,
+            "S03 CI must cover amd64/arm64 GitHub-hosted runners with matching QEMU")
+    require("timeout-minutes: 360" in s03_job and "fail-fast: false" in s03_job
+            and "--allow-downgrades" in s03_job,
+            "S03 CI must keep both architecture shards independent and install the exact locked package versions")
+    upload_start = s03_job.index("name: nodedance-s03-")
+    upload = s03_job[upload_start:]
+    lines = upload.splitlines()
+    path_index = next((index for index, line in enumerate(lines)
+                       if re.match(r"\s+path:\s*\|\s*$", line)), None)
+    require(path_index is not None, "S03 artifact upload has no explicit path allowlist")
+    paths = []
+    for line in lines[path_index + 1:]:
+        if not line.startswith("            "):
+            break
+        paths.append(line.strip())
+    expected = {
+        "reports/stages/S03.json", "reports/status.json",
+        ".artifacts/logs/acceptance-s03/",
+        ".artifacts/work-s03/guest-agent/**/browser/engine-*.json",
+        ".artifacts/work-s03/guest-agent/**/browser/guest-phase.json",
+        ".artifacts/work-s03/guest-agent/**/browser/playwright.log",
+        ".artifacts/work-s03/*/summary.json",
+        ".artifacts/work-s03/*/round-*/serial.log",
+        ".artifacts/work-s03/*/round-*/commands.log",
+        ".artifacts/work-s03/*/round-*/agent-core-states.jsonl",
+        ".artifacts/work-s03/*/round-*/guest-clock-reboot.json",
+        ".artifacts/work-s03/*/round-*/cpu-memory-load.json",
+    }
+    require(set(paths) == expected and len(paths) == len(expected),
+            f"S03 artifact paths differ from the explicit evidence allowlist: {paths}")
+    require("include-hidden-files: true" in upload,
+            "S03 evidence upload must include hidden evidence directories")
+    require(not any("/core/" in path or "manifest" in path or "binary" in path
+                    or "overlay" in path or "image" in path or "key" in path
+                    for path in paths),
+            "S03 artifact allowlist includes private harness files, binaries, images, overlays, or keys")
+
+
+def test_s03_aggregate_job_requires_both_current_shards():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+    aggregate = workflow[workflow.index("  s03-aggregate:"):workflow.index("  s04:")]
+    positions = [aggregate.index(value) for value in (
+        "needs: s03",
+        "python3 scripts/ci_evidence.py --stage S03 initialize",
+        "nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04",
+        "nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04-arm",
+        "python3 scripts/test/aggregate-s03-ci-selftest.py",
+        "python3 scripts/aggregate-s03-ci.py",
+        "python3 scripts/ci_evidence.py --stage S03 annotate",
+        "uses: actions/upload-artifact@",
+    )]
+    require(positions == sorted(positions),
+            "S03 aggregate job does not wait for both shards, validate their reports, and publish the final result")
+    require(aggregate.count("uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093") == 2
+            and "--run-id '${{ github.run_id }}'" in aggregate
+            and "--run-attempt '${{ github.run_attempt }}'" in aggregate
+            and "--sha '${{ github.sha }}'" in aggregate,
+            "S03 aggregation must download both current-run shards and validate the same run, attempt, and commit")
+    upload_start = aggregate.index("name: nodedance-s03-aggregate-")
+    upload = aggregate[upload_start:]
+    lines = upload.splitlines()
+    path_index = next((index for index, line in enumerate(lines)
+                       if re.match(r"\s+path:\s*\|\s*$", line)), None)
+    require(path_index is not None, "S03 aggregate artifact has no explicit report allowlist")
+    paths = []
+    for line in lines[path_index + 1:]:
+        if not line.startswith("            "):
+            break
+        paths.append(line.strip())
+    expected = {
+        "reports/stages/S03.json", "reports/status.json",
+        ".artifacts/s03-ci-shards/amd64/reports/stages/S03.json",
+        ".artifacts/s03-ci-shards/arm64/reports/stages/S03.json",
+    }
+    require(set(paths) == expected and len(paths) == len(expected),
+            "S03 aggregate artifact must contain the final report and both input shard reports only")
+
+
 def main():
     test_stale_pass_is_replaced_and_current_status_is_preserved()
     test_s01_marker_and_report_are_isolated_from_s00()
     test_s02_marker_and_report_are_isolated_from_s00_s01()
+    test_s04_marker_and_report_are_isolated_from_s00_s01_s02()
     test_workflow_upload_is_hidden_file_aware_and_allowlisted()
-    print("CI evidence safeguards PASS: S00/S01/S02 marker isolation, stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
+    test_s03_workflow_matrix_and_artifact_allowlist()
+    test_s03_aggregate_job_requires_both_current_shards()
+    test_s04_workflow_matrix_and_artifact_allowlist()
+    print("CI evidence safeguards PASS: S00/S01/S02/S03/S04 marker isolation, stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
 
 
 if __name__ == "__main__":

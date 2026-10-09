@@ -6,16 +6,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	"github.com/coder/websocket"
 )
 
 type dashboardDockerMessage struct {
-	Type      string                      `json:"type"`
-	NodeID    string                      `json:"nodeId"`
-	State     *dashboardNodeState         `json:"state,omitempty"`
-	Inventory *coredocker.View            `json:"inventory,omitempty"`
-	Container *coredocker.ContainerRecord `json:"container,omitempty"`
+	Type                 string                      `json:"type"`
+	NodeID               string                      `json:"nodeId"`
+	State                *dashboardNodeState         `json:"state,omitempty"`
+	Inventory            *coredocker.View            `json:"inventory,omitempty"`
+	Container            *coredocker.ContainerRecord `json:"container,omitempty"`
+	PreferenceIdentities map[string]string           `json:"preferenceIdentities,omitempty"`
 }
 
 type dockerPushFingerprint struct {
@@ -81,6 +83,7 @@ func (s *Server) writeDashboardDockerMessage(ctx context.Context, conn *websocke
 	}
 	err = conn.Write(eventCtx, websocket.MessageText, marshalAgentPayload(dashboardDockerMessage{
 		Type: "node_containers", NodeID: nodeID, State: &state, Inventory: &view,
+		PreferenceIdentities: dashboardPreferenceIdentities(nodeID, view.Containers),
 	}))
 	return fingerprint, err == nil, err
 }
@@ -98,14 +101,37 @@ func (s *Server) adminGetNodeContainers(w http.ResponseWriter, r *http.Request, 
 	if containerID != "" {
 		for _, record := range view.Containers {
 			if record.Container.ID == containerID {
-				writeJSON(w, http.StatusOK, dashboardDockerMessage{Type: "node_container", NodeID: nodeID, State: &state, Container: &record})
+				writeJSON(w, http.StatusOK, dashboardDockerMessage{Type: "node_container", NodeID: nodeID, State: &state, Container: &record,
+					PreferenceIdentities: dashboardPreferenceIdentities(nodeID, []coredocker.ContainerRecord{record})})
 				return
 			}
 		}
 		http.NotFound(w, r)
 		return
 	}
-	writeJSON(w, http.StatusOK, dashboardDockerMessage{Type: "node_containers", NodeID: nodeID, State: &state, Inventory: &view})
+	writeJSON(w, http.StatusOK, dashboardDockerMessage{Type: "node_containers", NodeID: nodeID, State: &state, Inventory: &view,
+		PreferenceIdentities: dashboardPreferenceIdentities(nodeID, view.Containers)})
+}
+
+func dashboardPreferenceIdentities(nodeID string, containers []coredocker.ContainerRecord) map[string]string {
+	identities := make(map[string]string, len(containers))
+	for _, record := range containers {
+		container := record.Container
+		if container.Compose == nil {
+			if identity, ok := dashboard.ContainerIdentity(container.ID); ok {
+				identities[container.ID] = identity
+			}
+			continue
+		}
+		compose := container.Compose
+		if identity, ok := dashboard.ComposeServiceIdentity(nodeID, compose.Project, compose.WorkingDir, compose.ConfigFiles, compose.Service); ok {
+			identities[container.ID] = identity
+		}
+	}
+	if len(identities) == 0 {
+		return nil
+	}
+	return identities
 }
 
 func dockerRoute(path string) (nodeID, containerID string, ok bool) {
