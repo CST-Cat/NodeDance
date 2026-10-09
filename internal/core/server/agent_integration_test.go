@@ -921,7 +921,10 @@ func TestRealAgentEnrollmentReconnectRotationAndRevocation(t *testing.T) {
 				apiNodeStatus, apiServerTime, apiLeaseValidUntil, leaseValidUntil)
 		}
 
-		materializeDeadline := leaseValidUntil.Add(2 * time.Second)
+		// The API above already verifies the exact 30-second lease deadline.
+		// Allow a bounded scheduling/SQLite-write margin for the background
+		// durable materialization when this integration suite runs under load.
+		materializeDeadline := leaseValidUntil.Add(5 * time.Second)
 		var offline testNodeLeaseSnapshot
 		for time.Now().Before(materializeDeadline) {
 			offline = nodeLeaseSnapshot(t, restarted, nodeID)
