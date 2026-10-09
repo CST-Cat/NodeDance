@@ -280,7 +280,7 @@ def test_workflow_upload_is_hidden_file_aware_and_allowlisted():
         "rm -f reports/stages/S02.json && python3 scripts/ci_evidence.py --stage S02 initialize",
         "run: make verify-tools",
         "run: make verify-ci-evidence",
-        "run: make frontend",
+        "run: make build",
         "run: make test-stage STAGE=S02",
         "python3 scripts/ci_evidence.py --stage S02 annotate",
         "uses: actions/upload-artifact@",
@@ -310,6 +310,9 @@ def test_workflow_upload_is_hidden_file_aware_and_allowlisted():
     require(not any("work-s02" in path or ".tools" in path or ".build" in path or "node_modules" in path
                     for path in s02_paths), "S02 artifact allowlist includes private work data or caches")
     makefile = (ROOT / "Makefile").read_text()
+    require("build: frontend" in makefile
+            and "-o .build/nodedance-agent ./cmd/nodedance-agent" in makefile,
+            "S02 prerequisite must build the runner-native Agent CLI consumed by the real systemd acceptance")
     require("frontend: deps" in makefile and "pnpm --dir web run build" in makefile,
             "S02 workflow prerequisite must generate the embedded frontend assets before Go tests")
     require("playwright-install: deps" in makefile

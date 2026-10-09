@@ -154,8 +154,8 @@ jobs:
       - name: Verify per-run report and artifact safeguards
         run: make verify-ci-evidence
 
-      - name: Build embedded Web assets for S02 Go tests
-        run: make frontend
+      - name: Build embedded Web assets and runner-native Agent CLI for S02 tests
+        run: make build
 
       - name: Run checks, dual-architecture builds and full S02 acceptance
         run: make test-stage STAGE=S02
