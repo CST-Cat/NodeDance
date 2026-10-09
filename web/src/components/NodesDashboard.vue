@@ -276,14 +276,16 @@ async function refreshNodes() {
     selectedNodeID.value = merged[0]?.nodeId ?? ''
   }
   busy.value = false
-  if (!selectedNodeID.value) return
-  const node = merged.find((item) => item.nodeId === selectedNodeID.value)
-  if (node) {
-		const requests: Promise<unknown>[] = []
-		if (!(node.nodeId in nodePreferences.value)) requests.push(loadPreferences(node))
-		if (node.agentId) requests.push(loadMetrics(node), loadContainers(node), loadTasks(node))
-		await Promise.all(requests)
+  const requests: Promise<unknown>[] = []
+  for (const node of merged) {
+    const selected = node.nodeId === selectedNodeID.value
+    if (!(node.nodeId in nodePreferences.value)) requests.push(loadPreferences(node))
+    if (!node.agentId) continue
+    if (selected || !(node.nodeId in views.value)) requests.push(loadMetrics(node))
+    if (selected || !(node.nodeId in dockerViews.value)) requests.push(loadContainers(node))
+    if (selected) requests.push(loadTasks(node))
   }
+  await Promise.all(requests)
 }
 
 async function loadMetrics(node: AgentNode) {
@@ -399,6 +401,45 @@ function metricSummaryValue(status: string | undefined, value: number | undefine
     return '未知'
   }
   return `${value.toFixed(1)}${suffix}`
+}
+
+function nodeTitle(node: AgentNode): string {
+  return nodePreferences.value[node.nodeId]?.find((item) => item.targetKind === 'node' && item.identity === `node:${node.nodeId}`)?.alias || node.displayName
+}
+
+function nodeContainerPreference(node: AgentNode, record: DockerInventory['containers'][number]): DashboardPreference | undefined {
+  const identity = preferenceIdentities.value[node.nodeId]?.[record.container.id]
+  if (!identity) return undefined
+  const kind = record.container.compose ? 'compose_service' : 'container'
+  return nodePreferences.value[node.nodeId]?.find((item) => item.targetKind === kind && item.identity === identity)
+}
+
+function nodeContainerTitle(node: AgentNode, record: DockerInventory['containers'][number]): string {
+  return nodeContainerPreference(node, record)?.alias || record.container.name || record.container.id.slice(0, 12)
+}
+
+function nodeContainerPreview(node: AgentNode): DockerInventory['containers'] {
+  const records = [...(dockerViews.value[node.nodeId]?.containers ?? [])]
+  return records.sort((left, right) => {
+    const leftPreference = nodeContainerPreference(node, left)
+    const rightPreference = nodeContainerPreference(node, right)
+    if (leftPreference?.pinned !== rightPreference?.pinned) return leftPreference?.pinned ? -1 : 1
+    if ((leftPreference?.sortOrder ?? 0) !== (rightPreference?.sortOrder ?? 0)) {
+      return (leftPreference?.sortOrder ?? 0) - (rightPreference?.sortOrder ?? 0)
+    }
+    return nodeContainerTitle(node, left).localeCompare(nodeContainerTitle(node, right), 'zh-CN')
+  }).slice(0, 3)
+}
+
+function nodeDockerStatus(node: AgentNode): string {
+  const inventory = dockerViews.value[node.nodeId]
+  if (inventory) return dockerAvailabilityText(inventory)
+  if (isPendingRegistration(node)) return '等待 Agent 注册'
+  return nodeIsOnline(node) ? '等待 Docker 状态' : 'Agent 离线'
+}
+
+function nodeContainerPortSummary(record: DockerInventory['containers'][number]): string {
+  return record.container.ports.map((port) => portText(port)).join(' · ')
 }
 
 function containerUptime(record: DockerInventory['containers'][number]): string {
@@ -856,33 +897,35 @@ onBeforeUnmount(() => {
           <button v-for="tab in sectionTabs" :key="tab.id" type="button" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button>
         </nav>
 
-        <section v-if="selectedNode && activeSection === 'overview'" class="fused-overview" data-testid="fused-overview">
-          <article class="host-summary-card">
-            <header><span class="eyebrow">VPS</span><span class="node-detail-status" :data-online="nodeIsOnline(selectedNode)">{{ nodeIsOnline(selectedNode) ? '在线' : '离线 / 过期' }}</span></header>
-            <h2>{{ selectedNodeTitle }}</h2>
-            <p class="host-summary-id">{{ selectedNode.nodeId }}</p>
-            <div class="host-summary-metrics">
-              <div><span>CPU</span><strong>{{ metricSummaryValue(selectedView?.metrics.cpu.usagePercent.status, selectedView?.metrics.cpu.usagePercent.value ?? undefined) }}</strong></div>
-              <div><span>内存</span><strong>{{ metricSummaryValue(selectedView?.metrics.memory.status, selectedView?.metrics.memory.value?.usedPercent) }}</strong></div>
-              <div><span>Docker</span><strong>{{ selectedDocker ? dockerAvailabilityText(selectedDocker) : '等待数据' }}</strong></div>
+        <section v-if="activeSection === 'overview'" class="vps-dashboard" aria-label="多 VPS 监控首页" data-testid="multi-vps-dashboard">
+          <p v-if="nodes.length === 0" class="dashboard-empty">暂无已登记的 VPS。完成 Agent 注册后，节点卡片会显示真实主机指标与 Docker 容器。</p>
+          <article v-for="node in nodes" :key="node.nodeId" class="vps-card" :data-node-id="node.nodeId" :data-online="nodeIsOnline(node)">
+            <header class="vps-card-header">
+              <div><span class="eyebrow">VPS</span><h2>{{ nodeTitle(node) }}</h2></div>
+              <span class="node-detail-status" :data-online="nodeIsOnline(node)">{{ isPendingRegistration(node) ? '等待注册' : nodeIsOnline(node) ? '在线' : '离线' }}</span>
+            </header>
+            <p class="host-summary-id">{{ node.nodeId }} · {{ node.agentVersion || 'Agent 未连接' }}</p>
+            <div class="vps-card-metrics">
+              <div><span>CPU</span><strong>{{ metricSummaryValue(views[node.nodeId]?.metrics.cpu.usagePercent.status, views[node.nodeId]?.metrics.cpu.usagePercent.value ?? undefined) }}</strong></div>
+              <div><span>内存</span><strong>{{ metricSummaryValue(views[node.nodeId]?.metrics.memory.status, views[node.nodeId]?.metrics.memory.value?.usedPercent) }}</strong></div>
+              <div><span>Docker Engine</span><strong>{{ nodeDockerStatus(node) }}</strong></div>
             </div>
-            <p v-if="selectedDocker && dockerIsStale(selectedDocker)" class="overview-stale">容器快照已过期，展示最近已知状态。</p>
-            <p v-if="selectedView && selectedView.nodeStatus !== 'online'" class="overview-stale">主机指标已过期；未知值保持为空，不以零代替。</p>
-          </article>
-          <article class="featured-containers-card">
-            <header class="featured-heading"><div><span class="eyebrow">PINNED SERVICES</span><h2>常用容器</h2></div><button type="button" class="container-action" @click="selectSection('docker')">全部 {{ selectedDocker?.containers.length ?? 0 }} 项</button></header>
-            <p v-if="!selectedDocker" class="docker-empty">正在读取 Docker 状态。</p>
-            <p v-else-if="dockerIsStale(selectedDocker)" class="overview-stale">容器数据已过期；写操作已禁用。</p>
-            <p v-if="selectedDocker && featuredContainers.length === 0" class="docker-empty">没有设置为首页显示的容器。</p>
-            <div v-if="featuredContainers.length" class="featured-container-list">
-              <article v-for="record in featuredContainers" :key="record.container.id" class="featured-container" :data-stale="dockerIsStale(selectedDocker!) || record.container.stale" :data-container-id="record.container.id">
-                <div class="featured-container-title"><span class="service-icon" aria-hidden="true">{{ preferenceForContainer(record)?.icon || '▣' }}</span><div><strong>{{ containerTitle(record) }}</strong><small>{{ record.container.compose ? `${record.container.compose.project} / ${record.container.compose.service}` : record.container.image }}</small></div><span class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span></div>
-                <p v-if="preferenceForContainer(record)?.notes" class="featured-note">{{ preferenceForContainer(record)?.notes }}</p>
-                <p v-if="record.container.ports.length" class="featured-port">{{ portText(record.container.ports[0]) }}</p>
-                <span v-if="dockerIsStale(selectedDocker!) || record.container.stale" class="container-stale">过期数据</span>
-                <div class="featured-actions"><a v-if="safeServiceURL(record)" :href="safeServiceURL(record)" target="_blank" rel="noopener noreferrer">打开服务 ↗</a><button type="button" class="container-action" @click="selectSection('docker')">管理</button><button type="button" class="container-action" :title="serviceLinkTitle(record)" :disabled="!containerPreferenceForEditor(record)" @click="editingPreference = record.container.id; selectSection('docker')">偏好</button></div>
-              </article>
-            </div>
+            <section class="vps-card-docker" :data-available="dockerViews[node.nodeId]?.dockerAvailability || 'unknown'" :data-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : false">
+              <header><strong>Docker 容器</strong><span>{{ dockerViews[node.nodeId]?.containers.length ?? '—' }}</span></header>
+              <p v-if="!dockerViews[node.nodeId]" class="docker-empty">{{ nodeIsOnline(node) ? '正在读取真实容器状态。' : '尚无可确认的容器快照。' }}</p>
+              <p v-else-if="dockerViews[node.nodeId].dockerAvailability === 'unavailable'" class="docker-empty">Engine 不可用。{{ dockerStatusReason(dockerViews[node.nodeId]) }}</p>
+              <p v-else-if="dockerViews[node.nodeId].containers.length === 0" class="docker-empty">{{ dockerIsStale(dockerViews[node.nodeId]) ? '历史容器数据已过期。' : '此节点当前没有容器。' }}</p>
+              <div v-else class="vps-card-container-list">
+                <div v-for="record in nodeContainerPreview(node)" :key="record.container.id" class="vps-card-container" :data-stale="dockerIsStale(dockerViews[node.nodeId]) || record.container.stale">
+                  <span class="service-icon" aria-hidden="true">{{ nodeContainerPreference(node, record)?.icon || '▣' }}</span>
+                  <div><strong>{{ nodeContainerTitle(node, record) }}</strong><small>实际名称：{{ record.container.name || record.container.id.slice(0, 12) }} · {{ record.container.image }}</small><small>{{ record.container.compose ? `Compose · ${record.container.compose.project}/${record.container.compose.service}` : '独立容器' }} · {{ containerHealthText(record.container) }}</small><small v-if="nodeContainerPortSummary(record)">端口：{{ nodeContainerPortSummary(record) }}</small></div>
+                  <span class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span>
+                </div>
+                <p v-if="dockerViews[node.nodeId].containers.length > 3" class="vps-card-more">另有 {{ dockerViews[node.nodeId].containers.length - 3 }} 个容器</p>
+                <p v-if="dockerIsStale(dockerViews[node.nodeId])" class="overview-stale">Agent 离线或租约已过期；以上为最近已知数据。</p>
+              </div>
+            </section>
+            <footer class="vps-card-footer"><span v-if="nodeReasons[node.nodeId]">{{ nodeReasons[node.nodeId] }}</span><button type="button" class="container-action" @click="chooseNode(node)">查看完整详情</button></footer>
           </article>
         </section>
 
@@ -1062,7 +1105,29 @@ onBeforeUnmount(() => {
 .dashboard-tabs { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 16px; border-bottom: 1px solid rgba(171,196,232,.12); padding-bottom: 8px; scrollbar-width: thin; }
 .dashboard-tabs button { flex: 0 0 auto; min-height: 38px; border: 1px solid transparent; border-radius: 7px; padding: 7px 12px; color: #aebbd0; background: transparent; font: inherit; font-size: 10px; cursor: pointer; }
 .dashboard-tabs button[aria-current='page'] { border-color: rgba(141,201,255,.22); color: #d6ebff; background: rgba(62,119,170,.18); }
-.fused-overview { display: grid; grid-template-columns: minmax(230px, .78fr) minmax(0, 1.4fr); gap: 12px; margin-bottom: 18px; }
+.vps-dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); align-items: start; gap: 12px; margin-bottom: 18px; }
+.vps-card { min-width: 0; border: 1px solid rgba(171,196,232,.13); border-radius: 12px; padding: clamp(14px,2vw,20px); background: linear-gradient(145deg,rgba(23,36,56,.88),rgba(9,17,29,.72)); }
+.vps-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.vps-card-header h2 { margin: 4px 0 0; font-size: 16px; overflow-wrap: anywhere; }
+.vps-card-header .node-detail-status { margin: 0; white-space: nowrap; }
+.vps-card-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
+.vps-card-metrics > div { display: grid; min-width: 0; gap: 5px; border: 1px solid rgba(171,196,232,.1); border-radius: 7px; padding: 8px; }
+.vps-card-metrics span, .node-settings-status span { color: #91a2ba; font-size: 9px; }
+.vps-card-metrics strong { color: #eaf0fa; font-size: 11px; overflow-wrap: anywhere; }
+.vps-card-docker { margin-top: 12px; border: 1px solid rgba(171,196,232,.1); border-radius: 8px; padding: 10px; background: rgba(18,29,45,.54); }
+.vps-card-docker > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #cbd8ea; font-size: 10px; }
+.vps-card-docker > header span { color: #91a2ba; font: 10px ui-monospace,monospace; }
+.vps-card-container-list { display: grid; gap: 7px; margin-top: 8px; }
+.vps-card-container { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 7px; border: 1px solid rgba(171,196,232,.08); border-radius: 7px; padding: 8px; }
+.vps-card-container[data-stale='true'] { border-color: rgba(255,176,129,.22); }
+.vps-card-container > div { display: grid; min-width: 0; gap: 3px; }
+.vps-card-container strong, .vps-card-container small { overflow-wrap: anywhere; }
+.vps-card-container strong { color: #eaf0fa; font-size: 10px; }
+.vps-card-container small { color: #91a2ba; font-size: 8px; line-height: 1.4; }
+.vps-card-container .container-state { font-size: 8px; }
+.vps-card-more { margin: 0; color: #91a2ba; font-size: 9px; }
+.vps-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; color: #91a2ba; font-size: 9px; overflow-wrap: anywhere; }
+.dashboard-empty { grid-column: 1 / -1; margin: 0; border: 1px dashed rgba(171,196,232,.18); border-radius: 10px; padding: 20px; color: #9aabc1; font-size: 11px; line-height: 1.6; }
 .host-summary-card, .featured-containers-card { min-width: 0; border: 1px solid rgba(171,196,232,.13); border-radius: 12px; padding: clamp(14px,2vw,20px); background: linear-gradient(145deg,rgba(23,36,56,.88),rgba(9,17,29,.72)); }
 .host-summary-card > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .host-summary-card h2, .featured-heading h2, .section-toolbar h2 { margin: 4px 0 0; font-size: 16px; overflow-wrap: anywhere; }
@@ -1175,6 +1240,6 @@ onBeforeUnmount(() => {
 .settings-save span[role='alert'] { color: #ffc1b8; }
 .preference-separation-note { margin-top: 12px; }
 @media (max-width: 760px) { .nodes-layout { grid-template-columns: minmax(0, 1fr); } .node-list { max-height: 270px; overflow: auto; } }
-@media (max-width: 900px) { .fused-overview { grid-template-columns: minmax(0,1fr); } .node-settings-status { grid-template-columns: repeat(2,minmax(0,1fr)); } .dashboard-settings-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media (max-width: 900px) { .node-settings-status { grid-template-columns: repeat(2,minmax(0,1fr)); } .dashboard-settings-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media (max-width: 560px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } .dashboard-tabs { margin-right: -12px; padding-right: 12px; } .featured-container-list { grid-template-columns: minmax(0,1fr); } .host-summary-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } .host-summary-metrics > div { padding: 6px; } .section-toolbar { align-items: flex-start; flex-direction: column; } .history-controls { width: 100%; } .history-controls label { flex: 1; } .docker-view-controls label, .docker-view-controls input, .docker-view-controls select { width: 100%; } .node-settings-status, .dashboard-settings-grid { grid-template-columns: minmax(0,1fr); } .docker-row-title { align-items: flex-start; flex-wrap: wrap; } .node-terminal-entry { align-items: flex-start; flex-direction: column; } .node-terminal-entry button { width: 100%; min-height: 42px; } .container-actions { width: 100%; justify-content: space-between; } .container-actions button { min-height: 42px; flex: 1; } }
 </style>
