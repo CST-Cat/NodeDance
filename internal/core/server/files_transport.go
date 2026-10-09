@@ -19,20 +19,19 @@ const (
 var errFileTransferSlowConsumer = errors.New("file transfer consumer is too slow")
 
 type coreFileTransfer struct {
-	requestID     string
-	nodeID        string
-	sessionID     string
-	generation    uint64
-	allowed       map[string]struct{}
-	download      bool
-	durableUpload bool
-	updates       chan protocol.Envelope
-	done          chan struct{}
-	mu            sync.Mutex
-	lastSeq       uint64
-	terminal      bool
-	closed        bool
-	err           error
+	requestID  string
+	nodeID     string
+	sessionID  string
+	generation uint64
+	allowed    map[string]struct{}
+	download   bool
+	updates    chan protocol.Envelope
+	done       chan struct{}
+	mu         sync.Mutex
+	lastSeq    uint64
+	terminal   bool
+	closed     bool
+	err        error
 }
 
 func (transfer *coreFileTransfer) finish(err error) {
@@ -107,32 +106,6 @@ func (connection *agentConnection) findFileTransfer(id string) (*coreFileTransfe
 	}
 	_, tombstone := connection.fileTombstones[id]
 	return nil, tombstone
-}
-
-func (connection *agentConnection) registerFileCancelAck(id string) chan protocol.FileCancelAck {
-	connection.fileMu.Lock()
-	defer connection.fileMu.Unlock()
-	if connection.fileCancelAcks == nil {
-		connection.fileCancelAcks = make(map[string]chan protocol.FileCancelAck)
-	}
-	if waiter := connection.fileCancelAcks[id]; waiter != nil {
-		return waiter
-	}
-	waiter := make(chan protocol.FileCancelAck, 1)
-	connection.fileCancelAcks[id] = waiter
-	return waiter
-}
-
-func (connection *agentConnection) fileCancelAck(id string) chan protocol.FileCancelAck {
-	connection.fileMu.Lock()
-	defer connection.fileMu.Unlock()
-	return connection.fileCancelAcks[id]
-}
-
-func (connection *agentConnection) clearFileCancelAck(id string) {
-	connection.fileMu.Lock()
-	delete(connection.fileCancelAcks, id)
-	connection.fileMu.Unlock()
 }
 
 func (connection *agentConnection) removeFileTransfer(transfer *coreFileTransfer, err error) bool {
@@ -263,22 +236,6 @@ func (s *Server) handleAgentFileMessage(connection *agentConnection, envelope pr
 	if connection == nil || !connection.filesEnabled || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
 		return errors.New("Agent file message is unavailable or too large")
 	}
-	if envelope.Type == protocol.TypeFileJournalReply {
-		return s.handleAgentFileJournalReply(connection, envelope)
-	}
-	if envelope.Type == protocol.TypeFileCancelAck {
-		var ack protocol.FileCancelAck
-		if err := decodeAgentPayload(envelope.Payload, &ack); err != nil || protocol.ValidateFileCancelAck(envelope, connection.generation, ack) != nil {
-			return errors.New("Agent file cancellation acknowledgment is invalid")
-		}
-		if waiter := connection.fileCancelAck(ack.TransferID); waiter != nil {
-			select {
-			case waiter <- ack:
-			default:
-			}
-		}
-		return nil
-	}
 	transfer, tombstone := connection.findFileTransfer(envelope.RequestID)
 	if transfer == nil {
 		if tombstone {
@@ -370,21 +327,10 @@ func (s *Server) newCoreFileTransfer(ctx context.Context, nodeID string, current
 	if err != nil {
 		return nil, nil, err
 	}
-	return s.newCoreFileTransferOnConnection(connection, current, operations, download, "", false)
+	return s.newCoreFileTransferOnConnection(connection, current, operations, download, "")
 }
 
-func (s *Server) newCoreFileTransferWithID(ctx context.Context, nodeID string, current *session, operations []string, download bool, requestID string, durableUpload bool) (*agentConnection, *coreFileTransfer, error) {
-	connection, err := s.activeFileConnection(ctx, nodeID)
-	if err != nil {
-		return nil, nil, err
-	}
-	return s.newCoreFileTransferOnConnection(connection, current, operations, download, requestID, durableUpload)
-}
-
-func (s *Server) newCoreFileTransferOnConnection(connection *agentConnection, current *session, operations []string, download bool, requestID string, durableUpload bool) (*agentConnection, *coreFileTransfer, error) {
-	if durableUpload && (connection == nil || !connection.fileJournalEnabled) {
-		return nil, nil, errContainerStreamUnavailable
-	}
+func (s *Server) newCoreFileTransferOnConnection(connection *agentConnection, current *session, operations []string, download bool, requestID string) (*agentConnection, *coreFileTransfer, error) {
 	id := requestID
 	if id == "" {
 		var err error
@@ -398,12 +344,9 @@ func (s *Server) newCoreFileTransferOnConnection(connection *agentConnection, cu
 		allowed[operation] = struct{}{}
 	}
 	transfer := &coreFileTransfer{requestID: id, nodeID: connection.nodeID, sessionID: current.ID, generation: connection.generation,
-		allowed: allowed, download: download, durableUpload: durableUpload, updates: make(chan protocol.Envelope, fileTransferQueue), done: make(chan struct{})}
+		allowed: allowed, download: download, updates: make(chan protocol.Envelope, fileTransferQueue), done: make(chan struct{})}
 	if err := connection.addFileTransfer(transfer); err != nil {
 		return nil, nil, err
-	}
-	if durableUpload {
-		connection.registerFileCancelAck(id)
 	}
 	return connection, transfer, nil
 }
@@ -485,36 +428,11 @@ func (s *Server) waitFileMessage(ctx context.Context, connection *agentConnectio
 }
 
 func (s *Server) closeCoreFileTransfer(connection *agentConnection, transfer *coreFileTransfer, cancel bool, err error) {
-	if connection != nil && transfer != nil {
-		if transfer.durableUpload && cancel {
-			connection.registerFileCancelAck(transfer.requestID)
-		}
-		removed := connection.removeFileTransfer(transfer, err)
-		if cancel && removed {
-			_ = s.enqueueFileCancel(connection, transfer.requestID)
-		} else if !cancel && transfer.durableUpload {
-			connection.clearFileCancelAck(transfer.requestID)
-		}
+	if connection == nil || transfer == nil {
+		return
 	}
-}
-
-func (s *Server) waitFileCancelAck(connection *agentConnection, transfer *coreFileTransfer, timeout time.Duration) bool {
-	if connection == nil || transfer == nil || !transfer.durableUpload {
-		return false
-	}
-	waiter := connection.fileCancelAck(transfer.requestID)
-	if waiter == nil {
-		return false
-	}
-	defer connection.clearFileCancelAck(transfer.requestID)
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case ack := <-waiter:
-		return ack.Canceled
-	case <-timer.C:
-		return false
-	case <-connection.ctx.Done():
-		return false
+	removed := connection.removeFileTransfer(transfer, err)
+	if cancel && removed {
+		_ = s.enqueueFileCancel(connection, transfer.requestID)
 	}
 }

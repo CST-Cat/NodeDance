@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,11 +20,11 @@ import (
 )
 
 type SystemProvider struct {
-	shell      string
-	dockerHost string
+	shell  string
+	docker *client.Client
 }
 
-func NewSystemProvider(shell, dockerHost string) *SystemProvider {
+func NewSystemProvider(shell string, dockerClient *client.Client) *SystemProvider {
 	shell = strings.TrimSpace(shell)
 	if shell == "" {
 		shell = strings.TrimSpace(os.Getenv("SHELL"))
@@ -33,10 +32,7 @@ func NewSystemProvider(shell, dockerHost string) *SystemProvider {
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	if dockerHost == "" {
-		dockerHost = "unix:///var/run/docker.sock"
-	}
-	return &SystemProvider{shell: shell, dockerHost: dockerHost}
+	return &SystemProvider{shell: shell, docker: dockerClient}
 }
 
 func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFrame) (Endpoint, error) {
@@ -145,8 +141,8 @@ func (e *hostEndpoint) Close() error {
 }
 
 func (p *SystemProvider) openContainer(ctx context.Context, request protocol.TerminalFrame) (Endpoint, error) {
-	if !strings.HasPrefix(p.dockerHost, "unix:///") {
-		return nil, errors.New("Docker terminal access requires a local Unix socket")
+	if p.docker == nil {
+		return nil, errors.New("Docker Engine is unavailable")
 	}
 	if len(request.ContainerID) != 64 {
 		return nil, errors.New("container target must be a full Docker ID")
@@ -156,19 +152,11 @@ func (p *SystemProvider) openContainer(ctx context.Context, request protocol.Ter
 			return nil, errors.New("container target must be a full Docker ID")
 		}
 	}
-	cli, err := client.New(client.WithHTTPClient(&http.Client{
-		Transport:     &http.Transport{ResponseHeaderTimeout: 8 * time.Second},
-		CheckRedirect: client.CheckRedirect,
-	}), client.WithHost(p.dockerHost), client.WithScheme("http"), client.WithAPIVersionNegotiation())
-	if err != nil {
-		return nil, errors.New("Docker terminal client is unavailable")
-	}
-	closeClient := func() { _ = cli.Close() }
+	cli := p.docker
 	inspectCtx, cancelInspect := context.WithTimeout(ctx, 10*time.Second)
 	inspected, err := cli.ContainerInspect(inspectCtx, request.ContainerID, client.ContainerInspectOptions{})
 	cancelInspect()
 	if err != nil || inspected.Container.ID != request.ContainerID || inspected.Container.State == nil || !inspected.Container.State.Running {
-		closeClient()
 		return nil, errors.New("target container is unavailable or not running")
 	}
 	execResult, err := cli.ExecCreate(ctx, request.ContainerID, client.ExecCreateOptions{
@@ -177,19 +165,16 @@ func (p *SystemProvider) openContainer(ctx context.Context, request protocol.Ter
 		Cmd:         []string{"/bin/sh", "-i"},
 	})
 	if err != nil || execResult.ID == "" {
-		closeClient()
 		return nil, errors.New("could not create Docker terminal Exec; container may not contain /bin/sh")
 	}
 	attached, err := cli.ExecAttach(ctx, execResult.ID, client.ExecAttachOptions{
 		TTY: true, ConsoleSize: client.ConsoleSize{Height: uint(request.Rows), Width: uint(request.Columns)},
 	})
 	if err != nil || attached.Conn == nil || attached.Reader == nil {
-		closeClient()
 		return nil, errors.New("could not attach Docker terminal Exec")
 	}
 	if err := waitForContainerExecStart(ctx, cli, execResult.ID); err != nil {
 		_ = attached.Conn.Close()
-		closeClient()
 		return nil, errors.New("container shell is unavailable or exited before starting")
 	}
 	return &containerEndpoint{cli: cli, response: attached, execID: execResult.ID}, nil
@@ -287,10 +272,9 @@ func (e *containerEndpoint) Close() error {
 		result, inspectErr := e.cli.ExecInspect(ctx, e.execID, client.ExecInspectOptions{})
 		cancel()
 		e.response.Close()
-		closeErr = e.cli.Close()
-		if inspectErr != nil && closeErr == nil {
+		if inspectErr != nil {
 			closeErr = fmt.Errorf("could not confirm Docker terminal Exec cleanup: %w", inspectErr)
-		} else if inspectErr == nil && result.Running && closeErr == nil {
+		} else if inspectErr == nil && result.Running {
 			closeErr = errors.New("Docker terminal Exec did not exit after terminal close")
 		}
 	})

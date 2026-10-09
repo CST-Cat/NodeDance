@@ -46,16 +46,9 @@ type SDKEngine struct {
 	client *client.Client
 }
 
-func NewSDKEngine(socket string) (*SDKEngine, error) {
-	if socket == "" {
-		socket = "unix:///var/run/docker.sock"
-	}
-	if !strings.HasPrefix(socket, "unix:///") {
-		return nil, errors.New("Docker Engine host must be a local Unix socket")
-	}
-	cli, err := client.New(client.WithHost(socket), client.WithScheme("http"), client.WithAPIVersionNegotiation(), client.WithTimeout(10*time.Minute))
-	if err != nil {
-		return nil, errors.New("could not create Docker image client")
+func NewEngine(cli *client.Client) (*SDKEngine, error) {
+	if cli == nil {
+		return nil, errors.New("shared Docker Engine client is required")
 	}
 	return &SDKEngine{client: cli}, nil
 }
@@ -242,13 +235,6 @@ func (e *SDKEngine) Remove(ctx context.Context, imageID string) error {
 		return errors.New("Docker image removal failed")
 	}
 	return nil
-}
-
-func (e *SDKEngine) Close() error {
-	if e == nil || e.client == nil {
-		return nil
-	}
-	return e.client.Close()
 }
 
 func cleanStrings(values []string) []string {

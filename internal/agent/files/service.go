@@ -1,5 +1,5 @@
 // Package files provides the Agent-side, root-confined filesystem operations
-// used by the S10 remote file manager. Transfer methods write to sibling
+// used by the remote file API. Transfer methods write to sibling
 // temporary files and never buffer a full upload in memory.
 package files
 

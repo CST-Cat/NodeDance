@@ -42,32 +42,18 @@ func (s *agentContainerStream) nextSequence() uint64 {
 type containerStreamBridge struct {
 	engine  containerstreams.Engine
 	stats   *containerstreams.StatsManager
-	close   func() error
 	mu      sync.Mutex
 	streams map[string]*agentContainerStream
 	closed  bool
 	wg      sync.WaitGroup
 }
 
-func newContainerStreamBridge(engine containerstreams.Engine, closeEngine func() error) (*containerStreamBridge, error) {
+func newContainerStreamBridge(engine containerstreams.Engine) (*containerStreamBridge, error) {
 	manager, err := containerstreams.NewStatsManager(engine, containerstreams.StatsManagerOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return &containerStreamBridge{engine: engine, stats: manager, close: closeEngine, streams: make(map[string]*agentContainerStream)}, nil
-}
-
-func newSDKContainerStreamBridge(socket string) (*containerStreamBridge, error) {
-	engine, err := containerstreams.NewSDKEngine(socket)
-	if err != nil {
-		return nil, err
-	}
-	bridge, err := newContainerStreamBridge(engine, engine.Close)
-	if err != nil {
-		_ = engine.Close()
-		return nil, err
-	}
-	return bridge, nil
+	return &containerStreamBridge{engine: engine, stats: manager, streams: make(map[string]*agentContainerStream)}, nil
 }
 
 func (b *containerStreamBridge) run(ctx context.Context, writer streamEnvelopeWriter, commands <-chan protocol.Envelope, generation uint64) error {
@@ -346,9 +332,6 @@ func (b *containerStreamBridge) closeAll() {
 	b.mu.Unlock()
 	b.wg.Wait()
 	_ = b.stats.Close()
-	if b.close != nil {
-		_ = b.close()
-	}
 }
 
 func (b *containerStreamBridge) sendHeartbeats(ctx context.Context, writer streamEnvelopeWriter, generation uint64) {

@@ -1,5 +1,4 @@
 import type { MetricsView } from './metrics-contract'
-import { sha256Blob } from './sha256'
 
 export interface SetupStatus {
   initialized: boolean
@@ -154,23 +153,6 @@ export interface AlertWindow { id: string; kind: 'silence' | 'maintenance'; scop
 export interface AlertDelivery {
   id: string; alertId?: string; channelId: string; channelName: string; kind: string; testSend: boolean
   status: string; attempts: number; maxAttempts: number; nextAttemptAt?: string; deliveredAt?: string; httpStatus?: number; lastError?: string; createdAt: string
-}
-
-export interface AgentUpdateManifest {
-  formatVersion: number; version: string; os: string; architecture: string; sha256: string; size: number
-  minProtocol: number; maxProtocol: number; coreMinVersion?: string; coreMaxVersion?: string; signature: string
-}
-export interface AgentUpdateRelease { id: string; version: string; os: string; architecture: string; manifest: AgentUpdateManifest; createdAt: string }
-export interface AgentUpdateTask {
-  id: string; batchId: string; batchNumber: number; nodeId: string; releaseId: string; version?: string
-  mode: 'manual' | 'automatic'; status: string; reason?: string; createdAt: string; updatedAt: string
-}
-export interface AgentUpdateSettings {
-  autoEnabled: boolean; windowStartMinute: number; windowEndMinute: number; batchSize: number; releaseId?: string
-  campaignDate?: string; campaignPaused: boolean; lastError?: string
-}
-export interface AgentUpdateOverview {
-  releases: AgentUpdateRelease[]; tasks: AgentUpdateTask[]; settings: AgentUpdateSettings; nodes: AgentNode[]
 }
 
 export interface NodeStatusResponse {
@@ -385,18 +367,6 @@ export interface TerminalAuthorization {
   expiresAt: string
 }
 
-export interface NodeFileEntry {
-  name: string
-  path: string
-  kind: 'file' | 'directory' | 'symlink' | 'other' | string
-  size: number
-  mode: number
-  ownerUid: number
-  ownerGid: number
-  modifiedAt: number
-  version?: string
-}
-
 interface AuthResponse {
   user: User
   csrfToken: string
@@ -413,64 +383,90 @@ export class ApiError extends Error {
 }
 
 let csrfToken = ''
+export const SESSION_EXPIRED_EVENT = 'nodedance:session-expired'
 
-function newFileIdempotencyKey() {
-  const bytes = crypto.getRandomValues(new Uint8Array(16))
-  bytes[6] = (bytes[6] & 0x0f) | 0x40
-  bytes[8] = (bytes[8] & 0x3f) | 0x80
-  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+function isAnonymousAuthRequest(path: string): boolean {
+  const pathname = path.split('?', 1)[0]
+  return pathname === '/api/v1/auth/csrf' ||
+    pathname === '/api/v1/auth/setup/status' ||
+    pathname === '/api/v1/auth/setup' ||
+    pathname === '/api/v1/auth/login'
 }
 
-async function request<T>(path: string, init: RequestInit = {}, csrf = false): Promise<T> {
-  const headers = new Headers(init.headers)
-  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData
-
-  if (init.body !== undefined && !isFormData && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json')
+function clearExpiredSession(path: string) {
+  csrfToken = ''
+  if (!isAnonymousAuthRequest(path)) {
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
   }
-  if (csrf) {
-    if (!csrfToken) {
-      const result = await request<{ token: string }>('/api/v1/auth/csrf', { method: 'GET' })
-      csrfToken = result.token
-    }
-    headers.set('X-CSRF-Token', csrfToken)
-  }
+}
 
-  const response = await fetch(path, {
-    ...init,
-    headers,
-    credentials: 'include',
-    cache: 'no-store',
-  })
+export async function request<T>(path: string, init: RequestInit = {}, csrf = false): Promise<T> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), 60_000)
+  const abortFromCaller = () => controller.abort(init.signal?.reason)
+  if (init.signal?.aborted) abortFromCaller()
+  else init.signal?.addEventListener('abort', abortFromCaller, { once: true })
 
-  if (!response.ok) {
-    let message = `请求失败（${response.status}）`
-    try {
-      const payload = await response.json() as { error?: unknown; message?: unknown }
-      if (typeof payload.message === 'string') message = payload.message
-      else if (typeof payload.error === 'string') message = payload.error
-    } catch {
-      // Keep the status-based message when the Core returns an empty or non-JSON error.
-    }
-    throw new ApiError(response.status, message)
-  }
-
-  if (response.status === 204) return undefined as T
-  const body = await response.text()
-  if (!body) return undefined as T
-  let payload: unknown
   try {
-    payload = JSON.parse(body)
-  } catch {
-    throw new ApiError(response.status, '服务器返回了无法识别的响应。')
+    const headers = new Headers(init.headers)
+    const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData
+
+    if (init.body !== undefined && !isFormData && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json')
+    }
+    if (csrf) {
+      if (!csrfToken) {
+        const result = await request<{ token: string }>('/api/v1/auth/csrf', {
+          method: 'GET',
+          signal: controller.signal,
+        })
+        csrfToken = result.token
+      }
+      headers.set('X-CSRF-Token', csrfToken)
+    }
+
+    const response = await fetch(path, {
+      ...init,
+      headers,
+      signal: controller.signal,
+      credentials: 'include',
+      cache: 'no-store',
+    })
+
+    if (response.status === 401) clearExpiredSession(path)
+
+    if (!response.ok) {
+      let message = `请求失败（${response.status}）`
+      const body = await response.text()
+      try {
+        const payload = JSON.parse(body) as { error?: unknown; message?: unknown }
+        if (typeof payload.message === 'string') message = payload.message
+        else if (typeof payload.error === 'string') message = payload.error
+      } catch {
+        // Keep the status-based message when the Core returns an empty or non-JSON error.
+      }
+      throw new ApiError(response.status, message)
+    }
+
+    if (response.status === 204) return undefined as T
+    const body = await response.text()
+    if (!body) return undefined as T
+    let payload: unknown
+    try {
+      payload = JSON.parse(body)
+    } catch {
+      throw new ApiError(response.status, '服务器返回了无法识别的响应。')
+    }
+    if ((path === '/api/v1/auth/setup' || path === '/api/v1/auth/login') &&
+      typeof payload === 'object' && payload !== null && 'csrfToken' in payload &&
+      typeof payload.csrfToken === 'string') {
+      csrfToken = payload.csrfToken
+    }
+    return payload as T
+  } finally {
+    window.clearTimeout(timeout)
+    init.signal?.removeEventListener('abort', abortFromCaller)
   }
-  if ((path === '/api/v1/auth/setup' || path === '/api/v1/auth/login') &&
-    typeof payload === 'object' && payload !== null && 'csrfToken' in payload &&
-    typeof payload.csrfToken === 'string') {
-    csrfToken = payload.csrfToken
-  }
-  return payload as T
 }
 
 export const api = {
@@ -496,59 +492,6 @@ export const api = {
     return result
   },
 
-  listNodeFiles: (nodeId: string, path = '/') => request<{ entries: NodeFileEntry[]; path: string }>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files?path=${encodeURIComponent(path)}`,
-  ),
-  statNodeFile: (nodeId: string, path: string) => request<NodeFileEntry>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/stat?path=${encodeURIComponent(path)}`,
-  ),
-  readNodeText: (nodeId: string, path: string) => request<{ path: string; text: string; version: string; size: number }>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/text?path=${encodeURIComponent(path)}`,
-  ),
-  saveNodeText: (nodeId: string, payload: { path: string; version: string; text: string }, idempotencyKey = newFileIdempotencyKey()) => request<{
-    taskId: string
-    transferId: string
-    status: string
-    entry?: NodeFileEntry
-    backupPath?: string
-  }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/files/text`, {
-    method: 'PUT',
-    headers: { 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify(payload),
-  }, true),
-  createNodeDirectory: (nodeId: string, path: string, idempotencyKey = newFileIdempotencyKey()) => request<{ taskId: string; transferId: string; status: string }>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/directories`, {
-      method: 'POST',
-      headers: { 'Idempotency-Key': idempotencyKey },
-      body: JSON.stringify({ path }),
-    }, true),
-  renameNodeFile: (nodeId: string, path: string, newPath: string, idempotencyKey = newFileIdempotencyKey()) => request<{ taskId: string; transferId: string; status: string }>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/rename`, {
-      method: 'POST',
-      headers: { 'Idempotency-Key': idempotencyKey },
-      body: JSON.stringify({ path, newPath }),
-    }, true),
-  deleteNodeFile: (nodeId: string, path: string, idempotencyKey = newFileIdempotencyKey()) => request<{ taskId: string; transferId: string; status: string }>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/delete`, {
-      method: 'DELETE',
-      headers: { 'Idempotency-Key': idempotencyKey },
-      body: JSON.stringify({ path, confirmPath: path }),
-    }, true),
-  uploadNodeFile: async (nodeId: string, path: string, file: File, version = '', signal?: AbortSignal, idempotencyKey = newFileIdempotencyKey()) => {
-    signal?.throwIfAborted()
-    const digest = await sha256Blob(file)
-    signal?.throwIfAborted()
-    const headers = new Headers({ 'Content-Type': 'application/octet-stream' })
-    headers.set('Idempotency-Key', idempotencyKey)
-    headers.set('X-File-SHA256', digest)
-    if (version) headers.set('X-File-Version', version)
-    return request<{ taskId: string; transferId: string; status: string; sha256: string }>(
-      `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/upload?path=${encodeURIComponent(path)}`,
-      { method: 'POST', headers, body: file, signal }, true,
-    )
-  },
-  nodeFileDownloadURL: (nodeId: string, path: string) =>
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/download?path=${encodeURIComponent(path)}`,
   changePassword: async (currentPassword: string, newPassword: string) => {
     const result = await request<void>('/api/v1/auth/password', {
       method: 'POST',
@@ -621,14 +564,6 @@ export const api = {
   createAlertWindow: (payload: Omit<AlertWindow, 'id'>) => request<{ window: AlertWindow }>('/api/v1/alerts/windows', { method: 'POST', body: JSON.stringify(payload) }, true),
   deleteAlertWindow: (id: string) => request<void>(`/api/v1/alerts/windows/${encodeURIComponent(id)}`, { method: 'DELETE' }, true),
   alertDeliveries: () => request<{ deliveries: AlertDelivery[] }>('/api/v1/alerts/deliveries'),
-  agentUpdates: () => request<AgentUpdateOverview>('/api/v1/updates'),
-  uploadAgentRelease: (manifest: File, artifact: File) => {
-    const form = new FormData(); form.append('manifest', manifest); form.append('artifact', artifact)
-    return request<{ id: string; version: string; architecture: string }>('/api/v1/updates/releases', { method: 'POST', body: form }, true)
-  },
-  requestAgentUpdate: (nodeId: string, releaseId: string) => request<AgentUpdateTask>(`/api/v1/updates/nodes/${encodeURIComponent(nodeId)}/update`, { method: 'POST', body: JSON.stringify({ releaseId }) }, true),
-  saveAgentUpdateSettings: (settings: AgentUpdateSettings) => request<{ settings: AgentUpdateSettings }>('/api/v1/updates/settings', { method: 'PUT', body: JSON.stringify(settings) }, true),
-  resumeAgentUpdateCampaign: () => request<void>('/api/v1/updates/campaign/resume', { method: 'POST' }, true),
   createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload, idempotencyKey: string) =>
     request<{ taskId: string; status: ContainerTask['status'] }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,

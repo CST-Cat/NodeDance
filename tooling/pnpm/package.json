@@ -1,8 +1,0 @@
-{
-  "name": "nodedance-locked-pnpm",
-  "private": true,
-  "version": "1.0.0",
-  "dependencies": {
-    "pnpm": "12.10.1"
-  }
-}

@@ -9,7 +9,6 @@ import ImagesPanel from './ImagesPanel.vue'
 import MetricsPanel from './MetricsPanel.vue'
 import PreferenceEditor from './PreferenceEditor.vue'
 import TerminalConsole from './TerminalConsole.vue'
-import NodeFiles from './NodeFiles.vue'
 import NodeServiceProbes from './NodeServiceProbes.vue'
 
 interface NodeClock {
@@ -36,10 +35,10 @@ const taskAuditErrors = ref<Record<string, string>>({})
 const preferenceIdentities = ref<Record<string, Record<string, string>>>({})
 const nodePreferences = ref<Record<string, DashboardPreference[]>>({})
 const dashboardSettings = ref<DashboardSettings>({ viewMode: 'monitor', groupBy: 'node', sortBy: 'custom', featuredLimit: 4, customFields: ['state', 'ports', 'health'] })
-const activeSection = ref<'overview' | 'docker' | 'images' | 'files' | 'history' | 'events' | 'settings'>('overview')
+const activeSection = ref<'overview' | 'docker' | 'images' | 'history' | 'events' | 'settings'>('overview')
 const sectionTabs: Array<{ id: typeof activeSection.value; label: string }> = [
   { id: 'overview', label: '总览' }, { id: 'docker', label: 'Docker 详情' }, { id: 'images', label: '镜像' },
-  { id: 'files', label: '管理节点文件' }, { id: 'history', label: '历史监控' }, { id: 'events', label: '事件历史' }, { id: 'settings', label: '节点设置' },
+  { id: 'history', label: '历史监控' }, { id: 'events', label: '事件历史' }, { id: 'settings', label: '节点设置' },
 ]
 const customFieldOptions = [
   { id: 'state', label: '运行状态' }, { id: 'ports', label: '端口' }, { id: 'health', label: '健康状态' },
@@ -197,10 +196,6 @@ function nodeIsOnline(node: AgentNode): boolean {
   const clock = clocks.value[node.nodeId]
   if (!clock) return node.status === 'online'
   return clock.status === 'online' && elapsed.value - clock.startedAt < remainingLease(clock)
-}
-
-function nodeSupportsFiles(node: AgentNode): boolean {
-  return node.capabilities?.includes('agent.files.v1') ?? false
 }
 
 function setNodeReason(nodeID: string, reason?: string) {
@@ -858,9 +853,8 @@ onBeforeUnmount(() => {
 
       <main class="node-detail" aria-live="polite">
         <nav v-if="selectedNode" class="dashboard-tabs" aria-label="节点管理视图">
-          <button v-for="tab in sectionTabs" :key="tab.id" type="button" :disabled="tab.id === 'files' && (!selectedNode.agentId || !nodeIsOnline(selectedNode) || !nodeSupportsFiles(selectedNode))" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button>
+          <button v-for="tab in sectionTabs" :key="tab.id" type="button" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button>
         </nav>
-        <p v-if="selectedNode && selectedNode.agentId && nodeIsOnline(selectedNode) && !nodeSupportsFiles(selectedNode)" class="node-empty" data-testid="file-capability-missing" role="status">Agent 未配置可用的主机文件根目录，文件管理已禁用。安装或重装 Agent 时显式配置 <code>--file-root /绝对目录</code> 后，它才会声明文件管理能力。</p>
 
         <section v-if="selectedNode && activeSection === 'overview'" class="fused-overview" data-testid="fused-overview">
           <article class="host-summary-card">
@@ -1006,14 +1000,6 @@ onBeforeUnmount(() => {
 
 
         <ImagesPanel v-if="selectedNode && activeSection === 'images'" :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" />
-
-        <section v-if="selectedNode && activeSection === 'files'" class="section-panel" aria-label="节点文件管理">
-          <header class="section-toolbar">
-            <div><span class="eyebrow">NODE FILES</span><h2>节点文件 · {{ selectedNodeTitle }}</h2></div>
-            <button class="container-action" type="button" @click="activeSection = 'docker'">返回节点详情</button>
-          </header>
-          <NodeFiles :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" :disabled="!nodeIsOnline(selectedNode) || !nodeSupportsFiles(selectedNode)" />
-        </section>
 
         <section v-if="selectedNode && activeSection === 'history'" class="section-panel" aria-label="历史监控设置">
           <div class="section-toolbar"><div><span class="eyebrow">PERSISTED METRICS</span><h2>历史监控 · {{ selectedNodeTitle }}</h2></div>

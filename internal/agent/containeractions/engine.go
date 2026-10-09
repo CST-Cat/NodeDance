@@ -3,9 +3,7 @@ package containeractions
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
-	"time"
 
 	"github.com/moby/moby/client"
 )
@@ -13,36 +11,14 @@ import (
 // SDKEngine is the real Docker Engine adapter. It permits only a local Unix
 // socket, negotiates the API version, and hard-codes safe remove flags.
 type SDKEngine struct {
-	client         *client.Client
-	requestTimeout time.Duration
+	client *client.Client
 }
 
-const defaultSDKRequestTimeout = 30 * time.Second
-
-func NewSDKEngine(socket string) (*SDKEngine, error) {
-	return newSDKEngine(socket, defaultSDKRequestTimeout)
-}
-
-func newSDKEngine(socket string, requestTimeout time.Duration) (*SDKEngine, error) {
-	if socket == "" {
-		socket = "unix:///var/run/docker.sock"
+func NewEngine(cli *client.Client) (*SDKEngine, error) {
+	if cli == nil {
+		return nil, errors.New("shared Docker Engine client is required")
 	}
-	if !strings.HasPrefix(socket, "unix:///") {
-		return nil, errors.New("Docker Engine host must be a local Unix socket")
-	}
-	if requestTimeout <= 0 || requestTimeout > 10*time.Minute {
-		return nil, errors.New("Docker Engine HTTP request timeout is outside the supported bounds")
-	}
-	cli, err := client.New(
-		client.WithHost(socket),
-		client.WithScheme("http"),
-		client.WithAPIVersionNegotiation(),
-		client.WithTimeout(requestTimeout),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create Docker Engine client: %w", err)
-	}
-	return &SDKEngine{client: cli, requestTimeout: requestTimeout}, nil
+	return &SDKEngine{client: cli}, nil
 }
 
 func (e *SDKEngine) Inspect(ctx context.Context, id string) (Container, error) {
@@ -109,21 +85,4 @@ func (e *SDKEngine) Remove(ctx context.Context, id string) error {
 func (e *SDKEngine) Rename(ctx context.Context, id, newName string) error {
 	_, err := e.client.ContainerRename(ctx, id, client.ContainerRenameOptions{NewName: newName})
 	return err
-}
-
-func (e *SDKEngine) Close() error {
-	if e == nil || e.client == nil {
-		return nil
-	}
-	return e.client.Close()
-}
-
-// DockerClient exposes the already-negotiated local Engine client to narrowly
-// scoped Agent features that need additional typed Docker operations. The
-// caller must not close this client independently; SDKEngine owns its lifetime.
-func (e *SDKEngine) DockerClient() *client.Client {
-	if e == nil {
-		return nil
-	}
-	return e.client
 }

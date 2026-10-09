@@ -7,7 +7,7 @@ import (
 	"fmt"
 )
 
-// SQLiteMigrator moves standalone-container display preferences in the S06
+// SQLiteMigrator moves standalone-container display preferences in the
 // dashboard_preferences table. The identity key includes both the node ID
 // and the full Docker container ID, so preferences cannot cross node bounds.
 type SQLiteMigrator struct {

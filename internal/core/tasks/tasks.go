@@ -98,7 +98,7 @@ const (
 	ActionImageDelete = protocol.TaskImageDelete
 )
 
-// Intent is the complete allowlisted, non-secret S05 container command. No
+// Intent is the complete allowlisted, non-secret remote container command. No
 // arbitrary JSON or freeform error field is persisted. Credentials for future
 // registry or other secret-bearing actions need a separate encrypted,
 // one-use transport contract before those actions are added here.

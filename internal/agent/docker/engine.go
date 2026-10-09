@@ -22,7 +22,6 @@ type Engine interface {
 	ListAll(context.Context) ([]string, error)
 	Inspect(context.Context, string) (Container, error)
 	OpenEvents(context.Context) (EventStream, error)
-	Close() error
 }
 
 type EventStream struct {
@@ -142,6 +141,15 @@ func (e *SDKEngine) OpenEvents(ctx context.Context) (EventStream, error) {
 }
 
 func (e *SDKEngine) Close() error { return e.client.Close() }
+
+// Client exposes the process-owned client for narrow feature adapters. The
+// runtime remains responsible for its lifetime.
+func (e *SDKEngine) Client() *client.Client {
+	if e == nil {
+		return nil
+	}
+	return e.client
+}
 
 type inspectResponse struct {
 	ID      string `json:"Id"`

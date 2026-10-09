@@ -56,4 +56,3 @@ func (e unavailableDockerEngine) Inspect(context.Context, string) (agentdocker.C
 func (e unavailableDockerEngine) OpenEvents(context.Context) (agentdocker.EventStream, error) {
 	return agentdocker.EventStream{}, e.err
 }
-func (e unavailableDockerEngine) Close() error { return nil }

@@ -18,21 +18,14 @@ const (
 
 // Result reports rows deleted by one atomic cleanup transaction.
 type Result struct {
-	AuditEntries        int64
-	CoreTaskEvents      int64
-	CoreTasks           int64
-	ComposeEvents       int64
-	ComposeOperations   int64
-	ComposeEditorEvents int64
-	ComposeEditorOps    int64
-	ProbeRuns           int64
-	AlertDeliveries     int64
-	AlertEvents         int64
-	Alerts              int64
-	AlertWindows        int64
-	AgentUpdateTasks    int64
-	FileTaskEvents      int64
-	FileTasks           int64
+	AuditEntries    int64
+	CoreTaskEvents  int64
+	CoreTasks       int64
+	ProbeRuns       int64
+	AlertDeliveries int64
+	AlertEvents     int64
+	Alerts          int64
+	AlertWindows    int64
 }
 
 // Cleanup removes completed history strictly older than now-retention. Rows on
@@ -90,22 +83,6 @@ func Cleanup(ctx context.Context, db *sql.DB, now time.Time, retention time.Dura
 		AND NOT EXISTS (SELECT 1 FROM core_task_resource_claims c WHERE c.task_id=t.task_id)`, cutoffNanos); err != nil {
 		return Result{}, err
 	}
-	if result.ComposeEvents, err = remove("expired Compose operation events", `DELETE FROM compose_operation_events WHERE operation_id IN (
-		SELECT operation_id FROM compose_operations WHERE status IN ('succeeded','failed','timed_out') AND updated_at < ?
-	)`, cutoffNanos); err != nil {
-		return Result{}, err
-	}
-	if result.ComposeOperations, err = remove("expired Compose operations", `DELETE FROM compose_operations WHERE status IN ('succeeded','failed','timed_out') AND updated_at < ?`, cutoffNanos); err != nil {
-		return Result{}, err
-	}
-	if result.ComposeEditorEvents, err = remove("expired Compose editor events", `DELETE FROM compose_editor_events WHERE operation_id IN (
-		SELECT operation_id FROM compose_editor_operations WHERE status IN ('succeeded','failed') AND updated_at < ?
-	)`, cutoffNanos); err != nil {
-		return Result{}, err
-	}
-	if result.ComposeEditorOps, err = remove("expired Compose editor operations", `DELETE FROM compose_editor_operations WHERE status IN ('succeeded','failed') AND updated_at < ?`, cutoffNanos); err != nil {
-		return Result{}, err
-	}
 	if result.ProbeRuns, err = remove("completed service probe runs", `DELETE FROM service_probe_runs
 		WHERE status <> 'pending' AND COALESCE(completed_at, checked_at) < ?`, cutoffNanos); err != nil {
 		return Result{}, err
@@ -142,19 +119,6 @@ func Cleanup(ctx context.Context, db *sql.DB, now time.Time, retention time.Dura
 	if result.AlertWindows, err = remove("expired alert windows", `DELETE FROM alert_windows
 		WHERE (disabled_at IS NOT NULL AND disabled_at < ?)
 		OR (disabled_at IS NULL AND ends_at < ?)`, cutoffNanos, cutoffNanos); err != nil {
-		return Result{}, err
-	}
-	if result.AgentUpdateTasks, err = remove("terminal Agent update tasks", `DELETE FROM agent_update_tasks
-		WHERE status IN ('succeeded','failed','paused') AND updated_at < ?`, cutoffSeconds); err != nil {
-		return Result{}, err
-	}
-	if result.FileTaskEvents, err = remove("expired file task events", `DELETE FROM file_write_task_events WHERE task_id IN (
-		SELECT task_id FROM file_write_tasks WHERE status IN ('succeeded','failed','canceled') AND finished_at_ns IS NOT NULL AND finished_at_ns < ?
-	)`, cutoffNanos); err != nil {
-		return Result{}, err
-	}
-	if result.FileTasks, err = remove("terminal file tasks", `DELETE FROM file_write_tasks
-		WHERE status IN ('succeeded','failed','canceled') AND finished_at_ns IS NOT NULL AND finished_at_ns < ?`, cutoffNanos); err != nil {
 		return Result{}, err
 	}
 	if err := tx.Commit(); err != nil {

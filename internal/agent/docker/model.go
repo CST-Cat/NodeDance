@@ -1,5 +1,5 @@
 // Package docker discovers and normalizes the local Docker Engine inventory.
-// It is read-only: user-authorized Engine mutations are implemented by S05.
+// It is read-only: user-authorized Engine mutations use the shared task path.
 package docker
 
 import (

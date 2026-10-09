@@ -6,19 +6,13 @@ package containerstreams
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"net/http"
-	"strings"
 	"time"
 
 	"github.com/moby/moby/client"
 )
 
-const (
-	defaultResponseHeaderTimeout = 8 * time.Second
-	defaultInspectTimeout        = 10 * time.Second
-)
+const defaultInspectTimeout = 10 * time.Second
 
 var ErrInvalidContainerID = errors.New("container stream requires a full Docker container ID")
 
@@ -43,39 +37,11 @@ type SDKEngine struct {
 	inspectTimeout time.Duration
 }
 
-func NewSDKEngine(socket string) (*SDKEngine, error) {
-	return newSDKEngine(socket, defaultResponseHeaderTimeout, defaultInspectTimeout)
-}
-
-func newSDKEngine(socket string, responseHeaderTimeout, inspectTimeout time.Duration) (*SDKEngine, error) {
-	if socket == "" {
-		socket = "unix:///var/run/docker.sock"
+func NewEngine(cli *client.Client) (*SDKEngine, error) {
+	if cli == nil {
+		return nil, errors.New("shared Docker Engine client is required")
 	}
-	if !strings.HasPrefix(socket, "unix:///") {
-		return nil, errors.New("Docker Engine host must be a local Unix socket")
-	}
-	if responseHeaderTimeout <= 0 || responseHeaderTimeout > time.Minute {
-		return nil, errors.New("Docker response-header timeout is outside the supported bounds")
-	}
-	if inspectTimeout <= 0 || inspectTimeout > time.Minute {
-		return nil, errors.New("Docker inspect timeout is outside the supported bounds")
-	}
-	httpClient := &http.Client{
-		Transport:     &http.Transport{ResponseHeaderTimeout: responseHeaderTimeout},
-		CheckRedirect: client.CheckRedirect,
-		// Deliberately leave http.Client.Timeout at zero. A total timeout would
-		// terminate otherwise healthy follow-log and stats streams.
-	}
-	cli, err := client.New(
-		client.WithHTTPClient(httpClient),
-		client.WithHost(socket),
-		client.WithScheme("http"),
-		client.WithAPIVersionNegotiation(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("create Docker stream client: %w", err)
-	}
-	return &SDKEngine{client: cli, inspectTimeout: inspectTimeout}, nil
+	return &SDKEngine{client: cli, inspectTimeout: defaultInspectTimeout}, nil
 }
 
 func (e *SDKEngine) Inspect(ctx context.Context, id string) (ContainerInfo, error) {
@@ -137,13 +103,6 @@ func (e *SDKEngine) OpenStats(ctx context.Context, id string) (io.ReadCloser, er
 		return nil, err
 	}
 	return result.Body, nil
-}
-
-func (e *SDKEngine) Close() error {
-	if e == nil || e.client == nil {
-		return nil
-	}
-	return e.client.Close()
 }
 
 func dockerTime(value time.Time) string {

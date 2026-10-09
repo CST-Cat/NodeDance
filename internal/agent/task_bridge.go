@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/agent/containeractions"
 	"github.com/CST-Cat/NodeDance/internal/agent/containerrebuild"
+	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	agentimages "github.com/CST-Cat/NodeDance/internal/agent/images"
 	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
 	"github.com/CST-Cat/NodeDance/internal/agent/taskrunner"
@@ -25,14 +25,13 @@ var errTaskSnapshotRequired = errors.New("complete task snapshot is required")
 type taskBridgeRuntime struct {
 	nodeID  string
 	journal *taskjournal.Store
-	engine  *containeractions.SDKEngine
 	images  *agentimages.SDKEngine
 	runner  *taskrunner.Runner
 	rebuild *containerrebuild.Manager
 	store   *containerrebuild.Store
 }
 
-func openTaskBridge(ctx context.Context, configPath, nodeID string) (*taskBridgeRuntime, error) {
+func openTaskBridge(ctx context.Context, configPath, nodeID string, shared *agentdocker.SDKEngine) (*taskBridgeRuntime, error) {
 	if nodeID == "" {
 		return nil, errors.New("Agent identity is not available for the task journal")
 	}
@@ -41,65 +40,62 @@ func openTaskBridge(ctx context.Context, configPath, nodeID string) (*taskBridge
 	if err != nil {
 		return nil, fmt.Errorf("open durable Agent task journal: %w", err)
 	}
-	closeOnError := func(err error, engine *containeractions.SDKEngine, imageEngine *agentimages.SDKEngine, rebuildStore *containerrebuild.Store) (*taskBridgeRuntime, error) {
-		if imageEngine != nil {
-			_ = imageEngine.Close()
-		}
-		if engine != nil {
-			_ = engine.Close()
-		}
+	closeOnError := func(err error, rebuildStore *containerrebuild.Store) (*taskBridgeRuntime, error) {
 		if rebuildStore != nil {
 			_ = rebuildStore.Close()
 		}
 		_ = journal.Close()
 		return nil, err
 	}
-	engine, err := containeractions.NewSDKEngine(os.Getenv("DOCKER_HOST"))
-	if err != nil {
+	if shared == nil {
 		// Still recover interrupted journal state before declining the bridge.
 		recoveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		_, recoverErr := journal.RecoverInterrupted(recoveryCtx)
 		cancel()
 		if recoverErr != nil {
-			return closeOnError(fmt.Errorf("recover Agent task journal: %w", recoverErr), nil, nil, nil)
+			return closeOnError(fmt.Errorf("recover Agent task journal: %w", recoverErr), nil)
 		}
-		return closeOnError(fmt.Errorf("create task Docker Engine client: %w", err), nil, nil, nil)
+		return closeOnError(errors.New("shared Docker Engine client is unavailable"), nil)
 	}
-	imageEngine, err := agentimages.NewSDKEngine(os.Getenv("DOCKER_HOST"))
+	engine, err := containeractions.NewEngine(shared.Client())
 	if err != nil {
-		return closeOnError(fmt.Errorf("create image Docker Engine client: %w", err), engine, nil, nil)
+		return closeOnError(fmt.Errorf("create container action adapter: %w", err), nil)
+	}
+	imageEngine, err := agentimages.NewEngine(shared.Client())
+	if err != nil {
+		return closeOnError(fmt.Errorf("create image adapter: %w", err), nil)
 	}
 	rebuildStore, err := containerrebuild.OpenStore(ctx, filepath.Join(filepath.Dir(configPath), "rebuilds.sqlite"))
 	if err != nil {
-		return closeOnError(fmt.Errorf("open durable Agent container rebuild store: %w", err), engine, imageEngine, nil)
+		return closeOnError(fmt.Errorf("open durable Agent container rebuild store: %w", err), nil)
 	}
-	dockerEngine, err := containerrebuild.NewDockerEngine(engine.DockerClient())
+	dockerEngine, err := containerrebuild.NewDockerEngine(shared.Client())
 	if err != nil {
-		return closeOnError(fmt.Errorf("create container rebuild Docker adapter: %w", err), engine, imageEngine, rebuildStore)
+		return closeOnError(fmt.Errorf("create container rebuild Docker adapter: %w", err), rebuildStore)
 	}
 	rebuildManager, err := containerrebuild.NewManager(dockerEngine, journal, rebuildStore, containerrebuild.Options{})
 	if err != nil {
-		return closeOnError(fmt.Errorf("create durable container rebuild manager: %w", err), engine, imageEngine, rebuildStore)
+		return closeOnError(fmt.Errorf("create durable container rebuild manager: %w", err), rebuildStore)
 	}
 	executor, err := containeractions.New(engine, journal, containeractions.Options{Rebuilder: &agentRebuildExecutor{manager: rebuildManager}})
 	if err != nil {
-		return closeOnError(fmt.Errorf("create durable container action executor: %w", err), engine, imageEngine, rebuildStore)
+		return closeOnError(fmt.Errorf("create durable container action executor: %w", err), rebuildStore)
 	}
 	runner, err := taskrunner.New(nodeID, journal, executor, taskrunner.Options{})
 	if err != nil {
-		return closeOnError(fmt.Errorf("create Agent task runner: %w", err), engine, imageEngine, rebuildStore)
+		return closeOnError(fmt.Errorf("create Agent task runner: %w", err), rebuildStore)
 	}
 	imageExecutor, err := agentimages.NewExecutor(imageEngine, journal)
 	if err != nil {
-		return closeOnError(fmt.Errorf("create durable image executor: %w", err), engine, imageEngine, rebuildStore)
+		return closeOnError(fmt.Errorf("create durable image executor: %w", err), rebuildStore)
 	}
 	if err := runner.SetImageExecutor(imageExecutor); err != nil {
-		return closeOnError(fmt.Errorf("attach image executor: %w", err), engine, imageEngine, rebuildStore)
+		return closeOnError(fmt.Errorf("attach image executor: %w", err), rebuildStore)
 	}
 	if err := runner.Start(ctx); err != nil {
-		return closeOnError(fmt.Errorf("start Agent task runner: %w", err), engine, imageEngine, rebuildStore)
+		return closeOnError(fmt.Errorf("start Agent task runner: %w", err), rebuildStore)
 	}
-	return &taskBridgeRuntime{nodeID: nodeID, journal: journal, engine: engine, images: imageEngine, runner: runner, rebuild: rebuildManager, store: rebuildStore}, nil
+	return &taskBridgeRuntime{nodeID: nodeID, journal: journal, images: imageEngine, runner: runner, rebuild: rebuildManager, store: rebuildStore}, nil
 }
 
 func (b *taskBridgeRuntime) close() error {
@@ -112,12 +108,6 @@ func (b *taskBridgeRuntime) close() error {
 		first = fmt.Errorf("stop Agent task runner: %w", err)
 	}
 	cancel()
-	if err := b.engine.Close(); err != nil && first == nil {
-		first = fmt.Errorf("close task Docker Engine client: %w", err)
-	}
-	if err := b.images.Close(); err != nil && first == nil {
-		first = fmt.Errorf("close image Docker Engine client: %w", err)
-	}
 	if err := b.journal.Close(); err != nil && first == nil {
 		first = fmt.Errorf("close Agent task journal: %w", err)
 	}

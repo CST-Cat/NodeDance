@@ -51,9 +51,6 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 		s.createTerminal(w, r, current, nodeID)
 		return
 	}
-	if s.handleAgentUpdateAPI(w, r, current) {
-		return
-	}
 	if s.handleTailscaleAPI(w, r, current) {
 		return
 	}
@@ -153,9 +150,6 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 		return
 	}
 	if s.handleTaskAPI(w, r, current) {
-		return
-	}
-	if s.handleComposeEditorAPI(w, r, current) {
 		return
 	}
 	if s.handleComposeAPI(w, r, current) {

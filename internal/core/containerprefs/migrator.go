@@ -1,6 +1,6 @@
-// Package containerprefs defines the replaceable identity-migration seam used
-// by rebuild task reporting. S06 owns the production persistent preference
-// store; this package includes an in-memory adapter for integration tests.
+// Package containerprefs defines the identity migration used when a rebuild
+// replaces a container ID. The dashboard repository owns persistent display
+// preferences; this package includes an in-memory adapter for tests.
 package containerprefs
 
 import (
@@ -42,7 +42,7 @@ type NopMigrator struct{}
 
 func (NopMigrator) MigrateContainer(context.Context, string, string, string) error { return nil }
 
-// MemoryStore is a replaceable test adapter. It moves S06 display preferences
+// MemoryStore is a replaceable test adapter. It moves display preferences
 // by identity and never copies them to the stopped rollback container.
 type MemoryStore struct {
 	mu     sync.RWMutex

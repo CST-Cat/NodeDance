@@ -1,12 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { ApiError, api, type Appearance, type Session, type User } from './api'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ApiError, api, SESSION_EXPIRED_EVENT, type Appearance, type Session, type User } from './api'
 import NodesDashboard from './components/NodesDashboard.vue'
 import TailscaleDiscovery from './components/TailscaleDiscovery.vue'
 import AlertCenter from './components/AlertCenter.vue'
-import AgentUpdates from './components/AgentUpdates.vue'
 
-type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'alerts' | 'updates'
+type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'alerts'
 type ImageKind = 'avatar' | 'background'
 
 const screen = ref<Screen>('loading')
@@ -280,18 +279,39 @@ async function logout() {
   }
 }
 
+function handleSessionExpired() {
+  currentUser.value = null
+  sessions.value = []
+  loginPassword.value = ''
+  setupForm.password = ''
+  passwordForm.currentPassword = ''
+  passwordForm.newPassword = ''
+  passwordForm.confirmPassword = ''
+  busy.value = false
+  busyLabel.value = ''
+  uploading.value = ''
+  clearMessages()
+  screen.value = 'login'
+  notice.value = '登录状态已失效，请重新登录。'
+}
+
 function formatTime(value: string): string {
   const time = new Date(value)
   return Number.isNaN(time.getTime()) ? '—' : time.toLocaleString()
 }
 
 onMounted(() => {
+  window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
   const colorScheme = window.matchMedia('(prefers-color-scheme: light)')
   preferredTheme.value = colorScheme.matches ? 'light' : 'dark'
   colorScheme.addEventListener('change', (event) => {
     preferredTheme.value = event.matches ? 'light' : 'dark'
   })
   void initializeScreen()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
 })
 </script>
 
@@ -315,11 +335,9 @@ onMounted(() => {
         <button v-if="screen === 'nodes'" class="quiet-button" type="button" @click="screen = 'settings'">账户设置</button>
         <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery'" class="quiet-button" type="button" @click="screen = 'alerts'">告警中心</button>
         <button v-if="screen === 'alerts'" class="quiet-button" type="button" @click="screen = 'nodes'">返回监控</button>
-        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'alerts'" class="quiet-button" type="button" @click="screen = 'updates'">Agent 更新</button>
-        <button v-if="screen === 'updates'" class="quiet-button" type="button" @click="screen = 'nodes'">返回监控</button>
         <button v-if="screen === 'nodes' || screen === 'settings'" class="quiet-button" type="button" @click="screen = 'discovery'">发现节点</button>
         <button v-if="screen === 'discovery'" class="quiet-button" type="button" @click="screen = 'nodes'">返回监控</button>
-        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'alerts' || screen === 'updates'" class="quiet-button" type="button" :disabled="busy" @click="logout">
+        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'alerts'" class="quiet-button" type="button" :disabled="busy" @click="logout">
           退出登录
         </button>
       </div>
@@ -416,8 +434,6 @@ onMounted(() => {
     <NodesDashboard v-else-if="screen === 'nodes'" />
 
     <AlertCenter v-else-if="screen === 'alerts'" />
-
-    <AgentUpdates v-else-if="screen === 'updates'" />
 
     <TailscaleDiscovery v-else-if="screen === 'discovery'" @back="screen = 'nodes'" />
 

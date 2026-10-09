@@ -18,15 +18,15 @@ import (
 	"time"
 
 	agentcompose "github.com/CST-Cat/NodeDance/internal/agent/compose"
+	"github.com/CST-Cat/NodeDance/internal/agent/containerstreams"
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
-	"github.com/CST-Cat/NodeDance/internal/agent/filejournal"
 	agentfiles "github.com/CST-Cat/NodeDance/internal/agent/files"
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
 	agentprobes "github.com/CST-Cat/NodeDance/internal/agent/probes"
 	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
-	agentupdate "github.com/CST-Cat/NodeDance/internal/agent/update"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
+	mobyclient "github.com/moby/moby/client"
 )
 
 const (
@@ -101,7 +101,13 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		cancelCollector()
 		<-collector.Done()
 	}()
-	taskBridge, bridgeErr := openTaskBridge(ctx, configPath, config.NodeID)
+	sharedDocker, dockerErr := agentdocker.NewSDKEngine(os.Getenv("DOCKER_HOST"))
+	if dockerErr == nil {
+		defer sharedDocker.Close()
+	} else if stderr != nil {
+		fmt.Fprintln(stderr, "Docker Engine unavailable; host monitoring remains active")
+	}
+	taskBridge, bridgeErr := openTaskBridge(ctx, configPath, config.NodeID, sharedDocker)
 	if bridgeErr != nil {
 		if stderr != nil {
 			fmt.Fprintln(stderr, "Agent task bridge unavailable; host monitoring remains active")
@@ -117,29 +123,8 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	if fileErr != nil && stderr != nil {
 		fmt.Fprintln(stderr, "Agent file service unavailable; monitoring and task execution remain active")
 	}
-	var fileJournal *filejournal.Store
-	if fileService != nil {
-		fileJournal, fileErr = filejournal.Open(ctx, filepath.Join(filepath.Dir(configPath), "file-writes.sqlite"))
-		if fileErr == nil {
-			fileErr = recoverAgentFileUploads(ctx, fileService, fileJournal)
-		}
-		if fileErr != nil {
-			_ = fileService.Close()
-			fileService = nil
-			if fileJournal != nil {
-				_ = fileJournal.Close()
-				fileJournal = nil
-			}
-			if stderr != nil {
-				fmt.Fprintln(stderr, "Agent file service unavailable; durable journal recovery failed")
-			}
-		}
-	}
 	if fileService != nil {
 		defer fileService.Close()
-	}
-	if fileJournal != nil {
-		defer fileJournal.Close()
 	}
 	var backoff reconnectBackoff
 	for {
@@ -151,12 +136,9 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 			return fmt.Errorf("reload Agent credentials: %w", err)
 		}
 		established := false
-		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates, taskBridge, func() {
+		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates, taskBridge, sharedDocker, func() {
 			established = true
-		}, fileService, fileJournal)
-		if errors.Is(connectionErr, agentupdate.ErrPrepared) {
-			return agentupdate.ErrPrepared
-		}
+		}, fileService)
 		if established {
 			backoff.connected()
 		}
@@ -184,11 +166,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	}
 }
 
-func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, taskBridge *taskBridgeRuntime, onEstablished func(), fileService *agentfiles.Service, fileJournals ...*filejournal.Store) error {
-	var fileJournal *filejournal.Store
-	if len(fileJournals) > 0 {
-		fileJournal = fileJournals[0]
-	}
+func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, taskBridge *taskBridgeRuntime, sharedDocker *agentdocker.SDKEngine, onEstablished func(), fileService *agentfiles.Service) error {
 	credential := config.Credential
 	pendingCredentialAlreadyActive := false
 	if config.PendingCredential != "" {
@@ -232,14 +210,18 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	connectionCtx, cancelConnection := context.WithCancel(ctx)
 	defer cancelConnection()
 	defer conn.CloseNow()
-	streamBridge, _ := newSDKContainerStreamBridge(os.Getenv("DOCKER_HOST"))
+	var streamBridge *containerStreamBridge
+	if sharedDocker != nil {
+		streamEngine, streamErr := containerstreams.NewEngine(sharedDocker.Client())
+		if streamErr == nil {
+			streamBridge, _ = newContainerStreamBridge(streamEngine)
+		}
+	}
 	if streamBridge != nil {
 		defer streamBridge.Close()
 	}
-	composeBridge, closeComposeBridge, composeAvailable, composeEditorAvailable := newSDKComposeBridge(configPath)
-	if closeComposeBridge != nil {
-		defer closeComposeBridge()
-	}
+
+	composeBridge, composeAvailable := newSDKComposeBridge(sharedDocker)
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
@@ -260,21 +242,6 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	}
 	if fileService != nil {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles)
-		if fileJournal != nil {
-			hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFileJournal)
-		}
-	}
-	if composeEditorAvailable {
-		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityComposeEditor)
-	}
-	if os.Getenv(agentupdate.HelperEnvironment) == "1" {
-		if _, err := agentupdate.PublicKeyFromBase64(agentupdate.TrustedPublicKeyBase64); err == nil {
-			hello.Capabilities = append(hello.Capabilities, protocol.CapabilityAgentUpdatesPreparedAck)
-			if journal, journalErr := agentupdate.ReadJournal(filepath.Dir(configPath)); journalErr == nil && journal.State == "staged" {
-				hello.UpdateTaskID = journal.TaskID
-				hello.UpdateState = journal.State
-			}
-		}
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
 		return errors.New("send Agent hello failed")
@@ -295,12 +262,6 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	var welcome protocol.Welcome
 	if err := decodeSocketPayload(envelope.Payload, &welcome); err != nil || !validWelcome(config, envelope.Generation, welcome) {
 		return errors.New("Core welcome is invalid")
-	}
-	if err := validatePreparedUpdateWelcome(filepath.Dir(configPath), welcome.Capabilities); err != nil {
-		return err
-	}
-	if err := agentupdate.ConfirmStartup(filepath.Dir(configPath), version); err != nil {
-		return fmt.Errorf("confirm Agent update startup: %w", err)
 	}
 	if onEstablished != nil {
 		onEstablished()
@@ -343,38 +304,19 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	if !containsCapability(welcome.Capabilities, protocol.CapabilityFiles) {
 		fileService = nil
 	}
-	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates,
+	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates, sharedDocker,
 		containsCapability(welcome.Capabilities, protocol.CapabilityDocker), taskBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityTaskBridge),
 		containsCapability(welcome.Capabilities, protocol.CapabilityImages), streamBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams), composeBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityCompose),
 		containsCapability(welcome.Capabilities, protocol.CapabilityTerminal), config.Shell, config.NodeID,
-		containsCapability(welcome.Capabilities, protocol.CapabilityProbes),
-		preparedAgentUpdatesEnabled(welcome.Capabilities), fileService, fileJournal, config, version)
-}
-
-func preparedAgentUpdatesEnabled(capabilities []string) bool {
-	return containsCapability(capabilities, protocol.CapabilityAgentUpdatesPreparedAck)
-}
-
-func validatePreparedUpdateWelcome(stateDir string, capabilities []string) error {
-	journal, err := agentupdate.ReadJournal(stateDir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("read staged Agent update journal: %w", err)
-	}
-	if journal.State == "staged" && !preparedAgentUpdatesEnabled(capabilities) {
-		return errors.New("Core does not support agent.updates.prepared-ack.v1; staged update remains unapplied")
-	}
-	return nil
+		containsCapability(welcome.Capabilities, protocol.CapabilityProbes), fileService)
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell, nodeID string, probesEnabled, updatesEnabled bool, fileService *agentfiles.Service, fileJournal *filejournal.Store, agentConfig Config, agentVersion string) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, sharedDocker *agentdocker.SDKEngine, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell, nodeID string, probesEnabled bool, fileService *agentfiles.Service) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -387,7 +329,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	}()
 	var terminalFrames chan protocol.TerminalFrame
 	if terminalEnabled {
-		manager := agentterminal.NewManager(agentterminal.NewSystemProvider(hostShell, os.Getenv("DOCKER_HOST")))
+		var dockerClient *mobyclient.Client
+		if sharedDocker != nil {
+			dockerClient = sharedDocker.Client()
+		}
+		manager := agentterminal.NewManager(agentterminal.NewSystemProvider(hostShell, dockerClient))
 		terminalFrames = make(chan protocol.TerminalFrame, 64)
 		terminalCtx, cancelTerminal := context.WithCancel(ctx)
 		terminalDone := make(chan struct{})
@@ -538,7 +484,7 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 		done := make(chan error, 1)
 		finished := make(chan struct{})
 		fileBridgeDone = done
-		bridge := newAgentFileBridge(fileService, generation, writer, fileJournal)
+		bridge := newAgentFileBridge(fileService, generation, writer)
 		go func() {
 			defer close(finished)
 			done <- bridge.run(fileCtx, fileMessages)
@@ -582,23 +528,13 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			}
 		}()
 	}
-	updateResults := make(chan protocol.AgentUpdateReport, 1)
-	updateRunning := false
-	var awaitingPreparedAck string
-	if updatesEnabled {
-		if journal, err := agentupdate.ReadJournal(filepath.Dir(configPath)); err == nil && journal.State == "staged" {
-			updateResults <- protocol.AgentUpdateReport{TaskID: journal.TaskID, Status: "prepared", Version: journal.Version}
-			updateRunning = true
-		}
-	}
 	var dockerDone <-chan error
 	if dockerEnabled {
 		var engine agentdocker.Engine
-		createdEngine, err := agentdocker.NewSDKEngine(os.Getenv("DOCKER_HOST"))
-		if err != nil {
+		if sharedDocker == nil {
 			engine = unavailableDockerEngine{err: errors.New("Docker Engine host must be a local unix socket")}
 		} else {
-			engine = createdEngine
+			engine = sharedDocker
 		}
 		observer := &socketDockerObserver{writer: writer, generation: generation}
 		discoverer, err := agentdocker.NewDiscoverer(engine, observer, agentdocker.Options{})
@@ -703,16 +639,6 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				return fmt.Errorf("Agent service probe bridge stopped unexpectedly: %w", err)
 			}
 			probeBridgeDone = nil
-		case report := <-updateResults:
-			if err := writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeAgentUpdateReport,
-				Generation: generation, RequestID: report.TaskID, Payload: encodePayload(report)}); err != nil {
-				return errors.New("send Agent update status failed")
-			}
-			if report.Status == "prepared" {
-				awaitingPreparedAck = report.TaskID
-			} else {
-				updateRunning = false
-			}
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -820,7 +746,7 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				default:
 					return errors.New("Core terminal command queue overflow")
 				}
-			case protocol.TypeFileRequest, protocol.TypeFileCancel, protocol.TypeFileJournalQuery:
+			case protocol.TypeFileRequest, protocol.TypeFileCancel:
 				if fileMessages == nil || envelope.Sequence != 0 || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
 					return errors.New("Core file request is invalid or was not negotiated")
 				}
@@ -838,54 +764,6 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				default:
 					return errors.New("Core service probe queue exceeded its bound")
 				}
-			case protocol.TypeAgentUpdate:
-				if !updatesEnabled || envelope.Sequence != 0 || !isUUID(envelope.RequestID) {
-					return errors.New("Core sent Agent update work without a negotiated update capability")
-				}
-				var command protocol.AgentUpdateCommand
-				if decodeSocketPayload(envelope.Payload, &command) != nil || command.TaskID != envelope.RequestID || command.ArtifactURL == "" {
-					return errors.New("Core Agent update command is invalid")
-				}
-				if updateRunning {
-					report := protocol.AgentUpdateReport{TaskID: command.TaskID, Status: "rejected", Reason: "another Agent update is already active"}
-					if err := writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeAgentUpdateReport,
-						Generation: generation, RequestID: report.TaskID, Payload: encodePayload(report)}); err != nil {
-						return errors.New("send Agent update rejection failed")
-					}
-					continue
-				}
-				var manifest agentupdate.Manifest
-				if decodeSocketPayload(command.Manifest, &manifest) != nil {
-					return errors.New("Core Agent update manifest is invalid")
-				}
-				updateRunning = true
-				go func(command protocol.AgentUpdateCommand, manifest agentupdate.Manifest) {
-					report := protocol.AgentUpdateReport{TaskID: command.TaskID, Version: manifest.Version}
-					key, keyErr := agentupdate.PublicKeyFromBase64(agentupdate.TrustedPublicKeyBase64)
-					client, clientErr := newHTTPClient(agentConfig.CAFile)
-					if keyErr == nil && clientErr == nil {
-						err := agentupdate.Stage(ctx, client, agentConfig.Credential, key, agentupdate.Request{TaskID: command.TaskID, Manifest: manifest,
-							ArtifactURL: command.ArtifactURL, CoreVersion: command.CoreVersion, CurrentAgentVersion: agentVersion,
-							Protocol: protocol.CurrentVersion}, filepath.Dir(configPath))
-						client.CloseIdleConnections()
-						if err == nil {
-							report.Status = "prepared"
-						} else {
-							report.Status, report.Reason = "rejected", safeUpdateError(err)
-						}
-					} else {
-						report.Status, report.Reason = "rejected", "Agent update trust or transport configuration unavailable"
-					}
-					select {
-					case updateResults <- report:
-					case <-ctx.Done():
-					}
-				}(command, manifest)
-			case protocol.TypeAgentUpdatePreparedAck:
-				if !updatesEnabled {
-					return errors.New("Core Agent update acknowledgement is invalid")
-				}
-				return acceptPreparedUpdateAck(filepath.Dir(configPath), awaitingPreparedAck, envelope)
 			case protocol.TypeProtocolError:
 				return errors.New("Core rejected Agent protocol message")
 			default:
@@ -903,21 +781,6 @@ func terminalSafeError(action string, err error) string {
 		return "could not open terminal for this target"
 	}
 	return "terminal operation failed"
-}
-
-func acceptPreparedUpdateAck(stateDir, awaitingTaskID string, envelope protocol.Envelope) error {
-	if envelope.Sequence != 0 || !isUUID(envelope.RequestID) {
-		return errors.New("Core Agent update acknowledgement is invalid")
-	}
-	var acknowledgement protocol.AgentUpdatePreparedAck
-	if decodeSocketPayload(envelope.Payload, &acknowledgement) != nil || acknowledgement.TaskID != envelope.RequestID ||
-		acknowledgement.TaskID != awaitingTaskID {
-		return errors.New("Core Agent update acknowledgement does not match a prepared report")
-	}
-	if err := agentupdate.AcknowledgePrepared(stateDir, acknowledgement.TaskID); err != nil {
-		return fmt.Errorf("persist Core Agent update acknowledgement: %w", err)
-	}
-	return agentupdate.ErrPrepared
 }
 
 func prepareRotation(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, configPath string, config Config, generation uint64, rotationID string,
@@ -1014,22 +877,6 @@ func containsCapability(capabilities []string, wanted string) bool {
 		}
 	}
 	return false
-}
-
-func safeUpdateError(err error) string {
-	if err == nil {
-		return ""
-	}
-	value := strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
-			return -1
-		}
-		return r
-	}, strings.TrimSpace(err.Error()))
-	if len(value) > 160 {
-		value = value[:160]
-	}
-	return value
 }
 
 func decodeSocketEnvelope(raw []byte) (protocol.Envelope, error) {
@@ -1195,25 +1042,4 @@ func openAgentFileService(configPath string) (*agentfiles.Service, error) {
 		limit = parsed
 	}
 	return agentfiles.New(root, limit)
-}
-
-func recoverAgentFileUploads(ctx context.Context, service *agentfiles.Service, journal *filejournal.Store) error {
-	if service == nil || journal == nil {
-		return nil
-	}
-	records, err := journal.IncompleteUploads(ctx)
-	if err != nil {
-		return err
-	}
-	for _, record := range records {
-		if err := service.RemoveUploadTemporary(record.TargetPath, record.TemporaryPath); err != nil {
-			return fmt.Errorf("clean interrupted Agent upload temporary: %w", err)
-		}
-		if record.Status == filejournal.Accepted {
-			if err := journal.Complete(ctx, record.TaskID, filejournal.Canceled, "cancel_confirmed"); err != nil {
-				return fmt.Errorf("record interrupted Agent upload cancellation: %w", err)
-			}
-		}
-	}
-	return nil
 }

@@ -3,16 +3,15 @@ package storage
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	corecompose "github.com/CST-Cat/NodeDance/internal/core/compose"
-	corecomposeedit "github.com/CST-Cat/NodeDance/internal/core/composeedit"
-	corefiletasks "github.com/CST-Cat/NodeDance/internal/core/filetasks"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 
 	_ "modernc.org/sqlite"
@@ -26,6 +25,33 @@ type Migration struct {
 type Store struct {
 	DB  *sql.DB
 	Dir string
+}
+
+// These snapshots keep the SQL for already released migration versions
+// immutable after their former feature packages are removed.
+//
+//go:embed migrations/v6_compose.sql
+var migrationV6Compose string
+
+//go:embed migrations/v7_compose_editor.sql
+var migrationV7ComposeEditor string
+
+//go:embed migrations/v12_file_tasks.sql
+var migrationV12FileTasks string
+
+//go:embed migrations/v13_file_tasks.sql
+var migrationV13FileTasks string
+
+func historicalStatements(source string) []string {
+	parts := strings.Split(source, ";\n\n")
+	statements := make([]string, 0, len(parts))
+	for _, part := range parts {
+		statement := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(part), ";"))
+		if statement != "" {
+			statements = append(statements, statement)
+		}
+	}
+	return statements
 }
 
 var migrations = []Migration{{
@@ -205,10 +231,10 @@ var migrations = []Migration{{
 	},
 }, {
 	Version: 6,
-	SQL:     corecompose.SchemaStatements(),
+	SQL:     historicalStatements(migrationV6Compose),
 }, {
 	Version: 7,
-	SQL:     corecomposeedit.SchemaStatements(),
+	SQL:     historicalStatements(migrationV7ComposeEditor),
 }, {
 	Version: 8,
 	SQL: []string{
@@ -432,13 +458,26 @@ var migrations = []Migration{{
 	},
 }, {
 	Version: 12,
-	SQL:     corefiletasks.SchemaStatements(),
+	SQL:     historicalStatements(migrationV12FileTasks),
 }, {
 	Version: 13,
-	SQL:     corefiletasks.MigrationV13Statements(),
+	SQL:     historicalStatements(migrationV13FileTasks),
 }, {
 	Version: 14,
 	SQL:     coretasks.MigrationV14Statements(),
+}, {
+	Version: 15,
+	SQL: []string{
+		`ALTER TABLE compose_operations RENAME TO archived_compose_operations`,
+		`ALTER TABLE compose_operation_events RENAME TO archived_compose_operation_events`,
+		`ALTER TABLE compose_editor_operations RENAME TO archived_compose_editor_operations`,
+		`ALTER TABLE compose_editor_events RENAME TO archived_compose_editor_events`,
+		`ALTER TABLE file_write_tasks RENAME TO archived_file_write_tasks`,
+		`ALTER TABLE file_write_task_events RENAME TO archived_file_write_task_events`,
+		`ALTER TABLE agent_update_releases RENAME TO archived_agent_update_releases`,
+		`ALTER TABLE agent_update_settings RENAME TO archived_agent_update_settings`,
+		`ALTER TABLE agent_update_tasks RENAME TO archived_agent_update_tasks`,
+	},
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {

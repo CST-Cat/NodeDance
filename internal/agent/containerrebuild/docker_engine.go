@@ -3,7 +3,6 @@ package containerrebuild
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/containerd/errdefs"
@@ -176,13 +175,4 @@ func (e *DockerEngine) RemoveImage(ctx context.Context, reference string) error 
 	return err
 }
 
-func (e *DockerEngine) Close() error {
-	if e == nil || e.client == nil {
-		return nil
-	}
-	return e.client.Close()
-}
-
 func IsNotFound(err error) bool { return err != nil && errdefs.IsNotFound(err) }
-
-func (e *DockerEngine) String() string { return fmt.Sprintf("DockerEngine(%p)", e.client) }

@@ -11,8 +11,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-
-	agentupdate "github.com/CST-Cat/NodeDance/internal/agent/update"
 )
 
 const AgentUnitName = "nodedance-agent.service"
@@ -22,7 +20,6 @@ type SystemdInstallOptions struct {
 	ConfigPath          string
 	UnitDir             string
 	BinaryPath          string
-	Version             string
 	FileRoot            string
 	FileRootSpecified   bool
 	DisableFileRoot     bool
@@ -99,26 +96,10 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 			return "", errors.New("systemd supplementary group must be a numeric GID or a valid group name")
 		}
 	}
-	if options.Version == "" {
-		options.Version = "bootstrap"
-	}
-	helper, current, err := agentupdate.InstallLayout(options.BinaryPath, stateDir, options.Version)
-	if err != nil {
-		return "", fmt.Errorf("install Agent update helper layout: %w", err)
-	}
-	target, err := filepath.EvalSymlinks(current)
-	if err != nil {
-		return "", fmt.Errorf("resolve installed Agent executable: %w", err)
-	}
-	for _, path := range []string{filepath.Join(stateDir, "bin"), filepath.Join(stateDir, "bin", "versions"), filepath.Dir(target), target, helper} {
-		if err := os.Chown(path, uid, gid); err != nil {
-			return "", fmt.Errorf("set Agent update helper ownership: %w", err)
-		}
-	}
 	if err := os.MkdirAll(options.UnitDir, 0o755); err != nil {
 		return "", fmt.Errorf("create systemd unit directory: %w", err)
 	}
-	unit := renderSystemdUnit(serviceUser.Username, serviceUser.Gid, options.ConfigPath, helper, fileRoot, options.SupplementaryGroups)
+	unit := renderSystemdUnit(serviceUser.Username, serviceUser.Gid, options.ConfigPath, options.BinaryPath, fileRoot, options.SupplementaryGroups)
 	if err := writeSystemdUnit(unitPath, unit); err != nil {
 		return "", err
 	}
@@ -137,7 +118,7 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 	return unitPath, nil
 }
 
-func renderSystemdUnit(serviceUser, primaryGroup, configPath, helperPath, fileRoot string, supplementaryGroups []string) string {
+func renderSystemdUnit(serviceUser, primaryGroup, configPath, binaryPath, fileRoot string, supplementaryGroups []string) string {
 	stateDir := filepath.Dir(configPath)
 	groupLine := ""
 	if len(supplementaryGroups) > 0 {
@@ -169,13 +150,13 @@ PrivateTmp=true
 ReadWritePaths=%s
 %s%s
 UMask=0077
-ExecStart=/usr/bin/env -- %s update-helper supervise --state-dir %s --config %s
+ExecStart=/usr/bin/env -- %s run --config %s
 Restart=always
 RestartSec=3s
 
 [Install]
 WantedBy=multi-user.target
-`, serviceUser, primaryGroup, groupLine, systemdQuoteUnitValue(stateDir), fileRootLine, fileRootMarker, systemdQuote(helperPath), systemdQuote(stateDir), systemdQuote(configPath))
+`, serviceUser, primaryGroup, groupLine, systemdQuoteUnitValue(stateDir), fileRootLine, fileRootMarker, systemdQuote(binaryPath), systemdQuote(configPath))
 }
 
 func systemdQuote(value string) string {

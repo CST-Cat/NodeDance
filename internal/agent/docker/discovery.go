@@ -104,7 +104,6 @@ func (d *Discoverer) Run(ctx context.Context) error {
 		cancel()
 		d.bus.close()
 		workers.Wait()
-		_ = d.engine.Close()
 	}()
 	startWorker := func(work func()) {
 		workers.Add(1)

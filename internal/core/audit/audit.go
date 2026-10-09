@@ -46,14 +46,11 @@ var actions = map[string]struct{}{
 	"agent_enrollment_create": {}, "agent_enrollment_consume": {},
 	"agent_revoke": {}, "agent_rotation_request": {},
 	"agent_rotation_prepare": {}, "agent_rotation_commit": {},
-	"compose_operation": {}, "terminal_start": {}, "terminal_end": {},
-	"file_mkdir": {}, "file_rename": {}, "file_delete": {}, "file_save_text": {}, "file_upload": {},
+	"terminal_start": {}, "terminal_end": {},
 	"probe_create": {}, "probe_update": {}, "probe_enable": {}, "probe_disable": {}, "probe_delete": {},
 	"alert_defaults_create": {}, "alert_rule_save": {}, "alert_rule_delete": {},
 	"alert_channel_save": {}, "alert_channel_delete": {}, "alert_channel_test": {},
 	"alert_window_create": {}, "alert_window_delete": {}, "alert_acknowledge": {}, "alert_silence": {},
-	"agent_update_release_upload": {}, "agent_update_request": {}, "agent_update_settings": {}, "agent_update_campaign_resume": {},
-	"agent_update_status": {},
 }
 
 var outcomes = map[string]struct{}{

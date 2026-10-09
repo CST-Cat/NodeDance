@@ -15,7 +15,6 @@ import (
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
-	coreupdates "github.com/CST-Cat/NodeDance/internal/core/updates"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
@@ -33,18 +32,13 @@ type agentConnection struct {
 	dockerEnabled            bool
 	taskEnabled              bool
 	probeEnabled             bool
-	updateEnabled            bool
-	stagedUpdateTaskID       string
-	updateBaseURL            string
 	streamEnabled            bool
 	composeEnabled           bool
 	imagesEnabled            bool
 	terminalEnabled          bool
 	filesEnabled             bool
-	fileJournalEnabled       bool
 	imageResponseMu          sync.Mutex
 	imageResponses           map[string]chan protocol.ImageListResponse
-	composeEditorEnabled     bool
 	taskSignal               chan struct{}
 	taskMu                   sync.RWMutex
 	taskJournalID            string
@@ -67,9 +61,6 @@ type agentConnection struct {
 	fileTransfers            map[string]*coreFileTransfer
 	fileTombstones           map[string]struct{}
 	fileTombstoneOrder       []string
-	fileCancelAcks           map[string]chan protocol.FileCancelAck
-	fileJournalMu            sync.Mutex
-	fileJournalQueries       map[string]map[string]struct{}
 	rebuildPlanMu            sync.Mutex
 	rebuildPlanWaiters       map[string]rebuildPlanWaiter
 	leaseUpdates             chan time.Time
@@ -83,33 +74,6 @@ type agentRead struct {
 	typeID websocket.MessageType
 	data   []byte
 	err    error
-}
-
-// persistAgentUpdateReportAndQueueAck makes the prepared-report handoff
-// durable before allowing an Agent to stop its old process. The Agent keeps a
-// staged journal and retries the report after reconnect if persistence or ACK
-// delivery fails.
-func persistAgentUpdateReportAndQueueAck(ctx context.Context, connection *agentConnection, report protocol.AgentUpdateReport, persist func() error) error {
-	if err := persist(); err != nil {
-		return err
-	}
-	if report.Status != "prepared" {
-		return nil
-	}
-	ack := protocol.AgentUpdatePreparedAck{TaskID: report.TaskID}
-	envelope := protocol.Envelope{
-		Version:    protocol.CurrentVersion,
-		Type:       protocol.TypeAgentUpdatePreparedAck,
-		Generation: connection.generation,
-		RequestID:  report.TaskID,
-		Payload:    marshalAgentPayload(ack),
-	}
-	select {
-	case connection.commands <- envelope:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
 }
 
 func (c *agentConnection) close() {
@@ -462,23 +426,18 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	connectionCtx, connectionCancel := context.WithCancel(r.Context())
 	negotiatedCapabilities := negotiateCapabilities(hello.Capabilities)
 	managed := &agentConnection{conn: conn, cancel: connectionCancel, agentID: identity.AgentID, generation: lease.ConnectionGeneration,
-		ctx:                connectionCtx,
-		metricsEnabled:     hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
-		dockerEnabled:      hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
-		taskEnabled:        hasCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge),
-		probeEnabled:       hasCapability(negotiatedCapabilities, protocol.CapabilityProbes),
-		updateEnabled:      hasCapability(negotiatedCapabilities, protocol.CapabilityAgentUpdatesPreparedAck),
-		stagedUpdateTaskID: hello.UpdateTaskID,
-		updateBaseURL:      s.agentUpdateOrigin(r),
-		streamEnabled:      hasCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams), nodeID: identity.NodeID,
-		composeEnabled:     hasCapability(negotiatedCapabilities, protocol.CapabilityCompose),
-		imagesEnabled:      hasCapability(negotiatedCapabilities, protocol.CapabilityImages),
-		terminalEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityTerminal),
-		filesEnabled:       hasCapability(negotiatedCapabilities, protocol.CapabilityFiles),
-		fileJournalEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityFiles) && hasCapability(negotiatedCapabilities, protocol.CapabilityFileJournal),
-		imageResponses:     make(map[string]chan protocol.ImageListResponse),
-		taskSignal:         make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
-		composeEditorEnabled:     hasCapability(negotiatedCapabilities, protocol.CapabilityComposeEditor),
+		ctx:            connectionCtx,
+		metricsEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
+		dockerEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
+		taskEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge),
+		probeEnabled:   hasCapability(negotiatedCapabilities, protocol.CapabilityProbes),
+		streamEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams), nodeID: identity.NodeID,
+		composeEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityCompose),
+		imagesEnabled:   hasCapability(negotiatedCapabilities, protocol.CapabilityImages),
+		terminalEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityTerminal),
+		filesEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityFiles),
+		imageResponses:  make(map[string]chan protocol.ImageListResponse),
+		taskSignal:      make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
 		commands: make(chan protocol.Envelope, 32), leaseUpdates: make(chan time.Time, 1)}
 	if managed.dockerEnabled {
@@ -494,8 +453,6 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	if managed.filesEnabled {
 		managed.fileTransfers = make(map[string]*coreFileTransfer)
 		managed.fileTombstones = make(map[string]struct{})
-		managed.fileCancelAcks = make(map[string]chan protocol.FileCancelAck)
-		managed.fileJournalQueries = make(map[string]map[string]struct{})
 	}
 	go s.watchAgentLease(managed, lease.Identity, lease.LastSeenAt)
 	if !s.installAgentConnection(managed, identity.AgentID) {
@@ -528,22 +485,10 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err := s.writeAgentEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeWelcome, Generation: lease.ConnectionGeneration, Payload: marshalAgentPayload(welcome)}); err != nil {
 		return
 	}
-	if s.updates != nil {
-		if err := s.updates.ReconcileVersion(ctx, identity.NodeID, hello.AgentVersion, hello.UpdateTaskID); err != nil {
-			s.closeAgentProtocol(conn, websocket.StatusInternalError, "could not reconcile Agent update task")
-			return
-		}
-	}
 	s.runAgentConnection(connectionCtx, managed, lease.Identity)
 }
 
 func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnection, identity agents.Identity) {
-	if connection.fileJournalEnabled {
-		go s.reconcileUnknownFileTasks(ctx, connection)
-	}
-	if connection.composeEnabled && connection.composeEditorEnabled {
-		go s.reconcileUnknownComposeEditorOperations(ctx, connection)
-	}
 	readMessages := make(chan agentRead, 1)
 	go func() {
 		for {
@@ -760,11 +705,11 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent Compose capability was not negotiated")
 					return
 				}
-				if err := s.handleAgentComposeResponse(ctx, connection, identity.NodeID, envelope); err != nil {
+				if err := s.handleAgentComposeResponse(connection, envelope); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid or unpersisted Agent Compose response")
 					return
 				}
-			case protocol.TypeFileResponse, protocol.TypeFileChunk, protocol.TypeFileCancelAck, protocol.TypeFileJournalReply:
+			case protocol.TypeFileResponse, protocol.TypeFileChunk:
 				if !connection.filesEnabled {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent file service was not negotiated")
 					return
@@ -809,31 +754,6 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not persist Agent service probe result")
 					return
 				}
-			case protocol.TypeAgentUpdateReport:
-				if !connection.updateEnabled || envelope.Sequence != 0 {
-					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent update capability was not negotiated")
-					return
-				}
-				var report protocol.AgentUpdateReport
-				if decodeAgentPayload(envelope.Payload, &report) != nil || !validUUID(report.TaskID) || envelope.RequestID != report.TaskID ||
-					(report.Status != "prepared" && report.Status != "rejected" && report.Status != "failed") {
-					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent update report")
-					return
-				}
-				if err := persistAgentUpdateReportAndQueueAck(ctx, connection, report, func() error {
-					return s.updates.Report(ctx, report.TaskID, identity.NodeID, report.Status, report.Reason)
-				}); err != nil {
-					if errors.Is(err, coreupdates.ErrNotFound) {
-						continue
-					}
-					s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not persist Agent update report")
-					return
-				}
-				outcome := "succeeded"
-				if report.Status == "failed" || report.Status == "rejected" {
-					outcome = "failed"
-				}
-				s.auditUpdate(nil, nil, "agent_update_status", outcome, identity.NodeID)
 			case protocol.TypeHello:
 				s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent hello is only valid at connection start")
 				return
@@ -911,11 +831,6 @@ func validHello(hello protocol.Hello) bool {
 	if !validUUID(hello.AgentID) || !validUUID(hello.NodeID) || strings.TrimSpace(hello.AgentVersion) == "" || len(hello.AgentVersion) > 80 || len(hello.Capabilities) > 32 || !validRuntimePermissions(hello.Permissions) {
 		return false
 	}
-	if hello.UpdateTaskID == "" && hello.UpdateState == "" {
-		// Older Agents do not report local updater state.
-	} else if !validUUID(hello.UpdateTaskID) || hello.UpdateState != "staged" || !hasCapability(hello.Capabilities, protocol.CapabilityAgentUpdatesPreparedAck) {
-		return false
-	}
 	seen := make(map[string]struct{}, len(hello.Capabilities))
 	for _, capability := range hello.Capabilities {
 		if len(capability) == 0 || len(capability) > 80 {
@@ -935,7 +850,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}, protocol.CapabilityImages: {}, protocol.CapabilityTerminal: {}, protocol.CapabilityFiles: {}, protocol.CapabilityFileJournal: {}, protocol.CapabilityComposeEditor: {}, protocol.CapabilityProbes: {}, protocol.CapabilityAgentUpdatesPreparedAck: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}, protocol.CapabilityImages: {}, protocol.CapabilityTerminal: {}, protocol.CapabilityFiles: {}, protocol.CapabilityProbes: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {

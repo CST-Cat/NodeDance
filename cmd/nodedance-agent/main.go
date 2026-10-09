@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,7 +11,6 @@ import (
 	"syscall"
 
 	"github.com/CST-Cat/NodeDance/internal/agent"
-	agentupdate "github.com/CST-Cat/NodeDance/internal/agent/update"
 )
 
 var version = "dev"
@@ -46,8 +44,6 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runInstallSystemd(ctx, args[1:], stdout, stderr)
 	case "validate-file-root":
 		return runValidateFileRoot(args[1:], stdout, stderr)
-	case "update-helper":
-		return runUpdateHelper(ctx, args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q (try 'nodedance-agent --help')", args[0])
 	}
@@ -61,7 +57,6 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, "  nodedance-agent run [--config path]")
 	fmt.Fprintln(output, "  nodedance-agent validate-file-root --file-root <absolute-directory> [--state-dir <path>]")
 	fmt.Fprintln(output, "  nodedance-agent install-systemd --user <service-user> [--config path] [--file-root absolute-directory] [--no-file-root] [--supplementary-group <gid>] [--enable]")
-	fmt.Fprintln(output, "  nodedance-agent update-helper supervise --state-dir <path> --config <path>")
 	fmt.Fprintln(output, "The Agent never accepts inbound management connections. Enrollment tokens are read only from stdin.")
 }
 
@@ -158,11 +153,7 @@ func runAgent(ctx context.Context, args []string, stderr io.Writer) error {
 	}
 	runCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	err = agent.Run(runCtx, path, version, stderr)
-	if errors.Is(err, agentupdate.ErrPrepared) {
-		return nil
-	}
-	return err
+	return agent.Run(runCtx, path, version, stderr)
 }
 
 func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -198,7 +189,7 @@ func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Wri
 		groups = []string{*supplementaryGroup}
 	}
 	path, err := agent.InstallSystemd(ctx, agent.SystemdInstallOptions{
-		User: *serviceUser, ConfigPath: *configPath, UnitDir: *unitDir, Version: version,
+		User: *serviceUser, ConfigPath: *configPath, UnitDir: *unitDir,
 		FileRoot: *fileRoot, FileRootSpecified: fileRootSpecified, DisableFileRoot: *noFileRoot,
 		SupplementaryGroups: groups, Reload: *reload, EnableNow: *enable,
 	})
@@ -216,47 +207,6 @@ func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Wri
 		fmt.Fprintln(stdout, "Host file access is disabled; no absolute file root is configured.")
 	}
 	return nil
-}
-
-func runUpdateHelper(ctx context.Context, args []string, stdout, stderr io.Writer) error {
-	if len(args) == 0 {
-		return fmt.Errorf("update-helper requires supervise or recover")
-	}
-	flags := newFlagSet("update-helper "+args[0], stderr)
-	stateDir := flags.String("state-dir", "", "private Agent state directory")
-	configPath := flags.String("config", "", "private Agent config path")
-	if err := flags.Parse(args[1:]); err != nil {
-		return err
-	}
-	if flags.NArg() != 0 {
-		return fmt.Errorf("unexpected update-helper arguments: %v", flags.Args())
-	}
-	resolved, err := agentupdate.ParseStateDir(*stateDir)
-	if err != nil {
-		return err
-	}
-	switch args[0] {
-	case "supervise":
-		if *configPath == "" {
-			return fmt.Errorf("--config is required")
-		}
-		runCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-		defer stop()
-		return agentupdate.Supervisor(runCtx, resolved, *configPath)
-	case "recover":
-		if _, err := agentupdate.ReadJournal(resolved); errors.Is(err, os.ErrNotExist) {
-			return nil
-		} else if err != nil {
-			return err
-		}
-		if err := agentupdate.Rollback(resolved); err != nil {
-			return err
-		}
-		fmt.Fprintln(stdout, "Agent update recovery restored the previous version")
-		return nil
-	default:
-		return fmt.Errorf("unknown update-helper command %q", args[0])
-	}
 }
 
 func resolveConfigPath(value string) (string, error) {
