@@ -112,6 +112,9 @@ func (e *SDKEngine) Pull(ctx context.Context, ref, authHeader string, report fun
 		if errdefs.IsUnauthorized(err) {
 			return ErrUnauthorized
 		}
+		if errdefs.IsNotFound(err) {
+			return ErrImageNotFound
+		}
 		return errors.New("Docker image pull request failed")
 	}
 	defer response.Close()
@@ -127,6 +130,9 @@ func (e *SDKEngine) Pull(ctx context.Context, ref, authHeader string, report fun
 		if message.Error != nil {
 			if message.Error.Code == 401 || strings.Contains(strings.ToLower(message.Error.Message), "unauthorized") {
 				return ErrUnauthorized
+			}
+			if message.Error.Code == 404 {
+				return ErrImageNotFound
 			}
 			return errors.New("Docker registry rejected the image pull")
 		}
