@@ -4,8 +4,8 @@
   "mode": "candidate",
   "status": "NOT_READY",
   "run_id": "s17-local-20261009T062447Z",
-  "updated_at": "2026-10-09T06:24:47Z",
-  "reason": "S17-07 候选备份/恢复实现及本地真实 SQLite 定向测试通过；正式新机恢复演练和实际部署环境证据尚未执行，因此 S17 整体及 S17-07 继续保持 NOT_READY。",
+  "updated_at": "2026-10-09T07:35:08Z",
+  "reason": "S17-07 本地 SQLite 候选检查及 S17-10 本地签名包安装/卸载候选自测通过；正式新机恢复演练和正式签名发布安装证据尚未执行，因此 S17 整体继续保持 NOT_READY。",
   "tests": {
     "S17-01": {
       "status": "NOT_READY",
@@ -101,10 +101,21 @@
       "status": "NOT_READY",
       "action": "发布包校验、签名、安装和卸载。",
       "expected": "产物可验证，卸载不默认删除业务数据。",
-      "environment": "独立干净Linux安装环境和正式签名。",
+      "environment": "本机 Linux arm64 候选自测，使用每次运行临时生成的 Ed25519 测试密钥；未使用正式签名密钥或干净 systemd 主机。",
       "evidence_required": "签名校验、安装服务、卸载后用户业务目录仍在。",
-      "runs": [],
-      "reason": "尚未验证正式发布签名、干净环境安装与卸载；缺少签名和卸载后数据保留证据。"
+      "runs": [
+        {
+          "run_id": "s17-release-local-20261009T0735Z",
+          "attempt": 1,
+          "status": "PASS",
+          "command": "make frontend && GO_BIN=$(command -v go) scripts/test/s17-release-selftest.sh",
+          "toolchain": "Go 1.26.8 linux/arm64; Node.js 22.23.3; pnpm 12.10.1",
+          "result": "候选自测通过：生成并验证 arm64/amd64 ELF 包；拒绝二进制篡改、错误公钥和错误架构；在临时前缀安装和卸载，拒绝覆盖未知文件，并保留业务数据目录。安装测试使用 --no-service。",
+          "scope_limit": "仅本机测试密钥及候选 no-service 安装流程；未执行正式签名、GitHub-hosted amd64/arm64 workflow、真实 systemd 安装或全新主机验收。"
+        }
+      ],
+      "reason": "本机候选签名包、架构校验、安装/卸载及业务数据保留测试通过；正式发布密钥、干净 systemd 主机安装和 GitHub amd64/arm64 workflow 证据仍缺失，因此本用例保持 NOT_READY。",
+      "candidate_coverage": "临时 Ed25519 密钥签名；arm64/amd64 ELF 包；篡改包、错误公钥、错误架构拒绝；no-service 安装、未知文件覆盖拒绝、卸载后业务数据保留。"
     },
     "S17-11": {
       "status": "NOT_READY",
