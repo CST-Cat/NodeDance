@@ -125,6 +125,9 @@ func (s *Server) acceptAgentTaskSnapshotPage(ctx context.Context, connection *ag
 		return err
 	}
 	for _, report := range snapshot.reports {
+		if taskstate.IsTerminal(report.Status) {
+			s.clearComposeContent(report.TaskID)
+		}
 		if report.Status != taskstate.Succeeded {
 			continue
 		}
@@ -203,6 +206,7 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 	}
 	if taskstate.IsTerminal(after.Status) {
 		s.clearImageCredentials(report.TaskID)
+		s.clearComposeContent(report.TaskID)
 		delete(connection.taskReconcileOutstanding, report.TaskID)
 		delete(connection.taskReconcileAttempted, report.TaskID)
 	}
@@ -249,12 +253,19 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		if task.Intent.Action == protocol.TaskImagePull {
 			dispatch.RegistryAuth = registryAuth
 		}
+		if task.Intent.Action == protocol.TaskComposeSave && task.Intent.Compose != nil {
+			dispatch.ComposeContent = s.takeComposeContent(task.TaskID, task.NodeID, task.Intent.Compose.ContentSHA256)
+		}
 		payload, err := json.Marshal(dispatch)
 		if err != nil || len(payload) > protocol.MaxTaskPayloadBytes {
 			clear(payload)
 			if dispatch.RegistryAuth != nil {
 				dispatch.RegistryAuth.Username, dispatch.RegistryAuth.Password = "", ""
 				dispatch.RegistryAuth = nil
+			}
+			if dispatch.ComposeContent != nil {
+				clear(dispatch.ComposeContent.Content)
+				dispatch.ComposeContent = nil
 			}
 			// The safe typed intent was already persisted, but no malformed frame
 			// is allowed to reach an Agent. Marking it unknown is safer than replay.
@@ -267,6 +278,10 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		if dispatch.RegistryAuth != nil {
 			dispatch.RegistryAuth.Username, dispatch.RegistryAuth.Password = "", ""
 			dispatch.RegistryAuth = nil
+		}
+		if dispatch.ComposeContent != nil {
+			clear(dispatch.ComposeContent.Content)
+			dispatch.ComposeContent = nil
 		}
 		writeErr := s.writeAgentEnvelope(ctx, connection.conn, message)
 		clear(payload)

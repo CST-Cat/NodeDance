@@ -77,6 +77,8 @@ type Server struct {
 	dashboardPreferences       *dashboard.Repository
 	tasks                      *coretasks.Store
 	composeProjects            *corecompose.Store
+	composeContentMu           sync.Mutex
+	composeContents            map[string]pendingComposeContent
 	imageAuthMu                sync.Mutex
 	imageAuth                  map[string]pendingImageCredential
 	probes                     *coreprobes.Store
@@ -216,6 +218,7 @@ func New(version string, options Options) (*Server, error) {
 		dashboardPreferences:      &dashboard.Repository{DB: store.DB, Now: options.Now},
 		docker:                    coredocker.NewStore(),
 		imageAuth:                 make(map[string]pendingImageCredential),
+		composeContents:           make(map[string]pendingComposeContent),
 		agentOfflineTimeout:       options.AgentOfflineTimeout,
 		agentSweepInterval:        options.AgentSweepInterval,
 		agentConnections:          make(map[string]*agentConnection),
@@ -348,6 +351,7 @@ func (s *Server) Close() error {
 	s.agentConnectionsMu.Unlock()
 	s.agentWait.Wait()
 	s.clearAllImageCredentials()
+	s.clearAllComposeContent()
 	if s.agents != nil {
 		_ = s.agents.MarkAllOffline(context.Background())
 	}

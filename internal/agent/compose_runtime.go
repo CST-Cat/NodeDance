@@ -4,7 +4,6 @@ import (
 	"context"
 
 	agentcompose "github.com/CST-Cat/NodeDance/internal/agent/compose"
-	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
@@ -14,12 +13,8 @@ func (adapter composeWriterAdapter) Send(ctx context.Context, envelope protocol.
 	return adapter.writer.send(ctx, envelope)
 }
 
-func newSDKComposeBridge(shared *agentdocker.SDKEngine) (*agentcompose.Bridge, bool) {
-	if shared == nil {
-		return nil, false
-	}
-	manager, err := agentcompose.NewManager(shared)
-	if err != nil {
+func newSDKComposeBridge(manager *agentcompose.Manager) (*agentcompose.Bridge, bool) {
+	if manager == nil {
 		return nil, false
 	}
 	bridge, err := agentcompose.NewBridge(manager)

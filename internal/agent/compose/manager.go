@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -22,13 +23,20 @@ type Engine interface {
 	Inspect(context.Context, string) (agentdocker.Container, error)
 }
 
-type Manager struct{ engine Engine }
+type Manager struct {
+	engine     Engine
+	dockerPath string
+}
 
 func NewManager(engine Engine) (*Manager, error) {
 	if engine == nil {
 		return nil, errors.New("Compose Engine is required")
 	}
-	return &Manager{engine: engine}, nil
+	dockerPath, err := osexec.LookPath("docker")
+	if err != nil {
+		return nil, errors.New("Docker Compose CLI is unavailable")
+	}
+	return &Manager{engine: engine, dockerPath: dockerPath}, nil
 }
 
 func (m *Manager) List(ctx context.Context) ([]protocol.ComposeProject, error) {

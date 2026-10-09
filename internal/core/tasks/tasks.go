@@ -74,15 +74,20 @@ func SchemaStatements() []string {
 type Action = protocol.TaskAction
 
 const (
-	ActionStart       = protocol.TaskStart
-	ActionStop        = protocol.TaskStop
-	ActionRestart     = protocol.TaskRestart
-	ActionPause       = protocol.TaskPause
-	ActionResume      = protocol.TaskResume
-	ActionDelete      = protocol.TaskDelete
-	ActionRename      = protocol.TaskRename
-	ActionImagePull   = protocol.TaskImagePull
-	ActionImageDelete = protocol.TaskImageDelete
+	ActionStart          = protocol.TaskStart
+	ActionStop           = protocol.TaskStop
+	ActionRestart        = protocol.TaskRestart
+	ActionPause          = protocol.TaskPause
+	ActionResume         = protocol.TaskResume
+	ActionDelete         = protocol.TaskDelete
+	ActionRename         = protocol.TaskRename
+	ActionImagePull      = protocol.TaskImagePull
+	ActionImageDelete    = protocol.TaskImageDelete
+	ActionComposeStart   = protocol.TaskComposeStart
+	ActionComposeStop    = protocol.TaskComposeStop
+	ActionComposeRestart = protocol.TaskComposeRestart
+	ActionComposeDeploy  = protocol.TaskComposeDeploy
+	ActionComposeSave    = protocol.TaskComposeSave
 )
 
 // Intent is the complete allowlisted, non-secret remote container command. No
@@ -1470,6 +1475,8 @@ func validateIntent(intent Intent, composeManaged bool) (string, []byte, string,
 	resourceKey := "docker-container:" + intent.ContainerID
 	if intent.Action == ActionImagePull || intent.Action == ActionImageDelete {
 		resourceKey = "docker-image:" + intent.ContainerID
+	} else if protocol.IsComposeTaskAction(intent.Action) {
+		resourceKey = "docker-compose-project:" + intent.ContainerID
 	}
 	canonical, err := protocol.CanonicalTaskIntent(intent)
 	if err != nil {

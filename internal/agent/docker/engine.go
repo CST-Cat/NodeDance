@@ -36,11 +36,11 @@ type SDKEngine struct {
 	client *client.Client
 }
 
-// Docker's default stop grace period is 10 seconds. Leave room for the Engine
-// to send the response headers after it stops a process that ignores SIGTERM.
-// This bounds only response-header establishment; request contexts still own
-// operation cancellation and long-lived stream shutdown.
-const sdkResponseHeaderTimeout = 15 * time.Second
+// Container mutations may request a 30-second stop grace period. Leave room
+// for the Engine to send response headers after that period if the process
+// ignores SIGTERM. This bounds only response-header establishment; request
+// contexts still own operation cancellation and long-lived stream shutdown.
+const sdkResponseHeaderTimeout = 40 * time.Second
 
 func NewSDKEngine(socket string) (*SDKEngine, error) {
 	if socket == "" {

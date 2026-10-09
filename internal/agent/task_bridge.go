@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	agentcompose "github.com/CST-Cat/NodeDance/internal/agent/compose"
 	"github.com/CST-Cat/NodeDance/internal/agent/containeractions"
 	"github.com/CST-Cat/NodeDance/internal/agent/containerrebuild"
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
@@ -29,6 +30,7 @@ type taskBridgeRuntime struct {
 	runner  *taskrunner.Runner
 	rebuild *containerrebuild.Manager
 	store   *containerrebuild.Store
+	compose *agentcompose.Manager
 }
 
 func openTaskBridge(ctx context.Context, configPath, nodeID string, shared *agentdocker.SDKEngine) (*taskBridgeRuntime, error) {
@@ -92,10 +94,21 @@ func openTaskBridge(ctx context.Context, configPath, nodeID string, shared *agen
 	if err := runner.SetImageExecutor(imageExecutor); err != nil {
 		return closeOnError(fmt.Errorf("attach image executor: %w", err), rebuildStore)
 	}
+	composeManager, composeErr := agentcompose.NewManager(shared)
+	if composeErr == nil {
+		composeExecutor, executorErr := agentcompose.NewTaskExecutor(composeManager, journal)
+		if executorErr == nil {
+			if err := runner.SetComposeExecutor(composeExecutor); err != nil {
+				return closeOnError(fmt.Errorf("attach Compose task executor: %w", err), rebuildStore)
+			}
+		}
+	} else {
+		composeManager = nil
+	}
 	if err := runner.Start(ctx); err != nil {
 		return closeOnError(fmt.Errorf("start Agent task runner: %w", err), rebuildStore)
 	}
-	return &taskBridgeRuntime{nodeID: nodeID, journal: journal, images: imageEngine, runner: runner, rebuild: rebuildManager, store: rebuildStore}, nil
+	return &taskBridgeRuntime{nodeID: nodeID, journal: journal, images: imageEngine, runner: runner, rebuild: rebuildManager, store: rebuildStore, compose: composeManager}, nil
 }
 
 func (b *taskBridgeRuntime) close() error {

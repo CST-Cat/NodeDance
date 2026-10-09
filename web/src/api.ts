@@ -303,7 +303,7 @@ export interface ContainerTask {
   taskId: string
   nodeId: string
   targetId: string
-  action: 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'delete' | 'rename' | 'image_pull' | 'image_delete' | 'rebuild' | 'rebuild_cleanup'
+  action: 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'delete' | 'rename' | 'image_pull' | 'image_delete' | 'rebuild' | 'rebuild_cleanup' | 'compose_start' | 'compose_stop' | 'compose_restart' | 'compose_deploy' | 'compose_config_save'
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'canceled' | 'unknown'
   deliveryState: string
   reconciliationRequired: boolean

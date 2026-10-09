@@ -15,11 +15,13 @@ import (
 
 const (
 	composeListTimeout        = 15 * time.Second
+	composeEditorTimeout      = 45 * time.Second
 	maxComposeWaitersPerAgent = 16
 )
 
 type composeWaiter struct {
-	result chan protocol.ComposeResponse
+	request protocol.ComposeRequest
+	result  chan protocol.ComposeResponse
 }
 
 func (connection *agentConnection) addComposeWaiter(request protocol.ComposeRequest) (*composeWaiter, error) {
@@ -37,7 +39,7 @@ func (connection *agentConnection) addComposeWaiter(request protocol.ComposeRequ
 	if _, exists := connection.composeWaiters[request.OperationID]; exists {
 		return nil, errors.New("duplicate Compose request ID")
 	}
-	waiter := composeWaiter{result: make(chan protocol.ComposeResponse, 1)}
+	waiter := composeWaiter{request: request, result: make(chan protocol.ComposeResponse, 1)}
 	connection.composeWaiters[request.OperationID] = waiter
 	return &waiter, nil
 }
@@ -72,7 +74,7 @@ func (connection *agentConnection) enqueueCompose(envelope protocol.Envelope) bo
 	}
 }
 
-func (s *Server) handleComposeAPI(w http.ResponseWriter, r *http.Request, _ *session) bool {
+func (s *Server) handleComposeAPI(w http.ResponseWriter, r *http.Request, current *session) bool {
 	if !strings.HasPrefix(r.URL.Path, "/api/v1/nodes/") {
 		return false
 	}
@@ -80,7 +82,14 @@ func (s *Server) handleComposeAPI(w http.ResponseWriter, r *http.Request, _ *ses
 	if len(parts) < 3 || !validUUID(parts[0]) || parts[1] != "compose" {
 		return false
 	}
-	if len(parts) != 3 || parts[2] != "projects" {
+	if len(parts) < 3 || parts[2] != "projects" {
+		http.NotFound(w, r)
+		return true
+	}
+	if len(parts) > 3 {
+		if s.handleComposeProjectAPI(w, r, current, parts[0], parts[2:]) {
+			return true
+		}
 		http.NotFound(w, r)
 		return true
 	}
@@ -154,6 +163,9 @@ func (s *Server) activeComposeConnectionForNode(nodeID string, generation uint64
 }
 
 func (s *Server) requestCompose(ctx context.Context, connection *agentConnection, request protocol.ComposeRequest, timeout time.Duration) (protocol.ComposeResponse, error) {
+	if err := protocol.ValidateComposeRequest(request); err != nil {
+		return protocol.ComposeResponse{}, err
+	}
 	waiter, err := connection.addComposeWaiter(request)
 	if err != nil {
 		return protocol.ComposeResponse{}, err
@@ -190,7 +202,7 @@ func (s *Server) handleAgentComposeResponse(connection *agentConnection, envelop
 	if !waiting {
 		return nil
 	}
-	if err := protocol.ValidateComposeResponse(response, protocol.ComposeRequest{OperationID: envelope.RequestID}); err != nil {
+	if err := protocol.ValidateComposeResponse(response, waiter.request); err != nil {
 		return err
 	}
 	waiter.result <- response

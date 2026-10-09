@@ -33,13 +33,15 @@ const (
 	TaskSnapshotPageSize = 32
 	MaxTaskSnapshotTasks = 10000
 	MaxTaskSnapshotBytes = 4 << 20
-	MaxTaskPayloadBytes  = 64 << 10
+	MaxTaskPayloadBytes  = 768 << 10
+	MaxComposeFileBytes  = 128 << 10
 )
 
 var (
 	ErrInvalidTaskMessage = errors.New("invalid task bridge message")
 	fullContainerID       = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	containerName         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
+	composeContentHash    = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 // TaskAction and TaskIntent are the single canonical safe request representation
@@ -58,7 +60,22 @@ const (
 	TaskImageDelete    TaskAction = "image_delete"
 	TaskRebuild        TaskAction = "rebuild"
 	TaskRebuildCleanup TaskAction = "rebuild_cleanup"
+	TaskComposeStart   TaskAction = "compose_start"
+	TaskComposeStop    TaskAction = "compose_stop"
+	TaskComposeRestart TaskAction = "compose_restart"
+	TaskComposeDeploy  TaskAction = "compose_deploy"
+	TaskComposeSave    TaskAction = "compose_config_save"
 )
+
+// ComposeTaskSpec identifies a project from Docker's Compose labels. File
+// content is kept out of the durable task intent and is sent only once in the
+// task dispatch when saving a file.
+type ComposeTaskSpec struct {
+	Project       ComposeProjectRef `json:"project"`
+	FileIndex     int               `json:"fileIndex,omitempty"`
+	BaseSHA256    string            `json:"baseSha256,omitempty"`
+	ContentSHA256 string            `json:"contentSha256,omitempty"`
+}
 
 // RebuildPortBinding is the only mutable part of a controlled container
 // rebuild in this stage. Every other supported Docker setting is copied from
@@ -110,13 +127,14 @@ type ContainerRebuildMount struct {
 }
 
 type TaskIntent struct {
-	Action          TaskAction   `json:"action"`
-	ContainerID     string       `json:"container_id"`
-	NewName         string       `json:"new_name,omitempty"`
-	DeleteConfirmed bool         `json:"delete_confirmed,omitempty"`
-	ImageReference  string       `json:"image_reference,omitempty"`
-	ImageID         string       `json:"image_id,omitempty"`
-	Rebuild         *RebuildSpec `json:"rebuild,omitempty"`
+	Action          TaskAction       `json:"action"`
+	ContainerID     string           `json:"container_id"`
+	NewName         string           `json:"new_name,omitempty"`
+	DeleteConfirmed bool             `json:"delete_confirmed,omitempty"`
+	ImageReference  string           `json:"image_reference,omitempty"`
+	ImageID         string           `json:"image_id,omitempty"`
+	Rebuild         *RebuildSpec     `json:"rebuild,omitempty"`
+	Compose         *ComposeTaskSpec `json:"compose,omitempty"`
 }
 
 // CanonicalTaskIntent returns the exact canonical JSON used in the task
@@ -142,29 +160,29 @@ func ValidateTaskIntent(intent TaskIntent) error {
 	}
 	switch intent.Action {
 	case TaskStart, TaskStop, TaskRestart, TaskPause, TaskResume:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil {
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil {
 			return ErrInvalidTaskMessage
 		}
 	case TaskDelete:
-		if intent.NewName != "" || !intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil {
+		if intent.NewName != "" || !intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil {
 			return ErrInvalidTaskMessage
 		}
 	case TaskRename:
-		if !containerName.MatchString(intent.NewName) || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil {
+		if !containerName.MatchString(intent.NewName) || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil {
 			return ErrInvalidTaskMessage
 		}
 	case TaskImagePull:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageID != "" || intent.Rebuild != nil || !validImageReference(intent.ImageReference) ||
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil || !validImageReference(intent.ImageReference) ||
 			intent.ContainerID != ImageTargetKey("pull:"+intent.ImageReference) {
 			return ErrInvalidTaskMessage
 		}
 	case TaskImageDelete:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.Rebuild != nil || !validImageID(intent.ImageID) ||
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.Rebuild != nil || intent.Compose != nil || !validImageID(intent.ImageID) ||
 			intent.ContainerID != ImageTargetKey("delete:"+intent.ImageID) {
 			return ErrInvalidTaskMessage
 		}
 	case TaskRebuild:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild == nil || intent.Rebuild.CleanupTaskID != "" || intent.Rebuild.ClearPortBindings && len(intent.Rebuild.PortBindings) != 0 {
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Compose != nil || intent.Rebuild == nil || intent.Rebuild.CleanupTaskID != "" || intent.Rebuild.ClearPortBindings && len(intent.Rebuild.PortBindings) != 0 {
 			return ErrInvalidTaskMessage
 		}
 		if len(intent.Rebuild.PortBindings) > 128 {
@@ -182,7 +200,7 @@ func ValidateTaskIntent(intent TaskIntent) error {
 			seen[key] = struct{}{}
 		}
 	case TaskRebuildCleanup:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild == nil || intent.Rebuild.CleanupTaskID == "" || len(intent.Rebuild.CleanupTaskID) > 128 || intent.Rebuild.ClearPortBindings || len(intent.Rebuild.PortBindings) != 0 {
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Compose != nil || intent.Rebuild == nil || intent.Rebuild.CleanupTaskID == "" || len(intent.Rebuild.CleanupTaskID) > 128 || intent.Rebuild.ClearPortBindings || len(intent.Rebuild.PortBindings) != 0 {
 			return ErrInvalidTaskMessage
 		}
 		for _, r := range intent.Rebuild.CleanupTaskID {
@@ -190,10 +208,29 @@ func ValidateTaskIntent(intent TaskIntent) error {
 				return ErrInvalidTaskMessage
 			}
 		}
+	case TaskComposeStart, TaskComposeStop, TaskComposeRestart, TaskComposeDeploy:
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || !validComposeTaskSpec(intent, false) {
+			return ErrInvalidTaskMessage
+		}
+	case TaskComposeSave:
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || !validComposeTaskSpec(intent, true) {
+			return ErrInvalidTaskMessage
+		}
 	default:
 		return ErrInvalidTaskMessage
 	}
 	return nil
+}
+
+func validComposeTaskSpec(intent TaskIntent, save bool) bool {
+	if intent.Compose == nil || intent.Compose.Project.Key != intent.ContainerID || ValidateComposeProjectRef(intent.Compose.Project) != nil ||
+		intent.Compose.FileIndex < 0 || intent.Compose.FileIndex >= len(intent.Compose.Project.ConfigFiles) {
+		return false
+	}
+	if save {
+		return composeContentHash.MatchString(intent.Compose.ContentSHA256) && composeContentHash.MatchString(intent.Compose.BaseSHA256)
+	}
+	return intent.Compose.FileIndex == 0 && intent.Compose.ContentSHA256 == "" && intent.Compose.BaseSHA256 == ""
 }
 
 // ImageTargetKey maps an image request to the fixed-width resource identifier
@@ -297,6 +334,8 @@ func TaskIdentity(taskID, nodeID, idempotencyKey string, intent TaskIntent) (tas
 	resourceKey := "docker-container:" + intent.ContainerID
 	if intent.Action == TaskImagePull || intent.Action == TaskImageDelete {
 		resourceKey = "docker-image:" + intent.ContainerID
+	} else if IsComposeTaskAction(intent.Action) {
+		resourceKey = "docker-compose-project:" + intent.ContainerID
 	}
 	return taskstate.Identity{
 		TaskID: taskID, NodeID: nodeID, IdempotencyKey: idempotencyKey,
@@ -315,6 +354,24 @@ func TaskRequestDigest(taskID, nodeID, idempotencyKey string, intent TaskIntent)
 		return [sha256.Size]byte{}, fmt.Errorf("digest safe task intent: %w", err)
 	}
 	return digest, nil
+}
+
+func IsComposeTaskAction(action TaskAction) bool {
+	switch action {
+	case TaskComposeStart, TaskComposeStop, TaskComposeRestart, TaskComposeDeploy, TaskComposeSave:
+		return true
+	default:
+		return false
+	}
+}
+
+func mustDecodeSHA256(value string) [sha256.Size]byte {
+	var digest [sha256.Size]byte
+	raw, err := hex.DecodeString(value)
+	if err == nil && len(raw) == len(digest) {
+		copy(digest[:], raw)
+	}
+	return digest
 }
 
 func IsFullContainerID(id string) bool { return fullContainerID.MatchString(id) }
@@ -374,6 +431,14 @@ type TaskDispatch struct {
 	// RegistryAuth is a one-delivery credential, outside TaskIntent and its
 	// digest, so Core and Agent task journals cannot persist it.
 	RegistryAuth *RegistryCredentials `json:"registryAuth,omitempty"`
+	// ComposeContent is a one-delivery config-save body; only its SHA-256 is
+	// persisted in TaskIntent and Agent journal records.
+	ComposeContent *ComposeContent `json:"composeContent,omitempty"`
+}
+
+type ComposeContent struct {
+	SHA256  string `json:"sha256"`
+	Content []byte `json:"content"`
 }
 
 type RegistryCredentials struct {
@@ -498,12 +563,22 @@ type TaskReportAck struct {
 func ValidateTaskDispatch(envelope Envelope, dispatch TaskDispatch, nodeID, journalID string, generation uint64) error {
 	if envelope.Version != CurrentVersion || envelope.Type != TypeTaskDispatch || envelope.Generation != generation ||
 		envelope.RequestID == "" || envelope.RequestID != dispatch.TaskID || generation == 0 ||
-		dispatch.NodeID != nodeID || dispatch.JournalID != journalID || dispatch.TargetID != dispatch.Intent.ContainerID ||
+		len(envelope.Payload) > MaxTaskPayloadBytes || dispatch.NodeID != nodeID || dispatch.JournalID != journalID || dispatch.TargetID != dispatch.Intent.ContainerID ||
 		!validTaskIdentityFields(dispatch.TaskID, dispatch.NodeID, dispatch.JournalID, dispatch.TargetID, dispatch.IdempotencyKey) {
 		return ErrInvalidTaskMessage
 	}
 	if dispatch.RegistryAuth != nil && (dispatch.Intent.Action != TaskImagePull || !dispatch.RegistryAuth.Valid()) {
 		return fmt.Errorf("%w: registry credentials are invalid for this dispatch", ErrInvalidTaskMessage)
+	}
+	if dispatch.ComposeContent != nil {
+		if dispatch.Intent.Action != TaskComposeSave || dispatch.Intent.Compose == nil ||
+			dispatch.ComposeContent.SHA256 != dispatch.Intent.Compose.ContentSHA256 ||
+			len(dispatch.ComposeContent.Content) > MaxComposeFileBytes || sha256.Sum256(dispatch.ComposeContent.Content) != mustDecodeSHA256(dispatch.ComposeContent.SHA256) {
+			return fmt.Errorf("%w: Compose payload is invalid for this dispatch", ErrInvalidTaskMessage)
+		}
+	} else if dispatch.Intent.Action == TaskComposeSave {
+		// The Core keeps file bodies only in memory. If that one-use payload was
+		// lost, the Agent will persist a failed result without changing the file.
 	}
 	digest, err := ParseDigest(dispatch.RequestDigest)
 	if err != nil {

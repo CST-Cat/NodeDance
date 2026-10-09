@@ -64,6 +64,11 @@ type ImageExecutor interface {
 	ReconcileImage(context.Context, string, protocol.TaskIntent) (taskjournal.Snapshot, error)
 }
 
+type ComposeExecutor interface {
+	ExecuteCompose(context.Context, protocol.TaskDispatch, func(taskjournal.Snapshot)) (taskjournal.Snapshot, error)
+	ReconcileCompose(context.Context, string, protocol.TaskIntent) (taskjournal.Snapshot, error)
+}
+
 type Options struct {
 	Workers             int
 	QueueCapacity       int
@@ -81,6 +86,7 @@ type Runner struct {
 	journal  Journal
 	executor Executor
 	images   ImageExecutor
+	compose  ComposeExecutor
 	options  Options
 
 	mu                sync.Mutex
@@ -124,6 +130,16 @@ func (r *Runner) SetImageExecutor(executor ImageExecutor) error {
 		return ErrAlreadyStarted
 	}
 	r.images = executor
+	return nil
+}
+
+func (r *Runner) SetComposeExecutor(executor ComposeExecutor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.started || r.starting || r.stopped {
+		return ErrAlreadyStarted
+	}
+	r.compose = executor
 	return nil
 }
 
@@ -335,6 +351,9 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 	if isImageAction(dispatch.Intent.Action) && r.images == nil {
 		return protocol.TaskReport{}, ErrImageExecutorUnavailable
 	}
+	if protocol.IsComposeTaskAction(dispatch.Intent.Action) && r.compose == nil {
+		return protocol.TaskReport{}, errors.New("Agent Compose task executor is unavailable")
+	}
 	_, alreadyActive := r.activeTasks[dispatch.TaskID]
 	if !alreadyActive && len(r.activeTasks) >= r.options.Workers+r.options.QueueCapacity {
 		return protocol.TaskReport{}, ErrCapacityExceeded
@@ -411,6 +430,9 @@ func (r *Runner) AcceptReconcile(ctx context.Context, generation uint64, envelop
 	}
 	if isImageAction(request.Intent.Action) && r.images == nil {
 		return protocol.TaskReport{}, ErrImageExecutorUnavailable
+	}
+	if protocol.IsComposeTaskAction(request.Intent.Action) && r.compose == nil {
+		return protocol.TaskReport{}, errors.New("Agent Compose task executor is unavailable")
 	}
 	if _, busy := r.activeTasks[request.TaskID]; !busy {
 		r.activeTasks[request.TaskID] = struct{}{}
@@ -702,6 +724,8 @@ func (r *Runner) runJob(job taskJob) {
 	if job.reconcile {
 		if job.intent != nil && isImageAction(job.intent.Action) && r.images != nil {
 			_, _ = r.images.ReconcileImage(ctx, job.taskID, *job.intent)
+		} else if job.intent != nil && protocol.IsComposeTaskAction(job.intent.Action) && r.compose != nil {
+			_, _ = r.compose.ReconcileCompose(ctx, job.taskID, *job.intent)
 		} else {
 			_, _ = r.executor.Reconcile(ctx, job.taskID)
 		}
@@ -719,6 +743,18 @@ func (r *Runner) runJob(job taskJob) {
 				r.mu.Lock()
 				delete(r.activeImagePulls, job.taskID)
 				r.mu.Unlock()
+			}
+			r.notify(job.taskID)
+			r.mu.Lock()
+			delete(r.activeTasks, job.taskID)
+			r.mu.Unlock()
+			return
+		}
+		if protocol.IsComposeTaskAction(job.dispatch.Intent.Action) {
+			if r.compose != nil {
+				_, _ = r.compose.ExecuteCompose(ctx, *job.dispatch, func(taskjournal.Snapshot) {
+					r.notify(job.taskID)
+				})
 			}
 			r.notify(job.taskID)
 			r.mu.Lock()

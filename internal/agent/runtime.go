@@ -221,7 +221,11 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		defer streamBridge.Close()
 	}
 
-	composeBridge, composeAvailable := newSDKComposeBridge(sharedDocker)
+	var composeManager *agentcompose.Manager
+	if taskBridge != nil {
+		composeManager = taskBridge.compose
+	}
+	composeBridge, composeAvailable := newSDKComposeBridge(composeManager)
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,

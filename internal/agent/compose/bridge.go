@@ -40,11 +40,36 @@ func (b *Bridge) Run(ctx context.Context, writer EnvelopeWriter, commands <-chan
 				protocol.ValidateComposeRequest(request) != nil {
 				return errors.New("Core sent an unsupported Compose operation")
 			}
-			projects, err := b.manager.List(ctx)
-			if err != nil {
-				return errors.New("Compose inventory could not be read")
+			action := request.Action
+			if action == "" {
+				action = "inventory"
 			}
-			response := protocol.ComposeResponse{OperationID: request.OperationID, Status: "succeeded", Verified: true, Projects: projects}
+			response := protocol.ComposeResponse{OperationID: request.OperationID}
+			switch action {
+			case "inventory":
+				projects, err := b.manager.List(ctx)
+				if err != nil {
+					response.Status, response.ErrorCode = "failed", "inventory_unavailable"
+				} else {
+					response.Status, response.Verified, response.Projects = "succeeded", true, projects
+				}
+			case "config_read":
+				document, err := b.manager.ReadConfig(ctx, *request.Project, request.FileIndex)
+				if err != nil {
+					response.Status, response.ErrorCode = "failed", composeErrorCode(err)
+				} else {
+					response.Status, response.Verified, response.Content = "succeeded", true, document.Text
+					response.ContentSHA256 = document.SHA256
+				}
+			case "config_validate":
+				if err := b.manager.ValidateConfig(ctx, *request.Project, request.FileIndex, request.Content); err != nil {
+					response.Status, response.ErrorCode = "failed", composeErrorCode(err)
+				} else {
+					response.Status, response.Verified = "succeeded", true
+				}
+			default:
+				return errors.New("Core sent an unsupported Compose operation")
+			}
 			if err := protocol.ValidateComposeResponse(response, request); err != nil {
 				return errors.New("Compose inventory response is invalid")
 			}
@@ -57,5 +82,20 @@ func (b *Bridge) Run(ctx context.Context, writer EnvelopeWriter, commands <-chan
 				return err
 			}
 		}
+	}
+}
+
+func composeErrorCode(err error) string {
+	switch {
+	case errors.Is(err, ErrConfigChanged):
+		return "config_changed"
+	case errors.Is(err, ErrConfigInvalid):
+		return "config_invalid"
+	case errors.Is(err, ErrConfigUnsafe):
+		return "config_unsafe"
+	case errors.Is(err, ErrProjectUnavailable):
+		return "project_unavailable"
+	default:
+		return "compose_unavailable"
 	}
 }

@@ -30,7 +30,11 @@ type ComposeProjectRef struct {
 }
 
 type ComposeRequest struct {
-	OperationID string `json:"operationId"`
+	OperationID string             `json:"operationId"`
+	Action      string             `json:"action,omitempty"`
+	Project     *ComposeProjectRef `json:"project,omitempty"`
+	FileIndex   int                `json:"fileIndex,omitempty"`
+	Content     string             `json:"content,omitempty"`
 }
 
 type ComposeServiceInstance struct {
@@ -54,11 +58,13 @@ type ComposeProject struct {
 }
 
 type ComposeResponse struct {
-	OperationID string           `json:"operationId"`
-	Status      string           `json:"status"`
-	ErrorCode   string           `json:"errorCode,omitempty"`
-	Verified    bool             `json:"verified"`
-	Projects    []ComposeProject `json:"projects,omitempty"`
+	OperationID   string           `json:"operationId"`
+	Status        string           `json:"status"`
+	ErrorCode     string           `json:"errorCode,omitempty"`
+	Verified      bool             `json:"verified"`
+	Projects      []ComposeProject `json:"projects,omitempty"`
+	Content       string           `json:"content,omitempty"`
+	ContentSHA256 string           `json:"contentSha256,omitempty"`
 }
 
 // ComposeProjectKey binds a project name to its working directory and ordered
@@ -92,11 +98,37 @@ func ValidateComposeRequest(request ComposeRequest) error {
 	if !composeOperationID.MatchString(request.OperationID) {
 		return errors.New("invalid Compose request")
 	}
+	action := request.Action
+	if action == "" {
+		action = "inventory"
+	}
+	switch action {
+	case "inventory":
+		if request.Project != nil || request.FileIndex != 0 || request.Content != "" {
+			return errors.New("inventory request has unexpected fields")
+		}
+	case "config_read":
+		if !validComposeEditorRequest(request) || request.Content != "" {
+			return errors.New("invalid Compose config read request")
+		}
+	case "config_validate":
+		if !validComposeEditorRequest(request) || len(request.Content) > MaxComposeFileBytes {
+			return errors.New("invalid Compose config validation request")
+		}
+	default:
+		return errors.New("unsupported Compose request action")
+	}
 	return nil
 }
 
+func validComposeEditorRequest(request ComposeRequest) bool {
+	return request.Project != nil && ValidateComposeProjectRef(*request.Project) == nil &&
+		request.FileIndex >= 0 && request.FileIndex < len(request.Project.ConfigFiles)
+}
+
 func ValidateComposeResponse(response ComposeResponse, request ComposeRequest) error {
-	if response.OperationID == "" || response.OperationID != request.OperationID || len(response.Projects) > 4096 || len(response.ErrorCode) > 64 {
+	if response.OperationID == "" || response.OperationID != request.OperationID || len(response.Projects) > 4096 || len(response.ErrorCode) > 64 ||
+		len(response.Content) > MaxComposeFileBytes || len(response.ContentSHA256) > 64 {
 		return errors.New("invalid Compose response identity or bounds")
 	}
 	switch response.Status {
@@ -114,6 +146,33 @@ func ValidateComposeResponse(response ComposeResponse, request ComposeRequest) e
 	for _, project := range response.Projects {
 		if err := validateComposeProject(project); err != nil {
 			return err
+		}
+	}
+	action := request.Action
+	if action == "" {
+		action = "inventory"
+	}
+	switch action {
+	case "inventory":
+		if response.Content != "" || response.ContentSHA256 != "" {
+			return errors.New("inventory response contains config data")
+		}
+	case "config_read":
+		if len(response.Projects) != 0 || response.Status == "succeeded" && !composeContentHash.MatchString(response.ContentSHA256) {
+			return errors.New("invalid Compose config read result")
+		}
+	case "config_validate":
+		if len(response.Projects) != 0 || response.Content != "" || response.ContentSHA256 != "" {
+			return errors.New("invalid Compose config validation result")
+		}
+	}
+	if response.Content != "" || response.ContentSHA256 != "" {
+		if request.Action != "config_read" || response.Status != "succeeded" || !composeContentHash.MatchString(response.ContentSHA256) {
+			return errors.New("invalid Compose config response")
+		}
+		digest := sha256.Sum256([]byte(response.Content))
+		if hex.EncodeToString(digest[:]) != response.ContentSHA256 {
+			return errors.New("Compose config response digest mismatch")
 		}
 	}
 	return nil
