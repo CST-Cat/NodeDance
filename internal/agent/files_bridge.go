@@ -65,7 +65,12 @@ func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Enve
 				if decodeSocketPayload(envelope.Payload, &cancel) != nil || protocol.ValidateFileCancel(envelope, b.generation, cancel) != nil {
 					return errors.New("Core file cancellation is invalid")
 				}
-				b.cancel(cancel.TransferID)
+				ack := protocol.FileCancelAck{TransferID: cancel.TransferID, Canceled: b.cancel(cancel.TransferID)}
+				payload, _ := json.Marshal(ack)
+				if err := b.writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeFileCancelAck,
+					Generation: b.generation, RequestID: cancel.TransferID, Payload: payload}); err != nil {
+					return err
+				}
 				continue
 			}
 			if envelope.Type != protocol.TypeFileRequest {
@@ -300,6 +305,8 @@ func fileErrorCode(err error) string {
 	switch {
 	case err == nil:
 		return ""
+	case errors.Is(err, agentfiles.ErrMutationResultUnknown):
+		return "result_unknown"
 	case errors.Is(err, agentfiles.ErrConflict), errors.Is(err, agentfiles.ErrExists):
 		return "conflict"
 	case errors.Is(err, agentfiles.ErrInvalidPath):
@@ -346,7 +353,7 @@ func (b *agentFileBridge) nextSequence(transfer *agentFileTransfer) uint64 {
 	return transfer.sequence
 }
 
-func (b *agentFileBridge) removeTransfer(id string) {
+func (b *agentFileBridge) removeTransfer(id string) *agentFileTransfer {
 	b.mu.Lock()
 	transfer := b.transfers[id]
 	delete(b.transfers, id)
@@ -359,10 +366,12 @@ func (b *agentFileBridge) removeTransfer(id string) {
 			transfer.upload.Abort()
 		}
 	}
+	return transfer
 }
 
-func (b *agentFileBridge) cancel(id string) {
-	b.removeTransfer(id)
+func (b *agentFileBridge) cancel(id string) bool {
+	transfer := b.removeTransfer(id)
+	return transfer != nil && transfer.upload != nil
 }
 
 func (b *agentFileBridge) closeAll() {

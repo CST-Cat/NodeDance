@@ -67,8 +67,8 @@ func TestVersionFourDatabaseUpgradesToDashboardAndHistorySchemaOnReopen(t *testi
 		t.Fatal("reopen v4 database with current migrations:", err)
 	}
 	defer upgraded.Close()
-	if err := upgraded.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 12 {
-		t.Fatalf("reopened database migration version=%d err=%v; want v12", version, err)
+	if err := upgraded.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 13 {
+		t.Fatalf("reopened database migration version=%d err=%v; want v13", version, err)
 	}
 	for _, table := range []string{"dashboard_preferences", "dashboard_settings", "metrics_minute", "metrics_hour"} {
 		var count int
@@ -83,6 +83,51 @@ func TestVersionFourDatabaseUpgradesToDashboardAndHistorySchemaOnReopen(t *testi
 	}
 	if mode != "monitor" || grouping != "node" || sorting != "custom" || featured != 4 || fields != `["state","ports","health"]` {
 		t.Fatalf("unexpected migrated dashboard defaults: mode=%q group=%q sort=%q featured=%d fields=%q", mode, grouping, sorting, featured, fields)
+	}
+}
+
+func TestFileTaskV13MigrationPreservesRowsAndAddsIdempotencyAndCanceled(t *testing.T) {
+	ctx := context.Background()
+	directory := filepath.Join(t.TempDir(), "core-data")
+	v12, err := OpenWithMigrations(ctx, directory, migrations[:12])
+	if err != nil {
+		t.Fatal("open v12 database:", err)
+	}
+	const nodeID = "00000000-0000-4000-8000-000000000041"
+	const taskID = "00000000-0000-4000-8000-000000000042"
+	if _, err := v12.DB.Exec(`INSERT INTO nodes(id,display_name,status,created_at,updated_at) VALUES(?, 'v12 migration node', 'pending', 1, 1)`, nodeID); err != nil {
+		t.Fatal("insert v12 node:", err)
+	}
+	if _, err := v12.DB.Exec(`INSERT INTO file_write_tasks(task_id,node_id,operation,target_path,status,result_code,created_at_ns,updated_at_ns)
+		VALUES(?,?,'delete','/tmp/legacy','running','',1,1)`, taskID, nodeID); err != nil {
+		t.Fatal("insert v12 file task:", err)
+	}
+	if _, err := v12.DB.Exec(`INSERT INTO file_write_task_events(node_id,task_id,event,to_status,occurred_at_ns)
+		VALUES(?,?,'accepted','queued',1)`, nodeID, taskID); err != nil {
+		t.Fatal("insert v12 task event:", err)
+	}
+	if err := v12.Close(); err != nil {
+		t.Fatal("close v12 database:", err)
+	}
+
+	upgraded, err := Open(ctx, directory)
+	if err != nil {
+		t.Fatal("apply v13 file task migration:", err)
+	}
+	defer upgraded.Close()
+	var target, status string
+	if err := upgraded.DB.QueryRow(`SELECT target_path,status FROM file_write_tasks WHERE task_id=?`, taskID).Scan(&target, &status); err != nil || target != "/tmp/legacy" || status != "running" {
+		t.Fatalf("v12 task after migration target=%q status=%q err=%v", target, status, err)
+	}
+	var events int
+	if err := upgraded.DB.QueryRow(`SELECT count(*) FROM file_write_task_events WHERE task_id=?`, taskID).Scan(&events); err != nil || events != 1 {
+		t.Fatalf("v12 task event count after migration=%d err=%v", events, err)
+	}
+	if _, err := upgraded.DB.Exec(`UPDATE file_write_tasks SET status='canceled',result_code='canceled_before_dispatch',finished_at_ns=2 WHERE task_id=?`, taskID); err != nil {
+		t.Fatalf("v13 schema rejected canceled status: %v", err)
+	}
+	if _, err := upgraded.DB.Exec(`UPDATE file_write_tasks SET idempotency_key='same-key',request_digest=lower(hex(zeroblob(32))) WHERE task_id=?`, taskID); err != nil {
+		t.Fatalf("v13 schema rejected idempotency fields: %v", err)
 	}
 }
 
@@ -305,10 +350,10 @@ func TestOpenEnablesWALAndRestrictsPermissions(t *testing.T) {
 		t.Fatalf("journal_mode=%q err=%v", mode, err)
 	}
 	var schemaVersion int
-	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schemaVersion); err != nil || schemaVersion != 12 {
-		t.Fatalf("schema version=%d err=%v, want integration schema version 12", schemaVersion, err)
+	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schemaVersion); err != nil || schemaVersion != 13 {
+		t.Fatalf("schema version=%d err=%v, want integration schema version 13", schemaVersion, err)
 	}
-	for _, index := range []string{"audit_entries_retention", "core_task_audit_events_retention", "core_tasks_retention", "compose_operations_retention", "compose_editor_operations_retention", "service_probe_runs_retention", "alerts_retention", "alert_events_retention", "alert_deliveries_retention", "alert_windows_retention", "agent_update_tasks_retention", "file_write_tasks_retention"} {
+	for _, index := range []string{"audit_entries_retention", "core_task_audit_events_retention", "core_tasks_retention", "compose_operations_retention", "compose_editor_operations_retention", "service_probe_runs_retention", "alerts_retention", "alert_events_retention", "alert_deliveries_retention", "alert_windows_retention", "agent_update_tasks_retention", "file_write_tasks_retention", "file_write_tasks_idempotency"} {
 		var count int
 		if err := store.DB.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='index' AND name=?`, index).Scan(&count); err != nil || count != 1 {
 			t.Errorf("retention index %q present=%d err=%v", index, count, err)

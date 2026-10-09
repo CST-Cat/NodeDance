@@ -11,10 +11,11 @@ import (
 const (
 	CapabilityFiles = "agent.files.v1"
 
-	TypeFileRequest  = "file_request"
-	TypeFileResponse = "file_response"
-	TypeFileChunk    = "file_chunk"
-	TypeFileCancel   = "file_cancel"
+	TypeFileRequest   = "file_request"
+	TypeFileResponse  = "file_response"
+	TypeFileChunk     = "file_chunk"
+	TypeFileCancel    = "file_cancel"
+	TypeFileCancelAck = "file_cancel_ack"
 
 	FileList         = "list"
 	FileStat         = "stat"
@@ -94,6 +95,11 @@ type FileChunk struct {
 
 type FileCancel struct {
 	TransferID string `json:"transferId"`
+}
+
+type FileCancelAck struct {
+	TransferID string `json:"transferId"`
+	Canceled   bool   `json:"canceled"`
 }
 
 func DecodeFileChunk(chunk FileChunk) ([]byte, error) {
@@ -188,7 +194,7 @@ func ValidateFileResponse(envelope Envelope, generation uint64, response FileRes
 	}
 	if response.Code != "" {
 		switch response.Code {
-		case "conflict", "destination_exists", "invalid_path", "limit_exceeded", "directory_too_large", "not_text", "confirmation_required", "not_found", "permission_denied", "digest_mismatch", "transfer_failed", "read_failed", "unavailable":
+		case "conflict", "destination_exists", "invalid_path", "limit_exceeded", "directory_too_large", "not_text", "confirmation_required", "not_found", "permission_denied", "digest_mismatch", "transfer_failed", "read_failed", "unavailable", "result_unknown":
 		default:
 			return errors.New("file response error code is invalid")
 		}
@@ -223,6 +229,14 @@ func ValidateFileChunkEnvelope(envelope Envelope, generation uint64, chunk FileC
 func ValidateFileCancel(envelope Envelope, generation uint64, cancel FileCancel) error {
 	if envelope.Type != TypeFileCancel || envelope.Version != CurrentVersion || envelope.Generation == 0 || envelope.Generation != generation || !fileRequestID.MatchString(envelope.RequestID) || envelope.Sequence != 0 || cancel.TransferID != envelope.RequestID {
 		return errors.New("file cancellation is invalid")
+	}
+	return nil
+}
+
+func ValidateFileCancelAck(envelope Envelope, generation uint64, ack FileCancelAck) error {
+	if envelope.Type != TypeFileCancelAck || envelope.Version != CurrentVersion || envelope.Generation == 0 || envelope.Generation != generation ||
+		!fileRequestID.MatchString(envelope.RequestID) || envelope.Sequence != 0 || ack.TransferID != envelope.RequestID {
+		return errors.New("file cancellation acknowledgment is invalid")
 	}
 	return nil
 }

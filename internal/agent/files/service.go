@@ -22,15 +22,16 @@ import (
 )
 
 var (
-	ErrConflict       = errors.New("file version conflict")
-	ErrExists         = errors.New("destination already exists")
-	ErrNotText        = errors.New("file is not a supported UTF-8 text file")
-	ErrTextTooLarge   = errors.New("text file exceeds the edit limit")
-	ErrLimitExceeded  = errors.New("file transfer exceeds the configured limit")
-	ErrInvalidPath    = errors.New("file path is invalid or outside the configured root")
-	ErrConfirmation   = errors.New("exact target confirmation is required")
-	ErrTransferDigest = errors.New("file transfer digest does not match")
-	ErrDirectoryLarge = errors.New("directory listing exceeds the protocol response limit")
+	ErrConflict              = errors.New("file version conflict")
+	ErrExists                = errors.New("destination already exists")
+	ErrNotText               = errors.New("file is not a supported UTF-8 text file")
+	ErrTextTooLarge          = errors.New("text file exceeds the edit limit")
+	ErrLimitExceeded         = errors.New("file transfer exceeds the configured limit")
+	ErrInvalidPath           = errors.New("file path is invalid or outside the configured root")
+	ErrConfirmation          = errors.New("exact target confirmation is required")
+	ErrTransferDigest        = errors.New("file transfer digest does not match")
+	ErrDirectoryLarge        = errors.New("directory listing exceeds the protocol response limit")
+	ErrMutationResultUnknown = errors.New("file mutation committed but its result could not be verified")
 )
 
 const defaultTransferLimit int64 = protocol.DefaultFileLimit
@@ -39,6 +40,9 @@ type Service struct {
 	root  *os.Root
 	name  string
 	limit int64
+	// afterAtomicReplace is a package-test fault-injection hook for the
+	// otherwise hard-to-reproduce post-commit verification failure path.
+	afterAtomicReplace func()
 }
 
 func New(rootPath string, limit int64) (*Service, error) {
@@ -415,13 +419,19 @@ func (u *Upload) CommitWithDigest(expectedDigest string) (protocol.FileEntry, er
 		}
 		u.closed = true
 	}
+	if u.service.afterAtomicReplace != nil {
+		u.service.afterAtomicReplace()
+	}
 	info, err := u.service.root.Lstat(u.target)
 	if err != nil {
-		return protocol.FileEntry{}, err
+		return protocol.FileEntry{}, fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
 	}
 	entry := makeEntry(filepath.Base(u.targetVirtual), u.targetVirtual, info)
 	entry.Version, err = u.service.version(u.target, info, info.Size() <= protocol.MaxTextFileBytes)
-	return entry, err
+	if err != nil {
+		return protocol.FileEntry{}, fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
+	}
+	return entry, nil
 }
 
 func linkUploadWithoutReplace(root *os.Root, temporary, target string) error {
@@ -553,13 +563,19 @@ func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.File
 		return protocol.FileEntry{}, "", err
 	}
 	cleanupReplacement = false
+	if s.afterAtomicReplace != nil {
+		s.afterAtomicReplace()
+	}
 	newInfo, err := s.root.Lstat(name)
 	if err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, "", fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
 	}
 	entry := makeEntry(path.Base(canonical), canonical, newInfo)
 	entry.Version, err = s.version(name, newInfo, true)
-	return entry, backup, err
+	if err != nil {
+		return protocol.FileEntry{}, "", fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
+	}
+	return entry, backup, nil
 }
 
 func (s *Service) backup(name, canonical string, info os.FileInfo) (string, error) {
