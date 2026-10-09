@@ -133,7 +133,7 @@ sudo chmod 755 -- "$PREFIX_PARENT"
 sudo python3 - "$PREFIX_PARENT" "$SUFFIX" <<'PY'
 import os,stat,sys
 path,suffix=sys.argv[1:]
-expected=os.path.join("/opt", "nodedance-s17-"+suffix)
+expected=os.path.join("/usr/local/lib", "nodedance-s17-"+suffix)
 try:
     info=os.lstat(path)
 except OSError as error:
