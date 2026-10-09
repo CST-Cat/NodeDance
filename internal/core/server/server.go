@@ -316,6 +316,7 @@ func New(version string, options Options) (*Server, error) {
 	go s.agentOfflineSweeper()
 	s.agentWait.Add(1)
 	go s.metricHistoryRetentionWorker()
+	s.agentWait.Add(1)
 	go s.serviceProbeScheduler()
 	s.agentWait.Add(1)
 	go s.alertEvaluationScheduler()
