@@ -70,11 +70,14 @@ def make_root(parent: pathlib.Path, label: str) -> tuple[pathlib.Path, pathlib.P
         "if args and args[0] == 'info': print(state['host_id']); raise SystemExit(0)\n"
         "if len(args) >= 3 and args[0] == 'container' and args[1] == 'inspect':\n"
         "  obj=state.get('container')\n"
-        "  if obj is None: print('Error: No such object: '+args[2], file=sys.stderr); raise SystemExit(1)\n"
+        "  if obj is None: print('Error response from daemon: '+state.get('container_missing_error', 'No such container:')+' '+args[2], file=sys.stderr); raise SystemExit(1)\n"
         "  print(json.dumps([obj])); raise SystemExit(0)\n"
         "if len(args) >= 3 and args[0] == 'network' and args[1] == 'inspect':\n"
         "  obj=state.get('network')\n"
-        "  if obj is None: print('Error response from daemon: network '+args[2]+' not found', file=sys.stderr); raise SystemExit(1)\n"
+        "  if obj is None:\n"
+        "    missing=state.get('network_missing_error', 'No such network:')\n"
+        "    message='network '+args[2]+' not found' if missing == 'not found' else missing+' '+args[2]\n"
+        "    print('Error response from daemon: '+message, file=sys.stderr); raise SystemExit(1)\n"
         "  print(json.dumps([obj])); raise SystemExit(0)\n"
         "print('unexpected Docker command: '+json.dumps(args), file=sys.stderr); raise SystemExit(99)\n"
     )
@@ -92,13 +95,17 @@ def make_root(parent: pathlib.Path, label: str) -> tuple[pathlib.Path, pathlib.P
 
 
 def run_collision(parent: pathlib.Path, label: str, *, with_container: bool, with_network: bool,
-                  marker_mismatch: bool = False, action: str = "start", legacy_marker: bool = False) -> None:
+                  marker_mismatch: bool = False, action: str = "start", legacy_marker: bool = False,
+                  container_missing_error: str = "No such container:",
+                  network_missing_error: str = "No such network:") -> None:
     root, fake_bin, state_path = make_root(parent, label)
     container, network = fixture_objects(root)
     state = {
         "host_id": HOST_ID,
         "container": container if with_container else None,
         "network": network if with_network else None,
+        "container_missing_error": container_missing_error,
+        "network_missing_error": network_missing_error,
     }
     state_path.write_text(json.dumps(state))
     log_path = parent / f"{label}-docker.log"
@@ -178,7 +185,11 @@ def main() -> None:
         parent = pathlib.Path(temp)
         run_collision(parent, "missing-marker-container", with_container=True, with_network=False)
         run_collision(parent, "missing-marker-network", with_container=False, with_network=True)
+        run_collision(parent, "missing-network-not-found", with_container=False, with_network=True,
+                      network_missing_error="not found")
         run_collision(parent, "missing-marker-both", with_container=True, with_network=True)
+        run_collision(parent, "network-inspect-permission-error", with_container=False, with_network=False,
+                      network_missing_error="permission denied")
         run_collision(parent, "marker-container-id-mismatch", with_container=True, with_network=True, marker_mismatch=True)
         run_collision(parent, "legacy-marker-stop", with_container=True, with_network=True,
                       action="stop", legacy_marker=True)

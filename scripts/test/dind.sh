@@ -43,7 +43,7 @@ read_snapshot() {
     if output="$(host_docker network inspect "$target" 2>&1)"; then printf '%s' "$output"; return 0; else rc=$?; fi
   fi
   lower="${output,,}"
-  if [[ "$lower" == *"no such object"* || "$lower" == *"not found"* || "$lower" == *"no such network"* ]]; then
+  if [[ "$lower" == *"no such container"* || "$lower" == *"no such network"* || "$lower" == *"not found"* ]]; then
     return 4
   fi
   echo "$output" >&2
