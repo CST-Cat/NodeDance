@@ -463,10 +463,14 @@ func (m *Manager) Reconcile(ctx context.Context, taskID string) (taskjournal.Sna
 		return m.markUnknown(ctx, taskID, ErrRecoveryRequired)
 	}
 	if record.Outcome == "succeeded" {
-		newContainer, inspectErr := m.engine.Inspect(ctx, record.NewID)
-		if inspectErr == nil && newContainer.ID == record.NewID && newContainer.Running == record.PreviousRunning {
-			return m.finishSucceeded(ctx, taskID, stateToken(newContainer), record.NewID)
+		newContainer, verifyErr := m.verifyPersistedSuccess(ctx, record)
+		if verifyErr != nil {
+			// The durable record says the forward operation was verified, but the
+			// current Engine state no longer proves that result. Keep both the
+			// replacement and rollback resources untouched for explicit recovery.
+			return m.markUnknown(ctx, taskID, verifyErr)
 		}
+		return m.finishSucceeded(ctx, taskID, stateToken(newContainer), record.NewID)
 	}
 	if record.Outcome == "failed" && record.Phase == PhaseRolledBack {
 		old, inspectErr := m.engine.Inspect(ctx, record.OriginalID)
@@ -477,6 +481,38 @@ func (m *Manager) Reconcile(ctx context.Context, taskID string) (taskjournal.Sna
 	// Recovery never replays forward. It either verifies a fully-created
 	// replacement, or performs an explicit compensating restore of the original.
 	return m.rollback(ctx, record, firstNonEmpty(record.ErrorCode, "agent_restart_recovery"))
+}
+
+func (m *Manager) verifyPersistedSuccess(ctx context.Context, record Record) (Container, error) {
+	if record.NewID == "" || record.Phase != PhaseVerified {
+		return Container{}, ErrRecoveryRequired
+	}
+	current, err := m.engine.Inspect(ctx, record.NewID)
+	if err != nil || current.ID != record.NewID || current.Config == nil || current.HostConfig == nil ||
+		current.Config.Labels[markerTaskLabel] != record.TaskID || current.Config.Labels[markerOwnerLabel] != "true" {
+		return Container{}, ErrRecoveryRequired
+	}
+	if record.PreviousRunning {
+		if !current.Running || current.Paused || current.Restarting ||
+			(current.Health != "healthy" && current.Health != "none" && current.Health != "") {
+			return Container{}, ErrHealthCheckFailed
+		}
+	} else if current.Running || current.Paused || current.Restarting {
+		return Container{}, ErrRecoveryRequired
+	}
+	original, err := m.engine.Inspect(ctx, record.OriginalID)
+	backupName := strings.TrimPrefix(original.Name, "/")
+	if err != nil || original.ID != record.OriginalID || original.HostConfig == nil || backupName != record.BackupName ||
+		original.Running || original.Paused || original.Restarting {
+		return Container{}, ErrRecoveryRequired
+	}
+	if !portsConfigured(current, record.Spec, original) {
+		return Container{}, ErrPortVerificationFailed
+	}
+	if !verifyNetworkAttachments(record.Networks, current.Networks, record.PreviousRunning, record.OriginalID) {
+		return Container{}, ErrNetworkVerificationFailed
+	}
+	return current, nil
 }
 
 func (m *Manager) CleanupObserved(ctx context.Context, request Request, onRunning func(taskjournal.Snapshot)) (taskjournal.Snapshot, error) {

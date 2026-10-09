@@ -694,6 +694,73 @@ func TestReconcileAfterRestartRestoresOriginalFromDurablePhase(t *testing.T) {
 	}
 }
 
+func TestReconcilePersistedSuccessWithNetworkMismatchBecomesUnknown(t *testing.T) {
+	ctx := context.Background()
+	engine := newMemoryEngine(t, false)
+	manager, store, _ := setupManager(t, engine)
+	request := rebuildRequest("task-reconcile-success-network-mismatch", "key-reconcile-success-network-mismatch",
+		protocol.TaskRebuild, rebuildOriginalID, protocol.RebuildSpec{})
+	completed, err := manager.ExecuteObserved(ctx, request, nil)
+	if err != nil || completed.Status != taskstate.Succeeded {
+		t.Fatalf("prepare persisted successful rebuild = %+v, err=%v", completed, err)
+	}
+	record, err := store.Get(ctx, request.TaskID)
+	if err != nil || record.Outcome != "succeeded" || record.Phase != PhaseVerified || record.NewID == "" {
+		t.Fatalf("persisted success record = %+v, err=%v", record, err)
+	}
+
+	identity, err := protocol.TaskIdentity(request.TaskID, request.NodeID, request.IdempotencyKey,
+		protocol.TaskIntent{Action: protocol.TaskRebuild, ContainerID: request.ContainerID, Rebuild: request.Spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	baseDir := t.TempDir()
+	if err := os.Chmod(baseDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	stateDir := filepath.Join(baseDir, "state")
+	if err := os.Mkdir(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	pendingJournal, err := taskjournal.Open(ctx, filepath.Join(stateDir, "pending.sqlite"), "node-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pendingJournal.Close() })
+	if _, err := pendingJournal.Enqueue(ctx, identity); err != nil {
+		t.Fatal(err)
+	}
+	if err := pendingJournal.BeginExecution(ctx, request.TaskID); err != nil {
+		t.Fatal(err)
+	}
+	recoveryManager, err := NewManager(engine, pendingJournal, store,
+		Options{OperationTimeout: time.Minute, VerifyTimeout: time.Second, HealthPoll: 100 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	engine.mu.Lock()
+	replacement := engine.containers[record.NewID]
+	replacement.Networks = map[string]*network.EndpointSettings{}
+	engine.containers[record.NewID] = replacement
+	engine.mu.Unlock()
+
+	reconciled, err := recoveryManager.Reconcile(ctx, request.TaskID)
+	if err == nil || !errors.Is(err, ErrRecoveryRequired) || reconciled.Status != taskstate.Unknown {
+		t.Fatalf("reconcile of conflicting persisted success = %+v, err=%v; want unknown/recovery-required", reconciled, err)
+	}
+	backup, err := engine.Inspect(ctx, record.OriginalID)
+	if err != nil || strings.TrimPrefix(backup.Name, "/") != record.BackupName || backup.Running {
+		t.Fatalf("reconciliation changed the rollback container: %+v, err=%v", backup, err)
+	}
+	if _, err := engine.Inspect(ctx, record.NewID); err != nil {
+		t.Fatalf("reconciliation removed the conflicting replacement instead of preserving it: %v", err)
+	}
+	if len(engine.removed) != 0 {
+		t.Fatalf("reconciliation removed rollback resources: %v", engine.removed)
+	}
+}
+
 func TestCleanupSnapshotOwnerMismatchLeavesRollbackContainerIntact(t *testing.T) {
 	engine := newMemoryEngine(t, false)
 	manager, store, _ := setupManager(t, engine)
