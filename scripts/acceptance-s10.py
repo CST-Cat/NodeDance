@@ -2,8 +2,8 @@
 """Run S10 component checks while preserving honest formal acceptance status.
 
 Mock/browser and package tests cannot substitute for a real Core-Agent-host
-filesystem run, 100 MiB/1 GiB memory measurements, or the deployed systemd
-write allowlist. Those normative cases therefore remain NOT_READY.
+filesystem run or 100 MiB/1 GiB memory measurements. Those normative cases
+therefore remain NOT_READY.
 """
 
 from __future__ import annotations
@@ -28,12 +28,13 @@ EVIDENCE = ROOT / ".artifacts/logs/acceptance-s10" / RUN_ID
 CORE_TESTS = (
     "TestFileRoutesRequireAdministratorSession|TestLogoutCancelsSessionBoundFileTransfer|"
     "TestRevocationClosesStalledUploadBodyAndCancelsAgentTransfer|"
-    "TestCanceledDispatchedFileWriteReturnsUnknownAndCancelsAgent"
+    "TestCanceledDispatchedFileWriteReturnsUnknownAndCancelsAgent|"
+    "TestCoreReconcilesAgentFileJournalResults"
 )
 NOT_READY = (
     "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, "
-    "systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration "
-    "remain unverified; component and mocked browser tests do not establish these cases."
+    "installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation "
+    "cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
 )
 
 
@@ -111,7 +112,7 @@ def main() -> int:
     checks: list[dict[str, object]] = []
     web_assets_built = False
     if args.mode in ("full", "integration"):
-        unit = ["go", "test", "-count=1", "./internal/protocol", "./internal/agent/files", "./internal/core/audit", "./internal/core/config"]
+        unit = ["go", "test", "-count=1", "./internal/protocol", "./internal/agent", "./internal/agent/filejournal", "./internal/agent/files", "./internal/core/filetasks", "./internal/core/audit", "./internal/core/config"]
         core = ["go", "test", "./internal/core/server", "-run", f"^({CORE_TESTS})$", "-count=1"]
         for attempt in range(1, args.repeat + 1):
             checks.append(run(f"go-components-{attempt}", unit))

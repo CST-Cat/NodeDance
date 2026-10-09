@@ -9,13 +9,16 @@ import (
 )
 
 const (
-	CapabilityFiles = "agent.files.v1"
+	CapabilityFiles       = "agent.files.v1"
+	CapabilityFileJournal = "agent.file-journal.v1"
 
-	TypeFileRequest   = "file_request"
-	TypeFileResponse  = "file_response"
-	TypeFileChunk     = "file_chunk"
-	TypeFileCancel    = "file_cancel"
-	TypeFileCancelAck = "file_cancel_ack"
+	TypeFileRequest      = "file_request"
+	TypeFileResponse     = "file_response"
+	TypeFileChunk        = "file_chunk"
+	TypeFileCancel       = "file_cancel"
+	TypeFileCancelAck    = "file_cancel_ack"
+	TypeFileJournalQuery = "file_journal_query"
+	TypeFileJournalReply = "file_journal_reply"
 
 	FileList         = "list"
 	FileStat         = "stat"
@@ -31,6 +34,7 @@ const (
 	FileDownloadAck  = "download_ack"
 
 	MaxFileControlBytes = 64 << 10
+	MaxFileJournalTasks = 128
 	MaxFileChunkBytes   = 32 << 10
 	DefaultFileLimit    = int64(1 << 30)
 	MaxFileSize         = int64(16 << 30)
@@ -100,6 +104,22 @@ type FileCancel struct {
 type FileCancelAck struct {
 	TransferID string `json:"transferId"`
 	Canceled   bool   `json:"canceled"`
+}
+
+// FileJournalQuery asks an authenticated Core to reconcile only the listed
+// durable write IDs. It contains no paths or file content.
+type FileJournalQuery struct {
+	TaskIDs []string `json:"taskIds"`
+}
+
+type FileJournalResult struct {
+	TaskID     string `json:"taskId"`
+	Status     string `json:"status"`
+	ResultCode string `json:"resultCode"`
+}
+
+type FileJournalReply struct {
+	Results []FileJournalResult `json:"results"`
 }
 
 func DecodeFileChunk(chunk FileChunk) ([]byte, error) {
@@ -237,6 +257,62 @@ func ValidateFileCancelAck(envelope Envelope, generation uint64, ack FileCancelA
 	if envelope.Type != TypeFileCancelAck || envelope.Version != CurrentVersion || envelope.Generation == 0 || envelope.Generation != generation ||
 		!fileRequestID.MatchString(envelope.RequestID) || envelope.Sequence != 0 || ack.TransferID != envelope.RequestID {
 		return errors.New("file cancellation acknowledgment is invalid")
+	}
+	return nil
+}
+
+func ValidateFileJournalQuery(envelope Envelope, generation uint64, query FileJournalQuery) error {
+	if envelope.Type != TypeFileJournalQuery || envelope.Version != CurrentVersion || envelope.Generation == 0 || envelope.Generation != generation ||
+		!fileRequestID.MatchString(envelope.RequestID) || envelope.Sequence != 0 || len(query.TaskIDs) == 0 || len(query.TaskIDs) > MaxFileJournalTasks {
+		return errors.New("file journal query envelope is invalid")
+	}
+	seen := make(map[string]struct{}, len(query.TaskIDs))
+	for _, id := range query.TaskIDs {
+		if !fileRequestID.MatchString(id) {
+			return errors.New("file journal query contains an invalid task ID")
+		}
+		if _, ok := seen[id]; ok {
+			return errors.New("file journal query contains duplicate task IDs")
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
+func ValidateFileJournalReply(envelope Envelope, generation uint64, reply FileJournalReply) error {
+	if envelope.Type != TypeFileJournalReply || envelope.Version != CurrentVersion || envelope.Generation == 0 || envelope.Generation != generation ||
+		!fileRequestID.MatchString(envelope.RequestID) || envelope.Sequence != 0 || len(reply.Results) > MaxFileJournalTasks {
+		return errors.New("file journal reply envelope is invalid")
+	}
+	seen := make(map[string]struct{}, len(reply.Results))
+	for _, result := range reply.Results {
+		if !fileRequestID.MatchString(result.TaskID) {
+			return errors.New("file journal reply contains an invalid task ID")
+		}
+		if _, ok := seen[result.TaskID]; ok {
+			return errors.New("file journal reply contains duplicate task IDs")
+		}
+		seen[result.TaskID] = struct{}{}
+		switch result.Status {
+		case "succeeded":
+			if result.ResultCode != "verified" && result.ResultCode != "state_verified" {
+				return errors.New("file journal success result code is invalid")
+			}
+		case "failed":
+			if result.ResultCode != "agent_rejected" && result.ResultCode != "not_committed" {
+				return errors.New("file journal failure result code is invalid")
+			}
+		case "canceled":
+			if result.ResultCode != "cancel_confirmed" {
+				return errors.New("file journal cancellation result code is invalid")
+			}
+		case "unknown":
+			if result.ResultCode != "result_pending" && result.ResultCode != "mutation_uncertain" {
+				return errors.New("file journal pending result code is invalid")
+			}
+		default:
+			return errors.New("file journal reply status is invalid")
+		}
 	}
 	return nil
 }

@@ -319,6 +319,11 @@ func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID 
 		}
 		return protocol.FileResponse{}, taskID, err
 	}
+	if write && !connection.fileJournalEnabled {
+		s.closeCoreFileTransfer(connection, transfer, false, errors.New("Agent does not support durable file task reconciliation"))
+		_ = s.resolveFileTask(nodeID, taskID, taskstate.Failed, "not_dispatched", current.RemoteAddr)
+		return protocol.FileResponse{}, taskID, errContainerStreamUnavailable
+	}
 	transferID := transfer.requestID
 	cancelOnExit := false
 	defer func() {

@@ -5,7 +5,7 @@
   "status": "NOT_READY",
   "run_id": "20261009T053138Z-e7daf4a5",
   "updated_at": "2026-10-09T05:32:00.407770+00:00",
-  "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases.",
+  "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior.",
   "checks": [
     {
       "name": "go-components-1",
@@ -87,7 +87,7 @@
       "environment": "Agent节点测试目录内命名样本。",
       "evidence_required": "stat/list/rename/download结果。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     },
     "S10-02": {
       "status": "NOT_READY",
@@ -96,7 +96,7 @@
       "environment": "根目录外测试文件及符号链接。",
       "evidence_required": "拒绝响应和根外文件未变更。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     },
     "S10-03": {
       "status": "NOT_READY",
@@ -105,7 +105,7 @@
       "environment": "独立只读测试目录/非特权Agent账号。",
       "evidence_required": "失败原因和文件原始属性。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     },
     "S10-04": {
       "status": "NOT_READY",
@@ -114,7 +114,7 @@
       "environment": "隔离节点、预生成校验样本和内存监测。",
       "evidence_required": "SHA-256、吞吐、RSS曲线及增量差≤64MiB。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     },
     "S10-05": {
       "status": "NOT_READY",
@@ -123,7 +123,7 @@
       "environment": "1GiB上限、断线和Session撤销。",
       "evidence_required": "temp目录、目标前后hash与传输任务状态。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     },
     "S10-06": {
       "status": "NOT_READY",
@@ -132,7 +132,7 @@
       "environment": "已有目标文件及无替换请求。",
       "evidence_required": "冲突状态和目标原hash。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     },
     "S10-07": {
       "status": "NOT_READY",
@@ -141,7 +141,7 @@
       "environment": "浏览器编辑与SSH并发修改。",
       "evidence_required": "版本标识、409冲突和外部内容保留。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     },
     "S10-08": {
       "status": "NOT_READY",
@@ -150,7 +150,7 @@
       "environment": "Agent测试目录及可控owner/mode。",
       "evidence_required": "文件hash、stat和原子替换过程。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     },
     "S10-09": {
       "status": "NOT_READY",
@@ -159,7 +159,7 @@
       "environment": "有子项/空目录及确认参数。",
       "evidence_required": "二次确认、删除结果和审计目标。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     },
     "S10-10": {
       "status": "NOT_READY",
@@ -168,7 +168,7 @@
       "environment": "并发1GiB受控上传、日志流、Agent指标。",
       "evidence_required": "心跳间隔、API延迟与流量曲线。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     },
     "S10-11": {
       "status": "NOT_READY",
@@ -177,7 +177,7 @@
       "environment": "大文本和随机二进制样本。",
       "evidence_required": "明确拒绝及目标文件hash不变。",
       "runs": [],
-      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, systemd ProtectSystem/ProtectHome write-allowlist, and durable S05 task-store integration remain unverified; component and mocked browser tests do not establish these cases."
+      "reason": "No real Core-Agent-host filesystem acceptance was executed. The 100 MiB/1 GiB RSS comparison, installed Agent service-user/file-root permissions, read-only filesystem, and owner-preservation cases remain unverified; component and mocked browser tests do not establish real target-host behavior."
     }
   }
 }

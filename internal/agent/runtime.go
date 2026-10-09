@@ -19,6 +19,7 @@ import (
 
 	agentcompose "github.com/CST-Cat/NodeDance/internal/agent/compose"
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
+	"github.com/CST-Cat/NodeDance/internal/agent/filejournal"
 	agentfiles "github.com/CST-Cat/NodeDance/internal/agent/files"
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
 	agentprobes "github.com/CST-Cat/NodeDance/internal/agent/probes"
@@ -116,8 +117,29 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	if fileErr != nil && stderr != nil {
 		fmt.Fprintln(stderr, "Agent file service unavailable; monitoring and task execution remain active")
 	}
+	var fileJournal *filejournal.Store
+	if fileService != nil {
+		fileJournal, fileErr = filejournal.Open(ctx, filepath.Join(filepath.Dir(configPath), "file-writes.sqlite"))
+		if fileErr == nil {
+			fileErr = recoverAgentFileUploads(ctx, fileService, fileJournal)
+		}
+		if fileErr != nil {
+			_ = fileService.Close()
+			fileService = nil
+			if fileJournal != nil {
+				_ = fileJournal.Close()
+				fileJournal = nil
+			}
+			if stderr != nil {
+				fmt.Fprintln(stderr, "Agent file service unavailable; durable journal recovery failed")
+			}
+		}
+	}
 	if fileService != nil {
 		defer fileService.Close()
+	}
+	if fileJournal != nil {
+		defer fileJournal.Close()
 	}
 	var backoff reconnectBackoff
 	for {
@@ -131,7 +153,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		established := false
 		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates, taskBridge, func() {
 			established = true
-		}, fileService)
+		}, fileService, fileJournal)
 		if errors.Is(connectionErr, agentupdate.ErrPrepared) {
 			return agentupdate.ErrPrepared
 		}
@@ -162,10 +184,10 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	}
 }
 
-func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, taskBridge *taskBridgeRuntime, onEstablished func(), fileServices ...*agentfiles.Service) error {
-	var fileService *agentfiles.Service
-	if len(fileServices) > 0 {
-		fileService = fileServices[0]
+func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, taskBridge *taskBridgeRuntime, onEstablished func(), fileService *agentfiles.Service, fileJournals ...*filejournal.Store) error {
+	var fileJournal *filejournal.Store
+	if len(fileJournals) > 0 {
+		fileJournal = fileJournals[0]
 	}
 	credential := config.Credential
 	pendingCredentialAlreadyActive := false
@@ -238,6 +260,9 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	}
 	if fileService != nil {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles)
+		if fileJournal != nil {
+			hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFileJournal)
+		}
 	}
 	if composeEditorAvailable {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityComposeEditor)
@@ -326,7 +351,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		containsCapability(welcome.Capabilities, protocol.CapabilityCompose),
 		containsCapability(welcome.Capabilities, protocol.CapabilityTerminal), config.Shell, config.NodeID,
 		containsCapability(welcome.Capabilities, protocol.CapabilityProbes),
-		preparedAgentUpdatesEnabled(welcome.Capabilities), fileService, config, version)
+		preparedAgentUpdatesEnabled(welcome.Capabilities), fileService, fileJournal, config, version)
 }
 
 func preparedAgentUpdatesEnabled(capabilities []string) bool {
@@ -349,7 +374,7 @@ func validatePreparedUpdateWelcome(stateDir string, capabilities []string) error
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell, nodeID string, probesEnabled, updatesEnabled bool, fileService *agentfiles.Service, agentConfig Config, agentVersion string) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell, nodeID string, probesEnabled, updatesEnabled bool, fileService *agentfiles.Service, fileJournal *filejournal.Store, agentConfig Config, agentVersion string) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -513,7 +538,7 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 		done := make(chan error, 1)
 		finished := make(chan struct{})
 		fileBridgeDone = done
-		bridge := newAgentFileBridge(fileService, generation, writer)
+		bridge := newAgentFileBridge(fileService, generation, writer, fileJournal)
 		go func() {
 			defer close(finished)
 			done <- bridge.run(fileCtx, fileMessages)
@@ -795,7 +820,7 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				default:
 					return errors.New("Core terminal command queue overflow")
 				}
-			case protocol.TypeFileRequest, protocol.TypeFileCancel:
+			case protocol.TypeFileRequest, protocol.TypeFileCancel, protocol.TypeFileJournalQuery:
 				if fileMessages == nil || envelope.Sequence != 0 || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
 					return errors.New("Core file request is invalid or was not negotiated")
 				}
@@ -1170,4 +1195,25 @@ func openAgentFileService(configPath string) (*agentfiles.Service, error) {
 		limit = parsed
 	}
 	return agentfiles.New(root, limit)
+}
+
+func recoverAgentFileUploads(ctx context.Context, service *agentfiles.Service, journal *filejournal.Store) error {
+	if service == nil || journal == nil {
+		return nil
+	}
+	records, err := journal.IncompleteUploads(ctx)
+	if err != nil {
+		return err
+	}
+	for _, record := range records {
+		if err := service.RemoveUploadTemporary(record.TargetPath, record.TemporaryPath); err != nil {
+			return fmt.Errorf("clean interrupted Agent upload temporary: %w", err)
+		}
+		if record.Status == filejournal.Accepted {
+			if err := journal.Complete(ctx, record.TaskID, filejournal.Canceled, "cancel_confirmed"); err != nil {
+				return fmt.Errorf("record interrupted Agent upload cancellation: %w", err)
+			}
+		}
+	}
+	return nil
 }
