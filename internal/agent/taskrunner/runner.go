@@ -31,19 +31,20 @@ const (
 )
 
 var (
-	ErrNotStarted               = errors.New("Agent task runner has not started")
-	ErrAlreadyStarted           = errors.New("Agent task runner already started")
-	ErrStopped                  = errors.New("Agent task runner is stopped")
-	ErrStaleGeneration          = errors.New("Agent task message belongs to a stale connection generation")
-	ErrNotSynchronized          = errors.New("Agent task journal has not completed Core synchronization")
-	ErrJournalMismatch          = errors.New("Agent task message has a different journal identity")
-	ErrCapabilityRequired       = errors.New("task bridge capability was not negotiated")
-	ErrCapacityExceeded         = errors.New("Agent task runner has no free durable task capacity")
-	ErrIdentityConflict         = errors.New("Agent task identity conflicts with its durable journal entry")
-	ErrTaskNotReconcileable     = errors.New("Agent task is not eligible for read-only reconciliation")
-	ErrInvalidSnapshot          = errors.New("invalid Agent task snapshot request")
-	ErrStaleReportAck           = errors.New("Agent task report acknowledgement is stale")
-	ErrImageExecutorUnavailable = errors.New("Agent image task executor is unavailable")
+	ErrNotStarted                = errors.New("Agent task runner has not started")
+	ErrAlreadyStarted            = errors.New("Agent task runner already started")
+	ErrStopped                   = errors.New("Agent task runner is stopped")
+	ErrStaleGeneration           = errors.New("Agent task message belongs to a stale connection generation")
+	ErrNotSynchronized           = errors.New("Agent task journal has not completed Core synchronization")
+	ErrJournalMismatch           = errors.New("Agent task message has a different journal identity")
+	ErrCapabilityRequired        = errors.New("task bridge capability was not negotiated")
+	ErrCapacityExceeded          = errors.New("Agent task runner has no free durable task capacity")
+	ErrIdentityConflict          = errors.New("Agent task identity conflicts with its durable journal entry")
+	ErrTaskNotReconcileable      = errors.New("Agent task is not eligible for read-only reconciliation")
+	ErrInvalidSnapshot           = errors.New("invalid Agent task snapshot request")
+	ErrStaleReportAck            = errors.New("Agent task report acknowledgement is stale")
+	ErrImageExecutorUnavailable  = errors.New("Agent image task executor is unavailable")
+	ErrDockerExecutorUnavailable = errors.New("Agent Docker task executor is unavailable")
 )
 
 type Journal interface {
@@ -69,6 +70,11 @@ type ComposeExecutor interface {
 	ReconcileCompose(context.Context, string, protocol.TaskIntent) (taskjournal.Snapshot, error)
 }
 
+type FileExecutor interface {
+	ExecuteFile(context.Context, protocol.TaskDispatch, func(taskjournal.Snapshot)) (taskjournal.Snapshot, error)
+	ReconcileFile(context.Context, string, protocol.TaskIntent) (taskjournal.Snapshot, error)
+}
+
 type Options struct {
 	Workers             int
 	QueueCapacity       int
@@ -87,6 +93,7 @@ type Runner struct {
 	executor Executor
 	images   ImageExecutor
 	compose  ComposeExecutor
+	files    FileExecutor
 	options  Options
 
 	mu                sync.Mutex
@@ -143,14 +150,24 @@ func (r *Runner) SetComposeExecutor(executor ComposeExecutor) error {
 	return nil
 }
 
+func (r *Runner) SetFileExecutor(executor FileExecutor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.started || r.starting || r.stopped {
+		return ErrAlreadyStarted
+	}
+	r.files = executor
+	return nil
+}
+
 type snapshotRevision struct {
 	generation uint64
 	revision   uint64
 }
 
 func New(nodeID string, journal Journal, executor Executor, options Options) (*Runner, error) {
-	if nodeID == "" || journal == nil || executor == nil {
-		return nil, errors.New("Agent task runner requires a node ID, task journal, and executor")
+	if nodeID == "" || journal == nil {
+		return nil, errors.New("Agent task runner requires a node ID and task journal")
 	}
 	if options.Workers == 0 {
 		options.Workers = defaultWorkers
@@ -197,6 +214,10 @@ func (r *Runner) Start(ctx context.Context) error {
 	if r.stopped {
 		r.mu.Unlock()
 		return ErrStopped
+	}
+	if r.executor == nil && r.images == nil && r.compose == nil && r.files == nil {
+		r.mu.Unlock()
+		return errors.New("Agent task runner has no available task executor")
 	}
 	r.starting = true
 	r.mu.Unlock()
@@ -354,6 +375,13 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 	if protocol.IsComposeTaskAction(dispatch.Intent.Action) && r.compose == nil {
 		return protocol.TaskReport{}, errors.New("Agent Compose task executor is unavailable")
 	}
+	if protocol.IsFileTaskAction(dispatch.Intent.Action) && r.files == nil {
+		return protocol.TaskReport{}, errors.New("Agent file task executor is unavailable")
+	}
+	if !isImageAction(dispatch.Intent.Action) && !protocol.IsComposeTaskAction(dispatch.Intent.Action) &&
+		!protocol.IsFileTaskAction(dispatch.Intent.Action) && r.executor == nil {
+		return protocol.TaskReport{}, ErrDockerExecutorUnavailable
+	}
 	_, alreadyActive := r.activeTasks[dispatch.TaskID]
 	if !alreadyActive && len(r.activeTasks) >= r.options.Workers+r.options.QueueCapacity {
 		return protocol.TaskReport{}, ErrCapacityExceeded
@@ -380,6 +408,11 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 	if accepted.Task.Status == taskstate.Queued && !alreadyActive {
 		r.activeTasks[dispatch.TaskID] = struct{}{}
 		copyOfDispatch := dispatch
+		if dispatch.FileContent != nil {
+			content := *dispatch.FileContent
+			content.Content = append([]byte(nil), dispatch.FileContent.Content...)
+			copyOfDispatch.FileContent = &content
+		}
 		if dispatch.RegistryAuth != nil {
 			credentials := *dispatch.RegistryAuth
 			copyOfDispatch.RegistryAuth = &credentials
@@ -433,6 +466,13 @@ func (r *Runner) AcceptReconcile(ctx context.Context, generation uint64, envelop
 	}
 	if protocol.IsComposeTaskAction(request.Intent.Action) && r.compose == nil {
 		return protocol.TaskReport{}, errors.New("Agent Compose task executor is unavailable")
+	}
+	if protocol.IsFileTaskAction(request.Intent.Action) && r.files == nil {
+		return protocol.TaskReport{}, errors.New("Agent file task executor is unavailable")
+	}
+	if !isImageAction(request.Intent.Action) && !protocol.IsComposeTaskAction(request.Intent.Action) &&
+		!protocol.IsFileTaskAction(request.Intent.Action) && r.executor == nil {
+		return protocol.TaskReport{}, ErrDockerExecutorUnavailable
 	}
 	if _, busy := r.activeTasks[request.TaskID]; !busy {
 		r.activeTasks[request.TaskID] = struct{}{}
@@ -720,13 +760,23 @@ func (r *Runner) worker() {
 }
 
 func (r *Runner) runJob(job taskJob) {
+	if job.dispatch != nil {
+		defer func() {
+			if job.dispatch.FileContent != nil {
+				clear(job.dispatch.FileContent.Content)
+				job.dispatch.FileContent = nil
+			}
+		}()
+	}
 	ctx := r.processCtx
 	if job.reconcile {
-		if job.intent != nil && isImageAction(job.intent.Action) && r.images != nil {
+		if job.intent != nil && protocol.IsFileTaskAction(job.intent.Action) && r.files != nil {
+			_, _ = r.files.ReconcileFile(ctx, job.taskID, *job.intent)
+		} else if job.intent != nil && isImageAction(job.intent.Action) && r.images != nil {
 			_, _ = r.images.ReconcileImage(ctx, job.taskID, *job.intent)
 		} else if job.intent != nil && protocol.IsComposeTaskAction(job.intent.Action) && r.compose != nil {
 			_, _ = r.compose.ReconcileCompose(ctx, job.taskID, *job.intent)
-		} else {
+		} else if r.executor != nil {
 			_, _ = r.executor.Reconcile(ctx, job.taskID)
 		}
 	} else if job.dispatch != nil {
@@ -762,6 +812,16 @@ func (r *Runner) runJob(job taskJob) {
 			r.mu.Unlock()
 			return
 		}
+		if protocol.IsFileTaskAction(job.dispatch.Intent.Action) {
+			if r.files != nil {
+				_, _ = r.files.ExecuteFile(ctx, *job.dispatch, func(taskjournal.Snapshot) { r.notify(job.taskID) })
+			}
+			r.notify(job.taskID)
+			r.mu.Lock()
+			delete(r.activeTasks, job.taskID)
+			r.mu.Unlock()
+			return
+		}
 		request := containeractions.Request{
 			TaskID: job.dispatch.TaskID, NodeID: job.dispatch.NodeID, IdempotencyKey: job.dispatch.IdempotencyKey,
 			Action: job.dispatch.Intent.Action, ContainerID: job.dispatch.TargetID,
@@ -774,11 +834,13 @@ func (r *Runner) runJob(job taskJob) {
 		if request.Action == protocol.TaskDelete {
 			request.DeleteConfirmationID = request.ContainerID
 		}
-		_, _ = r.executor.ExecuteObserved(ctx, request, func(taskjournal.Snapshot) {
-			// ExecuteObserved invokes this only after its durable running commit
-			// has been confirmed by a bounded journal read.
-			r.notify(job.taskID)
-		})
+		if r.executor != nil {
+			_, _ = r.executor.ExecuteObserved(ctx, request, func(taskjournal.Snapshot) {
+				// ExecuteObserved invokes this only after its durable running commit
+				// has been confirmed by a bounded journal read.
+				r.notify(job.taskID)
+			})
+		}
 	}
 	r.notify(job.taskID)
 	r.mu.Lock()

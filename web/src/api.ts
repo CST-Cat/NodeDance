@@ -370,6 +370,29 @@ export interface TerminalAuthorization {
   expiresAt: string
 }
 
+export interface NodeFileEntry {
+  name: string
+  path: string
+  kind: 'file' | 'directory' | 'symlink' | 'other' | string
+  size: number
+  mode: number
+  ownerUid: number
+  ownerGid: number
+  modifiedAt: number
+  version?: string
+}
+
+export type FileTaskAction = 'mkdir' | 'rename' | 'delete' | 'save_text'
+export interface CreateFileTaskPayload {
+  action: FileTaskAction
+  path: string
+  newPath?: string
+  expectedVersion?: string
+  deleteConfirmed?: boolean
+  confirmationPath?: string
+  content?: string
+}
+
 interface AuthResponse {
   user: User
   csrfToken: string
@@ -403,9 +426,9 @@ function clearExpiredSession(path: string) {
   }
 }
 
-export async function request<T>(path: string, init: RequestInit = {}, csrf = false): Promise<T> {
+export async function request<T>(path: string, init: RequestInit = {}, csrf = false, timeoutMs = 60_000): Promise<T> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), 60_000)
+  const timeout = window.setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs)
   const abortFromCaller = () => controller.abort(init.signal?.reason)
   if (init.signal?.aborted) abortFromCaller()
   else init.signal?.addEventListener('abort', abortFromCaller, { once: true })
@@ -571,6 +594,21 @@ export const api = {
     request<{ taskId: string; status: ContainerTask['status'] }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,
       { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
+  nodeFiles: (nodeId: string, path = '/') => request<{ entries: NodeFileEntry[]; path: string }>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files?path=${encodeURIComponent(path)}`),
+  nodeFileText: (nodeId: string, path: string) => request<{ path: string; text: string; version: string; size: number }>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/text?path=${encodeURIComponent(path)}`),
+  nodeFileStat: (nodeId: string, path: string) => request<NodeFileEntry>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/stat?path=${encodeURIComponent(path)}`),
+  createFileTask: (nodeId: string, payload: CreateFileTaskPayload, idempotencyKey: string) =>
+    request<{ taskId: string; status: ContainerTask['status']; action: string }>(
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/tasks`,
+      { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
+  uploadNodeFile: (nodeId: string, path: string, file: File, expectedVersion = '') =>
+    request<ContainerTask>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/files/upload?path=${encodeURIComponent(path)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/octet-stream', 'Idempotency-Key': crypto.randomUUID(), 'X-File-Version': expectedVersion },
+      body: file,
+    }, true, 30 * 60_000),
   createImagePullTask: (nodeId: string, payload: { imageReference: string; username?: string; password?: string }, idempotencyKey: string) =>
     request<{ taskId: string; status: ContainerTask['status'] }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/images/pull`,

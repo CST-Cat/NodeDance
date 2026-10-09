@@ -1477,6 +1477,8 @@ func validateIntent(intent Intent, composeManaged bool) (string, []byte, string,
 		resourceKey = "docker-image:" + intent.ContainerID
 	} else if protocol.IsComposeTaskAction(intent.Action) {
 		resourceKey = "docker-compose-project:" + intent.ContainerID
+	} else if protocol.IsFileTaskAction(intent.Action) {
+		resourceKey = "filesystem-path:" + intent.ContainerID
 	}
 	canonical, err := protocol.CanonicalTaskIntent(intent)
 	if err != nil {

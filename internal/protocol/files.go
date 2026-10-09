@@ -26,6 +26,7 @@ const (
 	FileUploadBegin  = "upload_begin"
 	FileUploadChunk  = "upload_chunk"
 	FileUploadCommit = "upload_commit"
+	FileUploadAck    = "upload_ack"
 	FileDownload     = "download"
 	FileDownloadAck  = "download_ack"
 
@@ -42,10 +43,14 @@ var fileRequestID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[8
 // FileRequest is a typed, read-only request sent by Core after authenticating
 // the administrator Session and binding the transfer to a node generation.
 type FileRequest struct {
-	Operation  string `json:"operation"`
-	Path       string `json:"path,omitempty"`
-	TransferID string `json:"transferId,omitempty"`
-	Sequence   uint64 `json:"sequence,omitempty"`
+	Operation       string `json:"operation"`
+	Path            string `json:"path,omitempty"`
+	TransferID      string `json:"transferId,omitempty"`
+	Sequence        uint64 `json:"sequence,omitempty"`
+	TaskID          string `json:"taskId,omitempty"`
+	ExpectedVersion string `json:"expectedVersion,omitempty"`
+	Size            int64  `json:"size,omitempty"`
+	SHA256          string `json:"sha256,omitempty"`
 }
 
 type FileEntry struct {
@@ -61,14 +66,15 @@ type FileEntry struct {
 }
 
 type FileResponse struct {
-	Operation string      `json:"operation"`
-	Code      string      `json:"code,omitempty"`
-	Message   string      `json:"message,omitempty"`
-	Version   string      `json:"version,omitempty"`
-	Size      int64       `json:"size,omitempty"`
-	Entries   []FileEntry `json:"entries,omitempty"`
-	Entry     *FileEntry  `json:"entry,omitempty"`
-	Text      string      `json:"text,omitempty"`
+	Operation   string      `json:"operation"`
+	Code        string      `json:"code,omitempty"`
+	Message     string      `json:"message,omitempty"`
+	Version     string      `json:"version,omitempty"`
+	Size        int64       `json:"size,omitempty"`
+	Entries     []FileEntry `json:"entries,omitempty"`
+	Entry       *FileEntry  `json:"entry,omitempty"`
+	Text        string      `json:"text,omitempty"`
+	AckSequence uint64      `json:"ackSequence,omitempty"`
 }
 
 type FileChunk struct {
@@ -119,10 +125,31 @@ func ValidateFileRequest(envelope Envelope, generation uint64, request FileReque
 		if request.TransferID != envelope.RequestID || request.Sequence == 0 {
 			return errors.New("download acknowledgement is invalid")
 		}
+	case FileUploadBegin:
+		if request.TransferID != envelope.RequestID || !validFileTaskID(request.TaskID) || request.Path == "" ||
+			request.Size < 0 || request.Size > MaxFileSize || !validFileDigest(request.SHA256) || len(request.ExpectedVersion) > 128 {
+			return errors.New("upload initialization is invalid")
+		}
+	case FileUploadAck:
+		if request.TransferID != envelope.RequestID || request.Sequence == 0 {
+			return errors.New("upload acknowledgement is invalid")
+		}
 	default:
 		return fmt.Errorf("unsupported file operation %q", request.Operation)
 	}
 	return nil
+}
+
+func validFileTaskID(value string) bool {
+	if len(value) != len("ndt_")+32 || !strings.HasPrefix(value, "ndt_") {
+		return false
+	}
+	for _, character := range value[len("ndt_"):] {
+		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func ValidateFileResponse(envelope Envelope, generation uint64, response FileResponse) error {
@@ -133,7 +160,7 @@ func ValidateFileResponse(envelope Envelope, generation uint64, response FileRes
 		return errors.New("file response is outside its bound")
 	}
 	switch response.Operation {
-	case FileList, FileStat, FileReadText, FileDownload:
+	case FileList, FileStat, FileReadText, FileDownload, FileUploadBegin, FileUploadChunk:
 	default:
 		return errors.New("file response operation is invalid")
 	}
@@ -143,6 +170,9 @@ func ValidateFileResponse(envelope Envelope, generation uint64, response FileRes
 		default:
 			return errors.New("file response error code is invalid")
 		}
+	}
+	if response.Operation == FileUploadChunk && response.AckSequence == 0 && response.Code == "" || response.Operation != FileUploadChunk && response.AckSequence != 0 {
+		return errors.New("file response acknowledgement is invalid")
 	}
 	if response.Text != "" {
 		text, err := base64.StdEncoding.DecodeString(response.Text)

@@ -30,20 +30,26 @@ type agentFileTransfer struct {
 	sequence          uint64
 	lastDownloadChunk uint64
 	lastDownloadAck   uint64
+	upload            *io.PipeWriter
+	nextUploadSeq     uint64
 }
 
 type agentFileBridge struct {
-	service    *agentfiles.Service
-	generation uint64
-	writer     fileEnvelopeWriter
-	mu         sync.Mutex
-	transfers  map[string]*agentFileTransfer
-	closed     bool
-	wg         sync.WaitGroup
+	service     *agentfiles.Service
+	tasks       *agentfiles.TaskExecutor
+	generation  uint64
+	writer      fileEnvelopeWriter
+	mu          sync.Mutex
+	transfers   map[string]*agentFileTransfer
+	canceled    map[string]struct{}
+	cancelOrder []string
+	closed      bool
+	wg          sync.WaitGroup
 }
 
-func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer fileEnvelopeWriter) *agentFileBridge {
-	return &agentFileBridge{service: service, generation: generation, writer: writer, transfers: make(map[string]*agentFileTransfer)}
+func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer fileEnvelopeWriter, tasks *agentfiles.TaskExecutor) *agentFileBridge {
+	return &agentFileBridge{service: service, tasks: tasks, generation: generation, writer: writer,
+		transfers: make(map[string]*agentFileTransfer), canceled: make(map[string]struct{})}
 }
 
 func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Envelope) error {
@@ -62,6 +68,16 @@ func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Enve
 					return errors.New("Core file cancellation is invalid")
 				}
 				b.cancel(cancel.TransferID)
+				continue
+			}
+			if envelope.Type == protocol.TypeFileChunk {
+				var chunk protocol.FileChunk
+				if decodeSocketPayload(envelope.Payload, &chunk) != nil || protocol.ValidateFileChunkEnvelope(envelope, b.generation, chunk) != nil {
+					return errors.New("Core file chunk is invalid")
+				}
+				if err := b.acceptUploadChunk(ctx, chunk); err != nil {
+					return err
+				}
 				continue
 			}
 			if envelope.Type != protocol.TypeFileRequest {
@@ -121,9 +137,78 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 			b.streamDownload(transferCtx, transfer)
 		}()
 		return nil
+	case protocol.FileUploadBegin:
+		if b.tasks == nil {
+			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, errors.New("durable file task runner is unavailable"))
+		}
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			b.beginUpload(ctx, id, request)
+		}()
+		return nil
 	default:
 		return errors.New("unsupported file operation")
 	}
+}
+
+func (b *agentFileBridge) beginUpload(ctx context.Context, id string, request protocol.FileRequest) {
+	pipe, err := b.tasks.AttachUpload(ctx, request.TaskID, request)
+	if err != nil {
+		if !b.isCanceled(id) {
+			b.sendFailure(context.Background(), id, protocol.FileUploadBegin, fileErrorCode(err))
+		}
+		return
+	}
+	transferCtx, cancel := context.WithCancel(ctx)
+	transfer := &agentFileTransfer{id: id, upload: pipe, cancel: cancel, nextUploadSeq: 1}
+	if !b.addTransfer(transfer) {
+		cancel()
+		_ = pipe.CloseWithError(errors.New("file transfer was canceled"))
+		return
+	}
+	if err := b.respond(transferCtx, id, protocol.FileResponse{Operation: protocol.FileUploadBegin, Size: request.Size}, nil); err != nil {
+		b.cancel(id)
+	}
+}
+
+func (b *agentFileBridge) acceptUploadChunk(ctx context.Context, chunk protocol.FileChunk) error {
+	transfer := b.getTransfer(chunk.TransferID)
+	if transfer == nil || transfer.upload == nil {
+		return errors.New("Core sent a chunk for an inactive upload")
+	}
+	if chunk.Sequence != transfer.nextUploadSeq {
+		return b.failUpload(ctx, chunk.TransferID, protocol.FileUploadChunk, errors.New("Core file upload sequence is invalid"))
+	}
+	data, err := protocol.DecodeFileChunk(chunk)
+	if err != nil {
+		return b.failUpload(ctx, chunk.TransferID, protocol.FileUploadChunk, err)
+	}
+	if len(data) > 0 {
+		if _, err := transfer.upload.Write(data); err != nil {
+			return b.failUpload(ctx, chunk.TransferID, protocol.FileUploadChunk, err)
+		}
+	}
+	transfer.nextUploadSeq++
+	if chunk.Final {
+		if err := transfer.upload.Close(); err != nil {
+			return b.failUpload(ctx, chunk.TransferID, protocol.FileUploadChunk, err)
+		}
+	}
+	if err := b.respond(ctx, chunk.TransferID, protocol.FileResponse{Operation: protocol.FileUploadChunk, AckSequence: chunk.Sequence}, nil); err != nil {
+		b.cancel(chunk.TransferID)
+		return nil
+	}
+	if chunk.Final {
+		b.removeTransfer(chunk.TransferID)
+	}
+	return nil
+}
+
+func (b *agentFileBridge) failUpload(ctx context.Context, id, operation string, err error) error {
+	b.sendFailure(ctx, id, operation, fileErrorCode(err))
+	b.cancel(id)
+	return nil
 }
 
 func (b *agentFileBridge) streamDownload(ctx context.Context, transfer *agentFileTransfer) {
@@ -255,6 +340,9 @@ func (b *agentFileBridge) addTransfer(transfer *agentFileTransfer) bool {
 	if b.closed || len(b.transfers) >= maxAgentFileTransfers || b.transfers[transfer.id] != nil {
 		return false
 	}
+	if _, canceled := b.canceled[transfer.id]; canceled {
+		return false
+	}
 	b.transfers[transfer.id] = transfer
 	return true
 }
@@ -284,7 +372,39 @@ func (b *agentFileBridge) removeTransfer(id string) *agentFileTransfer {
 }
 
 func (b *agentFileBridge) cancel(id string) bool {
-	return b.removeTransfer(id) != nil
+	b.mu.Lock()
+	if _, exists := b.canceled[id]; !exists {
+		b.canceled[id] = struct{}{}
+		b.cancelOrder = append(b.cancelOrder, id)
+		if len(b.cancelOrder) > 64 {
+			oldest := b.cancelOrder[0]
+			b.cancelOrder = b.cancelOrder[1:]
+			delete(b.canceled, oldest)
+		}
+	}
+	transfer := b.transfers[id]
+	delete(b.transfers, id)
+	b.mu.Unlock()
+	if transfer != nil {
+		if transfer.cancel != nil {
+			transfer.cancel()
+		}
+		if transfer.upload != nil {
+			_ = transfer.upload.CloseWithError(errors.New("file transfer was canceled"))
+		}
+		if transfer.download != nil {
+			_ = transfer.download.Close()
+		}
+		return true
+	}
+	return false
+}
+
+func (b *agentFileBridge) isCanceled(id string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, ok := b.canceled[id]
+	return ok
 }
 
 func (b *agentFileBridge) closeAll() {

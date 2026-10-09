@@ -107,7 +107,14 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	} else if stderr != nil {
 		fmt.Fprintln(stderr, "Docker Engine unavailable; host monitoring remains active")
 	}
-	taskBridge, bridgeErr := openTaskBridge(ctx, configPath, config.NodeID, sharedDocker)
+	fileService, fileErr := openAgentFileService(configPath)
+	if fileErr != nil && stderr != nil {
+		fmt.Fprintln(stderr, "Agent file service unavailable; monitoring and task execution remain active")
+	}
+	if fileService != nil {
+		defer fileService.Close()
+	}
+	taskBridge, bridgeErr := openTaskBridge(ctx, configPath, config.NodeID, sharedDocker, fileService)
 	if bridgeErr != nil {
 		if stderr != nil {
 			fmt.Fprintln(stderr, "Agent task bridge unavailable; host monitoring remains active")
@@ -118,13 +125,6 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 				fmt.Fprintln(stderr, "Agent task bridge shutdown did not fully complete")
 			}
 		}()
-	}
-	fileService, fileErr := openAgentFileService(configPath)
-	if fileErr != nil && stderr != nil {
-		fmt.Fprintln(stderr, "Agent file service unavailable; monitoring and task execution remain active")
-	}
-	if fileService != nil {
-		defer fileService.Close()
 	}
 	var backoff reconnectBackoff
 	for {
@@ -488,7 +488,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 		done := make(chan error, 1)
 		finished := make(chan struct{})
 		fileBridgeDone = done
-		bridge := newAgentFileBridge(fileService, generation, writer)
+		var fileTasks *agentfiles.TaskExecutor
+		if taskBridge != nil {
+			fileTasks = taskBridge.files
+		}
+		bridge := newAgentFileBridge(fileService, generation, writer, fileTasks)
 		go func() {
 			defer close(finished)
 			done <- bridge.run(fileCtx, fileMessages)
@@ -753,6 +757,15 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			case protocol.TypeFileRequest, protocol.TypeFileCancel:
 				if fileMessages == nil || envelope.Sequence != 0 || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
 					return errors.New("Core file request is invalid or was not negotiated")
+				}
+				select {
+				case fileMessages <- envelope:
+				default:
+					return errors.New("Agent file control queue is full")
+				}
+			case protocol.TypeFileChunk:
+				if fileMessages == nil || envelope.Sequence == 0 || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
+					return errors.New("Core file chunk is invalid or was not negotiated")
 				}
 				select {
 				case fileMessages <- envelope:

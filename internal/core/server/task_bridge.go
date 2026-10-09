@@ -127,6 +127,7 @@ func (s *Server) acceptAgentTaskSnapshotPage(ctx context.Context, connection *ag
 	for _, report := range snapshot.reports {
 		if taskstate.IsTerminal(report.Status) {
 			s.clearComposeContent(report.TaskID)
+			s.clearFileContent(report.TaskID)
 		}
 		if report.Status != taskstate.Succeeded {
 			continue
@@ -207,6 +208,7 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 	if taskstate.IsTerminal(after.Status) {
 		s.clearImageCredentials(report.TaskID)
 		s.clearComposeContent(report.TaskID)
+		s.clearFileContent(report.TaskID)
 		delete(connection.taskReconcileOutstanding, report.TaskID)
 		delete(connection.taskReconcileAttempted, report.TaskID)
 	}
@@ -256,6 +258,9 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		if task.Intent.Action == protocol.TaskComposeSave && task.Intent.Compose != nil {
 			dispatch.ComposeContent = s.takeComposeContent(task.TaskID, task.NodeID, task.Intent.Compose.ContentSHA256)
 		}
+		if task.Intent.Action == protocol.TaskFileSaveText && task.Intent.File != nil {
+			dispatch.FileContent = s.takeFileContent(task.TaskID, task.NodeID, task.Intent.File.SHA256)
+		}
 		payload, err := json.Marshal(dispatch)
 		if err != nil || len(payload) > protocol.MaxTaskPayloadBytes {
 			clear(payload)
@@ -266,6 +271,10 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			if dispatch.ComposeContent != nil {
 				clear(dispatch.ComposeContent.Content)
 				dispatch.ComposeContent = nil
+			}
+			if dispatch.FileContent != nil {
+				clear(dispatch.FileContent.Content)
+				dispatch.FileContent = nil
 			}
 			// The safe typed intent was already persisted, but no malformed frame
 			// is allowed to reach an Agent. Marking it unknown is safer than replay.
@@ -282,6 +291,10 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		if dispatch.ComposeContent != nil {
 			clear(dispatch.ComposeContent.Content)
 			dispatch.ComposeContent = nil
+		}
+		if dispatch.FileContent != nil {
+			clear(dispatch.FileContent.Content)
+			dispatch.FileContent = nil
 		}
 		writeErr := s.writeAgentEnvelope(ctx, connection.conn, message)
 		clear(payload)

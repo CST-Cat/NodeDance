@@ -11,6 +11,7 @@ import MetricsPanel from './MetricsPanel.vue'
 import PreferenceEditor from './PreferenceEditor.vue'
 import TerminalConsole from './TerminalConsole.vue'
 import NodeServiceProbes from './NodeServiceProbes.vue'
+import NodeFiles from './NodeFiles.vue'
 
 interface NodeClock {
   status: string
@@ -36,10 +37,10 @@ const taskAuditErrors = ref<Record<string, string>>({})
 const preferenceIdentities = ref<Record<string, Record<string, string>>>({})
 const nodePreferences = ref<Record<string, DashboardPreference[]>>({})
 const dashboardSettings = ref<DashboardSettings>({ viewMode: 'monitor', groupBy: 'node', sortBy: 'custom', nodeGroupBy: 'status', nodeSortBy: 'custom', featuredLimit: 4, customFields: ['state', 'ports', 'health'] })
-const activeSection = ref<'overview' | 'docker' | 'images' | 'compose' | 'history' | 'events' | 'settings'>('overview')
+const activeSection = ref<'overview' | 'docker' | 'images' | 'compose' | 'files' | 'history' | 'events' | 'settings'>('overview')
 const sectionTabs: Array<{ id: typeof activeSection.value; label: string }> = [
   { id: 'overview', label: '总览' }, { id: 'docker', label: 'Docker 详情' }, { id: 'images', label: '镜像' },
-  { id: 'compose', label: 'Compose 项目' }, { id: 'history', label: '历史监控' }, { id: 'events', label: '事件历史' }, { id: 'settings', label: '节点设置' },
+  { id: 'compose', label: 'Compose 项目' }, { id: 'files', label: '文件管理' }, { id: 'history', label: '历史监控' }, { id: 'events', label: '事件历史' }, { id: 'settings', label: '节点设置' },
 ]
 const customFieldOptions = [
   { id: 'state', label: '运行状态' }, { id: 'ports', label: '端口' }, { id: 'health', label: '健康状态' },
@@ -1122,6 +1123,7 @@ onBeforeUnmount(() => {
 
         <ImagesPanel v-if="selectedNode && activeSection === 'images'" :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" />
         <ComposeProjects v-if="selectedNode && activeSection === 'compose'" :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" />
+        <NodeFiles v-if="selectedNode && activeSection === 'files'" :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" :node-name="selectedNode.displayName" />
 
         <section v-if="selectedNode && activeSection === 'history'" class="section-panel" aria-label="历史监控设置">
           <div class="section-toolbar"><div><span class="eyebrow">PERSISTED METRICS</span><h2>历史监控 · {{ selectedNodeTitle }}</h2></div>

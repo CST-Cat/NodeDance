@@ -79,6 +79,8 @@ type Server struct {
 	composeProjects            *corecompose.Store
 	composeContentMu           sync.Mutex
 	composeContents            map[string]pendingComposeContent
+	fileContentMu              sync.Mutex
+	fileContents               map[string]pendingFileContent
 	imageAuthMu                sync.Mutex
 	imageAuth                  map[string]pendingImageCredential
 	probes                     *coreprobes.Store
@@ -219,6 +221,7 @@ func New(version string, options Options) (*Server, error) {
 		docker:                    coredocker.NewStore(),
 		imageAuth:                 make(map[string]pendingImageCredential),
 		composeContents:           make(map[string]pendingComposeContent),
+		fileContents:              make(map[string]pendingFileContent),
 		agentOfflineTimeout:       options.AgentOfflineTimeout,
 		agentSweepInterval:        options.AgentSweepInterval,
 		agentConnections:          make(map[string]*agentConnection),
@@ -352,6 +355,7 @@ func (s *Server) Close() error {
 	s.agentWait.Wait()
 	s.clearAllImageCredentials()
 	s.clearAllComposeContent()
+	s.clearAllFileContent()
 	if s.agents != nil {
 		_ = s.agents.MarkAllOffline(context.Background())
 	}

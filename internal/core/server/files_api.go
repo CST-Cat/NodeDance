@@ -28,6 +28,14 @@ func (s *Server) handleFilesAPI(w http.ResponseWriter, r *http.Request, current 
 	if !ok {
 		return false
 	}
+	if operation == "tasks" {
+		s.handleCreateFileTask(w, r, current, nodeID)
+		return true
+	}
+	if operation == "upload" {
+		s.handleFileUpload(w, r, current, nodeID)
+		return true
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return true
@@ -89,7 +97,7 @@ func filesRoute(requestPath string) (nodeID, operation string, ok bool) {
 	}
 	if len(parts) == 3 {
 		switch parts[2] {
-		case "stat", "text", "download":
+		case "stat", "text", "download", "tasks", "upload":
 			return parts[0], parts[2], true
 		}
 	}
@@ -155,6 +163,8 @@ func (s *Server) writeFileAPIError(w http.ResponseWriter, err error) {
 		case "not_text":
 			status = http.StatusUnsupportedMediaType
 		case "conflict":
+			status = http.StatusConflict
+		case "version_conflict":
 			status = http.StatusConflict
 		case "unavailable":
 			status = http.StatusServiceUnavailable

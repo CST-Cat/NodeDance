@@ -244,20 +244,22 @@ func (s *Service) Mkdir(virtual string) error {
 }
 
 func (s *Service) Rename(oldVirtual, newVirtual string) error {
-	oldName, _, err := s.normalize(oldVirtual)
+	oldName, oldCanonical, err := s.normalize(oldVirtual)
 	if err != nil {
 		return err
 	}
-	newName, _, err := s.normalize(newVirtual)
+	newName, newCanonical, err := s.normalize(newVirtual)
 	if err != nil {
 		return err
 	}
-	if _, err := s.root.Lstat(newName); err == nil {
+	if oldCanonical == "/" || newCanonical == "/" || oldCanonical == newCanonical {
+		return ErrInvalidPath
+	}
+	if err := renameNoReplace(s.root, oldName, newName); errors.Is(err, os.ErrExist) {
 		return ErrExists
-	} else if !errors.Is(err, os.ErrNotExist) {
+	} else {
 		return err
 	}
-	return s.root.Rename(oldName, newName)
 }
 
 func (s *Service) Delete(virtual string, confirmed bool) error {
@@ -716,6 +718,19 @@ func (s *Service) OpenDownload(virtual string) (*os.File, protocol.FileEntry, er
 func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.FileEntry, string, error) {
 	if len(text) > protocol.MaxTextFileBytes || !utf8.ValidString(text) || strings.ContainsRune(text, '\x00') {
 		return protocol.FileEntry{}, "", ErrNotText
+	}
+	if expectedVersion == "" {
+		digest := sha256.Sum256([]byte(text))
+		upload, err := s.BeginUpload(virtual, "", int64(len(text)), hex.EncodeToString(digest[:]))
+		if err != nil {
+			return protocol.FileEntry{}, "", err
+		}
+		if err := upload.WriteChunk([]byte(text)); err != nil {
+			upload.Abort()
+			return protocol.FileEntry{}, "", err
+		}
+		entry, err := upload.CommitWithDigest(hex.EncodeToString(digest[:]))
+		return entry, "", err
 	}
 	name, canonical, err := s.normalize(virtual)
 	if err != nil || name == "." {

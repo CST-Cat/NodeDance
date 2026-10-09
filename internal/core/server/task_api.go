@@ -127,6 +127,8 @@ func (s *Server) handleCancelUndeliveredTask(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	s.clearImageCredentials(taskID)
+	s.clearComposeContent(taskID)
+	s.clearFileContent(taskID)
 	writeJSON(w, http.StatusOK, toTaskView(task))
 }
 

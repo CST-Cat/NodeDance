@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -65,6 +66,11 @@ const (
 	TaskComposeRestart TaskAction = "compose_restart"
 	TaskComposeDeploy  TaskAction = "compose_deploy"
 	TaskComposeSave    TaskAction = "compose_config_save"
+	TaskFileMkdir      TaskAction = "file_mkdir"
+	TaskFileRename     TaskAction = "file_rename"
+	TaskFileDelete     TaskAction = "file_delete"
+	TaskFileSaveText   TaskAction = "file_save_text"
+	TaskFileUpload     TaskAction = "file_upload"
 )
 
 // ComposeTaskSpec identifies a project from Docker's Compose labels. File
@@ -91,6 +97,17 @@ type RebuildSpec struct {
 	PortBindings      []RebuildPortBinding `json:"portBindings,omitempty"`
 	ClearPortBindings bool                 `json:"clearPortBindings,omitempty"`
 	CleanupTaskID     string               `json:"cleanupTaskId,omitempty"`
+}
+
+// FileTaskSpec contains only bounded metadata for one filesystem operation.
+// File contents are carried once in TaskDispatch or streamed through the
+// existing file channel; they are never written to either task journal.
+type FileTaskSpec struct {
+	Path            string `json:"path"`
+	NewPath         string `json:"newPath,omitempty"`
+	ExpectedVersion string `json:"expectedVersion,omitempty"`
+	Size            int64  `json:"size,omitempty"`
+	SHA256          string `json:"sha256,omitempty"`
 }
 
 type ContainerRebuildPlanRequest struct {
@@ -135,6 +152,7 @@ type TaskIntent struct {
 	ImageID         string           `json:"image_id,omitempty"`
 	Rebuild         *RebuildSpec     `json:"rebuild,omitempty"`
 	Compose         *ComposeTaskSpec `json:"compose,omitempty"`
+	File            *FileTaskSpec    `json:"file,omitempty"`
 }
 
 // CanonicalTaskIntent returns the exact canonical JSON used in the task
@@ -155,34 +173,38 @@ func CanonicalTaskIntent(intent TaskIntent) ([]byte, error) {
 }
 
 func ValidateTaskIntent(intent TaskIntent) error {
-	if !IsFullContainerID(intent.ContainerID) {
+	if IsFileTaskAction(intent.Action) {
+		if !validFileTaskSpec(intent) {
+			return fmt.Errorf("%w: file target or operation metadata is invalid", ErrInvalidTaskMessage)
+		}
+	} else if !IsFullContainerID(intent.ContainerID) {
 		return fmt.Errorf("%w: target must be a full stable Docker resource digest", ErrInvalidTaskMessage)
 	}
 	switch intent.Action {
 	case TaskStart, TaskStop, TaskRestart, TaskPause, TaskResume:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil {
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil || intent.File != nil {
 			return ErrInvalidTaskMessage
 		}
 	case TaskDelete:
-		if intent.NewName != "" || !intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil {
+		if intent.NewName != "" || !intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil || intent.File != nil {
 			return ErrInvalidTaskMessage
 		}
 	case TaskRename:
-		if !containerName.MatchString(intent.NewName) || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil {
+		if !containerName.MatchString(intent.NewName) || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil || intent.File != nil {
 			return ErrInvalidTaskMessage
 		}
 	case TaskImagePull:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil || !validImageReference(intent.ImageReference) ||
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil || intent.File != nil || !validImageReference(intent.ImageReference) ||
 			intent.ContainerID != ImageTargetKey("pull:"+intent.ImageReference) {
 			return ErrInvalidTaskMessage
 		}
 	case TaskImageDelete:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.Rebuild != nil || intent.Compose != nil || !validImageID(intent.ImageID) ||
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.Rebuild != nil || intent.Compose != nil || intent.File != nil || !validImageID(intent.ImageID) ||
 			intent.ContainerID != ImageTargetKey("delete:"+intent.ImageID) {
 			return ErrInvalidTaskMessage
 		}
 	case TaskRebuild:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Compose != nil || intent.Rebuild == nil || intent.Rebuild.CleanupTaskID != "" || intent.Rebuild.ClearPortBindings && len(intent.Rebuild.PortBindings) != 0 {
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Compose != nil || intent.File != nil || intent.Rebuild == nil || intent.Rebuild.CleanupTaskID != "" || intent.Rebuild.ClearPortBindings && len(intent.Rebuild.PortBindings) != 0 {
 			return ErrInvalidTaskMessage
 		}
 		if len(intent.Rebuild.PortBindings) > 128 {
@@ -200,7 +222,7 @@ func ValidateTaskIntent(intent TaskIntent) error {
 			seen[key] = struct{}{}
 		}
 	case TaskRebuildCleanup:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Compose != nil || intent.Rebuild == nil || intent.Rebuild.CleanupTaskID == "" || len(intent.Rebuild.CleanupTaskID) > 128 || intent.Rebuild.ClearPortBindings || len(intent.Rebuild.PortBindings) != 0 {
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Compose != nil || intent.File != nil || intent.Rebuild == nil || intent.Rebuild.CleanupTaskID == "" || len(intent.Rebuild.CleanupTaskID) > 128 || intent.Rebuild.ClearPortBindings || len(intent.Rebuild.PortBindings) != 0 {
 			return ErrInvalidTaskMessage
 		}
 		for _, r := range intent.Rebuild.CleanupTaskID {
@@ -209,17 +231,70 @@ func ValidateTaskIntent(intent TaskIntent) error {
 			}
 		}
 	case TaskComposeStart, TaskComposeStop, TaskComposeRestart, TaskComposeDeploy:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || !validComposeTaskSpec(intent, false) {
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.File != nil || !validComposeTaskSpec(intent, false) {
 			return ErrInvalidTaskMessage
 		}
 	case TaskComposeSave:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || !validComposeTaskSpec(intent, true) {
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.File != nil || !validComposeTaskSpec(intent, true) {
+			return ErrInvalidTaskMessage
+		}
+	case TaskFileMkdir, TaskFileRename, TaskFileDelete, TaskFileSaveText, TaskFileUpload:
+		if intent.NewName != "" || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil {
+			return ErrInvalidTaskMessage
+		}
+		if (intent.Action == TaskFileDelete) != intent.DeleteConfirmed {
 			return ErrInvalidTaskMessage
 		}
 	default:
 		return ErrInvalidTaskMessage
 	}
 	return nil
+}
+
+func validFileTaskSpec(intent TaskIntent) bool {
+	if intent.File == nil || !ValidVirtualFilePath(intent.File.Path) || intent.ContainerID != FileTargetKey(intent.File.Path) {
+		return false
+	}
+	file := intent.File
+	validVersion := func(value string) bool {
+		return len(value) <= 128 && !strings.ContainsAny(value, "\x00\r\n")
+	}
+	switch intent.Action {
+	case TaskFileMkdir, TaskFileDelete:
+		return file.Path != "/" && file.NewPath == "" && file.ExpectedVersion == "" && file.Size == 0 && file.SHA256 == ""
+	case TaskFileRename:
+		return ValidVirtualFilePath(file.NewPath) && file.Path != "/" && file.NewPath != "/" && file.NewPath != file.Path &&
+			file.ExpectedVersion == "" && file.Size == 0 && file.SHA256 == ""
+	case TaskFileSaveText:
+		return file.Path != "/" && file.NewPath == "" && validVersion(file.ExpectedVersion) && file.Size >= 0 && file.Size <= MaxTextFileBytes && validFileDigest(file.SHA256)
+	case TaskFileUpload:
+		return file.Path != "/" && file.NewPath == "" && validVersion(file.ExpectedVersion) && file.Size >= 0 && file.Size <= MaxFileSize && validFileDigest(file.SHA256)
+	default:
+		return false
+	}
+}
+
+func ValidVirtualFilePath(value string) bool {
+	if value == "" || len(value) > 4096 || value[0] != '/' || strings.ContainsRune(value, '\x00') {
+		return false
+	}
+	for _, part := range strings.Split(value, "/") {
+		if part == ".." {
+			return false
+		}
+	}
+	return path.Clean(value) == value
+}
+
+func FileTargetKey(path string) string { return ImageTargetKey("file:" + path) }
+
+func IsFileTaskAction(action TaskAction) bool {
+	switch action {
+	case TaskFileMkdir, TaskFileRename, TaskFileDelete, TaskFileSaveText, TaskFileUpload:
+		return true
+	default:
+		return false
+	}
 }
 
 func validComposeTaskSpec(intent TaskIntent, save bool) bool {
@@ -336,6 +411,8 @@ func TaskIdentity(taskID, nodeID, idempotencyKey string, intent TaskIntent) (tas
 		resourceKey = "docker-image:" + intent.ContainerID
 	} else if IsComposeTaskAction(intent.Action) {
 		resourceKey = "docker-compose-project:" + intent.ContainerID
+	} else if IsFileTaskAction(intent.Action) {
+		resourceKey = "filesystem-path:" + intent.ContainerID
 	}
 	return taskstate.Identity{
 		TaskID: taskID, NodeID: nodeID, IdempotencyKey: idempotencyKey,
@@ -434,9 +511,17 @@ type TaskDispatch struct {
 	// ComposeContent is a one-delivery config-save body; only its SHA-256 is
 	// persisted in TaskIntent and Agent journal records.
 	ComposeContent *ComposeContent `json:"composeContent,omitempty"`
+	// FileContent is a one-delivery UTF-8 text body. Uploads use the existing
+	// bounded file chunk channel and never place file bytes in a task journal.
+	FileContent *FileContent `json:"fileContent,omitempty"`
 }
 
 type ComposeContent struct {
+	SHA256  string `json:"sha256"`
+	Content []byte `json:"content"`
+}
+
+type FileContent struct {
 	SHA256  string `json:"sha256"`
 	Content []byte `json:"content"`
 }
@@ -579,6 +664,18 @@ func ValidateTaskDispatch(envelope Envelope, dispatch TaskDispatch, nodeID, jour
 	} else if dispatch.Intent.Action == TaskComposeSave {
 		// The Core keeps file bodies only in memory. If that one-use payload was
 		// lost, the Agent will persist a failed result without changing the file.
+	}
+	if dispatch.FileContent != nil {
+		if dispatch.Intent.Action != TaskFileSaveText || dispatch.Intent.File == nil ||
+			dispatch.FileContent.SHA256 != dispatch.Intent.File.SHA256 || len(dispatch.FileContent.Content) > MaxTextFileBytes ||
+			sha256.Sum256(dispatch.FileContent.Content) != mustDecodeSHA256(dispatch.FileContent.SHA256) {
+			return fmt.Errorf("%w: file text payload is invalid for this dispatch", ErrInvalidTaskMessage)
+		}
+	} else if dispatch.Intent.Action != TaskFileSaveText && IsFileTaskAction(dispatch.Intent.Action) {
+		// Only the text editor uses a bounded one-delivery body. Other file
+		// mutations contain all of their required metadata in the intent.
+	} else if dispatch.Intent.Action == TaskFileSaveText {
+		// Missing one-use content is handled as a failed task by the Agent.
 	}
 	digest, err := ParseDigest(dispatch.RequestDigest)
 	if err != nil {

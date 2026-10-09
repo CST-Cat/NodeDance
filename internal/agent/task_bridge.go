@@ -12,6 +12,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/agent/containeractions"
 	"github.com/CST-Cat/NodeDance/internal/agent/containerrebuild"
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
+	agentfiles "github.com/CST-Cat/NodeDance/internal/agent/files"
 	agentimages "github.com/CST-Cat/NodeDance/internal/agent/images"
 	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
 	"github.com/CST-Cat/NodeDance/internal/agent/taskrunner"
@@ -31,11 +32,15 @@ type taskBridgeRuntime struct {
 	rebuild *containerrebuild.Manager
 	store   *containerrebuild.Store
 	compose *agentcompose.Manager
+	files   *agentfiles.TaskExecutor
 }
 
-func openTaskBridge(ctx context.Context, configPath, nodeID string, shared *agentdocker.SDKEngine) (*taskBridgeRuntime, error) {
+func openTaskBridge(ctx context.Context, configPath, nodeID string, shared *agentdocker.SDKEngine, fileService *agentfiles.Service) (*taskBridgeRuntime, error) {
 	if nodeID == "" {
 		return nil, errors.New("Agent identity is not available for the task journal")
+	}
+	if shared == nil && fileService == nil {
+		return nil, nil
 	}
 	journalPath := filepath.Join(filepath.Dir(configPath), "tasks.sqlite")
 	journal, err := taskjournal.Open(ctx, journalPath, nodeID)
@@ -49,66 +54,79 @@ func openTaskBridge(ctx context.Context, configPath, nodeID string, shared *agen
 		_ = journal.Close()
 		return nil, err
 	}
-	if shared == nil {
-		// Still recover interrupted journal state before declining the bridge.
-		recoveryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		_, recoverErr := journal.RecoverInterrupted(recoveryCtx)
-		cancel()
-		if recoverErr != nil {
-			return closeOnError(fmt.Errorf("recover Agent task journal: %w", recoverErr), nil)
+	var imageEngine *agentimages.SDKEngine
+	var rebuildStore *containerrebuild.Store
+	var rebuildManager *containerrebuild.Manager
+	var composeManager *agentcompose.Manager
+	var executor taskrunner.Executor
+	if shared != nil {
+		engine, engineErr := containeractions.NewEngine(shared.Client())
+		if engineErr != nil {
+			return closeOnError(fmt.Errorf("create container action adapter: %w", engineErr), nil)
 		}
-		return closeOnError(errors.New("shared Docker Engine client is unavailable"), nil)
-	}
-	engine, err := containeractions.NewEngine(shared.Client())
-	if err != nil {
-		return closeOnError(fmt.Errorf("create container action adapter: %w", err), nil)
-	}
-	imageEngine, err := agentimages.NewEngine(shared.Client())
-	if err != nil {
-		return closeOnError(fmt.Errorf("create image adapter: %w", err), nil)
-	}
-	rebuildStore, err := containerrebuild.OpenStore(ctx, filepath.Join(filepath.Dir(configPath), "rebuilds.sqlite"))
-	if err != nil {
-		return closeOnError(fmt.Errorf("open durable Agent container rebuild store: %w", err), nil)
-	}
-	dockerEngine, err := containerrebuild.NewDockerEngine(shared.Client())
-	if err != nil {
-		return closeOnError(fmt.Errorf("create container rebuild Docker adapter: %w", err), rebuildStore)
-	}
-	rebuildManager, err := containerrebuild.NewManager(dockerEngine, journal, rebuildStore, containerrebuild.Options{})
-	if err != nil {
-		return closeOnError(fmt.Errorf("create durable container rebuild manager: %w", err), rebuildStore)
-	}
-	executor, err := containeractions.New(engine, journal, containeractions.Options{Rebuilder: &agentRebuildExecutor{manager: rebuildManager}})
-	if err != nil {
-		return closeOnError(fmt.Errorf("create durable container action executor: %w", err), rebuildStore)
+		imageEngine, err = agentimages.NewEngine(shared.Client())
+		if err != nil {
+			return closeOnError(fmt.Errorf("create image adapter: %w", err), nil)
+		}
+		rebuildStore, err = containerrebuild.OpenStore(ctx, filepath.Join(filepath.Dir(configPath), "rebuilds.sqlite"))
+		if err != nil {
+			return closeOnError(fmt.Errorf("open durable Agent container rebuild store: %w", err), nil)
+		}
+		dockerEngine, engineErr := containerrebuild.NewDockerEngine(shared.Client())
+		if engineErr != nil {
+			return closeOnError(fmt.Errorf("create container rebuild Docker adapter: %w", engineErr), rebuildStore)
+		}
+		rebuildManager, err = containerrebuild.NewManager(dockerEngine, journal, rebuildStore, containerrebuild.Options{})
+		if err != nil {
+			return closeOnError(fmt.Errorf("create durable container rebuild manager: %w", err), rebuildStore)
+		}
+		dockerExecutor, executorErr := containeractions.New(engine, journal, containeractions.Options{Rebuilder: &agentRebuildExecutor{manager: rebuildManager}})
+		if executorErr != nil {
+			return closeOnError(fmt.Errorf("create durable container action executor: %w", executorErr), rebuildStore)
+		}
+		executor = dockerExecutor
 	}
 	runner, err := taskrunner.New(nodeID, journal, executor, taskrunner.Options{})
 	if err != nil {
 		return closeOnError(fmt.Errorf("create Agent task runner: %w", err), rebuildStore)
 	}
-	imageExecutor, err := agentimages.NewExecutor(imageEngine, journal)
-	if err != nil {
-		return closeOnError(fmt.Errorf("create durable image executor: %w", err), rebuildStore)
-	}
-	if err := runner.SetImageExecutor(imageExecutor); err != nil {
-		return closeOnError(fmt.Errorf("attach image executor: %w", err), rebuildStore)
-	}
-	composeManager, composeErr := agentcompose.NewManager(shared)
-	if composeErr == nil {
-		composeExecutor, executorErr := agentcompose.NewTaskExecutor(composeManager, journal)
-		if executorErr == nil {
-			if err := runner.SetComposeExecutor(composeExecutor); err != nil {
-				return closeOnError(fmt.Errorf("attach Compose task executor: %w", err), rebuildStore)
-			}
+	if imageEngine != nil {
+		imageExecutor, imageErr := agentimages.NewExecutor(imageEngine, journal)
+		if imageErr != nil {
+			return closeOnError(fmt.Errorf("create durable image executor: %w", imageErr), rebuildStore)
 		}
-	} else {
-		composeManager = nil
+		if err := runner.SetImageExecutor(imageExecutor); err != nil {
+			return closeOnError(fmt.Errorf("attach image executor: %w", err), rebuildStore)
+		}
+	}
+	if shared != nil {
+		var composeErr error
+		composeManager, composeErr = agentcompose.NewManager(shared)
+		if composeErr == nil {
+			composeExecutor, executorErr := agentcompose.NewTaskExecutor(composeManager, journal)
+			if executorErr == nil {
+				if err := runner.SetComposeExecutor(composeExecutor); err != nil {
+					return closeOnError(fmt.Errorf("attach Compose task executor: %w", err), rebuildStore)
+				}
+			}
+		} else {
+			composeManager = nil
+		}
+	}
+	var fileExecutor *agentfiles.TaskExecutor
+	if fileService != nil {
+		fileExecutor, err = agentfiles.NewTaskExecutor(fileService, journal)
+		if err != nil {
+			return closeOnError(fmt.Errorf("create durable file task executor: %w", err), rebuildStore)
+		}
+		if err := runner.SetFileExecutor(fileExecutor); err != nil {
+			return closeOnError(fmt.Errorf("attach file task executor: %w", err), rebuildStore)
+		}
 	}
 	if err := runner.Start(ctx); err != nil {
 		return closeOnError(fmt.Errorf("start Agent task runner: %w", err), rebuildStore)
 	}
-	return &taskBridgeRuntime{nodeID: nodeID, journal: journal, images: imageEngine, runner: runner, rebuild: rebuildManager, store: rebuildStore, compose: composeManager}, nil
+	return &taskBridgeRuntime{nodeID: nodeID, journal: journal, images: imageEngine, runner: runner, rebuild: rebuildManager, store: rebuildStore, compose: composeManager, files: fileExecutor}, nil
 }
 
 func (b *taskBridgeRuntime) close() error {
