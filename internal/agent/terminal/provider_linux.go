@@ -196,10 +196,17 @@ func (p *SystemProvider) openContainer(ctx context.Context, request protocol.Ter
 }
 
 func waitForContainerExecStart(ctx context.Context, cli *client.Client, execID string) error {
+	// Docker can briefly report an Exec as running while the runtime is still
+	// resolving its executable. In particular, an Exec for /bin/sh in a
+	// shell-less image may transition through Running before exiting with 127.
+	// Require a short continuous-running window so callers do not get a ready
+	// terminal for a process that has already failed to start.
+	const startupGrace = 100 * time.Millisecond
 	deadline := time.NewTimer(time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
+	var runningSince time.Time
 	for {
 		inspectCtx, cancel := context.WithTimeout(ctx, 750*time.Millisecond)
 		result, err := cli.ExecInspect(inspectCtx, execID, client.ExecInspectOptions{})
@@ -207,8 +214,17 @@ func waitForContainerExecStart(ctx context.Context, cli *client.Client, execID s
 		if err != nil {
 			return err
 		}
-		if result.Running {
-			return nil
+		if !result.Running {
+			if !runningSince.IsZero() {
+				return errors.New("Docker Exec exited during terminal startup")
+			}
+		} else {
+			if runningSince.IsZero() {
+				runningSince = time.Now()
+			}
+			if time.Since(runningSince) >= startupGrace {
+				return nil
+			}
 		}
 		select {
 		case <-ctx.Done():
