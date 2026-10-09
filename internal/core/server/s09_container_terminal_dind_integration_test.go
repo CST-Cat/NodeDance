@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/agent"
+	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 	"github.com/moby/moby/api/types/container"
@@ -118,6 +119,11 @@ func TestRealAgentBrowserContainerTerminalOnOwnedDIND(t *testing.T) {
 	agentDone = make(chan error, 1)
 	go func() { agentDone <- agent.Run(agentCtx, configPath, "s09-container-terminal-test", nil) }()
 	waitForS09TerminalAgent(t, core, enrollment.NodeID)
+	// Agent online can precede the initial Docker snapshot/event subscription.
+	// Wait for both before mutating Engine state, especially before creating the
+	// short-lived stopped fixture, which could otherwise fall into that startup
+	// gap and remain absent until the periodic full scan.
+	waitForS09ServerDockerReady(t, core, enrollment.NodeID, 30*time.Second)
 
 	image := s09ServerLockedBusyboxImage(t)
 	if _, err := cli.ImageInspect(runCtx.ctx, image); err != nil {
@@ -142,9 +148,13 @@ func TestRealAgentBrowserContainerTerminalOnOwnedDIND(t *testing.T) {
 	shelllessImageTag = "nodedance-s09-shellless:" + strings.TrimPrefix(suite, "nodedance-s09-container-")
 	shelllessImageID = createS09ServerShelllessImage(t, runCtx.ctx, cli, alphaID, shelllessImageTag, suite)
 	shelllessID := createS09ServerShelllessFixture(t, runCtx.ctx, cli, &fixtureIDs, shelllessImageTag, suite)
-	waitForS09ServerContainerInventory(t, core, enrollment.NodeID, map[string]bool{
-		alphaID: true, betaID: true, shelllessID: true, stoppedID: false,
-	}, 40*time.Second)
+	fixtures := map[string]s09ServerFixtureExpectation{
+		"alpha":     {id: alphaID, state: "running", running: true},
+		"beta":      {id: betaID, state: "running", running: true},
+		"shellless": {id: shelllessID, state: "running", running: true},
+		"stopped":   {id: stoppedID, state: "exited", running: false},
+	}
+	waitForS09ServerContainerInventory(t, core, enrollment.NodeID, cli, runCtx.ctx, fixtures, 30*time.Second)
 
 	httpClient, err := httpClientForRoots(rootPEM)
 	if err != nil {
@@ -391,6 +401,7 @@ func createS09ServerRunningFixture(t *testing.T, ctx context.Context, cli *clien
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		t.Fatalf("start exact-owner S09 %s fixture: %v", role, err)
 	}
+	t.Logf("S09_DIND_FIXTURE role=%s id=%s expected_engine_state=running owner_suite=%s", role, created.ID, suite)
 	return created.ID
 }
 
@@ -415,6 +426,7 @@ func createS09ServerStoppedFixture(t *testing.T, ctx context.Context, cli *clien
 		t.Fatalf("S09 short-lived fixture did not stop: %v", ctx.Err())
 	case <-waiter.Result:
 	}
+	t.Logf("S09_DIND_FIXTURE role=stopped id=%s expected_engine_state=exited owner_suite=%s", created.ID, suite)
 	return created.ID
 }
 
@@ -482,6 +494,7 @@ func createS09ServerShelllessImage(t *testing.T, ctx context.Context, cli *clien
 	if err != nil || image.ID == "" || !s09ServerContains(image.RepoTags, imageTag) || image.Config == nil || image.Config.Labels["io.nodedance.test"] != "true" || image.Config.Labels["io.nodedance.suite"] != suite {
 		t.Fatalf("inspect exact shell-less S09 fixture image: id=%q tags=%v err=%v", image.ID, image.RepoTags, err)
 	}
+	t.Logf("S09_DIND_FIXTURE role=shellless_image id=%s tag=%s owner_suite=%s", image.ID, imageTag, suite)
 	return image.ID
 }
 
@@ -498,28 +511,107 @@ func createS09ServerShelllessFixture(t *testing.T, ctx context.Context, cli *cli
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		t.Fatalf("start exact-owner shell-less fixture: %v", err)
 	}
+	t.Logf("S09_DIND_FIXTURE role=shellless id=%s expected_engine_state=running owner_suite=%s", created.ID, suite)
 	return created.ID
 }
 
-func waitForS09ServerContainerInventory(t *testing.T, core *Server, nodeID string, expected map[string]bool, timeout time.Duration) {
+type s09ServerFixtureExpectation struct {
+	id      string
+	state   string
+	running bool
+}
+
+type s09ServerInventoryObservation struct {
+	found             bool
+	name              string
+	state             string
+	running           bool
+	stale             bool
+	unavailableReason string
+}
+
+func waitForS09ServerDockerReady(t *testing.T, core *Server, nodeID string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
+	var last coredocker.View
+	var lastState dashboardNodeState
 	for time.Now().Before(deadline) {
 		state, view, err := core.dockerViewForNode(context.Background(), nodeID)
-		if err == nil && state.Exists && state.Status == "online" && !view.DataStale && view.DockerAvailability == "available" {
-			seen := make(map[string]bool, len(expected))
-			for _, record := range view.Containers {
-				if running, wanted := expected[record.Container.ID]; wanted && record.Container.Running == running && !record.Container.Stale {
-					seen[record.Container.ID] = true
-				}
-			}
-			if len(seen) == len(expected) {
+		if err == nil {
+			lastState, last = state, view
+			if state.Exists && state.Status == "online" && view.AgentOnline && view.DockerAvailability == "available" &&
+				view.DockerSnapshotFresh && view.DockerEventsConnected && !view.DataStale {
+				t.Logf("S09_DIND_INVENTORY baseline_ready generation=%d containers=%d snapshot_fresh=%t events_connected=%t", view.ActiveGeneration, len(view.Containers), view.DockerSnapshotFresh, view.DockerEventsConnected)
 				return
 			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("Core did not receive a fresh Agent Docker inventory for all S09 fixture targets: %v", expected)
+	t.Fatalf("S09 Docker observer did not establish its initial full snapshot/event stream before fixture creation: node_status=%s agent_online=%t docker=%s snapshot_fresh=%t events_connected=%t data_stale=%t stale_reason=%q containers=%d",
+		lastState.Status, last.AgentOnline, last.DockerAvailability, last.DockerSnapshotFresh, last.DockerEventsConnected, last.DataStale, last.StaleReason, len(last.Containers))
+}
+
+func waitForS09ServerContainerInventory(t *testing.T, core *Server, nodeID string, cli *client.Client, ctx context.Context, expected map[string]s09ServerFixtureExpectation, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	latest := make(map[string]s09ServerInventoryObservation, len(expected))
+	var lastView coredocker.View
+	var lastState dashboardNodeState
+	var lastError error
+	for time.Now().Before(deadline) {
+		state, view, err := core.dockerViewForNode(context.Background(), nodeID)
+		if err == nil {
+			lastError = nil
+			lastState, lastView = state, view
+			latest = make(map[string]s09ServerInventoryObservation, len(expected))
+			for role, fixture := range expected {
+				latest[role] = s09ServerInventoryObservation{}
+				for _, record := range view.Containers {
+					if record.Container.ID == fixture.id {
+						latest[role] = s09ServerInventoryObservation{found: true, name: record.Container.Name,
+							state: record.Container.State, running: record.Container.Running,
+							stale: record.Container.Stale, unavailableReason: record.Container.UnavailableReason}
+						break
+					}
+				}
+			}
+			if state.Exists && state.Status == "online" && view.AgentOnline && view.DockerSnapshotFresh && view.DockerEventsConnected &&
+				!view.DataStale && view.DockerAvailability == "available" && s09ServerFixtureInventoryMatches(expected, latest) {
+				return
+			}
+		} else {
+			lastError = err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	engine := make(map[string]string, len(expected))
+	for role, fixture := range expected {
+		inspectCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		inspected, err := cli.ContainerInspect(inspectCtx, fixture.id, client.ContainerInspectOptions{})
+		cancel()
+		if err != nil {
+			engine[role] = "inspect_error=" + err.Error()
+			continue
+		}
+		if inspected.Container.State == nil {
+			engine[role] = fmt.Sprintf("id=%s name=%s state=<nil>", inspected.Container.ID, inspected.Container.Name)
+			continue
+		}
+		engine[role] = fmt.Sprintf("id=%s name=%s state=%s running=%t", inspected.Container.ID, inspected.Container.Name, inspected.Container.State.Status, inspected.Container.State.Running)
+	}
+	t.Fatalf("Core did not receive all role-tagged S09 fixtures after a known fresh baseline: expected=%+v core={error:%v status:%s generation:%d docker:%s snapshot_fresh:%t events_connected:%t data_stale:%t stale_reason:%q containers:%d} observed=%+v engine=%+v",
+		expected, lastError, lastState.Status, lastView.ActiveGeneration, lastView.DockerAvailability, lastView.DockerSnapshotFresh,
+		lastView.DockerEventsConnected, lastView.DataStale, lastView.StaleReason, len(lastView.Containers), latest, engine)
+}
+
+func s09ServerFixtureInventoryMatches(expected map[string]s09ServerFixtureExpectation, actual map[string]s09ServerInventoryObservation) bool {
+	for role, fixture := range expected {
+		observed := actual[role]
+		if !observed.found || observed.state != fixture.state || observed.running != fixture.running || observed.stale {
+			return false
+		}
+	}
+	return true
 }
 
 func waitForS09ServerProcess(t *testing.T, ctx context.Context, cli *client.Client, containerID, needle string, present bool) {
