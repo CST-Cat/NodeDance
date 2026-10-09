@@ -4,8 +4,8 @@
   "mode": "integration",
   "status": "NOT_READY",
   "run_id": "agent-20261009g",
-  "updated_at": "2026-10-09T07:53:24+00:00",
-  "reason": "Focused owner-marked Engine 29.7.2 / local Registry tests passed for image pull/digest verification, multi-tag listing, stopped-container reference counts, in-use deletion refusal, safe unused deletion, missing manifest failure, invalid reference rejection, Agent-side private Registry success/failure with canary scans, and real slow-transfer cancellation with task and Engine absence confirmation. S08 remains NOT_READY: no-tag listing, Core credential/API and audit/database integration, Registry/Core log scans, Registry transport-failure and timeout cancellation branches, heartbeat during transfer, browser UI, and positive SDK pull progress remain unverified.",
+  "updated_at": "2026-10-09T08:06:26+00:00",
+  "reason": "The focused owner-marked Engine 29.7.2 / local Registry tests cover image pull/digest verification, multi-tag and untagged listing, stopped-container references, deletion refusal/success, private Registry authentication and secret scans, and real slow-transfer cancellation. S08 remains NOT_READY: Core credential/API and audit/database integration, Registry/Core log scans, transport-failure and timeout cancellation, heartbeat during transfer, executable Core/UI filtering and pagination, browser UI behavior, and positive SDK pull progress remain unverified.",
   "engine_attempt": {
     "status": "PASS",
     "details": "Fresh owner-marked Engine 29.7.2 (arm64), run agent-20261009g. Start guard refused any pre-existing run root; the newly started Engine image listing was empty before image fixture setup. The full focused real Registry/Engine test passed once. Engine and run data were then removed only by the matching owner-marked cleanup command.",
@@ -62,9 +62,25 @@
             "evidence": "s08-dind.sh start refuses an existing run root and created this unique run root; the newly started Engine image list was empty before the fixture pull."
           },
           "result": "Real generated Registry manifest pulled through SDK; Registry manifest digest matched Engine RepoDigest and Config ID. Missing manifest task was failed with missing_after_pull and confirmed absent by both SDK Inspect and Docker CLI image inspect."
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "exit_code": 0,
+          "run_id": "dangling-20261009a",
+          "engine_version": "29.7.2",
+          "engine_architecture": "arm64",
+          "command": "NODEDANCE_S08_TEST_PATTERN='^TestDINDImageManagementRealEngine/real_Engine_lists_an_untagged_image_with_empty_arrays$' scripts/test/s08-image-engine-dind.sh 29 dangling-20261009a",
+          "log": ".artifacts/s08/image-engine29-dangling-20261009a.log",
+          "fresh_storage": {
+            "status": "PASS",
+            "evidence": "s08-dind.sh created a new run root and refused any pre-existing root; Engine 29.7.2 ran behind this exact owner marker."
+          },
+          "result": "A stopped fixture container was committed without a repository tag. Docker CLI image inspect confirmed RepoTags was null; the real SDK Inspect and List both returned the image ID with non-nil empty Tags and Digests and zero container references. The focused test removed its owned fixture image/container; the matching owner-marker cleanup removed only this run’s Engine, network, socket, and data root.",
+          "cleanup": "scripts/test/s08-dind.sh clean 29 dangling-20261009a --purge-data"
         }
       ],
-      "reason": "Partially exercised: real Engine list/inspect returned multiple tags, RepoDigest, and stopped-container reference count. The normative untagged-image listing case and UI field comparison were not exercised, so this case remains NOT_READY."
+      "reason": "The untagged-image subcase passed against a real Engine 29.7.2/arm64: an Engine-created dangling image remained visible through SDK List and Inspect with empty arrays. Static path review found the Agent bridge copies these fields, applies ID/tag/digest filtering before pagination, protocol JSON carries the arrays, Core forwards the response, and ImagesPanel stores result.images directly while requesting pageSize=50. Core/Agent transport, HTTP API filtering/pagination, and browser rendering were not exercised end to end; S08-01 therefore remains NOT_READY."
     },
     "S08-02": {
       "status": "PASS",
