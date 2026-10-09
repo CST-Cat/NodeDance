@@ -21,19 +21,29 @@ import (
 const agentHelloTimeout = 5 * time.Second
 
 type agentConnection struct {
-	conn           *websocket.Conn
-	cancel         context.CancelFunc
-	agentID        string
-	generation     uint64
-	metricsEnabled bool
-	dockerEnabled  bool
-	dockerFrames   chan dockerFrame
-	commands       chan protocol.Envelope
-	leaseUpdates   chan time.Time
-	watchMu        sync.Mutex
-	watchCancel    context.CancelFunc
-	watchStopped   bool
-	watchDone      chan struct{}
+	conn            *websocket.Conn
+	cancel          context.CancelFunc
+	agentID         string
+	nodeID          string
+	generation      uint64
+	metricsEnabled  bool
+	dockerEnabled   bool
+	taskEnabled     bool
+	taskSignal      chan struct{}
+	taskMu          sync.RWMutex
+	taskJournalID   string
+	taskCapacity    int
+	taskSlots       int
+	taskSynced      bool
+	taskOutstanding map[string]struct{}
+	taskSnapshot    *agentTaskSnapshot
+	dockerFrames    chan dockerFrame
+	commands        chan protocol.Envelope
+	leaseUpdates    chan time.Time
+	watchMu         sync.Mutex
+	watchCancel     context.CancelFunc
+	watchStopped    bool
+	watchDone       chan struct{}
 }
 
 type agentRead struct {
@@ -361,7 +371,9 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	managed := &agentConnection{conn: conn, cancel: connectionCancel, agentID: identity.AgentID, generation: lease.ConnectionGeneration,
 		metricsEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
 		dockerEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
-		commands:       make(chan protocol.Envelope, 8), leaseUpdates: make(chan time.Time, 1)}
+		taskEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge), nodeID: identity.NodeID,
+		taskSignal: make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
+		commands: make(chan protocol.Envelope, 8), leaseUpdates: make(chan time.Time, 1)}
 	if managed.dockerEnabled {
 		managed.dockerFrames = make(chan dockerFrame, 16)
 	}
@@ -438,6 +450,13 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 			}
 			if err := s.writeAgentEnvelope(ctx, connection.conn, command); err != nil {
 				return
+			}
+		case <-connection.taskSignal:
+			if connection.taskEnabled {
+				if err := s.dispatchAgentTasks(ctx, connection, identity); err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not dispatch durable task")
+					return
+				}
 			}
 		case err := <-dockerFailures:
 			if err != nil {
@@ -554,6 +573,15 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				if err := s.writeAgentEnvelope(ctx, connection.conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeRotateAccepted, Generation: connection.generation, RequestID: rotation.RotationID, Payload: marshalAgentPayload(accepted)}); err != nil {
 					return
 				}
+			case protocol.TypeTaskJournalHello, protocol.TypeTaskSnapshotPage, protocol.TypeTaskReport:
+				if !connection.taskEnabled {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent task bridge was not negotiated")
+					return
+				}
+				if err := s.handleAgentTaskMessage(ctx, connection, identity, envelope); err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid or unpersisted Agent task message")
+					return
+				}
 			case protocol.TypeHello:
 				s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent hello is only valid at connection start")
 				return
@@ -649,7 +677,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {

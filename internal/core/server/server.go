@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"net"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
+	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/core/webassets"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
@@ -56,6 +58,7 @@ type Server struct {
 	hashSetupPassword          func(string) ([]byte, []byte, error)
 	agents                     *agents.Repository
 	metrics                    *coremetrics.Store
+	tasks                      *coretasks.Store
 	dockerMu                   sync.Mutex
 	docker                     *coredocker.Store
 	agentOfflineTimeout        time.Duration
@@ -167,6 +170,11 @@ func New(version string, options Options) (*Server, error) {
 		agentSweepInterval:     options.AgentSweepInterval,
 		agentConnections:       make(map[string]*agentConnection),
 		agentLeaseWatchers:     make(map[string]*agentConnection),
+	}
+	s.tasks, err = coretasks.New(store.DB, coretasks.Options{Now: options.Now})
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("initialize durable Core task store: %w", err)
 	}
 	s.csrfKey, err = loadOrCreateSigningKey(store.Dir)
 	if err != nil {

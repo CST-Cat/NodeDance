@@ -292,6 +292,113 @@ func TestIdempotencyAndCrossIdentityConflicts(t *testing.T) {
 	}
 }
 
+func TestEnqueueGateAllowsExistingRetryButRejectsNewWhileUnsynced(t *testing.T) {
+	fixture := openTestDB(t, "", time.Now().UTC())
+	request := defaultRequest()
+	request.TaskID = "task-gated-original"
+	first, err := fixture.store.Enqueue(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.db.Exec(`UPDATE nodes SET status='offline' WHERE id=?`, testNodeID); err != nil {
+		t.Fatal(err)
+	}
+
+	gateCalls := 0
+	unsynced := func(context.Context) (bool, func(), error) {
+		gateCalls++
+		return false, nil, ErrJournalNotObserved
+	}
+	retry := request
+	retry.TaskID = "task-gated-retry"
+	retried, err := fixture.store.EnqueueWithGate(context.Background(), retry, unsynced)
+	if err != nil {
+		t.Fatalf("identical retry failed while node/Agent was offline and unsynced: %v", err)
+	}
+	if retried.Created || retried.Task.TaskID != first.Task.TaskID {
+		t.Fatalf("retry did not return the existing durable task: %+v", retried)
+	}
+	if gateCalls != 0 {
+		t.Fatalf("readiness gate ran for existing idempotent retry %d times", gateCalls)
+	}
+
+	changed := retry
+	changed.TaskID = "task-gated-changed"
+	changed.Intent.Action = ActionStop
+	if _, err := fixture.store.EnqueueWithGate(context.Background(), changed, unsynced); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("changed request under existing key did not conflict before readiness: %v", err)
+	}
+	if gateCalls != 0 {
+		t.Fatalf("readiness gate ran for idempotency conflict %d times", gateCalls)
+	}
+
+	newRequest := defaultRequest()
+	newRequest.TaskID = "task-gated-new"
+	newRequest.IdempotencyKey = "restart-new-unsynced"
+	newRequest.Intent.ContainerID = strings.Repeat("b", 64)
+	if _, err := fixture.store.EnqueueWithGate(context.Background(), newRequest, unsynced); !errors.Is(err, ErrJournalNotObserved) {
+		t.Fatalf("new request was not rejected by unsynced readiness gate: %v", err)
+	}
+	if gateCalls != 1 {
+		t.Fatalf("new request readiness gate calls=%d, want 1", gateCalls)
+	}
+	var taskCount, auditCount, claimCount int
+	if err := fixture.db.QueryRow(`SELECT count(*) FROM core_tasks`).Scan(&taskCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_audit_events`).Scan(&auditCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_resource_claims`).Scan(&claimCount); err != nil {
+		t.Fatal(err)
+	}
+	if taskCount != 1 || auditCount != 1 || claimCount != 1 {
+		t.Fatalf("unsynced new request persisted rows task/audit/claim=%d/%d/%d", taskCount, auditCount, claimCount)
+	}
+}
+
+func TestEnqueueGateReleaseRunsAfterCommitOrRollback(t *testing.T) {
+	fixture := openTestDB(t, "", time.Now().UTC())
+	request := defaultRequest()
+	releaseObservedRows := -1
+	gate := func(context.Context) (bool, func(), error) {
+		return false, func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := fixture.db.QueryRowContext(ctx, `SELECT count(*) FROM core_tasks`).Scan(&releaseObservedRows); err != nil {
+				t.Errorf("read task rows while releasing gate: %v", err)
+			}
+		}, nil
+	}
+	if _, err := fixture.store.EnqueueWithGate(context.Background(), request, gate); err != nil {
+		t.Fatal(err)
+	}
+	if releaseObservedRows != 1 {
+		t.Fatalf("successful gate released before committed task was visible: rows=%d", releaseObservedRows)
+	}
+
+	releaseObservedRows = -1
+	failedGate := func(context.Context) (bool, func(), error) {
+		return false, func() {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := fixture.db.QueryRowContext(ctx, `SELECT count(*) FROM core_tasks`).Scan(&releaseObservedRows); err != nil {
+				t.Errorf("read task rows while releasing rejected gate: %v", err)
+			}
+		}, ErrJournalNotObserved
+	}
+	newRequest := defaultRequest()
+	newRequest.TaskID = "task-gate-rollback"
+	newRequest.IdempotencyKey = "restart-gate-rollback"
+	newRequest.Intent.ContainerID = strings.Repeat("b", 64)
+	if _, err := fixture.store.EnqueueWithGate(context.Background(), newRequest, failedGate); !errors.Is(err, ErrJournalNotObserved) {
+		t.Fatalf("failed readiness gate unexpectedly accepted: %v", err)
+	}
+	if releaseObservedRows != 1 {
+		t.Fatalf("failed gate released before transaction rollback completed: rows=%d", releaseObservedRows)
+	}
+}
+
 func TestConcurrentIdempotentRequestsCreateOneTaskAndAudit(t *testing.T) {
 	fixture := openTestDB(t, "", time.Now().UTC())
 	secondStore, err := New(fixture.db, Options{LeaseTTL: DefaultLeaseTTL, Now: func() time.Time { return fixture.now }})

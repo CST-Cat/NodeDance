@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { api, type AgentNode, type AgentNodesResponse, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
+import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import MetricsPanel from './MetricsPanel.vue'
 
@@ -18,6 +18,9 @@ const views = ref<Record<string, MetricsView>>({})
 const dockerViews = ref<Record<string, DockerInventory>>({})
 const clocks = ref<Record<string, NodeClock>>({})
 const nodeReasons = ref<Record<string, string>>({})
+const taskViews = ref<Record<string, ContainerTask>>({})
+const taskSubmitting = ref<Record<string, boolean>>({})
+const taskErrors = ref<Record<string, string>>({})
 const busy = ref(true)
 const error = ref('')
 const elapsed = ref(0)
@@ -26,6 +29,7 @@ let socket: WebSocket | undefined
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 let tickTimer: ReturnType<typeof setInterval> | undefined
+let taskRefreshTimer: ReturnType<typeof setInterval> | undefined
 let reconnectDelay = 1000
 let disposed = false
 let latestNodeListServerTime = Number.NEGATIVE_INFINITY
@@ -176,7 +180,7 @@ async function refreshNodes() {
   busy.value = false
   if (!selectedNodeID.value) return
   const node = merged.find((item) => item.nodeId === selectedNodeID.value)
-  if (node?.agentId) await Promise.all([loadMetrics(node), loadContainers(node)])
+  if (node?.agentId) await Promise.all([loadMetrics(node), loadContainers(node), loadTasks(node)])
 }
 
 async function loadMetrics(node: AgentNode) {
@@ -194,6 +198,55 @@ async function loadContainers(node: AgentNode) {
     acceptDockerResponse(result)
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : '无法加载 Docker 容器。'
+  }
+}
+
+async function loadTasks(node: AgentNode) {
+  try {
+    const result = await api.nodeTasks(node.nodeId)
+    const next = { ...taskViews.value }
+    for (const [taskId, task] of Object.entries(next)) {
+      if (task.nodeId === node.nodeId) delete next[taskId]
+    }
+    for (const task of result.tasks) next[task.taskId] = task
+    taskViews.value = next
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : '无法读取容器操作进度。'
+  }
+}
+
+function taskForContainer(containerID: string): ContainerTask | undefined {
+  return Object.values(taskViews.value)
+    .filter((task) => task.nodeId === selectedNodeID.value && task.targetId === containerID)
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0]
+}
+
+function taskStatusLabel(task: ContainerTask): string {
+  if (task.status === 'queued') return '任务已保存，等待 Agent'
+  if (task.status === 'running') return `正在执行：${task.progress.phase}`
+  if (task.status === 'succeeded') return `已验证完成：${task.result.observedState || 'Docker 状态已确认'}`
+  if (task.status === 'unknown') return '结果待确认，系统不会自动重试'
+  if (task.status === 'timed_out') return '超时，等待实际状态确认'
+  if (task.status === 'canceled') return '任务已取消'
+  return `执行失败：${task.result.code || '原因未分类'}`
+}
+
+async function restartContainer(container: DockerInventory['containers'][number]['container']) {
+  const node = selectedNode.value
+  const inventory = selectedDocker.value
+  if (!node || !inventory || !node.agentId || dockerIsStale(inventory) || container.stale || taskSubmitting.value[container.id]) return
+  taskSubmitting.value = { ...taskSubmitting.value, [container.id]: true }
+  const errors = { ...taskErrors.value }
+  delete errors[container.id]
+  taskErrors.value = errors
+  try {
+    const accepted = await api.createContainerTask(node.nodeId, container.id, { action: 'restart' }, crypto.randomUUID())
+    const current = await api.nodeTask(node.nodeId, accepted.taskId)
+    taskViews.value = { ...taskViews.value, [current.taskId]: current }
+  } catch (reason) {
+    taskErrors.value = { ...taskErrors.value, [container.id]: reason instanceof Error ? reason.message : '无法创建容器重启任务。' }
+  } finally {
+    taskSubmitting.value = { ...taskSubmitting.value, [container.id]: false }
   }
 }
 
@@ -355,7 +408,7 @@ function chooseNode(node: AgentNode) {
   selectedNodeID.value = node.nodeId
   error.value = ''
   if (node.agentId) {
-    void Promise.all([loadMetrics(node), loadContainers(node)])
+    void Promise.all([loadMetrics(node), loadContainers(node), loadTasks(node)])
   } else {
     setNodeReason(node.nodeId, 'awaiting_agent_registration')
   }
@@ -377,6 +430,11 @@ onMounted(() => {
     })
   }, 10_000)
   tickTimer = setInterval(() => { elapsed.value = performance.now() }, 250)
+  taskRefreshTimer = setInterval(() => {
+    const node = selectedNode.value
+    const hasActiveTask = Object.values(taskViews.value).some((task) => task.nodeId === selectedNodeID.value && (task.status === 'queued' || task.status === 'running'))
+    if (node && hasActiveTask) void loadTasks(node)
+  }, 1200)
 })
 
 onBeforeUnmount(() => {
@@ -384,6 +442,7 @@ onBeforeUnmount(() => {
   if (reconnectTimer !== undefined) clearTimeout(reconnectTimer)
   if (refreshTimer !== undefined) clearInterval(refreshTimer)
   if (tickTimer !== undefined) clearInterval(tickTimer)
+  if (taskRefreshTimer !== undefined) clearInterval(taskRefreshTimer)
   socket?.close()
 })
 </script>
@@ -460,6 +519,15 @@ onBeforeUnmount(() => {
                 <span v-for="(port, index) in (record.container.ports ?? [])" :key="`${port.containerPort}-${port.protocol}-${index}`">{{ portText(port) }}</span>
               </div>
               <p v-if="record.container.unavailableReason" class="container-reason">{{ record.container.unavailableReason }}</p>
+              <div class="container-task-actions">
+                <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="restartContainer(record.container)">
+                  {{ taskSubmitting[record.container.id] ? '正在提交…' : '重启容器' }}
+                </button>
+                <span v-if="taskForContainer(record.container.id)" class="container-task-status" :data-status="taskForContainer(record.container.id)?.status" role="status">
+                  {{ taskStatusLabel(taskForContainer(record.container.id)!) }}
+                </span>
+                <span v-if="taskErrors[record.container.id]" class="container-task-error" role="alert">{{ taskErrors[record.container.id] }}</span>
+              </div>
             </article>
           </div>
         </section>
@@ -512,6 +580,13 @@ onBeforeUnmount(() => {
 .container-ports { display: grid; gap: 4px; margin-top: 8px; color: #8dc9ff; font-size: 10px; overflow-wrap: anywhere; }
 .container-reason, .docker-empty { color: #9aabc1; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .container-reason { margin: 8px 0 0; }
+.container-task-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.container-action { min-height: 34px; border: 1px solid rgba(141, 201, 255, .25); border-radius: 7px; padding: 6px 10px; color: #cce6ff; background: rgba(62, 119, 170, .16); font: inherit; font-size: 10px; cursor: pointer; }
+.container-action:hover:not(:disabled) { background: rgba(62, 119, 170, .3); }
+.container-action:disabled { opacity: .48; cursor: not-allowed; }
+.container-task-status, .container-task-error { color: #a8bdd7; font-size: 10px; overflow-wrap: anywhere; }
+.container-task-status[data-status='succeeded'] { color: #9ce0b7; }
+.container-task-status[data-status='failed'], .container-task-status[data-status='unknown'], .container-task-status[data-status='timed_out'], .container-task-error { color: #ffc1b8; }
 @media (max-width: 760px) { .nodes-layout { grid-template-columns: minmax(0, 1fr); } .node-list { max-height: 270px; overflow: auto; } }
 @media (max-width: 480px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } }
 </style>

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 )
@@ -140,8 +141,10 @@ func ParseDigest(value string) ([sha256.Size]byte, error) {
 }
 
 type TaskJournalHello struct {
-	NodeID    string `json:"nodeId"`
-	JournalID string `json:"journalId"`
+	NodeID        string `json:"nodeId"`
+	JournalID     string `json:"journalId"`
+	Capacity      int    `json:"capacity"`
+	CapacityLimit int    `json:"capacityLimit"`
 }
 
 type TaskJournalStatus struct {
@@ -149,6 +152,11 @@ type TaskJournalStatus struct {
 	JournalID      string `json:"journalId"`
 	ReviewRequired bool   `json:"reviewRequired"`
 	Capacity       int    `json:"capacity"`
+	// SnapshotID and SnapshotAccepted form the durable Core acknowledgement
+	// for one complete, reconciled Agent journal snapshot. They are omitted in
+	// the initial journal acceptance response.
+	SnapshotID       string `json:"snapshotId,omitempty"`
+	SnapshotAccepted bool   `json:"snapshotAccepted,omitempty"`
 }
 
 type TaskSnapshotRequest struct {
@@ -254,6 +262,66 @@ func ValidateTaskDispatch(envelope Envelope, dispatch TaskDispatch, nodeID, jour
 		return fmt.Errorf("%w: request digest mismatch", ErrInvalidTaskMessage)
 	}
 	return nil
+}
+
+func ValidateTaskJournalHello(envelope Envelope, hello TaskJournalHello, nodeID string, generation uint64) error {
+	if envelope.Version != CurrentVersion || envelope.Type != TypeTaskJournalHello || envelope.Generation != generation ||
+		generation == 0 || envelope.Sequence != 0 || envelope.RequestID != "" || hello.NodeID != nodeID ||
+		!validJournalID(hello.JournalID) || hello.Capacity < 0 || hello.Capacity > 4096 ||
+		hello.CapacityLimit < 1 || hello.CapacityLimit > 4096 || hello.Capacity > hello.CapacityLimit {
+		return ErrInvalidTaskMessage
+	}
+	return nil
+}
+
+func ValidateTaskJournalStatus(envelope Envelope, status TaskJournalStatus, generation uint64) error {
+	if envelope.Version != CurrentVersion || envelope.Type != TypeTaskJournalStatus || envelope.Generation != generation ||
+		generation == 0 || envelope.Sequence != 0 || status.Capacity < 0 || status.Capacity > 4096 ||
+		!validJournalID(status.JournalID) || status.ReviewRequired && status.Accepted ||
+		status.SnapshotAccepted && (!status.Accepted || status.ReviewRequired || !validSnapshotID(status.SnapshotID)) ||
+		!status.SnapshotAccepted && status.SnapshotID != "" {
+		return ErrInvalidTaskMessage
+	}
+	if status.SnapshotAccepted && envelope.RequestID != status.SnapshotID || !status.SnapshotAccepted && envelope.RequestID != "" {
+		return ErrInvalidTaskMessage
+	}
+	return nil
+}
+
+func ValidateTaskSnapshotRequest(envelope Envelope, request TaskSnapshotRequest, nodeID, journalID string, generation uint64) error {
+	if envelope.Version != CurrentVersion || envelope.Type != TypeTaskSnapshotRequest || envelope.Generation != generation ||
+		generation == 0 || envelope.Sequence != 0 || envelope.RequestID != request.SnapshotID ||
+		request.JournalID != journalID || !validJournalID(request.JournalID) || !validSnapshotID(request.SnapshotID) || nodeID == "" {
+		return ErrInvalidTaskMessage
+	}
+	return nil
+}
+
+func ValidateTaskSnapshotPage(envelope Envelope, page TaskSnapshotPage, nodeID, journalID string, generation uint64) error {
+	if envelope.Version != CurrentVersion || envelope.Type != TypeTaskSnapshotPage || envelope.Generation != generation ||
+		generation == 0 || envelope.RequestID != page.SnapshotID || envelope.Sequence != uint64(page.Page)+1 ||
+		page.JournalID != journalID || !validJournalID(page.JournalID) || !validSnapshotID(page.SnapshotID) ||
+		len(page.Reports) > TaskSnapshotPageSize {
+		return ErrInvalidTaskMessage
+	}
+	return nil
+}
+
+func validJournalID(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size && hex.EncodeToString(decoded) == value
+}
+
+func validSnapshotID(value string) bool {
+	if value == "" || len(value) > 64 {
+		return false
+	}
+	for _, r := range value {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("._~-", r)) {
+			return false
+		}
+	}
+	return true
 }
 
 func ValidateTaskReport(envelope Envelope, report TaskReport, nodeID, journalID string, generation uint64) error {

@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -144,6 +146,9 @@ var migrations = []Migration{{
 		)`,
 		`CREATE INDEX docker_containers_node ON docker_containers(node_id, container_id)`,
 	},
+}, {
+	Version: 4,
+	SQL:     coretasks.SchemaStatements(),
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {

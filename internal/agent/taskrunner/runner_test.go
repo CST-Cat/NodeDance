@@ -336,6 +336,11 @@ func TestDurableDispatchRunsOnceAcrossDisconnectAndReconnectSnapshot(t *testing.
 		t.Fatalf("duplicate dispatch mutated Engine %d times", mutations)
 	}
 
+	// The SQLite terminal status commits before runJob emits its final durable
+	// report notification. Wait for the worker's notification boundary before
+	// taking the reconnect snapshot, or the snapshot can correctly require a
+	// second synchronization pass under the race detector.
+	waitRunnerIdle(t, runner)
 	connectAndSync(t, runner, store, 2)
 	pages, err := runner.SnapshotPages(2, "after-reconnect")
 	if err != nil {

@@ -100,6 +100,13 @@ type EnqueueRequest struct {
 	RemoteAddr     string
 }
 
+// EnqueueGate is evaluated only after Store has checked both the idempotency
+// key and task ID inside the write transaction. It supplies trusted,
+// connection-scoped acceptance facts for a genuinely new row. release is held
+// until the task, audit, and resource claim transaction commits or rolls back.
+// A retry or conflict never invokes the gate.
+type EnqueueGate func(context.Context) (composeManaged bool, release func(), err error)
+
 type Options struct {
 	LeaseTTL time.Duration
 	Now      func() time.Time
@@ -251,6 +258,16 @@ func New(db *sql.DB, options Options) (*Store, error) {
 }
 
 func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueResult, error) {
+	return s.EnqueueWithGate(ctx, request, func(context.Context) (bool, func(), error) {
+		return request.ComposeManaged, nil, nil
+	})
+}
+
+// EnqueueWithGate performs idempotency lookup before evaluating new-task
+// readiness. The gate remains held through commit, so callers can pin a
+// synchronized Agent connection while the durable acceptance transaction is
+// committed without rejecting safe retries during journal synchronization.
+func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gate EnqueueGate) (EnqueueResult, error) {
 	if request.TaskID == "" {
 		var err error
 		request.TaskID, err = newTaskID()
@@ -258,7 +275,7 @@ func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueRes
 			return EnqueueResult{}, fmt.Errorf("generate task ID: %w", err)
 		}
 	}
-	intentJSON, payload, resourceKey, err := validateIntent(request.Intent, request.ComposeManaged)
+	intentJSON, payload, resourceKey, err := validateIntent(request.Intent, false)
 	if err != nil {
 		return EnqueueResult{}, err
 	}
@@ -283,6 +300,12 @@ func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueRes
 	if err != nil {
 		return EnqueueResult{}, fmt.Errorf("begin durable task acceptance: %w", err)
 	}
+	var releaseGate func()
+	defer func() {
+		if releaseGate != nil {
+			releaseGate()
+		}
+	}()
 	defer tx.Rollback()
 
 	byKey, keyErr := loadByIdempotency(ctx, tx, request.NodeID, request.IdempotencyKey)
@@ -313,6 +336,17 @@ func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueRes
 			return EnqueueResult{}, fmt.Errorf("commit idempotent task lookup: %w", err)
 		}
 		return EnqueueResult{Task: byKey, Created: false}, nil
+	}
+
+	composeManaged := request.ComposeManaged
+	if gate != nil {
+		composeManaged, releaseGate, err = gate(ctx)
+		if err != nil {
+			return EnqueueResult{}, err
+		}
+	}
+	if composeManaged && request.Intent.Action == ActionRename {
+		return EnqueueResult{}, ErrManagedRename
 	}
 
 	now := s.now().UTC()

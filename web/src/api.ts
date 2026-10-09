@@ -126,6 +126,22 @@ export interface DockerInventoryMessage {
   inventory: DockerInventory
 }
 
+export interface ContainerTask {
+  taskId: string
+  nodeId: string
+  targetId: string
+  action: 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'delete' | 'rename'
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'canceled' | 'unknown'
+  deliveryState: string
+  reconciliationRequired: boolean
+  progress: { phase: string; completed: number; total: number }
+  result: { code?: string; observedState?: string; resourceRevision?: string }
+  createdAt: string
+  updatedAt: string
+  startedAt?: string
+  finishedAt?: string
+}
+
 interface AuthResponse {
   user: User
   csrfToken: string
@@ -229,6 +245,12 @@ export const api = {
   nodes: () => request<AgentNodesResponse>('/api/v1/nodes'),
   nodeMetrics: (nodeId: string) => request<AgentMetricsResponse>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/metrics`),
   nodeContainers: (nodeId: string) => request<DockerInventoryMessage>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/containers`),
+  nodeTasks: (nodeId: string) => request<{ tasks: ContainerTask[]; nextCursor: string }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks?limit=50`),
+  nodeTask: (nodeId: string, taskId: string) => request<ContainerTask>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}`),
+  createContainerTask: (nodeId: string, containerId: string, payload: { action: ContainerTask['action'] }, idempotencyKey: string) =>
+    request<{ taskId: string; status: ContainerTask['status'] }>(
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,
+      { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
   nodeContainer: (nodeId: string, containerId: string) =>
     request<{ type: 'node_container'; nodeId: string; container: DockerContainerRecord }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}`,
