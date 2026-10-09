@@ -9,6 +9,8 @@ import subprocess
 import sys
 import uuid
 
+from acceptance_candidates import CANDIDATE_TARGETS
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "tests/registry.json"
 REGISTRY = json.loads(REGISTRY_PATH.read_text())
@@ -46,6 +48,8 @@ def save_report(report):
 
 def not_ready_report(stage, mode, reason):
     cases = stage_tests(stage)
+    previous_path = REPORTS / f"{stage}.json"
+    previous = json.loads(previous_path.read_text()) if previous_path.is_file() else None
     report = {
         "schema": 1, "stage": stage, "mode": mode, "status": "NOT_READY",
         "run_id": uuid.uuid4().hex, "updated_at": timestamp(), "reason": reason,
@@ -58,44 +62,14 @@ def not_ready_report(stage, mode, reason):
             for case in cases
         },
     }
+    if previous:
+        report["historical_stage_report"] = previous.get("historical_stage_report", previous)
+        report["historical_evidence_note"] = (
+            "The previous detailed stage report is preserved verbatim as historical evidence. Current normative cases above remain NOT_READY until their required evidence is recorded by a current runner."
+        )
     path = save_report(report)
     print(f"{stage}: NOT_READY ({len(cases)} required cases listed individually); report={path.relative_to(ROOT)}", file=sys.stderr)
     return 2
-
-
-def preflight(stage, mode):
-    run_id = uuid.uuid4().hex
-    log_dir = ROOT / ".artifacts" / "stage-runs" / run_id
-    log_dir.mkdir(parents=True, exist_ok=True)
-    commands = [["make", "check"], ["make", "build"]]
-    for index, command in enumerate(commands, start=1):
-        log_path = log_dir / f"preflight-{index}.log"
-        with log_path.open("w") as stream:
-            stream.write("$ " + " ".join(command) + "\n")
-            stream.flush()
-            result = subprocess.run(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
-        print(f"preflight {index}/{len(commands)} {'PASS' if result.returncode == 0 else 'FAIL'}: {log_path.relative_to(ROOT)}", flush=True)
-        if result.returncode:
-            reason = f"required preflight command failed: {' '.join(command)}; see {log_path.relative_to(ROOT)}"
-            report = {
-                "schema": 1, "stage": stage, "mode": mode, "status": "FAIL",
-                "run_id": run_id, "updated_at": timestamp(), "reason": reason,
-                "tests": {
-                    case["id"]: {
-                        "status": "FAIL", "action": case["action"],
-                        "expected": case["expected"], "environment": case["environment"],
-                        "evidence_required": case["evidence"], "runs": [],
-                        "reason": "not run because a required stage preflight failed",
-                    }
-                    for case in stage_tests(stage)
-                },
-                "preflight": {"command": command, "exit_code": result.returncode,
-                              "log": str(log_path.relative_to(ROOT))},
-            }
-            path = save_report(report)
-            print(f"{stage}: FAIL; no test was reported PASS; report={path.relative_to(ROOT)}", file=sys.stderr)
-            return result.returncode
-    return 0
 
 
 def main():
@@ -108,19 +82,10 @@ def main():
     if args.stage not in {stage["id"] for stage in REGISTRY["stages"]}:
         parser.error(f"{args.stage} is absent from tests/registry.json")
 
-    if args.stage not in {"S00", "S01", "S02", "S03", "S04", "S05", "S08", "S10"}:
-        return not_ready_report(
-            args.stage, args.mode,
-            f"{args.stage} implementation and executable acceptance checks are not present in this checkout. This report lists every original case individually. A previous report cannot satisfy a current run.",
-        )
+    if args.stage in CANDIDATE_TARGETS:
+        command = [sys.executable, "scripts/acceptance-candidates.py", "--stage", args.stage, "--mode", args.mode]
+        return subprocess.run(command, cwd=ROOT).returncode
 
-    # S10 has a dedicated focused runner; its Core/Agent integration is still
-    # formal NOT_READY, so do not gate the file framework on unrelated stages.
-    if args.stage != "S10" and args.mode == "full" and (code := preflight(args.stage, args.mode)):
-        return code
-    if args.stage != "S10" and args.mode != "full":
-        if code := preflight(args.stage, args.mode):
-            return code
     repeat = 1
     if args.stage == "S08":
         command = [sys.executable, "scripts/acceptance-s08.py", "--mode", args.mode, "--repeat", str(repeat)]
@@ -137,7 +102,12 @@ def main():
         "S02": "scripts/acceptance-s02.py",
         "S03": "scripts/acceptance-s03.py",
         "S04": "scripts/acceptance-s04.py",
-    }[args.stage]
+    }.get(args.stage)
+    if acceptance is None:
+        return not_ready_report(
+            args.stage, args.mode,
+            f"{args.stage} has no runnable normative acceptance suite in this checkout. This report lists every original case individually; partial implementation or component checks do not satisfy the stage, and previous runs cannot satisfy a current run.",
+        )
     command = [sys.executable, acceptance, "--mode", args.mode, "--repeat", str(repeat)]
     return subprocess.run(command, cwd=ROOT).returncode
 

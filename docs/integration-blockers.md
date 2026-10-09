@@ -29,6 +29,12 @@ The integration database migrations are append-only: v1–v5 remain unchanged, C
 
 S09 remains visible through the generic stage runner, which reports `NOT_READY` until its normative acceptance suite is available. Mocked browser/component evidence is retained as component evidence and does not substitute for the live terminal transport.
 
+## Stage runner commands
+
+`make test-stage STAGE=S11`, `S14`, `S15`, or `S16` now dispatches one focused candidate target: `make test-candidate-s11`, `test-candidate-s14`, `test-candidate-s15`, or `test-candidate-s16`. Each target prepares the pinned frontend/browser dependencies and invokes its existing focused stage suite once. Candidate checks are recorded separately; they never turn the normative stage or its individual required cases into `PASS`. Missing real Engine, remote Agent, production SMTP, systemd, signing-key, and other case-specific evidence remains `NOT_READY`, with the previous detailed report retained under `historical_candidate_report`. Generic stages without a normative runner also keep prior detail in `historical_stage_report` when writing their current per-case `NOT_READY` result.
+
+Per-stage execution no longer repeats repository-wide `make check` and `make build`. Those remain available as final integration checks; S00–S05, S08, and S10 continue using their existing focused acceptance runners. Stages without a normative runner, including S09, still have a callable generic command that records every required case as `NOT_READY`.
+
 ## Integration checks recorded
 
 - `make frontend`: locked Go/Node/pnpm bootstrap, module verification, frontend typecheck, and production asset build passed.
