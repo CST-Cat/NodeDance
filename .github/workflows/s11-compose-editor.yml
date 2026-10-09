@@ -96,14 +96,17 @@ jobs:
       - name: Install and verify locked Go, Node, pnpm and Compose tools
         run: make verify-tools
 
-      - name: Install locked Go and frontend dependencies
-        run: make deps
+      - name: Build locked frontend assets required by the Core server package
+        run: make frontend
 
       - name: Start this job's marked DIND Engine ${{ matrix.engine }}
         run: scripts/test/dind.sh start '${{ matrix.engine }}'
 
       - name: Run real Compose source edit, affected-service, volume and rollback acceptance
         run: scripts/test/s11-compose-editor-dind.sh '${{ matrix.engine }}'
+
+      - name: Run real Core HTTPS API to enrolled Agent WSS to Compose Engine acceptance
+        run: scripts/test/s11-compose-editor-dind.sh '${{ matrix.engine }}' core-agent
 
       - name: Run S11-07 rollback after a mutable image tag moves
         run: scripts/test/s11-compose-editor-dind.sh '${{ matrix.engine }}' rollback-tag-drift

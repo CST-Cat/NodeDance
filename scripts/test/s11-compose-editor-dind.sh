@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENGINE="${1:-}"
 TEST_CASE="${2:-all}"
-[[ "$ENGINE" == 28 || "$ENGINE" == 29 ]] || { echo 'usage: s11-compose-editor-dind.sh ENGINE(28|29) [all|rollback-tag-drift]' >&2; exit 2; }
-[[ "$TEST_CASE" == all || "$TEST_CASE" == rollback-tag-drift ]] || { echo 'S11 NOT_READY: unsupported focused test case' >&2; exit 2; }
+[[ "$ENGINE" == 28 || "$ENGINE" == 29 ]] || { echo 'usage: s11-compose-editor-dind.sh ENGINE(28|29) [all|core-agent|rollback-tag-drift]' >&2; exit 2; }
+[[ "$TEST_CASE" == all || "$TEST_CASE" == rollback-tag-drift || "$TEST_CASE" == core-agent ]] || { echo 'S11 NOT_READY: unsupported focused test case' >&2; exit 2; }
 
 DIND_ROOT="${NODEDANCE_S11_DIND_ROOT:-$ROOT/.artifacts/dind/v$ENGINE}"
 DIND_ROOT="$(realpath -m "$DIND_ROOT")"
@@ -14,10 +14,16 @@ RUN_SUFFIX="${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 FIXTURE_NAME="s11-engine${ENGINE}-${RUN_SUFFIX}"
 LOG_NAME="engine-${ENGINE}.log"
 TEST_PATTERN='^TestDINDComposeEditorRealEngine$'
+TEST_PACKAGE='./internal/agent/composeedit'
 if [[ "$TEST_CASE" == rollback-tag-drift ]]; then
   FIXTURE_NAME+="-rollback-tag-drift"
   LOG_NAME="engine-${ENGINE}-rollback-tag-drift.log"
   TEST_PATTERN='^TestDINDComposeEditorRollbackSurvivesMutableTagDrift$'
+elif [[ "$TEST_CASE" == core-agent ]]; then
+  FIXTURE_NAME+="-core-agent"
+  LOG_NAME="engine-${ENGINE}-core-agent.log"
+  TEST_PATTERN='^TestDINDComposeEditorCoreAgentHTTPS$'
+  TEST_PACKAGE='./internal/core/server'
 fi
 FIXTURE_ROOT="$ROOT/.artifacts/fixtures/$FIXTURE_NAME"
 GO_BIN="${NODEDANCE_S11_GO_BIN:-$ROOT/.tools/go1.26.8/bin/go}"
@@ -52,8 +58,10 @@ fi
 
 export NODEDANCE_S11_DIND_ROOT="$DIND_ROOT"
 export NODEDANCE_S11_FIXTURE_ROOT="$FIXTURE_ROOT"
+export NODEDANCE_S11_ENGINE="$ENGINE"
 export NODEDANCE_S11_RUN_ID="${RUN_SUFFIX}-engine${ENGINE}"
+export DOCKER_HOST="unix://$DIND_ROOT/socket/docker.sock"
 export GOTOOLCHAIN=local
 
-"$GO_BIN" test -count=1 -run "$TEST_PATTERN" -v ./internal/agent/composeedit \
+"$GO_BIN" test -count=1 -timeout=12m -run "$TEST_PATTERN" -v "$TEST_PACKAGE" \
   2>&1 | tee "$ROOT/.artifacts/s11/$LOG_NAME"
