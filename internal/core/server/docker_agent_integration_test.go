@@ -1737,17 +1737,31 @@ func waitForS04DockerStaleEvent(t *testing.T, events <-chan s04DashboardRead, no
 			if !ok || event.err != nil {
 				t.Fatalf("dashboard closed while waiting for expired Docker freshness: %v", event.err)
 			}
-			if event.view.NodeID != nodeID || !event.view.DataStale || !event.view.AgentOnline || event.view.StaleReason != "docker_health_stale" {
-				t.Fatalf("unexpected Docker inventory push while waiting for health lease expiry: online=%t stale=%t reason=%q", event.view.AgentOnline, event.view.DataStale, event.view.StaleReason)
+			matched, failure := s04DockerStaleEventOutcome(event.view, nodeID, staleAfter)
+			if failure != "" {
+				t.Fatal(failure)
 			}
-			if event.view.ServerTime.Before(staleAfter) {
-				t.Fatalf("Core advertised Docker health stale before its 15-second receive-time lease expired: serverTime=%s validUntil=%s", event.view.ServerTime.Format(time.RFC3339Nano), staleAfter.Format(time.RFC3339Nano))
+			if matched {
+				return event.view
 			}
-			return event.view
 		case <-timer.C:
 			t.Fatalf("Docker freshness did not transition stale within %s after its receive-time deadline", timeout)
 		}
 	}
+}
+
+func s04DockerStaleEventOutcome(view coredocker.View, nodeID string, staleAfter time.Time) (bool, string) {
+	if view.NodeID != nodeID || !view.DataStale || view.StaleReason != "docker_health_stale" {
+		return false, ""
+	}
+	if !view.AgentOnline {
+		return false, fmt.Sprintf("Core marked Docker health stale while the Agent was offline: reason=%q", view.StaleReason)
+	}
+	if view.ServerTime.Before(staleAfter) {
+		return false, fmt.Sprintf("Core advertised Docker health stale before its 15-second receive-time lease expired: serverTime=%s validUntil=%s",
+			view.ServerTime.Format(time.RFC3339Nano), staleAfter.Format(time.RFC3339Nano))
+	}
+	return true, ""
 }
 
 func waitForS04DashboardClosed(t *testing.T, events <-chan s04DashboardRead, timeout time.Duration) {
