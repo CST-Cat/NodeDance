@@ -67,8 +67,8 @@ func TestVersionFourDatabaseUpgradesToDashboardAndHistorySchemaOnReopen(t *testi
 		t.Fatal("reopen v4 database with current migrations:", err)
 	}
 	defer upgraded.Close()
-	if err := upgraded.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 13 {
-		t.Fatalf("reopened database migration version=%d err=%v; want v13", version, err)
+	if err := upgraded.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 14 {
+		t.Fatalf("reopened database migration version=%d err=%v; want v14", version, err)
 	}
 	for _, table := range []string{"dashboard_preferences", "dashboard_settings", "metrics_minute", "metrics_hour"} {
 		var count int
@@ -83,6 +83,96 @@ func TestVersionFourDatabaseUpgradesToDashboardAndHistorySchemaOnReopen(t *testi
 	}
 	if mode != "monitor" || grouping != "node" || sorting != "custom" || featured != 4 || fields != `["state","ports","health"]` {
 		t.Fatalf("unexpected migrated dashboard defaults: mode=%q group=%q sort=%q featured=%d fields=%q", mode, grouping, sorting, featured, fields)
+	}
+}
+
+func TestCoreTaskV14MigrationPreservesRowsAndFailsClosedForAmbiguousLegacyPulls(t *testing.T) {
+	ctx := context.Background()
+	directory := filepath.Join(t.TempDir(), "core-data")
+	v13, err := OpenWithMigrations(ctx, directory, migrations[:13])
+	if err != nil {
+		t.Fatal("open v13 database:", err)
+	}
+	const nodeID = "00000000-0000-4000-8000-000000000051"
+	const taskID = "v13-existing-task"
+	const targetID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	const legacyPullID = "v13-queued-image-pull"
+	const legacyPullTarget = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	const sentPullID = "v13-sent-image-pull"
+	if _, err := v13.DB.Exec(`INSERT INTO nodes(id,display_name,status,created_at,updated_at) VALUES(?, 'v13 migration node', 'pending', 1, 1)`, nodeID); err != nil {
+		t.Fatal("insert v13 node:", err)
+	}
+	if _, err := v13.DB.Exec(`INSERT INTO core_tasks(task_id,node_id,idempotency_key,request_digest,accepted_generation,target_id,resource_key,action,intent_json,status,created_at_ns,updated_at_ns)
+		VALUES(?,?,?,zeroblob(32),0,?,?,'restart',?,'queued',1,2)`, taskID, nodeID, "v13-task-key", targetID, "docker-container:"+targetID,
+		`{"action":"restart","containerId":"`+targetID+`"}`); err != nil {
+		t.Fatal("insert v13 task row:", err)
+	}
+	if _, err := v13.DB.Exec(`INSERT INTO core_task_resource_claims(node_id,resource_key,task_id) VALUES(?,?,?)`, nodeID, "docker-container:"+targetID, taskID); err != nil {
+		t.Fatal("insert v13 resource claim:", err)
+	}
+	if _, err := v13.DB.Exec(`INSERT INTO core_task_audit_events(node_id,task_id,event,from_status,to_status,occurred_at_ns)
+		VALUES(?,?,'accepted',NULL,'queued',1)`, nodeID, taskID); err != nil {
+		t.Fatal("insert v13 task audit:", err)
+	}
+	for _, value := range []struct {
+		taskID, key, target, resource, delivery string
+		committed                               int
+	}{{legacyPullID, "v13-pull-key", legacyPullTarget, "docker-image:" + legacyPullTarget, "ready", 0},
+		{sentPullID, "v13-sent-pull-key", "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "docker-image:sent", "sent", 1}} {
+		if _, err := v13.DB.Exec(`INSERT INTO core_tasks(task_id,node_id,idempotency_key,request_digest,accepted_generation,target_id,resource_key,action,intent_json,status,delivery_state,delivery_committed,created_at_ns,updated_at_ns)
+			VALUES(?,?,?,zeroblob(32),0,?,?,'image_pull','{}','queued',?,?,3,4)`, value.taskID, nodeID, value.key, value.target, value.resource, value.delivery, value.committed); err != nil {
+			t.Fatalf("insert v13 image-pull task %q: %v", value.taskID, err)
+		}
+	}
+	if err := v13.Close(); err != nil {
+		t.Fatal("close v13 database:", err)
+	}
+
+	upgraded, err := Open(ctx, directory)
+	if err != nil {
+		t.Fatal("apply v14 migration:", err)
+	}
+	defer upgraded.Close()
+	var storedNode, storedKey, storedTarget, storedResource, status string
+	var created, updated int64
+	var authRequired int
+	if err := upgraded.DB.QueryRow(`SELECT node_id,idempotency_key,target_id,resource_key,status,created_at_ns,updated_at_ns,registry_auth_required
+		FROM core_tasks WHERE task_id=?`, taskID).Scan(&storedNode, &storedKey, &storedTarget, &storedResource, &status, &created, &updated, &authRequired); err != nil {
+		t.Fatal("read preserved v13 task after migration:", err)
+	}
+	if storedNode != nodeID || storedKey != "v13-task-key" || storedTarget != targetID || storedResource != "docker-container:"+targetID ||
+		status != "queued" || created != 1 || updated != 2 || authRequired != 0 {
+		t.Fatalf("v13 task changed after migration: node=%q key=%q target=%q resource=%q status=%q times=%d/%d auth=%d", storedNode, storedKey, storedTarget, storedResource, status, created, updated, authRequired)
+	}
+	var claims, audits int
+	if err := upgraded.DB.QueryRow(`SELECT count(*) FROM core_task_resource_claims WHERE task_id=?`, taskID).Scan(&claims); err != nil {
+		t.Fatal("count preserved v13 task claim:", err)
+	}
+	if err := upgraded.DB.QueryRow(`SELECT count(*) FROM core_task_audit_events WHERE task_id=?`, taskID).Scan(&audits); err != nil {
+		t.Fatal("count preserved v13 task audit:", err)
+	}
+	if claims != 1 || audits != 1 {
+		t.Fatalf("v13 task claim/audit rows after migration = %d/%d, want 1/1", claims, audits)
+	}
+	// V13 never persisted whether these pulls had Registry credentials. The
+	// queued legacy pull must remain intact but fail closed, so an old public
+	// pull may need a fresh user submission after upgrade. A sent row must keep
+	// its committed-delivery evidence and remain on reconciliation rules.
+	var legacyStatus, legacyDelivery string
+	var legacyRequired, sentRequired, sentCommitted int
+	if err := upgraded.DB.QueryRow(`SELECT status,delivery_state,registry_auth_required FROM core_tasks WHERE task_id=?`, legacyPullID).
+		Scan(&legacyStatus, &legacyDelivery, &legacyRequired); err != nil {
+		t.Fatal("read v13 queued image pull after migration:", err)
+	}
+	if legacyStatus != "queued" || legacyDelivery != "ready" || legacyRequired != 1 {
+		t.Fatalf("ambiguous legacy queued image pull was not preserved fail-closed: status=%q delivery=%q auth_required=%d", legacyStatus, legacyDelivery, legacyRequired)
+	}
+	if err := upgraded.DB.QueryRow(`SELECT registry_auth_required,delivery_committed FROM core_tasks WHERE task_id=?`, sentPullID).
+		Scan(&sentRequired, &sentCommitted); err != nil {
+		t.Fatal("read v13 already-committed image pull after migration:", err)
+	}
+	if sentRequired != 0 || sentCommitted != 1 {
+		t.Fatalf("v13 already-committed image pull was altered: auth_required=%d delivery_committed=%d", sentRequired, sentCommitted)
 	}
 }
 
@@ -350,8 +440,8 @@ func TestOpenEnablesWALAndRestrictsPermissions(t *testing.T) {
 		t.Fatalf("journal_mode=%q err=%v", mode, err)
 	}
 	var schemaVersion int
-	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schemaVersion); err != nil || schemaVersion != 13 {
-		t.Fatalf("schema version=%d err=%v, want integration schema version 13", schemaVersion, err)
+	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schemaVersion); err != nil || schemaVersion != 14 {
+		t.Fatalf("schema version=%d err=%v, want integration schema version 14", schemaVersion, err)
 	}
 	for _, index := range []string{"audit_entries_retention", "core_task_audit_events_retention", "core_tasks_retention", "compose_operations_retention", "compose_editor_operations_retention", "service_probe_runs_retention", "alerts_retention", "alert_events_retention", "alert_deliveries_retention", "alert_windows_retention", "agent_update_tasks_retention", "file_write_tasks_retention", "file_write_tasks_idempotency"} {
 		var count int

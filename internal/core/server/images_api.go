@@ -195,19 +195,32 @@ func (s *Server) createImageTask(w http.ResponseWriter, r *http.Request, current
 		}
 		return false, release, nil
 	}
+	credentialsLocked := credentials != nil
+	if credentialsLocked {
+		// Match the dispatcher lock order so an Agent poll cannot claim this
+		// durable auth-required row before its one-use credential is installed.
+		s.imageAuthMu.Lock()
+		s.expireImageCredentialsLocked(s.now())
+	}
 	result, err := s.tasks.EnqueueWithGate(r.Context(), coretasks.EnqueueRequest{
-		NodeID: nodeID, IdempotencyKey: key, Intent: intent,
+		NodeID: nodeID, IdempotencyKey: key, Intent: intent, RegistryAuthRequired: credentials != nil,
 		ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr,
 	}, gate)
 	if err != nil {
+		if credentialsLocked {
+			s.imageAuthMu.Unlock()
+		}
 		s.writeTaskStoreError(w, err)
 		return
 	}
 	if credentials != nil && result.Task.Status == taskstate.Queued && result.Task.DeliveryState == "ready" && !result.Task.Evidence.DeliveryCommitted {
-		s.storeImageCredentials(result.Task.TaskID, nodeID, *credentials)
+		s.storeImageCredentialsLocked(result.Task.TaskID, nodeID, *credentials)
 		credentials.Username, credentials.Password = "", ""
 	}
-	if result.Created {
+	if credentialsLocked {
+		s.imageAuthMu.Unlock()
+	}
+	if result.Created || credentials != nil {
 		s.signalAgentTasks(nodeID)
 	}
 	status := http.StatusAccepted
@@ -217,11 +230,42 @@ func (s *Server) createImageTask(w http.ResponseWriter, r *http.Request, current
 	writeJSON(w, status, map[string]any{"taskId": result.Task.TaskID, "status": result.Task.Status})
 }
 
+// claimNextImageTask keeps the availability check and the one-use credential
+// take under imageAuthMu. ClaimNextWithRegistryAuth commits delivery only when
+// this check succeeds; failed/expired entries are durably resolved before any
+// task frame can be written.
+func (s *Server) claimNextImageTask(ctx context.Context, connection coretasks.AgentConnection) (coretasks.Task, bool, *protocol.RegistryCredentials, error) {
+	s.imageAuthMu.Lock()
+	defer s.imageAuthMu.Unlock()
+	s.expireImageCredentialsLocked(s.now())
+	task, claimed, err := s.tasks.ClaimNextWithRegistryAuth(ctx, connection, sql.NullInt64{}, "unknown", func(task coretasks.Task) bool {
+		entry, ok := s.imageAuth[task.TaskID]
+		return ok && entry.nodeID == task.NodeID && entry.credentials.Valid()
+	})
+	if !claimed && task.Result.Code == coretasks.ResultRegistryCredentialsUnavailable {
+		if entry, ok := s.imageAuth[task.TaskID]; ok {
+			entry.credentials.Username, entry.credentials.Password = "", ""
+			delete(s.imageAuth, task.TaskID)
+		}
+	}
+	if err != nil || !claimed || !task.RegistryAuthRequired {
+		return task, claimed, nil, err
+	}
+	entry := s.imageAuth[task.TaskID]
+	delete(s.imageAuth, task.TaskID)
+	credentials := entry.credentials
+	return task, true, &credentials, nil
+}
+
 func (s *Server) storeImageCredentials(taskID, nodeID string, credentials protocol.RegistryCredentials) {
 	s.imageAuthMu.Lock()
+	s.storeImageCredentialsLocked(taskID, nodeID, credentials)
+	s.imageAuthMu.Unlock()
+}
+
+func (s *Server) storeImageCredentialsLocked(taskID, nodeID string, credentials protocol.RegistryCredentials) {
 	s.expireImageCredentialsLocked(s.now())
 	s.imageAuth[taskID] = pendingImageCredential{nodeID: nodeID, credentials: credentials, expiresAt: s.now().Add(imageCredentialLifetime)}
-	s.imageAuthMu.Unlock()
 }
 
 func (s *Server) takeImageCredentials(taskID, nodeID string) *protocol.RegistryCredentials {

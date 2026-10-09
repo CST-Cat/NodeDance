@@ -71,6 +71,19 @@ func SchemaStatements() []string {
 	return statements
 }
 
+// MigrationV14Statements adds the non-secret Registry-auth requirement flag
+// while preserving task identity, status, and delivery evidence.
+func MigrationV14Statements() []string {
+	return []string{
+		`ALTER TABLE core_tasks ADD COLUMN registry_auth_required INTEGER NOT NULL DEFAULT 0 CHECK (registry_auth_required IN (0,1))`,
+		// Earlier versions kept pull credentials only in process memory, so a
+		// queued legacy pull cannot be proven public after an upgrade/restart.
+		// Fail closed for undelivered legacy pulls; an old public pull may need
+		// resubmission, while fresh public pulls persist 0.
+		`UPDATE core_tasks SET registry_auth_required=1 WHERE action='image_pull' AND status='queued' AND delivery_state='ready' AND delivery_committed=0`,
+	}
+}
+
 type Action = protocol.TaskAction
 
 const (
@@ -96,6 +109,10 @@ type EnqueueRequest struct {
 	NodeID         string
 	IdempotencyKey string
 	Intent         Intent
+	// RegistryAuthRequired is part of idempotency semantics for image pulls.
+	// The credential values themselves are one-use transport data and are never
+	// included in task identity or persistence.
+	RegistryAuthRequired bool
 	// ComposeManaged must come from trusted Core asset state, never from an
 	// HTTP request boolean. The eventual authenticated route must overwrite any
 	// client value with the current Engine-derived classification.
@@ -147,11 +164,12 @@ type Progress struct {
 type ResultCode string
 
 const (
-	ResultVerified  ResultCode = "verified"
-	ResultFailed    ResultCode = "failed"
-	ResultTimedOut  ResultCode = "timed_out"
-	ResultCanceled  ResultCode = "canceled"
-	ResultUncertain ResultCode = "result_pending"
+	ResultVerified                       ResultCode = "verified"
+	ResultFailed                         ResultCode = "failed"
+	ResultRegistryCredentialsUnavailable ResultCode = "registry_credentials_unavailable"
+	ResultTimedOut                       ResultCode = "timed_out"
+	ResultCanceled                       ResultCode = "canceled"
+	ResultUncertain                      ResultCode = "result_pending"
 )
 
 // Result has only bounded tokens, never a command, request body, credential,
@@ -171,6 +189,7 @@ type Task struct {
 	RequestDigest          [sha256.Size]byte
 	AcceptedGeneration     uint64
 	Intent                 Intent
+	RegistryAuthRequired   bool
 	ResourceKey            string
 	Status                 taskstate.Status
 	DeliveryState          string
@@ -295,6 +314,9 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 	if err != nil {
 		return EnqueueResult{}, err
 	}
+	if request.RegistryAuthRequired && request.Intent.Action != ActionImagePull {
+		return EnqueueResult{}, ErrInvalidRequest
+	}
 	identity, err := protocol.TaskIdentity(request.TaskID, request.NodeID, request.IdempotencyKey, request.Intent)
 	if err != nil {
 		return EnqueueResult{}, fmt.Errorf("build canonical task identity: %w", err)
@@ -333,7 +355,7 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 		return EnqueueResult{}, fmt.Errorf("read task ID: %w", idErr)
 	}
 	if idErr == nil {
-		if byID.NodeID != request.NodeID || byID.IdempotencyKey != request.IdempotencyKey || byID.RequestDigest != digest {
+		if byID.NodeID != request.NodeID || byID.IdempotencyKey != request.IdempotencyKey || byID.RequestDigest != digest || byID.RegistryAuthRequired != request.RegistryAuthRequired {
 			return EnqueueResult{}, ErrTaskIDConflict
 		}
 		if keyErr != nil || byKey.TaskID != byID.TaskID {
@@ -345,7 +367,7 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 		return EnqueueResult{Task: byID, Created: false}, nil
 	}
 	if keyErr == nil {
-		if byKey.RequestDigest != digest {
+		if byKey.RequestDigest != digest || byKey.RegistryAuthRequired != request.RegistryAuthRequired {
 			return EnqueueResult{}, ErrIdempotencyConflict
 		}
 		if err := tx.Commit(); err != nil {
@@ -383,9 +405,9 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 	}
 
 	nowNS := now.UnixNano()
-	_, err = tx.ExecContext(ctx, `INSERT INTO core_tasks(task_id,node_id,idempotency_key,request_digest,accepted_generation,target_id,resource_key,action,intent_json,status,created_at_ns,updated_at_ns)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, request.TaskID, request.NodeID, request.IdempotencyKey, digest[:], acceptedGeneration, request.Intent.ContainerID,
-		resourceKey, request.Intent.Action, intentJSON, taskstate.Queued, nowNS, nowNS)
+	_, err = tx.ExecContext(ctx, `INSERT INTO core_tasks(task_id,node_id,idempotency_key,request_digest,accepted_generation,target_id,resource_key,action,intent_json,registry_auth_required,status,created_at_ns,updated_at_ns)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, request.TaskID, request.NodeID, request.IdempotencyKey, digest[:], acceptedGeneration, request.Intent.ContainerID,
+		resourceKey, request.Intent.Action, intentJSON, boolInt(request.RegistryAuthRequired), taskstate.Queued, nowNS, nowNS)
 	if err != nil {
 		return EnqueueResult{}, fmt.Errorf("persist Core task intent: %w", err)
 	}
@@ -399,14 +421,23 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 		return EnqueueResult{}, fmt.Errorf("commit queued task, audit, and resource claim: %w", err)
 	}
 	return EnqueueResult{Task: Task{TaskID: request.TaskID, NodeID: request.NodeID, IdempotencyKey: request.IdempotencyKey,
-		RequestDigest: digest, AcceptedGeneration: acceptedGeneration, Intent: request.Intent, ResourceKey: resourceKey, Status: taskstate.Queued,
+		RequestDigest: digest, AcceptedGeneration: acceptedGeneration, Intent: request.Intent, RegistryAuthRequired: request.RegistryAuthRequired, ResourceKey: resourceKey, Status: taskstate.Queued,
 		DeliveryState: "ready", CreatedAt: now, UpdatedAt: now, Progress: Progress{Phase: PhaseAccepted}}, Created: true}, nil
 }
 
-// ClaimNext durably marks one queued task as sent before returning it to a
-// transport caller. It never reclaims a sent task after a disconnect. A
-// missing report requires explicit reconciliation and can never requeue work.
+// ClaimNext uses the fail-closed no-credential policy. It durably marks a
+// deliverable task as sent before returning it to a transport caller, never
+// reclaims a sent task after disconnect, and leaves missing reports to the
+// existing reconciliation path.
 func (s *Store) ClaimNext(ctx context.Context, connection AgentConnection, actorID sql.NullInt64, remoteAddr string) (Task, bool, error) {
+	return s.ClaimNextWithRegistryAuth(ctx, connection, actorID, remoteAddr, nil)
+}
+
+// ClaimNextWithRegistryAuth commits one ready task for Agent delivery. An
+// authenticated image pull is failed before that commit if the caller cannot
+// prove its one-use credentials remain available. The credential itself never
+// crosses this storage boundary.
+func (s *Store) ClaimNextWithRegistryAuth(ctx context.Context, connection AgentConnection, actorID sql.NullInt64, remoteAddr string, credentialsAvailable func(Task) bool) (Task, bool, error) {
 	if !validConnection(connection) {
 		return Task{}, false, ErrInvalidRequest
 	}
@@ -444,6 +475,16 @@ func (s *Store) ClaimNext(ctx context.Context, connection AgentConnection, actor
 		return Task{}, false, fmt.Errorf("select queued task: %w", err)
 	}
 	nowNS := s.now().UTC().UnixNano()
+	if task.RegistryAuthRequired && (credentialsAvailable == nil || !credentialsAvailable(task)) {
+		task, err = resolveRegistryCredentialsUnavailableTx(ctx, tx, task, actorID, remoteAddr, time.Unix(0, nowNS).UTC())
+		if err != nil {
+			return Task{}, false, err
+		}
+		if err := tx.Commit(); err != nil {
+			return Task{}, false, fmt.Errorf("commit image pull credential-unavailable result: %w", err)
+		}
+		return task, false, nil
+	}
 	result, err := tx.ExecContext(ctx, `UPDATE core_tasks SET delivery_state='sent',dispatch_journal_id=?,delivery_committed=1,updated_at_ns=?
 		WHERE task_id=? AND node_id=? AND status='queued' AND delivery_state='ready' AND reconciliation_required=0`,
 		connection.JournalID, nowNS, task.TaskID, connection.NodeID)
@@ -677,6 +718,27 @@ func cancelStaleUndelivered(ctx context.Context, tx *sql.Tx, connection AgentCon
 		}
 	}
 	return nil
+}
+
+func resolveRegistryCredentialsUnavailableTx(ctx context.Context, tx *sql.Tx, task Task, actorID sql.NullInt64, remoteAddr string, now time.Time) (Task, error) {
+	evidence := mergeEvidence(task.Evidence, Evidence{FailureConfirmed: true, ActualResultConfirmed: true})
+	if err := taskstate.CanTransition(task.Status, taskstate.Failed, evidence); err != nil {
+		return Task{}, err
+	}
+	result := Result{Code: ResultRegistryCredentialsUnavailable, ObservedState: "credentials_unavailable"}
+	if err := finishTaskTx(ctx, tx, task, taskstate.Failed, evidence, result, task.Progress, now); err != nil {
+		return Task{}, fmt.Errorf("resolve image pull without one-use Registry credentials: %w", err)
+	}
+	if err := writeAudit(ctx, tx, task.NodeID, task.TaskID, "task_resolved", task.Status, taskstate.Failed, actorID, remoteAddr, now.UnixNano()); err != nil {
+		return Task{}, fmt.Errorf("audit image pull credential-unavailable result: %w", err)
+	}
+	task.Status = taskstate.Failed
+	task.DeliveryState = "done"
+	task.Evidence = evidence
+	task.Result = result
+	task.FinishedAt = timePtr(now)
+	task.UpdatedAt = now
+	return task, nil
 }
 
 // ReconcileAgentJournal applies Agent snapshots only when the durable journal
@@ -1247,7 +1309,7 @@ func updateStatusTx(ctx context.Context, tx *sql.Tx, taskID, nodeID string, stat
 	return err
 }
 
-const taskColumns = `task_id,node_id,idempotency_key,request_digest,accepted_generation,target_id,resource_key,action,intent_json,status,delivery_state,COALESCE(dispatch_journal_id,''),reconciliation_required,created_at_ns,updated_at_ns,started_at_ns,finished_at_ns,execution_attempted,execution_completed,failure_confirmed,postcondition_verified,process_terminated,actual_result_confirmed,cancellation_confirmed,delivery_committed,progress_phase,progress_completed,progress_total,result_code,observed_state,resource_revision`
+const taskColumns = `task_id,node_id,idempotency_key,request_digest,accepted_generation,target_id,resource_key,action,intent_json,registry_auth_required,status,delivery_state,COALESCE(dispatch_journal_id,''),reconciliation_required,created_at_ns,updated_at_ns,started_at_ns,finished_at_ns,execution_attempted,execution_completed,failure_confirmed,postcondition_verified,process_terminated,actual_result_confirmed,cancellation_confirmed,delivery_committed,progress_phase,progress_completed,progress_total,result_code,observed_state,resource_revision`
 
 type rowScanner interface{ Scan(...any) error }
 
@@ -1256,11 +1318,11 @@ func scanTask(row rowScanner) (Task, error) {
 	var digest []byte
 	var intentJSON string
 	var action, status, phase string
-	var reconciliation, attempted, completed, failed, verified, terminated, confirmed, canceled, delivered int
+	var authRequired, reconciliation, attempted, completed, failed, verified, terminated, confirmed, canceled, delivered int
 	var created, updated int64
 	var started, finished sql.NullInt64
 	var progressCompleted, progressTotal uint64
-	err := row.Scan(&task.TaskID, &task.NodeID, &task.IdempotencyKey, &digest, &task.AcceptedGeneration, &task.Intent.ContainerID, &task.ResourceKey, &action, &intentJSON, &status,
+	err := row.Scan(&task.TaskID, &task.NodeID, &task.IdempotencyKey, &digest, &task.AcceptedGeneration, &task.Intent.ContainerID, &task.ResourceKey, &action, &intentJSON, &authRequired, &status,
 		&task.DeliveryState, &task.DispatchJournalID, &reconciliation, &created, &updated, &started, &finished,
 		&attempted, &completed, &failed, &verified, &terminated, &confirmed, &canceled, &delivered,
 		&phase, &progressCompleted, &progressTotal, &task.Result.Code, &task.Result.ObservedState, &task.Result.ResourceRevision)
@@ -1278,6 +1340,7 @@ func scanTask(row rowScanner) (Task, error) {
 		return Task{}, errors.New("stored task intent does not match indexed fields")
 	}
 	task.Status = taskstate.Status(status)
+	task.RegistryAuthRequired = authRequired != 0
 	task.ReconciliationRequired = reconciliation != 0
 	task.CreatedAt = time.Unix(0, created).UTC()
 	task.UpdatedAt = time.Unix(0, updated).UTC()
@@ -1481,7 +1544,8 @@ func validProgress(progress Progress) bool {
 
 func validateResult(status taskstate.Status, result Result) error {
 	want := map[taskstate.Status]ResultCode{taskstate.Succeeded: ResultVerified, taskstate.Failed: ResultFailed, taskstate.TimedOut: ResultTimedOut, taskstate.Canceled: ResultCanceled}[status]
-	if result.Code != want || !safeToken(string(result.Code), 32) || !safeToken(result.ObservedState, 64) || !safeToken(result.ResourceRevision, 128) {
+	validFailedResult := status == taskstate.Failed && result.Code == ResultRegistryCredentialsUnavailable
+	if result.Code != want && !validFailedResult || !safeToken(string(result.Code), 32) || !safeToken(result.ObservedState, 64) || !safeToken(result.ResourceRevision, 128) {
 		return ErrTaskStateConflict
 	}
 	return nil

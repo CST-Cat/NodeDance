@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 	_ "modernc.org/sqlite"
 )
@@ -60,6 +61,11 @@ func openTestDB(t *testing.T, databasePath string, now time.Time) testDB {
 		for _, statement := range SchemaStatements() {
 			if _, err := db.Exec(statement); err != nil {
 				t.Fatalf("apply standalone Core task SQL %q: %v", statement, err)
+			}
+		}
+		for _, statement := range MigrationV14Statements() {
+			if _, err := db.Exec(statement); err != nil {
+				t.Fatalf("apply standalone Core task migration %q: %v", statement, err)
 			}
 		}
 	}
@@ -127,6 +133,53 @@ func TestEnqueuePersistsIntentAuditAndClaimBeforeDelivery(t *testing.T) {
 	}
 	if _, ok, err := fixture.store.ClaimNext(context.Background(), connection, request.ActorID, request.RemoteAddr); err != nil || ok {
 		t.Fatalf("sent task was automatically replayed: ok=%t err=%v", ok, err)
+	}
+}
+
+func TestRegistryAuthRequirementIsIdempotentAndFailsBeforeDelivery(t *testing.T) {
+	fixture := openTestDB(t, "", time.Now().UTC())
+	intent := Intent{Action: ActionImagePull, ImageReference: "registry.example/private:v1"}
+	intent.ContainerID = protocol.ImageTargetKey("pull:" + intent.ImageReference)
+	request := EnqueueRequest{NodeID: testNodeID, IdempotencyKey: "private-pull-auth", Intent: intent, RegistryAuthRequired: true}
+	accepted, err := fixture.store.Enqueue(context.Background(), request)
+	if err != nil || !accepted.Created || !accepted.Task.RegistryAuthRequired {
+		t.Fatalf("authenticated image pull acceptance = %+v, err=%v", accepted, err)
+	}
+	changed := request
+	changed.RegistryAuthRequired = false
+	if _, err := fixture.store.Enqueue(context.Background(), changed); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("same idempotency key with changed credential presence returned %v, want conflict", err)
+	}
+	connection := testConnection(strings.Repeat("8", 64))
+	if _, err := fixture.store.ObserveAgentConnection(context.Background(), connection); err != nil {
+		t.Fatal("observe Agent journal:", err)
+	}
+	resolved, claimed, err := fixture.store.ClaimNextWithRegistryAuth(context.Background(), connection, request.ActorID, request.RemoteAddr, nil)
+	if err != nil || claimed {
+		t.Fatalf("missing one-use credentials were dispatched: claimed=%t task=%+v err=%v", claimed, resolved, err)
+	}
+	if resolved.Status != taskstate.Failed || resolved.DeliveryState != "done" || resolved.Evidence.DeliveryCommitted ||
+		!resolved.Evidence.FailureConfirmed || !resolved.Evidence.ActualResultConfirmed || resolved.Result.Code != ResultRegistryCredentialsUnavailable {
+		t.Fatalf("missing credentials were not a confirmed pre-delivery failure: %+v", resolved)
+	}
+	var claims int
+	if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_resource_claims WHERE task_id=?`, accepted.Task.TaskID).Scan(&claims); err != nil || claims != 0 {
+		t.Fatalf("credential-unavailable task retained %d resource claims, err=%v", claims, err)
+	}
+	var resolvedAudits int
+	if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_audit_events WHERE task_id=? AND event='task_resolved' AND from_status='queued' AND to_status='failed'`, accepted.Task.TaskID).Scan(&resolvedAudits); err != nil || resolvedAudits != 1 {
+		t.Fatalf("credential-unavailable task resolution audit count=%d err=%v", resolvedAudits, err)
+	}
+
+	publicIntent := Intent{Action: ActionImagePull, ImageReference: "registry.example/public:v1"}
+	publicIntent.ContainerID = protocol.ImageTargetKey("pull:" + publicIntent.ImageReference)
+	public, err := fixture.store.Enqueue(context.Background(), EnqueueRequest{NodeID: testNodeID, IdempotencyKey: "public-pull-no-auth", Intent: publicIntent})
+	if err != nil {
+		t.Fatal("enqueue public unauthenticated image pull:", err)
+	}
+	delivered, claimed, err := fixture.store.ClaimNext(context.Background(), connection, sql.NullInt64{}, "unknown")
+	if err != nil || !claimed || delivered.TaskID != public.Task.TaskID || delivered.RegistryAuthRequired || delivered.DeliveryState != "sent" {
+		t.Fatalf("public image pull without credentials did not dispatch: claimed=%t task=%+v err=%v", claimed, delivered, err)
 	}
 }
 
@@ -681,6 +734,13 @@ func TestUndeliveredIntentIsCanceledWhenAgentConnectionGenerationChanges(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	authIntent := Intent{Action: ActionImagePull, ImageReference: "registry.example/stale-auth:v1"}
+	authIntent.ContainerID = protocol.ImageTargetKey("pull:" + authIntent.ImageReference)
+	authAccepted, err := fixture.store.Enqueue(context.Background(), EnqueueRequest{NodeID: testNodeID, IdempotencyKey: "stale-auth-pull",
+		Intent: authIntent, RegistryAuthRequired: true})
+	if err != nil {
+		t.Fatal("enqueue stale authenticated image pull:", err)
+	}
 	oldConnection := testConnection(strings.Repeat("3", 64))
 	if _, err := fixture.store.ObserveAgentConnection(context.Background(), oldConnection); err != nil {
 		t.Fatal(err)
@@ -699,6 +759,10 @@ func TestUndeliveredIntentIsCanceledWhenAgentConnectionGenerationChanges(t *test
 	}
 	if task.Status != taskstate.Canceled || task.DeliveryState != "done" || task.Evidence.DeliveryCommitted || task.Result.ObservedState != "not_dispatched" {
 		t.Fatalf("stale undelivered task was left for a later automatic run: %+v", task)
+	}
+	staleAuthTask, err := fixture.store.Get(context.Background(), testNodeID, authAccepted.Task.TaskID)
+	if err != nil || staleAuthTask.Status != taskstate.Canceled || staleAuthTask.Result.ObservedState != "not_dispatched" {
+		t.Fatalf("auth-required task unexpectedly bypassed the existing stale-generation cancellation: task=%+v err=%v", staleAuthTask, err)
 	}
 	var claims int
 	if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_resource_claims WHERE task_id=?`, task.TaskID).Scan(&claims); err != nil || claims != 0 {

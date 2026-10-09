@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -234,18 +233,21 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		return nil
 	}
 	journal := coretasks.AgentConnection{NodeID: identity.NodeID, ConnectionGeneration: connection.generation, JournalID: journalID}
-	for sent := 0; sent < coreTaskDispatchBurst && connection.taskSlots > 0; sent++ {
-		task, ok, err := s.tasks.ClaimNext(ctx, journal, sql.NullInt64{}, "unknown")
+	for handled := 0; handled < coreTaskDispatchBurst && connection.taskSlots > 0; handled++ {
+		task, ok, registryAuth, err := s.claimNextImageTask(ctx, journal)
 		if err != nil {
 			return err
 		}
 		if !ok {
+			if task.Status == taskstate.Failed && task.Result.Code == coretasks.ResultRegistryCredentialsUnavailable {
+				continue
+			}
 			break
 		}
 		dispatch := protocol.TaskDispatch{TaskID: task.TaskID, NodeID: task.NodeID, JournalID: journalID,
 			TargetID: task.Intent.ContainerID, IdempotencyKey: task.IdempotencyKey, RequestDigest: protocol.DigestString(task.RequestDigest), Intent: task.Intent}
 		if task.Intent.Action == protocol.TaskImagePull {
-			dispatch.RegistryAuth = s.takeImageCredentials(task.TaskID, task.NodeID)
+			dispatch.RegistryAuth = registryAuth
 		}
 		payload, err := json.Marshal(dispatch)
 		if err != nil || len(payload) > protocol.MaxTaskPayloadBytes {
