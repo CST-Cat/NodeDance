@@ -27,7 +27,9 @@ jobs:
         run: make verify-tools
 
       - name: Run candidate runner contract tests
-        run: python3 scripts/test/test_acceptance_candidates.py
+        run: |
+          python3 scripts/test/test_acceptance_candidates.py
+          python3 scripts/test/s06-dind-selftest.py
 
       - name: Start this run's owner-marked Engine 29 DIND
         shell: bash
