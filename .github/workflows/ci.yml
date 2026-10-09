@@ -154,8 +154,8 @@ jobs:
       - name: Verify per-run report and artifact safeguards
         run: make verify-ci-evidence
 
-      - name: Install locked project dependencies
-        run: make deps
+      - name: Build embedded Web assets for S02 Go tests
+        run: make frontend
 
       - name: Run checks, dual-architecture builds and full S02 acceptance
         run: make test-stage STAGE=S02
