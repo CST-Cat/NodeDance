@@ -222,6 +222,36 @@ func (s *Store) SetTaskStatus(ctx context.Context, id, status, reason string) er
 	_, err := s.db.ExecContext(ctx, `UPDATE agent_update_tasks SET status=?,reason=?,updated_at=? WHERE id=?`, status, reason, s.now().Unix(), id)
 	return err
 }
+
+// ClaimTaskForDispatch atomically gives one scheduler invocation ownership of
+// a queued/deferred task before it puts the command on an Agent connection.
+// A stale Pending result or concurrent dispatch cannot enqueue the same update
+// twice after this transition.
+func (s *Store) ClaimTaskForDispatch(ctx context.Context, id string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `UPDATE agent_update_tasks SET status='dispatched',reason='',updated_at=? WHERE id=? AND status IN ('queued','deferred')`, s.now().Unix(), id)
+	if err != nil {
+		return false, err
+	}
+	changed, err := result.RowsAffected()
+	return changed == 1, err
+}
+
+// DeferPendingTask records a prerequisite failure only while the task remains
+// queued/deferred. This prevents a stale scheduler snapshot from overwriting a
+// concurrent dispatch claim.
+func (s *Store) DeferPendingTask(ctx context.Context, id, reason string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE agent_update_tasks SET status='deferred',reason=?,updated_at=? WHERE id=? AND status IN ('queued','deferred') AND (status<>'deferred' OR reason<>?)`, reason, s.now().Unix(), id, reason)
+	return err
+}
+
+// DeferDispatchedTask rolls back a dispatch claim when the bounded connection
+// queue rejects the command. It must never regress a task that has already
+// advanced after the command was accepted.
+func (s *Store) DeferDispatchedTask(ctx context.Context, id, reason string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE agent_update_tasks SET status='deferred',reason=?,updated_at=? WHERE id=? AND status='dispatched'`, reason, s.now().Unix(), id)
+	return err
+}
+
 func (s *Store) Report(ctx context.Context, id, nodeID, status, reason string) error {
 	if status != "prepared" && status != "failed" && status != "rejected" {
 		return errors.New("invalid Agent update report")
@@ -397,8 +427,16 @@ func (s *Store) FailTask(ctx context.Context, id, reason string) error {
 	} else if err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE agent_update_tasks SET status='failed',reason=?,updated_at=? WHERE id=? AND status IN ('queued','deferred','dispatched','prepared')`, reason, s.now().Unix(), id); err != nil {
+	result, err := tx.ExecContext(ctx, `UPDATE agent_update_tasks SET status='failed',reason=?,updated_at=? WHERE id=? AND status IN ('queued','deferred')`, reason, s.now().Unix(), id)
+	if err != nil {
 		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return tx.Commit()
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE agent_update_tasks SET status='paused',reason='paused after earlier node failed',updated_at=? WHERE batch_id=? AND status IN ('queued','deferred')`, s.now().Unix(), batch); err != nil {
 		return err

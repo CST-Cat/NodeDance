@@ -127,21 +127,20 @@ func (s *Server) dispatchAgentUpdate(ctx context.Context, task coreupdates.Task)
 		s.failAgentUpdate(ctx, task, "update command could not be encoded")
 		return
 	}
-	if err := s.updates.SetTaskStatus(ctx, task.ID, "dispatched", ""); err != nil {
+	claimed, err := s.updates.ClaimTaskForDispatch(ctx, task.ID)
+	if err != nil || !claimed {
 		return
 	}
 	command := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeAgentUpdate, Generation: connection.generation, RequestID: task.ID, Payload: payload}
 	select {
 	case connection.commands <- command:
 	default:
-		s.deferAgentUpdate(ctx, task, "Agent control queue is full")
+		_ = s.updates.DeferDispatchedTask(ctx, task.ID, "Agent control queue is full")
 	}
 }
 
 func (s *Server) deferAgentUpdate(ctx context.Context, task coreupdates.Task, reason string) {
-	if task.Status != "deferred" || task.Reason != reason {
-		_ = s.updates.SetTaskStatus(ctx, task.ID, "deferred", reason)
-	}
+	_ = s.updates.DeferPendingTask(ctx, task.ID, reason)
 }
 func (s *Server) failAgentUpdate(ctx context.Context, task coreupdates.Task, reason string) {
 	_ = s.updates.FailTask(ctx, task.ID, reason)

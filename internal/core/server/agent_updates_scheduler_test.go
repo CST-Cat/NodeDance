@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -129,6 +130,35 @@ func TestAgentUpdateSchedulerDispatchesWhenConnectionIsIdle(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("idle Agent update was not dispatched")
+	}
+}
+
+func TestAgentUpdateSchedulerConcurrentDispatchClaimsTaskOnce(t *testing.T) {
+	s, connection, task := newAgentUpdateSchedulerFixture(t)
+	const contenders = 8
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	workers.Add(contenders)
+	for range contenders {
+		go func() {
+			defer workers.Done()
+			<-start
+			s.dispatchAgentUpdate(context.Background(), task)
+		}()
+	}
+	close(start)
+	workers.Wait()
+
+	updated := readAgentUpdateTask(t, s, task.ID)
+	if updated.Status != "dispatched" {
+		t.Fatalf("concurrent idle Agent update status = %q (%q), want dispatched exactly once", updated.Status, updated.Reason)
+	}
+	if got := len(connection.commands); got != 1 {
+		t.Fatalf("concurrent idle Agent update commands queued = %d, want 1", got)
+	}
+	command := <-connection.commands
+	if command.Type != protocol.TypeAgentUpdate || command.RequestID != task.ID {
+		t.Fatalf("concurrent idle Agent update command = %#v", command)
 	}
 }
 
