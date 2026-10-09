@@ -6,13 +6,42 @@ run and recorded.
 
 ## File root and operating-system permissions
 
-The Agent opens the configured file root with `os.OpenRoot`, which confines
-relative operations and rejects `..`/escaping symlinks. The default root is
-`/`; configure a narrower root with `NODEDANCE_AGENT_FILE_ROOT`. This is a
-path boundary, not an operating-system permission grant: reads, writes, owner
-preservation, atomic rename, and directory creation still run with the Agent
-service account's real UID/GID and are subject to mount permissions and
-systemd sandbox policy.
+The Agent opens an explicitly configured file root with `os.OpenRoot`, which
+confines relative operations and rejects `..`/escaping symlinks. There is no
+default host file root: when unset, the Agent does not create the file service
+and does not advertise `agent.files.v1`; the Core disables the file-manager tab
+and explains that a root must be configured. For a foreground Agent, set
+`NODEDANCE_AGENT_FILE_ROOT` to an absolute existing directory. For a systemd
+service, use `nodedance-agent install-systemd --file-root /absolute/directory`.
+The root may not be `/` or `/home` itself, nor `/root` and its descendants,
+`/proc`, `/sys`, `/dev`, `/run`, `/etc/systemd`, or any path overlapping the
+Agent's private state directory.
+The root and every component in its path must be real directories, not
+symlinks. A narrow `/home/<user>/...` directory is allowed; the rest of `/home`
+remains hidden from the service.
+
+The generated service uses `ProtectSystem=strict` and `ProtectHome=tmpfs`.
+`ReadWritePaths` grants writes to only the private Agent state directory;
+`BindPaths` exposes the exact selected file root when configured. Every other
+home directory remains inaccessible, and writes outside those explicit paths
+are denied by the service mount namespace. Linux owner, group, ACL, and mount permissions still
+apply: an allowlisted path is not made writable by changing its systemd mount
+policy alone. The service account must already be able to read and write the
+selected directory as needed. `--no-file-root` explicitly removes an existing
+file root; a repeated install without a new value retains the root recorded in
+the generated unit. A new `--file-root` always replaces that saved value. The
+SSH form also provides an explicit checkbox to clear the saved root; leaving
+the directory field blank alone does not remove persisted access.
+
+The SSH deployment form accepts the same optional absolute file-root value and
+an explicit option to disable previously configured access. It sends the path
+as base64 data through the remote script and passes it to the Agent installer
+as a quoted argument; the target validates canonical path,
+symlink components, existing directory type, protected roots, and overlap with
+Agent state before writing the systemd unit. Leaving the field empty disables
+file access on a new installation and preserves only a previously persisted
+NodeDance unit setting on reinstall, unless the administrator explicitly
+selects the disable option.
 
 `NODEDANCE_AGENT_MAX_FILE_BYTES` controls the per-file runtime limit, defaults
 to 1 GiB, and may not exceed the protocol hard limit of 16 GiB. The Core limit
@@ -21,14 +50,11 @@ The text editor is intentionally limited to 32 KiB so Base64 text fits the
 bounded 64 KiB control frame. Directory listings are capped at 100 entries and
 the encoded response is checked against the control-frame bound before send.
 
-The current S13 SSH-installed unit uses `ProtectSystem=strict`,
-`ProtectHome=true`, and only grants writes to `/var/lib/nodedance-agent`. With
-the default `/` file root, normal host paths may be readable while most writes
-are denied by systemd and `/home` is hidden by the sandbox. S13 integration
-must choose and document a precise file-root/access allowlist; it must not
-broaden writes to `/` or unhide `/home` to make the file manager appear
-complete. Until tested with the actual installed unit, host read/write reach
-is `NOT_READY`.
+The actual systemd mount combination is covered by a gated Linux integration
+test: a selected directory below `/home` must be writable, another home path
+must remain hidden, and a host path outside the selected root that would
+otherwise be writable by the service UID must reject writes. This test checks
+the process namespace rather than relying only on the Agent's Go path root.
 
 ## API and transfer result identity
 
@@ -76,6 +102,7 @@ The following remain `NOT_READY` unless a report records a real execution:
 
 - Real browser-to-Core-to-Agent-to-target filesystem integration.
 - 100 MiB and 1 GiB transfer SHA-256 and RSS-delta measurement (≤64 MiB).
-- Systemd-installed Agent write permissions under the current sandbox.
+- Real target read/write permissions for the administrator-selected file root
+  and its Linux UID/GID/ACL setup.
 - Read-only filesystem and non-root owner-preservation cases on a real target.
 - Durable file task records, lookup, and restart reconciliation.

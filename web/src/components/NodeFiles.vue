@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { ApiError, api, type NodeFileEntry } from '../api'
 
 const props = defineProps<{ nodeId: string; disabled?: boolean }>()
@@ -31,7 +31,7 @@ function joinPath(base: string, name: string) {
 }
 
 async function loadFiles(path = currentPath.value) {
-  if (!props.nodeId) return
+  if (!props.nodeId || props.disabled) return
   loading.value = true
   error.value = ''
   try {
@@ -54,6 +54,7 @@ function messageFor(caught: unknown) {
 }
 
 async function openEntry(entry: NodeFileEntry) {
+  if (props.disabled) return
   if (entry.kind === 'directory') {
     await loadFiles(entry.path)
     return
@@ -76,6 +77,7 @@ async function openEntry(entry: NodeFileEntry) {
 }
 
 async function saveText() {
+  if (props.disabled) return
   editorBusy.value = true
   editorError.value = ''
   try {
@@ -96,6 +98,7 @@ async function saveText() {
 }
 
 async function makeDirectory() {
+  if (props.disabled) return
   const name = window.prompt('新目录名称')
   if (!name) return
   busy.value = true
@@ -112,6 +115,7 @@ async function makeDirectory() {
 }
 
 async function renameEntry(entry: NodeFileEntry) {
+  if (props.disabled) return
   const destination = window.prompt('新路径', joinPath(parentPath.value, entry.name))
   if (!destination || destination === entry.path) return
   busy.value = true
@@ -128,6 +132,7 @@ async function renameEntry(entry: NodeFileEntry) {
 }
 
 async function deleteEntry(entry: NodeFileEntry) {
+  if (props.disabled) return
   const confirmation = window.prompt(`请输入完整路径以确认删除：${entry.path}`)
   if (confirmation !== entry.path) return
   busy.value = true
@@ -144,10 +149,12 @@ async function deleteEntry(entry: NodeFileEntry) {
 }
 
 function chooseUpload() {
+  if (props.disabled) return
   uploadInput.value?.click()
 }
 
 async function uploadChanged(event: Event) {
+  if (props.disabled) return
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ''
@@ -195,11 +202,18 @@ function downloadURL(entry: NodeFileEntry) {
   return api.nodeFileDownloadURL(props.nodeId, entry.path)
 }
 
-watch(() => props.nodeId, () => {
+watch(() => [props.nodeId, props.disabled] as const, ([, disabled]) => {
+  uploadController.value?.abort()
   currentPath.value = '/'
+  entries.value = []
+  if (disabled) {
+    error.value = '该 Agent 未声明可用的文件管理能力。'
+    editorOpen.value = false
+    return
+  }
+  error.value = ''
   void loadFiles('/')
-})
-onMounted(() => void loadFiles())
+}, { immediate: true })
 onBeforeUnmount(() => uploadController.value?.abort())
 </script>
 
@@ -220,10 +234,10 @@ onBeforeUnmount(() => uploadController.value?.abort())
     </header>
 
     <nav class="breadcrumbs" aria-label="文件路径">
-      <button type="button" @click="loadFiles('/')">/</button>
+      <button type="button" :disabled="disabled" @click="loadFiles('/')">/</button>
       <template v-for="(part, index) in pathParts" :key="`${index}-${part}`">
         <span aria-hidden="true">/</span>
-        <button type="button" @click="loadFiles(`/${pathParts.slice(0, index + 1).join('/')}`)">{{ part }}</button>
+        <button type="button" :disabled="disabled" @click="loadFiles(`/${pathParts.slice(0, index + 1).join('/')}`)">{{ part }}</button>
       </template>
     </nav>
 
@@ -246,7 +260,7 @@ onBeforeUnmount(() => uploadController.value?.abort())
         <tbody>
           <tr v-for="entry in entries" :key="entry.path">
             <td>
-              <button v-if="entry.kind === 'directory'" class="name-button" type="button" @click="openEntry(entry)">{{ entry.name }}/</button>
+              <button v-if="entry.kind === 'directory'" class="name-button" type="button" :disabled="disabled" @click="openEntry(entry)">{{ entry.name }}/</button>
               <span v-else>{{ entry.name }}</span>
             </td>
             <td>{{ entry.kind }}</td>
@@ -254,10 +268,10 @@ onBeforeUnmount(() => uploadController.value?.abort())
             <td><code>{{ entry.mode.toString(8).padStart(3, '0') }}</code></td>
             <td>{{ entry.ownerUid }}:{{ entry.ownerGid }}</td>
             <td class="row-actions">
-              <a v-if="entry.kind === 'file'" :href="downloadURL(entry)" :download="entry.name">下载</a>
-              <button v-if="entry.kind === 'file'" type="button" :disabled="busy" @click="openEntry(entry)">编辑</button>
-              <button type="button" :disabled="busy || entry.path === '/'" @click="renameEntry(entry)">重命名</button>
-              <button type="button" class="danger" :disabled="busy || entry.path === '/'" @click="deleteEntry(entry)">删除</button>
+              <a v-if="entry.kind === 'file' && !disabled" :href="downloadURL(entry)" :download="entry.name">下载</a>
+              <button v-if="entry.kind === 'file'" type="button" :disabled="disabled || busy" @click="openEntry(entry)">编辑</button>
+              <button type="button" :disabled="disabled || busy || entry.path === '/'" @click="renameEntry(entry)">重命名</button>
+              <button type="button" class="danger" :disabled="disabled || busy || entry.path === '/'" @click="deleteEntry(entry)">删除</button>
             </td>
           </tr>
         </tbody>

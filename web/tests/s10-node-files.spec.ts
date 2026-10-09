@@ -62,7 +62,7 @@ async function installFileAPIMock(page: import('@playwright/test').Page, onReque
   })
 }
 
-async function installDashboardMock(page: import('@playwright/test').Page) {
+async function installDashboardMock(page: import('@playwright/test').Page, filesCapability = true) {
   await page.addInitScript(() => {
     class DashboardSocketStub {
       onopen: ((event: Event) => void) | null = null
@@ -91,7 +91,8 @@ async function installDashboardMock(page: import('@playwright/test').Page) {
     if (url.pathname === '/api/v1/nodes') {
       await route.fulfill({ json: { serverTime: '2030-01-01T00:00:00.000Z', nodes: [{
         nodeId, agentId: 'agent-s10-ui', displayName: 'S10 UI node', status: 'online', generation: 1,
-        lastSeen: '2030-01-01T00:00:00.000Z', leaseValidUntil: '2030-01-01T00:01:00.000Z', capabilities: ['agent.metrics.v1'],
+        lastSeen: '2030-01-01T00:00:00.000Z', leaseValidUntil: '2030-01-01T00:01:00.000Z',
+        capabilities: ['agent.metrics.v1', ...(filesCapability ? ['agent.files.v1'] : [])],
       }] } })
       return
     }
@@ -193,11 +194,19 @@ test('a selected node opens and leaves the file manager from its dashboard detai
   const openFiles = page.getByRole('button', { name: '管理节点文件' })
   await expect(openFiles).toBeEnabled()
   await openFiles.click()
-  await expect(page.getByRole('region', { name: '节点文件管理' })).toBeVisible()
+  await expect(page.locator('.node-files')).toBeVisible()
   await expect(page.getByText('report.txt')).toBeVisible()
   await expect(page.getByTestId('docker-inventory')).toHaveCount(0)
 
   await page.getByRole('button', { name: '返回节点详情' }).click()
   await expect(page.getByTestId('docker-inventory')).toBeVisible()
   await expect(page.getByRole('button', { name: '管理节点文件' })).toBeEnabled()
+})
+
+test('an online Agent without file capability shows why host file management is disabled', async ({ page }) => {
+  await installDashboardMock(page, false)
+  await page.goto('/tests/fixtures/s03-nodes-dashboard.html')
+  await expect(page.getByRole('button', { name: '管理节点文件' })).toBeDisabled()
+  await expect(page.getByTestId('file-capability-missing')).toContainText('文件管理已禁用')
+  await expect(page.getByRole('region', { name: '节点文件管理' })).toHaveCount(0)
 })

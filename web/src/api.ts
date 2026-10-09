@@ -77,6 +77,8 @@ export interface TailscaleDeploymentTask {
 export interface TailscaleDeployPayload {
   peerIdentity: string
   displayName: string
+  fileRoot?: string
+  disableFileRoot?: boolean
   coreUrl: string
   fallbackUrl?: string
   allowFallback: boolean

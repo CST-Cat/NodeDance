@@ -1,0 +1,65 @@
+name: NodeDance S10 systemd file-root boundary
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nodedance-s10-systemd-file-root-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  systemd-boundary:
+    name: S10/S13 / exact host file-root permissions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install and verify locked Go toolchain
+        run: |
+          make verify-tools
+          echo "$GITHUB_WORKSPACE/.tools/go1.26.8/bin" >> "$GITHUB_PATH"
+
+      - name: Detect an isolated, controllable system manager
+        id: systemd
+        shell: bash
+        run: |
+          if [[ "$(ps -p 1 -o comm= | tr -d ' ')" == systemd ]] && command -v systemctl >/dev/null 2>&1 && sudo systemctl show-environment >/dev/null 2>&1; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Exercise real systemd home bind and write boundary
+        if: steps.systemd.outputs.available == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/nodedance-s10-systemd-file-root"
+          sudo env GOTOOLCHAIN=local NODEDANCE_TEST_SYSTEMD=1 PATH="$GITHUB_WORKSPACE/.tools/go1.26.8/bin:$PATH" \
+            go test -count=1 ./internal/agent -run 'TestSystemd(FileRootWriteBoundaryOnRunningManager|ExecStartUsesLiteralSpecialPathsOnRunningManager)$' -v \
+            2>&1 | tee "$RUNNER_TEMP/nodedance-s10-systemd-file-root/result.txt"
+
+      - name: Record systemd test as NOT_READY when this runner has no manager
+        if: steps.systemd.outputs.available != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/nodedance-s10-systemd-file-root"
+          echo 'NOT_READY: runner does not expose a controllable system manager; unit generation and path-policy tests remain covered by ordinary Go checks.' \
+            | tee "$RUNNER_TEMP/nodedance-s10-systemd-file-root/result.txt"
+
+      - name: Preserve gated systemd evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s10-systemd-file-root-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/nodedance-s10-systemd-file-root/result.txt
+            reports/stages/S10.json
+            reports/stages/S13.json

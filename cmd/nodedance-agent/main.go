@@ -57,7 +57,7 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, "  nodedance-agent enroll --server https://core.example --token-stdin [--ca-file path] [--config path]")
 	fmt.Fprintln(output, "  nodedance-agent recover [--config path]")
 	fmt.Fprintln(output, "  nodedance-agent run [--config path]")
-	fmt.Fprintln(output, "  nodedance-agent install-systemd --user <service-user> [--config path] [--enable]")
+	fmt.Fprintln(output, "  nodedance-agent install-systemd --user <service-user> [--config path] [--file-root absolute-directory] [--no-file-root] [--supplementary-group <gid>] [--enable]")
 	fmt.Fprintln(output, "  nodedance-agent update-helper supervise --state-dir <path> --config <path>")
 	fmt.Fprintln(output, "The Agent never accepts inbound management connections. Enrollment tokens are read only from stdin.")
 }
@@ -147,6 +147,9 @@ func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Wri
 	serviceUser := flags.String("user", "", "explicit Linux account that will run the Agent")
 	configPath := flags.String("config", "/var/lib/nodedance-agent/agent.json", "existing private Agent config path")
 	unitDir := flags.String("unit-dir", "/etc/systemd/system", "system unit directory")
+	fileRoot := flags.String("file-root", "", "explicit absolute, existing host directory exposed to the Agent file manager")
+	noFileRoot := flags.Bool("no-file-root", false, "disable host file access, even when replacing a previously configured unit")
+	supplementaryGroup := flags.String("supplementary-group", "", "additional Linux group name or numeric GID (used for authorized Docker socket access)")
 	reload := flags.Bool("reload", true, "run systemctl daemon-reload for the system unit directory")
 	enable := flags.Bool("enable", false, "enable and start the installed Agent unit")
 	if err := flags.Parse(args); err != nil {
@@ -158,9 +161,23 @@ func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Wri
 	if strings.TrimSpace(*serviceUser) == "" {
 		return fmt.Errorf("--user is required; installation never guesses or elevates the service identity")
 	}
+	fileRootSpecified := false
+	flags.Visit(func(flag *flag.Flag) {
+		if flag.Name == "file-root" {
+			fileRootSpecified = true
+		}
+	})
+	if *noFileRoot && fileRootSpecified {
+		return fmt.Errorf("--file-root and --no-file-root cannot be used together")
+	}
+	groups := []string(nil)
+	if *supplementaryGroup != "" {
+		groups = []string{*supplementaryGroup}
+	}
 	path, err := agent.InstallSystemd(ctx, agent.SystemdInstallOptions{
 		User: *serviceUser, ConfigPath: *configPath, UnitDir: *unitDir, Version: version,
-		Reload: *reload, EnableNow: *enable,
+		FileRoot: *fileRoot, FileRootSpecified: fileRootSpecified, DisableFileRoot: *noFileRoot,
+		SupplementaryGroups: groups, Reload: *reload, EnableNow: *enable,
 	})
 	if err != nil {
 		return err
@@ -168,6 +185,12 @@ func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Wri
 	fmt.Fprintf(stdout, "Installed %s\n", path)
 	if !*enable {
 		fmt.Fprintln(stdout, "Enable and start with: systemctl enable --now nodedance-agent.service")
+	}
+	installedUnit, readErr := os.ReadFile(path)
+	if readErr == nil && strings.Contains(string(installedUnit), "NODEDANCE_AGENT_FILE_ROOT=") {
+		fmt.Fprintln(stdout, "Host file access is enabled only under the configured absolute file root.")
+	} else {
+		fmt.Fprintln(stdout, "Host file access is disabled; no absolute file root is configured.")
 	}
 	return nil
 }

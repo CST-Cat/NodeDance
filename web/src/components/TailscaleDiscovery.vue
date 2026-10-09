@@ -17,6 +17,8 @@ const manualExpiry = ref('')
 const credentials = reactive({ user: '', password: '', privateKey: '', passphrase: '' })
 const form = reactive({
   displayName: '',
+  fileRoot: '',
+  disableFileRoot: false,
   coreUrl: window.location.protocol === 'https:' ? window.location.origin : '',
   fallbackUrl: '',
   allowFallback: false,
@@ -71,6 +73,8 @@ function choose(peer: TailscalePeer) {
   credentials.privateKey = ''
   credentials.passphrase = ''
   form.displayName = peerLabel(peer)
+  form.fileRoot = ''
+  form.disableFileRoot = false
   form.confirmHostKey = false
   form.confirmChangedHostKey = false
 }
@@ -117,6 +121,8 @@ async function startDeployment() {
     const accepted = await api.startTailscaleDeployment({
       peerIdentity: selected.value.identity,
       displayName: form.displayName,
+      fileRoot: form.disableFileRoot ? undefined : form.fileRoot.trim() || undefined,
+      disableFileRoot: form.disableFileRoot,
       coreUrl: form.coreUrl,
       fallbackUrl: form.fallbackUrl || undefined,
       allowFallback: form.allowFallback,
@@ -227,6 +233,8 @@ onMounted(() => { void discover() })
       <div class="deploy-columns">
         <div class="deploy-form">
           <label class="field"><span>NodeDance 显示名称</span><input v-model="form.displayName" maxlength="80" autocomplete="off" /></label>
+          <label class="field"><span>Agent 主机文件根目录（可选）</span><input v-model="form.fileRoot" :disabled="form.disableFileRoot" autocomplete="off" placeholder="/srv/nodedance-files" /><small class="field-hint">新部署留空时禁用文件管理；重装时保留目标机已明确保存的目录。配置后只开放该现有绝对目录，服务账号仍须拥有对应的 Linux 读写权限。</small></label>
+          <label class="check-row"><input v-model="form.disableFileRoot" type="checkbox" /><span>即使目标机已有配置，也明确禁用主机文件管理</span></label>
           <label class="field"><span>Core HTTPS 地址</span><input v-model="form.coreUrl" inputmode="url" placeholder="https://panel.example.ts.net" /><small class="field-hint">Agent 使用 HTTPS，证书验证始终开启。HTTP 不受支持。</small></label>
           <label class="field"><span>备用 HTTPS 地址（可选）</span><input v-model="form.fallbackUrl" inputmode="url" placeholder="https://backup.example.net" /></label>
           <label class="check-row"><input v-model="form.allowFallback" type="checkbox" /><span>明确允许主地址连接失败时尝试备用地址</span></label>

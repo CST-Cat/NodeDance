@@ -27,6 +27,8 @@ type Dependencies struct {
 type DeployRequest struct {
 	PeerIdentity      string         `json:"peerIdentity"`
 	DisplayName       string         `json:"displayName"`
+	FileRoot          string         `json:"fileRoot,omitempty"`
+	DisableFileRoot   bool           `json:"disableFileRoot,omitempty"`
 	CoreURL           string         `json:"coreUrl"`
 	FallbackURL       string         `json:"fallbackUrl,omitempty"`
 	AllowFallback     bool           `json:"allowFallback"`
@@ -103,6 +105,12 @@ func (s *Service) Deploy(ctx context.Context, request DeployRequest) (Deployment
 	if s.Artifacts == nil {
 		return DeploymentResult{}, errors.New("signed Agent artifacts are not configured on this Core")
 	}
+	if err := validateFileRootRequest(request.FileRoot); err != nil {
+		return DeploymentResult{}, err
+	}
+	if request.DisableFileRoot && request.FileRoot != "" {
+		return DeploymentResult{}, errors.New("fileRoot and disableFileRoot cannot be used together")
+	}
 	if !request.ConfirmHostKey {
 		return DeploymentResult{}, errors.New("confirm that the SSH host-key fingerprint matches the selected node")
 	}
@@ -156,7 +164,7 @@ func (s *Service) Deploy(ctx context.Context, request DeployRequest) (Deployment
 			return DeploymentResult{}, fmt.Errorf("create one-time Agent enrollment: %w", err)
 		}
 	}
-	if err := InstallRemote(ctx, remote, preflight, artifact, selectedURL, enrollment); err != nil {
+	if err := InstallRemoteWithFileRootOptions(ctx, remote, preflight, artifact, selectedURL, enrollment, request.FileRoot, request.DisableFileRoot); err != nil {
 		return DeploymentResult{}, err
 	}
 	if s.WaitOnline != nil {

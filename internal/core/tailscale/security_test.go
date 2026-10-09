@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"net"
 	"net/http"
@@ -121,6 +122,50 @@ func TestInstallScriptCleansTemporaryArtifactsAndPreservesExistingIdentity(t *te
 	}
 }
 
+func TestInstallScriptPassesAdminFileRootAsDataAndQuotedArgument(t *testing.T) {
+	fileRoot := `/srv/node dance/$(touch /tmp/not-executed);%"目录`
+	artifactBytes := []byte("test-agent")
+	artifact := Artifact{Bytes: artifactBytes, SHA256: HashSignedPayload(artifactBytes), OS: "linux", Arch: "amd64"}
+	remote := &recordingRemote{err: errors.New("capture only")}
+	err := InstallRemoteWithFileRoot(context.Background(), remote,
+		Preflight{OS: "linux", Arch: "amd64", UID: 0, Docker: DockerSocketInfo{Access: "absent"}},
+		artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, fileRoot)
+	if err == nil {
+		t.Fatal("recording remote unexpectedly succeeded")
+	}
+	script := string(remote.input)
+	encoded := base64.StdEncoding.EncodeToString([]byte(fileRoot))
+	if !strings.Contains(script, "printf '%s' '"+encoded+"' | base64 -d") || !strings.Contains(script, `--file-root "$FILE_ROOT"`) || !strings.Contains(script, "--enable") {
+		t.Fatalf("SSH script did not pass the file root as base64 data and a single quoted CLI argument:\n%s", script)
+	}
+	if strings.Contains(script, fileRoot) {
+		t.Fatal("SSH script interpolated the raw administrator path into shell source")
+	}
+	for _, rejected := range []string{"relative/path", "/", "/home", "/root/private", "/proc/1", "/var/lib/nodedance-agent/files", "/srv/root\nEnvironment=BAD=1"} {
+		before := remote.calls
+		if err := InstallRemoteWithFileRoot(context.Background(), remote,
+			Preflight{OS: "linux", Arch: "amd64", UID: 0, Docker: DockerSocketInfo{Access: "absent"}},
+			artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, rejected); err == nil {
+			t.Errorf("unsafe file-root request %q was accepted", rejected)
+		}
+		if remote.calls != before {
+			t.Errorf("unsafe file-root request %q contacted SSH target", rejected)
+		}
+	}
+	disabledRemote := &recordingRemote{err: errors.New("capture only")}
+	_ = InstallRemoteWithFileRootOptions(context.Background(), disabledRemote,
+		Preflight{OS: "linux", Arch: "amd64", UID: 0, Docker: DockerSocketInfo{Access: "absent"}},
+		artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, "", true)
+	if !strings.Contains(string(disabledRemote.input), "--no-file-root") || !strings.Contains(string(disabledRemote.input), "--enable") {
+		t.Fatal("explicit SSH disable did not reach the Agent systemd installer")
+	}
+	if err := InstallRemoteWithFileRootOptions(context.Background(), &recordingRemote{},
+		Preflight{OS: "linux", Arch: "amd64", UID: 0, Docker: DockerSocketInfo{Access: "absent"}},
+		artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, fileRoot, true); err == nil {
+		t.Fatal("SSH install accepted conflicting file-root and explicit-disable options")
+	}
+}
+
 func TestInspectRemoteRejectsPermissionAndUnknownArchitecture(t *testing.T) {
 	for name, output := range map[string]string{
 		"no sudo":                  "Linux\nx86_64\n1000\nnew\n-\nrootless\ndocker|absent\n",
@@ -185,8 +230,8 @@ func TestFreshRemoteWithoutAgentUserUsesSupplementaryDockerGroup(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected recording SSH transport to interrupt installation")
 	}
-	if !strings.Contains(string(install.input), "SupplementaryGroups=989\n") {
-		t.Fatal("systemd unit does not grant the Docker socket's numeric supplementary GID")
+	if !strings.Contains(string(install.input), "--supplementary-group '989' --enable") {
+		t.Fatal("Agent systemd installer does not receive the Docker socket's numeric supplementary GID")
 	}
 	if !strings.Contains(string(install.input), `[ "$(stat -c '%a|%u|%g' /var/run/docker.sock)" = '660|0|989' ]`) {
 		t.Fatal("installation script does not recheck the preflight Docker socket metadata")

@@ -14,11 +14,14 @@
 - SSH 安装仅从当前重新发现的 Tailscale IP 建立连接；host key 必须匹配用户当前确认指纹。已保存指纹变化时默认拒绝，只有显式重新确认并完成对新 host key 的 SSH 认证后才更新 pin。
 - 备用 URL 必须是 HTTPS origin，且仅在管理员勾选 `allowFallback` 后探测。curl 不关闭 TLS 校验；证书失败会拒绝该地址。
 - SSH 预检检查真实 Docker socket 的类型、mode、数字 UID/GID 和既有 Agent UID。`root:docker 0660` 会把 socket 数字 GID 配入 systemd `SupplementaryGroups`，并在安装前再次核对 socket 元数据。`0600 root:root` 等无法安全授权的配置会在创建凭据或启动服务前拒绝。owner 权限仅在已有 `nodedance-agent` UID 与 socket owner UID 相同时允许，安装脚本还会复核 UID。Docker socket 不存在时明确报告容器能力 unavailable。
-- systemd 保持 `ProtectSystem=strict`、`ProtectHome=true`，仅允许 Agent 私有状态目录写入。这样不会为迁就文件操作而开放根文件系统写权限。
+- SSH 部署与本地 `install-systemd` 使用同一 Agent unit 生成器。默认 `ProtectSystem=strict`、`ProtectHome=tmpfs`，只允许写入 Agent 私有状态目录；主机文件服务默认关闭，也不声明 `agent.files.v1`。
+- 管理员可以在 SSH 部署表单中填写可选绝对 file root，或本地执行 `nodedance-agent install-systemd --file-root /absolute/directory`。安装器要求目录已存在，拒绝根目录、广泛或受保护系统目录、Agent 状态目录重叠及任何符号链接路径；精确 root 通过 systemd `BindPaths` 暴露。其余 `/home` 内容保持不可见，其他文件系统仍受 strict 只读沙箱约束。SSH 表单提供单独的“即使目标机已有配置，也明确禁用”选项。
+- SSH 请求中的目录先做绝对路径/控制字符和受保护目录检查，再以 base64 数据交给目标安装脚本；远端不把原始用户路径插入 shell 源码，而是解码到变量并作为引号包裹的 CLI 参数。实际文件写权限仍由目标机 Agent UID/GID、ACL 和挂载权限决定。
+- 重装时，新显式 `fileRoot` 覆盖旧值；未传值时只从 NodeDance unit 中持久的 file-root marker 保留旧值。对应 `Environment=NODEDANCE_AGENT_FILE_ROOT=...` 行保留可读路径，便于管理员检查。`--no-file-root` 与 SSH 表单中的显式禁用选项会删除旧配置。无 marker 的旧 unit 默认不启用主机文件能力。
 
-## S10 文件访问的待集成限制
+## S10 文件访问的 systemd 集成
 
-当前 systemd 沙箱与 S10 主机文件服务契约尚未对齐：`ProtectSystem=strict` 只允许写 `/var/lib/nodedance-agent`，S10 文件上传、编辑和创建无法通过本服务单元写宿主机目标；`ProtectHome=true` 会隐藏 `/home`、`/root`、`/run/user`，文件浏览无法列出这些常见路径。维持安全默认。待 S10 明确 file-root、读取范围及写入授权后，再通过精确 `ReadOnlyPaths`/`ReadWritePaths` 集成；不能以无边界开放 `/` 作为修复。
+实际 systemd 权限用例由 gated workflow 运行：选定的 `/home/<user>/...` root 必须可写、同一 home 下未选目录必须不可见，并且服务 UID 原本可写但不在 allowlist 的 host 目录必须写入失败。本机没有可控 systemd manager 时结果仍为 `NOT_READY`，不能用 `systemd-analyze verify` 代替挂载命名空间实测。
 
 ## 已执行的候选测试
 
@@ -29,6 +32,7 @@
 | `NODEDANCE_S13_TEST_DOCKER_SOCKET=/var/run/docker.sock go test -v ./internal/core/tailscale -run 'Test(RealDockerEngineConnectsWithAuthorizedSupplementaryGroup\|FreshRemoteWithoutAgentUserUsesSupplementaryDockerGroup\|InstallRefusesDockerSocketThatCannotBeSafelyAuthorized\|DockerSocketOwnerAccessRequiresExistingMatchingServiceUID)$'` | PASS；Docker Engine `29.7.2` | 新节点 `UID=-1` 解析、systemd supplementary GID、无安全授权时拒绝、当前进程通过已授权附加 GID 连接 `/version`。此项没有安装 systemd Agent，也不替代远端 SSH 验收 |
 | `go vet ./internal/core/tailscale ./internal/core/server` | PASS | S13 组件和 Core API 编译/静态检查 |
 | `.github/workflows/s13-candidate.yml` | PENDING | 推送后在 GitHub Actions 创建隔离 OpenSSH target，并执行 gated real-SSH preflight、API 与 Web 检查；当前没有该远程 run 的结果 |
+| `.github/workflows/s10-systemd-file-root.yml` | PENDING | 推送后在 GitHub Actions 尝试真实 systemd bind-mount 权限用例；若 runner 没有可控 system manager，会显式报告 `NOT_READY` |
 | `go test -race ./internal/core/tailscale` | PASS | S13 package race 检查；该次未设置 Docker socket 环境变量，真实 Engine 用例由上方命令执行 |
 | `pnpm typecheck` | PASS | 锁定 Node.js `22.23.3`、pnpm `12.10.1` |
 | `pnpm build` | PASS | 生产 Web 静态资源构建 |
@@ -44,7 +48,7 @@
 - `S13-01`–`S13-02`：真实 CLI 登录状态、Tailnet 可见范围和节点分类。
 - `S13-03`：组件测试验证改名/IP 变化不改变 identity；真实 Tailnet 节点变化及 Agent 偏好关联尚未执行。
 - `S13-04`–`S13-05`：真实 OpenSSH 握手、错误凭据、host-key 验证由新增 Actions 测试覆盖，但当前 Actions 结果待运行；host-key 轮换及重新确认仍需独立可切 key 证据。
-- `S13-06`–`S13-07`：签名生产包、双架构 Agent 安装、真实 systemd 身份、安装中断后节点恢复和临时文件清理尚未由隔离 target 执行。
+- `S13-06`–`S13-07`：签名生产包、双架构 Agent 安装、真实 SSH 安装中断后节点恢复和临时文件清理尚未由隔离 target 执行。真实 systemd 文件根权限另由新 gated workflow 验证，结果待首次 Actions run。
 - `S13-08`–`S13-09`：真实目标机主备 HTTPS 可达性及证书验证/网络抓包。
 - `S13-10`：真实部署后的连接信息、救援流程和数据库/服务日志秘密扫描。
 

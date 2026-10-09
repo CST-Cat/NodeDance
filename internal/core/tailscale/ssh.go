@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -447,9 +448,27 @@ exit 31
 type Enrollment struct{ NodeID, Token string }
 
 func InstallRemote(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, coreURL string, enrollment Enrollment) error {
+	return InstallRemoteWithFileRootOptions(ctx, remote, preflight, artifact, coreURL, enrollment, "", false)
+}
+
+// InstallRemoteWithFileRoot passes an optional admin-selected host directory
+// as base64 data through the SSH script and then as one quoted process
+// argument. The target Agent installer performs filesystem canonicalization
+// and the full file-root policy check before generating the unit.
+func InstallRemoteWithFileRoot(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, coreURL string, enrollment Enrollment, fileRoot string) error {
+	return InstallRemoteWithFileRootOptions(ctx, remote, preflight, artifact, coreURL, enrollment, fileRoot, false)
+}
+
+func InstallRemoteWithFileRootOptions(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, coreURL string, enrollment Enrollment, fileRoot string, disableFileRoot bool) error {
 	coreURL, err := validateCoreURL(coreURL)
 	if err != nil {
 		return err
+	}
+	if err := validateFileRootRequest(fileRoot); err != nil {
+		return err
+	}
+	if disableFileRoot && fileRoot != "" {
+		return errors.New("fileRoot and disableFileRoot cannot be used together")
 	}
 	if preflight.OS != "linux" || preflight.Arch != artifact.Arch || artifact.OS != "linux" || len(artifact.Bytes) == 0 {
 		return errors.New("signed Agent artifact does not match the preflight OS and architecture")
@@ -470,9 +489,19 @@ func InstallRemote(ctx context.Context, remote Remote, preflight Preflight, arti
 	encodedArtifact := base64.StdEncoding.EncodeToString(artifact.Bytes)
 	encodedURL := base64.StdEncoding.EncodeToString([]byte(coreURL))
 	encodedToken := base64.StdEncoding.EncodeToString([]byte(enrollment.Token))
+	encodedFileRoot := base64.StdEncoding.EncodeToString([]byte(fileRoot))
+	fileRootInstall := `/usr/local/bin/nodedance-agent install-systemd --user nodedance-agent --config /var/lib/nodedance-agent/agent.json`
+	if fileRoot != "" {
+		fileRootInstall = fmt.Sprintf(`FILE_ROOT="$(printf '%%s' '%s' | base64 -d)"
+/usr/local/bin/nodedance-agent install-systemd --user nodedance-agent --config /var/lib/nodedance-agent/agent.json --file-root "$FILE_ROOT"`, encodedFileRoot)
+	} else if disableFileRoot {
+		fileRootInstall = "/usr/local/bin/nodedance-agent install-systemd --user nodedance-agent --config /var/lib/nodedance-agent/agent.json --no-file-root"
+	} else {
+		fileRootInstall = "env -u NODEDANCE_AGENT_FILE_ROOT " + fileRootInstall
+	}
 	dockerSupplementaryGroup := ""
 	if preflight.Docker.Access == "group" {
-		dockerSupplementaryGroup = fmt.Sprintf("SupplementaryGroups=%d\n", preflight.Docker.SupplementaryGID)
+		dockerSupplementaryGroup = fmt.Sprintf("--supplementary-group '%d'", preflight.Docker.SupplementaryGID)
 	}
 	dockerSocketRecheck := ""
 	dockerOwnerRecheck := ""
@@ -490,6 +519,7 @@ umask 077
 TMP="$(mktemp -d /tmp/nodedance-deploy.XXXXXX)"
 NEW_CONFIG=0
 HAD_BINARY=0
+HAD_AGENT_BIN=0
 HAD_UNIT=0
 WAS_ACTIVE=0
 rollback() {
@@ -497,6 +527,7 @@ rollback() {
   trap - EXIT HUP INT TERM
   if [ "$result" -ne 0 ]; then
     if [ "$HAD_BINARY" -eq 1 ]; then cp -a "$TMP/old-agent" /usr/local/bin/nodedance-agent; else rm -f /usr/local/bin/nodedance-agent; fi
+    if [ "$HAD_AGENT_BIN" -eq 1 ]; then rm -rf /var/lib/nodedance-agent/bin; cp -a "$TMP/old-agent-bin" /var/lib/nodedance-agent/bin; else rm -rf /var/lib/nodedance-agent/bin; fi
     if [ "$HAD_UNIT" -eq 1 ]; then cp -a "$TMP/old-unit" /etc/systemd/system/nodedance-agent.service; else rm -f /etc/systemd/system/nodedance-agent.service; fi
     if [ "$NEW_CONFIG" -eq 1 ]; then systemctl disable --now nodedance-agent.service >/dev/null 2>&1 || true; rm -f /var/lib/nodedance-agent/agent.json; fi
     systemctl daemon-reload >/dev/null 2>&1 || true
@@ -510,6 +541,7 @@ trap 'rollback 129' HUP
 trap 'rollback 130' INT
 trap 'rollback 143' TERM
 if [ -x /usr/local/bin/nodedance-agent ]; then cp -a /usr/local/bin/nodedance-agent "$TMP/old-agent"; HAD_BINARY=1; fi
+if [ -d /var/lib/nodedance-agent/bin ]; then cp -a /var/lib/nodedance-agent/bin "$TMP/old-agent-bin"; HAD_AGENT_BIN=1; fi
 if [ -f /etc/systemd/system/nodedance-agent.service ]; then cp -a /etc/systemd/system/nodedance-agent.service "$TMP/old-unit"; HAD_UNIT=1; fi
 if systemctl is-active --quiet nodedance-agent.service; then WAS_ACTIVE=1; fi
 %s
@@ -532,35 +564,41 @@ if [ ! -s /var/lib/nodedance-agent/agent.json ]; then
 fi
 chmod 0600 /var/lib/nodedance-agent/agent.json
 chown nodedance-agent:nodedance-agent /var/lib/nodedance-agent/agent.json
-cat > /etc/systemd/system/nodedance-agent.service <<'ND_UNIT'
-[Unit]
-Description=NodeDance Agent
-After=network-online.target
-Wants=network-online.target
-[Service]
-Type=simple
-User=nodedance-agent
-Group=nodedance-agent
-%sUMask=0077
-ExecStart=/usr/local/bin/nodedance-agent run --config /var/lib/nodedance-agent/agent.json
-Restart=always
-RestartSec=3s
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-ReadWritePaths=/var/lib/nodedance-agent
-[Install]
-WantedBy=multi-user.target
-ND_UNIT
-systemctl daemon-reload
-systemctl enable --now nodedance-agent.service
+%s %s --enable
 /usr/local/bin/nodedance-agent version >/dev/null
-`, dockerSocketRecheck, encodedArtifact, artifact.SHA256, dockerOwnerRecheck, encodedToken, encodedURL, dockerSupplementaryGroup)
+`, dockerSocketRecheck, encodedArtifact, artifact.SHA256, dockerOwnerRecheck, encodedToken, encodedURL, fileRootInstall, dockerSupplementaryGroup)
 	if _, err := remote.Run(ctx, mode, []byte(script)); err != nil {
 		return fmt.Errorf("remote Agent installation failed; temporary artifacts are removed and prior binary/service are restored where possible: %w", err)
 	}
 	return nil
+}
+
+func validateFileRootRequest(value string) error {
+	if value == "" {
+		return nil
+	}
+	if !filepath.IsAbs(value) || len(value) > 4096 || strings.ContainsAny(value, "\x00\r\n") {
+		return errors.New("Agent file root must be an absolute directory path without control characters")
+	}
+	clean := filepath.Clean(value)
+	if clean == "/" || clean == "/home" {
+		return fmt.Errorf("Agent file root %q is too broad or protected", clean)
+	}
+	for _, root := range []string{"/root", "/proc", "/sys", "/dev", "/run", "/etc/systemd", "/var/lib/nodedance-agent"} {
+		if clean == root || strings.HasPrefix(clean, root+string(filepath.Separator)) {
+			return fmt.Errorf("Agent file root %q is too broad or protected", clean)
+		}
+	}
+	privateState := "/var/lib/nodedance-agent"
+	if clean == privateState || pathContains(clean, privateState) || pathContains(privateState, clean) {
+		return errors.New("Agent file root may not include the private systemd state directory")
+	}
+	return nil
+}
+
+func pathContains(parent, child string) bool {
+	relative, err := filepath.Rel(parent, child)
+	return err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
 }
 
 // HashSignedPayload is exported for release tooling and deterministic tests.
