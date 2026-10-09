@@ -21,7 +21,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/CST-Cat/NodeDance/internal/core/audit"
+	corefiletasks "github.com/CST-Cat/NodeDance/internal/core/filetasks"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/taskstate"
 )
 
 type fileWriteRequest struct {
@@ -172,22 +174,13 @@ func (s *Server) handleFileText(w http.ResponseWriter, r *http.Request, current 
 			http.Error(w, "text file exceeds the editor limit", http.StatusRequestEntityTooLarge)
 			return
 		}
-		response, transferID, err := s.runFileOperation(r.Context(), current, nodeID, protocol.FileRequest{Operation: protocol.FileSaveText,
+		response, taskID, err := s.runFileOperation(r.Context(), current, nodeID, protocol.FileRequest{Operation: protocol.FileSaveText,
 			Path: request.Path, ExpectedVersion: request.Version, Text: encoded}, true)
-		metadata, metadataErr := newFileAuditMetadata(nodeID, transferID, protocol.FileRequest{Operation: protocol.FileSaveText, Path: request.Path})
-		if metadataErr != nil {
-			http.Error(w, "file audit target could not be encoded", http.StatusInternalServerError)
-			return
-		}
 		if err != nil {
-			s.writeFileMutationError(w, r, current, metadata, err)
+			s.writeFileTaskMutationError(w, nodeID, taskID, err)
 			return
 		}
-		if err := s.finishFileAudit(r.Context(), current, metadata, "succeeded"); err != nil {
-			s.writeFileAuditFailure(w, metadata)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"transferId": transferID, "status": "succeeded", "entry": response.Entry, "backupPath": response.BackupPath})
+		writeJSON(w, http.StatusOK, map[string]any{"taskId": taskID, "transferId": taskID, "status": "succeeded", "entry": response.Entry, "backupPath": response.BackupPath})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -215,21 +208,12 @@ func (s *Server) handleFileMutation(w http.ResponseWriter, r *http.Request, curr
 		}
 		request = protocol.FileRequest{Operation: protocol.FileDelete, Path: input.Path, Confirmed: true}
 	}
-	response, transferID, err := s.runFileOperation(r.Context(), current, nodeID, request, true)
-	metadata, metadataErr := newFileAuditMetadata(nodeID, transferID, request)
-	if metadataErr != nil {
-		http.Error(w, "file audit target could not be encoded", http.StatusInternalServerError)
-		return
-	}
+	response, taskID, err := s.runFileOperation(r.Context(), current, nodeID, request, true)
 	if err != nil {
-		s.writeFileMutationError(w, r, current, metadata, err)
+		s.writeFileTaskMutationError(w, nodeID, taskID, err)
 		return
 	}
-	if err := s.finishFileAudit(r.Context(), current, metadata, "succeeded"); err != nil {
-		s.writeFileAuditFailure(w, metadata)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"transferId": transferID, "status": "succeeded", "entry": response.Entry})
+	writeJSON(w, http.StatusOK, map[string]any{"taskId": taskID, "transferId": taskID, "status": "succeeded", "entry": response.Entry})
 }
 
 func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID string, request protocol.FileRequest, write bool) (protocol.FileResponse, string, error) {
@@ -243,37 +227,113 @@ func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID 
 	defer func() {
 		s.closeCoreFileTransfer(connection, transfer, cancelOnExit, nil)
 	}()
-	var metadata fileAuditMetadata
 	if write {
 		cancelOnExit = true
-		metadata, err = newFileAuditMetadata(nodeID, transferID, request)
-		if err != nil {
+		operation := request.Operation
+		if operation == protocol.FileUploadBegin {
+			operation = corefiletasks.OperationUpload
+		}
+		if _, err := s.fileTasks.Create(ctx, corefiletasks.CreateRequest{TaskID: transferID, NodeID: nodeID,
+			Operation: operation, TargetPath: request.Path, NewPath: request.NewPath,
+			ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
+			return protocol.FileResponse{}, transferID, errors.New("file operation could not be persisted")
+		}
+		if err := validateCoreFileRequest(transfer, request); err != nil {
+			_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "not_dispatched", current.RemoteAddr)
 			return protocol.FileResponse{}, transferID, err
 		}
-		if err := s.recordFileAudit(ctx, current, metadata, "accepted"); err != nil {
-			return protocol.FileResponse{}, transferID, errors.New("file operation could not be audited")
+		if err := s.fileTasks.MarkDispatched(ctx, nodeID, transferID, sql.NullInt64{Int64: 1, Valid: true}, current.RemoteAddr); err != nil {
+			_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "not_dispatched", current.RemoteAddr)
+			return protocol.FileResponse{}, transferID, errors.New("file operation could not be dispatched safely")
 		}
 	}
 	if err := s.sendFileRequest(ctx, connection, transfer, request); err != nil {
+		if write {
+			_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		}
 		return protocol.FileResponse{}, transferID, err
 	}
 	envelope, err := s.waitFileMessage(ctx, connection, transfer)
 	if err != nil {
+		if write {
+			_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		}
 		return protocol.FileResponse{}, transferID, err
 	}
 	var response protocol.FileResponse
 	if err := decodeAgentPayload(envelope.Payload, &response); err != nil {
+		if write {
+			_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		}
 		return protocol.FileResponse{}, transferID, errors.New("Agent file response could not be decoded")
 	}
-	// A valid terminal Agent response is the boundary where the result is
-	// confirmed. Before that point, a browser disconnect must cancel the
-	// Agent request and expose the outcome as unknown if cancellation races a
-	// filesystem mutation.
+	if response.Operation != request.Operation {
+		if write {
+			_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		}
+		return protocol.FileResponse{}, transferID, errors.New("Agent file response operation did not match request")
+	}
+	// A matching terminal Agent response confirms that execution started. For
+	// synchronous mutations the store records the start and terminal events in
+	// one transaction using the response receipt time; uploads have a distinct
+	// begin acknowledgment and enter running before their chunk stream.
 	cancelOnExit = false
 	if response.Code != "" {
+		if write {
+			if err := s.resolveFileTask(nodeID, transferID, taskstate.Failed, "agent_rejected", current.RemoteAddr); err != nil {
+				return protocol.FileResponse{}, transferID, err
+			}
+		}
 		return response, transferID, fileRemoteError{code: response.Code}
 	}
+	if write && !validFileWriteResult(request, response) {
+		_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		return protocol.FileResponse{}, transferID, errors.New("Agent file operation result could not be verified")
+	}
+	if write {
+		if err := s.resolveFileTask(nodeID, transferID, taskstate.Succeeded, "verified", current.RemoteAddr); err != nil {
+			return protocol.FileResponse{}, transferID, err
+		}
+	}
 	return response, transferID, nil
+}
+
+func validateCoreFileRequest(transfer *coreFileTransfer, request protocol.FileRequest) error {
+	if transfer == nil {
+		return errors.New("file transfer is unavailable")
+	}
+	payload, err := json.Marshal(request)
+	if err != nil || len(payload) > protocol.MaxFileControlBytes {
+		return errors.New("file request exceeds its protocol bound")
+	}
+	envelope := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeFileRequest, Generation: transfer.generation,
+		RequestID: transfer.requestID, Payload: payload}
+	if err := protocol.ValidateFileRequest(envelope, transfer.generation, request); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validFileWriteResult(request protocol.FileRequest, response protocol.FileResponse) bool {
+	if response.Operation != request.Operation || response.Code != "" {
+		return false
+	}
+	switch request.Operation {
+	case protocol.FileMkdir, protocol.FileRename, protocol.FileDelete:
+		return true
+	case protocol.FileSaveText:
+		return response.Entry != nil && response.Entry.Path == request.Path && response.Entry.Version != ""
+	case protocol.FileUploadCommit:
+		return response.Entry != nil && response.Entry.Path != "" && response.Entry.Size >= 0
+	default:
+		return false
+	}
+}
+
+func (s *Server) resolveFileTask(nodeID, taskID string, status taskstate.Status, resultCode, remoteAddr string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.fileTasks.Resolve(ctx, nodeID, taskID, status, resultCode, sql.NullInt64{Int64: 1, Valid: true}, remoteAddr)
 }
 
 func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, current *session, nodeID string) {
@@ -306,27 +366,49 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 		return
 	}
 	transferID := transfer.requestID
-	metadata, metadataErr := newFileAuditMetadata(nodeID, transferID, protocol.FileRequest{Operation: protocol.FileUploadBegin, Path: filePath})
-	if metadataErr != nil {
-		s.closeCoreFileTransfer(connection, transfer, true, metadataErr)
-		http.Error(w, "file audit target could not be encoded", http.StatusInternalServerError)
-		return
-	}
 	cancelOnExit := true
 	defer func() { s.closeCoreFileTransfer(connection, transfer, cancelOnExit, nil) }()
-	if err := s.recordFileAudit(r.Context(), current, metadata, "accepted"); err != nil {
-		http.Error(w, "file operation could not be audited", http.StatusInternalServerError)
+	if _, err := s.fileTasks.Create(r.Context(), corefiletasks.CreateRequest{TaskID: transferID, NodeID: nodeID,
+		Operation: corefiletasks.OperationUpload, TargetPath: filePath, ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
+		http.Error(w, "file operation could not be persisted", http.StatusInternalServerError)
 		return
 	}
 	begin := protocol.FileRequest{Operation: protocol.FileUploadBegin, Path: filePath, TransferID: transferID,
 		ExpectedVersion: r.Header.Get("X-File-Version"), ExpectedSize: r.ContentLength, ExpectedSHA256: providedDigest}
-	if err := s.sendFileRequest(r.Context(), connection, transfer, begin); err != nil {
-		s.writeFileMutationError(w, r, current, metadata, err)
+	if err := validateCoreFileRequest(transfer, begin); err != nil {
+		_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "not_dispatched", current.RemoteAddr)
+		s.writeFileTaskMutationError(w, nodeID, transferID, err)
 		return
 	}
-	if _, err := s.waitFileResponse(r.Context(), connection, transfer); err != nil {
-		s.writeFileMutationError(w, r, current, metadata, err)
+	if err := s.fileTasks.MarkDispatched(r.Context(), nodeID, transferID, sql.NullInt64{Int64: 1, Valid: true}, current.RemoteAddr); err != nil {
+		_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "not_dispatched", current.RemoteAddr)
+		s.writeFileTaskMutationError(w, nodeID, transferID, err)
 		return
+	}
+	if err := s.sendFileRequest(r.Context(), connection, transfer, begin); err != nil {
+		_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		s.writeFileTaskMutationError(w, nodeID, transferID, err)
+		return
+	}
+	if _, err := s.waitFileResponseForOperation(r.Context(), connection, transfer, protocol.FileUploadBegin); err != nil {
+		var remote fileRemoteError
+		if errors.As(err, &remote) {
+			_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "agent_rejected", current.RemoteAddr)
+		} else {
+			_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		}
+		s.writeFileTaskMutationError(w, nodeID, transferID, err)
+		return
+	}
+	if err := s.fileTasks.MarkRunning(r.Context(), nodeID, transferID, sql.NullInt64{Int64: 1, Valid: true}, current.RemoteAddr); err != nil {
+		_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		s.writeFileTaskMutationError(w, nodeID, transferID, err)
+		return
+	}
+	failBeforeCommit := func(err error) {
+		s.cancelFileTransfer(connection, transfer, r, current)
+		_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "not_committed", current.RemoteAddr)
+		s.writeFileTaskMutationError(w, nodeID, transferID, err)
 	}
 	var bodyActivity atomic.Int64
 	bodyActivity.Store(time.Now().UnixNano())
@@ -339,8 +421,7 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 	for {
 		if !s.dashboardSessionStillValid(r.Context(), current.ID) {
 			s.closeCoreFileTransfer(connection, transfer, true, errors.New("browser Session was revoked or expired"))
-			s.finishFileAudit(r.Context(), current, metadata, "unknown")
-			http.Error(w, "authentication required", http.StatusUnauthorized)
+			failBeforeCommit(errors.New("authentication required"))
 			return
 		}
 		n, readErr := io.ReadFull(r.Body, buffer)
@@ -349,16 +430,13 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 		}
 		if !s.dashboardSessionStillValid(r.Context(), current.ID) {
 			s.closeCoreFileTransfer(connection, transfer, true, errors.New("browser Session was revoked or expired"))
-			s.finishFileAudit(r.Context(), current, metadata, "unknown")
-			http.Error(w, "authentication required", http.StatusUnauthorized)
+			failBeforeCommit(errors.New("authentication required"))
 			return
 		}
 		if n > 0 {
 			chunk := buffer[:n]
 			if total+int64(n) > s.fileTransferLimit || total+int64(n) > r.ContentLength {
-				s.cancelFileTransfer(connection, transfer, r, current)
-				s.finishFileAudit(r.Context(), current, metadata, "failed")
-				http.Error(w, "file exceeds configured transfer limit", http.StatusRequestEntityTooLarge)
+				failBeforeCommit(errors.New("file exceeds configured transfer limit"))
 				return
 			}
 			_, _ = hash.Write(chunk)
@@ -367,19 +445,15 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 			request := protocol.FileRequest{Operation: protocol.FileUploadChunk, TransferID: transferID, Sequence: chunkSequence,
 				Data: base64.StdEncoding.EncodeToString(chunk)}
 			if err := s.sendFileRequest(r.Context(), connection, transfer, request); err != nil {
-				s.cancelFileTransfer(connection, transfer, r, current)
-				s.writeFileMutationError(w, r, current, metadata, err)
+				failBeforeCommit(err)
 				return
 			}
-			response, err := s.waitFileResponse(r.Context(), connection, transfer)
+			response, err := s.waitFileResponseForOperation(r.Context(), connection, transfer, protocol.FileUploadChunk)
 			if err != nil || response.Completed != total {
-				s.cancelFileTransfer(connection, transfer, r, current)
 				if err == nil {
-					// The transfer may have accepted bytes despite an invalid ack.
-					// Do not turn this into a false confirmed failure.
-					err = errFileOperationUnknown
+					err = errors.New("Agent did not confirm the uploaded chunk")
 				}
-				s.writeFileMutationError(w, r, current, metadata, err)
+				failBeforeCommit(err)
 				return
 			}
 		}
@@ -387,48 +461,53 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 			break
 		}
 		if readErr != nil {
-			s.cancelFileTransfer(connection, transfer, r, current)
-			s.finishFileAudit(r.Context(), current, metadata, "failed")
-			http.Error(w, "file upload was interrupted", http.StatusBadRequest)
+			failBeforeCommit(errors.New("file upload was interrupted"))
 			return
 		}
 	}
 	if total != r.ContentLength {
-		s.cancelFileTransfer(connection, transfer, r, current)
-		s.finishFileAudit(r.Context(), current, metadata, "failed")
-		http.Error(w, "file upload length did not match Content-Length", http.StatusBadRequest)
+		failBeforeCommit(errors.New("file upload length did not match Content-Length"))
 		return
 	}
 	stopBodyWatch()
 	actualDigest := hex.EncodeToString(hash.Sum(nil))
 	if providedDigest != "" && actualDigest != providedDigest {
-		s.cancelFileTransfer(connection, transfer, r, current)
-		s.finishFileAudit(r.Context(), current, metadata, "failed")
-		http.Error(w, "file SHA-256 did not match the supplied digest", http.StatusBadRequest)
+		failBeforeCommit(errors.New("file SHA-256 did not match the supplied digest"))
 		return
 	}
 	if !s.dashboardSessionStillValid(r.Context(), current.ID) {
 		s.closeCoreFileTransfer(connection, transfer, true, errors.New("browser Session was revoked or expired"))
-		s.finishFileAudit(r.Context(), current, metadata, "unknown")
-		http.Error(w, "authentication required", http.StatusUnauthorized)
+		failBeforeCommit(errors.New("authentication required"))
 		return
 	}
 	commit := protocol.FileRequest{Operation: protocol.FileUploadCommit, TransferID: transferID, ExpectedSize: total, ExpectedSHA256: actualDigest}
 	if err := s.sendFileRequest(r.Context(), connection, transfer, commit); err != nil {
-		s.writeFileMutationError(w, r, current, metadata, err)
+		_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		s.writeFileTaskMutationError(w, nodeID, transferID, err)
 		return
 	}
-	response, err := s.waitFileResponse(r.Context(), connection, transfer)
+	response, err := s.waitFileResponseForOperation(r.Context(), connection, transfer, protocol.FileUploadCommit)
 	if err != nil {
-		s.writeFileMutationError(w, r, current, metadata, err)
+		var remote fileRemoteError
+		if errors.As(err, &remote) {
+			_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "agent_rejected", current.RemoteAddr)
+		} else {
+			_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		}
+		s.writeFileTaskMutationError(w, nodeID, transferID, err)
+		return
+	}
+	if response.Entry == nil || response.Entry.Path != filePath || response.Entry.Size != total || response.Entry.Version == "" {
+		_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
+		s.writeFileTaskMutationError(w, nodeID, transferID, errFileOperationUnknown)
 		return
 	}
 	cancelOnExit = false
-	if err := s.finishFileAudit(r.Context(), current, metadata, "succeeded"); err != nil {
-		s.writeFileAuditFailure(w, metadata)
+	if err := s.resolveFileTask(nodeID, transferID, taskstate.Succeeded, "verified", current.RemoteAddr); err != nil {
+		s.writeFileTaskMutationError(w, nodeID, transferID, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"transferId": transferID, "status": "succeeded", "entry": response.Entry, "sha256": actualDigest})
+	writeJSON(w, http.StatusOK, map[string]any{"taskId": transferID, "transferId": transferID, "status": "succeeded", "entry": response.Entry, "sha256": actualDigest})
 }
 
 func (s *Server) watchFileUploadBody(r *http.Request, current *session, connection *agentConnection, transfer *coreFileTransfer, activity *atomic.Int64) func() {
@@ -612,6 +691,10 @@ func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request, curr
 }
 
 func (s *Server) waitFileResponse(ctx context.Context, connection *agentConnection, transfer *coreFileTransfer) (protocol.FileResponse, error) {
+	return s.waitFileResponseForOperation(ctx, connection, transfer, "")
+}
+
+func (s *Server) waitFileResponseForOperation(ctx context.Context, connection *agentConnection, transfer *coreFileTransfer, operation string) (protocol.FileResponse, error) {
 	envelope, err := s.waitFileMessage(ctx, connection, transfer)
 	if err != nil {
 		return protocol.FileResponse{}, err
@@ -622,6 +705,9 @@ func (s *Server) waitFileResponse(ctx context.Context, connection *agentConnecti
 	var response protocol.FileResponse
 	if err := decodeAgentPayload(envelope.Payload, &response); err != nil {
 		return protocol.FileResponse{}, err
+	}
+	if operation != "" && response.Operation != operation {
+		return response, errors.New("Agent returned a file response for a different operation")
 	}
 	if response.Code != "" {
 		return response, fileRemoteError{code: response.Code}
@@ -686,6 +772,41 @@ func (s *Server) writeFileMutationError(w http.ResponseWriter, r *http.Request, 
 	}
 	if auditErr := s.finishFileAudit(r.Context(), current, metadata, outcome); auditErr != nil {
 		body["auditStatus"] = "failed"
+	}
+	writeJSON(w, status, body)
+}
+
+// writeFileTaskMutationError reports the durable task's actual persisted
+// state. Final task status and audit outcome are committed together; if that
+// transaction fails, the response does not claim success or failure.
+func (s *Server) writeFileTaskMutationError(w http.ResponseWriter, nodeID, taskID string, err error) {
+	status := fileHTTPStatus(err)
+	var remote fileRemoteError
+	uncertain := status == http.StatusAccepted || errors.Is(err, context.Canceled) || errors.Is(err, errFileOperationUnknown) ||
+		(status >= http.StatusInternalServerError && !errors.As(err, &remote))
+	if uncertain {
+		status = http.StatusAccepted
+	}
+	body := map[string]any{"taskId": taskID, "transferId": taskID, "message": filePublicMessage(err)}
+	if taskID != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		task, lookupErr := s.fileTasks.Get(ctx, nodeID, taskID)
+		cancel()
+		if lookupErr == nil {
+			body["status"] = task.Status
+			if task.Status == taskstate.Unknown {
+				status = http.StatusAccepted
+			}
+		} else if errors.Is(lookupErr, corefiletasks.ErrNotFound) {
+			delete(body, "taskId")
+			delete(body, "transferId")
+		}
+	}
+	if _, exists := body["status"]; !exists && uncertain {
+		body["status"] = taskstate.Unknown
+		body["message"] = "结果待确认；请查询任务状态"
+	} else if _, exists := body["status"]; !exists {
+		body["status"] = "failed"
 	}
 	writeJSON(w, status, body)
 }
