@@ -51,8 +51,8 @@ def main() -> int:
     parser.add_argument("--mode", choices=("full", "integration", "e2e"), required=True)
     parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
-    if args.repeat < 1 or args.repeat > 3:
-        parser.error("--repeat must be between 1 and 3")
+    if args.repeat != 1:
+        parser.error("--repeat must be 1")
 
     run_id = uuid.uuid4().hex
     output_dir = ROOT / ".artifacts" / "s08" / run_id
@@ -69,25 +69,19 @@ def main() -> int:
 
     env = os.environ.copy()
     env["GOTOOLCHAIN"] = "local"
-    runs: list[dict[str, object]] = []
-    for index in range(args.repeat):
-        command = [go_bin, "test", "-count=1", "-run", PATTERN, *PACKAGES]
-        log_path = output_dir / f"components-{index + 1}.log"
-        with log_path.open("w") as stream:
-            stream.write("$ " + " ".join(command) + "\n")
-            stream.flush()
-            result = subprocess.run(command, cwd=ROOT, env=env, stdout=stream, stderr=subprocess.STDOUT)
-        runs.append({
-            "attempt": index + 1,
-            "status": "PASS" if result.returncode == 0 else "FAIL",
-            "exit_code": result.returncode,
-            "log": str(log_path.relative_to(ROOT)),
-        })
-        print(f"S08 component pass {index + 1}/{args.repeat}: {'PASS' if result.returncode == 0 else 'FAIL'} ({log_path.relative_to(ROOT)})", flush=True)
-        if result.returncode:
-            break
-
-    component_status = "PASS" if len(runs) == args.repeat and all(item["status"] == "PASS" for item in runs) else "FAIL"
+    command = [go_bin, "test", "-count=1", "-run", PATTERN, *PACKAGES]
+    log_path = output_dir / "components-1.log"
+    with log_path.open("w") as stream:
+        stream.write("$ " + " ".join(command) + "\n")
+        stream.flush()
+        result = subprocess.run(command, cwd=ROOT, env=env, stdout=stream, stderr=subprocess.STDOUT)
+    runs = [{
+        "attempt": 1,
+        "status": "PASS" if result.returncode == 0 else "FAIL",
+        "exit_code": result.returncode,
+        "log": str(log_path.relative_to(ROOT)),
+    }]
+    component_status = "PASS" if result.returncode == 0 else "FAIL"
     status = "FAIL" if component_status == "FAIL" else "NOT_READY"
     reason = ""
     engine_attempt_note = os.environ.get("NODEDANCE_S08_ENGINE_ATTEMPT_NOTE", "").strip()
@@ -140,6 +134,7 @@ def main() -> int:
     }
     overall["updated_at"] = report["updated_at"]
     status_path.write_text(json.dumps(overall, ensure_ascii=False, indent=2) + "\n")
+    print(f"S08 component run 1/1: {'PASS' if result.returncode == 0 else 'FAIL'} ({log_path.relative_to(ROOT)})", flush=True)
     print(f"S08: {status}; component={component_status}; normative Engine/Registry cases remain individually reported in {report_path.relative_to(ROOT)}")
     return 0 if status == "PASS" else 1 if status == "FAIL" else 2
 
