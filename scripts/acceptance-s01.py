@@ -712,6 +712,11 @@ def case_10():
                 "audit_fields": audit_columns, "audit_rows": len(audit)}
 
 
+def has_contiguous_schema_versions(versions):
+    """Check the complete applied migration ledger without pinning its length."""
+    return bool(versions) and versions == list(range(1, len(versions) + 1))
+
+
 def case_11():
     # Force a real DDL collision after the migration ledger has been created.
     migration_dir = WORK_DIR / "s01-11-migration-data"
@@ -758,7 +763,8 @@ def case_11():
         recovery_status, _, _ = Client(recovered).request("GET", "/api/v1/health")
         recovery_versions = [row[0] for row in db_query(migration_dir, "SELECT version FROM schema_migrations ORDER BY version")]
         recovery_row = db_query(migration_dir, "SELECT sentinel FROM migration_conflict_preserved")[0][0]
-        if recovery_status != 200 or recovery_versions != [1, 2] or recovery_row != "original-data-survives":
+        if (recovery_status != 200 or not has_contiguous_schema_versions(recovery_versions)
+                or recovery_row != "original-data-survives"):
             raise RuntimeError("Core did not recover on the repaired original data directory")
 
     deny_parent = pathlib.Path(tempfile.mkdtemp(prefix="nodedance-s01-unwritable-"))
