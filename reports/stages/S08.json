@@ -3,12 +3,18 @@
   "stage": "S08",
   "mode": "integration",
   "status": "NOT_READY",
-  "run_id": "2eace3017b4d4f2ab1bf9976d537b34d",
-  "updated_at": "2026-10-09T03:51:56.701565+00:00",
-  "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed.",
+  "run_id": "agent-20261009g",
+  "updated_at": "2026-10-09T07:33:48+00:00",
+  "reason": "A focused owner-marked real Docker Engine 29.7.2 / local Registry run passed for real image pull and digest/reference verification, stopped-container reference counts, in-use deletion refusal, safe unused deletion, missing Registry manifest failure with SDK and Docker CLI absence checks, and invalid reference rejection. This does not complete normative S08: no-tag image listing, private Registry authentication/secret scans, real interrupted or timed-out pull, heartbeat during transfer, browser UI, or full audit/database/log evidence remain unverified; this run also emitted no positive SDK transfer progress (completed=0,total=0).",
   "engine_attempt": {
-    "status": "NOT_READY",
-    "details": "scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
+    "status": "PASS",
+    "details": "Fresh owner-marked Engine 29.7.2 (arm64), run agent-20261009g. Start guard refused any pre-existing run root; the newly started Engine image listing was empty before image fixture setup. The full focused real Registry/Engine test passed once. Engine and run data were then removed only by the matching owner-marked cleanup command.",
+    "command": "scripts/test/s08-dind.sh start 29 agent-20261009g && scripts/test/s08-image-engine-dind.sh 29 agent-20261009g && scripts/test/s08-dind.sh clean 29 agent-20261009g --purge-data",
+    "log": ".artifacts/s08/image-engine29-agent-20261009g.log",
+    "run_id": "agent-20261009g",
+    "engine_version": "29.7.2",
+    "engine_architecture": "arm64",
+    "fresh_storage_verified": true
   },
   "component_tests": {
     "status": "PASS",
@@ -41,17 +47,49 @@
       "expected": "信息准确。",
       "environment": "含不同标签和容器引用的Engine镜像。",
       "evidence_required": "Engine image list/inspect与界面字段对照。",
-      "runs": [],
-      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "exit_code": 0,
+          "run_id": "agent-20261009g",
+          "engine_version": "29.7.2",
+          "engine_architecture": "arm64",
+          "command": "scripts/test/s08-image-engine-dind.sh 29 agent-20261009g",
+          "log": ".artifacts/s08/image-engine29-agent-20261009g.log",
+          "fresh_storage": {
+            "status": "PASS",
+            "evidence": "s08-dind.sh start refuses an existing run root and created this unique run root; the newly started Engine image list was empty before the fixture pull."
+          },
+          "result": "Real generated Registry manifest pulled through SDK; Registry manifest digest matched Engine RepoDigest and Config ID. Missing manifest task was failed with missing_after_pull and confirmed absent by both SDK Inspect and Docker CLI image inspect."
+        }
+      ],
+      "reason": "Partially exercised: real Engine list/inspect returned multiple tags, RepoDigest, and stopped-container reference count. The normative untagged-image listing case and UI field comparison were not exercised, so this case remains NOT_READY."
     },
     "S08-02": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "拉取存在和不存在的镜像。",
       "expected": "成功及错误准确。",
       "environment": "本地测试Registry中的锁定digest镜像。",
       "evidence_required": "真实拉取日志、digest和错误响应。",
-      "runs": [],
-      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "exit_code": 0,
+          "run_id": "agent-20261009g",
+          "engine_version": "29.7.2",
+          "engine_architecture": "arm64",
+          "command": "scripts/test/s08-image-engine-dind.sh 29 agent-20261009g",
+          "log": ".artifacts/s08/image-engine29-agent-20261009g.log",
+          "fresh_storage": {
+            "status": "PASS",
+            "evidence": "s08-dind.sh start refuses an existing run root and created this unique run root; the newly started Engine image list was empty before the fixture pull."
+          },
+          "result": "Real generated Registry manifest pulled through SDK; Registry manifest digest matched Engine RepoDigest and Config ID. Missing manifest task was failed with missing_after_pull and confirmed absent by both SDK Inspect and Docker CLI image inspect."
+        }
+      ],
+      "reason": "PASS for the covered paths: a generated image was uploaded directly to the run-local Registry, pulled through the real SDK, and checked against Registry manifest digest, Engine RepoDigest and Config ID. A missing manifest produced a failed task (missing_after_pull) and was confirmed absent via SDK Inspect and Docker CLI. Private Registry authentication and secret scanning are tracked separately in S08-03/07."
     },
     "S08-03": {
       "status": "NOT_READY",
@@ -60,7 +98,7 @@
       "environment": "受控私有Registry和一次性凭据。",
       "evidence_required": "Registry日志、任务结果、DB/log secret扫描。",
       "runs": [],
-      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
+      "reason": "No real authenticated private Registry success/failure or persisted-secret scan was executed."
     },
     "S08-04": {
       "status": "NOT_READY",
@@ -69,7 +107,7 @@
       "environment": "可控慢速Registry和网络故障。",
       "evidence_required": "中断任务状态及Engine真实镜像内容。",
       "runs": [],
-      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
+      "reason": "No real slow/interrupted/timeout Registry pull was run; component-level cancellation tests do not satisfy the real Engine acceptance case."
     },
     "S08-05": {
       "status": "NOT_READY",
@@ -77,8 +115,24 @@
       "expected": "前者成功，后者默认拒绝。",
       "environment": "真实无引用/有引用的镜像。",
       "evidence_required": "Engine镜像列表、冲突拒绝和确认流程。",
-      "runs": [],
-      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "exit_code": 0,
+          "run_id": "agent-20261009g",
+          "engine_version": "29.7.2",
+          "engine_architecture": "arm64",
+          "command": "scripts/test/s08-image-engine-dind.sh 29 agent-20261009g",
+          "log": ".artifacts/s08/image-engine29-agent-20261009g.log",
+          "fresh_storage": {
+            "status": "PASS",
+            "evidence": "s08-dind.sh start refuses an existing run root and created this unique run root; the newly started Engine image list was empty before the fixture pull."
+          },
+          "result": "Real generated Registry manifest pulled through SDK; Registry manifest digest matched Engine RepoDigest and Config ID. Missing manifest task was failed with missing_after_pull and confirmed absent by both SDK Inspect and Docker CLI image inspect."
+        }
+      ],
+      "reason": "Real Engine/task behavior passed for the covered path: a stopped container counted as an image reference; deletion was refused while referenced; after removing only that test-owned container and its two test-created tags, the unused image was removed and SDK inspection confirmed absence. The normative confirmation flow/UI was not exercised, so the full case remains NOT_READY."
     },
     "S08-06": {
       "status": "NOT_READY",
@@ -86,8 +140,24 @@
       "expected": "不中断。",
       "environment": "多Agent与受控持续镜像拉取。",
       "evidence_required": "拉取期间心跳/指标连续记录。",
-      "runs": [],
-      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "exit_code": 0,
+          "run_id": "agent-20261009g",
+          "engine_version": "29.7.2",
+          "engine_architecture": "arm64",
+          "command": "scripts/test/s08-image-engine-dind.sh 29 agent-20261009g",
+          "log": ".artifacts/s08/image-engine29-agent-20261009g.log",
+          "fresh_storage": {
+            "status": "PASS",
+            "evidence": "s08-dind.sh start refuses an existing run root and created this unique run root; the newly started Engine image list was empty before the fixture pull."
+          },
+          "result": "Real generated Registry manifest pulled through SDK; Registry manifest digest matched Engine RepoDigest and Config ID. Missing manifest task was failed with missing_after_pull and confirmed absent by both SDK Inspect and Docker CLI image inspect."
+        }
+      ],
+      "reason": "NOT_READY: real Engine pull emitted completed=0,total=0 and the persisted progress callback did not observe positive total. No heartbeat/metrics integration was running during the transfer."
     },
     "S08-07": {
       "status": "NOT_READY",
@@ -96,7 +166,7 @@
       "environment": "包含成功和认证失败的真实拉取历史。",
       "evidence_required": "明文秘密扫描与脱敏审计记录。",
       "runs": [],
-      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
+      "reason": "No full Core audit/database/log review or credential secret scan was executed."
     }
   }
 }
