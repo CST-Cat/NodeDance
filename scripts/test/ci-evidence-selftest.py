@@ -130,6 +130,16 @@ def test_stale_pass_is_replaced_and_current_status_is_preserved():
                 "fail-closed annotation retained stale test outcomes")
 
 
+def test_stage_docs_list_each_registered_case_once():
+    registry = json.loads((ROOT / "tests/registry.json").read_text())
+    for stage in registry["stages"]:
+        document = (ROOT / "docs/stages" / f"{stage['id']}.md").read_text()
+        for case in stage.get("tests", []) + stage.get("supplemental_tests", []):
+            marker = f"`{case['id']}`"
+            require(document.count(marker) == 1,
+                    f"{stage['id']} documentation must list {case['id']} exactly once")
+
+
 def test_workflow_upload_is_hidden_file_aware_and_allowlisted():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text()
     positions = [workflow.index(value) for value in (
@@ -628,6 +638,7 @@ def test_s03_aggregate_job_requires_both_current_shards():
 
 def main():
     test_stale_pass_is_replaced_and_current_status_is_preserved()
+    test_stage_docs_list_each_registered_case_once()
     test_s01_marker_and_report_are_isolated_from_s00()
     test_s02_marker_and_report_are_isolated_from_s00_s01()
     test_s04_marker_and_report_are_isolated_from_s00_s01_s02()
