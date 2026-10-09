@@ -4,8 +4,8 @@
   "mode": "integration",
   "status": "NOT_READY",
   "run_id": "agent-20261009g",
-  "updated_at": "2026-10-09T07:33:48+00:00",
-  "reason": "A focused owner-marked real Docker Engine 29.7.2 / local Registry run passed for real image pull and digest/reference verification, stopped-container reference counts, in-use deletion refusal, safe unused deletion, missing Registry manifest failure with SDK and Docker CLI absence checks, and invalid reference rejection. This does not complete normative S08: no-tag image listing, private Registry authentication/secret scans, real interrupted or timed-out pull, heartbeat during transfer, browser UI, or full audit/database/log evidence remain unverified; this run also emitted no positive SDK transfer progress (completed=0,total=0).",
+  "updated_at": "2026-10-09T07:44:23+00:00",
+  "reason": "The focused owner-marked Engine 29.7.2 / local Registry test passed for image pull/digest verification, multi-tag listing, stopped-container reference counts, in-use deletion refusal, safe unused deletion, missing manifest failure and invalid reference rejection. A separate fresh-Engine private-auth subtest passed for wrong-password rejection and valid-password success through the real Agent Executor/SDK, and scanned Agent task results, Agent SQLite DB/WAL/SHM, and complete test output for credential canaries. S08 remains NOT_READY: no-tag listing, Core credential/API and audit/database integration, Registry/Core log scans, real interrupted/canceled pull, heartbeat during transfer, browser UI, and positive SDK pull progress remain unverified.",
   "engine_attempt": {
     "status": "PASS",
     "details": "Fresh owner-marked Engine 29.7.2 (arm64), run agent-20261009g. Start guard refused any pre-existing run root; the newly started Engine image listing was empty before image fixture setup. The full focused real Registry/Engine test passed once. Engine and run data were then removed only by the matching owner-marked cleanup command.",
@@ -97,8 +97,39 @@
       "expected": "行为正确，凭据不泄露。",
       "environment": "受控私有Registry和一次性凭据。",
       "evidence_required": "Registry日志、任务结果、DB/log secret扫描。",
-      "runs": [],
-      "reason": "No real authenticated private Registry success/failure or persisted-secret scan was executed."
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "FAIL",
+          "exit_code": 1,
+          "run_id": "auth-20261009b",
+          "engine_version": "29.7.2",
+          "engine_architecture": "arm64",
+          "command": "scripts/test/s08-image-engine-dind.sh 29 auth-20261009b",
+          "log": ".artifacts/s08/image-engine29-auth-20261009b.log",
+          "fresh_storage": {
+            "status": "PASS",
+            "evidence": "Fresh run-owned DIND Engine; auth test fixture was created only in that Engine."
+          },
+          "result": "The test stopped before the Agent auth pull because the helper hard-coded public port 5000 when constructing the private Registry RepoDigest (fixture used port 5001). This is retained as a failed harness attempt; no auth outcome is inferred."
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "exit_code": 0,
+          "run_id": "auth-20261009c",
+          "engine_version": "29.7.2",
+          "engine_architecture": "arm64",
+          "command": "go test -mod=readonly -count=1 -timeout=8m -v ./internal/agent/images -run '^TestDINDImageManagementRealEngine/private_Registry_authentication_is_ephemeral$'",
+          "log": ".artifacts/s08/image-engine29-auth-20261009c-private-auth.log",
+          "fresh_storage": {
+            "status": "PASS",
+            "evidence": "Fresh owner-marked Engine 29.7.2; started on an empty run data root and cleaned using the matching owner marker."
+          },
+          "result": "Private Registry returned 401 anonymously. A wrong password produced failed/registry_auth_failed and the image remained absent. A valid one-use password produced a succeeded task; Engine Config ID and RepoDigest matched the fixture. Returned task JSON, Agent journal database/WAL/SHM, and full test output were scanned for username/password canaries and were clear."
+        }
+      ],
+      "reason": "Agent-side private Registry authentication, task status, Engine postcondition, Agent journal, returned-result, and test-output secret checks passed in the focused real Engine run. The full normative case remains NOT_READY until Core credential submission/storage/one-use delivery, Registry/Core logs, and broader Core audit/database secret scans are exercised end to end."
     },
     "S08-04": {
       "status": "NOT_READY",
@@ -165,8 +196,20 @@
       "expected": "无认证秘密。",
       "environment": "包含成功和认证失败的真实拉取历史。",
       "evidence_required": "明文秘密扫描与脱敏审计记录。",
-      "runs": [],
-      "reason": "No full Core audit/database/log review or credential secret scan was executed."
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "exit_code": 0,
+          "run_id": "auth-20261009c",
+          "engine_version": "29.7.2",
+          "engine_architecture": "arm64",
+          "command": "go test -mod=readonly -count=1 -timeout=8m -v ./internal/agent/images -run '^TestDINDImageManagementRealEngine/private_Registry_authentication_is_ephemeral$'",
+          "log": ".artifacts/s08/image-engine29-auth-20261009c-private-auth.log",
+          "result": "The focused real Agent pull checked accepted/rejected returned task JSON and the Agent SQLite database, WAL and SHM for user/password canaries. The acceptance command separately scans its complete output before displaying it."
+        }
+      ],
+      "reason": "Agent task results, Agent task journal files, and acceptance test output were clear of the canary credentials. This is partial evidence only: Core audit and database records, Registry logs, and broader application logs were not inspected, so S08-07 remains NOT_READY."
     }
   }
 }

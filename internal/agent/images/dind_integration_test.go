@@ -22,9 +22,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 	"github.com/containerd/errdefs"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type s08DINDOwner struct {
@@ -178,7 +180,7 @@ func TestDINDImageManagementRealEngine(t *testing.T) {
 		t.Fatalf("pre-pull inspection must show the fixture absent from Docker Engine, got err=%v", err)
 	}
 
-	journal := openImageJournal(t)
+	journal, journalPath := openImageJournalWithPath(t)
 	executor, err := NewExecutor(engine, journal)
 	if err != nil {
 		t.Fatal(err)
@@ -280,6 +282,96 @@ func TestDINDImageManagementRealEngine(t *testing.T) {
 	if err := engine.Pull(ctx, "not a valid image reference", "", nil); err == nil {
 		t.Fatal("invalid image reference was accepted by the real SDK Engine adapter")
 	}
+
+	t.Run("private Registry authentication is ephemeral", func(t *testing.T) {
+		username := os.Getenv("NODEDANCE_S08_REGISTRY_USER")
+		password := os.Getenv("NODEDANCE_S08_REGISTRY_PASSWORD")
+		if username == "" || password == "" {
+			t.Fatal("S08 auth canaries must be supplied by the acceptance runner")
+		}
+		if len(username) > 256 || len(password) > 4096 || strings.ContainsAny(username+password, "\x00\r\n\x7f") {
+			t.Fatal("S08 auth canaries are invalid")
+		}
+		wrongPassword := password + "-wrong"
+		if strings.Contains(username, ":") {
+			t.Fatal("S08 auth canary username cannot contain a colon")
+		}
+		privateRegistryName := "nd-s08-private-registry-" + shortS08RunID(runID)
+		privateRegistryHost := net.JoinHostPort(fields[0], "5001")
+		privateRegistryBase := "http://" + privateRegistryHost
+		privateRegistryRef := "127.0.0.1:5001/nodedance/s08-private:fixture-" + shortS08RunID(runID)
+
+		t.Cleanup(func() {
+			labels, inspectErr := s08DockerCommand(context.Background(), "unix://"+socket, cliConfig,
+				"inspect", "--format", `{{ index .Config.Labels "io.nodedance.suite" }}`, privateRegistryName)
+			if inspectErr == nil && strings.TrimSpace(labels) == suite {
+				if _, removeErr := s08DockerCommand(context.Background(), "unix://"+socket, cliConfig, "rm", "--force", privateRegistryName); removeErr != nil {
+					t.Errorf("remove owned S08 private Registry fixture: %v", removeErr)
+				}
+			} else if inspectErr != nil && !strings.Contains(strings.ToLower(inspectErr.Error()), "no such object") {
+				t.Errorf("verify owned S08 private Registry before cleanup: %v", inspectErr)
+			}
+		})
+		if err := startS08PrivateRegistry(ctx, docker, privateRegistryName, suite, registryImage, username, password); err != nil {
+			t.Fatalf("start owned private Registry fixture: %v", err)
+		}
+		if err := waitS08PrivateRegistry(ctx, privateRegistryBase, username, password); err != nil {
+			t.Fatalf("private Registry did not accept the valid fixture credential: %v", err)
+		}
+		privateDigest, err := pushS08ImageFixtureAuth(ctx, privateRegistryBase, "nodedance/s08-private",
+			"fixture-"+shortS08RunID(runID), fixture, username, password)
+		if err != nil {
+			t.Fatalf("seed private Registry through authenticated v2 API: %v", err)
+		}
+		if privateDigest != "127.0.0.1:5001/nodedance/s08-private@"+fixture.ManifestDigest {
+			t.Fatal("private Registry returned an unexpected manifest digest")
+		}
+		if _, err := engine.Inspect(ctx, privateRegistryRef); !errdefs.IsNotFound(err) {
+			t.Fatalf("private fixture must be absent before Agent pull, err=%v", err)
+		}
+
+		privateIntent := protocol.TaskIntent{Action: protocol.TaskImagePull,
+			ContainerID: protocol.ImageTargetKey("pull:" + privateRegistryRef), ImageReference: privateRegistryRef}
+		badDispatch := enqueueImageDispatch(t, journal, privateIntent, "s08-private-denied-"+shortS08RunID(runID),
+			&protocol.RegistryCredentials{Username: username, Password: wrongPassword})
+		badTask, err := executor.ExecuteImage(ctx, badDispatch, nil)
+		if err != nil || badTask.Status != taskstate.Failed || badTask.Result.ObservedState != "registry_auth_failed" {
+			t.Fatalf("invalid private Registry credentials were not confirmed rejected: status=%s code=%s state=%s err=%v",
+				badTask.Status, badTask.Result.Code, badTask.Result.ObservedState, err)
+		}
+		if badDispatch.RegistryAuth == nil || badDispatch.RegistryAuth.Username != "" || badDispatch.RegistryAuth.Password != "" {
+			t.Fatal("rejected credential fields remained in the in-memory Agent dispatch")
+		}
+		if _, err := engine.Inspect(ctx, privateRegistryRef); !errdefs.IsNotFound(err) {
+			t.Fatalf("rejected authentication unexpectedly installed the image, err=%v", err)
+		}
+
+		goodDispatch := enqueueImageDispatch(t, journal, privateIntent, "s08-private-accepted-"+shortS08RunID(runID),
+			&protocol.RegistryCredentials{Username: username, Password: password})
+		goodTask, err := executor.ExecuteImage(ctx, goodDispatch, nil)
+		if err != nil || goodTask.Status != taskstate.Succeeded || !goodTask.Evidence.PostconditionVerified {
+			t.Fatalf("valid private Registry credentials did not complete a verified Agent pull: status=%s state=%s err=%v",
+				goodTask.Status, goodTask.Result.ObservedState, err)
+		}
+		if goodDispatch.RegistryAuth == nil || goodDispatch.RegistryAuth.Username != "" || goodDispatch.RegistryAuth.Password != "" {
+			t.Fatal("accepted credential fields remained in the in-memory Agent dispatch")
+		}
+		privateImage, err := engine.Inspect(ctx, privateRegistryRef)
+		if err != nil || privateImage.ID != fixture.ConfigDigest || !hasS08String(privateImage.Digests, privateDigest) {
+			t.Fatal("authenticated Agent pull did not install the expected private Registry image")
+		}
+
+		for name, result := range map[string]taskjournal.Snapshot{"rejected": badTask, "accepted": goodTask} {
+			serialized, marshalErr := json.Marshal(result)
+			if marshalErr != nil || bytes.Contains(serialized, []byte(username)) || bytes.Contains(serialized, []byte(password)) || bytes.Contains(serialized, []byte(wrongPassword)) {
+				t.Fatalf("%s pull result contains Registry credentials", name)
+			}
+		}
+		if err := assertS08JournalOmitsCredentials(journalPath, username, password, wrongPassword); err != nil {
+			t.Fatal(err)
+		}
+		t.Log("private Registry accepted and rejected credentials through the real Agent executor; task result and durable journal contain no credential canaries")
+	})
 }
 
 type s08Fixture struct {
@@ -361,9 +453,13 @@ func buildS08ImageFixture(architecture string) (s08Fixture, error) {
 }
 
 func pushS08ImageFixture(ctx context.Context, registryBase, repository, tag string, fixture s08Fixture) (string, error) {
+	return pushS08ImageFixtureAuth(ctx, registryBase, repository, tag, fixture, "", "")
+}
+
+func pushS08ImageFixtureAuth(ctx context.Context, registryBase, repository, tag string, fixture s08Fixture, username, password string) (string, error) {
 	for digest, data := range map[string][]byte{fixture.ConfigDigest: fixture.ConfigBytes,
 		s08Digest(fixture.LayerBytes): fixture.LayerBytes} {
-		if err := s08RegistryUploadBlob(ctx, registryBase, repository, digest, data); err != nil {
+		if err := s08RegistryUploadBlobAuth(ctx, registryBase, repository, digest, data, username, password); err != nil {
 			return "", err
 		}
 	}
@@ -373,6 +469,9 @@ func pushS08ImageFixture(ctx context.Context, registryBase, repository, tag stri
 		return "", err
 	}
 	request.Header.Set("Content-Type", "application/vnd.docker.distribution.manifest.v2+json")
+	if username != "" {
+		request.SetBasicAuth(username, password)
+	}
 	response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
 	if err != nil {
 		return "", err
@@ -386,14 +485,29 @@ func pushS08ImageFixture(ctx context.Context, registryBase, repository, tag stri
 	if digest == "" {
 		return "", errors.New("Registry manifest upload omitted Docker-Content-Digest")
 	}
-	return "127.0.0.1:5000/" + repository + "@" + digest, nil
+	base, err := url.Parse(registryBase)
+	if err != nil {
+		return "", errors.New("invalid S08 Registry fixture URL")
+	}
+	_, port, err := net.SplitHostPort(base.Host)
+	if err != nil || port == "" {
+		return "", errors.New("S08 Registry fixture URL omitted its port")
+	}
+	return net.JoinHostPort("127.0.0.1", port) + "/" + repository + "@" + digest, nil
 }
 
 func s08RegistryUploadBlob(ctx context.Context, registryBase, repository, digest string, data []byte) error {
+	return s08RegistryUploadBlobAuth(ctx, registryBase, repository, digest, data, "", "")
+}
+
+func s08RegistryUploadBlobAuth(ctx context.Context, registryBase, repository, digest string, data []byte, username, password string) error {
 	startURL := registryBase + "/v2/" + repository + "/blobs/uploads/"
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, startURL, nil)
 	if err != nil {
 		return err
+	}
+	if username != "" {
+		request.SetBasicAuth(username, password)
 	}
 	response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
 	if err != nil {
@@ -422,6 +536,9 @@ func s08RegistryUploadBlob(ctx context.Context, registryBase, repository, digest
 	request, err = http.NewRequestWithContext(ctx, http.MethodPut, uploadURL.String(), bytes.NewReader(data))
 	if err != nil {
 		return err
+	}
+	if username != "" {
+		request.SetBasicAuth(username, password)
 	}
 	request.Header.Set("Content-Type", "application/octet-stream")
 	response, err = (&http.Client{Timeout: 30 * time.Second}).Do(request)
@@ -458,6 +575,93 @@ func waitS08RegistryHTTP(ctx context.Context, base string) error {
 		}
 	}
 	return fmt.Errorf("registry /v2/ endpoint did not return HTTP 200 at %s", base)
+}
+
+func startS08PrivateRegistry(ctx context.Context, docker func(...string) (string, error), name, suite, image, username, password string) error {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return errors.New("could not hash S08 Registry fixture credential")
+	}
+	root, err := os.MkdirTemp("", "nodedance-s08-registry-auth-")
+	if err != nil {
+		return errors.New("could not create S08 private Registry auth fixture")
+	}
+	defer os.RemoveAll(root)
+	htpasswdPath := filepath.Join(root, "htpasswd")
+	if err := os.WriteFile(htpasswdPath, append(append([]byte(username+":"), hash...), '\n'), 0o600); err != nil {
+		return errors.New("could not write S08 private Registry auth fixture")
+	}
+	containerID, err := docker("create", "--name", name, "--network", "host",
+		"--label", "io.nodedance.test=true", "--label", "io.nodedance.suite="+suite,
+		"--env", "REGISTRY_HTTP_ADDR=0.0.0.0:5001",
+		"--env", "REGISTRY_AUTH=htpasswd",
+		"--env", "REGISTRY_AUTH_HTPASSWD_REALM=NodeDance S08 private Registry",
+		"--env", "REGISTRY_AUTH_HTPASSWD_PATH=/etc/docker/registry/htpasswd",
+		image)
+	if err != nil || strings.TrimSpace(containerID) == "" {
+		return errors.New("could not create S08 private Registry container")
+	}
+	if _, err := docker("cp", htpasswdPath, name+":/etc/docker/registry/htpasswd"); err != nil {
+		return errors.New("could not install S08 private Registry credential verifier")
+	}
+	if _, err := docker("start", name); err != nil {
+		return errors.New("could not start S08 private Registry container")
+	}
+	return nil
+}
+
+func waitS08PrivateRegistry(ctx context.Context, base, username, password string) error {
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		status, err := s08RegistryStatus(ctx, client, base, username, password)
+		if err == nil && status == http.StatusOK {
+			anonymousStatus, anonymousErr := s08RegistryStatus(ctx, client, base, "", "")
+			if anonymousErr == nil && anonymousStatus == http.StatusUnauthorized {
+				return nil
+			}
+			return errors.New("private Registry did not reject anonymous access with HTTP 401")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+	return errors.New("private Registry did not become ready with the configured credential")
+}
+
+func s08RegistryStatus(ctx context.Context, client *http.Client, base, username, password string) (int, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/v2/", nil)
+	if err != nil {
+		return 0, err
+	}
+	if username != "" {
+		request.SetBasicAuth(username, password)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, err
+	}
+	_, _ = io.Copy(io.Discard, response.Body)
+	_ = response.Body.Close()
+	return response.StatusCode, nil
+}
+
+func assertS08JournalOmitsCredentials(path, username, password, wrongPassword string) error {
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		data, err := os.ReadFile(path + suffix)
+		if err != nil && errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return errors.New("could not inspect durable Agent image journal for auth canaries")
+		}
+		if bytes.Contains(data, []byte(username)) || bytes.Contains(data, []byte(password)) || bytes.Contains(data, []byte(wrongPassword)) {
+			return errors.New("durable Agent image journal contains Registry auth canaries")
+		}
+	}
+	return nil
 }
 
 func s08Digest(data []byte) string {
