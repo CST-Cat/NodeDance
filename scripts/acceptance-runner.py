@@ -8,7 +8,7 @@ import subprocess
 import sys
 import uuid
 
-from acceptance_report_policy import pass_runs_are_valid
+from acceptance_report_policy import pass_runs_are_valid, s06_partial_case_is_valid
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REGISTRY = json.loads((ROOT / "tests/registry.json").read_text())
@@ -76,6 +76,9 @@ for stage in REGISTRY["stages"]:
                     case_errors.append(f"{case_id} is PASS with a nonpassing current execution")
                 elif case_status == "NOT_READY" and any(item.get("status") == "PASS" for item in attempts):
                     case_errors.append(f"{case_id} hides a current PASS execution behind NOT_READY")
+            elif sid == "S06":
+                if not s06_partial_case_is_valid(report, case_id, case):
+                    case_errors.append(f"{case_id} has invalid partial S06 evidence or violates the one-case candidate boundary")
             elif sid != "S00" and (case.get("status") != "NOT_READY" or attempts):
                 if sid != "S01":
                     case_errors.append(f"{case_id} has an impossible non-S00/S01 result in the current implementation milestone")

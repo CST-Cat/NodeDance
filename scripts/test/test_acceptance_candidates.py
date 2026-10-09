@@ -23,6 +23,7 @@ from acceptance_candidates import (  # noqa: E402
     candidate_command,
     run_candidate_stage,
 )
+from acceptance_report_policy import s06_partial_case_is_valid  # noqa: E402
 
 
 def registry_fixture() -> dict:
@@ -52,19 +53,13 @@ def s06_registry_fixture() -> dict:
                 "id": "S06",
                 "tests": [
                     {
-                        "id": "S06-01",
-                        "action": "open responsive dashboard",
-                        "expected": "dashboard works at required viewport widths",
-                        "environment": "Chromium browser candidate",
-                        "evidence": "complete S06 normative environment",
-                    },
-                    {
-                        "id": "S06-02",
-                        "action": "save dashboard preference",
-                        "expected": "preference persists",
-                        "environment": "Core and browser candidate",
-                        "evidence": "real Core persistence",
-                    },
+                        "id": f"S06-{number:02d}",
+                        "action": "S06 acceptance action",
+                        "expected": "S06 acceptance result",
+                        "environment": "S06 candidate environment",
+                        "evidence": "S06 acceptance evidence",
+                    }
+                    for number in range(1, 13)
                 ],
                 "supplemental_tests": [],
             }
@@ -86,6 +81,8 @@ class CandidateRunnerTests(unittest.TestCase):
 
             def runner(command, *, cwd, stdout, stderr, text, timeout):
                 calls.append(command)
+                stdout.write(json.dumps({"Action": "run", "Test": "TestS06PreferencePersistenceAcrossCoreRestart"}) + "\n")
+                stdout.write(json.dumps({"Action": "pass", "Test": "TestS06PreferencePersistenceAcrossCoreRestart", "Elapsed": 0.5}) + "\n")
                 stdout.write("S06 Playwright candidate passed once\n")
                 return SimpleNamespace(returncode=0)
 
@@ -102,12 +99,87 @@ class CandidateRunnerTests(unittest.TestCase):
             self.assertEqual(result, 2)
             self.assertEqual(calls, [["make", "test-candidate-s06"]])
             self.assertEqual(report["status"], "NOT_READY")
+            self.assertEqual(report["repeat_required"], 1)
+            self.assertEqual(report["repeat_requested"], 1)
             self.assertEqual(report["candidate_status"], "PASS")
             self.assertEqual(len(report["candidate_checks"]), 1)
             self.assertEqual(report["candidate_checks"][0]["invocations"], 1)
-            self.assertEqual(set(report["tests"]), {"S06-01", "S06-02"})
-            self.assertTrue(all(case["status"] == "NOT_READY" for case in report["tests"].values()))
-            self.assertTrue(all(case["runs"] == [] for case in report["tests"].values()))
+            self.assertEqual(set(report["tests"]), {f"S06-{number:02d}" for number in range(1, 13)})
+            self.assertEqual(report["tests"]["S06-03"]["status"], "PASS")
+            self.assertEqual(report["tests"]["S06-03"]["runs"], [{
+                "attempt": 1,
+                "status": "PASS",
+                "test_name": "TestS06PreferencePersistenceAcrossCoreRestart",
+                "evidence": ".artifacts/logs/acceptance-s06/s06-one-run/candidate.log",
+            }])
+            other_cases = [case for case_id, case in report["tests"].items() if case_id != "S06-03"]
+            self.assertEqual(len(other_cases), 11)
+            self.assertTrue(all(case["status"] == "NOT_READY" and case["runs"] == [] for case in other_cases))
+            self.assertTrue(all(s06_partial_case_is_valid(report, case_id, case) for case_id, case in report["tests"].items()))
+
+    def test_s06_candidate_without_persistence_test_does_not_claim_s06_03(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+
+            def runner(command, **kwargs):
+                kwargs["stdout"].write("S06 responsive candidate passed once\n")
+                return SimpleNamespace(returncode=0)
+
+            result = run_candidate_stage(
+                "S06",
+                "full",
+                root=root,
+                registry=s06_registry_fixture(),
+                command_runner=runner,
+                run_id="s06-missing-preference-run",
+                updated_at="2026-10-08T00:00:00+00:00",
+            )
+            report = json.loads((root / "reports/stages/S06.json").read_text(encoding="utf-8"))
+            self.assertEqual(result, 2)
+            self.assertEqual(report["status"], "NOT_READY")
+            self.assertEqual(report["tests"]["S06-03"]["status"], "NOT_READY")
+            self.assertEqual(report["tests"]["S06-03"]["runs"], [])
+            self.assertTrue(all(case["status"] == "NOT_READY" for case_id, case in report["tests"].items() if case_id != "S06-03"))
+
+    def test_s06_preference_failure_is_not_hidden_by_partial_stage_status(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+
+            def runner(command, *, stdout, **kwargs):
+                stdout.write(json.dumps({"Action": "run", "Test": "TestS06PreferencePersistenceAcrossCoreRestart"}) + "\n")
+                stdout.write(json.dumps({"Action": "fail", "Test": "TestS06PreferencePersistenceAcrossCoreRestart", "Elapsed": 0.5}) + "\n")
+                return SimpleNamespace(returncode=1)
+
+            result = run_candidate_stage(
+                "S06", "full", root=root, registry=s06_registry_fixture(), command_runner=runner,
+                run_id="s06-preference-failed", updated_at="2026-10-08T00:00:00+00:00",
+            )
+            report = json.loads((root / "reports/stages/S06.json").read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertEqual(report["status"], "FAIL")
+            self.assertEqual(report["tests"]["S06-03"]["status"], "FAIL")
+            self.assertTrue(all(s06_partial_case_is_valid(report, case_id, case) for case_id, case in report["tests"].items()))
+
+    def test_s06_browser_candidate_failure_keeps_failure_status_with_preference_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+
+            def runner(command, *, stdout, **kwargs):
+                stdout.write(json.dumps({"Action": "run", "Test": "TestS06PreferencePersistenceAcrossCoreRestart"}) + "\n")
+                stdout.write(json.dumps({"Action": "pass", "Test": "TestS06PreferencePersistenceAcrossCoreRestart", "Elapsed": 0.5}) + "\n")
+                stdout.write("Playwright responsive candidate failed\n")
+                return SimpleNamespace(returncode=1)
+
+            result = run_candidate_stage(
+                "S06", "full", root=root, registry=s06_registry_fixture(), command_runner=runner,
+                run_id="s06-browser-failed", updated_at="2026-10-08T00:00:00+00:00",
+            )
+            report = json.loads((root / "reports/stages/S06.json").read_text(encoding="utf-8"))
+            self.assertEqual(result, 1)
+            self.assertEqual(report["status"], "FAIL")
+            self.assertEqual(report["candidate_status"], "FAIL")
+            self.assertEqual(report["tests"]["S06-03"]["status"], "PASS")
+            self.assertTrue(all(s06_partial_case_is_valid(report, case_id, case) for case_id, case in report["tests"].items()))
 
     def test_stage_runner_routes_s06_through_candidate_reporter(self) -> None:
         stage_runner = runpy.run_path(str(ROOT / "scripts/stage-runner.py"))

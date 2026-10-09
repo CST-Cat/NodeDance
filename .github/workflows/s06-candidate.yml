@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   candidate:
-    name: S06 / 40-container dashboard / touch reorder / responsive Chromium
+    name: S06 / HTTPS preference restart / responsive dashboard Chromium
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -27,7 +27,7 @@ jobs:
       - name: Run candidate runner contract tests
         run: python3 scripts/test/test_acceptance_candidates.py
 
-      - name: Run the S06 candidate once and verify the normative report remains NOT_READY
+      - name: Run S06 candidates once and verify only S06-03 is reported PASS
         shell: bash
         run: |
           set -euo pipefail
@@ -49,11 +49,23 @@ jobs:
           assert checks[0]["invocations"] == 1, checks[0]
           assert checks[0]["status"] == "PASS", checks[0]
           assert checks[0]["command"] == ["make", "test-candidate-s06"], checks[0]
-          assert report["tests"], "normative S06 cases missing"
-          assert all(case["status"] == "NOT_READY" and not case["runs"] for case in report["tests"].values())
+          assert len(report["tests"]) == 12, len(report["tests"])
+          preference = report["tests"]["S06-03"]
+          assert preference["status"] == "PASS", preference
+          assert len(preference["runs"]) == 1, preference["runs"]
+          assert preference["runs"][0]["attempt"] == 1, preference["runs"]
+          assert preference["runs"][0]["status"] == "PASS", preference["runs"]
+          assert preference["runs"][0]["test_name"] == "TestS06PreferencePersistenceAcrossCoreRestart", preference["runs"]
+          other_cases = {case_id: case for case_id, case in report["tests"].items() if case_id != "S06-03"}
+          assert len(other_cases) == 11, len(other_cases)
+          assert all(case["status"] == "NOT_READY" and not case["runs"] for case in other_cases.values())
           evidence = Path(checks[0]["evidence"])
           assert evidence.is_file(), str(evidence)
-          print(f"S06 candidate PASS once; {len(report['tests'])} normative cases remain NOT_READY")
+          preference_evidence = Path(preference["runs"][0]["evidence"])
+          assert preference_evidence == evidence, (preference_evidence, evidence)
+          candidate_log = evidence.read_text()
+          assert "S06-03_PREFERENCE_RESTART_PASS target=container visible=false pinned=true api_fields_verified=true sqlite_fields_verified=true restart_same_data_dir=true" in candidate_log
+          print("S06-03 real persistence PASS once; responsive candidate PASS once; 11 other normative cases remain NOT_READY; stage NOT_READY")
           PY
 
       - name: Preserve S06 report, runner logs and browser evidence
