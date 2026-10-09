@@ -858,7 +858,8 @@ func s08CoreScanRegistryLogs(logs []byte, username, password string) s08CoreRegi
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-		if occurrences, ok := s08CoreParseJSONRegistryLogLine(line, username); ok {
+		if occurrences, decodedPasswordMatch, ok := s08CoreParseJSONRegistryLogLine(line, username, password); ok {
+			scan.passwordMatch = scan.passwordMatch || decodedPasswordMatch
 			for _, occurrence := range occurrences {
 				s08CoreRecordRegistryUsernameOccurrence(&scan, occurrence, username, password, basicAuthorizationValue)
 			}
@@ -872,6 +873,9 @@ func s08CoreScanRegistryLogs(logs []byte, username, password string) s08CoreRegi
 			continue
 		}
 		for _, field := range fields {
+			if strings.Contains(field.field, password) || strings.Contains(field.value, password) {
+				scan.passwordMatch = true
+			}
 			if strings.Contains(field.field, username) {
 				s08CoreRecordRegistryUsernameOccurrence(&scan, s08CoreRegistryValueOccurrence{field: "<field-name>", value: field.field}, username, password, basicAuthorizationValue)
 			}
@@ -920,23 +924,24 @@ func s08CoreSafeRegistryFieldName(field, username, password, basicAuthorizationV
 	return field
 }
 
-func s08CoreParseJSONRegistryLogLine(line []byte, username string) ([]s08CoreRegistryValueOccurrence, bool) {
+func s08CoreParseJSONRegistryLogLine(line []byte, username, password string) ([]s08CoreRegistryValueOccurrence, bool, bool) {
 	trimmed := bytes.TrimSpace(line)
 	if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') {
-		return nil, false
+		return nil, false, false
 	}
 	decoder := json.NewDecoder(bytes.NewReader(trimmed))
 	var occurrences []s08CoreRegistryValueOccurrence
-	if err := s08CoreReadJSONRegistryValue(decoder, "", false, username, &occurrences); err != nil {
-		return nil, false
+	decodedPasswordMatch := false
+	if err := s08CoreReadJSONRegistryValue(decoder, "", false, username, password, &decodedPasswordMatch, &occurrences); err != nil {
+		return nil, false, false
 	}
 	if _, err := decoder.Token(); err != io.EOF {
-		return nil, false
+		return nil, false, false
 	}
-	return occurrences, true
+	return occurrences, decodedPasswordMatch, true
 }
 
-func s08CoreReadJSONRegistryValue(decoder *json.Decoder, field string, allowExactAuth bool, username string, occurrences *[]s08CoreRegistryValueOccurrence) error {
+func s08CoreReadJSONRegistryValue(decoder *json.Decoder, field string, allowExactAuth bool, username, password string, decodedPasswordMatch *bool, occurrences *[]s08CoreRegistryValueOccurrence) error {
 	token, err := decoder.Token()
 	if err != nil {
 		return err
@@ -957,12 +962,15 @@ func s08CoreReadJSONRegistryValue(decoder *json.Decoder, field string, allowExac
 				if strings.Contains(key, username) {
 					*occurrences = append(*occurrences, s08CoreRegistryValueOccurrence{field: "<field-name>", value: key})
 				}
+				if strings.Contains(key, password) {
+					*decodedPasswordMatch = true
+				}
 				childField := key
 				if field != "" {
 					childField = field + "." + key
 				}
 				directAuthValue := field == "" && key == "auth.user.name"
-				if err := s08CoreReadJSONRegistryValue(decoder, childField, directAuthValue, username, occurrences); err != nil {
+				if err := s08CoreReadJSONRegistryValue(decoder, childField, directAuthValue, username, password, decodedPasswordMatch, occurrences); err != nil {
 					return err
 				}
 			}
@@ -972,7 +980,7 @@ func s08CoreReadJSONRegistryValue(decoder *json.Decoder, field string, allowExac
 			}
 		case '[':
 			for decoder.More() {
-				if err := s08CoreReadJSONRegistryValue(decoder, field+"[]", false, username, occurrences); err != nil {
+				if err := s08CoreReadJSONRegistryValue(decoder, field+"[]", false, username, password, decodedPasswordMatch, occurrences); err != nil {
 					return err
 				}
 			}
@@ -984,6 +992,9 @@ func s08CoreReadJSONRegistryValue(decoder *json.Decoder, field string, allowExac
 			return errors.New("unexpected JSON delimiter")
 		}
 	case string:
+		if strings.Contains(value, password) {
+			*decodedPasswordMatch = true
+		}
 		if strings.Contains(value, username) {
 			*occurrences = append(*occurrences, s08CoreRegistryValueOccurrence{field: field, value: value, allowExactAuth: allowExactAuth})
 		}
@@ -1110,6 +1121,9 @@ func TestS08RegistryLogScannerAllowsOnlyExternalAuthUsernameField(t *testing.T) 
 		{name: "nested JSON username field", logs: `{"request":{"auth.user.name":"` + username + `"}}`, wantOtherUsername: true},
 		{name: "quoted message containing field-like text", logs: `message="request auth.user.name=\"` + username + `\" failed"`, wantOtherUsername: true},
 		{name: "password anywhere", logs: `field="` + password + `"`, wantPassword: true},
+		{name: "JSON escaped password", logs: `{"message":"short\u002dlived-password"}`, wantPassword: true},
+		{name: "logfmt escaped password with Unicode escape", logs: `message="short\u002dlived-password"`, wantPassword: true},
+		{name: "logfmt escaped password with hex escape", logs: `message="short\x2dlived-password"`, wantPassword: true},
 		{name: "Basic authorization value", logs: `header="Basic ` + basic + `"`, wantHeader: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
