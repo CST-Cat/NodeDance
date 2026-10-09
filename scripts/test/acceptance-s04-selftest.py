@@ -55,6 +55,7 @@ def test_original_case_mapping_and_redaction():
             "S04-09 must insert duplicate and older Docker frames over an authenticated WSS connection")
     integration_source = (ROOT / "internal/core/server/docker_agent_integration_test.go").read_text()
     proxy_source = (ROOT / "internal/core/server/agent_integration_test.go").read_text()
+    browser_source = (ROOT / "web/tests/s04-real-browser.mjs").read_text()
     require("S04-02 external lifecycle API observed rename" in integration_source and
             "S04-02 external lifecycle API observed delete" in integration_source,
             "S04-02 evidence does not record external rename/delete convergence through the private Core API")
@@ -63,6 +64,11 @@ def test_original_case_mapping_and_redaction():
     require("replayNextDockerChangeOutOfOrderAndDuplicate" in proxy_source and
             "S04-09 authenticated WSS accepted newer frame" in integration_source,
             "S04-09 test does not inject and verify duplicate/out-of-order frames through the authenticated proxy")
+    require("async function openDockerDetails()" in browser_source and
+            "name: 'Docker 详情', exact: true" in browser_source and
+            browser_source.count("await openDockerDetails()") == 2 and
+            "Docker 详情 tab did not become the active dashboard section" in browser_source,
+            "S04 real-browser flow must enter Docker details before asserting container rows, including after network restore")
     require(ACCEPTANCE.LOCKED_GO == ROOT / ".tools/go1.26.8/bin/go",
             "the S04 runner does not select the pinned Go 1.26.8 tool")
     node_version = json.loads((ROOT / "toolchain.lock.json").read_text())["node"]["version"]

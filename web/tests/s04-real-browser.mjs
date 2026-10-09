@@ -20,6 +20,18 @@ function fixtureRow() {
   }).first()
 }
 
+async function openDockerDetails() {
+  await page.getByRole('button', { name: '节点监控', exact: true }).waitFor({ timeout: 15_000 })
+  await page.getByRole('button', { name: '节点监控', exact: true }).click()
+  const dockerTab = page.getByRole('button', { name: 'Docker 详情', exact: true })
+  await dockerTab.waitFor({ timeout: 15_000 })
+  await dockerTab.click()
+  if (await dockerTab.getAttribute('aria-current') !== 'page') {
+    throw new Error('Docker 详情 tab did not become the active dashboard section')
+  }
+  await page.locator('.docker-panel').waitFor({ state: 'visible', timeout: 15_000 })
+}
+
 async function waitFresh() {
   try {
     await page.waitForFunction(() => {
@@ -197,8 +209,7 @@ async function open() {
     if (message.type() === 'error' && consoleErrors++ < 4) process.stderr.write(`S04_BROWSER_CONSOLEERROR ${message.text().split('\n')[0]}\n`)
   })
   await page.goto(config.url, { waitUntil: 'domcontentloaded' })
-  await page.getByRole('button', { name: '节点监控' }).waitFor({ timeout: 15_000 })
-  await page.getByRole('button', { name: '节点监控' }).click()
+  await openDockerDetails()
   const initial = await waitFresh()
   const rowName = await fixtureRow().locator('.docker-container-copy strong').innerText()
   if (rowName !== config.containerName) throw new Error(`Core inventory rendered wrong fixture: ${rowName}`)
@@ -334,8 +345,7 @@ async function restoreNetwork() {
   await page.reload({ waitUntil: 'domcontentloaded' })
   // Core intentionally opens authenticated sessions on the settings screen;
   // return to the live dashboard before asserting that its channels recovered.
-  await page.getByRole('button', { name: '节点监控' }).waitFor({ timeout: 15_000 })
-  await page.getByRole('button', { name: '节点监控' }).click()
+  await openDockerDetails()
   const fresh = await waitFresh()
   await observeDockerRows()
   return fresh
