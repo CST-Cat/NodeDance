@@ -220,7 +220,7 @@
       "expected": "秘密不泄露，模板输入安全。",
       "environment": "含测试凭据和恶意模板输入。",
       "evidence_required": "DB/log/通知内容扫描和渲染结果。",
-      "candidate_coverage": "Tests verify AES-GCM ciphertext excludes the password, channel API omits the secret, encryption-key permissions are 0600, and notifications use fixed JSON content; this implementation has no user-editable template.",
+      "candidate_coverage": "TestRenderMessageTemplateUsesAllowlistedFieldsOnce verifies all nine Notification fields, UTC time formatting, one-pass substitution, JSON-safe webhook values, and SMTP control-character escaping; TestMessageTemplateRejectsUnknownMalformedAndOversizedInput verifies rejection and empty-template legacy behavior; TestChannelMessageTemplatePersistsAndSnapshotsSafeWebhookPayload covers config persistence, per-channel rendering, malicious-looking values, JSON encoding, and default-channel compatibility; TestSMTPControlledLocalReceiver exercises a templated message through a real local SMTP TCP fixture; TestAlertAPISessionCSRFDeliveryAndAuditing covers API save/list and unknown-token rejection; Playwright covers allowed/unknown templates, editor reload, malicious text rendering, legacy empty-template submission, and 375/768/1440 CSS-pixel overflow.",
       "runs": [
         {
           "run_id": "s15-local-20261009T051200Z",
@@ -229,9 +229,30 @@
           "result": "Encrypted-secret/API-restart tests passed; go vet and whitespace checks passed.",
           "log": ".artifacts/logs/s15/candidate.log",
           "attempt": 1
+        },
+        {
+          "run_id": "s15-template-local-20261009T075339Z",
+          "status": "NOT_READY",
+          "command": "go test -race -count=1 ./internal/core/server -run '^TestAlertAPISessionCSRFDeliveryAndAuditing$'",
+          "result": "Initial server test could not compile because this isolated worktree had no embedded webassets/dist; the locked frontend production build generated the required ignored assets before the API test was run.",
+          "attempt": 0
+        },
+        {
+          "run_id": "s15-template-local-20261009T075339Z",
+          "status": "FAIL",
+          "command": "go test -race -count=1 ./internal/core/alerts -run 'TestRenderMessageTemplate|TestMessageTemplate|TestChannelMessageTemplate|TestSMTPControlledLocalReceiver'; go test -race -count=1 ./internal/core/server -run '^TestAlertAPISessionCSRFDeliveryAndAuditing$'; pnpm --dir web run typecheck; pnpm --dir web exec playwright test --config playwright.s15.config.ts --grep 'channel template|unknown template|malicious-looking|webhook channel form'",
+          "result": "Store/rendering tests, Vue typecheck, and four focused Chromium tests passed. The first Core API test run reached the assertions but failed because the newly added rejected-template request is correctly audited, increasing the expected count from two to three; only that assertion was corrected.",
+          "attempt": 1
+        },
+        {
+          "run_id": "s15-template-local-20261009T075339Z",
+          "status": "PASS",
+          "command": "go test -race -count=1 ./internal/core/server -run '^TestAlertAPISessionCSRFDeliveryAndAuditing$'",
+          "result": "After correcting the test expectation to include the rejected audited write, channel template create/list and unknown-field rejection passed under the race detector.",
+          "attempt": 2
         }
       ],
-      "reason": "本地数据库/API/权限断言通过；发布包、日志、备份专项扫描未运行，计划提及的用户模板功能未实现，因此正式项保持 NOT_READY。"
+      "reason": "Focused local Store/Core API/rendering/browser checks pass after correcting the audited-write assertion; independent deployment, full release artifact/log/backup scan, and configured production SMTP evidence remain absent, so S15 stays NOT_READY."
     }
   },
   "integration_migration": {

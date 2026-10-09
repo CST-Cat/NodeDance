@@ -111,12 +111,13 @@ type Event struct {
 }
 
 type ChannelConfig struct {
-	WebhookURL   string `json:"webhookUrl,omitempty"`
-	SMTPHost     string `json:"smtpHost,omitempty"`
-	SMTPPort     int    `json:"smtpPort,omitempty"`
-	SMTPFrom     string `json:"smtpFrom,omitempty"`
-	SMTPTo       string `json:"smtpTo,omitempty"`
-	SMTPUsername string `json:"smtpUsername,omitempty"`
+	WebhookURL      string `json:"webhookUrl,omitempty"`
+	MessageTemplate string `json:"messageTemplate,omitempty"`
+	SMTPHost        string `json:"smtpHost,omitempty"`
+	SMTPPort        int    `json:"smtpPort,omitempty"`
+	SMTPFrom        string `json:"smtpFrom,omitempty"`
+	SMTPTo          string `json:"smtpTo,omitempty"`
+	SMTPUsername    string `json:"smtpUsername,omitempty"`
 }
 
 type Channel struct {
@@ -246,6 +247,9 @@ func ValidateChannel(input ChannelInput) error {
 	name := strings.TrimSpace(input.Name)
 	if name == "" || utf8.RuneCountInString(name) > 80 || strings.ContainsAny(name, "\r\n\x00") {
 		return errors.New("channel name must contain 1 to 80 printable characters")
+	}
+	if err := ValidateMessageTemplate(input.Config.MessageTemplate); err != nil {
+		return err
 	}
 	switch input.Kind {
 	case ChannelWebhook:

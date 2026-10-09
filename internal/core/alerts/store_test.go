@@ -592,13 +592,15 @@ func TestSMTPControlledLocalReceiver(t *testing.T) {
 	_, _ = fmt.Sscanf(portText, "%d", &port)
 	now := time.Now().UTC()
 	store, _ := newTestStore(t, &now)
-	channel, err := store.SaveChannel(context.Background(), "", ChannelInput{Name: "local smtp", Kind: ChannelSMTP, Config: ChannelConfig{SMTPHost: "127.0.0.1", SMTPPort: port, SMTPFrom: "NodeDance <admin@example.test>", SMTPTo: "ops@example.test"}, Enabled: true})
+	channel, err := store.SaveChannel(context.Background(), "", ChannelInput{Name: "local smtp", Kind: ChannelSMTP, Config: ChannelConfig{SMTPHost: "127.0.0.1", SMTPPort: port, SMTPFrom: "NodeDance <admin@example.test>", SMTPTo: "ops@example.test", MessageTemplate: "{{event}} {{ruleName}}: {{message}}"}, Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	threshold := 90.0
 	newRule(t, store, now, KindCPU, 0, 60, &threshold, []string{channel.ID})
-	evaluate(t, store, now, cpuSample(now, 95))
+	sample := cpuSample(now, 95)
+	sample.Message = "<img src=x>\r\nSubject: forged"
+	evaluate(t, store, now, sample)
 	d, c, secret, claimed, err := store.ClaimDelivery(context.Background(), now)
 	if err != nil || !claimed {
 		t.Fatalf("claim smtp: %t %v", claimed, err)
@@ -621,7 +623,63 @@ func TestSMTPControlledLocalReceiver(t *testing.T) {
 	mu.Lock()
 	got := message
 	mu.Unlock()
-	if !strings.Contains(got, "test cpu") || !strings.Contains(got, `"event":"firing"`) {
+	if !strings.Contains(got, "test cpu") || !strings.Contains(got, "Event: firing") || !strings.Contains(got, `\r\nSubject: forged`) || strings.Contains(got, "\r\nSubject: forged") || !strings.Contains(got, "text/plain; charset=utf-8") {
 		t.Fatalf("SMTP fixture received wrong message: %q", got)
+	}
+}
+
+func TestChannelMessageTemplatePersistsAndSnapshotsSafeWebhookPayload(t *testing.T) {
+	now := time.Date(2026, 10, 9, 12, 0, 0, 0, time.UTC)
+	store, _ := newTestStore(t, &now)
+	legacy, err := store.SaveChannel(context.Background(), "", ChannelInput{
+		Name: "legacy", Kind: ChannelWebhook,
+		Config: ChannelConfig{WebhookURL: "http://127.0.0.1:1"}, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := "{{event}}|{{alertId}}|{{ruleName}}|{{nodeName}}|{{nodeId}}|{{severity}}|{{message}}"
+	custom, err := store.SaveChannel(context.Background(), "", ChannelInput{
+		Name: "custom", Kind: ChannelWebhook,
+		Config: ChannelConfig{WebhookURL: "http://127.0.0.1:1", MessageTemplate: template}, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := store.GetChannel(context.Background(), custom.ID)
+	if err != nil || reloaded.Config.MessageTemplate != template {
+		t.Fatalf("channel template was not persisted: %#v err=%v", reloaded.Config, err)
+	}
+	threshold := 90.0
+	newRule(t, store, now, KindCPU, 0, 60, &threshold, []string{legacy.ID, custom.ID})
+	malicious := "<script>alert(1)</script> {{event}}\r\nSubject: forged & more"
+	sample := cpuSample(now, 95)
+	sample.Message = malicious
+	evaluate(t, store, now, sample)
+
+	for range 2 {
+		delivery, _, _, claimed, err := store.ClaimDelivery(context.Background(), now)
+		if err != nil || !claimed {
+			t.Fatalf("claim channel delivery claimed=%v err=%v", claimed, err)
+		}
+		var notification Notification
+		if err := json.Unmarshal([]byte(delivery.PayloadJSON), &notification); err != nil {
+			t.Fatalf("stored Webhook payload is not JSON: %v", err)
+		}
+		if delivery.ChannelID == legacy.ID {
+			if notification.Message != malicious {
+				t.Fatalf("empty template changed legacy notification: %q", notification.Message)
+			}
+		} else if delivery.ChannelID == custom.ID {
+			wantPrefix := "firing|" + notification.AlertID + "|test cpu|test node|" + testNodeID + "|warning|"
+			if !strings.HasPrefix(notification.Message, wantPrefix) || !strings.HasSuffix(notification.Message, "|"+malicious) {
+				t.Fatalf("custom template rendered incorrectly: %q", notification.Message)
+			}
+			if strings.Contains(delivery.PayloadJSON, "\r\nSubject: forged") {
+				t.Fatal("rendered Webhook payload did not JSON escape injected line breaks")
+			}
+		} else {
+			t.Fatalf("unexpected channel delivery %q", delivery.ChannelID)
+		}
 	}
 }

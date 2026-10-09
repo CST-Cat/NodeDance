@@ -835,17 +835,24 @@ func (s *Store) notificationSuppressed(ctx context.Context, tx *sql.Tx, r Rule, 
 }
 
 func (s *Store) enqueueNotifications(ctx context.Context, tx *sql.Tx, alertID string, channelIDs []string, n Notification, now time.Time) error {
-	rows, err := tx.QueryContext(ctx, `SELECT id,name,kind FROM alert_channels WHERE deleted_at IS NULL AND enabled=1 ORDER BY id`)
+	rows, err := tx.QueryContext(ctx, `SELECT id,name,kind,config_json FROM alert_channels WHERE deleted_at IS NULL AND enabled=1 ORDER BY id`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
-	type channel struct{ id, name, kind string }
+	type channel struct {
+		id, name, kind string
+		config         ChannelConfig
+	}
 	all := []channel{}
 	for rows.Next() {
 		var c channel
-		if err := rows.Scan(&c.id, &c.name, &c.kind); err != nil {
+		var rawConfig string
+		if err := rows.Scan(&c.id, &c.name, &c.kind, &rawConfig); err != nil {
 			return err
+		}
+		if err := json.Unmarshal([]byte(rawConfig), &c.config); err != nil {
+			return errors.New("notification channel configuration is invalid")
 		}
 		all = append(all, c)
 	}
@@ -865,10 +872,6 @@ func (s *Store) enqueueNotifications(ctx context.Context, tx *sql.Tx, alertID st
 		}
 		all = filtered
 	}
-	payload, err := json.Marshal(n)
-	if err != nil {
-		return err
-	}
 	suppressed := false
 	if alertID != "" {
 		var suppressionErr error
@@ -878,6 +881,17 @@ func (s *Store) enqueueNotifications(ctx context.Context, tx *sql.Tx, alertID st
 		}
 	}
 	for _, c := range all {
+		channelNotification := n
+		if c.config.MessageTemplate != "" {
+			channelNotification.Message, err = RenderMessageTemplate(c.config.MessageTemplate, n)
+			if err != nil {
+				return err
+			}
+		}
+		payload, marshalErr := json.Marshal(channelNotification)
+		if marshalErr != nil {
+			return marshalErr
+		}
 		if suppressed {
 			_, err = tx.ExecContext(ctx, `INSERT INTO alert_deliveries(id,alert_id,channel_id,channel_name,kind,payload_json,status,max_attempts,last_error,created_at,updated_at) VALUES(?,?,?,?,? ,?,'suppressed',?,?,?,?)`, id(), alertID, c.id, c.name, c.kind, string(payload), maxDeliveryAttempts, "silenced or maintenance window", stamp(now), stamp(now))
 			if err != nil {
@@ -1026,7 +1040,16 @@ func (s *Store) EnqueueTest(ctx context.Context, channelID string) error {
 		return errors.New("notification channel is disabled")
 	}
 	n := Notification{Event: "test", Message: "NodeDance notification channel test", OccurredAt: s.now().UTC()}
-	payload, _ := json.Marshal(n)
+	if channel.Config.MessageTemplate != "" {
+		n.Message, e = RenderMessageTemplate(channel.Config.MessageTemplate, n)
+		if e != nil {
+			return e
+		}
+	}
+	payload, e := json.Marshal(n)
+	if e != nil {
+		return e
+	}
 	now := stamp(s.now())
 	_, e = s.db.ExecContext(ctx, `INSERT INTO alert_deliveries(id,channel_id,channel_name,kind,payload_json,test_send,status,max_attempts,next_attempt_at,created_at,updated_at) VALUES(?,?,?,?,?,1,'queued',?,?,?,?)`, id(), channel.ID, channel.Name, channel.Kind, string(payload), maxDeliveryAttempts, now, now, now)
 	return e
