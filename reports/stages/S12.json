@@ -3,9 +3,9 @@
   "stage": "S12",
   "mode": "candidate",
   "status": "NOT_READY",
-  "run_id": "20261009T051406Z-s12-candidate",
-  "updated_at": "2026-10-09T05:18:31+00:00",
-  "reason": "S12 候选框架、mock/Durable state、Core/Agent task bridge、responsive wizard 和 Engine 28/29 DIND 工作流已实现。正式用例仍 NOT_READY：本地缺少带独立 owner marker 的 Engine 28/29；真实工作流未运行；S06 持久偏好存储尚未实现。详细范围见 docs/stages/S12.md。",
+  "run_id": "37888355148-s12-engine-and-ui",
+  "updated_at": "2026-10-09T05:25:22+00:00",
+  "reason": "S12 候选与响应式 UI 已实现。GitHub Actions run 37888355148 的 Engine 28/29 真实 DIND 生命周期及 Chromium UI 均通过；S12-03 与 S12-05 已有规定的真实 Engine 证据。S12-01 缺少端口连通性探测，S12-02、S12-04、S12-06 至 S12-11 仍有报告中列明的完整验收缺口，且 S06 生产持久偏好存储尚未接入。",
   "tests": {
     "S12-01": {
       "status": "NOT_READY",
@@ -14,12 +14,32 @@
       "environment": "真实独立容器和端口修改任务。",
       "evidence_required": "前后Inspect、端口探测和旧实例保留。",
       "runs": [],
-      "reason": "本地 mock 端口变更/任务闭环通过；Engine 28/29 真实端口绑定、探测和旧实例保留仍未验证。 正式验收环境和证据尚未满足。",
+      "reason": "CI Engine 28/29 verified actual replacement port binding and retained stopped rollback container. The specified client-side connectivity probe to the new published port is not yet performed.",
       "candidate_component_checks": [
         {
           "status": "PASS",
           "test": "TestExecuteRebuildPersistsPlanPreservesDataAndCleanupRetainsActiveSnapshot",
           "command": "focused_go_component_tests"
+        },
+        {
+          "status": "PASS",
+          "test": "TestDINDRebuildLifecycle",
+          "engine_version": "28.5.2",
+          "run_id": "37888355148",
+          "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+          "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374546",
+          "artifact": "nodedance-s12-rebuild-engine28-37888355148-1",
+          "scope": "Actual published mapping changed from 38080 to 38081 and old stopped rollback container retained; no client-side port probe."
+        },
+        {
+          "status": "PASS",
+          "test": "TestDINDRebuildLifecycle",
+          "engine_version": "29.7.2",
+          "run_id": "37888355148",
+          "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+          "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374687",
+          "artifact": "nodedance-s12-rebuild-engine29-37888355148-1",
+          "scope": "Actual published mapping changed from 38080 to 38081 and old stopped rollback container retained; no client-side port probe."
         }
       ]
     },
@@ -30,7 +50,7 @@
       "environment": "配置覆盖项丰富的独立容器。",
       "evidence_required": "重建前后完整Inspect差异。",
       "runs": [],
-      "reason": "本地 mock 验证基础配置复制和重启策略；完整 Inspect 配置、资源限制、用户/命令真实 Engine 对照待验。 正式验收环境和证据尚未满足。",
+      "reason": "CI fixture verifies restart policy and requested port change only; full before/after Inspect comparison for environment, command, user, resources and remaining rich configuration is not yet recorded.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -40,13 +60,56 @@
       ]
     },
     "S12-03": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "bind、命名卷、匿名卷。",
       "expected": "使用原数据，不生成空卷替代。",
       "environment": "三类挂载均有唯一marker。",
       "evidence_required": "挂载Source/Volume ID和marker一致。",
-      "runs": [],
-      "reason": "本地 mock 验证挂载引用；DIND fixture 已包含 named/anonymous/bind marker，但真实 Engine 尚未运行。 正式验收环境和证据尚未满足。",
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 34.571,
+          "details": {
+            "workflow_run": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148",
+            "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374546",
+            "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+            "engine_version": "28.5.2",
+            "test_run_id": "20261009T052403Z-21812",
+            "artifact": "nodedance-s12-rebuild-engine28-37888355148-1",
+            "snapshot_image_id": "sha256:3f24b73b497f92baef65470cb77ce2b7eeeb91e6f52f7631b15b0a0cb862d61d",
+            "marker_sha256": {
+              "/data/named-marker": "a157d36a739191c1826419da5c87aedf3dd0cd6828565ada2a38a6b68ed741e5",
+              "/anonymous/anonymous-marker": "2f183a4e64493af3f377f745eda502363cd3e7ef6e4d266d444758de0a85fcc8",
+              "/bind/bind-marker": "33b3c09c23def07a88596cd53bc4e1845b70537200c6ad3121bd97c6490fc55a",
+              "/writable-marker": "aff6a9b280d9862b5a8588518d71ab855fc2f59a1783b47facda3cbeec247b63"
+            }
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 36.368,
+          "details": {
+            "workflow_run": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148",
+            "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374687",
+            "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+            "engine_version": "29.7.2",
+            "test_run_id": "20261009T052410Z-2554",
+            "artifact": "nodedance-s12-rebuild-engine29-37888355148-1",
+            "snapshot_image_id": "sha256:40b8397491df04c76f83376f104a9d85b93c8b421ba0376f41740b6e5cd545f9",
+            "marker_sha256": {
+              "/data/named-marker": "a157d36a739191c1826419da5c87aedf3dd0cd6828565ada2a38a6b68ed741e5",
+              "/anonymous/anonymous-marker": "2f183a4e64493af3f377f745eda502363cd3e7ef6e4d266d444758de0a85fcc8",
+              "/bind/bind-marker": "59e5347fa527e3a8c7a74b2e081dc6a89aa46f3c6ff856c5b2bfbac68b30c9d3",
+              "/writable-marker": "ebf81ad9a374b4758821f7adb35bdf6cf020fc6593352db23e9cc113337bf6fd"
+            }
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "PASS on real Engine 28.5.2 and 29.7.2: named and anonymous volume identities and bind source are checked; unique named, anonymous and bind marker SHA-256 values match before/after rebuild and after explicit rollback cleanup.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -54,12 +117,24 @@
           "command": "focused_go_component_tests"
         },
         {
-          "status": "NOT_READY",
+          "status": "PASS",
           "test": "TestDINDRebuildLifecycle",
-          "engine_matrix": [
-            "28",
-            "29"
-          ]
+          "engine_version": "28.5.2",
+          "run_id": "37888355148",
+          "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+          "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374546",
+          "artifact": "nodedance-s12-rebuild-engine28-37888355148-1",
+          "scope": "Named/anonymous volume identity, bind source, and three marker SHA-256 values verified unchanged."
+        },
+        {
+          "status": "PASS",
+          "test": "TestDINDRebuildLifecycle",
+          "engine_version": "29.7.2",
+          "run_id": "37888355148",
+          "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+          "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374687",
+          "artifact": "nodedance-s12-rebuild-engine29-37888355148-1",
+          "scope": "Named/anonymous volume identity, bind source, and three marker SHA-256 values verified unchanged."
         }
       ]
     },
@@ -70,7 +145,7 @@
       "environment": "至少两个自定义网络。",
       "evidence_required": "网络连接、alias、IP前后检查。",
       "runs": [],
-      "reason": "本地 mock 双网络、alias、静态 IPv4 IPAM 保留通过；真实 Engine 28/29 双网络 fixture 待 CI。 正式验收环境和证据尚未满足。",
+      "reason": "CI verifies both networks, configured aliases and static IPv4 IPAM request are retained on real Engine 28/29. Runtime-assigned Endpoint IPAddress equality and connectivity are not separately checked, so the case remains NOT_READY.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -78,23 +153,78 @@
           "command": "focused_go_component_tests"
         },
         {
-          "status": "NOT_READY",
+          "status": "PASS",
           "test": "TestDINDRebuildLifecycle",
-          "engine_matrix": [
-            "28",
-            "29"
-          ]
+          "engine_version": "28.5.2",
+          "run_id": "37888355148",
+          "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+          "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374546",
+          "artifact": "nodedance-s12-rebuild-engine28-37888355148-1",
+          "scope": "Two custom networks, aliases and requested static IPv4 IPAM config verified; runtime assigned IP/connectivity not separately checked."
+        },
+        {
+          "status": "PASS",
+          "test": "TestDINDRebuildLifecycle",
+          "engine_version": "29.7.2",
+          "run_id": "37888355148",
+          "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+          "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374687",
+          "artifact": "nodedance-s12-rebuild-engine29-37888355148-1",
+          "scope": "Two custom networks, aliases and requested static IPv4 IPAM config verified; runtime assigned IP/connectivity not separately checked."
         }
       ]
     },
     "S12-05": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "可写层有测试文件。",
       "expected": "快照保护后仍存在。",
       "environment": "无volume遮蔽的容器内marker文件。",
       "evidence_required": "快照ID/校验及新容器文件hash。",
-      "runs": [],
-      "reason": "本地 mock 验证快照记录和安全保留；DIND 可写层 marker 验证尚未真实运行。 正式验收环境和证据尚未满足。",
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 34.571,
+          "details": {
+            "workflow_run": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148",
+            "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374546",
+            "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+            "engine_version": "28.5.2",
+            "test_run_id": "20261009T052403Z-21812",
+            "artifact": "nodedance-s12-rebuild-engine28-37888355148-1",
+            "snapshot_image_id": "sha256:3f24b73b497f92baef65470cb77ce2b7eeeb91e6f52f7631b15b0a0cb862d61d",
+            "marker_sha256": {
+              "/data/named-marker": "a157d36a739191c1826419da5c87aedf3dd0cd6828565ada2a38a6b68ed741e5",
+              "/anonymous/anonymous-marker": "2f183a4e64493af3f377f745eda502363cd3e7ef6e4d266d444758de0a85fcc8",
+              "/bind/bind-marker": "33b3c09c23def07a88596cd53bc4e1845b70537200c6ad3121bd97c6490fc55a",
+              "/writable-marker": "aff6a9b280d9862b5a8588518d71ab855fc2f59a1783b47facda3cbeec247b63"
+            }
+          },
+          "reason": ""
+        },
+        {
+          "attempt": 1,
+          "status": "PASS",
+          "duration_seconds": 36.368,
+          "details": {
+            "workflow_run": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148",
+            "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374687",
+            "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+            "engine_version": "29.7.2",
+            "test_run_id": "20261009T052410Z-2554",
+            "artifact": "nodedance-s12-rebuild-engine29-37888355148-1",
+            "snapshot_image_id": "sha256:40b8397491df04c76f83376f104a9d85b93c8b421ba0376f41740b6e5cd545f9",
+            "marker_sha256": {
+              "/data/named-marker": "a157d36a739191c1826419da5c87aedf3dd0cd6828565ada2a38a6b68ed741e5",
+              "/anonymous/anonymous-marker": "2f183a4e64493af3f377f745eda502363cd3e7ef6e4d266d444758de0a85fcc8",
+              "/bind/bind-marker": "59e5347fa527e3a8c7a74b2e081dc6a89aa46f3c6ff856c5b2bfbac68b30c9d3",
+              "/writable-marker": "ebf81ad9a374b4758821f7adb35bdf6cf020fc6593352db23e9cc113337bf6fd"
+            }
+          },
+          "reason": ""
+        }
+      ],
+      "reason": "PASS on real Engine 28.5.2 and 29.7.2: writable-layer marker SHA-256 matches before/after rebuild; exact active snapshot image ID is recorded and still present after explicit rollback cleanup.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -102,12 +232,24 @@
           "command": "focused_go_component_tests"
         },
         {
-          "status": "NOT_READY",
+          "status": "PASS",
           "test": "TestDINDRebuildLifecycle",
-          "engine_matrix": [
-            "28",
-            "29"
-          ]
+          "engine_version": "28.5.2",
+          "run_id": "37888355148",
+          "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+          "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374546",
+          "artifact": "nodedance-s12-rebuild-engine28-37888355148-1",
+          "scope": "Writable marker SHA-256 verified unchanged and exact active snapshot image ID retained through explicit cleanup."
+        },
+        {
+          "status": "PASS",
+          "test": "TestDINDRebuildLifecycle",
+          "engine_version": "29.7.2",
+          "run_id": "37888355148",
+          "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+          "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374687",
+          "artifact": "nodedance-s12-rebuild-engine29-37888355148-1",
+          "scope": "Writable marker SHA-256 verified unchanged and exact active snapshot image ID retained through explicit cleanup."
         }
       ]
     },
@@ -118,7 +260,7 @@
       "environment": "三类可控失败注入。",
       "evidence_required": "旧容器ID/名称和新冲突资源回收。",
       "runs": [],
-      "reason": "本地新容器启动失败后原容器恢复通过；端口冲突、健康失败、真实清理注入待 Engine 验收。 正式验收环境和证据尚未满足。",
+      "reason": "Mock startup failure restores the original. Real Engine port-conflict, health-failure and cleanup fault injection have not been executed.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -142,7 +284,7 @@
       "environment": "测试快照存储配额和故障模拟。",
       "evidence_required": "旧容器持续运行及拒绝原因。",
       "runs": [],
-      "reason": "本地磁盘空间不足在停止旧实例前拒绝通过；真实快照失败注入待 Engine 验收。 正式验收环境和证据尚未满足。",
+      "reason": "Local preflight rejects insufficient space before stopping the original. Real Engine snapshot failure and low-space injection remain untested.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -158,7 +300,7 @@
       "environment": "三种独立容器配置。",
       "evidence_required": "操作前拒绝和原资源不变。",
       "runs": [],
-      "reason": "本地 Host Network、AutoRemove、Compose 配置预检拒绝通过；真实 Engine 全拒绝场景待完整验收。 正式验收环境和证据尚未满足。",
+      "reason": "Mock plan rejects Host Network, AutoRemove and Compose configurations. Real Engine pre-operation rejection for each fixture remains untested.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -174,7 +316,7 @@
       "environment": "重建状态机每个边界的进程重启注入。",
       "evidence_required": "journal、执行次数和Docker资源ID。",
       "runs": [],
-      "reason": "本地 SQLite 持久阶段模拟 Agent 重启并恢复原容器通过；其他状态边界和真实进程重启待 Engine 验收。 正式验收环境和证据尚未满足。",
+      "reason": "Durable SQLite phase test simulates recovery at one boundary. Actual Agent process restart at every rebuild boundary remains untested.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -190,7 +332,7 @@
       "environment": "有偏好/历史的真实重建流程。",
       "evidence_required": "主容器identity与回滚资源UI/API映射。",
       "runs": [],
-      "reason": "可替换偏好迁移接口和内存 adapter 验证成功迁移/幂等/失败不迁移；生产 S06 持久存储及真实 UI 身份迁移缺失。 正式验收环境和证据尚未满足。",
+      "reason": "Replaceable preference migration interface and memory adapter pass; production S06 persistent preference storage and complete authenticated UI/API migration remain unavailable.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -221,7 +363,7 @@
       "environment": "成功/失败后残留的快照和旧容器。",
       "evidence_required": "确认对象、卷marker及清理审计。",
       "runs": [],
-      "reason": "本地验证活动快照保留、失败恢复后显式移除未使用快照、owner mismatch 保留回滚容器；真实 Engine 清理待 CI。 正式验收环境和证据尚未满足。",
+      "reason": "Real Engine success-path cleanup removed the rollback container, retained the active snapshot and verified all marker hashes remained intact. Failed-restoration cleanup and its audit/volume checks remain untested.",
       "candidate_component_checks": [
         {
           "status": "PASS",
@@ -239,12 +381,24 @@
           "command": "focused_go_component_tests"
         },
         {
-          "status": "NOT_READY",
+          "status": "PASS",
           "test": "TestDINDRebuildLifecycle",
-          "engine_matrix": [
-            "28",
-            "29"
-          ]
+          "engine_version": "28.5.2",
+          "run_id": "37888355148",
+          "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+          "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374546",
+          "artifact": "nodedance-s12-rebuild-engine28-37888355148-1",
+          "scope": "Success-path explicit cleanup removed rollback container; kept active snapshot and all mount/writable markers. Failure-path cleanup remains untested."
+        },
+        {
+          "status": "PASS",
+          "test": "TestDINDRebuildLifecycle",
+          "engine_version": "29.7.2",
+          "run_id": "37888355148",
+          "commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+          "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148/job/113683374687",
+          "artifact": "nodedance-s12-rebuild-engine29-37888355148-1",
+          "scope": "Success-path explicit cleanup removed rollback container; kept active snapshot and all mount/writable markers. Failure-path cleanup remains untested."
         }
       ]
     }
@@ -255,10 +409,12 @@
   "environment": {
     "go": "go1.26.8",
     "node": "v22.23.3",
-    "docker_engine_28": "NOT_READY: dedicated marked DIND fixture not prepared",
-    "docker_engine_29": "NOT_READY: dedicated marked DIND fixture not prepared",
+    "docker_engine_28": "PASS in isolated owner-marked GitHub Actions DIND: Engine 28.5.2; local dedicated Engine remains NOT_READY",
+    "docker_engine_29": "PASS in isolated owner-marked GitHub Actions DIND: Engine 29.7.2; local dedicated Engine remains NOT_READY",
     "playwright": "chromium",
-    "production_preference_store": "NOT_READY: S06 persistent store not present"
+    "production_preference_store": "NOT_READY: S06 persistent store not present",
+    "ci_run": "37888355148",
+    "ci_commit": "e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7"
   },
   "checks": [
     {
@@ -285,30 +441,39 @@
     },
     {
       "name": "real_engine_28_rebuild",
-      "status": "NOT_READY",
-      "command": "scripts/test/dind.sh status 28; scripts/test/s12-container-rebuild-dind.sh 28",
+      "status": "PASS",
+      "command": "GitHub Actions: scripts/test/s12-container-rebuild-dind.sh 28",
       "results": [
-        "DIND NOT_READY: Engine 28 has not been prepared"
+        "Engine 28.5.2 DIND TestDINDRebuildLifecycle: PASS",
+        "named/anonymous/bind/writable marker SHA-256 unchanged",
+        "explicit cleanup retained active snapshot and mount data",
+        "artifact: nodedance-s12-rebuild-engine28-37888355148-1"
       ],
-      "scope": "No daemon connection or mutations attempted."
+      "scope": "Dedicated owner-marked DIND only; no shared host daemon mutation."
     },
     {
       "name": "real_engine_29_rebuild",
-      "status": "NOT_READY",
-      "command": "scripts/test/dind.sh status 29; scripts/test/s12-container-rebuild-dind.sh 29",
+      "status": "PASS",
+      "command": "GitHub Actions: scripts/test/s12-container-rebuild-dind.sh 29",
       "results": [
-        "DIND NOT_READY: Engine 29 has not been prepared"
+        "Engine 29.7.2 DIND TestDINDRebuildLifecycle: PASS",
+        "named/anonymous/bind/writable marker SHA-256 unchanged",
+        "explicit cleanup retained active snapshot and mount data",
+        "artifact: nodedance-s12-rebuild-engine29-37888355148-1"
       ],
-      "scope": "No daemon connection or mutations attempted."
+      "scope": "Dedicated owner-marked DIND only; no shared host daemon mutation."
     },
     {
       "name": "github_actions_s12_workflow",
-      "status": "NOT_READY",
-      "command": ".github/workflows/s12-container-rebuild.yml",
+      "status": "PASS",
+      "command": "https://github.com/CST-Cat/NodeDance/actions/runs/37888355148",
       "results": [
-        "Workflow added; no GitHub Actions run exists yet."
+        "Commit e6bab52dc7f8abb4d6a2f37eaad36bb86321a6a7",
+        "Engine 28.5.2 lifecycle PASS",
+        "Engine 29.7.2 lifecycle PASS",
+        "Responsive Chromium wizard: 2/2 PASS"
       ],
-      "scope": "Workflow provisions only job-owned marked DIND Engine 28/29 fixtures and runs the responsive Chromium suite."
+      "scope": "Per-job marked DIND fixtures and responsive Chromium suite; full S12 remains NOT_READY due uncovered acceptance cases."
     }
   ]
 }
