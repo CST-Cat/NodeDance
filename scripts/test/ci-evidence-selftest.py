@@ -479,6 +479,46 @@ def test_s03_workflow_matrix_and_artifact_allowlist():
             "S03 artifact allowlist includes private harness files, binaries, images, overlays, or keys")
 
 
+def test_s03_aggregate_job_requires_both_current_shards():
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+    aggregate = workflow[workflow.index("  s03-aggregate:"):workflow.index("  s04:")]
+    positions = [aggregate.index(value) for value in (
+        "needs: s03",
+        "python3 scripts/ci_evidence.py --stage S03 initialize",
+        "nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04",
+        "nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04-arm",
+        "python3 scripts/test/aggregate-s03-ci-selftest.py",
+        "python3 scripts/aggregate-s03-ci.py",
+        "python3 scripts/ci_evidence.py --stage S03 annotate",
+        "uses: actions/upload-artifact@",
+    )]
+    require(positions == sorted(positions),
+            "S03 aggregate job does not wait for both shards, validate their reports, and publish the final result")
+    require(aggregate.count("uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093") == 2
+            and "--run-id '${{ github.run_id }}'" in aggregate
+            and "--run-attempt '${{ github.run_attempt }}'" in aggregate
+            and "--sha '${{ github.sha }}'" in aggregate,
+            "S03 aggregation must download both current-run shards and validate the same run, attempt, and commit")
+    upload_start = aggregate.index("name: nodedance-s03-aggregate-")
+    upload = aggregate[upload_start:]
+    lines = upload.splitlines()
+    path_index = next((index for index, line in enumerate(lines)
+                       if re.match(r"\s+path:\s*\|\s*$", line)), None)
+    require(path_index is not None, "S03 aggregate artifact has no explicit report allowlist")
+    paths = []
+    for line in lines[path_index + 1:]:
+        if not line.startswith("            "):
+            break
+        paths.append(line.strip())
+    expected = {
+        "reports/stages/S03.json", "reports/status.json",
+        ".artifacts/s03-ci-shards/amd64/reports/stages/S03.json",
+        ".artifacts/s03-ci-shards/arm64/reports/stages/S03.json",
+    }
+    require(set(paths) == expected and len(paths) == len(expected),
+            "S03 aggregate artifact must contain the final report and both input shard reports only")
+
+
 def main():
     test_stale_pass_is_replaced_and_current_status_is_preserved()
     test_s01_marker_and_report_are_isolated_from_s00()
@@ -486,6 +526,7 @@ def main():
     test_s04_marker_and_report_are_isolated_from_s00_s01_s02()
     test_workflow_upload_is_hidden_file_aware_and_allowlisted()
     test_s03_workflow_matrix_and_artifact_allowlist()
+    test_s03_aggregate_job_requires_both_current_shards()
     test_s04_workflow_matrix_and_artifact_allowlist()
     print("CI evidence safeguards PASS: S00/S01/S02/S03/S04 marker isolation, stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
 

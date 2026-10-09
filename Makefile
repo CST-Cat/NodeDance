@@ -52,6 +52,7 @@ verify-ci-evidence:
 	python3 scripts/test/ci-evidence-selftest.py
 	python3 scripts/test/acceptance-s02-selftest.py
 	python3 scripts/test/acceptance-s03-selftest.py
+	python3 scripts/test/aggregate-s03-ci-selftest.py
 	python3 -m unittest -v scripts.test.test_s03_guest_resources
 	bash scripts/test/test_s03_core_process_guard.sh
 	python3 scripts/test/acceptance-s04-selftest.py

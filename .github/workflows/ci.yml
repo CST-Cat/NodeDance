@@ -233,7 +233,7 @@ jobs:
 
       - name: Prepare S03 evidence directories
         if: always()
-        run: mkdir -p reports/stages .artifacts/logs/acceptance-s03 .artifacts/work-s03/guest-agent .artifacts/work-s03/rounds
+        run: mkdir -p reports/stages .artifacts/logs/acceptance-s03
 
       - name: Preserve S03 reports and guest, round and test evidence
         if: always()
@@ -255,6 +255,64 @@ jobs:
             .artifacts/work-s03/*/round-*/agent-core-states.jsonl
             .artifacts/work-s03/*/round-*/guest-clock-reboot.json
             .artifacts/work-s03/*/round-*/cpu-memory-load.json
+
+  s03-aggregate:
+    name: S03 / validate amd64 + arm64 shard reports
+    needs: s03
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NODEDANCE_TEST_RUNNER: ubuntu-24.04
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize fresh aggregate report metadata
+        run: rm -f reports/stages/S03.json && python3 scripts/ci_evidence.py --stage S03 initialize
+
+      - name: Download current amd64 S03 shard
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04
+          path: .artifacts/s03-ci-shards/amd64
+
+      - name: Download current arm64 S03 shard
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04-arm
+          path: .artifacts/s03-ci-shards/arm64
+
+      - name: Test fail-closed S03 report aggregation
+        run: python3 scripts/test/aggregate-s03-ci-selftest.py
+
+      - name: Combine only matching current-run architecture reports
+        run: |
+          python3 scripts/aggregate-s03-ci.py \
+            --amd64-report .artifacts/s03-ci-shards/amd64/reports/stages/S03.json \
+            --arm64-report .artifacts/s03-ci-shards/arm64/reports/stages/S03.json \
+            --run-id '${{ github.run_id }}' \
+            --run-attempt '${{ github.run_attempt }}' \
+            --sha '${{ github.sha }}' \
+            --amd64-artifact 'nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04' \
+            --arm64-artifact 'nodedance-s03-${{ github.run_id }}-${{ github.run_attempt }}-ubuntu-24.04-arm' \
+            --output reports/stages/S03.json
+
+      - name: Attach aggregate GitHub run metadata
+        if: always()
+        run: python3 scripts/ci_evidence.py --stage S03 annotate
+
+      - name: Preserve aggregate report and both shard reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s03-aggregate-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: |
+            reports/stages/S03.json
+            reports/status.json
+            .artifacts/s03-ci-shards/amd64/reports/stages/S03.json
+            .artifacts/s03-ci-shards/arm64/reports/stages/S03.json
 
   s04:
     name: S04 / ${{ matrix.runner }} / Engine ${{ matrix.engine }} / real Core-Agent-browser
