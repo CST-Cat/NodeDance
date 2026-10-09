@@ -1711,23 +1711,79 @@ func waitForS04DockerStaleEvent(t *testing.T, events <-chan s04DashboardRead, no
 	t.Helper()
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
+	preDeadlinePushes := 0
 	for {
 		select {
 		case event, ok := <-events:
 			if !ok || event.err != nil {
 				t.Fatalf("dashboard closed while waiting for expired Docker freshness: %v", event.err)
 			}
-			if event.view.NodeID != nodeID || !event.view.DataStale || !event.view.AgentOnline || event.view.StaleReason != "docker_health_stale" {
-				t.Fatalf("unexpected Docker inventory push while waiting for health lease expiry: online=%t stale=%t reason=%q", event.view.AgentOnline, event.view.DataStale, event.view.StaleReason)
+			if event.view.NodeID != nodeID {
+				continue
 			}
-			if event.view.ServerTime.Before(staleAfter) {
-				t.Fatalf("Core advertised Docker health stale before its 15-second receive-time lease expired: serverTime=%s validUntil=%s", event.view.ServerTime.Format(time.RFC3339Nano), staleAfter.Format(time.RFC3339Nano))
+			accepted, transitionErr := s04DockerHealthLeaseTransition(event.view, nodeID, staleAfter)
+			if transitionErr != nil {
+				t.Fatalf("unexpected post-deadline Docker inventory push: serverTime=%s validUntil=%s: %v",
+					event.view.ServerTime.Format(time.RFC3339Nano), staleAfter.Format(time.RFC3339Nano), transitionErr)
 			}
+			if !accepted {
+				// The dashboard stream remains open throughout the reconnect
+				// portion of this test, so its buffered events can include the
+				// temporary "waiting for Docker Engine" state from before the
+				// healthy snapshot. Only a post-deadline event can prove the
+				// receive-time health lease transitioned.
+				preDeadlinePushes++
+				continue
+			}
+			t.Logf("Docker health lease transitioned after deadline; ignored %d queued pre-deadline dashboard pushes", preDeadlinePushes)
 			return event.view
 		case <-timer.C:
 			t.Fatalf("Docker freshness did not transition stale within %s after its receive-time deadline", timeout)
 		}
 	}
+}
+
+func TestS04DockerHealthLeaseTransitionRequiresPostDeadlineState(t *testing.T) {
+	deadline := time.Date(2026, time.October, 8, 12, 0, 0, 0, time.UTC)
+	base := coredocker.View{NodeID: "node-1", AgentOnline: true, DataStale: true, StaleReason: "docker_health_stale"}
+
+	preDeadline := base
+	preDeadline.StaleReason = "waiting for Docker Engine"
+	preDeadline.ServerTime = deadline.Add(-time.Millisecond)
+	if accepted, err := s04DockerHealthLeaseTransition(preDeadline, "node-1", deadline); accepted || err != nil {
+		t.Fatalf("pre-deadline dashboard backlog must not decide the transition: accepted=%t err=%v", accepted, err)
+	}
+
+	postDeadlineFresh := base
+	postDeadlineFresh.ServerTime = deadline.Add(time.Millisecond)
+	postDeadlineFresh.DataStale = false
+	postDeadlineFresh.StaleReason = ""
+	if accepted, err := s04DockerHealthLeaseTransition(postDeadlineFresh, "node-1", deadline); accepted || err == nil {
+		t.Fatalf("fresh Docker state after the deadline must fail the lease assertion: accepted=%t err=%v", accepted, err)
+	}
+
+	postDeadlineWrongReason := base
+	postDeadlineWrongReason.ServerTime = deadline.Add(time.Millisecond)
+	postDeadlineWrongReason.StaleReason = "waiting for Docker Engine"
+	if accepted, err := s04DockerHealthLeaseTransition(postDeadlineWrongReason, "node-1", deadline); accepted || err == nil {
+		t.Fatalf("post-deadline state with the wrong reason must fail: accepted=%t err=%v", accepted, err)
+	}
+
+	postDeadlineExpired := base
+	postDeadlineExpired.ServerTime = deadline.Add(time.Millisecond)
+	if accepted, err := s04DockerHealthLeaseTransition(postDeadlineExpired, "node-1", deadline); !accepted || err != nil {
+		t.Fatalf("post-deadline online stale state must satisfy the lease assertion: accepted=%t err=%v", accepted, err)
+	}
+}
+
+func s04DockerHealthLeaseTransition(view coredocker.View, nodeID string, staleAfter time.Time) (bool, error) {
+	if view.NodeID != nodeID || view.ServerTime.Before(staleAfter) {
+		return false, nil
+	}
+	if !view.AgentOnline || !view.DataStale || view.StaleReason != "docker_health_stale" {
+		return false, fmt.Errorf("post-deadline state is online=%t stale=%t reason=%q", view.AgentOnline, view.DataStale, view.StaleReason)
+	}
+	return true, nil
 }
 
 func waitForS04DashboardClosed(t *testing.T, events <-chan s04DashboardRead, timeout time.Duration) {
