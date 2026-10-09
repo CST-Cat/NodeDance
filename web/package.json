@@ -11,7 +11,8 @@
   "scripts": {
     "build": "vite build --outDir ../internal/core/webassets/dist --emptyOutDir",
     "typecheck": "vue-tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:s13": "playwright test --config=playwright.s13.config.ts"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",

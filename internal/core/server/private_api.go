@@ -44,6 +44,9 @@ type browserSessionView struct {
 }
 
 func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, current *session) {
+	if s.handleTailscaleAPI(w, r, current) {
+		return
+	}
 	switch r.URL.Path {
 	case "/api/v1/auth/me":
 		if r.Method != http.MethodGet {

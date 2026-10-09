@@ -4,8 +4,8 @@
   "mode": "initial",
   "status": "NOT_READY",
   "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "updated_at": "2026-10-09T04:15:51+00:00",
+  "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。",
   "tests": {
     "S13-01": {
       "status": "NOT_READY",
@@ -14,7 +14,7 @@
       "environment": "有/无tailscale CLI和无登录状态。",
       "evidence_required": "页面状态、候选列表和其他节点功能回归。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。"
     },
     "S13-02": {
       "status": "NOT_READY",
@@ -23,7 +23,7 @@
       "environment": "真实或受控Tailnet身份列表。",
       "evidence_required": "本地status JSON与候选集对照。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。"
     },
     "S13-03": {
       "status": "NOT_READY",
@@ -32,7 +32,7 @@
       "environment": "已注册节点改名及地址变化。",
       "evidence_required": "稳定Agent身份及偏好映射。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。"
     },
     "S13-04": {
       "status": "NOT_READY",
@@ -41,7 +41,7 @@
       "environment": "隔离SSH测试节点及一次性凭据。",
       "evidence_required": "SSH退出状态、安装结果和秘密扫描。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。"
     },
     "S13-05": {
       "status": "NOT_READY",
@@ -50,7 +50,7 @@
       "environment": "可切换host key的测试sshd。",
       "evidence_required": "拒绝/二次确认记录和无错误安装。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。"
     },
     "S13-06": {
       "status": "NOT_READY",
@@ -59,7 +59,7 @@
       "environment": "两架构Linux节点和已注册Agent。",
       "evidence_required": "二进制架构、服务状态和稳定设备ID。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。"
     },
     "S13-07": {
       "status": "NOT_READY",
@@ -68,7 +68,7 @@
       "environment": "SSH故障注入及安装临时目录。",
       "evidence_required": "失败状态、临时文件清理和节点原状。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。"
     },
     "S13-08": {
       "status": "NOT_READY",
@@ -77,7 +77,7 @@
       "environment": "双地址配置但禁用fallback。",
       "evidence_required": "网络捕获和Agent目标地址。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。"
     },
     "S13-09": {
       "status": "NOT_READY",
@@ -86,7 +86,7 @@
       "environment": "可信与不可信证书备用端点。",
       "evidence_required": "连接策略和证书失败日志。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。"
     },
     "S13-10": {
       "status": "NOT_READY",
@@ -95,7 +95,7 @@
       "environment": "完成部署并撤销Agent的节点。",
       "evidence_required": "数据库/log扫描及SSH独立救援文档。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "S13候选实现的局部自动化检查已执行；本规范用例要求的真实Tailnet、SSH主机、签名发布产物和systemd Agent集成证据尚未执行，保持NOT_READY。"
     }
   }
 }
