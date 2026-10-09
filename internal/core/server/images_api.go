@@ -23,9 +23,38 @@ const imageListTimeout = 35 * time.Second
 const imageCredentialLifetime = 5 * time.Minute
 
 type pendingImageCredential struct {
-	nodeID      string
-	credentials protocol.RegistryCredentials
-	expiresAt   time.Time
+	nodeID string
+	// The Core-owned staged copy uses clearable buffers. API request strings and
+	// the single-use protocol payload are separately released at their handoff.
+	username  []byte
+	password  []byte
+	expiresAt time.Time
+}
+
+func (c *pendingImageCredential) clear() {
+	if c == nil {
+		return
+	}
+	clear(c.username)
+	clear(c.password)
+	c.username = nil
+	c.password = nil
+}
+
+func (c pendingImageCredential) available() bool {
+	return validPendingImageCredentialText(c.username, 256) && validPendingImageCredentialText(c.password, 4096)
+}
+
+func validPendingImageCredentialText(value []byte, maxBytes int) bool {
+	if len(value) == 0 || len(value) > maxBytes {
+		return false
+	}
+	for _, item := range value {
+		if item == 0 || item == '\r' || item == '\n' || item == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 type imagePullRequest struct {
@@ -240,11 +269,11 @@ func (s *Server) claimNextImageTask(ctx context.Context, connection coretasks.Ag
 	s.expireImageCredentialsLocked(s.now())
 	task, claimed, err := s.tasks.ClaimNextWithRegistryAuth(ctx, connection, sql.NullInt64{}, "unknown", func(task coretasks.Task) bool {
 		entry, ok := s.imageAuth[task.TaskID]
-		return ok && entry.nodeID == task.NodeID && entry.credentials.Valid()
+		return ok && entry.nodeID == task.NodeID && entry.available()
 	})
 	if !claimed && task.Result.Code == coretasks.ResultRegistryCredentialsUnavailable {
 		if entry, ok := s.imageAuth[task.TaskID]; ok {
-			entry.credentials.Username, entry.credentials.Password = "", ""
+			entry.clear()
 			delete(s.imageAuth, task.TaskID)
 		}
 	}
@@ -253,7 +282,8 @@ func (s *Server) claimNextImageTask(ctx context.Context, connection coretasks.Ag
 	}
 	entry := s.imageAuth[task.TaskID]
 	delete(s.imageAuth, task.TaskID)
-	credentials := entry.credentials
+	credentials := protocol.RegistryCredentials{Username: string(entry.username), Password: string(entry.password)}
+	entry.clear()
 	return task, true, &credentials, nil
 }
 
@@ -265,7 +295,11 @@ func (s *Server) storeImageCredentials(taskID, nodeID string, credentials protoc
 
 func (s *Server) storeImageCredentialsLocked(taskID, nodeID string, credentials protocol.RegistryCredentials) {
 	s.expireImageCredentialsLocked(s.now())
-	s.imageAuth[taskID] = pendingImageCredential{nodeID: nodeID, credentials: credentials, expiresAt: s.now().Add(imageCredentialLifetime)}
+	if previous, ok := s.imageAuth[taskID]; ok {
+		previous.clear()
+	}
+	s.imageAuth[taskID] = pendingImageCredential{nodeID: nodeID, username: []byte(credentials.Username),
+		password: []byte(credentials.Password), expiresAt: s.now().Add(imageCredentialLifetime)}
 }
 
 func (s *Server) takeImageCredentials(taskID, nodeID string) *protocol.RegistryCredentials {
@@ -276,17 +310,22 @@ func (s *Server) takeImageCredentials(taskID, nodeID string) *protocol.RegistryC
 		delete(s.imageAuth, taskID)
 	}
 	s.imageAuthMu.Unlock()
-	if !ok || entry.nodeID != nodeID {
+	if !ok {
 		return nil
 	}
-	return &entry.credentials
+	if entry.nodeID != nodeID {
+		entry.clear()
+		return nil
+	}
+	credentials := protocol.RegistryCredentials{Username: string(entry.username), Password: string(entry.password)}
+	entry.clear()
+	return &credentials
 }
 
 func (s *Server) clearImageCredentials(taskID string) {
 	s.imageAuthMu.Lock()
 	if entry, ok := s.imageAuth[taskID]; ok {
-		entry.credentials.Username, entry.credentials.Password = "", ""
-		s.imageAuth[taskID] = entry
+		entry.clear()
 	}
 	delete(s.imageAuth, taskID)
 	s.imageAuthMu.Unlock()
@@ -296,7 +335,7 @@ func (s *Server) clearImageCredentialsForNode(nodeID string) {
 	s.imageAuthMu.Lock()
 	for taskID, entry := range s.imageAuth {
 		if entry.nodeID == nodeID {
-			entry.credentials.Username, entry.credentials.Password = "", ""
+			entry.clear()
 			delete(s.imageAuth, taskID)
 		}
 	}
@@ -351,10 +390,22 @@ func (s *Server) expireImageCredentials(now time.Time) {
 func (s *Server) expireImageCredentialsLocked(now time.Time) {
 	for taskID, entry := range s.imageAuth {
 		if !now.Before(entry.expiresAt) {
-			entry.credentials.Username, entry.credentials.Password = "", ""
+			entry.clear()
 			delete(s.imageAuth, taskID)
 		}
 	}
+}
+
+func (s *Server) clearAllImageCredentials() {
+	if s == nil {
+		return
+	}
+	s.imageAuthMu.Lock()
+	for taskID, entry := range s.imageAuth {
+		entry.clear()
+		delete(s.imageAuth, taskID)
+	}
+	s.imageAuthMu.Unlock()
 }
 
 func (s *Server) requestNodeImages(ctx context.Context, nodeID string, request protocol.ImageListRequest) (protocol.ImageListResponse, error) {

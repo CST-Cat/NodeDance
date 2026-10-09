@@ -398,6 +398,7 @@ func (s *Server) Close() error {
 	}
 	s.agentConnectionsMu.Unlock()
 	s.agentWait.Wait()
+	s.clearAllImageCredentials()
 	if s.agents != nil {
 		_ = s.agents.MarkAllOffline(context.Background())
 	}

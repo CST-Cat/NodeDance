@@ -49,18 +49,45 @@ func TestImageRegistryCredentialsAreOneUseAndExpireInMemory(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	s := &Server{imageAuth: make(map[string]pendingImageCredential), now: func() time.Time { return now }}
 	s.storeImageCredentials("task-one", "node-one", protocol.RegistryCredentials{Username: "user", Password: "secret"})
+	stored := s.imageAuth["task-one"]
 	first := s.takeImageCredentials("task-one", "node-one")
 	if first == nil || first.Username != "user" || first.Password != "secret" {
 		t.Fatal("one-time credentials were not available for the matching task")
+	}
+	if !allBytesZero(stored.username) || !allBytesZero(stored.password) {
+		t.Fatal("one-use credentials were removed from the map without clearing their Core-owned byte buffers")
 	}
 	first.Username, first.Password = "", ""
 	if second := s.takeImageCredentials("task-one", "node-one"); second != nil {
 		t.Fatal("one-time credentials were returned more than once")
 	}
+
+	s.storeImageCredentials("task-wrong-node", "node-one", protocol.RegistryCredentials{Username: "user", Password: "secret"})
+	wrongNode := s.imageAuth["task-wrong-node"]
+	if credentials := s.takeImageCredentials("task-wrong-node", "node-two"); credentials != nil {
+		t.Fatal("credentials were returned to a different node")
+	}
+	if !allBytesZero(wrongNode.username) || !allBytesZero(wrongNode.password) {
+		t.Fatal("wrong-node take did not clear the rejected credential buffers")
+	}
+
 	s.storeImageCredentials("task-expire", "node-one", protocol.RegistryCredentials{Username: "user", Password: "secret"})
+	expiredBuffers := s.imageAuth["task-expire"]
 	now = now.Add(imageCredentialLifetime)
 	s.expireImageCredentials(now)
 	if expired := s.takeImageCredentials("task-expire", "node-one"); expired != nil {
 		t.Fatal("expired Registry credentials remained available")
 	}
+	if !allBytesZero(expiredBuffers.username) || !allBytesZero(expiredBuffers.password) {
+		t.Fatal("expired credentials were removed without clearing their Core-owned byte buffers")
+	}
+}
+
+func allBytesZero(value []byte) bool {
+	for _, item := range value {
+		if item != 0 {
+			return false
+		}
+	}
+	return true
 }
