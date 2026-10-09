@@ -1,4 +1,5 @@
 import type { MetricsView } from './metrics-contract'
+import { sha256Blob } from './sha256'
 
 export interface SetupStatus {
   initialized: boolean
@@ -413,6 +414,14 @@ export class ApiError extends Error {
 
 let csrfToken = ''
 
+function newFileIdempotencyKey() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 async function request<T>(path: string, init: RequestInit = {}, csrf = false): Promise<T> {
   const headers = new Headers(init.headers)
   const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData
@@ -496,34 +505,44 @@ export const api = {
   readNodeText: (nodeId: string, path: string) => request<{ path: string; text: string; version: string; size: number }>(
     `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/text?path=${encodeURIComponent(path)}`,
   ),
-  saveNodeText: (nodeId: string, payload: { path: string; version: string; text: string }) => request<{
+  saveNodeText: (nodeId: string, payload: { path: string; version: string; text: string }, idempotencyKey = newFileIdempotencyKey()) => request<{
+    taskId: string
     transferId: string
     status: string
     entry?: NodeFileEntry
     backupPath?: string
   }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/files/text`, {
     method: 'PUT',
+    headers: { 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify(payload),
   }, true),
-  createNodeDirectory: (nodeId: string, path: string) => request<{ transferId: string; status: string }>(
+  createNodeDirectory: (nodeId: string, path: string, idempotencyKey = newFileIdempotencyKey()) => request<{ taskId: string; transferId: string; status: string }>(
     `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/directories`, {
       method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({ path }),
     }, true),
-  renameNodeFile: (nodeId: string, path: string, newPath: string) => request<{ transferId: string; status: string }>(
+  renameNodeFile: (nodeId: string, path: string, newPath: string, idempotencyKey = newFileIdempotencyKey()) => request<{ taskId: string; transferId: string; status: string }>(
     `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/rename`, {
       method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({ path, newPath }),
     }, true),
-  deleteNodeFile: (nodeId: string, path: string) => request<{ transferId: string; status: string }>(
+  deleteNodeFile: (nodeId: string, path: string, idempotencyKey = newFileIdempotencyKey()) => request<{ taskId: string; transferId: string; status: string }>(
     `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/delete`, {
       method: 'DELETE',
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify({ path, confirmPath: path }),
     }, true),
-  uploadNodeFile: (nodeId: string, path: string, file: File, version = '', signal?: AbortSignal) => {
+  uploadNodeFile: async (nodeId: string, path: string, file: File, version = '', signal?: AbortSignal, idempotencyKey = newFileIdempotencyKey()) => {
+    signal?.throwIfAborted()
+    const digest = await sha256Blob(file)
+    signal?.throwIfAborted()
     const headers = new Headers({ 'Content-Type': 'application/octet-stream' })
+    headers.set('Idempotency-Key', idempotencyKey)
+    headers.set('X-File-SHA256', digest)
     if (version) headers.set('X-File-Version', version)
-    return request<{ transferId: string; status: string; sha256: string }>(
+    return request<{ taskId: string; transferId: string; status: string; sha256: string }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/upload?path=${encodeURIComponent(path)}`,
       { method: 'POST', headers, body: file, signal }, true,
     )

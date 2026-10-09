@@ -69,3 +69,15 @@ func TestTextEditorLimitFitsControlEnvelope(t *testing.T) {
 		t.Fatal("text edit larger than advertised editor limit was accepted")
 	}
 }
+
+func TestFileCancelAckBindsGenerationAndTransfer(t *testing.T) {
+	envelope := fileEnvelope(TypeFileCancelAck, 0)
+	ack := FileCancelAck{TransferID: testFileRequestID, Canceled: true}
+	if err := ValidateFileCancelAck(envelope, 7, ack); err != nil {
+		t.Fatalf("valid cancel acknowledgment rejected: %v", err)
+	}
+	ack.TransferID = "11234567-89ab-4cde-8fab-0123456789ac"
+	if err := ValidateFileCancelAck(envelope, 7, ack); err == nil {
+		t.Fatal("cancel acknowledgment with different transfer ID was accepted")
+	}
+}

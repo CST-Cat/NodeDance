@@ -196,6 +196,57 @@ func TestTextEditDetectsExternalChangeAndPreservesMetadata(t *testing.T) {
 	}
 }
 
+func TestPostAtomicReplaceMetadataFailuresReturnUnknown(t *testing.T) {
+	t.Run("SaveText", func(t *testing.T) {
+		service, root := newTestService(t)
+		path := filepath.Join(root, "target.txt")
+		if err := os.WriteFile(path, []byte("before"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		entry, err := service.Stat("/target.txt")
+		if err != nil {
+			t.Fatal("read initial metadata:", err)
+		}
+		service.afterAtomicReplace = func() { _ = service.root.Close() }
+		if _, _, err := service.SaveText("/target.txt", entry.Version, "after"); !errors.Is(err, ErrMutationResultUnknown) {
+			t.Fatalf("post-rename metadata error=%v; want unknown mutation result", err)
+		}
+		stored, err := os.ReadFile(path)
+		if err != nil || string(stored) != "after" {
+			t.Fatalf("SaveText did not replace the file before metadata failure: content=%q err=%v", stored, err)
+		}
+	})
+
+	t.Run("UploadCommit", func(t *testing.T) {
+		service, root := newTestService(t)
+		path := filepath.Join(root, "target.txt")
+		if err := os.WriteFile(path, []byte("before"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		entry, err := service.Stat("/target.txt")
+		if err != nil {
+			t.Fatal("read initial metadata:", err)
+		}
+		data := []byte("uploaded")
+		digest := sha256.Sum256(data)
+		upload, err := service.BeginUpload("/target.txt", entry.Version, int64(len(data)), hex.EncodeToString(digest[:]))
+		if err != nil {
+			t.Fatal("begin upload:", err)
+		}
+		if err := upload.WriteChunk(data); err != nil {
+			t.Fatal("write upload chunk:", err)
+		}
+		service.afterAtomicReplace = func() { _ = service.root.Close() }
+		if _, err := upload.Commit(); !errors.Is(err, ErrMutationResultUnknown) {
+			t.Fatalf("post-rename upload metadata error=%v; want unknown mutation result", err)
+		}
+		stored, err := os.ReadFile(path)
+		if err != nil || string(stored) != string(data) {
+			t.Fatalf("UploadCommit did not replace the file before metadata failure: content=%q err=%v", stored, err)
+		}
+	})
+}
+
 func TestTextEditRejectsBinaryAndOversizedText(t *testing.T) {
 	service, root := newTestService(t)
 	if err := os.WriteFile(filepath.Join(root, "binary"), []byte{'a', 0, 'b'}, 0o600); err != nil {

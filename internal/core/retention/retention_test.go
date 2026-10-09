@@ -27,7 +27,7 @@ func TestCleanupExpiresOnlyTerminalFileTasksAndTheirEvents(t *testing.T) {
 	now := time.Date(2026, 10, 8, 12, 0, 0, 0, time.UTC)
 	cutoff := now.Add(-90 * 24 * time.Hour)
 	old := cutoff.Add(-time.Second)
-	for i := 1; i <= 4; i++ {
+	for i := 1; i <= 5; i++ {
 		nodeID := fmt.Sprintf("00000000-0000-4000-8000-%012x", i)
 		if _, err := store.DB.ExecContext(ctx, `INSERT INTO nodes(id,display_name,status,created_at,updated_at) VALUES(?,?,'pending',?,?)`, nodeID, nodeID, old.Unix(), old.Unix()); err != nil {
 			t.Fatal("insert node:", err)
@@ -36,11 +36,11 @@ func TestCleanupExpiresOnlyTerminalFileTasksAndTheirEvents(t *testing.T) {
 	insertTask := func(id, nodeID, status string, at time.Time) {
 		t.Helper()
 		var finished any
-		if status == "succeeded" || status == "failed" || status == "unknown" {
+		if status == "succeeded" || status == "failed" || status == "canceled" || status == "unknown" {
 			finished = at.UnixNano()
 		}
 		if _, err := store.DB.ExecContext(ctx, `INSERT INTO file_write_tasks(task_id,node_id,operation,target_path,status,result_code,created_at_ns,updated_at_ns,finished_at_ns)
-			VALUES(?,?,'mkdir','/tmp/target',?,?,?, ?,?)`, id, nodeID, status, map[string]string{"succeeded": "verified", "failed": "agent_rejected", "unknown": "result_pending", "running": ""}[status], at.UnixNano(), at.UnixNano(), finished); err != nil {
+			VALUES(?,?,'mkdir','/tmp/target',?,?,?, ?,?)`, id, nodeID, status, map[string]string{"succeeded": "verified", "failed": "agent_rejected", "canceled": "cancel_confirmed", "unknown": "result_pending", "running": ""}[status], at.UnixNano(), at.UnixNano(), finished); err != nil {
 			t.Fatal("insert file task", id, err)
 		}
 		if _, err := store.DB.ExecContext(ctx, `INSERT INTO file_write_task_events(node_id,task_id,event,to_status,occurred_at_ns) VALUES(?,?,'accepted',?,?)`, nodeID, id, status, at.UnixNano()); err != nil {
@@ -51,6 +51,7 @@ func TestCleanupExpiresOnlyTerminalFileTasksAndTheirEvents(t *testing.T) {
 	insertTask("00000000-0000-4000-8000-0000000000a2", "00000000-0000-4000-8000-000000000002", "failed", cutoff)
 	insertTask("00000000-0000-4000-8000-0000000000a3", "00000000-0000-4000-8000-000000000003", "unknown", old)
 	insertTask("00000000-0000-4000-8000-0000000000a4", "00000000-0000-4000-8000-000000000004", "running", old)
+	insertTask("00000000-0000-4000-8000-0000000000a5", "00000000-0000-4000-8000-000000000005", "canceled", old)
 
 	result, err := Cleanup(ctx, store.DB, now, 90*24*time.Hour)
 	if err != nil {
@@ -60,14 +61,16 @@ func TestCleanupExpiresOnlyTerminalFileTasksAndTheirEvents(t *testing.T) {
 	for query, want := range map[string]int{
 		`SELECT count(*) FROM file_write_tasks WHERE task_id='00000000-0000-4000-8000-0000000000a1'`:                                                                                    0,
 		`SELECT count(*) FROM file_write_task_events WHERE task_id='00000000-0000-4000-8000-0000000000a1'`:                                                                              0,
+		`SELECT count(*) FROM file_write_tasks WHERE task_id='00000000-0000-4000-8000-0000000000a5'`:                                                                                    0,
+		`SELECT count(*) FROM file_write_task_events WHERE task_id='00000000-0000-4000-8000-0000000000a5'`:                                                                              0,
 		`SELECT count(*) FROM file_write_tasks WHERE task_id IN ('00000000-0000-4000-8000-0000000000a2','00000000-0000-4000-8000-0000000000a3','00000000-0000-4000-8000-0000000000a4')`: 3,
 	} {
 		if err := store.DB.QueryRowContext(ctx, query).Scan(&got); err != nil || got != want {
 			t.Fatalf("query %q count=%d err=%v want=%d", query, got, err, want)
 		}
 	}
-	if result.FileTasks != 1 || result.FileTaskEvents != 1 {
-		t.Fatalf("file retention counts=%+v want one expired task and event", result)
+	if result.FileTasks != 2 || result.FileTaskEvents != 2 {
+		t.Fatalf("file retention counts=%+v want two expired terminal tasks and events", result)
 	}
 }
 
