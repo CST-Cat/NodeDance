@@ -166,7 +166,7 @@ func (e *Executor) pull(ctx context.Context, dispatch protocol.TaskDispatch, _ t
 		return e.finish(context.WithoutCancel(ctx), dispatch.TaskID, taskstate.Failed, failureEvidence(), taskjournal.Result{
 			Code: taskjournal.ResultFailed, ObservedState: "registry_auth_failed"})
 	}
-	if pullErr == nil && errdefs.IsNotFound(inspectErr) {
+	if (pullErr == nil || errors.Is(pullErr, ErrImageNotFound)) && errdefs.IsNotFound(inspectErr) {
 		return e.finish(context.WithoutCancel(ctx), dispatch.TaskID, taskstate.Failed, failureEvidence(), taskjournal.Result{
 			Code: taskjournal.ResultFailed, ObservedState: "missing_after_pull"})
 	}
