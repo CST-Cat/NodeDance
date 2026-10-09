@@ -274,11 +274,11 @@ func (m *Manager) preview(ctx context.Context, request protocol.ComposeRequest) 
 	}
 	oldResolved, err := m.resolve(ctx, request, nil)
 	if err != nil {
-		return protocol.ComposeEditorResult{}, nil, invalidSourceAt("current-compose-config-resolution")
+		return protocol.ComposeEditorResult{}, nil, scopedInvalidSource(err, "current")
 	}
 	newResolved, err := m.resolve(ctx, request, proposed)
 	if err != nil {
-		return protocol.ComposeEditorResult{}, nil, invalidSourceAt("proposed-compose-config-resolution")
+		return protocol.ComposeEditorResult{}, nil, scopedInvalidSource(err, "proposed")
 	}
 	servicesBefore, err := serviceModels(oldResolved)
 	if err != nil {
@@ -320,7 +320,23 @@ func (m *Manager) preview(ctx context.Context, request protocol.ComposeRequest) 
 // non-sensitive processing stage. Compose stderr and source/config values are
 // deliberately never included in this diagnostic.
 func invalidSourceAt(stage string) error {
-	return fmt.Errorf("%w (stage: %s)", ErrInvalidSource, stage)
+	return &invalidSourceDiagnostic{stage: stage}
+}
+
+type invalidSourceDiagnostic struct{ stage string }
+
+func (err *invalidSourceDiagnostic) Error() string {
+	return fmt.Sprintf("%s (stage: %s)", ErrInvalidSource, err.stage)
+}
+
+func (err *invalidSourceDiagnostic) Unwrap() error { return ErrInvalidSource }
+
+func scopedInvalidSource(err error, scope string) error {
+	var diagnostic *invalidSourceDiagnostic
+	if errors.As(err, &diagnostic) {
+		return invalidSourceAt(scope + "-" + diagnostic.stage)
+	}
+	return invalidSourceAt(scope + "-compose-config-resolution")
 }
 
 func (m *Manager) apply(ctx context.Context, request protocol.ComposeRequest) (protocol.ComposeEditorResult, error) {
@@ -857,9 +873,13 @@ func prefix(request protocol.ComposeRequest) []string {
 func (m *Manager) resolve(ctx context.Context, request protocol.ComposeRequest, proposed map[string]FileSnapshot) ([]byte, error) {
 	if proposed == nil {
 		if _, err := m.run(ctx, request.Project.WorkingDirectory, append(prefix(request), "config", "--quiet")); err != nil {
-			return nil, err
+			return nil, invalidSourceAt("compose-config-quiet")
 		}
-		return m.run(ctx, request.Project.WorkingDirectory, append(prefix(request), "config", "--format", "json"))
+		resolved, err := m.run(ctx, request.Project.WorkingDirectory, append(prefix(request), "config", "--format", "json"))
+		if err != nil {
+			return nil, invalidSourceAt("compose-config-json")
+		}
+		return resolved, nil
 	}
 	// Temporary files remain beside their originals so Compose resolves nested
 	// includes and extends relative to the same directory. The explicit project
@@ -932,9 +952,13 @@ func (m *Manager) resolve(ctx context.Context, request protocol.ComposeRequest, 
 		args = append(args, "--profile", profile)
 	}
 	if _, err := m.run(ctx, request.Project.WorkingDirectory, append(append([]string(nil), args...), "config", "--quiet")); err != nil {
-		return nil, err
+		return nil, invalidSourceAt("compose-config-quiet")
 	}
-	return m.run(ctx, request.Project.WorkingDirectory, append(args, "config", "--format", "json"))
+	resolved, err := m.run(ctx, request.Project.WorkingDirectory, append(args, "config", "--format", "json"))
+	if err != nil {
+		return nil, invalidSourceAt("compose-config-json")
+	}
+	return resolved, nil
 }
 
 func restoreSnapshotMap(files FileStore, snapshots map[string]FileSnapshot) error {
@@ -1190,9 +1214,9 @@ func applyPortEdit(source []byte, edit protocol.ComposePortEdit) ([]byte, error)
 		if entry.Kind == yaml.ScalarNode {
 			entry.Value = formatShortPort(edit.NewHostIP, edit.NewPublished, edit.Target, edit.Protocol)
 		} else if entry.Kind == yaml.MappingNode {
-			setMapping(entry, "published", strconv.Itoa(int(edit.NewPublished)))
+			setMapping(entry, "published", strconv.Itoa(int(edit.NewPublished)), "!!int")
 			if edit.NewHostIP != "" {
-				setMapping(entry, "host_ip", edit.NewHostIP)
+				setMapping(entry, "host_ip", edit.NewHostIP, "!!str")
 			} else {
 				removeMapping(entry, "host_ip")
 			}
@@ -1313,14 +1337,14 @@ func mappingValue(node *yaml.Node, key string) *yaml.Node {
 	return nil
 }
 
-func setMapping(node *yaml.Node, key, value string) {
+func setMapping(node *yaml.Node, key, value, tag string) {
 	if existing := mappingValue(node, key); existing != nil {
 		existing.Value = value
-		existing.Tag = "!!int"
+		existing.Tag = tag
 		return
 	}
 	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
-	valueNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!int", Value: value}
+	valueNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: value}
 	node.Content = append(node.Content, keyNode, valueNode)
 }
 

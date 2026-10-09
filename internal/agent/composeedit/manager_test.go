@@ -48,6 +48,7 @@ type editRunner struct {
 	engine        *editEngine
 	failNew       bool
 	failConfig    bool
+	failProposed  bool
 	configFailure string
 	makeUnhealthy bool
 	args          [][]string
@@ -64,6 +65,17 @@ func (r *editRunner) Run(_ context.Context, _ string, args []string, _ string) (
 	if strings.Contains(joined, " config ") || strings.HasSuffix(joined, "config --format json") || strings.HasSuffix(joined, "config --quiet") {
 		if r.failConfig {
 			return []byte(r.configFailure), errors.New(r.configFailure)
+		}
+		if r.failProposed {
+			for i := 0; i+1 < len(args); i++ {
+				if args[i] != "-f" {
+					continue
+				}
+				data, err := os.ReadFile(args[i+1])
+				if err == nil && strings.Contains(string(data), "18082") {
+					return []byte(r.configFailure), errors.New(r.configFailure)
+				}
+			}
 		}
 		port := "18080"
 		for i := 0; i+1 < len(args); i++ {
@@ -172,8 +184,22 @@ func TestPreviewInvalidSourceDiagnosticsAreClassifiedAndSafe(t *testing.T) {
 		runner.failConfig = true
 		runner.configFailure = "fixture-only-sensitive-compose-marker"
 		_, err := manager.Execute(context.Background(), request)
-		if err == nil || !strings.Contains(err.Error(), "stage: current-compose-config-resolution") {
+		if err == nil || !strings.Contains(err.Error(), "stage: current-compose-config-quiet") {
 			t.Fatalf("config resolution failure was not safely classified: %v", err)
+		}
+		if strings.Contains(err.Error(), runner.configFailure) {
+			t.Fatal("Compose diagnostic output escaped into the safe error")
+		}
+	})
+
+	t.Run("proposed compose config", func(t *testing.T) {
+		manager, request, _, _ := fixture(t, false, false)
+		runner := manager.runner.(*editRunner)
+		runner.failProposed = true
+		runner.configFailure = "fixture-only-proposed-config-marker"
+		_, err := manager.Execute(context.Background(), request)
+		if err == nil || !strings.Contains(err.Error(), "stage: proposed-compose-config-quiet") {
+			t.Fatalf("proposed config failure was not safely classified: %v", err)
 		}
 		if strings.Contains(err.Error(), runner.configFailure) {
 			t.Fatal("Compose diagnostic output escaped into the safe error")
