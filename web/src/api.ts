@@ -131,6 +131,28 @@ export interface ServiceProbePayload {
   revision?: number
 }
 
+export type AlertKind = 'node_offline' | 'cpu' | 'memory' | 'disk' | 'docker_unavailable' | 'container_state' | 'probe_state'
+export interface AlertRule {
+  id: string; name: string; kind: AlertKind; nodeId: string; subjectId?: string
+  severity: 'info' | 'warning' | 'critical'; threshold?: number; durationSeconds: number
+  cooldownSeconds: number; expectedState?: string; channelIds: string[]; enabled: boolean; revision: number
+}
+export interface AlertChannel {
+  id: string; name: string; kind: 'webhook' | 'smtp'; enabled: boolean; hasSecret: boolean; revision: number
+  config: { webhookUrl?: string; smtpHost?: string; smtpPort?: number; smtpFrom?: string; smtpTo?: string; smtpUsername?: string }
+}
+export interface AlertItem {
+  id: string; ruleId: string; ruleName: string; nodeId: string; nodeName: string; subjectId?: string
+  severity: string; status: 'active' | 'resolved'; message: string; currentValue?: number; firstSeenAt: string; lastSeenAt: string
+  resolvedAt?: string; acknowledgedAt?: string; acknowledgedBy?: string; acknowledgedNote?: string; silencedUntil?: string; suppressionReason?: string
+}
+export interface AlertEvent { id: string; alertId: string; kind: string; occurredAt: string; message: string }
+export interface AlertWindow { id: string; kind: 'silence' | 'maintenance'; scopeType: 'global' | 'node' | 'rule'; scopeId?: string; startsAt: string; endsAt: string; reason: string }
+export interface AlertDelivery {
+  id: string; alertId?: string; channelId: string; channelName: string; kind: string; testSend: boolean
+  status: string; attempts: number; maxAttempts: number; nextAttemptAt?: string; deliveredAt?: string; httpStatus?: number; lastError?: string; createdAt: string
+}
+
 export interface NodeStatusResponse {
   type: 'node_status'
   nodeId: string
@@ -542,6 +564,25 @@ export const api = {
     method: 'DELETE',
   }, true),
   serviceProbeHistory: (id: string) => request<{ runs: ServiceProbeRun[] }>(`/api/v1/probes/${encodeURIComponent(id)}/history?limit=100`),
+  alertRules: (nodeId = '') => request<{ rules: AlertRule[] }>(`/api/v1/alerts/rules${nodeId ? `?nodeId=${encodeURIComponent(nodeId)}` : ''}`),
+  createAlertRule: (payload: Omit<AlertRule, 'id' | 'revision'>) => request<{ rule: AlertRule }>('/api/v1/alerts/rules', { method: 'POST', body: JSON.stringify(payload) }, true),
+  updateAlertRule: (id: string, payload: AlertRule) => request<{ rule: AlertRule }>(`/api/v1/alerts/rules/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }, true),
+  deleteAlertRule: (id: string, revision: number) => request<void>(`/api/v1/alerts/rules/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ revision }) }, true),
+  ensureDefaultAlertRules: (nodeId: string) => request<{ rules: AlertRule[] }>('/api/v1/alerts/rules/defaults', { method: 'POST', body: JSON.stringify({ nodeId }) }, true),
+  alertChannels: () => request<{ channels: AlertChannel[] }>('/api/v1/alerts/channels'),
+  saveAlertChannel: (payload: { name: string; kind: 'webhook' | 'smtp'; config: AlertChannel['config']; secret?: string; enabled: boolean; revision?: number }, id?: string) =>
+    request<{ channel: AlertChannel }>(id ? `/api/v1/alerts/channels/${encodeURIComponent(id)}` : '/api/v1/alerts/channels', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) }, true),
+  deleteAlertChannel: (id: string, revision: number) => request<void>(`/api/v1/alerts/channels/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ revision }) }, true),
+  testAlertChannel: (id: string) => request<{ status: string }>(`/api/v1/alerts/channels/${encodeURIComponent(id)}/test`, { method: 'POST' }, true),
+  activeAlerts: () => request<{ alerts: AlertItem[] }>('/api/v1/alerts'),
+  alertHistory: () => request<{ alerts: AlertItem[] }>('/api/v1/alerts/history'),
+  alertEvents: () => request<{ events: AlertEvent[] }>('/api/v1/alerts/events'),
+  acknowledgeAlert: (id: string, note = '') => request<void>(`/api/v1/alerts/${encodeURIComponent(id)}/acknowledge`, { method: 'POST', body: JSON.stringify({ note }) }, true),
+  silenceAlert: (id: string, until: string, reason: string) => request<void>(`/api/v1/alerts/${encodeURIComponent(id)}/silence`, { method: 'POST', body: JSON.stringify({ until, reason }) }, true),
+  alertWindows: () => request<{ windows: AlertWindow[] }>('/api/v1/alerts/windows'),
+  createAlertWindow: (payload: Omit<AlertWindow, 'id'>) => request<{ window: AlertWindow }>('/api/v1/alerts/windows', { method: 'POST', body: JSON.stringify(payload) }, true),
+  deleteAlertWindow: (id: string) => request<void>(`/api/v1/alerts/windows/${encodeURIComponent(id)}`, { method: 'DELETE' }, true),
+  alertDeliveries: () => request<{ deliveries: AlertDelivery[] }>('/api/v1/alerts/deliveries'),
   createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload, idempotencyKey: string) =>
     request<{ taskId: string; status: ContainerTask['status'] }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,

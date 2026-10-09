@@ -1,11 +1,47 @@
 {
   "schema": 1,
   "stage": "S15",
-  "mode": "initial",
+  "mode": "candidate",
   "status": "NOT_READY",
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "run_id": "s15-local-20261009T051200Z",
+  "updated_at": "2026-10-09T05:12:45+00:00",
+  "reason": "全部本地受控候选检查通过，但没有在独立被控服务器和真实 Agent 环境运行端到端故障序列；生产 SMTP/TLS、远端认证/超时失败及部署服务进程重启证据缺失，因此不把阶段标记为 PASS。",
+  "environment": {
+    "os_arch": "Linux arm64",
+    "go": "go1.26.8",
+    "node": "v22.23.3 (locked project toolchain)",
+    "pnpm": "12.10.1",
+    "browser": "Playwright Chromium (locked Playwright 1.63.0)",
+    "docker_engine_used": false,
+    "scope": "SQLite alert store, in-process Core API/New restart, controlled local HTTP Webhook and scripted SMTP receiver, Playwright Vite UI with API stubs; no physical iPad/Android devices or remote Agent"
+  },
+  "candidate_suite": {
+    "command": "make test-s15",
+    "attempts": 1,
+    "attempt_statuses": [
+      "PASS"
+    ],
+    "checks": [
+      "make frontend: locked-tool verification, Go module verify, Vue/TypeScript typecheck, Vite production build (PASS)",
+      "go test -race -count=1 ./internal/core/alerts ./internal/core/audit ./internal/core/storage (PASS)",
+      "go test -race -count=1 ./internal/core/server -run 'TestAlert|TestProbe' (PASS)",
+      "pnpm --dir web run test:s15: 2 Chromium browser tests passed, including 375/768/1440 CSS pixel overflow checks (PASS)",
+      "go vet ./internal/core/alerts ./internal/core/server (PASS)",
+      "git diff --check (PASS)"
+    ],
+    "log_artifacts": [
+      ".artifacts/logs/s15/frontend.log",
+      ".artifacts/logs/s15/candidate.log",
+      ".artifacts/logs/s15/vet.log"
+    ],
+    "github_actions": {
+      "workflow": ".github/workflows/s15-candidate.yml",
+      "status": "PASS",
+      "run_id": "37887516710",
+      "url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887516710",
+      "note": "Workflow completed successfully; it uploaded the candidate report, full focused test log and browser artifacts."
+    }
+  },
   "tests": {
     "S15-01": {
       "status": "NOT_READY",
@@ -13,8 +49,18 @@
       "expected": "按持续时间触发。",
       "environment": "可控指标时钟和真实告警规则。",
       "evidence_required": "样本时间线、阈值及单次告警时间。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestEvaluationDurationRecoveryAndRealWebhookDelivery exercises 10-second duration using controlled SQLite samples; default 90%/300-second values are checked in TestOfflineSuppressionAcknowledgementWindowsAndDefaults.",
+      "runs": [
+        {
+          "run_id": "s15-local-20261009T051200Z",
+          "status": "PASS",
+          "command": "make test-s15",
+          "result": "Focused Go race suite passed; duration sample sequence passed.",
+          "log": ".artifacts/logs/s15/candidate.log",
+          "attempt": 1
+        }
+      ],
+      "reason": "持续条件在本地 Store 样本序列中通过；独立节点的真实 Core/Agent 指标触发、解除时间线未运行。"
     },
     "S15-02": {
       "status": "NOT_READY",
@@ -22,8 +68,18 @@
       "expected": "去重及冷却生效。",
       "environment": "持续异常指标和三个通知通道接收器。",
       "evidence_required": "通知总数、cooldown和活动告警ID。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestCooldownSuppressesRepeatedNotificationButAllowsReminder verifies cooldown; TestWebhookOutboxBoundedRetriesAndChannelSecretEncryption receives three real local HTTP 503 responses and verifies exactly three attempts.",
+      "runs": [
+        {
+          "run_id": "s15-local-20261009T051200Z",
+          "status": "PASS",
+          "command": "make test-s15",
+          "result": "Cooldown lifecycle and bounded Webhook retry tests passed.",
+          "log": ".artifacts/logs/s15/candidate.log",
+          "attempt": 1
+        }
+      ],
+      "reason": "本地 Store/Webhook 通过；Agent 连续上报及站内、Webhook、SMTP 三通道冷却总量未在完整 Core/Agent 部署中验证。"
     },
     "S15-03": {
       "status": "NOT_READY",
@@ -31,8 +87,18 @@
       "expected": "生命周期正确。",
       "environment": "故障-恢复-再故障指标序列。",
       "evidence_required": "事件ID、恢复记录和再次触发记录。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestEvaluationDurationRecoveryAndRealWebhookDelivery verifies firing, recovery and a new alert ID on re-fire.",
+      "runs": [
+        {
+          "run_id": "s15-local-20261009T051200Z",
+          "status": "PASS",
+          "command": "make test-s15",
+          "result": "Controlled failure-recovery-refailure Store sequence passed.",
+          "log": ".artifacts/logs/s15/candidate.log",
+          "attempt": 1
+        }
+      ],
+      "reason": "生命周期通过受控 Store 样本；真实 Agent 故障及恢复通知序列尚未执行。"
     },
     "S15-04": {
       "status": "NOT_READY",
@@ -40,8 +106,18 @@
       "expected": "行为及审计正确。",
       "environment": "活动告警、管理员操作和维护窗口。",
       "evidence_required": "抑制结果、解除时刻及审计。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "Store tests cover acknowledgement, alert silence, maintenance/silence windows and pending-delivery suppression; Core API test covers Session/CSRF and audit; Playwright covers browser acknowledgement interaction.",
+      "runs": [
+        {
+          "run_id": "s15-local-20261009T051200Z",
+          "status": "PASS",
+          "command": "make test-s15",
+          "result": "Store/API and responsive-browser candidate tests passed.",
+          "log": ".artifacts/logs/s15/candidate.log",
+          "attempt": 1
+        }
+      ],
+      "reason": "本地 Store/API 与 stubbed browser passed；真实 Core 页面定时窗口到期和端到端审计记录仍未部署验证。"
     },
     "S15-05": {
       "status": "NOT_READY",
@@ -49,8 +125,18 @@
       "expected": "不把旧值当作当前资源告警。",
       "environment": "旧高负载指标后切断Agent。",
       "evidence_required": "stale字段和告警列表。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestSilenceWindowAndOfflineMetricRemainUnknown verifies unknown values do not fire; TestOfflineNodeResetsPendingChildDuration verifies stale pre-offline duration is discarded.",
+      "runs": [
+        {
+          "run_id": "s15-local-20261009T051200Z",
+          "status": "PASS",
+          "command": "make test-s15",
+          "result": "Unknown sample and reconnect-duration reset tests passed.",
+          "log": ".artifacts/logs/s15/candidate.log",
+          "attempt": 1
+        }
+      ],
+      "reason": "使用直接构造的离线/未知样本通过；没有实际切断被控 Agent 并观察 Core lease 与旧指标的记录。"
     },
     "S15-06": {
       "status": "NOT_READY",
@@ -58,8 +144,18 @@
       "expected": "下级告警合理抑制。",
       "environment": "含多容器节点及失联。",
       "evidence_required": "父子告警数量、关联和抑制原因。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestOfflineSuppressionAcknowledgementWindowsAndDefaults fires CPU/container/probe alerts, then supplies offline/unknown samples and verifies child suppression and queued notification suppression.",
+      "runs": [
+        {
+          "run_id": "s15-local-20261009T051200Z",
+          "status": "PASS",
+          "command": "make test-s15",
+          "result": "Store parent-offline suppression assertions passed.",
+          "log": ".artifacts/logs/s15/candidate.log",
+          "attempt": 1
+        }
+      ],
+      "reason": "Store 状态机验证通过；多容器真实节点及 Agent 断连后的实际 Core 聚合状态未运行。"
     },
     "S15-07": {
       "status": "NOT_READY",
@@ -67,8 +163,18 @@
       "expected": "实际接收内容正确。",
       "environment": "真实站内记录和受控Webhook/SMTP接收器。",
       "evidence_required": "接收器原始消息与配置模板比较。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestEvaluationDurationRecoveryAndRealWebhookDelivery uses a local HTTP listener for a firing event; TestSMTPControlledLocalReceiver uses a scripted SMTP TCP receiver for a firing alert; Store/API persist the in-app record; Playwright uses API stubs.",
+      "runs": [
+        {
+          "run_id": "s15-local-20261009T051200Z",
+          "status": "PASS",
+          "command": "make test-s15",
+          "result": "Controlled local Webhook and SMTP receiver assertions and in-app Store records passed.",
+          "log": ".artifacts/logs/s15/candidate.log",
+          "attempt": 1
+        }
+      ],
+      "reason": "受控本地接收器收到真实 NodeDance Sender 发出的 firing 消息；独立部署 Core/Agent、真实外部 SMTP/TLS 和非 stub 浏览器端到端证据缺失。"
     },
     "S15-08": {
       "status": "NOT_READY",
@@ -76,8 +182,18 @@
       "expected": "有界重试，历史可查。",
       "environment": "故障注入Webhook/SMTP接收端。",
       "evidence_required": "每次尝试、最终状态和有限重试数。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestWebhookOutboxBoundedRetriesAndChannelSecretEncryption receives three controlled HTTP 503 responses and verifies attempts/history; wrong-key decryption failure is persisted as a terminal delivery failure.",
+      "runs": [
+        {
+          "run_id": "s15-local-20261009T051200Z",
+          "status": "PASS",
+          "command": "make test-s15",
+          "result": "HTTP 503 bounded retry history and crypto failure persistence assertions passed.",
+          "log": ".artifacts/logs/s15/candidate.log",
+          "attempt": 1
+        }
+      ],
+      "reason": "Webhook 响应错误序列通过；SMTP AUTH 拒绝、远端 TLS 协商失败与真实网络超时接收器尚未执行。"
     },
     "S15-09": {
       "status": "NOT_READY",
@@ -85,8 +201,18 @@
       "expected": "规则、活动告警及投递状态保留。",
       "environment": "真实持久数据库及投递队列。",
       "evidence_required": "重启前后规则/告警/task ID。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "TestAlertAndOutboxStateSurviveRestartAndRecoverSending reopens Store state and recovers interrupted deliveries; TestAlertChannelSecretSurvivesCoreRestartEncrypted constructs Core again against the same data directory.",
+      "runs": [
+        {
+          "run_id": "s15-local-20261009T051200Z",
+          "status": "PASS",
+          "command": "make test-s15",
+          "result": "SQLite and Core reinitialization persistence assertions passed.",
+          "log": ".artifacts/logs/s15/candidate.log",
+          "attempt": 1
+        }
+      ],
+      "reason": "本机 SQLite/Core 重建通过；已安装 systemd Core 进程杀停、再启动和真实投递队列恢复未测试。"
     },
     "S15-10": {
       "status": "NOT_READY",
@@ -94,8 +220,25 @@
       "expected": "秘密不泄露，模板输入安全。",
       "environment": "含测试凭据和恶意模板输入。",
       "evidence_required": "DB/log/通知内容扫描和渲染结果。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "candidate_coverage": "Tests verify AES-GCM ciphertext excludes the password, channel API omits the secret, encryption-key permissions are 0600, and notifications use fixed JSON content; this implementation has no user-editable template.",
+      "runs": [
+        {
+          "run_id": "s15-local-20261009T051200Z",
+          "status": "PASS",
+          "command": "make test-s15",
+          "result": "Encrypted-secret/API-restart tests passed; go vet and whitespace checks passed.",
+          "log": ".artifacts/logs/s15/candidate.log",
+          "attempt": 1
+        }
+      ],
+      "reason": "本地数据库/API/权限断言通过；发布包、日志、备份专项扫描未运行，计划提及的用户模板功能未实现，因此正式项保持 NOT_READY。"
     }
-  }
+  },
+  "integration_migration": {
+    "candidate_branch_version": 6,
+    "integration_version": 9,
+    "status": "NOT_READY",
+    "note": "The integration keeps v1–v8 unchanged and appends the alert tables at v9. The isolated candidate v6 is not reused."
+  },
+  "acceptance_policy_note": "The candidate report records one focused run. Current and future formal stage acceptance requires one complete meaningful run; re-run affected checks after failures or code changes."
 }

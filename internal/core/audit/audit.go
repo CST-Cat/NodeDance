@@ -19,6 +19,7 @@ const (
 	TargetFile              TargetKind = "file"
 	TargetTerminalHost      TargetKind = "terminal_host"
 	TargetTerminalContainer TargetKind = "terminal_container"
+	TargetAlert             TargetKind = "alert"
 )
 
 type Target struct {
@@ -48,6 +49,9 @@ var actions = map[string]struct{}{
 	"compose_operation": {}, "terminal_start": {}, "terminal_end": {},
 	"file_mkdir": {}, "file_rename": {}, "file_delete": {}, "file_save_text": {}, "file_upload": {},
 	"probe_create": {}, "probe_update": {}, "probe_enable": {}, "probe_disable": {}, "probe_delete": {},
+	"alert_defaults_create": {}, "alert_rule_save": {}, "alert_rule_delete": {},
+	"alert_channel_save": {}, "alert_channel_delete": {}, "alert_channel_test": {},
+	"alert_window_create": {}, "alert_window_delete": {}, "alert_acknowledge": {}, "alert_silence": {},
 }
 
 var outcomes = map[string]struct{}{
@@ -70,7 +74,7 @@ func Record(ctx context.Context, execer Execer, event Event) error {
 	targetKind, targetID := any(nil), any(nil)
 	if event.Target.Kind != "" || event.Target.ID != "" {
 		switch event.Target.Kind {
-		case TargetNode, TargetAgent:
+		case TargetNode, TargetAgent, TargetAlert:
 			if !targetIDPattern.MatchString(event.Target.ID) {
 				return errors.New("audit target ID must be a canonical UUID")
 			}

@@ -12,7 +12,7 @@ PNPM_BIN := $(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin
 export PATH := $(GO_BIN:%/go=%):$(NODE_BIN):$(PNPM_BIN):$(PATH)
 export GOTOOLCHAIN := local
 
-.PHONY: help bootstrap deps frontend playwright-install verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-terminal-component test-terminal-browser test-s11-go test-s11-ui test-s14 fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
+.PHONY: help bootstrap deps frontend playwright-install verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-terminal-component test-terminal-browser test-s11-go test-s11-ui test-s14 test-s15 fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
 
 help:
 	@printf '%s\n' \
@@ -31,6 +31,7 @@ help:
 	  '  make test-s11-go' \
 	  '  make test-acceptance' \
 	  '  make test-s14' \
+	  '  make test-s15' \
 	  '  make fixtures-start ENGINE=29' \
 	  '  make fixtures-create|fixtures-fault|fixtures-clean ENGINE=29 RUN_ID=<id>'
 
@@ -112,6 +113,11 @@ test-s14: deps
 	go test -race -count=1 ./internal/protocol ./internal/agent/probes ./internal/core/probes ./internal/core/server -run 'TestValidateProbe|TestExecutor|TestTCPDial|TestBridge|TestProbe|TestOfflineNode|TestRealAgentServiceProbe'
 	go test -count=1 ./internal/protocol ./internal/agent/probes ./internal/core/probes ./internal/core/server -run 'TestValidateProbe|TestExecutor|TestTCPDial|TestBridge|TestProbe|TestOfflineNode|TestRealAgentServiceProbe'
 	PATH="$(NODEDANCE_TOOL_ROOT)/node-v$(NODE_VERSION)/bin:$(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin:$$PATH" pnpm --dir web run test:s14
+
+test-s15: deps
+	go test -race -count=1 ./internal/core/alerts ./internal/core/audit ./internal/core/storage
+	go test -race -count=1 ./internal/core/server -run 'TestAlert|TestProbe'
+	PATH="$(NODEDANCE_TOOL_ROOT)/node-v$(NODE_VERSION)/bin:$(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin:$$PATH" pnpm --dir web run test:s15
 
 fixtures-start:
 	@test -n "$(ENGINE)" || { echo 'ENGINE is required (28 or 29)' >&2; exit 2; }

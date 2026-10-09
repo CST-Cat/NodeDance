@@ -3,8 +3,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ApiError, api, type Appearance, type Session, type User } from './api'
 import NodesDashboard from './components/NodesDashboard.vue'
 import TailscaleDiscovery from './components/TailscaleDiscovery.vue'
+import AlertCenter from './components/AlertCenter.vue'
 
-type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery'
+type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'alerts'
 type ImageKind = 'avatar' | 'background'
 
 const screen = ref<Screen>('loading')
@@ -311,9 +312,11 @@ onMounted(() => {
         <span class="system-label"><span class="status-dot"></span> 本地管理</span>
         <button v-if="screen === 'settings'" class="quiet-button" type="button" @click="screen = 'nodes'">节点监控</button>
         <button v-if="screen === 'nodes'" class="quiet-button" type="button" @click="screen = 'settings'">账户设置</button>
+        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery'" class="quiet-button" type="button" @click="screen = 'alerts'">告警中心</button>
+        <button v-if="screen === 'alerts'" class="quiet-button" type="button" @click="screen = 'nodes'">返回监控</button>
         <button v-if="screen === 'nodes' || screen === 'settings'" class="quiet-button" type="button" @click="screen = 'discovery'">发现节点</button>
         <button v-if="screen === 'discovery'" class="quiet-button" type="button" @click="screen = 'nodes'">返回监控</button>
-        <button v-if="screen === 'settings' || screen === 'nodes'" class="quiet-button" type="button" :disabled="busy" @click="logout">
+        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'alerts'" class="quiet-button" type="button" :disabled="busy" @click="logout">
           退出登录
         </button>
       </div>
@@ -408,6 +411,8 @@ onMounted(() => {
     </section>
 
     <NodesDashboard v-else-if="screen === 'nodes'" />
+
+    <AlertCenter v-else-if="screen === 'alerts'" />
 
     <TailscaleDiscovery v-else-if="screen === 'discovery'" @back="screen = 'nodes'" />
 
