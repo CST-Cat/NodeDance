@@ -32,13 +32,20 @@ GO_VERSION="$(GOTOOLCHAIN=local "$GO_BIN" version)"
 ARTIFACT_DIR="$ROOT/.artifacts/s08"
 mkdir -p "$ARTIFACT_DIR"
 ARTIFACT="$ARTIFACT_DIR/image-engine${ENGINE}-${RUN_ID}.log"
+SLOW_PROXY_BIN="$ARTIFACT_DIR/s08-slow-proxy-${RUN_ID}"
 AUTH_USER="nodedance-s08-user-$RUN_ID"
 AUTH_PASSWORD="nodedance-s08-password-$RUN_ID"
+ENGINE_ARCH="$(docker --host "unix://$EXPECTED_SOCKET" version --format '{{.Server.Arch}}')"
+[[ "$ENGINE_ARCH" == amd64 || "$ENGINE_ARCH" == arm64 ]] || { echo "S08 DIND NOT_READY: unsupported Engine architecture: $ENGINE_ARCH" >&2; exit 3; }
+GOOS=linux GOARCH="$ENGINE_ARCH" CGO_ENABLED=0 GOTOOLCHAIN=local \
+  "$GO_BIN" build -mod=readonly -trimpath -o "$SLOW_PROXY_BIN" ./scripts/test/s08-slow-proxy
+TEST_PATTERN="${NODEDANCE_S08_TEST_PATTERN:-^TestDINDImageManagementRealEngine$}"
 echo "S08 real image Engine run=$RUN_ID engine=$ENGINE started=$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$ARTIFACT"
 set +e
 NODEDANCE_S08_DIND_ROOT="$DIND_ROOT" NODEDANCE_S08_RUN_ID="$RUN_ID" \
-  NODEDANCE_S08_REGISTRY_USER="$AUTH_USER" NODEDANCE_S08_REGISTRY_PASSWORD="$AUTH_PASSWORD" GOTOOLCHAIN=local \
-  "$GO_BIN" test -mod=readonly -count=1 -timeout=8m -v ./internal/agent/images -run '^TestDINDImageManagementRealEngine$' \
+  NODEDANCE_S08_REGISTRY_USER="$AUTH_USER" NODEDANCE_S08_REGISTRY_PASSWORD="$AUTH_PASSWORD" \
+  NODEDANCE_S08_SLOW_PROXY_BIN="$SLOW_PROXY_BIN" GOTOOLCHAIN=local \
+  "$GO_BIN" test -mod=readonly -count=1 -timeout=8m -v ./internal/agent/images -run "$TEST_PATTERN" \
   >> "$ARTIFACT" 2>&1
 TEST_STATUS=$?
 set -e
@@ -49,4 +56,5 @@ if grep -Fq -- "$AUTH_USER" "$ARTIFACT" || grep -Fq -- "$AUTH_PASSWORD" "$ARTIFA
 fi
 cat "$ARTIFACT"
 [[ "$TEST_STATUS" == 0 ]] || exit "$TEST_STATUS"
+rm -f "$SLOW_PROXY_BIN"
 echo "S08 DIND evidence: $ARTIFACT"
