@@ -217,8 +217,8 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 }
 
 // migrateRebuiltContainerPreferences moves only a verified successful rebuild's
-// display preferences. The persistent S06 repository can be injected later;
-// current production installs use the explicit no-op adapter.
+// display preferences through the production SQLite adapter or an explicitly
+// injected test/alternate adapter.
 func (s *Server) migrateRebuiltContainerPreferences(ctx context.Context, task coretasks.Task) error {
 	if task.Status != taskstate.Succeeded || task.Intent.Action != protocol.TaskRebuild ||
 		!protocol.IsFullContainerID(task.Intent.ContainerID) || !protocol.IsFullContainerID(task.Result.ResourceRevision) ||

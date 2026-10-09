@@ -35,8 +35,9 @@ type Migrator interface {
 	MigrateContainer(context.Context, string, string, string) error
 }
 
-// NopMigrator is the production fallback until the S06 persistent preference
-// repository is installed.
+// NopMigrator explicitly disables display-preference migration. Production
+// servers use SQLiteMigrator by default; this adapter is for tests and
+// deployments that deliberately disable identity migration.
 type NopMigrator struct{}
 
 func (NopMigrator) MigrateContainer(context.Context, string, string, string) error { return nil }

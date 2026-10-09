@@ -45,8 +45,9 @@ type Options struct {
 	AgentSweepInterval     time.Duration
 	FileTransferLimit      int64
 	Now                    func() time.Time
-	// PreferenceMigrator is the S06 display-preference identity seam.
-	// Production defaults to a no-op until the persistent S06 repository lands.
+	// PreferenceMigrator overrides the production SQLite-backed S06 display-
+	// preference identity migration. NopMigrator is available for explicit
+	// disabled/test configurations only.
 	PreferenceMigrator coreprefs.Migrator
 }
 
@@ -210,7 +211,7 @@ func New(version string, options Options) (*Server, error) {
 		preferenceMigrator:     options.PreferenceMigrator,
 	}
 	if s.preferenceMigrator == nil {
-		s.preferenceMigrator = coreprefs.NopMigrator{}
+		s.preferenceMigrator = coreprefs.NewSQLiteMigrator(store.DB)
 	}
 	s.composeOps, err = corecompose.NewStore(store.DB, corecompose.Options{Now: options.Now})
 	if err != nil {
