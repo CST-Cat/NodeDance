@@ -261,12 +261,25 @@ func (s *Store) CompleteVersion(ctx context.Context, nodeID, version string) err
 	return err
 }
 
-func (s *Store) ReconcileVersion(ctx context.Context, nodeID, version string) error {
+func (s *Store) ReconcileVersion(ctx context.Context, nodeID, version string, pendingTaskIDs ...string) error {
+	pendingTaskID := ""
+	if len(pendingTaskIDs) > 0 {
+		pendingTaskID = pendingTaskIDs[0]
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if pendingTaskID != "" {
+		// A staged Agent journal survives a Core restart. Recover() moves the
+		// former dispatch to deferred; restore that exact task to dispatched
+		// before the connection scheduler runs so the Agent's retried prepared
+		// report can persist without sending the download command a second time.
+		if _, err := tx.ExecContext(ctx, `UPDATE agent_update_tasks SET status='dispatched',reason='',updated_at=? WHERE id=? AND node_id=? AND status IN ('queued','deferred')`, s.now().Unix(), pendingTaskID, nodeID); err != nil {
+			return err
+		}
+	}
 	rows, err := tx.QueryContext(ctx, `SELECT t.id,t.batch_id,r.version FROM agent_update_tasks t JOIN agent_update_releases r ON r.id=t.release_id WHERE t.node_id=? AND t.status='prepared'`, nodeID)
 	if err != nil {
 		return err
@@ -287,6 +300,11 @@ func (s *Store) ReconcileVersion(ctx context.Context, nodeID, version string) er
 	for _, p := range items {
 		if p.want == version {
 			_, err = tx.ExecContext(ctx, `UPDATE agent_update_tasks SET status='succeeded',reason='',updated_at=? WHERE id=? AND status='prepared'`, s.now().Unix(), p.id)
+		} else if p.id == pendingTaskID {
+			// The Agent reports a durable staged journal in Hello when Core's
+			// prepared acknowledgement may have been lost. Preserve the task so
+			// it can resend its report and receive the acknowledgement again.
+			continue
 		} else {
 			_, err = tx.ExecContext(ctx, `UPDATE agent_update_tasks SET status='failed',reason='Agent returned on the previous version after update attempt',updated_at=? WHERE id=? AND status='prepared'`, s.now().Unix(), p.id)
 			if err == nil {

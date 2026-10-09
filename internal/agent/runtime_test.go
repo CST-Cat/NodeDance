@@ -4,7 +4,19 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
+
+func TestLegacyCoreWelcomeDoesNotEnablePreparedAgentUpdates(t *testing.T) {
+	oldCoreCapabilities := []string{protocol.CapabilityAgentUpdates, protocol.CapabilityMetrics}
+	if preparedAgentUpdatesEnabled(oldCoreCapabilities) {
+		t.Fatal("legacy Core welcome enabled updates without prepared-ACK support")
+	}
+	if !preparedAgentUpdatesEnabled([]string{protocol.CapabilityAgentUpdatesPreparedAck}) {
+		t.Fatal("prepared-ACK Core capability did not enable updates")
+	}
+}
 
 func TestReconnectDelayRangeHasDeterministicBounds(t *testing.T) {
 	tests := []struct {

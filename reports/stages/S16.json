@@ -4,8 +4,8 @@
   "mode": "candidate",
   "status": "NOT_READY",
   "run_id": "s16-local-20261009T053703Z",
-  "updated_at": "2026-10-09T05:37:30Z",
-  "reason": "本地候选实现及受影响定向测试通过；最终代码提交 b5c8e41621f85556dde96f591f8cd23e420003bf 的 GitHub Actions 完整 S16 focused suite 通过。真实 systemd 多 Agent 更新、节点重启和生产签名密钥链证据仍缺失，因此整体阶段保持 NOT_READY。",
+  "updated_at": "2026-10-09T05:52:53Z",
+  "reason": "基线代码提交 b5c8e41621f85556dde96f591f8cd23e420003bf 的 GitHub Actions 完整 S16 focused suite 通过；后续 prepared-report handoff 修复的受影响 Agent/helper/Core update 测试及 go vet 通过。真实 systemd 多 Agent 更新、节点重启和生产签名密钥链证据仍缺失，因此整体阶段保持 NOT_READY。",
   "tests": {
     "S16-01": {
       "status": "NOT_READY",
@@ -232,6 +232,26 @@
     "browser": "Playwright Chromium 1.63.0",
     "docker_engine_used": false,
     "scope": "真实本机 Core/SQLite handler、TLS httptest release 下载、Linux helper 临时进程/文件系统、Playwright API-stubbed responsive UI；无独立 VPS、真实 systemd 启动或多 Agent。"
+  },
+  "prepared_ack_followup": {
+    "run_id": "s16-ack-handoff-20261009T055253Z",
+    "status": "PASS",
+    "scope": "Core 持久化 prepared 报告后 ACK；Agent 对 ACK 做持久确认；helper 在 ACK 前保持旧版本；Core 重启/ACK 丢失恢复；旧 Core capability 兼容拒绝。",
+    "commands": [
+      "go test -count=1 ./internal/agent/update ./internal/agent -run 'Prepared|Staged|Supervisor|Stage|LegacyCore'",
+      "go test -count=1 ./internal/core/server ./internal/core/updates -run 'Prepared|Staged|AgentUpdate|LegacyUpdate|CoreRestart|Rollout|AutomaticCampaign|SignedRelease|ReconcileVersion'",
+      "go vet ./internal/agent/update ./internal/agent ./internal/core/server ./internal/core/updates ./internal/protocol",
+      "git diff --check"
+    ],
+    "results": [
+      "Agent/helper 测试 PASS：prepared ACK 先持久化再退出、错误任务 ID 不接受、staged 状态下多次 helper 轮询不切换，匹配 ACK 后候选启动并进入 awaiting_confirmation。",
+      "Core 测试 PASS：延迟持久化期间不入队 ACK；数据库持久化失败不入队 ACK；Core 重启后的 staged 任务从 deferred 恢复为 dispatched，调度并发也不重复派发；prepared 报告在 ACK 丢失后可幂等重报。",
+      "兼容性测试 PASS：新 Core 不协商/排程旧 agent.updates.v1；Agent 只有收到 agent.updates.prepared-ack.v1 才启用更新。已经 staged 的 Agent 遇到不支持能力的 Core 时明确报错并保留旧版本/journal。",
+      "受影响包 go vet PASS；git diff --check PASS。"
+    ],
+    "unaffected_playwright": "NOT_RUN by scope; no UI code changed.",
+    "github_actions": "NOT_RUN for this follow-up; base candidate full S16 workflow remains recorded below.",
+    "formal_stage_status": "NOT_READY"
   },
   "candidate_suite": {
     "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16",

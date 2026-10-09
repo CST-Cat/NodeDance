@@ -19,7 +19,7 @@ func TestSupervisorRestartsAndConfirmsPreparedCandidate(t *testing.T) {
 	state, old, candidate := prepareSupervisorVersions(t)
 	marker := filepath.Join(state, "candidate-started")
 	prepared := Journal{
-		State: "prepared", OldTarget: filepath.Join("versions", "old", "nodedance-agent"),
+		State: "prepared", TaskID: testUpdateTaskID, OldTarget: filepath.Join("versions", "old", "nodedance-agent"),
 		CandidateTarget: filepath.Join("versions", "candidate", "nodedance-agent"), Version: "candidate",
 	}
 	oldScript := "#!/bin/sh\nprintf '%s' '" + marshalJournalForShell(t, prepared) + "' > " + shellQuote(JournalPath(state)) + "\nexit 0\n"
@@ -51,7 +51,7 @@ func TestSupervisorRollsBackWhenCandidateCannotExec(t *testing.T) {
 		t.Fatal(err)
 	}
 	setCurrent(t, state, oldTarget)
-	if err := WriteJournal(state, Journal{State: "prepared", OldTarget: oldTarget, CandidateTarget: candidateTarget, Version: "candidate"}); err != nil {
+	if err := WriteJournal(state, Journal{State: "prepared", TaskID: testUpdateTaskID, OldTarget: oldTarget, CandidateTarget: candidateTarget, Version: "candidate"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -73,7 +73,7 @@ func TestSupervisorRollsBackCandidateThatExitsBeforeConfirmation(t *testing.T) {
 	writeProgram(t, old, "#!/bin/sh\ntouch "+shellQuote(oldMarker)+"\nexec /bin/sleep 30\n")
 	writeProgram(t, candidate, "#!/bin/sh\ntouch "+shellQuote(candidateMarker)+"\nexit 17\n")
 	setCurrent(t, state, oldTarget)
-	if err := WriteJournal(state, Journal{State: "prepared", OldTarget: oldTarget, CandidateTarget: candidateTarget, Version: "candidate"}); err != nil {
+	if err := WriteJournal(state, Journal{State: "prepared", TaskID: testUpdateTaskID, OldTarget: oldTarget, CandidateTarget: candidateTarget, Version: "candidate"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -87,13 +87,61 @@ func TestSupervisorRollsBackCandidateThatExitsBeforeConfirmation(t *testing.T) {
 	cancel()
 }
 
+func TestSupervisorWaitsForCoreAckBeforeSwitchingStagedCandidate(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("Agent updates target Linux")
+	}
+	state, old, candidate := prepareSupervisorVersions(t)
+	oldTarget := filepath.Join("versions", "old", "nodedance-agent")
+	candidateTarget := filepath.Join("versions", "candidate", "nodedance-agent")
+	oldMarker := filepath.Join(state, "old-started")
+	candidateMarker := filepath.Join(state, "candidate-started")
+	writeProgram(t, old, "#!/bin/sh\ntouch "+shellQuote(oldMarker)+"\nexec /bin/sleep 30\n")
+	writeProgram(t, candidate, "#!/bin/sh\ntouch "+shellQuote(candidateMarker)+"\nexec /bin/sleep 30\n")
+	setCurrent(t, state, oldTarget)
+	if err := WriteJournal(state, Journal{State: "staged", TaskID: testUpdateTaskID, OldTarget: oldTarget, CandidateTarget: candidateTarget, Version: "candidate"}); err != nil {
+		t.Fatal(err)
+	}
+
+	cancel := startTestSupervisor(t, state)
+	waitForFile(t, oldMarker)
+	// Leave ample time for multiple supervisor polls after the Agent reports
+	// prepared but before Core persistence/ACK is allowed to finish.
+	time.Sleep(1200 * time.Millisecond)
+	assertCurrent(t, state, oldTarget)
+	j, err := ReadJournal(state)
+	if err != nil || j.State != "staged" {
+		t.Fatalf("journal before Core ACK = %#v, %v", j, err)
+	}
+	if err := AcknowledgePrepared(state, "2b7fb967-4ed0-47dd-8ceb-80955fcae0e7"); err == nil {
+		t.Fatal("supervisor test accepted mismatched Core ACK")
+	}
+	time.Sleep(600 * time.Millisecond)
+	assertCurrent(t, state, oldTarget)
+
+	if err := AcknowledgePrepared(state, testUpdateTaskID); err != nil {
+		t.Fatalf("persist matching Core ACK: %v", err)
+	}
+	waitForFile(t, candidateMarker)
+	assertCurrent(t, state, candidateTarget)
+	j, err = ReadJournal(state)
+	if err != nil || j.State != "awaiting_confirmation" {
+		t.Fatalf("candidate journal after acknowledged switch = %#v, %v", j, err)
+	}
+	if err := ConfirmStartup(state, "candidate"); err != nil {
+		t.Fatal(err)
+	}
+	waitForJournalRemoval(t, state)
+	cancel()
+}
+
 func TestSupervisorStartupConfirmedKeepsCandidate(t *testing.T) {
 	state, _, candidate := prepareSupervisorVersions(t)
 	candidateTarget := filepath.Join("versions", "candidate", "nodedance-agent")
 	marker := filepath.Join(state, "candidate-started")
 	writeProgram(t, candidate, "#!/bin/sh\ntouch "+shellQuote(marker)+"\nexec /bin/sleep 30\n")
 	setCurrent(t, state, candidateTarget)
-	if err := WriteJournal(state, Journal{State: "confirmed", OldTarget: filepath.Join("versions", "old", "nodedance-agent"), CandidateTarget: candidateTarget, Version: "candidate"}); err != nil {
+	if err := WriteJournal(state, Journal{State: "confirmed", TaskID: testUpdateTaskID, OldTarget: filepath.Join("versions", "old", "nodedance-agent"), CandidateTarget: candidateTarget, Version: "candidate"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -221,7 +269,7 @@ func TestSupervisorRecoveryKeepsConfirmedCurrent(t *testing.T) {
 	state, _, _ := prepareSupervisorVersions(t)
 	candidateTarget := filepath.Join("versions", "candidate", "nodedance-agent")
 	setCurrent(t, state, candidateTarget)
-	if err := WriteJournal(state, Journal{State: "confirmed", OldTarget: filepath.Join("versions", "old", "nodedance-agent"), CandidateTarget: candidateTarget, Version: "candidate"}); err != nil {
+	if err := WriteJournal(state, Journal{State: "confirmed", TaskID: testUpdateTaskID, OldTarget: filepath.Join("versions", "old", "nodedance-agent"), CandidateTarget: candidateTarget, Version: "candidate"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := recoverJournalAtBoot(state); err != nil {

@@ -104,6 +104,28 @@ func TestCoreRestartRequeuesDispatchedUpdateForReconciliation(t *testing.T) {
 	if err != nil || len(pending) != 1 || pending[0].Status != "deferred" {
 		t.Fatalf("recovered pending task=%+v err=%v", pending, err)
 	}
+	if err := store.ReconcileVersion(ctx, node, "0.9.0", task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := store.Pending(ctx, 10); err != nil || len(pending) != 0 {
+		t.Fatalf("staged task remained eligible for duplicate dispatch: %+v %v", pending, err)
+	}
+	if err := store.Report(ctx, task.ID, node, "prepared", ""); err != nil {
+		t.Fatalf("persist prepared report after Core restart: %v", err)
+	}
+	if err := store.Recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ReconcileVersion(ctx, node, "0.9.0", task.ID); err != nil {
+		t.Fatalf("reconcile after persisted report and lost ACK: %v", err)
+	}
+	if err := store.Report(ctx, task.ID, node, "prepared", ""); err != nil {
+		t.Fatalf("idempotent retry after lost prepared ACK: %v", err)
+	}
+	tasks, err := store.ListTasks(ctx, 10)
+	if err != nil || len(tasks) != 1 || tasks[0].ID != task.ID || tasks[0].Status != "prepared" {
+		t.Fatalf("prepared retry task=%+v err=%v", tasks, err)
+	}
 }
 
 func TestAutomaticCampaignReleasesOneNodeAfterConfirmedSuccess(t *testing.T) {

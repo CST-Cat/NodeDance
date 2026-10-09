@@ -213,7 +213,11 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	}
 	if os.Getenv(agentupdate.HelperEnvironment) == "1" {
 		if _, err := agentupdate.PublicKeyFromBase64(agentupdate.TrustedPublicKeyBase64); err == nil {
-			hello.Capabilities = append(hello.Capabilities, protocol.CapabilityAgentUpdates)
+			hello.Capabilities = append(hello.Capabilities, protocol.CapabilityAgentUpdatesPreparedAck)
+			if journal, journalErr := agentupdate.ReadJournal(filepath.Dir(configPath)); journalErr == nil && journal.State == "staged" {
+				hello.UpdateTaskID = journal.TaskID
+				hello.UpdateState = journal.State
+			}
 		}
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
@@ -235,6 +239,9 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	var welcome protocol.Welcome
 	if err := decodeSocketPayload(envelope.Payload, &welcome); err != nil || !validWelcome(config, envelope.Generation, welcome) {
 		return errors.New("Core welcome is invalid")
+	}
+	if err := validatePreparedUpdateWelcome(filepath.Dir(configPath), welcome.Capabilities); err != nil {
+		return err
 	}
 	if err := agentupdate.ConfirmStartup(filepath.Dir(configPath), version); err != nil {
 		return fmt.Errorf("confirm Agent update startup: %w", err)
@@ -281,7 +288,25 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		containsCapability(welcome.Capabilities, protocol.CapabilityDocker), taskBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityTaskBridge), streamBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams), config.NodeID,
-		containsCapability(welcome.Capabilities, protocol.CapabilityProbes), containsCapability(welcome.Capabilities, protocol.CapabilityAgentUpdates), config, version)
+		containsCapability(welcome.Capabilities, protocol.CapabilityProbes), preparedAgentUpdatesEnabled(welcome.Capabilities), config, version)
+}
+
+func preparedAgentUpdatesEnabled(capabilities []string) bool {
+	return containsCapability(capabilities, protocol.CapabilityAgentUpdatesPreparedAck)
+}
+
+func validatePreparedUpdateWelcome(stateDir string, capabilities []string) error {
+	journal, err := agentupdate.ReadJournal(stateDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read staged Agent update journal: %w", err)
+	}
+	if journal.State == "staged" && !preparedAgentUpdatesEnabled(capabilities) {
+		return errors.New("Core does not support agent.updates.prepared-ack.v1; staged update remains unapplied")
+	}
+	return nil
 }
 
 const agentHelloDeadline = 5 * time.Second
@@ -375,6 +400,13 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	}
 	updateResults := make(chan protocol.AgentUpdateReport, 1)
 	updateRunning := false
+	var awaitingPreparedAck string
+	if updatesEnabled {
+		if journal, err := agentupdate.ReadJournal(filepath.Dir(configPath)); err == nil && journal.State == "staged" {
+			updateResults <- protocol.AgentUpdateReport{TaskID: journal.TaskID, Status: "prepared", Version: journal.Version}
+			updateRunning = true
+		}
+	}
 	var dockerDone <-chan error
 	if dockerEnabled {
 		var engine agentdocker.Engine
@@ -478,9 +510,10 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				return errors.New("send Agent update status failed")
 			}
 			if report.Status == "prepared" {
-				return agentupdate.ErrPrepared
+				awaitingPreparedAck = report.TaskID
+			} else {
+				updateRunning = false
 			}
-			updateRunning = false
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -574,7 +607,7 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 					key, keyErr := agentupdate.PublicKeyFromBase64(agentupdate.TrustedPublicKeyBase64)
 					client, clientErr := newHTTPClient(agentConfig.CAFile)
 					if keyErr == nil && clientErr == nil {
-						err := agentupdate.Stage(ctx, client, agentConfig.Credential, key, agentupdate.Request{Manifest: manifest,
+						err := agentupdate.Stage(ctx, client, agentConfig.Credential, key, agentupdate.Request{TaskID: command.TaskID, Manifest: manifest,
 							ArtifactURL: command.ArtifactURL, CoreVersion: command.CoreVersion, CurrentAgentVersion: agentVersion,
 							Protocol: protocol.CurrentVersion}, filepath.Dir(configPath))
 						client.CloseIdleConnections()
@@ -591,6 +624,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 					case <-ctx.Done():
 					}
 				}(command, manifest)
+			case protocol.TypeAgentUpdatePreparedAck:
+				if !updatesEnabled {
+					return errors.New("Core Agent update acknowledgement is invalid")
+				}
+				return acceptPreparedUpdateAck(filepath.Dir(configPath), awaitingPreparedAck, envelope)
 			case protocol.TypeProtocolError:
 				return errors.New("Core rejected Agent protocol message")
 			default:
@@ -598,6 +636,21 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			}
 		}
 	}
+}
+
+func acceptPreparedUpdateAck(stateDir, awaitingTaskID string, envelope protocol.Envelope) error {
+	if envelope.Sequence != 0 || !isUUID(envelope.RequestID) {
+		return errors.New("Core Agent update acknowledgement is invalid")
+	}
+	var acknowledgement protocol.AgentUpdatePreparedAck
+	if decodeSocketPayload(envelope.Payload, &acknowledgement) != nil || acknowledgement.TaskID != envelope.RequestID ||
+		acknowledgement.TaskID != awaitingTaskID {
+		return errors.New("Core Agent update acknowledgement does not match a prepared report")
+	}
+	if err := agentupdate.AcknowledgePrepared(stateDir, acknowledgement.TaskID); err != nil {
+		return fmt.Errorf("persist Core Agent update acknowledgement: %w", err)
+	}
+	return agentupdate.ErrPrepared
 }
 
 func prepareRotation(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, configPath string, config Config, generation uint64, rotationID string,

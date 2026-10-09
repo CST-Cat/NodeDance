@@ -18,14 +18,17 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const diskReserveBytes = 16 << 20
 
-var ErrPrepared = errors.New("Agent update is staged and supervisor should switch versions")
+var ErrPrepared = errors.New("Core-confirmed Agent update is ready for supervisor switch")
 
 type Journal struct {
-	State           string    `json:"state"` // prepared, awaiting_confirmation, confirmed
+	State           string    `json:"state"` // staged, prepared (Core acknowledged), awaiting_confirmation, confirmed
+	TaskID          string    `json:"taskId"`
 	OldTarget       string    `json:"oldTarget"`
 	CandidateTarget string    `json:"candidateTarget"`
 	Version         string    `json:"version"`
@@ -33,6 +36,7 @@ type Journal struct {
 }
 
 type Request struct {
+	TaskID              string   `json:"taskId"`
 	Manifest            Manifest `json:"manifest"`
 	ArtifactURL         string   `json:"artifactUrl"`
 	CoreVersion         string   `json:"coreVersion"`
@@ -45,6 +49,9 @@ type Request struct {
 func Stage(ctx context.Context, client *http.Client, credential string, publicKey ed25519.PublicKey, request Request, stateDir string) error {
 	if client == nil || credential == "" {
 		return errors.New("Agent update transport is not configured")
+	}
+	if _, err := uuid.Parse(request.TaskID); err != nil {
+		return errors.New("Agent update task ID is invalid")
 	}
 	if err := request.Manifest.Verify(publicKey); err != nil {
 		return err
@@ -152,7 +159,7 @@ func Stage(ctx context.Context, client *http.Client, credential string, publicKe
 		return fmt.Errorf("read active Agent target: %w", err)
 	}
 	candidate := filepath.Join("versions", version, "nodedance-agent")
-	journal := Journal{State: "prepared", OldTarget: oldTarget, CandidateTarget: candidate, Version: version, StartedAt: time.Now().UTC()}
+	journal := Journal{State: "staged", TaskID: request.TaskID, OldTarget: oldTarget, CandidateTarget: candidate, Version: version, StartedAt: time.Now().UTC()}
 	if err := WriteJournal(stateDir, journal); err != nil {
 		_ = os.RemoveAll(destination)
 		return err
@@ -183,8 +190,11 @@ func ReadJournal(stateDir string) (Journal, error) {
 	if err := json.Unmarshal(data, &value); err != nil {
 		return value, err
 	}
-	if value.State != "prepared" && value.State != "awaiting_confirmation" && value.State != "confirmed" {
+	if value.State != "staged" && value.State != "prepared" && value.State != "awaiting_confirmation" && value.State != "confirmed" {
 		return Journal{}, errors.New("Agent update journal state is invalid")
+	}
+	if _, err := uuid.Parse(value.TaskID); err != nil {
+		return Journal{}, errors.New("Agent update journal task ID is invalid")
 	}
 	return value, nil
 }
@@ -255,6 +265,29 @@ func ApplyPrepared(stateDir string) error {
 		return err
 	}
 	return swapCurrent(stateDir, j.CandidateTarget)
+}
+
+// AcknowledgePrepared durably records Core's receipt of the Agent's prepared
+// report. The supervisor switches versions only after this transition.
+func AcknowledgePrepared(stateDir, taskID string) error {
+	if _, err := uuid.Parse(taskID); err != nil {
+		return errors.New("Agent update acknowledgement task ID is invalid")
+	}
+	j, err := ReadJournal(stateDir)
+	if err != nil {
+		return err
+	}
+	if j.TaskID != taskID {
+		return errors.New("Agent update acknowledgement does not match staged task")
+	}
+	if j.State == "prepared" {
+		return nil
+	}
+	if j.State != "staged" {
+		return errors.New("Agent update is not waiting for Core acknowledgement")
+	}
+	j.State = "prepared"
+	return WriteJournal(stateDir, j)
 }
 
 func ConfirmStartup(stateDir, version string) error {

@@ -57,7 +57,7 @@ func (s *Server) runAgentUpdateScheduler(ctx context.Context) {
 func compatibleAgentUpdateTargets(nodes []agents.Node, release coreupdates.Release) []string {
 	targets := make([]string, 0, len(nodes))
 	for _, node := range nodes {
-		if node.Status != "online" || !hasCapability(node.Capabilities, protocol.CapabilityAgentUpdates) {
+		if node.Status != "online" || !hasCapability(node.Capabilities, protocol.CapabilityAgentUpdatesPreparedAck) {
 			continue
 		}
 		if node.Permissions.OS != release.OS || node.Permissions.Architecture != release.Architecture {
@@ -83,6 +83,11 @@ func (s *Server) dispatchAgentUpdate(ctx context.Context, task coreupdates.Task)
 	connection := s.agentConnectionForNode(task.NodeID)
 	if connection == nil {
 		s.deferAgentUpdate(ctx, task, "Agent is offline")
+		return
+	}
+	if connection.stagedUpdateTaskID == task.ID {
+		// This connection has a durable staged journal for this task and will
+		// resend its prepared report. Never dispatch the artifact command twice.
 		return
 	}
 	if !connection.updateEnabled {

@@ -34,6 +34,7 @@ type agentConnection struct {
 	taskEnabled              bool
 	probeEnabled             bool
 	updateEnabled            bool
+	stagedUpdateTaskID       string
 	updateBaseURL            string
 	streamEnabled            bool
 	taskSignal               chan struct{}
@@ -63,6 +64,33 @@ type agentRead struct {
 	typeID websocket.MessageType
 	data   []byte
 	err    error
+}
+
+// persistAgentUpdateReportAndQueueAck makes the prepared-report handoff
+// durable before allowing an Agent to stop its old process. The Agent keeps a
+// staged journal and retries the report after reconnect if persistence or ACK
+// delivery fails.
+func persistAgentUpdateReportAndQueueAck(ctx context.Context, connection *agentConnection, report protocol.AgentUpdateReport, persist func() error) error {
+	if err := persist(); err != nil {
+		return err
+	}
+	if report.Status != "prepared" {
+		return nil
+	}
+	ack := protocol.AgentUpdatePreparedAck{TaskID: report.TaskID}
+	envelope := protocol.Envelope{
+		Version:    protocol.CurrentVersion,
+		Type:       protocol.TypeAgentUpdatePreparedAck,
+		Generation: connection.generation,
+		RequestID:  report.TaskID,
+		Payload:    marshalAgentPayload(ack),
+	}
+	select {
+	case connection.commands <- envelope:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func (c *agentConnection) close() {
@@ -388,14 +416,15 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	connectionCtx, connectionCancel := context.WithCancel(r.Context())
 	negotiatedCapabilities := negotiateCapabilities(hello.Capabilities)
 	managed := &agentConnection{conn: conn, cancel: connectionCancel, agentID: identity.AgentID, generation: lease.ConnectionGeneration,
-		ctx:            connectionCtx,
-		metricsEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
-		dockerEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
-		taskEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge),
-		probeEnabled:   hasCapability(negotiatedCapabilities, protocol.CapabilityProbes),
-		updateEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityAgentUpdates),
-		updateBaseURL:  s.agentUpdateOrigin(r),
-		streamEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams), nodeID: identity.NodeID,
+		ctx:                connectionCtx,
+		metricsEnabled:     hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
+		dockerEnabled:      hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
+		taskEnabled:        hasCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge),
+		probeEnabled:       hasCapability(negotiatedCapabilities, protocol.CapabilityProbes),
+		updateEnabled:      hasCapability(negotiatedCapabilities, protocol.CapabilityAgentUpdatesPreparedAck),
+		stagedUpdateTaskID: hello.UpdateTaskID,
+		updateBaseURL:      s.agentUpdateOrigin(r),
+		streamEnabled:      hasCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams), nodeID: identity.NodeID,
 		taskSignal: make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
 		commands: make(chan protocol.Envelope, 32), leaseUpdates: make(chan time.Time, 1)}
@@ -438,7 +467,10 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.updates != nil {
-		_ = s.updates.ReconcileVersion(ctx, identity.NodeID, hello.AgentVersion)
+		if err := s.updates.ReconcileVersion(ctx, identity.NodeID, hello.AgentVersion, hello.UpdateTaskID); err != nil {
+			s.closeAgentProtocol(conn, websocket.StatusInternalError, "could not reconcile Agent update task")
+			return
+		}
 	}
 	s.runAgentConnection(connectionCtx, managed, lease.Identity)
 }
@@ -662,7 +694,12 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent update report")
 					return
 				}
-				if err := s.updates.Report(ctx, report.TaskID, identity.NodeID, report.Status, report.Reason); err != nil && !errors.Is(err, coreupdates.ErrNotFound) {
+				if err := persistAgentUpdateReportAndQueueAck(ctx, connection, report, func() error {
+					return s.updates.Report(ctx, report.TaskID, identity.NodeID, report.Status, report.Reason)
+				}); err != nil {
+					if errors.Is(err, coreupdates.ErrNotFound) {
+						continue
+					}
 					s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not persist Agent update report")
 					return
 				}
@@ -747,6 +784,11 @@ func validHello(hello protocol.Hello) bool {
 	if !validUUID(hello.AgentID) || !validUUID(hello.NodeID) || strings.TrimSpace(hello.AgentVersion) == "" || len(hello.AgentVersion) > 80 || len(hello.Capabilities) > 32 || !validRuntimePermissions(hello.Permissions) {
 		return false
 	}
+	if hello.UpdateTaskID == "" && hello.UpdateState == "" {
+		// Older Agents do not report local updater state.
+	} else if !validUUID(hello.UpdateTaskID) || hello.UpdateState != "staged" || !hasCapability(hello.Capabilities, protocol.CapabilityAgentUpdatesPreparedAck) {
+		return false
+	}
 	seen := make(map[string]struct{}, len(hello.Capabilities))
 	for _, capability := range hello.Capabilities {
 		if len(capability) == 0 || len(capability) > 80 {
@@ -766,7 +808,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityProbes: {}, protocol.CapabilityAgentUpdates: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityProbes: {}, protocol.CapabilityAgentUpdatesPreparedAck: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {

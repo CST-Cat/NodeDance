@@ -79,6 +79,10 @@ func Supervisor(ctx context.Context, stateDir, configPath string) error {
 					return err
 				}
 				switch j.State {
+				case "staged":
+					// The artifact is durable, but Core has not confirmed that its
+					// prepared report was persisted. Keep running the old version.
+					continue
 				case "prepared":
 					if err := ApplyPrepared(stateDir); err != nil {
 						ticker.Stop()
@@ -133,6 +137,8 @@ func recoverJournalAtBoot(stateDir string) error {
 		return err
 	}
 	switch j.State {
+	case "staged":
+		return nil
 	case "prepared":
 		return ApplyPrepared(stateDir)
 	case "awaiting_confirmation":
@@ -155,6 +161,8 @@ func finishAfterChildExit(stateDir string) error {
 		return err
 	}
 	switch j.State {
+	case "staged":
+		return nil
 	case "prepared":
 		return ApplyPrepared(stateDir)
 	case "awaiting_confirmation":

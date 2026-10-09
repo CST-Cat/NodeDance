@@ -14,6 +14,8 @@ import (
 	"time"
 )
 
+const testUpdateTaskID = "5f29b72e-2613-4f44-8c88-3754fca3a124"
+
 func TestStageVerifiesAndAtomicallySwitchesCandidate(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("Agent updates target Linux")
@@ -45,12 +47,25 @@ func TestStageVerifiesAndAtomicallySwitchesCandidate(t *testing.T) {
 	if err := os.Symlink(filepath.Join("versions", "1.0.0", "nodedance-agent"), filepath.Join(state, "bin", "current")); err != nil {
 		t.Fatal(err)
 	}
-	if err := Stage(context.Background(), server.Client(), "test-device-credential", public, Request{Manifest: manifest, ArtifactURL: server.URL, CoreVersion: "1.0.0", CurrentAgentVersion: "1.0.0", Protocol: 1}, state); err != nil {
+	if err := Stage(context.Background(), server.Client(), "test-device-credential", public, Request{TaskID: testUpdateTaskID, Manifest: manifest, ArtifactURL: server.URL, CoreVersion: "1.0.0", CurrentAgentVersion: "1.0.0", Protocol: 1}, state); err != nil {
 		t.Fatalf("stage signed candidate: %v", err)
 	}
 	j, err := ReadJournal(state)
-	if err != nil || j.State != "prepared" {
+	if err != nil || j.State != "staged" || j.TaskID != testUpdateTaskID {
 		t.Fatalf("journal after staging = %#v, %v", j, err)
+	}
+	oldTarget := filepath.Join("versions", "1.0.0", "nodedance-agent")
+	if target, err := os.Readlink(filepath.Join(state, "bin", "current")); err != nil || target != oldTarget {
+		t.Fatalf("unacknowledged stage switched current to %q, %v", target, err)
+	}
+	if err := ApplyPrepared(state); err == nil {
+		t.Fatal("unacknowledged staged update was applied")
+	}
+	if err := AcknowledgePrepared(state, "2b7fb967-4ed0-47dd-8ceb-80955fcae0e7"); err == nil {
+		t.Fatal("mismatched Core acknowledgement was accepted")
+	}
+	if err := AcknowledgePrepared(state, testUpdateTaskID); err != nil {
+		t.Fatalf("persist Core acknowledgement: %v", err)
 	}
 	if err := ApplyPrepared(state); err != nil {
 		t.Fatalf("switch to candidate: %v", err)
@@ -96,7 +111,7 @@ func TestHelperRestoresPreviousVersionWithoutCoreAfterRestart(t *testing.T) {
 	if err := os.Symlink(filepath.Join("versions", "candidate", "nodedance-agent"), filepath.Join(state, "bin", "current")); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteJournal(state, Journal{State: "awaiting_confirmation", OldTarget: filepath.Join("versions", "old", "nodedance-agent"), CandidateTarget: filepath.Join("versions", "candidate", "nodedance-agent"), Version: "candidate", StartedAt: time.Now().UTC()}); err != nil {
+	if err := WriteJournal(state, Journal{State: "awaiting_confirmation", TaskID: testUpdateTaskID, OldTarget: filepath.Join("versions", "old", "nodedance-agent"), CandidateTarget: filepath.Join("versions", "candidate", "nodedance-agent"), Version: "candidate", StartedAt: time.Now().UTC()}); err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
