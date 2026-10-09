@@ -469,6 +469,14 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	if err := core.store.DB.QueryRow(`SELECT count(*) FROM core_tasks`).Scan(&taskCountBefore); err != nil {
 		t.Fatal("count tasks before Core storage failure injection:", err)
 	}
+	var taskAuditCountBefore int
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM core_task_audit_events`).Scan(&taskAuditCountBefore); err != nil {
+		t.Fatal("count task audit events before Core storage failure injection:", err)
+	}
+	var taskClaimCountBefore int
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM core_task_resource_claims`).Scan(&taskClaimCountBefore); err != nil {
+		t.Fatal("count task resource claims before Core storage failure injection:", err)
+	}
 	startedBeforeStorageFailure, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.StartedAt}}", composeID)
 	if err != nil {
 		t.Fatal("inspect Compose fixture before Core storage failure injection:", err)
@@ -478,21 +486,30 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 		t.Fatal("read main fixture process count before Core storage failure injection:", err)
 	}
 	failureWindowStart := time.Now().UTC()
-	if _, err := core.store.DB.Exec(`CREATE TRIGGER nodedance_s05_fail_task_insert BEFORE INSERT ON core_tasks BEGIN SELECT RAISE(ABORT, 'injected Core task insert failure'); END`); err != nil {
-		t.Fatal("install targeted Core task transaction failure injection:", err)
+	if _, err := core.store.DB.Exec(`CREATE TRIGGER nodedance_s05_fail_task_audit BEFORE INSERT ON core_task_audit_events
+		WHEN NEW.event='accepted' BEGIN SELECT RAISE(ABORT, 'injected Core task acceptance audit failure'); END`); err != nil {
+		t.Fatal("install targeted Core task acceptance audit failure injection:", err)
 	}
 	storageFailureStatus, _, storageFailureBody, storageFailureRequestErr := postTaskForTarget(
 		composeID, "restart", "s05-core-readonly-"+fmt.Sprint(time.Now().UnixNano()), nil)
-	_, restoreStorageErr := core.store.DB.Exec(`DROP TRIGGER nodedance_s05_fail_task_insert`)
+	_, restoreStorageErr := core.store.DB.Exec(`DROP TRIGGER nodedance_s05_fail_task_audit`)
 	if restoreStorageErr != nil {
-		t.Fatal("remove targeted Core task transaction failure injection:", restoreStorageErr)
+		t.Fatal("remove targeted Core task acceptance audit failure injection:", restoreStorageErr)
 	}
 	if storageFailureRequestErr != nil || storageFailureStatus != http.StatusInternalServerError {
-		t.Fatalf("Core task insert failure returned status=%d body=%q err=%v, want 500 before dispatch", storageFailureStatus, storageFailureBody, storageFailureRequestErr)
+		t.Fatalf("Core acceptance-audit failure returned status=%d body=%q err=%v, want 500 before dispatch", storageFailureStatus, storageFailureBody, storageFailureRequestErr)
 	}
 	var taskCountAfter int
 	if err := core.store.DB.QueryRow(`SELECT count(*) FROM core_tasks`).Scan(&taskCountAfter); err != nil || taskCountAfter != taskCountBefore {
 		t.Fatalf("failed Core task transaction left task rows: before=%d after=%d err=%v", taskCountBefore, taskCountAfter, err)
+	}
+	var taskAuditCountAfter int
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM core_task_audit_events`).Scan(&taskAuditCountAfter); err != nil || taskAuditCountAfter != taskAuditCountBefore {
+		t.Fatalf("failed Core task transaction left audit rows: before=%d after=%d err=%v", taskAuditCountBefore, taskAuditCountAfter, err)
+	}
+	var taskClaimCountAfter int
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM core_task_resource_claims`).Scan(&taskClaimCountAfter); err != nil || taskClaimCountAfter != taskClaimCountBefore {
+		t.Fatalf("failed Core task transaction left resource claims: before=%d after=%d err=%v", taskClaimCountBefore, taskClaimCountAfter, err)
 	}
 	startedAfterStorageFailure, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.StartedAt}}", composeID)
 	if err != nil || strings.TrimSpace(startedAfterStorageFailure) != strings.TrimSpace(startedBeforeStorageFailure) {
@@ -508,7 +525,7 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	if err != nil || strings.TrimSpace(engineEvents) != "" {
 		t.Fatalf("Core task insert failure produced Engine events for the Compose target: events=%q err=%v", strings.TrimSpace(engineEvents), err)
 	}
-	t.Log("S05_EVIDENCE core_task_insert_failure=500 task_rows_unchanged=true docker_started_at_unchanged=true docker_start_count_unchanged=true docker_events_unchanged=true verified=true")
+	t.Log("S05_EVIDENCE core_acceptance_audit_failure=500 task_rows_unchanged=true audit_rows_unchanged=true resource_claims_unchanged=true docker_started_at_unchanged=true docker_start_count_unchanged=true docker_events_unchanged=true verified=true")
 	if status, _, body, err := postTaskForTarget(composeID, "rename", "s05-compose-rename-"+fmt.Sprint(time.Now().UnixNano()), map[string]any{"newName": runID + "-compose-renamed"}); err != nil || status != http.StatusConflict {
 		t.Fatalf("Compose container rename returned %d body=%q err=%v, want Core conflict", status, body, err)
 	}
@@ -747,6 +764,7 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	t.Logf("S05_EVIDENCE agent_task_journal_failure=unknown_result_pending journal_rows=0 journal_insert_attempts=%d agent_mutation_api_calls=%d engine_mutation_api_calls=%d core_unknown_reason=delivery_committed_agent_journal_absent cross_connection_result_unproven=true resource_claim_retained=true docker_started_at_unchanged=true docker_start_count_unchanged=true docker_events_unchanged=true unknown_audit=true generation=%d->%d verified=true",
 		agentJournalInsertAttempts, agentMutationCalls, engineMutationCalls,
 		previousAgentGeneration, newAgentGeneration)
+	t.Log("S05_CASE S05-11 core_task_audit_and_agent_journal_persistence_fail_closed docker_mutations=0 verified=true")
 	performAPIActionForTarget(lifecycleID, "stop", nil)
 	deleteTask := performAPIActionForTarget(lifecycleID, "delete", map[string]any{"deleteConfirmed": true, "deleteConfirmationId": lifecycleID})
 	if deleteTask.Result.ObservedState != "missing" {

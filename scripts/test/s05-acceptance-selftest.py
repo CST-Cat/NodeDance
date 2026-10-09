@@ -35,11 +35,11 @@ def main() -> int:
     require(registry_ids == {f"S05-{index:02d}" for index in range(1, 13)},
             "fresh S05 report must list every original acceptance case exactly")
     require(acceptance.FORMAL_INTEGRATION_CASES == {
-        "S05-01", "S05-02", "S05-03", "S05-04", "S05-05", "S05-07", "S05-08", "S05-09", "S05-10", "S05-12",
+        "S05-01", "S05-02", "S05-03", "S05-04", "S05-05", "S05-07", "S05-08", "S05-09", "S05-10", "S05-11", "S05-12",
     }, "formal integration mapping changed without explicit review")
     require(set(acceptance.FORMAL_ASSERTION_MARKERS) == acceptance.FORMAL_INTEGRATION_CASES,
             "every integrated normative case needs its own assertion marker")
-    require({"S05-06", "S05-11"} <= set(acceptance.CURRENT_CORE_GAPS) and
+    require(set(acceptance.CURRENT_CORE_GAPS) == {"S05-06"} and
             not ({"S05-09", "S05-10"} & set(acceptance.CURRENT_CORE_GAPS)),
             "unintegrated cases must remain visible as gaps")
     safe_cancel_marker = acceptance.FORMAL_SUPPLEMENTAL_MARKERS.get("S05-06-QUEUED-CANCEL-OFFLINE", "")
@@ -55,6 +55,8 @@ def main() -> int:
             "negotiated-capacity S05-06 fixture manifest verifier is unavailable")
     require(acceptance.verify_agent_journal_failure_evidence.__name__ == "verify_agent_journal_failure_evidence",
             "S05-11 Agent journal write-failure evidence verifier is unavailable")
+    require(acceptance.verify_core_task_persistence_failure_evidence.__name__ == "verify_core_task_persistence_failure_evidence",
+            "S05-11 Core task/audit persistence failure evidence verifier is unavailable")
     require(acceptance.verify_stream_ui_responsive.__name__ == "verify_stream_ui_responsive",
             "product stream UI responsive evidence verifier is unavailable")
 
@@ -147,6 +149,21 @@ def main() -> int:
         require(not acceptance.verify_agent_journal_failure_evidence(evidence_path)["verified"],
                 "same-generation retry must not prove Agent reconnection")
 
+    with tempfile.TemporaryDirectory(prefix="s05-core-persistence-failure-") as temp_dir:
+        evidence_path = pathlib.Path(temp_dir) / "core-persistence-failure.log"
+        marker = (
+            "S05_EVIDENCE core_acceptance_audit_failure=500 task_rows_unchanged=true audit_rows_unchanged=true "
+            "resource_claims_unchanged=true docker_started_at_unchanged=true docker_start_count_unchanged=true "
+            "docker_events_unchanged=true verified=true"
+        )
+        evidence_path.write_text(marker + "\n", encoding="utf-8")
+        require(acceptance.verify_core_task_persistence_failure_evidence(evidence_path)["verified"],
+                "complete Core task/audit persistence-failure evidence should pass")
+        evidence_path.write_text(marker.replace("audit_rows_unchanged=true", "audit_rows_unchanged=false") + "\n",
+                                 encoding="utf-8")
+        require(not acceptance.verify_core_task_persistence_failure_evidence(evidence_path)["verified"],
+                "partial Core task/audit rollback evidence must fail closed")
+
     runner_source = (ROOT / "scripts/acceptance-s05.py").read_text(encoding="utf-8")
     require("args.repeat != 1" in runner_source and "for engine in (28, 29)" in runner_source,
             "full runner must require one complete run on both locked Engines")
@@ -169,6 +186,8 @@ def main() -> int:
             "safe queued cancellation and offline no-backlog must run and be verified per attempt and Engine")
     require("verify_agent_journal_failure_evidence(log_path)" in runner_source and
             "S05-11-AGENT-JOURNAL-FAILURE" in runner_source and
+            "verify_core_task_persistence_failure_evidence(log_path)" in runner_source and
+            "S05-11-CORE-DB-FAILURE" in runner_source and
             "unknown_audit=true" in runner_source and
             "engine_mutation_api_calls=0" in runner_source and
             "core_unknown_reason=delivery_committed_agent_journal_absent" in runner_source,

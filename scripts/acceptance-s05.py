@@ -32,7 +32,7 @@ STATUS_PATH = ROOT / "reports/status.json"
 RUN_ID = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
 EVIDENCE_ROOT = ROOT / ".artifacts/logs/acceptance-s05" / RUN_ID
 FORMAL_INTEGRATION_CASES = {
-    "S05-01", "S05-02", "S05-03", "S05-04", "S05-05", "S05-07", "S05-08", "S05-09", "S05-10", "S05-12",
+    "S05-01", "S05-02", "S05-03", "S05-04", "S05-05", "S05-07", "S05-08", "S05-09", "S05-10", "S05-11", "S05-12",
 }
 FORMAL_ASSERTION_MARKERS = {
     "S05-01": "S05_CASE S05-01 lifecycle=start,stop,restart,pause,resume,delete,rename verified=true",
@@ -44,6 +44,7 @@ FORMAL_ASSERTION_MARKERS = {
     "S05-08": "S05_CASE S05-08 independent_rename=succeeded compose_rename=409 verified=true",
     "S05-09": "S05_CASE S05-09 logs=stdout+stderr+unicode+large tty=raw verified=true",
     "S05-10": "S05_CASE S05-10 stats=shared-and-last-close active_engine_stats=0 verified=true",
+    "S05-11": "S05_CASE S05-11 core_task_audit_and_agent_journal_persistence_fail_closed docker_mutations=0 verified=true",
     "S05-12": "S05_EVIDENCE success_task_audit=true verified=true",
 }
 FORMAL_SUPPLEMENTAL_MARKERS = {
@@ -51,7 +52,6 @@ FORMAL_SUPPLEMENTAL_MARKERS = {
 }
 CURRENT_CORE_GAPS = {
     "S05-06": "The current complete Core+Agent+Engine fixture suite has not run on this candidate. Its historical attempt failed during make check preflight before normative S05 cases started; timeout, cancellation, offline, and reconciliation acceptance remains pending.",
-    "S05-11": "The current complete Core+Agent+Engine fixture suite has not run on this candidate. Its historical attempt failed during make check preflight before normative S05 cases started; Core task-row and Agent journal persistence-failure acceptance remains pending.",
 }
 
 
@@ -303,6 +303,20 @@ def verify_agent_journal_failure_evidence(log_path: pathlib.Path) -> dict[str, o
     return {"verified": True, "previous_generation": previous, "current_generation": current}
 
 
+def verify_core_task_persistence_failure_evidence(log_path: pathlib.Path) -> dict[str, object]:
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    marker = (
+        "S05_EVIDENCE core_acceptance_audit_failure=500 task_rows_unchanged=true audit_rows_unchanged=true "
+        "resource_claims_unchanged=true docker_started_at_unchanged=true docker_start_count_unchanged=true "
+        "docker_events_unchanged=true verified=true"
+    )
+    count = text.count(marker)
+    if count != 1:
+        return {"verified": False, "reason": "Core persistence failure did not prove one atomic task/audit/claim rollback and zero Docker mutation",
+                "matching_markers": count}
+    return {"verified": True}
+
+
 def source_digest() -> str:
     paths = [
         "scripts/acceptance-s05.py",
@@ -467,7 +481,7 @@ def main() -> int:
                 "engine_version": engines[engine][0],
                 "case_markers": {case_id: marker in text for case_id, marker in FORMAL_ASSERTION_MARKERS.items()},
                 "supplemental_assertions": {
-                    "core_task_insert_failure_without_docker_mutation": "S05_EVIDENCE core_task_insert_failure=500 task_rows_unchanged=true docker_started_at_unchanged=true docker_start_count_unchanged=true docker_events_unchanged=true verified=true" in text,
+                    "core_acceptance_audit_failure_without_docker_mutation": verify_core_task_persistence_failure_evidence(log_path).get("verified") is True,
                     "agent_task_journal_failure_zero_mutation": verify_agent_journal_failure_evidence(log_path).get("verified") is True,
                     "failed_task_audit_redacted": "S05_EVIDENCE failed_task_audit=true secret_redacted=true verified=true" in text,
                     "success_task_audit": "S05_EVIDENCE success_task_audit=true verified=true" in text,
@@ -568,6 +582,23 @@ def main() -> int:
                             for name in ("agent_sigkill", "core_sigkill")
                         } for number in (28, 29)
                     }
+                elif case_id == "S05-11":
+                    passed = all(
+                        engine_runs[number]["status"] == "PASS" and
+                        engine_runs[number]["case_markers"].get(case_id, False) and
+                        engine_runs[number]["supplemental_assertions"]["core_acceptance_audit_failure_without_docker_mutation"] and
+                        engine_runs[number]["supplemental_assertions"]["agent_task_journal_failure_zero_mutation"]
+                        for number in (28, 29)
+                    )
+                    status = "PASS" if passed else "FAIL"
+                    evidence = {
+                        str(number): {
+                            "integration_log": engine_runs[number]["evidence"],
+                            "core_task_and_audit_persistence_failure": engine_runs[number]["supplemental_assertions"]["core_acceptance_audit_failure_without_docker_mutation"],
+                            "agent_journal_persistence_failure": engine_runs[number]["supplemental_assertions"]["agent_task_journal_failure_zero_mutation"],
+                            "formal_marker": FORMAL_ASSERTION_MARKERS[case_id],
+                        } for number in (28, 29)
+                    }
                 elif case_id == "S05-12":
                     passed = True
                     for number in (28, 29):
@@ -616,8 +647,8 @@ def main() -> int:
                               for attempt in range(1, args.repeat + 1)]
 
     for supplemental_id, assertion_key, description in (
-        ("S05-11-CORE-DB-FAILURE", "core_task_insert_failure_without_docker_mutation",
-         "Real Core API rejected a task on a targeted SQLite INSERT failure, leaving task rows, target StartedAt, process start count, and Engine events unchanged."),
+        ("S05-11-CORE-DB-FAILURE", "core_acceptance_audit_failure_without_docker_mutation",
+         "Real Core API rolled back task and resource-claim rows when the acceptance-audit SQLite INSERT failed; target StartedAt, process start count, and Engine events stayed unchanged."),
         ("S05-11-AGENT-JOURNAL-FAILURE", "agent_task_journal_failure_zero_mutation",
          "Real Core+Agent+Engine injection rejected Agent journal INSERT; Core retained the uncertain durable task/claim and unknown audit, Agent journal stayed empty, and Docker StartedAt/start count/events stayed unchanged across a newer synchronized connection."),
         ("S05-12-FAILED-TASK-AUDIT", "failed_task_audit_redacted",
