@@ -715,52 +715,52 @@ func (s *Service) OpenDownload(virtual string) (*os.File, protocol.FileEntry, er
 	return file, entry, nil
 }
 
-func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.FileEntry, string, error) {
+func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.FileEntry, error) {
 	if len(text) > protocol.MaxTextFileBytes || !utf8.ValidString(text) || strings.ContainsRune(text, '\x00') {
-		return protocol.FileEntry{}, "", ErrNotText
+		return protocol.FileEntry{}, ErrNotText
 	}
 	if expectedVersion == "" {
 		digest := sha256.Sum256([]byte(text))
 		upload, err := s.BeginUpload(virtual, "", int64(len(text)), hex.EncodeToString(digest[:]))
 		if err != nil {
-			return protocol.FileEntry{}, "", err
+			return protocol.FileEntry{}, err
 		}
 		if err := upload.WriteChunk([]byte(text)); err != nil {
 			upload.Abort()
-			return protocol.FileEntry{}, "", err
+			return protocol.FileEntry{}, err
 		}
 		entry, err := upload.CommitWithDigest(hex.EncodeToString(digest[:]))
-		return entry, "", err
+		return entry, err
 	}
 	name, canonical, err := s.normalize(virtual)
 	if err != nil || name == "." {
-		return protocol.FileEntry{}, "", ErrInvalidPath
+		return protocol.FileEntry{}, ErrInvalidPath
 	}
 	old, err := s.root.Open(name)
 	if err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, err
 	}
 	defer old.Close()
 	info, err := old.Stat()
 	if err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, err
 	}
 	if !info.Mode().IsRegular() {
-		return protocol.FileEntry{}, "", ErrNotText
+		return protocol.FileEntry{}, ErrNotText
 	}
 	if info.Size() > protocol.MaxTextFileBytes {
-		return protocol.FileEntry{}, "", ErrTextTooLarge
+		return protocol.FileEntry{}, ErrTextTooLarge
 	}
 	currentVersion, err := s.version(name, info, true)
 	if err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, err
 	}
 	if expectedVersion == "" || currentVersion != expectedVersion {
-		return protocol.FileEntry{}, "", ErrConflict
+		return protocol.FileEntry{}, ErrConflict
 	}
 	temporary, replacement, err := s.createSiblingTemporary(name, ".nodedance-edit-")
 	if err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, err
 	}
 	cleanupReplacement := true
 	defer func() {
@@ -770,38 +770,34 @@ func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.File
 		}
 	}()
 	if _, err := io.WriteString(replacement, text); err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, err
 	}
 	if err := replacement.Sync(); err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, err
 	}
 	uid, gid := ownerIDs(info)
 	if err := replacement.Chown(uid, gid); err != nil {
-		return protocol.FileEntry{}, "", fmt.Errorf("preserve target owner: %w", err)
+		return protocol.FileEntry{}, fmt.Errorf("preserve target owner: %w", err)
 	}
 	if err := replacement.Chmod(info.Mode().Perm()); err != nil {
-		return protocol.FileEntry{}, "", fmt.Errorf("preserve target mode: %w", err)
-	}
-	backup, err := s.backup(name, canonical, info)
-	if err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, fmt.Errorf("preserve target mode: %w", err)
 	}
 	latestInfo, err := s.root.Stat(name)
 	if err != nil {
-		return protocol.FileEntry{}, "", ErrConflict
+		return protocol.FileEntry{}, ErrConflict
 	}
 	latestVersion, err := s.version(name, latestInfo, true)
 	if err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, err
 	}
 	if latestVersion != expectedVersion {
-		return protocol.FileEntry{}, "", ErrConflict
+		return protocol.FileEntry{}, ErrConflict
 	}
 	if err := replacement.Close(); err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, err
 	}
 	if err := s.root.Rename(temporary, name); err != nil {
-		return protocol.FileEntry{}, "", err
+		return protocol.FileEntry{}, err
 	}
 	cleanupReplacement = false
 	if s.afterAtomicReplace != nil {
@@ -809,59 +805,14 @@ func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.File
 	}
 	newInfo, err := s.root.Lstat(name)
 	if err != nil {
-		return protocol.FileEntry{}, "", fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
+		return protocol.FileEntry{}, fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
 	}
 	entry := makeEntry(path.Base(canonical), canonical, newInfo)
 	entry.Version, err = s.version(name, newInfo, true)
 	if err != nil {
-		return protocol.FileEntry{}, "", fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
+		return protocol.FileEntry{}, fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
 	}
-	return entry, backup, nil
-}
-
-func (s *Service) backup(name, canonical string, info os.FileInfo) (string, error) {
-	temporary, output, err := s.createSiblingTemporary(name, ".nodedance-backup-")
-	if err != nil {
-		return "", err
-	}
-	ok := false
-	defer func() {
-		_ = output.Close()
-		if !ok {
-			_ = s.root.Remove(temporary)
-		}
-	}()
-	input, err := s.root.Open(name)
-	if err != nil {
-		return "", err
-	}
-	_, copyErr := io.Copy(output, input)
-	closeErr := input.Close()
-	if copyErr != nil {
-		return "", copyErr
-	}
-	if closeErr != nil {
-		return "", closeErr
-	}
-	uid, gid := ownerIDs(info)
-	if err := output.Chown(uid, gid); err != nil {
-		return "", fmt.Errorf("preserve backup owner: %w", err)
-	}
-	if err := output.Chmod(info.Mode().Perm()); err != nil {
-		return "", fmt.Errorf("preserve backup mode: %w", err)
-	}
-	if err := output.Sync(); err != nil {
-		return "", err
-	}
-	if err := output.Close(); err != nil {
-		return "", err
-	}
-	backupName := temporary + ".saved"
-	if err := s.root.Rename(temporary, backupName); err != nil {
-		return "", err
-	}
-	ok = true
-	return "/" + backupName, nil
+	return entry, nil
 }
 
 func (s *Service) createSiblingTemporary(target, prefix string) (string, *os.File, error) {

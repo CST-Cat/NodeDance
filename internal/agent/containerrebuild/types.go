@@ -276,9 +276,9 @@ func preserveMounts(config *container.Config, host *container.HostConfig, mounts
 		}
 		delete(byTarget, current.Target)
 	}
-	// Legacy -v bind/volume declarations are retained as Binds. Replace only
-	// anonymous volume sources with the exact Engine volume name so a new
-	// anonymous volume is never silently allocated.
+	// Docker may return bind and volume declarations in HostConfig.Binds.
+	// Preserve them and replace anonymous volume sources with the exact Engine
+	// volume name so a new anonymous volume is never silently allocated.
 	for index, bind := range host.Binds {
 		parts := strings.Split(bind, ":")
 		if len(parts) < 2 {

@@ -137,7 +137,7 @@ func (e *TaskExecutor) ExecuteFile(ctx context.Context, dispatch protocol.TaskDi
 		if dispatch.FileContent == nil || dispatch.FileContent.SHA256 != dispatch.Intent.File.SHA256 {
 			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", "payload_unavailable")
 		}
-		entry, _, saveErr := e.service.SaveText(dispatch.Intent.File.Path, dispatch.Intent.File.ExpectedVersion, string(dispatch.FileContent.Content))
+		entry, saveErr := e.service.SaveText(dispatch.Intent.File.Path, dispatch.Intent.File.ExpectedVersion, string(dispatch.FileContent.Content))
 		err = saveErr
 		if err == nil && entry.Size != int64(len(dispatch.FileContent.Content)) {
 			return e.markUnknown(ctx, dispatch.TaskID)

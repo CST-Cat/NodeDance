@@ -102,11 +102,7 @@ async function initializeScreen() {
     const state = await api.setupStatus()
     initialized.value = state.initialized
     setupHint.value = state.setupHint ?? ''
-    try {
-      await loadAppearance()
-    } catch {
-      // A newly initialized or older Core may not have appearance data yet.
-    }
+    await loadAppearance()
 
     if (!state.initialized) {
       screen.value = 'setup'
