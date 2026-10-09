@@ -315,20 +315,20 @@ func TestRealAgentHostFilesAPIEndToEnd(t *testing.T) {
 	if err := os.WriteFile(deleteTarget, deleteContent, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	deleteRequest := func(confirm string, withCSRF bool) (int, []byte) {
+	deleteRequest := func(targetPath, confirm string, withCSRF bool) (int, []byte) {
 		t.Helper()
-		payload, _ := json.Marshal(map[string]string{"path": deletePath, "confirmPath": confirm})
+		payload, _ := json.Marshal(map[string]string{"path": targetPath, "confirmPath": confirm})
 		headers := http.Header{"Idempotency-Key": []string{"s10-delete-live-" + newTestFileIdempotencySuffix(t)}}
 		status, _, responseBody := request(http.MethodPost, apiNode+"/delete", payload, true, withCSRF, headers)
 		return status, responseBody
 	}
-	if status, body = deleteRequest(deletePath, false); status != http.StatusForbidden {
+	if status, body = deleteRequest(deletePath, deletePath, false); status != http.StatusForbidden {
 		t.Fatalf("delete without CSRF header returned HTTP %d, body=%q; want 403", status, body)
 	}
 	if current, err := os.ReadFile(deleteTarget); err != nil || !bytes.Equal(current, deleteContent) {
 		t.Fatalf("CSRF-rejected delete changed its target: readErr=%v content=%q", err, current)
 	}
-	if status, body = deleteRequest(deletePath+"-wrong", true); status != http.StatusBadRequest {
+	if status, body = deleteRequest(deletePath, deletePath+"-wrong", true); status != http.StatusBadRequest {
 		t.Fatalf("delete with non-exact confirmation returned HTTP %d, body=%q; want 400", status, body)
 	}
 	if current, err := os.ReadFile(deleteTarget); err != nil || !bytes.Equal(current, deleteContent) {
@@ -344,19 +344,84 @@ func TestRealAgentHostFilesAPIEndToEnd(t *testing.T) {
 	if _, err := os.Lstat(deleteTarget); !os.IsNotExist(err) {
 		t.Fatalf("confirmed delete did not remove exact file: lstat err=%v", err)
 	}
-	metadata, err := newFileAuditMetadata(enrollment.NodeID, deleteResult.TaskID, protocol.FileRequest{Operation: protocol.FileDelete, Path: deletePath})
-	if err != nil {
+	assertDeleteAudit := func(targetPath string, result s10LiveFileMutation) {
+		t.Helper()
+		// Match the documented audit wire format independently of the production
+		// metadata helper so this verifies node, task, and the exact URL-escaped
+		// JSON path list that was durably stored in SQLite.
+		pathList, err := json.Marshal([]string{targetPath})
+		if err != nil {
+			t.Fatalf("encode expected audit target path: %v", err)
+		}
+		wantTarget := enrollment.NodeID + ":" + result.TaskID + ":" + url.QueryEscape(string(pathList))
+		var count int
+		if err := core.store.DB.QueryRow(`SELECT count(*) FROM audit_entries WHERE action='file_delete' AND outcome='succeeded' AND target_kind=? AND target_id=?`,
+			string(audit.TargetFile), wantTarget).Scan(&count); err != nil {
+			t.Fatalf("count exact-target delete audit entries: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("persistent delete audit count=%d for exact node/task/path target %q, want 1", count, wantTarget)
+		}
+		var action, outcome, targetKind, targetID string
+		if err := core.store.DB.QueryRow(`SELECT action, outcome, target_kind, target_id FROM audit_entries WHERE target_id=? ORDER BY id DESC LIMIT 1`, wantTarget).
+			Scan(&action, &outcome, &targetKind, &targetID); err != nil {
+			t.Fatalf("read exact-target delete audit entry: %v", err)
+		}
+		if action != "file_delete" || outcome != "succeeded" || targetKind != string(audit.TargetFile) || targetID != wantTarget {
+			t.Fatalf("delete audit does not identify exact node/task/path: action=%q outcome=%q kind=%q target=%q want=%q", action, outcome, targetKind, targetID, wantTarget)
+		}
+	}
+	assertDeleteAudit(deletePath, deleteResult)
+
+	// A non-empty nested directory must use the same exact-path confirmation as
+	// a file. Rejected CSRF and mismatched confirmation requests must leave the
+	// directory and nested bytes untouched before the confirmed operation runs.
+	directoryPath := "/删除目录 确认样例"
+	nestedDirectory := filepath.Join(fileRoot, strings.TrimPrefix(directoryPath, "/"), "nested", "deeper")
+	if err := os.MkdirAll(nestedDirectory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	var action, outcome, targetKind, targetID string
-	if err := core.store.DB.QueryRow(`SELECT action, outcome, target_kind, target_id FROM audit_entries WHERE action='file_delete' AND target_id=? ORDER BY id DESC LIMIT 1`, metadata.target).
-		Scan(&action, &outcome, &targetKind, &targetID); err != nil {
-		t.Fatalf("read exact-target delete audit entry: %v", err)
+	nestedFile := filepath.Join(nestedDirectory, "keep.txt")
+	nestedContent := []byte("nested directory delete confirmation fixture\n")
+	if err := os.WriteFile(nestedFile, nestedContent, 0o600); err != nil {
+		t.Fatal(err)
 	}
-	if action != "file_delete" || outcome != "succeeded" || targetKind != string(audit.TargetFile) || targetID != metadata.target {
-		t.Fatalf("delete audit does not identify exact node/task/path: action=%q outcome=%q kind=%q target=%q want=%q", action, outcome, targetKind, targetID, metadata.target)
+	assertDirectoryUntouched := func(attempt string) {
+		t.Helper()
+		info, err := os.Lstat(filepath.Join(fileRoot, strings.TrimPrefix(directoryPath, "/")))
+		if err != nil || !info.IsDir() {
+			t.Fatalf("%s removed or changed the non-empty directory: info=%v err=%v", attempt, info, err)
+		}
+		current, err := os.ReadFile(nestedFile)
+		if err != nil || !bytes.Equal(current, nestedContent) {
+			t.Fatalf("%s changed nested directory content: readErr=%v content=%q", attempt, err, current)
+		}
 	}
-	t.Logf("candidate S10-09: exact-confirmation delete succeeded; audit target includes node=%s task=%s escaped exact path", enrollment.NodeID, deleteResult.TaskID)
+	if status, body = deleteRequest(directoryPath, directoryPath, false); status != http.StatusForbidden {
+		t.Fatalf("non-empty directory delete without CSRF returned HTTP %d, body=%q; want 403", status, body)
+	}
+	assertDirectoryUntouched("CSRF-rejected non-empty directory delete")
+	if status, body = deleteRequest(directoryPath, directoryPath+"-wrong", true); status != http.StatusBadRequest {
+		t.Fatalf("non-empty directory delete with non-exact confirmation returned HTTP %d, body=%q; want 400", status, body)
+	}
+	assertDirectoryUntouched("mismatched-confirmation non-empty directory delete")
+	directoryDeleteBody, _ := json.Marshal(map[string]string{"path": directoryPath, "confirmPath": directoryPath})
+	directoryDeleteKey := "s10-delete-directory-confirmed-" + newTestFileIdempotencySuffix(t)
+	status, _, body = request(http.MethodPost, apiNode+"/delete", directoryDeleteBody, true, true,
+		http.Header{"Idempotency-Key": []string{directoryDeleteKey}})
+	var directoryDeleteResult s10LiveFileMutation
+	if status != http.StatusOK || json.Unmarshal(body, &directoryDeleteResult) != nil || directoryDeleteResult.Status != "succeeded" || directoryDeleteResult.TaskID == "" {
+		t.Fatalf("exactly confirmed non-empty directory delete returned HTTP %d, result=%+v body=%q", status, directoryDeleteResult, body)
+	}
+	directoryTarget := filepath.Join(fileRoot, strings.TrimPrefix(directoryPath, "/"))
+	if _, err := os.Lstat(directoryTarget); !os.IsNotExist(err) {
+		t.Fatalf("confirmed non-empty directory still exists: lstat err=%v", err)
+	}
+	if _, err := os.Lstat(nestedFile); !os.IsNotExist(err) {
+		t.Fatalf("confirmed directory delete left its nested file: lstat err=%v", err)
+	}
+	assertDeleteAudit(directoryPath, directoryDeleteResult)
+	t.Logf("candidate S10-09 partial: file and nested non-empty directory deletion used exact confirmation; directory CSRF/mismatch rejection preserved nested bytes; persistent audit targets matched node/task/exact path")
 
 	if matches, err := filepath.Glob(filepath.Join(core.dataDir, ".nodedance-download-*")); err != nil || len(matches) != 0 {
 		t.Fatalf("Core download spool cleanup left artifacts: matches=%v err=%v", matches, err)

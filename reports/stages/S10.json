@@ -3,9 +3,9 @@
   "stage": "S10",
   "mode": "live-core-agent-filesystem-slice",
   "status": "NOT_READY",
-  "run_id": "20261009T081816Z-s10-live-files",
-  "updated_at": "2026-10-09T08:18:35.431678+00:00",
-  "reason": "A bounded real HTTPS/Core-WebSocket/registered-Agent/host-file-root slice passed in an automatically cleaned TempDir. The first run's assertion mismatch and the corrected pass are both retained. S10 remains NOT_READY because large-transfer RSS, installed service permissions, read-only/owner cases, concurrency, and other normative cases remain unverified.",
+  "run_id": "20261009T082541Z-s10-nonempty-directory-delete",
+  "updated_at": "2026-10-09T08:25:41+00:00",
+  "reason": "A real HTTPS/Core-WebSocket/registered-Agent/host-file-root slice passed in an automatically cleaned TempDir. The live delete path now covers a file and a nested non-empty directory, exact confirmation, rejection without CSRF or with a mismatched path, and the exact persistent node/task/path audit target. S10 and S10-09 remain NOT_READY because empty-directory deletion and the remaining required acceptance cases are not yet verified.",
   "checks": [
     {
       "name": "live-core-agent-host-files-attempt-1",
@@ -38,6 +38,22 @@
       ],
       "evidence": ".artifacts/logs/s10-live/real-core-agent-host-files-rerun-after-assertion-fix.log",
       "reason": "Same focused integration passed after the assertion accepted any rejected response and rechecked the outside-root canary."
+    },
+    {
+      "name": "live-core-agent-host-files-nonempty-directory-followup",
+      "status": "PASS",
+      "exit_code": 0,
+      "command": [
+        "go",
+        "test",
+        "-v",
+        "-count=1",
+        "-run",
+        "^TestRealAgentHostFilesAPIEndToEnd$",
+        "./internal/core/server"
+      ],
+      "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082541Z-final.log",
+      "reason": "Exact-confirmation file and nested non-empty directory deletion passed. Missing-CSRF and mismatched-confirmation requests preserved nested content; the directory and nested file disappeared; SQLite stored the exact node/task/escaped path audit target; TempDir cleanup passed."
     }
   ],
   "focused_attempt_history": [
@@ -72,6 +88,60 @@
       ],
       "evidence": ".artifacts/logs/s10-live/real-core-agent-host-files-rerun-after-assertion-fix.log",
       "reason": "Same focused integration passed after the assertion accepted any rejected response and rechecked the outside-root canary."
+    },
+    {
+      "name": "nonempty-directory-delete-attempt-1",
+      "status": "FAIL",
+      "exit_code": 1,
+      "command": [
+        "go",
+        "test",
+        "-v",
+        "-count=1",
+        "-run",
+        "^TestRealAgentHostFilesAPIEndToEnd$",
+        "./internal/core/server"
+      ],
+      "environment": "DOCKER_HOST=unix:///nonexistent/nodedance-s10-directory-delete-never.sock; no Docker/DIND/shared service",
+      "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082437Z.log",
+      "recorded_at": "2026-10-09T08:24:37+00:00",
+      "reason": "The assertion compared the audit target against the bare path; the actual contract stores a URL-escaped JSON path list. The test stopped before the new directory branch."
+    },
+    {
+      "name": "nonempty-directory-delete-attempt-2",
+      "status": "FAIL",
+      "exit_code": 1,
+      "command": [
+        "go",
+        "test",
+        "-v",
+        "-count=1",
+        "-run",
+        "^TestRealAgentHostFilesAPIEndToEnd$",
+        "./internal/core/server"
+      ],
+      "environment": "DOCKER_HOST=unix:///nonexistent/nodedance-s10-directory-delete-never.sock; no Docker/DIND/shared service",
+      "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082500Z-rerun.log",
+      "recorded_at": "2026-10-09T08:25:00+00:00",
+      "reason": "The exact target matched, but the query selected the earlier accepted audit event because it had no ordering; the assertion needed the latest event for that target. The test stopped before the new directory branch."
+    },
+    {
+      "name": "nonempty-directory-delete-final",
+      "status": "PASS",
+      "exit_code": 0,
+      "command": [
+        "go",
+        "test",
+        "-v",
+        "-count=1",
+        "-run",
+        "^TestRealAgentHostFilesAPIEndToEnd$",
+        "./internal/core/server"
+      ],
+      "environment": "DOCKER_HOST=unix:///nonexistent/nodedance-s10-directory-delete-never.sock; no Docker/DIND/shared service",
+      "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082541Z-final.log",
+      "recorded_at": "2026-10-09T08:25:41+00:00",
+      "reason": "Exact-confirmation file and nested non-empty directory deletion passed. Missing-CSRF and mismatched-confirmation requests preserved nested content; the directory and nested file disappeared; SQLite stored the exact node/task/escaped path audit target; TempDir cleanup passed."
     }
   ],
   "tests": {
@@ -111,6 +181,21 @@
           ],
           "evidence": ".artifacts/logs/s10-live/real-core-agent-host-files-rerun-after-assertion-fix.log",
           "recorded_at": "2026-10-09T08:18:35.431678+00:00"
+        },
+        {
+          "run_id": "20261009T082541Z-s10-nonempty-directory-delete",
+          "status": "PASS",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-count=1",
+            "-run",
+            "^TestRealAgentHostFilesAPIEndToEnd$",
+            "./internal/core/server"
+          ],
+          "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082541Z-final.log",
+          "recorded_at": "2026-10-09T08:25:41+00:00"
         }
       ],
       "reason": "Real HTTPS/Core-WebSocket/Agent host-root list/stat/rename/upload/download passed with a Chinese/spaced filename and matching SHA-256."
@@ -153,6 +238,21 @@
           "evidence": ".artifacts/logs/s10-live/real-core-agent-host-files-rerun-after-assertion-fix.log",
           "recorded_at": "2026-10-09T08:18:35.431678+00:00",
           "reason": "Assertion now checks refusal and unchanged outside-root canary; no production error mapping was changed."
+        },
+        {
+          "run_id": "20261009T082541Z-s10-nonempty-directory-delete",
+          "status": "PASS",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-count=1",
+            "-run",
+            "^TestRealAgentHostFilesAPIEndToEnd$",
+            "./internal/core/server"
+          ],
+          "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082541Z-final.log",
+          "recorded_at": "2026-10-09T08:25:41+00:00"
         }
       ],
       "reason": "Both .. and the escaping symlink were refused and the root-external canary stayed byte-identical. The symlink refusal currently maps to generic HTTP 503 (unavailable)."
@@ -229,6 +329,21 @@
           ],
           "evidence": ".artifacts/logs/s10-live/real-core-agent-host-files-rerun-after-assertion-fix.log",
           "recorded_at": "2026-10-09T08:18:35.431678+00:00"
+        },
+        {
+          "run_id": "20261009T082541Z-s10-nonempty-directory-delete",
+          "status": "PASS",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-count=1",
+            "-run",
+            "^TestRealAgentHostFilesAPIEndToEnd$",
+            "./internal/core/server"
+          ],
+          "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082541Z-final.log",
+          "recorded_at": "2026-10-09T08:25:41+00:00"
         }
       ],
       "reason": "The actual Core API read a version, an external host write changed the file, and the stale edit returned HTTP 409 while preserving the external bytes."
@@ -264,9 +379,57 @@
           "evidence": ".artifacts/logs/s10-live/real-core-agent-host-files-rerun-after-assertion-fix.log",
           "recorded_at": "2026-10-09T08:18:35.431678+00:00",
           "reason": "File branch only; directory variants are still pending."
+        },
+        {
+          "run_id": "nonempty-directory-delete-attempt-1",
+          "status": "FAIL",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-count=1",
+            "-run",
+            "^TestRealAgentHostFilesAPIEndToEnd$",
+            "./internal/core/server"
+          ],
+          "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082437Z.log",
+          "recorded_at": "2026-10-09T08:24:37+00:00",
+          "reason": "The assertion compared the audit target against the bare path; the actual contract stores a URL-escaped JSON path list. The test stopped before the new directory branch."
+        },
+        {
+          "run_id": "nonempty-directory-delete-attempt-2",
+          "status": "FAIL",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-count=1",
+            "-run",
+            "^TestRealAgentHostFilesAPIEndToEnd$",
+            "./internal/core/server"
+          ],
+          "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082500Z-rerun.log",
+          "recorded_at": "2026-10-09T08:25:00+00:00",
+          "reason": "The exact target matched, but the query selected the earlier accepted audit event because it had no ordering; the assertion needed the latest event for that target. The test stopped before the new directory branch."
+        },
+        {
+          "run_id": "nonempty-directory-delete-final",
+          "status": "PASS",
+          "command": [
+            "go",
+            "test",
+            "-v",
+            "-count=1",
+            "-run",
+            "^TestRealAgentHostFilesAPIEndToEnd$",
+            "./internal/core/server"
+          ],
+          "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082541Z-final.log",
+          "recorded_at": "2026-10-09T08:25:41+00:00",
+          "reason": "Exact-confirmation file and nested non-empty directory deletion passed. Missing-CSRF and mismatched-confirmation requests preserved nested content; the directory and nested file disappeared; SQLite stored the exact node/task/escaped path audit target; TempDir cleanup passed."
         }
       ],
-      "reason": "File deletion exact-confirmation, CSRF rejection, and the exact audit target passed; empty and non-empty directory deletion remain unverified."
+      "reason": "Live HTTPS/Core-WebSocket/Agent evidence now covers file deletion and a nested non-empty directory: CSRF rejection and mismatched exact-path confirmation preserved the nested file; confirmed deletion removed the directory tree; SQLite stored exactly one successful audit target matching node UUID, task UUID, and escaped path. Empty-directory deletion and the full S10-09 acceptance matrix remain unverified."
     },
     "S10-10": {
       "status": "NOT_READY",
@@ -286,5 +449,61 @@
       "runs": [],
       "reason": "The bounded live TempDir case does not cover 100 MiB/1 GiB RSS, installed Agent service-user and systemd file-root permissions, read-only filesystems, owner preservation, concurrent monitoring, interruption/revocation, or the other S10 cases."
     }
-  }
+  },
+  "focused_followup_history": [
+    {
+      "name": "nonempty-directory-delete-attempt-1",
+      "status": "FAIL",
+      "exit_code": 1,
+      "command": [
+        "go",
+        "test",
+        "-v",
+        "-count=1",
+        "-run",
+        "^TestRealAgentHostFilesAPIEndToEnd$",
+        "./internal/core/server"
+      ],
+      "environment": "DOCKER_HOST=unix:///nonexistent/nodedance-s10-directory-delete-never.sock; no Docker/DIND/shared service",
+      "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082437Z.log",
+      "recorded_at": "2026-10-09T08:24:37+00:00",
+      "reason": "The assertion compared the audit target against the bare path; the actual contract stores a URL-escaped JSON path list. The test stopped before the new directory branch."
+    },
+    {
+      "name": "nonempty-directory-delete-attempt-2",
+      "status": "FAIL",
+      "exit_code": 1,
+      "command": [
+        "go",
+        "test",
+        "-v",
+        "-count=1",
+        "-run",
+        "^TestRealAgentHostFilesAPIEndToEnd$",
+        "./internal/core/server"
+      ],
+      "environment": "DOCKER_HOST=unix:///nonexistent/nodedance-s10-directory-delete-never.sock; no Docker/DIND/shared service",
+      "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082500Z-rerun.log",
+      "recorded_at": "2026-10-09T08:25:00+00:00",
+      "reason": "The exact target matched, but the query selected the earlier accepted audit event because it had no ordering; the assertion needed the latest event for that target. The test stopped before the new directory branch."
+    },
+    {
+      "name": "nonempty-directory-delete-final",
+      "status": "PASS",
+      "exit_code": 0,
+      "command": [
+        "go",
+        "test",
+        "-v",
+        "-count=1",
+        "-run",
+        "^TestRealAgentHostFilesAPIEndToEnd$",
+        "./internal/core/server"
+      ],
+      "environment": "DOCKER_HOST=unix:///nonexistent/nodedance-s10-directory-delete-never.sock; no Docker/DIND/shared service",
+      "evidence": ".artifacts/stage-runs/s10-live-nonempty-directory-delete-20261009T082541Z-final.log",
+      "recorded_at": "2026-10-09T08:25:41+00:00",
+      "reason": "Exact-confirmation file and nested non-empty directory deletion passed. Missing-CSRF and mismatched-confirmation requests preserved nested content; the directory and nested file disappeared; SQLite stored the exact node/task/escaped path audit target; TempDir cleanup passed."
+    }
+  ]
 }
