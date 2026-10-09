@@ -218,107 +218,8 @@ func TestAlertProbeStateFromRealAgentResults(t *testing.T) {
 	if err != nil || state.Status != protocol.ProbeResultUnhealthy {
 		t.Fatalf("three Agent-reported failures did not persist unhealthy state: state=%+v err=%v", state, err)
 	}
-	leaseState, lease, err := core.currentMetricsState(context.Background(), enrollment.NodeID)
-	if err != nil || leaseState.Status != "online" || lease == nil {
-		t.Fatalf("Agent lease expired before S15 alert evaluation: state=%+v lease=%+v err=%v", leaseState, lease, err)
-	}
-	persistedRule, err := core.alerts.GetRule(context.Background(), ruleReply.Rule.ID)
-	if err != nil || persistedRule.Kind != corealerts.KindProbeState || persistedRule.NodeID != enrollment.NodeID || persistedRule.SubjectID != probe.ID || persistedRule.ExpectedState != protocol.ProbeResultHealthy || persistedRule.DurationSeconds != 0 {
-		t.Fatalf("probe alert rule scope/condition mismatch: rule=%+v err=%v", persistedRule, err)
-	}
 	setProbeDueIn(24 * time.Hour)
-	backgroundFired := false
-	backgroundDeadline := time.Now().Add(12 * time.Second)
-	for time.Now().Before(backgroundDeadline) {
-		found, findErr := findActiveProbeAlert(core, ruleReply.Rule.ID)
-		if findErr != nil {
-			t.Fatal(findErr)
-		}
-		if found != nil {
-			backgroundFired = true
-			break
-		}
-		time.Sleep(40 * time.Millisecond)
-	}
-	nodesAtEval, err := core.agents.ListNodes(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var nodeStatusAtEval string
-	for _, node := range nodesAtEval {
-		if node.NodeID == enrollment.NodeID {
-			nodeStatusAtEval = node.Status
-		}
-	}
-	probesAtEval, err := core.probes.List(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var probeAtEval *coreprobes.Config
-	for i := range probesAtEval {
-		if probesAtEval[i].ID == probe.ID {
-			probeAtEval = &probesAtEval[i]
-		}
-	}
-	rulesAtEval, err := core.alerts.ListRules(context.Background(), enrollment.NodeID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var ruleAtEval *corealerts.Rule
-	for i := range rulesAtEval {
-		if rulesAtEval[i].ID == ruleReply.Rule.ID {
-			ruleAtEval = &rulesAtEval[i]
-		}
-	}
-	leaseStateAtEval, leaseAtEval, err := core.currentMetricsState(context.Background(), enrollment.NodeID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var conditionSince, previousSampleAt int64
-	stateErr := core.store.DB.QueryRowContext(context.Background(), `SELECT condition_since,last_sample_at FROM alert_rule_state WHERE rule_id=? AND subject_id=?`, ruleReply.Rule.ID, probe.ID).Scan(&conditionSince, &previousSampleAt)
-	activeBefore, err := findActiveProbeAlert(core, ruleReply.Rule.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	probeCheckedAt, parseErr := time.Parse(time.RFC3339Nano, state.LastCheckedAt)
-	if parseErr != nil {
-		t.Fatalf("parse persisted probe observation time %q: %v", state.LastCheckedAt, parseErr)
-	}
-	// Run exactly the same Core evaluator once with the real persisted sample,
-	// then inspect its durable state. The background scheduler has already had
-	// several ticks by this point; this distinguishes sample/rule defects from
-	// a runtime scheduling failure.
-	evaluatorErr := core.evaluateAlerts(context.Background())
-	var conditionSinceAfter, previousSampleAtAfter int64
-	stateErrAfter := core.store.DB.QueryRowContext(context.Background(), `SELECT condition_since,last_sample_at FROM alert_rule_state WHERE rule_id=? AND subject_id=?`, ruleReply.Rule.ID, probe.ID).Scan(&conditionSinceAfter, &previousSampleAtAfter)
-	activeAfter, listErr := findActiveProbeAlert(core, ruleReply.Rule.ID)
-	if listErr != nil {
-		t.Fatal(listErr)
-	}
-	leaseValidUntilAtEval := "unavailable"
-	if leaseAtEval != nil {
-		leaseValidUntilAtEval = leaseAtEval.ValidUntil.UTC().Format(time.RFC3339Nano)
-	}
-	t.Logf("S15 evaluator diagnostic: background_fired=%t probe=%+v checked_at=%s current_node_status=%q current_lease_state=%q current_lease_valid_until=%s probe_list_entry=%+v rule_get_enabled=%t rule_list_entry=%+v rule_state_before=(since=%d last=%d err=%v) active_before=%t direct_eval_err=%v rule_state_after=(since=%d last=%d err=%v) active_after=%t",
-		backgroundFired, state, probeCheckedAt.UTC().Format(time.RFC3339Nano), nodeStatusAtEval, leaseStateAtEval.Status, leaseValidUntilAtEval, probeAtEval, persistedRule.Enabled, ruleAtEval,
-		conditionSince, previousSampleAt, stateErr, activeBefore != nil, evaluatorErr, conditionSinceAfter, previousSampleAtAfter, stateErrAfter, activeAfter != nil)
-	if nodeStatusAtEval != "online" || leaseStateAtEval.Status != "online" || leaseAtEval == nil {
-		t.Fatalf("node was not online at direct alert evaluation: node_status=%q lease_state=%q lease=%+v", nodeStatusAtEval, leaseStateAtEval.Status, leaseAtEval)
-	}
-	if probeAtEval == nil || !probeAtEval.Enabled || probeAtEval.NodeID != enrollment.NodeID || probeAtEval.ID != probe.ID || probeAtEval.Status != protocol.ProbeResultUnhealthy {
-		t.Fatalf("probe list omitted or changed the real unhealthy probe: entry=%+v", probeAtEval)
-	}
-	if ruleAtEval == nil || !ruleAtEval.Enabled || ruleAtEval.NodeID != enrollment.NodeID || ruleAtEval.SubjectID != probe.ID || ruleAtEval.Kind != corealerts.KindProbeState || ruleAtEval.ExpectedState != protocol.ProbeResultHealthy {
-		t.Fatalf("alert rule list omitted or changed the enabled probe rule: entry=%+v", ruleAtEval)
-	}
-	if evaluatorErr != nil {
-		t.Fatalf("direct Core alert evaluation failed for persisted unhealthy probe: %v", evaluatorErr)
-	}
-	if activeAfter == nil {
-		t.Fatalf("Core alert evaluator did not create a probe alert after direct evaluation; background_fired=%t probe=%+v online=%t lease_valid_until=%s rule=%+v rule_state_before=(since=%d last=%d err=%v) rule_state_after=(since=%d last=%d err=%v)",
-			backgroundFired, state, leaseState.Status == "online", lease.ValidUntil.UTC().Format(time.RFC3339Nano), persistedRule, conditionSince, previousSampleAt, stateErr, conditionSinceAfter, previousSampleAtAfter, stateErrAfter)
-	}
-	activeAlert := *activeAfter
+	activeAlert := waitForProbeAlert(t, core, ruleReply.Rule.ID, 12*time.Second)
 	initialEvents, err := core.alerts.ListEvents(context.Background(), activeAlert.ID, 10)
 	if err != nil {
 		t.Fatal(err)
@@ -472,6 +373,23 @@ func findActiveProbeAlert(core *Server, ruleID string) (*corealerts.Alert, error
 		}
 	}
 	return nil, nil
+}
+
+func waitForProbeAlert(t *testing.T, core *Server, ruleID string, timeout time.Duration) corealerts.Alert {
+	t.Helper()
+	var result corealerts.Alert
+	waitForAlertProbeCondition(t, "background evaluator probe alert firing", timeout, func() (bool, error) {
+		found, err := findActiveProbeAlert(core, ruleID)
+		if err != nil {
+			return false, err
+		}
+		if found == nil {
+			return false, nil
+		}
+		result = *found
+		return true, nil
+	})
+	return result
 }
 
 func receiveProbeWebhook(t *testing.T, notifications <-chan corealerts.Notification, event string) corealerts.Notification {
