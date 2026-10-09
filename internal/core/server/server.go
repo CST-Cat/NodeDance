@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,11 +10,13 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"time"
 
+	agentupdate "github.com/CST-Cat/NodeDance/internal/agent/update"
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	corealerts "github.com/CST-Cat/NodeDance/internal/core/alerts"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
@@ -28,6 +31,7 @@ import (
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
+	coreupdates "github.com/CST-Cat/NodeDance/internal/core/updates"
 	"github.com/CST-Cat/NodeDance/internal/core/webassets"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
@@ -48,7 +52,8 @@ type Options struct {
 	// PreferenceMigrator overrides the production SQLite-backed S06 display-
 	// preference identity migration. NopMigrator is available for explicit
 	// disabled/test configurations only.
-	PreferenceMigrator coreprefs.Migrator
+	PreferenceMigrator         coreprefs.Migrator
+	AgentUpdatePublicKeyBase64 string
 }
 
 type Server struct {
@@ -80,6 +85,9 @@ type Server struct {
 	imageAuth                  map[string]pendingImageCredential
 	probes                     *coreprobes.Store
 	alerts                     *corealerts.Store
+	updates                    *coreupdates.Store
+	agentUpdatePublicKey       ed25519.PublicKey
+	agentUpdatePublicKeyBase64 string
 	alertSender                *corealerts.Sender
 	dockerMu                   sync.Mutex
 	docker                     *coredocker.Store
@@ -180,35 +188,45 @@ func New(version string, options Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	var updatePublicKey ed25519.PublicKey
+	if strings.TrimSpace(options.AgentUpdatePublicKeyBase64) != "" {
+		updatePublicKey, err = agentupdate.PublicKeyFromBase64(options.AgentUpdatePublicKeyBase64)
+		if err != nil {
+			_ = store.Close()
+			return nil, fmt.Errorf("configure Agent update trust key: %w", err)
+		}
+	}
 	s := &Server{
-		version:                version,
-		assets:                 http.FileServer(http.FS(files)),
-		index:                  index,
-		store:                  store,
-		dataDir:                store.Dir,
-		development:            options.Development,
-		publicOrigin:           strings.TrimSuffix(options.PublicOrigin, "/"),
-		trusted:                trusted,
-		idleTimeout:            options.SessionIdleTimeout,
-		limiter:                newLoginLimiter(options.LoginMaxAttempts, options.LoginLockoutDuration, options.Now),
-		passwordSlots:          make(chan struct{}, 2),
-		websocketCheckInterval: options.WebSocketCheckInterval,
-		now:                    options.Now,
-		hashSetupPassword:      auth.HashPassword,
-		agents:                 agents.NewRepository(store.DB, options.Now),
-		metrics:                coremetrics.NewStore(),
-		history:                &corehistory.Store{DB: store.DB},
-		dashboardPreferences:   &dashboard.Repository{DB: store.DB, Now: options.Now},
-		docker:                 coredocker.NewStore(),
-		imageAuth:              make(map[string]pendingImageCredential),
-		agentOfflineTimeout:    options.AgentOfflineTimeout,
-		agentSweepInterval:     options.AgentSweepInterval,
-		agentConnections:       make(map[string]*agentConnection),
-		agentLeaseWatchers:     make(map[string]*agentConnection),
-		containerStreamSlots:   make(chan struct{}, 64),
-		terminals:              newTerminalStreamManager(),
-		fileTransferLimit:      options.FileTransferLimit,
-		preferenceMigrator:     options.PreferenceMigrator,
+		version:                    version,
+		assets:                     http.FileServer(http.FS(files)),
+		index:                      index,
+		store:                      store,
+		dataDir:                    store.Dir,
+		development:                options.Development,
+		publicOrigin:               strings.TrimSuffix(options.PublicOrigin, "/"),
+		trusted:                    trusted,
+		idleTimeout:                options.SessionIdleTimeout,
+		limiter:                    newLoginLimiter(options.LoginMaxAttempts, options.LoginLockoutDuration, options.Now),
+		passwordSlots:              make(chan struct{}, 2),
+		websocketCheckInterval:     options.WebSocketCheckInterval,
+		now:                        options.Now,
+		hashSetupPassword:          auth.HashPassword,
+		agents:                     agents.NewRepository(store.DB, options.Now),
+		metrics:                    coremetrics.NewStore(),
+		history:                    &corehistory.Store{DB: store.DB},
+		dashboardPreferences:       &dashboard.Repository{DB: store.DB, Now: options.Now},
+		docker:                     coredocker.NewStore(),
+		imageAuth:                  make(map[string]pendingImageCredential),
+		agentOfflineTimeout:        options.AgentOfflineTimeout,
+		agentSweepInterval:         options.AgentSweepInterval,
+		agentConnections:           make(map[string]*agentConnection),
+		agentLeaseWatchers:         make(map[string]*agentConnection),
+		containerStreamSlots:       make(chan struct{}, 64),
+		terminals:                  newTerminalStreamManager(),
+		fileTransferLimit:          options.FileTransferLimit,
+		preferenceMigrator:         options.PreferenceMigrator,
+		agentUpdatePublicKey:       updatePublicKey,
+		agentUpdatePublicKeyBase64: strings.TrimSpace(options.AgentUpdatePublicKeyBase64),
 	}
 	if s.preferenceMigrator == nil {
 		s.preferenceMigrator = coreprefs.NewSQLiteMigrator(store.DB)
@@ -237,6 +255,11 @@ func New(version string, options Options) (*Server, error) {
 		return nil, fmt.Errorf("initialize durable Core task store: %w", err)
 	}
 	s.probes = coreprobes.New(store.DB, options.Now)
+	s.updates = coreupdates.New(store.DB, options.Now)
+	if err := s.updates.Recover(context.Background()); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("recover Agent update tasks: %w", err)
+	}
 	alertKey, err := loadOrCreateAlertEncryptionKey(store.Dir)
 	if err != nil {
 		_ = store.Close()
@@ -298,6 +321,8 @@ func New(version string, options Options) (*Server, error) {
 	go s.alertEvaluationScheduler()
 	s.agentWait.Add(1)
 	go s.alertDeliveryScheduler()
+	s.agentWait.Add(1)
+	go s.agentUpdateScheduler()
 	return s, nil
 }
 
@@ -350,6 +375,36 @@ func (s *Server) SetupCredentialPath() (string, bool) {
 		return "", false
 	}
 	return path, true
+}
+
+func (s *Server) agentUpdateOrigin(r *http.Request) string {
+	if s.publicOrigin != "" {
+		return s.publicOrigin
+	}
+	if r == nil || r.Host == "" || strings.ContainsAny(r.Host, "/\\\r\n\t@") {
+		return ""
+	}
+	scheme := ""
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if scheme == "" && s.isTrustedProxy(remoteIP(r)) {
+		forwarded := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]))
+		if forwarded == "https" {
+			scheme = "https"
+		}
+	}
+	if scheme == "" && s.development && remoteIP(r) != nil && remoteIP(r).IsLoopback() {
+		scheme = "http"
+	}
+	if scheme == "" {
+		return ""
+	}
+	parsed, err := url.Parse(scheme + "://" + r.Host)
+	if err != nil || parsed.Host != r.Host || parsed.User != nil {
+		return ""
+	}
+	return parsed.Scheme + "://" + parsed.Host
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -434,11 +489,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.handleAgentIdentity(w, r)
 		return
+	case "/api/v1/agent-updates/":
+		s.handleAgentUpdateArtifact(w, r)
+		return
 	case "/ws/v1/agent":
 		s.handleAgentWebSocket(w, r)
 		return
 	case "/ws/v1/streams/logs", "/ws/v1/streams/stats":
 		s.handleContainerStreamWebSocket(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/agent-updates/") {
+		s.handleAgentUpdateArtifact(w, r)
 		return
 	}
 

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
 	agentprobes "github.com/CST-Cat/NodeDance/internal/agent/probes"
 	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
+	agentupdate "github.com/CST-Cat/NodeDance/internal/agent/update"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
@@ -130,6 +132,9 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates, taskBridge, func() {
 			established = true
 		}, fileService)
+		if errors.Is(connectionErr, agentupdate.ErrPrepared) {
+			return agentupdate.ErrPrepared
+		}
 		if established {
 			backoff.connected()
 		}
@@ -237,6 +242,15 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	if composeEditorAvailable {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityComposeEditor)
 	}
+	if os.Getenv(agentupdate.HelperEnvironment) == "1" {
+		if _, err := agentupdate.PublicKeyFromBase64(agentupdate.TrustedPublicKeyBase64); err == nil {
+			hello.Capabilities = append(hello.Capabilities, protocol.CapabilityAgentUpdatesPreparedAck)
+			if journal, journalErr := agentupdate.ReadJournal(filepath.Dir(configPath)); journalErr == nil && journal.State == "staged" {
+				hello.UpdateTaskID = journal.TaskID
+				hello.UpdateState = journal.State
+			}
+		}
+	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
 		return errors.New("send Agent hello failed")
 	}
@@ -256,6 +270,12 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	var welcome protocol.Welcome
 	if err := decodeSocketPayload(envelope.Payload, &welcome); err != nil || !validWelcome(config, envelope.Generation, welcome) {
 		return errors.New("Core welcome is invalid")
+	}
+	if err := validatePreparedUpdateWelcome(filepath.Dir(configPath), welcome.Capabilities); err != nil {
+		return err
+	}
+	if err := agentupdate.ConfirmStartup(filepath.Dir(configPath), version); err != nil {
+		return fmt.Errorf("confirm Agent update startup: %w", err)
 	}
 	if onEstablished != nil {
 		onEstablished()
@@ -305,12 +325,31 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams), composeBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityCompose),
 		containsCapability(welcome.Capabilities, protocol.CapabilityTerminal), config.Shell, config.NodeID,
-		containsCapability(welcome.Capabilities, protocol.CapabilityProbes), fileService)
+		containsCapability(welcome.Capabilities, protocol.CapabilityProbes),
+		preparedAgentUpdatesEnabled(welcome.Capabilities), fileService, config, version)
+}
+
+func preparedAgentUpdatesEnabled(capabilities []string) bool {
+	return containsCapability(capabilities, protocol.CapabilityAgentUpdatesPreparedAck)
+}
+
+func validatePreparedUpdateWelcome(stateDir string, capabilities []string) error {
+	journal, err := agentupdate.ReadJournal(stateDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read staged Agent update journal: %w", err)
+	}
+	if journal.State == "staged" && !preparedAgentUpdatesEnabled(capabilities) {
+		return errors.New("Core does not support agent.updates.prepared-ack.v1; staged update remains unapplied")
+	}
+	return nil
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell, nodeID string, probesEnabled bool, fileServices ...*agentfiles.Service) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell, nodeID string, probesEnabled, updatesEnabled bool, fileService *agentfiles.Service, agentConfig Config, agentVersion string) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -468,13 +507,13 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	}
 	var fileMessages chan protocol.Envelope
 	var fileBridgeDone <-chan error
-	if len(fileServices) > 0 && fileServices[0] != nil {
+	if fileService != nil {
 		fileMessages = make(chan protocol.Envelope, 16)
 		fileCtx, cancelFile := context.WithCancel(ctx)
 		done := make(chan error, 1)
 		finished := make(chan struct{})
 		fileBridgeDone = done
-		bridge := newAgentFileBridge(fileServices[0], generation, writer)
+		bridge := newAgentFileBridge(fileService, generation, writer)
 		go func() {
 			defer close(finished)
 			done <- bridge.run(fileCtx, fileMessages)
@@ -517,6 +556,15 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				}
 			}
 		}()
+	}
+	updateResults := make(chan protocol.AgentUpdateReport, 1)
+	updateRunning := false
+	var awaitingPreparedAck string
+	if updatesEnabled {
+		if journal, err := agentupdate.ReadJournal(filepath.Dir(configPath)); err == nil && journal.State == "staged" {
+			updateResults <- protocol.AgentUpdateReport{TaskID: journal.TaskID, Status: "prepared", Version: journal.Version}
+			updateRunning = true
+		}
 	}
 	var dockerDone <-chan error
 	if dockerEnabled {
@@ -630,6 +678,16 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				return fmt.Errorf("Agent service probe bridge stopped unexpectedly: %w", err)
 			}
 			probeBridgeDone = nil
+		case report := <-updateResults:
+			if err := writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeAgentUpdateReport,
+				Generation: generation, RequestID: report.TaskID, Payload: encodePayload(report)}); err != nil {
+				return errors.New("send Agent update status failed")
+			}
+			if report.Status == "prepared" {
+				awaitingPreparedAck = report.TaskID
+			} else {
+				updateRunning = false
+			}
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -755,6 +813,54 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				default:
 					return errors.New("Core service probe queue exceeded its bound")
 				}
+			case protocol.TypeAgentUpdate:
+				if !updatesEnabled || envelope.Sequence != 0 || !isUUID(envelope.RequestID) {
+					return errors.New("Core sent Agent update work without a negotiated update capability")
+				}
+				var command protocol.AgentUpdateCommand
+				if decodeSocketPayload(envelope.Payload, &command) != nil || command.TaskID != envelope.RequestID || command.ArtifactURL == "" {
+					return errors.New("Core Agent update command is invalid")
+				}
+				if updateRunning {
+					report := protocol.AgentUpdateReport{TaskID: command.TaskID, Status: "rejected", Reason: "another Agent update is already active"}
+					if err := writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeAgentUpdateReport,
+						Generation: generation, RequestID: report.TaskID, Payload: encodePayload(report)}); err != nil {
+						return errors.New("send Agent update rejection failed")
+					}
+					continue
+				}
+				var manifest agentupdate.Manifest
+				if decodeSocketPayload(command.Manifest, &manifest) != nil {
+					return errors.New("Core Agent update manifest is invalid")
+				}
+				updateRunning = true
+				go func(command protocol.AgentUpdateCommand, manifest agentupdate.Manifest) {
+					report := protocol.AgentUpdateReport{TaskID: command.TaskID, Version: manifest.Version}
+					key, keyErr := agentupdate.PublicKeyFromBase64(agentupdate.TrustedPublicKeyBase64)
+					client, clientErr := newHTTPClient(agentConfig.CAFile)
+					if keyErr == nil && clientErr == nil {
+						err := agentupdate.Stage(ctx, client, agentConfig.Credential, key, agentupdate.Request{TaskID: command.TaskID, Manifest: manifest,
+							ArtifactURL: command.ArtifactURL, CoreVersion: command.CoreVersion, CurrentAgentVersion: agentVersion,
+							Protocol: protocol.CurrentVersion}, filepath.Dir(configPath))
+						client.CloseIdleConnections()
+						if err == nil {
+							report.Status = "prepared"
+						} else {
+							report.Status, report.Reason = "rejected", safeUpdateError(err)
+						}
+					} else {
+						report.Status, report.Reason = "rejected", "Agent update trust or transport configuration unavailable"
+					}
+					select {
+					case updateResults <- report:
+					case <-ctx.Done():
+					}
+				}(command, manifest)
+			case protocol.TypeAgentUpdatePreparedAck:
+				if !updatesEnabled {
+					return errors.New("Core Agent update acknowledgement is invalid")
+				}
+				return acceptPreparedUpdateAck(filepath.Dir(configPath), awaitingPreparedAck, envelope)
 			case protocol.TypeProtocolError:
 				return errors.New("Core rejected Agent protocol message")
 			default:
@@ -772,6 +878,21 @@ func terminalSafeError(action string, err error) string {
 		return "could not open terminal for this target"
 	}
 	return "terminal operation failed"
+}
+
+func acceptPreparedUpdateAck(stateDir, awaitingTaskID string, envelope protocol.Envelope) error {
+	if envelope.Sequence != 0 || !isUUID(envelope.RequestID) {
+		return errors.New("Core Agent update acknowledgement is invalid")
+	}
+	var acknowledgement protocol.AgentUpdatePreparedAck
+	if decodeSocketPayload(envelope.Payload, &acknowledgement) != nil || acknowledgement.TaskID != envelope.RequestID ||
+		acknowledgement.TaskID != awaitingTaskID {
+		return errors.New("Core Agent update acknowledgement does not match a prepared report")
+	}
+	if err := agentupdate.AcknowledgePrepared(stateDir, acknowledgement.TaskID); err != nil {
+		return fmt.Errorf("persist Core Agent update acknowledgement: %w", err)
+	}
+	return agentupdate.ErrPrepared
 }
 
 func prepareRotation(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, configPath string, config Config, generation uint64, rotationID string,
@@ -868,6 +989,22 @@ func containsCapability(capabilities []string, wanted string) bool {
 		}
 	}
 	return false
+}
+
+func safeUpdateError(err error) string {
+	if err == nil {
+		return ""
+	}
+	value := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(err.Error()))
+	if len(value) > 160 {
+		value = value[:160]
+	}
+	return value
 }
 
 func decodeSocketEnvelope(raw []byte) (protocol.Envelope, error) {

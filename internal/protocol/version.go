@@ -17,14 +17,17 @@ const (
 )
 
 const (
-	TypeHello          = "hello"
-	TypeWelcome        = "welcome"
-	TypeHeartbeat      = "heartbeat"
-	TypeHeartbeatAck   = "heartbeat_ack"
-	TypeRotateRequest  = "rotate_request"
-	TypeRotatePrepare  = "rotate_prepare"
-	TypeRotateAccepted = "rotate_accepted"
-	TypeProtocolError  = "error"
+	TypeHello                  = "hello"
+	TypeWelcome                = "welcome"
+	TypeHeartbeat              = "heartbeat"
+	TypeHeartbeatAck           = "heartbeat_ack"
+	TypeRotateRequest          = "rotate_request"
+	TypeRotatePrepare          = "rotate_prepare"
+	TypeRotateAccepted         = "rotate_accepted"
+	TypeProtocolError          = "error"
+	TypeAgentUpdate            = "agent_update"
+	TypeAgentUpdateReport      = "agent_update_report"
+	TypeAgentUpdatePreparedAck = "agent_update_prepared_ack"
 
 	// Terminal messages are multiplexed over the existing authenticated,
 	// generation-bound Agent socket. They never carry an arbitrary command.
@@ -50,6 +53,8 @@ type Hello struct {
 	AgentVersion string             `json:"agentVersion"`
 	Capabilities []string           `json:"capabilities"`
 	Permissions  RuntimePermissions `json:"permissions"`
+	UpdateTaskID string             `json:"updateTaskId,omitempty"`
+	UpdateState  string             `json:"updateState,omitempty"`
 }
 
 type RuntimePermissions struct {

@@ -372,6 +372,48 @@ var migrations = []Migration{{
 		)`,
 		`CREATE INDEX alert_windows_active ON alert_windows(starts_at, ends_at, kind, scope_type, scope_id)`,
 	},
+}, {
+	Version: 7,
+	SQL: []string{
+		`CREATE TABLE agent_update_releases (
+			id TEXT PRIMARY KEY,
+			version TEXT NOT NULL,
+			os TEXT NOT NULL,
+			architecture TEXT NOT NULL,
+			manifest_json TEXT NOT NULL,
+			artifact_path TEXT NOT NULL,
+			created_at INTEGER NOT NULL
+		)`,
+		`CREATE INDEX agent_update_releases_version ON agent_update_releases(version, created_at DESC)`,
+		`CREATE TABLE agent_update_settings (
+			id INTEGER PRIMARY KEY CHECK(id=1),
+			auto_enabled INTEGER NOT NULL DEFAULT 0 CHECK(auto_enabled IN (0,1)),
+			window_start_minute INTEGER NOT NULL DEFAULT 0 CHECK(window_start_minute BETWEEN 0 AND 1439),
+			window_end_minute INTEGER NOT NULL DEFAULT 0 CHECK(window_end_minute BETWEEN 0 AND 1439),
+			batch_size INTEGER NOT NULL DEFAULT 1 CHECK(batch_size BETWEEN 1 AND 100),
+			release_id TEXT REFERENCES agent_update_releases(id),
+			campaign_date TEXT NOT NULL DEFAULT '',
+			campaign_paused INTEGER NOT NULL DEFAULT 0 CHECK(campaign_paused IN (0,1)),
+			last_error TEXT NOT NULL DEFAULT '',
+			updated_at INTEGER NOT NULL
+		)`,
+		`INSERT INTO agent_update_settings(id, updated_at) VALUES(1, 0)`,
+		`CREATE TABLE agent_update_tasks (
+			id TEXT PRIMARY KEY,
+			batch_id TEXT NOT NULL,
+			batch_number INTEGER NOT NULL CHECK(batch_number >= 0),
+			node_id TEXT NOT NULL REFERENCES nodes(id),
+			release_id TEXT NOT NULL REFERENCES agent_update_releases(id),
+			mode TEXT NOT NULL CHECK(mode IN ('manual','automatic')),
+			status TEXT NOT NULL CHECK(status IN ('queued','deferred','dispatched','prepared','succeeded','failed','paused')),
+			reason TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
+		`CREATE INDEX agent_update_tasks_status ON agent_update_tasks(status, created_at)`,
+		`CREATE INDEX agent_update_tasks_batch ON agent_update_tasks(batch_id, batch_number, status)`,
+		`CREATE UNIQUE INDEX agent_update_tasks_active_node ON agent_update_tasks(node_id) WHERE status IN ('queued','deferred','dispatched','prepared')`,
+	},
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {

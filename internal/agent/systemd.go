@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	agentupdate "github.com/CST-Cat/NodeDance/internal/agent/update"
 	"os"
 	"os/exec"
 	"os/user"
@@ -19,6 +20,7 @@ type SystemdInstallOptions struct {
 	ConfigPath string
 	UnitDir    string
 	BinaryPath string
+	Version    string
 	Reload     bool
 	EnableNow  bool
 }
@@ -37,6 +39,10 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 	uid, err := strconv.Atoi(serviceUser.Uid)
 	if err != nil || uid < 0 {
 		return "", errors.New("systemd service user has an invalid UID")
+	}
+	gid, err := strconv.Atoi(serviceUser.Gid)
+	if err != nil || gid < 0 {
+		return "", errors.New("systemd service user has an invalid primary GID")
 	}
 	if options.UnitDir == "" {
 		options.UnitDir = "/etc/systemd/system"
@@ -76,11 +82,28 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 	if options.UnitDir == "/etc/systemd/system" && os.Geteuid() != 0 {
 		return "", errors.New("installing a system unit requires root privileges")
 	}
+	stateDir := filepath.Dir(options.ConfigPath)
+	if options.Version == "" {
+		options.Version = "bootstrap"
+	}
+	helper, current, err := agentupdate.InstallLayout(options.BinaryPath, stateDir, options.Version)
+	if err != nil {
+		return "", fmt.Errorf("install Agent update helper layout: %w", err)
+	}
+	target, err := filepath.EvalSymlinks(current)
+	if err != nil {
+		return "", fmt.Errorf("resolve installed Agent executable: %w", err)
+	}
+	for _, path := range []string{filepath.Join(stateDir, "bin"), filepath.Join(stateDir, "bin", "versions"), filepath.Dir(target), target, helper} {
+		if err := os.Chown(path, uid, gid); err != nil {
+			return "", fmt.Errorf("set Agent update helper ownership: %w", err)
+		}
+	}
 	if err := os.MkdirAll(options.UnitDir, 0o755); err != nil {
 		return "", fmt.Errorf("create systemd unit directory: %w", err)
 	}
 	unitPath := filepath.Join(options.UnitDir, AgentUnitName)
-	unit := renderSystemdUnit(serviceUser.Username, serviceUser.Gid, options.ConfigPath, options.BinaryPath)
+	unit := renderSystemdUnit(serviceUser.Username, serviceUser.Gid, options.ConfigPath, helper)
 	if err := writeSystemdUnit(unitPath, unit); err != nil {
 		return "", err
 	}
@@ -99,7 +122,8 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 	return unitPath, nil
 }
 
-func renderSystemdUnit(serviceUser, primaryGroup, configPath, binaryPath string) string {
+func renderSystemdUnit(serviceUser, primaryGroup, configPath, helperPath string) string {
+	stateDir := filepath.Dir(configPath)
 	return fmt.Sprintf(`[Unit]
 Description=NodeDance Agent
 After=network-online.target
@@ -110,13 +134,13 @@ Type=simple
 User=%s
 Group=%s
 UMask=0077
-ExecStart=/usr/bin/env -- %s run --config %s
+ExecStart=/usr/bin/env -- %s update-helper supervise --state-dir %s --config %s
 Restart=always
 RestartSec=3s
 
 [Install]
 WantedBy=multi-user.target
-`, serviceUser, primaryGroup, systemdQuote(binaryPath), systemdQuote(configPath))
+`, serviceUser, primaryGroup, systemdQuote(helperPath), systemdQuote(stateDir), systemdQuote(configPath))
 }
 
 func systemdQuote(value string) string {

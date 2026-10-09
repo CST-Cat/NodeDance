@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "stage": "S16",
-  "mode": "initial",
+  "mode": "candidate",
   "status": "NOT_READY",
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "run_id": "s16-local-20261009T053703Z",
+  "updated_at": "2026-10-09T05:52:53Z",
+  "reason": "基线代码提交 b5c8e41621f85556dde96f591f8cd23e420003bf 的 GitHub Actions 完整 S16 focused suite 通过；后续 prepared-report handoff 修复的受影响 Agent/helper/Core update 测试及 go vet 通过。真实 systemd 多 Agent 更新、节点重启和生产签名密钥链证据仍缺失，因此整体阶段保持 NOT_READY。",
   "tests": {
     "S16-01": {
       "status": "NOT_READY",
@@ -13,8 +13,17 @@
       "expected": "新版本运行，身份和配置保留。",
       "environment": "真实systemd Linux Agent和签名release。",
       "evidence_required": "版本、设备ID、配置摘要和启动状态。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 PASS：TestStageVerifiesAndAtomicallySwitchesCandidate、TestSupervisorRestartsAndConfirmsPreparedCandidate：本地签名候选下载、切换和确认；没有真实 Agent 身份/配置验收。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "TestStageVerifiesAndAtomicallySwitchesCandidate、TestSupervisorRestartsAndConfirmsPreparedCandidate：本地签名候选下载、切换和确认；没有真实 Agent 身份/配置验收。 规定的真实部署环境证据尚缺失。",
+      "candidate_coverage": "TestStageVerifiesAndAtomicallySwitchesCandidate、TestSupervisorRestartsAndConfirmsPreparedCandidate：本地签名候选下载、切换和确认；没有真实 Agent 身份/配置验收。"
     },
     "S16-02": {
       "status": "NOT_READY",
@@ -22,8 +31,17 @@
       "expected": "替换前拒绝。",
       "environment": "三种篡改升级包。",
       "evidence_required": "旧二进制hash仍在及拒绝日志。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 PASS：TestSignedManifestAuthenticatesMetadataAndCompatibility、TestStageVerifiesAndAtomicallySwitchesCandidate、TestSignedReleaseUploadIdempotentManualTaskAndAgentArtifactAuth：本地 manifest 篡改、协议/架构拒绝、artifact 摘要拒绝。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "TestSignedManifestAuthenticatesMetadataAndCompatibility、TestStageVerifiesAndAtomicallySwitchesCandidate、TestSignedReleaseUploadIdempotentManualTaskAndAgentArtifactAuth：本地 manifest 篡改、协议/架构拒绝、artifact 摘要拒绝。 规定的真实部署环境证据尚缺失。",
+      "candidate_coverage": "TestSignedManifestAuthenticatesMetadataAndCompatibility、TestStageVerifiesAndAtomicallySwitchesCandidate、TestSignedReleaseUploadIdempotentManualTaskAndAgentArtifactAuth：本地 manifest 篡改、协议/架构拒绝、artifact 摘要拒绝。"
     },
     "S16-03": {
       "status": "NOT_READY",
@@ -31,8 +49,17 @@
       "expected": "拒绝并说明。",
       "environment": "不兼容manifest和Core版本。",
       "evidence_required": "拒绝状态、兼容性原因。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 PASS：TestSignedManifestAuthenticatesMetadataAndCompatibility：本地协议、Core/Agent 版本兼容拒绝；未在真实不同版本 Core/Agent 矩阵运行。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "TestSignedManifestAuthenticatesMetadataAndCompatibility：本地协议、Core/Agent 版本兼容拒绝；未在真实不同版本 Core/Agent 矩阵运行。 规定的真实部署环境证据尚缺失。",
+      "candidate_coverage": "TestSignedManifestAuthenticatesMetadataAndCompatibility：本地协议、Core/Agent 版本兼容拒绝；未在真实不同版本 Core/Agent 矩阵运行。"
     },
     "S16-04": {
       "status": "NOT_READY",
@@ -40,8 +67,17 @@
       "expected": "旧版本继续运行。",
       "environment": "网络中断及小容量测试分区。",
       "evidence_required": "旧Agent活性、磁盘和暂存文件。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 PARTIAL：TestStageVerifiesAndAtomicallySwitchesCandidate 覆盖受信 TLS 下载和正常暂存；本次未注入下载中断或低容量文件系统。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "TestStageVerifiesAndAtomicallySwitchesCandidate 覆盖受信 TLS 下载和正常暂存；本次未注入下载中断或低容量文件系统。 规定的真实部署环境证据尚缺失。",
+      "candidate_coverage": "TestStageVerifiesAndAtomicallySwitchesCandidate 覆盖受信 TLS 下载和正常暂存；本次未注入下载中断或低容量文件系统。"
     },
     "S16-05": {
       "status": "NOT_READY",
@@ -49,8 +85,17 @@
       "expected": "独立助手回滚。",
       "environment": "故障新版本systemd Agent和离线Core场景。",
       "evidence_required": "helper日志、旧hash及重新在线。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 PASS：TestSupervisorRollsBackWhenCandidateCannotExec、TestSupervisorRollsBackCandidateThatExitsBeforeConfirmation、TestHelperRestoresPreviousVersionWithoutCoreAfterRestart：临时 Linux 子进程 helper 离线恢复。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "TestSupervisorRollsBackWhenCandidateCannotExec、TestSupervisorRollsBackCandidateThatExitsBeforeConfirmation、TestHelperRestoresPreviousVersionWithoutCoreAfterRestart：临时 Linux 子进程 helper 离线恢复。 规定的真实部署环境证据尚缺失。",
+      "candidate_coverage": "TestSupervisorRollsBackWhenCandidateCannotExec、TestSupervisorRollsBackCandidateThatExitsBeforeConfirmation、TestHelperRestoresPreviousVersionWithoutCoreAfterRestart：临时 Linux 子进程 helper 离线恢复。"
     },
     "S16-06": {
       "status": "NOT_READY",
@@ -58,8 +103,17 @@
       "expected": "根据持久记录恢复。",
       "environment": "每个切换边界的真实VM/节点重启。",
       "evidence_required": "journal阶段、运行版本和设备身份。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 PARTIAL：Supervisor 测试覆盖 prepared/awaiting/confirmed 启动恢复状态；没有重启真实 VM 或 systemd 节点。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "Supervisor 测试覆盖 prepared/awaiting/confirmed 启动恢复状态；没有重启真实 VM 或 systemd 节点。 规定的真实部署环境证据尚缺失。",
+      "candidate_coverage": "Supervisor 测试覆盖 prepared/awaiting/confirmed 启动恢复状态；没有重启真实 VM 或 systemd 节点。"
     },
     "S16-07": {
       "status": "NOT_READY",
@@ -67,8 +121,17 @@
       "expected": "本地仍能执行回滚。",
       "environment": "断开Core后的本地升级失败。",
       "evidence_required": "无Core时helper仍恢复旧版本。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 PASS：TestHelperRestoresPreviousVersionWithoutCoreAfterRestart 和候选 exec/early-exit helper 测试在没有 Core 的临时环境完成回滚。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "TestHelperRestoresPreviousVersionWithoutCoreAfterRestart 和候选 exec/early-exit helper 测试在没有 Core 的临时环境完成回滚。 规定的真实部署环境证据尚缺失。",
+      "candidate_coverage": "TestHelperRestoresPreviousVersionWithoutCoreAfterRestart 和候选 exec/early-exit helper 测试在没有 Core 的临时环境完成回滚。"
     },
     "S16-08": {
       "status": "NOT_READY",
@@ -76,8 +139,17 @@
       "expected": "调度正确，后续暂停。",
       "environment": "至少三台Agent、canary失败注入。",
       "evidence_required": "批次任务状态和未更新节点版本。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 PASS：SQLite 按序放行节点、首节点失败暂停后续，campaign 仅选择兼容架构 Agent。规范要求的真实多 Agent/UTC 窗口证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "TestAutomaticCampaignReleasesOneNodeAfterConfirmedSuccess 和 TestRolloutIsIdempotentAndStopsAfterFirstFailure 用真实 SQLite 验证顺序放行和失败暂停；TestAgentUpdateCampaignFiltersNodeArchitecture 验证自动批次仅选择在线、支持 updater 且架构与 release 相符的节点。没有三台实际 Agent 和真实 UTC 窗口运行。 真实多 Agent/UTC 窗口证据缺失。",
+      "candidate_coverage": "TestAutomaticCampaignReleasesOneNodeAfterConfirmedSuccess 和 TestRolloutIsIdempotentAndStopsAfterFirstFailure 用真实 SQLite 验证顺序放行和失败暂停；TestAgentUpdateCampaignFiltersNodeArchitecture 验证自动批次仅选择在线、支持 updater 且架构与 release 相符的节点。没有三台实际 Agent 和真实 UTC 窗口运行。"
     },
     "S16-09": {
       "status": "NOT_READY",
@@ -85,8 +157,17 @@
       "expected": "延后，不强行中断。",
       "environment": "终端、文件传输及Docker任务进行中。",
       "evidence_required": "延后原因、任务完整结束再升级。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 NOT_RUN：实现有未完成控制任务和数据流的延迟检查；本次没有在真实终端、文件传输或容器任务执行中做更新竞争注入。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "规定环境为真实 systemd Linux Agent、多节点重启或生产密钥链；当前没有该环境，正式验收保持 NOT_READY。",
+      "candidate_coverage": "实现有未完成控制任务和数据流的延迟检查；本次没有在真实终端、文件传输或容器任务执行中做更新竞争注入。"
     },
     "S16-10": {
       "status": "NOT_READY",
@@ -94,8 +175,17 @@
       "expected": "不产生并行替换。",
       "environment": "并发相同/不同更新请求。",
       "evidence_required": "单一更新任务及单次二进制切换。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 PASS：TestSignedReleaseUploadIdempotentManualTaskAndAgentArtifactAuth、TestRolloutIsIdempotentAndStopsAfterFirstFailure：重复手动请求复用任务，campaign 节点活动任务去重。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "TestSignedReleaseUploadIdempotentManualTaskAndAgentArtifactAuth、TestRolloutIsIdempotentAndStopsAfterFirstFailure：重复手动请求复用任务，campaign 节点活动任务去重。 规定的真实部署环境证据尚缺失。",
+      "candidate_coverage": "TestSignedReleaseUploadIdempotentManualTaskAndAgentArtifactAuth、TestRolloutIsIdempotentAndStopsAfterFirstFailure：重复手动请求复用任务，campaign 节点活动任务去重。"
     },
     "S16-11": {
       "status": "NOT_READY",
@@ -103,8 +193,17 @@
       "expected": "数据保留，无重新注册。",
       "environment": "失败更新回滚后的Agent数据库/配置。",
       "evidence_required": "任务journal、设备身份及凭据摘要。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 NOT_RUN：helper rollback 测试只核对版本链接/journal；没有真实 Agent 配置、注册身份及设备凭据摘要的回滚前后对照。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "规定环境为真实 systemd Linux Agent、多节点重启或生产密钥链；当前没有该环境，正式验收保持 NOT_READY。",
+      "candidate_coverage": "helper rollback 测试只核对版本链接/journal；没有真实 Agent 配置、注册身份及设备凭据摘要的回滚前后对照。"
     },
     "S16-12": {
       "status": "NOT_READY",
@@ -112,8 +211,88 @@
       "expected": "生产产物不信任测试密钥。",
       "environment": "隔离测试/生产公钥构建。",
       "evidence_required": "密钥链验证和测试包生产拒绝。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s16-local-20261009T053703Z",
+          "status": "NOT_READY",
+          "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16; after the serial campaign fix: go test -count=1 ./internal/core/updates ./internal/core/server -run TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease",
+          "result": "本地组件覆盖 NOT_RUN：本地 manifest 使用临时 Ed25519 key；未建立隔离测试/生产 trust key 链或验证生产构建拒绝测试签名。 规范要求的完整环境证据缺失，故该用例不标记为 PASS。",
+          "attempt": 1
+        }
+      ],
+      "reason": "规定环境为真实 systemd Linux Agent、多节点重启或生产密钥链；当前没有该环境，正式验收保持 NOT_READY。",
+      "candidate_coverage": "本地 manifest 使用临时 Ed25519 key；未建立隔离测试/生产 trust key 链或验证生产构建拒绝测试签名。"
     }
+  },
+  "environment": {
+    "os_arch": "Linux arm64 (Oracle Linux kernel 6.17)",
+    "go": "go1.26.8 (locked project toolchain)",
+    "node": "v22.23.3 (locked project toolchain used by make)",
+    "pnpm": "12.10.1 (locked project toolchain used by make)",
+    "browser": "Playwright Chromium 1.63.0",
+    "docker_engine_used": false,
+    "scope": "真实本机 Core/SQLite handler、TLS httptest release 下载、Linux helper 临时进程/文件系统、Playwright API-stubbed responsive UI；无独立 VPS、真实 systemd 启动或多 Agent。"
+  },
+  "prepared_ack_followup": {
+    "run_id": "s16-ack-handoff-20261009T055253Z",
+    "status": "PASS",
+    "scope": "Core 持久化 prepared 报告后 ACK；Agent 对 ACK 做持久确认；helper 在 ACK 前保持旧版本；Core 重启/ACK 丢失恢复；旧 Core capability 兼容拒绝。",
+    "commands": [
+      "go test -count=1 ./internal/agent/update ./internal/agent -run 'Prepared|Staged|Supervisor|Stage|LegacyCore'",
+      "go test -count=1 ./internal/core/server ./internal/core/updates -run 'Prepared|Staged|AgentUpdate|LegacyUpdate|CoreRestart|Rollout|AutomaticCampaign|SignedRelease|ReconcileVersion'",
+      "go vet ./internal/agent/update ./internal/agent ./internal/core/server ./internal/core/updates ./internal/protocol",
+      "git diff --check"
+    ],
+    "results": [
+      "Agent/helper 测试 PASS：prepared ACK 先持久化再退出、错误任务 ID 不接受、staged 状态下多次 helper 轮询不切换，匹配 ACK 后候选启动并进入 awaiting_confirmation。",
+      "Core 测试 PASS：延迟持久化期间不入队 ACK；数据库持久化失败不入队 ACK；Core 重启后的 staged 任务从 deferred 恢复为 dispatched，调度并发也不重复派发；prepared 报告在 ACK 丢失后可幂等重报。",
+      "兼容性测试 PASS：新 Core 不协商/排程旧 agent.updates.v1；Agent 只有收到 agent.updates.prepared-ack.v1 才启用更新。已经 staged 的 Agent 遇到不支持能力的 Core 时明确报错并保留旧版本/journal。",
+      "受影响包 go vet PASS；git diff --check PASS。"
+    ],
+    "unaffected_playwright": "NOT_RUN by scope; no UI code changed.",
+    "github_actions": "NOT_RUN for this follow-up; base candidate full S16 workflow remains recorded below.",
+    "formal_stage_status": "NOT_READY"
+  },
+  "candidate_suite": {
+    "command": "NODEDANCE_SKIP_BOOTSTRAP=1 make test-s16",
+    "attempts": 1,
+    "attempt_statuses": [
+      "PASS"
+    ],
+    "checks": [
+      "锁定依赖校验、前端 typecheck 和 Vite production build（PASS）。",
+      "聚焦 Go Agent update/helper、systemd rendering、Core update store/storage/API 和协议 suite（PASS）；含候选启动成功、exec 失败本地回滚、候选进程早退回滚、confirmed journal 保留、Core 不可用恢复。",
+      "Playwright S16 管理页 1/1 通过，覆盖上传、手动更新、策略保存以及 375/768/1440 CSS 像素无横向溢出（PASS；API 使用 route stub）。",
+      "相关 Go 包 go vet（PASS）。"
+    ],
+    "post_suite_targeted_followup": {
+      "command": "go test -count=1 ./internal/core/updates ./internal/core/server -run 'TestRollout|TestAutomaticCampaign|TestAgentUpdate|TestSignedRelease'",
+      "status": "PASS",
+      "result": "serial campaign 仅在前一个 Agent 版本已确认后释放下一节点；失败暂停后续节点，自动 campaign 过滤不兼容架构。"
+    },
+    "git_diff_check": "PASS",
+    "log_artifacts": [
+      "GitHub Actions artifact nodedance-s16-candidate-37889592761-1: .artifacts/logs/s16/candidate.log"
+    ],
+    "github_actions": {
+      "workflow": ".github/workflows/s16-candidate.yml",
+      "status": "PASS",
+      "run_id": "37889592761",
+      "url": "https://github.com/CST-Cat/NodeDance/actions/runs/37889592761",
+      "head_sha": "b5c8e41621f85556dde96f591f8cd23e420003bf",
+      "artifact": "nodedance-s16-candidate-37889592761-1",
+      "artifact_contents": [
+        "reports/stages/S16.json",
+        ".artifacts/logs/s16/candidate.log",
+        "web/test-results/",
+        "web/playwright-report/"
+      ],
+      "note": "完整 workflow 所有步骤通过；CI 使用受控 Linux runner 和 Chromium，不替代真实 systemd 多 Agent 阶段验收。"
+    }
+  },
+  "out_of_scope_inherited_check": {
+    "command": "python3 scripts/verify-requirements.py",
+    "status": "FAIL",
+    "reason": "The base-branch S15 document docs/stages/S15.md lists S15-01 as plain text, while the repository verifier requires exactly one backtick-delimited `S15-01`. S15 files were left untouched per S16 scope. S16 IDs and report structure pass a focused validation."
   }
 }

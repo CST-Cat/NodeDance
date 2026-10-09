@@ -57,8 +57,9 @@ func TestSystemdInstallRequiresExplicitUserAndPrivateConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(unit)
-	for _, required := range []string{"User=" + serviceUser.Username, "UMask=0077", "run --config", "Restart=always",
-		systemdQuote(binaryPath), systemdQuote(configPath)} {
+	helperPath := filepath.Join(stateDir, "bin", "nodedance-agent-helper")
+	for _, required := range []string{"User=" + serviceUser.Username, "UMask=0077", "update-helper supervise", "Restart=always",
+		systemdQuote(helperPath), systemdQuote(configPath)} {
 		if !strings.Contains(text, required) {
 			t.Errorf("unit missing %q:\n%s", required, text)
 		}
@@ -253,7 +254,7 @@ func TestSystemdExecStartUsesLiteralSpecialPathsOnRunningManager(t *testing.T) {
 	if err := json.Unmarshal(data, &actual); err != nil {
 		t.Fatal("decode systemd-launched argument evidence")
 	}
-	expected := []string{"run", "--config", configPath}
+	expected := []string{"update-helper", "supervise", "--state-dir", stateDir, "--config", configPath}
 	if len(actual) != len(expected) {
 		t.Fatalf("systemd passed %d arguments; want %d", len(actual), len(expected))
 	}

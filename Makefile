@@ -12,7 +12,7 @@ PNPM_BIN := $(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin
 export PATH := $(GO_BIN:%/go=%):$(NODE_BIN):$(PNPM_BIN):$(PATH)
 export GOTOOLCHAIN := local
 
-.PHONY: help bootstrap deps frontend playwright-install verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-terminal-component test-terminal-browser test-s11-go test-s11-ui test-s14 test-s15 fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
+.PHONY: help bootstrap deps frontend playwright-install verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-terminal-component test-terminal-browser test-s11-go test-s11-ui test-s14 test-s15 test-s16 agent-release fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
 
 help:
 	@printf '%s\n' \
@@ -32,6 +32,8 @@ help:
 	  '  make test-acceptance' \
 	  '  make test-s14' \
 	  '  make test-s15' \
+	  '  make test-s16' \
+	  '  make agent-release VERSION=<version> ARCH=amd64|arm64 AGENT_UPDATE_PUBLIC_KEY=<base64> OUTPUT=<path>' \
 	  '  make fixtures-start ENGINE=29' \
 	  '  make fixtures-create|fixtures-fault|fixtures-clean ENGINE=29 RUN_ID=<id>'
 
@@ -118,6 +120,18 @@ test-s15: deps
 	go test -race -count=1 ./internal/core/alerts ./internal/core/audit ./internal/core/storage
 	go test -race -count=1 ./internal/core/server -run 'TestAlert|TestProbe'
 	PATH="$(NODEDANCE_TOOL_ROOT)/node-v$(NODE_VERSION)/bin:$(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin:$$PATH" pnpm --dir web run test:s15
+
+test-s16: frontend
+	go test -count=1 ./internal/agent/update ./internal/agent ./internal/core/updates ./internal/core/storage ./internal/protocol ./internal/core/server -run 'Test.*(AgentUpdate|AgentArtifact|SystemdInstallRequiresExplicitUser|SystemdUnitParses|Helper|Supervisor|SignedManifest|Stage|Rollout|CoreRestartRequeues|SignedRelease)'
+	PATH="$(NODEDANCE_TOOL_ROOT)/node-v$(NODE_VERSION)/bin:$(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin:$$PATH" pnpm --dir web run typecheck
+	PATH="$(NODEDANCE_TOOL_ROOT)/node-v$(NODE_VERSION)/bin:$(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin:$$PATH" pnpm --dir web run test:s16
+	go vet ./internal/agent/update ./internal/core/updates ./internal/core/server ./cmd/nodedance-agent ./cmd/nodedance-release
+
+agent-release: bootstrap
+	@test -n "$(VERSION)" -a -n "$(ARCH)" -a -n "$(AGENT_UPDATE_PUBLIC_KEY)" -a -n "$(OUTPUT)" || { echo 'VERSION, ARCH, AGENT_UPDATE_PUBLIC_KEY and OUTPUT are required' >&2; exit 2; }
+	@case "$(ARCH)" in amd64|arm64) ;; *) echo 'ARCH must be amd64 or arm64' >&2; exit 2;; esac
+	mkdir -p "$(dir $(OUTPUT))"
+	GOOS=linux GOARCH=$(ARCH) CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags '-X main.version=$(VERSION) -X github.com/CST-Cat/NodeDance/internal/agent/update.TrustedPublicKeyBase64=$(AGENT_UPDATE_PUBLIC_KEY)' -o "$(OUTPUT)" ./cmd/nodedance-agent
 
 fixtures-start:
 	@test -n "$(ENGINE)" || { echo 'ENGINE is required (28 or 29)' >&2; exit 2; }

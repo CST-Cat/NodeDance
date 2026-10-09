@@ -7,6 +7,7 @@ import (
 	"time"
 
 	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 func TestTerminalSafeErrorPreservesSessionLimit(t *testing.T) {
@@ -15,6 +16,16 @@ func TestTerminalSafeErrorPreservesSessionLimit(t *testing.T) {
 	}
 	if got := terminalSafeError("open", errors.New("unrelated provider error")); got != "could not open terminal for this target" {
 		t.Fatalf("provider error exposed or mapped unexpectedly: %q", got)
+	}
+}
+
+func TestLegacyCoreWelcomeDoesNotEnablePreparedAgentUpdates(t *testing.T) {
+	oldCoreCapabilities := []string{protocol.CapabilityAgentUpdates, protocol.CapabilityMetrics}
+	if preparedAgentUpdatesEnabled(oldCoreCapabilities) {
+		t.Fatal("legacy Core welcome enabled updates without prepared-ACK support")
+	}
+	if !preparedAgentUpdatesEnabled([]string{protocol.CapabilityAgentUpdatesPreparedAck}) {
+		t.Fatal("prepared-ACK Core capability did not enable updates")
 	}
 }
 
