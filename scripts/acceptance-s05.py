@@ -50,8 +50,8 @@ FORMAL_SUPPLEMENTAL_MARKERS = {
     "S05-06-QUEUED-CANCEL-OFFLINE": "S05_S06_CASE queued_cancel=not_dispatched repeated_delete=same_result docker_unchanged=true offline_post=503 no_rows=true reconnect_no_backlog=true delivered_timeout=unknown_result_pending no_replay=true verified=true",
 }
 CURRENT_CORE_GAPS = {
-    "S05-06": "The Core+Agent+Engine test now covers safe undelivered cancellation, offline rejection, and a delivered deadline followed by Agent-journal plus real-Engine reconciliation. It is not accepted until the final code passes the exact fixture suite once on both locked Engines; the current run exposed an S04 inventory loss and stopped before timeout assertions.",
-    "S05-11": "The Core+Agent+Engine test now injects a Core task-row failure and an Agent task-journal INSERT failure, checking durable unknown/audit/claim and no Docker mutation. It is not accepted until that exact suite passes once on both locked Engines; the current run is blocked earlier by the S04 inventory loss.",
+    "S05-06": "The current complete Core+Agent+Engine fixture suite has not run on this candidate. Its historical attempt failed during make check preflight before normative S05 cases started; timeout, cancellation, offline, and reconciliation acceptance remains pending.",
+    "S05-11": "The current complete Core+Agent+Engine fixture suite has not run on this candidate. Its historical attempt failed during make check preflight before normative S05 cases started; Core task-row and Agent journal persistence-failure acceptance remains pending.",
 }
 
 
