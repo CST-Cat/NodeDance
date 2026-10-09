@@ -4,6 +4,7 @@ import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type 
 import type { MetricsView } from '../metrics-contract'
 import ContainerStreams from './ContainerStreams.vue'
 import MetricsPanel from './MetricsPanel.vue'
+import NodeServiceProbes from './NodeServiceProbes.vue'
 
 interface NodeClock {
   status: string
@@ -597,6 +598,8 @@ onBeforeUnmount(() => {
             </article>
           </div>
         </section>
+        <NodeServiceProbes v-if="selectedNode" :key="selectedNode.nodeId" :node-id="selectedNode.nodeId"
+          :node-name="selectedNode.displayName" :node-online="nodeIsOnline(selectedNode)" />
       </main>
     </div>
   </section>

@@ -86,6 +86,51 @@ export interface TailscaleDeployPayload {
   credentials: { user: string; password?: string; privateKey?: string; passphrase?: string }
 }
 
+export interface ServiceProbe {
+  id: string
+  nodeId: string
+  name: string
+  kind: 'http' | 'https' | 'tcp'
+  target: string
+  expectedHttpStatus?: number
+  intervalSeconds: number
+  timeoutSeconds: number
+  enabled: boolean
+  revision: number
+  status: 'unknown' | 'healthy' | 'unhealthy'
+  lastErrorCode?: string
+  consecutiveFailures: number
+  consecutiveSuccesses: number
+  lastCheckedAt?: string
+  nextDueAt: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ServiceProbeRun {
+  runId: string
+  probeId: string
+  nodeId: string
+  status: 'pending' | 'unknown' | 'healthy' | 'unhealthy'
+  checkedAt: string
+  completedAt?: string
+  latencyMs?: number
+  httpStatus?: number
+  errorCode?: string
+}
+
+export interface ServiceProbePayload {
+  nodeId: string
+  name: string
+  kind: ServiceProbe['kind']
+  target: string
+  expectedHttpStatus?: number
+  intervalSeconds: number
+  timeoutSeconds: number
+  enabled: boolean
+  revision?: number
+}
+
 export interface NodeStatusResponse {
   type: 'node_status'
   nodeId: string
@@ -319,6 +364,17 @@ export const api = {
   nodeTasks: (nodeId: string) => request<{ tasks: ContainerTask[]; nextCursor: string }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks?limit=50`),
   nodeTask: (nodeId: string, taskId: string) => request<ContainerTask>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}`),
   nodeTaskAudit: (nodeId: string, taskId: string) => request<{ events: TaskAuditEvent[] }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}/audit`),
+  serviceProbes: () => request<{ probes: ServiceProbe[] }>('/api/v1/probes'),
+  createServiceProbe: (payload: ServiceProbePayload) => request<ServiceProbe>('/api/v1/probes', {
+    method: 'POST', body: JSON.stringify(payload),
+  }, true),
+  updateServiceProbe: (id: string, payload: ServiceProbePayload) => request<ServiceProbe>(`/api/v1/probes/${encodeURIComponent(id)}`, {
+    method: 'PUT', body: JSON.stringify(payload),
+  }, true),
+  deleteServiceProbe: (id: string, revision: number) => request<void>(`/api/v1/probes/${encodeURIComponent(id)}?revision=${revision}`, {
+    method: 'DELETE',
+  }, true),
+  serviceProbeHistory: (id: string) => request<{ runs: ServiceProbeRun[] }>(`/api/v1/probes/${encodeURIComponent(id)}/history?limit=100`),
   createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload, idempotencyKey: string) =>
     request<{ taskId: string; status: ContainerTask['status'] }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,

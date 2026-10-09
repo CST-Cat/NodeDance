@@ -196,6 +196,12 @@ func (w *socketEnvelopeWriter) send(ctx context.Context, envelope protocol.Envel
 	}
 }
 
+// Send exposes the serialized control lane to internal feature bridges without
+// giving them direct access to the WebSocket connection.
+func (w *socketEnvelopeWriter) Send(ctx context.Context, envelope protocol.Envelope) error {
+	return w.send(ctx, envelope)
+}
+
 // offerMetrics keeps at most the latest not-yet-written snapshot. Losing an
 // intermediate telemetry sample is preferable to delaying heartbeat/control.
 func (w *socketEnvelopeWriter) offerMetrics(envelope protocol.Envelope) {

@@ -17,6 +17,7 @@ import (
 
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
+	agentprobes "github.com/CST-Cat/NodeDance/internal/agent/probes"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
@@ -196,7 +197,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
-		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityDocker},
+		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityDocker, protocol.CapabilityProbes},
 		Permissions:  permissions,
 	}
 	if taskBridge != nil {
@@ -266,12 +267,13 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates,
 		containsCapability(welcome.Capabilities, protocol.CapabilityDocker), taskBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityTaskBridge), streamBridge,
-		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams))
+		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams), config.NodeID,
+		containsCapability(welcome.Capabilities, protocol.CapabilityProbes))
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, nodeID string, probesEnabled bool) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -328,6 +330,32 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			case <-timer.C:
 				if returnErr == nil {
 					returnErr = errors.New("Agent container stream bridge did not stop")
+				}
+			}
+		}()
+	}
+	var probeMessages chan protocol.Envelope
+	var probeBridgeDone <-chan error
+	if probesEnabled {
+		probeMessages = make(chan protocol.Envelope, 64)
+		probeCtx, cancelProbe := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		finished := make(chan struct{})
+		probeBridgeDone = done
+		bridge := agentprobes.NewBridge(agentprobes.NewExecutor())
+		go func() {
+			defer close(finished)
+			done <- bridge.Run(probeCtx, writer, generation, nodeID, probeMessages)
+		}()
+		defer func() {
+			cancelProbe()
+			timer := time.NewTimer(6 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-finished:
+			case <-timer.C:
+				if returnErr == nil {
+					returnErr = errors.New("Agent service probe bridge did not stop")
 				}
 			}
 		}()
@@ -424,6 +452,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				return err
 			}
 			streamBridgeDone = nil
+		case err := <-probeBridgeDone:
+			if err != nil {
+				return fmt.Errorf("Agent service probe bridge stopped unexpectedly: %w", err)
+			}
+			probeBridgeDone = nil
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -481,6 +514,15 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 						// burst of open requests tear down the Agent heartbeat socket.
 						go streamBridge.reject(ctx, writer, generation, envelope.RequestID, "stream_limit")
 					}
+				}
+			case protocol.TypeProbeDispatch:
+				if probeMessages == nil || envelope.Sequence != 0 {
+					return errors.New("Core sent service probe work without a negotiated probe capability")
+				}
+				select {
+				case probeMessages <- envelope:
+				default:
+					return errors.New("Core service probe queue exceeded its bound")
 				}
 			case protocol.TypeProtocolError:
 				return errors.New("Core rejected Agent protocol message")

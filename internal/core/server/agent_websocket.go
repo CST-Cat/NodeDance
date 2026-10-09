@@ -14,6 +14,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
+	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
@@ -30,6 +31,7 @@ type agentConnection struct {
 	metricsEnabled           bool
 	dockerEnabled            bool
 	taskEnabled              bool
+	probeEnabled             bool
 	streamEnabled            bool
 	taskSignal               chan struct{}
 	taskMu                   sync.RWMutex
@@ -129,6 +131,7 @@ func (s *Server) expireAgentLeases(ctx context.Context) {
 	}
 	for _, lease := range leases {
 		s.metrics.Notify(lease.NodeID)
+		_ = s.probes.MarkNodeUnknown(ctx, lease.NodeID, s.now())
 		s.closeAgentConnection(lease.AgentID, lease.Generation)
 	}
 }
@@ -166,6 +169,10 @@ func (s *Server) watchAgentLease(connection *agentConnection, identity agents.Id
 			}
 			if expired {
 				s.metrics.Notify(identity.NodeID)
+				// The per-connection deadline can win the race with the periodic
+				// offline sweep. In that case the sweep no longer sees an online
+				// lease, so this path must also invalidate the last probe status.
+				_ = s.probes.MarkNodeUnknown(watchCtx, identity.NodeID, s.now())
 				s.closeAgentConnection(identity.AgentID, connection.generation)
 				return
 			}
@@ -382,6 +389,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		metricsEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
 		dockerEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
 		taskEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge),
+		probeEnabled:   hasCapability(negotiatedCapabilities, protocol.CapabilityProbes),
 		streamEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams), nodeID: identity.NodeID,
 		taskSignal: make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
@@ -608,6 +616,33 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent container stream frame")
 					return
 				}
+			case protocol.TypeProbeReport:
+				if !connection.probeEnabled {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent probe capability was not negotiated")
+					return
+				}
+				var report protocol.ProbeReport
+				if envelope.Sequence != 0 || decodeAgentPayload(envelope.Payload, &report) != nil ||
+					protocol.ValidateProbeReport(envelope, report, identity.NodeID, connection.generation) != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent service probe result")
+					return
+				}
+				lastSeen, active, err := s.agents.ActiveLeaseLastSeen(ctx, identity.NodeID, connection.generation)
+				if err != nil {
+					return
+				}
+				receivedAt := s.now()
+				if !active || receivedAt.Before(lastSeen) || !receivedAt.Before(lastSeen.Add(s.agentOfflineTimeout)) {
+					continue
+				}
+				if err := s.probes.Complete(ctx, report, connection.generation, receivedAt); errors.Is(err, coreprobes.ErrNotFound) || errors.Is(err, coreprobes.ErrConflict) || errors.Is(err, coreprobes.ErrRunState) {
+					// A late or duplicated result is not a connection-fatal error; its
+					// persisted run remains authoritative and bounded by generation.
+					continue
+				} else if err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not persist Agent service probe result")
+					return
+				}
 			case protocol.TypeHello:
 				s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent hello is only valid at connection start")
 				return
@@ -703,7 +738,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityProbes: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {

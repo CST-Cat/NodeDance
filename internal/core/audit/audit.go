@@ -40,6 +40,7 @@ var actions = map[string]struct{}{
 	"agent_enrollment_create": {}, "agent_enrollment_consume": {},
 	"agent_revoke": {}, "agent_rotation_request": {},
 	"agent_rotation_prepare": {}, "agent_rotation_commit": {},
+	"probe_create": {}, "probe_update": {}, "probe_enable": {}, "probe_disable": {}, "probe_delete": {},
 }
 
 var outcomes = map[string]struct{}{

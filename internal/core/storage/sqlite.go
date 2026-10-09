@@ -149,6 +149,53 @@ var migrations = []Migration{{
 }, {
 	Version: 4,
 	SQL:     coretasks.SchemaStatements(),
+}, {
+	Version: 5,
+	SQL: []string{
+		`CREATE TABLE service_probes (
+			id TEXT PRIMARY KEY,
+			node_id TEXT NOT NULL REFERENCES nodes(id),
+			name TEXT NOT NULL,
+			kind TEXT NOT NULL CHECK (kind IN ('http', 'https', 'tcp')),
+			target TEXT NOT NULL,
+			expected_http_status INTEGER,
+			interval_seconds INTEGER NOT NULL CHECK (interval_seconds BETWEEN 10 AND 86400),
+			timeout_seconds INTEGER NOT NULL CHECK (timeout_seconds BETWEEN 1 AND 30 AND timeout_seconds < interval_seconds),
+			enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+			revision INTEGER NOT NULL CHECK (revision > 0),
+			status TEXT NOT NULL CHECK (status IN ('unknown', 'healthy', 'unhealthy')),
+			last_error_code TEXT,
+			consecutive_failures INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_failures >= 0),
+			consecutive_successes INTEGER NOT NULL DEFAULT 0 CHECK (consecutive_successes >= 0),
+			last_checked_at INTEGER,
+			next_due_at INTEGER NOT NULL,
+			created_at INTEGER NOT NULL,
+			updated_at INTEGER NOT NULL,
+			deleted_at INTEGER,
+			CHECK ((kind = 'tcp' AND expected_http_status IS NULL) OR (kind IN ('http', 'https') AND expected_http_status BETWEEN 100 AND 599))
+		)`,
+		`CREATE INDEX service_probes_due ON service_probes(enabled, deleted_at, next_due_at)`,
+		`CREATE INDEX service_probes_node ON service_probes(node_id, deleted_at, id)`,
+		`CREATE TABLE service_probe_runs (
+			run_id TEXT PRIMARY KEY,
+			probe_id TEXT NOT NULL REFERENCES service_probes(id),
+			node_id TEXT NOT NULL REFERENCES nodes(id),
+			probe_revision INTEGER NOT NULL,
+			generation INTEGER NOT NULL DEFAULT 0,
+			kind TEXT NOT NULL CHECK (kind IN ('http', 'https', 'tcp')),
+			expected_http_status INTEGER,
+			status TEXT NOT NULL CHECK (status IN ('pending', 'healthy', 'unhealthy', 'unknown')),
+			checked_at INTEGER NOT NULL,
+			completed_at INTEGER,
+			latency_ms INTEGER,
+			http_status INTEGER,
+			error_code TEXT,
+			timeout_seconds INTEGER NOT NULL,
+			CHECK ((kind='tcp' AND expected_http_status IS NULL) OR (kind IN ('http','https') AND expected_http_status BETWEEN 100 AND 599))
+		)`,
+		`CREATE INDEX service_probe_runs_probe_time ON service_probe_runs(probe_id, checked_at DESC, run_id DESC)`,
+		`CREATE INDEX service_probe_runs_pending ON service_probe_runs(status, checked_at)`,
+	},
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {
