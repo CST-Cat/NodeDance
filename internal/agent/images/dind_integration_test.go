@@ -218,6 +218,68 @@ func TestDINDImageManagementRealEngine(t *testing.T) {
 		t.Fatalf("real Engine list did not retain multi-tag/digest identity: %+v", listed)
 	}
 
+	t.Run("real Engine lists an untagged image with empty arrays", func(t *testing.T) {
+		// Commit a stopped, test-owned container without a repository name. This
+		// asks the real Engine to create a dangling image rather than synthesizing
+		// a response with missing RepoTags in a fake client.
+		untaggedContainerName := "nd-s08-untagged-" + shortS08RunID(runID)
+		containerID, err := docker("create", "--name", untaggedContainerName,
+			"--label", "io.nodedance.test=true", "--label", "io.nodedance.suite="+suite, pulled.ID)
+		if err != nil || !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(strings.TrimSpace(containerID)) {
+			t.Fatalf("create the owned stopped container used to derive an untagged image: id=%q err=%v", containerID, err)
+		}
+		containerID = strings.TrimSpace(containerID)
+		var untaggedID string
+		t.Cleanup(func() {
+			labels, inspectErr := s08DockerCommand(context.Background(), "unix://"+socket, cliConfig,
+				"inspect", "--format", `{{ index .Config.Labels "io.nodedance.suite" }}`, containerID)
+			if inspectErr == nil && strings.TrimSpace(labels) == suite {
+				if _, removeErr := s08DockerCommand(context.Background(), "unix://"+socket, cliConfig, "rm", containerID); removeErr != nil {
+					t.Errorf("remove only the owned untagged-image source container: %v", removeErr)
+				}
+			} else if inspectErr != nil && !strings.Contains(strings.ToLower(inspectErr.Error()), "no such object") {
+				t.Errorf("verify ownership of the untagged-image source container before cleanup: %v", inspectErr)
+			}
+			if untaggedID != "" {
+				labels, inspectErr := s08DockerCommand(context.Background(), "unix://"+socket, cliConfig,
+					"image", "inspect", "--format", `{{ index .Config.Labels "io.nodedance.suite" }}`, untaggedID)
+				if inspectErr == nil && strings.TrimSpace(labels) == suite {
+					if _, removeErr := s08DockerCommand(context.Background(), "unix://"+socket, cliConfig, "image", "rm", untaggedID); removeErr != nil {
+						t.Errorf("remove only the owned untagged image: %v", removeErr)
+					}
+				} else if inspectErr != nil && !strings.Contains(strings.ToLower(inspectErr.Error()), "no such image") {
+					t.Errorf("verify ownership of the untagged image before cleanup: %v", inspectErr)
+				}
+			}
+		})
+
+		committed, err := docker("commit", "--change", "LABEL io.nodedance.suite="+suite, containerID)
+		if err != nil {
+			t.Fatalf("commit the stopped fixture container without a tag: %v", err)
+		}
+		untaggedID = strings.TrimSpace(committed)
+		if !regexp.MustCompile(`^sha256:[0-9a-f]{64}$`).MatchString(untaggedID) {
+			t.Fatalf("Engine did not return a full image ID for the untagged commit: %q", committed)
+		}
+
+		inspected, err := engine.Inspect(ctx, untaggedID)
+		if err != nil || inspected.ID != untaggedID || inspected.Tags == nil || len(inspected.Tags) != 0 ||
+			inspected.Digests == nil || len(inspected.Digests) != 0 {
+			t.Fatalf("SDK inspect did not preserve an untagged image as empty arrays: image=%+v err=%v", inspected, err)
+		}
+		dockerTags, err := docker("image", "inspect", "--format", `{{json .RepoTags}}`, untaggedID)
+		if err != nil || dockerTags != "null" && dockerTags != "[]" {
+			t.Fatalf("Docker Engine fixture is not actually untagged: RepoTags=%q err=%v", dockerTags, err)
+		}
+
+		listed, ok := findS08ImageMust(t, engine, ctx, untaggedID)
+		if !ok || listed.ID != untaggedID || listed.Tags == nil || len(listed.Tags) != 0 ||
+			listed.Digests == nil || len(listed.Digests) != 0 || listed.Containers != 0 {
+			t.Fatalf("real Engine List omitted or corrupted the untagged image: image=%+v found=%t", listed, ok)
+		}
+		t.Logf("real Engine list retained dangling image %s with tags=%v digests=%v containers=%d", listed.ID, listed.Tags, listed.Digests, listed.Containers)
+	})
+
 	containerName := "nd-s08-ref-" + shortS08RunID(runID)
 	containerID, err := docker("create", "--name", containerName,
 		"--label", "io.nodedance.test=true", "--label", "io.nodedance.suite="+suite,
