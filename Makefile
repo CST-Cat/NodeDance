@@ -12,7 +12,7 @@ PNPM_BIN := $(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin
 export PATH := $(GO_BIN:%/go=%):$(NODE_BIN):$(PNPM_BIN):$(PATH)
 export GOTOOLCHAIN := local
 
-.PHONY: help bootstrap deps frontend playwright-install playwright-install-candidate verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-terminal-component test-terminal-browser test-s06 test-s11-go test-s11-ui test-s14 test-s15 test-s16 test-candidate-s06 test-candidate-s11 test-candidate-s14 test-candidate-s15 test-candidate-s16 agent-release fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
+.PHONY: help bootstrap deps frontend playwright-install playwright-install-candidate verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-terminal-component test-terminal-browser test-s06 test-s11-go test-s11-ui test-s14 test-s15 test-s16 test-candidate-s06 test-candidate-s11 test-candidate-s14 test-candidate-s15 test-candidate-s16 test-candidate-s17 agent-release fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
 
 help:
 	@printf '%s\n' \
@@ -149,6 +149,9 @@ test-s16: frontend
 	go vet ./internal/agent/update ./internal/core/updates ./internal/core/server ./cmd/nodedance-agent ./cmd/nodedance-release
 
 test-candidate-s16: frontend playwright-install-candidate test-s16
+
+test-candidate-s17: frontend
+	go test -v -count=1 ./internal/core/server -run '^TestS17BackupRestoreRealCoreAgentReconnect$$'
 
 agent-release: bootstrap
 	@test -n "$(VERSION)" -a -n "$(ARCH)" -a -n "$(AGENT_UPDATE_PUBLIC_KEY)" -a -n "$(OUTPUT)" || { echo 'VERSION, ARCH, AGENT_UPDATE_PUBLIC_KEY and OUTPUT are required' >&2; exit 2; }

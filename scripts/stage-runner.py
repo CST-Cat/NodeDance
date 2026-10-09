@@ -96,6 +96,9 @@ def main():
     if args.stage == "S10":
         command = [sys.executable, "scripts/acceptance-s10.py", "--mode", args.mode, "--repeat", str(repeat)]
         return subprocess.run(command, cwd=ROOT).returncode
+    if args.stage == "S17":
+        command = [sys.executable, "scripts/acceptance-s17.py", "--mode", args.mode]
+        return subprocess.run(command, cwd=ROOT).returncode
     acceptance = {
         "S00": "scripts/acceptance-s00.py",
         "S01": "scripts/acceptance-s01.py",
