@@ -18,6 +18,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -542,11 +544,13 @@ func TestS08CoreAgentAuthenticatedImagePullOnOwnedDIND(t *testing.T) {
 	}
 	registryScan := s08CoreScanRegistryLogs([]byte(registryLogs), username, password)
 	if registryScan.otherUsernameMatch || registryScan.passwordMatch || registryScan.authorizationHeaderValueMatch {
-		t.Fatalf("private Registry log scan found an unexpected credential occurrence: other_username=%t password=%t authorization_value=%t",
-			registryScan.otherUsernameMatch, registryScan.passwordMatch, registryScan.authorizationHeaderValueMatch)
+		t.Fatalf("private Registry log scan found an unexpected credential occurrence: other_username=%t password=%t authorization_value=%t username_fields=%s",
+			registryScan.otherUsernameMatch, registryScan.passwordMatch, registryScan.authorizationHeaderValueMatch,
+			s08CoreFormatRegistryLogOccurrences(registryScan.usernameOccurrences))
 	}
-	t.Logf("S08 Core-Agent-Engine private Registry pull verified: Engine=%s task=%s image_id_match=true manifest_digest_match=true authenticated_pull=true one_use_credentials_consumed=true persistent_secret_scan=clean registry_username_auth_audit_field_matches=%d registry_password_canary=false registry_basic_authorization_value_canary=false",
-		owner.ServerVersion, accepted.TaskID, registryScan.usernameAuthFieldMatches)
+	t.Logf("S08 Core-Agent-Engine private Registry pull verified: Engine=%s task=%s image_id_match=true manifest_digest_match=true authenticated_pull=true one_use_credentials_consumed=true persistent_secret_scan=clean registry_username_auth_audit_field_matches=%d registry_username_fields=%s registry_password_canary=false registry_basic_authorization_value_canary=false",
+		owner.ServerVersion, accepted.TaskID, registryScan.usernameAuthFieldMatches,
+		s08CoreFormatRegistryLogOccurrences(registryScan.usernameOccurrences))
 }
 
 func s08CoreSafeSuffix(value string) string {
@@ -828,37 +832,259 @@ type s08CoreRegistryLogScan struct {
 	otherUsernameMatch            bool
 	passwordMatch                 bool
 	authorizationHeaderValueMatch bool
+	usernameOccurrences           map[string]s08CoreRegistryFieldOccurrence
+}
+
+type s08CoreRegistryFieldOccurrence struct {
+	count             int
+	valueExactCount   int
+	allowedExactCount int
+}
+
+type s08CoreRegistryValueOccurrence struct {
+	field          string
+	value          string
+	allowExactAuth bool
 }
 
 func s08CoreScanRegistryLogs(logs []byte, username, password string) s08CoreRegistryLogScan {
 	scan := s08CoreRegistryLogScan{
-		passwordMatch: bytes.Contains(logs, []byte(password)),
+		passwordMatch:       bytes.Contains(logs, []byte(password)),
+		usernameOccurrences: make(map[string]s08CoreRegistryFieldOccurrence),
 	}
 	basicAuthorizationValue := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
 	scan.authorizationHeaderValueMatch = bytes.Contains(logs, []byte(basicAuthorizationValue))
 	for _, line := range bytes.Split(logs, []byte{'\n'}) {
-		if !bytes.Contains(line, []byte(username)) {
+		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-		foundUsername := false
-		for _, token := range strings.Fields(string(line)) {
-			valueAt := strings.Index(token, username)
-			if valueAt < 0 {
-				continue
+		if occurrences, ok := s08CoreParseJSONRegistryLogLine(line, username); ok {
+			for _, occurrence := range occurrences {
+				s08CoreRecordRegistryUsernameOccurrence(&scan, occurrence, username, password, basicAuthorizationValue)
 			}
-			foundUsername = true
-			field := strings.Trim(token[:valueAt], `{"':=`)
-			if field == "http.request.auth.user.name" {
-				scan.usernameAuthFieldMatches++
-			} else {
-				scan.otherUsernameMatch = true
-			}
+			continue
 		}
-		if !foundUsername {
-			scan.otherUsernameMatch = true
+		fields, ok := s08CoreParseLogfmtRegistryLogLine(line)
+		if !ok {
+			if bytes.Contains(line, []byte(username)) {
+				s08CoreRecordRegistryUsernameOccurrence(&scan, s08CoreRegistryValueOccurrence{field: "<unparsed>", value: string(line)}, username, password, basicAuthorizationValue)
+			}
+			continue
+		}
+		for _, field := range fields {
+			if strings.Contains(field.field, username) {
+				s08CoreRecordRegistryUsernameOccurrence(&scan, s08CoreRegistryValueOccurrence{field: "<field-name>", value: field.field}, username, password, basicAuthorizationValue)
+			}
+			allowExactAuth := field.field == "auth.user.name"
+			s08CoreRecordRegistryUsernameOccurrence(&scan, s08CoreRegistryValueOccurrence{
+				field: field.field, value: field.value, allowExactAuth: allowExactAuth,
+			}, username, password, basicAuthorizationValue)
 		}
 	}
 	return scan
+}
+
+func s08CoreRecordRegistryUsernameOccurrence(scan *s08CoreRegistryLogScan, occurrence s08CoreRegistryValueOccurrence, username, password, basicAuthorizationValue string) {
+	count := strings.Count(occurrence.value, username)
+	if count == 0 {
+		return
+	}
+	field := s08CoreSafeRegistryFieldName(occurrence.field, username, password, basicAuthorizationValue)
+	current := scan.usernameOccurrences[field]
+	current.count += count
+	valueExact := occurrence.value == username
+	if valueExact {
+		current.valueExactCount++
+	}
+	allowedExact := occurrence.allowExactAuth && occurrence.field == "auth.user.name" && valueExact
+	if allowedExact {
+		current.allowedExactCount++
+		scan.usernameAuthFieldMatches++
+	} else {
+		scan.otherUsernameMatch = true
+	}
+	scan.usernameOccurrences[field] = current
+}
+
+func s08CoreSafeRegistryFieldName(field, username, password, basicAuthorizationValue string) string {
+	if field == "" {
+		return "<unparsed>"
+	}
+	if strings.Contains(field, username) || strings.Contains(field, password) || strings.Contains(field, basicAuthorizationValue) {
+		return "<redacted-field>"
+	}
+	field = regexp.MustCompile(`[^A-Za-z0-9_.<>-]+`).ReplaceAllString(field, "_")
+	if len(field) > 96 {
+		field = field[:96]
+	}
+	return field
+}
+
+func s08CoreParseJSONRegistryLogLine(line []byte, username string) ([]s08CoreRegistryValueOccurrence, bool) {
+	trimmed := bytes.TrimSpace(line)
+	if len(trimmed) == 0 || (trimmed[0] != '{' && trimmed[0] != '[') {
+		return nil, false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(trimmed))
+	var occurrences []s08CoreRegistryValueOccurrence
+	if err := s08CoreReadJSONRegistryValue(decoder, "", false, username, &occurrences); err != nil {
+		return nil, false
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return nil, false
+	}
+	return occurrences, true
+}
+
+func s08CoreReadJSONRegistryValue(decoder *json.Decoder, field string, allowExactAuth bool, username string, occurrences *[]s08CoreRegistryValueOccurrence) error {
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	switch value := token.(type) {
+	case json.Delim:
+		switch value {
+		case '{':
+			for decoder.More() {
+				keyToken, err := decoder.Token()
+				if err != nil {
+					return err
+				}
+				key, ok := keyToken.(string)
+				if !ok {
+					return errors.New("JSON object key is not a string")
+				}
+				if strings.Contains(key, username) {
+					*occurrences = append(*occurrences, s08CoreRegistryValueOccurrence{field: "<field-name>", value: key})
+				}
+				childField := key
+				if field != "" {
+					childField = field + "." + key
+				}
+				directAuthValue := field == "" && key == "auth.user.name"
+				if err := s08CoreReadJSONRegistryValue(decoder, childField, directAuthValue, username, occurrences); err != nil {
+					return err
+				}
+			}
+			end, err := decoder.Token()
+			if err != nil || end != json.Delim('}') {
+				return errors.New("invalid JSON object terminator")
+			}
+		case '[':
+			for decoder.More() {
+				if err := s08CoreReadJSONRegistryValue(decoder, field+"[]", false, username, occurrences); err != nil {
+					return err
+				}
+			}
+			end, err := decoder.Token()
+			if err != nil || end != json.Delim(']') {
+				return errors.New("invalid JSON array terminator")
+			}
+		default:
+			return errors.New("unexpected JSON delimiter")
+		}
+	case string:
+		if strings.Contains(value, username) {
+			*occurrences = append(*occurrences, s08CoreRegistryValueOccurrence{field: field, value: value, allowExactAuth: allowExactAuth})
+		}
+	}
+	return nil
+}
+
+type s08CoreLogfmtRegistryField struct {
+	field string
+	value string
+}
+
+func s08CoreParseLogfmtRegistryLogLine(line []byte) ([]s08CoreLogfmtRegistryField, bool) {
+	var fields []s08CoreLogfmtRegistryField
+	for index := 0; index < len(line); {
+		for index < len(line) && s08CoreLogfmtSpace(line[index]) {
+			index++
+		}
+		if index == len(line) {
+			break
+		}
+		start := index
+		for index < len(line) && line[index] != '=' && !s08CoreLogfmtSpace(line[index]) {
+			index++
+		}
+		if index == len(line) || line[index] != '=' {
+			for index < len(line) && !s08CoreLogfmtSpace(line[index]) {
+				index++
+			}
+			fields = append(fields, s08CoreLogfmtRegistryField{field: "<unparsed>", value: string(line[start:index])})
+			continue
+		}
+		field := string(line[start:index])
+		if field == "" {
+			return nil, false
+		}
+		index++
+		if index < len(line) && line[index] == '"' {
+			valueStart := index
+			index++
+			escaped := false
+			closed := false
+			for index < len(line) {
+				current := line[index]
+				if escaped {
+					escaped = false
+					index++
+					continue
+				}
+				if current == '\\' {
+					escaped = true
+					index++
+					continue
+				}
+				if current == '"' {
+					closed = true
+					break
+				}
+				index++
+			}
+			if !closed {
+				return nil, false
+			}
+			quoted := string(line[valueStart : index+1])
+			value, err := strconv.Unquote(quoted)
+			if err != nil {
+				return nil, false
+			}
+			index++
+			if index < len(line) && !s08CoreLogfmtSpace(line[index]) {
+				return nil, false
+			}
+			fields = append(fields, s08CoreLogfmtRegistryField{field: field, value: value})
+			continue
+		}
+		valueStart := index
+		for index < len(line) && !s08CoreLogfmtSpace(line[index]) {
+			index++
+		}
+		fields = append(fields, s08CoreLogfmtRegistryField{field: field, value: string(line[valueStart:index])})
+	}
+	return fields, true
+}
+
+func s08CoreLogfmtSpace(value byte) bool {
+	return value == ' ' || value == '\t' || value == '\r' || value == '\n'
+}
+
+func s08CoreFormatRegistryLogOccurrences(occurrences map[string]s08CoreRegistryFieldOccurrence) string {
+	fields := make([]string, 0, len(occurrences))
+	for field := range occurrences {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	var summary []string
+	for _, field := range fields {
+		occurrence := occurrences[field]
+		summary = append(summary, fmt.Sprintf("%s{count=%d,value_exact=%d,allowed_exact=%d}", field,
+			occurrence.count, occurrence.valueExactCount, occurrence.allowedExactCount))
+	}
+	return strings.Join(summary, ",")
 }
 
 func TestS08RegistryLogScannerAllowsOnlyExternalAuthUsernameField(t *testing.T) {
@@ -872,9 +1098,17 @@ func TestS08RegistryLogScannerAllowsOnlyExternalAuthUsernameField(t *testing.T) 
 		wantPassword        bool
 		wantHeader          bool
 	}{
-		{name: "external auth username field", logs: `http.request.auth.user.name="` + username + `"`, wantUsernameMatches: 1},
+		{name: "canonical external auth username field", logs: `auth.user.name="` + username + `"`, wantUsernameMatches: 1},
+		{name: "canonical external auth username field unquoted", logs: `auth.user.name=` + username, wantUsernameMatches: 1},
+		{name: "canonical external auth username JSON field", logs: `{"auth.user.name":"` + username + `"}`, wantUsernameMatches: 1},
+		{name: "canonical exact auth field plus another username occurrence", logs: `auth.user.name="` + username + `" message="` + username + `"`, wantUsernameMatches: 1, wantOtherUsername: true},
+		{name: "different HTTP request auth field", logs: `http.request.auth.user.name="` + username + `"`, wantOtherUsername: true},
 		{name: "username in another field", logs: `message="` + username + `"`, wantOtherUsername: true},
-		{name: "username in a different auth field path", logs: `other.http.request.auth.user.name="` + username + `"`, wantOtherUsername: true},
+		{name: "username in a different auth field path", logs: `other.auth.user.name="` + username + `"`, wantOtherUsername: true},
+		{name: "username field with extra suffix", logs: `auth.user.name="` + username + `-extra"`, wantOtherUsername: true},
+		{name: "JSON username field with extra suffix", logs: `{"auth.user.name":"` + username + `-extra"}`, wantOtherUsername: true},
+		{name: "nested JSON username field", logs: `{"request":{"auth.user.name":"` + username + `"}}`, wantOtherUsername: true},
+		{name: "quoted message containing field-like text", logs: `message="request auth.user.name=\"` + username + `\" failed"`, wantOtherUsername: true},
 		{name: "password anywhere", logs: `field="` + password + `"`, wantPassword: true},
 		{name: "Basic authorization value", logs: `header="Basic ` + basic + `"`, wantHeader: true},
 	} {
@@ -882,9 +1116,9 @@ func TestS08RegistryLogScannerAllowsOnlyExternalAuthUsernameField(t *testing.T) 
 			got := s08CoreScanRegistryLogs([]byte(test.logs), username, password)
 			if got.usernameAuthFieldMatches != test.wantUsernameMatches || got.otherUsernameMatch != test.wantOtherUsername ||
 				got.passwordMatch != test.wantPassword || got.authorizationHeaderValueMatch != test.wantHeader {
-				t.Fatalf("scan classification = (auth_field=%d other_username=%t password=%t authorization=%t), want (%d,%t,%t,%t)",
+				t.Fatalf("scan classification = (auth_field=%d other_username=%t password=%t authorization=%t occurrences=%s), want (%d,%t,%t,%t)",
 					got.usernameAuthFieldMatches, got.otherUsernameMatch, got.passwordMatch, got.authorizationHeaderValueMatch,
-					test.wantUsernameMatches, test.wantOtherUsername, test.wantPassword, test.wantHeader)
+					s08CoreFormatRegistryLogOccurrences(got.usernameOccurrences), test.wantUsernameMatches, test.wantOtherUsername, test.wantPassword, test.wantHeader)
 			}
 		})
 	}
