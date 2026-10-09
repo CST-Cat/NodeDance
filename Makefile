@@ -67,6 +67,7 @@ verify-tools: bootstrap
 
 verify-ci-evidence:
 	python3 scripts/test/acceptance-report-policy-selftest.py
+	python3 scripts/test/acceptance-s10-repeat-selftest.py
 	python3 scripts/test/test_acceptance_candidates.py
 	python3 scripts/test/ci-evidence-selftest.py
 	python3 scripts/test/acceptance-s02-selftest.py
