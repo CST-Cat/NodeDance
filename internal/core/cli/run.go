@@ -33,6 +33,10 @@ func Run(ctx context.Context, args []string, lookup LookupEnv, stdout, stderr io
 		return nil
 	case "serve":
 		return runServe(ctx, args[1:], lookup, stdout, stderr, version)
+	case "backup":
+		return runBackup(ctx, args[1:], stdout, stderr)
+	case "restore":
+		return runRestore(ctx, args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown command %q (try 'nodedance --help')", args[0])
 	}
@@ -170,6 +174,8 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "NodeDance - unified Linux server and container management")
 	fmt.Fprintln(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--max-file-bytes bytes] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--dev]")
+	fmt.Fprintln(w, "       nodedance backup --data-dir DIR --output FILE")
+	fmt.Fprintln(w, "       nodedance restore --input FILE --data-dir NEW_DIR")
 	fmt.Fprintln(w, "       nodedance version")
 	fmt.Fprintln(w, "Default listen address: 127.0.0.1:8180")
 }
