@@ -9,7 +9,7 @@ export default defineConfig({
   timeout: 30_000,
   reporter: 'line',
   use: {
-    baseURL: 'http://127.0.0.1:4190',
+    baseURL: 'http://127.0.0.1:4173',
     viewport: { width: 1280, height: 900 },
     headless: true,
     trace: 'off',
@@ -20,8 +20,8 @@ export default defineConfig({
     { name: 'firefox', use: { browserName: 'firefox' } },
   ],
   webServer: {
-    command: 'pnpm exec vite --host 127.0.0.1 --port 4190 --strictPort',
-    url: 'http://127.0.0.1:4190/tests/fixtures/s10-node-files.html',
+    command: 'pnpm exec vite --host 127.0.0.1 --port 4173 --strictPort',
+    url: 'http://127.0.0.1:4173/tests/fixtures/s10-node-files.html',
     reuseExistingServer: false,
     timeout: 15_000,
   },

@@ -109,17 +109,27 @@ def main() -> int:
         parser.error("--repeat must be between 1 and 3")
 
     checks: list[dict[str, object]] = []
+    web_assets_built = False
     if args.mode in ("full", "integration"):
         unit = ["go", "test", "-count=1", "./internal/protocol", "./internal/agent/files", "./internal/core/audit", "./internal/core/config"]
         core = ["go", "test", "./internal/core/server", "-run", f"^({CORE_TESTS})$", "-count=1"]
         for attempt in range(1, args.repeat + 1):
             checks.append(run(f"go-components-{attempt}", unit))
+            if checks[-1]["status"] != "PASS":
+                break
+            if not web_assets_built:
+                checks.append(run("web-build", ["pnpm", "--dir", "web", "run", "build"]))
+                web_assets_built = checks[-1]["status"] == "PASS"
+            if not web_assets_built:
+                break
             checks.append(run(f"go-core-session-{attempt}", core))
-            if any(check["status"] != "PASS" for check in checks[-2:]):
+            if checks[-1]["status"] != "PASS":
                 break
     if args.mode in ("full", "e2e"):
         checks.append(run("web-typecheck", ["pnpm", "--dir", "web", "run", "typecheck"]))
-        checks.append(run("web-build", ["pnpm", "--dir", "web", "run", "build"]))
+        if not web_assets_built:
+            checks.append(run("web-build", ["pnpm", "--dir", "web", "run", "build"]))
+            web_assets_built = checks[-1]["status"] == "PASS"
         browser_command = ["pnpm", "--dir", "web", "exec", "playwright", "test", "--config", "playwright.s10.config.ts"]
         for project in args.project or []:
             browser_command.extend(("--project", project))

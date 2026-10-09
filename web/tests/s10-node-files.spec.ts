@@ -150,17 +150,26 @@ test('external edit conflict is shown and does not claim the stale save succeede
 })
 
 test('upload streams a file body and delete sends the exact path confirmation', async ({ page }) => {
-  let uploadBody = ''
   let uploadContentType = ''
   let deletePayload: unknown
   await installFileAPIMock(page, (request) => {
     const url = new URL(request.url())
     if (url.pathname.endsWith('/files/upload') && request.method() === 'POST') {
-      uploadBody = request.postData() ?? ''
       uploadContentType = request.headers()['content-type'] ?? ''
     }
     if (url.pathname.endsWith('/files/delete') && request.method() === 'DELETE') {
       deletePayload = request.postDataJSON()
+    }
+  })
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window)
+    Object.defineProperty(window, '__s10UploadBody', { value: null, writable: true })
+    window.fetch = (input, init) => {
+      const requestURL = input instanceof Request ? input.url : String(input)
+      if (new URL(requestURL, window.location.href).pathname.endsWith('/files/upload')) {
+        Object.defineProperty(window, '__s10UploadBody', { value: init?.body ?? null, writable: true })
+      }
+      return originalFetch(input, init)
     }
   })
   await page.addInitScript((path) => { window.prompt = () => path }, textFile.path)
@@ -168,7 +177,12 @@ test('upload streams a file body and delete sends the exact path confirmation', 
   await page.locator('input[type=file]').setInputFiles({ name: 'new 文件.txt', mimeType: 'text/plain', buffer: Buffer.from('upload bytes') })
   await expect(page.getByRole('status').filter({ hasText: '文件上传并校验完成' })).toBeVisible()
   expect(uploadContentType).toContain('application/octet-stream')
-  expect(uploadBody).toBe('upload bytes')
+  const uploadedFile = await page.evaluate(async () => {
+    const body = (window as Window & { __s10UploadBody?: BodyInit | null }).__s10UploadBody
+    if (!(body instanceof File)) return null
+    return { name: body.name, size: body.size, text: await body.text() }
+  })
+  expect(uploadedFile).toEqual({ name: 'new 文件.txt', size: 12, text: 'upload bytes' })
   await page.getByRole('button', { name: '删除' }).first().click()
   expect(deletePayload).toEqual({ path: textFile.path, confirmPath: textFile.path })
 })
