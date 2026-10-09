@@ -84,16 +84,25 @@ jobs:
         run: rm -f reports/stages/S01.json reports/status.json && python3 scripts/ci_evidence.py --stage S01 initialize
 
       - name: Install and verify locked Go, Node, native pnpm and Compose tools
-        run: make verify-tools
+        run: |
+          make verify-tools
+          python3 - <<'PY' >> "$GITHUB_PATH"
+          import json, os, pathlib
+          root = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          lock = json.loads((root / "toolchain.lock.json").read_text())
+          print(root / f".tools/go{lock['go']['version']}/bin")
+          print(root / f".tools/node-v{lock['node']['version']}/bin")
+          print(root / ".tools/pnpm/node_modules/.bin")
+          PY
 
       - name: Verify per-run report and artifact safeguards
         run: make verify-ci-evidence
 
-      - name: Install locked project dependencies
-        run: make deps
+      - name: Build locked frontend assets and local Core/Agent executables
+        run: make build
 
-      - name: Install browsers for locked Playwright
-        run: make playwright-install
+      - name: Install locked Chromium, WebKit and Firefox browsers
+        run: pnpm --dir web exec playwright install --with-deps chromium webkit firefox
 
       - name: Run checks, dual-architecture builds and full S01 acceptance
         run: make test-stage STAGE=S01
