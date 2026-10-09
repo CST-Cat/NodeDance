@@ -51,6 +51,9 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 		s.createTerminal(w, r, current, nodeID)
 		return
 	}
+	if s.handleTailscaleAPI(w, r, current) {
+		return
+	}
 	switch r.URL.Path {
 	case "/api/v1/auth/me":
 		if r.Method != http.MethodGet {

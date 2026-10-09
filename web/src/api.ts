@@ -44,6 +44,48 @@ export interface AgentNodesResponse {
   serverTime: string
 }
 
+export interface TailscalePeer {
+  identity: string
+  name: string
+  dnsName?: string
+  os: string
+  class: 'linux' | 'unsupported' | 'unknown' | string
+  online: boolean
+  ips: string[]
+  managed: boolean
+  nodeId?: string
+}
+
+export interface TailscaleDiscoveryResponse {
+  peers: TailscalePeer[]
+  discoveredAt: string
+}
+
+export interface TailscaleDeploymentTask {
+  taskId: string
+  peerIdentity: string
+  peerName: string
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'unknown' | string
+  phase: string
+  message?: string
+  nodeId?: string
+  createdAt: string
+  updatedAt: string
+  finishedAt?: string
+}
+
+export interface TailscaleDeployPayload {
+  peerIdentity: string
+  displayName: string
+  coreUrl: string
+  fallbackUrl?: string
+  allowFallback: boolean
+  hostFingerprint: string
+  confirmHostKey: boolean
+  confirmChangedHostKey: boolean
+  credentials: { user: string; password?: string; privateKey?: string; passphrase?: string }
+}
+
 export interface NodeStatusResponse {
   type: 'node_status'
   nodeId: string
@@ -412,6 +454,17 @@ export const api = {
   },
   sessions: () => request<{ sessions: Session[] }>('/api/v1/auth/sessions'),
   agents: () => request<AgentNodesResponse>('/api/v1/agents'),
+  tailscalePeers: () => request<TailscaleDiscoveryResponse>('/api/v1/discovery/tailscale'),
+  probeTailscaleSSH: (peerIdentity: string) => request<{ fingerprint: string }>('/api/v1/discovery/tailscale/host-key', {
+    method: 'POST', body: JSON.stringify({ peerIdentity }),
+  }, true),
+  createManualEnrollment: (displayName: string) => request<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number }>('/api/v1/discovery/enrollments', {
+    method: 'POST', body: JSON.stringify({ displayName }),
+  }, true),
+  startTailscaleDeployment: (payload: TailscaleDeployPayload) => request<TailscaleDeploymentTask>('/api/v1/discovery/deployments', {
+    method: 'POST', body: JSON.stringify(payload),
+  }, true),
+  tailscaleDeployment: (taskId: string) => request<TailscaleDeploymentTask>(`/api/v1/discovery/deployments/${encodeURIComponent(taskId)}`),
   nodes: () => request<AgentNodesResponse>('/api/v1/nodes'),
   nodeMetrics: (nodeId: string) => request<AgentMetricsResponse>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/metrics`),
   nodeContainers: (nodeId: string) => request<DockerInventoryMessage>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/containers`),
