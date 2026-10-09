@@ -15,12 +15,13 @@ The node detail page has a host terminal entry. Running container rows have a co
 ## Validation entry points
 
 ```bash
+pnpm --dir web run build
 make test-terminal-component
 NODEDANCE_S09_DIND_SOCKET="$PWD/.artifacts/dind/v29/socket/docker.sock" make test-terminal-component
 make test-terminal-browser PLAYWRIGHT_BROWSERS='chromium webkit'
 ```
 
-The DIND test accepts only the repository-owned, marker-verified Engine 28/29 socket. The `S09 terminal component acceptance` GitHub Actions workflow starts the locked nested daemon for each isolated job, runs host PTY, Core route/queue and real Docker Exec checks, runs the mobile-viewport browser tests in Chromium and WebKit, then stops only its owned test daemon. Its logs are uploaded as workflow artifacts.
+Build the embedded frontend before running Core Go tests in a clean checkout. The DIND test accepts only the repository-owned, marker-verified Engine 28/29 socket. The `S09 terminal component acceptance` GitHub Actions workflow starts the locked nested daemon for each isolated job, builds the embedded frontend, runs host PTY, Core route/queue and real Docker Exec checks, runs the mobile-viewport browser tests in Chromium and WebKit, then stops only its owned test daemon. Its logs are uploaded as workflow artifacts. The stopped-container test waits for `ContainerInspect.State.Running == false` after `ContainerWait` completes before attempting terminal creation.
 
 ## Current evidence and limits
 

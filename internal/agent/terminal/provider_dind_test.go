@@ -244,6 +244,7 @@ func TestDINDTerminalNoShellAndStoppedContainerFailures(t *testing.T) {
 		t.Fatalf("short-lived fixture did not stop: %v", ctx.Err())
 	case <-waiter.Result:
 	}
+	waitDINDContainerStopped(t, ctx, cli, created.ID)
 	provider := NewSystemProvider("/bin/sh", host)
 	if endpoint, err := provider.Open(ctx, protocol.TerminalFrame{StreamID: "abcdefghijklmnopqrstuvwxyz0123456789STOP", Action: protocol.TerminalActionOpen,
 		TargetKind: protocol.TerminalTargetContainer, ContainerID: created.ID, Rows: 24, Columns: 80}); err == nil {
@@ -321,6 +322,35 @@ func connectS09DIND(t *testing.T) (*client.Client, context.Context, context.Canc
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	return cli, ctx, cancel, dockerHost
+}
+
+func waitDINDContainerStopped(t *testing.T, ctx context.Context, cli *client.Client, containerID string) {
+	t.Helper()
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		inspectCtx, cancel := context.WithTimeout(ctx, time.Second)
+		inspected, err := cli.ContainerInspect(inspectCtx, containerID, client.ContainerInspectOptions{})
+		cancel()
+		if err != nil {
+			t.Fatalf("inspect short-lived fixture while awaiting stopped state: %v", err)
+		}
+		if inspected.Container.ID != containerID || inspected.Container.State == nil {
+			t.Fatalf("short-lived fixture identity or state changed while awaiting stop: id=%q state=%+v", inspected.Container.ID, inspected.Container.State)
+		}
+		if !inspected.Container.State.Running {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatalf("test context expired while awaiting stopped container state: %v", ctx.Err())
+		case <-deadline.C:
+			t.Fatal("ContainerWait completed but ContainerInspect.State.Running remained true")
+		case <-ticker.C:
+		}
+	}
 }
 
 func cleanupDINDContainer(t *testing.T, cli *client.Client, containerID, owner string) {
