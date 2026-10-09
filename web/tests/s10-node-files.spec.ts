@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { createHash } from 'node:crypto'
 
 const nodeId = '01234567-89ab-4cde-8fab-0123456789ab'
 const textFile = {
@@ -13,7 +14,7 @@ const textFile = {
   version: 'v1',
 }
 
-async function installFileAPIMock(page: import('@playwright/test').Page, onRequest?: (request: import('@playwright/test').Request) => void) {
+async function installFileAPIMock(page: import('@playwright/test').Page, onRequest?: (request: import('@playwright/test').Request) => void, textWriteStatus = 409) {
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
     onRequest?.(request)
@@ -35,7 +36,8 @@ async function installFileAPIMock(page: import('@playwright/test').Page, onReque
       return
     }
     if (url.pathname === `${base}/text` && request.method() === 'PUT') {
-      await route.fulfill({ status: 409, json: { message: 'version conflict' } })
+      if (textWriteStatus === 409) await route.fulfill({ status: 409, json: { message: 'version conflict' } })
+      else await route.fulfill({ json: { taskId: 'fixture-task', transferId: 'fixture-task', status: 'succeeded' } })
       return
     }
     if (url.pathname === `${base}/stat` && request.method() === 'GET') {
@@ -185,6 +187,90 @@ test('upload streams a file body and delete sends the exact path confirmation', 
   expect(uploadedFile).toEqual({ name: 'new 文件.txt', size: 12, text: 'upload bytes' })
   await page.getByRole('button', { name: '删除' }).first().click()
   expect(deletePayload).toEqual({ path: textFile.path, confirmPath: textFile.path })
+})
+
+test('every file write sends a stable idempotency key and upload hashes the Blob stream', async ({ page }) => {
+  const writes: Array<{ method: string; path: string; key: string; digest: string; body: string }> = []
+  await installFileAPIMock(page, (request) => {
+    const url = new URL(request.url())
+    if (!url.pathname.includes('/files/')) return
+    if (!['PUT', 'POST', 'DELETE'].includes(request.method())) return
+    writes.push({
+      method: request.method(),
+      path: url.pathname,
+      key: request.headers()['idempotency-key'] ?? '',
+      digest: request.headers()['x-file-sha256'] ?? '',
+      body: request.postData() ?? '',
+    })
+  }, 200)
+  await page.goto('/tests/fixtures/s10-node-files.html')
+
+  await page.evaluate(async (currentNodeId) => {
+    const { api } = await import(/* @vite-ignore */ new URL('/src/api.ts', window.location.href).href)
+    await api.saveNodeText(currentNodeId, { path: '/saved.txt', version: 'v1', text: 'saved' })
+    await api.createNodeDirectory(currentNodeId, '/made')
+    await api.renameNodeFile(currentNodeId, '/old', '/new')
+    await api.deleteNodeFile(currentNodeId, '/removed')
+    const file = new File(['upload bytes'], 'upload.txt', { type: 'text/plain' })
+    Object.defineProperty(file, 'arrayBuffer', { value: () => { throw new Error('whole-file buffering is forbidden') } })
+    await api.uploadNodeFile(currentNodeId, '/upload.txt', file)
+    await api.createNodeDirectory(currentNodeId, '/retry', 'stable-retry-key')
+    await api.createNodeDirectory(currentNodeId, '/retry', 'stable-retry-key')
+  }, nodeId)
+
+  const expectedPaths = [
+    '/api/v1/nodes/' + nodeId + '/files/text',
+    '/api/v1/nodes/' + nodeId + '/files/directories',
+    '/api/v1/nodes/' + nodeId + '/files/rename',
+    '/api/v1/nodes/' + nodeId + '/files/delete',
+    '/api/v1/nodes/' + nodeId + '/files/upload',
+  ]
+  expect(writes.map(write => write.path)).toEqual([...expectedPaths, expectedPaths[1], expectedPaths[1]])
+  for (const write of writes.slice(0, 5)) expect(write.key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  expect(new Set(writes.slice(0, 5).map(write => write.key)).size).toBe(5)
+  expect(writes.slice(5).map(write => write.key)).toEqual(['stable-retry-key', 'stable-retry-key'])
+  const upload = writes.find(write => write.path.endsWith('/upload'))!
+  expect(upload.digest).toBe(createHash('sha256').update('upload bytes').digest('hex'))
+  expect(writes.find(write => write.path.endsWith('/text'))?.body).toContain('"text":"saved"')
+})
+
+test('incremental SHA-256 covers empty, padding boundaries, and chunked streams', async ({ page }) => {
+  await installFileAPIMock(page)
+  await page.goto('/tests/fixtures/s10-node-files.html')
+  const lengths = [0, 55, 56, 63, 64, 65, 131_101]
+  const expected = Object.fromEntries(lengths.map(length => {
+    const bytes = Buffer.alloc(length)
+    for (let index = 0; index < length; index++) bytes[index] = index % 251
+    return [String(length), createHash('sha256').update(bytes).digest('hex')]
+  }))
+  const splitBytes = Buffer.alloc(137)
+  for (let index = 0; index < splitBytes.length; index++) splitBytes[index] = index % 251
+  const splitExpected = createHash('sha256').update(splitBytes).digest('hex')
+  const output = await page.evaluate(async ({ digests }) => {
+    const { sha256Blob, sha256Stream } = await import(/* @vite-ignore */ new URL('/src/sha256.ts', window.location.href).href)
+    const actual: Record<string, string> = { abc: await sha256Blob(new Blob(['abc'])) }
+    for (const lengthText of Object.keys(digests)) {
+      const length = Number(lengthText)
+      const bytes = new Uint8Array(length)
+      for (let index = 0; index < length; index++) bytes[index] = index % 251
+      actual[lengthText] = await sha256Blob(new Blob([bytes]))
+    }
+    const bytes = new Uint8Array(137)
+    for (let index = 0; index < bytes.length; index++) bytes[index] = index % 251
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes.slice(0, 55))
+        controller.enqueue(bytes.slice(55, 120))
+        controller.enqueue(bytes.slice(120))
+        controller.close()
+      },
+    })
+    actual.split = await sha256Stream(stream)
+    return actual
+  }, { digests: expected })
+  expect(output.abc).toBe(createHash('sha256').update('abc').digest('hex'))
+  expect(Object.fromEntries(lengths.map(length => [String(length), output[String(length)]]))).toEqual(expected)
+  expect(output.split).toBe(splitExpected)
 })
 
 test('a selected node opens and leaves the file manager from its dashboard detail', async ({ page }) => {

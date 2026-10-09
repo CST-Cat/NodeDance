@@ -66,6 +66,7 @@ type agentConnection struct {
 	fileTransfers            map[string]*coreFileTransfer
 	fileTombstones           map[string]struct{}
 	fileTombstoneOrder       []string
+	fileCancelAcks           map[string]chan protocol.FileCancelAck
 	rebuildPlanMu            sync.Mutex
 	rebuildPlanWaiters       map[string]rebuildPlanWaiter
 	leaseUpdates             chan time.Time
@@ -489,6 +490,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	if managed.filesEnabled {
 		managed.fileTransfers = make(map[string]*coreFileTransfer)
 		managed.fileTombstones = make(map[string]struct{})
+		managed.fileCancelAcks = make(map[string]chan protocol.FileCancelAck)
 	}
 	go s.watchAgentLease(managed, lease.Identity, lease.LastSeenAt)
 	if !s.installAgentConnection(managed, identity.AgentID) {
@@ -754,7 +756,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid or unpersisted Agent Compose response")
 					return
 				}
-			case protocol.TypeFileResponse, protocol.TypeFileChunk:
+			case protocol.TypeFileResponse, protocol.TypeFileChunk, protocol.TypeFileCancelAck:
 				if !connection.filesEnabled {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent file service was not negotiated")
 					return

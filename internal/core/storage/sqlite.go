@@ -433,6 +433,9 @@ var migrations = []Migration{{
 }, {
 	Version: 12,
 	SQL:     corefiletasks.SchemaStatements(),
+}, {
+	Version: 13,
+	SQL:     corefiletasks.MigrationV13Statements(),
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {

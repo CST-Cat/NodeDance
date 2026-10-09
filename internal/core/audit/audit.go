@@ -58,7 +58,7 @@ var actions = map[string]struct{}{
 
 var outcomes = map[string]struct{}{
 	"succeeded": {}, "rejected": {}, "rate_limited": {}, "failed": {},
-	"accepted": {}, "timed_out": {}, "unknown": {},
+	"accepted": {}, "timed_out": {}, "unknown": {}, "canceled": {},
 }
 
 var targetIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)

@@ -94,7 +94,7 @@ func (s *Server) handleFilesAPI(w http.ResponseWriter, r *http.Request, current 
 		if operation == "stat" {
 			requestOperation = protocol.FileStat
 		}
-		response, _, err := s.runFileOperation(r.Context(), current, nodeID, protocol.FileRequest{Operation: requestOperation, Path: filePath}, false)
+		response, _, err := s.runFileOperation(r.Context(), current, nodeID, protocol.FileRequest{Operation: requestOperation, Path: filePath}, false, "")
 		if err != nil {
 			s.writeFileAPIError(w, err)
 			return true
@@ -149,7 +149,7 @@ func (s *Server) handleFileText(w http.ResponseWriter, r *http.Request, current 
 	switch r.Method {
 	case http.MethodGet:
 		filePath := r.URL.Query().Get("path")
-		response, _, err := s.runFileOperation(r.Context(), current, nodeID, protocol.FileRequest{Operation: protocol.FileReadText, Path: filePath}, false)
+		response, _, err := s.runFileOperation(r.Context(), current, nodeID, protocol.FileRequest{Operation: protocol.FileReadText, Path: filePath}, false, "")
 		if err != nil {
 			s.writeFileAPIError(w, err)
 			return
@@ -174,8 +174,17 @@ func (s *Server) handleFileText(w http.ResponseWriter, r *http.Request, current 
 			http.Error(w, "text file exceeds the editor limit", http.StatusRequestEntityTooLarge)
 			return
 		}
-		response, taskID, err := s.runFileOperation(r.Context(), current, nodeID, protocol.FileRequest{Operation: protocol.FileSaveText,
-			Path: request.Path, ExpectedVersion: request.Version, Text: encoded}, true)
+		fileRequest := protocol.FileRequest{Operation: protocol.FileSaveText, Path: request.Path, ExpectedVersion: request.Version, Text: encoded}
+		task, created, err := s.createFileTaskIdempotently(r.Context(), current, nodeID, fileRequest, r.Header.Get("Idempotency-Key"), 0)
+		if err != nil {
+			s.writeFileTaskCreateError(w, err)
+			return
+		}
+		if !created {
+			writeReusedFileTask(w, task)
+			return
+		}
+		response, taskID, err := s.runFileOperation(r.Context(), current, nodeID, fileRequest, true, task.TaskID)
 		if err != nil {
 			s.writeFileTaskMutationError(w, nodeID, taskID, err)
 			return
@@ -208,7 +217,16 @@ func (s *Server) handleFileMutation(w http.ResponseWriter, r *http.Request, curr
 		}
 		request = protocol.FileRequest{Operation: protocol.FileDelete, Path: input.Path, Confirmed: true}
 	}
-	response, taskID, err := s.runFileOperation(r.Context(), current, nodeID, request, true)
+	task, created, err := s.createFileTaskIdempotently(r.Context(), current, nodeID, request, r.Header.Get("Idempotency-Key"), 0)
+	if err != nil {
+		s.writeFileTaskCreateError(w, err)
+		return
+	}
+	if !created {
+		writeReusedFileTask(w, task)
+		return
+	}
+	response, taskID, err := s.runFileOperation(r.Context(), current, nodeID, request, true, task.TaskID)
 	if err != nil {
 		s.writeFileTaskMutationError(w, nodeID, taskID, err)
 		return
@@ -216,11 +234,90 @@ func (s *Server) handleFileMutation(w http.ResponseWriter, r *http.Request, curr
 	writeJSON(w, http.StatusOK, map[string]any{"taskId": taskID, "transferId": taskID, "status": "succeeded", "entry": response.Entry})
 }
 
-func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID string, request protocol.FileRequest, write bool) (protocol.FileResponse, string, error) {
-	allowed := []string{request.Operation}
-	connection, transfer, err := s.newCoreFileTransfer(ctx, nodeID, current, allowed, false)
+func (s *Server) createFileTaskIdempotently(ctx context.Context, current *session, nodeID string, request protocol.FileRequest, key string, expectedSize int64) (corefiletasks.Task, bool, error) {
+	operation := request.Operation
+	contentDigest := ""
+	switch request.Operation {
+	case protocol.FileMkdir:
+		operation = corefiletasks.OperationMkdir
+	case protocol.FileRename:
+		operation = corefiletasks.OperationRename
+	case protocol.FileDelete:
+		operation = corefiletasks.OperationDelete
+	case protocol.FileSaveText:
+		operation = corefiletasks.OperationSaveText
+		content, err := base64.StdEncoding.DecodeString(request.Text)
+		if err != nil {
+			return corefiletasks.Task{}, false, corefiletasks.ErrInvalidRequest
+		}
+		digest := sha256.Sum256(content)
+		contentDigest = hex.EncodeToString(digest[:])
+	case protocol.FileUploadBegin:
+		operation = corefiletasks.OperationUpload
+		contentDigest = request.ExpectedSHA256
+	default:
+		return corefiletasks.Task{}, false, corefiletasks.ErrInvalidRequest
+	}
+	requestDigest, err := corefiletasks.DigestIntent(corefiletasks.Intent{Operation: operation, TargetPath: request.Path, NewPath: request.NewPath,
+		ExpectedVersion: request.ExpectedVersion, ExpectedSize: expectedSize, ContentSHA256: contentDigest})
 	if err != nil {
-		return protocol.FileResponse{}, "", err
+		return corefiletasks.Task{}, false, err
+	}
+	taskID, err := newContainerStreamRequestID()
+	if err != nil {
+		return corefiletasks.Task{}, false, err
+	}
+	return s.fileTasks.CreateIdempotent(ctx, corefiletasks.CreateRequest{TaskID: taskID, NodeID: nodeID,
+		IdempotencyKey: strings.TrimSpace(key), RequestDigest: requestDigest, Operation: operation,
+		TargetPath: request.Path, NewPath: request.NewPath, ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr})
+}
+
+func (s *Server) writeFileTaskCreateError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, corefiletasks.ErrIdempotencyConflict):
+		http.Error(w, "Idempotency-Key was already used for a different file operation", http.StatusConflict)
+	case errors.Is(err, corefiletasks.ErrInvalidRequest):
+		http.Error(w, "a valid Idempotency-Key is required for file writes", http.StatusBadRequest)
+	default:
+		http.Error(w, "file operation could not be persisted", http.StatusInternalServerError)
+	}
+}
+
+func writeReusedFileTask(w http.ResponseWriter, task corefiletasks.Task) {
+	statusCode := http.StatusOK
+	if task.Status == taskstate.Queued || task.Status == taskstate.Running || task.Status == taskstate.Unknown {
+		statusCode = http.StatusAccepted
+	}
+	writeJSON(w, statusCode, map[string]any{"taskId": task.TaskID, "transferId": task.TaskID, "status": task.Status, "resultCode": task.ResultCode})
+}
+
+func verifyUploadReplayBody(body io.Reader, expectedSize int64, expectedDigest string, limit int64) error {
+	if expectedSize < 0 || expectedSize > limit || !validSHA256(expectedDigest) {
+		return errors.New("upload replay identity is invalid")
+	}
+	hash := sha256.New()
+	count, err := io.CopyBuffer(hash, io.LimitReader(body, expectedSize+1), make([]byte, protocol.MaxFileChunkBytes))
+	if err != nil || count != expectedSize || hex.EncodeToString(hash.Sum(nil)) != expectedDigest {
+		return errors.New("upload body does not match the original Idempotency-Key request")
+	}
+	return nil
+}
+
+func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID string, request protocol.FileRequest, write bool, taskID string) (protocol.FileResponse, string, error) {
+	allowed := []string{request.Operation}
+	var connection *agentConnection
+	var transfer *coreFileTransfer
+	var err error
+	if write {
+		connection, transfer, err = s.newCoreFileTransferWithID(ctx, nodeID, current, allowed, false, taskID, false)
+	} else {
+		connection, transfer, err = s.newCoreFileTransfer(ctx, nodeID, current, allowed, false)
+	}
+	if err != nil {
+		if write {
+			_ = s.resolveFileTask(nodeID, taskID, taskstate.Failed, "not_dispatched", current.RemoteAddr)
+		}
+		return protocol.FileResponse{}, taskID, err
 	}
 	transferID := transfer.requestID
 	cancelOnExit := false
@@ -229,15 +326,6 @@ func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID 
 	}()
 	if write {
 		cancelOnExit = true
-		operation := request.Operation
-		if operation == protocol.FileUploadBegin {
-			operation = corefiletasks.OperationUpload
-		}
-		if _, err := s.fileTasks.Create(ctx, corefiletasks.CreateRequest{TaskID: transferID, NodeID: nodeID,
-			Operation: operation, TargetPath: request.Path, NewPath: request.NewPath,
-			ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
-			return protocol.FileResponse{}, transferID, errors.New("file operation could not be persisted")
-		}
 		if err := validateCoreFileRequest(transfer, request); err != nil {
 			_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "not_dispatched", current.RemoteAddr)
 			return protocol.FileResponse{}, transferID, err
@@ -280,8 +368,19 @@ func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID 
 	cancelOnExit = false
 	if response.Code != "" {
 		if write {
-			if err := s.resolveFileTask(nodeID, transferID, taskstate.Failed, "agent_rejected", current.RemoteAddr); err != nil {
+			status := fileAgentFailureStatus(request.Operation, response.Code)
+			resultCode := "agent_rejected"
+			if status == taskstate.Unknown {
+				resultCode = "result_pending"
+				if request.Operation == protocol.FileDelete || response.Code == "result_unknown" {
+					resultCode = "mutation_uncertain"
+				}
+			}
+			if err := s.resolveFileTask(nodeID, transferID, status, resultCode, current.RemoteAddr); err != nil {
 				return protocol.FileResponse{}, transferID, err
+			}
+			if status == taskstate.Unknown {
+				return protocol.FileResponse{}, transferID, errFileOperationUnknown
 			}
 		}
 		return response, transferID, fileRemoteError{code: response.Code}
@@ -330,6 +429,21 @@ func validFileWriteResult(request protocol.FileRequest, response protocol.FileRe
 	}
 }
 
+func fileAgentFailureStatus(operation, code string) taskstate.Status {
+	if code == "result_unknown" {
+		return taskstate.Unknown
+	}
+	if operation == protocol.FileDelete && code != "invalid_path" && code != "confirmation_required" {
+		// RemoveAll can remove part of a directory tree before returning an
+		// error. Only validation errors are proof that no entry was changed.
+		return taskstate.Unknown
+	}
+	// mkdir and rename are single atomic filesystem operations. SaveText and
+	// upload_commit explicitly report result_unknown for errors after rename;
+	// other allowlisted errors are returned before their atomic replacement.
+	return taskstate.Failed
+}
+
 func (s *Server) resolveFileTask(nodeID, taskID string, status taskstate.Status, resultCode, remoteAddr string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -355,26 +469,36 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 		return
 	}
 	providedDigest := strings.ToLower(strings.TrimSpace(r.Header.Get("X-File-SHA256")))
-	if providedDigest != "" && !validSHA256(providedDigest) {
-		http.Error(w, "X-File-SHA256 must be a lowercase SHA-256 digest", http.StatusBadRequest)
+	if !validSHA256(providedDigest) {
+		http.Error(w, "X-File-SHA256 is required and must be a lowercase SHA-256 digest", http.StatusBadRequest)
 		return
 	}
-	connection, transfer, err := s.newCoreFileTransfer(r.Context(), nodeID, current,
-		[]string{protocol.FileUploadBegin, protocol.FileUploadChunk, protocol.FileUploadCommit}, false)
+	begin := protocol.FileRequest{Operation: protocol.FileUploadBegin, Path: filePath,
+		ExpectedVersion: r.Header.Get("X-File-Version"), ExpectedSize: r.ContentLength, ExpectedSHA256: providedDigest}
+	task, created, err := s.createFileTaskIdempotently(r.Context(), current, nodeID, begin, r.Header.Get("Idempotency-Key"), r.ContentLength)
 	if err != nil {
-		s.writeFileAPIError(w, err)
+		s.writeFileTaskCreateError(w, err)
+		return
+	}
+	if !created {
+		if err := verifyUploadReplayBody(r.Body, r.ContentLength, providedDigest, s.fileTransferLimit); err != nil {
+			http.Error(w, "upload body does not match the original Idempotency-Key request", http.StatusConflict)
+			return
+		}
+		writeReusedFileTask(w, task)
+		return
+	}
+	connection, transfer, err := s.newCoreFileTransferWithID(r.Context(), nodeID, current,
+		[]string{protocol.FileUploadBegin, protocol.FileUploadChunk, protocol.FileUploadCommit}, false, task.TaskID, true)
+	if err != nil {
+		_ = s.resolveFileTask(nodeID, task.TaskID, taskstate.Failed, "not_dispatched", current.RemoteAddr)
+		s.writeFileTaskMutationError(w, nodeID, task.TaskID, err)
 		return
 	}
 	transferID := transfer.requestID
 	cancelOnExit := true
 	defer func() { s.closeCoreFileTransfer(connection, transfer, cancelOnExit, nil) }()
-	if _, err := s.fileTasks.Create(r.Context(), corefiletasks.CreateRequest{TaskID: transferID, NodeID: nodeID,
-		Operation: corefiletasks.OperationUpload, TargetPath: filePath, ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
-		http.Error(w, "file operation could not be persisted", http.StatusInternalServerError)
-		return
-	}
-	begin := protocol.FileRequest{Operation: protocol.FileUploadBegin, Path: filePath, TransferID: transferID,
-		ExpectedVersion: r.Header.Get("X-File-Version"), ExpectedSize: r.ContentLength, ExpectedSHA256: providedDigest}
+	begin.TransferID = transferID
 	if err := validateCoreFileRequest(transfer, begin); err != nil {
 		_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "not_dispatched", current.RemoteAddr)
 		s.writeFileTaskMutationError(w, nodeID, transferID, err)
@@ -405,9 +529,16 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 		s.writeFileTaskMutationError(w, nodeID, transferID, err)
 		return
 	}
-	failBeforeCommit := func(err error) {
+	failBeforeCommit := func(err error, cancellationRequested bool) {
 		s.cancelFileTransfer(connection, transfer, r, current)
-		_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "not_committed", current.RemoteAddr)
+		cancelConfirmed := s.waitFileCancelAck(connection, transfer, 2*time.Second)
+		status, resultCode := taskstate.Unknown, "result_pending"
+		if cancelConfirmed && cancellationRequested {
+			status, resultCode = taskstate.Canceled, "cancel_confirmed"
+		} else if cancelConfirmed {
+			status, resultCode = taskstate.Failed, "not_committed"
+		}
+		_ = s.resolveFileTask(nodeID, transferID, status, resultCode, current.RemoteAddr)
 		s.writeFileTaskMutationError(w, nodeID, transferID, err)
 	}
 	var bodyActivity atomic.Int64
@@ -420,8 +551,7 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 	var chunkSequence uint64
 	for {
 		if !s.dashboardSessionStillValid(r.Context(), current.ID) {
-			s.closeCoreFileTransfer(connection, transfer, true, errors.New("browser Session was revoked or expired"))
-			failBeforeCommit(errors.New("authentication required"))
+			failBeforeCommit(errors.New("authentication required"), true)
 			return
 		}
 		n, readErr := io.ReadFull(r.Body, buffer)
@@ -429,14 +559,13 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 			bodyActivity.Store(time.Now().UnixNano())
 		}
 		if !s.dashboardSessionStillValid(r.Context(), current.ID) {
-			s.closeCoreFileTransfer(connection, transfer, true, errors.New("browser Session was revoked or expired"))
-			failBeforeCommit(errors.New("authentication required"))
+			failBeforeCommit(errors.New("authentication required"), true)
 			return
 		}
 		if n > 0 {
 			chunk := buffer[:n]
 			if total+int64(n) > s.fileTransferLimit || total+int64(n) > r.ContentLength {
-				failBeforeCommit(errors.New("file exceeds configured transfer limit"))
+				failBeforeCommit(errors.New("file exceeds configured transfer limit"), false)
 				return
 			}
 			_, _ = hash.Write(chunk)
@@ -445,7 +574,7 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 			request := protocol.FileRequest{Operation: protocol.FileUploadChunk, TransferID: transferID, Sequence: chunkSequence,
 				Data: base64.StdEncoding.EncodeToString(chunk)}
 			if err := s.sendFileRequest(r.Context(), connection, transfer, request); err != nil {
-				failBeforeCommit(err)
+				failBeforeCommit(err, errors.Is(r.Context().Err(), context.Canceled))
 				return
 			}
 			response, err := s.waitFileResponseForOperation(r.Context(), connection, transfer, protocol.FileUploadChunk)
@@ -453,7 +582,7 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 				if err == nil {
 					err = errors.New("Agent did not confirm the uploaded chunk")
 				}
-				failBeforeCommit(err)
+				failBeforeCommit(err, errors.Is(r.Context().Err(), context.Canceled))
 				return
 			}
 		}
@@ -461,23 +590,22 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 			break
 		}
 		if readErr != nil {
-			failBeforeCommit(errors.New("file upload was interrupted"))
+			failBeforeCommit(errors.New("file upload was interrupted"), errors.Is(r.Context().Err(), context.Canceled))
 			return
 		}
 	}
 	if total != r.ContentLength {
-		failBeforeCommit(errors.New("file upload length did not match Content-Length"))
+		failBeforeCommit(errors.New("file upload length did not match Content-Length"), false)
 		return
 	}
 	stopBodyWatch()
 	actualDigest := hex.EncodeToString(hash.Sum(nil))
-	if providedDigest != "" && actualDigest != providedDigest {
-		failBeforeCommit(errors.New("file SHA-256 did not match the supplied digest"))
+	if actualDigest != providedDigest {
+		failBeforeCommit(errors.New("file SHA-256 did not match the supplied digest"), false)
 		return
 	}
 	if !s.dashboardSessionStillValid(r.Context(), current.ID) {
-		s.closeCoreFileTransfer(connection, transfer, true, errors.New("browser Session was revoked or expired"))
-		failBeforeCommit(errors.New("authentication required"))
+		failBeforeCommit(errors.New("authentication required"), true)
 		return
 	}
 	commit := protocol.FileRequest{Operation: protocol.FileUploadCommit, TransferID: transferID, ExpectedSize: total, ExpectedSHA256: actualDigest}
@@ -490,7 +618,12 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 	if err != nil {
 		var remote fileRemoteError
 		if errors.As(err, &remote) {
-			_ = s.resolveFileTask(nodeID, transferID, taskstate.Failed, "agent_rejected", current.RemoteAddr)
+			status := fileAgentFailureStatus(protocol.FileUploadCommit, remote.code)
+			resultCode := "agent_rejected"
+			if status == taskstate.Unknown {
+				resultCode = "mutation_uncertain"
+			}
+			_ = s.resolveFileTask(nodeID, transferID, status, resultCode, current.RemoteAddr)
 		} else {
 			_ = s.resolveFileTask(nodeID, transferID, taskstate.Unknown, "result_pending", current.RemoteAddr)
 		}
