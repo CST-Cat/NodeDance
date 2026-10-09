@@ -130,6 +130,148 @@ func TestEnqueuePersistsIntentAuditAndClaimBeforeDelivery(t *testing.T) {
 	}
 }
 
+func TestCancelUndeliveredTaskIsIdempotentAndNeverCancelsSentWork(t *testing.T) {
+	fixture := openTestDB(t, "", time.Now().UTC())
+	request := defaultRequest()
+	request.TaskID = "task-cancel-before-delivery"
+	accepted, err := fixture.store.Enqueue(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canceled, err := fixture.store.CancelUndelivered(context.Background(), testNodeID, accepted.Task.TaskID, request.ActorID, request.RemoteAddr)
+	if err != nil {
+		t.Fatal("cancel queued task before delivery:", err)
+	}
+	if canceled.Status != taskstate.Canceled || canceled.DeliveryState != "done" || canceled.Evidence.DeliveryCommitted ||
+		!canceled.Evidence.CancellationConfirmed || !canceled.Evidence.ActualResultConfirmed ||
+		canceled.Result.Code != ResultCanceled || canceled.Result.ObservedState != "not_dispatched" {
+		t.Fatalf("safe pre-delivery cancellation lacks exact proof: %+v", canceled)
+	}
+	repeated, err := fixture.store.CancelUndelivered(context.Background(), testNodeID, accepted.Task.TaskID, request.ActorID, request.RemoteAddr)
+	if err != nil || repeated.Status != taskstate.Canceled {
+		t.Fatalf("identical cancellation retry was not idempotent: task=%+v err=%v", repeated, err)
+	}
+	var cancelAudits, claims int
+	if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_audit_events WHERE task_id=? AND event='task_resolved'`, accepted.Task.TaskID).Scan(&cancelAudits); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.db.QueryRow(`SELECT count(*) FROM core_task_resource_claims WHERE task_id=?`, accepted.Task.TaskID).Scan(&claims); err != nil {
+		t.Fatal(err)
+	}
+	if cancelAudits != 1 || claims != 0 {
+		t.Fatalf("cancellation audit/claim result=%d/%d, want one event and released claim", cancelAudits, claims)
+	}
+
+	sentRequest := defaultRequest()
+	sentRequest.TaskID = "task-cancel-after-delivery"
+	sentRequest.IdempotencyKey = "restart-cancel-sent"
+	sentRequest.Intent.ContainerID = strings.Repeat("b", 64)
+	sent, err := fixture.store.Enqueue(context.Background(), sentRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := testConnection(strings.Repeat("9", 64))
+	if _, err := fixture.store.ObserveAgentConnection(context.Background(), connection); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := fixture.store.ClaimNext(context.Background(), connection, sql.NullInt64{}, "unknown"); err != nil || !ok {
+		t.Fatalf("durably deliver second task before cancel test: ok=%t err=%v", ok, err)
+	}
+	if _, err := fixture.store.CancelUndelivered(context.Background(), testNodeID, sent.Task.TaskID, sentRequest.ActorID, sentRequest.RemoteAddr); !errors.Is(err, ErrNotDelivered) {
+		t.Fatalf("sent Agent task was canceled without termination evidence: %v", err)
+	}
+	unchanged, err := fixture.store.Get(context.Background(), testNodeID, sent.Task.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged.Status != taskstate.Queued || unchanged.DeliveryState != "sent" || !unchanged.Evidence.DeliveryCommitted {
+		t.Fatalf("rejected cancellation changed a sent task: %+v", unchanged)
+	}
+}
+
+func TestAuditEventsAreNodeScopedTypedAndBounded(t *testing.T) {
+	fixture := openTestDB(t, "", time.Now().UTC())
+	accepted, err := fixture.store.Enqueue(context.Background(), defaultRequest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := fixture.store.AuditEvents(context.Background(), testNodeID, accepted.Task.TaskID)
+	if err != nil {
+		t.Fatal("read task audit events:", err)
+	}
+	if len(events) != 1 || events[0].Event != "accepted" || events[0].ToStatus.String != string(taskstate.Queued) ||
+		!events[0].ActorID.Valid || events[0].ActorID.Int64 != 1 || events[0].RemoteAddr != "192.0.2.45" || events[0].OccurredAt.IsZero() {
+		t.Fatalf("unexpected typed audit history: %+v", events)
+	}
+	if _, err := fixture.store.AuditEvents(context.Background(), "00000000-0000-4000-8000-000000000001", accepted.Task.TaskID); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("another node could read task audit history: %v", err)
+	}
+	if _, err := fixture.store.AuditEvents(context.Background(), testNodeID, "missing-task"); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("missing task audit lookup returned %v", err)
+	}
+}
+
+func TestReconciliationCandidatesRequireAgentKnownUnknownOnCurrentJournal(t *testing.T) {
+	fixture := openTestDB(t, "", time.Now().UTC())
+	connection := testConnection(strings.Repeat("a", 64))
+	if _, err := fixture.store.ObserveAgentConnection(context.Background(), connection); err != nil {
+		t.Fatal(err)
+	}
+	firstRequest := defaultRequest()
+	firstRequest.TaskID = "task-agent-unknown"
+	first, err := fixture.store.Enqueue(context.Background(), firstRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := fixture.store.ClaimNext(context.Background(), connection, sql.NullInt64{}, "unknown"); err != nil || !ok {
+		t.Fatalf("claim first task: ok=%t err=%v", ok, err)
+	}
+	running := bindAgentReport(first.Task, connection, AgentTask{Status: taskstate.Running,
+		Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseExecuting}})
+	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{running}, false); err != nil {
+		t.Fatalf("persist Agent running report: %v", err)
+	}
+	unknown := bindAgentReport(first.Task, connection, AgentTask{Status: taskstate.Unknown,
+		Evidence: Evidence{ExecutionAttempted: true}, Progress: Progress{Phase: PhaseReconciling}, Result: Result{Code: ResultUncertain}})
+	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{unknown}, false); err != nil {
+		t.Fatalf("persist Agent unknown report: %v", err)
+	}
+
+	secondRequest := defaultRequest()
+	secondRequest.TaskID = "task-journal-absence"
+	secondRequest.IdempotencyKey = "restart-absent"
+	secondRequest.Intent.ContainerID = strings.Repeat("b", 64)
+	second, err := fixture.store.Enqueue(context.Background(), secondRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := fixture.store.ClaimNext(context.Background(), connection, sql.NullInt64{}, "unknown"); err != nil || !ok {
+		t.Fatalf("claim second task: ok=%t err=%v", ok, err)
+	}
+	if _, err := fixture.store.ReconcileAgentJournal(context.Background(), connection, []AgentTask{unknown}, true); err != nil {
+		t.Fatalf("reconcile complete snapshot with one known Agent unknown: %v", err)
+	}
+	candidates, err := fixture.store.ReconciliationCandidates(context.Background(), connection, 10)
+	if err != nil {
+		t.Fatal("list same-journal reconciliation candidates:", err)
+	}
+	if len(candidates) != 1 || candidates[0].TaskID != first.Task.TaskID || candidates[0].Status != taskstate.Unknown || candidates[0].ReconciliationRequired {
+		t.Fatalf("candidate query included absent history or omitted Agent-known unknown: %+v", candidates)
+	}
+	absent, err := fixture.store.Get(context.Background(), testNodeID, second.Task.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if absent.Status != taskstate.Unknown || !absent.ReconciliationRequired {
+		t.Fatalf("missing journal history did not remain gated unknown: %+v", absent)
+	}
+	wrongJournal := connection
+	wrongJournal.JournalID = strings.Repeat("c", 64)
+	if _, err := fixture.store.ReconciliationCandidates(context.Background(), wrongJournal, 10); !errors.Is(err, ErrJournalChanged) {
+		t.Fatalf("stale journal received reconciliation candidates: %v", err)
+	}
+}
+
 func TestAgentReportIdentityMustMatchStoredTaskInsideSQLiteTransaction(t *testing.T) {
 	fixture := openTestDB(t, "", time.Now().UTC())
 	accepted, err := fixture.store.Enqueue(context.Background(), defaultRequest())

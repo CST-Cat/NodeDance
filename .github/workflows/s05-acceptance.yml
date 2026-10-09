@@ -1,0 +1,77 @@
+name: NodeDance S05 task acceptance
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nodedance-s05-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  s05:
+    name: S05 / real Core-Agent / owned Engine 28 and 29
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      NODEDANCE_TEST_RUNNER: ubuntu-24.04
+      NODEDANCE_TEST_ENGINE: 28+29
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Initialize fresh S05 evidence
+        run: rm -f reports/stages/S05.json && python3 scripts/ci_evidence.py --stage S05 initialize
+
+      - name: Install and verify locked Go, Node, native pnpm and Compose tools
+        run: make verify-tools
+
+      - name: Verify report and artifact safeguards
+        run: make verify-ci-evidence
+
+      - name: Install locked dependencies and Playwright browsers
+        run: |
+          make deps
+          make playwright-install
+
+      - name: Start only this job's marked Engine 28 and 29 fixtures
+        run: |
+          scripts/test/dind.sh start 28
+          scripts/test/dind.sh start 29
+
+      - name: Run fresh S05 checks and three real attempts on both engines
+        run: make test-stage STAGE=S05
+
+      - name: Attach GitHub run metadata to S05 evidence
+        if: always()
+        run: python3 scripts/ci_evidence.py --stage S05 annotate
+
+      - name: Remove only this job's marked DIND engines
+        if: always()
+        run: |
+          for engine in 28 29; do
+            marker=".artifacts/dind/v${engine}/owner.json"
+            if [[ -f "$marker" ]]; then scripts/test/dind.sh clean "$engine"; fi
+          done
+
+      - name: Redact and scan the S05 evidence allowlist
+        if: always()
+        run: python3 scripts/test/s05-sanitize-evidence.py
+
+      - name: Preserve S05 report and per-attempt evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s05-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            reports/stages/S05.json
+            reports/status.json
+            reports/evidence-s05-redaction.json
+            .artifacts/logs/acceptance-s05/
+            .artifacts/work-s05/

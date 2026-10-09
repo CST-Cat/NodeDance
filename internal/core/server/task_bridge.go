@@ -128,7 +128,8 @@ func (s *Server) acceptAgentTaskSnapshotPage(ctx context.Context, connection *ag
 	active := 0
 	connection.taskOutstanding = make(map[string]struct{})
 	for _, report := range snapshot.reports {
-		if report.Status == taskstate.Queued || report.Status == taskstate.Running {
+		_, reconciling := connection.taskReconcileOutstanding[report.TaskID]
+		if report.Status == taskstate.Queued || report.Status == taskstate.Running || (report.Status == taskstate.Unknown && reconciling) {
 			active++
 			connection.taskOutstanding[report.TaskID] = struct{}{}
 		}
@@ -162,10 +163,6 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 		return protocol.ErrInvalidTaskMessage
 	}
 	journal := coretasks.AgentConnection{NodeID: identity.NodeID, ConnectionGeneration: connection.generation, JournalID: journalID}
-	before, err := s.tasks.Get(ctx, identity.NodeID, report.TaskID)
-	if err != nil {
-		return err
-	}
 	converted, err := coretasks.AgentTaskFromProtocol(report)
 	if err != nil {
 		return err
@@ -177,13 +174,22 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 	if err != nil {
 		return err
 	}
-	if (before.Status == taskstate.Queued || before.Status == taskstate.Running) && after.Status != taskstate.Queued && after.Status != taskstate.Running {
-		if _, active := connection.taskOutstanding[report.TaskID]; active {
-			delete(connection.taskOutstanding, report.TaskID)
-			if connection.taskSlots < connection.taskCapacity {
-				connection.taskSlots++
-			}
+	if _, active := connection.taskOutstanding[report.TaskID]; active &&
+		(after.Status == taskstate.Unknown || taskstate.IsTerminal(after.Status)) {
+		delete(connection.taskOutstanding, report.TaskID)
+		if connection.taskSlots < connection.taskCapacity {
+			connection.taskSlots++
 		}
+	}
+	if after.Status == taskstate.Unknown {
+		// A reconciliation response has finished for this generation. Keep the
+		// attempted marker to prevent an unbounded same-generation retry loop,
+		// but stop counting the completed request against active task capacity.
+		delete(connection.taskReconcileOutstanding, report.TaskID)
+	}
+	if taskstate.IsTerminal(after.Status) {
+		delete(connection.taskReconcileOutstanding, report.TaskID)
+		delete(connection.taskReconcileAttempted, report.TaskID)
 	}
 	ack := protocol.TaskReportAck{TaskID: report.TaskID, ReportRevision: report.ReportRevision, Accepted: true}
 	if err := s.writeAgentEnvelope(ctx, connection.conn, protocol.Envelope{Version: protocol.CurrentVersion,
@@ -206,7 +212,7 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			return err
 		}
 		if !ok {
-			return nil
+			break
 		}
 		dispatch := protocol.TaskDispatch{TaskID: task.TaskID, NodeID: task.NodeID, JournalID: journalID,
 			TargetID: task.Intent.ContainerID, IdempotencyKey: task.IdempotencyKey, RequestDigest: protocol.DigestString(task.RequestDigest), Intent: task.Intent}
@@ -222,6 +228,44 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			RequestID: task.TaskID, Payload: payload}
 		if err := s.writeAgentEnvelope(ctx, connection.conn, message); err != nil {
 			return err // Core delivery is already committed; reconnect reconciliation will mark uncertainty.
+		}
+	}
+	if connection.taskSlots > 0 {
+		if connection.taskReconcileOutstanding == nil {
+			connection.taskReconcileOutstanding = make(map[string]struct{})
+		}
+		if connection.taskReconcileAttempted == nil {
+			connection.taskReconcileAttempted = make(map[string]struct{})
+		}
+		candidates, err := s.tasks.ReconciliationCandidates(ctx, journal, coreTaskDispatchBurst)
+		if err != nil {
+			return err
+		}
+		for _, task := range candidates {
+			if connection.taskSlots <= 0 {
+				break
+			}
+			if _, attempted := connection.taskReconcileAttempted[task.TaskID]; attempted {
+				continue
+			}
+			if _, active := connection.taskOutstanding[task.TaskID]; active {
+				continue
+			}
+			request := protocol.TaskReconcileRequest{TaskID: task.TaskID, NodeID: task.NodeID,
+				JournalID: journalID, TargetID: task.Intent.ContainerID, IdempotencyKey: task.IdempotencyKey,
+				RequestDigest: protocol.DigestString(task.RequestDigest)}
+			message := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTaskReconcile,
+				Generation: connection.generation, RequestID: task.TaskID, Payload: marshalAgentPayload(request)}
+			if err := protocol.ValidateTaskReconcile(message, request, identity.NodeID, journalID, connection.generation); err != nil {
+				return err
+			}
+			connection.taskSlots--
+			connection.taskOutstanding[task.TaskID] = struct{}{}
+			connection.taskReconcileOutstanding[task.TaskID] = struct{}{}
+			connection.taskReconcileAttempted[task.TaskID] = struct{}{}
+			if err := s.writeAgentEnvelope(ctx, connection.conn, message); err != nil {
+				return err // Read-only reconciliation is safe to repeat on the next authenticated generation.
+			}
 		}
 	}
 	if connection.taskSlots > 0 {

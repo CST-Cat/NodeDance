@@ -17,9 +17,10 @@ import (
 )
 
 type containerActionRequest struct {
-	Action          protocol.TaskAction `json:"action"`
-	NewName         string              `json:"newName,omitempty"`
-	DeleteConfirmed bool                `json:"deleteConfirmed,omitempty"`
+	Action               protocol.TaskAction `json:"action"`
+	NewName              string              `json:"newName,omitempty"`
+	DeleteConfirmed      bool                `json:"deleteConfirmed,omitempty"`
+	DeleteConfirmationID string              `json:"deleteConfirmationId,omitempty"`
 }
 
 type taskView struct {
@@ -50,6 +51,16 @@ type taskResultView struct {
 	ResourceRevision string `json:"resourceRevision,omitempty"`
 }
 
+type taskAuditEventView struct {
+	ID         int64  `json:"id"`
+	Event      string `json:"event"`
+	FromStatus string `json:"fromStatus,omitempty"`
+	ToStatus   string `json:"toStatus,omitempty"`
+	ActorID    *int64 `json:"actorId,omitempty"`
+	RemoteAddr string `json:"remoteAddress"`
+	OccurredAt string `json:"occurredAt"`
+}
+
 func (s *Server) handleTaskAPI(w http.ResponseWriter, r *http.Request, current *session) bool {
 	if nodeID, containerID, ok := containerActionRoute(r.URL.Path); ok {
 		if r.Method != http.MethodPost {
@@ -59,7 +70,15 @@ func (s *Server) handleTaskAPI(w http.ResponseWriter, r *http.Request, current *
 		s.handleCreateContainerTask(w, r, current, nodeID, containerID)
 		return true
 	}
+	if nodeID, taskID, ok := nodeTaskAuditRoute(r.URL.Path); ok {
+		s.handleTaskAudit(w, r, nodeID, taskID)
+		return true
+	}
 	if nodeID, taskID, ok := nodeTaskRoute(r.URL.Path); ok {
+		if r.Method == http.MethodDelete {
+			s.handleCancelUndeliveredTask(w, r, current, nodeID, taskID)
+			return true
+		}
 		s.handleTaskLookup(w, r, nodeID, taskID)
 		return true
 	}
@@ -68,6 +87,56 @@ func (s *Server) handleTaskAPI(w http.ResponseWriter, r *http.Request, current *
 		return true
 	}
 	return false
+}
+
+func (s *Server) handleCancelUndeliveredTask(w http.ResponseWriter, r *http.Request, current *session, nodeID, taskID string) {
+	task, err := s.tasks.CancelUndelivered(r.Context(), nodeID, taskID, sql.NullInt64{Int64: 1, Valid: true}, current.RemoteAddr)
+	if errors.Is(err, coretasks.ErrTaskNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if errors.Is(err, coretasks.ErrNotDelivered) || errors.Is(err, coretasks.ErrTaskStateConflict) {
+		http.Error(w, "task may already have reached the Agent", http.StatusConflict)
+		return
+	}
+	if err != nil {
+		http.Error(w, "task cancellation could not be persisted", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, toTaskView(task))
+}
+
+func (s *Server) handleTaskAudit(w http.ResponseWriter, r *http.Request, nodeID, taskID string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	events, err := s.tasks.AuditEvents(r.Context(), nodeID, taskID)
+	if errors.Is(err, coretasks.ErrTaskNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "task audit lookup failed", http.StatusInternalServerError)
+		return
+	}
+	items := make([]taskAuditEventView, 0, len(events))
+	for _, event := range events {
+		item := taskAuditEventView{ID: event.ID, Event: event.Event, RemoteAddr: event.RemoteAddr,
+			OccurredAt: event.OccurredAt.UTC().Format(time.RFC3339Nano)}
+		if event.FromStatus.Valid {
+			item.FromStatus = event.FromStatus.String
+		}
+		if event.ToStatus.Valid {
+			item.ToStatus = event.ToStatus.String
+		}
+		if event.ActorID.Valid {
+			actorID := event.ActorID.Int64
+			item.ActorID = &actorID
+		}
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"events": items})
 }
 
 func (s *Server) handleCreateContainerTask(w http.ResponseWriter, r *http.Request, current *session, nodeID, containerID string) {
@@ -82,6 +151,19 @@ func (s *Server) handleCreateContainerTask(w http.ResponseWriter, r *http.Reques
 	}
 	var request containerActionRequest
 	if !decodeJSON(w, r, &request) {
+		return
+	}
+	// Deletion requires a separate, exact-target confirmation. The boolean is
+	// still part of the canonical typed-intent digest; this transient full-ID
+	// echo proves that the administrator confirmed the resource shown by this
+	// route and is never persisted as a secret or free-form payload.
+	if request.Action == protocol.TaskDelete {
+		if !request.DeleteConfirmed || request.DeleteConfirmationID != containerID {
+			http.Error(w, "delete confirmation must match the full target ID", http.StatusBadRequest)
+			return
+		}
+	} else if request.DeleteConfirmed || request.DeleteConfirmationID != "" {
+		http.Error(w, "delete confirmation is only valid for delete", http.StatusBadRequest)
 		return
 	}
 	intent := coretasks.Intent{Action: request.Action, ContainerID: containerID, NewName: request.NewName, DeleteConfirmed: request.DeleteConfirmed}
@@ -266,6 +348,8 @@ func (s *Server) writeTaskStoreError(w http.ResponseWriter, err error) {
 		http.Error(w, "invalid container action", http.StatusBadRequest)
 	case errors.Is(err, coretasks.ErrIdempotencyConflict), errors.Is(err, coretasks.ErrTaskIDConflict), errors.Is(err, coretasks.ErrResourceBusy), errors.Is(err, coretasks.ErrManagedRename):
 		http.Error(w, "task conflicts with existing state", http.StatusConflict)
+	case errors.Is(err, coretasks.ErrNotDelivered):
+		http.Error(w, "task may already have reached the Agent", http.StatusConflict)
 	case errors.Is(err, coretasks.ErrNodeOffline), errors.Is(err, coretasks.ErrNodeNotFound), errors.Is(err, coretasks.ErrJournalNotObserved), errors.Is(err, coretasks.ErrReconciliationNeeded):
 		http.Error(w, "Agent is not ready to accept tasks", http.StatusServiceUnavailable)
 	default:
@@ -304,6 +388,15 @@ func containerActionRoute(path string) (nodeID, containerID string, ok bool) {
 func nodeTaskRoute(path string) (nodeID, taskID string, ok bool) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) != 6 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "nodes" || parts[4] != "tasks" || parts[5] == "" || !validUUID(parts[3]) {
+		return "", "", false
+	}
+	return parts[3], parts[5], true
+}
+
+func nodeTaskAuditRoute(path string) (nodeID, taskID string, ok bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 7 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "nodes" || parts[4] != "tasks" ||
+		parts[5] == "" || parts[6] != "audit" || !validUUID(parts[3]) {
 		return "", "", false
 	}
 	return parts[3], parts[5], true

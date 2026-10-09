@@ -5,22 +5,33 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/agent"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	modernsqlite "modernc.org/sqlite"
+)
+
+var (
+	s05JournalInsertAttemptFunctionOnce sync.Once
+	s05JournalInsertAttemptFunctionErr  error
+	s05JournalInsertAttemptCount        atomic.Int64
 )
 
 // This is a component integration test, not full S05 acceptance. It drives a
@@ -28,6 +39,9 @@ import (
 // one owner-labelled container on the project's isolated Docker-in-Docker
 // Engine. It never touches the host Docker daemon.
 func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
+	if err := ensureS05JournalInsertAttemptFunction(); err != nil {
+		t.Fatal("register non-transactional Agent journal insert attempt observer:", err)
+	}
 	root, endpoint, engineVersion := requireOwnedS04DIND(t)
 	t.Setenv("DOCKER_HOST", endpoint)
 	imageID, err := runS04DockerCLI(endpoint, "image", "inspect", "--format", "{{.Id}}", s04BusyboxImage)
@@ -50,16 +64,11 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	if !protocol.IsFullContainerID(containerID) {
 		t.Fatalf("owned Engine returned malformed fixture ID %q", containerID)
 	}
-	defer func() {
-		label, inspectErr := runS04DockerCLI(endpoint, "container", "inspect", "--format", `{{ index .Config.Labels "io.nodedance.suite" }}`, containerID)
-		if inspectErr != nil || strings.TrimSpace(label) != runID {
-			t.Errorf("refusing to remove S05 fixture without exact ownership proof: id=%s label=%q err=%v", containerID, strings.TrimSpace(label), inspectErr)
-			return
-		}
-		if _, removeErr := runS04DockerCLI(endpoint, "container", "rm", "--force", containerID); removeErr != nil {
-			t.Errorf("remove exact owned S05 fixture %s: %v", containerID, removeErr)
-		}
-	}()
+	fixtures := newS05DINDFixtureManifest(endpoint, runID)
+	fixtures.add(t, "main", containerID)
+	defer func() { fixtures.cleanup(t) }()
+	t.Logf("S05_FIXTURE suite=%s kind=main id=%s name=%s", runID, containerID, containerName)
+	var composeID string
 	initialCount, err := waitForS05ContainerStartCount(endpoint, containerID, 10*time.Second)
 	if err != nil || initialCount != 1 {
 		t.Fatalf("fixture did not start exactly once before NodeDance action: count=%d err=%v", initialCount, err)
@@ -123,6 +132,47 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	proxyRoot, err := os.MkdirTemp("/tmp", "nd-s05-journal-")
+	if err != nil {
+		t.Fatal("create owner-scoped short Docker proxy directory:", err)
+	}
+	if err := os.Chmod(proxyRoot, 0o700); err != nil {
+		_ = os.RemoveAll(proxyRoot)
+		t.Fatal("restrict owner-scoped Docker proxy directory:", err)
+	}
+	proxyOwner := runID + "\n"
+	proxyOwnerPath := filepath.Join(proxyRoot, "owner.json")
+	if err := os.WriteFile(proxyOwnerPath, []byte(proxyOwner), 0o600); err != nil {
+		_ = os.RemoveAll(proxyRoot)
+		t.Fatal("write Docker proxy owner marker:", err)
+	}
+	dockerProxy, err := newS05CancellationBarrierProxy(filepath.Join(proxyRoot, "engine.sock"), endpoint)
+	if err != nil {
+		_ = os.RemoveAll(proxyRoot)
+		t.Fatal("start owner-scoped Docker mutation counter proxy:", err)
+	}
+	dockerProxy.EnableEngineForwarding()
+	defer func() {
+		owner, readErr := os.ReadFile(proxyOwnerPath)
+		if readErr != nil || string(owner) != proxyOwner {
+			t.Errorf("refuse cleanup of Docker proxy directory without matching owner marker: owner=%q err=%v", owner, readErr)
+			return
+		}
+		info, statErr := os.Lstat(proxyRoot)
+		if statErr != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			t.Errorf("refuse cleanup of unexpected Docker proxy directory: info=%v err=%v", info, statErr)
+			return
+		}
+		if err := os.RemoveAll(proxyRoot); err != nil {
+			t.Errorf("remove owner-scoped Docker proxy directory: %v", err)
+		}
+	}()
+	defer func() {
+		if err := dockerProxy.Close(); err != nil {
+			t.Errorf("close Docker mutation counter proxy: %v", err)
+		}
+	}()
+	t.Setenv("DOCKER_HOST", dockerProxy.Host())
 	agentCtx, cancelAgent := context.WithCancel(context.Background())
 	agentDone := make(chan error, 1)
 	agentLog := &agentTestLog{}
@@ -166,20 +216,24 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 
 	client := tlsHTTPClient(rootPEM)
 	client.Timeout = 5 * time.Second
-	postRestart := func(action string) (int, s05TaskAccepted, string, error) {
-		body, err := json.Marshal(map[string]string{"action": action})
+	postTaskForTarget := func(targetID, action, idempotencyKey string, fields map[string]any) (int, s05TaskAccepted, string, error) {
+		payload := map[string]any{"action": action}
+		for key, value := range fields {
+			payload[key] = value
+		}
+		body, err := json.Marshal(payload)
 		if err != nil {
 			return 0, s05TaskAccepted{}, "", err
 		}
 		request, err := http.NewRequest(http.MethodPost,
-			coreHTTP.URL+"/api/v1/nodes/"+agentConfig.NodeID+"/containers/"+containerID+"/actions", strings.NewReader(string(body)))
+			coreHTTP.URL+"/api/v1/nodes/"+agentConfig.NodeID+"/containers/"+targetID+"/actions", strings.NewReader(string(body)))
 		if err != nil {
 			return 0, s05TaskAccepted{}, "", err
 		}
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("Origin", coreHTTP.URL)
 		request.Header.Set(csrfHeaderName, clicked.CSRFToken)
-		request.Header.Set("Idempotency-Key", clicked.IdempotencyKey)
+		request.Header.Set("Idempotency-Key", idempotencyKey)
 		request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: session})
 		request.AddCookie(&http.Cookie{Name: csrfCookieName, Value: clicked.CSRFToken})
 		response, err := client.Do(request)
@@ -199,6 +253,26 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 		}
 		return response.StatusCode, accepted, string(responseBody), nil
 	}
+	postTask := func(action, idempotencyKey string, fields map[string]any) (int, s05TaskAccepted, string, error) {
+		return postTaskForTarget(containerID, action, idempotencyKey, fields)
+	}
+	postRestart := func(action string) (int, s05TaskAccepted, string, error) {
+		return postTask(action, clicked.IdempotencyKey, nil)
+	}
+	for _, conflicting := range []struct {
+		action string
+		fields map[string]any
+	}{
+		{action: "stop"},
+		{action: "restart"},
+		{action: "delete", fields: map[string]any{"deleteConfirmed": true, "deleteConfirmationId": containerID}},
+	} {
+		status, _, body, err := postTask(conflicting.action, "s05-conflict-"+conflicting.action+"-"+fmt.Sprint(time.Now().UnixNano()), conflicting.fields)
+		if err != nil || status != http.StatusConflict {
+			t.Fatalf("conflicting %s while restart claim is held returned %d body=%q err=%v, want 409", conflicting.action, status, body, err)
+		}
+	}
+	t.Log("S05_CASE S05-04 in_flight_resource_conflicts=stop,restart,delete verified=true")
 	var taskID string
 	for attempt := 0; attempt < 9; attempt++ {
 		status, accepted, responseBody, err := postRestart("restart")
@@ -227,6 +301,39 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	if err != nil || apiTask.Status != "succeeded" || apiTask.Result.Code != "verified" || apiTask.Result.ObservedState != "running" {
 		t.Fatalf("authenticated task result was not postcondition-verified: task=%+v err=%v", apiTask, err)
 	}
+	auditRequest, err := http.NewRequest(http.MethodGet, coreHTTP.URL+"/api/v1/nodes/"+agentConfig.NodeID+"/tasks/"+taskID+"/audit", nil)
+	if err != nil {
+		t.Fatal("create authenticated task audit query:", err)
+	}
+	auditRequest.AddCookie(&http.Cookie{Name: sessionCookieName, Value: session})
+	auditResponse, err := client.Do(auditRequest)
+	if err != nil {
+		t.Fatal("query task audit API:", err)
+	}
+	auditBody, readErr := io.ReadAll(io.LimitReader(auditResponse.Body, 1<<20))
+	_ = auditResponse.Body.Close()
+	if readErr != nil || auditResponse.StatusCode != http.StatusOK {
+		t.Fatalf("task audit query returned %d, read error=%v body=%q", auditResponse.StatusCode, readErr, auditBody)
+	}
+	var auditPayload struct {
+		Events []taskAuditEventView `json:"events"`
+	}
+	if err := json.Unmarshal(auditBody, &auditPayload); err != nil {
+		t.Fatal("decode task audit response:", err)
+	}
+	seenAudit := map[string]bool{}
+	for _, event := range auditPayload.Events {
+		seenAudit[event.Event+":"+event.ToStatus] = true
+	}
+	for _, required := range []string{"accepted:queued", "delivery_claimed:queued", "agent_status:running", "agent_status:succeeded"} {
+		if !seenAudit[required] {
+			t.Fatalf("task audit history omitted %q: %+v", required, auditPayload.Events)
+		}
+	}
+	t.Log("S05_EVIDENCE success_task_audit=true verified=true")
+	if strings.Contains(string(auditBody), clicked.IdempotencyKey) || strings.Contains(string(auditBody), "requestDigest") || strings.Contains(string(auditBody), "intentJson") {
+		t.Fatalf("audit response exposed request identity material: %s", auditBody)
+	}
 	waitForS04DockerView(t, core, agentConfig.NodeID, 15*time.Second, func(view coredocker.View) bool {
 		record := s04RecordForID(view, containerID)
 		return view.AgentOnline && view.DockerSnapshotFresh && !view.DataStale && record.Container.ID == containerID && record.Container.Running
@@ -234,6 +341,7 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	if status, _, responseBody, err := postRestart("stop"); err != nil || status != http.StatusConflict || !strings.Contains(responseBody, "task conflicts with existing state") {
 		t.Fatalf("different intent with the same idempotency key returned status=%d body=%q err=%v, want idempotency conflict 409", status, responseBody, err)
 	}
+	t.Log("S05_CASE S05-03 same_key_different_intent=409 verified=true")
 	finalCount, err := readS05ContainerStartCount(endpoint, containerID)
 	if err != nil || finalCount != initialCount+1 {
 		t.Fatalf("ten identical submissions caused %d process starts; want exactly one restart (%d→%d), err=%v", finalCount-initialCount, initialCount, finalCount, err)
@@ -254,12 +362,532 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	}
 	t.Logf("S05_TASK_BRIDGE verified one durable restart: task=%s status=%s process_starts=%d→%d audits={accepted:%d,delivery:%d}",
 		taskID, apiTask.Status, initialCount, finalCount, acceptedAudits, deliveryAudits)
-	if strings.Contains(agentLog.String(), "unavailable; retrying") {
-		t.Fatalf("Agent transport unexpectedly reconnected during the steady task operation: %s", agentLog.String())
+	t.Log("S05_CASE S05-02 identical_submissions=10 actual_restarts=1 verified=true")
+
+	// Exercise the whole Core -> authenticated Agent bridge -> real Engine
+	// lifecycle set with unique idempotency keys. The dedicated containeractions
+	// DIND suite tests executor internals; these calls prove the integrated wire
+	// and Core task state for each supported action.
+	performAPIAction := func(action string, fields map[string]any) s05TaskAPIView {
+		t.Helper()
+		key := fmt.Sprintf("s05-%s-%d", action, time.Now().UnixNano())
+		status, accepted, body, err := postTask(action, key, fields)
+		if err != nil || status != http.StatusAccepted || accepted.TaskID == "" {
+			t.Fatalf("submit %s task returned %d body=%q accepted=%+v err=%v", action, status, body, accepted, err)
+		}
+		deadline := time.Now().Add(35 * time.Second)
+		for time.Now().Before(deadline) {
+			task, getErr := getS05Task(client, coreHTTP.URL, session, agentConfig.NodeID, accepted.TaskID)
+			if getErr != nil {
+				t.Fatalf("read %s task result: %v", action, getErr)
+			}
+			if task.Status == "succeeded" || task.Status == "failed" || task.Status == "unknown" || task.Status == "timed_out" || task.Status == "canceled" {
+				if task.Status != "succeeded" || task.Result.Code != "verified" {
+					t.Fatalf("%s task did not reach a verified success: %+v", action, task)
+				}
+				return task
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Fatalf("%s task did not complete before deadline; task_id=%s", action, accepted.TaskID)
+		return s05TaskAPIView{}
 	}
+	performAPIAction("stop", nil)
+	if got, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.Running}}", containerID); err != nil || strings.TrimSpace(got) != "false" {
+		t.Fatalf("Core-Agent stop did not change real Engine state: state=%q err=%v", strings.TrimSpace(got), err)
+	}
+	performAPIAction("start", nil)
+	if got, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.Running}}", containerID); err != nil || strings.TrimSpace(got) != "true" {
+		t.Fatalf("Core-Agent start did not change real Engine state: state=%q err=%v", strings.TrimSpace(got), err)
+	}
+	performAPIAction("pause", nil)
+	if got, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.Paused}}", containerID); err != nil || strings.TrimSpace(got) != "true" {
+		t.Fatalf("Core-Agent pause did not change real Engine state: state=%q err=%v", strings.TrimSpace(got), err)
+	}
+	performAPIAction("resume", nil)
+	if got, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.Paused}}", containerID); err != nil || strings.TrimSpace(got) != "false" {
+		t.Fatalf("Core-Agent resume did not change real Engine state: state=%q err=%v", strings.TrimSpace(got), err)
+	}
+	renamed := runID + "-renamed"
+	performAPIAction("rename", map[string]any{"newName": renamed})
+	if got, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.Name}}", containerID); err != nil || strings.TrimSpace(got) != "/"+renamed {
+		t.Fatalf("Core-Agent independent rename result=%q err=%v", strings.TrimSpace(got), err)
+	}
+	composeName := runID + "-compose"
+	composeID, err = runS04DockerCLI(endpoint, "container", "run", "--detach", "--name", composeName,
+		"--label", "io.nodedance.test=true", "--label", "io.nodedance.suite="+runID,
+		"--label", "com.docker.compose.project=nodedance_s05_"+runID, "--label", "com.docker.compose.service=web",
+		s04BusyboxImage, "sh", "-c", "while :; do sleep 1; done")
+	if err != nil {
+		t.Fatal("create owned Compose-labelled fixture:", err)
+	}
+	composeID = strings.TrimSpace(composeID)
+	if !protocol.IsFullContainerID(composeID) {
+		t.Fatalf("Compose fixture returned malformed full ID %q", composeID)
+	}
+	fixtures.add(t, "compose", composeID)
+	t.Logf("S05_FIXTURE suite=%s kind=compose id=%s name=%s", runID, composeID, composeName)
+	waitForS04DockerView(t, core, agentConfig.NodeID, 20*time.Second, func(view coredocker.View) bool {
+		record := s04RecordForID(view, composeID)
+		return view.AgentOnline && view.DockerSnapshotFresh && !view.DataStale && record.Container.ID == composeID && record.Container.Compose != nil
+	}, "Core did not derive Compose ownership from the real Agent inventory")
+	var taskCountBefore int
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM core_tasks`).Scan(&taskCountBefore); err != nil {
+		t.Fatal("count tasks before Core storage failure injection:", err)
+	}
+	startedBeforeStorageFailure, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.StartedAt}}", composeID)
+	if err != nil {
+		t.Fatal("inspect Compose fixture before Core storage failure injection:", err)
+	}
+	startsBeforeStorageFailure, err := readS05ContainerStartCount(endpoint, containerID)
+	if err != nil {
+		t.Fatal("read main fixture process count before Core storage failure injection:", err)
+	}
+	failureWindowStart := time.Now().UTC()
+	if _, err := core.store.DB.Exec(`CREATE TRIGGER nodedance_s05_fail_task_insert BEFORE INSERT ON core_tasks BEGIN SELECT RAISE(ABORT, 'injected Core task insert failure'); END`); err != nil {
+		t.Fatal("install targeted Core task transaction failure injection:", err)
+	}
+	storageFailureStatus, _, storageFailureBody, storageFailureRequestErr := postTaskForTarget(
+		composeID, "restart", "s05-core-readonly-"+fmt.Sprint(time.Now().UnixNano()), nil)
+	_, restoreStorageErr := core.store.DB.Exec(`DROP TRIGGER nodedance_s05_fail_task_insert`)
+	if restoreStorageErr != nil {
+		t.Fatal("remove targeted Core task transaction failure injection:", restoreStorageErr)
+	}
+	if storageFailureRequestErr != nil || storageFailureStatus != http.StatusInternalServerError {
+		t.Fatalf("Core task insert failure returned status=%d body=%q err=%v, want 500 before dispatch", storageFailureStatus, storageFailureBody, storageFailureRequestErr)
+	}
+	var taskCountAfter int
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM core_tasks`).Scan(&taskCountAfter); err != nil || taskCountAfter != taskCountBefore {
+		t.Fatalf("failed Core task transaction left task rows: before=%d after=%d err=%v", taskCountBefore, taskCountAfter, err)
+	}
+	startedAfterStorageFailure, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.StartedAt}}", composeID)
+	if err != nil || strings.TrimSpace(startedAfterStorageFailure) != strings.TrimSpace(startedBeforeStorageFailure) {
+		t.Fatalf("Core SQLite write failure reached Docker or changed the fixture: before=%q after=%q err=%v", strings.TrimSpace(startedBeforeStorageFailure), strings.TrimSpace(startedAfterStorageFailure), err)
+	}
+	startsAfterStorageFailure, err := readS05ContainerStartCount(endpoint, containerID)
+	if err != nil || startsAfterStorageFailure != startsBeforeStorageFailure {
+		t.Fatalf("failed Core task transaction restarted the main Engine fixture: starts_before=%d starts_after=%d err=%v", startsBeforeStorageFailure, startsAfterStorageFailure, err)
+	}
+	failureWindowEnd := time.Now().UTC()
+	engineEvents, err := runS04DockerCLI(endpoint, "events", "--since", failureWindowStart.Format(time.RFC3339Nano),
+		"--until", failureWindowEnd.Format(time.RFC3339Nano), "--filter", "container="+composeID, "--format", "{{.Action}}")
+	if err != nil || strings.TrimSpace(engineEvents) != "" {
+		t.Fatalf("Core task insert failure produced Engine events for the Compose target: events=%q err=%v", strings.TrimSpace(engineEvents), err)
+	}
+	t.Log("S05_EVIDENCE core_task_insert_failure=500 task_rows_unchanged=true docker_started_at_unchanged=true docker_start_count_unchanged=true docker_events_unchanged=true verified=true")
+	if status, _, body, err := postTaskForTarget(composeID, "rename", "s05-compose-rename-"+fmt.Sprint(time.Now().UnixNano()), map[string]any{"newName": runID + "-compose-renamed"}); err != nil || status != http.StatusConflict {
+		t.Fatalf("Compose container rename returned %d body=%q err=%v, want Core conflict", status, body, err)
+	}
+	if got, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.Name}}", composeID); err != nil || strings.TrimSpace(got) != "/"+composeName {
+		t.Fatalf("rejected Compose rename changed the Engine name: name=%q err=%v", strings.TrimSpace(got), err)
+	}
+	t.Log("S05_CASE S05-08 independent_rename=succeeded compose_rename=409 verified=true")
+	if status, _, body, err := postTask("delete", "s05-delete-wrong-id-"+fmt.Sprint(time.Now().UnixNano()), map[string]any{
+		"deleteConfirmed": true, "deleteConfirmationId": strings.Repeat("b", 64),
+	}); err != nil || status != http.StatusBadRequest {
+		t.Fatalf("delete confirmation for a different target returned %d body=%q err=%v, want 400", status, body, err)
+	}
+	runningDeleteKey := "s05-delete-running-" + fmt.Sprint(time.Now().UnixNano())
+	status, acceptedDelete, body, err := postTask("delete", runningDeleteKey, map[string]any{
+		"deleteConfirmed": true, "deleteConfirmationId": containerID,
+	})
+	if err != nil || status != http.StatusAccepted {
+		t.Fatalf("submit exact-target running delete returned %d body=%q err=%v", status, body, err)
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	var runningDelete s05TaskAPIView
+	for time.Now().Before(deadline) {
+		runningDelete, err = getS05Task(client, coreHTTP.URL, session, agentConfig.NodeID, acceptedDelete.TaskID)
+		if err != nil {
+			t.Fatalf("read running-delete refusal: %v", err)
+		}
+		if runningDelete.Status == "failed" || runningDelete.Status == "succeeded" || runningDelete.Status == "unknown" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if runningDelete.Status != "failed" {
+		t.Fatalf("running delete result=%+v, want a confirmed refusal", runningDelete)
+	}
+	auditURL := coreHTTP.URL + "/api/v1/nodes/" + agentConfig.NodeID + "/tasks/" + acceptedDelete.TaskID + "/audit"
+	auditRequest, err = http.NewRequest(http.MethodGet, auditURL, nil)
+	if err != nil {
+		t.Fatal("create failed-task audit query:", err)
+	}
+	auditRequest.AddCookie(&http.Cookie{Name: sessionCookieName, Value: session})
+	auditResponse, err = client.Do(auditRequest)
+	if err != nil {
+		t.Fatal("query failed-task audit API:", err)
+	}
+	failedAuditBody, failedAuditReadErr := io.ReadAll(io.LimitReader(auditResponse.Body, 1<<20))
+	_ = auditResponse.Body.Close()
+	if failedAuditReadErr != nil || auditResponse.StatusCode != http.StatusOK {
+		t.Fatalf("failed-task audit query returned %d, read error=%v body=%q", auditResponse.StatusCode, failedAuditReadErr, failedAuditBody)
+	}
+	var failedAuditPayload struct {
+		Events []taskAuditEventView `json:"events"`
+	}
+	if err := json.Unmarshal(failedAuditBody, &failedAuditPayload); err != nil {
+		t.Fatal("decode failed-task audit response:", err)
+	}
+	failedTransitions := make(map[string]bool, len(failedAuditPayload.Events))
+	for _, event := range failedAuditPayload.Events {
+		failedTransitions[event.Event+":"+event.ToStatus] = true
+	}
+	for _, required := range []string{"accepted:queued", "delivery_claimed:queued", "agent_status:failed"} {
+		if !failedTransitions[required] {
+			t.Fatalf("failed task audit omitted %q: %+v", required, failedAuditPayload.Events)
+		}
+	}
+	if strings.Contains(string(failedAuditBody), runningDeleteKey) || strings.Contains(string(failedAuditBody), "requestDigest") || strings.Contains(string(failedAuditBody), "intentJson") {
+		t.Fatalf("failed-task audit exposed request identity material: %s", failedAuditBody)
+	}
+	t.Log("S05_EVIDENCE failed_task_audit=true secret_redacted=true verified=true")
+	// Force a genuine Agent task-journal insert failure for a uniquely keyed
+	// restart. Core delivery is already durable, but the Agent must reject the
+	// task before Docker mutation, reconnect with the same journal, and leave the
+	// uncertain task claimed instead of replaying it.
+	agentJournalPath := filepath.Join(filepath.Dir(configPath), "tasks.sqlite")
+	agentJournalURL := (&url.URL{Scheme: "file", Path: agentJournalPath}).String()
+	agentJournalDB, err := sql.Open("sqlite", agentJournalURL)
+	if err != nil {
+		t.Fatal("open Agent task journal for targeted failure injection:", err)
+	}
+	if _, err := agentJournalDB.Exec(`CREATE TRIGGER nodedance_s05_fail_agent_task_enqueue BEFORE INSERT ON task_journal
+		WHEN NEW.idempotency_key LIKE 's05-agent-journal-failure-%'
+		BEGIN SELECT nodedance_s05_note_journal_insert_attempt(NEW.task_id);
+		SELECT RAISE(ABORT, 'injected Agent task journal insert failure'); END`); err != nil {
+		_ = agentJournalDB.Close()
+		t.Fatal("install targeted Agent task journal failure trigger:", err)
+	}
+	defer func() {
+		_, _ = agentJournalDB.Exec(`DROP TRIGGER IF EXISTS nodedance_s05_fail_agent_task_enqueue`)
+		_ = agentJournalDB.Close()
+	}()
+	journalFailureKey := "s05-agent-journal-failure-" + fmt.Sprint(time.Now().UnixNano())
+	journalFailureStartedAt, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.StartedAt}}", containerID)
+	if err != nil {
+		_, _ = agentJournalDB.Exec(`DROP TRIGGER IF EXISTS nodedance_s05_fail_agent_task_enqueue`)
+		_ = agentJournalDB.Close()
+		t.Fatal("inspect Engine before Agent journal failure injection:", err)
+	}
+	journalFailureStartCount, err := readS05ContainerStartCount(endpoint, containerID)
+	if err != nil {
+		_, _ = agentJournalDB.Exec(`DROP TRIGGER IF EXISTS nodedance_s05_fail_agent_task_enqueue`)
+		_ = agentJournalDB.Close()
+		t.Fatal("read Engine start count before Agent journal failure injection:", err)
+	}
+	journalFailureEventsSince := time.Now().UTC()
+	dockerProxy.ArmTargets([]string{containerID})
+	agentMutationCallsBefore := dockerProxy.RestartHitCount(containerID)
+	engineMutationCallsBefore := dockerProxy.ForwardedRestartCount(containerID)
+	agentJournalInsertAttemptsBefore := s05JournalInsertAttemptCount.Load()
+	previousAgentGeneration := generationForNode(t, core, agentConfig.NodeID)
+	previousConnection := core.activeAgentConnectionForNode(agentConfig.NodeID)
+	if previousConnection == nil || previousConnection.generation != previousAgentGeneration {
+		t.Fatalf("journal failure injection requires the current Agent connection: expected_generation=%d active=%t",
+			previousAgentGeneration, previousConnection != nil)
+	}
+	previousJournalID, previousJournalSynced := previousConnection.taskBridgeState()
+	if !previousJournalSynced || previousJournalID == "" {
+		t.Fatalf("journal failure injection requires a fully synchronized journal: id_present=%t synced=%t", previousJournalID != "", previousJournalSynced)
+	}
+	agentLogBeforeJournalFailure := agentLog.String()
+	if strings.Contains(agentLogBeforeJournalFailure, "Agent connection unavailable; retrying") {
+		t.Fatalf("Agent had already retried its connection before journal failure injection: %q", agentLogBeforeJournalFailure)
+	}
+	status, journalFailureTask, body, err := postTaskForTarget(containerID, "restart", journalFailureKey, nil)
+	if err != nil || status != http.StatusAccepted || journalFailureTask.TaskID == "" {
+		_, _ = agentJournalDB.Exec(`DROP TRIGGER IF EXISTS nodedance_s05_fail_agent_task_enqueue`)
+		_ = agentJournalDB.Close()
+		t.Fatalf("Core did not durably accept task for Agent-journal failure test: status=%d task=%+v body=%q err=%v", status, journalFailureTask, body, err)
+	}
+	waitForCondition(t, 25*time.Second, func() bool {
+		task, getErr := core.tasks.Get(context.Background(), agentConfig.NodeID, journalFailureTask.TaskID)
+		return getErr == nil && task.Status == "unknown" && task.Result.Code == "result_pending" && task.ReconciliationRequired
+	}, "Core did not preserve uncertain delivered task after Agent journal insert failure")
+	var agentTaskRows int
+	if err := agentJournalDB.QueryRow(`SELECT count(*) FROM task_journal WHERE task_id=? OR idempotency_key=?`, journalFailureTask.TaskID, journalFailureKey).Scan(&agentTaskRows); err != nil || agentTaskRows != 0 {
+		_, _ = agentJournalDB.Exec(`DROP TRIGGER IF EXISTS nodedance_s05_fail_agent_task_enqueue`)
+		_ = agentJournalDB.Close()
+		t.Fatalf("failed Agent journal transaction left a task row: rows=%d err=%v", agentTaskRows, err)
+	}
+	if _, err := agentJournalDB.Exec(`DROP TRIGGER nodedance_s05_fail_agent_task_enqueue`); err != nil {
+		_ = agentJournalDB.Close()
+		t.Fatal("remove targeted Agent journal failure trigger:", err)
+	}
+	if err := agentJournalDB.Close(); err != nil {
+		t.Fatal("close Agent journal failure injector:", err)
+	}
+	newAgentGeneration, reconnected := awaitS05AgentBridgeReady(core, agentConfig.NodeID, previousAgentGeneration, 25*time.Second)
+	if !reconnected || newAgentGeneration <= previousAgentGeneration {
+		t.Fatalf("real Agent did not reconnect and synchronize after journal write failure: generation=%d active=%s logs=%q",
+			previousAgentGeneration, describeS05AgentTaskBridge(core, agentConfig.NodeID), agentLog.String())
+	}
+	newConnection := core.activeAgentConnectionForNode(agentConfig.NodeID)
+	if newConnection == nil || newConnection.generation != newAgentGeneration {
+		t.Fatalf("reconnected Agent connection was not the synchronized generation %d", newAgentGeneration)
+	}
+	newJournalID, newJournalSynced := newConnection.taskBridgeState()
+	if !newJournalSynced || newJournalID != previousJournalID {
+		t.Fatalf("Agent journal failure changed journal identity or did not resynchronize: before=%q after=%q synced=%t",
+			previousJournalID, newJournalID, newJournalSynced)
+	}
+	waitForS04DockerView(t, core, agentConfig.NodeID, 20*time.Second, func(view coredocker.View) bool {
+		return view.ActiveGeneration == newAgentGeneration && view.AgentOnline && !view.DataStale && view.DockerSnapshotFresh &&
+			view.DockerAvailability == protocol.DockerAvailabilityAvailable && dockerViewContains(view, containerID)
+	}, "fresh inventory did not return after Agent journal insert failure")
+	journalFailureTaskState, err := core.tasks.Get(context.Background(), agentConfig.NodeID, journalFailureTask.TaskID)
+	if err != nil || journalFailureTaskState.Status != "unknown" || journalFailureTaskState.Result.Code != "result_pending" ||
+		!journalFailureTaskState.ReconciliationRequired || !journalFailureTaskState.Evidence.DeliveryCommitted {
+		t.Fatalf("Agent journal failure did not retain an unresolved Core claim: task=%+v err=%v", journalFailureTaskState, err)
+	}
+	var retainedClaims int
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM core_task_resource_claims WHERE node_id=? AND task_id=?`, agentConfig.NodeID, journalFailureTask.TaskID).Scan(&retainedClaims); err != nil || retainedClaims != 1 {
+		t.Fatalf("Agent journal failure released its unresolved resource claim: claims=%d err=%v", retainedClaims, err)
+	}
+	journalRowsByKey, err := s05AgentJournalCountByIdempotencyKey(agentJournalPath, journalFailureKey)
+	if err != nil || journalRowsByKey != 0 {
+		t.Fatalf("failed Agent journal write reappeared after reconnection: rows=%d err=%v", journalRowsByKey, err)
+	}
+	journalFailureStartedAfter, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.StartedAt}}", containerID)
+	if err != nil || strings.TrimSpace(journalFailureStartedAfter) != strings.TrimSpace(journalFailureStartedAt) {
+		t.Fatalf("Agent journal write failure changed Docker StartedAt: before=%q after=%q err=%v", strings.TrimSpace(journalFailureStartedAt), strings.TrimSpace(journalFailureStartedAfter), err)
+	}
+	journalFailureStartCountAfter, err := readS05ContainerStartCount(endpoint, containerID)
+	if err != nil || journalFailureStartCountAfter != journalFailureStartCount {
+		t.Fatalf("Agent journal failure executed restart before its durable record: starts_before=%d after=%d err=%v", journalFailureStartCount, journalFailureStartCountAfter, err)
+	}
+	journalFailureEvents, err := runS04DockerCLI(endpoint, "events", "--since", journalFailureEventsSince.Format(time.RFC3339Nano),
+		"--until", time.Now().UTC().Add(250*time.Millisecond).Format(time.RFC3339Nano), "--filter", "container="+containerID, "--format", "{{.Action}}")
+	if err != nil || strings.TrimSpace(journalFailureEvents) != "" {
+		t.Fatalf("Agent journal failure emitted Docker events: events=%q err=%v", strings.TrimSpace(journalFailureEvents), err)
+	}
+	journalFailureAudit, err := core.tasks.AuditEvents(context.Background(), agentConfig.NodeID, journalFailureTask.TaskID)
+	if err != nil {
+		t.Fatal("read Agent-journal-failure task audit:", err)
+	}
+	unknownAudit := false
+	for _, event := range journalFailureAudit {
+		if event.Event == "agent_status" && event.ToStatus.String == "unknown" {
+			unknownAudit = true
+		}
+	}
+	if !unknownAudit {
+		t.Fatalf("uncertain Agent journal failure is missing its durable unknown audit: events=%+v", journalFailureAudit)
+	}
+	if !strings.Contains(agentLog.String()[len(agentLogBeforeJournalFailure):], "Agent connection unavailable; retrying") {
+		t.Fatalf("expected Agent did not log a bounded reconnect after journal insert failure: before=%q after=%q", agentLogBeforeJournalFailure, agentLog.String())
+	}
+	agentJournalInsertAttempts := s05JournalInsertAttemptCount.Load() - agentJournalInsertAttemptsBefore
+	agentMutationCalls := dockerProxy.RestartHitCount(containerID) - agentMutationCallsBefore
+	engineMutationCalls := dockerProxy.ForwardedRestartCount(containerID) - engineMutationCallsBefore
+	if agentJournalInsertAttempts != 1 {
+		t.Fatalf("Agent journal trigger did not observe exactly one durable INSERT attempt: count=%d", agentJournalInsertAttempts)
+	}
+	if agentMutationCalls != 0 || engineMutationCalls != 0 {
+		t.Fatalf("Agent attempted Docker restart before its journal write succeeded: local_api_calls=%d Engine_api_calls=%d",
+			agentMutationCalls, engineMutationCalls)
+	}
+	t.Logf("S05_EVIDENCE agent_task_journal_failure=unknown_result_pending journal_rows=0 journal_insert_attempts=%d agent_mutation_api_calls=%d engine_mutation_api_calls=%d core_unknown_reason=delivery_committed_agent_journal_absent cross_connection_result_unproven=true resource_claim_retained=true docker_started_at_unchanged=true docker_start_count_unchanged=true docker_events_unchanged=true unknown_audit=true generation=%d->%d verified=true",
+		agentJournalInsertAttempts, agentMutationCalls, engineMutationCalls,
+		previousAgentGeneration, newAgentGeneration)
+	performAPIAction("stop", nil)
+	deleteTask := performAPIAction("delete", map[string]any{"deleteConfirmed": true, "deleteConfirmationId": containerID})
+	if deleteTask.Result.ObservedState != "missing" {
+		t.Fatalf("verified delete observed state=%q, want missing", deleteTask.Result.ObservedState)
+	}
+	if _, err := runS04DockerCLI(endpoint, "container", "inspect", containerID); err == nil {
+		t.Fatal("Core-Agent delete task succeeded but real Engine still has the container")
+	}
+	if present, err := s05OwnedContainerPresent(endpoint, containerID); err != nil || present {
+		t.Fatalf("deleted main fixture was not verified absent from the live Engine: id=%s present=%t err=%v", containerID, present, err)
+	}
+	fixtures.markExpectedDeleted(t, containerID)
+	t.Logf("S05_FIXTURE_CLEANUP suite=%s id=%s removed_by_task=true verified_absent=true", runID, containerID)
+	fixtures.verifyExpected(t)
+	t.Log("S05_CASE S05-07 wrong_delete_confirmation=400 running_delete=failed stopped_delete=succeeded verified=true")
+	t.Log("S05_CASE S05-01 lifecycle=start,stop,restart,pause,resume,delete,rename verified=true")
 	if err := browser.Close(); err != nil {
 		t.Errorf("close real browser bridge: %v", err)
 	}
+}
+
+// s05DINDFixtureManifest is the complete set of Engine containers created by
+// this test run. Only a fixture explicitly marked expectedDeleted may be
+// absent before teardown; all other entries must still exist under their
+// exact full Engine IDs and suite labels.
+type s05DINDFixtureManifest struct {
+	endpoint string
+	suite    string
+	items    map[string]*s05DINDFixture
+}
+
+type s05DINDFixture struct {
+	kind            string
+	id              string
+	expectedDeleted bool
+}
+
+func newS05DINDFixtureManifest(endpoint, suite string) *s05DINDFixtureManifest {
+	return &s05DINDFixtureManifest{endpoint: endpoint, suite: suite, items: make(map[string]*s05DINDFixture)}
+}
+
+func (m *s05DINDFixtureManifest) add(t *testing.T, kind, id string) {
+	t.Helper()
+	if !protocol.IsFullContainerID(id) {
+		t.Fatalf("S05 %s fixture manifest requires a full Engine ID, got %q", kind, id)
+	}
+	if _, exists := m.items[id]; exists {
+		t.Fatalf("duplicate S05 fixture manifest ID %s", id)
+	}
+	m.items[id] = &s05DINDFixture{kind: kind, id: id}
+}
+
+func (m *s05DINDFixtureManifest) markExpectedDeleted(t *testing.T, id string) {
+	t.Helper()
+	fixture, exists := m.items[id]
+	if !exists || fixture.kind != "main" {
+		t.Fatalf("only the registered main fixture may be marked as intentionally deleted: id=%s", id)
+	}
+	fixture.expectedDeleted = true
+}
+
+func (m *s05DINDFixtureManifest) verifyExpected(t *testing.T) {
+	t.Helper()
+	actual, err := s05ListSuiteFixtureIDs(m.endpoint, m.suite)
+	if err != nil {
+		t.Fatalf("list exact S05 suite fixture manifest: %v", err)
+	}
+	actualSet := make(map[string]bool, len(actual))
+	for _, id := range actual {
+		actualSet[id] = true
+	}
+	for _, fixture := range m.items {
+		present := actualSet[fixture.id]
+		wantPresent := !fixture.expectedDeleted
+		if present != wantPresent {
+			t.Errorf("S05 fixture manifest mismatch: kind=%s id=%s present=%t want_present=%t expected_deleted=%t", fixture.kind, fixture.id, present, wantPresent, fixture.expectedDeleted)
+			continue
+		}
+		if !present {
+			continue
+		}
+		if err := s05VerifySuiteFixtureIdentity(m.endpoint, m.suite, fixture.id); err != nil {
+			t.Errorf("S05 fixture identity mismatch: kind=%s id=%s: %v", fixture.kind, fixture.id, err)
+		}
+		delete(actualSet, fixture.id)
+	}
+	for id := range actualSet {
+		t.Errorf("unexpected Engine container with this unique S05 suite label: id=%s", id)
+	}
+	t.Logf("S05_FIXTURE_MANIFEST suite=%s expected_present=%d expected_deleted=%d unexpected=%d verified=true",
+		m.suite, m.expectedPresentCount(), m.expectedDeletedCount(), len(actualSet))
+}
+
+func (m *s05DINDFixtureManifest) cleanup(t *testing.T) {
+	t.Helper()
+	// Check the suite-tagged inventory first. A Docker daemon version response
+	// alone is not cleanup evidence; every recorded full ID is checked below.
+	actual, err := s05ListSuiteFixtureIDs(m.endpoint, m.suite)
+	if err != nil {
+		t.Errorf("cannot inspect S05 fixture manifest before cleanup: %v", err)
+		return
+	}
+	actualSet := make(map[string]bool, len(actual))
+	for _, id := range actual {
+		actualSet[id] = true
+	}
+	for _, fixture := range m.items {
+		if !actualSet[fixture.id] {
+			if !fixture.expectedDeleted {
+				t.Errorf("S05 fixture missing before cleanup without an expected task deletion: kind=%s id=%s", fixture.kind, fixture.id)
+			}
+			continue
+		}
+		if err := s05VerifySuiteFixtureIdentity(m.endpoint, m.suite, fixture.id); err != nil {
+			t.Errorf("refusing cleanup without exact S05 fixture identity: kind=%s id=%s: %v", fixture.kind, fixture.id, err)
+			continue
+		}
+		if _, err := runS04DockerCLI(m.endpoint, "container", "rm", "--force", fixture.id); err != nil {
+			t.Errorf("remove exact S05 fixture kind=%s id=%s: %v", fixture.kind, fixture.id, err)
+			continue
+		}
+		if present, err := s05OwnedContainerPresent(m.endpoint, fixture.id); err != nil || present {
+			t.Errorf("S05 fixture cleanup is unverified: kind=%s id=%s present=%t err=%v", fixture.kind, fixture.id, present, err)
+			continue
+		}
+		t.Logf("S05_FIXTURE_CLEANUP suite=%s kind=%s id=%s removed=true verified_absent=true", m.suite, fixture.kind, fixture.id)
+	}
+	remaining, err := s05ListSuiteFixtureIDs(m.endpoint, m.suite)
+	if err != nil {
+		t.Errorf("cannot verify final S05 fixture manifest: %v", err)
+		return
+	}
+	if len(remaining) != 0 {
+		t.Errorf("S05 fixture manifest has uncleaned suite resources: suite=%s ids=%v", m.suite, remaining)
+		return
+	}
+	t.Logf("S05_FIXTURE_MANIFEST_CLEANUP suite=%s expected_ids=%d remaining_ids=0 verified=true", m.suite, len(m.items))
+}
+
+func (m *s05DINDFixtureManifest) expectedPresentCount() int {
+	count := 0
+	for _, fixture := range m.items {
+		if !fixture.expectedDeleted {
+			count++
+		}
+	}
+	return count
+}
+
+func (m *s05DINDFixtureManifest) expectedDeletedCount() int {
+	return len(m.items) - m.expectedPresentCount()
+}
+
+func s05ListSuiteFixtureIDs(endpoint, suite string) ([]string, error) {
+	output, err := runS04DockerCLI(endpoint, "container", "ls", "--all", "--quiet", "--no-trunc", "--filter", "label=io.nodedance.suite="+suite)
+	if err != nil {
+		return nil, err
+	}
+	ids := strings.Fields(output)
+	for _, id := range ids {
+		if !protocol.IsFullContainerID(id) {
+			return nil, fmt.Errorf("Engine returned non-full container ID %q for suite %q", id, suite)
+		}
+	}
+	return ids, nil
+}
+
+func s05VerifySuiteFixtureIdentity(endpoint, suite, id string) error {
+	actualID, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.Id}}", id)
+	if err != nil {
+		return fmt.Errorf("inspect exact ID: %w", err)
+	}
+	if strings.TrimSpace(actualID) != id {
+		return fmt.Errorf("inspected ID %q does not match manifest ID", strings.TrimSpace(actualID))
+	}
+	label, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", `{{ index .Config.Labels "io.nodedance.suite" }}`, id)
+	if err != nil {
+		return fmt.Errorf("inspect suite ownership label: %w", err)
+	}
+	if strings.TrimSpace(label) != suite {
+		return fmt.Errorf("suite ownership label %q does not match %q", strings.TrimSpace(label), suite)
+	}
+	return nil
+}
+
+func s05OwnedContainerPresent(endpoint, containerID string) (bool, error) {
+	output, err := runS04DockerCLI(endpoint, "container", "ls", "--all", "--quiet", "--no-trunc", "--filter", "id="+containerID)
+	if err != nil {
+		return false, err
+	}
+	for _, value := range strings.Fields(output) {
+		if value == containerID || strings.HasPrefix(containerID, value) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func TestRealAgentTaskJournalHandshakeDoesNotQueueWhenDockerIsUnavailable(t *testing.T) {
@@ -413,6 +1041,53 @@ func readS05ContainerStartCount(endpoint, containerID string) (int, error) {
 		return 0, fmt.Errorf("invalid fixture start counter %q", strings.TrimSpace(value))
 	}
 	return count, nil
+}
+
+func ensureS05JournalInsertAttemptFunction() error {
+	s05JournalInsertAttemptFunctionOnce.Do(func() {
+		s05JournalInsertAttemptFunctionErr = modernsqlite.RegisterScalarFunction(
+			"nodedance_s05_note_journal_insert_attempt", 1,
+			func(_ *modernsqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+				if len(args) != 1 {
+					return nil, fmt.Errorf("journal insert observer requires one task ID")
+				}
+				if _, ok := args[0].(string); !ok {
+					return nil, fmt.Errorf("journal insert observer requires a text task ID")
+				}
+				s05JournalInsertAttemptCount.Add(1)
+				return int64(1), nil
+			},
+		)
+	})
+	return s05JournalInsertAttemptFunctionErr
+}
+
+func TestS05JournalInsertAttemptObserverSurvivesAbort(t *testing.T) {
+	if err := ensureS05JournalInsertAttemptFunction(); err != nil {
+		t.Fatal("register non-transactional Agent journal insert attempt observer:", err)
+	}
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal("open isolated SQLite observer test database:", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE task_journal(task_id TEXT NOT NULL);
+		CREATE TRIGGER fail_insert BEFORE INSERT ON task_journal BEGIN
+		SELECT nodedance_s05_note_journal_insert_attempt(NEW.task_id);
+		SELECT RAISE(ABORT, 'injected journal failure'); END`); err != nil {
+		t.Fatal("create isolated trigger failure fixture:", err)
+	}
+	before := s05JournalInsertAttemptCount.Load()
+	if _, err := db.Exec(`INSERT INTO task_journal(task_id) VALUES('task-observer-test')`); err == nil {
+		t.Fatal("triggered journal insert unexpectedly succeeded")
+	}
+	if got := s05JournalInsertAttemptCount.Load() - before; got != 1 {
+		t.Fatalf("observer did not record exactly one INSERT attempt before rollback: delta=%d", got)
+	}
+	var rows int
+	if err := db.QueryRow(`SELECT count(*) FROM task_journal`).Scan(&rows); err != nil || rows != 0 {
+		t.Fatalf("failed journal INSERT left a row behind: rows=%d err=%v", rows, err)
+	}
 }
 
 func waitForS05ContainerStartCount(endpoint, containerID string, timeout time.Duration) (int, error) {
