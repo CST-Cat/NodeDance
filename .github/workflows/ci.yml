@@ -343,6 +343,35 @@ jobs:
       - name: Install and verify locked Go, Node, native pnpm and Compose tools
         run: make verify-tools
 
+      - name: Prepare isolated S04 DIND sibling fixture worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture_root="$(dirname "$GITHUB_WORKSPACE")/NodeDance-s04"
+          expected_root="$(realpath -m "$GITHUB_WORKSPACE/../NodeDance-s04")"
+          [[ "$fixture_root" == "$expected_root" ]]
+          [[ ! -e "$fixture_root" && ! -L "$fixture_root" ]] || {
+            echo "refusing pre-existing S04 fixture worktree path: $fixture_root" >&2
+            exit 1
+          }
+          git worktree add --detach "$fixture_root" "$GITHUB_SHA"
+          actual_root="$(realpath -- "$fixture_root")"
+          actual_sha="$(git -C "$fixture_root" rev-parse HEAD)"
+          [[ "$actual_root" == "$expected_root" && "$actual_sha" == "$GITHUB_SHA" ]]
+          [[ -x "$fixture_root/scripts/test/dind.sh" && -f "$fixture_root/test-images.lock.json" ]]
+
+          compose_bin="$GITHUB_WORKSPACE/.tools/docker/cli-plugins/docker-compose"
+          [[ -x "$compose_bin" ]]
+          expected_compose="$(cat "$GITHUB_WORKSPACE/docker-compose.version")"
+          actual_compose="$("$compose_bin" version --short | sed 's/^v//')"
+          [[ "$actual_compose" == "$expected_compose" ]] || {
+            echo "locked Compose plugin mismatch: expected $expected_compose, found $actual_compose" >&2
+            exit 1
+          }
+          printf 'NODEDANCE_S04_DIND_ROOT=%s\n' "$fixture_root" >> "$GITHUB_ENV"
+          printf 'S04 DIND fixture root verified: %s at %s; Compose %s from main checkout\n' \
+            "$fixture_root" "$actual_sha" "$actual_compose"
+
       - name: Verify per-run report and artifact safeguards
         run: make verify-ci-evidence
 
