@@ -1296,21 +1296,9 @@ type agentTestProxy struct {
 	dockerChunks                    atomic.Uint64
 	dropDockerMessages              atomic.Bool
 	droppedDockerMessages           atomic.Uint64
-	replayNextDockerChange          atomic.Bool
-	dockerReplayResults             chan dockerReplayEvidence
 	tunnelMu                        sync.Mutex
 	tunnels                         map[uint64]context.CancelFunc
 	nextTunnelID                    uint64
-}
-
-type dockerReplayEvidence struct {
-	OlderSequence   uint64
-	NewerSequence   uint64
-	OlderAction     string
-	NewerAction     string
-	OlderState      string
-	NewerState      string
-	DuplicateWrites int
 }
 
 type dropWelcomeTarget struct {
@@ -1331,7 +1319,7 @@ func newAgentTestProxy(t *testing.T, current *atomic.Pointer[Server], coreURL st
 	return &agentTestProxy{current: current, coreURL: coreURL, rootPEM: rootPEM,
 		droppedWelcome: make(chan droppedWelcomeEvent, 1), identityHeld: make(chan struct{}, 1), helloHeld: make(chan struct{}, 1),
 		releaseHello: make(chan struct{}, 1), releaseIdentity: make(chan struct{}), tunnels: make(map[uint64]context.CancelFunc),
-		droppedDockerChunk: make(chan struct{}, 1), dockerReplayResults: make(chan dockerReplayEvidence, 1)}
+		droppedDockerChunk: make(chan struct{}, 1)}
 }
 
 func (p *agentTestProxy) dropNextDockerSnapshotChunk() {
@@ -1341,10 +1329,6 @@ func (p *agentTestProxy) dropNextDockerSnapshotChunk() {
 func (p *agentTestProxy) dropNextDockerSnapshotChunkAndBlockReconnect() {
 	p.blockReconnectAfterDroppedChunk.Store(true)
 	p.dropDockerChunk.Store(true)
-}
-
-func (p *agentTestProxy) replayNextDockerChangeOutOfOrderAndDuplicate() {
-	p.replayNextDockerChange.Store(true)
 }
 
 func (p *agentTestProxy) dropCommittedRotationWelcome(agentID, nodeID string, afterGeneration uint64) {
@@ -1455,9 +1439,6 @@ func (p *agentTestProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) 
 	done := make(chan struct{}, 2)
 	go func() {
 		defer func() { done <- struct{}{} }()
-		var previousDockerData []byte
-		var previousDockerEnvelope protocol.Envelope
-		var previousDockerBatch protocol.DockerBatch
 		for {
 			messageType, data, err := downstream.Read(ctx)
 			if err != nil {
@@ -1485,45 +1466,6 @@ func (p *agentTestProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) 
 						}
 						return
 					}
-				}
-				if json.Unmarshal(envelope.Payload, &batch) == nil && !batch.FullSnapshot && len(batch.Changes) != 0 {
-					if p.replayNextDockerChange.Load() && previousDockerData != nil && envelope.Sequence > previousDockerEnvelope.Sequence &&
-						p.replayNextDockerChange.CompareAndSwap(true, false) {
-						if err := upstream.Write(ctx, messageType, data); err != nil {
-							return
-						}
-						if err := upstream.Write(ctx, messageType, previousDockerData); err != nil {
-							return
-						}
-						if err := upstream.Write(ctx, messageType, data); err != nil {
-							return
-						}
-						evidence := dockerReplayEvidence{
-							OlderSequence: previousDockerEnvelope.Sequence, NewerSequence: envelope.Sequence,
-							DuplicateWrites: 1,
-						}
-						if len(previousDockerBatch.Changes) != 0 {
-							evidence.OlderAction = string(previousDockerBatch.Changes[0].Action)
-							if previousDockerBatch.Changes[0].Container != nil {
-								evidence.OlderState = previousDockerBatch.Changes[0].Container.State
-							}
-						}
-						evidence.NewerAction = string(batch.Changes[0].Action)
-						if batch.Changes[0].Container != nil {
-							evidence.NewerState = batch.Changes[0].Container.State
-						}
-						select {
-						case p.dockerReplayResults <- evidence:
-						default:
-						}
-						previousDockerData = append(previousDockerData[:0], data...)
-						previousDockerEnvelope = envelope
-						previousDockerBatch = batch
-						continue
-					}
-					previousDockerData = append(previousDockerData[:0], data...)
-					previousDockerEnvelope = envelope
-					previousDockerBatch = batch
 				}
 			}
 			if isHelloMessage(data) && p.holdNextHello.CompareAndSwap(true, false) {
