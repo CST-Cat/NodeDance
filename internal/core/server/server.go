@@ -15,6 +15,7 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
+	corecompose "github.com/CST-Cat/NodeDance/internal/core/compose"
 	"github.com/CST-Cat/NodeDance/internal/core/config"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
@@ -59,6 +60,7 @@ type Server struct {
 	agents                     *agents.Repository
 	metrics                    *coremetrics.Store
 	tasks                      *coretasks.Store
+	composeOps                 *corecompose.Store
 	dockerMu                   sync.Mutex
 	docker                     *coredocker.Store
 	agentOfflineTimeout        time.Duration
@@ -172,6 +174,15 @@ func New(version string, options Options) (*Server, error) {
 		agentConnections:       make(map[string]*agentConnection),
 		agentLeaseWatchers:     make(map[string]*agentConnection),
 		containerStreamSlots:   make(chan struct{}, 64),
+	}
+	s.composeOps, err = corecompose.NewStore(store.DB, corecompose.Options{Now: options.Now})
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("initialize Compose operation store: %w", err)
+	}
+	if _, err := s.composeOps.RecoverUnfinished(context.Background()); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("recover unfinished Compose operations: %w", err)
 	}
 	s.tasks, err = coretasks.New(store.DB, coretasks.Options{Now: options.Now})
 	if err != nil {

@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "stage": "S07",
-  "mode": "initial",
+  "mode": "candidate",
   "status": "NOT_READY",
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "run_id": "e52d2dce36004ecf843f13845041b571",
+  "updated_at": "2026-10-09T03:50:21.348877+00:00",
+  "reason": "可审阅的 Compose 候选已实现，但 S07 未通过正式验收：生产 SQLite migration v6 尚未由集成 owner 注册；ComposeProjects 尚未挂入 S06 应用 shell；本地没有带 NodeDance owner marker 的 DIND，因此 Engine 28/29 真实验收未执行；S07-10 的全部 P0 与三次完整验收仍未完成。所有正式 S07 用例保持 NOT_READY。",
   "tests": {
     "S07-01": {
       "status": "NOT_READY",
@@ -14,7 +14,7 @@
       "environment": "已有Compose Engine标签和项目目录。",
       "evidence_required": "Compose config与NodeDance项目/服务关联。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "候选组件测试不替代本阶段真实 Core-Agent-Docker/P0 验收；正式用例尚未完成。"
     },
     "S07-02": {
       "status": "NOT_READY",
@@ -23,7 +23,7 @@
       "environment": "先登记后移走测试项目配置。",
       "evidence_required": "缺失状态和仍可操作的容器列表。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "候选组件测试不替代本阶段真实 Core-Agent-Docker/P0 验收；正式用例尚未完成。"
     },
     "S07-03": {
       "status": "NOT_READY",
@@ -32,7 +32,7 @@
       "environment": "两个隔离目录、相同服务名Compose项目。",
       "evidence_required": "路径、项目ID及任务目标逐项核对。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "候选组件测试不替代本阶段真实 Core-Agent-Docker/P0 验收；正式用例尚未完成。"
     },
     "S07-04": {
       "status": "NOT_READY",
@@ -41,7 +41,7 @@
       "environment": "nd-demo多文件/环境/profile fixture。",
       "evidence_required": "最终解析配置、容器Mounts和选中服务。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "候选组件测试不替代本阶段真实 Core-Agent-Docker/P0 验收；正式用例尚未完成。"
     },
     "S07-05": {
       "status": "NOT_READY",
@@ -50,7 +50,7 @@
       "environment": "分别缺变量、Compose插件和权限受限节点。",
       "evidence_required": "失败原因、无错误写入和无破坏状态。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "候选组件测试不替代本阶段真实 Core-Agent-Docker/P0 验收；正式用例尚未完成。"
     },
     "S07-06": {
       "status": "NOT_READY",
@@ -59,7 +59,7 @@
       "environment": "真实Compose项目和持久卷。",
       "evidence_required": "任务状态、CLI/Engine实际状态。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "候选组件测试不替代本阶段真实 Core-Agent-Docker/P0 验收；正式用例尚未完成。"
     },
     "S07-07": {
       "status": "NOT_READY",
@@ -68,7 +68,7 @@
       "environment": "命名卷内写入唯一标记。",
       "evidence_required": "操作前后相同数据标记和卷ID。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "候选组件测试不替代本阶段真实 Core-Agent-Docker/P0 验收；正式用例尚未完成。"
     },
     "S07-08": {
       "status": "NOT_READY",
@@ -77,7 +77,7 @@
       "environment": "操作中断点和可切换不健康服务。",
       "evidence_required": "任务结果、恢复状态和健康检查。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "候选组件测试不替代本阶段真实 Core-Agent-Docker/P0 验收；正式用例尚未完成。"
     },
     "S07-09": {
       "status": "NOT_READY",
@@ -86,7 +86,7 @@
       "environment": "空格、引号、分号等测试路径。",
       "evidence_required": "最终命令参数、路径和无额外进程/文件。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "候选组件测试不替代本阶段真实 Core-Agent-Docker/P0 验收；正式用例尚未完成。"
     },
     "S07-10": {
       "status": "NOT_READY",
@@ -95,7 +95,61 @@
       "environment": "真实Core、至少三Agent及Docker/Compose验收环境。",
       "evidence_required": "13个P0追踪项和关联正文用例逐项PASS。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "候选组件测试不替代本阶段真实 Core-Agent-Docker/P0 验收；正式用例尚未完成。"
     }
+  },
+  "candidate_validation": {
+    "status": "PARTIAL_IMPLEMENTATION_NOT_STAGE_PASS",
+    "passed_checks": [
+      {
+        "command": "GOTOOLCHAIN=local .tools/go1.26.8/bin/go test ./internal/agent/compose ./internal/agent ./internal/core/compose ./internal/core/server ./internal/protocol",
+        "status": "PASS",
+        "detail": "本次候选的 Agent、Compose manager、Core Store、Core server 和协议包测试通过。"
+      },
+      {
+        "command": "GOTOOLCHAIN=local .tools/go1.26.8/bin/go vet ./internal/agent/compose ./internal/agent ./internal/core/compose ./internal/core/server ./internal/protocol",
+        "status": "PASS",
+        "detail": "候选涉及 Go 包 vet 通过。"
+      },
+      {
+        "command": "make frontend",
+        "status": "PASS",
+        "detail": "锁定工具链下 Vue 类型检查和 Vite production build 通过。"
+      }
+    ],
+    "not_ready_checks": [
+      {
+        "command": "GOTOOLCHAIN=local .tools/go1.26.8/bin/go test -run ^TestDINDComposeLifecycle$ -v ./internal/agent/compose",
+        "status": "NOT_READY",
+        "detail": "TestDINDComposeLifecycle 明确跳过：未设置 NODEDANCE_S07_DIND_ROOT，工作树不存在带 owner marker 的 Engine 28/29 fixture。已添加 .github/workflows/s07-compose.yml 和 scripts/test/s07-compose-dind.sh。"
+      },
+      {
+        "command": "生产 SQLite migration 集成",
+        "status": "NOT_READY",
+        "detail": "Compose DDL 仅在 internal/core/compose/schema.sql；按并行迁移约定未修改 internal/core/storage/sqlite.go。集成 owner 需在 S06 v5 后注册 v6。注册前 Core Compose API 的持久存储不可用。"
+      },
+      {
+        "command": "S06 应用 shell 集成",
+        "status": "NOT_READY",
+        "detail": "ComposeProjects 是独立响应式页面；按文件所有权未修改 App.vue 或 NodesDashboard.vue，需由 S06 owner 挂入导航/节点入口。"
+      },
+      {
+        "command": "S07 full/integration/e2e 和三次完整验收",
+        "status": "NOT_READY",
+        "detail": "S00-S06 前置与全部 P0 尚未集中集成验收；本次组件测试没有覆盖正式阶段全套用例。"
+      }
+    ],
+    "full_repository_test": {
+      "command": "GOTOOLCHAIN=local .tools/go1.26.8/bin/go test ./...",
+      "status": "FAIL_INCOMPLETE",
+      "failed_test": "internal/core/agents.TestMigrationVersionTwoExtendsAuditWithTypedTargets",
+      "detail": "该基线测试断言 schema migration version == 3，实际为 4；候选没有改迁移 owner 文件。输出出现该失败后，全仓 server 测试仍运行，进程被停止以优先交付候选；因此不能报告全仓 go test 完成。"
+    },
+    "integration_points": [
+      "在 S06 v5 后把 Compose schema 注册为正式 v6 migration，并验证 fresh install 和已有库升级。",
+      "由 S06 owner 将 ComposeProjects.vue 接入应用 shell 的导航或节点详情入口。",
+      "在 GitHub Actions 上执行 Engine 28 与 29 的真实 Compose 生命周期、profiles、两副本、特殊路径、named volume down/up 验收。",
+      "集中集成阶段核对 S05 持久任务接口、Core-Agent 重启后的只读结果核验以及完整 P0 回归。"
+    ]
   }
 }
