@@ -5,7 +5,7 @@
   "status": "NOT_READY",
   "run_id": "s11-components-20261009T0454Z",
   "updated_at": "2026-10-09T04:54:33+00:00",
-  "reason": "候选组件检查已通过，但 S11-01..10 均未完成规定的真实 Engine/端到端验收；Engine 28、29 与 Core-Agent-Engine 联合验证待 GitHub Actions job 运行并取得证据。",
+  "reason": "候选 Go/前端构建与响应式 UI 检查通过；Engine 28/29 真实预览集成均在 Compose 编辑预览处失败，原因分类诊断及 Engine-only 复验待完成。完整 S11 阶段仍为 NOT_READY。",
   "tests": {
     "S11-01": {
       "status": "NOT_READY",
@@ -14,14 +14,19 @@
       "environment": "隔离Compose Engine及TCP/UDP/v4/v6端口服务。",
       "evidence_required": "渲染配置、Engine绑定和探测结果。",
       "runs": [],
-      "reason": "NOT_READY：Go 单测覆盖结构化 TCP/UDP 以及 IPv4/IPv6 地址解析；真实 Engine 多映射绑定、连通性探测和 IPv6 发布未执行。需取得 Engine 28/29 输出及实际绑定/探测证据。",
-      "acceptance_evidence_missing": "Engine 28/29 多映射实际绑定、连通性探测和 IPv6 发布证据。",
+      "reason": "NOT_READY：结构化 TCP/UDP 与 IPv4/IPv6 端口编辑单测通过；Engine 28/29 的真实端口变更预览均失败，实际绑定和连通性验证未到达。",
+      "acceptance_evidence_missing": "Engine 28/29 预览错误的安全分类、实际应用后 Engine 绑定和 TCP/UDP/v4/v6 探测结果。",
       "component_tests_passed": [
         "TestStructuredPortEditsHandleIPv4IPv6UDPAndLongSyntax"
       ],
       "integration_tests_not_run": [
         "TestDINDComposeEditorRealEngine"
-      ]
+      ],
+      "latest_ci_attempt": {
+        "workflow_run_id": "37886160909",
+        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
+        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
+      }
     },
     "S11-02": {
       "status": "NOT_READY",
@@ -30,14 +35,19 @@
       "environment": "多文件变量覆盖、长格式和YAML anchors fixture。",
       "evidence_required": "原上下文最终Compose config与差异。",
       "runs": [],
-      "reason": "NOT_READY：真实 Engine 测试代码覆盖多文件、env 文件、profile 和长格式端口，但没有执行；YAML anchor/最终合并配置的 Engine 证据缺失。",
-      "acceptance_evidence_missing": "真实多文件、env/profile、YAML anchor 与最终合并配置的 Engine 输出。",
+      "reason": "NOT_READY：多文件、env/profile、长格式端口 fixture 已提交真实 Engine 测试，但 Engine 28/29 均在 preview 返回 ErrInvalidSource；最终合并配置及 diff 未返回。",
+      "acceptance_evidence_missing": "确认失败位于结构化 port edit 还是 Compose config resolution，并取得多文件/env/profile/YAML anchor 最终配置证据。",
       "component_tests_passed": [
         "TestStructuredPortEditsHandleIPv4IPv6UDPAndLongSyntax"
       ],
       "integration_tests_not_run": [
         "TestDINDComposeEditorRealEngine"
-      ]
+      ],
+      "latest_ci_attempt": {
+        "workflow_run_id": "37886160909",
+        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
+        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
+      }
     },
     "S11-03": {
       "status": "NOT_READY",
@@ -46,12 +56,17 @@
       "environment": "源项目相对bind路径和临时校验目录。",
       "evidence_required": "临时/正式Mounts目标保持相同。",
       "runs": [],
-      "reason": "NOT_READY：临时文件邻近源目录、保留 project-directory 的实现有组件覆盖；真实 Engine 下预览与正式 mount source 相等的证据未采集。",
-      "acceptance_evidence_missing": "真实 Engine 下预览解析与正式运行 Mounts source 一致的对照结果。",
+      "reason": "NOT_READY：使用相对 bind mount 的 Engine fixture 已启动；preview 失败后未应用变更，也未比较预览与正式 Mounts。",
+      "acceptance_evidence_missing": "真实 Engine 预览与运行时 Mounts source 的相等性证据。",
       "component_tests_passed": [],
       "integration_tests_not_run": [
         "TestDINDComposeEditorRealEngine"
-      ]
+      ],
+      "latest_ci_attempt": {
+        "workflow_run_id": "37886160909",
+        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
+        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
+      }
     },
     "S11-04": {
       "status": "NOT_READY",
@@ -60,14 +75,19 @@
       "environment": "真实项目及配置错误样本。",
       "evidence_required": "文件hash、服务ID和任务拒绝原因。",
       "runs": [],
-      "reason": "NOT_READY：组件测试证明非法配置预览不改源文件；真实 Engine 缺失变量、无效合并配置的拒绝结果及服务 ID/源 hash 前后对照未执行。",
-      "acceptance_evidence_missing": "真实 Engine 对缺失变量/无效合并配置的拒绝结果、服务 ID 与源 hash 前后对照。",
+      "reason": "NOT_READY：组件单测覆盖无效预览不写源文件；真实 Engine 测试在后续非法配置和缺失变量检查前即中止。",
+      "acceptance_evidence_missing": "真实 Engine 拒绝原因、原文件 hash 与服务 ID 前后核对。",
       "component_tests_passed": [
         "TestPreviewUsesVersionChecksRedactsEnvironmentAndNeverMutatesSource"
       ],
       "integration_tests_not_run": [
         "TestDINDComposeEditorRealEngine"
-      ]
+      ],
+      "latest_ci_attempt": {
+        "workflow_run_id": "37886160909",
+        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
+        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
+      }
     },
     "S11-05": {
       "status": "NOT_READY",
@@ -76,14 +96,19 @@
       "environment": "Web和SSH并发源文件修改。",
       "evidence_required": "版本冲突响应和外部文件保留。",
       "runs": [],
-      "reason": "NOT_READY：组件测试覆盖版本冲突且不覆盖外部修改；DIND 场景未运行，Web 与真实 SSH 并发修改仍无验收证据。",
-      "acceptance_evidence_missing": "DIND 端到端冲突结果及 Web 与真实 SSH 并发编辑场景。",
+      "reason": "NOT_READY：组件测试覆盖源版本冲突；真实 Engine 的外部并发修改断言位于预览之后，因共同预览错误尚未执行。",
+      "acceptance_evidence_missing": "真实 Engine stale-version 冲突响应及外部修改保留证据。",
       "component_tests_passed": [
         "TestExternalSourceConflictIsNotOverwritten"
       ],
       "integration_tests_not_run": [
         "TestDINDComposeEditorRealEngine"
-      ]
+      ],
+      "latest_ci_attempt": {
+        "workflow_run_id": "37886160909",
+        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
+        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
+      }
     },
     "S11-06": {
       "status": "NOT_READY",
@@ -92,8 +117,8 @@
       "environment": "端口占用者与可控不健康Compose服务。",
       "evidence_required": "任务失败、旧配置/镜像/服务回滚状态。",
       "runs": [],
-      "reason": "NOT_READY：mock Engine 测试覆盖端口占用、健康失败、固定旧镜像 override 和 --no-build；真实 Engine 的端口冲突回滚及 unhealthy 服务恢复均未执行。",
-      "acceptance_evidence_missing": "真实 Engine 端口占用回滚和 unhealthy 服务失败恢复；DIND 当前场景尚未运行。",
+      "reason": "NOT_READY：mock Engine 的端口占用、健康失败与 pinned rollback 测试通过；真实 Engine 集成在端口冲突/health rollback 场景前中止。",
+      "acceptance_evidence_missing": "Engine 28/29 实际端口占用和 unhealthy service 回滚记录。",
       "component_tests_passed": [
         "TestApplyOccupiedPortRestoresSourceAndConfirmsRollback",
         "TestApplyHealthFailureRestoresSourceAndConfirmsRollback",
@@ -101,7 +126,12 @@
       ],
       "integration_tests_not_run": [
         "TestDINDComposeEditorRealEngine"
-      ]
+      ],
+      "latest_ci_attempt": {
+        "workflow_run_id": "37886160909",
+        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
+        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
+      }
     },
     "S11-07": {
       "status": "NOT_READY",
@@ -110,12 +140,17 @@
       "environment": "移动标签前后镜像digest不同。",
       "evidence_required": "回滚时实际镜像ID/digest与旧版本一致。",
       "runs": [],
-      "reason": "NOT_READY：组件测试检查保留固定镜像引用且回滚不 rebuild；真实 Engine 移动原镜像 tag 后校验恢复 image ID/digest 的场景未实现为验收步骤或未执行。",
-      "acceptance_evidence_missing": "先移动原镜像 tag，再通过真实 Engine 确认回滚到固定旧 image ID/digest 的演练。",
+      "reason": "NOT_READY：组件测试检查 rollback 固定旧镜像且不 rebuild；当前真实 Engine 流程未到达 rollback。",
+      "acceptance_evidence_missing": "移动镜像 tag 后以真实 Engine 检查旧 image ID/digest 恢复的演练。",
       "component_tests_passed": [
         "TestRollbackOverrideUsesPinnedImageAndNeverIncludesVolumes"
       ],
-      "integration_tests_not_run": []
+      "integration_tests_not_run": [],
+      "latest_ci_attempt": {
+        "workflow_run_id": "37886160909",
+        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
+        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
+      }
     },
     "S11-08": {
       "status": "NOT_READY",
@@ -124,13 +159,18 @@
       "environment": "各部署阶段断电/进程重启注入。",
       "evidence_required": "持久journal、恢复判定和实际资源。",
       "runs": [],
-      "reason": "NOT_READY：Agent 事务日志恢复和 Core 内容无关账本恢复有组件测试；Core/Agent 进程与 Engine 资源状态的联合故障注入未执行。",
-      "acceptance_evidence_missing": "Core/Agent 进程重启与 Engine 真实资源状态联合故障注入。",
+      "reason": "NOT_READY：Agent 事务恢复和 Core 内容无关账本组件测试通过；本轮真实 Engine 测试未到达进程重启故障注入。",
+      "acceptance_evidence_missing": "Core/Agent 重启与 Engine 状态联合恢复记录。",
       "component_tests_passed": [
         "TestAgentRestartRecoveryRestoresAnApplyingTransactionWithoutReplay",
         "TestContentFreeIdempotentOperationLedgerAndRecovery"
       ],
-      "integration_tests_not_run": []
+      "integration_tests_not_run": [],
+      "latest_ci_attempt": {
+        "workflow_run_id": "37886160909",
+        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
+        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
+      }
     },
     "S11-09": {
       "status": "NOT_READY",
@@ -139,13 +179,18 @@
       "environment": "私密env文件和不同mode配置。",
       "evidence_required": "备份stat、日志/报告秘密扫描。",
       "runs": [],
-      "reason": "NOT_READY：组件测试覆盖源文件/env mode、同 UID、备份权限及全树敏感字段（含 build args）遮罩；真实不同 owner/mode、运行日志和 CI artifact secret 扫描未执行。",
-      "acceptance_evidence_missing": "真实不同 owner/mode 文件、运行日志扫描及 CI artifact secret 扫描。",
+      "reason": "NOT_READY：组件测试覆盖源文件/env 权限、备份与敏感字段脱敏；DIND 预览失败，真实 API/日志/artifact secret 扫描未完成。",
+      "acceptance_evidence_missing": "不同 owner/mode 节点实测、resolved config/日志秘密扫描。",
       "component_tests_passed": [
         "TestApplyPreservesSourceAndEnvironmentModesAndSecuresBackups",
         "TestResolvedConfigRedactsSensitiveFieldsAcrossComposeTree"
       ],
-      "integration_tests_not_run": []
+      "integration_tests_not_run": [],
+      "latest_ci_attempt": {
+        "workflow_run_id": "37886160909",
+        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
+        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
+      }
     },
     "S11-10": {
       "status": "NOT_READY",
@@ -154,17 +199,22 @@
       "environment": "含依赖服务及持久卷的项目。",
       "evidence_required": "未受影响Container ID、卷ID及marker前后比对。",
       "runs": [],
-      "reason": "NOT_READY：组件测试/DIND 测试实现检查受影响服务及命名卷数据；真实 Engine 测试未执行，未保存未受影响容器 ID、卷 ID 和 marker 的运行前后证据。",
-      "acceptance_evidence_missing": "真实 Engine 运行前后未受影响容器 ID、卷 ID 及数据 marker 的保存比对证据。",
+      "reason": "NOT_READY：组件测试覆盖只重建受影响服务；真实 Engine 的 apply/volume marker 比较未到达。",
+      "acceptance_evidence_missing": "未受影响 container ID、volume ID 与数据 marker 前后记录。",
       "component_tests_passed": [
         "TestApplyRebuildsOnlyAffectedServiceAndRetainsRollbackSourceAndVolume"
       ],
       "integration_tests_not_run": [
         "TestDINDComposeEditorRealEngine"
-      ]
+      ],
+      "latest_ci_attempt": {
+        "workflow_run_id": "37886160909",
+        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
+        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
+      }
     }
   },
-  "candidate_status": "PASS",
+  "candidate_status": "PARTIAL",
   "toolchain": {
     "go": "1.26.8",
     "node": "22.23.3",
@@ -176,30 +226,50 @@
     "go-focused-tests-and-vet": {
       "status": "PASS",
       "command": "make test-s11-go",
-      "result": "Focused Go package tests passed for agent/composeedit, agent/compose, protocol, core/compose, core/composeedit, core/storage, and core/server; go vet passed for the same package set. Core server package test completed in 119.641s.",
-      "evidence": ".artifacts/s11/go-focused.log"
+      "result": "PASS on clean GitHub Actions checkout: make frontend generated the ignored embedded assets, then make test-s11-go and go vet passed. Core server package test took 122.091s.",
+      "evidence": ".artifacts/s11/go-focused.log",
+      "ci_run_id": "37886160909",
+      "ci_commit": "648b0a56b3ede6154015d6a588a3cd95c847a2a6",
+      "ci_job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676656040",
+      "ci_artifact": "nodedance-s11-go-37886160909-1 (frontend.log, go-focused.log)"
     },
     "locked-frontend-typecheck-and-build": {
       "status": "PASS",
       "command": "make frontend",
       "result": "Frozen dependency install, Vue typecheck, and embedded Vite production build passed.",
-      "evidence": ".artifacts/s11/frontend.log"
+      "evidence": ".artifacts/s11/frontend.log",
+      "ci_run_id": "37886160909",
+      "ci_job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676656040",
+      "ci_artifact": "nodedance-s11-go-37886160909-1/frontend.log"
     },
     "responsive-browser-component-flow": {
       "status": "PASS",
       "command": "make test-s11-ui",
       "result": "1 Chromium Playwright component UI test passed at 390x844. It covers source editor, mocked preview, apply status, and rollback status; API behavior is mocked, so this is not Core-Agent-Engine E2E evidence.",
-      "evidence": ".artifacts/s11/playwright.log"
+      "evidence": ".artifacts/s11/playwright.log",
+      "ci_run_id": "37886160909",
+      "ci_job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676656282",
+      "ci_artifact": "nodedance-s11-ui-37886160909-1/test-results/.last-run.json"
     },
     "engine-28-real-compose": {
-      "status": "NOT_READY",
+      "status": "FAIL",
       "command": "scripts/test/s11-compose-editor-dind.sh 28",
-      "reason": "本工作区没有 Engine 28 owner marker；未启动或复用任何 Docker daemon。GitHub Actions job 尚未运行。"
+      "reason": "本工作区没有 Engine 28 owner marker；未启动或复用任何 Docker daemon。GitHub Actions job 尚未运行。",
+      "ci_run_id": "37886160909",
+      "engine_version": "28.5.2",
+      "ci_job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676655830",
+      "ci_artifact": "nodedance-s11-engine28-37886160909-1/engine-28.log",
+      "result": "TestDINDComposeEditorRealEngine failed during preview at dind_integration_test.go:225 with ErrInvalidSource; the pre-diagnostic implementation did not reveal whether applyPortEdit or Compose config resolution failed. No apply/rollback assertions were reached."
     },
     "engine-29-real-compose": {
-      "status": "NOT_READY",
+      "status": "FAIL",
       "command": "scripts/test/s11-compose-editor-dind.sh 29",
-      "reason": "本工作区没有 Engine 29 owner marker；未启动或复用任何 Docker daemon。GitHub Actions job 尚未运行。"
+      "reason": "本工作区没有 Engine 29 owner marker；未启动或复用任何 Docker daemon。GitHub Actions job 尚未运行。",
+      "ci_run_id": "37886160909",
+      "engine_version": "29.7.2",
+      "ci_job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676655950",
+      "ci_artifact": "nodedance-s11-engine29-37886160909-1/engine-29.log",
+      "result": "TestDINDComposeEditorRealEngine failed during preview at dind_integration_test.go:225 with ErrInvalidSource; the pre-diagnostic implementation did not reveal whether applyPortEdit or Compose config resolution failed. No apply/rollback assertions were reached."
     },
     "core-agent-engine-end-to-end": {
       "status": "NOT_READY",
@@ -221,5 +291,59 @@
       "resolution": "Pinned-image rollback now passes --no-build and has an assertion that --build is absent. Resolved configuration redacts sensitive fields recursively and has fake-marker build.args regression coverage.",
       "validation": "Covered by the latest passing make test-s11-go run; real Engine rollback path remains NOT_READY."
     }
-  ]
+  ],
+  "candidate_suite": {
+    "status": "PARTIAL",
+    "workflow_run_id": "37886160909",
+    "workflow_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909",
+    "commit": "648b0a56b3ede6154015d6a588a3cd95c847a2a6",
+    "environment": {
+      "runner": "GitHub Actions ubuntu-24.04",
+      "toolchain": "Go 1.26.8, Node.js 22.23.3, pnpm 12.10.1, Docker Compose 5.4.0",
+      "engine_images": "Engine 28.5.2 and 29.7.2, each in job-owned DIND"
+    },
+    "additional_checks": [
+      {
+        "name": "clean-checkout embedded frontend and Go component suite",
+        "status": "PASS",
+        "commands": [
+          "make frontend",
+          "make test-s11-go"
+        ],
+        "result": "Frontend assets were built before Go package tests; focused package tests and go vet passed.",
+        "artifact": "nodedance-s11-go-37886160909-1 (frontend.log, go-focused.log)",
+        "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676656040"
+      },
+      {
+        "name": "responsive Compose editor UI",
+        "status": "PASS",
+        "commands": [
+          "make verify-tools",
+          "make frontend",
+          "make playwright-install PLAYWRIGHT_BROWSERS=chromium",
+          "make test-s11-ui"
+        ],
+        "result": "Responsive browser job passed at 390x844; the UI test uses mocked API responses.",
+        "artifact": "nodedance-s11-ui-37886160909-1/test-results/.last-run.json",
+        "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676656282"
+      },
+      {
+        "name": "real Compose Agent Engine 28",
+        "status": "FAIL",
+        "command": "scripts/test/s11-compose-editor-dind.sh 28",
+        "result": "Preview failed at dind_integration_test.go:225 with Compose source or structured port edit is invalid; applyPortEdit vs Compose config validation was not distinguished in this run.",
+        "artifact": "nodedance-s11-engine28-37886160909-1/engine-28.log",
+        "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676655830"
+      },
+      {
+        "name": "real Compose Agent Engine 29",
+        "status": "FAIL",
+        "command": "scripts/test/s11-compose-editor-dind.sh 29",
+        "result": "Preview failed at dind_integration_test.go:225 with Compose source or structured port edit is invalid; applyPortEdit vs Compose config validation was not distinguished in this run.",
+        "artifact": "nodedance-s11-engine29-37886160909-1/engine-29.log",
+        "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676655950"
+      }
+    ],
+    "diagnostic_followup": "Add static safe preview-stage classification. Re-run only the Engine matrix through workflow_dispatch suite=engines; do not rerun Go/UI jobs."
+  }
 }

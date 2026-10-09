@@ -256,11 +256,11 @@ func (m *Manager) preview(ctx context.Context, request protocol.ComposeRequest) 
 	for _, edit := range request.Editor.PortEdits {
 		snapshot, ok := proposed[edit.File]
 		if !ok {
-			return protocol.ComposeEditorResult{}, nil, ErrInvalidSource
+			return protocol.ComposeEditorResult{}, nil, invalidSourceAt("structured-port-edit-source")
 		}
 		changed, err := applyPortEdit(snapshot.Content, edit)
 		if err != nil {
-			return protocol.ComposeEditorResult{}, nil, err
+			return protocol.ComposeEditorResult{}, nil, invalidSourceAt("structured-port-edit")
 		}
 		snapshot.Content = changed
 		proposed[edit.File] = snapshot
@@ -270,23 +270,23 @@ func (m *Manager) preview(ctx context.Context, request protocol.ComposeRequest) 
 		proposedBytes += len(snapshot.Content)
 	}
 	if proposedBytes > protocol.MaxComposeEditBytes {
-		return protocol.ComposeEditorResult{}, nil, ErrInvalidSource
+		return protocol.ComposeEditorResult{}, nil, invalidSourceAt("proposed-source-size")
 	}
 	oldResolved, err := m.resolve(ctx, request, nil)
 	if err != nil {
-		return protocol.ComposeEditorResult{}, nil, ErrInvalidSource
+		return protocol.ComposeEditorResult{}, nil, invalidSourceAt("current-compose-config-resolution")
 	}
 	newResolved, err := m.resolve(ctx, request, proposed)
 	if err != nil {
-		return protocol.ComposeEditorResult{}, nil, ErrInvalidSource
+		return protocol.ComposeEditorResult{}, nil, invalidSourceAt("proposed-compose-config-resolution")
 	}
 	servicesBefore, err := serviceModels(oldResolved)
 	if err != nil {
-		return protocol.ComposeEditorResult{}, nil, ErrInvalidSource
+		return protocol.ComposeEditorResult{}, nil, invalidSourceAt("current-compose-service-model")
 	}
 	servicesAfter, err := serviceModels(newResolved)
 	if err != nil {
-		return protocol.ComposeEditorResult{}, nil, ErrInvalidSource
+		return protocol.ComposeEditorResult{}, nil, invalidSourceAt("proposed-compose-service-model")
 	}
 	affected := changedServices(servicesBefore, servicesAfter)
 	current, err := m.observeProject(ctx, request.Project)
@@ -306,7 +306,7 @@ func (m *Manager) preview(ctx context.Context, request protocol.ComposeRequest) 
 	}
 	redacted, err := redactResolvedConfig(newResolved)
 	if err != nil {
-		return protocol.ComposeEditorResult{}, nil, ErrInvalidSource
+		return protocol.ComposeEditorResult{}, nil, invalidSourceAt("resolved-config-redaction")
 	}
 	result.ResolvedConfig = redacted
 	result.Impact = []string{"仅重建配置发生变化的服务；其他服务保持原实例。", "应用数据卷不在配置回滚范围内，需使用应用自身备份。"}
@@ -314,6 +314,13 @@ func (m *Manager) preview(ctx context.Context, request protocol.ComposeRequest) 
 		result.Impact = append(result.Impact, "解析后的服务模型没有变化；只保存源文件，不重建容器。")
 	}
 	return result, proposed, nil
+}
+
+// invalidSourceAt keeps API error classification stable while exposing only a
+// non-sensitive processing stage. Compose stderr and source/config values are
+// deliberately never included in this diagnostic.
+func invalidSourceAt(stage string) error {
+	return fmt.Errorf("%w (stage: %s)", ErrInvalidSource, stage)
 }
 
 func (m *Manager) apply(ctx context.Context, request protocol.ComposeRequest) (protocol.ComposeEditorResult, error) {

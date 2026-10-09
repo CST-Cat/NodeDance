@@ -47,6 +47,8 @@ type editRunner struct {
 	root          string
 	engine        *editEngine
 	failNew       bool
+	failConfig    bool
+	configFailure string
 	makeUnhealthy bool
 	args          [][]string
 }
@@ -60,6 +62,9 @@ func (r *editRunner) Run(_ context.Context, _ string, args []string, _ string) (
 		return nil, nil
 	}
 	if strings.Contains(joined, " config ") || strings.HasSuffix(joined, "config --format json") || strings.HasSuffix(joined, "config --quiet") {
+		if r.failConfig {
+			return []byte(r.configFailure), errors.New(r.configFailure)
+		}
 		port := "18080"
 		for i := 0; i+1 < len(args); i++ {
 			if args[i] == "-f" {
@@ -149,6 +154,31 @@ func TestPreviewUsesVersionChecksRedactsEnvironmentAndNeverMutatesSource(t *test
 	if _, err := manager.Execute(context.Background(), stale); err == nil {
 		t.Fatal("stale source versions were accepted")
 	}
+}
+
+func TestPreviewInvalidSourceDiagnosticsAreClassifiedAndSafe(t *testing.T) {
+	t.Run("structured port edit", func(t *testing.T) {
+		manager, request, _, _ := fixture(t, false, false)
+		request.Editor.PortEdits[0].OldPublished++
+		_, err := manager.Execute(context.Background(), request)
+		if err == nil || !strings.Contains(err.Error(), "stage: structured-port-edit") {
+			t.Fatalf("port edit failure was not safely classified: %v", err)
+		}
+	})
+
+	t.Run("compose config resolution", func(t *testing.T) {
+		manager, request, _, _ := fixture(t, false, false)
+		runner := manager.runner.(*editRunner)
+		runner.failConfig = true
+		runner.configFailure = "fixture-only-sensitive-compose-marker"
+		_, err := manager.Execute(context.Background(), request)
+		if err == nil || !strings.Contains(err.Error(), "stage: current-compose-config-resolution") {
+			t.Fatalf("config resolution failure was not safely classified: %v", err)
+		}
+		if strings.Contains(err.Error(), runner.configFailure) {
+			t.Fatal("Compose diagnostic output escaped into the safe error")
+		}
+	})
 }
 
 func TestResolvedConfigRedactsSensitiveFieldsAcrossComposeTree(t *testing.T) {
