@@ -36,7 +36,7 @@ AUTH_PASSWORD="nodedance-s08-password-$RUN_ID"
 TEST_PACKAGE="${NODEDANCE_S08_TEST_PACKAGE:-./internal/agent/images}"
 case "$TEST_PACKAGE" in
   ./internal/agent/images)
-    ARTIFACT_STEM="image-engine"
+    ARTIFACT_STEM="image"
     DEFAULT_TEST_PATTERN='^TestDINDImageManagementRealEngine$'
     SLOW_PROXY_BIN="$ARTIFACT_DIR/s08-slow-proxy-${RUN_ID}"
     ENGINE_ARCH="$(docker --host "unix://$EXPECTED_SOCKET" version --format '{{.Server.Arch}}')"

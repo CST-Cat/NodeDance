@@ -560,6 +560,12 @@ def test_s08_image_engine_builds_embedded_assets_before_core_test():
     web_build = json.loads((ROOT / "web/package.json").read_text())["scripts"]["build"]
     require("../internal/core/webassets/dist" in web_build,
             "S08 frontend build does not produce the Go-embedded webassets/dist directory")
+    runner = (ROOT / "scripts/test/s08-image-engine-dind.sh").read_text()
+    require('ARTIFACT_STEM="image"' in runner
+            and 'ARTIFACT="$ARTIFACT_DIR/${ARTIFACT_STEM}-engine${ENGINE}-${RUN_ID}.log"' in runner,
+            "S08 Agent image test producer does not use the image-engine<version>-<run>.log naming contract")
+    require('test -s ".artifacts/s08/image-engine${{ matrix.engine }}-$S08_RUN_ID.log"' in workflow,
+            "S08 workflow does not verify the producer's image-engine<version>-<run>.log artifact")
 
 
 def test_s03_workflow_matrix_and_artifact_allowlist():
