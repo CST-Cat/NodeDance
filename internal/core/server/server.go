@@ -20,6 +20,7 @@ import (
 	corecomposeedit "github.com/CST-Cat/NodeDance/internal/core/composeedit"
 	"github.com/CST-Cat/NodeDance/internal/core/config"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
+	coreprefs "github.com/CST-Cat/NodeDance/internal/core/containerprefs"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	corehistory "github.com/CST-Cat/NodeDance/internal/core/history"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
@@ -42,6 +43,9 @@ type Options struct {
 	AgentSweepInterval     time.Duration
 	FileTransferLimit      int64
 	Now                    func() time.Time
+	// PreferenceMigrator is the S06 display-preference identity seam.
+	// Production defaults to a no-op until the persistent S06 repository lands.
+	PreferenceMigrator coreprefs.Migrator
 }
 
 type Server struct {
@@ -86,6 +90,7 @@ type Server struct {
 	containerStreamSlots       chan struct{}
 	terminals                  *terminalStreamManager
 	fileTransferLimit          int64
+	preferenceMigrator         coreprefs.Migrator
 }
 
 type session struct {
@@ -197,6 +202,10 @@ func New(version string, options Options) (*Server, error) {
 		containerStreamSlots:   make(chan struct{}, 64),
 		terminals:              newTerminalStreamManager(),
 		fileTransferLimit:      options.FileTransferLimit,
+		preferenceMigrator:     options.PreferenceMigrator,
+	}
+	if s.preferenceMigrator == nil {
+		s.preferenceMigrator = coreprefs.NopMigrator{}
 	}
 	s.composeOps, err = corecompose.NewStore(store.DB, corecompose.Options{Now: options.Now})
 	if err != nil {

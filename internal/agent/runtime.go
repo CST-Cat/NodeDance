@@ -374,7 +374,7 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 		taskBridgeDone = done
 		go func() {
 			defer close(finished)
-			done <- runTaskBridgeSession(taskCtx, writer, taskBridge.runner, generation, taskBridge.nodeID, taskBridge.journal.JournalID(), taskMessages)
+			done <- runTaskBridgeSession(taskCtx, writer, taskBridge.runner, taskBridge.rebuild, generation, taskBridge.nodeID, taskBridge.journal.JournalID(), taskMessages)
 		}()
 		defer func() {
 			cancelTask()
@@ -629,7 +629,8 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				}
 				return errReconnectAfterRotation
 			case protocol.TypeTaskJournalStatus, protocol.TypeTaskSnapshotRequest, protocol.TypeTaskDispatch,
-				protocol.TypeTaskReconcile, protocol.TypeTaskReportAck, protocol.TypeTaskCancelRequest:
+				protocol.TypeTaskReconcile, protocol.TypeTaskReportAck, protocol.TypeTaskCancelRequest,
+				protocol.TypeContainerRebuildPlanRequest:
 				if taskMessages == nil {
 					return errors.New("Core sent task work without a negotiated task bridge")
 				}

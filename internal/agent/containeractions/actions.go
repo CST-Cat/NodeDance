@@ -22,13 +22,15 @@ import (
 type Action = protocol.TaskAction
 
 const (
-	ActionStart   = protocol.TaskStart
-	ActionStop    = protocol.TaskStop
-	ActionRestart = protocol.TaskRestart
-	ActionPause   = protocol.TaskPause
-	ActionResume  = protocol.TaskResume
-	ActionDelete  = protocol.TaskDelete
-	ActionRename  = protocol.TaskRename
+	ActionStart          = protocol.TaskStart
+	ActionStop           = protocol.TaskStop
+	ActionRestart        = protocol.TaskRestart
+	ActionPause          = protocol.TaskPause
+	ActionResume         = protocol.TaskResume
+	ActionDelete         = protocol.TaskDelete
+	ActionRename         = protocol.TaskRename
+	ActionRebuild        = protocol.TaskRebuild
+	ActionRebuildCleanup = protocol.TaskRebuildCleanup
 )
 
 var (
@@ -65,6 +67,23 @@ type Request struct {
 	NewName              string
 	DeleteConfirmed      bool
 	DeleteConfirmationID string
+	Rebuild              *protocol.RebuildSpec
+	ConfirmationID       string
+}
+
+type RebuildExecutor interface {
+	ExecuteObserved(context.Context, RebuildRequest, func(taskjournal.Snapshot)) (taskjournal.Snapshot, error)
+	Reconcile(context.Context, string) (taskjournal.Snapshot, error)
+}
+
+type RebuildRequest struct {
+	TaskID         string
+	NodeID         string
+	IdempotencyKey string
+	Action         Action
+	ContainerID    string
+	Spec           *protocol.RebuildSpec
+	ConfirmationID string
 }
 
 // Container is a small sanitized projection of the Docker Inspect response.
@@ -111,6 +130,7 @@ type Options struct {
 	OperationTimeout    time.Duration
 	VerificationTimeout time.Duration
 	BootIDSource        func(context.Context) (string, error)
+	Rebuilder           RebuildExecutor
 }
 
 type Executor struct {
@@ -119,6 +139,7 @@ type Executor struct {
 	operationTimeout    time.Duration
 	verificationTimeout time.Duration
 	bootIDSource        func(context.Context) (string, error)
+	rebuilder           RebuildExecutor
 }
 
 func New(engine Engine, journal Journal, options Options) (*Executor, error) {
@@ -139,7 +160,7 @@ func New(engine Engine, journal Journal, options Options) (*Executor, error) {
 		return nil, errors.New("container action timeouts are outside the supported bounds")
 	}
 	return &Executor{engine: engine, journal: journal, operationTimeout: options.OperationTimeout,
-		verificationTimeout: options.VerificationTimeout, bootIDSource: options.BootIDSource}, nil
+		verificationTimeout: options.VerificationTimeout, bootIDSource: options.BootIDSource, rebuilder: options.Rebuilder}, nil
 }
 
 // Execute accepts an idempotent safe intent, durably begins it, performs at
@@ -156,6 +177,14 @@ func (e *Executor) Execute(ctx context.Context, request Request) (taskjournal.Sn
 // must be quick and nonblocking; taskrunner uses it only to enqueue a report
 // wake-up hint.
 func (e *Executor) ExecuteObserved(ctx context.Context, request Request, onRunning func(taskjournal.Snapshot)) (taskjournal.Snapshot, error) {
+	if request.Action == ActionRebuild || request.Action == ActionRebuildCleanup {
+		if e.rebuilder == nil {
+			return taskjournal.Snapshot{}, ErrInvalidRequest
+		}
+		return e.rebuilder.ExecuteObserved(ctx, RebuildRequest{TaskID: request.TaskID, NodeID: request.NodeID,
+			IdempotencyKey: request.IdempotencyKey, Action: request.Action, ContainerID: request.ContainerID,
+			Spec: request.Rebuild, ConfirmationID: request.ConfirmationID}, onRunning)
+	}
 	if ctx == nil {
 		return taskjournal.Snapshot{}, ErrInvalidRequest
 	}
@@ -327,6 +356,12 @@ func (e *Executor) Reconcile(ctx context.Context, taskID string) (taskjournal.Sn
 		}
 		return task, ErrTaskNotReconcileable
 	}
+	if task.Action == string(ActionRebuild) || task.Action == string(ActionRebuildCleanup) {
+		if e.rebuilder == nil {
+			return task, ErrOutcomeUnknown
+		}
+		return e.rebuilder.Reconcile(ctx, taskID)
+	}
 	if task.ExecutionPhase != taskjournal.ExecutionPhaseMutationMayHaveStarted || task.Baseline == nil ||
 		task.Baseline.TargetID != task.TargetID || task.Baseline.Action != task.Action || task.Action != string(ActionRestart) {
 		return task, errors.Join(ErrOutcomeUnknown, ErrBaselineUnverifiable)
@@ -382,7 +417,7 @@ func requestIdentity(request Request) (taskstate.Identity, error) {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
 	intent := protocol.TaskIntent{Action: request.Action, ContainerID: request.ContainerID,
-		NewName: request.NewName, DeleteConfirmed: request.DeleteConfirmed}
+		NewName: request.NewName, DeleteConfirmed: request.DeleteConfirmed, Rebuild: request.Rebuild}
 	if err := protocol.ValidateTaskIntent(intent); err != nil {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
@@ -391,6 +426,9 @@ func requestIdentity(request Request) (taskstate.Identity, error) {
 			return taskstate.Identity{}, ErrInvalidRequest
 		}
 	} else if request.DeleteConfirmationID != "" {
+		return taskstate.Identity{}, ErrInvalidRequest
+	}
+	if request.Action == ActionRebuildCleanup && request.ConfirmationID != request.ContainerID {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
 	identity, err := protocol.TaskIdentity(request.TaskID, request.NodeID, request.IdempotencyKey, intent)

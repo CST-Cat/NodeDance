@@ -730,6 +730,10 @@ func (r *Runner) runJob(job taskJob) {
 			TaskID: job.dispatch.TaskID, NodeID: job.dispatch.NodeID, IdempotencyKey: job.dispatch.IdempotencyKey,
 			Action: job.dispatch.Intent.Action, ContainerID: job.dispatch.TargetID,
 			NewName: job.dispatch.Intent.NewName, DeleteConfirmed: job.dispatch.Intent.DeleteConfirmed,
+			Rebuild: job.dispatch.Intent.Rebuild,
+		}
+		if request.Action == protocol.TaskRebuildCleanup {
+			request.ConfirmationID = request.ContainerID
 		}
 		if request.Action == protocol.TaskDelete {
 			request.DeleteConfirmationID = request.ContainerID

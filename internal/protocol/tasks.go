@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
@@ -16,15 +18,17 @@ import (
 const (
 	CapabilityTaskBridge = "agent.task-bridge.v1"
 
-	TypeTaskJournalHello    = "task_journal_hello"
-	TypeTaskJournalStatus   = "task_journal_status"
-	TypeTaskSnapshotRequest = "task_snapshot_request"
-	TypeTaskSnapshotPage    = "task_snapshot_page"
-	TypeTaskDispatch        = "task_dispatch"
-	TypeTaskReport          = "task_report"
-	TypeTaskReportAck       = "task_report_ack"
-	TypeTaskReconcile       = "task_reconcile_request"
-	TypeTaskCancelRequest   = "task_cancel_request"
+	TypeTaskJournalHello             = "task_journal_hello"
+	TypeTaskJournalStatus            = "task_journal_status"
+	TypeTaskSnapshotRequest          = "task_snapshot_request"
+	TypeTaskSnapshotPage             = "task_snapshot_page"
+	TypeTaskDispatch                 = "task_dispatch"
+	TypeTaskReport                   = "task_report"
+	TypeTaskReportAck                = "task_report_ack"
+	TypeTaskReconcile                = "task_reconcile_request"
+	TypeTaskCancelRequest            = "task_cancel_request"
+	TypeContainerRebuildPlanRequest  = "container_rebuild_plan_request"
+	TypeContainerRebuildPlanResponse = "container_rebuild_plan_response"
 
 	TaskSnapshotPageSize = 32
 	MaxTaskSnapshotTasks = 10000
@@ -43,24 +47,76 @@ var (
 type TaskAction string
 
 const (
-	TaskStart       TaskAction = "start"
-	TaskStop        TaskAction = "stop"
-	TaskRestart     TaskAction = "restart"
-	TaskPause       TaskAction = "pause"
-	TaskResume      TaskAction = "resume"
-	TaskDelete      TaskAction = "delete"
-	TaskRename      TaskAction = "rename"
-	TaskImagePull   TaskAction = "image_pull"
-	TaskImageDelete TaskAction = "image_delete"
+	TaskStart          TaskAction = "start"
+	TaskStop           TaskAction = "stop"
+	TaskRestart        TaskAction = "restart"
+	TaskPause          TaskAction = "pause"
+	TaskResume         TaskAction = "resume"
+	TaskDelete         TaskAction = "delete"
+	TaskRename         TaskAction = "rename"
+	TaskImagePull      TaskAction = "image_pull"
+	TaskImageDelete    TaskAction = "image_delete"
+	TaskRebuild        TaskAction = "rebuild"
+	TaskRebuildCleanup TaskAction = "rebuild_cleanup"
 )
 
+// RebuildPortBinding is the only mutable part of a controlled container
+// rebuild in this stage. Every other supported Docker setting is copied from
+// a fresh Engine Inspect. An empty PortBindings slice means preserve existing
+// bindings; ClearPortBindings explicitly requests no published host ports.
+type RebuildPortBinding struct {
+	ContainerPort string `json:"containerPort"`
+	HostIP        string `json:"hostIp,omitempty"`
+	HostPort      string `json:"hostPort,omitempty"`
+}
+
+type RebuildSpec struct {
+	PortBindings      []RebuildPortBinding `json:"portBindings,omitempty"`
+	ClearPortBindings bool                 `json:"clearPortBindings,omitempty"`
+	CleanupTaskID     string               `json:"cleanupTaskId,omitempty"`
+}
+
+type ContainerRebuildPlanRequest struct {
+	ContainerID string      `json:"containerId"`
+	Spec        RebuildSpec `json:"spec"`
+}
+
+type ContainerRebuildPlanResponse struct {
+	Plan      *ContainerRebuildPlan `json:"plan,omitempty"`
+	ErrorCode string                `json:"errorCode,omitempty"`
+}
+
+type ContainerRebuildPlan struct {
+	ContainerID       string                  `json:"containerId"`
+	Name              string                  `json:"name"`
+	ImageID           string                  `json:"imageId"`
+	WasRunning        bool                    `json:"wasRunning"`
+	WritableLayerSize int64                   `json:"writableLayerBytes"`
+	SnapshotRequired  bool                    `json:"snapshotRequired"`
+	PortsBefore       []string                `json:"portsBefore"`
+	PortsAfter        []string                `json:"portsAfter"`
+	Preserved         []string                `json:"preserved"`
+	Changed           []string                `json:"changed"`
+	Downtime          string                  `json:"downtime"`
+	Risks             []string                `json:"risks"`
+	Mounts            []ContainerRebuildMount `json:"mounts"`
+}
+
+type ContainerRebuildMount struct {
+	Type        string `json:"type"`
+	Destination string `json:"destination"`
+	ReadWrite   bool   `json:"readWrite"`
+	VolumeID    string `json:"volumeId,omitempty"`
+}
+
 type TaskIntent struct {
-	Action          TaskAction `json:"action"`
-	ContainerID     string     `json:"container_id"`
-	NewName         string     `json:"new_name,omitempty"`
-	DeleteConfirmed bool       `json:"delete_confirmed,omitempty"`
-	ImageReference  string     `json:"image_reference,omitempty"`
-	ImageID         string     `json:"image_id,omitempty"`
+	Action          TaskAction   `json:"action"`
+	ContainerID     string       `json:"container_id"`
+	NewName         string       `json:"new_name,omitempty"`
+	DeleteConfirmed bool         `json:"delete_confirmed,omitempty"`
+	ImageReference  string       `json:"image_reference,omitempty"`
+	ImageID         string       `json:"image_id,omitempty"`
+	Rebuild         *RebuildSpec `json:"rebuild,omitempty"`
 }
 
 // CanonicalTaskIntent returns the exact canonical JSON used in the task
@@ -86,26 +142,53 @@ func ValidateTaskIntent(intent TaskIntent) error {
 	}
 	switch intent.Action {
 	case TaskStart, TaskStop, TaskRestart, TaskPause, TaskResume:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" {
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil {
 			return ErrInvalidTaskMessage
 		}
 	case TaskDelete:
-		if intent.NewName != "" || !intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" {
+		if intent.NewName != "" || !intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil {
 			return ErrInvalidTaskMessage
 		}
 	case TaskRename:
-		if !containerName.MatchString(intent.NewName) || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" {
+		if !containerName.MatchString(intent.NewName) || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil {
 			return ErrInvalidTaskMessage
 		}
 	case TaskImagePull:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageID != "" || !validImageReference(intent.ImageReference) ||
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageID != "" || intent.Rebuild != nil || !validImageReference(intent.ImageReference) ||
 			intent.ContainerID != ImageTargetKey("pull:"+intent.ImageReference) {
 			return ErrInvalidTaskMessage
 		}
 	case TaskImageDelete:
-		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || !validImageID(intent.ImageID) ||
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.Rebuild != nil || !validImageID(intent.ImageID) ||
 			intent.ContainerID != ImageTargetKey("delete:"+intent.ImageID) {
 			return ErrInvalidTaskMessage
+		}
+	case TaskRebuild:
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild == nil || intent.Rebuild.CleanupTaskID != "" || intent.Rebuild.ClearPortBindings && len(intent.Rebuild.PortBindings) != 0 {
+			return ErrInvalidTaskMessage
+		}
+		if len(intent.Rebuild.PortBindings) > 128 {
+			return ErrInvalidTaskMessage
+		}
+		seen := make(map[string]struct{}, len(intent.Rebuild.PortBindings))
+		for _, binding := range intent.Rebuild.PortBindings {
+			if !validRebuildPortBinding(binding) {
+				return ErrInvalidTaskMessage
+			}
+			key := binding.ContainerPort + "|" + binding.HostIP + "|" + binding.HostPort
+			if _, exists := seen[key]; exists {
+				return ErrInvalidTaskMessage
+			}
+			seen[key] = struct{}{}
+		}
+	case TaskRebuildCleanup:
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild == nil || intent.Rebuild.CleanupTaskID == "" || len(intent.Rebuild.CleanupTaskID) > 128 || intent.Rebuild.ClearPortBindings || len(intent.Rebuild.PortBindings) != 0 {
+			return ErrInvalidTaskMessage
+		}
+		for _, r := range intent.Rebuild.CleanupTaskID {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("._~-", r)) {
+				return ErrInvalidTaskMessage
+			}
 		}
 	default:
 		return ErrInvalidTaskMessage
@@ -128,6 +211,74 @@ func validImageReference(value string) bool {
 	}
 	for _, r := range value {
 		if r < 0x21 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+func ValidateContainerRebuildPlanRequest(envelope Envelope, request ContainerRebuildPlanRequest, generation uint64) error {
+	if envelope.Version != CurrentVersion || envelope.Type != TypeContainerRebuildPlanRequest || envelope.Generation != generation ||
+		generation == 0 || envelope.Sequence != 0 || envelope.RequestID == "" || len(envelope.RequestID) > 128 ||
+		!IsFullContainerID(request.ContainerID) || len(envelope.Payload) > MaxTaskPayloadBytes {
+		return ErrInvalidTaskMessage
+	}
+	return ValidateTaskIntent(TaskIntent{Action: TaskRebuild, ContainerID: request.ContainerID, Rebuild: &request.Spec})
+}
+
+func ValidateContainerRebuildPlanResponse(envelope Envelope, response ContainerRebuildPlanResponse, requestID string, generation uint64) error {
+	if envelope.Version != CurrentVersion || envelope.Type != TypeContainerRebuildPlanResponse || envelope.Generation != generation ||
+		generation == 0 || envelope.Sequence != 0 || envelope.RequestID != requestID || requestID == "" ||
+		len(envelope.Payload) > MaxTaskPayloadBytes || (response.Plan == nil) == (response.ErrorCode == "") {
+		return ErrInvalidTaskMessage
+	}
+	if response.ErrorCode != "" {
+		if !safeTaskToken(response.ErrorCode, 64) {
+			return ErrInvalidTaskMessage
+		}
+		return nil
+	}
+	plan := response.Plan
+	if !IsFullContainerID(plan.ContainerID) || plan.Name == "" || len(plan.Name) > 255 || plan.ImageID == "" || len(plan.ImageID) > 256 ||
+		plan.WritableLayerSize < 0 || len(plan.PortsBefore) > 4096 || len(plan.PortsAfter) > 4096 || len(plan.Preserved) > 64 || len(plan.Changed) > 64 || len(plan.Risks) > 64 || len(plan.Mounts) > 1024 ||
+		plan.SnapshotRequired != (plan.WritableLayerSize > 0) || len(plan.Downtime) > 512 {
+		return ErrInvalidTaskMessage
+	}
+	for _, mount := range plan.Mounts {
+		if mount.Type == "" || len(mount.Type) > 32 || mount.Destination == "" || len(mount.Destination) > 4096 || len(mount.VolumeID) > 256 {
+			return ErrInvalidTaskMessage
+		}
+	}
+	for _, values := range [][]string{plan.PortsBefore, plan.PortsAfter, plan.Preserved, plan.Changed, plan.Risks} {
+		for _, value := range values {
+			if len(value) == 0 || len(value) > 512 || strings.ContainsAny(value, "\x00\r\n") {
+				return ErrInvalidTaskMessage
+			}
+		}
+	}
+	return nil
+}
+
+func validRebuildPortBinding(binding RebuildPortBinding) bool {
+	if len(binding.ContainerPort) > 16 || len(binding.HostIP) > 64 || len(binding.HostPort) > 5 || binding.ContainerPort == "" {
+		return false
+	}
+	parts := strings.Split(binding.ContainerPort, "/")
+	if len(parts) != 2 || (parts[1] != "tcp" && parts[1] != "udp") {
+		return false
+	}
+	containerPort, err := strconv.Atoi(parts[0])
+	if err != nil || containerPort < 1 || containerPort > 65535 {
+		return false
+	}
+	if binding.HostPort != "" {
+		hostPort, err := strconv.Atoi(binding.HostPort)
+		if err != nil || hostPort < 1 || hostPort > 65535 {
+			return false
+		}
+	}
+	if binding.HostIP != "" {
+		if _, err := netip.ParseAddr(binding.HostIP); err != nil {
 			return false
 		}
 	}

@@ -125,6 +125,18 @@ func (s *Server) acceptAgentTaskSnapshotPage(ctx context.Context, connection *ag
 	if _, err := s.tasks.ReconcileAgentJournal(ctx, journal, snapshot.reports, true); err != nil {
 		return err
 	}
+	for _, report := range snapshot.reports {
+		if report.Status != taskstate.Succeeded {
+			continue
+		}
+		after, err := s.tasks.Get(ctx, identity.NodeID, report.TaskID)
+		if err != nil {
+			return err
+		}
+		if err := s.migrateRebuiltContainerPreferences(ctx, after); err != nil {
+			return err
+		}
+	}
 	active := 0
 	connection.taskOutstanding = make(map[string]struct{})
 	for _, report := range snapshot.reports {
@@ -174,6 +186,9 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 	if err != nil {
 		return err
 	}
+	if err := s.migrateRebuiltContainerPreferences(ctx, after); err != nil {
+		return err
+	}
 	if _, active := connection.taskOutstanding[report.TaskID]; active &&
 		(after.Status == taskstate.Unknown || taskstate.IsTerminal(after.Status)) {
 		delete(connection.taskOutstanding, report.TaskID)
@@ -199,6 +214,18 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 	}
 	s.signalAgentTasks(identity.NodeID)
 	return nil
+}
+
+// migrateRebuiltContainerPreferences moves only a verified successful rebuild's
+// display preferences. The persistent S06 repository can be injected later;
+// current production installs use the explicit no-op adapter.
+func (s *Server) migrateRebuiltContainerPreferences(ctx context.Context, task coretasks.Task) error {
+	if task.Status != taskstate.Succeeded || task.Intent.Action != protocol.TaskRebuild ||
+		!protocol.IsFullContainerID(task.Intent.ContainerID) || !protocol.IsFullContainerID(task.Result.ResourceRevision) ||
+		task.Intent.ContainerID == task.Result.ResourceRevision {
+		return nil
+	}
+	return s.preferenceMigrator.MigrateContainer(ctx, task.NodeID, task.Intent.ContainerID, task.Result.ResourceRevision)
 }
 
 func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnection, identity agents.Identity) error {

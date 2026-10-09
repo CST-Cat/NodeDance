@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/agent/containeractions"
+	"github.com/CST-Cat/NodeDance/internal/agent/containerrebuild"
 	agentimages "github.com/CST-Cat/NodeDance/internal/agent/images"
 	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
 	"github.com/CST-Cat/NodeDance/internal/agent/taskrunner"
@@ -27,23 +28,28 @@ type taskBridgeRuntime struct {
 	engine  *containeractions.SDKEngine
 	images  *agentimages.SDKEngine
 	runner  *taskrunner.Runner
+	rebuild *containerrebuild.Manager
+	store   *containerrebuild.Store
 }
 
 func openTaskBridge(ctx context.Context, configPath, nodeID string) (*taskBridgeRuntime, error) {
 	if nodeID == "" {
-		return nil, fmt.Errorf("Agent identity is not available for the task journal")
+		return nil, errors.New("Agent identity is not available for the task journal")
 	}
 	journalPath := filepath.Join(filepath.Dir(configPath), "tasks.sqlite")
 	journal, err := taskjournal.Open(ctx, journalPath, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("open durable Agent task journal: %w", err)
 	}
-	closeOnError := func(err error, engine *containeractions.SDKEngine, imageEngine *agentimages.SDKEngine) (*taskBridgeRuntime, error) {
+	closeOnError := func(err error, engine *containeractions.SDKEngine, imageEngine *agentimages.SDKEngine, rebuildStore *containerrebuild.Store) (*taskBridgeRuntime, error) {
 		if imageEngine != nil {
 			_ = imageEngine.Close()
 		}
 		if engine != nil {
 			_ = engine.Close()
+		}
+		if rebuildStore != nil {
+			_ = rebuildStore.Close()
 		}
 		_ = journal.Close()
 		return nil, err
@@ -55,33 +61,45 @@ func openTaskBridge(ctx context.Context, configPath, nodeID string) (*taskBridge
 		_, recoverErr := journal.RecoverInterrupted(recoveryCtx)
 		cancel()
 		if recoverErr != nil {
-			return closeOnError(fmt.Errorf("recover Agent task journal: %w", recoverErr), nil, nil)
+			return closeOnError(fmt.Errorf("recover Agent task journal: %w", recoverErr), nil, nil, nil)
 		}
-		return closeOnError(fmt.Errorf("create task Docker Engine client: %w", err), nil, nil)
+		return closeOnError(fmt.Errorf("create task Docker Engine client: %w", err), nil, nil, nil)
 	}
 	imageEngine, err := agentimages.NewSDKEngine(os.Getenv("DOCKER_HOST"))
 	if err != nil {
-		return closeOnError(fmt.Errorf("create image Docker Engine client: %w", err), engine, nil)
+		return closeOnError(fmt.Errorf("create image Docker Engine client: %w", err), engine, nil, nil)
 	}
-	executor, err := containeractions.New(engine, journal, containeractions.Options{})
+	rebuildStore, err := containerrebuild.OpenStore(ctx, filepath.Join(filepath.Dir(configPath), "rebuilds.sqlite"))
 	if err != nil {
-		return closeOnError(fmt.Errorf("create durable container action executor: %w", err), engine, imageEngine)
+		return closeOnError(fmt.Errorf("open durable Agent container rebuild store: %w", err), engine, imageEngine, nil)
+	}
+	dockerEngine, err := containerrebuild.NewDockerEngine(engine.DockerClient())
+	if err != nil {
+		return closeOnError(fmt.Errorf("create container rebuild Docker adapter: %w", err), engine, imageEngine, rebuildStore)
+	}
+	rebuildManager, err := containerrebuild.NewManager(dockerEngine, journal, rebuildStore, containerrebuild.Options{})
+	if err != nil {
+		return closeOnError(fmt.Errorf("create durable container rebuild manager: %w", err), engine, imageEngine, rebuildStore)
+	}
+	executor, err := containeractions.New(engine, journal, containeractions.Options{Rebuilder: &agentRebuildExecutor{manager: rebuildManager}})
+	if err != nil {
+		return closeOnError(fmt.Errorf("create durable container action executor: %w", err), engine, imageEngine, rebuildStore)
 	}
 	runner, err := taskrunner.New(nodeID, journal, executor, taskrunner.Options{})
 	if err != nil {
-		return closeOnError(fmt.Errorf("create Agent task runner: %w", err), engine, imageEngine)
+		return closeOnError(fmt.Errorf("create Agent task runner: %w", err), engine, imageEngine, rebuildStore)
 	}
 	imageExecutor, err := agentimages.NewExecutor(imageEngine, journal)
 	if err != nil {
-		return closeOnError(fmt.Errorf("create durable image executor: %w", err), engine, imageEngine)
+		return closeOnError(fmt.Errorf("create durable image executor: %w", err), engine, imageEngine, rebuildStore)
 	}
 	if err := runner.SetImageExecutor(imageExecutor); err != nil {
-		return closeOnError(fmt.Errorf("attach image executor: %w", err), engine, imageEngine)
+		return closeOnError(fmt.Errorf("attach image executor: %w", err), engine, imageEngine, rebuildStore)
 	}
 	if err := runner.Start(ctx); err != nil {
-		return closeOnError(fmt.Errorf("start Agent task runner: %w", err), engine, imageEngine)
+		return closeOnError(fmt.Errorf("start Agent task runner: %w", err), engine, imageEngine, rebuildStore)
 	}
-	return &taskBridgeRuntime{nodeID: nodeID, journal: journal, engine: engine, images: imageEngine, runner: runner}, nil
+	return &taskBridgeRuntime{nodeID: nodeID, journal: journal, engine: engine, images: imageEngine, runner: runner, rebuild: rebuildManager, store: rebuildStore}, nil
 }
 
 func (b *taskBridgeRuntime) close() error {
@@ -103,10 +121,13 @@ func (b *taskBridgeRuntime) close() error {
 	if err := b.journal.Close(); err != nil && first == nil {
 		first = fmt.Errorf("close Agent task journal: %w", err)
 	}
+	if err := b.store.Close(); err != nil && first == nil {
+		first = fmt.Errorf("close Agent container rebuild store: %w", err)
+	}
 	return first
 }
 
-func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, runner *taskrunner.Runner, generation uint64, nodeID, journalID string, incoming <-chan protocol.Envelope) error {
+func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, runner *taskrunner.Runner, rebuild *containerrebuild.Manager, generation uint64, nodeID, journalID string, incoming <-chan protocol.Envelope) error {
 	capabilities := []string{protocol.CapabilityTaskBridge}
 	if err := runner.Connect(generation, journalID, capabilities); err != nil {
 		return errors.New("Agent task bridge could not attach this connection")
@@ -132,6 +153,26 @@ func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, run
 			}
 		case envelope := <-incoming:
 			switch envelope.Type {
+			case protocol.TypeContainerRebuildPlanRequest:
+				var request protocol.ContainerRebuildPlanRequest
+				if err := decodeSocketPayload(envelope.Payload, &request); err != nil || protocol.ValidateContainerRebuildPlanRequest(envelope, request, generation) != nil || rebuild == nil {
+					return errors.New("Core container rebuild plan request is invalid")
+				}
+				planCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				plan, planErr := rebuild.Plan(planCtx, request.ContainerID, request.Spec)
+				cancel()
+				response := protocol.ContainerRebuildPlanResponse{Plan: &plan}
+				if planErr != nil {
+					response.Plan = nil
+					response.ErrorCode = rebuildPlanErrorCode(planErr)
+				}
+				if err := protocol.ValidateContainerRebuildPlanResponse(protocol.Envelope{Version: protocol.CurrentVersion,
+					Type: protocol.TypeContainerRebuildPlanResponse, Generation: generation, RequestID: envelope.RequestID}, response, envelope.RequestID, generation); err != nil {
+					return errors.New("Agent container rebuild plan response is invalid")
+				}
+				if err := sendAgentTaskEnvelope(ctx, writer, generation, protocol.TypeContainerRebuildPlanResponse, envelope.RequestID, 0, response); err != nil {
+					return err
+				}
 			case protocol.TypeTaskJournalStatus:
 				var status protocol.TaskJournalStatus
 				if err := decodeSocketPayload(envelope.Payload, &status); err != nil || protocol.ValidateTaskJournalStatus(envelope, status, generation) != nil || status.JournalID != journalID {
@@ -284,4 +325,15 @@ func sendAgentTaskEnvelope(ctx context.Context, writer *socketEnvelopeWriter, ge
 		return errors.New("Agent task bridge write failed")
 	}
 	return nil
+}
+
+func rebuildPlanErrorCode(err error) string {
+	switch {
+	case errors.Is(err, containerrebuild.ErrUnsupportedConfiguration):
+		return "unsupported_configuration"
+	case errors.Is(err, containerrebuild.ErrRecordConflict):
+		return "resource_conflict"
+	default:
+		return "inspect_unavailable"
+	}
 }

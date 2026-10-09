@@ -60,6 +60,8 @@ type agentConnection struct {
 	fileTransfers            map[string]*coreFileTransfer
 	fileTombstones           map[string]struct{}
 	fileTombstoneOrder       []string
+	rebuildPlanMu            sync.Mutex
+	rebuildPlanWaiters       map[string]rebuildPlanWaiter
 	leaseUpdates             chan time.Time
 	watchMu                  sync.Mutex
 	watchCancel              context.CancelFunc
@@ -711,6 +713,15 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				}
 				if err := s.handleAgentFileMessage(connection, envelope); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent file transfer frame")
+					return
+				}
+			case protocol.TypeContainerRebuildPlanResponse:
+				if !connection.taskEnabled || envelope.Sequence != 0 {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent task bridge was not negotiated")
+					return
+				}
+				if err := s.handleAgentRebuildPlanResponse(connection, envelope); err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid container rebuild plan response")
 					return
 				}
 			case protocol.TypeHello:
