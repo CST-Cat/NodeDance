@@ -236,6 +236,28 @@ func (m *terminalStreamManager) find(streamID string) *terminalStream {
 	return m.streams[streamID]
 }
 
+// hasLiveConnection reports whether this Agent still owns an unexpired
+// terminal authorization or an active browser terminal session. Update
+// scheduling uses it as a point-in-time check before dispatching an update.
+func (m *terminalStreamManager) hasLiveConnection(connection *agentConnection, now time.Time) bool {
+	if m == nil || connection == nil {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, stream := range m.tickets {
+		if stream.agent == connection && !stream.closed && !stream.consumed && now.Before(stream.expires) {
+			return true
+		}
+	}
+	for _, stream := range m.streams {
+		if stream.agent == connection && !stream.closed {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *terminalStreamManager) handleAgentFrame(s *Server, connection *agentConnection, identity agents.Identity, frame protocol.TerminalFrame) {
 	stream := m.find(frame.StreamID)
 	if stream == nil || stream.agent != connection || stream.agentID != identity.AgentID || stream.nodeID != identity.NodeID || stream.generation != connection.generation {

@@ -104,8 +104,12 @@ func (s *Server) dispatchAgentUpdate(ctx context.Context, task coreupdates.Task)
 	connection.streamMu.Lock()
 	busy = busy || len(connection.streams) > 0
 	connection.streamMu.Unlock()
+	connection.fileMu.Lock()
+	busy = busy || len(connection.fileTransfers) > 0
+	connection.fileMu.Unlock()
+	busy = busy || s.terminals != nil && s.terminals.hasLiveConnection(connection, s.now())
 	if busy {
-		s.deferAgentUpdate(ctx, task, "deferred while Agent task or data stream is active")
+		s.deferAgentUpdate(ctx, task, "deferred while Agent task, stream, terminal session, or file transfer is active")
 		return
 	}
 	release, err := s.updates.GetRelease(ctx, task.ReleaseID)
