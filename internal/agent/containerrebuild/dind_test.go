@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/netip"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +32,8 @@ type s12DindOwner struct {
 	ServerVersion string `json:"server_version"`
 	Socket        string `json:"socket"`
 	HostDaemon    string `json:"host_daemon"`
+	ContainerName string `json:"container_name"`
+	NetworkName   string `json:"network_name"`
 }
 
 type s12ImageLock struct {
@@ -125,6 +129,14 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 				_, _ = runS12Docker(cleanupCtx, socket, "volume", "rm", anonymousVolume)
 			}
 		}
+		if volumes, listErr := runS12Docker(cleanupCtx, socket, "volume", "ls", "-q", "--filter", "label=io.nodedance.suite="+suite); listErr == nil {
+			for _, volume := range strings.Fields(string(volumes)) {
+				labels, inspectErr := runS12Docker(cleanupCtx, socket, "volume", "inspect", "--format", "{{ index .Labels \"io.nodedance.suite\" }}", volume)
+				if inspectErr == nil && strings.TrimSpace(string(labels)) == suite {
+					_, _ = runS12Docker(cleanupCtx, socket, "volume", "rm", volume)
+				}
+			}
+		}
 		for _, fixtureNetwork := range []string{networkName, networkName2} {
 			if labels, inspectErr := runS12Docker(cleanupCtx, socket, "network", "inspect", "--format", "{{ index .Labels \"io.nodedance.suite\" }}", fixtureNetwork); inspectErr == nil && strings.TrimSpace(string(labels)) == suite {
 				_, _ = runS12Docker(cleanupCtx, socket, "network", "rm", fixtureNetwork)
@@ -145,6 +157,9 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 	if err := os.Mkdir(bindRoot, 0o700); err != nil {
 		t.Fatalf("create unique repository-owned bind fixture: %v", err)
 	}
+	if err := os.Chmod(bindRoot, 0o777); err != nil {
+		t.Fatalf("make unique bind fixture traversable by its configured container user: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(bindRoot, "owner.json"), []byte(suite+"\n"), 0o600); err != nil {
 		t.Fatalf("write bind fixture owner marker: %v", err)
 	}
@@ -161,18 +176,14 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	engine := dindStorageEngine{DockerEngine: dockerEngine, storageRoot: filepath.Join(root, "data")}
-	if err := createDindFixture(ctx, engineClient, containerName, image, suite, networkName, networkName2, staticIPA, staticIPB, volumeName, bindRoot); err != nil {
+	anonymousVolume, err = createDindFixture(ctx, engineClient, socket, containerName, image, suite, networkName, networkName2, staticIPA, staticIPB, volumeName, bindRoot)
+	if err != nil {
 		t.Fatal(err)
 	}
-	anonymousOutput, err := runS12Docker(ctx, socket, "inspect", "--format", "{{range .Mounts}}{{if eq .Destination \"/anonymous\"}}{{.Name}}{{end}}{{end}}", containerName)
-	if err != nil || strings.TrimSpace(string(anonymousOutput)) == "" {
-		t.Fatalf("record unique anonymous volume identity before rebuild: %q err=%v", anonymousOutput, err)
-	}
-	anonymousVolume = strings.TrimSpace(string(anonymousOutput))
-	if _, err := runS12Docker(ctx, socket, "exec", containerName, "sh", "-c", "printf writable-"+runID+" > /writable-marker"); err != nil {
+	if _, err := runS12Docker(ctx, socket, "exec", containerName, "sh", "-c", "printf writable-"+runID+" > /tmp/writable-marker"); err != nil {
 		t.Fatalf("write a fixture-only writable-layer marker after startup: %v", err)
 	}
-	markerPaths := []string{"/data/named-marker", "/anonymous/anonymous-marker", "/bind/bind-marker", "/writable-marker"}
+	markerPaths := []string{"/data/named-marker", "/anonymous/anonymous-marker", "/bind/bind-marker", "/tmp/writable-marker"}
 	markerHashes := make(map[string][32]byte, len(markerPaths))
 	for _, path := range markerPaths {
 		contents, err := runS12Docker(ctx, socket, "exec", containerName, "cat", path)
@@ -211,6 +222,7 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 	if initial.WritableSize < 1 || len(initial.Mounts) != 3 || len(initial.Networks) != 2 {
 		t.Fatalf("fixture lacks writable layer/mount/network coverage: size=%d mounts=%+v networks=%+v", initial.WritableSize, initial.Mounts, initial.Networks)
 	}
+	assertRichDindFixture(t, initial)
 	newPort := protocol.RebuildSpec{PortBindings: []protocol.RebuildPortBinding{{ContainerPort: "80/tcp", HostIP: "127.0.0.1", HostPort: "38081"}}}
 	plan, err := manager.Plan(ctx, initial.ID, newPort)
 	if err != nil || !plan.SnapshotRequired || len(plan.Mounts) != 3 {
@@ -231,6 +243,7 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 	if err != nil || !replacement.Running || replacement.HostConfig.RestartPolicy.Name != "always" {
 		t.Fatalf("replacement state/restart policy = %+v, err=%v", replacement, err)
 	}
+	assertRebuildPreservesRichInspectConfig(t, initial, replacement)
 	port, _ := network.ParsePort("80/tcp")
 	if replacement.PublishedPorts[port] == nil || replacement.PublishedPorts[port][0].HostPort != "38081" {
 		t.Fatalf("new published port was not applied: %+v", replacement.PublishedPorts)
@@ -303,24 +316,77 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 	}
 }
 
-func createDindFixture(ctx context.Context, engineClient *client.Client, name, image, suite, networkName, networkName2 string,
-	staticIPA, staticIPB netip.Addr, volumeName, bindRoot string) error {
+func createDindFixture(ctx context.Context, engineClient *client.Client, socket, name, image, suite, networkName, networkName2 string,
+	staticIPA, staticIPB netip.Addr, volumeName, bindRoot string) (string, error) {
 	port, err := network.ParsePort("80/tcp")
 	if err != nil {
-		return err
+		return "", err
 	}
 	labels := map[string]string{"io.nodedance.test": "true", "io.nodedance.suite": suite}
-	config := &container.Config{Image: image, Cmd: []string{"sh", "-c", "mkdir -p /data /anonymous /bind; printf named > /data/named-marker; printf anonymous > /anonymous/anonymous-marker; while :; do sleep 1; done"},
-		Labels: labels, ExposedPorts: network.PortSet{port: struct{}{}}}
+	// Prime the generated anonymous volume and all marker contents as root,
+	// then run the inspected/rebuilt fixture as a non-root user. This makes the
+	// User setting meaningful without making volume writes depend on Engine
+	// defaults or mutating any pre-existing volume.
+	initConfig := &container.Config{Image: image,
+		Cmd:    []string{"sh", "-c", "set -eu; mkdir -p /data /anonymous /bind; printf named > /data/named-marker; printf anonymous > /anonymous/anonymous-marker; chown -R 1000:1000 /data /anonymous; chown 1000:1000 /bind/bind-marker"},
+		Labels: labels}
+	anonymousVolumeLabels := map[string]string{"io.nodedance.test": "true", "io.nodedance.suite": suite, "fixture.role": "anonymous-volume"}
+	initHost := &container.HostConfig{NetworkMode: container.NetworkMode("bridge"), Mounts: []mount.Mount{
+		{Type: mount.TypeVolume, Source: volumeName, Target: "/data"},
+		{Type: mount.TypeVolume, Target: "/anonymous", VolumeOptions: &mount.VolumeOptions{Labels: anonymousVolumeLabels}},
+		{Type: mount.TypeBind, Source: bindRoot, Target: "/bind"},
+	}}
+	initName := name + "-mount-init"
+	initCreated, err := engineClient.ContainerCreate(ctx, client.ContainerCreateOptions{Config: initConfig, HostConfig: initHost, Name: initName})
+	if err != nil {
+		return "", fmt.Errorf("create real DIND mount initializer: %w", err)
+	}
+	if _, err := engineClient.ContainerStart(ctx, initCreated.ID, client.ContainerStartOptions{}); err != nil {
+		_, _ = engineClient.ContainerRemove(context.WithoutCancel(ctx), initCreated.ID, client.ContainerRemoveOptions{RemoveVolumes: false, Force: true})
+		return "", fmt.Errorf("start real DIND mount initializer: %w", err)
+	}
+	waitOutput, err := runS12Docker(ctx, socket, "wait", initName)
+	if err != nil || strings.TrimSpace(string(waitOutput)) != "0" {
+		return "", fmt.Errorf("wait for real DIND mount initializer: exit=%q err=%v", strings.TrimSpace(string(waitOutput)), err)
+	}
+	initInspect, err := engineClient.ContainerInspect(ctx, initCreated.ID, client.ContainerInspectOptions{})
+	if err != nil {
+		return "", fmt.Errorf("inspect real DIND mount initializer: %w", err)
+	}
+	anonymousVolume := ""
+	for _, mountPoint := range initInspect.Container.Mounts {
+		if mountPoint.Destination == "/anonymous" {
+			anonymousVolume = mountPoint.Name
+			break
+		}
+	}
+	if anonymousVolume == "" {
+		return "", errors.New("real DIND mount initializer did not allocate the anonymous volume")
+	}
+	if _, err := engineClient.ContainerRemove(ctx, initCreated.ID, client.ContainerRemoveOptions{RemoveVolumes: false, Force: true}); err != nil {
+		return "", fmt.Errorf("remove completed real DIND mount initializer while retaining its volumes: %w", err)
+	}
+
+	config := &container.Config{
+		Image: image, User: "1000:1000", WorkingDir: "/tmp",
+		Entrypoint: []string{"sh", "-c"}, Cmd: []string{"while :; do sleep 1; done"},
+		Env: []string{"NODEDANCE_FIXTURE=rich-inspect", "APP_MODE=rebuild-fixture", "FEATURE_FLAG=preserve-me"},
+		Labels: map[string]string{
+			"io.nodedance.test": "true", "io.nodedance.suite": suite,
+			"app.kubernetes.io/name": "nodedance-rebuild-fixture", "fixture.role": "rich-config",
+		},
+		ExposedPorts: network.PortSet{port: struct{}{}}}
 	settings := &network.EndpointSettings{Aliases: []string{name, "nd-s12-primary"},
 		IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: staticIPA}}
 	settings2 := &network.EndpointSettings{Aliases: []string{name, "nd-s12-secondary"},
 		IPAMConfig: &network.EndpointIPAMConfig{IPv4Address: staticIPB}}
 	host := &container.HostConfig{NetworkMode: container.NetworkMode("bridge"), RestartPolicy: container.RestartPolicy{Name: "always"},
+		Resources: container.Resources{Memory: 128 * 1024 * 1024, CPUPeriod: 100_000, CPUQuota: 50_000,
+			PidsLimit: int64Pointer(128)},
 		PortBindings: network.PortMap{port: {{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: "38080"}}},
 		Mounts: []mount.Mount{
 			{Type: mount.TypeVolume, Source: volumeName, Target: "/data"},
-			{Type: mount.TypeVolume, Target: "/anonymous"},
+			{Type: mount.TypeVolume, Source: anonymousVolume, Target: "/anonymous"},
 			{Type: mount.TypeBind, Source: bindRoot, Target: "/bind"},
 		}}
 	created, err := engineClient.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: host,
@@ -328,13 +394,13 @@ func createDindFixture(ctx context.Context, engineClient *client.Client, name, i
 			networkName: settings, networkName2: settings2,
 		}}, Name: name})
 	if err != nil {
-		return fmt.Errorf("create real DIND fixture container: %w", err)
+		return "", fmt.Errorf("create real DIND fixture container: %w", err)
 	}
 	if _, err := engineClient.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = engineClient.ContainerRemove(context.WithoutCancel(ctx), created.ID, client.ContainerRemoveOptions{RemoveVolumes: false, Force: true})
-		return fmt.Errorf("start real DIND fixture container: %w", err)
+		return "", fmt.Errorf("start real DIND fixture container: %w", err)
 	}
-	return nil
+	return anonymousVolume, nil
 }
 
 func requireS12DIND(t *testing.T, root string) (string, string, string) {
@@ -345,8 +411,8 @@ func requireS12DIND(t *testing.T, root string) (string, string, string) {
 	}
 	repoRoot := findS12RepoRoot(t)
 	relative, err := filepath.Rel(filepath.Join(repoRoot, ".artifacts", "dind"), root)
-	if err != nil || (relative != "v28" && relative != "v29") {
-		t.Fatalf("S12 DIND root must be this checkout's dedicated .artifacts/dind/v28 or v29 directory: %s", root)
+	if err != nil || (relative != "v28" && relative != "v29" && relative != "s12-rich-config-v28" && relative != "s12-rich-config-v29") {
+		t.Fatalf("S12 DIND root must be this checkout's dedicated Engine 28/29 fixture directory: %s", root)
 	}
 	markerPath := filepath.Join(root, "owner.json")
 	markerBytes, err := os.ReadFile(markerPath)
@@ -358,7 +424,14 @@ func requireS12DIND(t *testing.T, root string) (string, string, string) {
 		t.Fatalf("decode S12 DIND owner marker: %v", err)
 	}
 	wantSocket := filepath.Join(root, "socket", "docker.sock")
-	if owner.Suite != "nodedance-s00-dind" || owner.Socket != wantSocket || owner.HostDaemon == "" ||
+	wantSuite := "nodedance-s00-dind"
+	if relative == "s12-rich-config-v28" || relative == "s12-rich-config-v29" {
+		engine := strings.TrimPrefix(relative, "s12-rich-config-v")
+		if owner.ContainerName != "nodedance-s12-rich-config-dind-v"+engine || owner.NetworkName != "nodedance-s12-rich-config-net-v"+engine {
+			t.Fatalf("S12 rich-config owner marker does not identify its exact dedicated Engine resources: %+v", owner)
+		}
+	}
+	if owner.Suite != wantSuite || owner.Socket != wantSocket || owner.HostDaemon == "" ||
 		!strings.HasPrefix(owner.ServerVersion, "28.") && !strings.HasPrefix(owner.ServerVersion, "29.") {
 		t.Fatalf("S12 DIND owner marker does not identify a dedicated NodeDance 28/29 Engine: %+v", owner)
 	}
@@ -427,3 +500,101 @@ func mountNameAt(mounts []container.MountPoint, destination string) string {
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }
+
+func assertRichDindFixture(t *testing.T, item Container) {
+	t.Helper()
+	if item.Config == nil || item.HostConfig == nil {
+		t.Fatal("rich DIND fixture did not return Config and HostConfig")
+	}
+	wantEnv := []string{"NODEDANCE_FIXTURE=rich-inspect", "APP_MODE=rebuild-fixture", "FEATURE_FLAG=preserve-me"}
+	if item.Config.User != "1000:1000" || item.Config.WorkingDir != "/tmp" ||
+		!reflect.DeepEqual(item.Config.Entrypoint, []string{"sh", "-c"}) ||
+		!reflect.DeepEqual(item.Config.Cmd, []string{"while :; do sleep 1; done"}) ||
+		!contains(item.Config.Env, wantEnv[0]) || !contains(item.Config.Env, wantEnv[1]) || !contains(item.Config.Env, wantEnv[2]) ||
+		item.Config.Labels["app.kubernetes.io/name"] != "nodedance-rebuild-fixture" || item.Config.Labels["fixture.role"] != "rich-config" {
+		t.Fatalf("real DIND fixture is missing its non-default Config values: user=%q workdir=%q entrypoint=%q cmd=%q env=%q labels=%v",
+			item.Config.User, item.Config.WorkingDir, item.Config.Entrypoint, item.Config.Cmd, item.Config.Env, item.Config.Labels)
+	}
+	resources := item.HostConfig.Resources
+	if item.HostConfig.RestartPolicy.Name != "always" || resources.Memory != 128*1024*1024 || resources.NanoCPUs != 0 ||
+		resources.CPUPeriod != 100_000 || resources.CPUQuota != 50_000 || resources.PidsLimit == nil || *resources.PidsLimit != 128 {
+		t.Fatalf("real DIND fixture is missing its non-default HostConfig values: restart=%+v resources=%+v", item.HostConfig.RestartPolicy, resources)
+	}
+}
+
+func assertRebuildPreservesRichInspectConfig(t *testing.T, before, after Container) {
+	t.Helper()
+	if before.Config == nil || after.Config == nil || before.HostConfig == nil || after.HostConfig == nil {
+		t.Fatal("real Engine Inspect omitted Config or HostConfig before/after rebuild")
+	}
+	beforeConfig, err := cloneJSON(*before.Config)
+	if err != nil {
+		t.Fatalf("copy pre-rebuild Config: %v", err)
+	}
+	afterConfig, err := cloneJSON(*after.Config)
+	if err != nil {
+		t.Fatalf("copy post-rebuild Config: %v", err)
+	}
+	// The snapshot is the expected replacement image; the two labels identify
+	// the controlled rebuild task/owned snapshot. Neither is user configuration.
+	beforeConfig.Image = afterConfig.Image
+	delete(afterConfig.Labels, markerTaskLabel)
+	delete(afterConfig.Labels, markerOwnerLabel)
+	if !reflect.DeepEqual(beforeConfig, afterConfig) {
+		beforeJSON, _ := json.Marshal(beforeConfig)
+		afterJSON, _ := json.Marshal(afterConfig)
+		t.Fatalf("real Engine rebuild changed Config beyond the snapshot image and task labels:\nbefore=%s\nafter=%s", beforeJSON, afterJSON)
+	}
+
+	beforeHost, err := cloneJSON(*before.HostConfig)
+	if err != nil {
+		t.Fatalf("copy pre-rebuild HostConfig: %v", err)
+	}
+	afterHost, err := cloneJSON(*after.HostConfig)
+	if err != nil {
+		t.Fatalf("copy post-rebuild HostConfig: %v", err)
+	}
+	// The requested host-port change is the only expected HostConfig difference.
+	beforeHost.PortBindings = afterHost.PortBindings
+	if !reflect.DeepEqual(beforeHost, afterHost) {
+		beforeJSON, _ := json.Marshal(beforeHost)
+		afterJSON, _ := json.Marshal(afterHost)
+		t.Fatalf("real Engine rebuild changed HostConfig beyond the requested port binding:\nbefore=%s\nafter=%s", beforeJSON, afterJSON)
+	}
+
+	beforeNetworks, err := normalizedDindNetworks(before.Networks)
+	if err != nil {
+		t.Fatalf("copy pre-rebuild network configuration: %v", err)
+	}
+	afterNetworks, err := normalizedDindNetworks(after.Networks)
+	if err != nil {
+		t.Fatalf("copy post-rebuild network configuration: %v", err)
+	}
+	if !reflect.DeepEqual(beforeNetworks, afterNetworks) {
+		beforeJSON, _ := json.Marshal(beforeNetworks)
+		afterJSON, _ := json.Marshal(afterNetworks)
+		t.Fatalf("real Engine rebuild changed configured network endpoints:\nbefore=%s\nafter=%s", beforeJSON, afterJSON)
+	}
+}
+
+func normalizedDindNetworks(source map[string]*network.EndpointSettings) (map[string]*network.EndpointSettings, error) {
+	result := make(map[string]*network.EndpointSettings, len(source))
+	for name, endpoint := range source {
+		if endpoint == nil {
+			return nil, fmt.Errorf("network %q has a nil endpoint", name)
+		}
+		copyEndpoint, err := cloneJSON(*endpoint)
+		if err != nil {
+			return nil, err
+		}
+		clearEndpointRuntimeFields(&copyEndpoint)
+		// Docker derives DNSNames from endpoint aliases plus each container's
+		// current short ID. A replacement necessarily gets another ID; configured
+		// aliases are compared separately and remain part of EndpointSettings.
+		copyEndpoint.DNSNames = nil
+		result[name] = &copyEndpoint
+	}
+	return result, nil
+}
+
+func int64Pointer(value int64) *int64 { return &value }
