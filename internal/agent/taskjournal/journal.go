@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -52,6 +53,9 @@ type Store struct {
 	journalID string
 	now       func() time.Time
 }
+
+//go:embed schema.sql
+var schemaSQL string
 
 type EnqueueResult struct {
 	Task    Snapshot
@@ -222,185 +226,42 @@ func Open(ctx context.Context, databasePath, nodeID string) (*Store, error) {
 }
 
 func initializeSchema(ctx context.Context, db *sql.DB, nodeID string) (string, error) {
-	var version int
-	if err := db.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
-		return "", fmt.Errorf("read task journal schema version: %w", err)
-	}
-	if version > 3 {
-		return "", fmt.Errorf("task journal schema version %d is newer than supported version 3", version)
-	}
-	if version == 1 {
-		journalID, err := readJournalOwner(ctx, db, nodeID)
-		if err != nil {
-			return "", err
-		}
-		if err := migrateTaskJournalV1ToV2(ctx, db); err != nil {
-			return "", err
-		}
-		if err := migrateTaskJournalV2ToV3(ctx, db); err != nil {
-			return "", err
-		}
-		return journalID, nil
-	}
-	if version == 2 {
-		journalID, err := readJournalOwner(ctx, db, nodeID)
-		if err != nil {
-			return "", err
-		}
-		if err := migrateTaskJournalV2ToV3(ctx, db); err != nil {
-			return "", err
-		}
-		return journalID, nil
-	}
-	if version == 3 {
-		return readJournalOwner(ctx, db, nodeID)
-	}
-	journalID, err := newJournalID()
-	if err != nil {
-		return "", fmt.Errorf("generate journal identity: %w", err)
-	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", fmt.Errorf("begin task journal schema creation: %w", err)
 	}
-	statements := []string{
-		`CREATE TABLE journal_owner (
-			id INTEGER PRIMARY KEY CHECK(id=1),
-			node_id TEXT NOT NULL,
-			journal_id TEXT NOT NULL
-		)`,
-		`CREATE TABLE task_journal (
-			task_id TEXT PRIMARY KEY,
-			node_id TEXT NOT NULL,
-			idempotency_key TEXT NOT NULL,
-			request_digest BLOB NOT NULL CHECK(length(request_digest)=32),
-			target_id TEXT NOT NULL,
-			resource_key TEXT NOT NULL,
-			action TEXT NOT NULL,
-			status TEXT NOT NULL CHECK(status IN ('queued','running','succeeded','failed','timed_out','canceled','unknown')),
-			created_at_ns INTEGER NOT NULL,
-			updated_at_ns INTEGER NOT NULL,
-			started_at_ns INTEGER,
-			finished_at_ns INTEGER,
-			execution_attempted INTEGER NOT NULL DEFAULT 0 CHECK(execution_attempted IN (0,1)),
-			execution_completed INTEGER NOT NULL DEFAULT 0 CHECK(execution_completed IN (0,1)),
-			failure_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(failure_confirmed IN (0,1)),
-			postcondition_verified INTEGER NOT NULL DEFAULT 0 CHECK(postcondition_verified IN (0,1)),
-			process_terminated INTEGER NOT NULL DEFAULT 0 CHECK(process_terminated IN (0,1)),
-			actual_result_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(actual_result_confirmed IN (0,1)),
-			cancellation_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(cancellation_confirmed IN (0,1)),
-			delivery_committed INTEGER NOT NULL DEFAULT 0 CHECK(delivery_committed IN (0,1)),
-			progress_phase TEXT NOT NULL DEFAULT 'accepted',
-			progress_completed INTEGER NOT NULL DEFAULT 0,
-			progress_total INTEGER NOT NULL DEFAULT 0,
-			result_code TEXT NOT NULL DEFAULT '',
-			observed_state TEXT NOT NULL DEFAULT '',
-			resource_revision TEXT NOT NULL DEFAULT '',
-			execution_phase TEXT NOT NULL DEFAULT 'none' CHECK(execution_phase IN ('none','mutation_may_have_started','result_persisted')),
-			baseline_verified INTEGER NOT NULL DEFAULT 0 CHECK(baseline_verified IN (0,1)),
-			baseline_target_id TEXT NOT NULL DEFAULT '',
-			baseline_action TEXT NOT NULL DEFAULT '',
-			baseline_host_boot_id TEXT NOT NULL DEFAULT '',
-			baseline_started_at TEXT NOT NULL DEFAULT '',
-			baseline_restart_count INTEGER NOT NULL DEFAULT -1 CHECK(baseline_restart_count >= -1),
-			baseline_running INTEGER NOT NULL DEFAULT 0 CHECK(baseline_running IN (0,1)),
-			baseline_paused INTEGER NOT NULL DEFAULT 0 CHECK(baseline_paused IN (0,1)),
-			baseline_restarting INTEGER NOT NULL DEFAULT 0 CHECK(baseline_restarting IN (0,1)),
-			task_log BLOB NOT NULL DEFAULT X'',
-			log_truncated INTEGER NOT NULL DEFAULT 0 CHECK(log_truncated IN (0,1)),
-			UNIQUE(node_id, idempotency_key)
-		)`,
-		`CREATE INDEX task_journal_resource_status ON task_journal(node_id, resource_key, status)`,
-		`CREATE TABLE active_resource_claims (
-			node_id TEXT NOT NULL,
-			resource_key TEXT NOT NULL,
-			task_id TEXT NOT NULL UNIQUE REFERENCES task_journal(task_id) ON DELETE CASCADE,
-			PRIMARY KEY(node_id, resource_key)
-		)`,
-	}
-	for _, statement := range statements {
+	defer tx.Rollback()
+	parts := strings.Split(schemaSQL, ";\n\n")
+	for index, part := range parts {
+		statement := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(part), ";"))
+		if statement == "" {
+			continue
+		}
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			_ = tx.Rollback()
-			return "", fmt.Errorf("create task journal schema: %w", err)
+			return "", fmt.Errorf("initialize current task journal schema statement %d: %w", index+1, err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO journal_owner(id,node_id,journal_id) VALUES(1,?,?)`, nodeID, journalID); err != nil {
-		_ = tx.Rollback()
-		return "", fmt.Errorf("record task journal owner: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `PRAGMA user_version=3`); err != nil {
-		_ = tx.Rollback()
-		return "", fmt.Errorf("set task journal schema version: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return "", fmt.Errorf("commit task journal schema: %w", err)
-	}
-	return journalID, nil
-}
-
-func migrateTaskJournalV2ToV3(ctx context.Context, db *sql.DB) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin task journal v2-to-v3 migration: %w", err)
-	}
-	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `ALTER TABLE task_journal ADD COLUMN delivery_committed INTEGER NOT NULL DEFAULT 0 CHECK(delivery_committed IN (0,1))`); err != nil {
-		return fmt.Errorf("add durable Core delivery marker: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `PRAGMA user_version=3`); err != nil {
-		return fmt.Errorf("set task journal schema version 3: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit task journal v3 migration: %w", err)
-	}
-	return nil
-}
-
-func readJournalOwner(ctx context.Context, db *sql.DB, nodeID string) (string, error) {
-	var owner string
-	var journalID string
-	if err := db.QueryRowContext(ctx, `SELECT node_id,journal_id FROM journal_owner WHERE id=1`).Scan(&owner, &journalID); err != nil {
+	var owner, journalID string
+	err = tx.QueryRowContext(ctx, `SELECT node_id,journal_id FROM journal_owner WHERE id=1`).Scan(&owner, &journalID)
+	if errors.Is(err, sql.ErrNoRows) {
+		journalID, err = newJournalID()
+		if err != nil {
+			return "", fmt.Errorf("generate journal identity: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO journal_owner(id,node_id,journal_id) VALUES(1,?,?)`, nodeID, journalID); err != nil {
+			return "", fmt.Errorf("record task journal owner: %w", err)
+		}
+	} else if err != nil {
 		return "", fmt.Errorf("read task journal owner: %w", err)
-	}
-	if owner != nodeID {
+	} else if owner != nodeID {
 		return "", ErrWrongNode
-	}
-	if !validJournalID(journalID) {
+	} else if !validJournalID(journalID) {
 		return "", errors.New("task journal ID is invalid")
 	}
-	return journalID, nil
-}
-
-func migrateTaskJournalV1ToV2(ctx context.Context, db *sql.DB) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin task journal v1-to-v2 migration: %w", err)
-	}
-	defer tx.Rollback()
-	statements := []string{
-		`ALTER TABLE task_journal ADD COLUMN execution_phase TEXT NOT NULL DEFAULT 'none' CHECK(execution_phase IN ('none','mutation_may_have_started','result_persisted'))`,
-		`ALTER TABLE task_journal ADD COLUMN baseline_verified INTEGER NOT NULL DEFAULT 0 CHECK(baseline_verified IN (0,1))`,
-		`ALTER TABLE task_journal ADD COLUMN baseline_target_id TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE task_journal ADD COLUMN baseline_action TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE task_journal ADD COLUMN baseline_host_boot_id TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE task_journal ADD COLUMN baseline_started_at TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE task_journal ADD COLUMN baseline_restart_count INTEGER NOT NULL DEFAULT -1 CHECK(baseline_restart_count >= -1)`,
-		`ALTER TABLE task_journal ADD COLUMN baseline_running INTEGER NOT NULL DEFAULT 0 CHECK(baseline_running IN (0,1))`,
-		`ALTER TABLE task_journal ADD COLUMN baseline_paused INTEGER NOT NULL DEFAULT 0 CHECK(baseline_paused IN (0,1))`,
-		`ALTER TABLE task_journal ADD COLUMN baseline_restarting INTEGER NOT NULL DEFAULT 0 CHECK(baseline_restarting IN (0,1))`,
-	}
-	for _, statement := range statements {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("migrate task journal schema to v2: %w", err)
-		}
-	}
-	if _, err := tx.ExecContext(ctx, `PRAGMA user_version=2`); err != nil {
-		return fmt.Errorf("set task journal schema version 2: %w", err)
-	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit task journal v2 migration: %w", err)
+		return "", fmt.Errorf("commit current task journal schema: %w", err)
 	}
-	return nil
+	return journalID, nil
 }
 
 func newJournalID() (string, error) {

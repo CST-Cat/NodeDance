@@ -48,17 +48,17 @@ var (
 	ErrNotDelivered         = errors.New("task has not been durably marked for delivery")
 )
 
-// SchemaSQL is a standalone, intentionally unregistered migration fragment.
-// Production storage migration registration is owned by the integration
-// layer. New never applies this SQL implicitly.
+// SchemaSQL is the current Core task schema fragment. The Core storage
+// initializer applies it as part of the current v0 database schema.
 //
 //go:embed schema.sql
 var schemaSQL string
 
 func SchemaSQL() string { return schemaSQL }
 
-// SchemaStatements returns a fresh statement slice for a future ordered Core
-// migration. The embedded SQL is split only on statement-ending semicolons.
+// SchemaStatements returns the Core task statements for current-schema
+// initialization. The embedded SQL is split only on statement-ending
+// semicolons.
 func SchemaStatements() []string {
 	parts := strings.Split(schemaSQL, ";\n\n")
 	statements := make([]string, 0, len(parts))
@@ -69,19 +69,6 @@ func SchemaStatements() []string {
 		}
 	}
 	return statements
-}
-
-// MigrationV14Statements adds the non-secret Registry-auth requirement flag
-// while preserving task identity, status, and delivery evidence.
-func MigrationV14Statements() []string {
-	return []string{
-		`ALTER TABLE core_tasks ADD COLUMN registry_auth_required INTEGER NOT NULL DEFAULT 0 CHECK (registry_auth_required IN (0,1))`,
-		// Earlier versions kept pull credentials only in process memory, so a
-		// queued legacy pull cannot be proven public after an upgrade/restart.
-		// Fail closed for undelivered legacy pulls; an old public pull may need
-		// resubmission, while fresh public pulls persist 0.
-		`UPDATE core_tasks SET registry_auth_required=1 WHERE action='image_pull' AND status='queued' AND delivery_state='ready' AND delivery_committed=0`,
-	}
 }
 
 type Action = protocol.TaskAction

@@ -34,7 +34,7 @@ const taskAuditLoading = ref<Record<string, boolean>>({})
 const taskAuditErrors = ref<Record<string, string>>({})
 const preferenceIdentities = ref<Record<string, Record<string, string>>>({})
 const nodePreferences = ref<Record<string, DashboardPreference[]>>({})
-const dashboardSettings = ref<DashboardSettings>({ viewMode: 'monitor', groupBy: 'node', sortBy: 'custom', featuredLimit: 4, customFields: ['state', 'ports', 'health'] })
+const dashboardSettings = ref<DashboardSettings>({ viewMode: 'monitor', groupBy: 'node', sortBy: 'custom', nodeGroupBy: 'status', nodeSortBy: 'custom', featuredLimit: 4, customFields: ['state', 'ports', 'health'] })
 const activeSection = ref<'overview' | 'docker' | 'images' | 'history' | 'events' | 'settings'>('overview')
 const sectionTabs: Array<{ id: typeof activeSection.value; label: string }> = [
   { id: 'overview', label: '总览' }, { id: 'docker', label: 'Docker 详情' }, { id: 'images', label: '镜像' },
@@ -44,6 +44,7 @@ const customFieldOptions = [
   { id: 'state', label: '运行状态' }, { id: 'ports', label: '端口' }, { id: 'health', label: '健康状态' },
   { id: 'image', label: '镜像' }, { id: 'uptime', label: '运行时间' },
 ]
+const serverSearch = ref('')
 const containerSearch = ref('')
 const editingPreference = ref('')
 const historyView = ref<MetricHistory | null>(null)
@@ -133,6 +134,52 @@ const sortedContainers = computed(() => {
 
 const featuredContainers = computed(() => sortedContainers.value.filter((record) => preferenceForContainer(record)?.visible !== false)
   .slice(0, dashboardSettings.value.featuredLimit))
+
+const serverCardGroups = computed(() => {
+  const query = serverSearch.value.trim().toLocaleLowerCase()
+  const matching = nodes.value.filter((node) => {
+    const preference = nodePreference(node)
+    if (preference?.visible === false) return false
+    const hostname = views.value[node.nodeId]?.metrics.system.hostname.value
+    const status = nodeStatusGroup(node)
+    return !query || [node.displayName, nodeTitle(node), node.nodeId, preference?.group, preference?.notes, hostname, status]
+      .some((value) => value?.toLocaleLowerCase().includes(query))
+  })
+  const title = (node: AgentNode) => nodeTitle(node)
+  const statusRank = (node: AgentNode) => nodeIsOnline(node) ? 0 : isPendingRegistration(node) ? 1 : node.status === 'revoked' ? 3 : 2
+  matching.sort((left, right) => {
+    if (dashboardSettings.value.nodeSortBy === 'name') return title(left).localeCompare(title(right), 'zh-CN')
+    if (dashboardSettings.value.nodeSortBy === 'status') {
+      const difference = statusRank(left) - statusRank(right)
+      if (difference !== 0) return difference
+    } else {
+      const leftPreference = nodePreference(left)
+      const rightPreference = nodePreference(right)
+      const leftPinned = leftPreference?.pinned ?? false
+      const rightPinned = rightPreference?.pinned ?? false
+      if (leftPinned !== rightPinned) return leftPinned ? -1 : 1
+      if ((leftPreference?.sortOrder ?? 0) !== (rightPreference?.sortOrder ?? 0)) {
+        return (leftPreference?.sortOrder ?? 0) - (rightPreference?.sortOrder ?? 0)
+      }
+    }
+    return title(left).localeCompare(title(right), 'zh-CN')
+  })
+  if (dashboardSettings.value.nodeGroupBy === 'none') return [{ key: 'all', label: '', nodes: matching }]
+  const groups = new Map<string, AgentNode[]>()
+  for (const node of matching) {
+    const label = dashboardSettings.value.nodeGroupBy === 'status'
+      ? nodeStatusGroup(node)
+      : nodePreference(node)?.group.trim() || '未分组'
+    const current = groups.get(label) ?? []
+    current.push(node)
+    groups.set(label, current)
+  }
+  const statusOrder = ['在线', '等待注册', '离线', '已撤销']
+  const labels = [...groups.keys()].sort((left, right) => dashboardSettings.value.nodeGroupBy === 'status'
+    ? statusOrder.indexOf(left) - statusOrder.indexOf(right)
+    : left.localeCompare(right, 'zh-CN'))
+  return labels.map((label) => ({ key: label, label, nodes: groups.get(label) ?? [] }))
+})
 
 const selectedNodeTasks = computed(() => selectedTasks.value)
 
@@ -358,7 +405,7 @@ function nodePreferenceForEditor(): DashboardPreference | undefined {
     nodeId: selectedNode.value.nodeId,
     targetKind: 'node',
     identity: `node:${selectedNode.value.nodeId}`,
-    alias: '', icon: 'server', notes: '', serviceUrl: '', sortOrder: -1,
+    alias: '', icon: 'server', notes: '', serviceUrl: '', group: '', sortOrder: -1,
     visible: true, pinned: true,
   }
 }
@@ -371,7 +418,7 @@ function containerPreferenceForEditor(record: DockerInventory['containers'][numb
     nodeId: selectedNode.value.nodeId,
     targetKind,
     identity,
-    alias: '', icon: '', notes: '', serviceUrl: '',
+    alias: '', icon: '', notes: '', serviceUrl: '', group: '',
     sortOrder: selectedDocker.value?.containers.findIndex((item) => item.container.id === record.container.id) ?? 0,
     visible: true, pinned: false,
   }
@@ -403,8 +450,26 @@ function metricSummaryValue(status: string | undefined, value: number | undefine
   return `${value.toFixed(1)}${suffix}`
 }
 
+function nodePreference(node: AgentNode): DashboardPreference | undefined {
+  return nodePreferences.value[node.nodeId]?.find((item) => item.targetKind === 'node' && item.identity === `node:${node.nodeId}`)
+}
+
 function nodeTitle(node: AgentNode): string {
-  return nodePreferences.value[node.nodeId]?.find((item) => item.targetKind === 'node' && item.identity === `node:${node.nodeId}`)?.alias || node.displayName
+  return nodePreference(node)?.alias || node.displayName
+}
+
+function nodeStatusGroup(node: AgentNode): string {
+  if (nodeIsOnline(node)) return '在线'
+  if (isPendingRegistration(node)) return '等待注册'
+  return node.status === 'revoked' ? '已撤销' : '离线'
+}
+
+function nodeIcon(icon: string | undefined): string {
+  const icons: Record<string, string> = {
+    server: '▤', globe: '◎', database: '▥', shield: '⬡', terminal: '›_',
+    box: '▣', cloud: '☁', folder: '▰', activity: '⌁',
+  }
+  return (icon && icons[icon]) || '▤'
 }
 
 function nodeContainerPreference(node: AgentNode, record: DockerInventory['containers'][number]): DashboardPreference | undefined {
@@ -898,10 +963,20 @@ onBeforeUnmount(() => {
         </nav>
 
         <section v-if="activeSection === 'overview'" class="vps-dashboard" aria-label="多 VPS 监控首页" data-testid="multi-vps-dashboard">
+          <div class="server-view-controls" aria-label="服务器筛选和排序">
+            <label>搜索服务器 <input v-model="serverSearch" type="search" placeholder="名称、主机名、分组或备注" aria-label="搜索服务器"></label>
+            <label>服务器分组 <select v-model="dashboardSettings.nodeGroupBy"><option value="status">连接状态</option><option value="group">自定义分组</option><option value="none">不分组</option></select></label>
+            <label>服务器排序 <select v-model="dashboardSettings.nodeSortBy"><option value="custom">自定义顺序</option><option value="name">显示名称</option><option value="status">连接状态</option></select></label>
+            <button type="button" class="container-action" :disabled="dashboardSettingsSaving" @click="void saveDashboardSettings()">{{ dashboardSettingsSaving ? '保存中…' : '保存视图' }}</button>
+          </div>
           <p v-if="nodes.length === 0" class="dashboard-empty">暂无已登记的 VPS。完成 Agent 注册后，节点卡片会显示真实主机指标与 Docker 容器。</p>
-          <article v-for="node in nodes" :key="node.nodeId" class="vps-card" :data-node-id="node.nodeId" :data-online="nodeIsOnline(node)">
+          <p v-else-if="serverCardGroups.every((group) => group.nodes.length === 0)" class="dashboard-empty">没有符合当前筛选条件的 VPS。</p>
+          <section v-for="group in serverCardGroups" :key="group.key" class="vps-card-group" :data-group="group.key">
+            <h2 v-if="group.label" class="vps-group-heading">{{ group.label }}</h2>
+            <div class="vps-card-grid">
+            <article v-for="node in group.nodes" :key="node.nodeId" class="vps-card" :data-node-id="node.nodeId" :data-online="nodeIsOnline(node)">
             <header class="vps-card-header">
-              <div><span class="eyebrow">VPS</span><h2>{{ nodeTitle(node) }}</h2></div>
+              <div class="vps-card-heading"><span class="vps-node-icon" aria-hidden="true">{{ nodeIcon(nodePreference(node)?.icon) }}</span><div><span class="eyebrow">VPS<template v-if="nodePreference(node)?.group"> · {{ nodePreference(node)?.group }}</template></span><h2>{{ nodeTitle(node) }}</h2></div></div>
               <span class="node-detail-status" :data-online="nodeIsOnline(node)">{{ isPendingRegistration(node) ? '等待注册' : nodeIsOnline(node) ? '在线' : '离线' }}</span>
             </header>
             <p class="host-summary-id">{{ node.nodeId }} · {{ node.agentVersion || 'Agent 未连接' }}</p>
@@ -927,6 +1002,8 @@ onBeforeUnmount(() => {
             </section>
             <footer class="vps-card-footer"><span v-if="nodeReasons[node.nodeId]">{{ nodeReasons[node.nodeId] }}</span><button type="button" class="container-action" @click="chooseNode(node)">查看完整详情</button></footer>
           </article>
+            </div>
+          </section>
         </section>
 
         <MetricsPanel v-if="selectedNode && activeSection === 'overview' && selectedView" :key="selectedView.nodeId" :view="selectedView" />
@@ -1075,6 +1152,8 @@ onBeforeUnmount(() => {
             <h3>首页和容器视图</h3>
             <div class="dashboard-settings-grid">
               <label>默认视图<select v-model="dashboardSettings.viewMode"><option value="monitor">监控</option><option value="manage">管理</option></select></label>
+              <label>VPS 首页分组<select v-model="dashboardSettings.nodeGroupBy"><option value="status">连接状态</option><option value="group">自定义分组</option><option value="none">不分组</option></select></label>
+              <label>VPS 首页排序<select v-model="dashboardSettings.nodeSortBy"><option value="custom">自定义顺序</option><option value="name">显示名称</option><option value="status">连接状态</option></select></label>
               <label>分组方式<select v-model="dashboardSettings.groupBy"><option value="node">节点</option><option value="compose">Compose 项目</option><option value="state">运行状态</option><option value="none">不分组</option></select></label>
               <label>排序方式<select v-model="dashboardSettings.sortBy"><option value="custom">自定义顺序</option><option value="name">显示名称</option><option value="state">运行状态</option></select></label>
               <label>首页容器上限<input v-model.number="dashboardSettings.featuredLimit" type="number" min="1" max="20"></label>
@@ -1105,9 +1184,20 @@ onBeforeUnmount(() => {
 .dashboard-tabs { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 16px; border-bottom: 1px solid rgba(171,196,232,.12); padding-bottom: 8px; scrollbar-width: thin; }
 .dashboard-tabs button { flex: 0 0 auto; min-height: 38px; border: 1px solid transparent; border-radius: 7px; padding: 7px 12px; color: #aebbd0; background: transparent; font: inherit; font-size: 10px; cursor: pointer; }
 .dashboard-tabs button[aria-current='page'] { border-color: rgba(141,201,255,.22); color: #d6ebff; background: rgba(62,119,170,.18); }
-.vps-dashboard { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); align-items: start; gap: 12px; margin-bottom: 18px; }
+.vps-dashboard { display: grid; grid-template-columns: minmax(0,1fr); align-items: start; gap: 12px; margin-bottom: 18px; }
+.server-view-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.server-view-controls label { display: grid; min-width: 140px; gap: 5px; color: #9aabc1; font-size: 9px; }
+.server-view-controls input, .server-view-controls select { min-height: 36px; min-width: 0; border: 1px solid rgba(171,196,232,.16); border-radius: 6px; padding: 7px 9px; color: #eaf0fa; background: #111b29; font: inherit; font-size: 10px; }
+.server-view-controls input { width: min(320px,58vw); }
+.server-view-controls button { min-height: 36px; }
+.vps-card-group { display: grid; gap: 9px; }
+.vps-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); align-items: start; gap: 12px; }
+.vps-group-heading { margin: 0; color: #8bb4f4; font-size: 11px; font-weight: 600; }
 .vps-card { min-width: 0; border: 1px solid rgba(171,196,232,.13); border-radius: 12px; padding: clamp(14px,2vw,20px); background: linear-gradient(145deg,rgba(23,36,56,.88),rgba(9,17,29,.72)); }
 .vps-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.vps-card-heading { display: flex; min-width: 0; align-items: center; gap: 9px; }
+.vps-card-heading > div { min-width: 0; }
+.vps-node-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(141,201,255,.2); border-radius: 9px; color: #a9d5ff; background: rgba(62,119,170,.16); font-size: 17px; }
 .vps-card-header h2 { margin: 4px 0 0; font-size: 16px; overflow-wrap: anywhere; }
 .vps-card-header .node-detail-status { margin: 0; white-space: nowrap; }
 .vps-card-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
@@ -1241,5 +1331,5 @@ onBeforeUnmount(() => {
 .preference-separation-note { margin-top: 12px; }
 @media (max-width: 760px) { .nodes-layout { grid-template-columns: minmax(0, 1fr); } .node-list { max-height: 270px; overflow: auto; } }
 @media (max-width: 900px) { .node-settings-status { grid-template-columns: repeat(2,minmax(0,1fr)); } .dashboard-settings-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
-@media (max-width: 560px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } .dashboard-tabs { margin-right: -12px; padding-right: 12px; } .featured-container-list { grid-template-columns: minmax(0,1fr); } .host-summary-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } .host-summary-metrics > div { padding: 6px; } .section-toolbar { align-items: flex-start; flex-direction: column; } .history-controls { width: 100%; } .history-controls label { flex: 1; } .docker-view-controls label, .docker-view-controls input, .docker-view-controls select { width: 100%; } .node-settings-status, .dashboard-settings-grid { grid-template-columns: minmax(0,1fr); } .docker-row-title { align-items: flex-start; flex-wrap: wrap; } .node-terminal-entry { align-items: flex-start; flex-direction: column; } .node-terminal-entry button { width: 100%; min-height: 42px; } .container-actions { width: 100%; justify-content: space-between; } .container-actions button { min-height: 42px; flex: 1; } }
+@media (max-width: 560px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } .dashboard-tabs { margin-right: -12px; padding-right: 12px; } .featured-container-list { grid-template-columns: minmax(0,1fr); } .host-summary-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } .host-summary-metrics > div { padding: 6px; } .section-toolbar { align-items: flex-start; flex-direction: column; } .history-controls { width: 100%; } .history-controls label { flex: 1; } .server-view-controls, .server-view-controls label, .server-view-controls input, .server-view-controls select, .server-view-controls button { width: 100%; } .docker-view-controls label, .docker-view-controls input, .docker-view-controls select { width: 100%; } .node-settings-status, .dashboard-settings-grid { grid-template-columns: minmax(0,1fr); } .docker-row-title { align-items: flex-start; flex-wrap: wrap; } .node-terminal-entry { align-items: flex-start; flex-direction: column; } .node-terminal-entry button { width: 100%; min-height: 42px; } .container-actions { width: 100%; justify-content: space-between; } .container-actions button { min-height: 42px; flex: 1; } }
 </style>

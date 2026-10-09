@@ -1,4 +1,4 @@
-CREATE TABLE core_tasks (
+CREATE TABLE IF NOT EXISTS core_tasks (
     task_id TEXT PRIMARY KEY,
     node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE RESTRICT,
     idempotency_key TEXT NOT NULL,
@@ -8,6 +8,7 @@ CREATE TABLE core_tasks (
     resource_key TEXT NOT NULL,
     action TEXT NOT NULL,
     intent_json TEXT NOT NULL,
+    registry_auth_required INTEGER NOT NULL DEFAULT 0 CHECK (registry_auth_required IN (0,1)),
     status TEXT NOT NULL CHECK (status IN ('queued','running','succeeded','failed','timed_out','canceled','unknown')),
     delivery_state TEXT NOT NULL DEFAULT 'ready' CHECK (delivery_state IN ('ready','sent','needs_reconciliation','done')),
     dispatch_journal_id TEXT,
@@ -33,17 +34,17 @@ CREATE TABLE core_tasks (
     UNIQUE(node_id, idempotency_key)
 );
 
-CREATE INDEX core_tasks_node_created ON core_tasks(node_id, created_at_ns DESC, task_id DESC);
-CREATE INDEX core_tasks_node_status ON core_tasks(node_id, status, created_at_ns);
+CREATE INDEX IF NOT EXISTS core_tasks_node_created ON core_tasks(node_id, created_at_ns DESC, task_id DESC);
+CREATE INDEX IF NOT EXISTS core_tasks_node_status ON core_tasks(node_id, status, created_at_ns);
 
-CREATE TABLE core_task_resource_claims (
+CREATE TABLE IF NOT EXISTS core_task_resource_claims (
     node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE RESTRICT,
     resource_key TEXT NOT NULL,
     task_id TEXT NOT NULL UNIQUE REFERENCES core_tasks(task_id) ON DELETE RESTRICT,
     PRIMARY KEY(node_id, resource_key)
 );
 
-CREATE TABLE core_task_audit_events (
+CREATE TABLE IF NOT EXISTS core_task_audit_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE RESTRICT,
     task_id TEXT REFERENCES core_tasks(task_id) ON DELETE RESTRICT,
@@ -55,9 +56,9 @@ CREATE TABLE core_task_audit_events (
     remote_addr TEXT NOT NULL DEFAULT 'unknown'
 );
 
-CREATE INDEX core_task_audit_task ON core_task_audit_events(node_id, task_id, id);
+CREATE INDEX IF NOT EXISTS core_task_audit_task ON core_task_audit_events(node_id, task_id, id);
 
-CREATE TABLE core_task_agent_state (
+CREATE TABLE IF NOT EXISTS core_task_agent_state (
     node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE RESTRICT,
     journal_id TEXT NOT NULL CHECK (length(journal_id) = 64),
     pending_journal_id TEXT CHECK (pending_journal_id IS NULL OR length(pending_journal_id) = 64),
@@ -66,7 +67,7 @@ CREATE TABLE core_task_agent_state (
     CHECK ((pending_journal_id IS NULL) = (review_required = 0))
 );
 
-CREATE TRIGGER core_tasks_keep_unresolved
+CREATE TRIGGER IF NOT EXISTS core_tasks_keep_unresolved
 BEFORE DELETE ON core_tasks
 WHEN OLD.status IN ('queued','running','unknown')
 BEGIN

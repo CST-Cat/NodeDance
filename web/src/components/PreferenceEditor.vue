@@ -16,7 +16,7 @@ async function save() {
   notice.value = ''
   saving.value = true
   try {
-    const next = { ...form, alias: form.alias.trim(), notes: form.notes.trim(), serviceUrl: form.serviceUrl.trim() }
+    const next = { ...form, alias: form.alias.trim(), notes: form.notes.trim(), serviceUrl: form.serviceUrl.trim(), group: form.group.trim() }
     await api.saveNodePreference(next.nodeId, next)
     Object.assign(form, next)
     emit('saved', next)
@@ -44,6 +44,12 @@ async function save() {
     </label>
     <label>备注
       <textarea v-model="form.notes" maxlength="2048" rows="2" placeholder="可选说明"></textarea>
+    </label>
+    <label v-if="form.targetKind === 'node'">VPS 分组
+      <input v-model="form.group" maxlength="128" placeholder="未分组">
+    </label>
+    <label v-if="form.targetKind === 'node'">自定义顺序
+      <input v-model.number="form.sortOrder" type="number" min="-1000000" max="1000000" step="1" required>
     </label>
     <label>服务入口
       <input v-model="form.serviceUrl" type="url" maxlength="2048" placeholder="https://service.example.com">

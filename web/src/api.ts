@@ -246,6 +246,7 @@ export interface DashboardPreference {
   icon: string
   notes: string
   serviceUrl: string
+  group: string
   sortOrder: number
   visible: boolean
   pinned: boolean
@@ -255,6 +256,8 @@ export interface DashboardSettings {
   viewMode: 'monitor' | 'manage'
   groupBy: 'node' | 'compose' | 'state' | 'none'
   sortBy: 'custom' | 'name' | 'state'
+  nodeGroupBy: 'group' | 'status' | 'none'
+  nodeSortBy: 'custom' | 'name' | 'status'
   featuredLimit: number
   customFields: string[]
 }

@@ -54,6 +54,7 @@ type Preference struct {
 	Icon       string `json:"icon"`
 	Notes      string `json:"notes"`
 	ServiceURL string `json:"serviceUrl"`
+	Group      string `json:"group"`
 	SortOrder  int    `json:"sortOrder"`
 	Visible    bool   `json:"visible"`
 	Pinned     bool   `json:"pinned"`
@@ -63,6 +64,8 @@ type Settings struct {
 	ViewMode      string   `json:"viewMode"`
 	GroupBy       string   `json:"groupBy"`
 	SortBy        string   `json:"sortBy"`
+	NodeGroupBy   string   `json:"nodeGroupBy"`
+	NodeSortBy    string   `json:"nodeSortBy"`
 	FeaturedLimit int      `json:"featuredLimit"`
 	CustomFields  []string `json:"customFields"`
 }
@@ -73,7 +76,7 @@ type Repository struct {
 }
 
 func (r Repository) List(ctx context.Context, nodeID string) ([]Preference, error) {
-	rows, err := r.DB.QueryContext(ctx, `SELECT node_id, target_kind, identity_key, alias, icon, notes, service_url, sort_order, visible, pinned
+	rows, err := r.DB.QueryContext(ctx, `SELECT node_id, target_kind, identity_key, alias, icon, notes, service_url, group_name, sort_order, visible, pinned
 		FROM dashboard_preferences WHERE node_id=? ORDER BY sort_order, target_kind, identity_key`, nodeID)
 	if err != nil {
 		return nil, err
@@ -84,7 +87,7 @@ func (r Repository) List(ctx context.Context, nodeID string) ([]Preference, erro
 		var item Preference
 		var visible, pinned int
 		if err := rows.Scan(&item.NodeID, &item.TargetKind, &item.Identity, &item.Alias, &item.Icon,
-			&item.Notes, &item.ServiceURL, &item.SortOrder, &visible, &pinned); err != nil {
+			&item.Notes, &item.ServiceURL, &item.Group, &item.SortOrder, &visible, &pinned); err != nil {
 			return nil, err
 		}
 		item.Visible, item.Pinned = visible == 1, pinned == 1
@@ -108,20 +111,20 @@ func (r Repository) Put(ctx context.Context, item Preference) error {
 	if item.Pinned {
 		pinned = 1
 	}
-	_, err := r.DB.ExecContext(ctx, `INSERT INTO dashboard_preferences(node_id, target_kind, identity_key, alias, icon, notes, service_url, sort_order, visible, pinned, updated_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	_, err := r.DB.ExecContext(ctx, `INSERT INTO dashboard_preferences(node_id, target_kind, identity_key, alias, icon, notes, service_url, group_name, sort_order, visible, pinned, updated_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(node_id, target_kind, identity_key) DO UPDATE SET alias=excluded.alias, icon=excluded.icon, notes=excluded.notes,
-		service_url=excluded.service_url, sort_order=excluded.sort_order, visible=excluded.visible, pinned=excluded.pinned, updated_at=excluded.updated_at`,
+		service_url=excluded.service_url, group_name=excluded.group_name, sort_order=excluded.sort_order, visible=excluded.visible, pinned=excluded.pinned, updated_at=excluded.updated_at`,
 		item.NodeID, item.TargetKind, item.Identity, strings.TrimSpace(item.Alias), item.Icon, strings.TrimSpace(item.Notes),
-		strings.TrimSpace(item.ServiceURL), item.SortOrder, visible, pinned, now.UTC().UnixNano())
+		strings.TrimSpace(item.ServiceURL), strings.TrimSpace(item.Group), item.SortOrder, visible, pinned, now.UTC().UnixNano())
 	return err
 }
 
 func (r Repository) GetSettings(ctx context.Context) (Settings, error) {
 	var settings Settings
 	var fields string
-	err := r.DB.QueryRowContext(ctx, `SELECT view_mode, group_by, sort_by, featured_limit, custom_fields_json FROM dashboard_settings WHERE id=1`).
-		Scan(&settings.ViewMode, &settings.GroupBy, &settings.SortBy, &settings.FeaturedLimit, &fields)
+	err := r.DB.QueryRowContext(ctx, `SELECT view_mode, group_by, sort_by, node_group_by, node_sort_by, featured_limit, custom_fields_json FROM dashboard_settings WHERE id=1`).
+		Scan(&settings.ViewMode, &settings.GroupBy, &settings.SortBy, &settings.NodeGroupBy, &settings.NodeSortBy, &settings.FeaturedLimit, &fields)
 	if err != nil {
 		return Settings{}, err
 	}
@@ -130,6 +133,12 @@ func (r Repository) GetSettings(ctx context.Context) (Settings, error) {
 }
 
 func (r Repository) PutSettings(ctx context.Context, settings Settings) error {
+	if settings.NodeGroupBy == "" {
+		settings.NodeGroupBy = "status"
+	}
+	if settings.NodeSortBy == "" {
+		settings.NodeSortBy = "custom"
+	}
 	if !validSettings(settings) {
 		return ErrInvalidPreference
 	}
@@ -138,14 +147,15 @@ func (r Repository) PutSettings(ctx context.Context, settings Settings) error {
 	if r.Now != nil {
 		now = r.Now()
 	}
-	_, err := r.DB.ExecContext(ctx, `UPDATE dashboard_settings SET view_mode=?, group_by=?, sort_by=?, featured_limit=?, custom_fields_json=?, updated_at=? WHERE id=1`,
-		settings.ViewMode, settings.GroupBy, settings.SortBy, settings.FeaturedLimit, fields, now.UTC().UnixNano())
+	_, err := r.DB.ExecContext(ctx, `UPDATE dashboard_settings SET view_mode=?, group_by=?, sort_by=?, node_group_by=?, node_sort_by=?, featured_limit=?, custom_fields_json=?, updated_at=? WHERE id=1`,
+		settings.ViewMode, settings.GroupBy, settings.SortBy, settings.NodeGroupBy, settings.NodeSortBy, settings.FeaturedLimit, fields, now.UTC().UnixNano())
 	return err
 }
 
 func validPreference(item Preference) bool {
 	if !validNodeID(item.NodeID) || item.Identity == "" || len(item.Identity) > 4096 || strings.TrimSpace(item.Identity) != item.Identity ||
-		len(item.Alias) > 128 || len(item.Notes) > 2048 || item.SortOrder < -1_000_000 || item.SortOrder > 1_000_000 {
+		len(item.Alias) > 128 || len(item.Notes) > 2048 || len(item.Group) > 128 || strings.ContainsRune(item.Group, '\x00') ||
+		item.SortOrder < -1_000_000 || item.SortOrder > 1_000_000 {
 		return false
 	}
 	switch item.TargetKind {
@@ -154,10 +164,16 @@ func validPreference(item Preference) bool {
 			return false
 		}
 	case "container":
+		if item.Group != "" {
+			return false
+		}
 		if _, ok := ContainerIdentity(strings.TrimPrefix(item.Identity, "container:")); !strings.HasPrefix(item.Identity, "container:") || !ok {
 			return false
 		}
 	case "compose_service":
+		if item.Group != "" {
+			return false
+		}
 		identity := strings.TrimPrefix(item.Identity, "compose:")
 		decoded, err := hex.DecodeString(identity)
 		if !strings.HasPrefix(item.Identity, "compose:") || err != nil || len(decoded) != sha256.Size {
@@ -194,6 +210,12 @@ func validNodeID(value string) bool {
 
 func validSettings(s Settings) bool {
 	if s.ViewMode != "monitor" && s.ViewMode != "manage" {
+		return false
+	}
+	if s.NodeGroupBy != "group" && s.NodeGroupBy != "status" && s.NodeGroupBy != "none" {
+		return false
+	}
+	if s.NodeSortBy != "custom" && s.NodeSortBy != "name" && s.NodeSortBy != "status" {
 		return false
 	}
 	if s.GroupBy != "node" && s.GroupBy != "compose" && s.GroupBy != "state" && s.GroupBy != "none" {
