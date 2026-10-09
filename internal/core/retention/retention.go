@@ -149,12 +149,12 @@ func Cleanup(ctx context.Context, db *sql.DB, now time.Time, retention time.Dura
 		return Result{}, err
 	}
 	if result.FileTaskEvents, err = remove("expired file task events", `DELETE FROM file_write_task_events WHERE task_id IN (
-		SELECT task_id FROM file_write_tasks WHERE status IN ('succeeded','failed') AND finished_at_ns IS NOT NULL AND finished_at_ns < ?
+		SELECT task_id FROM file_write_tasks WHERE status IN ('succeeded','failed','canceled') AND finished_at_ns IS NOT NULL AND finished_at_ns < ?
 	)`, cutoffNanos); err != nil {
 		return Result{}, err
 	}
 	if result.FileTasks, err = remove("terminal file tasks", `DELETE FROM file_write_tasks
-		WHERE status IN ('succeeded','failed') AND finished_at_ns IS NOT NULL AND finished_at_ns < ?`, cutoffNanos); err != nil {
+		WHERE status IN ('succeeded','failed','canceled') AND finished_at_ns IS NOT NULL AND finished_at_ns < ?`, cutoffNanos); err != nil {
 		return Result{}, err
 	}
 	if err := tx.Commit(); err != nil {

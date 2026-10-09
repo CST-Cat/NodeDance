@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -107,6 +108,24 @@ func TestFileTasksAppearInExistingTaskListLookupAndAuditAPI(t *testing.T) {
 	}
 }
 
+func TestFileAgentFailureStatusKeepsAmbiguousMutationsUnknown(t *testing.T) {
+	for _, testCase := range []struct {
+		operation string
+		code      string
+		want      taskstate.Status
+	}{
+		{operation: protocol.FileSaveText, code: "result_unknown", want: taskstate.Unknown},
+		{operation: protocol.FileUploadCommit, code: "result_unknown", want: taskstate.Unknown},
+		{operation: protocol.FileDelete, code: "unavailable", want: taskstate.Unknown}, // RemoveAll may have partially deleted a tree.
+		{operation: protocol.FileDelete, code: "invalid_path", want: taskstate.Failed},
+		{operation: protocol.FileSaveText, code: "conflict", want: taskstate.Failed},
+	} {
+		if got := fileAgentFailureStatus(testCase.operation, testCase.code); got != testCase.want {
+			t.Errorf("fileAgentFailureStatus(%q, %q)=%s, want %s", testCase.operation, testCase.code, got, testCase.want)
+		}
+	}
+}
+
 func TestFileWriteIsPersistedBeforeDispatchAndAgentDisconnectBecomesUnknown(t *testing.T) {
 	core, err := New("file-write-disconnect-test", Options{DataDir: filepath.Join(t.TempDir(), "core"), Development: true, PublicOrigin: "https://panel.test"})
 	if err != nil {
@@ -146,6 +165,7 @@ func TestFileWriteIsPersistedBeforeDispatchAndAgentDisconnectBecomesUnknown(t *t
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Origin", "https://panel.test")
 	r.Header.Set(csrfHeaderName, csrf)
+	r.Header.Set("Idempotency-Key", "file-mkdir-once")
 	r.AddCookie(&http.Cookie{Name: sessionCookieName, Value: session})
 	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: csrf})
 	w := httptest.NewRecorder()
@@ -168,6 +188,36 @@ func TestFileWriteIsPersistedBeforeDispatchAndAgentDisconnectBecomesUnknown(t *t
 	queued, err := core.fileTasks.Get(context.Background(), lease.NodeID, command.RequestID)
 	if err != nil || queued.Status != taskstate.Queued || queued.DispatchStartedAt == nil || queued.StartedAt != nil {
 		t.Fatalf("file intent was not durable before Agent dispatch or forged running: task=%+v err=%v", queued, err)
+	}
+	duplicate := func(path string) *httptest.ResponseRecorder {
+		t.Helper()
+		replay := httptest.NewRequest(http.MethodPost, "https://panel.test/api/v1/nodes/"+lease.NodeID+"/files/directories", strings.NewReader(`{"path":"`+path+`"}`))
+		replay.Header.Set("Content-Type", "application/json")
+		replay.Header.Set("Origin", "https://panel.test")
+		replay.Header.Set(csrfHeaderName, csrf)
+		replay.Header.Set("Idempotency-Key", "file-mkdir-once")
+		replay.AddCookie(&http.Cookie{Name: sessionCookieName, Value: session})
+		replay.AddCookie(&http.Cookie{Name: csrfCookieName, Value: csrf})
+		replayRecorder := httptest.NewRecorder()
+		core.ServeHTTP(replayRecorder, replay)
+		return replayRecorder
+	}
+	replayed := duplicate("/tmp/nodedance-disconnect-marker")
+	var replayResponse struct {
+		TaskID string           `json:"taskId"`
+		Status taskstate.Status `json:"status"`
+	}
+	if replayed.Code != http.StatusAccepted || json.Unmarshal(replayed.Body.Bytes(), &replayResponse) != nil || replayResponse.TaskID != command.RequestID || replayResponse.Status != taskstate.Queued {
+		t.Fatalf("same-key replay status=%d response=%+v body=%s", replayed.Code, replayResponse, replayed.Body.String())
+	}
+	conflictingReplay := duplicate("/tmp/other-target")
+	if conflictingReplay.Code != http.StatusConflict {
+		t.Fatalf("same-key changed target status=%d body=%s; want 409", conflictingReplay.Code, conflictingReplay.Body.String())
+	}
+	select {
+	case extra := <-connection.commands:
+		t.Fatalf("idempotency replay dispatched another file write: %+v", extra)
+	default:
 	}
 
 	cancelConnection()
@@ -274,6 +324,7 @@ func TestFileUploadSuccessPersistsOnlyVerifiedResult(t *testing.T) {
 	request.ContentLength = int64(len(data))
 	request.Header.Set("Content-Type", "application/octet-stream")
 	request.Header.Set("X-File-SHA256", hex.EncodeToString(digest[:]))
+	request.Header.Set("Idempotency-Key", "upload-success-once")
 	request.Header.Set("Origin", "https://panel.test")
 	request.Header.Set(csrfHeaderName, csrf)
 	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: session})
@@ -359,5 +410,122 @@ completed:
 	var taskText string
 	if err := core.store.DB.QueryRow(`SELECT target_path || operation || result_code FROM file_write_tasks WHERE task_id=?`, taskID).Scan(&taskText); err != nil || strings.Contains(taskText, string(data)) {
 		t.Fatalf("file task schema stores content or lacks metadata: value=%q err=%v", taskText, err)
+	}
+}
+
+func TestFileUploadCancellationRequiresAgentConfirmation(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		ackCanceled bool
+		want        taskstate.Status
+		wantResult  string
+	}{
+		{name: "Agent confirms temporary upload was canceled", ackCanceled: true, want: taskstate.Canceled, wantResult: "cancel_confirmed"},
+		{name: "Agent reports no confirmed cancellation", ackCanceled: false, want: taskstate.Unknown, wantResult: "result_pending"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			core := newTestServer(t)
+			session, csrf, err := installIntegrationAdmin(core)
+			if err != nil {
+				t.Fatal(err)
+			}
+			enrollment, err := core.agents.CreateEnrollment(context.Background(), "file upload cancel", "127.0.0.1", sql.NullInt64{Int64: 1, Valid: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential := strings.Repeat("c", 64)
+			identity, err := core.agents.ConsumeEnrollment(context.Background(), auth.DigestToken(enrollment.Token), auth.DigestToken(credential), "66666666-6666-4666-8666-666666666666", "127.0.0.1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			lease, err := core.agents.BeginConnection(context.Background(), identity, auth.DigestToken(credential), protocol.CurrentVersion, "test-agent",
+				`["agent.files.v1"]`, protocol.RuntimePermissions{OS: "linux", Architecture: "amd64"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			connectionCtx, cancelConnection := context.WithCancel(context.Background())
+			connection := &agentConnection{ctx: connectionCtx, cancel: cancelConnection, agentID: lease.AgentID, nodeID: lease.NodeID,
+				generation: lease.ConnectionGeneration, filesEnabled: true, commands: make(chan protocol.Envelope, 8),
+				fileTransfers: make(map[string]*coreFileTransfer), fileTombstones: make(map[string]struct{}), fileCancelAcks: make(map[string]chan protocol.FileCancelAck)}
+			core.agentConnectionsMu.Lock()
+			core.agentConnections[lease.AgentID] = connection
+			core.agentConnectionsMu.Unlock()
+			t.Cleanup(cancelConnection)
+
+			bodyReader, bodyWriter := io.Pipe()
+			requestCtx, cancelRequest := context.WithCancel(context.Background())
+			defer cancelRequest()
+			r := httptest.NewRequestWithContext(requestCtx, http.MethodPost, "https://panel.test/api/v1/nodes/"+lease.NodeID+"/files/upload?path=%2Ftmp%2Fcancel-upload", bodyReader)
+			r.ContentLength = 4
+			digest := sha256.Sum256([]byte("data"))
+			r.Header.Set("Content-Type", "application/octet-stream")
+			r.Header.Set("X-File-SHA256", hex.EncodeToString(digest[:]))
+			r.Header.Set("Idempotency-Key", "cancel-upload-key")
+			r.Header.Set("Origin", "https://panel.test")
+			r.Header.Set(csrfHeaderName, csrf)
+			r.AddCookie(&http.Cookie{Name: sessionCookieName, Value: session})
+			r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: csrf})
+			responseRecorder := httptest.NewRecorder()
+			done := make(chan struct{})
+			go func() {
+				core.ServeHTTP(responseRecorder, r)
+				close(done)
+			}()
+			defer bodyWriter.Close()
+
+			begin := receiveCoreFileCommand(t, connection)
+			var beginRequest protocol.FileRequest
+			if err := json.Unmarshal(begin.Payload, &beginRequest); err != nil || beginRequest.Operation != protocol.FileUploadBegin {
+				t.Fatalf("unexpected upload begin request=%+v err=%v", beginRequest, err)
+			}
+			beginResponse, _ := json.Marshal(protocol.FileResponse{Operation: protocol.FileUploadBegin})
+			if err := core.handleAgentFileMessage(connection, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeFileResponse,
+				Generation: lease.ConnectionGeneration, RequestID: begin.RequestID, Sequence: 1, Payload: beginResponse}); err != nil {
+				t.Fatal("deliver Agent upload-begin ACK:", err)
+			}
+			var running corefiletasks.Task
+			deadline := time.Now().Add(3 * time.Second)
+			for time.Now().Before(deadline) {
+				running, err = core.fileTasks.Get(context.Background(), lease.NodeID, begin.RequestID)
+				if err != nil || running.Status == taskstate.Running {
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			if err != nil || running.Status != taskstate.Running || running.StartedAt == nil {
+				t.Fatalf("upload did not enter running after Agent begin ACK: task=%+v err=%v", running, err)
+			}
+
+			cancelRequest()
+			cancel := receiveCoreFileCommand(t, connection)
+			if cancel.Type != protocol.TypeFileCancel {
+				t.Fatalf("expected FileCancel after client cancellation, got %+v", cancel)
+			}
+			ackPayload, _ := json.Marshal(protocol.FileCancelAck{TransferID: begin.RequestID, Canceled: testCase.ackCanceled})
+			if err := core.handleAgentFileMessage(connection, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeFileCancelAck,
+				Generation: lease.ConnectionGeneration, RequestID: begin.RequestID, Payload: ackPayload}); err != nil {
+				t.Fatal("deliver Agent cancellation ACK:", err)
+			}
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+				t.Fatal("canceled upload handler did not return")
+			}
+			task, err := core.fileTasks.Get(context.Background(), lease.NodeID, begin.RequestID)
+			if err != nil || task.Status != testCase.want || task.ResultCode != testCase.wantResult {
+				t.Fatalf("upload cancellation state=%+v err=%v, want %s/%s; HTTP=%d %s", task, err, testCase.want, testCase.wantResult, responseRecorder.Code, responseRecorder.Body.String())
+			}
+		})
+	}
+}
+
+func receiveCoreFileCommand(t *testing.T, connection *agentConnection) protocol.Envelope {
+	t.Helper()
+	select {
+	case command := <-connection.commands:
+		return command
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for Core file command")
+		return protocol.Envelope{}
 	}
 }

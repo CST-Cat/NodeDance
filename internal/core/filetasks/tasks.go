@@ -5,8 +5,10 @@ package filetasks
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -31,17 +33,29 @@ const (
 )
 
 var (
-	ErrInvalidRequest = errors.New("invalid durable file task request")
-	ErrNotFound       = errors.New("file task not found")
-	ErrStateConflict  = errors.New("file task state conflict")
-	canonicalUUID     = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	ErrInvalidRequest      = errors.New("invalid durable file task request")
+	ErrNotFound            = errors.New("file task not found")
+	ErrStateConflict       = errors.New("file task state conflict")
+	ErrIdempotencyConflict = errors.New("idempotency key was reused for a different file operation")
+	canonicalUUID          = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	validKey               = regexp.MustCompile(`^[a-zA-Z0-9._~-]{1,200}$`)
+	validDigest            = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
 //go:embed schema.sql
 var schemaSQL string
 
+//go:embed migration_v13.sql
+var migrationV13SQL string
+
 func SchemaStatements() []string {
-	parts := strings.Split(schemaSQL, ";\n\n")
+	return splitSQLStatements(schemaSQL)
+}
+
+func MigrationV13Statements() []string { return splitSQLStatements(migrationV13SQL) }
+
+func splitSQLStatements(sql string) []string {
+	parts := strings.Split(sql, ";\n\n")
 	statements := make([]string, 0, len(parts))
 	for _, part := range parts {
 		statement := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(part), ";"))
@@ -73,13 +87,42 @@ type Task struct {
 }
 
 type CreateRequest struct {
-	TaskID     string
-	NodeID     string
-	Operation  string
-	TargetPath string
-	NewPath    string
-	ActorID    sql.NullInt64
-	RemoteAddr string
+	TaskID         string
+	NodeID         string
+	IdempotencyKey string
+	RequestDigest  string
+	Operation      string
+	TargetPath     string
+	NewPath        string
+	ActorID        sql.NullInt64
+	RemoteAddr     string
+}
+
+// Intent contains only allowlisted request identity fields. Content is
+// represented by a caller-computed digest and is never persisted.
+type Intent struct {
+	Operation       string `json:"operation"`
+	TargetPath      string `json:"targetPath"`
+	NewPath         string `json:"newPath,omitempty"`
+	ExpectedVersion string `json:"expectedVersion,omitempty"`
+	ExpectedSize    int64  `json:"expectedSize,omitempty"`
+	ContentSHA256   string `json:"contentSHA256,omitempty"`
+}
+
+func DigestIntent(intent Intent) (string, error) {
+	if intent.Operation == "" || len(intent.TargetPath) == 0 || len(intent.TargetPath) > 4096 ||
+		!utf8.ValidString(intent.TargetPath) || strings.ContainsRune(intent.TargetPath, '\x00') ||
+		len(intent.NewPath) > 4096 || !utf8.ValidString(intent.NewPath) || strings.ContainsRune(intent.NewPath, '\x00') ||
+		len(intent.ExpectedVersion) > 128 || intent.ExpectedSize < 0 ||
+		(intent.ContentSHA256 != "" && !validDigest.MatchString(intent.ContentSHA256)) {
+		return "", ErrInvalidRequest
+	}
+	encoded, err := json.Marshal(intent)
+	if err != nil {
+		return "", ErrInvalidRequest
+	}
+	digest := sha256.Sum256(encoded)
+	return hex.EncodeToString(digest[:]), nil
 }
 
 type Event struct {
@@ -108,8 +151,23 @@ func New(db *sql.DB, now func() time.Time) (*Store, error) {
 }
 
 func (s *Store) Create(ctx context.Context, request CreateRequest) (Task, error) {
+	task, _, err := s.create(ctx, request, false)
+	return task, err
+}
+
+// CreateIdempotent atomically accepts a file write or returns the existing
+// task for the same node/key/digest. A reused key with a different digest is
+// rejected; callers must never dispatch the returned existing task again.
+func (s *Store) CreateIdempotent(ctx context.Context, request CreateRequest) (Task, bool, error) {
+	if !validKey.MatchString(request.IdempotencyKey) || !validDigest.MatchString(request.RequestDigest) {
+		return Task{}, false, ErrInvalidRequest
+	}
+	return s.create(ctx, request, true)
+}
+
+func (s *Store) create(ctx context.Context, request CreateRequest, idempotent bool) (Task, bool, error) {
 	if ctx == nil || !validRequest(request) {
-		return Task{}, ErrInvalidRequest
+		return Task{}, false, ErrInvalidRequest
 	}
 	now := s.now().UTC()
 	paths := []string{request.TargetPath}
@@ -118,31 +176,58 @@ func (s *Store) Create(ctx context.Context, request CreateRequest) (Task, error)
 	}
 	encodedTarget, err := json.Marshal(paths)
 	if err != nil {
-		return Task{}, ErrInvalidRequest
+		return Task{}, false, ErrInvalidRequest
 	}
 	target := audit.Target{Kind: audit.TargetFile, ID: audit.FileTarget(request.NodeID, request.TaskID, string(encodedTarget))}
 	status := taskstate.Queued
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return Task{}, fmt.Errorf("begin durable file task acceptance: %w", err)
+		return Task{}, false, fmt.Errorf("begin durable file task acceptance: %w", err)
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO file_write_tasks(task_id,node_id,operation,target_path,new_path,status,result_code,created_at_ns,updated_at_ns)
-		VALUES(?,?,?,?,?,?, '',?,?)`, request.TaskID, request.NodeID, request.Operation, request.TargetPath, request.NewPath, status, now.UnixNano(), now.UnixNano()); err != nil {
-		return Task{}, fmt.Errorf("persist file task intent: %w", err)
+	var insertResult sql.Result
+	if idempotent {
+		insertResult, err = tx.ExecContext(ctx, `INSERT INTO file_write_tasks(task_id,node_id,idempotency_key,request_digest,operation,target_path,new_path,status,result_code,created_at_ns,updated_at_ns)
+			VALUES(?,?,?,?,?,?,?,?,'',?,?) ON CONFLICT(node_id,idempotency_key) DO NOTHING`, request.TaskID, request.NodeID, request.IdempotencyKey, request.RequestDigest,
+			request.Operation, request.TargetPath, request.NewPath, status, now.UnixNano(), now.UnixNano())
+	} else {
+		insertResult, err = tx.ExecContext(ctx, `INSERT INTO file_write_tasks(task_id,node_id,operation,target_path,new_path,status,result_code,created_at_ns,updated_at_ns)
+			VALUES(?,?,?,?,?,?, '',?,?)`, request.TaskID, request.NodeID, request.Operation, request.TargetPath, request.NewPath, status, now.UnixNano(), now.UnixNano())
+	}
+	if err != nil {
+		return Task{}, false, fmt.Errorf("persist file task intent: %w", err)
+	}
+	if affected, err := insertResult.RowsAffected(); err != nil {
+		return Task{}, false, fmt.Errorf("read file task insert result: %w", err)
+	} else if affected == 0 && idempotent {
+		existing, readErr := scanTask(tx.QueryRowContext(ctx, taskSelect+` WHERE node_id=? AND idempotency_key=?`, request.NodeID, request.IdempotencyKey))
+		if readErr != nil {
+			return Task{}, false, fmt.Errorf("read existing idempotent file task: %w", readErr)
+		}
+		var existingDigest string
+		if err := tx.QueryRowContext(ctx, `SELECT request_digest FROM file_write_tasks WHERE node_id=? AND task_id=?`, request.NodeID, existing.TaskID).Scan(&existingDigest); err != nil {
+			return Task{}, false, fmt.Errorf("read existing file task digest: %w", err)
+		}
+		if existingDigest != request.RequestDigest {
+			return Task{}, false, ErrIdempotencyConflict
+		}
+		if err := tx.Commit(); err != nil {
+			return Task{}, false, fmt.Errorf("commit idempotent file task lookup: %w", err)
+		}
+		return existing, false, nil
 	}
 	if err := insertEvent(ctx, tx, request.NodeID, request.TaskID, "accepted", sql.NullString{}, sql.NullString{String: string(status), Valid: true}, request.ActorID, request.RemoteAddr, now); err != nil {
-		return Task{}, fmt.Errorf("persist file task acceptance event: %w", err)
+		return Task{}, false, fmt.Errorf("persist file task acceptance event: %w", err)
 	}
 	if err := audit.Record(ctx, tx, audit.Event{OccurredAt: now, Action: auditAction(request.Operation), Outcome: "accepted",
 		ActorID: request.ActorID, RemoteAddr: request.RemoteAddr, Target: target}); err != nil {
-		return Task{}, fmt.Errorf("persist file task acceptance audit: %w", err)
+		return Task{}, false, fmt.Errorf("persist file task acceptance audit: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return Task{}, fmt.Errorf("commit durable file task acceptance: %w", err)
+		return Task{}, false, fmt.Errorf("commit durable file task acceptance: %w", err)
 	}
 	return Task{TaskID: request.TaskID, NodeID: request.NodeID, Operation: request.Operation, TargetPath: request.TargetPath,
-		NewPath: request.NewPath, Status: status, CreatedAt: now, UpdatedAt: now}, nil
+		NewPath: request.NewPath, Status: status, CreatedAt: now, UpdatedAt: now}, true, nil
 }
 
 // MarkDispatched records a conservative delivery boundary before Core writes
@@ -192,7 +277,7 @@ func (s *Store) MarkRunning(ctx context.Context, nodeID, taskID string, actorID 
 }
 
 func (s *Store) Resolve(ctx context.Context, nodeID, taskID string, status taskstate.Status, resultCode string, actorID sql.NullInt64, remoteAddr string) error {
-	if status != taskstate.Succeeded && status != taskstate.Failed && status != taskstate.Unknown {
+	if status != taskstate.Succeeded && status != taskstate.Failed && status != taskstate.Canceled && status != taskstate.Unknown {
 		return ErrInvalidRequest
 	}
 	if resultCode == "" || len(resultCode) > 64 || !isResultCode(resultCode) {
@@ -237,20 +322,26 @@ func (s *Store) transition(ctx context.Context, nodeID, taskID string, to taskst
 		}
 		return tx.Commit()
 	}
-	if to != taskstate.Succeeded && to != taskstate.Failed && to != taskstate.Unknown {
+	if to != taskstate.Succeeded && to != taskstate.Failed && to != taskstate.Canceled && to != taskstate.Unknown {
 		return ErrInvalidRequest
 	}
-	if resultCode == "verified" && to != taskstate.Succeeded || (resultCode == "not_dispatched" || resultCode == "not_committed" || resultCode == "agent_rejected") && to != taskstate.Failed || resultCode == "result_pending" && to != taskstate.Unknown {
+	if resultCode == "verified" && to != taskstate.Succeeded || (resultCode == "not_dispatched" || resultCode == "not_committed" || resultCode == "agent_rejected") && to != taskstate.Failed ||
+		(resultCode == "result_pending" || resultCode == "mutation_uncertain") && to != taskstate.Unknown ||
+		(resultCode == "canceled_before_dispatch" || resultCode == "cancel_confirmed") && to != taskstate.Canceled {
 		return ErrInvalidRequest
 	}
 	if (to == taskstate.Succeeded || to == taskstate.Unknown) && task.DispatchStartedAt == nil {
+		return ErrStateConflict
+	}
+	if to == taskstate.Canceled && (from == taskstate.Queued && (task.DispatchStartedAt != nil || resultCode != "canceled_before_dispatch") ||
+		from == taskstate.Running && resultCode != "cancel_confirmed" || from != taskstate.Queued && from != taskstate.Running) {
 		return ErrStateConflict
 	}
 	// A terminal Agent response is the first available evidence of execution
 	// for one-frame mutations. Record the status history through running in the
 	// same transaction; started_at is the Core receipt time of the first Agent
 	// evidence, not a claimed remote process start timestamp.
-	if from == taskstate.Queued && (to == taskstate.Succeeded || resultCode == "agent_rejected") {
+	if from == taskstate.Queued && (to == taskstate.Succeeded || resultCode == "agent_rejected" || resultCode == "mutation_uncertain") {
 		if task.DispatchStartedAt == nil || taskstate.CanTransition(taskstate.Queued, taskstate.Running, taskstate.Evidence{ExecutionAttempted: true}) != nil {
 			return ErrStateConflict
 		}
@@ -312,6 +403,9 @@ func fileTaskEvidence(from, to taskstate.Status, resultCode string, dispatched b
 			FailureConfirmed:   true, ActualResultConfirmed: true}
 	case taskstate.Unknown:
 		return taskstate.Evidence{ExecutionAttempted: from == taskstate.Running, DeliveryCommitted: from == taskstate.Queued && dispatched}
+	case taskstate.Canceled:
+		return taskstate.Evidence{ExecutionAttempted: from == taskstate.Running, ProcessTerminated: from == taskstate.Running,
+			CancellationConfirmed: true, ActualResultConfirmed: true}
 	default:
 		return taskstate.Evidence{}
 	}
@@ -506,7 +600,7 @@ func validRequest(request CreateRequest) bool {
 
 func isResultCode(value string) bool {
 	switch value {
-	case "verified", "agent_rejected", "result_pending", "not_dispatched", "not_committed":
+	case "verified", "agent_rejected", "result_pending", "not_dispatched", "not_committed", "mutation_uncertain", "canceled_before_dispatch", "cancel_confirmed":
 		return true
 	default:
 		return false
