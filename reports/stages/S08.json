@@ -4,8 +4,8 @@
   "mode": "integration",
   "status": "NOT_READY",
   "run_id": "agent-20261009g",
-  "updated_at": "2026-10-09T07:44:23+00:00",
-  "reason": "The focused owner-marked Engine 29.7.2 / local Registry test passed for image pull/digest verification, multi-tag listing, stopped-container reference counts, in-use deletion refusal, safe unused deletion, missing manifest failure and invalid reference rejection. A separate fresh-Engine private-auth subtest passed for wrong-password rejection and valid-password success through the real Agent Executor/SDK, and scanned Agent task results, Agent SQLite DB/WAL/SHM, and complete test output for credential canaries. S08 remains NOT_READY: no-tag listing, Core credential/API and audit/database integration, Registry/Core log scans, real interrupted/canceled pull, heartbeat during transfer, browser UI, and positive SDK pull progress remain unverified.",
+  "updated_at": "2026-10-09T07:53:24+00:00",
+  "reason": "Focused owner-marked Engine 29.7.2 / local Registry tests passed for image pull/digest verification, multi-tag listing, stopped-container reference counts, in-use deletion refusal, safe unused deletion, missing manifest failure, invalid reference rejection, Agent-side private Registry success/failure with canary scans, and real slow-transfer cancellation with task and Engine absence confirmation. S08 remains NOT_READY: no-tag listing, Core credential/API and audit/database integration, Registry/Core log scans, Registry transport-failure and timeout cancellation branches, heartbeat during transfer, browser UI, and positive SDK pull progress remain unverified.",
   "engine_attempt": {
     "status": "PASS",
     "details": "Fresh owner-marked Engine 29.7.2 (arm64), run agent-20261009g. Start guard refused any pre-existing run root; the newly started Engine image listing was empty before image fixture setup. The full focused real Registry/Engine test passed once. Engine and run data were then removed only by the matching owner-marked cleanup command.",
@@ -137,8 +137,39 @@
       "expected": "不假报完成，可查看实际结果。",
       "environment": "可控慢速Registry和网络故障。",
       "evidence_required": "中断任务状态及Engine真实镜像内容。",
-      "runs": [],
-      "reason": "No real slow/interrupted/timeout Registry pull was run; component-level cancellation tests do not satisfy the real Engine acceptance case."
+      "runs": [
+        {
+          "attempt": 1,
+          "status": "FAIL",
+          "exit_code": 1,
+          "run_id": "cancel-20261009a",
+          "engine_version": "29.7.2",
+          "engine_architecture": "arm64",
+          "command": "NODEDANCE_S08_TEST_PATTERN='^TestDINDImageManagementRealEngine/real_slow_Registry_pull_cancellation_confirms_Engine_absence$' scripts/test/s08-image-engine-dind.sh 29 cancel-20261009a",
+          "log": ".artifacts/s08/image-engine29-cancel-20261009a.log",
+          "fresh_storage": {
+            "status": "PASS",
+            "evidence": "Fresh owner-marked DIND Engine; failure happened before any pull operation."
+          },
+          "result": "The helper executable was copied into /tmp, which the pinned DIND image mounts as tmpfs; docker cp and docker exec observed different filesystems. The proxy did not start and no cancellation result is inferred. The helper path was corrected to /var/tmp."
+        },
+        {
+          "attempt": 2,
+          "status": "PASS",
+          "exit_code": 0,
+          "run_id": "cancel-20261009b",
+          "engine_version": "29.7.2",
+          "engine_architecture": "arm64",
+          "command": "NODEDANCE_S08_TEST_PATTERN='^TestDINDImageManagementRealEngine/real_slow_Registry_pull_cancellation_confirms_Engine_absence$' scripts/test/s08-image-engine-dind.sh 29 cancel-20261009b",
+          "log": ".artifacts/s08/image-engine29-cancel-20261009b.log",
+          "fresh_storage": {
+            "status": "PASS",
+            "evidence": "Fresh owner-marked Engine 29.7.2; the run root was unique and cleaned by its matching owner marker."
+          },
+          "result": "A 48 MiB uncompressible layer (50,347,195 compressed bytes) was served at 2 MiB/s. Cancellation was requested after 2,244,608 bytes were served; the slow endpoint then became quiescent with zero active blob requests and one canceled request. Agent task status was canceled with CancellationConfirmed, ProcessTerminated, and ActualResultConfirmed evidence. SDK Inspect and Docker CLI both confirmed the image absent after quiescence."
+        }
+      ],
+      "reason": "The real Engine/Agent explicit-cancellation path passed during a measured slow blob transfer, and the task plus SDK/CLI confirmed the image was absent after the transfer stopped. S08-04 remains NOT_READY until Registry/network transport failure and operation-timeout branches are tested; the UI result path is also not part of this focused case."
     },
     "S08-05": {
       "status": "NOT_READY",

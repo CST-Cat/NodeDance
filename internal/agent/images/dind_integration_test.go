@@ -372,6 +372,153 @@ func TestDINDImageManagementRealEngine(t *testing.T) {
 		}
 		t.Log("private Registry accepted and rejected credentials through the real Agent executor; task result and durable journal contain no credential canaries")
 	})
+
+	t.Run("real slow Registry pull cancellation confirms Engine absence", func(t *testing.T) {
+		helperBinary := strings.TrimSpace(os.Getenv("NODEDANCE_S08_SLOW_PROXY_BIN"))
+		if helperBinary == "" {
+			t.Fatal("S08 slow Registry proxy binary must be built by the acceptance runner")
+		}
+		if info, statErr := os.Stat(helperBinary); statErr != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+			t.Fatal("S08 slow Registry proxy binary is missing or not executable")
+		}
+
+		largeFixture, err := buildS08ImageFixtureSized(architecture, 48<<20)
+		if err != nil {
+			t.Fatalf("build uncompressible slow-pull fixture: %v", err)
+		}
+		cancelRepo := "nodedance/s08-cancel"
+		cancelTag := "fixture-" + shortS08RunID(runID)
+		cancelRef := "127.0.0.1:5002/" + cancelRepo + ":" + cancelTag
+		expectedRepoDigest, err := pushS08ImageFixture(ctx, "http://"+registryHost, cancelRepo, cancelTag, largeFixture)
+		if err != nil {
+			t.Fatalf("seed the slow-pull fixture into this run's Registry: %v", err)
+		}
+		if expectedRepoDigest != "127.0.0.1:5000/"+cancelRepo+"@"+largeFixture.ManifestDigest {
+			t.Fatal("slow-pull fixture Registry digest does not match its manifest")
+		}
+		if _, err := engine.Inspect(ctx, cancelRef); !errdefs.IsNotFound(err) {
+			t.Fatalf("slow-pull image must be absent before task dispatch, err=%v", err)
+		}
+
+		slowPath := "/v2/" + cancelRepo + "/blobs/" + s08Digest(largeFixture.LayerBytes)
+		// The pinned DIND image mounts /tmp as tmpfs, which docker cp does not
+		// expose to exec consistently. Keep the helper in the container rootfs.
+		remoteProxy := "/var/tmp/nodedance-s08-slow-proxy-" + shortS08RunID(runID)
+		remotePID := remoteProxy + ".pid"
+		outerDocker := func(args ...string) (string, error) {
+			return s08DockerCommand(ctx, owner.HostDaemon, outerConfig, args...)
+		}
+		if _, err := outerDocker("cp", helperBinary, owner.ContainerName+":"+remoteProxy); err != nil {
+			t.Fatalf("copy the static slow-pull proxy into this run's DIND container: %v", err)
+		}
+		if _, err := outerDocker("exec", "--detach", owner.ContainerName, remoteProxy,
+			"--listen", "0.0.0.0:5002", "--upstream", "http://127.0.0.1:5000",
+			"--slow-path", slowPath, "--bytes-per-second", fmt.Sprint(2<<20), "--pid-file", remotePID); err != nil {
+			t.Fatalf("start the throttled Registry proxy inside this run's DIND namespace: %v", err)
+		}
+		t.Cleanup(func() {
+			pid, pidErr := outerDocker("exec", owner.ContainerName, "cat", remotePID)
+			if pidErr == nil && regexp.MustCompile(`^[0-9]+$`).MatchString(strings.TrimSpace(pid)) {
+				_, _ = outerDocker("exec", owner.ContainerName, "kill", "-TERM", strings.TrimSpace(pid))
+			}
+			_, _ = outerDocker("exec", owner.ContainerName, "rm", "-f", remoteProxy, remotePID)
+		})
+		proxyBase := "http://" + net.JoinHostPort(fields[0], "5002")
+		if err := waitS08SlowProxy(ctx, proxyBase); err != nil {
+			t.Fatalf("DIND-local slow-pull proxy did not become ready: %v", err)
+		}
+
+		cancelIntent := protocol.TaskIntent{Action: protocol.TaskImagePull,
+			ContainerID: protocol.ImageTargetKey("pull:" + cancelRef), ImageReference: cancelRef}
+		cancelDispatch := enqueueImageDispatch(t, journal, cancelIntent, "s08-cancel-pull-"+shortS08RunID(runID), nil)
+		pullCtx, cancelPull := context.WithCancelCause(ctx)
+		type pullResult struct {
+			task taskjournal.Snapshot
+			err  error
+		}
+		finished := make(chan pullResult, 1)
+		go func() {
+			task, executeErr := executor.ExecuteImage(pullCtx, cancelDispatch, nil)
+			finished <- pullResult{task: task, err: executeErr}
+		}()
+
+		const cancelAfterBytes = int64(2 << 20)
+		waitCtx, waitCancel := context.WithTimeout(ctx, 90*time.Second)
+		defer waitCancel()
+		var transfer s08SlowProxyStats
+		for {
+			transfer, err = readS08SlowProxyStats(waitCtx, proxyBase)
+			if err == nil && transfer.BlobGETs > 0 && transfer.BytesSent >= cancelAfterBytes {
+				break
+			}
+			select {
+			case completed := <-finished:
+				cancelPull(nil)
+				t.Fatalf("pull ended before a measurable partial blob transfer: status=%s state=%s err=%v stats=%+v",
+					completed.task.Status, completed.task.Result.ObservedState, completed.err, transfer)
+			case <-waitCtx.Done():
+				cancelPull(nil)
+				t.Fatalf("proxy did not serve the cancellation threshold before timeout: stats=%+v err=%v", transfer, waitCtx.Err())
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+		if transfer.ActiveBlobGETs < 1 || transfer.BytesSent >= int64(len(largeFixture.LayerBytes)) {
+			cancelPull(nil)
+			t.Fatalf("cancellation trigger was not mid-transfer: stats=%+v layer_bytes=%d", transfer, len(largeFixture.LayerBytes))
+		}
+		running, err := journal.Get(ctx, cancelDispatch.TaskID)
+		if err != nil || running.Status != taskstate.Running {
+			cancelPull(nil)
+			t.Fatalf("Agent task was not durably running at the mid-transfer cancellation point: task=%+v err=%v", running, err)
+		}
+		cancelPull(taskstate.ErrCancellationRequested)
+
+		var outcome pullResult
+		select {
+		case outcome = <-finished:
+		case <-time.After(30 * time.Second):
+			t.Fatal("real Agent/SDK pull did not terminate after cancellation")
+		}
+		if outcome.err != nil || outcome.task.Status != taskstate.Canceled || outcome.task.Result.ObservedState != "absent_after_cancel" ||
+			!outcome.task.Evidence.CancellationConfirmed || !outcome.task.Evidence.ProcessTerminated || !outcome.task.Evidence.ActualResultConfirmed {
+			t.Fatalf("real cancellation was not confirmed by the Agent task state: status=%s state=%s evidence=%+v err=%v",
+				outcome.task.Status, outcome.task.Result.ObservedState, outcome.task.Evidence, outcome.err)
+		}
+		journalTask, err := journal.Get(ctx, cancelDispatch.TaskID)
+		if err != nil || journalTask.Status != taskstate.Canceled || journalTask.Result.ObservedState != "absent_after_cancel" {
+			t.Fatalf("durable Agent journal did not retain the confirmed cancellation: task=%+v err=%v", journalTask, err)
+		}
+
+		quiescenceCtx, quiescenceCancel := context.WithTimeout(ctx, 10*time.Second)
+		defer quiescenceCancel()
+		for {
+			transfer, err = readS08SlowProxyStats(quiescenceCtx, proxyBase)
+			if err == nil && transfer.ActiveBlobGETs == 0 && transfer.CanceledBlobGETs > 0 {
+				break
+			}
+			select {
+			case <-quiescenceCtx.Done():
+				t.Fatalf("slow Registry request did not stop after Engine cancellation: stats=%+v err=%v", transfer, quiescenceCtx.Err())
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+		stoppedAt := transfer
+		time.Sleep(500 * time.Millisecond)
+		transfer, err = readS08SlowProxyStats(ctx, proxyBase)
+		if err != nil || transfer.BytesSent != stoppedAt.BytesSent || transfer.BlobGETs != stoppedAt.BlobGETs || transfer.BytesSent >= int64(len(largeFixture.LayerBytes)) {
+			t.Fatalf("Registry transfer did not remain stopped after cancellation: before=%+v after=%+v err=%v layer_bytes=%d",
+				stoppedAt, transfer, err, len(largeFixture.LayerBytes))
+		}
+		if _, err := engine.Inspect(ctx, cancelRef); !errdefs.IsNotFound(err) {
+			t.Fatalf("Engine contains the image after confirmed cancellation: err=%v", err)
+		}
+		if _, err := docker("image", "inspect", cancelRef); err == nil ||
+			!strings.Contains(strings.ToLower(err.Error()), "no such image") {
+			t.Fatalf("Docker CLI did not confirm image absence after cancellation: err=%v", err)
+		}
+		t.Logf("real pull canceled after %d/%d layer bytes; task=%s, active Registry transfers=%d, canceled transfers=%d, SDK and CLI both confirmed image absent",
+			transfer.BytesSent, len(largeFixture.LayerBytes), outcome.task.Status, transfer.ActiveBlobGETs, transfer.CanceledBlobGETs)
+	})
 }
 
 type s08Fixture struct {
@@ -383,7 +530,14 @@ type s08Fixture struct {
 }
 
 func buildS08ImageFixture(architecture string) (s08Fixture, error) {
-	payload := make([]byte, 2<<20)
+	return buildS08ImageFixtureSized(architecture, 2<<20)
+}
+
+func buildS08ImageFixtureSized(architecture string, payloadSize int) (s08Fixture, error) {
+	if payloadSize < 1 {
+		return s08Fixture{}, errors.New("S08 image fixture payload size must be positive")
+	}
+	payload := make([]byte, payloadSize)
 	for offset, counter := 0, uint64(0); offset < len(payload); counter++ {
 		block := sha256.Sum256([]byte(fmt.Sprintf("nodedance-s08-image-fixture-%08x", counter)))
 		offset += copy(payload[offset:], block[:])
@@ -662,6 +816,48 @@ func assertS08JournalOmitsCredentials(path, username, password, wrongPassword st
 		}
 	}
 	return nil
+}
+
+type s08SlowProxyStats struct {
+	BlobGETs         uint64 `json:"blob_gets"`
+	BytesSent        int64  `json:"bytes_sent"`
+	ActiveBlobGETs   int64  `json:"active_blob_gets"`
+	CanceledBlobGETs uint64 `json:"canceled_blob_gets"`
+}
+
+func waitS08SlowProxy(ctx context.Context, base string) error {
+	deadline := time.Now().Add(15 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := readS08SlowProxyStats(ctx, base); err == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	return errors.New("slow Registry proxy status endpoint did not become ready")
+}
+
+func readS08SlowProxyStats(ctx context.Context, base string) (s08SlowProxyStats, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/__nodedance_s08/status", nil)
+	if err != nil {
+		return s08SlowProxyStats{}, errors.New("could not create slow Registry proxy status request")
+	}
+	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
+	if err != nil {
+		return s08SlowProxyStats{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return s08SlowProxyStats{}, errors.New("slow Registry proxy status endpoint returned an error")
+	}
+	var result s08SlowProxyStats
+	if err := json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&result); err != nil {
+		return s08SlowProxyStats{}, errors.New("could not decode slow Registry proxy transfer counters")
+	}
+	return result, nil
 }
 
 func s08Digest(data []byte) string {
