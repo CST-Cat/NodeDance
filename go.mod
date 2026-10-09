@@ -7,6 +7,8 @@ toolchain go1.26.8
 require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/coder/websocket v1.8.15
+	github.com/creack/pty v1.1.24
+	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.1
 	github.com/shirou/gopsutil/v4 v4.26.9
 	modernc.org/sqlite v1.60.1
@@ -25,7 +27,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/moby/moby/api v1.56.1 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect

@@ -25,6 +25,11 @@ const (
 	TypeRotatePrepare  = "rotate_prepare"
 	TypeRotateAccepted = "rotate_accepted"
 	TypeProtocolError  = "error"
+
+	// Terminal messages are multiplexed over the existing authenticated,
+	// generation-bound Agent socket. They never carry an arbitrary command.
+	TypeTerminalFrame  = "terminal_frame"
+	CapabilityTerminal = "agent.terminal.v1"
 )
 
 // Envelope is the only top-level JSON shape accepted on the Agent channel.

@@ -126,6 +126,12 @@ export interface DockerInventoryMessage {
   inventory: DockerInventory
 }
 
+export interface TerminalAuthorization {
+  streamId: string
+  ticket: string
+  expiresAt: string
+}
+
 interface AuthResponse {
   user: User
   csrfToken: string
@@ -236,6 +242,10 @@ export const api = {
   revokeSession: (id: string) => request<void>(`/api/v1/auth/sessions/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   }, true),
+  createTerminal: (nodeId: string, target: { targetKind: 'host' } | { targetKind: 'container'; containerId: string }) =>
+    request<TerminalAuthorization>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/terminals`, {
+      method: 'POST', body: JSON.stringify(target),
+    }, true),
   appearance: () => request<Appearance>('/api/v1/public/appearance'),
   saveAppearance: (payload: Pick<Appearance, 'displayName' | 'theme' | 'backgroundColor'>) =>
     request<void>('/api/v1/settings/appearance', {

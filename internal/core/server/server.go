@@ -68,6 +68,7 @@ type Server struct {
 	agentCancel                context.CancelFunc
 	agentWait                  sync.WaitGroup
 	agentLeaseWatchers         map[string]*agentConnection
+	terminals                  *terminalStreamManager
 }
 
 type session struct {
@@ -167,6 +168,7 @@ func New(version string, options Options) (*Server, error) {
 		agentSweepInterval:     options.AgentSweepInterval,
 		agentConnections:       make(map[string]*agentConnection),
 		agentLeaseWatchers:     make(map[string]*agentConnection),
+		terminals:              newTerminalStreamManager(),
 	}
 	s.csrfKey, err = loadOrCreateSigningKey(store.Dir)
 	if err != nil {
@@ -199,6 +201,9 @@ func New(version string, options Options) (*Server, error) {
 }
 
 func (s *Server) Close() error {
+	if s.terminals != nil {
+		s.terminals.closeAll(s, "Core shutdown")
+	}
 	s.agentLifecycleMu.Lock()
 	s.agentClosing = true
 	if s.agentCancel != nil {

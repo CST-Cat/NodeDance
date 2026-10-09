@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { api, type AgentNode, type AgentNodesResponse, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
+import { api, type AgentNode, type AgentNodesResponse, type DockerContainer, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import MetricsPanel from './MetricsPanel.vue'
+import TerminalConsole from './TerminalConsole.vue'
 
 interface NodeClock {
   status: string
@@ -33,6 +34,7 @@ let latestNodeListServerTime = Number.NEGATIVE_INFINITY
 const selectedNode = computed(() => nodes.value.find((node) => node.nodeId === selectedNodeID.value) ?? null)
 const selectedView = computed(() => views.value[selectedNodeID.value] ?? null)
 const selectedDocker = computed(() => dockerViews.value[selectedNodeID.value] ?? null)
+const activeTerminal = ref<{ nodeId: string; targetKind: 'host' | 'container'; containerId?: string; targetLabel: string } | null>(null)
 
 function dockerAvailabilityText(inventory: DockerInventory): string {
   if (inventory.dockerAvailability === 'available') {
@@ -361,6 +363,14 @@ function chooseNode(node: AgentNode) {
   }
 }
 
+function openHostTerminal(node: AgentNode) {
+  activeTerminal.value = { nodeId: node.nodeId, targetKind: 'host', targetLabel: `${node.displayName} · 主机终端` }
+}
+
+function openContainerTerminal(node: AgentNode, container: DockerContainer) {
+  activeTerminal.value = { nodeId: node.nodeId, targetKind: 'container', containerId: container.id, targetLabel: `${node.displayName} · ${container.name || container.id.slice(0, 12)}` }
+}
+
 function isPendingRegistration(node: AgentNode): boolean {
   return node.status === 'pending' || !node.agentId
 }
@@ -426,6 +436,11 @@ onBeforeUnmount(() => {
         </div>
         <div v-else class="metrics-waiting"><h2>选择一个节点</h2><p>节点的实时与最近指标会显示在这里。</p></div>
 
+        <div v-if="selectedNode" class="node-terminal-entry">
+          <div><strong>主机终端</strong><small>通过已连接 Agent 打开目标节点的配置 shell。</small></div>
+          <button type="button" :disabled="!nodeIsOnline(selectedNode)" @click="openHostTerminal(selectedNode)">打开终端</button>
+        </div>
+
         <section v-if="selectedNode" class="docker-panel" aria-labelledby="docker-title" data-testid="docker-inventory">
           <header class="docker-heading">
             <div><span class="eyebrow">CONTAINER INVENTORY</span><h2 id="docker-title">Docker 容器</h2></div>
@@ -447,7 +462,7 @@ onBeforeUnmount(() => {
             <article v-for="record in selectedDocker.containers" :key="record.container.id" class="docker-row" :data-container-id="record.container.id" :data-stale="dockerIsStale(selectedDocker) || record.container.stale">
               <div class="docker-row-title">
                 <div class="docker-container-copy"><strong>{{ record.container.name || record.container.id.slice(0, 12) }}</strong><small>{{ record.container.image || '未知镜像' }}<template v-if="record.container.compose"> · {{ record.container.compose.project }}/{{ record.container.compose.service }}</template></small></div>
-                <span class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span>
+                <div class="container-actions"><span class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span><button type="button" :disabled="!record.container.running || record.container.stale || dockerIsStale(selectedDocker) || !nodeIsOnline(selectedNode)" @click="openContainerTerminal(selectedNode, record.container)">控制台</button></div>
               </div>
               <div class="docker-row-meta">
                 <span :data-health="record.container.health">健康：{{ containerHealthText(record.container) }}</span>
@@ -465,6 +480,7 @@ onBeforeUnmount(() => {
         </section>
       </main>
     </div>
+    <TerminalConsole v-if="activeTerminal" v-bind="activeTerminal" @close="activeTerminal = null" />
   </section>
 </template>
 
@@ -495,6 +511,12 @@ onBeforeUnmount(() => {
 .metrics-waiting p { max-width: 440px; color: #9aabc1; font-size: 12px; line-height: 1.7; }
 .node-detail-status { margin-top: 12px; border: 1px solid rgba(171, 196, 232, .15); border-radius: 999px; padding: 6px 11px; color: #ffb4aa; font-size: 10px; }
 .node-detail-status[data-online='true'] { color: #9ce0b7; }
+.node-terminal-entry { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; border: 1px solid rgba(121, 214, 156, .18); border-radius: 10px; padding: 12px 14px; background: rgba(31, 89, 62, .1); }
+.node-terminal-entry > div { display: grid; gap: 4px; }
+.node-terminal-entry strong { color: #cfe9d7; font-size: 11px; }
+.node-terminal-entry small { color: #94aa9d; font-size: 10px; line-height: 1.5; }
+.node-terminal-entry button, .container-actions button { min-height: 34px; border: 1px solid rgba(121, 214, 156, .28); border-radius: 7px; padding: 6px 10px; color: #a9e7bd; background: rgba(73, 152, 99, .12); font-size: 10px; white-space: nowrap; cursor: pointer; }
+.node-terminal-entry button:disabled, .container-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .docker-panel { margin-top: 20px; border: 1px solid rgba(171, 196, 232, .13); border-radius: 12px; padding: clamp(14px, 2vw, 20px); background: rgba(9, 17, 29, .46); }
 .docker-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
 .docker-heading h2 { margin: 4px 0 0; font-size: 17px; }
@@ -505,6 +527,7 @@ onBeforeUnmount(() => {
 .docker-row { min-width: 0; border: 1px solid rgba(171, 196, 232, .1); border-radius: 9px; padding: 12px; background: rgba(18, 29, 45, .68); }
 .docker-row[data-stale='true'] { border-color: rgba(255, 176, 129, .22); }
 .docker-row-title { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
+.container-actions { display: flex; align-items: center; gap: 8px; }
 .docker-container-copy { display: grid; min-width: 0; gap: 4px; }
 .docker-container-copy strong { overflow-wrap: anywhere; font-size: 12px; }
 .docker-container-copy small { overflow-wrap: anywhere; color: #93a4bb; font-size: 10px; }
@@ -513,5 +536,5 @@ onBeforeUnmount(() => {
 .container-reason, .docker-empty { color: #9aabc1; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
 .container-reason { margin: 8px 0 0; }
 @media (max-width: 760px) { .nodes-layout { grid-template-columns: minmax(0, 1fr); } .node-list { max-height: 270px; overflow: auto; } }
-@media (max-width: 480px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } }
+@media (max-width: 480px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } .node-terminal-entry { align-items: flex-start; flex-direction: column; } .node-terminal-entry button { width: 100%; min-height: 42px; } .docker-row-title { flex-wrap: wrap; } .container-actions { width: 100%; justify-content: space-between; } .container-actions button { min-height: 42px; flex: 1; } }
 </style>

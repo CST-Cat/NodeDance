@@ -21,19 +21,20 @@ import (
 const agentHelloTimeout = 5 * time.Second
 
 type agentConnection struct {
-	conn           *websocket.Conn
-	cancel         context.CancelFunc
-	agentID        string
-	generation     uint64
-	metricsEnabled bool
-	dockerEnabled  bool
-	dockerFrames   chan dockerFrame
-	commands       chan protocol.Envelope
-	leaseUpdates   chan time.Time
-	watchMu        sync.Mutex
-	watchCancel    context.CancelFunc
-	watchStopped   bool
-	watchDone      chan struct{}
+	conn            *websocket.Conn
+	cancel          context.CancelFunc
+	agentID         string
+	generation      uint64
+	metricsEnabled  bool
+	dockerEnabled   bool
+	terminalEnabled bool
+	dockerFrames    chan dockerFrame
+	commands        chan protocol.Envelope
+	leaseUpdates    chan time.Time
+	watchMu         sync.Mutex
+	watchCancel     context.CancelFunc
+	watchStopped    bool
+	watchDone       chan struct{}
 }
 
 type agentRead struct {
@@ -71,6 +72,18 @@ func (c *agentConnection) enqueue(command protocol.Envelope) {
 	default:
 		// The rotation request is durable in SQLite and will be included in the
 		// next welcome if a bounded live-command queue is full.
+	}
+}
+
+func (c *agentConnection) tryEnqueue(command protocol.Envelope) bool {
+	if c == nil {
+		return false
+	}
+	select {
+	case c.commands <- command:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -229,21 +242,31 @@ func resetLeaseTimer(timer *time.Timer, duration time.Duration) {
 }
 
 func (s *Server) closeAgentConnection(agentID string, expectedGeneration uint64) {
+	var closed *agentConnection
 	s.agentConnectionsMu.Lock()
 	connection := s.agentConnections[agentID]
 	if connection != nil && (expectedGeneration == 0 || connection.generation == expectedGeneration) {
 		delete(s.agentConnections, agentID)
 		connection.close()
+		closed = connection
 	}
 	s.agentConnectionsMu.Unlock()
+	if closed != nil && s.terminals != nil {
+		s.terminals.closeAgent(s, closed.agentID, closed.generation, "Agent disconnected")
+	}
 }
 
 func (s *Server) detachAgentConnection(agentID string, expectedGeneration uint64) {
+	var detached *agentConnection
 	s.agentConnectionsMu.Lock()
 	if connection := s.agentConnections[agentID]; connection != nil && connection.generation == expectedGeneration {
 		delete(s.agentConnections, agentID)
+		detached = connection
 	}
 	s.agentConnectionsMu.Unlock()
+	if detached != nil && s.terminals != nil {
+		s.terminals.closeAgent(s, detached.agentID, detached.generation, "Agent disconnected")
+	}
 }
 
 func (s *Server) installAgentConnection(connection *agentConnection, agentID string) bool {
@@ -257,6 +280,9 @@ func (s *Server) installAgentConnection(connection *agentConnection, agentID str
 	s.agentConnectionsMu.Unlock()
 	if old != nil {
 		old.close()
+		if s.terminals != nil {
+			s.terminals.closeAgent(s, old.agentID, old.generation, "Agent reconnected")
+		}
 	}
 	return true
 }
@@ -359,9 +385,10 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	connectionCtx, connectionCancel := context.WithCancel(r.Context())
 	negotiatedCapabilities := negotiateCapabilities(hello.Capabilities)
 	managed := &agentConnection{conn: conn, cancel: connectionCancel, agentID: identity.AgentID, generation: lease.ConnectionGeneration,
-		metricsEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
-		dockerEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
-		commands:       make(chan protocol.Envelope, 8), leaseUpdates: make(chan time.Time, 1)}
+		metricsEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
+		dockerEnabled:   hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
+		terminalEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityTerminal),
+		commands:        make(chan protocol.Envelope, 8), leaseUpdates: make(chan time.Time, 1)}
 	if managed.dockerEnabled {
 		managed.dockerFrames = make(chan dockerFrame, 16)
 	}
@@ -534,6 +561,17 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Docker inventory queue overflow")
 					return
 				}
+			case protocol.TypeTerminalFrame:
+				if !connection.terminalEnabled || envelope.Sequence != 0 {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent terminal capability was not negotiated")
+					return
+				}
+				var frame protocol.TerminalFrame
+				if err := decodeAgentPayload(envelope.Payload, &frame); err != nil || protocol.ValidateTerminalFrame(frame, true) != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent terminal frame")
+					return
+				}
+				s.terminals.handleAgentFrame(s, connection, identity, frame)
 			case protocol.TypeRotatePrepare:
 				var rotation protocol.RotatePrepare
 				if err := decodeAgentPayload(envelope.Payload, &rotation); err != nil || !validUUID(rotation.RotationID) || !validDeviceCredential(rotation.NewCredential) {
@@ -649,7 +687,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTerminal: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {

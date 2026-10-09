@@ -22,6 +22,7 @@ const ConfigSchema = 1
 type Config struct {
 	Schema            int       `json:"schema"`
 	Server            string    `json:"server"`
+	Shell             string    `json:"shell,omitempty"`
 	CAFile            string    `json:"caFile,omitempty"`
 	Development       bool      `json:"development,omitempty"`
 	Credential        string    `json:"credential"`
@@ -136,7 +137,7 @@ func loadConfigForUID(path string, ownerUID int) (Config, error) {
 	if err := decoder.Decode(&extra); err != io.EOF {
 		return Config{}, errors.New("Agent config has trailing data")
 	}
-	if config.Schema != ConfigSchema || config.Server == "" || !isCredential(config.Credential) {
+	if config.Schema != ConfigSchema || config.Server == "" || !isCredential(config.Credential) || !validConfiguredShell(config.Shell) {
 		return Config{}, errors.New("Agent config is incomplete or unsupported")
 	}
 	if config.PendingCredential != "" && (!isCredential(config.PendingCredential) || !isUUID(config.PendingRotationID)) {
@@ -171,7 +172,7 @@ func SaveConfig(path string, config Config, exclusive bool) error {
 	if config.Schema == 0 {
 		config.Schema = ConfigSchema
 	}
-	if config.Schema != ConfigSchema || config.Server == "" || !isCredential(config.Credential) {
+	if config.Schema != ConfigSchema || config.Server == "" || !isCredential(config.Credential) || !validConfiguredShell(config.Shell) {
 		return errors.New("refusing to save invalid Agent configuration")
 	}
 	if config.PendingCredential != "" && (!isCredential(config.PendingCredential) || !isUUID(config.PendingRotationID)) {
@@ -261,6 +262,13 @@ func SaveConfig(path string, config Config, exclusive bool) error {
 		return fmt.Errorf("sync Agent credential directory: %w", err)
 	}
 	return nil
+}
+
+func validConfiguredShell(shell string) bool {
+	if shell == "" {
+		return true
+	}
+	return filepath.IsAbs(shell) && len(shell) <= 4096 && !strings.ContainsAny(shell, "\x00\r\n")
 }
 
 func validateConfigTransition(previous, next Config) error {

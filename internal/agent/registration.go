@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -45,7 +46,11 @@ func Enroll(ctx context.Context, server, caFile string, development bool, tokenR
 	if err != nil {
 		return fmt.Errorf("generate enrollment request ID: %w", err)
 	}
-	config := Config{Schema: ConfigSchema, Server: parsedServer, CAFile: caFile, Development: development,
+	configuredShell := strings.TrimSpace(os.Getenv("SHELL"))
+	if configuredShell == "" || !filepath.IsAbs(configuredShell) || strings.ContainsAny(configuredShell, "\x00\r\n") {
+		configuredShell = "/bin/sh"
+	}
+	config := Config{Schema: ConfigSchema, Server: parsedServer, Shell: configuredShell, CAFile: caFile, Development: development,
 		Credential: credential, EnrollmentToken: token, RequestID: requestID, CreatedAt: time.Now().UTC()}
 	if err := SaveConfig(configPath, config, true); err != nil {
 		return err

@@ -10,13 +10,16 @@ import (
 )
 
 const (
-	controlWriteTimeout = 5 * time.Second
-	metricWriteTimeout  = time.Second
-	dockerWriteTimeout  = 2 * time.Second
-	maxDockerWriteBurst  = 8
+	controlWriteTimeout   = 5 * time.Second
+	metricWriteTimeout    = time.Second
+	dockerWriteTimeout    = 2 * time.Second
+	terminalWriteTimeout  = 2 * time.Second
+	maxDockerWriteBurst   = 8
+	maxTerminalWriteBurst = 8
 )
 
 var errDockerWriterQueueFull = errors.New("Agent Docker frame queue is full")
+var errTerminalWriterQueueFull = errors.New("Agent terminal output queue is full")
 
 type envelopeWrite struct {
 	envelope protocol.Envelope
@@ -33,6 +36,7 @@ type socketEnvelopeWriter struct {
 	cancel   context.CancelFunc
 	high     chan envelopeWrite
 	docker   chan protocol.Envelope
+	terminal chan protocol.Envelope
 	metrics  chan protocol.Envelope
 	failures chan error
 	done     chan struct{}
@@ -43,11 +47,26 @@ func newSocketEnvelopeWriter(ctx context.Context, conn *websocket.Conn) *socketE
 	w := &socketEnvelopeWriter{
 		conn: conn, ctx: writerCtx, cancel: cancel,
 		high: make(chan envelopeWrite, 8), metrics: make(chan protocol.Envelope, 1),
-		docker:   make(chan protocol.Envelope, 16),
+		docker: make(chan protocol.Envelope, 16), terminal: make(chan protocol.Envelope, 16),
 		failures: make(chan error, 1), done: make(chan struct{}),
 	}
 	go w.run()
 	return w
+}
+
+// offerTerminal preserves output order in a bounded queue. A saturated slow
+// browser cannot grow Agent memory or hold heartbeat writes behind terminal IO.
+func (w *socketEnvelopeWriter) offerTerminal(ctx context.Context, envelope protocol.Envelope) error {
+	select {
+	case w.terminal <- envelope:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-w.ctx.Done():
+		return errors.New("Agent socket writer stopped")
+	default:
+		return errTerminalWriterQueueFull
+	}
 }
 
 // offerDocker preserves FIFO ordering and never overwrites a snapshot chunk.
@@ -121,6 +140,7 @@ func (w *socketEnvelopeWriter) offerMetrics(envelope protocol.Envelope) {
 func (w *socketEnvelopeWriter) run() {
 	defer close(w.done)
 	dockerBurst := 0
+	terminalBurst := 0
 	for {
 		select {
 		case <-w.ctx.Done():
@@ -132,6 +152,30 @@ func (w *socketEnvelopeWriter) run() {
 		select {
 		case request := <-w.high:
 			w.write(request.envelope, request.result, controlWriteTimeout)
+			continue
+		default:
+		}
+		if terminalBurst >= maxTerminalWriteBurst {
+			select {
+			case envelope := <-w.metrics:
+				w.write(envelope, nil, metricWriteTimeout)
+				terminalBurst = 0
+				continue
+			default:
+			}
+			select {
+			case envelope := <-w.docker:
+				w.write(envelope, nil, dockerWriteTimeout)
+				dockerBurst++
+				terminalBurst = 0
+				continue
+			default:
+			}
+		}
+		select {
+		case envelope := <-w.terminal:
+			w.write(envelope, nil, terminalWriteTimeout)
+			terminalBurst++
 			continue
 		default:
 		}
@@ -158,12 +202,16 @@ func (w *socketEnvelopeWriter) run() {
 			return
 		case request := <-w.high:
 			w.write(request.envelope, request.result, controlWriteTimeout)
+		case envelope := <-w.terminal:
+			w.write(envelope, nil, terminalWriteTimeout)
+			terminalBurst++
 		case envelope := <-w.docker:
 			w.write(envelope, nil, dockerWriteTimeout)
 			dockerBurst++
 		case envelope := <-w.metrics:
 			w.write(envelope, nil, metricWriteTimeout)
 			dockerBurst = 0
+			terminalBurst = 0
 		}
 	}
 }

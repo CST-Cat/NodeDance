@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T16:07:58.657454+00:00",
+  "run_id": "progress-snapshot-20261009T040908Z-a3d71468",
+  "updated_at": "2026-10-09T04:09:08.390+00:00",
   "status": "NOT_READY",
-  "reason": "当前没有任何阶段报告完成实际验收。",
+  "reason": "S00 and S01 have passed; S02-S17 remain incomplete, so the project status is NOT_READY.",
   "stages": {
     "S00": {
       "status": "PASS",
@@ -21,83 +21,115 @@
     },
     "S02": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "初始验收模板；当前运行结果由S02验收脚本逐项写入，尚未在此模板记录任何实际结果。"
     },
     "S03": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S04": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S05": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S06": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S07": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S08": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S09": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "component",
+      "run_id": "s09-component-77538a401154",
+      "updated_at": "2026-10-09T04:08:15.068+00:00",
+      "reason": "S09 component checks are underway: host PTY and real Docker Exec passed against marker-verified isolated Engine 28/29, including foreground sleep Ctrl-C/exit with non-running ExecInspect; the browser viewport checks are mocked. The full Core-Agent-browser lifecycle acceptance and three consecutive full-stage runs remain unexecuted, so S09 is NOT_READY."
     },
     "S10": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S11": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S12": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S13": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S14": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S15": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S16": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     },
     "S17": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "mode": "initial",
+      "run_id": "initial-unexecuted",
+      "updated_at": "2026-10-08T00:00:00+00:00",
+      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
     }
   }
 }
