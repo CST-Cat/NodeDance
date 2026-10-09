@@ -125,13 +125,19 @@ The run covers the protected Core API with an actual registered Agent: upload,
 list, stat, rename, and download of a Chinese/spaced filename with SHA-256
 comparison; text read followed by an external host write and a stale edit that
 must return HTTP 409 without replacing the external bytes; `..` and an
-escaping symlink that must not read the root-external canary; and delete with
-CSRF and exact-path confirmation plus a persisted audit target containing the
+escaping symlink that must not read the root-external canary; and exact-path
+file deletion with CSRF rejection and a persisted audit target containing the
 node, task, and escaped exact path. A missing CSRF header and a mismatched
-delete confirmation leave the file intact. The test verifies Core download
-spools and Agent upload temporaries are gone, stops its Agent/Core, removes
-only the test-owned TempDir, and verifies that directory is absent. Go's own
-TempDir cleanup remains registered as a fallback on early test failure.
+confirmation leave the file intact. The follow-up also creates a non-empty
+directory with a nested file, verifies both missing-CSRF and mismatched-path
+requests preserve its tree and bytes, then confirms deletion through the live
+Core-Agent API. It checks that the directory and nested file disappear and
+that SQLite contains exactly one successful audit row whose independently
+constructed target matches the node UUID, returned task ID, and exact escaped
+directory path. Empty-directory deletion remains untested. The test verifies
+Core download spools and Agent upload temporaries are gone, stops its Agent/Core,
+removes only the test-owned TempDir, and verifies that directory is absent.
+Go's own TempDir cleanup remains registered as a fallback on early test failure.
 
 The first execution failed because the test incorrectly required an escaping
 symlink to return HTTP 400. The real Agent refused the symlink, but Go's
@@ -141,11 +147,25 @@ an unchanged outside-root canary; it did not alter production error mapping.
 The focused test then passed once. The first failure and corrected pass are
 both retained in the current stage report and local test logs.
 
+The non-empty-directory follow-up added a nested file and exercised the live
+delete API with an omitted CSRF header, a mismatched confirmation path, and
+the exact confirmation. The first attempt compared the audit target against
+the bare path, while the established contract stores a URL-escaped JSON path
+list; the next attempt selected the earlier `accepted` audit row instead of
+the later `succeeded` row. After correcting only those two test assertions, one
+focused run passed and verified the directory and nested file were removed,
+both rejected requests preserved the nested bytes, and SQLite stored exactly
+one successful exact node/task/path audit target. Both assertion failures and
+the passing run are retained in `.artifacts/stage-runs/`. This is partial
+S10-09 evidence only: empty-directory deletion and the remaining S10-09 matrix
+are still unverified.
+
 This bounded local integration supplies live evidence for S10-01, S10-02,
-and S10-07, plus file-branch evidence for S10-09 (directory deletion remains
-untested). The full stage stays `NOT_READY`: the test uses a small
-fixture, runs the Agent as the current test account, and does not cover large
-transfer memory use or the systemd sandbox.
+and S10-07, plus partial S10-09 evidence for file and nested non-empty
+directory deletion. S10-09 remains `NOT_READY` because empty-directory delete
+and the full required matrix are not covered. The full stage stays `NOT_READY`:
+the test uses a small fixture, runs the Agent as the current test account, and
+does not cover large-transfer memory use or the systemd sandbox.
 
 The following remain `NOT_READY` until a report records the required evidence:
 

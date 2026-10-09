@@ -100,7 +100,11 @@ def save_report(checks: list[dict[str, object]], mode: str) -> None:
         item["status"] = case_status
         if live_pass and case["id"] in LIVE_FILE_CASES:
             if case["id"] in LIVE_FILE_PARTIAL_CASES:
-                item["reason"] = "The real Agent file-delete branch and exact audit target passed; empty and non-empty directory deletion remain unverified."
+                item["reason"] = (
+                    "The real Agent/Core API verified exact-confirmation deletion of a file and a nested non-empty directory; "
+                    "missing-CSRF and mismatched-confirmation requests preserved directory contents, and SQLite stored the "
+                    "exact node/task/path audit target. Empty-directory deletion and the full S10-09 matrix remain unverified."
+                )
             else:
                 item["reason"] = "The focused real HTTPS/Core-WebSocket/registered-Agent test passed against an isolated host file root."
             item["runs"] = [{
