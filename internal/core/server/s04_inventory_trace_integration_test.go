@@ -78,6 +78,10 @@ func TestRealAgentDockerInventoryTraceOnOwnedDIND(t *testing.T) {
 	coreHTTP := httptest.NewUnstartedServer(core)
 	coreHTTP.TLS = &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
 	coreHTTP.StartTLS()
+	wssProxy := &s04InventoryTraceWSSProxy{core: core, coreURL: coreHTTP.URL, rootPEM: rootPEM}
+	wssServer := httptest.NewUnstartedServer(wssProxy)
+	wssServer.TLS = &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
+	wssServer.StartTLS()
 	var stopAgent func()
 	t.Cleanup(func() {
 		if stopAgent != nil {
@@ -88,6 +92,7 @@ func TestRealAgentDockerInventoryTraceOnOwnedDIND(t *testing.T) {
 			t.Errorf("close S04 inventory-trace Core: %v", err)
 		}
 	})
+	t.Cleanup(wssServer.Close)
 
 	enrollment, err := core.agents.CreateEnrollment(context.Background(), "S04 inventory trace "+engineVersion,
 		"127.0.0.1", sql.NullInt64{Int64: 1, Valid: true})
@@ -99,23 +104,13 @@ func TestRealAgentDockerInventoryTraceOnOwnedDIND(t *testing.T) {
 		t.Fatal("write S04 inventory-trace CA:", err)
 	}
 	configPath := filepath.Join(work, "agent", "agent.json")
-	if err := agent.Enroll(context.Background(), coreHTTP.URL, caPath, false, strings.NewReader(enrollment.Token), configPath); err != nil {
+	if err := agent.Enroll(context.Background(), wssServer.URL, caPath, false, strings.NewReader(enrollment.Token), configPath); err != nil {
 		t.Fatal("enroll S04 inventory-trace Agent:", err)
 	}
 	config, err := agent.LoadConfig(configPath)
 	if err != nil {
 		t.Fatal("load S04 inventory-trace Agent config:", err)
 	}
-
-	wssProxy := &s04InventoryTraceWSSProxy{coreURL: coreHTTP.URL, rootPEM: rootPEM}
-	wssServer := httptest.NewUnstartedServer(wssProxy)
-	wssServer.TLS = &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12}
-	wssServer.StartTLS()
-	config.Server = wssServer.URL
-	if err := agent.SaveConfig(configPath, config, false); err != nil {
-		t.Fatal("point test Agent at the inventory-trace WSS proxy:", err)
-	}
-	t.Cleanup(wssServer.Close)
 
 	engineTap, agentDockerHost := startS04DockerAPITap(t, endpoint)
 	t.Setenv("DOCKER_HOST", agentDockerHost)
@@ -534,6 +529,7 @@ type s04WireTraceEvent struct {
 }
 
 type s04InventoryTraceWSSProxy struct {
+	core    *Server
 	coreURL string
 	rootPEM []byte
 	mu      sync.Mutex
@@ -542,7 +538,7 @@ type s04InventoryTraceWSSProxy struct {
 
 func (p *s04InventoryTraceWSSProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/ws/v1/agent" {
-		http.NotFound(w, r)
+		p.core.ServeHTTP(w, r)
 		return
 	}
 	ctx, cancel := context.WithCancel(r.Context())

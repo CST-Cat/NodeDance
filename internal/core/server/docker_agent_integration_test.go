@@ -50,6 +50,10 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 			t.Fatalf("pull locked S04 fixture image: %v", pullErr)
 		}
 	}
+	baselineIDs, err := s04EngineContainerIDs(endpoint)
+	if err != nil {
+		t.Fatalf("capture exact owned DIND baseline container IDs: %v", err)
+	}
 	runID := fmt.Sprintf("nd-s04-%d", time.Now().UnixNano())
 	composeProject := runID + "-compose"
 	composeFile := filepath.Join(work, "compose.yaml")
@@ -96,6 +100,17 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}
 	composeID := composeIDLines[0]
 	containerIDs = append(containerIDs, composeID)
+	expectedInventoryIDs := func() []string {
+		ids := append(append([]string(nil), baselineIDs...), containerIDs...)
+		sort.Strings(ids)
+		return ids
+	}
+	initialExpectedIDs := expectedInventoryIDs()
+	engineIDs, err := s04EngineContainerIDs(endpoint)
+	if err != nil || !sameS04StringSet(engineIDs, initialExpectedIDs) {
+		t.Fatalf("owned DIND inventory after creating exact multi-chunk fixtures differs from baseline plus test fixtures: got=%v expected=%v err=%v",
+			sortedStrings(engineIDs), initialExpectedIDs, err)
+	}
 
 	certificate, rootPEM, err := makeAgentTestCertificate()
 	if err != nil {
@@ -181,7 +196,7 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 
 	proxy.networkDown.Store(false)
 	waitForAgentStatusWithin(t, core, config.NodeID, "online", firstGeneration, 30*time.Second)
-	inventory := waitForDockerInventoryContains(t, coreHTTP.URL, rootPEM, session, config.NodeID, containerIDs, 45*time.Second)
+	inventory := waitForDockerInventoryContains(t, coreHTTP.URL, rootPEM, session, config.NodeID, initialExpectedIDs, 45*time.Second)
 	if got := proxy.dockerChunks.Load(); got < 3 {
 		t.Fatalf("Core-Agent path did not carry multiple Docker snapshot frames: observed %d", got)
 	}
@@ -189,12 +204,17 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 		t.Fatalf("snapshot reconnect did not use a newer Core generation: before=%d after=%d", firstGeneration, generation)
 	}
 	var committedRows int
-	if err := core.store.DB.QueryRow(`SELECT count(*) FROM docker_containers WHERE node_id=?`, config.NodeID).Scan(&committedRows); err != nil || committedRows < 200 {
-		t.Fatalf("final complete snapshot was not atomically committed: rows=%d err=%v", committedRows, err)
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM docker_containers WHERE node_id=?`, config.NodeID).Scan(&committedRows); err != nil || committedRows != len(initialExpectedIDs) {
+		t.Fatalf("final complete snapshot was not atomically committed with the exact baseline and fixture inventory: rows=%d want=%d err=%v", committedRows, len(initialExpectedIDs), err)
 	}
 
-	if inventory.Inventory == nil || len(inventory.Inventory.Containers) != 201 {
-		t.Fatalf("private Core container inventory did not expose the committed Agent snapshot: count=%d", inventoryCount(inventory))
+	if inventory.Inventory == nil || !sameS04StringSet(dockerViewContainerIDs(*inventory.Inventory), initialExpectedIDs) {
+		t.Fatalf("private Core container inventory did not expose exactly the baseline plus committed Agent fixtures: got=%v want=%v",
+			inventoryIDs(inventory), initialExpectedIDs)
+	}
+	if storedIDs := s04StoredContainerIDs(t, core, config.NodeID); !sameS04StringSet(storedIDs, initialExpectedIDs) {
+		t.Fatalf("Core persisted inventory does not exactly match baseline plus committed Agent fixtures: got=%v want=%v",
+			sortedStrings(storedIDs), initialExpectedIDs)
 	}
 	var composeRecord *coredocker.ContainerRecord
 	for index := range inventory.Inventory.Containers {
@@ -212,8 +232,9 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	dashboard := openS04Dashboard(t, coreHTTP.URL, rootPEM, session)
 	defer dashboard.CloseNow()
 	initialPush := readS04DashboardInventory(t, dashboard, config.NodeID, 15*time.Second)
-	if len(initialPush.Containers) != len(inventory.Inventory.Containers) || len(initialPush.Containers) != 201 {
-		t.Fatalf("Dashboard initial push does not contain the committed inventory: API=%d WebSocket=%d", len(inventory.Inventory.Containers), len(initialPush.Containers))
+	if !sameS04StringSet(dockerViewContainerIDs(initialPush), initialExpectedIDs) {
+		t.Fatalf("Dashboard initial push does not contain exactly the committed baseline plus fixture inventory: got=%v want=%v",
+			dockerViewContainerIDs(initialPush), initialExpectedIDs)
 	}
 	dashboardEvents, stopDashboardReader := startS04DashboardReader(dashboard)
 	defer stopDashboardReader()
@@ -227,11 +248,13 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 	}
 	eventID = strings.TrimSpace(eventID)
 	containerIDs = append(containerIDs, eventID)
+	expectedEventIDs := expectedInventoryIDs()
 	pushed := waitForS04DashboardInventory(t, dashboardEvents, config.NodeID, func(view coredocker.View) bool {
-		return dockerViewContains(view, eventID)
+		return sameS04StringSet(dockerViewContainerIDs(view), expectedEventIDs)
 	}, 10*time.Second)
-	if len(pushed.Containers) < 201 {
-		t.Fatalf("Dashboard event push did not converge to the new external container: count=%d", len(pushed.Containers))
+	if !sameS04StringSet(dockerViewContainerIDs(pushed), expectedEventIDs) {
+		t.Fatalf("Dashboard event push did not converge to exactly the baseline, fixtures, and new external container: got=%v want=%v",
+			dockerViewContainerIDs(pushed), expectedEventIDs)
 	}
 	if record, err := waitForS04ContainerRecordAPI(coreHTTP.URL, rootPEM, session, config.NodeID, eventID, func(record coredocker.ContainerRecord) bool {
 		return record.Container.State == "created" && !record.Container.Running
@@ -309,7 +332,11 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("S04-02 external lifecycle API observed delete container=%s absent from API and dashboard", eventID)
-	waitForDockerInventoryContains(t, coreHTTP.URL, rootPEM, session, config.NodeID, containerIDs, 10*time.Second)
+	afterEventDelete := waitForDockerInventoryContains(t, coreHTTP.URL, rootPEM, session, config.NodeID, expectedInventoryIDs(), 10*time.Second)
+	if afterEventDelete.Inventory == nil || !sameS04StringSet(dockerViewContainerIDs(*afterEventDelete.Inventory), expectedInventoryIDs()) {
+		t.Fatalf("private Core inventory after external delete differs from baseline plus remaining fixtures: got=%v want=%v",
+			inventoryIDs(afterEventDelete), expectedInventoryIDs())
+	}
 	// Interrupt a second multi-chunk snapshot after a complete inventory has
 	// committed. This proves that the incomplete replacement does not erase or
 	// partially publish the last authoritative rows.
@@ -326,24 +353,25 @@ func TestRealDockerAgentCoreMultiChunkSnapshotReconnect(t *testing.T) {
 		return proxy.connectionAttempts.Load() > connectionAttempts && generationForNode(t, core, config.NodeID) > committedGeneration
 	}, "Agent did not enter the blocked reconnect after the replacement snapshot was interrupted")
 	partialGeneration := generationForNode(t, core, config.NodeID)
+	committedExpectedIDs := expectedInventoryIDs()
 	partialView := waitForS04DockerView(t, core, config.NodeID, 5*time.Second, func(view coredocker.View) bool {
-		return view.ActiveGeneration == partialGeneration && view.DataStale && len(view.Containers) == len(containerIDs)
+		return view.ActiveGeneration == partialGeneration && view.DataStale && sameS04StringSet(dockerViewContainerIDs(view), committedExpectedIDs)
 	}, "incomplete replacement snapshot retains the old inventory as stale")
-	if got := dockerViewContainerIDs(partialView); strings.Join(got, ",") != strings.Join(sortedStrings(containerIDs), ",") {
-		t.Fatalf("incomplete replacement snapshot changed the prior committed container IDs: got=%v want=%v", got, sortedStrings(containerIDs))
+	if got := dockerViewContainerIDs(partialView); !sameS04StringSet(got, committedExpectedIDs) {
+		t.Fatalf("incomplete replacement snapshot changed the prior committed container IDs: got=%v want=%v", got, committedExpectedIDs)
 	}
 	var retainedRows int
-	if err := core.store.DB.QueryRow(`SELECT count(*) FROM docker_containers WHERE node_id=?`, config.NodeID).Scan(&retainedRows); err != nil || retainedRows != len(containerIDs) {
-		t.Fatalf("incomplete replacement snapshot changed persisted inventory rows: got=%d want=%d err=%v", retainedRows, len(containerIDs), err)
+	if err := core.store.DB.QueryRow(`SELECT count(*) FROM docker_containers WHERE node_id=?`, config.NodeID).Scan(&retainedRows); err != nil || retainedRows != len(committedExpectedIDs) {
+		t.Fatalf("incomplete replacement snapshot changed persisted inventory rows: got=%d want=%d err=%v", retainedRows, len(committedExpectedIDs), err)
 	}
 	t.Logf("incomplete replacement snapshot retained %d previously committed IDs and SQLite rows as stale at generation=%d", retainedRows, partialGeneration)
 	proxy.networkDown.Store(false)
 	waitForAgentStatusWithin(t, core, config.NodeID, "online", partialGeneration, 30*time.Second)
 	recoveredView := waitForS04DockerView(t, core, config.NodeID, 30*time.Second, func(view coredocker.View) bool {
-		return view.AgentOnline && view.DockerAvailability == "available" && view.DockerSnapshotFresh && !view.DataStale && len(view.Containers) == len(containerIDs)
+		return view.AgentOnline && view.DockerAvailability == "available" && view.DockerSnapshotFresh && !view.DataStale && sameS04StringSet(dockerViewContainerIDs(view), committedExpectedIDs)
 	}, "complete replacement snapshot restores the retained inventory")
-	if got := dockerViewContainerIDs(recoveredView); strings.Join(got, ",") != strings.Join(sortedStrings(containerIDs), ",") {
-		t.Fatalf("recovered replacement snapshot changed the authoritative container IDs: got=%v want=%v", got, sortedStrings(containerIDs))
+	if got := dockerViewContainerIDs(recoveredView); !sameS04StringSet(got, committedExpectedIDs) {
+		t.Fatalf("recovered replacement snapshot changed the authoritative container IDs: got=%v want=%v", got, committedExpectedIDs)
 	}
 	sequenceBeforeDrop := heartbeatSequenceForNode(t, core, config.NodeID)
 	droppedBefore := proxy.droppedDockerMessages.Load()
@@ -965,11 +993,10 @@ func TestRealAgentDockerDINDStopAndSocketPermissionRecovery(t *testing.T) {
 	}
 	root, endpoint, engineVersion := requireOwnedS04DIND(t)
 	t.Setenv("DOCKER_HOST", endpoint)
-	baselineOutput, err := runS04DockerCLI(endpoint, "container", "ls", "--all", "--quiet", "--no-trunc")
+	baselineIDs, err := s04EngineContainerIDs(endpoint)
 	if err != nil {
-		t.Fatalf("list baseline containers on the owned Engine: %v", err)
+		t.Fatalf("list exact baseline containers on the owned Engine: %v", err)
 	}
-	baselineIDs := strings.Fields(baselineOutput)
 	engine := strings.SplitN(engineVersion, ".", 2)[0]
 	owner := readOwnedS04DINDOwner(t, root, endpoint, engineVersion)
 	dindScriptRoot := root
@@ -1192,10 +1219,12 @@ func TestRealAgentDockerDINDStopAndSocketPermissionRecovery(t *testing.T) {
 	finalView := waitForS04DockerView(t, core, config.NodeID, 40*time.Second, func(view coredocker.View) bool {
 		return view.AgentOnline && view.DockerAvailability == "available" && view.DockerSnapshotFresh && !view.DataStale && dockerViewContains(view, fixtureID)
 	}, "full Docker resync after restoring socket permissions")
-	if len(finalView.Containers) != 1 {
-		t.Fatalf("socket permission recovery changed the stopped inventory: count=%d", len(finalView.Containers))
+	if gotIDs := s04DockerViewContainerIDs(finalView); !sameS04StringSet(gotIDs, expectedIDs) {
+		t.Fatalf("socket permission recovery changed the baseline plus stopped fixture inventory: got=%v want=%v",
+			sortedStrings(gotIDs), sortedStrings(expectedIDs))
 	}
-	t.Logf("socket DAC recovery preserved the exact stopped asset; final availability=%s stale=%t generation=%d", finalView.DockerAvailability, finalView.DataStale, finalView.ActiveGeneration)
+	t.Logf("socket DAC recovery preserved the exact baseline plus stopped fixture inventory (%d containers); final availability=%s stale=%t generation=%d",
+		len(expectedIDs), finalView.DockerAvailability, finalView.DataStale, finalView.ActiveGeneration)
 }
 
 func dialUnixSocketForDACProbe(path string) error {
@@ -1799,4 +1828,11 @@ func inventoryCount(message dashboardDockerMessage) int {
 		return 0
 	}
 	return len(message.Inventory.Containers)
+}
+
+func inventoryIDs(message dashboardDockerMessage) []string {
+	if message.Inventory == nil {
+		return nil
+	}
+	return dockerViewContainerIDs(*message.Inventory)
 }
