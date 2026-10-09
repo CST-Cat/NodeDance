@@ -50,6 +50,8 @@ type agentConnection struct {
 	streamTombstoneOrder     []string
 	composeMu                sync.Mutex
 	composeWaiters           map[string]composeWaiter
+	rebuildPlanMu            sync.Mutex
+	rebuildPlanWaiters       map[string]rebuildPlanWaiter
 	leaseUpdates             chan time.Time
 	watchMu                  sync.Mutex
 	watchCancel              context.CancelFunc
@@ -622,6 +624,15 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				}
 				if err := s.handleAgentComposeResponse(ctx, connection, identity.NodeID, envelope); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid or unpersisted Agent Compose response")
+					return
+				}
+			case protocol.TypeContainerRebuildPlanResponse:
+				if !connection.taskEnabled || envelope.Sequence != 0 {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent task bridge was not negotiated")
+					return
+				}
+				if err := s.handleAgentRebuildPlanResponse(connection, envelope); err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid container rebuild plan response")
 					return
 				}
 			case protocol.TypeHello:

@@ -17,10 +17,12 @@ import (
 )
 
 type containerActionRequest struct {
-	Action               protocol.TaskAction `json:"action"`
-	NewName              string              `json:"newName,omitempty"`
-	DeleteConfirmed      bool                `json:"deleteConfirmed,omitempty"`
-	DeleteConfirmationID string              `json:"deleteConfirmationId,omitempty"`
+	Action               protocol.TaskAction   `json:"action"`
+	NewName              string                `json:"newName,omitempty"`
+	DeleteConfirmed      bool                  `json:"deleteConfirmed,omitempty"`
+	DeleteConfirmationID string                `json:"deleteConfirmationId,omitempty"`
+	Rebuild              *protocol.RebuildSpec `json:"rebuild,omitempty"`
+	ConfirmationID       string                `json:"confirmationId,omitempty"`
 }
 
 type taskView struct {
@@ -166,7 +168,17 @@ func (s *Server) handleCreateContainerTask(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "delete confirmation is only valid for delete", http.StatusBadRequest)
 		return
 	}
-	intent := coretasks.Intent{Action: request.Action, ContainerID: containerID, NewName: request.NewName, DeleteConfirmed: request.DeleteConfirmed}
+	if request.Action == protocol.TaskRebuildCleanup {
+		if request.ConfirmationID != containerID {
+			http.Error(w, "cleanup confirmation must match the full target ID", http.StatusBadRequest)
+			return
+		}
+	} else if request.ConfirmationID != "" {
+		http.Error(w, "confirmationId is only valid for rebuild cleanup", http.StatusBadRequest)
+		return
+	}
+	intent := coretasks.Intent{Action: request.Action, ContainerID: containerID, NewName: request.NewName,
+		DeleteConfirmed: request.DeleteConfirmed, Rebuild: request.Rebuild}
 	if err := protocol.ValidateTaskIntent(intent); err != nil {
 		http.Error(w, "invalid container action", http.StatusBadRequest)
 		return
@@ -346,7 +358,7 @@ func (s *Server) writeTaskStoreError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, coretasks.ErrInvalidRequest), errors.Is(err, protocol.ErrInvalidTaskMessage):
 		http.Error(w, "invalid container action", http.StatusBadRequest)
-	case errors.Is(err, coretasks.ErrIdempotencyConflict), errors.Is(err, coretasks.ErrTaskIDConflict), errors.Is(err, coretasks.ErrResourceBusy), errors.Is(err, coretasks.ErrManagedRename):
+	case errors.Is(err, coretasks.ErrIdempotencyConflict), errors.Is(err, coretasks.ErrTaskIDConflict), errors.Is(err, coretasks.ErrResourceBusy), errors.Is(err, coretasks.ErrManagedRename), errors.Is(err, coretasks.ErrManagedRebuild):
 		http.Error(w, "task conflicts with existing state", http.StatusConflict)
 	case errors.Is(err, coretasks.ErrNotDelivered):
 		http.Error(w, "task may already have reached the Agent", http.StatusConflict)

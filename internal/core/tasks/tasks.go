@@ -44,6 +44,7 @@ var (
 	ErrTaskNotFound         = errors.New("task not found")
 	ErrTaskStateConflict    = errors.New("task state conflicts with the durable record")
 	ErrManagedRename        = errors.New("Compose-managed containers cannot be renamed")
+	ErrManagedRebuild       = errors.New("Compose-managed containers cannot be rebuilt by the independent container workflow")
 	ErrNotDelivered         = errors.New("task has not been durably marked for delivery")
 )
 
@@ -360,6 +361,9 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 	}
 	if composeManaged && request.Intent.Action == ActionRename {
 		return EnqueueResult{}, ErrManagedRename
+	}
+	if composeManaged && (request.Intent.Action == protocol.TaskRebuild || request.Intent.Action == protocol.TaskRebuildCleanup) {
+		return EnqueueResult{}, ErrManagedRebuild
 	}
 
 	now := s.now().UTC()

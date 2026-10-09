@@ -17,6 +17,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	corecompose "github.com/CST-Cat/NodeDance/internal/core/compose"
 	"github.com/CST-Cat/NodeDance/internal/core/config"
+	coreprefs "github.com/CST-Cat/NodeDance/internal/core/containerprefs"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
@@ -37,6 +38,9 @@ type Options struct {
 	AgentOfflineTimeout    time.Duration
 	AgentSweepInterval     time.Duration
 	Now                    func() time.Time
+	// PreferenceMigrator is the S06 display-preference identity seam.
+	// Production defaults to a no-op until the persistent S06 repository lands.
+	PreferenceMigrator coreprefs.Migrator
 }
 
 type Server struct {
@@ -74,6 +78,7 @@ type Server struct {
 	agentWait                  sync.WaitGroup
 	agentLeaseWatchers         map[string]*agentConnection
 	containerStreamSlots       chan struct{}
+	preferenceMigrator         coreprefs.Migrator
 }
 
 type session struct {
@@ -174,6 +179,10 @@ func New(version string, options Options) (*Server, error) {
 		agentConnections:       make(map[string]*agentConnection),
 		agentLeaseWatchers:     make(map[string]*agentConnection),
 		containerStreamSlots:   make(chan struct{}, 64),
+		preferenceMigrator:     options.PreferenceMigrator,
+	}
+	if s.preferenceMigrator == nil {
+		s.preferenceMigrator = coreprefs.NopMigrator{}
 	}
 	s.composeOps, err = corecompose.NewStore(store.DB, corecompose.Options{Now: options.Now})
 	if err != nil {

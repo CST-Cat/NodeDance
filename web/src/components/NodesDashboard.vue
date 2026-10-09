@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type ContainerTaskAction, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse, type TaskAuditEvent } from '../api'
+import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse, type TaskAuditEvent } from '../api'
 import type { MetricsView } from '../metrics-contract'
+import ContainerRebuildWizard from './ContainerRebuildWizard.vue'
 import ContainerStreams from './ContainerStreams.vue'
 import MetricsPanel from './MetricsPanel.vue'
 
@@ -42,6 +43,7 @@ let latestNodeListServerTime = Number.NEGATIVE_INFINITY
 const selectedNode = computed(() => nodes.value.find((node) => node.nodeId === selectedNodeID.value) ?? null)
 const selectedView = computed(() => views.value[selectedNodeID.value] ?? null)
 const selectedDocker = computed(() => dockerViews.value[selectedNodeID.value] ?? null)
+const selectedNodeTasks = computed(() => Object.values(taskViews.value).filter((task) => task.nodeId === selectedNodeID.value))
 
 function dockerAvailabilityText(inventory: DockerInventory): string {
   if (inventory.dockerAvailability === 'available') {
@@ -222,7 +224,15 @@ async function loadTasks(node: AgentNode) {
 
 function taskForContainer(containerID: string): ContainerTask | undefined {
   return Object.values(taskViews.value)
-    .filter((task) => task.nodeId === selectedNodeID.value && task.targetId === containerID)
+    .filter((task) => task.nodeId === selectedNodeID.value && (task.targetId === containerID ||
+      task.action === 'rebuild' && task.status === 'succeeded' && task.result.resourceRevision === containerID))
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0]
+}
+
+function rollbackTaskForContainer(containerID: string): ContainerTask | undefined {
+  return selectedNodeTasks.value
+    .filter((task) => task.action === 'rebuild' && task.status === 'succeeded' &&
+      task.targetId === containerID && Boolean(task.result.resourceRevision) && task.result.resourceRevision !== containerID)
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0]
 }
 
@@ -256,7 +266,7 @@ async function submitContainerAction(container: DockerInventory['containers'][nu
   const inventory = selectedDocker.value
   if (!node || !inventory || !node.agentId || dockerIsStale(inventory) || container.stale || taskSubmitting.value[container.id]) return
 
-  let payload: { action: ContainerTaskAction; newName?: string; deleteConfirmed?: boolean; deleteConfirmationId?: string } = { action }
+  let payload: CreateContainerTaskPayload = { action }
   if (action === 'rename') {
     if (container.compose) return
     const newName = window.prompt('输入新的独立容器名称', container.name)
@@ -544,10 +554,11 @@ onBeforeUnmount(() => {
             {{ dockerIsStale(selectedDocker) ? '当前没有可确认的容器列表，等待完整扫描。' : '此节点没有容器。' }}
           </p>
           <div v-if="selectedDocker && selectedDocker.containers.length > 0" class="docker-list">
-            <article v-for="record in selectedDocker.containers" :key="record.container.id" class="docker-row" :data-container-id="record.container.id" :data-stale="dockerIsStale(selectedDocker) || record.container.stale">
+            <article v-for="record in selectedDocker.containers" :key="record.container.name || record.container.id" class="docker-row" :data-container-id="record.container.id" :data-stale="dockerIsStale(selectedDocker) || record.container.stale">
               <div class="docker-row-title">
                 <div class="docker-container-copy"><strong>{{ record.container.name || record.container.id.slice(0, 12) }}</strong><small>{{ record.container.image || '未知镜像' }}<template v-if="record.container.compose"> · {{ record.container.compose.project }}/{{ record.container.compose.service }}</template></small></div>
-                <span class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span>
+                <span v-if="rollbackTaskForContainer(record.container.id)" class="container-state container-rollback-state" data-role="rollback">回滚副本</span>
+                <span v-else class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span>
               </div>
               <div class="docker-row-meta">
                 <span :data-health="record.container.health">健康：{{ containerHealthText(record.container) }}</span>
@@ -561,6 +572,10 @@ onBeforeUnmount(() => {
               </div>
               <p v-if="record.container.unavailableReason" class="container-reason">{{ record.container.unavailableReason }}</p>
               <div class="container-task-actions">
+                <p v-if="rollbackTaskForContainer(record.container.id)" class="container-rollback-note" role="note">
+                  此实例是已验证重建留下的停止回滚副本（任务 {{ rollbackTaskForContainer(record.container.id)?.taskId }}），不会作为主服务提供生命周期操作。
+                </p>
+                <template v-else>
                 <button v-if="record.container.paused" class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'resume')">恢复</button>
                 <template v-else-if="record.container.running">
                   <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'stop')">停止</button>
@@ -570,6 +585,7 @@ onBeforeUnmount(() => {
                 <button v-else class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'start')">启动</button>
                 <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id] || Boolean(record.container.compose)" :title="record.container.compose ? 'Compose 项目容器不能通过实际重命名修改服务身份' : '重命名独立容器'" @click="submitContainerAction(record.container, 'rename')">重命名</button>
                 <button class="container-action container-action-danger" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id] || record.container.running || record.container.paused || record.container.restarting" :title="record.container.running || record.container.paused || record.container.restarting ? '请先确认容器已停止' : '删除容器并保留数据卷'" @click="submitContainerAction(record.container, 'delete')">删除</button>
+                <ContainerRebuildWizard :node-id="selectedNode.nodeId" :container="record.container" :stale="dockerIsStale(selectedDocker)" :tasks="selectedNodeTasks" />
                 <span v-if="taskSubmitting[record.container.id]" class="container-task-status" role="status">正在提交任务…</span>
                 <span v-if="taskForContainer(record.container.id)" class="container-task-status" :data-status="taskForContainer(record.container.id)?.status" role="status">
                   {{ taskStatusLabel(taskForContainer(record.container.id)!) }}
@@ -586,9 +602,10 @@ onBeforeUnmount(() => {
                     <time :datetime="event.occurredAt">{{ new Date(event.occurredAt).toLocaleString() }}</time>
                   </li>
                 </ol>
+                </template>
               </div>
               <ContainerStreams
-                v-if="selectedNode && selectedDocker"
+                v-if="selectedNode && selectedDocker && !rollbackTaskForContainer(record.container.id)"
                 :node-id="selectedNode.nodeId"
                 :container-id="record.container.id"
                 :disabled="dockerIsStale(selectedDocker) || record.container.stale"
@@ -638,6 +655,8 @@ onBeforeUnmount(() => {
 .docker-list { display: grid; gap: 9px; }
 .docker-row { min-width: 0; border: 1px solid rgba(171, 196, 232, .1); border-radius: 9px; padding: 12px; background: rgba(18, 29, 45, .68); }
 .docker-row[data-stale='true'] { border-color: rgba(255, 176, 129, .22); }
+.container-rollback-state { color: #ffd092; border-color: rgba(255, 208, 146, .3); }
+.container-rollback-note { flex: 1 0 100%; margin: 4px 0; color: #ffd092; font-size: 11px; line-height: 1.6; }
 .docker-row-title { display: flex; justify-content: space-between; align-items: start; gap: 12px; }
 .docker-container-copy { display: grid; min-width: 0; gap: 4px; }
 .docker-container-copy strong { overflow-wrap: anywhere; font-size: 12px; }

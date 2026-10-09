@@ -117,3 +117,13 @@ func (e *SDKEngine) Close() error {
 	}
 	return e.client.Close()
 }
+
+// DockerClient exposes the already-negotiated local Engine client to narrowly
+// scoped Agent features that need additional typed Docker operations. The
+// caller must not close this client independently; SDKEngine owns its lifetime.
+func (e *SDKEngine) DockerClient() *client.Client {
+	if e == nil {
+		return nil
+	}
+	return e.client
+}

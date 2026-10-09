@@ -130,7 +130,7 @@ export interface ContainerTask {
   taskId: string
   nodeId: string
   targetId: string
-  action: 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'delete' | 'rename'
+  action: 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'delete' | 'rename' | 'rebuild' | 'rebuild_cleanup'
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'canceled' | 'unknown'
   deliveryState: string
   reconciliationRequired: boolean
@@ -153,11 +153,41 @@ export interface TaskAuditEvent {
 }
 
 export type ContainerTaskAction = ContainerTask['action']
+export interface RebuildPortBinding {
+  containerPort: string
+  hostIp?: string
+  hostPort?: string
+}
+
+export interface RebuildSpec {
+  portBindings?: RebuildPortBinding[]
+  clearPortBindings?: boolean
+  cleanupTaskId?: string
+}
+
+export interface ContainerRebuildPlan {
+  containerId: string
+  name: string
+  imageId: string
+  wasRunning: boolean
+  writableLayerBytes: number
+  snapshotRequired: boolean
+  portsBefore: string[]
+  portsAfter: string[]
+  preserved: string[]
+  changed: string[]
+  downtime: string
+  risks: string[]
+  mounts: { type: string; destination: string; readWrite: boolean; volumeId?: string }[]
+}
+
 export interface CreateContainerTaskPayload {
   action: ContainerTaskAction
   newName?: string
   deleteConfirmed?: boolean
   deleteConfirmationId?: string
+  rebuild?: RebuildSpec
+  confirmationId?: string
 }
 
 interface AuthResponse {
@@ -270,6 +300,10 @@ export const api = {
     request<{ taskId: string; status: ContainerTask['status'] }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,
       { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
+  planContainerRebuild: (nodeId: string, containerId: string, spec: RebuildSpec) =>
+    request<ContainerRebuildPlan>(
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/rebuild/plan`,
+      { method: 'POST', body: JSON.stringify({ spec }) }, true),
   nodeContainer: (nodeId: string, containerId: string) =>
     request<{ type: 'node_container'; nodeId: string; container: DockerContainerRecord }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}`,
