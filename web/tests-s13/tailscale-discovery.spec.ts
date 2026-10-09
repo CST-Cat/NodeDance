@@ -112,8 +112,9 @@ test('requires confirmed SSH fingerprint and explicit fallback, clears credentia
   await expect(page.locator('.ssh-rescue')).toContainText('100.64.0.10')
   await expect(page.locator('.ssh-rescue pre')).toContainText('ssh --')
 
-  await page.locator('.deploy-form .field input').nth(1).fill('https://core.example.ts.net')
-  await page.locator('.deploy-form .field input').nth(2).fill('https://backup.example.net')
+  await page.getByLabel('Agent 主机文件根目录（可选）').fill('/srv/Node Dance/文件')
+  await page.getByLabel('Core HTTPS 地址').fill('https://core.example.ts.net')
+  await page.getByLabel('备用 HTTPS 地址（可选）').fill('https://backup.example.net')
   await page.getByLabel('SSH 用户').fill('deploy')
   const password = page.locator('input[type="password"][autocomplete="new-password"]')
   await password.fill('one-time-ssh-password')
@@ -132,6 +133,8 @@ test('requires confirmed SSH fingerprint and explicit fallback, clears credentia
   expect(deployRequests).toHaveLength(1)
   expect(deployRequests[0]).toMatchObject({
     peerIdentity: linuxPeer.identity,
+    fileRoot: '/srv/Node Dance/文件',
+    disableFileRoot: false,
     coreUrl: 'https://core.example.ts.net',
     fallbackUrl: 'https://backup.example.net',
     allowFallback: false,
@@ -141,13 +144,16 @@ test('requires confirmed SSH fingerprint and explicit fallback, clears credentia
 })
 
 test('shows failed deployment status with the remote failure reason', async ({ page }) => {
-  await stubApplicationAPI(page, { outcome: 'failed', message: 'SSH host key did not match the confirmed fingerprint.' })
+  const { deployRequests } = await stubApplicationAPI(page, { outcome: 'failed', message: 'SSH host key did not match the confirmed fingerprint.' })
   await openDiscovery(page)
   await page.getByRole('button', { name: '查看部署选项' }).click()
+  await page.getByLabel('即使目标机已有配置，也明确禁用主机文件管理').check()
+  await expect(page.getByLabel('Agent 主机文件根目录（可选）')).toBeDisabled()
   await page.getByLabel('SSH 用户').fill('deploy')
   await page.getByRole('button', { name: '读取 SSH host key 指纹' }).click()
   await page.getByLabel('我已通过独立可信渠道核对该指纹').check()
   await page.getByRole('button', { name: '启动 SSH 部署任务' }).click()
   await expect(page.getByTestId('deployment-task')).toHaveAttribute('data-status', 'failed')
   await expect(page.getByRole('alert')).toContainText('SSH host key did not match the confirmed fingerprint.')
+  expect(deployRequests[0]).toMatchObject({ disableFileRoot: true })
 })

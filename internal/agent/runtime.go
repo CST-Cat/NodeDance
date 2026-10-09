@@ -112,7 +112,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 			}
 		}()
 	}
-	fileService, fileErr := openAgentFileService()
+	fileService, fileErr := openAgentFileService(configPath)
 	if fileErr != nil && stderr != nil {
 		fmt.Fprintln(stderr, "Agent file service unavailable; monitoring and task execution remain active")
 	}
@@ -1148,10 +1148,18 @@ func safeConnectionError(err error) string {
 	return message
 }
 
-func openAgentFileService() (*agentfiles.Service, error) {
-	root := strings.TrimSpace(os.Getenv("NODEDANCE_AGENT_FILE_ROOT"))
+func openAgentFileService(configPath string) (*agentfiles.Service, error) {
+	root := os.Getenv("NODEDANCE_AGENT_FILE_ROOT")
 	if root == "" {
-		root = "/"
+		return nil, nil
+	}
+	stateDir, err := filepath.Abs(filepath.Dir(configPath))
+	if err != nil {
+		return nil, fmt.Errorf("resolve Agent state directory for file access: %w", err)
+	}
+	root, err = ValidateFileRoot(root, stateDir)
+	if err != nil {
+		return nil, err
 	}
 	limit := protocol.DefaultFileLimit
 	if configured := strings.TrimSpace(os.Getenv("NODEDANCE_AGENT_MAX_FILE_BYTES")); configured != "" {

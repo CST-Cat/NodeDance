@@ -199,6 +199,10 @@ function nodeIsOnline(node: AgentNode): boolean {
   return clock.status === 'online' && elapsed.value - clock.startedAt < remainingLease(clock)
 }
 
+function nodeSupportsFiles(node: AgentNode): boolean {
+  return node.capabilities?.includes('agent.files.v1') ?? false
+}
+
 function setNodeReason(nodeID: string, reason?: string) {
   if (reason) {
     nodeReasons.value = { ...nodeReasons.value, [nodeID]: reason }
@@ -854,8 +858,9 @@ onBeforeUnmount(() => {
 
       <main class="node-detail" aria-live="polite">
         <nav v-if="selectedNode" class="dashboard-tabs" aria-label="节点管理视图">
-          <button v-for="tab in sectionTabs" :key="tab.id" type="button" :disabled="tab.id === 'files' && (!selectedNode.agentId || !nodeIsOnline(selectedNode))" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button>
+          <button v-for="tab in sectionTabs" :key="tab.id" type="button" :disabled="tab.id === 'files' && (!selectedNode.agentId || !nodeIsOnline(selectedNode) || !nodeSupportsFiles(selectedNode))" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button>
         </nav>
+        <p v-if="selectedNode && selectedNode.agentId && nodeIsOnline(selectedNode) && !nodeSupportsFiles(selectedNode)" class="node-empty" data-testid="file-capability-missing" role="status">Agent 未配置可用的主机文件根目录，文件管理已禁用。安装或重装 Agent 时显式配置 <code>--file-root /绝对目录</code> 后，它才会声明文件管理能力。</p>
 
         <section v-if="selectedNode && activeSection === 'overview'" class="fused-overview" data-testid="fused-overview">
           <article class="host-summary-card">
@@ -1007,7 +1012,7 @@ onBeforeUnmount(() => {
             <div><span class="eyebrow">NODE FILES</span><h2>节点文件 · {{ selectedNodeTitle }}</h2></div>
             <button class="container-action" type="button" @click="activeSection = 'docker'">返回节点详情</button>
           </header>
-          <NodeFiles :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" :disabled="!nodeIsOnline(selectedNode)" />
+          <NodeFiles :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" :disabled="!nodeIsOnline(selectedNode) || !nodeSupportsFiles(selectedNode)" />
         </section>
 
         <section v-if="selectedNode && activeSection === 'history'" class="section-panel" aria-label="历史监控设置">
