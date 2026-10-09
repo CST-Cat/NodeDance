@@ -102,13 +102,9 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 	if info, err := os.Lstat(work); err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		t.Fatalf("private /var/tmp fixture is not a real directory: %v", err)
 	}
-	binaryPath := filepath.Join(work, "nodedance-agent")
-	compiledBinary, err := os.ReadFile(compiledBinaryPath)
+	binaryPath, err := stageSystemdTestAgentBinary(compiledBinaryPath, work)
 	if err != nil {
-		t.Fatalf("read compiled Agent CLI into private fixture: %v", err)
-	}
-	if err := os.WriteFile(binaryPath, compiledBinary, 0o755); err != nil {
-		t.Fatalf("copy compiled Agent CLI into private fixture: %v", err)
+		t.Fatalf("stage compiled Agent CLI into private fixture: %v", err)
 	}
 	versionCtx, cancelVersion := context.WithTimeout(testCtx, 10*time.Second)
 	versionOutput, err := exec.CommandContext(versionCtx, binaryPath, "version").CombinedOutput()
@@ -168,6 +164,7 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 	}
 
 	stateDir := filepath.Join(work, "service-state")
+	helperPath, currentPath, installedBinaryPath := systemdInstalledAgentPaths(stateDir)
 	if err := os.Mkdir(stateDir, 0o700); err != nil {
 		t.Fatalf("create private Agent state directory: %v", err)
 	}
@@ -205,7 +202,9 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 	}
 	diagnostics := systemdAgentDiagnostics{
 		systemctl: systemctl, sourceBinary: compiledBinaryPath, binaryPath: binaryPath,
-		configPath: configPath, caPath: caPath, serviceUID: serviceUID,
+		stateDir: stateDir, helperPath: helperPath, currentPath: currentPath,
+		installedBinaryPath: installedBinaryPath,
+		configPath:          configPath, caPath: caPath, serviceUID: serviceUID,
 		serviceGroups: serviceGroups, secrets: []string{config.Credential},
 	}
 	t.Logf("service-user path access before systemd start (component names omitted):\n%s",
@@ -226,7 +225,7 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 			}
 			return
 		}
-		if !unitOwnedByTest || !unitReferencesTestFiles(contents, binaryPath, configPath) {
+		if !unitOwnedByTest || !unitReferencesInstalledAgent(contents, helperPath, stateDir, configPath) {
 			t.Errorf("system unit no longer matches this test's private binary/config; refusing cleanup")
 			preserveWork = true
 			return
@@ -261,7 +260,7 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 	})
 	cancelInstall()
 	if installedPath == unitPath {
-		if contents, readErr := os.ReadFile(unitPath); readErr == nil && unitReferencesTestFiles(contents, binaryPath, configPath) {
+		if contents, readErr := os.ReadFile(unitPath); readErr == nil && unitReferencesInstalledAgent(contents, helperPath, stateDir, configPath) {
 			unitOwnedByTest = true
 		}
 	}
@@ -269,14 +268,17 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 		safeError := diagnostics.sanitize(installErr.Error())
 		t.Fatalf("install and start real NodeDance Agent systemd service: %s\n%s", safeError, diagnostics.failure("install/start failed", 0))
 	}
-	if !unitReferencesTestFilesMustRead(t, unitPath, binaryPath, configPath) {
-		t.Fatal("installed systemd unit does not reference the compiled Agent and private config")
+	if !unitReferencesInstalledAgentMustRead(t, unitPath, helperPath, stateDir, configPath) {
+		t.Fatal("installed systemd unit does not reference the installed Agent helper and private config")
+	}
+	if err := assertSystemdAgentServicePaths(diagnostics); err != nil {
+		t.Fatalf("installed Agent files are not accessible to the selected service account: %v\n%s", err, diagnostics.failure("installed path access check failed", 0))
 	}
 
 	firstPID := waitForSystemdMainPID(t, diagnostics, 20*time.Second)
-	assertSystemdAgentProcess(t, firstPID, serviceUID, binaryPath, diagnostics)
+	assertSystemdAgentProcess(t, firstPID, serviceUID, helperPath, diagnostics)
 	firstGeneration := waitForAgentGenerationAndHeartbeat(t, core, config.NodeID, 0, 20*time.Second, diagnostics)
-	assertSystemdAgentStillCurrent(t, diagnostics, firstPID, 0, serviceUID, binaryPath)
+	assertSystemdAgentStillCurrent(t, diagnostics, firstPID, 0, serviceUID, helperPath)
 	firstDigest := readAgentCredentialDigest(t, core, config.AgentID)
 	if !bytes.Equal(firstDigest, auth.DigestToken(config.Credential)) {
 		t.Fatal("Core credential verifier does not match the enrolled Agent credential")
@@ -295,9 +297,9 @@ func TestSystemdAgentInstallConnectRestart(t *testing.T) {
 		t.Fatalf("restart actual Agent service: %s\n%s", strings.TrimSpace(diagnostics.sanitize(string(restartOutput))), diagnostics.failure("systemctl restart command failed", firstPID))
 	}
 	secondPID := waitForSystemdMainPIDDifferent(t, diagnostics, firstPID, restartsBeforeManualRestart, 20*time.Second)
-	assertSystemdAgentProcess(t, secondPID, serviceUID, binaryPath, diagnostics)
+	assertSystemdAgentProcess(t, secondPID, serviceUID, helperPath, diagnostics)
 	secondGeneration := waitForAgentGenerationAndHeartbeat(t, core, config.NodeID, firstGeneration, 20*time.Second, diagnostics)
-	assertSystemdAgentStillCurrent(t, diagnostics, secondPID, restartsBeforeManualRestart, serviceUID, binaryPath)
+	assertSystemdAgentStillCurrent(t, diagnostics, secondPID, restartsBeforeManualRestart, serviceUID, helperPath)
 	secondDigest := readAgentCredentialDigest(t, core, config.AgentID)
 	if secondGeneration <= firstGeneration || !bytes.Equal(firstDigest, secondDigest) || !bytes.Equal(secondDigest, auth.DigestToken(config.Credential)) {
 		t.Fatal("systemd restart did not preserve the same Core device identity and credential")
@@ -325,21 +327,76 @@ func runSystemdCommand(systemctl string, args ...string) (string, error) {
 	return string(output), err
 }
 
-func unitReferencesTestFiles(contents []byte, binaryPath, configPath string) bool {
-	text := string(contents)
-	return strings.Contains(text, "Description=NodeDance Agent") &&
-		strings.Contains(text, "User=nobody") &&
-		strings.Contains(text, binaryPath) && strings.Contains(text, configPath)
+func stageSystemdTestAgentBinary(sourcePath, fixtureRoot string) (string, error) {
+	binaryPath := filepath.Join(fixtureRoot, "nodedance-agent")
+	compiledBinary, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(binaryPath, compiledBinary, 0o755); err != nil {
+		return "", err
+	}
+	return binaryPath, nil
 }
 
-func unitReferencesTestFilesMustRead(t *testing.T, unitPath, binaryPath, configPath string) bool {
+func systemdInstalledAgentPaths(stateDir string) (helperPath, currentPath, installedBinaryPath string) {
+	helperPath = filepath.Join(stateDir, "bin", "nodedance-agent-helper")
+	currentPath = filepath.Join(stateDir, "bin", "current")
+	installedBinaryPath = filepath.Join(stateDir, "bin", "versions", "bootstrap", "nodedance-agent")
+	return helperPath, currentPath, installedBinaryPath
+}
+
+func unitReferencesInstalledAgent(contents []byte, helperPath, stateDir, configPath string) bool {
+	text := string(contents)
+	for _, line := range strings.Split(text, "\n") {
+		if line == systemdAgentExecStart(helperPath, stateDir, configPath) {
+			return strings.Contains(text, "Description=NodeDance Agent\n") && strings.Contains(text, "User=nobody\n")
+		}
+	}
+	return false
+}
+
+func systemdAgentExecStart(helperPath, stateDir, configPath string) string {
+	return "ExecStart=/usr/bin/env -- " + quoteSystemdExecArg(helperPath) +
+		" update-helper supervise --state-dir " + quoteSystemdExecArg(stateDir) +
+		" --config " + quoteSystemdExecArg(configPath)
+}
+
+func quoteSystemdExecArg(value string) string {
+	quoted := strconv.Quote(value)
+	quoted = strings.ReplaceAll(quoted, "%", "%%")
+	return strings.ReplaceAll(quoted, "$", "$$")
+}
+
+func unitReferencesInstalledAgentMustRead(t *testing.T, unitPath, helperPath, stateDir, configPath string) bool {
 	t.Helper()
 	contents, err := os.ReadFile(unitPath)
 	if err != nil {
 		t.Errorf("read installed systemd unit: %v", err)
 		return false
 	}
-	return unitReferencesTestFiles(contents, binaryPath, configPath)
+	return unitReferencesInstalledAgent(contents, helperPath, stateDir, configPath)
+}
+
+func assertSystemdAgentServicePaths(diagnostics systemdAgentDiagnostics) error {
+	for _, item := range []struct {
+		label    string
+		path     string
+		required os.FileMode
+	}{
+		{label: "installed helper", path: diagnostics.helperPath, required: 0o5},
+		{label: "installed current link", path: diagnostics.currentPath, required: 0o5},
+		{label: "installed version binary", path: diagnostics.installedBinaryPath, required: 0o5},
+		{label: "private config", path: diagnostics.configPath, required: 0o4},
+		{label: "trusted test CA", path: diagnostics.caPath, required: 0o4},
+	} {
+		for _, line := range servicePathAccess(item.label, item.path, item.required, diagnostics.serviceUID, diagnostics.serviceGroups) {
+			if !strings.HasSuffix(line, "service-access=true") {
+				return fmt.Errorf("%s is not traversable/readable by service account", item.label)
+			}
+		}
+	}
+	return nil
 }
 
 func waitForSystemdMainPID(t *testing.T, diagnostics systemdAgentDiagnostics, timeout time.Duration) int {
@@ -508,14 +565,18 @@ func (b *boundedDiagnosticBuffer) Write(value []byte) (int, error) {
 }
 
 type systemdAgentDiagnostics struct {
-	systemctl     string
-	sourceBinary  string
-	binaryPath    string
-	configPath    string
-	caPath        string
-	serviceUID    int
-	serviceGroups []int
-	secrets       []string
+	systemctl           string
+	sourceBinary        string
+	binaryPath          string
+	stateDir            string
+	helperPath          string
+	currentPath         string
+	installedBinaryPath string
+	configPath          string
+	caPath              string
+	serviceUID          int
+	serviceGroups       []int
+	secrets             []string
 }
 
 func (d systemdAgentDiagnostics) failure(reason string, pid int) string {
@@ -543,7 +604,7 @@ func (d systemdAgentDiagnostics) failure(reason string, pid int) string {
 	}
 	journal := runDiagnosticCommand("journalctl", []string{"-u", agent.AgentUnitName, "-n", "30", "--no-pager", "-o", "json"}, 5*time.Second)
 	output.WriteString("journalctl selected unit messages (max 20, sanitized):\n")
-	output.WriteString(sanitizeSystemdJournal(journal.output, d.sourceBinary, d.binaryPath, d.configPath, d.caPath, d.secrets))
+	output.WriteString(sanitizeSystemdJournal(journal.output, d.sourceBinary, d.binaryPath, d.stateDir, d.configPath, d.caPath, d.secrets))
 	if journal.truncated {
 		output.WriteString("\n[journalctl output truncated at the diagnostic limit]\n")
 	}
@@ -557,11 +618,12 @@ func (d systemdAgentDiagnostics) failure(reason string, pid int) string {
 }
 
 func (d systemdAgentDiagnostics) sanitize(value string) string {
-	return sanitizeSystemdDiagnostic(value, d.sourceBinary, d.binaryPath, d.configPath, d.caPath, d.secrets)
+	return sanitizeSystemdDiagnostic(value, d.sourceBinary, d.binaryPath, d.stateDir, d.configPath, d.caPath, d.secrets)
 }
 
 func (d systemdAgentDiagnostics) pathAccessSummary() []string {
-	return systemdPathAccessSummary(d.sourceBinary, d.binaryPath, d.configPath, d.caPath, d.serviceUID, d.serviceGroups)
+	return systemdPathAccessSummary(d.sourceBinary, d.binaryPath, d.helperPath, d.currentPath,
+		d.installedBinaryPath, d.configPath, d.caPath, d.serviceUID, d.serviceGroups)
 }
 
 type diagnosticCommandResult struct {
@@ -584,8 +646,8 @@ func runDiagnosticCommand(program string, args []string, timeout time.Duration) 
 var diagnosticAssignmentPattern = regexp.MustCompile(`(?i)(\b(?:bearer|token|credential|password|authorization|cookie|csrf)\b\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s,;]+)`)
 var diagnosticJSONSecretPattern = regexp.MustCompile(`(?i)(["']?(?:token|credential|password|authorization|cookie|csrf)["']?\s*:\s*)("[^"]*"|'[^']*'|[^\s,;]+)`)
 
-func sanitizeSystemdDiagnostic(value, sourceBinary, binaryPath, configPath, caPath string, secrets []string) string {
-	for _, privateValue := range append([]string{sourceBinary, binaryPath, configPath, caPath}, secrets...) {
+func sanitizeSystemdDiagnostic(value, sourceBinary, binaryPath, stateDir, configPath, caPath string, secrets []string) string {
+	for _, privateValue := range append([]string{sourceBinary, binaryPath, stateDir, configPath, caPath}, secrets...) {
 		if privateValue != "" {
 			value = strings.ReplaceAll(value, privateValue, "[REDACTED_PATH_OR_SECRET]")
 		}
@@ -598,7 +660,7 @@ func sanitizeSystemdDiagnostic(value, sourceBinary, binaryPath, configPath, caPa
 	return value
 }
 
-func sanitizeSystemdJournal(value, sourceBinary, binaryPath, configPath, caPath string, secrets []string) string {
+func sanitizeSystemdJournal(value, sourceBinary, binaryPath, stateDir, configPath, caPath string, secrets []string) string {
 	var output strings.Builder
 	decoder := json.NewDecoder(strings.NewReader(value))
 	count := 0
@@ -622,7 +684,7 @@ func sanitizeSystemdJournal(value, sourceBinary, binaryPath, configPath, caPath 
 		if message == "" {
 			continue
 		}
-		message = sanitizeSystemdDiagnostic(message, sourceBinary, binaryPath, configPath, caPath, secrets)
+		message = sanitizeSystemdDiagnostic(message, sourceBinary, binaryPath, stateDir, configPath, caPath, secrets)
 		if len(message) > 600 {
 			message = message[:600] + "[message truncated]"
 		}
@@ -692,7 +754,7 @@ func servicePathAccess(label, path string, required os.FileMode, serviceUID int,
 	return lines
 }
 
-func systemdPathAccessSummary(sourceBinary, binaryPath, configPath, caPath string, serviceUID int, serviceGroups []int) []string {
+func systemdPathAccessSummary(sourceBinary, binaryPath, helperPath, currentPath, installedBinaryPath, configPath, caPath string, serviceUID int, serviceGroups []int) []string {
 	var lines []string
 	for _, item := range []struct {
 		label string
@@ -700,7 +762,10 @@ func systemdPathAccessSummary(sourceBinary, binaryPath, configPath, caPath strin
 		mode  os.FileMode
 	}{
 		{label: "compiled-source", path: sourceBinary, mode: 0o5},
-		{label: "service-binary", path: binaryPath, mode: 0o5},
+		{label: "staged-source-binary", path: binaryPath, mode: 0o5},
+		{label: "installed-helper", path: helperPath, mode: 0o5},
+		{label: "installed-current-link", path: currentPath, mode: 0o5},
+		{label: "installed-version-binary", path: installedBinaryPath, mode: 0o5},
 		{label: "agent-config", path: configPath, mode: 0o4},
 		{label: "test-ca", path: caPath, mode: 0o4},
 		{label: "former-artifact-work-root", path: systemdS02ArtifactWorkRoot(), mode: 0o5},
@@ -747,7 +812,7 @@ func TestSystemdDiagnosticRedactionAndBounds(t *testing.T) {
 	secret := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	privatePath := "/private/agent.json"
 	input := "Bearer " + secret + " credential=" + secret + " path=" + privatePath + ` {"token":"` + secret + `"}`
-	redacted := sanitizeSystemdDiagnostic(input, "/private/source", "/private/binary", privatePath, "/private/ca.pem", []string{secret})
+	redacted := sanitizeSystemdDiagnostic(input, "/private/source", "/private/binary", "/private", privatePath, "/private/ca.pem", []string{secret})
 	if strings.Contains(redacted, secret) || strings.Contains(redacted, privatePath) || strings.Contains(redacted, "/private/binary") {
 		t.Fatal("systemd diagnostic sanitizer retained a credential or private path")
 	}
@@ -769,7 +834,7 @@ func TestSystemdDiagnosticRedactionAndBounds(t *testing.T) {
 		`{"_SYSTEMD_UNIT":"nodedance-agent.service","_COMM":"env","MESSAGE":"env: failed to execute Agent CLI: Permission denied"}`,
 		`{"_SYSTEMD_UNIT":"other.service","_COMM":"other-agent","MESSAGE":"` + secret + `"}`,
 	}, "\n")
-	filtered := sanitizeSystemdJournal(journal, "/private/source", "/private/binary", privatePath, "/private/ca.pem", []string{secret})
+	filtered := sanitizeSystemdJournal(journal, "/private/source", "/private/binary", "/private", privatePath, "/private/ca.pem", []string{secret})
 	if strings.Contains(filtered, secret) || strings.Contains(filtered, "other-agent") ||
 		!strings.Contains(filtered, "Main process exited") || !strings.Contains(filtered, "Permission denied") {
 		t.Fatal("systemd journal filter retained an unrelated message or failed to redact a credential")
@@ -788,6 +853,88 @@ func TestSystemdDiagnosticRedactionAndBounds(t *testing.T) {
 	joinedPaths := strings.Join(paths, "\n")
 	if !strings.Contains(joinedPaths, "service-access=false") || strings.Contains(joinedPaths, directory) || strings.Contains(joinedPaths, privateFile) {
 		t.Fatal("service-user path diagnostics did not report inaccessible ancestors without exposing paths")
+	}
+}
+
+func TestSystemdAgentFixturePathsAreServiceAccessibleAndUseInstalledHelper(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("service-user path access requires Linux file ownership")
+	}
+	serviceUser, err := user.Lookup("nobody")
+	if err != nil {
+		t.Skip("nobody service account is unavailable")
+	}
+	serviceUID, err := strconv.Atoi(serviceUser.Uid)
+	if err != nil {
+		t.Fatalf("parse service UID: %v", err)
+	}
+	serviceGID, err := strconv.Atoi(serviceUser.Gid)
+	if err != nil {
+		t.Fatalf("parse service GID: %v", err)
+	}
+
+	base := t.TempDir()
+	if err := os.Chmod(base, 0o711); err != nil {
+		t.Fatal(err)
+	}
+	checkout := filepath.Join(base, "checkout")
+	buildDir := filepath.Join(checkout, ".build")
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(checkout, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(buildDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.Join(buildDir, "nodedance-agent")
+	compiled := []byte("compiled Agent fixture bytes")
+	if err := os.WriteFile(sourcePath, compiled, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	groups := []int{serviceGID}
+	if groupIDs, groupErr := serviceUser.GroupIds(); groupErr == nil {
+		for _, value := range groupIDs {
+			if groupID, parseErr := strconv.Atoi(value); parseErr == nil {
+				groups = appendUniqueInt(groups, groupID)
+			}
+		}
+	}
+	if access := strings.Join(servicePathAccess("compiled-source", sourcePath, 0o5, serviceUID, groups), "\n"); !strings.Contains(access, "service-access=false") {
+		t.Fatalf("regression fixture did not reproduce a service-inaccessible checkout build path:\n%s", access)
+	}
+
+	fixtureRoot := filepath.Join(base, "var-tmp")
+	if err := os.Mkdir(fixtureRoot, 0o711); err != nil {
+		t.Fatal(err)
+	}
+	stagedPath, err := stageSystemdTestAgentBinary(sourcePath, fixtureRoot)
+	if err != nil {
+		t.Fatalf("stage source binary outside inaccessible checkout: %v", err)
+	}
+	if staged, err := os.ReadFile(stagedPath); err != nil || !bytes.Equal(staged, compiled) {
+		t.Fatalf("staged Agent bytes differ from compiled source: err=%v", err)
+	}
+	if access := strings.Join(servicePathAccess("staged-source", stagedPath, 0o5, serviceUID, groups), "\n"); !strings.Contains(access, "service-access=true") {
+		t.Fatalf("staged fixture binary is not accessible to the systemd service identity:\n%s", access)
+	}
+
+	stateDir := filepath.Join(fixtureRoot, "service-state")
+	helperPath, currentPath, versionedPath := systemdInstalledAgentPaths(stateDir)
+	if helperPath != filepath.Join(stateDir, "bin", "nodedance-agent-helper") ||
+		currentPath != filepath.Join(stateDir, "bin", "current") ||
+		versionedPath != filepath.Join(stateDir, "bin", "versions", "bootstrap", "nodedance-agent") {
+		t.Fatal("installed Agent path helper no longer matches the systemd updater layout")
+	}
+	configPath := filepath.Join(stateDir, "agent.json")
+	unit := "[Unit]\nDescription=NodeDance Agent\n[Service]\nUser=nobody\n" + systemdAgentExecStart(helperPath, stateDir, configPath) + "\n"
+	if !unitReferencesInstalledAgent([]byte(unit), helperPath, stateDir, configPath) {
+		t.Fatal("systemd ownership check rejected the installed helper and private config paths")
+	}
+	wrongUnit := "[Unit]\nDescription=NodeDance Agent\n[Service]\nUser=nobody\n" + systemdAgentExecStart(sourcePath, stateDir, configPath) + "\n"
+	if unitReferencesInstalledAgent([]byte(wrongUnit), helperPath, stateDir, configPath) {
+		t.Fatal("systemd ownership check accepted the inaccessible source path instead of installed helper")
 	}
 }
 
