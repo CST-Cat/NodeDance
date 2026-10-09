@@ -14,7 +14,9 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	"github.com/CST-Cat/NodeDance/internal/core/tailscale"
+	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/taskstate"
 )
 
 func (s *Server) tailscaleService(current *session) *tailscale.Service {
@@ -91,7 +93,7 @@ func (s *Server) tailscaleCoordinator(current *session) (*tailscale.Coordinator,
 	if err != nil {
 		return nil, err
 	}
-	return tailscale.SharedCoordinator(dataDir, service)
+	return tailscale.SharedCoordinator(dataDir, service, s.tasks)
 }
 
 func (s *Server) handleTailscaleAPI(w http.ResponseWriter, r *http.Request, current *session) bool {
@@ -153,6 +155,20 @@ func (s *Server) handleTailscaleAPI(w http.ResponseWriter, r *http.Request, curr
 		return true
 	}
 	if r.URL.Path == "/api/v1/discovery/deployments" {
+		if r.Method == http.MethodGet {
+			coordinator, err := s.tailscaleCoordinator(current)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "deployment manager could not load its private state"})
+				return true
+			}
+			tasks, err := coordinator.UnresolvedTasks(r.Context())
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "unresolved deployment tasks could not be read"})
+				return true
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"tasks": tasks})
+			return true
+		}
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return true
@@ -161,29 +177,42 @@ func (s *Server) handleTailscaleAPI(w http.ResponseWriter, r *http.Request, curr
 		if !decodeBoundedJSON(w, r, &request, 128<<10) {
 			return true
 		}
+		idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+		if idempotencyKey == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"message": "Idempotency-Key is required"})
+			return true
+		}
 		coordinator, err := s.tailscaleCoordinator(current)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "deployment manager could not load its private state"})
 			return true
 		}
-		task, err := coordinator.Start(r.Context(), request)
+		task, err := coordinator.Start(r.Context(), request, idempotencyKey, sql.NullInt64{Int64: 1, Valid: true}, s.effectiveRemoteAddr(r))
 		clearTailscaleSecrets(&request)
 		if err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+			status := http.StatusBadRequest
+			if errors.Is(err, coretasks.ErrIdempotencyConflict) || errors.Is(err, coretasks.ErrResourceBusy) {
+				status = http.StatusConflict
+			}
+			writeJSON(w, status, map[string]string{"message": err.Error()})
 			return true
 		}
-		s.auditEvent(r, "tailscale_ssh_deploy", "accepted", sql.NullInt64{Int64: 1, Valid: true})
 		writeJSON(w, http.StatusAccepted, task)
 		return true
 	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/discovery/deployments/") {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		id := strings.TrimPrefix(r.URL.Path, "/api/v1/discovery/deployments/")
+		if strings.HasSuffix(id, "/resolve") {
+			id = strings.TrimSuffix(id, "/resolve")
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return true
+			}
+			s.handleResolveTailscaleDeployment(w, r, current, id)
 			return true
 		}
-		id := strings.TrimPrefix(r.URL.Path, "/api/v1/discovery/deployments/")
-		if !validUUID(id) {
-			http.NotFound(w, r)
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return true
 		}
 		coordinator, err := s.tailscaleCoordinator(current)
@@ -191,7 +220,7 @@ func (s *Server) handleTailscaleAPI(w http.ResponseWriter, r *http.Request, curr
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "deployment manager could not load its private state"})
 			return true
 		}
-		task, ok := coordinator.Task(id)
+		task, ok := coordinator.Task(r.Context(), id)
 		if !ok {
 			http.NotFound(w, r)
 			return true
@@ -200,6 +229,95 @@ func (s *Server) handleTailscaleAPI(w http.ResponseWriter, r *http.Request, curr
 		return true
 	}
 	return false
+}
+
+func (s *Server) handleResolveTailscaleDeployment(w http.ResponseWriter, r *http.Request, current *session, taskID string) {
+	s.tailscaleResolveMu.Lock()
+	defer s.tailscaleResolveMu.Unlock()
+
+	var request struct {
+		Outcome       string `json:"outcome"`
+		ObservedState string `json:"observedState"`
+		Confirmed     bool   `json:"confirmed"`
+	}
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if !request.Confirmed {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "confirm that you inspected the target VPS before resolving this task"})
+		return
+	}
+	var status taskstate.Status
+	var evidence coretasks.Evidence
+	var result coretasks.Result
+	switch {
+	case request.Outcome == "succeeded" && (request.ObservedState == "connected" || request.ObservedState == "unavailable" || request.ObservedState == "absent"):
+		status = taskstate.Succeeded
+		evidence = coretasks.Evidence{ExecutionAttempted: true, ExecutionCompleted: true, ActualResultConfirmed: true, PostconditionVerified: true}
+		result = coretasks.Result{Code: coretasks.ResultVerified, ObservedState: request.ObservedState}
+	case request.Outcome == "failed" && (request.ObservedState == "installation_failed" || request.ObservedState == "not_installed"):
+		status = taskstate.Failed
+		evidence = coretasks.Evidence{ExecutionAttempted: true, ExecutionCompleted: true, ActualResultConfirmed: true, FailureConfirmed: true}
+		result = coretasks.Result{Code: coretasks.ResultFailed, ObservedState: request.ObservedState}
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "select a verified deployment outcome and matching observed state"})
+		return
+	}
+	task, err := s.tasks.GetByID(r.Context(), taskID)
+	if errors.Is(err, coretasks.ErrTaskNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "deployment task could not be read", http.StatusInternalServerError)
+		return
+	}
+	if task.Intent.Action != coretasks.ActionAgentDeploy {
+		http.NotFound(w, r)
+		return
+	}
+	if task.Status != taskstate.Unknown || task.DeliveryState != "done" || task.ReconciliationRequired {
+		http.Error(w, "deployment task is not awaiting administrator review", http.StatusConflict)
+		return
+	}
+	coordinator, err := s.tailscaleCoordinator(current)
+	if err != nil {
+		http.Error(w, "deployment task could not access its synchronized state", http.StatusInternalServerError)
+		return
+	}
+	if status == taskstate.Succeeded {
+		if task.Intent.AgentDeploy == nil || task.NodeID == "" {
+			http.Error(w, "deployment peer association could not be verified", http.StatusConflict)
+			return
+		}
+		if err := coordinator.AssociatePeer(task.Intent.AgentDeploy.PeerIdentity, task.NodeID); err != nil {
+			http.Error(w, "deployment peer association could not be persisted", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if task.Intent.AgentDeploy == nil || task.NodeID == "" {
+			http.Error(w, "deployment peer association could not be verified", http.StatusConflict)
+			return
+		}
+		if err := coordinator.DisassociatePeer(task.Intent.AgentDeploy.PeerIdentity, task.NodeID); err != nil {
+			http.Error(w, "failed deployment peer association could not be cleared", http.StatusInternalServerError)
+			return
+		}
+	}
+	if err := s.tasks.ResolveUncertainTask(r.Context(), task.NodeID, task.TaskID, status, evidence, result, sql.NullInt64{Int64: 1, Valid: true}, s.effectiveRemoteAddr(r)); err != nil {
+		if errors.Is(err, coretasks.ErrTaskStateConflict) {
+			http.Error(w, "deployment task is not awaiting administrator review", http.StatusConflict)
+		} else {
+			http.Error(w, "deployment task outcome could not be recorded", http.StatusInternalServerError)
+		}
+		return
+	}
+	resolved, ok := coordinator.Task(r.Context(), task.TaskID)
+	if !ok {
+		http.Error(w, "deployment task could not be read after resolution", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, resolved)
 }
 
 func decodeBoundedJSON(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {

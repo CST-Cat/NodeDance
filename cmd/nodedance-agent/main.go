@@ -103,6 +103,9 @@ func runEnroll(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 	if err != nil {
 		return err
 	}
+	if isTerminalInput(stdin) {
+		fmt.Fprintln(stderr, "Paste the one-time enrollment token, press Enter, then press Ctrl-D on a blank line (Linux/macOS) or Ctrl-Z followed by Enter (Windows) to finish stdin.")
+	}
 	if err := agent.Enroll(ctx, *server, *caFile, *dev, stdin, path); err != nil {
 		return err
 	}
@@ -112,6 +115,15 @@ func runEnroll(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 	}
 	fmt.Fprintf(stdout, "Agent enrolled: node=%s agent=%s config=%s\n", config.NodeID, config.AgentID, path)
 	return nil
+}
+
+func isTerminalInput(reader io.Reader) bool {
+	file, ok := reader.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 func runRecover(ctx context.Context, args []string, stdout, stderr io.Writer) error {
@@ -190,7 +202,10 @@ func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Wri
 	}
 	path, err := agent.InstallSystemd(ctx, agent.SystemdInstallOptions{
 		User: *serviceUser, ConfigPath: *configPath, UnitDir: *unitDir,
-		FileRoot: *fileRoot, FileRootSpecified: fileRootSpecified, DisableFileRoot: *noFileRoot,
+		ExpectedUnitState:  os.Getenv("NODEDANCE_INTERNAL_EXPECTED_SYSTEMD_UNIT_STATE"),
+		ExpectedUnitSHA256: os.Getenv("NODEDANCE_INTERNAL_EXPECTED_SYSTEMD_UNIT_SHA256"),
+		ResultSHA256Path:   os.Getenv("NODEDANCE_INTERNAL_SYSTEMD_RESULT_FILE"),
+		FileRoot:           *fileRoot, FileRootSpecified: fileRootSpecified, DisableFileRoot: *noFileRoot,
 		SupplementaryGroups: groups, Reload: *reload, EnableNow: *enable,
 	})
 	if err != nil {

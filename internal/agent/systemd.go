@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +22,9 @@ type SystemdInstallOptions struct {
 	ConfigPath          string
 	UnitDir             string
 	BinaryPath          string
+	ExpectedUnitState   string
+	ExpectedUnitSHA256  string
+	ResultSHA256Path    string
 	FileRoot            string
 	FileRootSpecified   bool
 	DisableFileRoot     bool
@@ -40,8 +45,8 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 		return "", errors.New("systemd service user has an unsupported account name")
 	}
 	uid, err := strconv.Atoi(serviceUser.Uid)
-	if err != nil || uid < 0 {
-		return "", errors.New("systemd service user has an invalid UID")
+	if err != nil || uid <= 0 {
+		return "", errors.New("systemd service user must resolve to a non-root UID")
 	}
 	gid, err := strconv.Atoi(serviceUser.Gid)
 	if err != nil || gid < 0 {
@@ -50,6 +55,7 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 	if options.UnitDir == "" {
 		options.UnitDir = "/etc/systemd/system"
 	}
+	options.UnitDir = filepath.Clean(options.UnitDir)
 	if options.EnableNow && options.UnitDir != "/etc/systemd/system" {
 		return "", errors.New("enabling a systemd unit is available only for /etc/systemd/system")
 	}
@@ -91,6 +97,23 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 	if err != nil {
 		return "", err
 	}
+	if options.UnitDir == "/etc/systemd/system" {
+		if err := refuseSystemdUnitShadow(ctx, unitPath); err != nil {
+			return "", err
+		}
+	}
+	if options.ExpectedUnitState != "" && options.ExpectedUnitState != "absent" && options.ExpectedUnitState != "managed" {
+		return "", errors.New("expected systemd unit state must be absent or managed")
+	}
+	if options.ExpectedUnitSHA256 != "" {
+		decoded, err := hex.DecodeString(options.ExpectedUnitSHA256)
+		if err != nil || len(decoded) != sha256.Size {
+			return "", errors.New("expected systemd unit fingerprint is invalid")
+		}
+	}
+	if options.ExpectedUnitState == "absent" && options.ExpectedUnitSHA256 != "" || options.ExpectedUnitState == "managed" && options.ExpectedUnitSHA256 == "" {
+		return "", errors.New("expected systemd unit state and fingerprint do not match")
+	}
 	for _, group := range options.SupplementaryGroups {
 		if !validSupplementaryGroup(group) {
 			return "", errors.New("systemd supplementary group must be a numeric GID or a valid group name")
@@ -100,8 +123,14 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 		return "", fmt.Errorf("create systemd unit directory: %w", err)
 	}
 	unit := renderSystemdUnit(serviceUser.Username, serviceUser.Gid, options.ConfigPath, options.BinaryPath, fileRoot, options.SupplementaryGroups)
-	if err := writeSystemdUnit(unitPath, unit); err != nil {
+	if err := writeSystemdUnitExpected(unitPath, unit, options.ExpectedUnitState, options.ExpectedUnitSHA256); err != nil {
 		return "", err
+	}
+	if options.ResultSHA256Path != "" {
+		unitDigest := sha256.Sum256([]byte(unit))
+		if err := writeSystemdInstallResult(options.ResultSHA256Path, hex.EncodeToString(unitDigest[:])); err != nil {
+			return unitPath, fmt.Errorf("write installed systemd unit fingerprint: %w", err)
+		}
 	}
 	if options.Reload {
 		command := exec.CommandContext(ctx, "systemctl", "daemon-reload")
@@ -116,6 +145,41 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 		}
 	}
 	return unitPath, nil
+}
+
+func writeSystemdInstallResult(path, digest string) error {
+	if !filepath.IsAbs(path) || len(digest) != sha256.Size*2 {
+		return errors.New("systemd unit result path or fingerprint is invalid")
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return errors.New("systemd unit result fingerprint is invalid")
+	}
+	directory, err := os.Lstat(filepath.Dir(path))
+	if err != nil {
+		return fmt.Errorf("inspect systemd unit result directory: %w", err)
+	}
+	if !directory.IsDir() || directory.Mode()&os.ModeSymlink != 0 || directory.Mode().Perm()&0o077 != 0 {
+		return errors.New("systemd unit result directory must be a private real directory")
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("create systemd unit result file: %w", err)
+	}
+	if _, err := file.WriteString(digest + "\n"); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return fmt.Errorf("write systemd unit result file: %w", err)
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		_ = os.Remove(path)
+		return fmt.Errorf("sync systemd unit result file: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("close systemd unit result file: %w", err)
+	}
+	return nil
 }
 
 func renderSystemdUnit(serviceUser, primaryGroup, configPath, binaryPath, fileRoot string, supplementaryGroups []string) string {
@@ -134,7 +198,8 @@ func renderSystemdUnit(serviceUser, primaryGroup, configPath, binaryPath, fileRo
 		fileRootLine = "BindPaths=" + systemdQuoteUnitValue(fileRoot) + "\nEnvironment=NODEDANCE_AGENT_FILE_ROOT=" + systemdQuoteUnitValue(fileRoot) + "\n"
 		fileRootMarker = "# NodeDanceFileRootBase64=" + base64.RawStdEncoding.EncodeToString([]byte(fileRoot)) + "\n"
 	}
-	return fmt.Sprintf(`[Unit]
+	return fmt.Sprintf(`# NodeDanceAgentUnit=1
+[Unit]
 Description=NodeDance Agent
 After=network-online.target
 Wants=network-online.target
@@ -320,10 +385,16 @@ func readPersistedSystemdFileRoot(unitPath string) (string, error) {
 }
 
 func writeSystemdUnit(path, contents string) error {
-	if info, err := os.Lstat(path); err == nil && (!info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
-		return errors.New("refusing to replace a non-regular systemd unit path")
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("inspect systemd unit path: %w", err)
+	return writeSystemdUnitExpected(path, contents, "", "")
+}
+
+func writeSystemdUnitExpected(path, contents, expectedState, expectedSHA256 string) error {
+	initialState, initialSHA256, err := inspectNodeDanceSystemdUnit(path)
+	if err != nil {
+		return err
+	}
+	if expectedState != "" && (initialState != expectedState || initialSHA256 != expectedSHA256) {
+		return errors.New("systemd unit state changed since deployment preflight; refusing to replace it")
 	}
 	directory := filepath.Dir(path)
 	temporary, err := os.CreateTemp(directory, ".nodedance-agent-unit-*")
@@ -347,8 +418,139 @@ func writeSystemdUnit(path, contents string) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
-	if err := os.Rename(temporaryPath, path); err != nil {
+	currentState, currentSHA256, err := inspectNodeDanceSystemdUnit(path)
+	if err != nil {
+		return err
+	}
+	if currentState != initialState || currentSHA256 != initialSHA256 {
+		return errors.New("systemd unit changed while preparing the update; refusing to replace it")
+	}
+	if currentState == "absent" {
+		if err := os.Link(temporaryPath, path); err != nil {
+			return fmt.Errorf("install new systemd unit without replacing a concurrent file: %w", err)
+		}
+		if err := os.Remove(temporaryPath); err != nil {
+			return fmt.Errorf("remove temporary systemd unit: %w", err)
+		}
+	} else if err := os.Rename(temporaryPath, path); err != nil {
 		return fmt.Errorf("install systemd unit: %w", err)
 	}
 	return nil
+}
+
+func inspectNodeDanceSystemdUnit(path string) (string, string, error) {
+	info, err := os.Lstat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "absent", "", nil
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("inspect systemd unit path: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return "", "", errors.New("refusing to replace a non-regular systemd unit path")
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", fmt.Errorf("read existing systemd unit: %w", err)
+	}
+	if !isNodeDanceSystemdUnit(string(contents)) {
+		return "", "", errors.New("refusing to replace an existing systemd unit not marked as NodeDance-managed")
+	}
+	digest := sha256.Sum256(contents)
+	return "managed", hex.EncodeToString(digest[:]), nil
+}
+
+func refuseSystemdUnitShadow(ctx context.Context, target string) error {
+	command := exec.CommandContext(ctx, "systemctl", "show", "--property=FragmentPath", "--value", AgentUnitName)
+	output, err := command.Output()
+	if ctx.Err() != nil {
+		return fmt.Errorf("inspect effective systemd Agent unit: %w", ctx.Err())
+	}
+	if err != nil {
+		return fmt.Errorf("inspect effective systemd Agent unit: %w", err)
+	}
+	fragment := strings.TrimSpace(string(output))
+	if fragment != "" {
+		if filepath.Clean(fragment) != filepath.Clean(target) {
+			return fmt.Errorf("refusing to shadow an existing Agent systemd unit at %s", fragment)
+		}
+		return nil
+	}
+	stateCommand := exec.CommandContext(ctx, "systemctl", "show", "--property=LoadState", "--value", AgentUnitName)
+	stateOutput, stateErr := stateCommand.Output()
+	if ctx.Err() != nil {
+		return fmt.Errorf("confirm absent systemd Agent unit: %w", ctx.Err())
+	}
+	if stateErr != nil {
+		return fmt.Errorf("confirm absent systemd Agent unit: %w", stateErr)
+	}
+	if strings.TrimSpace(string(stateOutput)) != "not-found" {
+		return errors.New("refusing to install without proving the effective Agent systemd unit is absent")
+	}
+	for _, directory := range []string{
+		"/run/systemd/system",
+		"/usr/local/lib/systemd/system",
+		"/usr/lib/systemd/system",
+		"/lib/systemd/system",
+	} {
+		path := filepath.Join(directory, AgentUnitName)
+		if filepath.Clean(path) == filepath.Clean(target) {
+			continue
+		}
+		if _, err := os.Lstat(path); err == nil {
+			return fmt.Errorf("refusing to shadow an existing Agent systemd unit at %s", path)
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("inspect possible systemd Agent unit %s: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func isNodeDanceSystemdUnit(contents string) bool {
+	hasMarker, hasUnit, hasService, hasDescription, hasSimpleType, hasExecStart := false, false, false, false, false, false
+	hasNonRootUser, hasRootUser, hasRestart, hasInstallTarget := false, false, false, false
+	hasInstallSection, hasNoNewPrivileges, hasProtectSystem, hasProtectHome := false, false, false, false
+	hasPrivateTmp, hasReadWritePaths, hasUMask := false, false, false
+	for _, rawLine := range strings.Split(contents, "\n") {
+		line := strings.TrimSpace(rawLine)
+		switch {
+		case line == "# NodeDanceAgentUnit=1":
+			hasMarker = true
+		case line == "[Unit]":
+			hasUnit = true
+		case line == "[Service]":
+			hasService = true
+		case line == "[Install]":
+			hasInstallSection = true
+		case line == "Description=NodeDance Agent":
+			hasDescription = true
+		case line == "Type=simple":
+			hasSimpleType = true
+		case strings.HasPrefix(line, "ExecStart=/usr/bin/env -- ") && strings.Contains(line, "nodedance-agent") && strings.Contains(line, "run --config "):
+			hasExecStart = true
+		case strings.HasPrefix(line, "User=") && strings.TrimPrefix(line, "User=") != "root" && strings.TrimPrefix(line, "User=") != "":
+			hasNonRootUser = true
+		case line == "User=root":
+			hasRootUser = true
+		case line == "Restart=always":
+			hasRestart = true
+		case line == "WantedBy=multi-user.target":
+			hasInstallTarget = true
+		case line == "NoNewPrivileges=true":
+			hasNoNewPrivileges = true
+		case line == "ProtectSystem=strict":
+			hasProtectSystem = true
+		case line == "ProtectHome=tmpfs":
+			hasProtectHome = true
+		case line == "PrivateTmp=true":
+			hasPrivateTmp = true
+		case strings.HasPrefix(line, "ReadWritePaths="):
+			hasReadWritePaths = true
+		case line == "UMask=0077":
+			hasUMask = true
+		}
+	}
+	generatedShape := hasUnit && hasService && hasDescription && hasSimpleType && hasExecStart && hasNonRootUser && !hasRootUser && hasRestart &&
+		hasInstallSection && hasInstallTarget && hasNoNewPrivileges && hasProtectSystem && hasProtectHome && hasPrivateTmp && hasReadWritePaths && hasUMask
+	return hasMarker && generatedShape
 }

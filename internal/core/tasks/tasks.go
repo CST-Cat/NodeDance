@@ -88,6 +88,7 @@ const (
 	ActionComposeRestart = protocol.TaskComposeRestart
 	ActionComposeDeploy  = protocol.TaskComposeDeploy
 	ActionComposeSave    = protocol.TaskComposeSave
+	ActionAgentDeploy    = protocol.TaskAgentDeploy
 )
 
 // Intent is the complete allowlisted, non-secret remote container command. No
@@ -295,6 +296,73 @@ func (s *Store) Enqueue(ctx context.Context, request EnqueueRequest) (EnqueueRes
 // synchronized Agent connection while the durable acceptance transaction is
 // committed without rejecting safe retries during journal synchronization.
 func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gate EnqueueGate) (EnqueueResult, error) {
+	return s.enqueue(ctx, request, gate, false, false)
+}
+
+// EnqueueAndStartLocal commits acceptance and the Core executor's running
+// transition in one transaction. A failed start transition cannot leave a
+// queued local task or resource claim behind.
+func (s *Store) EnqueueAndStartLocal(ctx context.Context, request EnqueueRequest) (EnqueueResult, error) {
+	if request.Intent.Action != ActionAgentDeploy {
+		return EnqueueResult{}, ErrInvalidRequest
+	}
+	return s.enqueue(ctx, request, nil, true, true)
+}
+
+// FindLocalByIdempotency returns a prior Core-local task before an executor
+// performs any external work. A matching key with a different intent is a
+// conflict, just as it is during EnqueueAndStartLocal.
+func (s *Store) FindLocalByIdempotency(ctx context.Context, key string, intent Intent) (Task, bool, error) {
+	if ctx == nil || intent.Action != ActionAgentDeploy {
+		return Task{}, false, ErrInvalidRequest
+	}
+	payload, err := protocol.CanonicalTaskIntent(intent)
+	if err != nil {
+		return Task{}, false, fmt.Errorf("validate Core-local task intent: %w", err)
+	}
+	if _, err := protocol.TaskIdentity("lookup", "lookup", key, intent); err != nil {
+		return Task{}, false, fmt.Errorf("validate Core-local idempotency key: %w", err)
+	}
+	task, err := loadLocalDeploymentByIdempotency(ctx, s.db, key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Task{}, false, nil
+	}
+	if err != nil {
+		return Task{}, false, err
+	}
+	existing, err := protocol.CanonicalTaskIntent(task.Intent)
+	if err != nil {
+		return Task{}, false, fmt.Errorf("validate stored Core-local task intent: %w", err)
+	}
+	if string(existing) != string(payload) {
+		return Task{}, false, ErrIdempotencyConflict
+	}
+	return task, true, nil
+}
+
+// CheckLocalResourceAvailable fails before a Core-local executor performs
+// preflight or creates enrollment state when the same peer already has an
+// unresolved task claim. EnqueueAndStartLocal repeats this check atomically.
+func (s *Store) CheckLocalResourceAvailable(ctx context.Context, intent Intent) error {
+	if ctx == nil || intent.Action != ActionAgentDeploy {
+		return ErrInvalidRequest
+	}
+	_, _, resourceKey, err := validateIntent(intent, false)
+	if err != nil {
+		return err
+	}
+	var claimedTaskID string
+	err = s.db.QueryRowContext(ctx, `SELECT task_id FROM core_task_resource_claims WHERE resource_key=? ORDER BY task_id LIMIT 1`, resourceKey).Scan(&claimedTaskID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("check Core-local resource claim: %w", err)
+	}
+	return fmt.Errorf("%w: task %s", ErrResourceBusy, claimedTaskID)
+}
+
+func (s *Store) enqueue(ctx context.Context, request EnqueueRequest, gate EnqueueGate, local, startLocal bool) (EnqueueResult, error) {
 	if request.TaskID == "" {
 		var err error
 		request.TaskID, err = newTaskID()
@@ -305,6 +373,12 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 	intentJSON, payload, resourceKey, err := validateIntent(request.Intent, false)
 	if err != nil {
 		return EnqueueResult{}, err
+	}
+	if local != (request.Intent.Action == ActionAgentDeploy) {
+		return EnqueueResult{}, ErrInvalidRequest
+	}
+	if startLocal && !local {
+		return EnqueueResult{}, ErrInvalidRequest
 	}
 	if request.RegistryAuthRequired && request.Intent.Action != ActionImagePull {
 		return EnqueueResult{}, ErrInvalidRequest
@@ -337,6 +411,22 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 		}
 	}()
 	defer tx.Rollback()
+	if local {
+		byKey, err := loadLocalDeploymentByIdempotency(ctx, tx, request.IdempotencyKey)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return EnqueueResult{}, fmt.Errorf("read Core-local task idempotency key: %w", err)
+		}
+		if err == nil {
+			existingIntent, existingErr := protocol.CanonicalTaskIntent(byKey.Intent)
+			if existingErr != nil || string(existingIntent) != string(payload) {
+				return EnqueueResult{}, ErrIdempotencyConflict
+			}
+			if err := tx.Commit(); err != nil {
+				return EnqueueResult{}, fmt.Errorf("commit Core-local idempotency lookup: %w", err)
+			}
+			return EnqueueResult{Task: byKey, Created: false}, nil
+		}
+	}
 
 	byKey, keyErr := loadByIdempotency(ctx, tx, request.NodeID, request.IdempotencyKey)
 	if keyErr != nil && !errors.Is(keyErr, sql.ErrNoRows) {
@@ -383,12 +473,23 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 	}
 
 	now := s.now().UTC()
-	acceptedGeneration, err := requireOnlineNode(ctx, tx, request.NodeID, now, s.leaseTTL)
+	var acceptedGeneration uint64
+	if local {
+		if err := requireNodeExists(ctx, tx, request.NodeID); err != nil {
+			return EnqueueResult{}, err
+		}
+	} else {
+		acceptedGeneration, err = requireOnlineNode(ctx, tx, request.NodeID, now, s.leaseTTL)
+	}
 	if err != nil {
 		return EnqueueResult{}, err
 	}
 	var claimedTaskID string
-	err = tx.QueryRowContext(ctx, `SELECT task_id FROM core_task_resource_claims WHERE node_id=? AND resource_key=?`, request.NodeID, resourceKey).Scan(&claimedTaskID)
+	if local {
+		err = tx.QueryRowContext(ctx, `SELECT task_id FROM core_task_resource_claims WHERE resource_key=? ORDER BY task_id LIMIT 1`, resourceKey).Scan(&claimedTaskID)
+	} else {
+		err = tx.QueryRowContext(ctx, `SELECT task_id FROM core_task_resource_claims WHERE node_id=? AND resource_key=?`, request.NodeID, resourceKey).Scan(&claimedTaskID)
+	}
 	if err == nil {
 		return EnqueueResult{}, fmt.Errorf("%w: task %s", ErrResourceBusy, claimedTaskID)
 	}
@@ -397,9 +498,15 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 	}
 
 	nowNS := now.UnixNano()
-	_, err = tx.ExecContext(ctx, `INSERT INTO core_tasks(task_id,node_id,idempotency_key,request_digest,accepted_generation,target_id,resource_key,action,intent_json,registry_auth_required,status,created_at_ns,updated_at_ns)
-		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, request.TaskID, request.NodeID, request.IdempotencyKey, digest[:], acceptedGeneration, request.Intent.ContainerID,
-		resourceKey, request.Intent.Action, intentJSON, boolInt(request.RegistryAuthRequired), taskstate.Queued, nowNS, nowNS)
+	deliveryState := "ready"
+	if local {
+		// Core-local tasks must never enter Agent ClaimNext or journal-loss
+		// reconciliation while the newly provisioned Agent connects.
+		deliveryState = "done"
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO core_tasks(task_id,node_id,idempotency_key,request_digest,accepted_generation,target_id,resource_key,action,intent_json,registry_auth_required,status,delivery_state,created_at_ns,updated_at_ns)
+		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, request.TaskID, request.NodeID, request.IdempotencyKey, digest[:], acceptedGeneration, request.Intent.ContainerID,
+		resourceKey, request.Intent.Action, intentJSON, boolInt(request.RegistryAuthRequired), taskstate.Queued, deliveryState, nowNS, nowNS)
 	if err != nil {
 		return EnqueueResult{}, fmt.Errorf("persist Core task intent: %w", err)
 	}
@@ -409,12 +516,191 @@ func (s *Store) EnqueueWithGate(ctx context.Context, request EnqueueRequest, gat
 	if err := writeAudit(ctx, tx, request.NodeID, request.TaskID, "accepted", "", taskstate.Queued, request.ActorID, request.RemoteAddr, nowNS); err != nil {
 		return EnqueueResult{}, fmt.Errorf("persist task acceptance audit: %w", err)
 	}
+	status := taskstate.Queued
+	progress := Progress{Phase: PhaseAccepted}
+	var startedAt *time.Time
+	if startLocal {
+		status = taskstate.Running
+		progress.Phase = PhasePreparing
+		startedAt = timePtr(now)
+		if _, err := tx.ExecContext(ctx, `UPDATE core_tasks SET status=?,execution_attempted=1,started_at_ns=?,progress_phase=?,updated_at_ns=? WHERE node_id=? AND task_id=? AND status='queued' AND delivery_state='done'`,
+			status, nowNS, progress.Phase, nowNS, request.NodeID, request.TaskID); err != nil {
+			return EnqueueResult{}, fmt.Errorf("start Core-local task in acceptance transaction: %w", err)
+		}
+		if err := writeAudit(ctx, tx, request.NodeID, request.TaskID, "delivery_claimed", taskstate.Queued, status, request.ActorID, request.RemoteAddr, nowNS); err != nil {
+			return EnqueueResult{}, fmt.Errorf("audit Core-local task start: %w", err)
+		}
+	}
 	if err := tx.Commit(); err != nil {
-		return EnqueueResult{}, fmt.Errorf("commit queued task, audit, and resource claim: %w", err)
+		return EnqueueResult{}, fmt.Errorf("commit task, audit, and resource claim: %w", err)
 	}
 	return EnqueueResult{Task: Task{TaskID: request.TaskID, NodeID: request.NodeID, IdempotencyKey: request.IdempotencyKey,
-		RequestDigest: digest, AcceptedGeneration: acceptedGeneration, Intent: request.Intent, RegistryAuthRequired: request.RegistryAuthRequired, ResourceKey: resourceKey, Status: taskstate.Queued,
-		DeliveryState: "ready", CreatedAt: now, UpdatedAt: now, Progress: Progress{Phase: PhaseAccepted}}, Created: true}, nil
+		RequestDigest: digest, AcceptedGeneration: acceptedGeneration, Intent: request.Intent, RegistryAuthRequired: request.RegistryAuthRequired, ResourceKey: resourceKey, Status: status,
+		DeliveryState: deliveryState, CreatedAt: now, UpdatedAt: now, StartedAt: startedAt, Evidence: Evidence{ExecutionAttempted: startLocal}, Progress: progress}, Created: true}, nil
+}
+
+// CompleteLocal records a verified outcome from a Core-owned executor. Unknown
+// outcomes remain unresolved and retain their shared resource claim.
+func (s *Store) CompleteLocal(ctx context.Context, nodeID, taskID string, status taskstate.Status, observedState string, actorID sql.NullInt64, remoteAddr string) (Task, error) {
+	if ctx == nil || !validTaskIdentifier(nodeID) || !validTaskIdentifier(taskID) ||
+		(status != taskstate.Succeeded && status != taskstate.Failed && status != taskstate.Unknown) || !safeToken(observedState, 64) {
+		return Task{}, ErrInvalidRequest
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Task{}, fmt.Errorf("begin Core-local task completion: %w", err)
+	}
+	defer tx.Rollback()
+	task, err := loadByTaskID(ctx, tx, nodeID, taskID)
+	if err != nil {
+		return Task{}, lookupError(err)
+	}
+	if task.Intent.Action != ActionAgentDeploy || task.Status != taskstate.Running {
+		return Task{}, ErrTaskStateConflict
+	}
+	now := s.now().UTC()
+	evidence := Evidence{ExecutionAttempted: true}
+	result := Result{}
+	progress := Progress{Phase: PhaseVerifying}
+	if status == taskstate.Unknown {
+		result = Result{Code: ResultUncertain}
+		progress.Phase = PhaseReconciling
+		if err := updateStatusTx(ctx, tx, taskID, nodeID, status, evidence, progress, result, now); err != nil {
+			return Task{}, err
+		}
+	} else {
+		evidence.ExecutionCompleted = true
+		evidence.ActualResultConfirmed = true
+		if status == taskstate.Succeeded {
+			evidence.PostconditionVerified = true
+			result = Result{Code: ResultVerified, ObservedState: observedState}
+		} else {
+			evidence.FailureConfirmed = true
+			result = Result{Code: ResultFailed, ObservedState: observedState}
+		}
+		if err := taskstate.CanTransition(task.Status, status, mergeEvidence(task.Evidence, evidence)); err != nil {
+			return Task{}, err
+		}
+		if err := finishTaskTx(ctx, tx, task, status, mergeEvidence(task.Evidence, evidence), result, progress, now); err != nil {
+			return Task{}, err
+		}
+	}
+	if err := writeAudit(ctx, tx, nodeID, taskID, "task_resolved", task.Status, status, actorID, remoteAddr, now.UnixNano()); err != nil {
+		return Task{}, fmt.Errorf("audit Core-local task completion: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Task{}, fmt.Errorf("commit Core-local task completion: %w", err)
+	}
+	return loadByTaskID(ctx, s.db, nodeID, taskID)
+}
+
+// MarkLocalUnknown records that a Core-local external operation reached its
+// executor but could not be durably resolved. It is idempotent for an already
+// unknown task and keeps the shared resource claim for manual inspection.
+func (s *Store) MarkLocalUnknown(ctx context.Context, nodeID, taskID string, actorID sql.NullInt64, remoteAddr string) (Task, error) {
+	if ctx == nil || !validTaskIdentifier(nodeID) || !validTaskIdentifier(taskID) {
+		return Task{}, ErrInvalidRequest
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Task{}, fmt.Errorf("begin Core-local uncertainty recovery: %w", err)
+	}
+	defer tx.Rollback()
+	task, err := loadByTaskID(ctx, tx, nodeID, taskID)
+	if err != nil {
+		return Task{}, lookupError(err)
+	}
+	if task.Intent.Action != ActionAgentDeploy {
+		return Task{}, ErrTaskStateConflict
+	}
+	if task.Status == taskstate.Unknown {
+		if err := tx.Commit(); err != nil {
+			return Task{}, fmt.Errorf("commit existing Core-local unknown result: %w", err)
+		}
+		return task, nil
+	}
+	if task.Status != taskstate.Running {
+		return Task{}, ErrTaskStateConflict
+	}
+	now := s.now().UTC()
+	evidence := mergeEvidence(task.Evidence, Evidence{ExecutionAttempted: true})
+	if err := updateStatusTx(ctx, tx, taskID, nodeID, taskstate.Unknown, evidence, Progress{Phase: PhaseReconciling}, Result{Code: ResultUncertain}, now); err != nil {
+		return Task{}, err
+	}
+	if err := writeAudit(ctx, tx, nodeID, taskID, "task_resolved", taskstate.Running, taskstate.Unknown, actorID, remoteAddr, now.UnixNano()); err != nil {
+		return Task{}, fmt.Errorf("audit Core-local unknown recovery: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Task{}, fmt.Errorf("commit Core-local unknown recovery: %w", err)
+	}
+	return loadByTaskID(ctx, s.db, nodeID, taskID)
+}
+
+// RecoverLocalTasks resolves Core-local provisioning tasks interrupted by a
+// Core restart. Queued means the executor had not started the external write;
+// running means its result must be inspected and cannot be retried blindly.
+func (s *Store) RecoverLocalTasks(ctx context.Context) error {
+	if ctx == nil {
+		return ErrInvalidRequest
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin Core-local task recovery: %w", err)
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT `+taskColumns+` FROM core_tasks WHERE action=? AND delivery_state='done' AND status IN ('queued','running') ORDER BY created_at_ns,task_id`, ActionAgentDeploy)
+	if err != nil {
+		return fmt.Errorf("query interrupted Core-local tasks: %w", err)
+	}
+	var pending []Task
+	for rows.Next() {
+		task, scanErr := scanTask(rows)
+		if scanErr != nil {
+			_ = rows.Close()
+			return scanErr
+		}
+		pending = append(pending, task)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, task := range pending {
+		now := s.now().UTC()
+		switch task.Status {
+		case taskstate.Queued:
+			evidence := mergeEvidence(task.Evidence, Evidence{CancellationConfirmed: true, ActualResultConfirmed: true})
+			if err := finishTaskTx(ctx, tx, task, taskstate.Canceled, evidence,
+				Result{Code: ResultCanceled, ObservedState: "not_started"}, Progress{Phase: PhaseAccepted}, now); err != nil {
+				return fmt.Errorf("cancel unstarted Core-local task %s: %w", task.TaskID, err)
+			}
+			if err := writeAudit(ctx, tx, task.NodeID, task.TaskID, "task_resolved", taskstate.Queued, taskstate.Canceled, sql.NullInt64{}, "unknown", now.UnixNano()); err != nil {
+				return fmt.Errorf("audit unstarted Core-local task recovery: %w", err)
+			}
+		case taskstate.Running:
+			evidence := mergeEvidence(task.Evidence, Evidence{ExecutionAttempted: true})
+			if err := updateStatusTx(ctx, tx, task.TaskID, task.NodeID, taskstate.Unknown, evidence,
+				Progress{Phase: PhaseReconciling}, Result{Code: ResultUncertain}, now); err != nil {
+				return fmt.Errorf("mark interrupted Core-local task %s unknown: %w", task.TaskID, err)
+			}
+			if err := writeAudit(ctx, tx, task.NodeID, task.TaskID, "task_resolved", taskstate.Running, taskstate.Unknown, sql.NullInt64{}, "unknown", now.UnixNano()); err != nil {
+				return fmt.Errorf("audit interrupted Core-local task recovery: %w", err)
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit Core-local task recovery: %w", err)
+	}
+	return nil
 }
 
 // ClaimNext uses the fail-closed no-credential policy. It durably marks a
@@ -853,7 +1139,11 @@ func (s *Store) ResolveUncertainTask(ctx context.Context, nodeID, taskID string,
 	if err != nil {
 		return lookupError(err)
 	}
-	if !task.ReconciliationRequired {
+	localDeployment := task.Intent.Action == ActionAgentDeploy && task.DeliveryState == "done" && !task.ReconciliationRequired
+	if localDeployment && task.Status == status && task.Status != taskstate.Unknown && task.Result.Code == result.Code && task.Result.ObservedState == result.ObservedState && task.Result.ResourceRevision == result.ResourceRevision {
+		return tx.Commit()
+	}
+	if !task.ReconciliationRequired && !(localDeployment && task.Status == taskstate.Unknown) {
 		return ErrTaskStateConflict
 	}
 	merged := mergeEvidence(task.Evidence, evidence)
@@ -915,6 +1205,50 @@ func (s *Store) Get(ctx context.Context, nodeID, taskID string) (Task, error) {
 		return Task{}, lookupError(err)
 	}
 	return task, nil
+}
+
+// GetByID retrieves a globally unique Core task for authenticated product
+// endpoints whose local executor does not have an Agent delivery route.
+func (s *Store) GetByID(ctx context.Context, taskID string) (Task, error) {
+	if ctx == nil || !validTaskIdentifier(taskID) {
+		return Task{}, ErrInvalidRequest
+	}
+	task, err := loadByTaskIDAnyNode(ctx, s.db, taskID)
+	if err != nil {
+		return Task{}, lookupError(err)
+	}
+	return task, nil
+}
+
+// ListUnresolvedLocalAgentDeployments returns only Core-local Agent deployment
+// tasks that still own a resource claim. It is a view over the authoritative
+// Core task ledger, used to restore active and unknown deployments after a UI
+// or Core restart.
+func (s *Store) ListUnresolvedLocalAgentDeployments(ctx context.Context, limit int) ([]Task, error) {
+	if ctx == nil || limit < 1 || limit > MaxPageSize {
+		return nil, ErrInvalidRequest
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT `+taskColumns+` FROM core_tasks
+		WHERE action=? AND delivery_state='done' AND status IN ('queued','running','unknown')
+		AND reconciliation_required=0
+		AND EXISTS (SELECT 1 FROM core_task_resource_claims claims WHERE claims.task_id=core_tasks.task_id)
+		ORDER BY updated_at_ns DESC,task_id LIMIT ?`, ActionAgentDeploy, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list unresolved Core-local Agent deployments: %w", err)
+	}
+	defer rows.Close()
+	tasks := make([]Task, 0, limit)
+	for rows.Next() {
+		task, err := scanTask(rows)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read unresolved Core-local Agent deployments: %w", err)
+	}
+	return tasks, nil
 }
 
 // ReconciliationCandidates returns only Agent-reported unknown tasks whose
@@ -1365,6 +1699,12 @@ func loadByIdempotency(ctx context.Context, q interface {
 	return scanTask(q.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM core_tasks WHERE node_id=? AND idempotency_key=?`, nodeID, key))
 }
 
+func loadLocalDeploymentByIdempotency(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, key string) (Task, error) {
+	return scanTask(q.QueryRowContext(ctx, `SELECT `+taskColumns+` FROM core_tasks WHERE action=? AND idempotency_key=? ORDER BY created_at_ns,task_id LIMIT 1`, ActionAgentDeploy, key))
+}
+
 func loadNextReady(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }, nodeID string, generation uint64) (Task, error) {
@@ -1392,6 +1732,20 @@ func requireOnlineNode(ctx context.Context, q interface {
 		return 0, ErrNodeOffline
 	}
 	return generation, nil
+}
+
+func requireNodeExists(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, nodeID string) error {
+	var exists int
+	err := q.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id=?`, nodeID).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNodeNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("read local task target node: %w", err)
+	}
+	return nil
 }
 
 func requireOnlineConnection(ctx context.Context, q interface {
@@ -1479,6 +1833,8 @@ func validateIntent(intent Intent, composeManaged bool) (string, []byte, string,
 		resourceKey = "docker-compose-project:" + intent.ContainerID
 	} else if protocol.IsFileTaskAction(intent.Action) {
 		resourceKey = "filesystem-path:" + intent.ContainerID
+	} else if intent.Action == ActionAgentDeploy {
+		resourceKey = "agent-deployment:" + intent.AgentDeploy.PeerIdentity
 	}
 	canonical, err := protocol.CanonicalTaskIntent(intent)
 	if err != nil {

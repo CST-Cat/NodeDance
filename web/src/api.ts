@@ -65,10 +65,11 @@ export interface TailscaleDeploymentTask {
   taskId: string
   peerIdentity: string
   peerName: string
-  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'unknown' | string
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'canceled' | 'unknown' | string
   phase: string
   message?: string
   nodeId?: string
+  dockerState?: string
   createdAt: string
   updatedAt: string
   finishedAt?: string
@@ -141,7 +142,7 @@ export interface AlertRule {
 }
 export interface AlertChannel {
   id: string; name: string; kind: 'webhook' | 'smtp'; enabled: boolean; hasSecret: boolean; revision: number
-  config: { webhookUrl?: string; messageTemplate?: string; smtpHost?: string; smtpPort?: number; smtpFrom?: string; smtpTo?: string; smtpUsername?: string; smtpSecurityMode?: 'starttls' | 'implicit_tls' | '' }
+  config: { webhookUrl?: string; messageTemplate?: string; smtpHost?: string; smtpPort?: number; smtpFrom?: string; smtpTo?: string; smtpUsername?: string; smtpSecurityMode?: 'starttls' | 'implicit_tls' }
 }
 export interface AlertItem {
   id: string; ruleId: string; ruleName: string; nodeId: string; nodeName: string; subjectId?: string
@@ -527,7 +528,6 @@ export const api = {
     return result
   },
   sessions: () => request<{ sessions: Session[] }>('/api/v1/auth/sessions'),
-  agents: () => request<AgentNodesResponse>('/api/v1/agents'),
   tailscalePeers: () => request<TailscaleDiscoveryResponse>('/api/v1/discovery/tailscale'),
   probeTailscaleSSH: (peerIdentity: string) => request<{ fingerprint: string }>('/api/v1/discovery/tailscale/host-key', {
     method: 'POST', body: JSON.stringify({ peerIdentity }),
@@ -535,10 +535,15 @@ export const api = {
   createManualEnrollment: (displayName: string) => request<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number }>('/api/v1/discovery/enrollments', {
     method: 'POST', body: JSON.stringify({ displayName }),
   }, true),
-  startTailscaleDeployment: (payload: TailscaleDeployPayload) => request<TailscaleDeploymentTask>('/api/v1/discovery/deployments', {
-    method: 'POST', body: JSON.stringify(payload),
+  startTailscaleDeployment: (payload: TailscaleDeployPayload, idempotencyKey: string) => request<TailscaleDeploymentTask>('/api/v1/discovery/deployments', {
+    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload),
   }, true),
+  tailscaleDeployments: () => request<{ tasks: TailscaleDeploymentTask[] }>('/api/v1/discovery/deployments'),
   tailscaleDeployment: (taskId: string) => request<TailscaleDeploymentTask>(`/api/v1/discovery/deployments/${encodeURIComponent(taskId)}`),
+  resolveTailscaleDeployment: (taskId: string, payload: { outcome: 'succeeded' | 'failed'; observedState: string }) =>
+    request<TailscaleDeploymentTask>(`/api/v1/discovery/deployments/${encodeURIComponent(taskId)}/resolve`, {
+      method: 'POST', body: JSON.stringify({ ...payload, confirmed: true }),
+    }, true),
   nodes: () => request<AgentNodesResponse>('/api/v1/nodes'),
   nodeMetrics: (nodeId: string) => request<AgentMetricsResponse>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/metrics`),
   nodeContainers: (nodeId: string) => request<DockerInventoryMessage>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/containers`),

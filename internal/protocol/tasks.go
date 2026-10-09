@@ -71,6 +71,7 @@ const (
 	TaskFileDelete     TaskAction = "file_delete"
 	TaskFileSaveText   TaskAction = "file_save_text"
 	TaskFileUpload     TaskAction = "file_upload"
+	TaskAgentDeploy    TaskAction = "agent_deploy"
 )
 
 // ComposeTaskSpec identifies a project from Docker's Compose labels. File
@@ -110,6 +111,22 @@ type FileTaskSpec struct {
 	SHA256          string `json:"sha256,omitempty"`
 }
 
+// AgentDeployTaskSpec identifies a Tailscale peer for Core-local provisioning.
+// SSH credentials and one-time enrollment tokens are deliberately excluded.
+type AgentDeployTaskSpec struct {
+	PeerIdentity          string `json:"peer_identity"`
+	PeerName              string `json:"peer_name"`
+	FileRoot              string `json:"file_root,omitempty"`
+	DisableFileRoot       bool   `json:"disable_file_root,omitempty"`
+	CoreURL               string `json:"core_url"`
+	FallbackURL           string `json:"fallback_url,omitempty"`
+	AllowFallback         bool   `json:"allow_fallback,omitempty"`
+	HostFingerprint       string `json:"host_fingerprint"`
+	ConfirmChangedHostKey bool   `json:"confirm_changed_host_key,omitempty"`
+	SSHUser               string `json:"ssh_user"`
+	Authentication        string `json:"authentication"`
+}
+
 type ContainerRebuildPlanRequest struct {
 	ContainerID string      `json:"containerId"`
 	Spec        RebuildSpec `json:"spec"`
@@ -144,15 +161,16 @@ type ContainerRebuildMount struct {
 }
 
 type TaskIntent struct {
-	Action          TaskAction       `json:"action"`
-	ContainerID     string           `json:"container_id"`
-	NewName         string           `json:"new_name,omitempty"`
-	DeleteConfirmed bool             `json:"delete_confirmed,omitempty"`
-	ImageReference  string           `json:"image_reference,omitempty"`
-	ImageID         string           `json:"image_id,omitempty"`
-	Rebuild         *RebuildSpec     `json:"rebuild,omitempty"`
-	Compose         *ComposeTaskSpec `json:"compose,omitempty"`
-	File            *FileTaskSpec    `json:"file,omitempty"`
+	Action          TaskAction           `json:"action"`
+	ContainerID     string               `json:"container_id"`
+	NewName         string               `json:"new_name,omitempty"`
+	DeleteConfirmed bool                 `json:"delete_confirmed,omitempty"`
+	ImageReference  string               `json:"image_reference,omitempty"`
+	ImageID         string               `json:"image_id,omitempty"`
+	Rebuild         *RebuildSpec         `json:"rebuild,omitempty"`
+	Compose         *ComposeTaskSpec     `json:"compose,omitempty"`
+	File            *FileTaskSpec        `json:"file,omitempty"`
+	AgentDeploy     *AgentDeployTaskSpec `json:"agent_deploy,omitempty"`
 }
 
 // CanonicalTaskIntent returns the exact canonical JSON used in the task
@@ -173,9 +191,16 @@ func CanonicalTaskIntent(intent TaskIntent) ([]byte, error) {
 }
 
 func ValidateTaskIntent(intent TaskIntent) error {
+	if intent.Action != TaskAgentDeploy && intent.AgentDeploy != nil {
+		return ErrInvalidTaskMessage
+	}
 	if IsFileTaskAction(intent.Action) {
 		if !validFileTaskSpec(intent) {
 			return fmt.Errorf("%w: file target or operation metadata is invalid", ErrInvalidTaskMessage)
+		}
+	} else if intent.Action == TaskAgentDeploy {
+		if !validAgentDeployTaskSpec(intent) {
+			return fmt.Errorf("%w: Agent deployment target or metadata is invalid", ErrInvalidTaskMessage)
 		}
 	} else if !IsFullContainerID(intent.ContainerID) {
 		return fmt.Errorf("%w: target must be a full stable Docker resource digest", ErrInvalidTaskMessage)
@@ -245,10 +270,42 @@ func ValidateTaskIntent(intent TaskIntent) error {
 		if (intent.Action == TaskFileDelete) != intent.DeleteConfirmed {
 			return ErrInvalidTaskMessage
 		}
+	case TaskAgentDeploy:
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil || intent.File != nil {
+			return ErrInvalidTaskMessage
+		}
 	default:
 		return ErrInvalidTaskMessage
 	}
 	return nil
+}
+
+func validAgentDeployTaskSpec(intent TaskIntent) bool {
+	if intent.AgentDeploy == nil || intent.AgentDeploy.PeerIdentity == "" || len(intent.AgentDeploy.PeerIdentity) > 200 ||
+		strings.TrimSpace(intent.AgentDeploy.PeerIdentity) != intent.AgentDeploy.PeerIdentity || intent.AgentDeploy.PeerName == "" || len([]rune(intent.AgentDeploy.PeerName)) > 80 ||
+		strings.TrimSpace(intent.AgentDeploy.PeerName) != intent.AgentDeploy.PeerName || len(intent.AgentDeploy.FileRoot) > 4096 ||
+		(intent.AgentDeploy.DisableFileRoot && intent.AgentDeploy.FileRoot != "") || intent.AgentDeploy.CoreURL == "" || len(intent.AgentDeploy.CoreURL) > 2048 ||
+		len(intent.AgentDeploy.FallbackURL) > 2048 || intent.AgentDeploy.HostFingerprint == "" || len(intent.AgentDeploy.HostFingerprint) > 256 ||
+		intent.AgentDeploy.SSHUser == "" || len(intent.AgentDeploy.SSHUser) > 128 ||
+		(intent.AgentDeploy.Authentication != "password" && intent.AgentDeploy.Authentication != "private_key") ||
+		intent.ContainerID != "tailscale-peer:"+intent.AgentDeploy.PeerIdentity {
+		return false
+	}
+	for _, value := range []string{intent.AgentDeploy.PeerIdentity, intent.AgentDeploy.CoreURL, intent.AgentDeploy.FallbackURL, intent.AgentDeploy.HostFingerprint, intent.AgentDeploy.SSHUser} {
+		for _, r := range value {
+			if r < 0x21 || r == 0x7f {
+				return false
+			}
+		}
+	}
+	for _, value := range []string{intent.AgentDeploy.PeerName, intent.AgentDeploy.FileRoot} {
+		for _, r := range value {
+			if r < 0x20 || r == 0x7f {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func validFileTaskSpec(intent TaskIntent) bool {
@@ -413,6 +470,8 @@ func TaskIdentity(taskID, nodeID, idempotencyKey string, intent TaskIntent) (tas
 		resourceKey = "docker-compose-project:" + intent.ContainerID
 	} else if IsFileTaskAction(intent.Action) {
 		resourceKey = "filesystem-path:" + intent.ContainerID
+	} else if intent.Action == TaskAgentDeploy {
+		resourceKey = "agent-deployment:" + intent.AgentDeploy.PeerIdentity
 	}
 	return taskstate.Identity{
 		TaskID: taskID, NodeID: nodeID, IdempotencyKey: idempotencyKey,

@@ -83,6 +83,7 @@ type Server struct {
 	fileContents               map[string]pendingFileContent
 	imageAuthMu                sync.Mutex
 	imageAuth                  map[string]pendingImageCredential
+	tailscaleResolveMu         sync.Mutex
 	probes                     *coreprobes.Store
 	alerts                     *corealerts.Store
 	alertSender                *corealerts.Sender
@@ -245,6 +246,10 @@ func New(version string, options Options) (*Server, error) {
 	if err != nil {
 		_ = store.Close()
 		return nil, fmt.Errorf("initialize durable Core task store: %w", err)
+	}
+	if err := s.tasks.RecoverLocalTasks(context.Background()); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("recover interrupted Core-local tasks: %w", err)
 	}
 	s.probes = coreprobes.New(store.DB, options.Now)
 	alertKey, err := loadOrCreateAlertEncryptionKey(store.Dir)

@@ -115,21 +115,11 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 		}
 		s.adminCreateAgentEnrollment(w, r, current)
 		return
-	case "/api/v1/agents":
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		s.adminListAgents(w, r)
-		return
 	case "/api/v1/nodes":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		// The node dashboard exposes the same Core-owned node and lease view as
-		// the legacy Agent management list. Keep the latter available for the
-		// identity-management screen while giving metrics their node-scoped API.
 		s.adminListAgents(w, r)
 		return
 	}

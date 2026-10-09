@@ -12,7 +12,7 @@ Luna Work 是唯一代码修改者。一个大阶段完成后再提交审查。�
 - **REJECT**：有可定位的编译错误、重复实现、需求偏离、权限绕过、数据损坏或危险操作。
 - **WAIT_FOR_VPS**：MVP 本地源码交付完成，只等待用户安排真实 VPS 联调。
 
-没有明确证据的问题不得阻止进入下一阶段。重复公共机制一旦指定归一，必须只剩一条可运行实现。旧数据须先备份并迁移，不得为了减少表或代码而静默丢弃。禁止重建旧验收系统或同等作用的新平台。构建错误、权限绕过、数据损坏和 Docker 误操作阻止验收。修复后只复验受影响路径。
+没有明确证据的问题不得阻止进入下一阶段。重复公共机制一旦指定归一，必须只剩一条可运行实现。开发期旧数据库和历史开发数据不做 schema/data 迁移，可删除后由当前 schema 重新初始化；运行中的当前 schema 数据不得在正常启动时重置。禁止重建旧验收系统或同等作用的新平台。构建错误、权限绕过、数据损坏和 Docker 误操作阻止验收。修复后只复验受影响路径。
 
 开发顺序：阶段 0 清理与基础架构统一 → 阶段 1 MVP → 用户提供 VPS 后进行一轮真实联调 → 阶段 2 至阶段 7 顺序交付。不得等待 VPS 才开始或完成本地可做的 MVP 源码。
 
@@ -23,7 +23,7 @@ Luna Work 是唯一代码修改者。一个大阶段完成后再提交审查。�
 1. 删除旧 `docs/stages/`、`docs/reviews/`、`reports/`、旧需求追踪和测试夹具；用本计划替换旧计划，更新架构说明与 README。删除 S00–S17、旧验收报告、已不存在脚本和阶段专用 Playwright 命令。
 2. 保留 `.tool-versions` 与 `web/pnpm-lock.yaml`、Go module files。删除重复 Node 版本文件、内部 pnpm 安装器、工具链锁文件和旧工具检查/安装脚本。Makefile 只保留依赖安装、类型检查、构建、运行和基本测试入口；Vite 使用通用开发代理配置。
 3. 删除 Agent 自动更新、发布打包与监督代码、Core 更新任务和 Web 更新界面，保留 Agent 手动运行、安装及 systemd 管理。
-4. Core 仅保留 `internal/core/tasks/` 作为通用远程任务状态库。Compose 项目存储仅管理项目清单；Compose、文件模块不保留独立通用状态账本。数据迁移须保留已有操作记录。
+4. Core 仅保留 `internal/core/tasks/` 作为通用远程任务状态库。Compose 项目存储仅管理项目清单；Compose、文件模块不保留独立通用状态账本。SQLite 仅初始化当前完整 schema，不保留 schema 版本号、历史迁移 SQL 或旧 schema/data 兼容迁移；旧开发库可删除。阶段 2 的历史监控图表是现行产品功能，须正常存储和查询。
 5. Agent 仅保留 `internal/agent/taskjournal/` 作为持久通用任务日志，并让 `taskrunner` 负责统一执行和结果上报。文件事务或容器重建所需的短期恢复记录只能保留为业务恢复数据。
 6. 只由 `internal/agent/docker/engine.go` 创建 Docker SDK Client、解析本地 Socket 并协商 API 版本。操作、日志统计、镜像、Compose 和重建复用这个 Client。每类流保留合适的 Context、响应头超时和关闭策略；Docker 不可用时主机监控继续工作。
 7. `web/src/api.ts` 是唯一普通 HTTP 请求实现，统一 Cookie、CSRF、超时、错误和登录失效；业务 API 文件只保留业务方法。`streamApi.ts` 独立处理 WebSocket。

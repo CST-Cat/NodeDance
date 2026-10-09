@@ -813,17 +813,16 @@ func (s *Store) MarkUnknown(ctx context.Context, taskID string) error {
 }
 
 // RecoverInterrupted must be called only after the old Agent process is known
-// to be stopped. It never replays work: running tasks and Core-delivered queued
-// tasks become unknown, and their resource claims stay held until actual Engine
-// state is queried and confirmed. A legacy queued row without the v3 delivery
-// marker remains queued because the old journal cannot prove Core dispatch.
+// to be stopped. It never replays work: all queued and running tasks become
+// unknown, and their resource claims stay held until actual Engine state is
+// queried and confirmed.
 func (s *Store) RecoverInterrupted(ctx context.Context) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin interrupted-task recovery: %w", err)
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE task_journal SET status='unknown',result_code=?,progress_phase=?,updated_at_ns=?,finished_at_ns=NULL WHERE node_id=? AND (status='running' OR (status='queued' AND delivery_committed=1))`, ResultUncertain, PhaseReconciling, s.now().UTC().UnixNano(), s.nodeID)
+	result, err := tx.ExecContext(ctx, `UPDATE task_journal SET status='unknown',result_code=?,progress_phase=?,updated_at_ns=?,finished_at_ns=NULL WHERE node_id=? AND status IN ('queued','running')`, ResultUncertain, PhaseReconciling, s.now().UTC().UnixNano(), s.nodeID)
 	if err != nil {
 		return 0, fmt.Errorf("mark interrupted tasks unknown: %w", err)
 	}

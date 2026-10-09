@@ -30,7 +30,6 @@ const (
 	ChannelWebhook = "webhook"
 	ChannelSMTP    = "smtp"
 
-	SMTPSecurityLegacy      = ""
 	SMTPSecuritySTARTTLS    = "starttls"
 	SMTPSecurityImplicitTLS = "implicit_tls"
 )
@@ -266,7 +265,7 @@ func ValidateChannel(input ChannelInput) error {
 			return errors.New("webhook channel cannot contain SMTP settings")
 		}
 	case ChannelSMTP:
-		if input.Config.SMTPSecurityMode != SMTPSecurityLegacy && input.Config.SMTPSecurityMode != SMTPSecuritySTARTTLS && input.Config.SMTPSecurityMode != SMTPSecurityImplicitTLS {
+		if input.Config.SMTPSecurityMode != SMTPSecuritySTARTTLS && input.Config.SMTPSecurityMode != SMTPSecurityImplicitTLS {
 			return errors.New("SMTP security mode must be starttls or implicit_tls")
 		}
 		if strings.TrimSpace(input.Config.SMTPHost) == "" || len(input.Config.SMTPHost) > 253 || input.Config.SMTPPort < 1 || input.Config.SMTPPort > 65535 {

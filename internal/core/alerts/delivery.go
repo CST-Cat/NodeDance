@@ -72,7 +72,7 @@ func (s *Sender) sendWebhook(ctx context.Context, target, secret, payload string
 }
 
 func (s *Sender) sendSMTP(ctx context.Context, config ChannelConfig, secret, payload string) error {
-	if config.SMTPSecurityMode != SMTPSecurityLegacy && config.SMTPSecurityMode != SMTPSecuritySTARTTLS && config.SMTPSecurityMode != SMTPSecurityImplicitTLS {
+	if config.SMTPSecurityMode != SMTPSecuritySTARTTLS && config.SMTPSecurityMode != SMTPSecurityImplicitTLS {
 		return errors.New("unsupported SMTP security mode")
 	}
 	addr := net.JoinHostPort(config.SMTPHost, fmt.Sprint(config.SMTPPort))
@@ -119,13 +119,10 @@ func (s *Sender) sendSMTP(ctx context.Context, config ChannelConfig, secret, pay
 			return errors.New("SMTP server does not support required STARTTLS")
 		}
 	}
-	if !tlsActive && !isLoopbackHost(config.SMTPHost) {
-		return errors.New("remote SMTP requires TLS")
+	if !tlsActive {
+		return errors.New("SMTP requires TLS")
 	}
 	if config.SMTPUsername != "" || secret != "" {
-		if !tlsActive && !isLoopbackHost(config.SMTPHost) {
-			return errors.New("SMTP authentication requires TLS")
-		}
 		if config.SMTPUsername == "" || secret == "" {
 			return errors.New("SMTP username and password must be provided together")
 		}
@@ -218,12 +215,4 @@ func escapeSMTPText(value string) string {
 		}
 	}
 	return out.String()
-}
-
-func isLoopbackHost(host string) bool {
-	if strings.EqualFold(host, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(strings.Trim(host, "[]"))
-	return ip != nil && ip.IsLoopback()
 }

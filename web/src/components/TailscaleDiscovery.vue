@@ -12,8 +12,18 @@ const selected = ref<TailscalePeer | null>(null)
 const fingerprint = ref('')
 const fingerprintLoading = ref(false)
 const task = ref<TailscaleDeploymentTask | null>(null)
+const unresolvedDeployments = ref<TailscaleDeploymentTask[]>([])
+const activeDeploymentKey = ref('')
+const activeDeploymentSignature = ref('')
+const resolutionOutcome = ref<'succeeded' | 'failed'>('succeeded')
+const resolutionObservedState = ref('connected')
+const resolutionConfirmed = ref(false)
 const manualToken = ref('')
 const manualExpiry = ref('')
+const manualDisplayName = ref('')
+const manualCoreUrl = ref(window.location.protocol === 'https:' ||
+  (window.location.protocol === 'http:' && isLiteralLoopbackHostname(window.location.hostname))
+  ? window.location.origin : '')
 const credentials = reactive({ user: '', password: '', privateKey: '', passphrase: '' })
 const form = reactive({
   displayName: '',
@@ -27,7 +37,7 @@ const form = reactive({
   usePrivateKey: false,
 })
 
-watch(() => form.coreUrl, () => {
+watch(() => manualCoreUrl.value, () => {
   manualToken.value = ''
   manualExpiry.value = ''
 })
@@ -35,7 +45,7 @@ watch(() => form.coreUrl, () => {
 const candidates = computed(() => peers.value.filter((peer) => !peer.managed && peer.class === 'linux'))
 const unsupported = computed(() => peers.value.filter((peer) => !peer.managed && peer.class !== 'linux'))
 const managed = computed(() => peers.value.filter((peer) => peer.managed))
-const taskFinished = computed(() => !!task.value && ['succeeded', 'failed', 'unknown'].includes(task.value.status))
+const taskFinished = computed(() => !!task.value && ['succeeded', 'failed', 'timed_out', 'canceled', 'unknown'].includes(task.value.status))
 const rescueCommand = computed(() => {
   if (!selected.value?.ips.length) return ''
   const address = selected.value.ips[0]
@@ -46,6 +56,21 @@ const rescueCommand = computed(() => {
 function peerLabel(peer: TailscalePeer): string { return peer.name || peer.dnsName || peer.identity }
 function stateLabel(peer: TailscalePeer): string { return peer.online ? '在线' : '离线' }
 function clearNotice() { error.value = ''; notice.value = '' }
+
+function changeResolutionOutcome(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (value !== 'succeeded' && value !== 'failed') return
+  resolutionConfirmed.value = false
+  resolutionOutcome.value = value
+  resolutionObservedState.value = value === 'succeeded' ? 'connected' : 'installation_failed'
+}
+
+function changeResolutionObservedState(event: Event) {
+  const value = (event.target as HTMLSelectElement).value
+  if (!['connected', 'unavailable', 'absent'].includes(value)) return
+  resolutionConfirmed.value = false
+  resolutionObservedState.value = value
+}
 
 async function discover() {
   clearNotice()
@@ -63,11 +88,34 @@ async function discover() {
   }
 }
 
+async function refreshDeploymentTasks() {
+  try {
+    const result = await api.tailscaleDeployments()
+    unresolvedDeployments.value = result.tasks
+    if (task.value) {
+      const current = result.tasks.find((candidate) => candidate.taskId === task.value?.taskId)
+      if (current) task.value = current
+    } else {
+      task.value = result.tasks[0] ?? null
+    }
+  } catch (reason) {
+    error.value = `无法恢复未完成的 Agent 部署任务：${message(reason)}`
+  }
+}
+
+function inspectDeploymentTask(deployment: TailscaleDeploymentTask) {
+  task.value = deployment
+  resolutionConfirmed.value = false
+}
+
 function choose(peer: TailscalePeer) {
   clearNotice()
   selected.value = peer
   fingerprint.value = ''
   task.value = null
+  activeDeploymentKey.value = ''
+  activeDeploymentSignature.value = ''
+  resolutionConfirmed.value = false
   manualToken.value = ''
   credentials.password = ''
   credentials.privateKey = ''
@@ -94,14 +142,17 @@ async function probeHostKey() {
 }
 
 async function createManualCommand() {
-  if (!selected.value) return
   clearNotice()
-  if (!isCoreHTTPSOrigin(form.coreUrl)) {
-    error.value = '请输入可从目标节点访问的 HTTPS Core 地址，再生成手动注册凭据。'
+  if (!isManualCoreOrigin(manualCoreUrl.value)) {
+    error.value = '请输入 HTTPS Core 地址，或仅用于本机开发的 HTTP loopback 地址。'
+    return
+  }
+  if (!manualDisplayName.value.trim()) {
+    error.value = '请输入 VPS 显示名称，再生成一次性注册凭据。'
     return
   }
   try {
-    const result = await api.createManualEnrollment(form.displayName || peerLabel(selected.value))
+    const result = await api.createManualEnrollment(manualDisplayName.value.trim())
     manualToken.value = result.token
     manualExpiry.value = result.expiresAt
     notice.value = '一次性注册凭据已生成。它只能使用一次，并会在十分钟后过期。'
@@ -117,21 +168,36 @@ async function startDeployment() {
   const auth = form.usePrivateKey
     ? { user: credentials.user, privateKey: credentials.privateKey, passphrase: credentials.passphrase || undefined }
     : { user: credentials.user, password: credentials.password }
+  const payload = {
+    peerIdentity: selected.value.identity,
+    displayName: form.displayName,
+    fileRoot: form.disableFileRoot ? undefined : form.fileRoot.trim() || undefined,
+    disableFileRoot: form.disableFileRoot,
+    coreUrl: form.coreUrl,
+    fallbackUrl: form.fallbackUrl || undefined,
+    allowFallback: form.allowFallback,
+    hostFingerprint: fingerprint.value,
+    confirmHostKey: form.confirmHostKey,
+    confirmChangedHostKey: form.confirmChangedHostKey,
+    credentials: auth,
+  }
+  const signature = JSON.stringify({
+    peerIdentity: payload.peerIdentity, displayName: payload.displayName, fileRoot: payload.fileRoot,
+    disableFileRoot: payload.disableFileRoot, coreUrl: payload.coreUrl, fallbackUrl: payload.fallbackUrl,
+    allowFallback: payload.allowFallback, hostFingerprint: payload.hostFingerprint,
+    confirmChangedHostKey: payload.confirmChangedHostKey,
+    sshUser: auth.user, authentication: form.usePrivateKey ? 'private_key' : 'password',
+  })
+  if (!activeDeploymentKey.value || activeDeploymentSignature.value !== signature) {
+    activeDeploymentKey.value = crypto.randomUUID()
+    activeDeploymentSignature.value = signature
+  }
   try {
-    const accepted = await api.startTailscaleDeployment({
-      peerIdentity: selected.value.identity,
-      displayName: form.displayName,
-      fileRoot: form.disableFileRoot ? undefined : form.fileRoot.trim() || undefined,
-      disableFileRoot: form.disableFileRoot,
-      coreUrl: form.coreUrl,
-      fallbackUrl: form.fallbackUrl || undefined,
-      allowFallback: form.allowFallback,
-      hostFingerprint: fingerprint.value,
-      confirmHostKey: form.confirmHostKey,
-      confirmChangedHostKey: form.confirmChangedHostKey,
-      credentials: auth,
-    })
+    const accepted = await api.startTailscaleDeployment(payload, activeDeploymentKey.value)
     task.value = accepted
+    unresolvedDeployments.value = [accepted, ...unresolvedDeployments.value.filter((item) => item.taskId !== accepted.taskId)]
+    activeDeploymentKey.value = ''
+    activeDeploymentSignature.value = ''
     credentials.password = ''
     credentials.privateKey = ''
     credentials.passphrase = ''
@@ -140,6 +206,22 @@ async function startDeployment() {
     error.value = message(reason)
   } finally {
     loading.value = false
+  }
+}
+
+async function resolveUnknownDeployment() {
+  if (!task.value || task.value.status !== 'unknown' || !resolutionConfirmed.value) return
+  clearNotice()
+  try {
+    task.value = await api.resolveTailscaleDeployment(task.value.taskId, {
+      outcome: resolutionOutcome.value,
+      observedState: resolutionObservedState.value,
+    })
+    resolutionConfirmed.value = false
+    await refreshDeploymentTasks()
+    if (task.value.status === 'succeeded') await discover()
+  } catch (reason) {
+    error.value = message(reason)
   }
 }
 
@@ -153,6 +235,7 @@ async function pollTask(id: string) {
       return
     }
     if (taskFinished.value) {
+      await refreshDeploymentTasks()
       if (task.value?.status === 'succeeded') {
         const successMessage = task.value.message || 'Agent 已真实连接到 Core。'
         await discover()
@@ -173,26 +256,44 @@ function message(reason: unknown): string {
 }
 
 function copyCommand() {
-  if (!selected.value || !manualToken.value) return
+  if (!manualToken.value) return
   const command = copyEnrollmentCommand()
-  void navigator.clipboard?.writeText(command).then(() => { notice.value = '手动安装命令已复制。注册 Token 需在终端提示时粘贴，勿放入命令参数。' })
+  void navigator.clipboard?.writeText(command).then(() => { notice.value = '手动安装命令已复制。运行到注册提示时粘贴 Token，按 Enter 后在空行按 Ctrl-D 结束输入（Windows 使用 Ctrl-Z 后按 Enter）；勿放入命令参数。' })
 }
 
 function shellQuote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'` }
-function isCoreHTTPSOrigin(value: string): boolean {
+function isManualCoreOrigin(value: string): boolean {
   try {
     const parsed = new URL(value.trim())
-    return parsed.protocol === 'https:' && !!parsed.hostname && !parsed.username && !parsed.password &&
+    const secure = parsed.protocol === 'https:'
+    const development = parsed.protocol === 'http:' && isLiteralLoopbackHostname(parsed.hostname)
+    return (secure || development) && !!parsed.hostname && !parsed.username && !parsed.password &&
       (parsed.pathname === '' || parsed.pathname === '/') && !parsed.search && !parsed.hash
   } catch {
     return false
   }
 }
+function isLiteralLoopbackHostname(value: string): boolean {
+  const hostname = value.replace(/^\[|\]$/g, '')
+  if (hostname === '::1') return true
+  const octets = hostname.split('.')
+  return octets.length === 4 && octets.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255) && Number(octets[0]) === 127
+}
+function isManualDevOrigin(value: string): boolean {
+  try {
+    const parsed = new URL(value.trim())
+    return parsed.protocol === 'http:' && isLiteralLoopbackHostname(parsed.hostname)
+  } catch {
+    return false
+  }
+}
 function copyEnrollmentCommand(): string {
-  return `sudo -u nodedance-agent /usr/local/bin/nodedance-agent enroll --server ${shellQuote(form.coreUrl)} --token-stdin --config /var/lib/nodedance-agent/agent.json`
+  const devFlag = isManualDevOrigin(manualCoreUrl.value) ? ' --dev' : ''
+  const serverOrigin = new URL(manualCoreUrl.value.trim()).origin
+  return `sudo -u nodedance-agent /usr/local/bin/nodedance-agent enroll${devFlag} --server ${shellQuote(serverOrigin)} --token-stdin --config /var/lib/nodedance-agent/agent.json`
 }
 
-onMounted(() => { void discover() })
+onMounted(() => { void discover(); void refreshDeploymentTasks() })
 </script>
 
 <template>
@@ -204,6 +305,14 @@ onMounted(() => { void discover() })
 
     <div v-if="error" class="alert alert-error" role="alert">{{ error }}</div>
     <div v-if="notice" class="alert alert-success" role="status">{{ notice }}</div>
+
+    <section v-if="unresolvedDeployments.length" class="discovery-card" aria-labelledby="unresolved-deployments-title" data-testid="unresolved-deployments">
+      <div class="discovery-section-heading"><div><h2 id="unresolved-deployments-title">未完成的 Agent 部署</h2><p>任务从 Core Tasks 恢复；未知结果需先检查目标节点，再记录核实结果。</p></div><button class="quiet-button" type="button" @click="refreshDeploymentTasks">刷新任务</button></div>
+      <div class="managed-list"><article v-for="deployment in unresolvedDeployments" :key="deployment.taskId">
+        <strong>{{ deployment.peerName || deployment.peerIdentity }}</strong><span>{{ deployment.phase }} · {{ deployment.status }}</span><code>{{ deployment.taskId }}</code>
+        <button class="secondary-button" type="button" @click="inspectDeploymentTask(deployment)">{{ deployment.status === 'unknown' ? '核实并解除占用' : '查看任务' }}</button>
+      </article></div>
+    </section>
 
     <section class="discovery-card" aria-labelledby="candidates-title">
       <div class="discovery-section-heading"><div><h2 id="candidates-title">可部署的 Linux 节点</h2><p>部署前会逐台确认 SSH 主机指纹、系统、架构、权限及 Agent 签名。</p></div><span class="count-pill">{{ candidates.length }}</span></div>
@@ -255,7 +364,6 @@ onMounted(() => { void discover() })
           <label v-if="fingerprint" class="check-row"><input v-model="form.confirmHostKey" type="checkbox" /><span>我已通过独立可信渠道核对该指纹</span></label>
           <label v-if="fingerprint" class="check-row"><input v-model="form.confirmChangedHostKey" type="checkbox" /><span>若它与此前保存的指纹不同，我明确确认接受此次变更</span></label>
           <button class="primary-button full-button" type="button" :disabled="loading || !fingerprint || !form.confirmHostKey || !credentials.user || !form.displayName" @click="startDeployment">{{ loading ? '部署中…' : '启动 SSH 部署任务' }}</button>
-          <div v-if="task" class="task-status" data-testid="deployment-task" :data-status="task.status" role="status"><strong>{{ task.phase }} · {{ task.status }}</strong><span>{{ task.message }}</span><small v-if="task.nodeId">Node ID：{{ task.nodeId }}</small></div>
         </div>
       </div>
 
@@ -266,10 +374,33 @@ onMounted(() => { void discover() })
         <p class="field-hint">用已核对的 host key 和 SSH 用户登录后，可独立查看 <code>systemctl status nodedance-agent</code>；不要把密码、私钥或一次性注册 Token 添加到此命令。</p>
       </aside>
 
-      <details class="manual-install">
-        <summary>手动安装或通过 SSH 救援</summary>
-        <p>从可信发布渠道下载目标架构 Agent，并独立核对发布签名。下面的手动流程在目标机终端执行，不会通过 SSH 运行命令；Core HTTPS 地址使用上方部署表单的值。</p>
-        <button class="secondary-button" type="button" :disabled="!isCoreHTTPSOrigin(form.coreUrl)" @click="createManualCommand">生成一次性注册凭据</button>
+    </section>
+
+    <section v-if="task" class="discovery-card" aria-labelledby="deployment-task-title" data-testid="deployment-task-section">
+      <div class="discovery-section-heading"><div><h2 id="deployment-task-title">Agent 部署任务</h2><p>任务状态来自共享 Core Tasks 存储。</p></div><button class="quiet-button" type="button" @click="task = null">关闭</button></div>
+      <div class="task-status" data-testid="deployment-task" :data-status="task.status" role="status"><strong>{{ task.phase }} · {{ task.status }}</strong><span>{{ task.message }}</span><small v-if="task.nodeId">Node ID：{{ task.nodeId }}</small></div>
+      <div v-if="task.status === 'unknown'" class="task-status task-review" data-testid="deployment-review">
+        <strong>检查目标 VPS 后解除部署占用</strong>
+        <p>请先通过独立 SSH 检查 systemd、Agent 注册和节点在线状态。确认结果会写入任务审计并释放该 Tailscale peer 的任务占用。</p>
+        <label class="field"><span>核实结果</span><select :value="resolutionOutcome" @change="changeResolutionOutcome">
+          <option value="succeeded">Agent 已安装并上线</option><option value="failed">Agent 未安装或安装失败</option>
+        </select></label>
+        <label v-if="resolutionOutcome === 'succeeded'" class="field"><span>Docker 状态</span><select :value="resolutionObservedState" @change="changeResolutionObservedState">
+          <option value="connected">Docker 可用</option><option value="unavailable">Docker 不可用</option><option value="absent">主机没有 Docker</option>
+        </select></label>
+        <label class="check-row"><input v-model="resolutionConfirmed" type="checkbox" /><span>我已检查目标 VPS，并确认上述真实结果</span></label>
+        <button class="secondary-button" type="button" :disabled="!resolutionConfirmed" @click="resolveUnknownDeployment">记录核实结果</button>
+      </div>
+    </section>
+
+    <section class="discovery-card manual-card" aria-labelledby="manual-install-title">
+      <div class="discovery-section-heading"><div><h2 id="manual-install-title">手动安装 Agent</h2><p>此流程不依赖 Core 的 Tailscale 登录或 SSH 辅助部署。</p></div></div>
+      <details class="manual-install" open>
+        <summary>生成一次性注册凭据和安装命令</summary>
+        <p>从可信发布渠道下载目标架构 Agent，并独立核对发布签名。所有命令都在你已授权的 VPS 终端中执行；NodeDance 不会通过 SSH 连接此 VPS。</p>
+        <label class="field"><span>VPS 显示名称</span><input v-model="manualDisplayName" maxlength="80" autocomplete="off" /></label>
+        <label class="field"><span>Core 地址</span><input v-model="manualCoreUrl" inputmode="url" placeholder="https://panel.example.ts.net 或 http://127.0.0.1:8180" /><small class="field-hint">HTTPS 用于常规连接。仅 HTTP literal loopback 可用于本机 --dev；其他 HTTP 地址会被拒绝。</small></label>
+        <button class="secondary-button" type="button" :disabled="!isManualCoreOrigin(manualCoreUrl) || !manualDisplayName.trim()" @click="createManualCommand">生成一次性注册凭据</button>
         <template v-if="manualToken">
           <pre><code>id -u nodedance-agent >/dev/null 2>&1 || sudo useradd --system --home-dir /var/lib/nodedance-agent --shell /usr/sbin/nologin nodedance-agent
 sudo install -d -m 0700 -o nodedance-agent -g nodedance-agent /var/lib/nodedance-agent
@@ -279,7 +410,7 @@ sudo /usr/local/bin/nodedance-agent install-systemd --user nodedance-agent --con
 sudo systemctl enable --now nodedance-agent.service</code></pre>
           <label class="field"><span>一次性 Token（到期 {{ manualExpiry }}）</span><textarea readonly rows="2" :value="manualToken" /></label>
           <button class="quiet-button" type="button" @click="copyCommand">复制不含 Token 的安全命令</button>
-          <p class="field-hint">在终端提示时粘贴 Token。不要将 Token 放在命令参数、shell history 或工单中。启用服务前，检查 Docker socket 的 type/mode/UID/GID；若用组读写授权，必须将 socket 的数字 supplementary GID 配入 service unit，不能用 world-writable socket 放行。成功注册后，可独立通过 SSH 检查 <code>systemctl status nodedance-agent</code>。</p>
+          <p class="field-hint">运行到注册提示时粘贴 Token，按 Enter 后在空行按 Ctrl-D 结束 stdin（Linux/macOS）；Windows 使用 Ctrl-Z 后按 Enter。若从重定向输入读取，关闭输入流即可。不要将 Token 放在命令参数、shell history 或工单中。启用服务前，检查 Docker socket 的 type/mode/UID/GID；若用组读写授权，必须将 socket 的数字 supplementary GID 配入 service unit，不能用 world-writable socket 放行。成功注册后，可独立通过 SSH 检查 <code>systemctl status nodedance-agent</code>。</p>
         </template>
       </details>
     </section>

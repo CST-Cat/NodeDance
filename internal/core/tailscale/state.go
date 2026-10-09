@@ -12,9 +12,8 @@ import (
 var ErrChangedHostKey = errors.New("SSH host key changed; explicit reconfirmation is required")
 
 type State struct {
-	Pins    map[string]string         `json:"hostKeyPins"`
-	Managed map[string]string         `json:"managedPeers"`
-	Tasks   map[string]DeploymentTask `json:"deploymentTasks,omitempty"`
+	Pins    map[string]string `json:"hostKeyPins"`
+	Managed map[string]string `json:"managedPeers"`
 }
 
 type StateStore struct {
@@ -33,7 +32,7 @@ func (s *StateStore) Read() (State, error) {
 }
 
 func (s *StateStore) readLocked() (State, error) {
-	state := State{Pins: map[string]string{}, Managed: map[string]string{}, Tasks: map[string]DeploymentTask{}}
+	state := State{Pins: map[string]string{}, Managed: map[string]string{}}
 	info, err := os.Lstat(s.path)
 	if errors.Is(err, os.ErrNotExist) {
 		return state, nil
@@ -56,9 +55,6 @@ func (s *StateStore) readLocked() (State, error) {
 	}
 	if state.Managed == nil {
 		state.Managed = map[string]string{}
-	}
-	if state.Tasks == nil {
-		state.Tasks = map[string]DeploymentTask{}
 	}
 	return state, nil
 }
@@ -90,9 +86,6 @@ func (s *StateStore) saveLocked(state State) error {
 	}
 	if state.Managed == nil {
 		state.Managed = map[string]string{}
-	}
-	if state.Tasks == nil {
-		state.Tasks = map[string]DeploymentTask{}
 	}
 	data, err := json.Marshal(state)
 	if err != nil {
@@ -167,5 +160,25 @@ func (s *StateStore) Associate(identity, nodeID string) error {
 		return err
 	}
 	state.Managed[identity] = nodeID
+	return s.saveLocked(state)
+}
+
+// Disassociate removes a peer mapping only when it still points at nodeID.
+// This keeps resolution of an older deployment task from erasing a newer
+// association for the same peer.
+func (s *StateStore) Disassociate(identity, nodeID string) error {
+	if identity == "" || nodeID == "" {
+		return errors.New("stable peer identity and NodeDance node ID are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, err := s.readLocked()
+	if err != nil {
+		return err
+	}
+	if state.Managed[identity] != nodeID {
+		return nil
+	}
+	delete(state.Managed, identity)
 	return s.saveLocked(state)
 }
