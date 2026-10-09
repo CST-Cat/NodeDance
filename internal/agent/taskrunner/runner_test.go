@@ -715,7 +715,7 @@ func TestDeliveredQueuedProcessRestartBecomesUnknownAndCannotReplay(t *testing.T
 		t.Fatal("stale/invalid envelope was accepted")
 	}
 	request := protocol.TaskReconcileRequest{TaskID: dispatch.TaskID, NodeID: dispatch.NodeID, JournalID: dispatch.JournalID,
-		TargetID: dispatch.TargetID, IdempotencyKey: dispatch.IdempotencyKey, RequestDigest: dispatch.RequestDigest}
+		TargetID: dispatch.TargetID, IdempotencyKey: dispatch.IdempotencyKey, RequestDigest: dispatch.RequestDigest, Intent: dispatch.Intent}
 	reconcileEnvelope := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTaskReconcile,
 		Generation: 1, RequestID: dispatch.TaskID}
 	if _, err := runner.AcceptReconcile(context.Background(), 1, reconcileEnvelope, request); err != nil {
@@ -957,5 +957,19 @@ func TestReportQueueOverflowRequiresCompleteSnapshotAndDoesNotLeakEngineErrors(t
 	batch, err = runner.DrainReports(1, protocol.TaskSnapshotPageSize)
 	if err != nil || batch.SnapshotRequired {
 		t.Fatalf("successful snapshot did not clear overflow barrier: batch=%+v err=%v", batch, err)
+	}
+}
+
+func TestCancelImagePullSignalsOnlyTheRegisteredTask(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	runner := &Runner{activeImagePulls: map[string]context.CancelCauseFunc{"image-pull-task": cancel}}
+	if !runner.CancelImagePull("image-pull-task") {
+		t.Fatal("active image pull was not canceled")
+	}
+	if !errors.Is(context.Cause(ctx), taskstate.ErrCancellationRequested) {
+		t.Fatalf("image pull cancellation cause = %v", context.Cause(ctx))
+	}
+	if runner.CancelImagePull("other-task") {
+		t.Fatal("cancellation was accepted for an unrelated or inactive task")
 	}
 }

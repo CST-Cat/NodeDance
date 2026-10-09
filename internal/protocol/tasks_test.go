@@ -41,6 +41,60 @@ func TestTaskIntentUsesExistingCanonicalDigestContract(t *testing.T) {
 	}
 }
 
+func TestImageTaskCanonicalIntentExcludesOneTimeRegistryCredentials(t *testing.T) {
+	ref := "registry.example.test/team/api:v2"
+	intent := TaskIntent{Action: TaskImagePull, ContainerID: ImageTargetKey("pull:" + ref), ImageReference: ref}
+	canonical, err := CanonicalTaskIntent(intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"username", "password", "private-user", "private-password"} {
+		if strings.Contains(string(canonical), secret) {
+			t.Fatalf("canonical image intent contains credential material %q", secret)
+		}
+	}
+	identity, err := TaskIdentity("image-task", testTaskNodeID, "image-key", intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.ResourceKey != "docker-image:"+intent.ContainerID {
+		t.Fatalf("image task resource key = %q", identity.ResourceKey)
+	}
+	digest, err := TaskRequestDigest("image-task", testTaskNodeID, "image-key", intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatch := TaskDispatch{TaskID: "image-task", NodeID: testTaskNodeID, JournalID: strings.Repeat("c", 64),
+		TargetID: intent.ContainerID, IdempotencyKey: "image-key", RequestDigest: DigestString(digest), Intent: intent,
+		RegistryAuth: &RegistryCredentials{Username: "private-user", Password: "private-password"}}
+	envelope := Envelope{Version: CurrentVersion, Type: TypeTaskDispatch, Generation: 3, RequestID: dispatch.TaskID}
+	if err := ValidateTaskDispatch(envelope, dispatch, testTaskNodeID, dispatch.JournalID, 3); err != nil {
+		t.Fatalf("valid one-time credential dispatch rejected: %v", err)
+	}
+	bad := dispatch
+	bad.RegistryAuth = &RegistryCredentials{Username: "private-user\n", Password: "private-password"}
+	if err := ValidateTaskDispatch(envelope, bad, testTaskNodeID, dispatch.JournalID, 3); err == nil {
+		t.Fatal("credential containing a line break was accepted")
+	}
+	bad = dispatch
+	bad.Intent.ContainerID = strings.Repeat("f", 64)
+	if err := ValidateTaskDispatch(envelope, bad, testTaskNodeID, dispatch.JournalID, 3); err == nil {
+		t.Fatal("image intent with a target digest unrelated to the image ref was accepted")
+	}
+}
+
+func TestImageDeleteIntentRequiresFullContentAddressedID(t *testing.T) {
+	id := "sha256:" + strings.Repeat("a", 64)
+	intent := TaskIntent{Action: TaskImageDelete, ContainerID: ImageTargetKey("delete:" + id), ImageID: id}
+	if err := ValidateTaskIntent(intent); err != nil {
+		t.Fatal(err)
+	}
+	intent.ImageID = "sha256:short"
+	if err := ValidateTaskIntent(intent); err == nil {
+		t.Fatal("short image ID was accepted")
+	}
+}
+
 func TestValidateTaskDispatchBindsEnvelopeNodeJournalTargetAndDigest(t *testing.T) {
 	intent := TaskIntent{Action: TaskDelete, ContainerID: strings.Repeat("b", 64), DeleteConfirmed: true}
 	digest, err := TaskRequestDigest("task-2", testTaskNodeID, "delete-2", intent)
@@ -138,6 +192,25 @@ func TestTaskReportAckRequiresMatchingTaskGenerationAndRevision(t *testing.T) {
 	wrongTask.RequestID = "task-other"
 	if err := ValidateTaskReportAck(wrongTask, ack, 7); !errors.Is(err, ErrInvalidTaskMessage) {
 		t.Fatalf("acknowledgement for another task was accepted: %v", err)
+	}
+}
+
+func TestTaskCancelRequestIsBoundToTaskJournalAndGeneration(t *testing.T) {
+	journalID := strings.Repeat("c", 64)
+	request := TaskCancelRequest{TaskID: "image-pull-task", JournalID: journalID}
+	envelope := Envelope{Version: CurrentVersion, Type: TypeTaskCancelRequest, Generation: 9, RequestID: request.TaskID}
+	if err := ValidateTaskCancelRequest(envelope, request, testTaskNodeID, journalID, 9); err != nil {
+		t.Fatalf("valid image cancellation rejected: %v", err)
+	}
+	bad := request
+	bad.JournalID = strings.Repeat("d", 64)
+	if err := ValidateTaskCancelRequest(envelope, bad, testTaskNodeID, journalID, 9); !errors.Is(err, ErrInvalidTaskMessage) {
+		t.Fatalf("cancellation for another journal was accepted: %v", err)
+	}
+	stale := envelope
+	stale.Generation--
+	if err := ValidateTaskCancelRequest(stale, request, testTaskNodeID, journalID, 9); !errors.Is(err, ErrInvalidTaskMessage) {
+		t.Fatalf("stale-generation cancellation was accepted: %v", err)
 	}
 }
 

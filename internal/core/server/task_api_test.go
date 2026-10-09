@@ -104,6 +104,9 @@ func TestTaskAPIRequiresSessionOriginCSRFAndHonorsRevocation(t *testing.T) {
 		"/api/v1/nodes/" + nodeID + "/tasks/" + taskID,
 		"/api/v1/nodes/" + nodeID + "/tasks/" + taskID + "/audit",
 		"/api/v1/nodes/" + nodeID + "/containers/" + containerID + "/actions",
+		"/api/v1/nodes/" + nodeID + "/images",
+		"/api/v1/nodes/" + nodeID + "/images/pull",
+		"/api/v1/nodes/" + nodeID + "/images/sha256:" + strings.Repeat("a", 64),
 	} {
 		if response := request(http.MethodGet, path, false, false, false); response.Code != http.StatusUnauthorized {
 			t.Errorf("unauthenticated GET %s returned %d, want 401", path, response.Code)
@@ -111,6 +114,12 @@ func TestTaskAPIRequiresSessionOriginCSRFAndHonorsRevocation(t *testing.T) {
 	}
 	if response := request(http.MethodPost, "/api/v1/nodes/"+nodeID+"/containers/"+containerID+"/actions", false, false, false); response.Code != http.StatusUnauthorized {
 		t.Errorf("unauthenticated action returned %d, want 401", response.Code)
+	}
+	if response := request(http.MethodPost, "/api/v1/nodes/"+nodeID+"/images/pull", false, false, false); response.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated image pull returned %d, want 401", response.Code)
+	}
+	if response := request(http.MethodDelete, "/api/v1/nodes/"+nodeID+"/images/sha256:"+strings.Repeat("a", 64), false, false, false); response.Code != http.StatusUnauthorized {
+		t.Errorf("unauthenticated image deletion returned %d, want 401", response.Code)
 	}
 	if response := request(http.MethodDelete, "/api/v1/nodes/"+nodeID+"/tasks/"+taskID, false, false, false); response.Code != http.StatusUnauthorized {
 		t.Errorf("unauthenticated task cancellation returned %d, want 401", response.Code)
@@ -120,6 +129,12 @@ func TestTaskAPIRequiresSessionOriginCSRFAndHonorsRevocation(t *testing.T) {
 	}
 	if response := request(http.MethodPost, "/api/v1/nodes/"+nodeID+"/containers/"+containerID+"/actions", true, true, false); response.Code != http.StatusForbidden {
 		t.Errorf("authenticated action without a CSRF token returned %d, want 403", response.Code)
+	}
+	if response := request(http.MethodPost, "/api/v1/nodes/"+nodeID+"/images/pull", true, false, true); response.Code != http.StatusForbidden {
+		t.Errorf("authenticated image pull without a trusted Origin returned %d, want 403", response.Code)
+	}
+	if response := request(http.MethodPost, "/api/v1/nodes/"+nodeID+"/images/pull", true, true, false); response.Code != http.StatusForbidden {
+		t.Errorf("authenticated image pull without CSRF returned %d, want 403", response.Code)
 	}
 	if response := request(http.MethodDelete, "/api/v1/nodes/"+nodeID+"/tasks/"+taskID, true, false, true); response.Code != http.StatusForbidden {
 		t.Errorf("authenticated task cancellation without a trusted Origin returned %d, want 403", response.Code)

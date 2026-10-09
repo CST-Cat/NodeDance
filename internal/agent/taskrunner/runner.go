@@ -7,6 +7,7 @@ package taskrunner
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -30,18 +31,19 @@ const (
 )
 
 var (
-	ErrNotStarted           = errors.New("Agent task runner has not started")
-	ErrAlreadyStarted       = errors.New("Agent task runner already started")
-	ErrStopped              = errors.New("Agent task runner is stopped")
-	ErrStaleGeneration      = errors.New("Agent task message belongs to a stale connection generation")
-	ErrNotSynchronized      = errors.New("Agent task journal has not completed Core synchronization")
-	ErrJournalMismatch      = errors.New("Agent task message has a different journal identity")
-	ErrCapabilityRequired   = errors.New("task bridge capability was not negotiated")
-	ErrCapacityExceeded     = errors.New("Agent task runner has no free durable task capacity")
-	ErrIdentityConflict     = errors.New("Agent task identity conflicts with its durable journal entry")
-	ErrTaskNotReconcileable = errors.New("Agent task is not eligible for read-only reconciliation")
-	ErrInvalidSnapshot      = errors.New("invalid Agent task snapshot request")
-	ErrStaleReportAck       = errors.New("Agent task report acknowledgement is stale")
+	ErrNotStarted               = errors.New("Agent task runner has not started")
+	ErrAlreadyStarted           = errors.New("Agent task runner already started")
+	ErrStopped                  = errors.New("Agent task runner is stopped")
+	ErrStaleGeneration          = errors.New("Agent task message belongs to a stale connection generation")
+	ErrNotSynchronized          = errors.New("Agent task journal has not completed Core synchronization")
+	ErrJournalMismatch          = errors.New("Agent task message has a different journal identity")
+	ErrCapabilityRequired       = errors.New("task bridge capability was not negotiated")
+	ErrCapacityExceeded         = errors.New("Agent task runner has no free durable task capacity")
+	ErrIdentityConflict         = errors.New("Agent task identity conflicts with its durable journal entry")
+	ErrTaskNotReconcileable     = errors.New("Agent task is not eligible for read-only reconciliation")
+	ErrInvalidSnapshot          = errors.New("invalid Agent task snapshot request")
+	ErrStaleReportAck           = errors.New("Agent task report acknowledgement is stale")
+	ErrImageExecutorUnavailable = errors.New("Agent image task executor is unavailable")
 )
 
 type Journal interface {
@@ -55,6 +57,11 @@ type Journal interface {
 type Executor interface {
 	ExecuteObserved(context.Context, containeractions.Request, func(taskjournal.Snapshot)) (taskjournal.Snapshot, error)
 	Reconcile(context.Context, string) (taskjournal.Snapshot, error)
+}
+
+type ImageExecutor interface {
+	ExecuteImage(context.Context, protocol.TaskDispatch, func()) (taskjournal.Snapshot, error)
+	ReconcileImage(context.Context, string, protocol.TaskIntent) (taskjournal.Snapshot, error)
 }
 
 type Options struct {
@@ -73,6 +80,7 @@ type Runner struct {
 	nodeID   string
 	journal  Journal
 	executor Executor
+	images   ImageExecutor
 	options  Options
 
 	mu                sync.Mutex
@@ -88,6 +96,7 @@ type Runner struct {
 	syncAckGeneration uint64
 	syncAckRevision   uint64
 	activeTasks       map[string]struct{}
+	activeImagePulls  map[string]context.CancelCauseFunc
 	work              chan taskJob
 	reportHints       chan string
 	reportWake        chan struct{}
@@ -105,6 +114,17 @@ type taskJob struct {
 	taskID    string
 	dispatch  *protocol.TaskDispatch
 	reconcile bool
+	intent    *protocol.TaskIntent
+}
+
+func (r *Runner) SetImageExecutor(executor ImageExecutor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.started || r.starting || r.stopped {
+		return ErrAlreadyStarted
+	}
+	r.images = executor
+	return nil
 }
 
 type snapshotRevision struct {
@@ -134,11 +154,12 @@ func New(nodeID string, journal Journal, executor Executor, options Options) (*R
 	}
 	return &Runner{
 		nodeID: nodeID, journal: journal, executor: executor, options: options,
-		activeTasks:   make(map[string]struct{}),
-		work:          make(chan taskJob, options.Workers+options.QueueCapacity),
-		reportHints:   make(chan string, options.ReportQueueCapacity),
-		reportWake:    make(chan struct{}, 1),
-		queuedReports: make(map[string]struct{}), pendingReports: make(map[string]uint64),
+		activeTasks:      make(map[string]struct{}),
+		activeImagePulls: make(map[string]context.CancelCauseFunc),
+		work:             make(chan taskJob, options.Workers+options.QueueCapacity),
+		reportHints:      make(chan string, options.ReportQueueCapacity),
+		reportWake:       make(chan struct{}, 1),
+		queuedReports:    make(map[string]struct{}), pendingReports: make(map[string]uint64),
 		snapshotDirty: true, snapshotRevisions: make(map[string]snapshotRevision),
 		reportRevision: 1, joinDone: make(chan struct{}),
 	}, nil
@@ -265,6 +286,19 @@ func (r *Runner) CapacityLimit() int {
 	return r.options.Workers + r.options.QueueCapacity
 }
 
+// CancelImagePull interrupts only an active image pull. The executor remains
+// responsible for verifying Engine state before it reports a canceled result.
+func (r *Runner) CancelImagePull(taskID string) bool {
+	r.mu.Lock()
+	cancel := r.activeImagePulls[taskID]
+	r.mu.Unlock()
+	if cancel == nil {
+		return false
+	}
+	cancel(taskstate.ErrCancellationRequested)
+	return true
+}
+
 // ReportsChanged is a coalesced, nonblocking wake signal for the currently
 // attached transport. The SQLite journal remains the source of truth; callers
 // must DrainReports after a wake and use a complete snapshot when requested.
@@ -298,6 +332,9 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 	if err := protocol.ValidateTaskDispatch(envelope, dispatch, r.nodeID, r.activeJournalID, generation); err != nil {
 		return protocol.TaskReport{}, err
 	}
+	if isImageAction(dispatch.Intent.Action) && r.images == nil {
+		return protocol.TaskReport{}, ErrImageExecutorUnavailable
+	}
 	_, alreadyActive := r.activeTasks[dispatch.TaskID]
 	if !alreadyActive && len(r.activeTasks) >= r.options.Workers+r.options.QueueCapacity {
 		return protocol.TaskReport{}, ErrCapacityExceeded
@@ -324,10 +361,17 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 	if accepted.Task.Status == taskstate.Queued && !alreadyActive {
 		r.activeTasks[dispatch.TaskID] = struct{}{}
 		copyOfDispatch := dispatch
+		if dispatch.RegistryAuth != nil {
+			credentials := *dispatch.RegistryAuth
+			copyOfDispatch.RegistryAuth = &credentials
+		}
 		select {
 		case r.work <- taskJob{taskID: dispatch.TaskID, dispatch: &copyOfDispatch}:
 		default:
 			delete(r.activeTasks, dispatch.TaskID)
+			if copyOfDispatch.RegistryAuth != nil {
+				copyOfDispatch.RegistryAuth.Username, copyOfDispatch.RegistryAuth.Password = "", ""
+			}
 			return protocol.TaskReport{}, ErrCapacityExceeded
 		}
 	}
@@ -365,10 +409,14 @@ func (r *Runner) AcceptReconcile(ctx context.Context, generation uint64, envelop
 	if !matchesReconcile(entry, request) || entry.Status != taskstate.Unknown {
 		return protocol.TaskReport{}, ErrTaskNotReconcileable
 	}
+	if isImageAction(request.Intent.Action) && r.images == nil {
+		return protocol.TaskReport{}, ErrImageExecutorUnavailable
+	}
 	if _, busy := r.activeTasks[request.TaskID]; !busy {
 		r.activeTasks[request.TaskID] = struct{}{}
+		intent := request.Intent
 		select {
-		case r.work <- taskJob{taskID: request.TaskID, reconcile: true}:
+		case r.work <- taskJob{taskID: request.TaskID, reconcile: true, intent: &intent}:
 		default:
 			delete(r.activeTasks, request.TaskID)
 			return protocol.TaskReport{}, ErrCapacityExceeded
@@ -652,8 +700,32 @@ func (r *Runner) worker() {
 func (r *Runner) runJob(job taskJob) {
 	ctx := r.processCtx
 	if job.reconcile {
-		_, _ = r.executor.Reconcile(ctx, job.taskID)
+		if job.intent != nil && isImageAction(job.intent.Action) && r.images != nil {
+			_, _ = r.images.ReconcileImage(ctx, job.taskID, *job.intent)
+		} else {
+			_, _ = r.executor.Reconcile(ctx, job.taskID)
+		}
 	} else if job.dispatch != nil {
+		if isImageAction(job.dispatch.Intent.Action) {
+			if r.images != nil {
+				imageCtx, cancel := context.WithCancelCause(ctx)
+				if job.dispatch.Intent.Action == protocol.TaskImagePull {
+					r.mu.Lock()
+					r.activeImagePulls[job.taskID] = cancel
+					r.mu.Unlock()
+				}
+				_, _ = r.images.ExecuteImage(imageCtx, *job.dispatch, func() { r.notify(job.taskID) })
+				cancel(context.Canceled)
+				r.mu.Lock()
+				delete(r.activeImagePulls, job.taskID)
+				r.mu.Unlock()
+			}
+			r.notify(job.taskID)
+			r.mu.Lock()
+			delete(r.activeTasks, job.taskID)
+			r.mu.Unlock()
+			return
+		}
 		request := containeractions.Request{
 			TaskID: job.dispatch.TaskID, NodeID: job.dispatch.NodeID, IdempotencyKey: job.dispatch.IdempotencyKey,
 			Action: job.dispatch.Intent.Action, ContainerID: job.dispatch.TargetID,
@@ -672,6 +744,10 @@ func (r *Runner) runJob(job taskJob) {
 	r.mu.Lock()
 	delete(r.activeTasks, job.taskID)
 	r.mu.Unlock()
+}
+
+func isImageAction(action protocol.TaskAction) bool {
+	return action == protocol.TaskImagePull || action == protocol.TaskImageDelete
 }
 
 func (r *Runner) notify(taskID string) {
@@ -760,8 +836,10 @@ func matchesDispatch(snapshot taskjournal.Snapshot, dispatch protocol.TaskDispat
 
 func matchesReconcile(snapshot taskjournal.Snapshot, request protocol.TaskReconcileRequest) bool {
 	digest, err := protocol.ParseDigest(request.RequestDigest)
-	return err == nil && snapshot.TaskID == request.TaskID && snapshot.NodeID == request.NodeID &&
-		snapshot.TargetID == request.TargetID && snapshot.IdempotencyKey == request.IdempotencyKey && snapshot.RequestDigest == digest
+	computed, intentErr := protocol.TaskRequestDigest(request.TaskID, request.NodeID, request.IdempotencyKey, request.Intent)
+	return err == nil && intentErr == nil && snapshot.TaskID == request.TaskID && snapshot.NodeID == request.NodeID &&
+		snapshot.TargetID == request.TargetID && snapshot.IdempotencyKey == request.IdempotencyKey &&
+		snapshot.RequestDigest == digest && subtle.ConstantTimeCompare(digest[:], computed[:]) == 1
 }
 
 func reportFromSnapshot(snapshot taskjournal.Snapshot, nodeID, journalID string) (protocol.TaskReport, error) {

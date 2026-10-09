@@ -201,6 +201,9 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	}
 	if taskBridge != nil {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityTaskBridge)
+		if taskBridge.images != nil {
+			hello.Capabilities = append(hello.Capabilities, protocol.CapabilityImages)
+		}
 	}
 	if streamBridge != nil {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityContainerStreams)
@@ -265,13 +268,14 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	}
 	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates,
 		containsCapability(welcome.Capabilities, protocol.CapabilityDocker), taskBridge,
-		containsCapability(welcome.Capabilities, protocol.CapabilityTaskBridge), streamBridge,
+		containsCapability(welcome.Capabilities, protocol.CapabilityTaskBridge),
+		containsCapability(welcome.Capabilities, protocol.CapabilityImages), streamBridge,
 		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams))
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled bool, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool) (returnErr error) {
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -328,6 +332,31 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			case <-timer.C:
 				if returnErr == nil {
 					returnErr = errors.New("Agent container stream bridge did not stop")
+				}
+			}
+		}()
+	}
+	var imageMessages chan protocol.Envelope
+	var imageBridgeDone <-chan error
+	if taskBridge != nil && taskBridge.images != nil && imagesEnabled {
+		imageMessages = make(chan protocol.Envelope, 8)
+		imageCtx, cancelImage := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		finished := make(chan struct{})
+		imageBridgeDone = done
+		go func() {
+			defer close(finished)
+			done <- runAgentImageSession(imageCtx, writer, taskBridge.images, generation, imageMessages)
+		}()
+		defer func() {
+			cancelImage()
+			timer := time.NewTimer(6 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-finished:
+			case <-timer.C:
+				if returnErr == nil {
+					returnErr = errors.New("Agent image bridge did not stop")
 				}
 			}
 		}()
@@ -424,6 +453,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				return err
 			}
 			streamBridgeDone = nil
+		case err := <-imageBridgeDone:
+			if err != nil {
+				return fmt.Errorf("Agent image bridge stopped unexpectedly: %w", err)
+			}
+			imageBridgeDone = nil
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -456,7 +490,7 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				}
 				return errReconnectAfterRotation
 			case protocol.TypeTaskJournalStatus, protocol.TypeTaskSnapshotRequest, protocol.TypeTaskDispatch,
-				protocol.TypeTaskReconcile, protocol.TypeTaskReportAck:
+				protocol.TypeTaskReconcile, protocol.TypeTaskReportAck, protocol.TypeTaskCancelRequest:
 				if taskMessages == nil {
 					return errors.New("Core sent task work without a negotiated task bridge")
 				}
@@ -481,6 +515,20 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 						// burst of open requests tear down the Agent heartbeat socket.
 						go streamBridge.reject(ctx, writer, generation, envelope.RequestID, "stream_limit")
 					}
+				}
+			case protocol.TypeImageListRequest:
+				var request protocol.ImageListRequest
+				if imageMessages == nil || decodeSocketPayload(envelope.Payload, &request) != nil ||
+					protocol.ValidateImageListRequest(envelope, request, generation) != nil {
+					return errors.New("Core image list request is invalid or was not negotiated")
+				}
+				select {
+				case imageMessages <- envelope:
+				default:
+					go func() {
+						_ = sendAgentImageResponse(ctx, writer, generation, envelope.RequestID,
+							protocol.ImageListResponse{Page: request.Page, ErrorCode: "engine_unavailable", Images: []protocol.ImageSummary{}})
+					}()
 				}
 			case protocol.TypeProtocolError:
 				return errors.New("Core rejected Agent protocol message")

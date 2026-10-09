@@ -59,6 +59,8 @@ type Server struct {
 	agents                     *agents.Repository
 	metrics                    *coremetrics.Store
 	tasks                      *coretasks.Store
+	imageAuthMu                sync.Mutex
+	imageAuth                  map[string]pendingImageCredential
 	dockerMu                   sync.Mutex
 	docker                     *coredocker.Store
 	agentOfflineTimeout        time.Duration
@@ -167,6 +169,7 @@ func New(version string, options Options) (*Server, error) {
 		agents:                 agents.NewRepository(store.DB, options.Now),
 		metrics:                coremetrics.NewStore(),
 		docker:                 coredocker.NewStore(),
+		imageAuth:              make(map[string]pendingImageCredential),
 		agentOfflineTimeout:    options.AgentOfflineTimeout,
 		agentSweepInterval:     options.AgentSweepInterval,
 		agentConnections:       make(map[string]*agentConnection),

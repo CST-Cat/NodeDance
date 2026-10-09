@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type ContainerTaskAction, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse, type TaskAuditEvent } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import ContainerStreams from './ContainerStreams.vue'
+import ImagesPanel from './ImagesPanel.vue'
 import MetricsPanel from './MetricsPanel.vue'
 
 interface NodeClock {
@@ -597,6 +598,7 @@ onBeforeUnmount(() => {
             </article>
           </div>
         </section>
+        <ImagesPanel v-if="selectedNode" :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" />
       </main>
     </div>
   </section>

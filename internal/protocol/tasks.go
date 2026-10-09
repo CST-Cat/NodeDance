@@ -24,6 +24,7 @@ const (
 	TypeTaskReport          = "task_report"
 	TypeTaskReportAck       = "task_report_ack"
 	TypeTaskReconcile       = "task_reconcile_request"
+	TypeTaskCancelRequest   = "task_cancel_request"
 
 	TaskSnapshotPageSize = 32
 	MaxTaskSnapshotTasks = 10000
@@ -42,13 +43,15 @@ var (
 type TaskAction string
 
 const (
-	TaskStart   TaskAction = "start"
-	TaskStop    TaskAction = "stop"
-	TaskRestart TaskAction = "restart"
-	TaskPause   TaskAction = "pause"
-	TaskResume  TaskAction = "resume"
-	TaskDelete  TaskAction = "delete"
-	TaskRename  TaskAction = "rename"
+	TaskStart       TaskAction = "start"
+	TaskStop        TaskAction = "stop"
+	TaskRestart     TaskAction = "restart"
+	TaskPause       TaskAction = "pause"
+	TaskResume      TaskAction = "resume"
+	TaskDelete      TaskAction = "delete"
+	TaskRename      TaskAction = "rename"
+	TaskImagePull   TaskAction = "image_pull"
+	TaskImageDelete TaskAction = "image_delete"
 )
 
 type TaskIntent struct {
@@ -56,6 +59,8 @@ type TaskIntent struct {
 	ContainerID     string     `json:"container_id"`
 	NewName         string     `json:"new_name,omitempty"`
 	DeleteConfirmed bool       `json:"delete_confirmed,omitempty"`
+	ImageReference  string     `json:"image_reference,omitempty"`
+	ImageID         string     `json:"image_id,omitempty"`
 }
 
 // CanonicalTaskIntent returns the exact canonical JSON used in the task
@@ -77,25 +82,56 @@ func CanonicalTaskIntent(intent TaskIntent) ([]byte, error) {
 
 func ValidateTaskIntent(intent TaskIntent) error {
 	if !IsFullContainerID(intent.ContainerID) {
-		return fmt.Errorf("%w: target must be the full Docker container ID", ErrInvalidTaskMessage)
+		return fmt.Errorf("%w: target must be a full stable Docker resource digest", ErrInvalidTaskMessage)
 	}
 	switch intent.Action {
 	case TaskStart, TaskStop, TaskRestart, TaskPause, TaskResume:
-		if intent.NewName != "" || intent.DeleteConfirmed {
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" {
 			return ErrInvalidTaskMessage
 		}
 	case TaskDelete:
-		if intent.NewName != "" || !intent.DeleteConfirmed {
+		if intent.NewName != "" || !intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" {
 			return ErrInvalidTaskMessage
 		}
 	case TaskRename:
-		if !containerName.MatchString(intent.NewName) || intent.DeleteConfirmed {
+		if !containerName.MatchString(intent.NewName) || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" {
+			return ErrInvalidTaskMessage
+		}
+	case TaskImagePull:
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageID != "" || !validImageReference(intent.ImageReference) ||
+			intent.ContainerID != ImageTargetKey("pull:"+intent.ImageReference) {
+			return ErrInvalidTaskMessage
+		}
+	case TaskImageDelete:
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || !validImageID(intent.ImageID) ||
+			intent.ContainerID != ImageTargetKey("delete:"+intent.ImageID) {
 			return ErrInvalidTaskMessage
 		}
 	default:
 		return ErrInvalidTaskMessage
 	}
 	return nil
+}
+
+// ImageTargetKey maps an image request to the fixed-width resource identifier
+// used by the durable task ledger. The original reference or image ID remains
+// a separate typed field; registry credentials are never part of this value.
+func ImageTargetKey(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
+}
+
+func validImageReference(value string) bool {
+	if len(value) == 0 || len(value) > 512 || strings.TrimSpace(value) != value || strings.ContainsAny(value, " \t\r\n") ||
+		strings.Contains(value, "@sha256:") && len(value) < 72 {
+		return false
+	}
+	for _, r := range value {
+		if r < 0x21 || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // TaskIdentity constructs the shared identity digest input. TaskID and
@@ -107,9 +143,13 @@ func TaskIdentity(taskID, nodeID, idempotencyKey string, intent TaskIntent) (tas
 	if err != nil {
 		return taskstate.Identity{}, err
 	}
+	resourceKey := "docker-container:" + intent.ContainerID
+	if intent.Action == TaskImagePull || intent.Action == TaskImageDelete {
+		resourceKey = "docker-image:" + intent.ContainerID
+	}
 	return taskstate.Identity{
 		TaskID: taskID, NodeID: nodeID, IdempotencyKey: idempotencyKey,
-		TargetID: intent.ContainerID, ResourceKey: "docker-container:" + intent.ContainerID,
+		TargetID: intent.ContainerID, ResourceKey: resourceKey,
 		Action: string(intent.Action), Payload: payload,
 	}, nil
 }
@@ -180,15 +220,76 @@ type TaskDispatch struct {
 	IdempotencyKey string     `json:"idempotencyKey"`
 	RequestDigest  string     `json:"requestDigest"`
 	Intent         TaskIntent `json:"intent"`
+	// RegistryAuth is a one-delivery credential, outside TaskIntent and its
+	// digest, so Core and Agent task journals cannot persist it.
+	RegistryAuth *RegistryCredentials `json:"registryAuth,omitempty"`
+}
+
+type RegistryCredentials struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func (c RegistryCredentials) Valid() bool {
+	return len(c.Username) > 0 && len(c.Username) <= 256 && len(c.Password) > 0 && len(c.Password) <= 4096 &&
+		validCredentialText(c.Username) && validCredentialText(c.Password)
+}
+
+func validCredentialText(value string) bool {
+	for _, r := range value {
+		if r == 0 || r == '\r' || r == '\n' || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 type TaskReconcileRequest struct {
-	TaskID         string `json:"taskId"`
-	NodeID         string `json:"nodeId"`
-	JournalID      string `json:"journalId"`
-	TargetID       string `json:"targetId"`
-	IdempotencyKey string `json:"idempotencyKey"`
-	RequestDigest  string `json:"requestDigest"`
+	TaskID         string     `json:"taskId"`
+	NodeID         string     `json:"nodeId"`
+	JournalID      string     `json:"journalId"`
+	TargetID       string     `json:"targetId"`
+	IdempotencyKey string     `json:"idempotencyKey"`
+	RequestDigest  string     `json:"requestDigest"`
+	Intent         TaskIntent `json:"intent"`
+}
+
+// TaskCancelRequest only interrupts an active image pull. A canceled state is
+// still reported by the Agent after the Engine call stops and the requested
+// image state has been inspected.
+type TaskCancelRequest struct {
+	TaskID    string `json:"taskId"`
+	JournalID string `json:"journalId"`
+}
+
+func ValidateTaskCancelRequest(envelope Envelope, request TaskCancelRequest, nodeID, journalID string, generation uint64) error {
+	if envelope.Version != CurrentVersion || envelope.Type != TypeTaskCancelRequest || envelope.Generation != generation ||
+		generation == 0 || envelope.Sequence != 0 || envelope.RequestID == "" || envelope.RequestID != request.TaskID ||
+		!validNodeIdentity(request.TaskID) || request.JournalID != journalID ||
+		!validNodeIdentity(nodeID) || !validJournalIdentity(journalID) {
+		return ErrInvalidTaskMessage
+	}
+	return nil
+}
+
+func validNodeIdentity(value string) bool {
+	if value == "" || len(value) > taskstate.MaxIdentityBytes {
+		return false
+	}
+	for _, r := range value {
+		if r < 0x21 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+func validJournalIdentity(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size && hex.EncodeToString(decoded) == value
 }
 
 type TaskEvidence struct {
@@ -249,6 +350,9 @@ func ValidateTaskDispatch(envelope Envelope, dispatch TaskDispatch, nodeID, jour
 		dispatch.NodeID != nodeID || dispatch.JournalID != journalID || dispatch.TargetID != dispatch.Intent.ContainerID ||
 		!validTaskIdentityFields(dispatch.TaskID, dispatch.NodeID, dispatch.JournalID, dispatch.TargetID, dispatch.IdempotencyKey) {
 		return ErrInvalidTaskMessage
+	}
+	if dispatch.RegistryAuth != nil && (dispatch.Intent.Action != TaskImagePull || !dispatch.RegistryAuth.Valid()) {
+		return fmt.Errorf("%w: registry credentials are invalid for this dispatch", ErrInvalidTaskMessage)
 	}
 	digest, err := ParseDigest(dispatch.RequestDigest)
 	if err != nil {
@@ -358,12 +462,19 @@ func ValidateTaskReportAck(envelope Envelope, ack TaskReportAck, generation uint
 func ValidateTaskReconcile(envelope Envelope, request TaskReconcileRequest, nodeID, journalID string, generation uint64) error {
 	if envelope.Version != CurrentVersion || envelope.Type != TypeTaskReconcile || envelope.Generation != generation ||
 		envelope.RequestID == "" || envelope.RequestID != request.TaskID || generation == 0 ||
-		request.NodeID != nodeID || request.JournalID != journalID ||
+		request.NodeID != nodeID || request.JournalID != journalID || request.TargetID != request.Intent.ContainerID ||
 		!validTaskIdentityFields(request.TaskID, request.NodeID, request.JournalID, request.TargetID, request.IdempotencyKey) {
 		return ErrInvalidTaskMessage
 	}
-	_, err := ParseDigest(request.RequestDigest)
-	return err
+	digest, err := ParseDigest(request.RequestDigest)
+	if err != nil {
+		return err
+	}
+	computed, err := TaskRequestDigest(request.TaskID, request.NodeID, request.IdempotencyKey, request.Intent)
+	if err != nil || subtle.ConstantTimeCompare(digest[:], computed[:]) != 1 {
+		return ErrInvalidTaskMessage
+	}
+	return nil
 }
 
 func validTaskIdentityFields(taskID, nodeID, journalID, targetID, key string) bool {

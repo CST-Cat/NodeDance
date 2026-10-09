@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/agent/containeractions"
+	agentimages "github.com/CST-Cat/NodeDance/internal/agent/images"
 	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
 	"github.com/CST-Cat/NodeDance/internal/agent/taskrunner"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -24,6 +25,7 @@ type taskBridgeRuntime struct {
 	nodeID  string
 	journal *taskjournal.Store
 	engine  *containeractions.SDKEngine
+	images  *agentimages.SDKEngine
 	runner  *taskrunner.Runner
 }
 
@@ -36,7 +38,10 @@ func openTaskBridge(ctx context.Context, configPath, nodeID string) (*taskBridge
 	if err != nil {
 		return nil, fmt.Errorf("open durable Agent task journal: %w", err)
 	}
-	closeOnError := func(err error, engine *containeractions.SDKEngine) (*taskBridgeRuntime, error) {
+	closeOnError := func(err error, engine *containeractions.SDKEngine, imageEngine *agentimages.SDKEngine) (*taskBridgeRuntime, error) {
+		if imageEngine != nil {
+			_ = imageEngine.Close()
+		}
 		if engine != nil {
 			_ = engine.Close()
 		}
@@ -50,22 +55,33 @@ func openTaskBridge(ctx context.Context, configPath, nodeID string) (*taskBridge
 		_, recoverErr := journal.RecoverInterrupted(recoveryCtx)
 		cancel()
 		if recoverErr != nil {
-			return closeOnError(fmt.Errorf("recover Agent task journal: %w", recoverErr), nil)
+			return closeOnError(fmt.Errorf("recover Agent task journal: %w", recoverErr), nil, nil)
 		}
-		return closeOnError(fmt.Errorf("create task Docker Engine client: %w", err), nil)
+		return closeOnError(fmt.Errorf("create task Docker Engine client: %w", err), nil, nil)
+	}
+	imageEngine, err := agentimages.NewSDKEngine(os.Getenv("DOCKER_HOST"))
+	if err != nil {
+		return closeOnError(fmt.Errorf("create image Docker Engine client: %w", err), engine, nil)
 	}
 	executor, err := containeractions.New(engine, journal, containeractions.Options{})
 	if err != nil {
-		return closeOnError(fmt.Errorf("create durable container action executor: %w", err), engine)
+		return closeOnError(fmt.Errorf("create durable container action executor: %w", err), engine, imageEngine)
 	}
 	runner, err := taskrunner.New(nodeID, journal, executor, taskrunner.Options{})
 	if err != nil {
-		return closeOnError(fmt.Errorf("create Agent task runner: %w", err), engine)
+		return closeOnError(fmt.Errorf("create Agent task runner: %w", err), engine, imageEngine)
+	}
+	imageExecutor, err := agentimages.NewExecutor(imageEngine, journal)
+	if err != nil {
+		return closeOnError(fmt.Errorf("create durable image executor: %w", err), engine, imageEngine)
+	}
+	if err := runner.SetImageExecutor(imageExecutor); err != nil {
+		return closeOnError(fmt.Errorf("attach image executor: %w", err), engine, imageEngine)
 	}
 	if err := runner.Start(ctx); err != nil {
-		return closeOnError(fmt.Errorf("start Agent task runner: %w", err), engine)
+		return closeOnError(fmt.Errorf("start Agent task runner: %w", err), engine, imageEngine)
 	}
-	return &taskBridgeRuntime{nodeID: nodeID, journal: journal, engine: engine, runner: runner}, nil
+	return &taskBridgeRuntime{nodeID: nodeID, journal: journal, engine: engine, images: imageEngine, runner: runner}, nil
 }
 
 func (b *taskBridgeRuntime) close() error {
@@ -80,6 +96,9 @@ func (b *taskBridgeRuntime) close() error {
 	cancel()
 	if err := b.engine.Close(); err != nil && first == nil {
 		first = fmt.Errorf("close task Docker Engine client: %w", err)
+	}
+	if err := b.images.Close(); err != nil && first == nil {
+		first = fmt.Errorf("close image Docker Engine client: %w", err)
 	}
 	if err := b.journal.Close(); err != nil && first == nil {
 		first = fmt.Errorf("close Agent task journal: %w", err)
@@ -161,10 +180,15 @@ func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, run
 				}
 			case protocol.TypeTaskDispatch:
 				var dispatch protocol.TaskDispatch
-				if err := decodeSocketPayload(envelope.Payload, &dispatch); err != nil {
+				decodeErr := decodeSocketPayload(envelope.Payload, &dispatch)
+				clear(envelope.Payload)
+				if decodeErr != nil {
+					wipeRegistryCredentials(dispatch.RegistryAuth)
 					return errors.New("Core task dispatch is invalid")
 				}
 				report, err := runner.AcceptDispatch(ctx, generation, envelope, dispatch)
+				wipeRegistryCredentials(dispatch.RegistryAuth)
+				dispatch.RegistryAuth = nil
 				if err != nil {
 					return errors.New("Agent could not durably accept Core task")
 				}
@@ -183,6 +207,16 @@ func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, run
 				if err := sendAgentTaskEnvelope(ctx, writer, generation, protocol.TypeTaskReport, report.TaskID, 0, report); err != nil {
 					return err
 				}
+			case protocol.TypeTaskCancelRequest:
+				var request protocol.TaskCancelRequest
+				if err := decodeSocketPayload(envelope.Payload, &request); err != nil ||
+					protocol.ValidateTaskCancelRequest(envelope, request, nodeID, journalID, generation) != nil {
+					return errors.New("Core image cancellation request is invalid")
+				}
+				// A missing or already finished task is harmless here. Its durable
+				// report remains authoritative; cancellation is never acknowledged
+				// until the executor confirms the stopped Engine state.
+				runner.CancelImagePull(request.TaskID)
 			case protocol.TypeTaskReportAck:
 				var ack protocol.TaskReportAck
 				if err := decodeSocketPayload(envelope.Payload, &ack); err != nil || protocol.ValidateTaskReportAck(envelope, ack, generation) != nil {
@@ -208,6 +242,12 @@ func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, run
 				return errors.New("Core sent an unsupported task bridge message")
 			}
 		}
+	}
+}
+
+func wipeRegistryCredentials(credentials *protocol.RegistryCredentials) {
+	if credentials != nil {
+		credentials.Username, credentials.Password = "", ""
 	}
 }
 

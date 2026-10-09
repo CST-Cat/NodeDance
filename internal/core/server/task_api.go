@@ -37,6 +37,7 @@ type taskView struct {
 	UpdatedAt              string              `json:"updatedAt"`
 	StartedAt              *string             `json:"startedAt,omitempty"`
 	FinishedAt             *string             `json:"finishedAt,omitempty"`
+	CancelRequested        bool                `json:"cancelRequested,omitempty"`
 }
 
 type taskProgressView struct {
@@ -90,6 +91,26 @@ func (s *Server) handleTaskAPI(w http.ResponseWriter, r *http.Request, current *
 }
 
 func (s *Server) handleCancelUndeliveredTask(w http.ResponseWriter, r *http.Request, current *session, nodeID, taskID string) {
+	currentTask, lookupErr := s.tasks.Get(r.Context(), nodeID, taskID)
+	if errors.Is(lookupErr, coretasks.ErrTaskNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if lookupErr != nil {
+		http.Error(w, "task cancellation could not be read", http.StatusInternalServerError)
+		return
+	}
+	if currentTask.Intent.Action == protocol.TaskImagePull && currentTask.Status == taskstate.Running {
+		if err := s.requestImagePullCancellation(currentTask); err != nil {
+			http.Error(w, "image pull cancellation could not be delivered", http.StatusServiceUnavailable)
+			return
+		}
+		s.clearImageCredentials(taskID)
+		view := toTaskView(currentTask)
+		view.CancelRequested = true
+		writeJSON(w, http.StatusAccepted, view)
+		return
+	}
 	task, err := s.tasks.CancelUndelivered(r.Context(), nodeID, taskID, sql.NullInt64{Int64: 1, Valid: true}, current.RemoteAddr)
 	if errors.Is(err, coretasks.ErrTaskNotFound) {
 		http.NotFound(w, r)
@@ -103,6 +124,7 @@ func (s *Server) handleCancelUndeliveredTask(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "task cancellation could not be persisted", http.StatusInternalServerError)
 		return
 	}
+	s.clearImageCredentials(taskID)
 	writeJSON(w, http.StatusOK, toTaskView(task))
 }
 

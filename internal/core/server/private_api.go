@@ -130,6 +130,9 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 		s.adminGetNodeMetrics(w, r, parts[0])
 		return
 	}
+	if s.handleImageAPI(w, r, current) {
+		return
+	}
 	if s.handleTaskAPI(w, r, current) {
 		return
 	}

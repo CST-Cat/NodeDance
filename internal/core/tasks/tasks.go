@@ -73,13 +73,15 @@ func SchemaStatements() []string {
 type Action = protocol.TaskAction
 
 const (
-	ActionStart   = protocol.TaskStart
-	ActionStop    = protocol.TaskStop
-	ActionRestart = protocol.TaskRestart
-	ActionPause   = protocol.TaskPause
-	ActionResume  = protocol.TaskResume
-	ActionDelete  = protocol.TaskDelete
-	ActionRename  = protocol.TaskRename
+	ActionStart       = protocol.TaskStart
+	ActionStop        = protocol.TaskStop
+	ActionRestart     = protocol.TaskRestart
+	ActionPause       = protocol.TaskPause
+	ActionResume      = protocol.TaskResume
+	ActionDelete      = protocol.TaskDelete
+	ActionRename      = protocol.TaskRename
+	ActionImagePull   = protocol.TaskImagePull
+	ActionImageDelete = protocol.TaskImageDelete
 )
 
 // Intent is the complete allowlisted, non-secret S05 container command. No
@@ -1412,6 +1414,9 @@ func validateIntent(intent Intent, composeManaged bool) (string, []byte, string,
 		return "", nil, "", ErrInvalidRequest
 	}
 	resourceKey := "docker-container:" + intent.ContainerID
+	if intent.Action == ActionImagePull || intent.Action == ActionImageDelete {
+		resourceKey = "docker-image:" + intent.ContainerID
+	}
 	canonical, err := protocol.CanonicalTaskIntent(intent)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("canonicalize typed safe task intent: %w", err)

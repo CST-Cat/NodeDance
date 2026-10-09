@@ -221,6 +221,7 @@ func (s *Server) adminAgentAction(w http.ResponseWriter, r *http.Request, curren
 			return
 		}
 		s.closeAgentConnection(identity.AgentID, 0)
+		s.clearImageCredentialsForNode(identity.NodeID)
 		writeJSON(w, http.StatusOK, agentIdentityResponse{AgentID: identity.AgentID, NodeID: identity.NodeID, DisplayName: identity.DisplayName, Status: identity.Status})
 	case "rotate":
 		if r.Method != http.MethodPost {

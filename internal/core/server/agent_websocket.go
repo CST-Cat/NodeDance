@@ -31,6 +31,9 @@ type agentConnection struct {
 	dockerEnabled            bool
 	taskEnabled              bool
 	streamEnabled            bool
+	imagesEnabled            bool
+	imageResponseMu          sync.Mutex
+	imageResponses           map[string]chan protocol.ImageListResponse
 	taskSignal               chan struct{}
 	taskMu                   sync.RWMutex
 	taskJournalID            string
@@ -117,6 +120,7 @@ func (s *Server) agentOfflineSweeper() {
 		case <-s.agentContext.Done():
 			return
 		case <-ticker.C:
+			s.expireImageCredentials(s.now())
 			s.expireAgentLeases(s.agentContext)
 		}
 	}
@@ -383,6 +387,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		dockerEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
 		taskEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge),
 		streamEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams), nodeID: identity.NodeID,
+		imagesEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityImages), imageResponses: make(map[string]chan protocol.ImageListResponse),
 		taskSignal: make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
 		commands: make(chan protocol.Envelope, 32), leaseUpdates: make(chan time.Time, 1)}
@@ -462,9 +467,12 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 			return
 		case command := <-connection.commands:
 			if command.Generation != connection.generation {
+				clear(command.Payload)
 				continue
 			}
-			if err := s.writeAgentEnvelope(ctx, connection.conn, command); err != nil {
+			err := s.writeAgentEnvelope(ctx, connection.conn, command)
+			clear(command.Payload)
+			if err != nil {
 				return
 			}
 		case <-connection.taskSignal:
@@ -598,6 +606,17 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid or unpersisted Agent task message")
 					return
 				}
+			case protocol.TypeImageListResponse:
+				if !connection.imagesEnabled || envelope.Sequence != 0 || envelope.RequestID == "" {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent image capability was not negotiated")
+					return
+				}
+				var response protocol.ImageListResponse
+				if decodeImagePayload(envelope.Payload, &response) != nil || protocol.ValidateImageListResponse(envelope, response, connection.generation) != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent image list response")
+					return
+				}
+				connection.resolveImageResponse(envelope.RequestID, response)
 			case protocol.TypeContainerStreamReady, protocol.TypeContainerLog, protocol.TypeContainerStats,
 				protocol.TypeContainerStreamError, protocol.TypeContainerStreamEnd, protocol.TypeContainerStreamHeartbeat:
 				if !connection.streamEnabled {
@@ -625,6 +644,7 @@ func (s *Server) writeAgentEnvelope(ctx context.Context, conn *websocket.Conn, e
 	if err != nil {
 		return err
 	}
+	defer clear(data)
 	writeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	return conn.Write(writeCtx, websocket.MessageText, data)
@@ -703,7 +723,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityImages: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {

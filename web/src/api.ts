@@ -126,11 +126,27 @@ export interface DockerInventoryMessage {
   inventory: DockerInventory
 }
 
+export interface DockerImage {
+  id: string
+  tags: string[]
+  digests: string[]
+  size: number
+  createdAt: number
+  containers: number
+}
+
+export interface DockerImagePage {
+  images: DockerImage[]
+  total: number
+  page: number
+  errorCode?: string
+}
+
 export interface ContainerTask {
   taskId: string
   nodeId: string
   targetId: string
-  action: 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'delete' | 'rename'
+  action: 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'delete' | 'rename' | 'image_pull' | 'image_delete'
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'canceled' | 'unknown'
   deliveryState: string
   reconciliationRequired: boolean
@@ -140,6 +156,7 @@ export interface ContainerTask {
   updatedAt: string
   startedAt?: string
   finishedAt?: string
+  cancelRequested?: boolean
 }
 
 export interface TaskAuditEvent {
@@ -263,13 +280,26 @@ export const api = {
   nodes: () => request<AgentNodesResponse>('/api/v1/nodes'),
   nodeMetrics: (nodeId: string) => request<AgentMetricsResponse>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/metrics`),
   nodeContainers: (nodeId: string) => request<DockerInventoryMessage>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/containers`),
+  nodeImages: (nodeId: string, filter = '', page = 0) => request<DockerImagePage>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/images?filter=${encodeURIComponent(filter)}&page=${page}&pageSize=50`),
   nodeTasks: (nodeId: string) => request<{ tasks: ContainerTask[]; nextCursor: string }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks?limit=50`),
   nodeTask: (nodeId: string, taskId: string) => request<ContainerTask>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}`),
   nodeTaskAudit: (nodeId: string, taskId: string) => request<{ events: TaskAuditEvent[] }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}/audit`),
+  cancelNodeTask: (nodeId: string, taskId: string) => request<ContainerTask & { cancelRequested?: boolean }>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }, true),
   createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload, idempotencyKey: string) =>
     request<{ taskId: string; status: ContainerTask['status'] }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,
       { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
+  createImagePullTask: (nodeId: string, payload: { imageReference: string; username?: string; password?: string }, idempotencyKey: string) =>
+    request<{ taskId: string; status: ContainerTask['status'] }>(
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/images/pull`,
+      { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
+  createImageDeleteTask: (nodeId: string, imageID: string, idempotencyKey: string) =>
+    request<{ taskId: string; status: ContainerTask['status'] }>(
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/images/${encodeURIComponent(imageID)}`,
+      { method: 'DELETE', headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({ deleteConfirmed: true, confirmationId: imageID }) }, true),
   nodeContainer: (nodeId: string, containerId: string) =>
     request<{ type: 'node_container'; nodeId: string; container: DockerContainerRecord }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}`,
