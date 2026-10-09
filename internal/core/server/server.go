@@ -35,6 +35,7 @@ type Options struct {
 	WebSocketCheckInterval time.Duration
 	AgentOfflineTimeout    time.Duration
 	AgentSweepInterval     time.Duration
+	FileTransferLimit      int64
 	Now                    func() time.Time
 }
 
@@ -72,6 +73,7 @@ type Server struct {
 	agentWait                  sync.WaitGroup
 	agentLeaseWatchers         map[string]*agentConnection
 	containerStreamSlots       chan struct{}
+	fileTransferLimit          int64
 }
 
 type session struct {
@@ -114,6 +116,12 @@ func New(version string, options Options) (*Server, error) {
 	}
 	if options.AgentOfflineTimeout == 0 {
 		options.AgentOfflineTimeout = time.Duration(protocol.OfflineAfterSeconds) * time.Second
+	}
+	if options.FileTransferLimit == 0 {
+		options.FileTransferLimit = protocol.DefaultFileLimit
+	}
+	if options.FileTransferLimit < 1 || options.FileTransferLimit > protocol.MaxFileSize {
+		return nil, errors.New("file transfer limit is outside the protocol hard limit")
 	}
 	if options.AgentOfflineTimeout <= 0 || options.AgentOfflineTimeout > 30*time.Second {
 		return nil, errors.New("Agent offline timeout must be greater than zero and no more than 30 seconds")
@@ -172,6 +180,7 @@ func New(version string, options Options) (*Server, error) {
 		agentConnections:       make(map[string]*agentConnection),
 		agentLeaseWatchers:     make(map[string]*agentConnection),
 		containerStreamSlots:   make(chan struct{}, 64),
+		fileTransferLimit:      options.FileTransferLimit,
 	}
 	s.tasks, err = coretasks.New(store.DB, coretasks.Options{Now: options.Now})
 	if err != nil {

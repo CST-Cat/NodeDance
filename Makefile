@@ -22,9 +22,9 @@ help:
 	  '  make verify-ci-evidence' \
 	  '  make check' \
 	  '  make build' \
-	  '  make test-stage STAGE=S00|S01|S02|S03|S04|S05' \
-	  '  make test-integration STAGE=S00|S01|S02|S03|S04|S05' \
-	  '  make test-e2e STAGE=S00|S01|S02|S03|S04|S05' \
+	  '  make test-stage STAGE=S00|S01|S02|S03|S04|S05|S10' \
+	  '  make test-integration STAGE=S00|S01|S02|S03|S04|S05|S10' \
+	  '  make test-e2e STAGE=S00|S01|S02|S03|S04|S05|S10' \
 	  '  make test-acceptance' \
 	  '  make fixtures-start ENGINE=29' \
 	  '  make fixtures-create|fixtures-fault|fixtures-clean ENGINE=29 RUN_ID=<id>'

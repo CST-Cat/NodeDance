@@ -160,6 +160,18 @@ export interface CreateContainerTaskPayload {
   deleteConfirmationId?: string
 }
 
+export interface NodeFileEntry {
+  name: string
+  path: string
+  kind: 'file' | 'directory' | 'symlink' | 'other' | string
+  size: number
+  mode: number
+  ownerUid: number
+  ownerGid: number
+  modifiedAt: number
+  version?: string
+}
+
 interface AuthResponse {
   user: User
   csrfToken: string
@@ -250,6 +262,50 @@ export const api = {
     csrfToken = ''
     return result
   },
+
+  listNodeFiles: (nodeId: string, path = '/') => request<{ entries: NodeFileEntry[]; path: string }>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files?path=${encodeURIComponent(path)}`,
+  ),
+  statNodeFile: (nodeId: string, path: string) => request<NodeFileEntry>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/stat?path=${encodeURIComponent(path)}`,
+  ),
+  readNodeText: (nodeId: string, path: string) => request<{ path: string; text: string; version: string; size: number }>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/text?path=${encodeURIComponent(path)}`,
+  ),
+  saveNodeText: (nodeId: string, payload: { path: string; version: string; text: string }) => request<{
+    transferId: string
+    status: string
+    entry?: NodeFileEntry
+    backupPath?: string
+  }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/files/text`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  }, true),
+  createNodeDirectory: (nodeId: string, path: string) => request<{ transferId: string; status: string }>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/directories`, {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }, true),
+  renameNodeFile: (nodeId: string, path: string, newPath: string) => request<{ transferId: string; status: string }>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/rename`, {
+      method: 'POST',
+      body: JSON.stringify({ path, newPath }),
+    }, true),
+  deleteNodeFile: (nodeId: string, path: string) => request<{ transferId: string; status: string }>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/delete`, {
+      method: 'DELETE',
+      body: JSON.stringify({ path, confirmPath: path }),
+    }, true),
+  uploadNodeFile: (nodeId: string, path: string, file: File, version = '', signal?: AbortSignal) => {
+    const headers = new Headers({ 'Content-Type': 'application/octet-stream' })
+    if (version) headers.set('X-File-Version', version)
+    return request<{ transferId: string; status: string; sha256: string }>(
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/upload?path=${encodeURIComponent(path)}`,
+      { method: 'POST', headers, body: file, signal }, true,
+    )
+  },
+  nodeFileDownloadURL: (nodeId: string, path: string) =>
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/download?path=${encodeURIComponent(path)}`,
   changePassword: async (currentPassword: string, newPassword: string) => {
     const result = await request<void>('/api/v1/auth/password', {
       method: 'POST',

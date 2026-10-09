@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 const DefaultListen = "127.0.0.1:8180"
@@ -27,6 +29,7 @@ type File struct {
 	LoginMaxAttempts       int      `json:"login_max_attempts"`
 	LoginLockoutDuration   string   `json:"login_lockout_duration"`
 	WebSocketCheckInterval string   `json:"websocket_check_interval"`
+	MaxFileTransferBytes   int64    `json:"max_file_transfer_bytes"`
 }
 
 type Sources struct {
@@ -203,6 +206,26 @@ func RuntimeWebSocketCheckInterval(file File, development bool) (time.Duration, 
 		return 0, errors.New("websocket_check_interval override is accepted only in --dev mode")
 	}
 	return parsed, nil
+}
+
+func RuntimeFileTransferLimit(file File, envValue, cliValue string) (int64, error) {
+	for _, candidate := range []string{cliValue, envValue} {
+		if strings.TrimSpace(candidate) == "" {
+			continue
+		}
+		value, err := strconv.ParseInt(strings.TrimSpace(candidate), 10, 64)
+		if err != nil || value < 1 || value > protocol.MaxFileSize {
+			return 0, errors.New("max file transfer bytes must be between 1 and the protocol hard limit")
+		}
+		return value, nil
+	}
+	if file.MaxFileTransferBytes != 0 {
+		if file.MaxFileTransferBytes < 1 || file.MaxFileTransferBytes > protocol.MaxFileSize {
+			return 0, errors.New("max_file_transfer_bytes is outside the protocol hard limit")
+		}
+		return file.MaxFileTransferBytes, nil
+	}
+	return protocol.DefaultFileLimit, nil
 }
 
 func DefaultConfigPath(home string) string {

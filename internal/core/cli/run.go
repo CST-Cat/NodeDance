@@ -44,6 +44,7 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	listenFlag := flags.String("listen", "", "IP:port to listen on")
 	configFlag := flags.String("config", "", "path to config JSON file")
 	dataDirFlag := flags.String("data-dir", "", "path to Core data directory")
+	maxFileBytesFlag := flags.String("max-file-bytes", "", "maximum single file transfer size in bytes (default 1073741824)")
 	publicOriginFlag := flags.String("public-origin", "", "public HTTPS origin used for browser Origin validation")
 	trustedProxiesFlag := flags.String("trusted-proxies", "", "comma-separated trusted proxy IPs or CIDRs")
 	dev := flags.Bool("dev", false, "development mode; requires a loopback address")
@@ -109,6 +110,10 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	if err != nil {
 		return err
 	}
+	fileTransferLimit, err := config.RuntimeFileTransferLimit(fileConfig, lookupValue(lookup, "NODEDANCE_MAX_FILE_BYTES"), *maxFileBytesFlag)
+	if err != nil {
+		return err
+	}
 
 	listener, err := net.Listen("tcp", listen)
 	if err != nil {
@@ -124,6 +129,7 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 		LoginMaxAttempts:       loginMaxAttempts,
 		LoginLockoutDuration:   loginLockout,
 		WebSocketCheckInterval: websocketCheckInterval,
+		FileTransferLimit:      fileTransferLimit,
 	})
 	if err != nil {
 		return err
@@ -161,7 +167,7 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "NodeDance - unified Linux server and container management")
-	fmt.Fprintln(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--dev]")
+	fmt.Fprintln(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--max-file-bytes bytes] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--dev]")
 	fmt.Fprintln(w, "       nodedance version")
 	fmt.Fprintln(w, "Default listen address: 127.0.0.1:8180")
 }

@@ -1,0 +1,47 @@
+name: NodeDance S10 file manager checks
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nodedance-s10-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  s10:
+    name: S10 / file transfer components and Chromium, WebKit, Firefox mocks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install and verify locked Go, Node, pnpm, and browser tools
+        run: make verify-tools
+
+      - name: Install locked project dependencies
+        run: make deps
+
+      - name: Install the S10 Playwright browsers
+        run: make playwright-install
+
+      - name: Run S10 component and mocked browser checks three times
+        run: make test-stage STAGE=S10
+
+      - name: Preserve NOT_READY report and test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s10-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: |
+            reports/stages/S10.json
+            reports/status.json
+            .artifacts/logs/acceptance-s10/
+            web/test-results/

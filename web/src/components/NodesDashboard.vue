@@ -4,6 +4,7 @@ import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type 
 import type { MetricsView } from '../metrics-contract'
 import ContainerStreams from './ContainerStreams.vue'
 import MetricsPanel from './MetricsPanel.vue'
+import NodeFiles from './NodeFiles.vue'
 
 interface NodeClock {
   status: string
@@ -15,6 +16,7 @@ interface NodeClock {
 
 const nodes = ref<AgentNode[]>([])
 const selectedNodeID = ref('')
+const fileManagerOpen = ref(false)
 const views = ref<Record<string, MetricsView>>({})
 const dockerViews = ref<Record<string, DockerInventory>>({})
 const clocks = ref<Record<string, NodeClock>>({})
@@ -447,6 +449,7 @@ function scheduleReconnect() {
 
 function chooseNode(node: AgentNode) {
   selectedNodeID.value = node.nodeId
+  fileManagerOpen.value = false
   error.value = ''
   if (node.agentId) {
     void Promise.all([loadMetrics(node), loadContainers(node), loadTasks(node)])
@@ -515,6 +518,19 @@ onBeforeUnmount(() => {
       </aside>
 
       <main class="node-detail" aria-live="polite">
+        <div v-if="selectedNode" class="node-detail-toolbar">
+          <span class="node-detail-name">{{ selectedNode.displayName }}</span>
+          <button
+            class="node-detail-action"
+            type="button"
+            :aria-pressed="fileManagerOpen"
+            :disabled="!selectedNode.agentId || !nodeIsOnline(selectedNode)"
+            :title="!selectedNode.agentId || !nodeIsOnline(selectedNode) ? '需要在线 Agent 才能管理节点文件' : ''"
+            @click="fileManagerOpen = !fileManagerOpen"
+          >{{ fileManagerOpen ? '返回节点详情' : '管理节点文件' }}</button>
+        </div>
+        <NodeFiles v-if="selectedNode && fileManagerOpen" :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" />
+        <template v-else>
         <MetricsPanel v-if="selectedView" :key="selectedView.nodeId" :view="selectedView" />
         <div v-else-if="selectedNode" class="metrics-waiting" data-testid="metrics-waiting">
           <span class="eyebrow">{{ selectedNode.displayName }}</span>
@@ -597,6 +613,7 @@ onBeforeUnmount(() => {
             </article>
           </div>
         </section>
+        </template>
       </main>
     </div>
   </section>
@@ -612,6 +629,11 @@ onBeforeUnmount(() => {
 .stream-state[data-state='connected'] i, .node-option-dot[data-status='online'] { background: #79d69c; box-shadow: 0 0 0 3px rgba(80, 186, 119, .13); }
 .nodes-error { margin-bottom: 16px; border: 1px solid rgba(255, 129, 116, .24); border-radius: 10px; padding: 12px 14px; color: #ffc1b8; background: rgba(184, 77, 72, .1); font-size: 12px; overflow-wrap: anywhere; }
 .nodes-layout { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.node-detail-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.node-detail-name { min-width: 0; color: #dce6f5; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.node-detail-action { min-height: 38px; border: 1px solid rgba(141, 201, 255, .3); border-radius: 8px; padding: 7px 12px; color: #cce6ff; background: rgba(62, 119, 170, .16); font: inherit; font-size: 12px; cursor: pointer; }
+.node-detail-action:hover:not(:disabled) { background: rgba(62, 119, 170, .3); }
+.node-detail-action:disabled { opacity: .48; cursor: not-allowed; }
 .node-list { overflow: hidden; border: 1px solid rgba(171, 196, 232, .13); border-radius: 14px; background: rgba(15, 25, 40, .72); }
 .node-list-heading { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(171, 196, 232, .1); padding: 14px 16px; color: #dce6f5; font-size: 12px; }
 .node-list-heading span { color: #8fa1b9; font-size: 10px; }
