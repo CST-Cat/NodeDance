@@ -421,7 +421,44 @@ func TestRealAgentHostFilesAPIEndToEnd(t *testing.T) {
 		t.Fatalf("confirmed directory delete left its nested file: lstat err=%v", err)
 	}
 	assertDeleteAudit(directoryPath, directoryDeleteResult)
-	t.Logf("candidate S10-09 partial: file and nested non-empty directory deletion used exact confirmation; directory CSRF/mismatch rejection preserved nested bytes; persistent audit targets matched node/task/exact path")
+
+	emptyDirectoryPath := "/空目录 删除确认样例"
+	emptyDirectoryTarget := filepath.Join(fileRoot, strings.TrimPrefix(emptyDirectoryPath, "/"))
+	if err := os.Mkdir(emptyDirectoryTarget, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	assertEmptyDirectoryUntouched := func(attempt string) {
+		t.Helper()
+		info, err := os.Lstat(emptyDirectoryTarget)
+		if err != nil || !info.IsDir() {
+			t.Fatalf("%s removed or changed the empty directory: info=%v err=%v", attempt, info, err)
+		}
+		entries, err := os.ReadDir(emptyDirectoryTarget)
+		if err != nil || len(entries) != 0 {
+			t.Fatalf("%s changed empty directory contents: entries=%v err=%v", attempt, entries, err)
+		}
+	}
+	if status, body = deleteRequest(emptyDirectoryPath, emptyDirectoryPath, false); status != http.StatusForbidden {
+		t.Fatalf("empty directory delete without CSRF returned HTTP %d, body=%q; want 403", status, body)
+	}
+	assertEmptyDirectoryUntouched("CSRF-rejected empty directory delete")
+	if status, body = deleteRequest(emptyDirectoryPath, emptyDirectoryPath+"-wrong", true); status != http.StatusBadRequest {
+		t.Fatalf("empty directory delete with non-exact confirmation returned HTTP %d, body=%q; want 400", status, body)
+	}
+	assertEmptyDirectoryUntouched("mismatched-confirmation empty directory delete")
+	emptyDirectoryDeleteBody, _ := json.Marshal(map[string]string{"path": emptyDirectoryPath, "confirmPath": emptyDirectoryPath})
+	emptyDirectoryDeleteKey := "s10-delete-empty-directory-confirmed-" + newTestFileIdempotencySuffix(t)
+	status, _, body = request(http.MethodPost, apiNode+"/delete", emptyDirectoryDeleteBody, true, true,
+		http.Header{"Idempotency-Key": []string{emptyDirectoryDeleteKey}})
+	var emptyDirectoryDeleteResult s10LiveFileMutation
+	if status != http.StatusOK || json.Unmarshal(body, &emptyDirectoryDeleteResult) != nil || emptyDirectoryDeleteResult.Status != "succeeded" || emptyDirectoryDeleteResult.TaskID == "" {
+		t.Fatalf("exactly confirmed empty directory delete returned HTTP %d, result=%+v body=%q", status, emptyDirectoryDeleteResult, body)
+	}
+	if _, err := os.Lstat(emptyDirectoryTarget); !os.IsNotExist(err) {
+		t.Fatalf("confirmed empty directory still exists: lstat err=%v", err)
+	}
+	assertDeleteAudit(emptyDirectoryPath, emptyDirectoryDeleteResult)
+	t.Logf("candidate S10-09: file and empty/non-empty directory deletion used exact confirmation; CSRF/mismatch rejection preserved targets; persistent audit matched node/task/exact path once")
 
 	if matches, err := filepath.Glob(filepath.Join(core.dataDir, ".nodedance-download-*")); err != nil || len(matches) != 0 {
 		t.Fatalf("Core download spool cleanup left artifacts: matches=%v err=%v", matches, err)
