@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	agentupdate "github.com/CST-Cat/NodeDance/internal/agent/update"
 )
@@ -34,8 +35,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return keygen(args[1:], stdout, stderr)
 	case "sign":
 		return sign(args[1:], stdout, stderr)
+	case "bundle":
+		return bundle(args[1:], stdout, stderr)
 	default:
-		return fmt.Errorf("unknown command %q", args[0])
+		return fmt.Errorf("unknown command %q (expected keygen, sign, or bundle)", args[0])
 	}
 }
 
@@ -88,28 +91,9 @@ func sign(args []string, stdout, stderr io.Writer) error {
 	if *architecture != "amd64" && *architecture != "arm64" {
 		return errors.New("architecture must be amd64 or arm64")
 	}
-	keyInfo, err := os.Stat(*keyPath)
+	private, err := readPrivateKey(*keyPath)
 	if err != nil {
 		return err
-	}
-	if keyInfo.Mode().Perm()&0077 != 0 {
-		return errors.New("private signing key must have mode 0600")
-	}
-	rawKey, err := os.ReadFile(*keyPath)
-	if err != nil {
-		return err
-	}
-	privateBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(rawKey)))
-	if err != nil {
-		return errors.New("private signing key file must contain base64 Ed25519 key material")
-	}
-	var private ed25519.PrivateKey
-	if len(privateBytes) == ed25519.SeedSize {
-		private = ed25519.NewKeyFromSeed(privateBytes)
-	} else if len(privateBytes) == ed25519.PrivateKeySize {
-		private = ed25519.PrivateKey(privateBytes)
-	} else {
-		return errors.New("private signing key has an invalid size")
 	}
 	data, err := os.ReadFile(*binaryPath)
 	if err != nil {
@@ -132,6 +116,39 @@ func sign(args []string, stdout, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stdout, "Signed manifest %s for %s (%d bytes).\n", filepath.Base(*output), manifest.Architecture, manifest.Size)
 	return nil
+}
+
+func readPrivateKey(path string) (ed25519.PrivateKey, error) {
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+		return nil, errors.New("private signing key must be a regular file with mode 0600")
+	}
+	rawKey, err := io.ReadAll(io.LimitReader(file, 4097))
+	if err != nil {
+		return nil, err
+	}
+	if len(rawKey) > 4096 {
+		return nil, errors.New("private signing key file is oversized")
+	}
+	privateBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(rawKey)))
+	if err != nil {
+		return nil, errors.New("private signing key file must contain base64 Ed25519 key material")
+	}
+	if len(privateBytes) == ed25519.SeedSize {
+		return ed25519.NewKeyFromSeed(privateBytes), nil
+	}
+	if len(privateBytes) == ed25519.PrivateKeySize {
+		return ed25519.PrivateKey(privateBytes), nil
+	}
+	return nil, errors.New("private signing key has an invalid size")
 }
 
 func writeNew(path string, data []byte, mode os.FileMode) error {
