@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -28,8 +29,12 @@ type smtpFixtureResult struct {
 	err           error
 }
 
-func startSMTPFixture(t *testing.T, mode string, certificate tls.Certificate) (int, <-chan smtpFixtureResult) {
+func startSMTPFixture(t *testing.T, mode string, certificate tls.Certificate, authResponses ...string) (int, <-chan smtpFixtureResult) {
 	t.Helper()
+	authResponse := "235 authenticated\r\n"
+	if len(authResponses) > 0 {
+		authResponse = authResponses[0]
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -127,7 +132,11 @@ func startSMTPFixture(t *testing.T, mode string, certificate tls.Certificate) (i
 				} else {
 					capture.authBeforeTLS = true
 				}
-				_, _ = io.WriteString(conn, "235 authenticated\r\n")
+				if _, err := io.WriteString(conn, authResponse); err != nil {
+					capture.err = err
+					result <- capture
+					return
+				}
 			case strings.HasPrefix(upper, "MAIL FROM"), strings.HasPrefix(upper, "RCPT TO"):
 				_, _ = io.WriteString(conn, "250 accepted\r\n")
 			case strings.HasPrefix(upper, "DATA"):
@@ -243,6 +252,72 @@ func TestSMTPStartTLSCompatibilityAndNoDowngrade(t *testing.T) {
 	}
 	if capture := waitSMTPFixture(t, result); capture.authBeforeTLS || capture.authAfterTLS {
 		t.Fatalf("SMTP credentials were sent despite missing STARTTLS: %#v", capture)
+	}
+}
+
+func TestSMTPStartTLSAuthRejectionDoesNotLeakSecrets(t *testing.T) {
+	const (
+		username     = "operator-credential-secret"
+		password     = "fixture-password-secret"
+		serverSecret = "smtp-response-secret"
+	)
+	cert, roots := smtpFixtureCertificate(t, nil, []net.IP{net.ParseIP("127.0.0.1")})
+	port, result := startSMTPFixture(t, SMTPSecuritySTARTTLS, cert,
+		"535 5.7.8 authentication rejected "+serverSecret+"\r\n")
+
+	now := time.Now().UTC()
+	store, _ := newTestStore(t, &now)
+	config := smtpTestConfig(port, SMTPSecuritySTARTTLS)
+	config.SMTPUsername = username
+	channel, err := store.SaveChannel(context.Background(), "", ChannelInput{
+		Name: "STARTTLS auth rejection", Kind: ChannelSMTP, Config: config,
+		Secret: password, Enabled: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.EnqueueTest(context.Background(), channel.ID); err != nil {
+		t.Fatal(err)
+	}
+	delivery, sendChannel, secret, claimed, err := store.ClaimDelivery(context.Background(), now)
+	if err != nil || !claimed {
+		t.Fatalf("ClaimDelivery claimed=%t err=%v", claimed, err)
+	}
+
+	sender := NewSender()
+	sender.smtpRootCAs = roots
+	_, sendErr := sender.Send(context.Background(), sendChannel, secret, delivery.PayloadJSON)
+	if sendErr == nil {
+		t.Fatal("SMTP delivery succeeded after the receiver rejected AUTH")
+	}
+	if sendErr.Error() != "SMTP authentication failed" {
+		t.Fatalf("SMTP AUTH error was not reduced to a safe message: %q", sendErr)
+	}
+	capture := waitSMTPFixture(t, result)
+	if !capture.tlsActive || !capture.authAfterTLS || capture.authBeforeTLS {
+		t.Fatalf("SMTP AUTH was not confined to the established TLS session: %#v", capture)
+	}
+	for _, value := range []string{username, password, serverSecret} {
+		if strings.Contains(sendErr.Error(), value) {
+			t.Fatalf("SMTP error leaked a secret: %q", sendErr)
+		}
+	}
+
+	if err := store.CompleteDelivery(context.Background(), delivery, false, 0, sendErr.Error(), now); err != nil {
+		t.Fatal(err)
+	}
+	history, err := store.ListDeliveries(context.Background(), 10)
+	if err != nil || len(history) != 1 || history[0].Status != "retry" || history[0].Attempts != 1 {
+		t.Fatalf("SMTP AUTH failure history was not persisted: %#v err=%v", history, err)
+	}
+	encoded, err := json.Marshal(history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{username, password, serverSecret} {
+		if strings.Contains(string(encoded), value) {
+			t.Fatalf("SMTP delivery history leaked a secret %q: %s", value, encoded)
+		}
 	}
 }
 

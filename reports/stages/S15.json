@@ -182,7 +182,7 @@
       "expected": "有界重试，历史可查。",
       "environment": "故障注入Webhook/SMTP接收端。",
       "evidence_required": "每次尝试、最终状态和有限重试数。",
-      "candidate_coverage": "TestWebhookOutboxBoundedRetriesAndChannelSecretEncryption receives three controlled HTTP 503 responses and verifies attempts/history; wrong-key decryption failure is persisted as a terminal delivery failure.",
+      "candidate_coverage": "TestWebhookOutboxBoundedRetriesAndChannelSecretEncryption receives three controlled HTTP 503 responses and verifies attempts/history; TestSMTPStartTLSAuthRejectionDoesNotLeakSecrets uses a real loopback TCP STARTTLS session, confirms AUTH only after TLS and a 535 receiver rejection, then verifies Send error and persisted delivery history omit the SMTP username, password, and server response secret; wrong-key decryption failure is persisted as a terminal delivery failure.",
       "runs": [
         {
           "run_id": "s15-local-20261009T051200Z",
@@ -191,9 +191,16 @@
           "result": "HTTP 503 bounded retry history and crypto failure persistence assertions passed.",
           "log": ".artifacts/logs/s15/candidate.log",
           "attempt": 1
+        },
+        {
+          "run_id": "s15-smtp-auth-local-20261009T111042Z",
+          "status": "PASS",
+          "command": "GOTMPDIR=/dev/shm/nodedance-go-tmp GOCACHE=/dev/shm/nodedance-go-cache GOTOOLCHAIN=local .tools/go1.26.8/bin/go test -count=1 ./internal/core/alerts",
+          "result": "The full internal/core/alerts package passed once, including a real loopback STARTTLS SMTP server that rejected AUTH with 535; the sender reported only a generic error and the persisted retry history contained none of the tested secrets.",
+          "attempt": 1
         }
       ],
-      "reason": "Webhook 响应错误序列通过；SMTP AUTH 拒绝、远端 TLS 协商失败与真实网络超时接收器尚未执行。"
+      "reason": "Webhook 错误重试与本地受控 SMTP STARTTLS AUTH 拒绝通过；远端 TLS 协商失败、真实网络超时及独立部署 SMTP 接收端历史仍未运行。"
     },
     "S15-09": {
       "status": "NOT_READY",
