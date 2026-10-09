@@ -207,7 +207,7 @@ test('real guest Agent metrics update the authenticated dashboard through each S
     await page.getByRole('button', { name: '登录控制台' }).click()
     await expect(page.getByRole('button', { name: '节点监控' })).toBeVisible()
     await page.getByRole('button', { name: '节点监控' }).click()
-    await expect(page.getByRole('heading', { name: '节点指标.' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'NodeDance.' })).toBeVisible()
     expect(new URL(page.url()).origin, 'browser is on the exact same-origin loopback configured on Core').toBe('http://127.0.0.1:4187')
     await expect(page.locator('.node-option')).toHaveCount(1)
     await expect(page.getByTestId('metrics-waiting')).toContainText('等待 Agent')
