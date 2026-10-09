@@ -22,6 +22,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -517,9 +518,14 @@ func TestRealAgentEnrollmentReconnectRotationAndRevocation(t *testing.T) {
 	// S02-07 injects an Agent-network outage, observes an actual bounded-backoff
 	// retry and recovery, then restarts Core and checks durable new generations.
 	runCase("S02-07", func(t *testing.T) {
+		preOutageGenerations := make([]uint64, agentCount)
+		for index := range running {
+			preOutageGenerations[index] = generationForNode(t, core, running[index].identity.NodeID)
+		}
 		priorAttempts := proxy.connectionAttempts.Load()
 		proxy.networkDown.Store(true)
 		proxy.closeAgentTunnels()
+		waitForAgentProxyTunnelCount(t, proxy, 0, 3*time.Second, "outage cancellation to drain old WSS proxy tunnels")
 		outageDeadline := time.Now().Add(8 * time.Second)
 		for time.Now().Before(outageDeadline) && proxy.connectionAttempts.Load() == priorAttempts {
 			time.Sleep(25 * time.Millisecond)
@@ -535,14 +541,26 @@ func TestRealAgentEnrollmentReconnectRotationAndRevocation(t *testing.T) {
 			t.Fatal("Agent did not report a bounded reconnect delay after the outage")
 		}
 		proxy.networkDown.Store(false)
-		networkGeneration := generationForNode(t, core, running[0].identity.NodeID)
-		waitForAgentStatus(t, core, running[0].identity.NodeID, "online", networkGeneration)
-
+		// Do not infer recovery from a total tunnel count: one old/stalled TLS
+		// handler plus two current Agents also equals three. Require every real
+		// Agent to own a newer Core generation before testing Core shutdown.
+		for index := range running {
+			waitForAgentStatus(t, core, running[index].identity.NodeID, "online", preOutageGenerations[index])
+		}
 		oldGenerations := make([]uint64, agentCount)
+		expectedTunnels := make(map[string]agentProxyTunnelExpectation, agentCount)
 		for index := range running {
 			oldGenerations[index] = generationForNode(t, core, running[index].identity.NodeID)
+			if oldGenerations[index] <= preOutageGenerations[index] {
+				t.Fatalf("Agent %d did not receive a new generation after outage: before=%d after=%d",
+					index+1, preOutageGenerations[index], oldGenerations[index])
+			}
+			expectedTunnels[running[index].identity.AgentID] = agentProxyTunnelExpectation{
+				nodeID: running[index].identity.NodeID, generation: oldGenerations[index],
+			}
 		}
-		waitForAgentProxyTunnelCount(t, proxy, agentCount, 3*time.Second, "all three Agent WSS tunnels before Core restart")
+		waitForAgentProxyTunnelManifest(t, proxy, expectedTunnels, 3*time.Second,
+			"one active bidirectional WSS proxy tunnel for each recovered Agent generation")
 		current.Store(nil)
 		closeS02CoreWithin(t, core, proxy, 5*time.Second)
 		restarted, err = New("integration-restarted", Options{DataDir: dataDir, PublicOrigin: "https://panel.test"})
@@ -1305,12 +1323,14 @@ func closeS02CoreWithin(t *testing.T, core *Server, proxy *agentTestProxy, timeo
 		}
 	case <-time.After(timeout):
 		activeTunnels := proxy.activeTunnelCount()
+		tunnelDetails := proxy.tunnelDiagnostics()
 		proxy.closeAgentTunnels()
 		select {
 		case err := <-closed:
-			t.Fatalf("Core.Close exceeded %s with %d proxy tunnels; it completed with error %v only after forced tunnel cancellation", timeout, activeTunnels, err)
+			t.Fatalf("Core.Close exceeded %s with %d proxy tunnels %v; it completed with error %v only after forced tunnel cancellation",
+				timeout, activeTunnels, tunnelDetails, err)
 		case <-time.After(2 * time.Second):
-			t.Fatalf("Core.Close exceeded %s and remained blocked after canceling %d proxy tunnels", timeout, activeTunnels)
+			t.Fatalf("Core.Close exceeded %s and remained blocked after canceling %d proxy tunnels %v", timeout, activeTunnels, tunnelDetails)
 		}
 	}
 	waitForAgentProxyTunnelCount(t, proxy, 0, 3*time.Second, "Core.Close to drain Agent proxy tunnels")
@@ -1326,7 +1346,54 @@ func waitForAgentProxyTunnelCount(t *testing.T, proxy *agentTestProxy, want int,
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	t.Fatalf("%s: active Agent proxy tunnels=%d, expected=%d", description, proxy.activeTunnelCount(), want)
+	t.Fatalf("%s: active Agent proxy tunnels=%d, expected=%d; tunnels=%v",
+		description, proxy.activeTunnelCount(), want, proxy.tunnelDiagnostics())
+}
+
+func waitForAgentProxyTunnelManifest(t *testing.T, proxy *agentTestProxy, expected map[string]agentProxyTunnelExpectation, timeout time.Duration, description string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var mismatch string
+	for time.Now().Before(deadline) {
+		if mismatch = agentProxyTunnelManifestMismatch(proxy, expected); mismatch == "" {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("%s: %s; active proxy tunnels: %v", description, mismatch, proxy.tunnelDiagnostics())
+}
+
+func agentProxyTunnelManifestMismatch(proxy *agentTestProxy, expected map[string]agentProxyTunnelExpectation) string {
+	proxy.tunnelMu.Lock()
+	defer proxy.tunnelMu.Unlock()
+	if len(proxy.tunnels) != len(expected) {
+		return fmt.Sprintf("tunnel count=%d, expected=%d", len(proxy.tunnels), len(expected))
+	}
+	seen := make(map[string]bool, len(expected))
+	for id, tunnel := range proxy.tunnels {
+		want, ok := expected[tunnel.agentID]
+		if !ok {
+			return fmt.Sprintf("tunnel %d has unknown or missing Agent identity %q", id, tunnel.agentID)
+		}
+		if seen[tunnel.agentID] {
+			return fmt.Sprintf("Agent %s has more than one active tunnel", tunnel.agentID)
+		}
+		seen[tunnel.agentID] = true
+		if tunnel.nodeID != want.nodeID || tunnel.generation != want.generation {
+			return fmt.Sprintf("tunnel %d Agent=%s has node/generation=%s/%d, expected %s/%d",
+				id, tunnel.agentID, tunnel.nodeID, tunnel.generation, want.nodeID, want.generation)
+		}
+		if tunnel.agentToCoreDone || tunnel.coreToAgentDone {
+			return fmt.Sprintf("tunnel %d Agent=%s has exited copy directions agent-to-Core=%t Core-to-agent=%t",
+				id, tunnel.agentID, tunnel.agentToCoreDone, tunnel.coreToAgentDone)
+		}
+	}
+	for agentID := range expected {
+		if !seen[agentID] {
+			return fmt.Sprintf("Agent %s has no active tunnel for its recovered generation", agentID)
+		}
+	}
+	return ""
 }
 
 func closeS02HTTPServerWithin(t *testing.T, server *httptest.Server, description string, timeout time.Duration) {
@@ -1482,8 +1549,25 @@ type agentTestProxy struct {
 	replayNextDockerChange          atomic.Bool
 	dockerReplayResults             chan dockerReplayEvidence
 	tunnelMu                        sync.Mutex
-	tunnels                         map[uint64]context.CancelFunc
+	tunnels                         map[uint64]*agentProxyTunnel
 	nextTunnelID                    uint64
+}
+
+type agentProxyTunnel struct {
+	cancel          context.CancelFunc
+	startedAt       time.Time
+	agentID         string
+	nodeID          string
+	generation      uint64
+	agentToCoreDone bool
+	agentToCoreExit string
+	coreToAgentDone bool
+	coreToAgentExit string
+}
+
+type agentProxyTunnelExpectation struct {
+	nodeID     string
+	generation uint64
 }
 
 type dockerReplayEvidence struct {
@@ -1513,7 +1597,7 @@ func newAgentTestProxy(t *testing.T, current *atomic.Pointer[Server], coreURL st
 	t.Helper()
 	return &agentTestProxy{current: current, coreURL: coreURL, rootPEM: rootPEM,
 		droppedWelcome: make(chan droppedWelcomeEvent, 1), identityHeld: make(chan struct{}, 1), helloHeld: make(chan struct{}, 1),
-		releaseHello: make(chan struct{}, 1), releaseIdentity: make(chan struct{}), tunnels: make(map[uint64]context.CancelFunc),
+		releaseHello: make(chan struct{}, 1), releaseIdentity: make(chan struct{}), tunnels: make(map[uint64]*agentProxyTunnel),
 		droppedDockerChunk: make(chan struct{}, 1), dockerReplayResults: make(chan dockerReplayEvidence, 1)}
 }
 
@@ -1612,9 +1696,9 @@ func (p *agentTestProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
 	tunnelID := p.addTunnel(cancel)
 	defer p.removeTunnel(tunnelID)
+	defer cancel()
 	upstreamURL := strings.Replace(p.coreURL, "https://", "wss://", 1) + "/ws/v1/agent"
 	upstream, response, err := websocket.Dial(ctx, upstreamURL, &websocket.DialOptions{
 		HTTPClient: tlsHTTPClient(p.rootPEM),
@@ -1637,16 +1721,29 @@ func (p *agentTestProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) 
 	downstream.SetReadLimit(protocol.MaxMessageBytes + 1024)
 	done := make(chan struct{}, 2)
 	go func() {
-		defer func() { done <- struct{}{} }()
+		exit := "peer closed"
+		defer func() {
+			p.markTunnelCopyDone(tunnelID, "agent_to_core", exit)
+			done <- struct{}{}
+		}()
 		var previousDockerData []byte
 		var previousDockerEnvelope protocol.Envelope
 		var previousDockerBatch protocol.DockerBatch
 		for {
 			messageType, data, err := downstream.Read(ctx)
 			if err != nil {
+				exit = describeTunnelError("read", err)
 				return
 			}
 			var envelope protocol.Envelope
+			if messageType == websocket.MessageText && json.Unmarshal(data, &envelope) == nil {
+				if envelope.Type == protocol.TypeHello {
+					var hello protocol.Hello
+					if json.Unmarshal(envelope.Payload, &hello) == nil {
+						p.recordTunnelIdentity(tunnelID, hello.AgentID, hello.NodeID)
+					}
+				}
+			}
 			if messageType == websocket.MessageText && json.Unmarshal(data, &envelope) == nil && envelope.Type == protocol.TypeDocker {
 				if p.dropDockerMessages.Load() {
 					p.droppedDockerMessages.Add(1)
@@ -1657,6 +1754,7 @@ func (p *agentTestProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) 
 					p.dockerChunks.Add(1)
 					if batch.SnapshotIndex == 0 && !batch.SnapshotFinal && p.dropDockerChunk.CompareAndSwap(true, false) {
 						if err := upstream.Write(ctx, messageType, data); err != nil {
+							exit = describeTunnelError("write", err)
 							return
 						}
 						if p.blockReconnectAfterDroppedChunk.CompareAndSwap(true, false) {
@@ -1673,12 +1771,15 @@ func (p *agentTestProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) 
 					if p.replayNextDockerChange.Load() && previousDockerData != nil && envelope.Sequence > previousDockerEnvelope.Sequence &&
 						p.replayNextDockerChange.CompareAndSwap(true, false) {
 						if err := upstream.Write(ctx, messageType, data); err != nil {
+							exit = describeTunnelError("write", err)
 							return
 						}
 						if err := upstream.Write(ctx, messageType, previousDockerData); err != nil {
+							exit = describeTunnelError("write", err)
 							return
 						}
 						if err := upstream.Write(ctx, messageType, data); err != nil {
+							exit = describeTunnelError("write", err)
 							return
 						}
 						evidence := dockerReplayEvidence{
@@ -1716,22 +1817,37 @@ func (p *agentTestProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) 
 				}
 				select {
 				case <-p.releaseHello:
+					exit = "injected held hello released"
 					return
 				case <-ctx.Done():
+					exit = describeTunnelError("hello wait", ctx.Err())
 					return
 				}
 			}
 			if err := upstream.Write(ctx, messageType, data); err != nil {
+				exit = describeTunnelError("write", err)
 				return
 			}
 		}
 	}()
 	go func() {
-		defer func() { done <- struct{}{} }()
+		exit := "peer closed"
+		defer func() {
+			p.markTunnelCopyDone(tunnelID, "core_to_agent", exit)
+			done <- struct{}{}
+		}()
 		for {
 			messageType, data, err := upstream.Read(ctx)
 			if err != nil {
+				exit = describeTunnelError("read", err)
 				return
+			}
+			var envelope protocol.Envelope
+			if messageType == websocket.MessageText && json.Unmarshal(data, &envelope) == nil && envelope.Type == protocol.TypeWelcome {
+				var welcome protocol.Welcome
+				if json.Unmarshal(envelope.Payload, &welcome) == nil {
+					p.recordTunnelWelcome(tunnelID, welcome.AgentID, welcome.NodeID, welcome.Generation)
+				}
 			}
 			if dropped, ok := p.takeCommittedRotationWelcome(data); ok {
 				p.holdNextIdentity.Store(true)
@@ -1739,9 +1855,11 @@ func (p *agentTestProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) 
 				case p.droppedWelcome <- dropped:
 				default:
 				}
+				exit = "injected committed-rotation WELCOME drop"
 				return
 			}
 			if err := downstream.Write(ctx, messageType, data); err != nil {
+				exit = describeTunnelError("write", err)
 				return
 			}
 		}
@@ -1762,8 +1880,71 @@ func (p *agentTestProxy) addTunnel(cancel context.CancelFunc) uint64 {
 	p.tunnelMu.Lock()
 	defer p.tunnelMu.Unlock()
 	p.nextTunnelID++
-	p.tunnels[p.nextTunnelID] = cancel
+	p.tunnels[p.nextTunnelID] = &agentProxyTunnel{cancel: cancel, startedAt: time.Now()}
 	return p.nextTunnelID
+}
+
+func (p *agentTestProxy) recordTunnelIdentity(id uint64, agentID, nodeID string) {
+	p.tunnelMu.Lock()
+	defer p.tunnelMu.Unlock()
+	if tunnel := p.tunnels[id]; tunnel != nil {
+		tunnel.agentID = agentID
+		tunnel.nodeID = nodeID
+	}
+}
+
+func (p *agentTestProxy) recordTunnelWelcome(id uint64, agentID, nodeID string, generation uint64) {
+	p.tunnelMu.Lock()
+	defer p.tunnelMu.Unlock()
+	if tunnel := p.tunnels[id]; tunnel != nil {
+		if tunnel.agentID == "" {
+			tunnel.agentID = agentID
+		}
+		if tunnel.nodeID == "" {
+			tunnel.nodeID = nodeID
+		}
+		tunnel.generation = generation
+	}
+}
+
+func (p *agentTestProxy) markTunnelCopyDone(id uint64, direction, exit string) {
+	p.tunnelMu.Lock()
+	defer p.tunnelMu.Unlock()
+	if tunnel := p.tunnels[id]; tunnel != nil {
+		switch direction {
+		case "agent_to_core":
+			tunnel.agentToCoreDone = true
+			tunnel.agentToCoreExit = exit
+		case "core_to_agent":
+			tunnel.coreToAgentDone = true
+			tunnel.coreToAgentExit = exit
+		}
+	}
+}
+
+func describeTunnelError(operation string, err error) string {
+	if err == nil {
+		return operation + " returned nil error"
+	}
+	return operation + " " + fmt.Sprintf("%T", err)
+}
+
+func (p *agentTestProxy) tunnelDiagnostics() []string {
+	p.tunnelMu.Lock()
+	defer p.tunnelMu.Unlock()
+	ids := make([]uint64, 0, len(p.tunnels))
+	for id := range p.tunnels {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	details := make([]string, 0, len(ids))
+	for _, id := range ids {
+		tunnel := p.tunnels[id]
+		details = append(details, fmt.Sprintf("id=%d agent=%s node=%s generation=%d age=%s agentToCoreDone=%t agentToCoreExit=%q coreToAgentDone=%t coreToAgentExit=%q",
+			id, tunnel.agentID, tunnel.nodeID, tunnel.generation, time.Since(tunnel.startedAt).Round(time.Millisecond),
+			tunnel.agentToCoreDone, tunnel.agentToCoreExit, tunnel.coreToAgentDone, tunnel.coreToAgentExit))
+	}
+	return details
 }
 
 func (p *agentTestProxy) removeTunnel(id uint64) {
@@ -1775,8 +1956,8 @@ func (p *agentTestProxy) removeTunnel(id uint64) {
 func (p *agentTestProxy) closeAgentTunnels() {
 	p.tunnelMu.Lock()
 	cancels := make([]context.CancelFunc, 0, len(p.tunnels))
-	for _, cancel := range p.tunnels {
-		cancels = append(cancels, cancel)
+	for _, tunnel := range p.tunnels {
+		cancels = append(cancels, tunnel.cancel)
 	}
 	p.tunnelMu.Unlock()
 	for _, cancel := range cancels {
