@@ -3,9 +3,9 @@
   "stage": "S11",
   "mode": "candidate-checks",
   "status": "NOT_READY",
-  "run_id": "s11-components-20261009T0454Z",
-  "updated_at": "2026-10-09T04:54:33+00:00",
-  "reason": "候选 Go/前端构建与响应式 UI 检查通过；Engine 28/29 真实预览集成均在 Compose 编辑预览处失败，原因分类诊断及 Engine-only 复验待完成。完整 S11 阶段仍为 NOT_READY。",
+  "run_id": "s11-engine-only-37887672834",
+  "updated_at": "2026-10-09T05:17:20Z",
+  "reason": "本地 focused Go/vet、锁定前端构建、响应式 Chromium 组件测试及 Engine 28/29 DIND Compose 编辑候选检查均有通过证据；S11-01/04/06/07/08/09/10 仍有明确缺失子场景，完整 Core-Agent-Engine E2E 未执行，因此完整阶段保持 NOT_READY。",
   "tests": {
     "S11-01": {
       "status": "NOT_READY",
@@ -13,60 +13,140 @@
       "expected": "解析及实际绑定正确。",
       "environment": "隔离Compose Engine及TCP/UDP/v4/v6端口服务。",
       "evidence_required": "渲染配置、Engine绑定和探测结果。",
-      "runs": [],
-      "reason": "NOT_READY：结构化 TCP/UDP 与 IPv4/IPv6 端口编辑单测通过；Engine 28/29 的真实端口变更预览均失败，实际绑定和连通性验证未到达。",
-      "acceptance_evidence_missing": "Engine 28/29 预览错误的安全分类、实际应用后 Engine 绑定和 TCP/UDP/v4/v6 探测结果。",
+      "runs": [
+        {
+          "workflow_run_id": "37887672834",
+          "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
+          "test": "TestDINDComposeEditorRealEngine",
+          "status": "PASS",
+          "scope": "TestDINDComposeEditorRealEngine 通过；覆盖 IPv4 TCP 新端口和 UDP 多映射，未覆盖 IPv6。",
+          "environment": "GitHub Actions ubuntu-24.04; locked Docker Compose 5.4.0; owner-isolated Docker Engine 28.5.2 and 29.7.2; job-owned DIND fixtures.",
+          "evidence": [
+            {
+              "engine": "28.5.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+              "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log"
+            },
+            {
+              "engine": "29.7.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+              "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
+            }
+          ]
+        }
+      ],
+      "reason": "真实 Engine 28/29 均验证了 IPv4 TCP 端口变更及同服务 UDP 映射保留；计划要求的 IPv6 主机绑定尚未在 Engine 上验证。",
+      "acceptance_evidence_missing": "Engine 28/29 上 IPv6 TCP/UDP 主机绑定及连通性结果。",
       "component_tests_passed": [
         "TestStructuredPortEditsHandleIPv4IPv6UDPAndLongSyntax"
       ],
-      "integration_tests_not_run": [
-        "TestDINDComposeEditorRealEngine"
-      ],
       "latest_ci_attempt": {
-        "workflow_run_id": "37886160909",
-        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
-        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
-      }
+        "workflow_run_id": "37887672834",
+        "engine_28": "PASS",
+        "engine_29": "PASS",
+        "scope": "TestDINDComposeEditorRealEngine 通过；覆盖 IPv4 TCP 新端口和 UDP 多映射，未覆盖 IPv6。"
+      },
+      "integration_tests_passed": [
+        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS（IPv4 TCP/UDP 子集）"
+      ],
+      "remaining_integration_tests": [
+        "IPv6 主机绑定端口验证"
+      ]
     },
     "S11-02": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "修改多文件、变量、长格式端口。",
       "expected": "最终模型正确。",
-      "environment": "多文件变量覆盖、长格式和YAML anchors fixture。",
+      "environment": "多文件、环境变量覆盖、profile 与长格式端口 fixture。",
       "evidence_required": "原上下文最终Compose config与差异。",
-      "runs": [],
-      "reason": "NOT_READY：多文件、env/profile、长格式端口 fixture 已提交真实 Engine 测试，但 Engine 28/29 均在 preview 返回 ErrInvalidSource；最终合并配置及 diff 未返回。",
-      "acceptance_evidence_missing": "确认失败位于结构化 port edit 还是 Compose config resolution，并取得多文件/env/profile/YAML anchor 最终配置证据。",
-      "component_tests_passed": [
-        "TestStructuredPortEditsHandleIPv4IPv6UDPAndLongSyntax"
+      "runs": [
+        {
+          "workflow_run_id": "37887672834",
+          "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
+          "test": "TestDINDComposeEditorRealEngine",
+          "status": "PASS",
+          "scope": "TestDINDComposeEditorRealEngine 验证多文件/env/profile/长格式端口的预览及实际应用。",
+          "environment": "GitHub Actions ubuntu-24.04; locked Docker Compose 5.4.0; owner-isolated Docker Engine 28.5.2 and 29.7.2; job-owned DIND fixtures.",
+          "evidence": [
+            {
+              "engine": "28.5.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+              "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log"
+            },
+            {
+              "engine": "29.7.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+              "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
+            }
+          ]
+        }
       ],
-      "integration_tests_not_run": [
-        "TestDINDComposeEditorRealEngine"
+      "reason": "Engine 28/29 真实测试使用多 Compose 文件、环境文件变量、profile 及长格式端口；预览成功，应用后实际端口映射验证通过。",
+      "acceptance_evidence_missing": "",
+      "component_tests_passed": [
+        "TestStructuredPortEditsHandleIPv4IPv6UDPAndLongSyntax",
+        "TestProposedComposeConfigResolutionUsesOriginalContext"
       ],
       "latest_ci_attempt": {
-        "workflow_run_id": "37886160909",
-        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
-        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
-      }
+        "workflow_run_id": "37887672834",
+        "engine_28": "PASS",
+        "engine_29": "PASS",
+        "scope": "TestDINDComposeEditorRealEngine 验证多文件/env/profile/长格式端口的预览及实际应用。"
+      },
+      "integration_tests_passed": [
+        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS"
+      ],
+      "remaining_integration_tests": []
     },
     "S11-03": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "临时校验涉及相对挂载。",
       "expected": "不因临时路径改变挂载目标。",
       "environment": "源项目相对bind路径和临时校验目录。",
       "evidence_required": "临时/正式Mounts目标保持相同。",
-      "runs": [],
-      "reason": "NOT_READY：使用相对 bind mount 的 Engine fixture 已启动；preview 失败后未应用变更，也未比较预览与正式 Mounts。",
-      "acceptance_evidence_missing": "真实 Engine 预览与运行时 Mounts source 的相等性证据。",
-      "component_tests_passed": [],
-      "integration_tests_not_run": [
-        "TestDINDComposeEditorRealEngine"
+      "runs": [
+        {
+          "workflow_run_id": "37887672834",
+          "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
+          "test": "TestDINDComposeEditorRealEngine",
+          "status": "PASS",
+          "scope": "TestDINDComposeEditorRealEngine 验证相对 bind mount 在临时预览和实际应用后仍解析到原项目目录。",
+          "environment": "GitHub Actions ubuntu-24.04; locked Docker Compose 5.4.0; owner-isolated Docker Engine 28.5.2 and 29.7.2; job-owned DIND fixtures.",
+          "evidence": [
+            {
+              "engine": "28.5.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+              "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log"
+            },
+            {
+              "engine": "29.7.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+              "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
+            }
+          ]
+        }
+      ],
+      "reason": "Engine 28/29 真实预览和应用均通过；应用后容器 Mounts 中 bind source 与原项目目录下 site 路径一致。",
+      "acceptance_evidence_missing": "",
+      "component_tests_passed": [
+        "TestProposedComposeConfigResolutionUsesOriginalContext"
       ],
       "latest_ci_attempt": {
-        "workflow_run_id": "37886160909",
-        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
-        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
-      }
+        "workflow_run_id": "37887672834",
+        "engine_28": "PASS",
+        "engine_29": "PASS",
+        "scope": "TestDINDComposeEditorRealEngine 验证相对 bind mount 在临时预览和实际应用后仍解析到原项目目录。"
+      },
+      "integration_tests_passed": [
+        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS"
+      ],
+      "remaining_integration_tests": []
     },
     "S11-04": {
       "status": "NOT_READY",
@@ -74,41 +154,93 @@
       "expected": "原文件及服务不变。",
       "environment": "真实项目及配置错误样本。",
       "evidence_required": "文件hash、服务ID和任务拒绝原因。",
-      "runs": [],
-      "reason": "NOT_READY：组件单测覆盖无效预览不写源文件；真实 Engine 测试在后续非法配置和缺失变量检查前即中止。",
-      "acceptance_evidence_missing": "真实 Engine 拒绝原因、原文件 hash 与服务 ID 前后核对。",
+      "runs": [
+        {
+          "workflow_run_id": "37887672834",
+          "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
+          "test": "TestDINDComposeEditorRealEngine",
+          "status": "PASS",
+          "scope": "TestDINDComposeEditorRealEngine 覆盖无效语法拒绝和源文件保留；缺失变量子场景未覆盖。",
+          "environment": "GitHub Actions ubuntu-24.04; locked Docker Compose 5.4.0; owner-isolated Docker Engine 28.5.2 and 29.7.2; job-owned DIND fixtures.",
+          "evidence": [
+            {
+              "engine": "28.5.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+              "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log"
+            },
+            {
+              "engine": "29.7.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+              "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
+            }
+          ]
+        }
+      ],
+      "reason": "Engine 28/29 测试验证了非法 Compose 配置预览被拒绝且源文件未改变；缺失必需环境变量的独立失败路径尚未验证。",
+      "acceptance_evidence_missing": "真实 Engine 环境中缺失 required variable 的拒绝结果，以及源文件/服务状态前后核对。",
       "component_tests_passed": [
         "TestPreviewUsesVersionChecksRedactsEnvironmentAndNeverMutatesSource"
       ],
-      "integration_tests_not_run": [
-        "TestDINDComposeEditorRealEngine"
-      ],
       "latest_ci_attempt": {
-        "workflow_run_id": "37886160909",
-        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
-        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
-      }
+        "workflow_run_id": "37887672834",
+        "engine_28": "PASS",
+        "engine_29": "PASS",
+        "scope": "TestDINDComposeEditorRealEngine 覆盖无效语法拒绝和源文件保留；缺失变量子场景未覆盖。"
+      },
+      "integration_tests_passed": [
+        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS（非法语法子集）"
+      ],
+      "remaining_integration_tests": [
+        "缺失 required environment variable 的真实 Compose 拒绝场景"
+      ]
     },
     "S11-05": {
-      "status": "NOT_READY",
+      "status": "PASS",
       "action": "编辑期间外部修改文件。",
       "expected": "返回冲突。",
       "environment": "Web和SSH并发源文件修改。",
       "evidence_required": "版本冲突响应和外部文件保留。",
-      "runs": [],
-      "reason": "NOT_READY：组件测试覆盖源版本冲突；真实 Engine 的外部并发修改断言位于预览之后，因共同预览错误尚未执行。",
-      "acceptance_evidence_missing": "真实 Engine stale-version 冲突响应及外部修改保留证据。",
+      "runs": [
+        {
+          "workflow_run_id": "37887672834",
+          "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
+          "test": "TestDINDComposeEditorRealEngine",
+          "status": "PASS",
+          "scope": "TestDINDComposeEditorRealEngine 验证真实 Compose 项目的 stale-version 冲突和外部文件保留。",
+          "environment": "GitHub Actions ubuntu-24.04; locked Docker Compose 5.4.0; owner-isolated Docker Engine 28.5.2 and 29.7.2; job-owned DIND fixtures.",
+          "evidence": [
+            {
+              "engine": "28.5.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+              "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log"
+            },
+            {
+              "engine": "29.7.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+              "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
+            }
+          ]
+        }
+      ],
+      "reason": "Engine 28/29 测试在编辑器读取后独立修改源文件，再提交旧版本；NodeDance 返回源冲突并逐字节保留外部修改。",
+      "acceptance_evidence_missing": "",
       "component_tests_passed": [
         "TestExternalSourceConflictIsNotOverwritten"
       ],
-      "integration_tests_not_run": [
-        "TestDINDComposeEditorRealEngine"
-      ],
       "latest_ci_attempt": {
-        "workflow_run_id": "37886160909",
-        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
-        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
-      }
+        "workflow_run_id": "37887672834",
+        "engine_28": "PASS",
+        "engine_29": "PASS",
+        "scope": "TestDINDComposeEditorRealEngine 验证真实 Compose 项目的 stale-version 冲突和外部文件保留。"
+      },
+      "integration_tests_passed": [
+        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS"
+      ],
+      "remaining_integration_tests": []
     },
     "S11-06": {
       "status": "NOT_READY",
@@ -116,22 +248,49 @@
       "expected": "失败并执行恢复。",
       "environment": "端口占用者与可控不健康Compose服务。",
       "evidence_required": "任务失败、旧配置/镜像/服务回滚状态。",
-      "runs": [],
-      "reason": "NOT_READY：mock Engine 的端口占用、健康失败与 pinned rollback 测试通过；真实 Engine 集成在端口冲突/health rollback 场景前中止。",
-      "acceptance_evidence_missing": "Engine 28/29 实际端口占用和 unhealthy service 回滚记录。",
+      "runs": [
+        {
+          "workflow_run_id": "37887672834",
+          "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
+          "test": "TestDINDComposeEditorRealEngine",
+          "status": "PASS",
+          "scope": "TestDINDComposeEditorRealEngine 通过真实端口冲突/回滚；健康检查失败路径仅有组件测试。",
+          "environment": "GitHub Actions ubuntu-24.04; locked Docker Compose 5.4.0; owner-isolated Docker Engine 28.5.2 and 29.7.2; job-owned DIND fixtures.",
+          "evidence": [
+            {
+              "engine": "28.5.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+              "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log"
+            },
+            {
+              "engine": "29.7.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+              "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
+            }
+          ]
+        }
+      ],
+      "reason": "Engine 28/29 实测端口占用导致操作失败，任务确认回滚，Compose 文件逐字节恢复，Web 仍绑定原端口；真实 unhealthy healthcheck 失败恢复尚未覆盖。",
+      "acceptance_evidence_missing": "Engine 28/29 上 unhealthy 服务触发应用失败并确认回滚的独立记录。",
       "component_tests_passed": [
         "TestApplyOccupiedPortRestoresSourceAndConfirmsRollback",
         "TestApplyHealthFailureRestoresSourceAndConfirmsRollback",
         "TestRollbackOverrideUsesPinnedImageAndNeverIncludesVolumes"
       ],
-      "integration_tests_not_run": [
-        "TestDINDComposeEditorRealEngine"
-      ],
       "latest_ci_attempt": {
-        "workflow_run_id": "37886160909",
-        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
-        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
-      }
+        "workflow_run_id": "37887672834",
+        "engine_28": "PASS",
+        "engine_29": "PASS",
+        "scope": "TestDINDComposeEditorRealEngine 通过真实端口冲突/回滚；健康检查失败路径仅有组件测试。"
+      },
+      "integration_tests_passed": [
+        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS（端口占用回滚）"
+      ],
+      "remaining_integration_tests": [
+        "真实 unhealthy healthcheck 的失败恢复场景"
+      ]
     },
     "S11-07": {
       "status": "NOT_READY",
@@ -139,18 +298,47 @@
       "expected": "使用保留的旧引用恢复。",
       "environment": "移动标签前后镜像digest不同。",
       "evidence_required": "回滚时实际镜像ID/digest与旧版本一致。",
-      "runs": [],
-      "reason": "NOT_READY：组件测试检查 rollback 固定旧镜像且不 rebuild；当前真实 Engine 流程未到达 rollback。",
-      "acceptance_evidence_missing": "移动镜像 tag 后以真实 Engine 检查旧 image ID/digest 恢复的演练。",
+      "runs": [
+        {
+          "workflow_run_id": "37887672834",
+          "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
+          "test": "TestDINDComposeEditorRealEngine",
+          "status": "PASS",
+          "scope": "TestDINDComposeEditorRealEngine 执行了固定镜像回滚；未注入 tag 变化。",
+          "environment": "GitHub Actions ubuntu-24.04; locked Docker Compose 5.4.0; owner-isolated Docker Engine 28.5.2 and 29.7.2; job-owned DIND fixtures.",
+          "evidence": [
+            {
+              "engine": "28.5.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+              "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log"
+            },
+            {
+              "engine": "29.7.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+              "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
+            }
+          ]
+        }
+      ],
+      "reason": "Engine 28/29 真实端口回滚路径通过，恢复使用事务创建的固定镜像引用；测试没有在 pin 后移动原镜像 tag，尚未证明 tag 漂移时仍恢复到原 image ID/digest。",
+      "acceptance_evidence_missing": "修改源 image tag 后，Engine 实际恢复的旧 image ID/digest 与 pin 前记录相同。",
       "component_tests_passed": [
         "TestRollbackOverrideUsesPinnedImageAndNeverIncludesVolumes"
       ],
-      "integration_tests_not_run": [],
       "latest_ci_attempt": {
-        "workflow_run_id": "37886160909",
-        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
-        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
-      }
+        "workflow_run_id": "37887672834",
+        "engine_28": "PASS",
+        "engine_29": "PASS",
+        "scope": "TestDINDComposeEditorRealEngine 执行了固定镜像回滚；未注入 tag 变化。"
+      },
+      "integration_tests_passed": [
+        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS（固定引用回滚路径）"
+      ],
+      "remaining_integration_tests": [
+        "回滚期间移动镜像 tag 并核对旧 image ID/digest"
+      ]
     },
     "S11-08": {
       "status": "NOT_READY",
@@ -158,19 +346,46 @@
       "expected": "可识别当前阶段及结果。",
       "environment": "各部署阶段断电/进程重启注入。",
       "evidence_required": "持久journal、恢复判定和实际资源。",
-      "runs": [],
-      "reason": "NOT_READY：Agent 事务恢复和 Core 内容无关账本组件测试通过；本轮真实 Engine 测试未到达进程重启故障注入。",
-      "acceptance_evidence_missing": "Core/Agent 重启与 Engine 状态联合恢复记录。",
+      "runs": [
+        {
+          "workflow_run_id": "37887672834",
+          "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
+          "test": "TestDINDComposeEditorRealEngine",
+          "status": "NOT_READY",
+          "scope": "Engine DIND 工作流通过，但没有执行 S11-08 所需的 Core/Agent 重启故障注入。",
+          "environment": "GitHub Actions ubuntu-24.04; locked Docker Compose 5.4.0; owner-isolated Docker Engine 28.5.2 and 29.7.2; job-owned DIND fixtures.",
+          "evidence": [
+            {
+              "engine": "28.5.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+              "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log"
+            },
+            {
+              "engine": "29.7.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+              "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
+            }
+          ]
+        }
+      ],
+      "reason": "本次 Engine DIND 集成未在 Core/Agent 事务中途注入进程重启；相关恢复仍只有组件级证据。",
+      "acceptance_evidence_missing": "真实 Core/Agent 在编辑事务各持久化阶段重启后的 journal 恢复和 Engine 实际状态。",
       "component_tests_passed": [
         "TestAgentRestartRecoveryRestoresAnApplyingTransactionWithoutReplay",
         "TestContentFreeIdempotentOperationLedgerAndRecovery"
       ],
-      "integration_tests_not_run": [],
       "latest_ci_attempt": {
-        "workflow_run_id": "37886160909",
-        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
-        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
-      }
+        "workflow_run_id": "37887672834",
+        "engine_28": "PASS (suite did not exercise this case-specific scenario)",
+        "engine_29": "PASS (suite did not exercise this case-specific scenario)",
+        "scope": "Engine DIND 工作流通过，但没有执行 S11-08 所需的 Core/Agent 重启故障注入。"
+      },
+      "integration_tests_passed": [],
+      "remaining_integration_tests": [
+        "在 prepared/applying/Compose up/verify 阶段重启 Core 或 Agent 并验证恢复"
+      ]
     },
     "S11-09": {
       "status": "NOT_READY",
@@ -178,19 +393,48 @@
       "expected": "权限保留，秘密不泄露。",
       "environment": "私密env文件和不同mode配置。",
       "evidence_required": "备份stat、日志/报告秘密扫描。",
-      "runs": [],
-      "reason": "NOT_READY：组件测试覆盖源文件/env 权限、备份与敏感字段脱敏；DIND 预览失败，真实 API/日志/artifact secret 扫描未完成。",
-      "acceptance_evidence_missing": "不同 owner/mode 节点实测、resolved config/日志秘密扫描。",
+      "runs": [
+        {
+          "workflow_run_id": "37887672834",
+          "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
+          "test": "TestDINDComposeEditorRealEngine",
+          "status": "PASS",
+          "scope": "TestDINDComposeEditorRealEngine 对 preview resolved config 的秘密值泄露断言通过。",
+          "environment": "GitHub Actions ubuntu-24.04; locked Docker Compose 5.4.0; owner-isolated Docker Engine 28.5.2 and 29.7.2; job-owned DIND fixtures.",
+          "evidence": [
+            {
+              "engine": "28.5.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+              "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log"
+            },
+            {
+              "engine": "29.7.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+              "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
+            }
+          ]
+        }
+      ],
+      "reason": "Engine 28/29 实际预览检查了一个环境秘密未出现在 resolved config；真实文件 owner/mode 变体以及 CI 日志、API 和 artifact 的秘密扫描未执行。",
+      "acceptance_evidence_missing": "真实节点 owner/mode 保持结果，以及 API、日志、报告和 artifact 的敏感值扫描。",
       "component_tests_passed": [
         "TestApplyPreservesSourceAndEnvironmentModesAndSecuresBackups",
         "TestResolvedConfigRedactsSensitiveFieldsAcrossComposeTree"
       ],
-      "integration_tests_not_run": [],
       "latest_ci_attempt": {
-        "workflow_run_id": "37886160909",
-        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
-        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
-      }
+        "workflow_run_id": "37887672834",
+        "engine_28": "PASS",
+        "engine_29": "PASS",
+        "scope": "TestDINDComposeEditorRealEngine 对 preview resolved config 的秘密值泄露断言通过。"
+      },
+      "integration_tests_passed": [
+        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS（resolved config secret 检查）"
+      ],
+      "remaining_integration_tests": [
+        "owner/mode 变体和 API/log/artifact secret 扫描"
+      ]
     },
     "S11-10": {
       "status": "NOT_READY",
@@ -198,20 +442,47 @@
       "expected": "无误重建、无数据丢失。",
       "environment": "含依赖服务及持久卷的项目。",
       "evidence_required": "未受影响Container ID、卷ID及marker前后比对。",
-      "runs": [],
-      "reason": "NOT_READY：组件测试覆盖只重建受影响服务；真实 Engine 的 apply/volume marker 比较未到达。",
-      "acceptance_evidence_missing": "未受影响 container ID、volume ID 与数据 marker 前后记录。",
+      "runs": [
+        {
+          "workflow_run_id": "37887672834",
+          "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
+          "test": "TestDINDComposeEditorRealEngine",
+          "status": "PASS",
+          "scope": "TestDINDComposeEditorRealEngine 验证受影响服务单独重建、其他服务 ID 不变及命名卷 marker 保留；未采集卷 ID 前后值。",
+          "environment": "GitHub Actions ubuntu-24.04; locked Docker Compose 5.4.0; owner-isolated Docker Engine 28.5.2 and 29.7.2; job-owned DIND fixtures.",
+          "evidence": [
+            {
+              "engine": "28.5.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+              "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log"
+            },
+            {
+              "engine": "29.7.2",
+              "status": "PASS",
+              "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+              "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log"
+            }
+          ]
+        }
+      ],
+      "reason": "Engine 28/29 实测 Web 服务 ID 改变，database 和 profile 服务 ID 不变，命名卷中的 Redis marker 保留；端口占用回滚后未受影响服务和卷数据仍在。当前没有记录命名卷 ID 的前后对比，完整证据仍缺一项。",
+      "acceptance_evidence_missing": "实际 Docker volume ID 在变更前后保持一致的记录。",
       "component_tests_passed": [
         "TestApplyRebuildsOnlyAffectedServiceAndRetainsRollbackSourceAndVolume"
       ],
-      "integration_tests_not_run": [
-        "TestDINDComposeEditorRealEngine"
-      ],
       "latest_ci_attempt": {
-        "workflow_run_id": "37886160909",
-        "engine_28": "FAIL at common preview before case-specific Engine postconditions",
-        "engine_29": "FAIL at common preview before case-specific Engine postconditions"
-      }
+        "workflow_run_id": "37887672834",
+        "engine_28": "PASS (suite did not collect volume IDs before/after)",
+        "engine_29": "PASS (suite did not collect volume IDs before/after)",
+        "scope": "TestDINDComposeEditorRealEngine 验证受影响服务单独重建、其他服务 ID 不变及命名卷 marker 保留；未采集卷 ID 前后值。"
+      },
+      "integration_tests_passed": [
+        "TestDINDComposeEditorRealEngine：Engine 28.5.2 PASS、Engine 29.7.2 PASS（服务 ID 与 marker 子集）"
+      ],
+      "remaining_integration_tests": [
+        "变更前后采集并比较 Docker volume ID"
+      ]
     }
   },
   "candidate_status": "PARTIAL",
@@ -226,12 +497,15 @@
     "go-focused-tests-and-vet": {
       "status": "PASS",
       "command": "make test-s11-go",
-      "result": "PASS on clean GitHub Actions checkout: make frontend generated the ignored embedded assets, then make test-s11-go and go vet passed. Core server package test took 122.091s.",
+      "result": "先前 clean GitHub Actions checkout 的 focused tests/vet 通过；修复 long-syntax host_ip tag 后，本机在 Go 1.26.8、Node 22.23.3、Compose 5.4.0 环境再次执行 make test-s11-go，7 个聚焦 Go 包和 go vet 全部通过，Core server tests 用时 114.413s。后续提交只调整 DIND 测试断言。",
       "evidence": ".artifacts/s11/go-focused.log",
       "ci_run_id": "37886160909",
       "ci_commit": "648b0a56b3ede6154015d6a588a3cd95c847a2a6",
       "ci_job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676656040",
-      "ci_artifact": "nodedance-s11-go-37886160909-1 (frontend.log, go-focused.log)"
+      "ci_artifact": "nodedance-s11-go-37886160909-1 (frontend.log, go-focused.log)",
+      "local_commit": "57e4ffabd6c738fa90ecfbe6d07b613cbe019bc5",
+      "local_command": "make test-s11-go",
+      "local_result": "PASS"
     },
     "locked-frontend-typecheck-and-build": {
       "status": "PASS",
@@ -252,28 +526,30 @@
       "ci_artifact": "nodedance-s11-ui-37886160909-1/test-results/.last-run.json"
     },
     "engine-28-real-compose": {
-      "status": "FAIL",
+      "status": "PASS",
       "command": "scripts/test/s11-compose-editor-dind.sh 28",
-      "reason": "本工作区没有 Engine 28 owner marker；未启动或复用任何 Docker daemon。GitHub Actions job 尚未运行。",
-      "ci_run_id": "37886160909",
+      "reason": "专用 GitHub Actions DIND job 通过；本工作区未启动或复用外部 Docker daemon。",
+      "ci_run_id": "37887672834",
       "engine_version": "28.5.2",
-      "ci_job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676655830",
-      "ci_artifact": "nodedance-s11-engine28-37886160909-1/engine-28.log",
-      "result": "TestDINDComposeEditorRealEngine failed during preview at dind_integration_test.go:225 with ErrInvalidSource; the pre-diagnostic implementation did not reveal whether applyPortEdit or Compose config resolution failed. No apply/rollback assertions were reached."
+      "ci_job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323",
+      "ci_artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log",
+      "result": "TestDINDComposeEditorRealEngine PASS (17.60s); real Engine 28.5.2 preview/apply, affected-only service recreate, relative bind, named-volume marker, occupied-port rollback and stale-source conflict passed.",
+      "ci_commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f"
     },
     "engine-29-real-compose": {
-      "status": "FAIL",
+      "status": "PASS",
       "command": "scripts/test/s11-compose-editor-dind.sh 29",
-      "reason": "本工作区没有 Engine 29 owner marker；未启动或复用任何 Docker daemon。GitHub Actions job 尚未运行。",
-      "ci_run_id": "37886160909",
+      "reason": "专用 GitHub Actions DIND job 通过；本工作区未启动或复用外部 Docker daemon。",
+      "ci_run_id": "37887672834",
       "engine_version": "29.7.2",
-      "ci_job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676655950",
-      "ci_artifact": "nodedance-s11-engine29-37886160909-1/engine-29.log",
-      "result": "TestDINDComposeEditorRealEngine failed during preview at dind_integration_test.go:225 with ErrInvalidSource; the pre-diagnostic implementation did not reveal whether applyPortEdit or Compose config resolution failed. No apply/rollback assertions were reached."
+      "ci_job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189",
+      "ci_artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log",
+      "result": "TestDINDComposeEditorRealEngine PASS (23.22s); real Engine 29.7.2 preview/apply, affected-only service recreate, relative bind, named-volume marker, occupied-port rollback and stale-source conflict passed.",
+      "ci_commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f"
     },
     "core-agent-engine-end-to-end": {
       "status": "NOT_READY",
-      "reason": "UI Playwright 使用模拟 API；真实 Core、Agent、Compose Engine 联合应用/失败恢复尚未执行。"
+      "reason": "DIND 真实 Agent/Compose Engine 用例通过，但请求仍由测试直接调用 Agent manager；浏览器 UI 使用模拟 API。完整 Core API → Agent 通信 → Engine 写操作链路及失败恢复尚未执行。"
     }
   },
   "migration_contract": {
@@ -290,13 +566,33 @@
       "note": "Root review identified rollback rebuild risk and resolved-config sensitive-key leakage.",
       "resolution": "Pinned-image rollback now passes --no-build and has an assertion that --build is absent. Resolved configuration redacts sensitive fields recursively and has fake-marker build.args regression coverage.",
       "validation": "Covered by the latest passing make test-s11-go run; real Engine rollback path remains NOT_READY."
+    },
+    {
+      "note": "Engine 28/29 preview failed before any apply assertions. Safe stage diagnostics localized failure to proposed Compose config --quiet; a config-only real Compose CLI test reproduced it without Docker daemon.",
+      "resolution": "Structured long-syntax port edit used the generic YAML mapping setter that tagged host_ip as !!int. Set published as !!int and host_ip as !!str; the config-only CLI preview regression now passes.",
+      "evidence": "37886667022 engine28/engine29 failed at proposed-compose-config-quiet; local TestProposedComposeConfigResolutionUsesOriginalContext passes at commit 57e4ffabd6c738fa90ecfbe6d07b613cbe019bc5."
+    },
+    {
+      "note": "First post-fix Engine 28/29 attempt advanced through preview/apply but failed the affected-only recreate assertion.",
+      "resolution": "The DIND fixture captured baseline container IDs only after apply, so it compared post-apply state with itself. Capture baseline IDs before apply and compare them afterward.",
+      "evidence": "37887355386 engine28/engine29 artifacts show all three IDs unchanged in the self-comparison; test-only fix committed as 3958b220db02ac12de14d2ad1b91947d87ab51df."
+    },
+    {
+      "note": "Second post-fix Engine 28/29 attempt passed the affected-only recreate and volume checks, then failed the rollback source assertion.",
+      "resolution": "The fixture hardcoded an unquoted port scalar even though the pre-transaction source snapshot was quoted. Compare the restored source byte-for-byte with the source read before the failing operation; omit raw config contents from failure logs.",
+      "evidence": "37887523017 engine28/engine29 artifacts; test-only fix committed as 5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f."
+    },
+    {
+      "note": "Final targeted Engine-only acceptance passed on both Engine versions after the YAML type correction and DIND assertion fixes.",
+      "resolution": "No further production or fixture change was needed after this pass.",
+      "evidence": "37887672834: Engine 28.5.2 PASS (17.60s), Engine 29.7.2 PASS (23.22s); exact artifacts are recorded per S11-01..10."
     }
   ],
   "candidate_suite": {
     "status": "PARTIAL",
-    "workflow_run_id": "37886160909",
-    "workflow_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909",
-    "commit": "648b0a56b3ede6154015d6a588a3cd95c847a2a6",
+    "workflow_run_id": "37887672834",
+    "workflow_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834",
+    "commit": "5c2de739e7ab46eb917a63c3a1a9bbb24a287c5f",
     "environment": {
       "runner": "GitHub Actions ubuntu-24.04",
       "toolchain": "Go 1.26.8, Node.js 22.23.3, pnpm 12.10.1, Docker Compose 5.4.0",
@@ -310,7 +606,7 @@
           "make frontend",
           "make test-s11-go"
         ],
-        "result": "Frontend assets were built before Go package tests; focused package tests and go vet passed.",
+        "result": "PASS on clean GitHub Actions checkout; after the long-syntax host_ip fix, make test-s11-go also passed locally at commit 57e4ffabd6c738fa90ecfbe6d07b613cbe019bc5. The final two commits changed only DIND assertion code.",
         "artifact": "nodedance-s11-go-37886160909-1 (frontend.log, go-focused.log)",
         "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676656040"
       },
@@ -328,22 +624,32 @@
         "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676656282"
       },
       {
+        "name": "proposed Compose config resolution with locked CLI",
+        "status": "PASS",
+        "commands": [
+          "go test -count=1 -run '^TestProposedComposeConfigResolutionUsesOriginalContext$' -v ./internal/agent/composeedit"
+        ],
+        "environment": "Local locked Docker CLI/Compose 5.4.0; no Docker daemon required; temporary multi-file project path with spaces/semicolon, env file, profile and relative bind.",
+        "result": "PASS after correction. Reproduced the previous failure without Engine and confirmed proposed long-syntax port keeps host_ip as a YAML string, retains the original bind source, and redacts the fixture secret.",
+        "source_commit": "57e4ffabd6c738fa90ecfbe6d07b613cbe019bc5"
+      },
+      {
         "name": "real Compose Agent Engine 28",
-        "status": "FAIL",
+        "status": "PASS",
         "command": "scripts/test/s11-compose-editor-dind.sh 28",
-        "result": "Preview failed at dind_integration_test.go:225 with Compose source or structured port edit is invalid; applyPortEdit vs Compose config validation was not distinguished in this run.",
-        "artifact": "nodedance-s11-engine28-37886160909-1/engine-28.log",
-        "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676655830"
+        "result": "TestDINDComposeEditorRealEngine PASS (17.60s) on Engine 28.5.2; includes preview/apply, actual TCP/UDP mappings, relative bind, affected-only recreation, volume marker, occupied-port rollback and stale-source conflict.",
+        "artifact": "nodedance-s11-engine28-37887672834-1/engine-28.log",
+        "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219323"
       },
       {
         "name": "real Compose Agent Engine 29",
-        "status": "FAIL",
+        "status": "PASS",
         "command": "scripts/test/s11-compose-editor-dind.sh 29",
-        "result": "Preview failed at dind_integration_test.go:225 with Compose source or structured port edit is invalid; applyPortEdit vs Compose config validation was not distinguished in this run.",
-        "artifact": "nodedance-s11-engine29-37886160909-1/engine-29.log",
-        "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37886160909/job/113676655950"
+        "result": "TestDINDComposeEditorRealEngine PASS (23.22s) on Engine 29.7.2; includes preview/apply, actual TCP/UDP mappings, relative bind, affected-only recreation, volume marker, occupied-port rollback and stale-source conflict.",
+        "artifact": "nodedance-s11-engine29-37887672834-1/engine-29.log",
+        "job_url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887672834/job/113681219189"
       }
     ],
-    "diagnostic_followup": "Add static safe preview-stage classification. Re-run only the Engine matrix through workflow_dispatch suite=engines; do not rerun Go/UI jobs."
+    "diagnostic_followup": "Engine 28/29 DIND passed. Full S11 remains NOT_READY for uncovered case subscenarios and complete Core-Agent-Engine E2E; see each S11-01..10 runs and remaining_integration_tests."
   }
 }

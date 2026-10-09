@@ -68,10 +68,10 @@
     },
     "S11": {
       "status": "NOT_READY",
-      "reason": "候选 Go focused tests/vet、锁定前端构建及 390x844 Chromium UI component test 通过；S11-01..10 真实 Engine 与完整 Core-Agent-Engine 验收仍待执行，详见 reports/stages/S11.json。",
-      "updated_at": "2026-10-09T04:54:33+00:00",
+      "reason": "候选 focused Go/vet、前端及响应式 UI 检查通过；真实 Engine 28/29 DIND Compose 编辑验收现已通过。仍有 IPv6、required-env 失败、unhealthy 回滚、移动 tag 验证、重启注入、卷 ID 对比及真实 Core-Agent E2E 等明确缺项，详见 reports/stages/S11.json。",
+      "updated_at": "2026-10-09T05:17:20Z",
       "mode": "candidate-checks",
-      "run_id": "s11-components-20261009T0454Z"
+      "run_id": "s11-engine-only-37887672834"
     },
     "S12": {
       "status": "NOT_READY",
