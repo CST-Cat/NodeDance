@@ -16,6 +16,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"unicode/utf8"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -43,6 +44,16 @@ type Service struct {
 	// afterAtomicReplace is a package-test fault-injection hook for the
 	// otherwise hard-to-reproduce post-commit verification failure path.
 	afterAtomicReplace func()
+}
+
+// MutationBaseline stores opaque metadata fingerprints only. It lets recovery
+// distinguish a requested postcondition from the pre-existing state without
+// persisting file contents.
+type MutationBaseline struct {
+	TargetExists       bool
+	TargetFingerprint  string
+	NewPathExists      bool
+	NewPathFingerprint string
 }
 
 func New(rootPath string, limit int64) (*Service, error) {
@@ -260,6 +271,152 @@ func (s *Service) Delete(virtual string, confirmed bool) error {
 	return s.root.RemoveAll(name)
 }
 
+func (s *Service) CaptureMutationBaseline(operation, virtual, newVirtual string) (MutationBaseline, error) {
+	var baseline MutationBaseline
+	name, _, err := s.normalize(virtual)
+	if err != nil {
+		return baseline, err
+	}
+	baseline.TargetExists, baseline.TargetFingerprint, err = s.pathFingerprint(name)
+	if err != nil {
+		return baseline, err
+	}
+	if operation == protocol.FileRename {
+		newName, _, err := s.normalize(newVirtual)
+		if err != nil {
+			return baseline, err
+		}
+		baseline.NewPathExists, baseline.NewPathFingerprint, err = s.pathFingerprint(newName)
+		if err != nil {
+			return baseline, err
+		}
+	}
+	return baseline, nil
+}
+
+func (s *Service) pathFingerprint(name string) (bool, string, error) {
+	info, err := s.root.Lstat(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, "", nil
+	}
+	if err != nil {
+		return false, "", err
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false, "", errors.New("filesystem identity is unavailable")
+	}
+	uid, gid := ownerIDs(info)
+	value := fmt.Sprintf("%d:%d:%d:%d:%d:%d:%d:%d", stat.Dev, stat.Ino, info.Mode(), info.Size(), info.ModTime().UnixNano(), uid, gid, info.Mode().Type())
+	digest := sha256.Sum256([]byte(value))
+	return true, hex.EncodeToString(digest[:]), nil
+}
+
+// VerifyMutation checks the requested postcondition without retaining or
+// returning file bytes. It is used after a reconnect when the Agent journal
+// proves that a write was started but the response was not persisted.
+func (s *Service) VerifyMutation(operation, virtual, newVirtual string, expectedSize int64, expectedSHA256 string, baseline MutationBaseline) (bool, error) {
+	name, canonical, err := s.normalize(virtual)
+	if err != nil {
+		return false, err
+	}
+	switch operation {
+	case protocol.FileMkdir:
+		if !baseline.BaselineAllowsCreatedTarget() {
+			return false, nil
+		}
+		info, err := s.root.Lstat(name)
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		return info.IsDir(), nil
+	case protocol.FileDelete:
+		if canonical == "/" || !baseline.TargetExists {
+			return false, ErrInvalidPath
+		}
+		_, err := s.root.Lstat(name)
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, err
+	case protocol.FileRename:
+		if !baseline.TargetExists || baseline.NewPathExists || baseline.TargetFingerprint == "" {
+			return false, nil
+		}
+		newName, _, err := s.normalize(newVirtual)
+		if err != nil {
+			return false, err
+		}
+		_, sourceErr := s.root.Lstat(name)
+		_, destinationErr := s.root.Lstat(newName)
+		if !errors.Is(sourceErr, os.ErrNotExist) || destinationErr != nil {
+			if sourceErr != nil && !errors.Is(sourceErr, os.ErrNotExist) {
+				return false, sourceErr
+			}
+			if destinationErr != nil && !errors.Is(destinationErr, os.ErrNotExist) {
+				return false, destinationErr
+			}
+			return false, nil
+		}
+		_, destinationFingerprint, err := s.pathFingerprint(newName)
+		if err != nil {
+			return false, err
+		}
+		return destinationFingerprint == baseline.TargetFingerprint, nil
+	case protocol.FileSaveText, protocol.FileUploadBegin, protocol.FileUploadCommit, "upload":
+		if baseline.TargetExists {
+			_, fingerprint, fingerprintErr := s.pathFingerprint(name)
+			if fingerprintErr != nil {
+				return false, fingerprintErr
+			}
+			if fingerprint == baseline.TargetFingerprint {
+				return false, nil
+			}
+		}
+		return s.verifyFileDigest(name, expectedSize, expectedSHA256)
+	default:
+		return false, errors.New("unsupported file mutation postcondition")
+	}
+}
+
+func (b MutationBaseline) BaselineAllowsCreatedTarget() bool { return !b.TargetExists }
+
+func (s *Service) verifyFileDigest(name string, expectedSize int64, expectedSHA256 string) (bool, error) {
+	if expectedSize < 0 || expectedSize > s.limit || len(expectedSHA256) != 64 {
+		return false, ErrLimitExceeded
+	}
+	info, err := s.root.Lstat(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() || info.Size() != expectedSize {
+		return false, nil
+	}
+	file, err := s.root.Open(name)
+	if err != nil {
+		return false, err
+	}
+	hash := sha256.New()
+	read, copyErr := io.Copy(hash, io.LimitReader(file, s.limit+1))
+	closeErr := file.Close()
+	if copyErr != nil {
+		return false, copyErr
+	}
+	if closeErr != nil {
+		return false, closeErr
+	}
+	if read != expectedSize {
+		return false, nil
+	}
+	return hex.EncodeToString(hash.Sum(nil)) == expectedSHA256, nil
+}
+
 type Upload struct {
 	service         *Service
 	target          string
@@ -283,7 +440,37 @@ func (u *Upload) Written() int64 {
 	return u.written
 }
 
+func (u *Upload) TemporaryPath() string {
+	if u == nil || u.temporary == "" {
+		return ""
+	}
+	return "/" + u.temporary
+}
+
 func (s *Service) BeginUpload(virtual, expectedVersion string, size int64, digest string) (*Upload, error) {
+	temporary, err := s.ReserveUploadTemporaryPath(virtual)
+	if err != nil {
+		return nil, err
+	}
+	return s.BeginUploadAtTemporary(virtual, expectedVersion, size, digest, temporary)
+}
+
+// ReserveUploadTemporaryPath chooses an unpredictable sibling name without
+// creating it. The Agent journals this exact name before BeginUploadAtTemporary
+// can create a file, so a crash immediately after creation can be cleaned up.
+func (s *Service) ReserveUploadTemporaryPath(virtual string) (string, error) {
+	target, _, err := s.normalize(virtual)
+	if err != nil || target == "." {
+		return "", ErrInvalidPath
+	}
+	name, err := s.newSiblingTemporaryName(target, ".nodedance-upload-")
+	if err != nil {
+		return "", err
+	}
+	return "/" + name, nil
+}
+
+func (s *Service) BeginUploadAtTemporary(virtual, expectedVersion string, size int64, digest, temporaryVirtual string) (*Upload, error) {
 	if size < 0 || size > s.limit {
 		return nil, ErrLimitExceeded
 	}
@@ -317,13 +504,52 @@ func (s *Service) BeginUpload(virtual, expectedVersion string, size int64, diges
 	} else if expectedVersion != "" {
 		return nil, ErrConflict
 	}
-	temporary, file, err := s.createSiblingTemporary(target, ".nodedance-upload-")
+	temporary, _, err := s.normalize(temporaryVirtual)
+	if err != nil || path.Dir(temporary) != path.Dir(target) || !validUploadTempName(path.Base(target), path.Base(temporary)) {
+		return nil, ErrInvalidPath
+	}
+	file, err := s.root.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, err
 	}
 	return &Upload{service: s, target: target, targetVirtual: canonical, temporary: temporary, file: file, hash: sha256.New(),
 		expectedSize: size, expectedDigest: digest, expectedVersion: expectedVersion,
 		initialVersion: initialVersion, initialInfo: info}, nil
+}
+
+func validUploadTempName(targetBase, temporaryBase string) bool {
+	prefix := "." + targetBase + ".nodedance-upload-"
+	if !strings.HasPrefix(temporaryBase, prefix) || len(temporaryBase) != len(prefix)+24 {
+		return false
+	}
+	for _, char := range strings.TrimPrefix(temporaryBase, prefix) {
+		if !(char >= '0' && char <= '9' || char >= 'a' && char <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// RemoveUploadTemporary removes only a temporary upload path that was returned
+// by this service and durably recorded by the Agent journal. It never scans a
+// user directory or removes files based on a broad prefix.
+func (s *Service) RemoveUploadTemporary(targetVirtual, temporaryVirtual string) error {
+	target, _, err := s.normalize(targetVirtual)
+	if err != nil || target == "." {
+		return ErrInvalidPath
+	}
+	temporary, _, err := s.normalize(temporaryVirtual)
+	if err != nil || temporary == "." || path.Dir(temporary) != path.Dir(target) {
+		return ErrInvalidPath
+	}
+	if !validUploadTempName(path.Base(target), path.Base(temporary)) {
+		return ErrInvalidPath
+	}
+	if err := s.root.Remove(temporary); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else {
+		return err
+	}
 }
 
 func (u *Upload) WriteChunk(data []byte) error {
@@ -624,16 +850,15 @@ func (s *Service) backup(name, canonical string, info os.FileInfo) (string, erro
 }
 
 func (s *Service) createSiblingTemporary(target, prefix string) (string, *os.File, error) {
-	directory, base := path.Dir(target), path.Base(target)
+	base := path.Base(target)
 	if target == "." || base == "/" {
 		return "", nil, ErrInvalidPath
 	}
 	for attempt := 0; attempt < 10; attempt++ {
-		var random [12]byte
-		if _, err := rand.Read(random[:]); err != nil {
+		name, err := s.newSiblingTemporaryName(target, prefix)
+		if err != nil {
 			return "", nil, err
 		}
-		name := path.Join(directory, "."+base+prefix+hex.EncodeToString(random[:]))
 		file, err := s.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err == nil {
 			return name, file, nil
@@ -643,6 +868,18 @@ func (s *Service) createSiblingTemporary(target, prefix string) (string, *os.Fil
 		}
 	}
 	return "", nil, errors.New("could not allocate a unique temporary file")
+}
+
+func (s *Service) newSiblingTemporaryName(target, prefix string) (string, error) {
+	directory, base := path.Dir(target), path.Base(target)
+	if target == "." || base == "/" {
+		return "", ErrInvalidPath
+	}
+	var random [12]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return "", err
+	}
+	return path.Join(directory, "."+base+prefix+hex.EncodeToString(random[:])), nil
 }
 
 // ownerIDs uses the platform's stat owner when available. The helper is kept

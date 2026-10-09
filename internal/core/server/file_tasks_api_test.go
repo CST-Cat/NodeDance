@@ -153,7 +153,7 @@ func TestFileWriteIsPersistedBeforeDispatchAndAgentDisconnectBecomesUnknown(t *t
 	}
 	connectionCtx, cancelConnection := context.WithCancel(context.Background())
 	connection := &agentConnection{ctx: connectionCtx, cancel: cancelConnection, agentID: lease.AgentID, nodeID: lease.NodeID,
-		generation: lease.ConnectionGeneration, filesEnabled: true, commands: make(chan protocol.Envelope, 8),
+		generation: lease.ConnectionGeneration, filesEnabled: true, fileJournalEnabled: true, commands: make(chan protocol.Envelope, 8),
 		fileTransfers: make(map[string]*coreFileTransfer), fileTombstones: make(map[string]struct{})}
 	core.agentConnectionsMu.Lock()
 	core.agentConnections[lease.AgentID] = connection
@@ -286,6 +286,72 @@ func TestCoreStartupRecoversDispatchedFileWriteAsUnknown(t *testing.T) {
 	}
 }
 
+func TestCoreReconcilesAgentFileJournalResults(t *testing.T) {
+	core, err := New("file-agent-journal-reconcile-test", Options{DataDir: filepath.Join(t.TempDir(), "core"), Development: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = core.Close() })
+	const nodeID = "00000000-0000-4000-8000-000000000071"
+	const successID = "00000000-0000-4000-8000-000000000072"
+	const unknownID = "00000000-0000-4000-8000-000000000073"
+	now := time.Now().UnixNano()
+	if _, err := core.store.DB.Exec(`INSERT INTO nodes(id,display_name,status,created_at,updated_at) VALUES(?, 'journal reconcile node', 'pending', ?, ?)`, nodeID, now, now); err != nil {
+		t.Fatal(err)
+	}
+	actor := sql.NullInt64{Int64: 1, Valid: true}
+	createUnknown := func(taskID, target string) corefiletasks.Task {
+		t.Helper()
+		task, err := core.fileTasks.Create(context.Background(), corefiletasks.CreateRequest{TaskID: taskID, NodeID: nodeID,
+			Operation: corefiletasks.OperationMkdir, TargetPath: target, ActorID: actor, RemoteAddr: "127.0.0.1"})
+		if err != nil {
+			t.Fatal("create file-task reconciliation fixture:", err)
+		}
+		if err := core.fileTasks.MarkDispatched(context.Background(), nodeID, taskID, actor, "127.0.0.1"); err != nil {
+			t.Fatal("mark file task dispatched:", err)
+		}
+		if err := core.fileTasks.Resolve(context.Background(), nodeID, taskID, taskstate.Unknown, "result_pending", actor, "127.0.0.1"); err != nil {
+			t.Fatal("mark file task uncertain:", err)
+		}
+		task, err = core.fileTasks.Get(context.Background(), nodeID, taskID)
+		if err != nil {
+			t.Fatal("read file task for reconciliation:", err)
+		}
+		return task
+	}
+	successTask := createUnknown(successID, "/srv/reconciled")
+	unknownTask := createUnknown(unknownID, "/srv/still-unknown")
+	connection := &agentConnection{nodeID: nodeID, generation: 7, fileJournalEnabled: true}
+	query, err := newFileJournalQuery(connection, []corefiletasks.Task{successTask, unknownTask})
+	if err != nil {
+		t.Fatal("create Agent journal query:", err)
+	}
+	var queryPayload protocol.FileJournalQuery
+	if err := json.Unmarshal(query.Payload, &queryPayload); err != nil || len(queryPayload.TaskIDs) != 2 {
+		t.Fatalf("Agent journal query payload=%+v err=%v", queryPayload, err)
+	}
+	reply := protocol.FileJournalReply{Results: []protocol.FileJournalResult{
+		{TaskID: successID, Status: "succeeded", ResultCode: "state_verified"},
+		{TaskID: unknownID, Status: "unknown", ResultCode: "result_pending"},
+	}}
+	envelope := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeFileJournalReply, Generation: 7, RequestID: query.RequestID,
+		Payload: marshalAgentPayload(reply)}
+	if err := core.handleAgentFileJournalReply(connection, envelope); err != nil {
+		t.Fatal("apply Agent file journal response:", err)
+	}
+	resolved, err := core.fileTasks.Get(context.Background(), nodeID, successID)
+	if err != nil || resolved.Status != taskstate.Succeeded || resolved.ResultCode != "state_verified" {
+		t.Fatalf("verified Agent state did not resolve Core task: task=%+v err=%v", resolved, err)
+	}
+	stillUnknown, err := core.fileTasks.Get(context.Background(), nodeID, unknownID)
+	if err != nil || stillUnknown.Status != taskstate.Unknown || stillUnknown.ResultCode != "result_pending" {
+		t.Fatalf("unverified Agent state did not remain unknown: task=%+v err=%v", stillUnknown, err)
+	}
+	if len(connection.fileJournalQueries) != 0 {
+		t.Fatalf("completed reconciliation query remained outstanding: %+v", connection.fileJournalQueries)
+	}
+}
+
 func TestFileUploadSuccessPersistsOnlyVerifiedResult(t *testing.T) {
 	// The API test exercises the request path with a fake Agent frame source;
 	// bytes remain streamed and are never placed in the task schema.
@@ -311,7 +377,7 @@ func TestFileUploadSuccessPersistsOnlyVerifiedResult(t *testing.T) {
 	}
 	connectionCtx, cancelConnection := context.WithCancel(context.Background())
 	connection := &agentConnection{ctx: connectionCtx, cancel: cancelConnection, agentID: lease.AgentID, nodeID: lease.NodeID,
-		generation: lease.ConnectionGeneration, filesEnabled: true, commands: make(chan protocol.Envelope, 16),
+		generation: lease.ConnectionGeneration, filesEnabled: true, fileJournalEnabled: true, commands: make(chan protocol.Envelope, 16),
 		fileTransfers: make(map[string]*coreFileTransfer), fileTombstones: make(map[string]struct{})}
 	core.agentConnectionsMu.Lock()
 	core.agentConnections[lease.AgentID] = connection
@@ -445,7 +511,7 @@ func TestFileUploadCancellationRequiresAgentConfirmation(t *testing.T) {
 			}
 			connectionCtx, cancelConnection := context.WithCancel(context.Background())
 			connection := &agentConnection{ctx: connectionCtx, cancel: cancelConnection, agentID: lease.AgentID, nodeID: lease.NodeID,
-				generation: lease.ConnectionGeneration, filesEnabled: true, commands: make(chan protocol.Envelope, 8),
+				generation: lease.ConnectionGeneration, filesEnabled: true, fileJournalEnabled: true, commands: make(chan protocol.Envelope, 8),
 				fileTransfers: make(map[string]*coreFileTransfer), fileTombstones: make(map[string]struct{}), fileCancelAcks: make(map[string]chan protocol.FileCancelAck)}
 			core.agentConnectionsMu.Lock()
 			core.agentConnections[lease.AgentID] = connection

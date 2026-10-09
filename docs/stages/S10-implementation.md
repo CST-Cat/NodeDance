@@ -21,14 +21,12 @@ The text editor is intentionally limited to 32 KiB so Base64 text fits the
 bounded 64 KiB control frame. Directory listings are capped at 100 entries and
 the encoded response is checked against the control-frame bound before send.
 
-The current S13 SSH-installed unit uses `ProtectSystem=strict`,
-`ProtectHome=true`, and only grants writes to `/var/lib/nodedance-agent`. With
-the default `/` file root, normal host paths may be readable while most writes
-are denied by systemd and `/home` is hidden by the sandbox. S13 integration
-must choose and document a precise file-root/access allowlist; it must not
-broaden writes to `/` or unhide `/home` to make the file manager appear
-complete. Until tested with the actual installed unit, host read/write reach
-is `NOT_READY`.
+The generated Agent systemd unit runs as the explicitly selected service user
+and does not currently add a `ProtectSystem`/`ProtectHome` sandbox or a
+`ReadWritePaths` allowlist. The configured file root is therefore constrained
+by `os.Root` and the service account's actual filesystem permissions. Host
+read/write reach, read-only filesystem behavior, and owner preservation still
+require tests on a real installed target.
 
 ## API and transfer result identity
 
@@ -39,16 +37,19 @@ the same Core listen port. Download is spooled to a mode-0600 Core temporary
 file and SHA-256-verified before any successful HTTP response is sent; this
 uses bounded memory but needs temporary Core disk space up to the file size.
 
-File APIs return `transferId`, not S05 `taskId`. S10's durable task-store
-integration and queryable file-operation task lifecycle are `NOT_READY`; the
-random transfer identifier must not be treated as a durable task. Audit uses
-operation-specific actions and a URL-escaped target identifier containing the
-node UUID, transfer UUID, and JSON-encoded exact path (or source/destination
-pair); file contents are never recorded. The durable file task record still
-needs an ordered storage migration and Agent reconciliation contract during
-integration. If the final audit write fails after the Agent verified success,
-the API reports that the operation succeeded and that audit persistence
-failed; it does not silently claim a durable audit result.
+File write requests use their task ID as the transfer ID for compatibility
+with the existing file API, and the returned task can be queried through the
+existing node task endpoints. Core persists the write intent before dispatch;
+Agent stores a body-free journal with a bounded terminal retention window and
+does not replay non-idempotent writes. On reconnect, Core asks the Agent for
+the recorded outcome; unverifiable operations remain `unknown`. Upload temp
+paths are journaled before creation and cleanup removes only the exact
+Agent-generated sibling path. Audit uses operation-specific actions and an
+escaped target identifier containing the node UUID, task UUID, and exact path
+(or source/destination pair); file contents are never recorded. If the final
+audit write fails after the Agent verified success, the API reports that the
+operation succeeded and that audit persistence failed; it does not silently
+claim a durable audit result.
 
 The file manager is reachable from the selected node's dashboard detail using
 the “管理节点文件” button. It mounts `NodeFiles` with that selected node ID;
@@ -58,14 +59,15 @@ disabled until the node has a registered, online Agent.
 ## Candidate checks
 
 Component tests cover root confinement, special names, upload abort/no-overwrite,
-digest checks, text conflicts, mode preservation, and editor limits. Protocol
-tests cover frame type, generation, transfer ID, sequence and size bounds.
-Core tests cover logout cancellation, cancellation of a stalled HTTP upload
-body after Session revocation, and an explicitly `unknown` response after a
-dispatched write loses its browser connection. Web Playwright tests use a
-mocked API and verify component behavior only. Absent upload targets are
-installed using an atomic root-relative hard link that fails on an `EEXIST`
-race, instead of a replace-capable rename.
+digest checks, text conflicts, mode preservation, editor limits, upload-path
+ownership recovery, journal retention/capacity, and Agent journal reconciliation.
+Protocol tests cover frame type, generation, transfer ID, sequence and size
+bounds. Core tests cover task lookup, audit, logout cancellation, cancellation
+of a stalled HTTP upload body after Session revocation, and an explicitly
+`unknown` response after a dispatched write loses its browser connection. Web
+Playwright tests use a mocked API and verify component behavior only. Absent
+upload targets are installed using an atomic root-relative hard link that
+fails on an `EEXIST` race, instead of a replace-capable rename.
 
 The dedicated `.github/workflows/s10-files.yml` workflow runs locked component
 checks and the Chromium/WebKit/Firefox mock browser suite. The local focused
@@ -76,6 +78,5 @@ The following remain `NOT_READY` unless a report records a real execution:
 
 - Real browser-to-Core-to-Agent-to-target filesystem integration.
 - 100 MiB and 1 GiB transfer SHA-256 and RSS-delta measurement (≤64 MiB).
-- Systemd-installed Agent write permissions under the current sandbox.
+- Real installed-Agent write permissions for the configured file root.
 - Read-only filesystem and non-root owner-preservation cases on a real target.
-- Durable file task records, lookup, and restart reconciliation.

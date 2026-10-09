@@ -263,6 +263,9 @@ func (s *Server) handleAgentFileMessage(connection *agentConnection, envelope pr
 	if connection == nil || !connection.filesEnabled || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
 		return errors.New("Agent file message is unavailable or too large")
 	}
+	if envelope.Type == protocol.TypeFileJournalReply {
+		return s.handleAgentFileJournalReply(connection, envelope)
+	}
 	if envelope.Type == protocol.TypeFileCancelAck {
 		var ack protocol.FileCancelAck
 		if err := decodeAgentPayload(envelope.Payload, &ack); err != nil || protocol.ValidateFileCancelAck(envelope, connection.generation, ack) != nil {
@@ -379,6 +382,9 @@ func (s *Server) newCoreFileTransferWithID(ctx context.Context, nodeID string, c
 }
 
 func (s *Server) newCoreFileTransferOnConnection(connection *agentConnection, current *session, operations []string, download bool, requestID string, durableUpload bool) (*agentConnection, *coreFileTransfer, error) {
+	if durableUpload && (connection == nil || !connection.fileJournalEnabled) {
+		return nil, nil, errContainerStreamUnavailable
+	}
 	id := requestID
 	if id == "" {
 		var err error

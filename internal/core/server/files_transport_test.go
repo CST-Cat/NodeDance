@@ -23,7 +23,7 @@ const (
 
 func newTestFileConnection(sessionID string) (*agentConnection, *coreFileTransfer) {
 	ctx, cancel := context.WithCancel(context.Background())
-	connection := &agentConnection{ctx: ctx, cancel: cancel, nodeID: testFileNodeID, generation: 9, filesEnabled: true,
+	connection := &agentConnection{ctx: ctx, cancel: cancel, nodeID: testFileNodeID, generation: 9, filesEnabled: true, fileJournalEnabled: true,
 		fileTransfers: make(map[string]*coreFileTransfer), fileTombstones: make(map[string]struct{}), commands: make(chan protocol.Envelope, 4)}
 	transfer := &coreFileTransfer{requestID: testFileTransfer, nodeID: testFileNodeID, sessionID: sessionID, generation: 9,
 		allowed: map[string]struct{}{protocol.FileUploadBegin: {}, protocol.FileUploadChunk: {}, protocol.FileUploadCommit: {}},

@@ -11,6 +11,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/CST-Cat/NodeDance/internal/agent/filejournal"
 	agentfiles "github.com/CST-Cat/NodeDance/internal/agent/files"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
@@ -38,6 +39,7 @@ type agentFileTransfer struct {
 
 type agentFileBridge struct {
 	service    *agentfiles.Service
+	journal    *filejournal.Store
 	generation uint64
 	writer     fileEnvelopeWriter
 	mu         sync.Mutex
@@ -46,8 +48,12 @@ type agentFileBridge struct {
 	wg         sync.WaitGroup
 }
 
-func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer fileEnvelopeWriter) *agentFileBridge {
-	return &agentFileBridge{service: service, generation: generation, writer: writer, transfers: make(map[string]*agentFileTransfer)}
+func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer fileEnvelopeWriter, journals ...*filejournal.Store) *agentFileBridge {
+	var journal *filejournal.Store
+	if len(journals) > 0 {
+		journal = journals[0]
+	}
+	return &agentFileBridge{service: service, journal: journal, generation: generation, writer: writer, transfers: make(map[string]*agentFileTransfer)}
 }
 
 func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Envelope) error {
@@ -69,6 +75,16 @@ func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Enve
 				payload, _ := json.Marshal(ack)
 				if err := b.writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeFileCancelAck,
 					Generation: b.generation, RequestID: cancel.TransferID, Payload: payload}); err != nil {
+					return err
+				}
+				continue
+			}
+			if envelope.Type == protocol.TypeFileJournalQuery {
+				var query protocol.FileJournalQuery
+				if decodeSocketPayload(envelope.Payload, &query) != nil || protocol.ValidateFileJournalQuery(envelope, b.generation, query) != nil {
+					return errors.New("Core file journal query is invalid")
+				}
+				if err := b.reconcile(ctx, envelope.RequestID, query); err != nil {
 					return err
 				}
 				continue
@@ -102,11 +118,20 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 		entry, err := b.service.Stat(request.Path)
 		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry}, err)
 	case protocol.FileMkdir:
-		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, b.service.Mkdir(request.Path))
+		intent := filejournal.Intent{TaskID: id, Operation: "mkdir", TargetPath: request.Path}
+		return b.runMutation(ctx, id, request, intent, func() (protocol.FileResponse, error) {
+			return protocol.FileResponse{Operation: request.Operation}, b.service.Mkdir(request.Path)
+		})
 	case protocol.FileRename:
-		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, b.service.Rename(request.Path, request.NewPath))
+		intent := filejournal.Intent{TaskID: id, Operation: "rename", TargetPath: request.Path, NewPath: request.NewPath}
+		return b.runMutation(ctx, id, request, intent, func() (protocol.FileResponse, error) {
+			return protocol.FileResponse{Operation: request.Operation}, b.service.Rename(request.Path, request.NewPath)
+		})
 	case protocol.FileDelete:
-		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, b.service.Delete(request.Path, request.Confirmed))
+		intent := filejournal.Intent{TaskID: id, Operation: "delete", TargetPath: request.Path}
+		return b.runMutation(ctx, id, request, intent, func() (protocol.FileResponse, error) {
+			return protocol.FileResponse{Operation: request.Operation}, b.service.Delete(request.Path, request.Confirmed)
+		})
 	case protocol.FileReadText:
 		text, version, err := b.service.ReadText(request.Path)
 		response := protocol.FileResponse{Operation: request.Operation, Version: version}
@@ -119,16 +144,52 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 		if err != nil {
 			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, agentfiles.ErrNotText)
 		}
-		entry, backup, err := b.service.SaveText(request.Path, request.ExpectedVersion, string(text))
-		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry, BackupPath: backup}, err)
+		defer clear(text)
+		digest := sha256.Sum256(text)
+		intent := filejournal.Intent{TaskID: id, Operation: "save_text", TargetPath: request.Path, ExpectedVersion: request.ExpectedVersion,
+			ExpectedSize: int64(len(text)), ContentSHA256: hex.EncodeToString(digest[:])}
+		return b.runMutation(ctx, id, request, intent, func() (protocol.FileResponse, error) {
+			entry, backup, err := b.service.SaveText(request.Path, request.ExpectedVersion, string(text))
+			return protocol.FileResponse{Operation: request.Operation, Entry: &entry, BackupPath: backup}, err
+		})
 	case protocol.FileUploadBegin:
-		upload, err := b.service.BeginUpload(request.Path, request.ExpectedVersion, request.ExpectedSize, request.ExpectedSHA256)
+		intent := filejournal.Intent{TaskID: id, Operation: "upload", TargetPath: request.Path, ExpectedVersion: request.ExpectedVersion,
+			ExpectedSize: request.ExpectedSize, ContentSHA256: request.ExpectedSHA256}
+		baseline, baselineErr := b.service.CaptureMutationBaseline(protocol.FileUploadBegin, request.Path, "")
+		if baselineErr != nil {
+			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, baselineErr)
+		}
+		setJournalBaseline(&intent, baseline)
+		if b.journal != nil {
+			temporaryPath, err := b.service.ReserveUploadTemporaryPath(request.Path)
+			if err != nil {
+				return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, err)
+			}
+			intent.TemporaryPath = temporaryPath
+			intent.TemporaryOwned = true
+			record, created, err := b.journal.Begin(ctx, intent)
+			if err != nil {
+				return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, errors.New("file operation journal is unavailable"))
+			}
+			if !created || record.Status != filejournal.Accepted {
+				return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Code: "result_unknown", Message: "file operation result is pending"}, nil)
+			}
+		}
+		var upload *agentfiles.Upload
+		var err error
+		if b.journal != nil {
+			upload, err = b.service.BeginUploadAtTemporary(request.Path, request.ExpectedVersion, request.ExpectedSize, request.ExpectedSHA256, intent.TemporaryPath)
+		} else {
+			upload, err = b.service.BeginUpload(request.Path, request.ExpectedVersion, request.ExpectedSize, request.ExpectedSHA256)
+		}
 		if err != nil {
+			b.completeWrite(context.Background(), id, filejournal.Failed, "agent_rejected")
 			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, err)
 		}
 		transfer := &agentFileTransfer{id: id, upload: upload, ack: make(chan uint64, 1), expectedSize: request.ExpectedSize, expectedSHA256: request.ExpectedSHA256}
 		if !b.addTransfer(transfer) {
 			upload.Abort()
+			b.completeWrite(context.Background(), id, filejournal.Failed, "agent_rejected")
 			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, errors.New("file transfer limit reached"))
 		}
 		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, nil)
@@ -139,6 +200,7 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 		}
 		if request.TransferID != id || request.Sequence != transfer.chunkSequence+1 {
 			responseErr := b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, errors.New("file chunk sequence is invalid"))
+			b.completeWrite(context.Background(), id, filejournal.Failed, "not_committed")
 			b.removeTransfer(id)
 			return responseErr
 		}
@@ -151,6 +213,7 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 		}
 		responseErr := b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Completed: transfer.upload.Written()}, err)
 		if err != nil {
+			b.completeWrite(context.Background(), id, filejournal.Failed, "not_committed")
 			b.removeTransfer(id)
 		}
 		return responseErr
@@ -164,10 +227,15 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 			b.removeTransfer(id)
 			return responseErr
 		}
+		if b.journal != nil {
+			if err := b.journal.StartMutation(ctx, id); err != nil {
+				return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Code: "result_unknown", Message: "file operation result is pending"}, nil)
+			}
+		}
 		entry, err := transfer.upload.CommitWithDigest(request.ExpectedSHA256)
-		respondErr := b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry}, err)
+		responseErr := b.finishMutation(ctx, id, request, protocol.FileResponse{Operation: request.Operation, Entry: &entry}, err)
 		b.removeTransfer(id)
-		return respondErr
+		return responseErr
 	case protocol.FileDownload:
 		file, entry, err := b.service.OpenDownload(request.Path)
 		if err != nil {
@@ -193,6 +261,151 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 	default:
 		return errors.New("unsupported file operation")
 	}
+}
+
+func (b *agentFileBridge) runMutation(ctx context.Context, id string, request protocol.FileRequest, intent filejournal.Intent,
+	operate func() (protocol.FileResponse, error)) error {
+	baseline, err := b.service.CaptureMutationBaseline(request.Operation, request.Path, request.NewPath)
+	if err != nil {
+		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, err)
+	}
+	setJournalBaseline(&intent, baseline)
+	if b.journal != nil {
+		record, created, err := b.journal.Begin(ctx, intent)
+		if err != nil {
+			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, errors.New("file operation journal is unavailable"))
+		}
+		if !created || record.Status != filejournal.Accepted {
+			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Code: "result_unknown", Message: "file operation result is pending"}, nil)
+		}
+		if err := b.journal.StartMutation(ctx, id); err != nil {
+			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, errors.New("file operation journal is unavailable"))
+		}
+	}
+	response, err := operate()
+	return b.finishMutation(ctx, id, request, response, err)
+}
+
+func (b *agentFileBridge) finishMutation(ctx context.Context, id string, request protocol.FileRequest, response protocol.FileResponse, operationErr error) error {
+	if b.journal == nil {
+		return b.respond(ctx, id, response, operationErr)
+	}
+	if operationErr != nil {
+		if confirmedFileRejection(request.Operation, operationErr) {
+			if err := b.journal.Complete(context.Background(), id, filejournal.Failed, "agent_rejected"); err != nil {
+				response.Code = "result_unknown"
+				response.Message = "file operation result is pending"
+				return b.respond(ctx, id, response, nil)
+			}
+			return b.respond(ctx, id, response, operationErr)
+		}
+		_ = b.journal.Complete(context.Background(), id, filejournal.Unknown, "mutation_uncertain")
+		response.Code = "result_unknown"
+		response.Message = "file operation result is pending"
+		return b.respond(ctx, id, response, nil)
+	}
+	record, err := b.journal.Get(context.Background(), id)
+	if err != nil {
+		response.Code = "result_unknown"
+		response.Message = "file operation result is pending"
+		return b.respond(ctx, id, response, nil)
+	}
+	verified, verifyErr := b.service.VerifyMutation(record.Operation, record.TargetPath, record.NewPath, record.ExpectedSize, record.ContentSHA256, serviceBaseline(record))
+	if verifyErr != nil || !verified {
+		_ = b.journal.Complete(context.Background(), id, filejournal.Unknown, "mutation_uncertain")
+		response.Code = "result_unknown"
+		response.Message = "file operation result is pending"
+		return b.respond(ctx, id, response, nil)
+	}
+	if err := b.journal.Complete(context.Background(), id, filejournal.Succeeded, "verified"); err != nil {
+		response.Code = "result_unknown"
+		response.Message = "file operation result is pending"
+		return b.respond(ctx, id, response, nil)
+	}
+	return b.respond(ctx, id, response, nil)
+}
+
+func confirmedFileRejection(operation string, err error) bool {
+	switch {
+	case errors.Is(err, agentfiles.ErrInvalidPath), errors.Is(err, agentfiles.ErrConflict), errors.Is(err, agentfiles.ErrExists),
+		errors.Is(err, agentfiles.ErrConfirmation), errors.Is(err, agentfiles.ErrLimitExceeded), errors.Is(err, agentfiles.ErrTextTooLarge),
+		errors.Is(err, agentfiles.ErrNotText), errors.Is(err, agentfiles.ErrTransferDigest):
+		return true
+	case errors.Is(err, os.ErrNotExist), errors.Is(err, os.ErrPermission):
+		return operation != protocol.FileDelete
+	case errors.Is(err, os.ErrExist):
+		return operation == protocol.FileMkdir
+	default:
+		return false
+	}
+}
+
+func (b *agentFileBridge) completeWrite(ctx context.Context, id string, status filejournal.Status, code string) error {
+	if b.journal == nil {
+		return nil
+	}
+	return b.journal.Complete(ctx, id, status, code)
+}
+
+func (b *agentFileBridge) reconcile(ctx context.Context, queryID string, query protocol.FileJournalQuery) error {
+	reply := protocol.FileJournalReply{Results: make([]protocol.FileJournalResult, 0, len(query.TaskIDs))}
+	for _, taskID := range query.TaskIDs {
+		if b.journal == nil {
+			continue
+		}
+		record, err := b.journal.Get(ctx, taskID)
+		if errors.Is(err, filejournal.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return errors.New("Agent file journal could not be read")
+		}
+		if record.Status == filejournal.Accepted && record.Operation == "upload" {
+			// An upload in accepted means its temporary body had not entered the
+			// atomic target commit. The old connection's bridge is gone, so its
+			// temporary file is no longer usable and the write is confirmed canceled.
+			if record.TemporaryOwned {
+				_ = b.service.RemoveUploadTemporary(record.TargetPath, record.TemporaryPath)
+			}
+			if err := b.journal.Complete(ctx, taskID, filejournal.Canceled, "cancel_confirmed"); err == nil {
+				record.Status, record.ResultCode = filejournal.Canceled, "cancel_confirmed"
+			}
+		}
+		if record.Status == filejournal.Accepted || record.Status == filejournal.Running || record.Status == filejournal.Unknown {
+			verified, verifyErr := b.service.VerifyMutation(record.Operation, record.TargetPath, record.NewPath, record.ExpectedSize, record.ContentSHA256, serviceBaseline(record))
+			if verifyErr == nil && verified {
+				if err := b.journal.Complete(ctx, taskID, filejournal.Succeeded, "state_verified"); err == nil {
+					record.Status, record.ResultCode = filejournal.Succeeded, "state_verified"
+				}
+			} else {
+				if err := b.journal.Complete(ctx, taskID, filejournal.Unknown, "result_pending"); err == nil || record.Status == filejournal.Unknown && record.ResultCode == "result_pending" {
+					record.Status, record.ResultCode = filejournal.Unknown, "result_pending"
+				} else {
+					record.Status, record.ResultCode = filejournal.Unknown, "result_pending"
+				}
+			}
+		}
+		reply.Results = append(reply.Results, protocol.FileJournalResult{TaskID: taskID, Status: string(record.Status), ResultCode: record.ResultCode})
+	}
+	envelope := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeFileJournalReply, Generation: b.generation,
+		RequestID: queryID, Payload: encodePayload(reply)}
+	if protocol.ValidateFileJournalReply(envelope, b.generation, reply) != nil {
+		return errors.New("Agent file journal response is invalid")
+	}
+	return b.writer.send(ctx, envelope)
+}
+
+func setJournalBaseline(intent *filejournal.Intent, baseline agentfiles.MutationBaseline) {
+	intent.BaselineCaptured = true
+	intent.BeforeTargetExists = baseline.TargetExists
+	intent.BeforeTargetFingerprint = baseline.TargetFingerprint
+	intent.BeforeNewPathExists = baseline.NewPathExists
+	intent.BeforeNewPathFingerprint = baseline.NewPathFingerprint
+}
+
+func serviceBaseline(record filejournal.Record) agentfiles.MutationBaseline {
+	return agentfiles.MutationBaseline{TargetExists: record.BeforeTargetExists, TargetFingerprint: record.BeforeTargetFingerprint,
+		NewPathExists: record.BeforeNewPathExists, NewPathFingerprint: record.BeforeNewPathFingerprint}
 }
 
 func (b *agentFileBridge) streamDownload(ctx context.Context, transfer *agentFileTransfer) {
@@ -371,7 +584,15 @@ func (b *agentFileBridge) removeTransfer(id string) *agentFileTransfer {
 
 func (b *agentFileBridge) cancel(id string) bool {
 	transfer := b.removeTransfer(id)
-	return transfer != nil && transfer.upload != nil
+	if transfer == nil || transfer.upload == nil {
+		return false
+	}
+	if b.journal != nil {
+		if err := b.journal.Complete(context.Background(), id, filejournal.Canceled, "cancel_confirmed"); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func (b *agentFileBridge) closeAll() {
