@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type ContainerTaskAction, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse, type TaskAuditEvent } from '../api'
 import type { MetricsView } from '../metrics-contract'
+import ContainerStreams from './ContainerStreams.vue'
 import MetricsPanel from './MetricsPanel.vue'
 
 interface NodeClock {
@@ -586,6 +587,13 @@ onBeforeUnmount(() => {
                   </li>
                 </ol>
               </div>
+              <ContainerStreams
+                v-if="selectedNode && selectedDocker"
+                :node-id="selectedNode.nodeId"
+                :container-id="record.container.id"
+                :disabled="dockerIsStale(selectedDocker) || record.container.stale"
+                :stats-available="record.container.running && !record.container.paused && !record.container.restarting"
+              />
             </article>
           </div>
         </section>

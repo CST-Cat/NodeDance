@@ -71,6 +71,7 @@ type Server struct {
 	agentCancel                context.CancelFunc
 	agentWait                  sync.WaitGroup
 	agentLeaseWatchers         map[string]*agentConnection
+	containerStreamSlots       chan struct{}
 }
 
 type session struct {
@@ -170,6 +171,7 @@ func New(version string, options Options) (*Server, error) {
 		agentSweepInterval:     options.AgentSweepInterval,
 		agentConnections:       make(map[string]*agentConnection),
 		agentLeaseWatchers:     make(map[string]*agentConnection),
+		containerStreamSlots:   make(chan struct{}, 64),
 	}
 	s.tasks, err = coretasks.New(store.DB, coretasks.Options{Now: options.Now})
 	if err != nil {
@@ -322,6 +324,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/ws/v1/agent":
 		s.handleAgentWebSocket(w, r)
+		return
+	case "/ws/v1/streams/logs", "/ws/v1/streams/stats":
+		s.handleContainerStreamWebSocket(w, r)
 		return
 	}
 
