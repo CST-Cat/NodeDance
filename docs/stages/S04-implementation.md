@@ -4,10 +4,12 @@ This file records implementation decisions, review findings, rejected work, and
 reproducible evidence. It does not override the fixed acceptance case IDs or
 their machine status in [`reports/stages/S04.json`](../../reports/stages/S04.json).
 No original S04 case is marked `PASS` by this module-only work.
-The three-run entries below are historical test evidence from the former gate;
-the current gate is one complete current run on each required Engine/architecture
-matrix. Historical checks are retained and are not being rerun for this policy
-change.
+The three-run Engine submodule checks below are historical evidence from the
+former gate. The current gate is one complete normative S04 run for each
+required Engine/architecture matrix, including the integrated Agent-to-Core
+network path. Those historical module runs do not satisfy the current gate.
+They are retained as historical evidence and are not being rerun for this
+documentation change.
 
 ## Review 1 — rejected: Docker event request context ended at handshake
 
@@ -146,12 +148,13 @@ JSON framing only: it does not traverse the Agent runtime, Core persistence, or
 WSS and is not final network-path acceptance evidence. The fixture measured
 60,388 payload bytes and 60,508 envelope bytes.
 
-The two 100-change runs establish only the isolated Agent-module
-Engine/Discoverer/observer path. They are not the full S04-SUP-01 result because
-they do not traverse the integrated Agent WebSocket, Core persistence, or Core
-observation path. Therefore `S04-SUP-01`, every other original S04 case, and the
-whole-stage repeat gate remain outstanding, and the machine report keeps all
-original S04 cases at `NOT_READY` until the full gate is completed.
+The two 100-change runs and the three-run Engine event-stream rows above are
+historical Engine submodule evidence. They establish only the isolated
+Agent-module Engine/Discoverer/observer path and do not traverse the integrated
+Agent WebSocket, Core persistence, or Core observation path. The current
+single normative S04 run is still missing that Core-Agent network-path evidence;
+the original S04 cases therefore remain `NOT_READY` until the complete required
+Engine/architecture matrix is recorded.
 
 ## Shared Docker DTO and Core inventory component (historical pre-integration baseline)
 
