@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { composeApi, type ComposeAction, type ComposeOperationResponse, type ComposeProject } from '../compose-api'
+import ComposeEditor from './ComposeEditor.vue'
 
 const props = defineProps<{ nodeId: string; nodeName?: string }>()
 const actions: ComposeAction[] = ['validate', 'up', 'start', 'stop', 'restart', 'down']
@@ -11,6 +12,7 @@ const notice = ref('')
 const activeOperation = ref('')
 const activeProjectKey = ref('')
 const query = ref('')
+const editorProjectKey = ref('')
 const projectInputs = reactive<Record<string, { profiles: string; envFiles: string }>>({})
 
 const filteredProjects = computed(() => {
@@ -36,6 +38,10 @@ async function refresh() {
 
 function isBusy(project: ComposeProject) {
   return activeOperation.value !== '' && activeProjectKey.value === project.ref.key
+}
+
+function toggleEditor(project: ComposeProject) {
+  editorProjectKey.value = editorProjectKey.value === project.ref.key ? '' : project.ref.key
 }
 
 function inputsFor(project: ComposeProject) {
@@ -180,6 +186,10 @@ onMounted(() => { void refresh() })
         </section>
       </div>
 
+      <section v-if="editorProjectKey === project.ref.key" class="editor-panel">
+        <ComposeEditor :node-id="nodeId" :project="project" />
+      </section>
+
       <footer class="project-actions" :aria-label="`${project.ref.name} 操作`">
         <div v-for="action in actions" :key="action" class="action-control">
           <button type="button" :class="{ danger: action === 'down' }"
@@ -188,6 +198,13 @@ onMounted(() => { void refresh() })
             {{ isBusy(project) && activeOperation === action ? '执行中…' : actionLabel(action) }}
           </button>
           <small>{{ actionDescription(action) }}</small>
+        </div>
+        <div class="action-control">
+          <button type="button" :disabled="!project.configAvailable || loading || (activeOperation !== '' && !isBusy(project))"
+            :aria-expanded="editorProjectKey === project.ref.key" @click="toggleEditor(project)">
+            {{ editorProjectKey === project.ref.key ? '关闭配置编辑器' : '编辑配置与端口' }}
+          </button>
+          <small>预览合并配置、受影响服务和回滚范围后再提交。</small>
         </div>
       </footer>
     </article>
@@ -235,6 +252,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .config-files ol { color: #c5d1e2; display: grid; gap: .25rem; margin: 0; padding-left: 1.35rem; }
 .config-files li { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .79rem; overflow-wrap: anywhere; }
 .services-list { border-top: 1px solid var(--line); display: grid; gap: .6rem; padding-top: .9rem; }
+.editor-panel { border-top: 1px solid var(--line); min-width: 0; padding-top: .9rem; }
 .services-list h3 { align-items: center; display: flex; font-size: .96rem; gap: .5rem; margin: 0; }
 .services-list h3 span, .service-name span { color: var(--muted); font-size: .78rem; font-weight: 400; }
 .service-empty { color: var(--muted); font-size: .86rem; }

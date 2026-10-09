@@ -12,7 +12,7 @@ PNPM_BIN := $(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin
 export PATH := $(GO_BIN:%/go=%):$(NODE_BIN):$(PNPM_BIN):$(PATH)
 export GOTOOLCHAIN := local
 
-.PHONY: help bootstrap deps frontend playwright-install verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
+.PHONY: help bootstrap deps frontend playwright-install verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-s11-go test-s11-ui fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
 
 help:
 	@printf '%s\n' \
@@ -25,6 +25,8 @@ help:
 	  '  make test-stage STAGE=S00|S01|S02|S03|S04|S05' \
 	  '  make test-integration STAGE=S00|S01|S02|S03|S04|S05' \
 	  '  make test-e2e STAGE=S00|S01|S02|S03|S04|S05' \
+	  '  make test-s11-ui' \
+	  '  make test-s11-go' \
 	  '  make test-acceptance' \
 	  '  make fixtures-start ENGINE=29' \
 	  '  make fixtures-create|fixtures-fault|fixtures-clean ENGINE=29 RUN_ID=<id>'
@@ -88,6 +90,13 @@ test-e2e: bootstrap
 
 test-acceptance: bootstrap
 	python3 scripts/acceptance-runner.py
+
+test-s11-ui: deps
+	pnpm --dir web run test:s11-ui
+
+test-s11-go: verify-tools
+	go test -count=1 -timeout=180s ./internal/agent/composeedit ./internal/agent/compose ./internal/protocol ./internal/core/compose ./internal/core/composeedit ./internal/core/storage ./internal/core/server
+	go vet ./internal/agent/composeedit ./internal/agent/compose ./internal/protocol ./internal/core/compose ./internal/core/composeedit ./internal/core/storage ./internal/core/server
 
 fixtures-start:
 	@test -n "$(ENGINE)" || { echo 'ENGINE is required (28 or 29)' >&2; exit 2; }

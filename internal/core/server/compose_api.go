@@ -403,6 +403,12 @@ func (s *Server) handleAgentComposeResponse(ctx context.Context, connection *age
 	if err := protocol.ValidateComposeResponse(response, request); err != nil {
 		return err
 	}
+	if isComposeEditorAction(request.Action) {
+		if waiting {
+			waiter.result <- response
+		}
+		return nil
+	}
 	if request.Action != protocol.ComposeList {
 		if response.Project != nil {
 			if err := s.composeOps.RegisterProjects(ctx, nodeID, []protocol.ComposeProject{*response.Project}); err != nil {

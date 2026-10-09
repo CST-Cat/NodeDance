@@ -59,3 +59,29 @@ func TestValidateComposeRequestBoundsPathsActionsAndProfiles(t *testing.T) {
 		t.Fatal("test fixture unexpectedly changed")
 	}
 }
+
+func TestComposeEditorStatusQueryMustBeReadOnlyAndBoundToAnOperation(t *testing.T) {
+	directory := t.TempDir()
+	files := []string{filepath.Join(directory, "compose.yaml")}
+	project := ComposeProjectRef{Name: "demo", WorkingDirectory: directory, ConfigFiles: files}
+	project.Key = ComposeProjectKey(project.Name, project.WorkingDirectory, project.ConfigFiles)
+	request := ComposeRequest{OperationID: "00000000-0000-4000-8000-000000000002", Action: ComposeEditStatus, Project: project,
+		Editor: &ComposeEditorInput{TargetOperationID: "00000000-0000-4000-8000-000000000001"}}
+	if err := ValidateComposeRequest(request); err != nil {
+		t.Fatalf("valid result query rejected: %v", err)
+	}
+	invalid := request
+	invalid.Editor = &ComposeEditorInput{TargetOperationID: "../../outside"}
+	if err := ValidateComposeRequest(invalid); err == nil {
+		t.Fatal("result query accepted a path-like operation target")
+	}
+	invalid = request
+	invalid.Editor = &ComposeEditorInput{TargetOperationID: request.Editor.TargetOperationID, PortEdits: []ComposePortEdit{{Service: "web"}}}
+	if err := ValidateComposeRequest(invalid); err == nil {
+		t.Fatal("read-only result query accepted a mutation")
+	}
+	success := ComposeResponse{OperationID: request.OperationID, Status: "succeeded", Verified: true, Editor: &ComposeEditorResult{}}
+	if err := ValidateComposeResponse(success, request); err != nil {
+		t.Fatalf("verified read-only result was rejected: %v", err)
+	}
+}

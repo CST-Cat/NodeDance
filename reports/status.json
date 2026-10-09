@@ -68,8 +68,10 @@
     },
     "S11": {
       "status": "NOT_READY",
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
-      "updated_at": "2026-10-08T00:00:00+00:00"
+      "reason": "候选 Go focused tests/vet、锁定前端构建及 390x844 Chromium UI component test 通过；S11-01..10 真实 Engine 与完整 Core-Agent-Engine 验收仍待执行，详见 reports/stages/S11.json。",
+      "updated_at": "2026-10-09T04:54:33+00:00",
+      "mode": "candidate-checks",
+      "run_id": "s11-components-20261009T0454Z"
     },
     "S12": {
       "status": "NOT_READY",

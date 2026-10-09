@@ -1,0 +1,105 @@
+name: NodeDance S11 Compose editor acceptance
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nodedance-s11-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  go-components:
+    name: S11 / Go protocol, Agent, Core storage and API
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Run focused S11 Go tests and vet
+        run: |
+          mkdir -p .artifacts/s11
+          make test-s11-go 2>&1 | tee .artifacts/s11/go-focused.log
+
+      - name: Preserve Go component report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s11-go-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          path: .artifacts/s11/go-focused.log
+
+  responsive-editor:
+    name: S11 / responsive Compose editor / Chromium
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install and verify locked Go, Node, pnpm and Compose tools
+        run: make verify-tools
+
+      - name: Install locked frontend dependencies and verify the embedded build
+        run: make frontend
+
+      - name: Install locked Chromium browser
+        run: make playwright-install PLAYWRIGHT_BROWSERS=chromium
+
+      - name: Test project editor, diff, port preview, apply and rollback status at mobile width
+        run: make test-s11-ui
+
+      - name: Preserve UI browser report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s11-ui-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: |
+            web/test-results/
+            web/playwright-report/
+
+  real-compose-engine:
+    name: S11 / real Agent editor transaction / Engine ${{ matrix.engine }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: ['28', '29']
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install and verify locked Go, Node, pnpm and Compose tools
+        run: make verify-tools
+
+      - name: Install locked Go and frontend dependencies
+        run: make deps
+
+      - name: Start this job's marked DIND Engine ${{ matrix.engine }}
+        run: scripts/test/dind.sh start '${{ matrix.engine }}'
+
+      - name: Run real Compose source edit, affected-service, volume and rollback acceptance
+        run: scripts/test/s11-compose-editor-dind.sh '${{ matrix.engine }}'
+
+      - name: Clean only the marked Engine ${{ matrix.engine }} fixture
+        if: always()
+        run: |
+          marker='.artifacts/dind/v${{ matrix.engine }}/owner.json'
+          if [[ -f "$marker" ]]; then scripts/test/dind.sh clean '${{ matrix.engine }}'; fi
+
+      - name: Preserve S11 Engine evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s11-engine${{ matrix.engine }}-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: .artifacts/s11/

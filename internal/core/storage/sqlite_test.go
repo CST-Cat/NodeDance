@@ -147,6 +147,16 @@ func TestOpenEnablesWALAndRestrictsPermissions(t *testing.T) {
 	if err := store.DB.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil || mode != "wal" {
 		t.Fatalf("journal_mode=%q err=%v", mode, err)
 	}
+	var schemaVersion int
+	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schemaVersion); err != nil || schemaVersion < 6 {
+		t.Fatalf("schema version=%d err=%v, want Compose editor migration version 6 or later", schemaVersion, err)
+	}
+	for _, table := range []string{"compose_projects", "compose_operations", "compose_editor_operations", "compose_editor_events"} {
+		var count int
+		if err := store.DB.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
+			t.Errorf("table %q present=%d err=%v", table, count, err)
+		}
+	}
 	for path, want := range map[string]os.FileMode{dir: 0o700, filepath.Join(dir, "nodedance.sqlite"): 0o600} {
 		info, err := os.Stat(path)
 		if err != nil {

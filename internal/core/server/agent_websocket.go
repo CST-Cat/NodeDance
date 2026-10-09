@@ -32,6 +32,7 @@ type agentConnection struct {
 	taskEnabled              bool
 	streamEnabled            bool
 	composeEnabled           bool
+	composeEditorEnabled     bool
 	taskSignal               chan struct{}
 	taskMu                   sync.RWMutex
 	taskJournalID            string
@@ -386,8 +387,9 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		dockerEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
 		taskEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge),
 		streamEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams), nodeID: identity.NodeID,
-		composeEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityCompose),
-		taskSignal:     make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
+		composeEnabled:       hasCapability(negotiatedCapabilities, protocol.CapabilityCompose),
+		composeEditorEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityComposeEditor),
+		taskSignal:           make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
 		commands: make(chan protocol.Envelope, 32), leaseUpdates: make(chan time.Time, 1)}
 	if managed.dockerEnabled {
@@ -435,6 +437,9 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnection, identity agents.Identity) {
+	if connection.composeEnabled && connection.composeEditorEnabled {
+		go s.reconcileUnknownComposeEditorOperations(ctx, connection)
+	}
 	readMessages := make(chan agentRead, 1)
 	go func() {
 		for {
@@ -719,7 +724,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}}
+	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}, protocol.CapabilityComposeEditor: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
 		if _, ok := supported[capability]; ok {

@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "stage": "S11",
-  "mode": "initial",
+  "mode": "candidate-checks",
   "status": "NOT_READY",
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "run_id": "s11-components-20261009T0454Z",
+  "updated_at": "2026-10-09T04:54:33+00:00",
+  "reason": "候选组件检查已通过，但 S11-01..10 均未完成规定的真实 Engine/端到端验收；Engine 28、29 与 Core-Agent-Engine 联合验证待 GitHub Actions job 运行并取得证据。",
   "tests": {
     "S11-01": {
       "status": "NOT_READY",
@@ -14,7 +14,14 @@
       "environment": "隔离Compose Engine及TCP/UDP/v4/v6端口服务。",
       "evidence_required": "渲染配置、Engine绑定和探测结果。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "NOT_READY：Go 单测覆盖结构化 TCP/UDP 以及 IPv4/IPv6 地址解析；真实 Engine 多映射绑定、连通性探测和 IPv6 发布未执行。需取得 Engine 28/29 输出及实际绑定/探测证据。",
+      "acceptance_evidence_missing": "Engine 28/29 多映射实际绑定、连通性探测和 IPv6 发布证据。",
+      "component_tests_passed": [
+        "TestStructuredPortEditsHandleIPv4IPv6UDPAndLongSyntax"
+      ],
+      "integration_tests_not_run": [
+        "TestDINDComposeEditorRealEngine"
+      ]
     },
     "S11-02": {
       "status": "NOT_READY",
@@ -23,7 +30,14 @@
       "environment": "多文件变量覆盖、长格式和YAML anchors fixture。",
       "evidence_required": "原上下文最终Compose config与差异。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "NOT_READY：真实 Engine 测试代码覆盖多文件、env 文件、profile 和长格式端口，但没有执行；YAML anchor/最终合并配置的 Engine 证据缺失。",
+      "acceptance_evidence_missing": "真实多文件、env/profile、YAML anchor 与最终合并配置的 Engine 输出。",
+      "component_tests_passed": [
+        "TestStructuredPortEditsHandleIPv4IPv6UDPAndLongSyntax"
+      ],
+      "integration_tests_not_run": [
+        "TestDINDComposeEditorRealEngine"
+      ]
     },
     "S11-03": {
       "status": "NOT_READY",
@@ -32,7 +46,12 @@
       "environment": "源项目相对bind路径和临时校验目录。",
       "evidence_required": "临时/正式Mounts目标保持相同。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "NOT_READY：临时文件邻近源目录、保留 project-directory 的实现有组件覆盖；真实 Engine 下预览与正式 mount source 相等的证据未采集。",
+      "acceptance_evidence_missing": "真实 Engine 下预览解析与正式运行 Mounts source 一致的对照结果。",
+      "component_tests_passed": [],
+      "integration_tests_not_run": [
+        "TestDINDComposeEditorRealEngine"
+      ]
     },
     "S11-04": {
       "status": "NOT_READY",
@@ -41,7 +60,14 @@
       "environment": "真实项目及配置错误样本。",
       "evidence_required": "文件hash、服务ID和任务拒绝原因。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "NOT_READY：组件测试证明非法配置预览不改源文件；真实 Engine 缺失变量、无效合并配置的拒绝结果及服务 ID/源 hash 前后对照未执行。",
+      "acceptance_evidence_missing": "真实 Engine 对缺失变量/无效合并配置的拒绝结果、服务 ID 与源 hash 前后对照。",
+      "component_tests_passed": [
+        "TestPreviewUsesVersionChecksRedactsEnvironmentAndNeverMutatesSource"
+      ],
+      "integration_tests_not_run": [
+        "TestDINDComposeEditorRealEngine"
+      ]
     },
     "S11-05": {
       "status": "NOT_READY",
@@ -50,7 +76,14 @@
       "environment": "Web和SSH并发源文件修改。",
       "evidence_required": "版本冲突响应和外部文件保留。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "NOT_READY：组件测试覆盖版本冲突且不覆盖外部修改；DIND 场景未运行，Web 与真实 SSH 并发修改仍无验收证据。",
+      "acceptance_evidence_missing": "DIND 端到端冲突结果及 Web 与真实 SSH 并发编辑场景。",
+      "component_tests_passed": [
+        "TestExternalSourceConflictIsNotOverwritten"
+      ],
+      "integration_tests_not_run": [
+        "TestDINDComposeEditorRealEngine"
+      ]
     },
     "S11-06": {
       "status": "NOT_READY",
@@ -59,7 +92,16 @@
       "environment": "端口占用者与可控不健康Compose服务。",
       "evidence_required": "任务失败、旧配置/镜像/服务回滚状态。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "NOT_READY：mock Engine 测试覆盖端口占用、健康失败、固定旧镜像 override 和 --no-build；真实 Engine 的端口冲突回滚及 unhealthy 服务恢复均未执行。",
+      "acceptance_evidence_missing": "真实 Engine 端口占用回滚和 unhealthy 服务失败恢复；DIND 当前场景尚未运行。",
+      "component_tests_passed": [
+        "TestApplyOccupiedPortRestoresSourceAndConfirmsRollback",
+        "TestApplyHealthFailureRestoresSourceAndConfirmsRollback",
+        "TestRollbackOverrideUsesPinnedImageAndNeverIncludesVolumes"
+      ],
+      "integration_tests_not_run": [
+        "TestDINDComposeEditorRealEngine"
+      ]
     },
     "S11-07": {
       "status": "NOT_READY",
@@ -68,7 +110,12 @@
       "environment": "移动标签前后镜像digest不同。",
       "evidence_required": "回滚时实际镜像ID/digest与旧版本一致。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "NOT_READY：组件测试检查保留固定镜像引用且回滚不 rebuild；真实 Engine 移动原镜像 tag 后校验恢复 image ID/digest 的场景未实现为验收步骤或未执行。",
+      "acceptance_evidence_missing": "先移动原镜像 tag，再通过真实 Engine 确认回滚到固定旧 image ID/digest 的演练。",
+      "component_tests_passed": [
+        "TestRollbackOverrideUsesPinnedImageAndNeverIncludesVolumes"
+      ],
+      "integration_tests_not_run": []
     },
     "S11-08": {
       "status": "NOT_READY",
@@ -77,7 +124,13 @@
       "environment": "各部署阶段断电/进程重启注入。",
       "evidence_required": "持久journal、恢复判定和实际资源。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "NOT_READY：Agent 事务日志恢复和 Core 内容无关账本恢复有组件测试；Core/Agent 进程与 Engine 资源状态的联合故障注入未执行。",
+      "acceptance_evidence_missing": "Core/Agent 进程重启与 Engine 真实资源状态联合故障注入。",
+      "component_tests_passed": [
+        "TestAgentRestartRecoveryRestoresAnApplyingTransactionWithoutReplay",
+        "TestContentFreeIdempotentOperationLedgerAndRecovery"
+      ],
+      "integration_tests_not_run": []
     },
     "S11-09": {
       "status": "NOT_READY",
@@ -86,7 +139,13 @@
       "environment": "私密env文件和不同mode配置。",
       "evidence_required": "备份stat、日志/报告秘密扫描。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "NOT_READY：组件测试覆盖源文件/env mode、同 UID、备份权限及全树敏感字段（含 build args）遮罩；真实不同 owner/mode、运行日志和 CI artifact secret 扫描未执行。",
+      "acceptance_evidence_missing": "真实不同 owner/mode 文件、运行日志扫描及 CI artifact secret 扫描。",
+      "component_tests_passed": [
+        "TestApplyPreservesSourceAndEnvironmentModesAndSecuresBackups",
+        "TestResolvedConfigRedactsSensitiveFieldsAcrossComposeTree"
+      ],
+      "integration_tests_not_run": []
     },
     "S11-10": {
       "status": "NOT_READY",
@@ -95,7 +154,72 @@
       "environment": "含依赖服务及持久卷的项目。",
       "evidence_required": "未受影响Container ID、卷ID及marker前后比对。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "NOT_READY：组件测试/DIND 测试实现检查受影响服务及命名卷数据；真实 Engine 测试未执行，未保存未受影响容器 ID、卷 ID 和 marker 的运行前后证据。",
+      "acceptance_evidence_missing": "真实 Engine 运行前后未受影响容器 ID、卷 ID 及数据 marker 的保存比对证据。",
+      "component_tests_passed": [
+        "TestApplyRebuildsOnlyAffectedServiceAndRetainsRollbackSourceAndVolume"
+      ],
+      "integration_tests_not_run": [
+        "TestDINDComposeEditorRealEngine"
+      ]
     }
-  }
+  },
+  "candidate_status": "PASS",
+  "toolchain": {
+    "go": "1.26.8",
+    "node": "22.23.3",
+    "pnpm": "12.10.1",
+    "docker_compose": "5.4.0",
+    "go_toolchain": "GOTOOLCHAIN=local"
+  },
+  "component_checks": {
+    "go-focused-tests-and-vet": {
+      "status": "PASS",
+      "command": "make test-s11-go",
+      "result": "Focused Go package tests passed for agent/composeedit, agent/compose, protocol, core/compose, core/composeedit, core/storage, and core/server; go vet passed for the same package set. Core server package test completed in 119.641s.",
+      "evidence": ".artifacts/s11/go-focused.log"
+    },
+    "locked-frontend-typecheck-and-build": {
+      "status": "PASS",
+      "command": "make frontend",
+      "result": "Frozen dependency install, Vue typecheck, and embedded Vite production build passed.",
+      "evidence": ".artifacts/s11/frontend.log"
+    },
+    "responsive-browser-component-flow": {
+      "status": "PASS",
+      "command": "make test-s11-ui",
+      "result": "1 Chromium Playwright component UI test passed at 390x844. It covers source editor, mocked preview, apply status, and rollback status; API behavior is mocked, so this is not Core-Agent-Engine E2E evidence.",
+      "evidence": ".artifacts/s11/playwright.log"
+    },
+    "engine-28-real-compose": {
+      "status": "NOT_READY",
+      "command": "scripts/test/s11-compose-editor-dind.sh 28",
+      "reason": "本工作区没有 Engine 28 owner marker；未启动或复用任何 Docker daemon。GitHub Actions job 尚未运行。"
+    },
+    "engine-29-real-compose": {
+      "status": "NOT_READY",
+      "command": "scripts/test/s11-compose-editor-dind.sh 29",
+      "reason": "本工作区没有 Engine 29 owner marker；未启动或复用任何 Docker daemon。GitHub Actions job 尚未运行。"
+    },
+    "core-agent-engine-end-to-end": {
+      "status": "NOT_READY",
+      "reason": "UI Playwright 使用模拟 API；真实 Core、Agent、Compose Engine 联合应用/失败恢复尚未执行。"
+    }
+  },
+  "migration_contract": {
+    "v5": "S07 Compose project/operation schema",
+    "v6": "S11 editor operation/event schema",
+    "merge_rule": "If S06 schema is later needed, append migration v7 or later; do not reorder, reuse, or backfill v5/v6."
+  },
+  "history": [
+    {
+      "note": "An earlier focused Agent suite exposed test-fixture mutex deadlocks in occupied-port and Agent-recovery tests: status queries were made while the fixture Engine mutex remained held. The fixtures now release the lock before querying status; the latest complete focused suite and vet passed.",
+      "resolution": "Fixed test synchronization; no production behavior was changed for this fixture issue."
+    },
+    {
+      "note": "Root review identified rollback rebuild risk and resolved-config sensitive-key leakage.",
+      "resolution": "Pinned-image rollback now passes --no-build and has an assertion that --build is absent. Resolved configuration redacts sensitive fields recursively and has fake-marker build.args regression coverage.",
+      "validation": "Covered by the latest passing make test-s11-go run; real Engine rollback path remains NOT_READY."
+    }
+  ]
 }

@@ -133,6 +133,9 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 	if s.handleTaskAPI(w, r, current) {
 		return
 	}
+	if s.handleComposeEditorAPI(w, r, current) {
+		return
+	}
 	if s.handleComposeAPI(w, r, current) {
 		return
 	}

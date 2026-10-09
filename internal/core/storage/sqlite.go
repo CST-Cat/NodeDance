@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	corecompose "github.com/CST-Cat/NodeDance/internal/core/compose"
+	corecomposeedit "github.com/CST-Cat/NodeDance/internal/core/composeedit"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 
 	_ "modernc.org/sqlite"
@@ -149,6 +151,12 @@ var migrations = []Migration{{
 }, {
 	Version: 4,
 	SQL:     coretasks.SchemaStatements(),
+}, {
+	Version: 5,
+	SQL:     corecompose.SchemaStatements(),
+}, {
+	Version: 6,
+	SQL:     corecomposeedit.SchemaStatements(),
 }}
 
 func Open(ctx context.Context, directory string) (*Store, error) {

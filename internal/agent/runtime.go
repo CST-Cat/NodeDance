@@ -194,7 +194,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	if streamBridge != nil {
 		defer streamBridge.Close()
 	}
-	composeBridge, closeComposeBridge, composeAvailable := newSDKComposeBridge()
+	composeBridge, closeComposeBridge, composeAvailable, composeEditorAvailable := newSDKComposeBridge(configPath)
 	if closeComposeBridge != nil {
 		defer closeComposeBridge()
 	}
@@ -212,6 +212,9 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	}
 	if composeAvailable {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityCompose)
+	}
+	if composeEditorAvailable {
+		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityComposeEditor)
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
 		return errors.New("send Agent hello failed")
