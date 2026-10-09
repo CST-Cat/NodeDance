@@ -31,6 +31,8 @@ type Result struct {
 	Alerts              int64
 	AlertWindows        int64
 	AgentUpdateTasks    int64
+	FileTaskEvents      int64
+	FileTasks           int64
 }
 
 // Cleanup removes completed history strictly older than now-retention. Rows on
@@ -144,6 +146,15 @@ func Cleanup(ctx context.Context, db *sql.DB, now time.Time, retention time.Dura
 	}
 	if result.AgentUpdateTasks, err = remove("terminal Agent update tasks", `DELETE FROM agent_update_tasks
 		WHERE status IN ('succeeded','failed','paused') AND updated_at < ?`, cutoffSeconds); err != nil {
+		return Result{}, err
+	}
+	if result.FileTaskEvents, err = remove("expired file task events", `DELETE FROM file_write_task_events WHERE task_id IN (
+		SELECT task_id FROM file_write_tasks WHERE status IN ('succeeded','failed') AND finished_at_ns IS NOT NULL AND finished_at_ns < ?
+	)`, cutoffNanos); err != nil {
+		return Result{}, err
+	}
+	if result.FileTasks, err = remove("terminal file tasks", `DELETE FROM file_write_tasks
+		WHERE status IN ('succeeded','failed') AND finished_at_ns IS NOT NULL AND finished_at_ns < ?`, cutoffNanos); err != nil {
 		return Result{}, err
 	}
 	if err := tx.Commit(); err != nil {

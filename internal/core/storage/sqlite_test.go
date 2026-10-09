@@ -67,8 +67,8 @@ func TestVersionFourDatabaseUpgradesToDashboardAndHistorySchemaOnReopen(t *testi
 		t.Fatal("reopen v4 database with current migrations:", err)
 	}
 	defer upgraded.Close()
-	if err := upgraded.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 11 {
-		t.Fatalf("reopened database migration version=%d err=%v; want v11", version, err)
+	if err := upgraded.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil || version != 12 {
+		t.Fatalf("reopened database migration version=%d err=%v; want v12", version, err)
 	}
 	for _, table := range []string{"dashboard_preferences", "dashboard_settings", "metrics_minute", "metrics_hour"} {
 		var count int
@@ -305,16 +305,16 @@ func TestOpenEnablesWALAndRestrictsPermissions(t *testing.T) {
 		t.Fatalf("journal_mode=%q err=%v", mode, err)
 	}
 	var schemaVersion int
-	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schemaVersion); err != nil || schemaVersion != 11 {
-		t.Fatalf("schema version=%d err=%v, want integration schema version 11", schemaVersion, err)
+	if err := store.DB.QueryRow(`SELECT max(version) FROM schema_migrations`).Scan(&schemaVersion); err != nil || schemaVersion != 12 {
+		t.Fatalf("schema version=%d err=%v, want integration schema version 12", schemaVersion, err)
 	}
-	for _, index := range []string{"audit_entries_retention", "core_task_audit_events_retention", "core_tasks_retention", "compose_operations_retention", "compose_editor_operations_retention", "service_probe_runs_retention", "alerts_retention", "alert_events_retention", "alert_deliveries_retention", "alert_windows_retention", "agent_update_tasks_retention"} {
+	for _, index := range []string{"audit_entries_retention", "core_task_audit_events_retention", "core_tasks_retention", "compose_operations_retention", "compose_editor_operations_retention", "service_probe_runs_retention", "alerts_retention", "alert_events_retention", "alert_deliveries_retention", "alert_windows_retention", "agent_update_tasks_retention", "file_write_tasks_retention"} {
 		var count int
 		if err := store.DB.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='index' AND name=?`, index).Scan(&count); err != nil || count != 1 {
 			t.Errorf("retention index %q present=%d err=%v", index, count, err)
 		}
 	}
-	for _, table := range []string{"compose_projects", "compose_operations", "compose_editor_operations", "compose_editor_events", "service_probes", "service_probe_runs", "alert_rules", "alert_rule_state", "alerts", "alert_events", "alert_channels", "alert_deliveries", "alert_windows", "agent_update_releases", "agent_update_settings", "agent_update_tasks"} {
+	for _, table := range []string{"compose_projects", "compose_operations", "compose_editor_operations", "compose_editor_events", "service_probes", "service_probe_runs", "alert_rules", "alert_rule_state", "alerts", "alert_events", "alert_channels", "alert_deliveries", "alert_windows", "agent_update_releases", "agent_update_settings", "agent_update_tasks", "file_write_tasks", "file_write_task_events"} {
 		var count int
 		if err := store.DB.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count); err != nil || count != 1 {
 			t.Errorf("table %q present=%d err=%v", table, count, err)

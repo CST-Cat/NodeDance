@@ -26,6 +26,7 @@ import (
 	coreprefs "github.com/CST-Cat/NodeDance/internal/core/containerprefs"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
+	corefiletasks "github.com/CST-Cat/NodeDance/internal/core/filetasks"
 	corehistory "github.com/CST-Cat/NodeDance/internal/core/history"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
@@ -82,6 +83,7 @@ type Server struct {
 	history                    *corehistory.Store
 	dashboardPreferences       *dashboard.Repository
 	tasks                      *coretasks.Store
+	fileTasks                  *corefiletasks.Store
 	composeOps                 *corecompose.Store
 	composeEditorOps           *corecomposeedit.Store
 	imageAuthMu                sync.Mutex
@@ -272,6 +274,15 @@ func New(version string, options Options) (*Server, error) {
 	if err != nil {
 		_ = store.Close()
 		return nil, fmt.Errorf("initialize durable Core task store: %w", err)
+	}
+	s.fileTasks, err = corefiletasks.New(store.DB, options.Now)
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("initialize durable file task store: %w", err)
+	}
+	if err := s.fileTasks.RecoverUnfinished(context.Background()); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("recover unfinished file write tasks: %w", err)
 	}
 	s.probes = coreprobes.New(store.DB, options.Now)
 	s.updates = coreupdates.New(store.DB, options.Now)
