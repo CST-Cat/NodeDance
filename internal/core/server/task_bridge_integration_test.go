@@ -69,6 +69,7 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	defer func() { fixtures.cleanup(t) }()
 	t.Logf("S05_FIXTURE suite=%s kind=main id=%s name=%s", runID, containerID, containerName)
 	var composeID string
+	var lifecycleID string
 	initialCount, err := waitForS05ContainerStartCount(endpoint, containerID, 10*time.Second)
 	if err != nil || initialCount != 1 {
 		t.Fatalf("fixture did not start exactly once before NodeDance action: count=%d err=%v", initialCount, err)
@@ -368,10 +369,10 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	// lifecycle set with unique idempotency keys. The dedicated containeractions
 	// DIND suite tests executor internals; these calls prove the integrated wire
 	// and Core task state for each supported action.
-	performAPIAction := func(action string, fields map[string]any) s05TaskAPIView {
+	performAPIActionForTarget := func(targetID, action string, fields map[string]any) s05TaskAPIView {
 		t.Helper()
 		key := fmt.Sprintf("s05-%s-%d", action, time.Now().UnixNano())
-		status, accepted, body, err := postTask(action, key, fields)
+		status, accepted, body, err := postTaskForTarget(targetID, action, key, fields)
 		if err != nil || status != http.StatusAccepted || accepted.TaskID == "" {
 			t.Fatalf("submit %s task returned %d body=%q accepted=%+v err=%v", action, status, body, accepted, err)
 		}
@@ -391,6 +392,9 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 		}
 		t.Fatalf("%s task did not complete before deadline; task_id=%s", action, accepted.TaskID)
 		return s05TaskAPIView{}
+	}
+	performAPIAction := func(action string, fields map[string]any) s05TaskAPIView {
+		return performAPIActionForTarget(containerID, action, fields)
 	}
 	performAPIAction("stop", nil)
 	if got, err := runS04DockerCLI(endpoint, "container", "inspect", "--format", "{{.State.Running}}", containerID); err != nil || strings.TrimSpace(got) != "false" {
@@ -427,10 +431,40 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	}
 	fixtures.add(t, "compose", composeID)
 	t.Logf("S05_FIXTURE suite=%s kind=compose id=%s name=%s", runID, composeID, composeName)
+	lifecycleName := runID + "-lifecycle"
+	lifecycleID, err = runS04DockerCLI(endpoint, "container", "run", "--detach", "--name", lifecycleName,
+		"--label", "io.nodedance.test=true", "--label", "io.nodedance.suite="+runID,
+		s04BusyboxImage, "sh", "-c", "while :; do sleep 1; done")
+	if err != nil {
+		t.Fatal("create owned independent lifecycle fixture:", err)
+	}
+	lifecycleID = strings.TrimSpace(lifecycleID)
+	if !protocol.IsFullContainerID(lifecycleID) {
+		t.Fatalf("lifecycle fixture returned malformed full ID %q", lifecycleID)
+	}
+	fixtures.add(t, "lifecycle", lifecycleID)
+	t.Logf("S05_FIXTURE suite=%s kind=lifecycle id=%s name=%s", runID, lifecycleID, lifecycleName)
+	previousGeneration := generationForNode(t, core, agentConfig.NodeID)
+	core.closeAgentConnection(agentConfig.AgentID, previousGeneration)
+	composeGeneration, reconnected := awaitS05AgentBridgeReady(core, agentConfig.NodeID, previousGeneration, 20*time.Second)
+	if !reconnected || composeGeneration <= previousGeneration {
+		t.Fatalf("real Agent did not reconnect for an authoritative Compose fixture snapshot: previous_generation=%d active=%s",
+			previousGeneration, describeS05AgentTaskBridge(core, agentConfig.NodeID))
+	}
+	t.Logf("S05_FIXTURE_SYNC suite=%s strategy=real_agent_reconnect previous_generation=%d snapshot_generation=%d verified=true",
+		runID, previousGeneration, composeGeneration)
 	waitForS04DockerView(t, core, agentConfig.NodeID, 20*time.Second, func(view coredocker.View) bool {
-		record := s04RecordForID(view, composeID)
-		return view.AgentOnline && view.DockerSnapshotFresh && !view.DataStale && record.Container.ID == composeID && record.Container.Compose != nil
-	}, "Core did not derive Compose ownership from the real Agent inventory")
+		mainRecord := s04RecordForID(view, containerID)
+		composeRecord := s04RecordForID(view, composeID)
+		lifecycleRecord := s04RecordForID(view, lifecycleID)
+		return view.ActiveGeneration == composeGeneration && view.AgentOnline && view.DockerAvailability == protocol.DockerAvailabilityAvailable &&
+			view.DockerSnapshotFresh && !view.DataStale && mainRecord.Container.ID == containerID &&
+			lifecycleRecord.Container.ID == lifecycleID && lifecycleRecord.Container.Running &&
+			composeRecord.Container.ID == composeID && composeRecord.Container.Compose != nil &&
+			composeRecord.Container.Compose.Project == "nodedance_s05_"+runID && composeRecord.Container.Compose.Service == "web"
+	}, "Core did not derive the exact Compose identity from a fresh authoritative Agent inventory")
+	const agentRetryLogMarker = "Agent connection unavailable; retrying"
+	agentRetriesAfterFixtureSync := strings.Count(agentLog.String(), agentRetryLogMarker)
 	var taskCountBefore int
 	if err := core.store.DB.QueryRow(`SELECT count(*) FROM core_tasks`).Scan(&taskCountBefore); err != nil {
 		t.Fatal("count tasks before Core storage failure injection:", err)
@@ -593,8 +627,9 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 		t.Fatalf("journal failure injection requires a fully synchronized journal: id_present=%t synced=%t", previousJournalID != "", previousJournalSynced)
 	}
 	agentLogBeforeJournalFailure := agentLog.String()
-	if strings.Contains(agentLogBeforeJournalFailure, "Agent connection unavailable; retrying") {
-		t.Fatalf("Agent had already retried its connection before journal failure injection: %q", agentLogBeforeJournalFailure)
+	if retries := strings.Count(agentLogBeforeJournalFailure, agentRetryLogMarker); retries != agentRetriesAfterFixtureSync {
+		t.Fatalf("Agent retried its connection after the synchronized fixture baseline and before journal failure injection: retries_before=%d retries_now=%d log=%q",
+			agentRetriesAfterFixtureSync, retries, agentLogBeforeJournalFailure)
 	}
 	status, journalFailureTask, body, err := postTaskForTarget(containerID, "restart", journalFailureKey, nil)
 	if err != nil || status != http.StatusAccepted || journalFailureTask.TaskID == "" {
@@ -659,9 +694,29 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 		t.Fatalf("Agent journal failure executed restart before its durable record: starts_before=%d after=%d err=%v", journalFailureStartCount, journalFailureStartCountAfter, err)
 	}
 	journalFailureEvents, err := runS04DockerCLI(endpoint, "events", "--since", journalFailureEventsSince.Format(time.RFC3339Nano),
-		"--until", time.Now().UTC().Add(250*time.Millisecond).Format(time.RFC3339Nano), "--filter", "container="+containerID, "--format", "{{.Action}}")
-	if err != nil || strings.TrimSpace(journalFailureEvents) != "" {
-		t.Fatalf("Agent journal failure emitted Docker events: events=%q err=%v", strings.TrimSpace(journalFailureEvents), err)
+		"--until", time.Now().UTC().Add(250*time.Millisecond).Format(time.RFC3339Nano), "--filter", "container="+containerID, "--format", "{{.Actor.ID}}|{{.Action}}")
+	unexpectedJournalFailureEvents := make([]string, 0)
+	allowedJournalProbeEvents := map[string]struct{}{"exec_create": {}, "exec_start": {}, "exec_die": {}}
+	for _, line := range strings.Split(strings.TrimSpace(journalFailureEvents), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[0]) != containerID {
+			unexpectedJournalFailureEvents = append(unexpectedJournalFailureEvents, line)
+			continue
+		}
+		action := strings.TrimSpace(parts[1])
+		if index := strings.IndexByte(action, ':'); index >= 0 {
+			action = action[:index]
+		}
+		if _, allowed := allowedJournalProbeEvents[strings.TrimSpace(action)]; !allowed {
+			unexpectedJournalFailureEvents = append(unexpectedJournalFailureEvents, line)
+		}
+	}
+	if err != nil || len(unexpectedJournalFailureEvents) != 0 {
+		t.Fatalf("Agent journal failure emitted unexpected Docker events; only exact-target counter-probe exec events are allowed: events=%q unexpected=%v err=%v",
+			strings.TrimSpace(journalFailureEvents), unexpectedJournalFailureEvents, err)
 	}
 	journalFailureAudit, err := core.tasks.AuditEvents(context.Background(), agentConfig.NodeID, journalFailureTask.TaskID)
 	if err != nil {
@@ -692,19 +747,19 @@ func TestS05CoreAgentBrowserRestartIdempotencyOnOwnedDIND(t *testing.T) {
 	t.Logf("S05_EVIDENCE agent_task_journal_failure=unknown_result_pending journal_rows=0 journal_insert_attempts=%d agent_mutation_api_calls=%d engine_mutation_api_calls=%d core_unknown_reason=delivery_committed_agent_journal_absent cross_connection_result_unproven=true resource_claim_retained=true docker_started_at_unchanged=true docker_start_count_unchanged=true docker_events_unchanged=true unknown_audit=true generation=%d->%d verified=true",
 		agentJournalInsertAttempts, agentMutationCalls, engineMutationCalls,
 		previousAgentGeneration, newAgentGeneration)
-	performAPIAction("stop", nil)
-	deleteTask := performAPIAction("delete", map[string]any{"deleteConfirmed": true, "deleteConfirmationId": containerID})
+	performAPIActionForTarget(lifecycleID, "stop", nil)
+	deleteTask := performAPIActionForTarget(lifecycleID, "delete", map[string]any{"deleteConfirmed": true, "deleteConfirmationId": lifecycleID})
 	if deleteTask.Result.ObservedState != "missing" {
 		t.Fatalf("verified delete observed state=%q, want missing", deleteTask.Result.ObservedState)
 	}
-	if _, err := runS04DockerCLI(endpoint, "container", "inspect", containerID); err == nil {
-		t.Fatal("Core-Agent delete task succeeded but real Engine still has the container")
+	if _, err := runS04DockerCLI(endpoint, "container", "inspect", lifecycleID); err == nil {
+		t.Fatal("Core-Agent delete task succeeded but real Engine still has the lifecycle fixture")
 	}
-	if present, err := s05OwnedContainerPresent(endpoint, containerID); err != nil || present {
-		t.Fatalf("deleted main fixture was not verified absent from the live Engine: id=%s present=%t err=%v", containerID, present, err)
+	if present, err := s05OwnedContainerPresent(endpoint, lifecycleID); err != nil || present {
+		t.Fatalf("deleted lifecycle fixture was not verified absent from the live Engine: id=%s present=%t err=%v", lifecycleID, present, err)
 	}
-	fixtures.markExpectedDeleted(t, containerID)
-	t.Logf("S05_FIXTURE_CLEANUP suite=%s id=%s removed_by_task=true verified_absent=true", runID, containerID)
+	fixtures.markExpectedDeleted(t, lifecycleID)
+	t.Logf("S05_FIXTURE_CLEANUP suite=%s id=%s removed_by_task=true verified_absent=true", runID, lifecycleID)
 	fixtures.verifyExpected(t)
 	t.Log("S05_CASE S05-07 wrong_delete_confirmation=400 running_delete=failed stopped_delete=succeeded verified=true")
 	t.Log("S05_CASE S05-01 lifecycle=start,stop,restart,pause,resume,delete,rename verified=true")
@@ -747,8 +802,8 @@ func (m *s05DINDFixtureManifest) add(t *testing.T, kind, id string) {
 func (m *s05DINDFixtureManifest) markExpectedDeleted(t *testing.T, id string) {
 	t.Helper()
 	fixture, exists := m.items[id]
-	if !exists || fixture.kind != "main" {
-		t.Fatalf("only the registered main fixture may be marked as intentionally deleted: id=%s", id)
+	if !exists || fixture.kind != "lifecycle" {
+		t.Fatalf("only the registered independent lifecycle fixture may be marked as intentionally deleted: id=%s", id)
 	}
 	fixture.expectedDeleted = true
 }

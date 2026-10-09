@@ -165,8 +165,9 @@ func TestS05QueuedCancelAndOfflineNoBacklogOnOwnedDIND(t *testing.T) {
 		agentGeneration = generation
 		view := waitForS04DockerView(t, core, config.NodeID, 20*time.Second, func(view docker.View) bool {
 			return view.ActiveGeneration == generation && view.AgentOnline && !view.DataStale &&
-				view.DockerSnapshotFresh && view.DockerAvailability == protocol.DockerAvailabilityAvailable
-		}, "Agent must connect to the owned Engine through the local Unix proxy")
+				view.DockerSnapshotFresh && view.DockerEventsConnected &&
+				view.DockerAvailability == protocol.DockerAvailabilityAvailable
+		}, "Agent Docker event stream and initial snapshot must be ready before fixture creation")
 		if view.ActiveGeneration != generation || !core.taskBridgeReady(config.NodeID, generation) {
 			t.Fatalf("Agent is not ready on synchronized generation %d: view=%+v", generation, view)
 		}
@@ -225,6 +226,16 @@ func TestS05QueuedCancelAndOfflineNoBacklogOnOwnedDIND(t *testing.T) {
 			t.Fatalf("slot %d fixture did not start exactly once: count=%d err=%v", slot, got, waitErr)
 		}
 	}
+	previousGeneration := agentGeneration
+	core.closeAgentConnection(config.AgentID, previousGeneration)
+	var reconnected bool
+	agentGeneration, reconnected = awaitS05AgentBridgeReady(core, config.NodeID, previousGeneration, 20*time.Second)
+	if !reconnected || agentGeneration <= previousGeneration {
+		t.Fatalf("real Agent did not reconnect for an authoritative fixture snapshot: previous_generation=%d active=%s",
+			previousGeneration, describeS05AgentTaskBridge(core, config.NodeID))
+	}
+	t.Logf("S05_FIXTURE_SYNC suite=%s strategy=real_agent_reconnect previous_generation=%d snapshot_generation=%d verified=true",
+		runID, previousGeneration, agentGeneration)
 	waitForS05FixtureInventory(t, core, endpoint, config.NodeID, agentGeneration, fixtureIDs, 30*time.Second)
 	heldTargets := make([]string, 0, capacity)
 	for slot := 0; slot < capacity; slot++ {
@@ -524,7 +535,6 @@ func TestS05QueuedCancelAndOfflineNoBacklogOnOwnedDIND(t *testing.T) {
 		t.Fatalf("timeout task lost its authenticated Agent generation before reconciliation: active=%t expected=%d", connection != nil, timeoutGeneration)
 	}
 	core.closeAgentConnection(config.AgentID, timeoutGeneration)
-	var reconnected bool
 	agentGeneration, reconnected = awaitS05AgentBridgeReady(core, config.NodeID, timeoutGeneration, 20*time.Second)
 	if !reconnected || agentGeneration <= timeoutGeneration {
 		t.Fatalf("Agent did not reconnect on a newer synchronized generation after timeout: previous=%d active=%s",
@@ -583,7 +593,7 @@ func TestS05QueuedCancelAndOfflineNoBacklogOnOwnedDIND(t *testing.T) {
 	t.Logf("S05_S06_OPERATION_TIMEOUT task_status=unknown result=result_pending operation_deadline=%s delivered=true delete_status=409 engine_unchanged=true reconciliation_inspected=true proxy_forwarded_restart=0 reconnect_no_replay=true verified=true generation=%d->%d",
 		agentOperationDeadline, timeoutGeneration, agentGeneration)
 
-	previousGeneration := agentGeneration
+	previousGeneration = agentGeneration
 	stopAgent()
 	waitForAgentStatusWithin(t, core, config.NodeID, "offline", previousGeneration, 15*time.Second)
 	offlineGeneration := generationForNode(t, core, config.NodeID)
@@ -726,8 +736,8 @@ func waitForS05FixtureInventory(t *testing.T, core *Server, endpoint, nodeID str
 		sequences = append(sequences, sequence)
 	}
 	sort.Slice(sequences, func(i, j int) bool { return sequences[i] < sequences[j] })
-	t.Logf("S05_S06_INVENTORY_DIAGNOSTIC generation=%d view_generation=%d revision=%d fresh=%t availability=%s engine_ids=%v engine_error=%v view_ids=%v view_records=%v missing_fixture_ids=%v missing_fixture_inspect=%v fixture_record_sequences=%v distinct_fixture_sequences=%d snapshot_chunk_count=not-retained-by-store",
-		generation, latest.ActiveGeneration, revision, latest.DockerSnapshotFresh, latest.DockerAvailability,
+	t.Logf("S05_S06_INVENTORY_DIAGNOSTIC generation=%d view_generation=%d revision=%d fresh=%t events_connected=%t availability=%s engine_ids=%v engine_error=%v view_ids=%v view_records=%v missing_fixture_ids=%v missing_fixture_inspect=%v fixture_record_sequences=%v distinct_fixture_sequences=%d snapshot_chunk_count=not-retained-by-store",
+		generation, latest.ActiveGeneration, revision, latest.DockerSnapshotFresh, latest.DockerEventsConnected, latest.DockerAvailability,
 		engineIDs, engineErr, viewIDs, viewRecords, missing, missingInspect, sequences, len(sequences))
 	t.Fatalf("fresh Core inventory failed to contain all exact S05 fixtures: fixtures=%d Core=%d generation=%d", len(fixtureIDs), len(latest.Containers), latest.ActiveGeneration)
 }
@@ -1063,26 +1073,36 @@ func s05ReadAgentTaskExecutionEvidence(path, taskID string) (s05AgentTaskExecuti
 func s05DockerEventsAfter(endpoint, containerID string, since time.Time) ([]string, error) {
 	until := time.Now().UTC().Add(250 * time.Millisecond)
 	output, err := runS04DockerCLI(endpoint, "events", "--since", since.UTC().Format(time.RFC3339Nano),
-		"--until", until.Format(time.RFC3339Nano), "--filter", "container="+containerID, "--format", "{{.TimeNano}}|{{.Action}}")
+		"--until", until.Format(time.RFC3339Nano), "--filter", "container="+containerID, "--format", "{{.TimeNano}}|{{.Actor.ID}}|{{.Action}}")
 	if err != nil {
 		return nil, err
 	}
 	var events []string
+	allowedCounterProbeEvents := map[string]struct{}{"exec_create": {}, "exec_start": {}, "exec_die": {}}
 	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "|", 2)
-		if len(parts) != 2 {
+		parts := strings.SplitN(line, "|", 3)
+		if len(parts) != 3 {
 			return nil, fmt.Errorf("unexpected Docker events output %q", line)
 		}
 		nanos, err := strconv.ParseInt(parts[0], 10, 64)
 		if err != nil {
 			return nil, fmt.Errorf("parse Docker event timestamp %q: %w", parts[0], err)
 		}
+		if strings.TrimSpace(parts[1]) != containerID {
+			return nil, fmt.Errorf("Docker events filter for %q returned event for %q: %s", containerID, strings.TrimSpace(parts[1]), line)
+		}
 		if nanos > since.UnixNano() {
-			events = append(events, parts[1])
+			action := strings.TrimSpace(parts[2])
+			if index := strings.IndexByte(action, ':'); index >= 0 {
+				action = action[:index]
+			}
+			if _, isCounterProbe := allowedCounterProbeEvents[strings.TrimSpace(action)]; !isCounterProbe {
+				events = append(events, action)
+			}
 		}
 	}
 	return events, nil
