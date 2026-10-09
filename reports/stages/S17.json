@@ -1,11 +1,11 @@
 {
   "schema": 1,
   "stage": "S17",
-  "mode": "initial",
+  "mode": "candidate",
   "status": "NOT_READY",
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "run_id": "s17-local-20261009T062447Z",
+  "updated_at": "2026-10-09T06:24:47Z",
+  "reason": "S17-07 候选备份/恢复实现及本地真实 SQLite 定向测试通过；正式新机恢复演练和实际部署环境证据尚未执行，因此 S17 整体及 S17-07 继续保持 NOT_READY。",
   "tests": {
     "S17-01": {
       "status": "NOT_READY",
@@ -65,10 +65,19 @@
       "status": "NOT_READY",
       "action": "备份与新机恢复。",
       "expected": "身份、配置、偏好、历史完整。",
-      "environment": "停服一致性备份及全新恢复主机。",
+      "environment": "隔离临时目录、真实 SQLite storage.Open 数据库及本机 Linux 原子目录安装；未在用户新主机执行恢复。",
       "evidence_required": "Node/Agent身份、密钥、偏好、历史和文件hash。",
-      "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "runs": [
+        {
+          "run_id": "s17-local-20261009T062447Z",
+          "status": "NOT_READY",
+          "command": "make frontend; go test ./internal/core/backup -count=1; go test ./internal/core/cli -run TestBackupAndRestoreCommandsUseCoreBackupWorkflowWithoutPrintingSecrets -count=1; go vet ./internal/core/backup ./internal/core/cli; git diff --check",
+          "result": "本地候选检查 PASS：真实 storage.Open SQLite/WAL 中的 node、Agent 身份及 credential verifier、admin、全部 dashboard preference 字段、metrics history 与 alert/CSRF key 字节往返；备份为 0600 且不覆盖。坏摘要、无效 SQLite、路径逃逸、symlink/hardlink、重复 tar entry 被拒绝；新目录和现有空目录可原子恢复；目标出现、替换为空目录或变非空时拒绝且保留数据；CLI 不打印秘密。go vet、diff check 通过。正式 S17-07 仍 NOT_READY：没有用户实际新机恢复及恢复后 Core/Agent 启动证据。",
+          "attempt": 1
+        }
+      ],
+      "reason": "候选本地测试通过；正式要求的全新主机恢复、恢复后服务启动与 Agent 重新连接尚未实测，故保持 NOT_READY。",
+      "candidate_coverage": "真实 storage.Open SQLite 在线快照及 WAL round-trip；node/Agent身份、active credential verifier、admin 凭据、dashboard alias/icon/notes/service URL/order/visible/pinned、metrics history、alert/CSRF key 字节保留；输出 0600/不覆盖；坏摘要、坏 SQLite、路径逃逸、链接、重复项拒绝；Linux 原子目标安装和竞态失败保留；CLI 输出不含秘密。"
     },
     "S17-08": {
       "status": "NOT_READY",
