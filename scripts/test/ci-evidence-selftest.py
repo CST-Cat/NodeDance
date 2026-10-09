@@ -537,6 +537,31 @@ def test_s04_workflow_matrix_and_artifact_allowlist():
                     for path in paths), "S04 artifact allowlist includes private test work data or build caches")
 
 
+def test_s08_image_engine_builds_embedded_assets_before_core_test():
+    workflow = (ROOT / ".github/workflows/s08-image-engine.yml").read_text()
+    verify_tools_position = workflow_command_position(
+        workflow, ("run: make verify-tools",),
+        "S08 image Engine workflow does not verify the locked toolchain",
+    )
+    frontend_position = workflow_command_position(
+        workflow, ("run: make frontend",),
+        "S08 image Engine workflow does not build locked embedded Web assets",
+    )
+    core_test_position = workflow_command_position(
+        workflow,
+        ("run: NODEDANCE_S08_TEST_PACKAGE=./internal/core/server scripts/test/s08-image-engine-dind.sh",),
+        "S08 image Engine workflow does not run the Core API integration test",
+    )
+    require(verify_tools_position < frontend_position < core_test_position,
+            "S08 Core package test must run after the locked frontend build creates webassets/dist")
+    makefile = (ROOT / "Makefile").read_text()
+    require("frontend: deps" in makefile and "pnpm --dir web run build" in makefile,
+            "S08 frontend prerequisite must use the locked frontend build target")
+    web_build = json.loads((ROOT / "web/package.json").read_text())["scripts"]["build"]
+    require("../internal/core/webassets/dist" in web_build,
+            "S08 frontend build does not produce the Go-embedded webassets/dist directory")
+
+
 def test_s03_workflow_matrix_and_artifact_allowlist():
     workflow = (ROOT / ".github/workflows/ci.yml").read_text()
     s03_job = workflow[workflow.index("  s03:"):workflow.index("  s04:")]
@@ -646,7 +671,8 @@ def main():
     test_s03_workflow_matrix_and_artifact_allowlist()
     test_s03_aggregate_job_requires_both_current_shards()
     test_s04_workflow_matrix_and_artifact_allowlist()
-    print("CI evidence safeguards PASS: S00/S01/S02/S03/S04/S05 workflow order, marker isolation, stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
+    test_s08_image_engine_builds_embedded_assets_before_core_test()
+    print("CI evidence safeguards PASS: S00/S01/S02/S03/S04/S05/S08 workflow order, marker isolation, stale PASS invalidation, current-run metadata, hidden logs and bounded artifact paths")
 
 
 if __name__ == "__main__":

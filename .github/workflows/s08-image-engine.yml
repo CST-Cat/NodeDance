@@ -30,8 +30,8 @@ jobs:
       - name: Install and verify locked Go, Node, pnpm and Compose tools
         run: make verify-tools
 
-      - name: Install locked project dependencies
-        run: make deps
+      - name: Install locked dependencies and build embedded Web assets
+        run: make frontend
 
       - name: Start this run's owner-marked DIND Engine ${{ matrix.engine }}
         run: scripts/test/s08-dind.sh start '${{ matrix.engine }}' "$S08_RUN_ID"
