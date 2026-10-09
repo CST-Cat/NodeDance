@@ -45,12 +45,95 @@ def registry_fixture() -> dict:
     }
 
 
+def s06_registry_fixture() -> dict:
+    return {
+        "stages": [
+            {
+                "id": "S06",
+                "tests": [
+                    {
+                        "id": "S06-01",
+                        "action": "open responsive dashboard",
+                        "expected": "dashboard works at required viewport widths",
+                        "environment": "Chromium browser candidate",
+                        "evidence": "complete S06 normative environment",
+                    },
+                    {
+                        "id": "S06-02",
+                        "action": "save dashboard preference",
+                        "expected": "preference persists",
+                        "environment": "Core and browser candidate",
+                        "evidence": "real Core persistence",
+                    },
+                ],
+                "supplemental_tests": [],
+            }
+        ]
+    }
+
+
 class CandidateRunnerTests(unittest.TestCase):
     def test_each_candidate_maps_to_one_focused_make_target(self) -> None:
-        self.assertEqual(set(CANDIDATE_TARGETS), {"S11", "S14", "S15", "S16"})
+        self.assertEqual(set(CANDIDATE_TARGETS), {"S06", "S11", "S14", "S15", "S16"})
         for stage, target in CANDIDATE_TARGETS.items():
             with self.subTest(stage=stage):
                 self.assertEqual(candidate_command(stage), ["make", target])
+
+    def test_s06_candidate_runs_once_and_keeps_normative_cases_not_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            calls: list[list[str]] = []
+
+            def runner(command, *, cwd, stdout, stderr, text, timeout):
+                calls.append(command)
+                stdout.write("S06 Playwright candidate passed once\n")
+                return SimpleNamespace(returncode=0)
+
+            result = run_candidate_stage(
+                "S06",
+                "full",
+                root=root,
+                registry=s06_registry_fixture(),
+                command_runner=runner,
+                run_id="s06-one-run",
+                updated_at="2026-10-08T00:00:00+00:00",
+            )
+            report = json.loads((root / "reports/stages/S06.json").read_text(encoding="utf-8"))
+            self.assertEqual(result, 2)
+            self.assertEqual(calls, [["make", "test-candidate-s06"]])
+            self.assertEqual(report["status"], "NOT_READY")
+            self.assertEqual(report["candidate_status"], "PASS")
+            self.assertEqual(len(report["candidate_checks"]), 1)
+            self.assertEqual(report["candidate_checks"][0]["invocations"], 1)
+            self.assertEqual(set(report["tests"]), {"S06-01", "S06-02"})
+            self.assertTrue(all(case["status"] == "NOT_READY" for case in report["tests"].values()))
+            self.assertTrue(all(case["runs"] == [] for case in report["tests"].values()))
+
+    def test_stage_runner_routes_s06_through_candidate_reporter(self) -> None:
+        stage_runner = runpy.run_path(str(ROOT / "scripts/stage-runner.py"))
+        original_argv = sys.argv
+        original_run = stage_runner["subprocess"].run
+        calls: list[tuple[list[str], pathlib.Path]] = []
+
+        def runner(command, *, cwd):
+            calls.append((command, pathlib.Path(cwd)))
+            return SimpleNamespace(returncode=2)
+
+        try:
+            sys.argv = ["stage-runner.py", "--stage", "S06", "--mode", "full"]
+            stage_runner["subprocess"].run = runner
+            self.assertEqual(stage_runner["main"](), 2)
+        finally:
+            stage_runner["subprocess"].run = original_run
+            sys.argv = original_argv
+        self.assertEqual(calls, [([
+            sys.executable,
+            "scripts/acceptance-candidates.py",
+            "--stage",
+            "S06",
+            "--mode",
+            "full",
+        ], ROOT)])
 
     def test_all_original_candidate_cases_remain_not_ready_after_candidate_pass(self) -> None:
         for stage in CANDIDATE_TARGETS:

@@ -15,6 +15,7 @@ REGISTRY = json.loads((ROOT / "tests/registry.json").read_text(encoding="utf-8")
 REPORTS = pathlib.Path("reports/stages")
 STATUS_FILE = pathlib.Path("reports/status.json")
 CANDIDATE_TARGETS = {
+    "S06": "test-candidate-s06",
     "S11": "test-candidate-s11",
     "S14": "test-candidate-s14",
     "S15": "test-candidate-s15",
