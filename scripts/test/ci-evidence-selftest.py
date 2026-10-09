@@ -477,13 +477,19 @@ def test_s04_workflow_matrix_and_artifact_allowlist():
         '[[ "$actual_root" == "$expected_root" && "$actual_sha" == "$GITHUB_SHA" ]]',
         'printf \'NODEDANCE_S04_DIND_ROOT=%s\\n\' "$fixture_root" >> "$GITHUB_ENV"',
         "run: make verify-ci-evidence",
-        "run: make deps",
+        "run: make frontend",
         "make playwright-install PLAYWRIGHT_BROWSERS=chromium",
         "run: make test-stage STAGE=S04",
         "python3 scripts/ci_evidence.py --stage S04 annotate",
         "uses: actions/upload-artifact@",
     )]
     require(positions == sorted(positions), "S04 CI workflow is missing isolated evidence, locked tools, real browser install, full acceptance, or final report step")
+    makefile = (ROOT / "Makefile").read_text()
+    require("frontend: deps" in makefile and "pnpm --dir web run build" in makefile,
+            "S04 workflow prerequisite must generate the embedded frontend assets before Go tests")
+    web_build = json.loads((ROOT / "web/package.json").read_text())["scripts"]["build"]
+    require("../internal/core/webassets/dist" in web_build,
+            "S04 frontend build does not produce the Go-embedded webassets/dist directory")
     require('fixture_root="$(dirname "$GITHUB_WORKSPACE")/NodeDance-s04"' in s04_job
             and 'expected_root="$(realpath -m "$GITHUB_WORKSPACE/../NodeDance-s04")"' in s04_job
             and '[[ "$fixture_root" == "$expected_root" ]]' in s04_job,

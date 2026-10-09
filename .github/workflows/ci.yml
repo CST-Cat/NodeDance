@@ -384,8 +384,8 @@ jobs:
       - name: Verify per-run report and artifact safeguards
         run: make verify-ci-evidence
 
-      - name: Install locked project dependencies
-        run: make deps
+      - name: Build embedded Web assets for S04 Go tests
+        run: make frontend
 
       - name: Install locked Chromium browser for the real embedded UI test
         run: make playwright-install PLAYWRIGHT_BROWSERS=chromium
