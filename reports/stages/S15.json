@@ -34,8 +34,10 @@
     ],
     "github_actions": {
       "workflow": ".github/workflows/s15-candidate.yml",
-      "status": "PENDING",
-      "note": "Will run after the candidate branch is pushed; workflow uploads report, complete test log and browser failure artifacts."
+      "status": "PASS",
+      "run_id": "37887516710",
+      "url": "https://github.com/CST-Cat/NodeDance/actions/runs/37887516710",
+      "note": "Workflow completed successfully; it uploaded the candidate report, full focused test log and browser artifacts."
     }
   },
   "tests": {
