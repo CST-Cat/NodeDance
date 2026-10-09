@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
+	corealerts "github.com/CST-Cat/NodeDance/internal/core/alerts"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	"github.com/CST-Cat/NodeDance/internal/core/config"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
@@ -61,6 +62,8 @@ type Server struct {
 	metrics                    *coremetrics.Store
 	tasks                      *coretasks.Store
 	probes                     *coreprobes.Store
+	alerts                     *corealerts.Store
+	alertSender                *corealerts.Sender
 	dockerMu                   sync.Mutex
 	docker                     *coredocker.Store
 	agentOfflineTimeout        time.Duration
@@ -181,6 +184,21 @@ func New(version string, options Options) (*Server, error) {
 		return nil, fmt.Errorf("initialize durable Core task store: %w", err)
 	}
 	s.probes = coreprobes.New(store.DB, options.Now)
+	alertKey, err := loadOrCreateAlertEncryptionKey(store.Dir)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	s.alerts, err = corealerts.NewStore(store.DB, alertKey, options.Now)
+	if err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("initialize alert store: %w", err)
+	}
+	s.alertSender = corealerts.NewSender()
+	if err := s.alerts.RecoverDeliveries(context.Background()); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("recover alert deliveries: %w", err)
+	}
 	s.csrfKey, err = loadOrCreateSigningKey(store.Dir)
 	if err != nil {
 		_ = store.Close()
@@ -218,6 +236,10 @@ func New(version string, options Options) (*Server, error) {
 	go s.agentOfflineSweeper()
 	s.agentWait.Add(1)
 	go s.serviceProbeScheduler()
+	s.agentWait.Add(1)
+	go s.alertEvaluationScheduler()
+	s.agentWait.Add(1)
+	go s.alertDeliveryScheduler()
 	return s, nil
 }
 
@@ -479,6 +501,9 @@ func (s *Server) agentConnectionForNode(nodeID string) *agentConnection {
 func isMetricsTelemetryRead(r *http.Request) bool {
 	if r == nil || r.Method != http.MethodGet {
 		return false
+	}
+	if r.URL.Path == "/api/v1/alerts" || strings.HasPrefix(r.URL.Path, "/api/v1/alerts/") {
+		return true
 	}
 	if r.URL.Path == "/api/v1/nodes" {
 		return true

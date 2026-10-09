@@ -14,6 +14,7 @@ type TargetKind string
 const (
 	TargetNode  TargetKind = "node"
 	TargetAgent TargetKind = "agent"
+	TargetAlert TargetKind = "alert"
 )
 
 type Target struct {
@@ -41,6 +42,9 @@ var actions = map[string]struct{}{
 	"agent_revoke": {}, "agent_rotation_request": {},
 	"agent_rotation_prepare": {}, "agent_rotation_commit": {},
 	"probe_create": {}, "probe_update": {}, "probe_enable": {}, "probe_disable": {}, "probe_delete": {},
+	"alert_defaults_create": {}, "alert_rule_save": {}, "alert_rule_delete": {},
+	"alert_channel_save": {}, "alert_channel_delete": {}, "alert_channel_test": {},
+	"alert_window_create": {}, "alert_window_delete": {}, "alert_acknowledge": {}, "alert_silence": {},
 }
 
 var outcomes = map[string]struct{}{
@@ -64,7 +68,7 @@ func Record(ctx context.Context, execer Execer, event Event) error {
 			return errors.New("audit target ID must be a canonical UUID")
 		}
 		switch event.Target.Kind {
-		case TargetNode, TargetAgent:
+		case TargetNode, TargetAgent, TargetAlert:
 			targetKind, targetID = string(event.Target.Kind), event.Target.ID
 		default:
 			return errors.New("audit target kind is not allowlisted")
