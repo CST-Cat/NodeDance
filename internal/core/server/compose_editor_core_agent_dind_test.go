@@ -297,7 +297,7 @@ networks:
 	enrollmentResponse := admin.request(t, http.MethodPost, "/api/v1/agents/enrollments", map[string]string{"displayName": "S11 real Engine Compose editor"}, "")
 	if enrollmentResponse.status != http.StatusCreated {
 		closeCore()
-		t.Fatalf("create Agent enrollment through authenticated HTTPS API: HTTP %d: %s", enrollmentResponse.status, enrollmentResponse.body)
+		t.Fatalf("create Agent enrollment through authenticated HTTPS API: HTTP %d (response body redacted)", enrollmentResponse.status)
 	}
 	var enrollment struct {
 		NodeID string `json:"nodeId"`
@@ -305,7 +305,7 @@ networks:
 	}
 	if err := json.Unmarshal(enrollmentResponse.body, &enrollment); err != nil || enrollment.NodeID == "" || enrollment.Token == "" {
 		closeCore()
-		t.Fatalf("decode HTTPS enrollment response: %+v err=%v", enrollment, err)
+		t.Fatalf("decode HTTPS enrollment response: node_id_present=%t one_time_token_present=%t decode_error=%t", enrollment.NodeID != "", enrollment.Token != "", err != nil)
 	}
 	caPath := filepath.Join(fixtureRoot, "trusted-ca.pem")
 	if err := os.WriteFile(caPath, rootPEM, 0o600); err != nil {
@@ -320,7 +320,7 @@ networks:
 	agentConfig, err := agent.LoadConfig(agentConfigPath)
 	if err != nil || agentConfig.NodeID != enrollment.NodeID {
 		closeCore()
-		t.Fatalf("Agent identity did not match Core enrollment: config=%+v err=%v", agentConfig, err)
+		t.Fatalf("Agent identity did not match Core enrollment: config_loaded=%t node_id_present=%t node_id_matches=%t credential_present=%t pending_credential_present=%t", err == nil, agentConfig.NodeID != "", agentConfig.NodeID == enrollment.NodeID, agentConfig.Credential != "", agentConfig.PendingCredential != "")
 	}
 	agentCtx, stopAgent := context.WithCancel(context.Background())
 	agentDone := make(chan error, 1)
