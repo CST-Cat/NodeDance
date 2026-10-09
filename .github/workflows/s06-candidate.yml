@@ -1,0 +1,72 @@
+name: NodeDance S06 responsive dashboard candidate
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nodedance-s06-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    name: S06 / 40-container dashboard / touch reorder / responsive Chromium
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install and verify locked Go, Node and pnpm
+        run: make verify-tools
+
+      - name: Run candidate runner contract tests
+        run: python3 scripts/test/test_acceptance_candidates.py
+
+      - name: Run the S06 candidate once and verify the normative report remains NOT_READY
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .artifacts/logs/s06
+          set +e
+          make test-stage STAGE=S06 2>&1 | tee .artifacts/logs/s06/stage-runner.log
+          stage_exit=${PIPESTATUS[0]}
+          set -e
+          test "$stage_exit" -eq 2
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("reports/stages/S06.json").read_text())
+          assert report["status"] == "NOT_READY", report["status"]
+          assert report["candidate_status"] == "PASS", report.get("candidate_status")
+          checks = report["candidate_checks"]
+          assert len(checks) == 1, len(checks)
+          assert checks[0]["invocations"] == 1, checks[0]
+          assert checks[0]["status"] == "PASS", checks[0]
+          assert checks[0]["command"] == ["make", "test-candidate-s06"], checks[0]
+          assert report["tests"], "normative S06 cases missing"
+          assert all(case["status"] == "NOT_READY" and not case["runs"] for case in report["tests"].values())
+          evidence = Path(checks[0]["evidence"])
+          assert evidence.is_file(), str(evidence)
+          print(f"S06 candidate PASS once; {len(report['tests'])} normative cases remain NOT_READY")
+          PY
+
+      - name: Preserve S06 report, runner logs and browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nodedance-s06-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: ignore
+          include-hidden-files: true
+          path: |
+            reports/stages/S06.json
+            reports/status.json
+            .artifacts/logs/s06/
+            .artifacts/logs/acceptance-s06/
+            web/test-results/
+            web/playwright-report/

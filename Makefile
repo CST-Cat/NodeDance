@@ -12,7 +12,7 @@ PNPM_BIN := $(NODEDANCE_TOOL_ROOT)/pnpm/node_modules/.bin
 export PATH := $(GO_BIN:%/go=%):$(NODE_BIN):$(PNPM_BIN):$(PATH)
 export GOTOOLCHAIN := local
 
-.PHONY: help bootstrap deps frontend playwright-install playwright-install-candidate verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-terminal-component test-terminal-browser test-s11-go test-s11-ui test-s14 test-s15 test-s16 test-candidate-s11 test-candidate-s14 test-candidate-s15 test-candidate-s16 agent-release fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
+.PHONY: help bootstrap deps frontend playwright-install playwright-install-candidate verify-tools verify-ci-evidence check build test-stage test-integration test-e2e test-acceptance test-terminal-component test-terminal-browser test-s06 test-s11-go test-s11-ui test-s14 test-s15 test-s16 test-candidate-s06 test-candidate-s11 test-candidate-s14 test-candidate-s15 test-candidate-s16 agent-release fixtures-start fixtures-stop fixtures-create fixtures-fault fixtures-clean
 
 help:
 	@printf '%s\n' \
@@ -34,6 +34,8 @@ help:
 	  '  make test-candidate-s15' \
 	  '  make test-candidate-s16' \
 	  '  make test-acceptance' \
+	  '  make test-s06' \
+	  '  make test-candidate-s06' \
 	  '  make test-s14' \
 	  '  make test-s15' \
 	  '  make test-s16' \
@@ -92,15 +94,15 @@ build: frontend
 	@echo 'Build PASS: host, linux/amd64 and linux/arm64 Core and Agent binaries'
 
 test-stage: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-stage STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05, STAGE=S08, STAGE=S10, STAGE=S11, STAGE=S14, STAGE=S15 or STAGE=S16' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-stage STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05, STAGE=S06, STAGE=S08, STAGE=S10, STAGE=S11, STAGE=S14, STAGE=S15 or STAGE=S16' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode full
 
 test-integration: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-integration STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05, STAGE=S08, STAGE=S10, STAGE=S11, STAGE=S14, STAGE=S15 or STAGE=S16' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-integration STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05, STAGE=S06, STAGE=S08, STAGE=S10, STAGE=S11, STAGE=S14, STAGE=S15 or STAGE=S16' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode integration
 
 test-e2e: bootstrap
-	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-e2e STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05, STAGE=S08, STAGE=S10, STAGE=S11, STAGE=S14, STAGE=S15 or STAGE=S16' >&2; exit 2; }
+	@test -n "$(STAGE)" || { echo 'STAGE is required, e.g. make test-e2e STAGE=S00, STAGE=S01, STAGE=S02, STAGE=S03, STAGE=S04, STAGE=S05, STAGE=S06, STAGE=S08, STAGE=S10, STAGE=S11, STAGE=S14, STAGE=S15 or STAGE=S16' >&2; exit 2; }
 	python3 scripts/stage-runner.py --stage "$(STAGE)" --mode e2e
 
 test-acceptance: bootstrap
@@ -111,6 +113,11 @@ test-terminal-component: bootstrap
 
 test-terminal-browser: playwright-install
 	pnpm --dir web exec playwright test --config=playwright.s03.config.ts tests/s09-terminal-responsive.spec.ts --project=chromium --project=webkit
+
+test-s06: deps
+	pnpm --dir web run test:s06
+
+test-candidate-s06: frontend playwright-install-candidate test-s06
 
 test-s11-ui: deps
 	pnpm --dir web run test:s11-ui

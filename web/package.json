@@ -12,6 +12,7 @@
     "build": "vite build --outDir ../internal/core/webassets/dist --emptyOutDir",
     "typecheck": "vue-tsc --noEmit",
     "test:e2e": "playwright test",
+    "test:s06": "playwright test --config playwright.s03.config.ts tests/s06-dashboard.spec.ts --project=chromium --trace=on --reporter=line,html",
     "test:s10": "playwright test --config playwright.s10.config.ts",
     "test:s11-ui": "playwright test -c playwright.s11.config.ts",
     "test:s13": "playwright test --config=playwright.s13.config.ts",
