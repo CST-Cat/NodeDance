@@ -3,6 +3,7 @@ package containerrebuild
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -91,6 +92,8 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 	staticIPB := netip.MustParseAddr(fmt.Sprintf("10.231.%d.10", tokenBytes[2]))
 	volumeName := containerName + "-volume"
 	var taskID, snapshotRef string
+	var anonymousVolume string
+	bindRoot := filepath.Join(findS12RepoRoot(t), ".artifacts", "fixtures", suite)
 	var engineClient *client.Client
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -114,10 +117,21 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 		if labels, inspectErr := runS12Docker(cleanupCtx, socket, "volume", "inspect", "--format", "{{ index .Labels \"io.nodedance.suite\" }}", volumeName); inspectErr == nil && strings.TrimSpace(string(labels)) == suite {
 			_, _ = runS12Docker(cleanupCtx, socket, "volume", "rm", volumeName)
 		}
+		if anonymousVolume != "" {
+			// The anonymous mount has no Docker ownership label. Its exact name
+			// was captured from this suite-labeled fixture container before any
+			// rebuild mutation, so remove only that unique volume after containers.
+			if _, inspectErr := runS12Docker(cleanupCtx, socket, "volume", "inspect", anonymousVolume); inspectErr == nil {
+				_, _ = runS12Docker(cleanupCtx, socket, "volume", "rm", anonymousVolume)
+			}
+		}
 		for _, fixtureNetwork := range []string{networkName, networkName2} {
 			if labels, inspectErr := runS12Docker(cleanupCtx, socket, "network", "inspect", "--format", "{{ index .Labels \"io.nodedance.suite\" }}", fixtureNetwork); inspectErr == nil && strings.TrimSpace(string(labels)) == suite {
 				_, _ = runS12Docker(cleanupCtx, socket, "network", "rm", fixtureNetwork)
 			}
+		}
+		if owner, readErr := os.ReadFile(filepath.Join(bindRoot, "owner.json")); readErr == nil && strings.TrimSpace(string(owner)) == suite {
+			_ = os.RemoveAll(bindRoot)
 		}
 	})
 	for _, fixtureNetwork := range []struct{ name, subnet string }{{networkName, subnetA}, {networkName2, subnetB}} {
@@ -128,13 +142,14 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 	if _, err := runS12Docker(ctx, socket, "volume", "create", "--label", "io.nodedance.test=true", "--label", "io.nodedance.suite="+suite, volumeName); err != nil {
 		t.Fatalf("create test-owned inner volume: %v", err)
 	}
-	volumePathOut, err := runS12Docker(ctx, socket, "volume", "inspect", "--format", "{{.Mountpoint}}", volumeName)
-	if err != nil {
-		t.Fatal(err)
+	if err := os.Mkdir(bindRoot, 0o700); err != nil {
+		t.Fatalf("create unique repository-owned bind fixture: %v", err)
 	}
-	volumePath := strings.TrimSpace(string(volumePathOut))
-	if volumePath == "" || !filepath.IsAbs(volumePath) {
-		t.Fatalf("inner Engine returned an invalid volume mountpoint: %q", volumePath)
+	if err := os.WriteFile(filepath.Join(bindRoot, "owner.json"), []byte(suite+"\n"), 0o600); err != nil {
+		t.Fatalf("write bind fixture owner marker: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(bindRoot, "bind-marker"), []byte("bind-"+runID), 0o600); err != nil {
+		t.Fatalf("write unique bind mount marker: %v", err)
 	}
 	engineClient, err = client.NewClientWithOpts(client.WithHost(socket), client.WithAPIVersionNegotiation())
 	if err != nil {
@@ -146,11 +161,25 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	engine := dindStorageEngine{DockerEngine: dockerEngine, storageRoot: filepath.Join(root, "data")}
-	if err := createDindFixture(ctx, engineClient, containerName, image, suite, networkName, networkName2, staticIPA, staticIPB, volumeName, volumePath); err != nil {
+	if err := createDindFixture(ctx, engineClient, containerName, image, suite, networkName, networkName2, staticIPA, staticIPB, volumeName, bindRoot); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runS12Docker(ctx, socket, "exec", containerName, "sh", "-c", "printf writable > /writable-marker"); err != nil {
+	anonymousOutput, err := runS12Docker(ctx, socket, "inspect", "--format", "{{range .Mounts}}{{if eq .Destination \"/anonymous\"}}{{.Name}}{{end}}{{end}}", containerName)
+	if err != nil || strings.TrimSpace(string(anonymousOutput)) == "" {
+		t.Fatalf("record unique anonymous volume identity before rebuild: %q err=%v", anonymousOutput, err)
+	}
+	anonymousVolume = strings.TrimSpace(string(anonymousOutput))
+	if _, err := runS12Docker(ctx, socket, "exec", containerName, "sh", "-c", "printf writable-"+runID+" > /writable-marker"); err != nil {
 		t.Fatalf("write a fixture-only writable-layer marker after startup: %v", err)
+	}
+	markerPaths := []string{"/data/named-marker", "/anonymous/anonymous-marker", "/bind/bind-marker", "/writable-marker"}
+	markerHashes := make(map[string][32]byte, len(markerPaths))
+	for _, path := range markerPaths {
+		contents, err := runS12Docker(ctx, socket, "exec", containerName, "cat", path)
+		if err != nil {
+			t.Fatalf("read pre-rebuild marker %s: %v", path, err)
+		}
+		markerHashes[path] = sha256.Sum256(contents)
 	}
 
 	base := t.TempDir()
@@ -215,8 +244,8 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 				t.Fatalf("anonymous volume identity changed: %+v old=%q", mountPoint, mountNameAt(initial.Mounts, "/anonymous"))
 			}
 		}
-		if mountPoint.Destination == "/bind" && mountPoint.Source != volumePath {
-			t.Fatalf("bind source changed: got %q want %q", mountPoint.Source, volumePath)
+		if mountPoint.Destination == "/bind" && filepath.Clean(mountPoint.Source) != filepath.Clean(bindRoot) {
+			t.Fatalf("bind source changed: got %q want %q", mountPoint.Source, bindRoot)
 		}
 	}
 	if len(replacement.Networks) != 2 || !hasNetwork(replacement.Networks, networkName) || !hasNetwork(replacement.Networks, networkName2) ||
@@ -229,10 +258,17 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 			t.Fatalf("replacement lost requested static address for %s: %+v want=%s", name, endpoint, wantIP)
 		}
 	}
-	for _, path := range []string{"/data/named-marker", "/anonymous/anonymous-marker", "/bind/named-marker", "/writable-marker"} {
-		if _, err := runS12Docker(ctx, socket, "exec", newID, "sh", "-c", "test -s "+shellQuote(path)); err != nil {
-			t.Fatalf("data marker %s was not preserved in replacement: %v", path, err)
+	for _, path := range markerPaths {
+		contents, err := runS12Docker(ctx, socket, "exec", newID, "cat", path)
+		if err != nil {
+			t.Fatalf("read post-rebuild marker %s: %v", path, err)
 		}
+		gotHash := sha256.Sum256(contents)
+		beforeHash := markerHashes[path]
+		if gotHash != beforeHash {
+			t.Fatalf("marker %s changed across rebuild: before=%s after=%s", path, hex.EncodeToString(beforeHash[:]), hex.EncodeToString(gotHash[:]))
+		}
+		t.Logf("marker %s sha256=%s", path, hex.EncodeToString(gotHash[:]))
 	}
 	old, err := engine.Inspect(ctx, initial.ID)
 	if err != nil || strings.TrimPrefix(old.Name, "/") != recordBackupName(t, store, taskID) || old.Running {
@@ -254,11 +290,21 @@ func TestDINDRebuildLifecycle(t *testing.T) {
 	}
 	if _, _, err := engine.ImageInspect(ctx, snapshotRef); err != nil {
 		t.Fatalf("snapshot backing the replacement was removed: %v", err)
+	} else if snapshotID, labels, inspectErr := engine.ImageInspect(ctx, snapshotRef); inspectErr != nil || snapshotID != record.SnapshotID || labels[markerTaskLabel] != taskID {
+		t.Fatalf("snapshot identity/owner changed after cleanup: id=%s record=%s labels=%+v err=%v", snapshotID, record.SnapshotID, labels, inspectErr)
+	} else {
+		t.Logf("active writable-layer snapshot image=%s", snapshotID)
+	}
+	for _, path := range markerPaths {
+		contents, err := runS12Docker(ctx, socket, "exec", newID, "cat", path)
+		if err != nil || sha256.Sum256(contents) != markerHashes[path] {
+			t.Fatalf("cleanup damaged retained volume/bind/writable data at %s: err=%v", path, err)
+		}
 	}
 }
 
 func createDindFixture(ctx context.Context, engineClient *client.Client, name, image, suite, networkName, networkName2 string,
-	staticIPA, staticIPB netip.Addr, volumeName, volumePath string) error {
+	staticIPA, staticIPB netip.Addr, volumeName, bindRoot string) error {
 	port, err := network.ParsePort("80/tcp")
 	if err != nil {
 		return err
@@ -275,7 +321,7 @@ func createDindFixture(ctx context.Context, engineClient *client.Client, name, i
 		Mounts: []mount.Mount{
 			{Type: mount.TypeVolume, Source: volumeName, Target: "/data"},
 			{Type: mount.TypeVolume, Target: "/anonymous"},
-			{Type: mount.TypeBind, Source: volumePath, Target: "/bind"},
+			{Type: mount.TypeBind, Source: bindRoot, Target: "/bind"},
 		}}
 	created, err := engineClient.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: host,
 		NetworkingConfig: &network.NetworkingConfig{EndpointsConfig: map[string]*network.EndpointSettings{
