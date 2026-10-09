@@ -14,7 +14,7 @@
       "environment": "Clean ephemeral Linux amd64/arm64 CI environments; user VPS installation is performed by the user after the complete Core/Agent delivery.",
       "evidence_required": "命令日志、版本、安装前置和服务状态。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未运行干净 Linux amd64/arm64 安装流程；缺少安装日志、工具版本及服务状态证据。"
     },
     "S17-02": {
       "status": "NOT_READY",
@@ -23,7 +23,7 @@
       "environment": "S00-S16完整锁定测试环境。",
       "evidence_required": "182条原始用例和新增回归的逐项状态。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未执行 S00-S16 全量回归；缺少182条原始用例和新增回归的逐项结果。"
     },
     "S17-03": {
       "status": "NOT_READY",
@@ -32,7 +32,7 @@
       "environment": "ubuntu-24.04 and ubuntu-24.04-arm hosted runners; isolated Engine 28/29 matrix where Docker is needed; cross-compilation alone is insufficient.",
       "evidence_required": "CPU架构、二进制执行、Core/Agent/Engine日志。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未在 GitHub-hosted amd64/arm64 runner 启动产物；缺少运行时架构及 Core/Agent/Engine 证据。"
     },
     "S17-04": {
       "status": "NOT_READY",
@@ -41,7 +41,7 @@
       "environment": "Playwright CI browsers and responsive/touch emulation; physical iPad/Android is outside the required acceptance environment.",
       "evidence_required": "浏览器版本及流程录像/报告。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未执行三浏览器桌面与响应式/触屏仿真流程；缺少浏览器版本、录像和报告。"
     },
     "S17-05": {
       "status": "NOT_READY",
@@ -50,7 +50,7 @@
       "environment": "至少三真实节点固定负载连续72小时。",
       "evidence_required": "时间序列、进程重启/内存/WAL和故障日志。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未完成三节点72小时持续运行；缺少监控时间序列和故障恢复记录。"
     },
     "S17-06": {
       "status": "NOT_READY",
@@ -59,7 +59,7 @@
       "environment": "注明真实/仿真节点比例的容量环境。",
       "evidence_required": "可复现负载脚本、P95、Core/Agent RSS和DB数据。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未执行20节点/200容器负载；缺少资源、P95及真实/仿真比例报告。"
     },
     "S17-07": {
       "status": "NOT_READY",
@@ -86,7 +86,7 @@
       "environment": "故障注入的迁移/升级和可恢复备份。",
       "evidence_required": "失败记录、旧版启动、数据库一致性。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未做升级/迁移故障注入和回滚演练；缺少旧版本启动及数据库一致性证据。"
     },
     "S17-09": {
       "status": "NOT_READY",
@@ -95,7 +95,7 @@
       "environment": "可控时钟、大量指标/审计数据。",
       "evidence_required": "清理前后行数、DB/WAL增长与有效记录保留。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未验证到期清理和保留策略；缺少清理前后数据量及文件/WAL增长记录。"
     },
     "S17-10": {
       "status": "NOT_READY",
@@ -104,7 +104,7 @@
       "environment": "独立干净Linux安装环境和正式签名。",
       "evidence_required": "签名校验、安装服务、卸载后用户业务目录仍在。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未验证正式发布签名、干净环境安装与卸载；缺少签名和卸载后数据保留证据。"
     },
     "S17-11": {
       "status": "NOT_READY",
@@ -113,7 +113,7 @@
       "environment": "发布包、二进制、HTTP路径、日志和镜像。",
       "evidence_required": "全量secret扫描与匿名接口检查。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未完成发布产物和公开入口的秘密扫描；缺少扫描结果。"
     },
     "S17-12": {
       "status": "NOT_READY",
@@ -122,7 +122,7 @@
       "environment": "原始设计正文、22优先级功能及全部阶段报告。",
       "evidence_required": "机器校验trace覆盖及逐项验收链接。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "尚未执行需求编号覆盖核对；缺少原始设计、P0/P1/P2及阶段用例 trace 结果。"
     }
   }
 }
