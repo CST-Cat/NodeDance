@@ -1,11 +1,39 @@
 {
   "schema": 1,
   "stage": "S08",
-  "mode": "initial",
+  "mode": "integration",
   "status": "NOT_READY",
-  "run_id": "initial-unexecuted",
-  "updated_at": "2026-10-08T00:00:00+00:00",
-  "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。",
+  "run_id": "2eace3017b4d4f2ab1bf9976d537b34d",
+  "updated_at": "2026-10-09T03:51:56.701565+00:00",
+  "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed.",
+  "engine_attempt": {
+    "status": "NOT_READY",
+    "details": "scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
+  },
+  "component_tests": {
+    "status": "PASS",
+    "runs": [
+      {
+        "attempt": 1,
+        "status": "PASS",
+        "exit_code": 0,
+        "log": ".artifacts/s08/2eace3017b4d4f2ab1bf9976d537b34d/components-1.log"
+      }
+    ],
+    "test_names": [
+      "TestImageTaskCanonicalIntentExcludesOneTimeRegistryCredentials",
+      "TestImageDeleteIntentRequiresFullContentAddressedID",
+      "TestTaskCancelRequestIsBoundToTaskJournalAndGeneration",
+      "TestPullUsesEphemeralCredentialsAndVerifiesEngineState",
+      "TestInterruptedPullBecomesUnknownThenReadOnlyReconciles",
+      "TestImageReferenceVerificationUsesDockerDistributionNormalization",
+      "TestExplicitPullCancellationWaitsForStoppedEngineAndConfirmedState",
+      "TestDeleteRefusesReferencedImageAndVerifiesSuccessfulRemoval",
+      "TestCancelImagePullSignalsOnlyTheRegisteredTask",
+      "TestRequestImagePullCancellationUsesLiveMatchingJournal",
+      "TestImageRegistryCredentialsAreOneUseAndExpireInMemory"
+    ]
+  },
   "tests": {
     "S08-01": {
       "status": "NOT_READY",
@@ -14,7 +42,7 @@
       "environment": "含不同标签和容器引用的Engine镜像。",
       "evidence_required": "Engine image list/inspect与界面字段对照。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
     },
     "S08-02": {
       "status": "NOT_READY",
@@ -23,7 +51,7 @@
       "environment": "本地测试Registry中的锁定digest镜像。",
       "evidence_required": "真实拉取日志、digest和错误响应。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
     },
     "S08-03": {
       "status": "NOT_READY",
@@ -32,7 +60,7 @@
       "environment": "受控私有Registry和一次性凭据。",
       "evidence_required": "Registry日志、任务结果、DB/log secret扫描。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
     },
     "S08-04": {
       "status": "NOT_READY",
@@ -41,7 +69,7 @@
       "environment": "可控慢速Registry和网络故障。",
       "evidence_required": "中断任务状态及Engine真实镜像内容。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
     },
     "S08-05": {
       "status": "NOT_READY",
@@ -50,7 +78,7 @@
       "environment": "真实无引用/有引用的镜像。",
       "evidence_required": "Engine镜像列表、冲突拒绝和确认流程。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
     },
     "S08-06": {
       "status": "NOT_READY",
@@ -59,7 +87,7 @@
       "environment": "多Agent与受控持续镜像拉取。",
       "evidence_required": "拉取期间心跳/指标连续记录。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
     },
     "S08-07": {
       "status": "NOT_READY",
@@ -68,7 +96,7 @@
       "environment": "包含成功和认证失败的真实拉取历史。",
       "evidence_required": "明文秘密扫描与脱敏审计记录。",
       "runs": [],
-      "reason": "未在当前S00实施里程碑中实现；需逐项执行本阶段规范用例。"
+      "reason": "Component/mocked checks passed, but no S08-owned real Docker Engine and controlled Registry acceptance evidence was provided. Engine fixture attempt: scripts/test/dind.sh start 28 timed out after reusing existing nodedance-s00-dind-v28 (label io.nodedance.suite=nodedance-s00-dind); read-only inspection showed the Engine socket/data binds point into /home/ubuntu/codex-use/NodeDance-s04, not this S08 worktree. The helper exec set the mounted Docker socket mode to 0666. No stop/recreate/remove or registry/image acceptance was performed."
     }
   }
 }

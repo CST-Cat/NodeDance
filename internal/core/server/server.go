@@ -66,6 +66,8 @@ type Server struct {
 	dashboardPreferences       *dashboard.Repository
 	tasks                      *coretasks.Store
 	composeOps                 *corecompose.Store
+	imageAuthMu                sync.Mutex
+	imageAuth                  map[string]pendingImageCredential
 	dockerMu                   sync.Mutex
 	docker                     *coredocker.Store
 	agentOfflineTimeout        time.Duration
@@ -176,6 +178,7 @@ func New(version string, options Options) (*Server, error) {
 		history:                &corehistory.Store{DB: store.DB},
 		dashboardPreferences:   &dashboard.Repository{DB: store.DB, Now: options.Now},
 		docker:                 coredocker.NewStore(),
+		imageAuth:              make(map[string]pendingImageCredential),
 		agentOfflineTimeout:    options.AgentOfflineTimeout,
 		agentSweepInterval:     options.AgentSweepInterval,
 		agentConnections:       make(map[string]*agentConnection),

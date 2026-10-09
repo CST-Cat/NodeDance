@@ -188,6 +188,7 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 		delete(connection.taskReconcileOutstanding, report.TaskID)
 	}
 	if taskstate.IsTerminal(after.Status) {
+		s.clearImageCredentials(report.TaskID)
 		delete(connection.taskReconcileOutstanding, report.TaskID)
 		delete(connection.taskReconcileAttempted, report.TaskID)
 	}
@@ -216,8 +217,16 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		}
 		dispatch := protocol.TaskDispatch{TaskID: task.TaskID, NodeID: task.NodeID, JournalID: journalID,
 			TargetID: task.Intent.ContainerID, IdempotencyKey: task.IdempotencyKey, RequestDigest: protocol.DigestString(task.RequestDigest), Intent: task.Intent}
+		if task.Intent.Action == protocol.TaskImagePull {
+			dispatch.RegistryAuth = s.takeImageCredentials(task.TaskID, task.NodeID)
+		}
 		payload, err := json.Marshal(dispatch)
 		if err != nil || len(payload) > protocol.MaxTaskPayloadBytes {
+			clear(payload)
+			if dispatch.RegistryAuth != nil {
+				dispatch.RegistryAuth.Username, dispatch.RegistryAuth.Password = "", ""
+				dispatch.RegistryAuth = nil
+			}
 			// The safe typed intent was already persisted, but no malformed frame
 			// is allowed to reach an Agent. Marking it unknown is safer than replay.
 			return errors.New("durable task cannot be represented by the task wire contract")
@@ -226,8 +235,15 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		connection.taskOutstanding[task.TaskID] = struct{}{}
 		message := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTaskDispatch, Generation: connection.generation,
 			RequestID: task.TaskID, Payload: payload}
-		if err := s.writeAgentEnvelope(ctx, connection.conn, message); err != nil {
-			return err // Core delivery is already committed; reconnect reconciliation will mark uncertainty.
+		if dispatch.RegistryAuth != nil {
+			dispatch.RegistryAuth.Username, dispatch.RegistryAuth.Password = "", ""
+			dispatch.RegistryAuth = nil
+		}
+		writeErr := s.writeAgentEnvelope(ctx, connection.conn, message)
+		clear(payload)
+		message.Payload = nil
+		if writeErr != nil {
+			return writeErr // Core delivery is already committed; reconnect reconciliation will mark uncertainty.
 		}
 	}
 	if connection.taskSlots > 0 {
@@ -253,7 +269,7 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			}
 			request := protocol.TaskReconcileRequest{TaskID: task.TaskID, NodeID: task.NodeID,
 				JournalID: journalID, TargetID: task.Intent.ContainerID, IdempotencyKey: task.IdempotencyKey,
-				RequestDigest: protocol.DigestString(task.RequestDigest)}
+				RequestDigest: protocol.DigestString(task.RequestDigest), Intent: task.Intent}
 			message := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTaskReconcile,
 				Generation: connection.generation, RequestID: task.TaskID, Payload: marshalAgentPayload(request)}
 			if err := protocol.ValidateTaskReconcile(message, request, identity.NodeID, journalID, connection.generation); err != nil {

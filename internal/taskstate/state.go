@@ -37,8 +37,9 @@ const (
 )
 
 var (
-	ErrInvalidRequest = errors.New("invalid task request")
-	ErrInvalidStatus  = errors.New("invalid task status transition")
+	ErrInvalidRequest        = errors.New("invalid task request")
+	ErrInvalidStatus         = errors.New("invalid task status transition")
+	ErrCancellationRequested = errors.New("task cancellation was explicitly requested")
 )
 
 // Identity contains only stable identifiers and the request body used to

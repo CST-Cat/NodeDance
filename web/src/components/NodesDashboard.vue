@@ -4,6 +4,7 @@ import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type 
 import type { MetricsView } from '../metrics-contract'
 import ContainerStreams from './ContainerStreams.vue'
 import HistoricalMetrics from './HistoricalMetrics.vue'
+import ImagesPanel from './ImagesPanel.vue'
 import MetricsPanel from './MetricsPanel.vue'
 import PreferenceEditor from './PreferenceEditor.vue'
 
@@ -31,9 +32,9 @@ const taskAuditErrors = ref<Record<string, string>>({})
 const preferenceIdentities = ref<Record<string, Record<string, string>>>({})
 const nodePreferences = ref<Record<string, DashboardPreference[]>>({})
 const dashboardSettings = ref<DashboardSettings>({ viewMode: 'monitor', groupBy: 'node', sortBy: 'custom', featuredLimit: 4, customFields: ['state', 'ports', 'health'] })
-const activeSection = ref<'overview' | 'docker' | 'history' | 'events' | 'settings'>('overview')
+const activeSection = ref<'overview' | 'docker' | 'images' | 'history' | 'events' | 'settings'>('overview')
 const sectionTabs: Array<{ id: typeof activeSection.value; label: string }> = [
-  { id: 'overview', label: '总览' }, { id: 'docker', label: 'Docker 详情' },
+  { id: 'overview', label: '总览' }, { id: 'docker', label: 'Docker 详情' }, { id: 'images', label: '镜像' },
   { id: 'history', label: '历史监控' }, { id: 'events', label: '事件历史' }, { id: 'settings', label: '节点设置' },
 ]
 const customFieldOptions = [
@@ -959,6 +960,8 @@ onBeforeUnmount(() => {
             </article>
           </div>
         </section>
+
+        <ImagesPanel v-if="selectedNode && activeSection === 'images'" :key="selectedNode.nodeId" :node-id="selectedNode.nodeId" />
 
         <section v-if="selectedNode && activeSection === 'history'" class="section-panel" aria-label="历史监控设置">
           <div class="section-toolbar"><div><span class="eyebrow">PERSISTED METRICS</span><h2>历史监控 · {{ selectedNodeTitle }}</h2></div>
