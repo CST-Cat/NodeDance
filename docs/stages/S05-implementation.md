@@ -1,19 +1,25 @@
 # S05 durable task component implementation
 
 **Formal phase status: `NOT_READY`.** This document describes the shared state
-contract and Agent SQLite journal only. Core authorization/audit and the real
-Docker execution plus postcondition chain have not been integrated. None of the
-original `S05-01` through `S05-12` acceptance cases is reported as passing by
-the component test runner.
+contract and Agent SQLite journal component. The integrated candidate also has
+Core task/audit persistence and API/bridge paths under `internal/core/tasks`,
+including `task_api.go` and `task_bridge.go`, plus Agent taskrunner,
+containeractions, and containerstreams paths. This component document and its
+tests do not establish that the complete live Core-Agent-Engine chain passes.
+None of the original `S05-01` through `S05-12` acceptance cases is reported as
+passing by the component test runner.
 
 ## Ownership and interfaces
 
-The work is limited to `internal/taskstate`, `internal/agent/taskjournal`, the
-local component tests, this document, and `scripts/test/s05-task-journal.py`.
-The shared package has no transport, database, or executor dependency. The
-journal does not execute commands. Core still needs its own durable task and
-audit transaction before delivery, and the Agent runtime must call
-`BeginExecution` before crossing into the Docker executor.
+The historical component work was limited to `internal/taskstate`,
+`internal/agent/taskjournal`, the local component tests, this document, and
+`scripts/test/s05-task-journal.py`. The shared package has no transport,
+database, or executor dependency, and the journal does not execute commands.
+Those ownership boundaries are preserved here as component history; the
+integrated candidate contains paths for Core task/audit persistence and
+delivery, Agent journaling and execution, and container streams. Their live
+Engine-backed postconditions and failure/recovery behavior still require the
+normative stage acceptance evidence.
 
 `taskstate.Identity` is the request boundary. It contains the task ID, node ID,
 idempotency key, target/resource identity, action, and transient JSON payload.
@@ -136,9 +142,12 @@ Historical note: The component runner passed three standard and race-instrumente
 runs under the former repeated-run policy; this is preserved historical evidence, not a current stage gate. `go vet -mod=readonly` passed for both owned Go packages. The latest
 local evidence is `.artifacts/work-s05/20261008T172416Z-2012296/report.json`;
 runner logs and reports stay in ignored local work files and are not committed.
-These checks approve only the isolated component. The formal S05 phase and all
-twelve normative `S05-01` through `S05-12` cases remain `NOT_READY` pending the
-Core/Agent integration and real Docker execution/postcondition tests.
+These checks approve only the isolated component. The integrated candidate
+contains Core and Agent task, audit, execution, and stream paths, but this
+component evidence does not validate them end to end. The formal S05 phase and
+all twelve normative `S05-01` through `S05-12` cases remain `NOT_READY` pending
+complete live Engine acceptance, including their required failure and
+recovery cases.
 
 ## Current integrated-baseline evidence
 
@@ -146,8 +155,9 @@ The earlier full S05 attempt `dc55d299d91b4ba9b60af0751edbe38c` stopped in `make
 
 ## Outstanding phase work
 
-S05 still needs the Core task/audit persistence path, Agent task delivery and
-journal integration, Docker lifecycle execution with fresh postcondition
-inspection, timeout/cancel/process termination confirmation, and the real
-Engine suites for all twelve normative cases. The current gate is one complete
-full acceptance run plus regression checks for any affected suites.
+The integrated candidate contains Core task/audit persistence, Agent delivery
+and journal integration, lifecycle execution, and container-stream paths. S05
+still needs complete live normative verification: fresh Engine postcondition
+inspection, timeout/cancel/process termination confirmation, and failure and
+recovery coverage for all twelve cases. The phase remains `NOT_READY` until one
+complete full acceptance run records the required evidence.
