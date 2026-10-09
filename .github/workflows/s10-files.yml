@@ -36,6 +36,13 @@ jobs:
       - name: Install locked project dependencies
         run: make deps
 
+      - name: Run one live Core-Agent-host-filesystem integration test
+        run: |
+          mkdir -p .artifacts/logs/acceptance-s10
+          set -o pipefail
+          GOTOOLCHAIN=local go test -v -count=1 -run '^TestRealAgentHostFilesAPIEndToEnd$' ./internal/core/server 2>&1 \
+            | tee .artifacts/logs/acceptance-s10/real-core-agent-host-files.log
+
       - name: Install the S10 Playwright browsers
         run: make playwright-install
 
