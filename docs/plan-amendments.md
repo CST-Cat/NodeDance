@@ -25,7 +25,7 @@
 
 ## S00 CI 结构
 
-S00 workflow 使用官方 GitHub-hosted `ubuntu-24.04` 与 `ubuntu-24.04-arm` runner，并把 Engine 28/29 作为独立矩阵维度。每个工作组合执行 `make test-stage STAGE=S00`，该目标先运行 `make check` 和双架构 Core/Agent 构建，再将8项原始 S00 用例连续运行三遍。CI 报告和本地报告的状态区分明确；本地尚无 GitHub Actions 运行时，不能声称 Actions 已通过。
+S00 workflow 使用官方 GitHub-hosted `ubuntu-24.04` 与 `ubuntu-24.04-arm` runner，并把 Engine 28/29 作为独立矩阵维度。每个工作组合执行 `make test-stage STAGE=S00`，该目标先运行 `make check` 和双架构 Core/Agent 构建，再在一次完整运行中逐项执行8项原始 S00 用例。早期规则要求连续三遍的旧运行仅保留为历史证据，不构成当前验收门槛或当前 CI PASS。CI 报告和本地报告的状态区分明确；本地尚无 GitHub Actions 运行时，不能声称 Actions 已通过。
 
 ## S01 CI 与浏览器证据
 
