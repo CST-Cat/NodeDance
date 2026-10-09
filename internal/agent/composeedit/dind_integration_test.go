@@ -421,7 +421,7 @@ func TestDINDComposeEditorRollbackSurvivesMutableTagDrift(t *testing.T) {
 		projectName = projectName[:55]
 	}
 	oldPort := findAvailablePublishedPort(t, ctx, baseRunner, dockerHost, fixtureDir, suite, images["nginx"])
-	blockedPort := findAvailablePublishedPort(t, ctx, baseRunner, dockerHost, fixtureDir, suite, images["nginx"])
+	blockedPort := findAvailablePublishedPortDifferentFrom(t, ctx, baseRunner, dockerHost, fixtureDir, suite, images["nginx"], oldPort)
 	if _, err := baseRunner.Run(ctx, fixtureDir, []string{"pull", images["busybox"]}, dockerHost); err != nil {
 		t.Fatalf("pull the locked replacement image for tag drift: %v", err)
 	}
@@ -673,6 +673,18 @@ func findAvailablePublishedPort(t *testing.T, ctx context.Context, runner agentc
 		t.Fatalf("probe an owner-scoped DIND TCP port: %v (%s)", err, output)
 	}
 	t.Fatal("could not allocate a free TCP port in the dedicated DIND Engine")
+	return 0
+}
+
+func findAvailablePublishedPortDifferentFrom(t *testing.T, ctx context.Context, runner agentcomposeedit.Runner, dockerHost, directory, suite, image string, excluded int) int {
+	t.Helper()
+	for attempt := 0; attempt < 16; attempt++ {
+		port := findAvailablePublishedPort(t, ctx, runner, dockerHost, directory, suite, image)
+		if port != excluded {
+			return port
+		}
+	}
+	t.Fatalf("could not allocate a published port distinct from %d after 16 attempts", excluded)
 	return 0
 }
 
