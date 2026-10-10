@@ -51,6 +51,14 @@ func (e *TaskExecutor) ExecuteCompose(ctx context.Context, dispatch protocol.Tas
 	if enqueued.Task.Status == taskstate.Unknown || enqueued.Task.Status == taskstate.Running {
 		return enqueued.Task, errors.New("Compose task requires result reconciliation")
 	}
+	if dispatch.Intent.Compose == nil {
+		return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", "project_unavailable")
+	}
+	unlock, err := e.manager.lockProject(ctx, dispatch.Intent.Compose.Project)
+	if err != nil {
+		return e.afterError(ctx, dispatch.TaskID, err)
+	}
+	defer unlock()
 	if err := e.journal.BeginExecution(ctx, dispatch.TaskID); err != nil {
 		return e.afterError(ctx, dispatch.TaskID, err)
 	}
@@ -71,7 +79,7 @@ func (e *TaskExecutor) ExecuteCompose(ctx context.Context, dispatch protocol.Tas
 			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", "payload_unavailable")
 		}
 		if dispatch.Intent.Action == protocol.TaskComposeCreate {
-			instances, err := e.manager.CreateProject(ctx, dispatch.Intent.Compose.Project, dispatch.ComposeContent.Content, dispatch.Intent.Compose.ContentSHA256)
+			instances, err := e.manager.CreateProject(ctx, dispatch.Intent.Compose.Project, dispatch.TaskID, dispatch.ComposeContent.Content, dispatch.Intent.Compose.ContentSHA256)
 			if err != nil {
 				if errors.Is(err, ErrOperationUncertain) {
 					return e.markUnknown(ctx, dispatch.TaskID)
@@ -101,7 +109,7 @@ func (e *TaskExecutor) ExecuteCompose(ctx context.Context, dispatch protocol.Tas
 		if err != nil {
 			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", "baseline_unavailable")
 		}
-		state, err := e.manager.DeployProject(ctx, dispatch.Intent.Compose.Project, baseline)
+		state, err := e.manager.DeployProject(ctx, dispatch.Intent.Compose.Project, dispatch.TaskID, baseline)
 		if err != nil {
 			var deploymentErr *deploymentResultError
 			if errors.As(err, &deploymentErr) {
@@ -131,7 +139,7 @@ func (e *TaskExecutor) ExecuteCompose(ctx context.Context, dispatch protocol.Tas
 		}
 		return e.finish(ctx, dispatch.TaskID, taskstate.Succeeded, state, dispatch.Intent.Compose.Project.Key)
 	}
-	state, err := e.manager.ExecuteProject(ctx, dispatch.Intent.Compose.Project, dispatch.Intent.Action)
+	state, err := e.manager.ExecuteProject(ctx, dispatch.Intent.Compose.Project, dispatch.TaskID, dispatch.Intent.Action)
 	if err != nil {
 		if errors.Is(err, ErrConfigInvalid) || errors.Is(err, ErrProjectUnavailable) {
 			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", stableErrorCode(err))

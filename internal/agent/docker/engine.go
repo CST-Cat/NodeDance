@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/moby/moby/client"
 )
 
@@ -343,7 +345,7 @@ func composeIdentity(labels map[string]string) *ComposeIdentity {
 	if project == "" && service == "" {
 		return nil
 	}
-	return &ComposeIdentity{
+	identity := &ComposeIdentity{
 		Project:         project,
 		Service:         service,
 		WorkingDir:      labels[prefix+"project.working_dir"],
@@ -352,6 +354,72 @@ func composeIdentity(labels map[string]string) *ComposeIdentity {
 		OneOff:          strings.EqualFold(labels[prefix+"oneoff"], "true"),
 		Version:         labels[prefix+"version"],
 	}
+	identity.TaskID = labels[ComposeTaskIDLabel]
+	identity.TaskRefKey = labels[ComposeTaskRefKeyLabel]
+	identity.TaskOverride = labels[ComposeTaskOverrideLabel]
+	_, hasTaskID := labels[ComposeTaskIDLabel]
+	_, hasRefKey := labels[ComposeTaskRefKeyLabel]
+	_, hasOverride := labels[ComposeTaskOverrideLabel]
+	identity.TaskMarkerSeen = hasTaskID || hasRefKey || hasOverride
+	if !identity.TaskMarkerSeen {
+		return identity
+	}
+	if identity.TaskID == "" || identity.TaskRefKey == "" || identity.TaskOverride == "" ||
+		!validComposeTaskLabelValue(identity.TaskID) || !validComposeTaskLabelValue(identity.TaskRefKey) {
+		return identity
+	}
+
+	workDir, err := filepath.Abs(identity.WorkingDir)
+	if err != nil || filepath.Clean(workDir) != workDir || workDir == string(filepath.Separator) {
+		return identity
+	}
+	override, err := filepath.Abs(identity.TaskOverride)
+	if err != nil || filepath.Clean(override) != override || filepath.Dir(override) != workDir ||
+		!strings.HasPrefix(filepath.Base(override), ".nodedance-task-") || !strings.HasSuffix(override, ".yaml") {
+		return identity
+	}
+	runtimeFiles := strings.Split(identity.ConfigFiles, ",")
+	if len(runtimeFiles) < 2 || runtimeFiles[len(runtimeFiles)-1] != override {
+		return identity
+	}
+	sourceFiles := runtimeFiles[:len(runtimeFiles)-1]
+	for index, file := range sourceFiles {
+		if strings.TrimSpace(file) != file || file == "" || strings.Contains(file, ",") {
+			return identity
+		}
+		if !filepath.IsAbs(file) {
+			file = filepath.Join(workDir, file)
+		}
+		file, err = filepath.Abs(file)
+		if err != nil || filepath.Clean(file) != file {
+			return identity
+		}
+		sourceFiles[index] = file
+	}
+	ref := protocol.ComposeProjectRef{
+		Name: identity.Project, WorkingDirectory: workDir, ConfigFiles: sourceFiles,
+	}
+	ref.Key = protocol.ComposeProjectKey(ref.Name, ref.WorkingDirectory, ref.ConfigFiles)
+	if protocol.ValidateComposeProjectRef(ref) != nil || ref.Key != identity.TaskRefKey {
+		return identity
+	}
+	identity.WorkingDir = workDir
+	identity.ConfigFiles = strings.Join(sourceFiles, ",")
+	identity.TaskMarkerValid = true
+	return identity
+}
+
+func validComposeTaskLabelValue(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for index, r := range value {
+		valid := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == ':' || r == '-'
+		if !valid || index == 0 && !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+			return false
+		}
+	}
+	return true
 }
 
 func healthcheckConfigured(config *struct {

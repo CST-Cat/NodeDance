@@ -25,9 +25,16 @@ type Engine interface {
 }
 
 type Manager struct {
-	engine     Engine
-	dockerPath string
-	createMu   sync.Mutex
+	engine        Engine
+	dockerPath    string
+	createMu      sync.Mutex
+	projectLockMu sync.Mutex
+	projectLocks  map[string]*projectLock
+}
+
+type projectLock struct {
+	gate  chan struct{}
+	users int
 }
 
 func NewManager(engine Engine) (*Manager, error) {
@@ -38,7 +45,50 @@ func NewManager(engine Engine) (*Manager, error) {
 	if err != nil {
 		return nil, errors.New("Docker Compose CLI is unavailable")
 	}
-	return &Manager{engine: engine, dockerPath: dockerPath}, nil
+	return &Manager{engine: engine, dockerPath: dockerPath, projectLocks: make(map[string]*projectLock)}, nil
+}
+
+// lockProject serializes all dispatched Compose writes for one canonical
+// project reference while allowing unrelated projects to proceed concurrently.
+func (m *Manager) lockProject(ctx context.Context, ref protocol.ComposeProjectRef) (func(), error) {
+	if ctx == nil || protocol.ValidateComposeProjectRef(ref) != nil {
+		return nil, ErrProjectConflict
+	}
+	m.projectLockMu.Lock()
+	lock := m.projectLocks[ref.Key]
+	if lock == nil {
+		lock = &projectLock{gate: make(chan struct{}, 1)}
+		lock.gate <- struct{}{}
+		m.projectLocks[ref.Key] = lock
+	}
+	lock.users++
+	m.projectLockMu.Unlock()
+
+	select {
+	case <-ctx.Done():
+		m.projectLockMu.Lock()
+		lock.users--
+		if lock.users == 0 {
+			delete(m.projectLocks, ref.Key)
+		}
+		m.projectLockMu.Unlock()
+		return nil, ctx.Err()
+	case <-lock.gate:
+	}
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			m.projectLockMu.Lock()
+			lock.users--
+			if lock.users == 0 {
+				delete(m.projectLocks, ref.Key)
+			} else {
+				lock.gate <- struct{}{}
+			}
+			m.projectLockMu.Unlock()
+		})
+	}, nil
 }
 
 func (m *Manager) List(ctx context.Context) ([]protocol.ComposeProject, error) {
@@ -110,6 +160,9 @@ func reference(identity *agentdocker.ComposeIdentity) (protocol.ComposeProjectRe
 	if identity == nil || identity.Project == "" || identity.WorkingDir == "" || identity.ConfigFiles == "" {
 		return protocol.ComposeProjectRef{}, ErrConfigMissing
 	}
+	if identity.TaskMarkerSeen && !identity.TaskMarkerValid {
+		return protocol.ComposeProjectRef{}, ErrProjectConflict
+	}
 	workingDirectory, err := filepath.Abs(identity.WorkingDir)
 	if err != nil {
 		return protocol.ComposeProjectRef{}, err
@@ -132,7 +185,13 @@ func reference(identity *agentdocker.ComposeIdentity) (protocol.ComposeProjectRe
 	}
 	ref := protocol.ComposeProjectRef{Name: identity.Project, WorkingDirectory: workingDirectory, ConfigFiles: files}
 	ref.Key = protocol.ComposeProjectKey(ref.Name, ref.WorkingDirectory, ref.ConfigFiles)
-	return ref, protocol.ValidateComposeProjectRef(ref)
+	if err := protocol.ValidateComposeProjectRef(ref); err != nil {
+		return protocol.ComposeProjectRef{}, err
+	}
+	if identity.TaskMarkerValid && ref.Key != identity.TaskRefKey {
+		return protocol.ComposeProjectRef{}, ErrProjectConflict
+	}
+	return ref, nil
 }
 
 func configExists(ref protocol.ComposeProjectRef) bool {

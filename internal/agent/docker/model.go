@@ -100,7 +100,18 @@ type ComposeIdentity struct {
 	ContainerNumber string `json:"container_number,omitempty"`
 	OneOff          bool   `json:"one_off"`
 	Version         string `json:"version,omitempty"`
+	TaskID          string `json:"-"`
+	TaskRefKey      string `json:"-"`
+	TaskOverride    string `json:"-"`
+	TaskMarkerSeen  bool   `json:"-"`
+	TaskMarkerValid bool   `json:"-"`
 }
+
+const (
+	ComposeTaskIDLabel       = "io.nodedance.internal.compose.task-id"
+	ComposeTaskRefKeyLabel   = "io.nodedance.internal.compose.ref-key"
+	ComposeTaskOverrideLabel = "io.nodedance.internal.compose.override-file"
+)
 
 type ChangeAction string
 

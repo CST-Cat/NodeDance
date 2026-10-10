@@ -57,10 +57,10 @@ type ProjectConfigSnapshot struct{ Files [][]byte }
 // CreateProject stages a new config without replacing any existing path,
 // validates it with Docker Compose, commits it atomically, and verifies the
 // resulting project through Docker Engine. Rollback never removes volumes.
-func (m *Manager) CreateProject(ctx context.Context, ref protocol.ComposeProjectRef, content []byte, digest string) ([]agentdocker.Container, error) {
+func (m *Manager) CreateProject(ctx context.Context, ref protocol.ComposeProjectRef, taskID string, content []byte, digest string) ([]agentdocker.Container, error) {
 	m.createMu.Lock()
 	defer m.createMu.Unlock()
-	if err := validateCreateProjectRef(ref); err != nil || len(content) == 0 || len(content) > protocol.MaxComposeFileBytes {
+	if err := validateCreateProjectRef(ref); err != nil || !validComposeTaskLabelValue(taskID) || len(content) == 0 || len(content) > protocol.MaxComposeFileBytes {
 		return nil, ErrConfigUnsafe
 	}
 	actualDigest := sha256.Sum256(content)
@@ -127,15 +127,16 @@ func (m *Manager) CreateProject(ctx context.Context, ref protocol.ComposeProject
 		}
 		return nil, ErrOperationUncertain
 	}
-	if err := m.runCompose(ctx, ref, nil, "up", "-d"); err != nil {
-		if m.rollbackCreatedProject(ctx, ref, root, digest) {
+	started := time.Now()
+	if err := m.runComposeWithTask(ctx, ref, taskID, "up", "-d"); err != nil {
+		if m.rollbackCreatedProject(ctx, ref, root, digest, taskID, started) {
 			return nil, ErrCreateFailed
 		}
 		return nil, ErrOperationUncertain
 	}
 	instances, err := m.waitProjectInstances(ctx, ref)
 	if err != nil || len(instances) == 0 {
-		if m.rollbackCreatedProject(ctx, ref, root, digest) {
+		if m.rollbackCreatedProject(ctx, ref, root, digest, taskID, started) {
 			return nil, ErrCreateFailed
 		}
 		return nil, ErrOperationUncertain
@@ -260,27 +261,12 @@ func syncComposeRoot(root *os.Root) error {
 	return directory.Sync()
 }
 
-func (m *Manager) rollbackCreatedProject(ctx context.Context, ref protocol.ComposeProjectRef, root *os.Root, digest string) bool {
+func (m *Manager) rollbackCreatedProject(ctx context.Context, ref protocol.ComposeProjectRef, root *os.Root, digest, taskID string, started time.Time) bool {
 	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
 		return false
 	}
-	instances, err := m.projectInstances(ctx, ref)
-	if err != nil {
+	if err := m.removeTaskCreatedProjectInstances(ctx, ref, nil, started, taskID); err != nil {
 		return false
-	}
-	if len(instances) > 0 {
-		for _, instance := range instances {
-			if instance.Compose == nil || instance.Compose.Project != ref.Name {
-				return false
-			}
-			identity, identityErr := reference(instance.Compose)
-			if identityErr != nil || identity.Key != ref.Key {
-				return false
-			}
-		}
-		if err := m.runCompose(ctx, ref, nil, "down", "--remove-orphans"); err != nil {
-			return false
-		}
 	}
 	remaining, err := m.projectInstances(ctx, ref)
 	if err != nil || len(remaining) != 0 || m.verifyConfigDigest(ref, 0, digest) != nil {
@@ -589,7 +575,7 @@ func (m *Manager) SaveConfig(ctx context.Context, ref protocol.ComposeProjectRef
 	return committed, nil
 }
 
-func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjectRef, action protocol.TaskAction) (string, error) {
+func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjectRef, taskID string, action protocol.TaskAction) (string, error) {
 	if err := m.requireLiveProject(ctx, ref); err != nil {
 		return "unknown", err
 	}
@@ -602,9 +588,15 @@ func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjec
 	}
 	var args []string
 	var expected string
+	var commandErr error
 	switch action {
 	case protocol.TaskComposeStart:
-		args, expected = []string{"up", "-d"}, "running"
+		if len(before) == 0 {
+			commandErr = m.runComposeWithTask(ctx, ref, taskID, "up", "-d")
+		} else {
+			commandErr = m.runCompose(ctx, ref, nil, "start")
+		}
+		expected = "running"
 	case protocol.TaskComposeStop:
 		if len(before) == 0 {
 			return "stopped", nil
@@ -612,7 +604,7 @@ func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjec
 		args, expected = []string{"stop"}, "stopped"
 	case protocol.TaskComposeRestart:
 		if len(before) == 0 {
-			args = []string{"up", "-d"}
+			commandErr = m.runComposeWithTask(ctx, ref, taskID, "up", "-d")
 		} else {
 			args = []string{"restart"}
 		}
@@ -622,7 +614,9 @@ func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjec
 	default:
 		return "unchanged", ErrConfigInvalid
 	}
-	commandErr := m.runCompose(ctx, ref, nil, args...)
+	if commandErr == nil && len(args) > 0 {
+		commandErr = m.runCompose(ctx, ref, nil, args...)
+	}
 	if commandErr != nil {
 		// A failed Compose command can leave some old services running while the
 		// requested deployment never took effect. Never infer success from that
@@ -642,7 +636,10 @@ func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjec
 	return expected, nil
 }
 
-func (m *Manager) DeployProject(ctx context.Context, ref protocol.ComposeProjectRef, baseline ProjectConfigSnapshot) (string, error) {
+func (m *Manager) DeployProject(ctx context.Context, ref protocol.ComposeProjectRef, taskID string, baseline ProjectConfigSnapshot) (string, error) {
+	if !validComposeTaskLabelValue(taskID) {
+		return "unknown", ErrProjectConflict
+	}
 	if err := m.requireLiveProject(ctx, ref); err != nil {
 		return "unknown", err
 	}
@@ -665,10 +662,10 @@ func (m *Manager) DeployProject(ctx context.Context, ref protocol.ComposeProject
 		} else if errors.Is(err, ErrDeployRejected) {
 			code = "deployment_preflight_failed"
 		}
-		return m.recoverDeployment(ctx, ref, baseline, attempted, before, code, false, time.Time{})
+		return m.recoverDeployment(ctx, ref, taskID, baseline, attempted, before, code, false, time.Time{})
 	}
 	started := time.Now()
-	commandErr := m.runCompose(ctx, ref, nil, "up", "-d", "--force-recreate")
+	commandErr := m.runComposeWithTask(ctx, ref, taskID, "up", "-d", "--force-recreate")
 	var after []agentdocker.Container
 	if commandErr == nil {
 		after, err = m.waitProjectState(ctx, ref, "running")
@@ -687,12 +684,12 @@ func (m *Manager) DeployProject(ctx context.Context, ref protocol.ComposeProject
 		if errors.Is(err, ErrConfigChanged) {
 			code = "config_changed_during_deploy"
 		}
-		return m.recoverDeployment(ctx, ref, baseline, attempted, before, code, true, started)
+		return m.recoverDeployment(ctx, ref, taskID, baseline, attempted, before, code, true, started)
 	}
 	return "running", nil
 }
 
-func (m *Manager) recoverDeployment(ctx context.Context, ref protocol.ComposeProjectRef, baseline, attempted ProjectConfigSnapshot, before []agentdocker.Container, failureCode string, mutationAttempted bool, started time.Time) (string, error) {
+func (m *Manager) recoverDeployment(ctx context.Context, ref protocol.ComposeProjectRef, taskID string, baseline, attempted ProjectConfigSnapshot, before []agentdocker.Container, failureCode string, mutationAttempted bool, started time.Time) (string, error) {
 	recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), composeOperationLimit)
 	defer cancel()
 	ctx = recoveryCtx
@@ -707,7 +704,7 @@ func (m *Manager) recoverDeployment(ctx context.Context, ref protocol.ComposePro
 	}
 	if len(before) == 0 {
 		if mutationAttempted {
-			if err := m.removeCreatedProjectInstances(ctx, ref, before, started); err != nil {
+			if err := m.removeTaskCreatedProjectInstances(ctx, ref, before, started, taskID); err != nil {
 				return "unknown", &deploymentResultError{state: "recovery_required", code: "unexpected_project_containers", unknown: true}
 			}
 		} else {
@@ -729,10 +726,9 @@ func (m *Manager) recoverDeployment(ctx context.Context, ref protocol.ComposePro
 		return "unknown", &deploymentResultError{state: "recovery_required", code: "project_identity_conflict", unknown: true}
 	}
 	// A partial `up` can leave task-created containers occupying ports needed by
-	// the baseline. Remove only instances whose exact Compose ref, service slot,
-	// and creation time prove they belong to this deployment before recreating
-	// the baseline services.
-	if err := m.removeTaskCreatedProjectInstances(ctx, ref, before, started); err != nil {
+	// the baseline. The exact task marker and canonical source ref prove ownership;
+	// creation time is only a secondary consistency check.
+	if err := m.removeTaskCreatedProjectInstances(ctx, ref, before, started, taskID); err != nil {
 		return "unknown", &deploymentResultError{state: "recovery_required", code: "unexpected_project_containers", unknown: true}
 	}
 	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
@@ -742,7 +738,7 @@ func (m *Manager) recoverDeployment(ctx context.Context, ref protocol.ComposePro
 	for service, count := range serviceInstanceCounts(before) {
 		args = append(args, "--scale", service+"="+strconv.Itoa(count))
 	}
-	if err := m.runCompose(ctx, ref, nil, args...); err != nil {
+	if err := m.runComposeWithTask(ctx, ref, taskID, args...); err != nil {
 		return "unknown", &deploymentResultError{state: "recovery_required", code: "service_recovery_failed", unknown: true}
 	}
 	if err := m.restoreContainerStates(ctx, ref, before); err != nil {
@@ -758,62 +754,8 @@ func (m *Manager) recoverDeployment(ctx context.Context, ref protocol.ComposePro
 	return "recovered", &deploymentResultError{state: "recovered", code: failureCode}
 }
 
-func (m *Manager) removeCreatedProjectInstances(ctx context.Context, ref protocol.ComposeProjectRef, before []agentdocker.Container, started time.Time) error {
-	if started.IsZero() || m.assertProjectNameOwned(ctx, ref) != nil {
-		return ErrOperationUncertain
-	}
-	oldIDs := make(map[string]struct{}, len(before))
-	for _, container := range before {
-		oldIDs[container.ID] = struct{}{}
-	}
-	ids, err := m.engine.ListAll(ctx)
-	if err != nil {
-		return ErrProjectUnavailable
-	}
-	created := make([]agentdocker.Container, 0)
-	for _, id := range ids {
-		container, inspectErr := m.engine.Inspect(ctx, id)
-		if inspectErr != nil {
-			return ErrProjectUnavailable
-		}
-		if container.Compose == nil || container.Compose.Project != ref.Name {
-			continue
-		}
-		identity, identityErr := reference(container.Compose)
-		if identityErr != nil || identity.Key != ref.Key {
-			return ErrProjectConflict
-		}
-		if _, existed := oldIDs[container.ID]; existed {
-			continue
-		}
-		if container.CreatedAt == nil || container.CreatedAt.Before(started.Add(-5*time.Second)) {
-			return ErrOperationUncertain
-		}
-		created = append(created, container)
-	}
-	for _, candidate := range created {
-		current, inspectErr := m.engine.Inspect(ctx, candidate.ID)
-		if inspectErr != nil || current.ID != candidate.ID || current.Compose == nil || current.Compose.Project != ref.Name ||
-			current.CreatedAt == nil || current.CreatedAt.Before(started.Add(-5*time.Second)) {
-			return ErrOperationUncertain
-		}
-		identity, identityErr := reference(current.Compose)
-		if identityErr != nil || identity.Key != ref.Key {
-			return ErrProjectConflict
-		}
-		if err := m.runDocker(ctx, "container", "rm", "--force", "--", current.ID); err != nil {
-			return err
-		}
-	}
-	remaining, err := m.projectInstances(ctx, ref)
-	if err != nil || len(remaining) != 0 {
-		return ErrOperationUncertain
-	}
-	return nil
-}
-
-func (m *Manager) removeTaskCreatedProjectInstances(ctx context.Context, ref protocol.ComposeProjectRef, before []agentdocker.Container, started time.Time) error {
-	if started.IsZero() || m.assertProjectNameOwned(ctx, ref) != nil {
+func (m *Manager) removeTaskCreatedProjectInstances(ctx context.Context, ref protocol.ComposeProjectRef, before []agentdocker.Container, started time.Time, taskID string) error {
+	if started.IsZero() || !validComposeTaskLabelValue(taskID) || m.assertProjectNameOwned(ctx, ref) != nil {
 		return ErrOperationUncertain
 	}
 	baselineIDs := make(map[string]string, len(before))
@@ -863,6 +805,10 @@ func (m *Manager) removeTaskCreatedProjectInstances(ctx context.Context, ref pro
 			}
 			continue
 		}
+		if !container.Compose.TaskMarkerSeen || !container.Compose.TaskMarkerValid || container.Compose.TaskID != taskID ||
+			container.Compose.TaskRefKey != ref.Key {
+			return ErrOperationUncertain
+		}
 		if container.CreatedAt == nil || container.CreatedAt.Before(started.Add(-5*time.Second)) {
 			return ErrOperationUncertain
 		}
@@ -872,15 +818,13 @@ func (m *Manager) removeTaskCreatedProjectInstances(ctx context.Context, ref pro
 		current, inspectErr := m.engine.Inspect(ctx, candidate.ID)
 		if inspectErr != nil || current.ID != candidate.ID || current.Compose == nil || current.Compose.Project != ref.Name ||
 			current.Compose.Service != candidate.Compose.Service || current.Compose.ContainerNumber != candidate.Compose.ContainerNumber ||
+			!current.Compose.TaskMarkerSeen || !current.Compose.TaskMarkerValid || current.Compose.TaskID != taskID || current.Compose.TaskRefKey != ref.Key ||
 			current.CreatedAt == nil || current.CreatedAt.Before(started.Add(-5*time.Second)) ||
 			candidate.CreatedAt == nil || !current.CreatedAt.Equal(*candidate.CreatedAt) {
 			return ErrOperationUncertain
 		}
 		identity, identityErr := reference(current.Compose)
 		if identityErr != nil || identity.Key != ref.Key {
-			return ErrProjectConflict
-		}
-		if _, baselineID := baselineIDs[current.ID]; baselineID {
 			return ErrProjectConflict
 		}
 		if err := m.runDocker(ctx, "container", "rm", "--force", "--", current.ID); err != nil {
@@ -1324,6 +1268,10 @@ func (m *Manager) runCompose(ctx context.Context, ref protocol.ComposeProjectRef
 }
 
 func (m *Manager) runComposeOutput(ctx context.Context, ref protocol.ComposeProjectRef, overrides map[int]string, operation ...string) (string, error) {
+	return m.runComposeOutputWithExtraFile(ctx, ref, overrides, "", operation...)
+}
+
+func (m *Manager) runComposeOutputWithExtraFile(ctx context.Context, ref protocol.ComposeProjectRef, overrides map[int]string, extraFile string, operation ...string) (string, error) {
 	if m.dockerPath == "" || protocol.ValidateComposeProjectRef(ref) != nil {
 		return "", ErrProjectUnavailable
 	}
@@ -1333,6 +1281,9 @@ func (m *Manager) runComposeOutput(ctx context.Context, ref protocol.ComposeProj
 			config = replacement
 		}
 		args = append(args, "--file", config)
+	}
+	if extraFile != "" {
+		args = append(args, "--file", extraFile)
 	}
 	args = append(args, operation...)
 	timeout := composeOperationLimit
@@ -1352,6 +1303,185 @@ func (m *Manager) runComposeOutput(ctx context.Context, ref protocol.ComposeProj
 		return output.buffer.String(), errors.New("Docker Compose command failed")
 	}
 	return output.buffer.String(), nil
+}
+
+func (m *Manager) runComposeWithTask(ctx context.Context, ref protocol.ComposeProjectRef, taskID string, operation ...string) error {
+	if !validComposeTaskLabelValue(taskID) || protocol.ValidateComposeProjectRef(ref) != nil {
+		return ErrProjectConflict
+	}
+	output, err := m.runComposeOutput(ctx, ref, nil, "config", "--format", "json")
+	if err != nil {
+		return ErrConfigInvalid
+	}
+	var normalized struct {
+		Services map[string]json.RawMessage `json:"services"`
+	}
+	if err := json.Unmarshal([]byte(output), &normalized); err != nil || len(normalized.Services) == 0 {
+		return ErrConfigInvalid
+	}
+	services := make(map[string]map[string]string, len(normalized.Services))
+	for name, raw := range normalized.Services {
+		if name == "" || serviceUsesReservedTaskLabels(raw) {
+			return ErrConfigUnsafe
+		}
+		services[name] = map[string]string{
+			agentdocker.ComposeTaskIDLabel:       taskID,
+			agentdocker.ComposeTaskRefKeyLabel:   ref.Key,
+			agentdocker.ComposeTaskOverrideLabel: "",
+		}
+	}
+
+	override, err := createTaskComposeOverride(ref, services)
+	if err != nil {
+		return ErrConfigUnsafe
+	}
+	for _, labels := range services {
+		labels[agentdocker.ComposeTaskOverrideLabel] = override.path
+	}
+	// The override's own path is part of the ownership proof, so rewrite and
+	// fsync it only after the random path has been allocated.
+	if err := override.write(services); err != nil {
+		_ = override.remove()
+		return ErrConfigUnsafe
+	}
+	_, commandErr := m.runComposeOutputWithExtraFile(ctx, ref, nil, override.path, operation...)
+	removeErr := override.remove()
+	if removeErr != nil {
+		return ErrOperationUncertain
+	}
+	return commandErr
+}
+
+type taskComposeOverride struct {
+	root *os.Root
+	name string
+	path string
+}
+
+func createTaskComposeOverride(ref protocol.ComposeProjectRef, services map[string]map[string]string) (*taskComposeOverride, error) {
+	root, err := openSafeWorkingRoot(ref.WorkingDirectory)
+	if err != nil {
+		return nil, err
+	}
+	for attempt := 0; attempt < 8; attempt++ {
+		var nonce [16]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			root.Close()
+			return nil, err
+		}
+		name := ".nodedance-task-" + hex.EncodeToString(nonce[:]) + ".yaml"
+		path := filepath.Join(ref.WorkingDirectory, name)
+		file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			root.Close()
+			return nil, err
+		}
+		if err := file.Close(); err != nil {
+			root.Remove(name)
+			root.Close()
+			return nil, err
+		}
+		return &taskComposeOverride{root: root, name: name, path: path}, nil
+	}
+	root.Close()
+	return nil, ErrProjectConflict
+}
+
+func (o *taskComposeOverride) write(services map[string]map[string]string) error {
+	content, err := json.Marshal(struct {
+		Services map[string]map[string]map[string]string `json:"services"`
+	}{Services: makeTaskOverrideServices(services)})
+	if err != nil {
+		return err
+	}
+	file, err := o.root.OpenFile(o.name, os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(content); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return syncComposeRoot(o.root)
+}
+
+func makeTaskOverrideServices(services map[string]map[string]string) map[string]map[string]map[string]string {
+	override := make(map[string]map[string]map[string]string, len(services))
+	for name, labels := range services {
+		override[name] = map[string]map[string]string{"labels": labels}
+	}
+	return override
+}
+
+func (o *taskComposeOverride) remove() error {
+	if o == nil || o.root == nil {
+		return ErrConfigUnsafe
+	}
+	removeErr := o.root.Remove(o.name)
+	syncErr := syncComposeRoot(o.root)
+	closeErr := o.root.Close()
+	if removeErr != nil || syncErr != nil || closeErr != nil {
+		return ErrOperationUncertain
+	}
+	o.root = nil
+	return nil
+}
+
+func serviceUsesReservedTaskLabels(raw json.RawMessage) bool {
+	var service map[string]json.RawMessage
+	if json.Unmarshal(raw, &service) != nil {
+		return true
+	}
+	labelsRaw := service["labels"]
+	if len(labelsRaw) == 0 || string(labelsRaw) == "null" {
+		return false
+	}
+	var mapLabels map[string]json.RawMessage
+	if json.Unmarshal(labelsRaw, &mapLabels) == nil {
+		for label := range mapLabels {
+			if isReservedTaskLabel(label) {
+				return true
+			}
+		}
+		return false
+	}
+	var listLabels []string
+	if json.Unmarshal(labelsRaw, &listLabels) != nil {
+		return true
+	}
+	for _, label := range listLabels {
+		key, _, _ := strings.Cut(label, "=")
+		if isReservedTaskLabel(key) {
+			return true
+		}
+	}
+	return false
+}
+
+func isReservedTaskLabel(label string) bool {
+	return label == agentdocker.ComposeTaskIDLabel || label == agentdocker.ComposeTaskRefKeyLabel || label == agentdocker.ComposeTaskOverrideLabel
+}
+
+func validComposeTaskLabelValue(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for index, r := range value {
+		valid := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '.' || r == ':' || r == '-'
+		if !valid || index == 0 && !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+			return false
+		}
+	}
+	return true
 }
 
 func (m *Manager) waitProjectState(ctx context.Context, ref protocol.ComposeProjectRef, expected string) ([]agentdocker.Container, error) {
