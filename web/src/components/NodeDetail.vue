@@ -333,7 +333,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="node-detail-page" aria-labelledby="detail-title" data-testid="node-detail">
     <header class="detail-heading">
-      <div><button class="container-action back-button" type="button" @click="emit('back')">← 所有 VPS</button><span class="eyebrow">SINGLE VPS DETAIL</span><h1 id="detail-title">{{ nodeTitle }}</h1><p>{{ node.displayName }} · {{ node.nodeId }}</p></div>
+      <div><button class="container-action back-button" type="button" @click="emit('back')">← 所有 VPS</button><span class="eyebrow">SINGLE VPS DETAIL</span><h1 id="detail-title">{{ nodeTitle }}</h1><p>{{ node.displayName }} · {{ node.nodeId }}</p><p v-if="nodePreference?.notes" class="node-detail-note">{{ nodePreference.notes }}</p></div>
       <div class="detail-heading-status"><span class="node-detail-status" :data-online="online">{{ pending ? '等待注册' : online ? '在线' : '离线' }}</span><span class="docker-state" :data-available="inventory?.dockerAvailability || 'unknown'" :data-stale="dockerStale">{{ inventory ? dockerAvailabilityText(inventory) : online ? '等待 Docker 状态' : 'Docker 状态未知' }}</span></div>
     </header>
     <nav class="dashboard-tabs" aria-label="节点管理视图"><button v-for="tab in sectionTabs" :key="tab.id" type="button" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button></nav>
@@ -380,6 +380,7 @@ onBeforeUnmount(() => {
 .detail-heading { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:20px; }
 .detail-heading h1 { margin:6px 0 4px; font-size:clamp(24px,3vw,34px); overflow-wrap:anywhere; }
 .detail-heading p { margin:0; color:#91a2ba; font:10px/1.5 ui-monospace,monospace; overflow-wrap:anywhere; }
+.detail-heading .node-detail-note { margin-top:7px; color:#bdcbe0; font-family:inherit; font-size:11px; line-height:1.55; white-space:pre-wrap; }
 .back-button { margin-bottom:12px; }
 .detail-heading-status { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
 .dashboard-tabs { display:flex; gap:6px; overflow-x:auto; margin:0 0 16px; border-bottom:1px solid rgba(171,196,232,.12); padding-bottom:8px; scrollbar-width:thin; }

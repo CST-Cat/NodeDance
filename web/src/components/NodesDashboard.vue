@@ -159,7 +159,7 @@ const serverCardGroups = computed(() => {
       .some((value) => value?.toLocaleLowerCase().includes(query))
     if (statusFilter.value === 'online' && status !== '在线') return false
     if (statusFilter.value === 'pending' && status !== '等待注册') return false
-    if (statusFilter.value === 'offline' && !['离线', '已撤销'].includes(status)) return false
+    if (statusFilter.value === 'offline' && status !== '离线') return false
     if (statusFilter.value === 'revoked' && status !== '已撤销') return false
     return !query || [node.displayName, nodeTitle(node), node.nodeId, preference?.group, preference?.notes, hostname, status]
       .some((value) => value?.toLocaleLowerCase().includes(query))

@@ -259,6 +259,7 @@ function emitAction(record: DockerContainerRecord, action: ContainerTaskAction) 
       <span class="vps-card-status" :data-online="online" role="status">{{ nodeStatusLabel() }}</span>
     </header>
     <p class="vps-card-id">{{ node.nodeId }} · {{ node.agentVersion || 'Agent 未连接' }}</p>
+    <p v-if="nodePreference?.notes" class="vps-card-note">{{ nodePreference.notes }}</p>
 
     <div class="vps-card-metrics" aria-label="主机监控指标">
       <div><span>CPU</span><strong>{{ metricValue(metrics?.metrics.cpu.usagePercent, metrics?.metrics.cpu.usagePercent.value ?? undefined) }}</strong></div>
@@ -322,6 +323,7 @@ function emitAction(record: DockerContainerRecord, action: ContainerTaskAction) 
 .vps-card-status { border: 1px solid rgba(171,196,232,.15); border-radius: 999px; padding: 6px 10px; color: #ffb4aa; font-size: 10px; white-space: nowrap; }
 .vps-card-status[data-online='true'] { color: #9ce0b7; }
 .vps-card-id { margin: 6px 0 12px; color: #8193aa; font: 9px/1.5 ui-monospace,monospace; overflow-wrap: anywhere; }
+.vps-card-note { margin: -5px 0 12px; color: #b7c5d9; font-size: 10px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .vps-card-metrics { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 7px; }
 .vps-card-metrics > div { display: grid; min-width: 0; gap: 5px; border: 1px solid rgba(171,196,232,.1); border-radius: 7px; padding: 8px; }
 .vps-card-metrics span { color: #91a2ba; font-size: 9px; }
