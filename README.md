@@ -24,7 +24,7 @@ make frontend
 make build
 ```
 
-The binaries are written to `.build/nodedance` and `.build/nodedance-agent`. `make check` runs the frontend checks and Go tests.
+The binaries are written to `.build/nodedance` and `.build/nodedance-agent`. `make check` runs the frontend checks and Go tests. To install already-built binaries, run `sudo make install`; it copies both files to `$(PREFIX)/bin` (default `/usr/local/bin`) without rebuilding as root. `DESTDIR` can stage the install for packaging, for example `make install DESTDIR=/tmp/nodedance-package`.
 
 ## Run the Core
 
@@ -36,9 +36,19 @@ go run ./cmd/nodedance serve --dev --listen 127.0.0.1:8180 --data-dir ./data
 
 Open `http://127.0.0.1:8180`. On first start, the Core prints the path to a private, one-time setup credential file. Enter that credential in the first-run setup flow and choose an administrator password of at least 12 UTF-8 bytes. The Core removes the credential file after setup succeeds.
 
-For a persistent installation, create a dedicated service account and private data directory. A minimal Core systemd unit can use the built binary:
+For a persistent installation, build and install the binaries, then create a dedicated Core service account and private data directory:
 
-```ini
+```sh
+make build
+sudo make install
+getent passwd nodedance >/dev/null || sudo useradd --system --home-dir /var/lib/nodedance --shell /usr/sbin/nologin nodedance
+sudo install -d -o nodedance -g nodedance -m 0700 /var/lib/nodedance
+```
+
+Create the service unit only when the destination path is absent. This command uses a temporary file and a no-clobber hard link, so an existing unit or symlink is not overwritten:
+
+```sh
+sudo sh -c 'set -eu; unit=/etc/systemd/system/nodedance.service; tmp=$(mktemp /etc/systemd/system/.nodedance.service.XXXXXX); trap "rm -f \"$tmp\"" EXIT; cat >"$tmp"; chmod 0644 "$tmp"; ln "$tmp" "$unit"; rm "$tmp"; trap - EXIT' <<'EOF'
 [Unit]
 Description=NodeDance Core
 After=network-online.target
@@ -61,9 +71,16 @@ ReadWritePaths=/var/lib/nodedance
 
 [Install]
 WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now nodedance.service
+sudo systemctl status nodedance.service
 ```
 
-Create `/var/lib/nodedance` owned by `nodedance` with mode `0700`, install the unit as `/etc/systemd/system/nodedance.service`, then enable it with systemd. Configure the reverse proxy for HTTPS, WebSocket upgrades on `/ws/`, and forwarding to `127.0.0.1:8180`. Set `NODEDANCE_TRUSTED_PROXIES` or `trusted_proxies` only to the proxy addresses that actually connect to the Core. Do not expose an unencrypted Core listener to the public Internet.
+The unit listens on loopback and stores its database and keys under `/var/lib/nodedance`. Configure the reverse proxy for HTTPS, WebSocket upgrades on `/ws/`, and forwarding to `127.0.0.1:8180`. Set `NODEDANCE_TRUSTED_PROXIES` or `trusted_proxies` only to the proxy addresses that actually connect to the Core. Do not expose an unencrypted Core listener to the public Internet. On first start, read the one-time setup credential from the private file path printed in the service log (normally `sudo -u nodedance cat /var/lib/nodedance/setup-credential.txt`), then enter it in the browser setup flow. The Core removes that credential after setup succeeds.
+
+Manage the service with `sudo systemctl restart nodedance.service`, `sudo systemctl stop nodedance.service`, and `sudo journalctl -u nodedance.service`. A local Agent can run on the same Linux host. In production, enroll it against an HTTPS origin with a valid certificate; a reverse proxy can route that origin back to the loopback Core. For local development only, use the loopback `--dev` flow below. The Agent connects outbound over WSS for HTTPS origins and reconnects automatically after temporary Core or network outages.
 
 The Core reads JSON configuration from `--config` or `NODEDANCE_CONFIG`; its default is `$XDG_CONFIG_HOME/nodedance/config.json` (or `~/.config/nodedance/config.json` on a typical Linux host). CLI flags take precedence over supported environment variables, which take precedence over the config file. Important options include:
 
@@ -82,6 +99,8 @@ The Core data directory contains the SQLite database and authentication/encrypti
 
 Create an enrollment credential in the Core console, then enroll the Agent on the target Linux host. The token is read from stdin; it is not placed in the command line or shell history.
 
+If building from this checkout on that host, first run `make build` and `sudo make install`. Otherwise install a trusted release binary after verifying its release signature. Use the same `nodedance-agent` executable for enrollment, recovery, foreground execution, and systemd installation.
+
 ```sh
 nodedance-agent enroll --server https://nodedance.example --token-stdin
 nodedance-agent run
@@ -92,6 +111,7 @@ When using a terminal, paste the one-time token, press Enter, then finish stdin 
 For a persistent Agent, create a dedicated unprivileged account and private state directory, enroll with an explicit config path, then install its systemd unit:
 
 ```sh
+getent passwd nodedance-agent >/dev/null || sudo useradd --system --home-dir /var/lib/nodedance-agent --shell /usr/sbin/nologin nodedance-agent
 sudo install -d -o nodedance-agent -g nodedance-agent -m 0700 /var/lib/nodedance-agent
 sudo -u nodedance-agent nodedance-agent enroll \
   --server https://nodedance.example \
@@ -103,7 +123,24 @@ sudo nodedance-agent install-systemd \
   --enable
 ```
 
+The installer writes a NodeDance-managed system unit, refuses an unrelated or unmarked existing unit, reloads systemd, and enables/starts the Agent. Inspect it with `sudo systemctl status nodedance-agent.service`; restart or stop it with `sudo systemctl restart nodedance-agent.service` or `sudo systemctl stop nodedance-agent.service`. If enrollment may have reached Core but the response was lost, retain the private config and run `sudo -u nodedance-agent nodedance-agent recover --config /var/lib/nodedance-agent/agent.json`. Recovery checks the saved device credential and does not replay the one-time token.
+
 Add `--file-root /absolute/path` only when the Agent should expose that host directory in the console. Docker access is optional. If it is authorized, pass `--supplementary-group docker` when installing the unit (or use an explicitly approved group). Membership in the Docker group grants powerful control of the host. NodeDance does not change Docker socket permissions. If Docker is absent or the Agent user cannot access it, the console reports Docker as unavailable while host monitoring continues.
+
+### Optional Tailscale discovery and SSH-assisted Agent installation
+
+Tailscale is optional. Core startup does not install, configure, or require it. If the Core host has the Tailscale CLI installed and is logged in, an administrator can open **发现节点** in the console; discovery reads that host's local `tailscale status --json`. If the CLI is absent or not logged in, ordinary Core management and manual Agent enrollment continue to work.
+
+SSH-assisted deployment is available only for visible, online Linux peers and requires a signed Agent artifact on the Core. Build Linux `amd64` and/or `arm64` Agent binaries, sign each binary with an Ed25519 release key kept outside the Core host, and place each binary with its detached signature at `linux-amd64/nodedance-agent[.sig]` or `linux-arm64/nodedance-agent[.sig]` under a private artifact directory. Configure the Core service environment with the artifact directory and the base64-encoded raw Ed25519 public key, then restart Core:
+
+```ini
+Environment=NODEDANCE_AGENT_ARTIFACT_DIR=/var/lib/nodedance-agent-artifacts
+Environment=NODEDANCE_AGENT_SIGNING_PUBLIC_KEY=<base64-encoded-raw-ed25519-public-key>
+```
+
+Add those lines in `sudo systemctl edit nodedance.service`, save the override, then run `sudo systemctl daemon-reload && sudo systemctl restart nodedance.service`.
+
+The public key is not secret; keep the signing private key off the Core host. In the UI, refresh discovery, select a Linux peer, read its SSH host-key fingerprint, and verify it through an independent trusted channel before confirming. Credentials are held only for the active deployment request and are not stored in task history. The UI displays a manual SSH recovery command. If signed artifacts are not configured, use the manual enrollment procedure above. Tailscale and SSH deployment should be used only when you administer those systems.
 
 ## Use probes and alerts
 
