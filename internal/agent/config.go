@@ -127,6 +127,10 @@ func loadConfigForUID(path string, ownerUID int) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	return decodeConfig(data)
+}
+
+func decodeConfig(data []byte) (Config, error) {
 	var config Config
 	decoder := json.NewDecoder(strings.NewReader(string(data)))
 	decoder.DisallowUnknownFields()

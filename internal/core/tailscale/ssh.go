@@ -724,31 +724,33 @@ trap 'rollback 129' HUP
 trap 'rollback 130' INT
 trap 'rollback 143' TERM
 %s
+printf '%%s' '%s' | base64 -d > "$TMP/nodedance-agent"
+actual="$(sha256sum "$TMP/nodedance-agent" | awk '{print $1}')"
+[ "$actual" = '%s' ] || { echo 'Agent SHA-256 mismatch' >&2; exit 21; }
+chmod 0755 "$TMP/nodedance-agent"
+"$TMP/nodedance-agent" validate-systemd-state --config /var/lib/nodedance-agent/agent.json
+if ! getent passwd nodedance-agent >/dev/null; then useradd --system --home-dir /var/lib/nodedance-agent --shell /usr/sbin/nologin nodedance-agent; fi
+service_uid="$(id -u nodedance-agent)"
+[ "$service_uid" -ne 0 ] || { echo 'refusing to run Agent as root service account' >&2; exit 22; }
+%s
+%s
+state_config="$("$TMP/nodedance-agent" prepare-systemd-state --user nodedance-agent)"
+case "$state_config" in
+  new) NEW_CONFIG=1 ;;
+  existing) NEW_CONFIG=0 ;;
+  *) echo 'Agent state preparation returned an invalid result' >&2; exit 30 ;;
+esac
 if [ -x /usr/local/bin/nodedance-agent ]; then cp -a /usr/local/bin/nodedance-agent "$TMP/old-agent"; HAD_BINARY=1; fi
 if [ -d /var/lib/nodedance-agent/bin ]; then cp -a /var/lib/nodedance-agent/bin "$TMP/old-agent-bin"; HAD_AGENT_BIN=1; fi
 if [ -f /etc/systemd/system/nodedance-agent.service ]; then cp -a /etc/systemd/system/nodedance-agent.service "$TMP/old-unit"; HAD_UNIT=1; fi
 if systemctl is-active --quiet nodedance-agent.service; then WAS_ACTIVE=1; fi
 SNAPSHOT_COMPLETE=1
-%s
-printf '%%s' '%s' | base64 -d > "$TMP/nodedance-agent"
-actual="$(sha256sum "$TMP/nodedance-agent" | awk '{print $1}')"
-[ "$actual" = '%s' ] || { echo 'Agent SHA-256 mismatch' >&2; exit 21; }
-chmod 0755 "$TMP/nodedance-agent"
-if ! getent passwd nodedance-agent >/dev/null; then useradd --system --home-dir /var/lib/nodedance-agent --shell /usr/sbin/nologin nodedance-agent; fi
-service_uid="$(id -u nodedance-agent)"
-[ "$service_uid" -ne 0 ] || { echo 'refusing to run Agent as root service account' >&2; exit 22; }
-%s
 install -m 0755 "$TMP/nodedance-agent" /usr/local/bin/.nodedance-agent.new
 mv -f /usr/local/bin/.nodedance-agent.new /usr/local/bin/nodedance-agent
-mkdir -p /var/lib/nodedance-agent
-chmod 0700 /var/lib/nodedance-agent
-chown nodedance-agent:nodedance-agent /var/lib/nodedance-agent
-if [ ! -s /var/lib/nodedance-agent/agent.json ]; then
+if [ "$state_config" = new ]; then
   NEW_CONFIG=1
   printf '%%s' '%s' | base64 -d | runuser -u nodedance-agent -- /usr/local/bin/nodedance-agent enroll --server "$(printf '%%s' '%s' | base64 -d)" --token-stdin --config /var/lib/nodedance-agent/agent.json
 fi
-chmod 0600 /var/lib/nodedance-agent/agent.json
-chown nodedance-agent:nodedance-agent /var/lib/nodedance-agent/agent.json
 %s
 UNIT_MAY_HAVE_CHANGED=1
 set +e
@@ -763,7 +765,7 @@ if [ -f "$unit_path" ] && [ ! -L "$unit_path" ] && is_nodedance_unit "$unit_path
 fi
 [ "$install_status" -eq 0 ] || exit "$install_status"
 /usr/local/bin/nodedance-agent version >/dev/null
-`, unitRollback, artifactRollback, unitGuard, dockerSocketRecheck, encodedArtifact, artifact.SHA256, dockerOwnerRecheck, encodedToken, encodedURL, unitGuard, fileRootInstall, dockerSupplementaryGroup)
+`, unitRollback, artifactRollback, unitGuard, encodedArtifact, artifact.SHA256, dockerOwnerRecheck, dockerSocketRecheck, encodedToken, encodedURL, unitGuard, fileRootInstall, dockerSupplementaryGroup)
 	if _, err := remote.Run(ctx, mode, []byte(script)); err != nil {
 		return fmt.Errorf("remote Agent installation failed; temporary artifacts are removed and prior binary/service are restored where possible: %w", err)
 	}

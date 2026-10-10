@@ -7,10 +7,177 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 )
+
+func TestPrepareSystemdStateRejectsSymlinkPathsWithoutChangingTargets(t *testing.T) {
+	serviceUID, serviceGID := os.Geteuid(), os.Getegid()
+
+	t.Run("state directory symlink", func(t *testing.T) {
+		root := t.TempDir()
+		victim := filepath.Join(root, "victim")
+		if err := os.Mkdir(victim, 0o751); err != nil {
+			t.Fatal(err)
+		}
+		victimConfig := filepath.Join(victim, "agent.json")
+		if err := os.WriteFile(victimConfig, []byte("unrelated-state\n"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+		stateDir := filepath.Join(root, "nodedance-agent")
+		if err := os.Symlink(victim, stateDir); err != nil {
+			t.Fatal(err)
+		}
+		beforeDir := statePathSnapshot(t, victim)
+		beforeConfig := statePathSnapshot(t, victimConfig)
+
+		if _, err := prepareSystemdState(filepath.Join(stateDir, "agent.json"), serviceUID, serviceGID); err == nil {
+			t.Fatal("state directory symlink was accepted")
+		}
+		assertStatePathSnapshot(t, victim, beforeDir)
+		assertStatePathSnapshot(t, victimConfig, beforeConfig)
+	})
+
+	t.Run("config symlink", func(t *testing.T) {
+		root := t.TempDir()
+		stateDir := filepath.Join(root, "nodedance-agent")
+		if err := os.Mkdir(stateDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		victim := filepath.Join(root, "unrelated.json")
+		if err := os.WriteFile(victim, []byte("unrelated-config\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		configPath := filepath.Join(stateDir, "agent.json")
+		if err := os.Symlink(victim, configPath); err != nil {
+			t.Fatal(err)
+		}
+		beforeDir := statePathSnapshot(t, stateDir)
+		beforeConfig := statePathSnapshot(t, victim)
+
+		if _, err := prepareSystemdState(configPath, serviceUID, serviceGID); err == nil {
+			t.Fatal("config symlink was accepted")
+		}
+		assertStatePathSnapshot(t, stateDir, beforeDir)
+		assertStatePathSnapshot(t, victim, beforeConfig)
+	})
+
+	t.Run("config hard link", func(t *testing.T) {
+		root := t.TempDir()
+		stateDir := filepath.Join(root, "nodedance-agent")
+		if err := os.Mkdir(stateDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		victim := filepath.Join(root, "unrelated.json")
+		if err := os.WriteFile(victim, []byte("unrelated-config\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		configPath := filepath.Join(stateDir, "agent.json")
+		if err := os.Link(victim, configPath); err != nil {
+			t.Fatal(err)
+		}
+		beforeDir := statePathSnapshot(t, stateDir)
+		beforeConfig := statePathSnapshot(t, victim)
+
+		if _, err := prepareSystemdState(configPath, serviceUID, serviceGID); err == nil || !strings.Contains(err.Error(), "hard links") {
+			t.Fatalf("expected hard-linked config rejection, got %v", err)
+		}
+		assertStatePathSnapshot(t, stateDir, beforeDir)
+		assertStatePathSnapshot(t, victim, beforeConfig)
+	})
+}
+
+func TestPrepareSystemdStateCreatesNewAndPreservesValidConfig(t *testing.T) {
+	serviceUID, serviceGID := os.Geteuid(), os.Getegid()
+	root := t.TempDir()
+
+	newConfig := filepath.Join(root, "new-state", "agent.json")
+	exists, err := prepareSystemdState(newConfig, serviceUID, serviceGID)
+	if err != nil || exists {
+		t.Fatalf("prepare new state: exists=%v err=%v", exists, err)
+	}
+	newInfo, err := os.Stat(filepath.Dir(newConfig))
+	if err != nil || newInfo.Mode().Perm() != 0o700 {
+		t.Fatalf("new state directory is not private: info=%v err=%v", newInfo, err)
+	}
+
+	stateDir := filepath.Join(root, "existing-state")
+	if err := os.Mkdir(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(stateDir, "agent.json")
+	config := Config{Schema: ConfigSchema, Server: "https://core.example", Credential: strings.Repeat("a", 64)}
+	if err := SaveConfig(configPath, config, true); err != nil {
+		t.Fatalf("write existing Agent config: %v", err)
+	}
+	original, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(configPath, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	exists, err = prepareSystemdState(configPath, serviceUID, serviceGID)
+	if err != nil || !exists {
+		t.Fatalf("prepare existing state: exists=%v err=%v", exists, err)
+	}
+	stored, err := os.ReadFile(configPath)
+	if err != nil || string(stored) != string(original) {
+		t.Fatalf("existing Agent config content changed: err=%v", err)
+	}
+	stateInfo, err := os.Stat(stateDir)
+	if err != nil || stateInfo.Mode().Perm() != 0o700 {
+		t.Fatalf("existing state directory was not secured: info=%v err=%v", stateInfo, err)
+	}
+	configInfo, err := os.Stat(configPath)
+	if err != nil || configInfo.Mode().Perm() != 0o600 {
+		t.Fatalf("existing config was not secured: info=%v err=%v", configInfo, err)
+	}
+	if _, err := LoadConfig(configPath); err != nil {
+		t.Fatalf("existing Agent identity no longer loads: %v", err)
+	}
+}
+
+type systemdStateSnapshot struct {
+	mode os.FileMode
+	uid  uint32
+	gid  uint32
+	data string
+}
+
+func statePathSnapshot(t *testing.T, path string) systemdStateSnapshot {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatalf("unexpected stat type for %s", path)
+	}
+	snapshot := systemdStateSnapshot{mode: info.Mode(), uid: stat.Uid, gid: stat.Gid}
+	if info.Mode().IsRegular() {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot.data = string(data)
+	}
+	return snapshot
+}
+
+func assertStatePathSnapshot(t *testing.T, path string, want systemdStateSnapshot) {
+	t.Helper()
+	if got := statePathSnapshot(t, path); got != want {
+		t.Fatalf("target changed at %s: got=%+v want=%+v", path, got, want)
+	}
+}
 
 func TestWriteSystemdUnitCreateReinstallAndForeignRefusal(t *testing.T) {
 	path := filepath.Join(t.TempDir(), AgentUnitName)

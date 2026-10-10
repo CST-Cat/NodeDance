@@ -13,9 +13,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"golang.org/x/sys/unix"
 )
 
 const AgentUnitName = "nodedance-agent.service"
+
+const systemdStateConfigMaxBytes = 1 << 20
 
 type SystemdInstallOptions struct {
 	User                string
@@ -31,6 +35,220 @@ type SystemdInstallOptions struct {
 	SupplementaryGroups []string
 	Reload              bool
 	EnableNow           bool
+}
+
+// ValidateSystemdStatePath checks the Agent state directory and config without
+// following any existing symlink. It performs no filesystem mutations, so an
+// SSH installer can reject unsafe paths before creating the service account or
+// replacing the installed binary.
+func ValidateSystemdStatePath(configPath string) error {
+	dirFD, missing, err := openSystemdStateDirectory(configPath, false)
+	if err != nil || missing {
+		return err
+	}
+	defer unix.Close(dirFD)
+
+	configFD, exists, err := openSystemdConfig(dirFD, filepath.Base(configPath))
+	if err != nil || !exists {
+		return err
+	}
+	defer unix.Close(configFD)
+	_, err = readSystemdConfig(configFD)
+	return err
+}
+
+// PrepareSystemdStateForUser safely prepares the dedicated Agent state path
+// for a non-root system account. Directory and file ownership/mode changes are
+// applied through already-open, no-follow file descriptors.
+//
+// It returns true when a valid config already existed and was preserved.
+func PrepareSystemdStateForUser(serviceUser, configPath string) (bool, error) {
+	if os.Geteuid() != 0 {
+		return false, errors.New("preparing systemd Agent state requires root privileges")
+	}
+	account, err := user.Lookup(serviceUser)
+	if err != nil {
+		return false, fmt.Errorf("lookup systemd service user %q: %w", serviceUser, err)
+	}
+	uid, err := strconv.Atoi(account.Uid)
+	if err != nil || uid <= 0 {
+		return false, errors.New("systemd service user must resolve to a non-root UID")
+	}
+	gid, err := strconv.Atoi(account.Gid)
+	if err != nil || gid < 0 {
+		return false, errors.New("systemd service user has an invalid primary GID")
+	}
+	return prepareSystemdState(configPath, uid, gid)
+}
+
+func prepareSystemdState(configPath string, serviceUID, serviceGID int) (bool, error) {
+	dirFD, missing, err := openSystemdStateDirectory(configPath, true)
+	if err != nil {
+		return false, err
+	}
+	if missing {
+		return false, errors.New("internal error: Agent state directory was not created")
+	}
+	defer unix.Close(dirFD)
+
+	configFD, exists, err := openSystemdConfig(dirFD, filepath.Base(configPath))
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		defer unix.Close(configFD)
+		if _, err := readSystemdConfig(configFD); err != nil {
+			return false, err
+		}
+	}
+
+	// Validate and open the config before touching either path's metadata. In
+	// particular, a config symlink must not cause even the state directory to
+	// be chmod/chowned as a side effect of a rejected installation.
+	if err := setSystemdStateMetadata(dirFD, serviceUID, serviceGID, 0o700, "Agent state directory"); err != nil {
+		return false, err
+	}
+	if exists {
+		if err := setSystemdStateMetadata(configFD, serviceUID, serviceGID, 0o600, "Agent config"); err != nil {
+			return false, err
+		}
+	}
+	return exists, nil
+}
+
+func openSystemdStateDirectory(configPath string, createFinal bool) (int, bool, error) {
+	if !filepath.IsAbs(configPath) || filepath.Clean(configPath) != configPath || strings.ContainsRune(configPath, '\x00') {
+		return -1, false, errors.New("systemd Agent config path must be a clean absolute path")
+	}
+	if filepath.Base(configPath) == "." || filepath.Base(configPath) == string(filepath.Separator) {
+		return -1, false, errors.New("systemd Agent config path must name a file")
+	}
+	directory := filepath.Dir(configPath)
+	if directory == string(filepath.Separator) {
+		return -1, false, errors.New("systemd Agent config requires a dedicated state directory")
+	}
+	components := strings.Split(strings.TrimPrefix(directory, string(filepath.Separator)), string(filepath.Separator))
+	rootFD, err := unix.Open(string(filepath.Separator), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return -1, false, fmt.Errorf("open filesystem root: %w", err)
+	}
+	currentFD := rootFD
+	for index, component := range components {
+		if component == "" || component == "." || component == ".." {
+			if currentFD != rootFD {
+				unix.Close(currentFD)
+			}
+			unix.Close(rootFD)
+			return -1, false, errors.New("systemd Agent state path has an invalid component")
+		}
+		final := index == len(components)-1
+		nextFD, openErr := unix.Openat(currentFD, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+		if errors.Is(openErr, unix.ENOENT) && final {
+			if !createFinal {
+				if currentFD != rootFD {
+					unix.Close(currentFD)
+				}
+				unix.Close(rootFD)
+				return -1, true, nil
+			}
+			if err := unix.Mkdirat(currentFD, component, 0o700); err != nil && !errors.Is(err, unix.EEXIST) {
+				if currentFD != rootFD {
+					unix.Close(currentFD)
+				}
+				unix.Close(rootFD)
+				return -1, false, fmt.Errorf("create Agent state directory: %w", err)
+			}
+			nextFD, openErr = unix.Openat(currentFD, component, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+		}
+		if openErr != nil {
+			if currentFD != rootFD {
+				unix.Close(currentFD)
+			}
+			unix.Close(rootFD)
+			return -1, false, fmt.Errorf("open Agent state path component %q without following symlinks: %w", component, openErr)
+		}
+		if currentFD != rootFD {
+			unix.Close(currentFD)
+		}
+		currentFD = nextFD
+	}
+	unix.Close(rootFD)
+	return currentFD, false, nil
+}
+
+func openSystemdConfig(dirFD int, name string) (int, bool, error) {
+	if name == "" || name == "." || name == ".." || strings.ContainsRune(name, '/') {
+		return -1, false, errors.New("systemd Agent config path must name a file")
+	}
+	fd, err := unix.Openat(dirFD, name, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
+	if errors.Is(err, unix.ENOENT) {
+		return -1, false, nil
+	}
+	if err != nil {
+		return -1, false, fmt.Errorf("open Agent config without following symlinks: %w", err)
+	}
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
+		unix.Close(fd)
+		return -1, false, fmt.Errorf("inspect Agent config: %w", err)
+	}
+	if stat.Mode&unix.S_IFMT != unix.S_IFREG {
+		unix.Close(fd)
+		return -1, false, errors.New("Agent config must be a regular file")
+	}
+	if stat.Nlink != 1 {
+		unix.Close(fd)
+		return -1, false, errors.New("Agent config must not have hard links")
+	}
+	return fd, true, nil
+}
+
+func readSystemdConfig(fd int) (Config, error) {
+	if _, err := unix.Seek(fd, 0, 0); err != nil {
+		return Config{}, fmt.Errorf("rewind Agent config: %w", err)
+	}
+	data := make([]byte, 0, 4096)
+	buffer := make([]byte, 4096)
+	for {
+		count, err := unix.Read(fd, buffer)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		if err != nil {
+			return Config{}, fmt.Errorf("read Agent config: %w", err)
+		}
+		if count == 0 {
+			break
+		}
+		data = append(data, buffer[:count]...)
+		if len(data) > systemdStateConfigMaxBytes {
+			return Config{}, errors.New("Agent config is too large")
+		}
+	}
+	config, err := decodeConfig(data)
+	if err != nil {
+		return Config{}, fmt.Errorf("validate existing Agent config: %w", err)
+	}
+	return config, nil
+}
+
+func setSystemdStateMetadata(fd, uid, gid int, mode uint32, label string) error {
+	var stat unix.Stat_t
+	if err := unix.Fstat(fd, &stat); err != nil {
+		return fmt.Errorf("inspect %s: %w", label, err)
+	}
+	if label == "Agent config" && stat.Nlink != 1 {
+		return errors.New("Agent config must not have hard links")
+	}
+	if int(stat.Uid) != uid || int(stat.Gid) != gid {
+		if err := unix.Fchown(fd, uid, gid); err != nil {
+			return fmt.Errorf("set %s owner: %w", label, err)
+		}
+	}
+	if err := unix.Fchmod(fd, mode); err != nil {
+		return fmt.Errorf("set %s permissions: %w", label, err)
+	}
+	return nil
 }
 
 func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string, error) {

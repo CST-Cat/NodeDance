@@ -10,9 +10,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -609,6 +611,201 @@ func TestInstallRemotePassesSystemdPreflightFingerprintToInstaller(t *testing.T)
 				t.Fatalf("generated deployment script has invalid shell syntax: %v: %s", err, output)
 			}
 		})
+	}
+}
+
+func TestGeneratedInstallValidatesAgentStateBeforeAnySystemWrites(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("generated SSH installer targets Linux")
+	}
+	arch := map[string]string{"amd64": "x86_64", "arm64": "aarch64"}[runtime.GOARCH]
+	if arch == "" {
+		t.Skipf("unsupported test build architecture %q", runtime.GOARCH)
+	}
+
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test source path")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(testFile), "..", "..", ".."))
+	agentBinary := filepath.Join(t.TempDir(), "nodedance-agent")
+	build := exec.Command("go", "build", "-o", agentBinary, "./cmd/nodedance-agent")
+	build.Dir = repoRoot
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build the Agent artifact for the generated install script: %v: %s", err, output)
+	}
+	artifactBytes, err := os.ReadFile(agentBinary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(artifactBytes)
+	remote := &stage6Remote{}
+	preflight := Preflight{OS: "linux", Arch: arch, UID: 0, UnitState: "absent"}
+	artifact := Artifact{Bytes: artifactBytes, OS: "linux", Arch: arch, SHA256: hex.EncodeToString(digest[:])}
+	if err := InstallRemoteWithFileRootOptions(context.Background(), remote, preflight, artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, "", false); err != nil {
+		t.Fatalf("generate Agent installation script: %v", err)
+	}
+	if len(remote.installs) != 1 {
+		t.Fatalf("expected one generated install script, got %d", len(remote.installs))
+	}
+	script := remote.installs[0]
+	validateAt := strings.Index(script, `"$TMP/nodedance-agent" validate-systemd-state --config /var/lib/nodedance-agent/agent.json`)
+	accountAt := strings.Index(script, "if ! getent passwd nodedance-agent")
+	snapshotAt := strings.Index(script, "if [ -x /usr/local/bin/nodedance-agent ]")
+	installAt := strings.Index(script, "install -m 0755 \"$TMP/nodedance-agent\" /usr/local/bin/.nodedance-agent.new")
+	if validateAt < 0 || accountAt < 0 || snapshotAt < 0 || installAt < 0 || validateAt > accountAt || validateAt > snapshotAt || validateAt > installAt {
+		t.Fatal("generated installer must validate state paths before account changes, snapshots, or binary installation")
+	}
+	for _, unsafe := range []string{
+		"mkdir -p /var/lib/nodedance-agent",
+		"chmod 0700 /var/lib/nodedance-agent",
+		"chown nodedance-agent:nodedance-agent /var/lib/nodedance-agent",
+		"chmod 0600 /var/lib/nodedance-agent/agent.json",
+		"chown nodedance-agent:nodedance-agent /var/lib/nodedance-agent/agent.json",
+	} {
+		if strings.Contains(script, unsafe) {
+			t.Fatalf("generated installer retained unsafe path-based mutation %q", unsafe)
+		}
+	}
+
+	for _, testCase := range []struct {
+		name      string
+		setup     func(*testing.T, string) []string
+		wantError bool
+	}{
+		{
+			name: "state directory symlink",
+			setup: func(t *testing.T, root string) []string {
+				t.Helper()
+				victim := filepath.Join(root, "victim-state")
+				if err := os.Mkdir(victim, 0o751); err != nil {
+					t.Fatal(err)
+				}
+				victimConfig := filepath.Join(victim, "agent.json")
+				if err := os.WriteFile(victimConfig, []byte("unrelated-state\n"), 0o640); err != nil {
+					t.Fatal(err)
+				}
+				stateDir := filepath.Join(root, "var", "lib", "nodedance-agent")
+				if err := os.Symlink(victim, stateDir); err != nil {
+					t.Fatal(err)
+				}
+				return []string{victim, victimConfig}
+			},
+			wantError: true,
+		},
+		{
+			name: "config symlink",
+			setup: func(t *testing.T, root string) []string {
+				t.Helper()
+				stateDir := filepath.Join(root, "var", "lib", "nodedance-agent")
+				if err := os.Mkdir(stateDir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				victim := filepath.Join(root, "unrelated.json")
+				if err := os.WriteFile(victim, []byte("unrelated-config\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(victim, filepath.Join(stateDir, "agent.json")); err != nil {
+					t.Fatal(err)
+				}
+				return []string{stateDir, victim}
+			},
+			wantError: true,
+		},
+		{
+			name: "new unlinked state path",
+			setup: func(*testing.T, string) []string {
+				return nil
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, directory := range []string{"tmp", "var/lib", "usr/local/bin", "etc/systemd/system", "run/systemd/system", "usr/local/lib/systemd/system", "usr/lib/systemd/system", "lib/systemd/system", "bin"} {
+				if err := os.MkdirAll(filepath.Join(root, directory), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			victims := testCase.setup(t, root)
+			before := make([]systemPathSnapshot, 0, len(victims))
+			for _, victim := range victims {
+				before = append(before, snapshotSystemPath(t, victim))
+			}
+			fakeSystemctl := "#!/bin/sh\ncase \"$1:$2\" in\nshow:--property=FragmentPath) printf '\\n' ;;\nshow:--property=LoadState) printf 'not-found\\n' ;;\n*) exit 3 ;;\nesac\n"
+			if err := os.WriteFile(filepath.Join(root, "bin", "systemctl"), []byte(fakeSystemctl), 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			stagedScript := script
+			for _, path := range []string{
+				"/var/lib/nodedance-agent",
+				"/usr/local/bin",
+				"/etc/systemd/system",
+				"/run/systemd/system",
+				"/usr/local/lib/systemd/system",
+				"/usr/lib/systemd/system",
+				"/lib/systemd/system",
+				"/var/run/docker.sock",
+				"/tmp/nodedance-deploy.",
+			} {
+				stagedScript = strings.ReplaceAll(stagedScript, path, filepath.Join(root, strings.TrimPrefix(path, "/")))
+			}
+			prefixEnd := strings.Index(stagedScript, "\nif ! getent passwd nodedance-agent")
+			if prefixEnd < 0 {
+				t.Fatal("cannot isolate generated installer preflight")
+			}
+			command := exec.Command("/bin/sh", "-s")
+			command.Stdin = strings.NewReader(stagedScript[:prefixEnd])
+			command.Env = append(os.Environ(), "PATH="+filepath.Join(root, "bin")+":"+os.Getenv("PATH"))
+			output, runErr := command.CombinedOutput()
+			if testCase.wantError && runErr == nil {
+				t.Fatalf("generated installer accepted a symlinked state path: %s", output)
+			}
+			if !testCase.wantError && runErr != nil {
+				t.Fatalf("generated installer rejected a safe new state path: %v: %s", runErr, output)
+			}
+			for index, victim := range victims {
+				assertSystemPathUnchanged(t, victim, before[index])
+			}
+			if _, err := os.Lstat(filepath.Join(root, "usr", "local", "bin", ".nodedance-agent.new")); !os.IsNotExist(err) {
+				t.Fatalf("installer wrote a global binary before path validation: %v", err)
+			}
+		})
+	}
+}
+
+type systemPathSnapshot struct {
+	mode os.FileMode
+	uid  uint32
+	gid  uint32
+	data string
+}
+
+func snapshotSystemPath(t *testing.T, path string) systemPathSnapshot {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Fatalf("unexpected stat type for %s", path)
+	}
+	snapshot := systemPathSnapshot{mode: info.Mode(), uid: stat.Uid, gid: stat.Gid}
+	if info.Mode().IsRegular() {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot.data = string(data)
+	}
+	return snapshot
+}
+
+func assertSystemPathUnchanged(t *testing.T, path string, want systemPathSnapshot) {
+	t.Helper()
+	if got := snapshotSystemPath(t, path); got != want {
+		t.Fatalf("target changed at %s: got=%+v want=%+v", path, got, want)
 	}
 }
 

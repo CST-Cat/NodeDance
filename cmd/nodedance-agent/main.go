@@ -42,6 +42,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runAgent(ctx, args[1:], stderr)
 	case "install-systemd":
 		return runInstallSystemd(ctx, args[1:], stdout, stderr)
+	case "validate-systemd-state":
+		return runValidateSystemdState(args[1:], stdout, stderr)
+	case "prepare-systemd-state":
+		return runPrepareSystemdState(args[1:], stdout, stderr)
 	case "validate-file-root":
 		return runValidateFileRoot(args[1:], stdout, stderr)
 	default:
@@ -56,8 +60,50 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, "  nodedance-agent recover [--config path]")
 	fmt.Fprintln(output, "  nodedance-agent run [--config path]")
 	fmt.Fprintln(output, "  nodedance-agent validate-file-root --file-root <absolute-directory> [--state-dir <path>]")
+	fmt.Fprintln(output, "  nodedance-agent validate-systemd-state [--config path]")
+	fmt.Fprintln(output, "  nodedance-agent prepare-systemd-state --user <service-user>")
 	fmt.Fprintln(output, "  nodedance-agent install-systemd --user <service-user> [--config path] [--file-root absolute-directory] [--no-file-root] [--supplementary-group <gid>] [--enable]")
 	fmt.Fprintln(output, "The Agent never accepts inbound management connections. Enrollment tokens are read only from stdin.")
+}
+
+func runValidateSystemdState(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("validate-systemd-state", stderr)
+	configPath := flags.String("config", "/var/lib/nodedance-agent/agent.json", "Agent config path to validate without following symlinks")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected validate-systemd-state arguments: %v", flags.Args())
+	}
+	if err := agent.ValidateSystemdStatePath(*configPath); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "Agent state path is safe")
+	return nil
+}
+
+func runPrepareSystemdState(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("prepare-systemd-state", stderr)
+	serviceUser := flags.String("user", "", "explicit non-root Agent service account")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected prepare-systemd-state arguments: %v", flags.Args())
+	}
+	if strings.TrimSpace(*serviceUser) == "" {
+		return fmt.Errorf("--user is required")
+	}
+	exists, err := agent.PrepareSystemdStateForUser(*serviceUser, "/var/lib/nodedance-agent/agent.json")
+	if err != nil {
+		return err
+	}
+	if exists {
+		fmt.Fprintln(stdout, "existing")
+	} else {
+		fmt.Fprintln(stdout, "new")
+	}
+	return nil
 }
 
 // runValidateFileRoot is a read-only target-side preflight for SSH deployment.
