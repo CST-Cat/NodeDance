@@ -1,5 +1,5 @@
-// Package compose discovers read-only Compose project inventory from Docker
-// Engine labels. Mutating operations will use the Core task path when re-added.
+// Package compose discovers Compose inventory from Docker Engine labels and
+// executes Compose changes through the shared Core Task and Agent TaskJournal.
 package compose
 
 import (
@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -26,6 +27,7 @@ type Engine interface {
 type Manager struct {
 	engine     Engine
 	dockerPath string
+	createMu   sync.Mutex
 }
 
 func NewManager(engine Engine) (*Manager, error) {
@@ -134,12 +136,18 @@ func reference(identity *agentdocker.ComposeIdentity) (protocol.ComposeProjectRe
 }
 
 func configExists(ref protocol.ComposeProjectRef) bool {
-	if info, err := os.Stat(ref.WorkingDirectory); err != nil || !info.IsDir() {
+	root, err := openSafeWorkingRoot(ref.WorkingDirectory)
+	if err != nil {
 		return false
 	}
+	defer root.Close()
 	for _, file := range ref.ConfigFiles {
-		info, err := os.Stat(file)
-		if err != nil || !info.Mode().IsRegular() {
+		clean := filepath.Clean(file)
+		relative, relErr := filepath.Rel(ref.WorkingDirectory, clean)
+		resolved, resolveErr := filepath.EvalSymlinks(clean)
+		info, statErr := root.Lstat(relative)
+		if relErr != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) ||
+			resolveErr != nil || resolved != clean || statErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 			return false
 		}
 	}

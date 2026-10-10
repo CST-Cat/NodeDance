@@ -12,8 +12,9 @@ type EnvelopeWriter interface {
 	Send(context.Context, protocol.Envelope) error
 }
 
-// Bridge exposes Compose inventory only. Mutating Compose operations are
-// disabled until they use the Core's common task state and result path.
+// Bridge handles read-only inventory and config preflight requests. Compose
+// file writes and project lifecycle mutations use the shared Core Task and
+// Agent TaskJournal path.
 type Bridge struct{ manager *Manager }
 
 func NewBridge(manager *Manager) (*Bridge, error) {

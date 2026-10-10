@@ -257,8 +257,8 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		if task.Intent.Action == protocol.TaskImagePull {
 			dispatch.RegistryAuth = registryAuth
 		}
-		if task.Intent.Action == protocol.TaskComposeSave && task.Intent.Compose != nil {
-			dispatch.ComposeContent = s.takeComposeContent(task.TaskID, task.NodeID, task.Intent.Compose.ContentSHA256)
+		if (task.Intent.Action == protocol.TaskComposeSave || task.Intent.Action == protocol.TaskComposeCreate) && task.Intent.Compose != nil {
+			dispatch.ComposeContent = s.takeComposeContent(task.TaskID, task.NodeID, connection.generation, journalID, task.Intent.Compose.ContentSHA256)
 		}
 		if task.Intent.Action == protocol.TaskFileSaveText && task.Intent.File != nil {
 			dispatch.FileContent = s.takeFileContent(task.TaskID, task.NodeID, task.Intent.File.SHA256)
@@ -274,7 +274,7 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 				dispatch.RegistryAuth = nil
 			}
 			if dispatch.ComposeContent != nil {
-				clear(dispatch.ComposeContent.Content)
+				protocol.ClearComposeContent(dispatch.ComposeContent)
 				dispatch.ComposeContent = nil
 			}
 			if dispatch.FileContent != nil {
@@ -296,7 +296,7 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			dispatch.RegistryAuth = nil
 		}
 		if dispatch.ComposeContent != nil {
-			clear(dispatch.ComposeContent.Content)
+			protocol.ClearComposeContent(dispatch.ComposeContent)
 			dispatch.ComposeContent = nil
 		}
 		if dispatch.FileContent != nil {

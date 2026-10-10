@@ -1,5 +1,5 @@
-// Package compose stores the last known Compose project inventory. Operation
-// state is managed only by Core Tasks when Compose writes are reintroduced.
+// Package compose stores the last known Compose project inventory. Mutating
+// operations and their durable state are handled by the shared Core Task store.
 package compose
 
 import (

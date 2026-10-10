@@ -353,6 +353,7 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 		return protocol.TaskReport{}, protocol.ErrInvalidTaskMessage
 	}
 	defer protocol.ClearContainerCreateSpec(dispatch.ContainerCreate)
+	defer protocol.ClearComposeContent(dispatch.ComposeContent)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.started {
@@ -409,6 +410,11 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 	if accepted.Task.Status == taskstate.Queued && !alreadyActive {
 		r.activeTasks[dispatch.TaskID] = struct{}{}
 		copyOfDispatch := dispatch
+		if dispatch.ComposeContent != nil {
+			content := *dispatch.ComposeContent
+			content.Content = append([]byte(nil), dispatch.ComposeContent.Content...)
+			copyOfDispatch.ComposeContent = &content
+		}
 		if dispatch.FileContent != nil {
 			content := *dispatch.FileContent
 			content.Content = append([]byte(nil), dispatch.FileContent.Content...)
@@ -436,6 +442,7 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 			if copyOfDispatch.FileContent != nil {
 				clear(copyOfDispatch.FileContent.Content)
 			}
+			protocol.ClearComposeContent(copyOfDispatch.ComposeContent)
 			clearRunnerContainerCreateSpec(copyOfDispatch.ContainerCreate)
 			return protocol.TaskReport{}, ErrCapacityExceeded
 		}
@@ -775,6 +782,7 @@ func (r *Runner) worker() {
 func (r *Runner) runJob(job taskJob) {
 	if job.dispatch != nil {
 		defer clearRunnerContainerCreateSpec(job.dispatch.ContainerCreate)
+		defer protocol.ClearComposeContent(job.dispatch.ComposeContent)
 		defer func() {
 			if job.dispatch.FileContent != nil {
 				clear(job.dispatch.FileContent.Content)

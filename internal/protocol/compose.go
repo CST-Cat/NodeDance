@@ -80,11 +80,13 @@ func ComposeProjectKey(name, workingDirectory string, configFiles []string) stri
 }
 
 func ValidateComposeProjectRef(ref ComposeProjectRef) error {
-	if !composeName.MatchString(ref.Name) || !filepath.IsAbs(ref.WorkingDirectory) || len(ref.ConfigFiles) == 0 || len(ref.ConfigFiles) > MaxComposeConfigFiles {
+	if !composeName.MatchString(ref.Name) || !filepath.IsAbs(ref.WorkingDirectory) || filepath.Clean(ref.WorkingDirectory) != ref.WorkingDirectory ||
+		strings.TrimSpace(ref.WorkingDirectory) != ref.WorkingDirectory || strings.IndexByte(ref.WorkingDirectory, 0) >= 0 ||
+		len(ref.ConfigFiles) == 0 || len(ref.ConfigFiles) > MaxComposeConfigFiles {
 		return errors.New("invalid Compose project reference")
 	}
 	for _, file := range ref.ConfigFiles {
-		if !filepath.IsAbs(file) || strings.TrimSpace(file) != file || strings.IndexByte(file, 0) >= 0 {
+		if !filepath.IsAbs(file) || filepath.Clean(file) != file || strings.TrimSpace(file) != file || strings.IndexByte(file, 0) >= 0 {
 			return errors.New("invalid Compose config path")
 		}
 	}

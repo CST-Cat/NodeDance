@@ -93,6 +93,10 @@ func (s *Server) handleComposeAPI(w http.ResponseWriter, r *http.Request, curren
 		http.NotFound(w, r)
 		return true
 	}
+	if r.Method == http.MethodPost {
+		s.handleCreateComposeProjectTask(w, r, current, parts[0])
+		return true
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return true

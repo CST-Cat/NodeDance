@@ -57,7 +57,7 @@ func (e *TaskExecutor) ExecuteCompose(ctx context.Context, dispatch protocol.Tas
 	if onRunning != nil {
 		onRunning(running)
 	}
-	if dispatch.Intent.Action == protocol.TaskComposeSave {
+	if dispatch.Intent.Action == protocol.TaskComposeSave || dispatch.Intent.Action == protocol.TaskComposeCreate {
 		contentDigest := sha256.Sum256(nil)
 		if dispatch.ComposeContent != nil {
 			contentDigest = sha256.Sum256(dispatch.ComposeContent.Content)
@@ -65,6 +65,19 @@ func (e *TaskExecutor) ExecuteCompose(ctx context.Context, dispatch protocol.Tas
 		if dispatch.ComposeContent == nil || dispatch.ComposeContent.SHA256 != dispatch.Intent.Compose.ContentSHA256 ||
 			hex.EncodeToString(contentDigest[:]) != dispatch.Intent.Compose.ContentSHA256 {
 			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", "payload_unavailable")
+		}
+		if dispatch.Intent.Action == protocol.TaskComposeCreate {
+			instances, err := e.manager.CreateProject(ctx, dispatch.Intent.Compose.Project, dispatch.ComposeContent.Content, dispatch.Intent.Compose.ContentSHA256)
+			if err != nil {
+				if errors.Is(err, ErrOperationUncertain) {
+					return e.markUnknown(ctx, dispatch.TaskID)
+				}
+				return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", stableErrorCode(err))
+			}
+			if len(instances) == 0 {
+				return e.markUnknown(ctx, dispatch.TaskID)
+			}
+			return e.finish(ctx, dispatch.TaskID, taskstate.Succeeded, "deployed", dispatch.Intent.Compose.Project.Key)
 		}
 		committed, err := e.manager.SaveConfig(ctx, dispatch.Intent.Compose.Project, dispatch.Intent.Compose.FileIndex,
 			dispatch.Intent.Compose.BaseSHA256, string(dispatch.ComposeContent.Content))
@@ -90,6 +103,16 @@ func (e *TaskExecutor) ReconcileCompose(ctx context.Context, taskID string, inte
 	task, err := e.journal.Get(ctx, taskID)
 	if err != nil || task.Status != taskstate.Unknown {
 		return task, err
+	}
+	if intent.Action == protocol.TaskComposeCreate && intent.Compose != nil {
+		if instances, err := e.manager.verifyCreatedProject(ctx, intent.Compose.Project, intent.Compose.ContentSHA256); err == nil && len(instances) > 0 {
+			evidence := taskstate.Evidence{ExecutionAttempted: true, ExecutionCompleted: true, ActualResultConfirmed: true, PostconditionVerified: true}
+			result := taskjournal.Result{Code: taskjournal.ResultVerified, ObservedState: "deployed", ResourceRevision: intent.Compose.Project.Key}
+			if err := e.journal.Finish(ctx, taskID, taskstate.Succeeded, evidence, result); err != nil {
+				return taskjournal.Snapshot{}, err
+			}
+			return e.journal.Get(ctx, taskID)
+		}
 	}
 	if intent.Action == protocol.TaskComposeSave && intent.Compose != nil {
 		if err := e.manager.verifyConfigDigest(intent.Compose.Project, intent.Compose.FileIndex, intent.Compose.ContentSHA256); err == nil {
@@ -157,6 +180,10 @@ func stableErrorCode(err error) string {
 		return "config_invalid"
 	case errors.Is(err, ErrProjectUnavailable):
 		return "project_unavailable"
+	case errors.Is(err, ErrProjectConflict):
+		return "project_conflict"
+	case errors.Is(err, ErrCreateFailed):
+		return "creation_rolled_back"
 	case errors.Is(err, ErrConfigUnsafe):
 		return "config_unsafe"
 	default:

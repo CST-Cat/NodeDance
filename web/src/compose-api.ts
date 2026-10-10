@@ -41,9 +41,19 @@ export interface ComposeConfigDocument {
 
 export type ComposeOperation = 'start' | 'stop' | 'restart' | 'deploy' | 'config_save'
 
+export interface ComposeCreateRequest {
+  name: string
+  workingDirectory: string
+  content: string
+}
+
 export const composeApi = {
   projects: (nodeId: string) => request<ComposeProjectsResponse>(
     `/api/v1/nodes/${encodeURIComponent(nodeId)}/compose/projects`,
+  ),
+  createProject: (nodeId: string, payload: ComposeCreateRequest, idempotencyKey: string) => request<{ taskId: string; status: ContainerTask['status'] }>(
+    `/api/v1/nodes/${encodeURIComponent(nodeId)}/compose/projects`,
+    { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true,
   ),
   config: (nodeId: string, projectKey: string, fileIndex: number) => request<ComposeConfigDocument>(
     `/api/v1/nodes/${encodeURIComponent(nodeId)}/compose/projects/${encodeURIComponent(projectKey)}/config/${fileIndex}`,

@@ -71,6 +71,7 @@ const (
 	TaskComposeRestart  TaskAction = "compose_restart"
 	TaskComposeDeploy   TaskAction = "compose_deploy"
 	TaskComposeSave     TaskAction = "compose_config_save"
+	TaskComposeCreate   TaskAction = "compose_create"
 	TaskFileMkdir       TaskAction = "file_mkdir"
 	TaskFileRename      TaskAction = "file_rename"
 	TaskFileDelete      TaskAction = "file_delete"
@@ -328,6 +329,10 @@ func ValidateTaskIntent(intent TaskIntent) error {
 		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.File != nil || !validComposeTaskSpec(intent, true) {
 			return ErrInvalidTaskMessage
 		}
+	case TaskComposeCreate:
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.File != nil || !validComposeCreateTaskSpec(intent) {
+			return ErrInvalidTaskMessage
+		}
 	case TaskFileMkdir, TaskFileRename, TaskFileDelete, TaskFileSaveText, TaskFileUpload:
 		if intent.NewName != "" || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil {
 			return ErrInvalidTaskMessage
@@ -547,6 +552,12 @@ func validComposeTaskSpec(intent TaskIntent, save bool) bool {
 	return intent.Compose.FileIndex == 0 && intent.Compose.ContentSHA256 == "" && intent.Compose.BaseSHA256 == ""
 }
 
+func validComposeCreateTaskSpec(intent TaskIntent) bool {
+	return intent.Compose != nil && intent.Compose.Project.Key == intent.ContainerID &&
+		ValidateComposeProjectRef(intent.Compose.Project) == nil && intent.Compose.FileIndex == 0 &&
+		intent.Compose.BaseSHA256 == "" && composeContentHash.MatchString(intent.Compose.ContentSHA256)
+}
+
 // ImageTargetKey maps an image request to the fixed-width resource identifier
 // used by the durable task ledger. The original reference or image ID remains
 // a separate typed field; registry credentials are never part of this value.
@@ -678,7 +689,7 @@ func TaskRequestDigest(taskID, nodeID, idempotencyKey string, intent TaskIntent)
 
 func IsComposeTaskAction(action TaskAction) bool {
 	switch action {
-	case TaskComposeStart, TaskComposeStop, TaskComposeRestart, TaskComposeDeploy, TaskComposeSave:
+	case TaskComposeStart, TaskComposeStop, TaskComposeRestart, TaskComposeDeploy, TaskComposeSave, TaskComposeCreate:
 		return true
 	default:
 		return false
@@ -751,7 +762,7 @@ type TaskDispatch struct {
 	// RegistryAuth is a one-delivery credential, outside TaskIntent and its
 	// digest, so Core and Agent task journals cannot persist it.
 	RegistryAuth *RegistryCredentials `json:"registryAuth,omitempty"`
-	// ComposeContent is a one-delivery config-save body; only its SHA-256 is
+	// ComposeContent is a one-delivery create/save body; only its SHA-256 is
 	// persisted in TaskIntent and Agent journal records.
 	ComposeContent *ComposeContent `json:"composeContent,omitempty"`
 	// FileContent is a one-delivery UTF-8 text body. Uploads use the existing
@@ -765,6 +776,14 @@ type TaskDispatch struct {
 type ComposeContent struct {
 	SHA256  string `json:"sha256"`
 	Content []byte `json:"content"`
+}
+
+func ClearComposeContent(content *ComposeContent) {
+	if content == nil {
+		return
+	}
+	clear(content.Content)
+	content.SHA256 = ""
 }
 
 type FileContent struct {
@@ -902,12 +921,12 @@ func ValidateTaskDispatch(envelope Envelope, dispatch TaskDispatch, nodeID, jour
 		return fmt.Errorf("%w: registry credentials are invalid for this dispatch", ErrInvalidTaskMessage)
 	}
 	if dispatch.ComposeContent != nil {
-		if dispatch.Intent.Action != TaskComposeSave || dispatch.Intent.Compose == nil ||
+		if dispatch.Intent.Action != TaskComposeSave && dispatch.Intent.Action != TaskComposeCreate || dispatch.Intent.Compose == nil ||
 			dispatch.ComposeContent.SHA256 != dispatch.Intent.Compose.ContentSHA256 ||
 			len(dispatch.ComposeContent.Content) > MaxComposeFileBytes || sha256.Sum256(dispatch.ComposeContent.Content) != mustDecodeSHA256(dispatch.ComposeContent.SHA256) {
 			return fmt.Errorf("%w: Compose payload is invalid for this dispatch", ErrInvalidTaskMessage)
 		}
-	} else if dispatch.Intent.Action == TaskComposeSave {
+	} else if dispatch.Intent.Action == TaskComposeSave || dispatch.Intent.Action == TaskComposeCreate {
 		// The Core keeps file bodies only in memory. If that one-use payload was
 		// lost, the Agent will persist a failed result without changing the file.
 	}

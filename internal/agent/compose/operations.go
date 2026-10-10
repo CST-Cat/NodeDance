@@ -3,11 +3,13 @@ package compose
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -28,11 +30,251 @@ const (
 
 var (
 	ErrProjectUnavailable = errors.New("Compose project is no longer present in Docker inventory")
+	ErrProjectConflict    = errors.New("Compose project name or config path is already in use")
+	ErrCreateFailed       = errors.New("Compose project creation failed and was rolled back")
 	ErrConfigUnsafe       = errors.New("Compose config file is outside the supported safe edit scope")
 	ErrConfigChanged      = errors.New("Compose config file changed since it was opened")
 	ErrConfigInvalid      = errors.New("Compose config is invalid")
 	ErrOperationUncertain = errors.New("Compose operation result could not be verified")
 )
+
+// CreateProject stages a new config without replacing any existing path,
+// validates it with Docker Compose, commits it atomically, and verifies the
+// resulting project through Docker Engine. Rollback never removes volumes.
+func (m *Manager) CreateProject(ctx context.Context, ref protocol.ComposeProjectRef, content []byte, digest string) ([]agentdocker.Container, error) {
+	m.createMu.Lock()
+	defer m.createMu.Unlock()
+	if err := validateCreateProjectRef(ref); err != nil || len(content) == 0 || len(content) > protocol.MaxComposeFileBytes {
+		return nil, ErrConfigUnsafe
+	}
+	actualDigest := sha256.Sum256(content)
+	if hex.EncodeToString(actualDigest[:]) != digest {
+		return nil, ErrConfigChanged
+	}
+	root, err := openSafeWorkingRoot(ref.WorkingDirectory)
+	if err != nil {
+		return nil, ErrConfigUnsafe
+	}
+	defer root.Close()
+	if _, err := root.Lstat("compose.yaml"); err == nil || !errors.Is(err, fs.ErrNotExist) {
+		return nil, ErrProjectConflict
+	}
+	if err := m.assertProjectNameAvailable(ctx, ref); err != nil {
+		return nil, err
+	}
+	temporary, temporaryPath, err := writeNewComposeCandidate(root, ref.WorkingDirectory, content)
+	if err != nil {
+		return nil, ErrConfigUnsafe
+	}
+	defer root.Remove(temporary)
+	_, err = m.runComposeOutput(ctx, ref, map[int]string{0: temporaryPath}, "config", "--quiet")
+	if err != nil {
+		return nil, ErrConfigInvalid
+	}
+	services, err := m.runComposeOutput(ctx, ref, map[int]string{0: temporaryPath}, "config", "--services")
+	if err != nil || strings.TrimSpace(services) == "" {
+		return nil, ErrConfigInvalid
+	}
+	if _, err := root.Lstat("compose.yaml"); err == nil || !errors.Is(err, fs.ErrNotExist) {
+		return nil, ErrProjectConflict
+	}
+	if err := root.Link(temporary, "compose.yaml"); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return nil, ErrProjectConflict
+		}
+		return nil, ErrConfigUnsafe
+	}
+	removeCreatedConfig := func() bool {
+		if err := m.verifyConfigDigest(ref, 0, digest); err != nil {
+			return false
+		}
+		if err := root.Remove("compose.yaml"); err != nil {
+			return false
+		}
+		return syncComposeRoot(root) == nil
+	}
+	if err := syncComposeRoot(root); err != nil {
+		if removeCreatedConfig() {
+			return nil, ErrCreateFailed
+		}
+		return nil, ErrOperationUncertain
+	}
+	if err := m.verifyConfigDigest(ref, 0, digest); err != nil || m.runCompose(ctx, ref, nil, "config", "--quiet") != nil {
+		if !removeCreatedConfig() {
+			return nil, ErrOperationUncertain
+		}
+		return nil, ErrConfigInvalid
+	}
+	if err := m.assertProjectNameAvailable(ctx, ref); err != nil {
+		if removeCreatedConfig() {
+			return nil, err
+		}
+		return nil, ErrOperationUncertain
+	}
+	if err := m.runCompose(ctx, ref, nil, "up", "-d"); err != nil {
+		if m.rollbackCreatedProject(ctx, ref, root, digest) {
+			return nil, ErrCreateFailed
+		}
+		return nil, ErrOperationUncertain
+	}
+	instances, err := m.waitProjectInstances(ctx, ref)
+	if err != nil || len(instances) == 0 {
+		if m.rollbackCreatedProject(ctx, ref, root, digest) {
+			return nil, ErrCreateFailed
+		}
+		return nil, ErrOperationUncertain
+	}
+	if err := m.verifyConfigDigest(ref, 0, digest); err != nil {
+		return nil, ErrOperationUncertain
+	}
+	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
+		return nil, ErrOperationUncertain
+	}
+	return instances, nil
+}
+
+func validateCreateProjectRef(ref protocol.ComposeProjectRef) error {
+	if protocol.ValidateComposeProjectRef(ref) != nil || len(ref.ConfigFiles) != 1 ||
+		filepath.Clean(ref.WorkingDirectory) != ref.WorkingDirectory || ref.WorkingDirectory == string(filepath.Separator) ||
+		ref.ConfigFiles[0] != filepath.Join(ref.WorkingDirectory, "compose.yaml") {
+		return ErrConfigUnsafe
+	}
+	return nil
+}
+
+func (m *Manager) assertProjectNameAvailable(ctx context.Context, ref protocol.ComposeProjectRef) error {
+	ids, err := m.engine.ListAll(ctx)
+	if err != nil {
+		return ErrProjectUnavailable
+	}
+	for _, id := range ids {
+		container, err := m.engine.Inspect(ctx, id)
+		if err != nil {
+			return ErrProjectUnavailable
+		}
+		if container.Compose != nil && container.Compose.Project == ref.Name {
+			return ErrProjectConflict
+		}
+	}
+	return nil
+}
+
+func (m *Manager) assertProjectNameOwned(ctx context.Context, ref protocol.ComposeProjectRef) error {
+	ids, err := m.engine.ListAll(ctx)
+	if err != nil {
+		return ErrProjectUnavailable
+	}
+	for _, id := range ids {
+		container, err := m.engine.Inspect(ctx, id)
+		if err != nil {
+			return ErrProjectUnavailable
+		}
+		if container.Compose == nil || container.Compose.Project != ref.Name {
+			continue
+		}
+		identity, err := reference(container.Compose)
+		if err != nil || identity.Key != ref.Key {
+			return ErrProjectConflict
+		}
+	}
+	return nil
+}
+
+func openSafeWorkingRoot(path string) (*os.Root, error) {
+	if !filepath.IsAbs(path) || path == string(filepath.Separator) || filepath.Clean(path) != path {
+		return nil, ErrConfigUnsafe
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil || resolved != path {
+		return nil, ErrConfigUnsafe
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return nil, ErrConfigUnsafe
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, ErrConfigUnsafe
+	}
+	openedInfo, openErr := root.Stat(".")
+	currentInfo, statErr := os.Stat(path)
+	if openErr != nil || statErr != nil || !os.SameFile(openedInfo, currentInfo) {
+		root.Close()
+		return nil, ErrConfigUnsafe
+	}
+	return root, nil
+}
+
+func writeNewComposeCandidate(root *os.Root, directory string, content []byte) (string, string, error) {
+	for attempt := 0; attempt < 8; attempt++ {
+		var nonce [16]byte
+		if _, err := rand.Read(nonce[:]); err != nil {
+			return "", "", err
+		}
+		name := ".nodedance-compose-" + hex.EncodeToString(nonce[:]) + ".tmp"
+		file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0o600)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", "", err
+		}
+		if _, err = file.Write(content); err == nil {
+			err = file.Sync()
+		}
+		closeErr := file.Close()
+		if err == nil {
+			err = closeErr
+		}
+		if err != nil {
+			_ = root.Remove(name)
+			return "", "", err
+		}
+		return name, filepath.Join(directory, name), nil
+	}
+	return "", "", ErrConfigUnsafe
+}
+
+func syncComposeRoot(root *os.Root) error {
+	directory, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
+}
+
+func (m *Manager) rollbackCreatedProject(ctx context.Context, ref protocol.ComposeProjectRef, root *os.Root, digest string) bool {
+	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
+		return false
+	}
+	instances, err := m.projectInstances(ctx, ref)
+	if err != nil {
+		return false
+	}
+	if len(instances) > 0 {
+		for _, instance := range instances {
+			if instance.Compose == nil || instance.Compose.Project != ref.Name {
+				return false
+			}
+			identity, identityErr := reference(instance.Compose)
+			if identityErr != nil || identity.Key != ref.Key {
+				return false
+			}
+		}
+		if err := m.runCompose(ctx, ref, nil, "down", "--remove-orphans"); err != nil {
+			return false
+		}
+	}
+	remaining, err := m.projectInstances(ctx, ref)
+	if err != nil || len(remaining) != 0 || m.verifyConfigDigest(ref, 0, digest) != nil {
+		return false
+	}
+	if err := root.Remove("compose.yaml"); err != nil {
+		return false
+	}
+	return syncComposeRoot(root) == nil
+}
 
 type ConfigDocument struct {
 	Text   string
@@ -250,8 +492,13 @@ func (m *Manager) safeConfigPath(ref protocol.ComposeProjectRef, index int) (str
 }
 
 func (m *Manager) runCompose(ctx context.Context, ref protocol.ComposeProjectRef, overrides map[int]string, operation ...string) error {
+	_, err := m.runComposeOutput(ctx, ref, overrides, operation...)
+	return err
+}
+
+func (m *Manager) runComposeOutput(ctx context.Context, ref protocol.ComposeProjectRef, overrides map[int]string, operation ...string) (string, error) {
 	if m.dockerPath == "" || protocol.ValidateComposeProjectRef(ref) != nil {
-		return ErrProjectUnavailable
+		return "", ErrProjectUnavailable
 	}
 	args := []string{"compose", "--project-name", ref.Name, "--project-directory", ref.WorkingDirectory}
 	for index, config := range ref.ConfigFiles {
@@ -272,9 +519,9 @@ func (m *Manager) runCompose(ctx context.Context, ref protocol.ComposeProjectRef
 	var output boundedOutput
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Run(); err != nil {
-		return errors.New("Docker Compose command failed")
+		return output.buffer.String(), errors.New("Docker Compose command failed")
 	}
-	return nil
+	return output.buffer.String(), nil
 }
 
 func (m *Manager) waitProjectState(ctx context.Context, ref protocol.ComposeProjectRef, expected string) ([]agentdocker.Container, error) {
@@ -293,6 +540,26 @@ func (m *Manager) waitProjectState(ctx context.Context, ref protocol.ComposeProj
 			if expected == "stopped" && allStopped || expected == "running" && allRunning {
 				return containers, nil
 			}
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ErrOperationUncertain
+		case <-deadline.C:
+			return nil, ErrOperationUncertain
+		case <-ticker.C:
+		}
+	}
+}
+
+func (m *Manager) waitProjectInstances(ctx context.Context, ref protocol.ComposeProjectRef) ([]agentdocker.Container, error) {
+	deadline := time.NewTimer(45 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(composeStatePoll)
+	defer ticker.Stop()
+	for {
+		containers, err := m.projectInstances(ctx, ref)
+		if err == nil && len(containers) > 0 {
+			return containers, nil
 		}
 		select {
 		case <-ctx.Done():
@@ -433,4 +700,21 @@ func (m *Manager) verifyConfigDigest(ref protocol.ComposeProjectRef, index int, 
 		return fmt.Errorf("%w", ErrConfigChanged)
 	}
 	return nil
+}
+
+func (m *Manager) verifyCreatedProject(ctx context.Context, ref protocol.ComposeProjectRef, digest string) ([]agentdocker.Container, error) {
+	if err := validateCreateProjectRef(ref); err != nil {
+		return nil, err
+	}
+	if err := m.verifyConfigDigest(ref, 0, digest); err != nil {
+		return nil, err
+	}
+	instances, err := m.projectInstances(ctx, ref)
+	if err != nil || len(instances) == 0 {
+		return nil, ErrProjectUnavailable
+	}
+	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
+		return nil, err
+	}
+	return instances, nil
 }

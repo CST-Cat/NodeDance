@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, type ContainerTask } from '../api'
 import { composeApi, type ComposeOperation, type ComposeProject } from '../compose-api'
 import ComposeEditor from './ComposeEditor.vue'
+import ComposeCreateForm from './ComposeCreateForm.vue'
 
 const props = defineProps<{ nodeId: string }>()
 
@@ -120,6 +121,7 @@ onBeforeUnmount(() => {
     </header>
     <p v-if="stale" class="compose-stale" role="status">Agent 离线、Docker 不可用或项目清单过期时，操作与编辑会被禁用；历史项目仍可查看。</p>
     <p v-if="error" class="compose-error" role="alert">{{ error }}</p>
+    <ComposeCreateForm :node-id="nodeId" :disabled="stale" @created="void refresh()" />
     <p v-if="loading && !projects.length" class="compose-empty">正在读取真实 Docker Compose 标签和容器库存…</p>
     <p v-else-if="!projects.length" class="compose-empty">没有发现 Compose 项目。没有 Compose 文件时，关联容器仍保留在 Docker 详情中。</p>
     <article v-for="project in projects" :key="project.ref.key" class="compose-project-card" :data-stale="project.dataStale || stale">

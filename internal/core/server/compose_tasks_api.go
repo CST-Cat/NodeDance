@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"time"
@@ -20,6 +22,7 @@ import (
 )
 
 const composePayloadLifetime = 10 * time.Minute
+const maxPendingComposeContents = 32
 
 type composeTaskRequest struct {
 	Action     string `json:"action"`
@@ -32,11 +35,19 @@ type composeValidateRequest struct {
 	Content string `json:"content"`
 }
 
+type composeCreateRequest struct {
+	Name             string `json:"name"`
+	WorkingDirectory string `json:"workingDirectory"`
+	Content          string `json:"content"`
+}
+
 type pendingComposeContent struct {
-	nodeID  string
-	digest  string
-	content []byte
-	expires time.Time
+	nodeID     string
+	generation uint64
+	journalID  string
+	digest     string
+	content    []byte
+	expires    time.Time
 }
 
 func (s *Server) handleComposeProjectAPI(w http.ResponseWriter, r *http.Request, current *session, nodeID string, parts []string) bool {
@@ -123,6 +134,101 @@ func (s *Server) handleValidateComposeConfig(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"valid": true})
+}
+
+func (s *Server) handleCreateComposeProjectTask(w http.ResponseWriter, r *http.Request, current *session, nodeID string) {
+	request, ok := decodeComposeJSON[composeCreateRequest](w, r)
+	if !ok {
+		return
+	}
+	key := r.Header.Get("Idempotency-Key")
+	if key == "" {
+		http.Error(w, "Idempotency-Key is required", http.StatusBadRequest)
+		return
+	}
+	if len(request.Content) == 0 || len(request.Content) > protocol.MaxComposeFileBytes ||
+		filepath.Clean(request.WorkingDirectory) != request.WorkingDirectory || !filepath.IsAbs(request.WorkingDirectory) ||
+		request.WorkingDirectory == string(filepath.Separator) {
+		http.Error(w, "invalid Compose project directory or configuration", http.StatusBadRequest)
+		return
+	}
+	configPath := filepath.Join(request.WorkingDirectory, "compose.yaml")
+	ref := protocol.ComposeProjectRef{Name: request.Name, WorkingDirectory: request.WorkingDirectory, ConfigFiles: []string{configPath}}
+	ref.Key = protocol.ComposeProjectKey(ref.Name, ref.WorkingDirectory, ref.ConfigFiles)
+	if protocol.ValidateComposeProjectRef(ref) != nil {
+		http.Error(w, "invalid Compose project identity", http.StatusBadRequest)
+		return
+	}
+	state, view, _, viewErr := s.dockerViewStateForNode(r.Context(), nodeID)
+	if viewErr != nil || !state.Exists {
+		http.Error(w, "node Docker inventory is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if state.Status != "online" || !view.AgentOnline || view.DataStale || view.DockerAvailability != "available" || !view.DockerSnapshotFresh {
+		http.Error(w, "node Agent or Docker Engine is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	connection := s.activeComposeConnectionForNode(nodeID, state.Generation)
+	if connection == nil {
+		http.Error(w, "Agent Compose capability is unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	digest := sha256.Sum256([]byte(request.Content))
+	digestText := hex.EncodeToString(digest[:])
+	intent := protocol.TaskIntent{Action: protocol.TaskComposeCreate, ContainerID: ref.Key,
+		Compose: &protocol.ComposeTaskSpec{Project: ref, FileIndex: 0, ContentSHA256: digestText}}
+	if err := protocol.ValidateTaskIntent(intent); err != nil {
+		http.Error(w, "invalid Compose create task", http.StatusBadRequest)
+		return
+	}
+	var boundJournalID string
+	gate := func(context.Context) (bool, func(), error) {
+		if s.activeComposeConnectionForNode(nodeID, state.Generation) != connection {
+			return false, nil, coretasks.ErrNodeOffline
+		}
+		journalID, release, err := s.lockTaskBridgeReadySession(nodeID, state.Generation)
+		if err != nil {
+			return false, nil, err
+		}
+		boundJournalID = journalID
+		return false, release, nil
+	}
+	_, knownRetry, lookupErr := s.tasks.FindByIdempotency(r.Context(), nodeID, key)
+	if lookupErr != nil {
+		http.Error(w, "Compose task idempotency could not be checked", http.StatusInternalServerError)
+		return
+	}
+	s.composeContentMu.Lock()
+	s.expireComposeContentLocked()
+	if !knownRetry && len(s.composeContents) >= maxPendingComposeContents {
+		s.composeContentMu.Unlock()
+		http.Error(w, "Compose task payload queue is full", http.StatusServiceUnavailable)
+		return
+	}
+	result, err := s.tasks.EnqueueWithGate(r.Context(), coretasks.EnqueueRequest{
+		NodeID: nodeID, IdempotencyKey: key, Intent: intent,
+		ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr,
+	}, gate)
+	if err == nil && result.Created && result.Task.Status == taskstate.Queued && result.Task.DeliveryState == "ready" && !result.Task.Evidence.DeliveryCommitted {
+		s.storeComposeContentLocked(result.Task.TaskID, nodeID, state.Generation, boundJournalID, digestText, []byte(request.Content))
+	}
+	s.composeContentMu.Unlock()
+	if err != nil {
+		if errors.Is(err, coretasks.ErrNodeOffline) || errors.Is(err, coretasks.ErrNodeNotFound) || errors.Is(err, coretasks.ErrJournalNotObserved) {
+			http.Error(w, "Agent task bridge is unavailable", http.StatusServiceUnavailable)
+		} else {
+			s.writeTaskStoreError(w, err)
+		}
+		return
+	}
+	if result.Created {
+		s.signalAgentTasks(nodeID)
+	}
+	status := http.StatusAccepted
+	if !result.Created {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, map[string]any{"taskId": result.Task.TaskID, "status": result.Task.Status})
 }
 
 func (s *Server) freshComposeProject(r *http.Request, nodeID, projectKey string) (dashboardNodeState, coredocker.View, *agentConnection, protocol.ComposeProject, bool) {
@@ -221,15 +327,17 @@ func (s *Server) handleCreateComposeTask(w http.ResponseWriter, r *http.Request,
 		http.Error(w, "invalid Compose task intent", http.StatusBadRequest)
 		return
 	}
+	var boundJournalID string
 	gate := func(ctx context.Context) (bool, func(), error) {
 		currentConnection := s.activeComposeConnectionForNode(nodeID, state.Generation)
 		if currentConnection == nil || currentConnection != connection {
 			return false, nil, coretasks.ErrNodeOffline
 		}
-		release, err := s.lockTaskBridgeReady(nodeID, state.Generation)
+		journalID, release, err := s.lockTaskBridgeReadySession(nodeID, state.Generation)
 		if err != nil {
 			return false, nil, err
 		}
+		boundJournalID = journalID
 		return false, release, nil
 	}
 	contentLocked := action == protocol.TaskComposeSave
@@ -238,6 +346,17 @@ func (s *Server) handleCreateComposeTask(w http.ResponseWriter, r *http.Request,
 		// one-use content body has been installed in memory.
 		s.composeContentMu.Lock()
 		s.expireComposeContentLocked()
+		_, knownRetry, lookupErr := s.tasks.FindByIdempotency(r.Context(), nodeID, key)
+		if lookupErr != nil {
+			s.composeContentMu.Unlock()
+			http.Error(w, "Compose task idempotency could not be checked", http.StatusInternalServerError)
+			return
+		}
+		if !knownRetry && len(s.composeContents) >= maxPendingComposeContents {
+			s.composeContentMu.Unlock()
+			http.Error(w, "Compose task payload queue is full", http.StatusServiceUnavailable)
+			return
+		}
 	}
 	result, err := s.tasks.EnqueueWithGate(r.Context(), coretasks.EnqueueRequest{NodeID: nodeID, IdempotencyKey: key,
 		Intent: intent, ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}, gate)
@@ -252,8 +371,8 @@ func (s *Server) handleCreateComposeTask(w http.ResponseWriter, r *http.Request,
 		}
 		return
 	}
-	if action == protocol.TaskComposeSave && result.Task.Status == taskstate.Queued && result.Task.DeliveryState == "ready" && !result.Task.Evidence.DeliveryCommitted {
-		s.storeComposeContentLocked(result.Task.TaskID, nodeID, intent.Compose.ContentSHA256, content)
+	if action == protocol.TaskComposeSave && result.Created && result.Task.Status == taskstate.Queued && result.Task.DeliveryState == "ready" && !result.Task.Evidence.DeliveryCommitted {
+		s.storeComposeContentLocked(result.Task.TaskID, nodeID, state.Generation, boundJournalID, intent.Compose.ContentSHA256, content)
 	}
 	if contentLocked {
 		s.composeContentMu.Unlock()
@@ -290,16 +409,16 @@ func decodeComposeJSON[T any](w http.ResponseWriter, r *http.Request) (T, bool) 
 	return value, true
 }
 
-func (s *Server) storeComposeContentLocked(taskID, nodeID, digest string, content []byte) {
+func (s *Server) storeComposeContentLocked(taskID, nodeID string, generation uint64, journalID, digest string, content []byte) {
 	s.expireComposeContentLocked()
 	if previous, ok := s.composeContents[taskID]; ok {
 		clear(previous.content)
 	}
-	s.composeContents[taskID] = pendingComposeContent{nodeID: nodeID, digest: digest,
+	s.composeContents[taskID] = pendingComposeContent{nodeID: nodeID, generation: generation, journalID: journalID, digest: digest,
 		content: append([]byte(nil), content...), expires: s.now().Add(composePayloadLifetime)}
 }
 
-func (s *Server) takeComposeContent(taskID, nodeID, digest string) *protocol.ComposeContent {
+func (s *Server) takeComposeContent(taskID, nodeID string, generation uint64, journalID, digest string) *protocol.ComposeContent {
 	s.composeContentMu.Lock()
 	defer s.composeContentMu.Unlock()
 	s.expireComposeContentLocked()
@@ -309,7 +428,7 @@ func (s *Server) takeComposeContent(taskID, nodeID, digest string) *protocol.Com
 	}
 	delete(s.composeContents, taskID)
 	defer clear(entry.content)
-	if entry.nodeID != nodeID || entry.digest != digest || !entry.expires.After(s.now()) {
+	if entry.nodeID != nodeID || entry.generation != generation || entry.journalID != journalID || entry.digest != digest || !entry.expires.After(s.now()) {
 		return nil
 	}
 	return &protocol.ComposeContent{SHA256: entry.digest, Content: append([]byte(nil), entry.content...)}
@@ -341,6 +460,29 @@ func (s *Server) clearAllComposeContent() {
 		delete(s.composeContents, taskID)
 	}
 	s.composeContentMu.Unlock()
+}
+
+func (s *Server) discardComposeContentForSession(nodeID string, generation uint64) {
+	if s == nil || nodeID == "" || generation == 0 {
+		return
+	}
+	s.composeContentMu.Lock()
+	taskIDs := make([]string, 0)
+	for taskID, entry := range s.composeContents {
+		if entry.nodeID != nodeID || entry.generation != generation {
+			continue
+		}
+		clear(entry.content)
+		delete(s.composeContents, taskID)
+		taskIDs = append(taskIDs, taskID)
+	}
+	s.composeContentMu.Unlock()
+	for _, taskID := range taskIDs {
+		_, err := s.tasks.CancelUndelivered(context.Background(), nodeID, taskID, sql.NullInt64{}, "unknown")
+		if err != nil && !errors.Is(err, coretasks.ErrNotDelivered) && !errors.Is(err, coretasks.ErrTaskStateConflict) && !errors.Is(err, coretasks.ErrTaskNotFound) {
+			log.Printf("NodeDance could not resolve undelivered Compose task %s after Agent disconnect: %v", taskID, err)
+		}
+	}
 }
 
 var composeContentHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)

@@ -421,6 +421,7 @@ func (s *Server) closeAgentConnection(agentID string, expectedGeneration uint64)
 	s.agentConnectionsMu.Unlock()
 	if closed != nil {
 		s.discardContainerCreateSpecsForSession(closed.nodeID, closed.generation)
+		s.discardComposeContentForSession(closed.nodeID, closed.generation)
 	}
 	if closed != nil && s.terminals != nil {
 		s.terminals.closeAgent(s, closed.agentID, closed.generation, "Agent disconnected")
@@ -437,6 +438,7 @@ func (s *Server) detachAgentConnection(agentID string, expectedGeneration uint64
 	s.agentConnectionsMu.Unlock()
 	if detached != nil {
 		s.discardContainerCreateSpecsForSession(detached.nodeID, detached.generation)
+		s.discardComposeContentForSession(detached.nodeID, detached.generation)
 	}
 	if detached != nil && s.terminals != nil {
 		s.terminals.closeAgent(s, detached.agentID, detached.generation, "Agent disconnected")
@@ -455,6 +457,7 @@ func (s *Server) installAgentConnection(connection *agentConnection, agentID str
 	if old != nil {
 		old.close()
 		s.discardContainerCreateSpecsForSession(old.nodeID, old.generation)
+		s.discardComposeContentForSession(old.nodeID, old.generation)
 		if s.terminals != nil {
 			s.terminals.closeAgent(s, old.agentID, old.generation, "Agent reconnected")
 		}

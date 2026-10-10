@@ -88,6 +88,7 @@ const (
 	ActionComposeRestart  = protocol.TaskComposeRestart
 	ActionComposeDeploy   = protocol.TaskComposeDeploy
 	ActionComposeSave     = protocol.TaskComposeSave
+	ActionComposeCreate   = protocol.TaskComposeCreate
 	ActionAgentDeploy     = protocol.TaskAgentDeploy
 	ActionContainerCreate = protocol.TaskContainerCreate
 )
