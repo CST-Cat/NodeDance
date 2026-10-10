@@ -164,8 +164,18 @@ function networkText(record: DockerContainerRecord): string {
 
 function portText(record: DockerContainerRecord): string {
   const container = record.container
-  if (container.hostNetwork) return 'Host Network：端口直接使用宿主机网络'
   const ports = container.ports ?? []
+  if (container.hostNetwork) {
+    const prefix = 'Host Network（容器与宿主机共享网络）'
+    if (!ports.length) return `${prefix}；未声明容器端口`
+    const declared = ports.map((port) => {
+      const label = `${port.containerPort}/${port.protocol}`
+      if (port.configured.length) return `${label}（配置映射不作为 Host Network 宿主机绑定）`
+      if (port.exposed) return `${label}（仅声明，不代表服务实际监听）`
+      return `${label}（Host Network 下非 Docker 发布映射）`
+    })
+    return `${prefix}；${declared.join('，')}`
+  }
   if (!ports.length) return '未声明容器端口'
   return ports.map((port) => {
     if (port.published.length) {
