@@ -30,7 +30,10 @@ const installCommand = computed(() => {
     '--display-name', shellQuote(displayName.value.trim()),
   ]
   if (development) args.push('--dev')
-  const pipeline = `curl --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 https://github.com/CST-Cat/NodeDance/releases/latest/download/install-agent.sh | sudo bash -s -- ${args.join(' ')}`
+  const apiURL = 'https://api.github.com/repos/CST-Cat/NodeDance/releases?per_page=100'
+  const releases = `releases=$(curl --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 "${apiURL}") || { echo 'Could not list Agent releases.' >&2; exit 1; }; tag=$(printf '%s\\n' "$releases" | awk -F'"' '$2 == "tag_name" && $4 ~ /^agent-v[0-9]+\\.[0-9]+\\.[0-9]+$/ { print $4; exit }'); [[ "$tag" =~ ^agent-v[0-9]+\\.[0-9]+\\.[0-9]+$ ]] || { echo 'No published agent-vMAJOR.MINOR.PATCH release was found.' >&2; exit 1; }`
+  const assetURL = 'https://github.com/CST-Cat/NodeDance/releases/download/$tag/install-agent.sh'
+  const pipeline = `${releases}; curl --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 "${assetURL}" | sudo bash -s -- --release-tag "$tag" ${args.join(' ')}`
   return `bash -o pipefail -c ${shellQuote(pipeline)}`
 })
 
@@ -115,7 +118,7 @@ function isLiteralLoopback(hostname: string): boolean {
           <button class="quiet-button" type="button" @click="copyText(token, '一次性 Token')">复制 Token</button>
           <p class="field-hint">在目标机运行命令后，脚本会在 /dev/tty 隐藏提示输入此 Token；它不会进入命令历史或进程参数。脚本校验发布 SHA256 后会自动注册、安装 systemd 并启动 Agent。</p>
         </div>
-        <p class="agent-release-note">安装命令使用 GitHub Releases/latest。若尚未发布可用的 Agent Release，脚本会在修改目标机之前明确退出；需先发布 v* tag 并等待 Agent release workflow 完成。</p>
+        <p class="agent-release-note">安装命令只解析并使用最新已发布的 agent-vMAJOR.MINOR.PATCH Agent tag；Core 发布不会影响 Agent 下载。若没有 Agent release，命令会在调用 sudo 安装脚本前明确退出。</p>
       </div>
     </section>
   </main>

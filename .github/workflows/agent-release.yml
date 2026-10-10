@@ -3,7 +3,7 @@ name: Agent release
 on:
   push:
     tags:
-      - 'v*'
+      - 'agent-v*'
 
 permissions:
   contents: write
@@ -14,6 +14,16 @@ jobs:
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v4
+
+      - name: Validate Agent release tag
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^agent-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            printf 'Invalid Agent release tag: %s\n' "$RELEASE_VERSION" >&2
+            exit 1
+          }
 
       - name: Set up Go
         uses: actions/setup-go@v5

@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 umask 077
 
-readonly RELEASE_BASE="https://github.com/CST-Cat/NodeDance/releases/latest/download"
+readonly RELEASE_BASE="https://github.com/CST-Cat/NodeDance/releases/download"
 readonly STATE_DIR="/var/lib/nodedance-agent"
 readonly CONFIG_PATH="${STATE_DIR}/agent.json"
 readonly BIN_DIR="/usr/local/bin"
@@ -10,6 +10,7 @@ readonly AGENT_PATH="${BIN_DIR}/nodedance-agent"
 
 server_url=""
 display_name=""
+release_tag=""
 development=0
 tmp_dir=""
 staged_agent=""
@@ -26,9 +27,10 @@ usage() {
 NodeDance Agent installer
 
 Usage:
-  bash -o pipefail -c 'curl --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 https://github.com/CST-Cat/NodeDance/releases/latest/download/install-agent.sh | sudo bash -s -- --server '\''https://core.example'\'' --display-name '\''My server'\'''
+  bash install-agent.sh --release-tag agent-v0.1.0 --server https://core.example --display-name 'My server'
 
 Options:
+  --release-tag TAG     Published Agent-only tag (agent-vMAJOR.MINOR.PATCH; required)
   --server URL          Core HTTPS origin (required)
   --display-name NAME   Display name bound to this one-time enrollment (required)
   --dev                 Allow HTTP only for a literal loopback Core address
@@ -102,6 +104,11 @@ while (($#)); do
       server_url=$2
       shift 2
       ;;
+    --release-tag)
+      (($# >= 2)) || fail '--release-tag requires a value'
+      release_tag=$2
+      shift 2
+      ;;
     --display-name)
       (($# >= 2)) || fail '--display-name requires a value'
       display_name=$2
@@ -129,6 +136,7 @@ esac
 
 [[ -n "$server_url" ]] || fail 'the generated command must include --server'
 [[ -n "$display_name" ]] || fail 'the generated command must include --display-name'
+[[ "$release_tag" =~ ^agent-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail '--release-tag must be a published Agent-only tag such as agent-v0.1.0'
 [[ "$display_name" != *$'\n'* && "$display_name" != *$'\r'* ]] || fail 'display name must be one line'
 if (( development )); then
   case "$server_url" in
@@ -151,16 +159,13 @@ load_state=$(systemctl show --property=LoadState --value nodedance-agent.service
 
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/nodedance-agent-install.XXXXXXXX")
 asset="nodedance-agent-linux-${arch}"
-manifest_url="${RELEASE_BASE}/SHA256SUMS"
-asset_url="${RELEASE_BASE}/${asset}"
+manifest_url="${RELEASE_BASE}/${release_tag}/SHA256SUMS"
+asset_url="${RELEASE_BASE}/${release_tag}/${asset}"
 
-http_status=$(curl --silent --show-error --location --proto '=https' --tlsv1.2 --output "$tmp_dir/SHA256SUMS" --write-out '%{http_code}' "$manifest_url" 2>/dev/null || true)
-if [[ "$http_status" == 404 ]]; then
-  fail 'no published GitHub Release was found; publish a v* tag and wait for the Agent release workflow before installing'
-fi
-[[ "$http_status" == 200 ]] || fail "could not download the latest release checksum manifest (HTTP ${http_status:-unknown}); check connectivity and release availability"
+http_status=$(curl --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output "$tmp_dir/SHA256SUMS" --write-out '%{http_code}' "$manifest_url" 2>/dev/null || true)
+[[ "$http_status" == 200 ]] || fail "could not download the Agent release checksum manifest for ${release_tag} (HTTP ${http_status:-unknown}); check the Agent tag and release availability"
 
-curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$tmp_dir/$asset" "$asset_url" || fail "release asset is unavailable: $asset"
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output "$tmp_dir/$asset" "$asset_url" || fail "release asset is unavailable: $asset"
 expected_sha=$(awk -v name="$asset" '$2 == name { print $1 }' "$tmp_dir/SHA256SUMS")
 [[ "$expected_sha" =~ ^[[:xdigit:]]{64}$ ]] || fail "release checksum manifest does not contain one valid SHA256 entry for $asset"
 printf '%s  %s\n' "$expected_sha" "$asset" | (cd "$tmp_dir" && sha256sum --check --status -) || fail "SHA256 verification failed for $asset"

@@ -518,9 +518,16 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	releaseWorkflow, err := os.ReadFile(filepath.Join(repoRoot, ".github", "workflows", "agent-release.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, required := range []string{
 		"bash -o pipefail -c",
 		"--proto =https --proto-redir =https --tlsv1.2",
+		"api.github.com/repos/CST-Cat/NodeDance/releases?per_page=100",
+		"agent-v[0-9]+",
+		"releases/download/$tag/install-agent.sh",
 		"sudo bash -s --",
 		"data-testid=\"agent-install-command\"",
 		"data-testid=\"agent-enrollment-token\"",
@@ -531,6 +538,10 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 		}
 	}
 	for _, required := range []string{
+		"--release-tag TAG",
+		"releases/download\"",
+		"${RELEASE_BASE}/${release_tag}/SHA256SUMS",
+		"${RELEASE_BASE}/${release_tag}/${asset}",
 		"--token-stdin",
 		"prepare-systemd-state --require-new",
 		"install-systemd --config \"$CONFIG_PATH\" --enable",
@@ -538,6 +549,12 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 		if !strings.Contains(string(installer), required) {
 			t.Errorf("Agent installer is missing root-only behavior %q", required)
 		}
+	}
+	if strings.Contains(string(enrollmentUI)+string(installer), "releases/latest/download") {
+		t.Fatal("Agent enrollment must not use the repository-wide latest release URL")
+	}
+	if !strings.Contains(string(releaseWorkflow), "- 'agent-v*'") || strings.Contains(string(releaseWorkflow), "- 'v*'") {
+		t.Fatal("Agent release workflow must be triggered only by Agent-prefixed tags")
 	}
 	for _, retired := range []string{
 		"sudo -u",
