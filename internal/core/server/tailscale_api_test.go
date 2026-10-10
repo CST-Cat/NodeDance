@@ -332,6 +332,234 @@ func connectProtocolAgentForTest(t *testing.T, core *Server, coreURL string, cap
 	return conn, agents.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID}, welcome
 }
 
+func TestDockerRestoreFailurePreservesHistoryAndHostMonitoring(t *testing.T) {
+	for _, mode := range []string{"load_decode", "single_node_restore"} {
+		t.Run(mode, func(t *testing.T) {
+			dataDir := t.TempDir()
+			identity, credential, containerID := seedDockerRestoreFixture(t, dataDir)
+
+			corruptStore, err := storage.Open(context.Background(), dataDir)
+			if err != nil {
+				t.Fatalf("reopen fixture database: %v", err)
+			}
+			var originalRecord string
+			if err := corruptStore.DB.QueryRowContext(context.Background(), `SELECT record_json FROM docker_containers WHERE node_id=? AND container_id=?`, identity.NodeID, containerID).Scan(&originalRecord); err != nil {
+				t.Fatalf("read seeded Docker history: %v", err)
+			}
+			switch mode {
+			case "load_decode":
+				if _, err := corruptStore.DB.ExecContext(context.Background(), `UPDATE docker_containers SET record_json='{' WHERE node_id=? AND container_id=?`, identity.NodeID, containerID); err != nil {
+					t.Fatalf("corrupt Docker record JSON: %v", err)
+				}
+				originalRecord = "{"
+			case "single_node_restore":
+				if _, err := corruptStore.DB.ExecContext(context.Background(), `UPDATE docker_containers SET container_id=?, record_json=? WHERE node_id=? AND container_id=?`, " bad-id", `{"container":{"id":" bad-id"}}`, identity.NodeID, containerID); err != nil {
+					t.Fatalf("make Docker record fail stale restore: %v", err)
+				}
+				containerID = " bad-id"
+				originalRecord = `{"container":{"id":" bad-id"}}`
+			}
+			if err := corruptStore.Close(); err != nil {
+				t.Fatalf("close corrupted fixture database: %v", err)
+			}
+
+			core, err := New("test", Options{DataDir: dataDir, Development: true, AgentOfflineTimeout: 15 * time.Second})
+			if err != nil {
+				t.Fatalf("start Core with failed Docker restore: %v", err)
+			}
+			coreClosed := false
+			t.Cleanup(func() {
+				if !coreClosed {
+					if err := core.Close(); err != nil {
+						t.Errorf("stop Core: %v", err)
+					}
+				}
+			})
+			coreHTTP := httptest.NewServer(core)
+			t.Cleanup(coreHTTP.Close)
+			health, err := http.Get(coreHTTP.URL + "/api/v1/health")
+			if err != nil {
+				t.Fatalf("Core health endpoint unavailable after Docker restore failure: %v", err)
+			}
+			_ = health.Body.Close()
+			if health.StatusCode != http.StatusOK {
+				t.Fatalf("Core health endpoint status after Docker restore failure: %d", health.StatusCode)
+			}
+
+			conn, welcome := connectPersistedProtocolAgentForTest(t, coreHTTP.URL, identity, credential,
+				[]string{protocol.CapabilityMetrics, protocol.CapabilityDocker})
+			defer conn.Close(websocket.StatusNormalClosure, "test complete")
+			if containsCapability(welcome.Capabilities, protocol.CapabilityDocker) {
+				t.Fatalf("Core negotiated Docker despite failed restore: %#v", welcome.Capabilities)
+			}
+			if !containsCapability(welcome.Capabilities, protocol.CapabilityMetrics) {
+				t.Fatalf("Docker restore failure blocked host metrics: %#v", welcome.Capabilities)
+			}
+			metricsPayload, err := protocol.MarshalMetricsSnapshot(testMetricsSnapshot(time.Now().UTC()))
+			if err != nil {
+				t.Fatalf("marshal host metrics: %v", err)
+			}
+			writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeMetrics,
+				Generation: welcome.Generation, Sequence: 1, Payload: metricsPayload})
+			writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHeartbeat,
+				Generation: welcome.Generation, Sequence: 1, Payload: marshalAgentPayload(protocol.Heartbeat{Capabilities: []string{protocol.CapabilityMetrics}})})
+			readProtocolAgentHeartbeatAck(t, conn, welcome.Generation, 1)
+			waitForDockerRestoreTest(t, "Core to accept post-restore host metrics", func() bool {
+				lease := &coremetrics.Lease{Identity: coremetrics.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID},
+					Generation: welcome.Generation, ValidUntil: time.Now().Add(15 * time.Second), Status: coremetrics.LeaseOnline}
+				view, ok := core.metrics.SnapshotAt(identity.NodeID, lease, time.Now())
+				return ok && view.Sequence == 1
+			})
+			_, dockerView, _, err := core.dockerViewStateForNode(context.Background(), identity.NodeID)
+			if err != nil {
+				t.Fatalf("read Docker status after restore failure: %v", err)
+			}
+			if dockerView.DockerAvailability != protocol.DockerAvailabilityUnavailable || !dockerView.DataStale {
+				t.Fatalf("failed Docker restore was not shown as unavailable/stale: %#v", dockerView)
+			}
+			if mode == "load_decode" && dockerView.StaleReason != "docker_state_restore_failed" {
+				t.Fatalf("wrong Docker store restore reason: %q", dockerView.StaleReason)
+			}
+			if mode == "single_node_restore" && dockerView.StaleReason != "docker_node_state_restore_failed" {
+				t.Fatalf("wrong per-node Docker restore reason: %q", dockerView.StaleReason)
+			}
+			var afterRecord string
+			var afterCount int
+			if err := core.store.DB.QueryRowContext(context.Background(), `SELECT record_json FROM docker_containers WHERE node_id=? AND container_id=?`, identity.NodeID, containerID).Scan(&afterRecord); err != nil {
+				t.Fatalf("read Docker history after Agent reconnect: %v", err)
+			}
+			if err := core.store.DB.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM docker_containers WHERE node_id=?`, identity.NodeID).Scan(&afterCount); err != nil {
+				t.Fatalf("count Docker history after Agent reconnect: %v", err)
+			}
+			if afterRecord != originalRecord || afterCount != 1 {
+				t.Fatalf("Docker restore failure overwrote history: record=%q count=%d want record=%q count=1", afterRecord, afterCount, originalRecord)
+			}
+			conn.Close(websocket.StatusNormalClosure, "test complete")
+			coreHTTP.Close()
+			if err := core.Close(); err != nil {
+				t.Fatalf("stop Core: %v", err)
+			}
+			coreClosed = true
+		})
+	}
+}
+
+func seedDockerRestoreFixture(t *testing.T, dataDir string) (agents.Identity, string, string) {
+	t.Helper()
+	core, err := New("test", Options{DataDir: dataDir, Development: true, AgentOfflineTimeout: 15 * time.Second})
+	if err != nil {
+		t.Fatalf("start fixture Core: %v", err)
+	}
+	coreClosed := false
+	t.Cleanup(func() {
+		if !coreClosed {
+			if err := core.Close(); err != nil {
+				t.Errorf("stop fixture Core: %v", err)
+			}
+		}
+	})
+	coreHTTP := httptest.NewServer(core)
+	t.Cleanup(coreHTTP.Close)
+	enrollment, err := core.agents.CreateEnrollment(context.Background(), "docker-restore-test", "127.0.0.1", sql.NullInt64{})
+	if err != nil {
+		t.Fatalf("create fixture Agent enrollment: %v", err)
+	}
+	credential, err := agentruntime.NewCredential()
+	if err != nil {
+		t.Fatalf("create fixture Agent credential: %v", err)
+	}
+	requestID, err := agentruntime.NewRequestID()
+	if err != nil {
+		t.Fatalf("create fixture Agent request ID: %v", err)
+	}
+	identity, err := core.agents.ConsumeEnrollment(context.Background(), auth.DigestToken(enrollment.Token), auth.DigestToken(credential), requestID, "127.0.0.1")
+	if err != nil {
+		t.Fatalf("consume fixture Agent enrollment: %v", err)
+	}
+	conn, welcome := connectPersistedProtocolAgentForTest(t, coreHTTP.URL, identity, credential,
+		[]string{protocol.CapabilityMetrics, protocol.CapabilityDocker})
+	containerID := strings.Repeat("d", 64)
+	now := time.Now().UTC()
+	container := protocol.DockerContainer{ID: containerID, Name: "restore-test", Image: "busybox:latest", ImageID: "sha256:" + strings.Repeat("e", 64),
+		State: "running", Running: true, Health: protocol.DockerHealthNone, Ports: []protocol.DockerPort{}, Networks: []protocol.DockerNetwork{},
+		Mounts: []protocol.DockerMount{}, ObservedAt: now}
+	batch := protocol.DockerBatch{Sequence: 1, SnapshotID: 1, FullSnapshot: true, SnapshotFinal: true,
+		Changes: []protocol.DockerChange{{Sequence: 1, Action: protocol.DockerChangeUpsert, ContainerID: containerID, Container: &container, ObservedAt: now}},
+		Health:  &protocol.DockerHealth{Sequence: 1, Availability: protocol.DockerAvailabilityAvailable, SnapshotFresh: true, ObservedAt: now}}
+	payload, err := protocol.MarshalDockerBatch(batch)
+	if err != nil {
+		t.Fatalf("marshal fixture Docker inventory: %v", err)
+	}
+	writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeDocker,
+		Generation: welcome.Generation, Sequence: 1, Payload: payload})
+	waitForDockerRestoreTest(t, "Docker fixture inventory to persist", func() bool {
+		var count int
+		return core.store.DB.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM docker_containers WHERE node_id=? AND container_id=?`, identity.NodeID, containerID).Scan(&count) == nil && count == 1
+	})
+	conn.Close(websocket.StatusNormalClosure, "fixture complete")
+	coreHTTP.Close()
+	if err := core.Close(); err != nil {
+		t.Fatalf("stop fixture Core: %v", err)
+	}
+	coreClosed = true
+	return identity, credential, containerID
+}
+
+func connectPersistedProtocolAgentForTest(t *testing.T, coreURL string, identity agents.Identity, credential string, capabilities []string) (*websocket.Conn, protocol.Welcome) {
+	t.Helper()
+	ctx := context.Background()
+	endpoint := "ws" + strings.TrimPrefix(coreURL, "http") + "/ws/v1/agent"
+	conn, _, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + credential}}})
+	if err != nil {
+		t.Fatalf("connect persisted Agent WebSocket: %v", err)
+	}
+	permissions := protocol.RuntimePermissions{OS: "linux", Architecture: "amd64", EffectiveUID: 1000, EffectiveGID: 1000, SupplementaryGroups: []int{}}
+	helloPayload, err := json.Marshal(protocol.Hello{AgentID: identity.AgentID, NodeID: identity.NodeID, AgentVersion: "test", Capabilities: capabilities, Permissions: permissions})
+	if err != nil {
+		t.Fatalf("marshal persisted Agent hello: %v", err)
+	}
+	writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: helloPayload})
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	messageType, raw, err := conn.Read(readCtx)
+	if err != nil || messageType != websocket.MessageText {
+		conn.CloseNow()
+		t.Fatalf("read persisted Agent welcome: type=%v err=%v", messageType, err)
+	}
+	var envelope protocol.Envelope
+	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Type != protocol.TypeWelcome {
+		conn.CloseNow()
+		t.Fatalf("invalid persisted Agent welcome envelope: %s err=%v", raw, err)
+	}
+	var welcome protocol.Welcome
+	if err := json.Unmarshal(envelope.Payload, &welcome); err != nil || welcome.Generation == 0 {
+		conn.CloseNow()
+		t.Fatalf("invalid persisted Agent welcome payload: %s err=%v", envelope.Payload, err)
+	}
+	return conn, welcome
+}
+
+func waitForDockerRestoreTest(t *testing.T, description string, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", description)
+}
+
+func containsCapability(capabilities []string, wanted string) bool {
+	for _, capability := range capabilities {
+		if capability == wanted {
+			return true
+		}
+	}
+	return false
+}
+
 func writeProtocolAgentEnvelope(t *testing.T, conn *websocket.Conn, envelope protocol.Envelope) {
 	t.Helper()
 	data, err := json.Marshal(envelope)

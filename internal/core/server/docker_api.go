@@ -8,6 +8,7 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
 
@@ -46,6 +47,14 @@ func (s *Server) dockerViewStateForNode(ctx context.Context, nodeID string) (das
 		return state, coredocker.View{}, 0, nil
 	}
 	now := s.now()
+	if reason := s.dockerRestoreUnavailableReason(nodeID); reason != "" {
+		return state, coredocker.View{
+			NodeID: nodeID, AgentID: state.AgentID, AgentOnline: state.Status == "online",
+			ActiveGeneration: state.Generation, LeaseValidUntil: state.LeaseValidUntil,
+			DockerAvailability: protocol.DockerAvailabilityUnavailable, DataStale: true,
+			StaleReason: reason, Containers: []coredocker.ContainerRecord{}, ServerTime: now.UTC(),
+		}, 0, nil
+	}
 	var dockerLease *coredocker.Lease
 	if lease != nil {
 		dockerLease = &coredocker.Lease{

@@ -17,9 +17,12 @@ type dockerFrame struct {
 func (s *Server) bindDockerConnection(ctx context.Context, identity coredocker.Identity, generation uint64) error {
 	s.dockerMu.Lock()
 	defer s.dockerMu.Unlock()
+	if s.dockerRestoreUnavailableReasonLocked(identity.NodeID) != "" {
+		return errors.New("Docker state is unavailable because persisted inventory could not be restored")
+	}
 	current := s.docker
 	if current == nil {
-		current = coredocker.NewStore()
+		return errors.New("Docker store is unavailable")
 	}
 	candidate := current.Clone()
 	if err := candidate.BindConnection(identity, generation); err != nil {
@@ -41,6 +44,10 @@ func (s *Server) markDockerUnavailable(ctx context.Context, nodeID, reason strin
 		return errors.New("Docker unavailable state is invalid")
 	}
 	s.dockerMu.Lock()
+	if s.dockerRestoreUnavailableReasonLocked(nodeID) != "" {
+		s.dockerMu.Unlock()
+		return nil
+	}
 	current := s.docker
 	if current == nil {
 		s.dockerMu.Unlock()
@@ -92,6 +99,10 @@ func (s *Server) runDockerFrames(ctx context.Context, connection *agentConnectio
 func (s *Server) acceptDockerFrame(ctx context.Context, identity coredocker.Identity, generation uint64, frame dockerFrame) error {
 	changed := false
 	s.dockerMu.Lock()
+	if s.dockerRestoreUnavailableReasonLocked(identity.NodeID) != "" {
+		s.dockerMu.Unlock()
+		return errors.New("Docker state is unavailable because persisted inventory could not be restored")
+	}
 	current := s.docker
 	if current == nil {
 		s.dockerMu.Unlock()
@@ -147,6 +158,22 @@ func (s *Server) acceptDockerFrame(ctx context.Context, identity coredocker.Iden
 		s.metrics.Notify(identity.NodeID)
 	}
 	return nil
+}
+
+func (s *Server) dockerRestoreUnavailableReason(nodeID string) string {
+	if s == nil {
+		return ""
+	}
+	s.dockerMu.Lock()
+	defer s.dockerMu.Unlock()
+	return s.dockerRestoreUnavailableReasonLocked(nodeID)
+}
+
+func (s *Server) dockerRestoreUnavailableReasonLocked(nodeID string) string {
+	if s.dockerRestoreFailed {
+		return "docker_state_restore_failed"
+	}
+	return s.dockerRestoreFailedNodes[nodeID]
 }
 
 func isRejectedDockerSnapshot(err error) bool {

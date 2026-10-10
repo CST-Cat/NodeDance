@@ -533,7 +533,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.closeAgentProtocol(conn, websocket.StatusPolicyViolation, "Agent identity mismatch")
 		return
 	}
-	negotiatedCapabilities := negotiateCapabilities(hello.Capabilities)
+	negotiatedCapabilities := s.negotiateCapabilitiesForNode(identity.NodeID, hello.Capabilities)
 	capabilities, err := json.Marshal(negotiatedCapabilities)
 	if err != nil {
 		s.closeAgentProtocol(conn, websocket.StatusInternalError, "could not record Agent capabilities")
@@ -1067,6 +1067,20 @@ func negotiateCapabilities(reported []string) []string {
 		}
 	}
 	return result
+}
+
+func (s *Server) negotiateCapabilitiesForNode(nodeID string, reported []string) []string {
+	capabilities := negotiateCapabilities(reported)
+	if s == nil || s.dockerRestoreUnavailableReason(nodeID) == "" {
+		return capabilities
+	}
+	filtered := capabilities[:0]
+	for _, capability := range capabilities {
+		if capability != protocol.CapabilityDocker {
+			filtered = append(filtered, capability)
+		}
+	}
+	return filtered
 }
 
 func validRuntimePermissions(value protocol.RuntimePermissions) bool {

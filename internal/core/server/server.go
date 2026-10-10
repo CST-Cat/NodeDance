@@ -89,6 +89,8 @@ type Server struct {
 	alertSender                *corealerts.Sender
 	dockerMu                   sync.Mutex
 	docker                     *coredocker.Store
+	dockerRestoreFailed        bool
+	dockerRestoreFailedNodes   map[string]string
 	agentOfflineTimeout        time.Duration
 	agentSweepInterval         time.Duration
 	agentConnectionsMu         sync.Mutex
@@ -297,10 +299,13 @@ func New(version string, options Options) (*Server, error) {
 	}
 	savedDocker, err := loadDockerNodes(context.Background(), store.DB)
 	if err != nil {
+		s.dockerRestoreFailed = true
 		log.Printf("NodeDance persisted Docker state could not be restored; Core management remains active: %v", err)
 	} else {
+		s.dockerRestoreFailedNodes = make(map[string]string)
 		for _, saved := range savedDocker {
 			if err := s.docker.RestoreStale(saved); err != nil {
+				s.dockerRestoreFailedNodes[saved.Identity.NodeID] = "docker_node_state_restore_failed"
 				log.Printf("NodeDance persisted Docker state for node %s could not be restored: %v", saved.Identity.NodeID, err)
 			}
 		}
