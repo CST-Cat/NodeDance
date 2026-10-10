@@ -28,6 +28,7 @@ type agentIdentityResponse struct {
 	DisplayName     string `json:"displayName"`
 	Status          string `json:"status"`
 	CredentialState string `json:"credentialState,omitempty"`
+	Generation      uint64 `json:"generation,omitempty"`
 }
 
 func (s *Server) handleAgentEnroll(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +84,7 @@ func (s *Server) handleAgentIdentity(w http.ResponseWriter, r *http.Request) {
 	if identity.CredentialIsPending {
 		credentialState = "pending"
 	}
-	writeJSON(w, http.StatusOK, agentIdentityResponse{AgentID: identity.AgentID, NodeID: identity.NodeID, DisplayName: identity.DisplayName, Status: identity.Status, CredentialState: credentialState})
+	writeJSON(w, http.StatusOK, agentIdentityResponse{AgentID: identity.AgentID, NodeID: identity.NodeID, DisplayName: identity.DisplayName, Status: identity.Status, CredentialState: credentialState, Generation: identity.ConnectionGeneration})
 }
 
 func (s *Server) secureAgentRequest(r *http.Request) bool {

@@ -1,0 +1,47 @@
+name: Agent release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build Linux Agent artifacts
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o dist/nodedance-agent-linux-amd64 ./cmd/nodedance-agent
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o dist/nodedance-agent-linux-arm64 ./cmd/nodedance-agent
+          cp scripts/install-agent.sh dist/install-agent.sh
+          chmod 0755 dist/install-agent.sh dist/nodedance-agent-linux-amd64 dist/nodedance-agent-linux-arm64
+          (cd dist && sha256sum nodedance-agent-linux-amd64 nodedance-agent-linux-arm64 > SHA256SUMS)
+
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_VERSION" \
+            dist/install-agent.sh \
+            dist/nodedance-agent-linux-amd64 \
+            dist/nodedance-agent-linux-arm64 \
+            dist/SHA256SUMS \
+            --title "$RELEASE_VERSION" \
+            --generate-notes

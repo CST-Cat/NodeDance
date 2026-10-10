@@ -22,9 +22,13 @@ type assignedIdentity struct {
 	DisplayName     string `json:"displayName"`
 	Status          string `json:"status"`
 	CredentialState string `json:"credentialState"`
+	Generation      uint64 `json:"generation"`
 }
 
 func Enroll(ctx context.Context, server, caFile string, development bool, tokenReader io.Reader, configPath string) error {
+	if err := requireAgentRoot("enrollment"); err != nil {
+		return err
+	}
 	parsedServer, err := ParseServerURL(server, development)
 	if err != nil {
 		return err
@@ -85,6 +89,9 @@ func Enroll(ctx context.Context, server, caFile string, development bool, tokenR
 }
 
 func Recover(ctx context.Context, configPath string) error {
+	if err := requireAgentRoot("recovery"); err != nil {
+		return err
+	}
 	config, err := LoadConfig(configPath)
 	if err != nil {
 		return err

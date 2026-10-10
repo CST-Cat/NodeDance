@@ -574,7 +574,7 @@ export const api = {
   probeTailscaleSSH: (peerIdentity: string) => request<{ fingerprint: string }>('/api/v1/discovery/tailscale/host-key', {
     method: 'POST', body: JSON.stringify({ peerIdentity }),
   }, true),
-  createManualEnrollment: (displayName: string) => request<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number }>('/api/v1/discovery/enrollments', {
+  createAgentEnrollment: (displayName: string) => request<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number }>('/api/v1/agents/enrollments', {
     method: 'POST', body: JSON.stringify({ displayName }),
   }, true),
   startTailscaleDeployment: (payload: TailscaleDeployPayload, idempotencyKey: string) => request<TailscaleDeploymentTask>('/api/v1/discovery/deployments', {

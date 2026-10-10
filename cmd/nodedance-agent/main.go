@@ -42,6 +42,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return runAgent(ctx, args[1:], stderr)
 	case "install-systemd":
 		return runInstallSystemd(ctx, args[1:], stdout, stderr)
+	case "uninstall-systemd":
+		return runUninstallSystemd(ctx, args[1:], stdout, stderr)
 	case "validate-systemd-state":
 		return runValidateSystemdState(args[1:], stdout, stderr)
 	case "prepare-systemd-state":
@@ -61,8 +63,9 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, "  nodedance-agent run [--config path]")
 	fmt.Fprintln(output, "  nodedance-agent validate-file-root --file-root <absolute-directory> [--state-dir <path>]")
 	fmt.Fprintln(output, "  nodedance-agent validate-systemd-state [--config path]")
-	fmt.Fprintln(output, "  nodedance-agent prepare-systemd-state --user <service-user>")
-	fmt.Fprintln(output, "  nodedance-agent install-systemd --user <service-user> [--config path] [--file-root absolute-directory] [--no-file-root] [--supplementary-group <gid>] [--enable]")
+	fmt.Fprintln(output, "  nodedance-agent prepare-systemd-state [--user root] [--require-new]")
+	fmt.Fprintln(output, "  nodedance-agent install-systemd [--user root] [--config path] [--file-root absolute-directory] [--no-file-root] [--supplementary-group <gid>] [--enable]")
+	fmt.Fprintln(output, "  nodedance-agent uninstall-systemd [--unit-dir path]")
 	fmt.Fprintln(output, "The Agent never accepts inbound management connections. Enrollment tokens are read only from stdin.")
 }
 
@@ -84,15 +87,32 @@ func runValidateSystemdState(args []string, stdout, stderr io.Writer) error {
 
 func runPrepareSystemdState(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("prepare-systemd-state", stderr)
-	serviceUser := flags.String("user", "", "explicit non-root Agent service account")
+	serviceUser := flags.String("user", "", "root-only Agent service account; omitted defaults to root")
+	requireNew := flags.Bool("require-new", false, "create a fresh state directory and refuse to adopt existing state")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected prepare-systemd-state arguments: %v", flags.Args())
 	}
-	if strings.TrimSpace(*serviceUser) == "" {
-		return fmt.Errorf("--user is required")
+	userExplicit := false
+	flags.Visit(func(flag *flag.Flag) {
+		if flag.Name == "user" {
+			userExplicit = true
+		}
+	})
+	if userExplicit {
+		if strings.TrimSpace(*serviceUser) != "root" {
+			return fmt.Errorf("NodeDance Agent systemd service only supports --user root")
+		}
+	}
+	if *requireNew {
+		identity, err := agent.PrepareNewSystemdStateForUser(*serviceUser, "/var/lib/nodedance-agent/agent.json")
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stdout, "created:%s\n", identity)
+		return nil
 	}
 	exists, err := agent.PrepareSystemdStateForUser(*serviceUser, "/var/lib/nodedance-agent/agent.json")
 	if err != nil {
@@ -127,6 +147,9 @@ func runValidateFileRoot(args []string, stdout, stderr io.Writer) error {
 }
 
 func runEnroll(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if err := requireAgentCommandRoot("enrollment", os.Geteuid()); err != nil {
+		return err
+	}
 	flags := newFlagSet("enroll", stderr)
 	server := flags.String("server", "", "Core HTTPS URL")
 	caFile := flags.String("ca-file", "", "additional trusted CA PEM file")
@@ -173,6 +196,9 @@ func isTerminalInput(reader io.Reader) bool {
 }
 
 func runRecover(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	if err := requireAgentCommandRoot("recovery", os.Geteuid()); err != nil {
+		return err
+	}
 	flags := newFlagSet("recover", stderr)
 	configPath := flags.String("config", "", "private Agent config path")
 	if err := flags.Parse(args); err != nil {
@@ -197,6 +223,9 @@ func runRecover(ctx context.Context, args []string, stdout, stderr io.Writer) er
 }
 
 func runAgent(ctx context.Context, args []string, stderr io.Writer) error {
+	if err := requireAgentCommandRoot("runtime", os.Geteuid()); err != nil {
+		return err
+	}
 	flags := newFlagSet("run", stderr)
 	configPath := flags.String("config", "", "private Agent config path")
 	if err := flags.Parse(args); err != nil {
@@ -214,9 +243,16 @@ func runAgent(ctx context.Context, args []string, stderr io.Writer) error {
 	return agent.Run(runCtx, path, version, stderr)
 }
 
+func requireAgentCommandRoot(operation string, uid int) error {
+	if uid == 0 {
+		return nil
+	}
+	return fmt.Errorf("NodeDance Agent %s requires root privileges for full host management", operation)
+}
+
 func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("install-systemd", stderr)
-	serviceUser := flags.String("user", "", "explicit Linux account that will run the Agent")
+	serviceUser := flags.String("user", "", "root-only Agent service account; omitted defaults to root")
 	configPath := flags.String("config", "/var/lib/nodedance-agent/agent.json", "existing private Agent config path")
 	unitDir := flags.String("unit-dir", "/etc/systemd/system", "system unit directory")
 	fileRoot := flags.String("file-root", "", "explicit absolute, existing host directory exposed to the Agent file manager")
@@ -229,9 +265,6 @@ func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Wri
 	}
 	if flags.NArg() != 0 {
 		return fmt.Errorf("unexpected install-systemd arguments: %v", flags.Args())
-	}
-	if strings.TrimSpace(*serviceUser) == "" {
-		return fmt.Errorf("--user is required; installation never guesses or elevates the service identity")
 	}
 	fileRootSpecified := false
 	flags.Visit(func(flag *flag.Flag) {
@@ -262,11 +295,33 @@ func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Wri
 		fmt.Fprintln(stdout, "Enable and start with: systemctl enable --now nodedance-agent.service")
 	}
 	installedUnit, readErr := os.ReadFile(path)
-	if readErr == nil && strings.Contains(string(installedUnit), "NODEDANCE_AGENT_FILE_ROOT=") {
-		fmt.Fprintln(stdout, "Host file access is enabled only under the configured absolute file root.")
-	} else {
+	unitText := string(installedUnit)
+	switch {
+	case readErr == nil && strings.Contains(unitText, "Environment=NODEDANCE_AGENT_FILE_ACCESS=disabled"):
+		fmt.Fprintln(stdout, "Host file access is disabled by the systemd Agent unit.")
+	case readErr == nil && strings.Contains(unitText, "NODEDANCE_AGENT_FILE_ROOT=\"/\""):
+		fmt.Fprintln(stdout, "Host file access covers the host filesystem; kernel/runtime paths and Agent credentials are protected.")
+	case readErr == nil && strings.Contains(unitText, "NODEDANCE_AGENT_FILE_ROOT="):
+		fmt.Fprintln(stdout, "Host file access is confined to the configured absolute file root.")
+	default:
 		fmt.Fprintln(stdout, "Host file access is disabled; no absolute file root is configured.")
 	}
+	return nil
+}
+
+func runUninstallSystemd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("uninstall-systemd", stderr)
+	unitDir := flags.String("unit-dir", "/etc/systemd/system", "system unit directory")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected uninstall-systemd arguments: %v", flags.Args())
+	}
+	if err := agent.UninstallSystemd(ctx, *unitDir); err != nil {
+		return err
+	}
+	fmt.Fprintln(stdout, "Uninstalled the NodeDance Agent systemd unit; Agent configuration and identity were preserved.")
 	return nil
 }
 

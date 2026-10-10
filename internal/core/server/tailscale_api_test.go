@@ -603,6 +603,9 @@ func testMetricsSnapshot(sampledAt time.Time) protocol.MetricsSnapshot {
 }
 
 func TestLocalAgentAndCoreKeepMonitoringAfterProbeWorkerFailure(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("local Agent/Core integration requires the root-only Agent runtime")
+	}
 	ctx := context.Background()
 	core, err := New("test", Options{DataDir: t.TempDir(), Development: true, AgentOfflineTimeout: 15 * time.Second})
 	if err != nil {

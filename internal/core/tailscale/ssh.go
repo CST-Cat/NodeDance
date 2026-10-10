@@ -347,14 +347,14 @@ if [ "$unit_present" -eq 1 ]; then
   elif [ -n "$rootcmd" ]; then
     if sudo -n test -L "$unit_path" || ! sudo -n test -f "$unit_path"; then
       printf '%s\n' 'unit|foreign|-'
-    elif sudo -n grep -Fxq '# NodeDanceAgentUnit=1' "$unit_path" && sudo -n grep -Fxq '[Unit]' "$unit_path" && sudo -n grep -Fxq '[Service]' "$unit_path" && sudo -n grep -Fxq 'Description=NodeDance Agent' "$unit_path" && sudo -n grep -Fxq 'Type=simple' "$unit_path" && sudo -n grep -Eq '^ExecStart=/usr/bin/env -- .*nodedance-agent.*run --config ' "$unit_path" && sudo -n grep -Eq '^User=[a-zA-Z0-9_.-]+$' "$unit_path" && ! sudo -n grep -Fxq 'User=root' "$unit_path" && sudo -n grep -Fxq 'NoNewPrivileges=true' "$unit_path" && sudo -n grep -Fxq 'ProtectSystem=strict' "$unit_path" && sudo -n grep -Fxq 'ProtectHome=tmpfs' "$unit_path" && sudo -n grep -Fxq 'PrivateTmp=true' "$unit_path" && sudo -n grep -Eq '^ReadWritePaths=.' "$unit_path" && sudo -n grep -Fxq 'UMask=0077' "$unit_path" && sudo -n grep -Fxq 'Restart=always' "$unit_path" && sudo -n grep -Fxq '[Install]' "$unit_path" && sudo -n grep -Fxq 'WantedBy=multi-user.target' "$unit_path"; then
+    elif sudo -n grep -Fxq '# NodeDanceAgentUnit=1' "$unit_path" && sudo -n grep -Fxq '[Unit]' "$unit_path" && sudo -n grep -Fxq '[Service]' "$unit_path" && sudo -n grep -Fxq 'Description=NodeDance Agent' "$unit_path" && sudo -n grep -Fxq 'Type=simple' "$unit_path" && sudo -n grep -Eq '^ExecStart=/usr/bin/env -- .*nodedance-agent.*run --config ' "$unit_path" && sudo -n grep -Fxq 'User=root' "$unit_path" && sudo -n grep -Fxq 'Group=root' "$unit_path" && sudo -n grep -Fxq 'UMask=0077' "$unit_path" && sudo -n grep -Fxq 'Restart=always' "$unit_path" && sudo -n grep -Fxq '[Install]' "$unit_path" && sudo -n grep -Fxq 'WantedBy=multi-user.target' "$unit_path"; then
       printf 'unit|managed|%s\n' "$(sudo -n sha256sum "$unit_path" | cut -d ' ' -f1)"
     else
       printf '%s\n' 'unit|foreign|-'
     fi
   elif [ -L "$unit_path" ] || [ ! -f "$unit_path" ]; then
     printf '%s\n' 'unit|foreign|-'
-  elif grep -Fxq '# NodeDanceAgentUnit=1' "$unit_path" && grep -Fxq '[Unit]' "$unit_path" && grep -Fxq '[Service]' "$unit_path" && grep -Fxq 'Description=NodeDance Agent' "$unit_path" && grep -Fxq 'Type=simple' "$unit_path" && grep -Eq '^ExecStart=/usr/bin/env -- .*nodedance-agent.*run --config ' "$unit_path" && grep -Eq '^User=[a-zA-Z0-9_.-]+$' "$unit_path" && ! grep -Fxq 'User=root' "$unit_path" && grep -Fxq 'NoNewPrivileges=true' "$unit_path" && grep -Fxq 'ProtectSystem=strict' "$unit_path" && grep -Fxq 'ProtectHome=tmpfs' "$unit_path" && grep -Fxq 'PrivateTmp=true' "$unit_path" && grep -Eq '^ReadWritePaths=.' "$unit_path" && grep -Fxq 'UMask=0077' "$unit_path" && grep -Fxq 'Restart=always' "$unit_path" && grep -Fxq '[Install]' "$unit_path" && grep -Fxq 'WantedBy=multi-user.target' "$unit_path"; then
+  elif grep -Fxq '# NodeDanceAgentUnit=1' "$unit_path" && grep -Fxq '[Unit]' "$unit_path" && grep -Fxq '[Service]' "$unit_path" && grep -Fxq 'Description=NodeDance Agent' "$unit_path" && grep -Fxq 'Type=simple' "$unit_path" && grep -Eq '^ExecStart=/usr/bin/env -- .*nodedance-agent.*run --config ' "$unit_path" && grep -Fxq 'User=root' "$unit_path" && grep -Fxq 'Group=root' "$unit_path" && grep -Fxq 'UMask=0077' "$unit_path" && grep -Fxq 'Restart=always' "$unit_path" && grep -Fxq '[Install]' "$unit_path" && grep -Fxq 'WantedBy=multi-user.target' "$unit_path"; then
     printf 'unit|managed|%s\n' "$(sha256sum "$unit_path" | cut -d ' ' -f1)"
   else
     printf '%s\n' 'unit|foreign|-'
@@ -367,7 +367,7 @@ else
 fi`
 	command += `
 if [ -S /var/run/docker.sock ]; then
-  service_uid="$(id -u nodedance-agent 2>/dev/null || echo -1)"
+  service_uid=0
   printf 'docker|%s|%s|%s|%s\n' "$(stat -c %a /var/run/docker.sock)" "$(stat -c %u /var/run/docker.sock)" "$(stat -c %g /var/run/docker.sock)" "$service_uid"
 elif [ -e /var/run/docker.sock ]; then
   echo docker|invalid
@@ -639,12 +639,12 @@ func InstallRemoteWithFileRootOptions(ctx context.Context, remote Remote, prefli
 	encodedURL := base64.StdEncoding.EncodeToString([]byte(coreURL))
 	encodedToken := base64.StdEncoding.EncodeToString([]byte(enrollment.Token))
 	encodedFileRoot := base64.StdEncoding.EncodeToString([]byte(fileRoot))
-	fileRootInstall := `/usr/local/bin/nodedance-agent install-systemd --user nodedance-agent --config /var/lib/nodedance-agent/agent.json`
+	fileRootInstall := `/usr/local/bin/nodedance-agent install-systemd --user root --config /var/lib/nodedance-agent/agent.json`
 	if fileRoot != "" {
 		fileRootInstall = fmt.Sprintf(`FILE_ROOT="$(printf '%%s' '%s' | base64 -d)"
-/usr/local/bin/nodedance-agent install-systemd --user nodedance-agent --config /var/lib/nodedance-agent/agent.json --file-root "$FILE_ROOT"`, encodedFileRoot)
+/usr/local/bin/nodedance-agent install-systemd --user root --config /var/lib/nodedance-agent/agent.json --file-root "$FILE_ROOT"`, encodedFileRoot)
 	} else if disableFileRoot {
-		fileRootInstall = "/usr/local/bin/nodedance-agent install-systemd --user nodedance-agent --config /var/lib/nodedance-agent/agent.json --no-file-root"
+		fileRootInstall = "/usr/local/bin/nodedance-agent install-systemd --user root --config /var/lib/nodedance-agent/agent.json --no-file-root"
 	} else {
 		fileRootInstall = "env -u NODEDANCE_AGENT_FILE_ROOT " + fileRootInstall
 	}
@@ -699,7 +699,7 @@ unit_path=/etc/systemd/system/nodedance-agent.service
 agent_binary_path=/usr/local/bin/nodedance-agent
 agent_bin_path=/var/lib/nodedance-agent/bin
 is_nodedance_unit() {
-  [ -f "$1" ] && [ ! -L "$1" ] && grep -Fxq '# NodeDanceAgentUnit=1' "$1" && grep -Fxq '[Unit]' "$1" && grep -Fxq '[Service]' "$1" && grep -Fxq 'Description=NodeDance Agent' "$1" && grep -Fxq 'Type=simple' "$1" && grep -Eq '^ExecStart=/usr/bin/env -- .*nodedance-agent.*run --config ' "$1" && grep -Eq '^User=[a-zA-Z0-9_.-]+$' "$1" && ! grep -Fxq 'User=root' "$1" && grep -Fxq 'NoNewPrivileges=true' "$1" && grep -Fxq 'ProtectSystem=strict' "$1" && grep -Fxq 'ProtectHome=tmpfs' "$1" && grep -Fxq 'PrivateTmp=true' "$1" && grep -Eq '^ReadWritePaths=.' "$1" && grep -Fxq 'UMask=0077' "$1" && grep -Fxq 'Restart=always' "$1" && grep -Fxq '[Install]' "$1" && grep -Fxq 'WantedBy=multi-user.target' "$1"
+  [ -f "$1" ] && [ ! -L "$1" ] && grep -Fxq '# NodeDanceAgentUnit=1' "$1" && grep -Fxq '[Unit]' "$1" && grep -Fxq '[Service]' "$1" && grep -Fxq 'Description=NodeDance Agent' "$1" && grep -Fxq 'Type=simple' "$1" && grep -Eq '^ExecStart=/usr/bin/env -- .*nodedance-agent.*run --config ' "$1" && grep -Fxq 'User=root' "$1" && grep -Fxq 'Group=root' "$1" && grep -Fxq 'UMask=0077' "$1" && grep -Fxq 'Restart=always' "$1" && grep -Fxq '[Install]' "$1" && grep -Fxq 'WantedBy=multi-user.target' "$1"
 }
 %s
 %s
@@ -729,12 +729,10 @@ actual="$(sha256sum "$TMP/nodedance-agent" | awk '{print $1}')"
 [ "$actual" = '%s' ] || { echo 'Agent SHA-256 mismatch' >&2; exit 21; }
 chmod 0755 "$TMP/nodedance-agent"
 "$TMP/nodedance-agent" validate-systemd-state --config /var/lib/nodedance-agent/agent.json
-if ! getent passwd nodedance-agent >/dev/null; then useradd --system --home-dir /var/lib/nodedance-agent --shell /usr/sbin/nologin nodedance-agent; fi
-service_uid="$(id -u nodedance-agent)"
-[ "$service_uid" -ne 0 ] || { echo 'refusing to run Agent as root service account' >&2; exit 22; }
+service_uid=0
 %s
 %s
-state_config="$("$TMP/nodedance-agent" prepare-systemd-state --user nodedance-agent)"
+state_config="$("$TMP/nodedance-agent" prepare-systemd-state --user root)"
 case "$state_config" in
   new) NEW_CONFIG=1 ;;
   existing) NEW_CONFIG=0 ;;
@@ -749,7 +747,7 @@ install -m 0755 "$TMP/nodedance-agent" /usr/local/bin/.nodedance-agent.new
 mv -f /usr/local/bin/.nodedance-agent.new /usr/local/bin/nodedance-agent
 if [ "$state_config" = new ]; then
   NEW_CONFIG=1
-  printf '%%s' '%s' | base64 -d | runuser -u nodedance-agent -- /usr/local/bin/nodedance-agent enroll --server "$(printf '%%s' '%s' | base64 -d)" --token-stdin --config /var/lib/nodedance-agent/agent.json
+  printf '%%s' '%s' | base64 -d | /usr/local/bin/nodedance-agent enroll --server "$(printf '%%s' '%s' | base64 -d)" --token-stdin --config /var/lib/nodedance-agent/agent.json
 fi
 %s
 UNIT_MAY_HAVE_CHANGED=1

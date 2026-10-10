@@ -97,41 +97,31 @@ The Core data directory contains the SQLite database and authentication/encrypti
 
 ## Enroll and run an Agent
 
-Create an enrollment credential in the Core console, then enroll the Agent on the target Linux host. The token is read from stdin; it is not placed in the command line or shell history.
+After signing in to the Core console, choose **添加 Agent**, enter a node display name, and generate a one-time enrollment. The page shows the Core-bound installer command and the short-lived token separately. Copy the command to the target Linux host, run it, then paste the token only into the installer's hidden `/dev/tty` prompt. The token is never part of the command, shell history, process arguments, or environment.
 
-If building from this checkout on that host, first run `make build` and `sudo make install`. Otherwise install a trusted release binary after verifying its release signature. Use the same `nodedance-agent` executable for enrollment, recovery, foreground execution, and systemd installation.
+The target host command is:
 
-```sh
-nodedance-agent enroll --server https://nodedance.example --token-stdin
-nodedance-agent run
+```bash
+bash -o pipefail -c 'curl --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 https://github.com/CST-Cat/NodeDance/releases/latest/download/install-agent.sh | sudo bash -s -- --server '\''https://nodedance.example'\'' --display-name '\''production-01'\'''
 ```
 
-When using a terminal, paste the one-time token, press Enter, then finish stdin with Ctrl-D on Linux/macOS (or Ctrl-Z followed by Enter on Windows). For same-host development against a loopback Core, use `--dev --server http://127.0.0.1:8180`; `--dev` accepts only literal loopback HTTP addresses.
+The installer supports Linux `amd64` and `arm64`. It downloads the matching Agent and the release SHA256 manifest over HTTPS, verifies the binary, prepares root-owned state, enrolls through `nodedance-agent enroll --token-stdin`, then installs, enables, and starts the root systemd service. It refuses existing Agent state, binaries, or a same-name service, and will not overwrite existing config or service files. If enrollment may have reached Core but the response was lost, it preserves the protected config and provides the recovery command.
 
-For a persistent Agent, create a dedicated unprivileged account and private state directory, enroll with an explicit config path, then install its systemd unit:
+**Release availability:** this repository currently has no published GitHub Release, so the `releases/latest/download` URL above is not usable yet. Until the first release is published, the installer detects the missing release before modifying the target host and exits with an explicit message. A maintainer triggers the release workflow by pushing a version tag after the workflow is present on the tagged commit; for example, `git tag v0.1.0` followed by `git push origin v0.1.0`. GitHub Actions builds the two Agent binaries, generates `SHA256SUMS`, attaches the installer, and creates the Release. Do not run the curl command until that workflow has completed and the release assets are available.
 
-```sh
-getent passwd nodedance-agent >/dev/null || sudo useradd --system --home-dir /var/lib/nodedance-agent --shell /usr/sbin/nologin nodedance-agent
-sudo install -d -o nodedance-agent -g nodedance-agent -m 0700 /var/lib/nodedance-agent
-sudo -u nodedance-agent nodedance-agent enroll \
-  --server https://nodedance.example \
-  --config /var/lib/nodedance-agent/agent.json \
-  --token-stdin
-sudo nodedance-agent install-systemd \
-  --user nodedance-agent \
-  --config /var/lib/nodedance-agent/agent.json \
-  --enable
-```
+The Agent runs as root for full host management; `enroll`, `recover`, and `run` reject non-root callers. It verifies the config remains root-owned, regular, and mode `0600` inside a `0700` state directory. Root file management exposes host paths while blocking kernel/runtime trees and Agent credentials. NodeDance does not change Docker socket permissions.
 
-The installer writes a NodeDance-managed system unit, refuses an unrelated or unmarked existing unit, reloads systemd, and enables/starts the Agent. Inspect it with `sudo systemctl status nodedance-agent.service`; restart or stop it with `sudo systemctl restart nodedance-agent.service` or `sudo systemctl stop nodedance-agent.service`. If enrollment may have reached Core but the response was lost, retain the private config and run `sudo -u nodedance-agent nodedance-agent recover --config /var/lib/nodedance-agent/agent.json`. Recovery checks the saved device credential and does not replay the one-time token.
+For same-host development against a loopback Core, build with `make build` and use `sudo .build/nodedance-agent enroll --dev --server http://127.0.0.1:8180 --config /var/lib/nodedance-agent/agent.json --token-stdin`. `--dev` accepts only literal loopback HTTP addresses; production URLs must use HTTPS with a valid certificate.
 
-Add `--file-root /absolute/path` only when the Agent should expose that host directory in the console. Docker access is optional. If it is authorized, pass `--supplementary-group docker` when installing the unit (or use an explicitly approved group). Membership in the Docker group grants powerful control of the host. NodeDance does not change Docker socket permissions. If Docker is absent or the Agent user cannot access it, the console reports Docker as unavailable while host monitoring continues.
+The installer writes a NodeDance-managed root service without a filesystem/system write sandbox. It refuses unrelated or unmarked units, reloads systemd, and can enable/start the Agent. Inspect it with `sudo systemctl status nodedance-agent.service`; restart or stop it with `sudo systemctl restart nodedance-agent.service` or `sudo systemctl stop nodedance-agent.service`. If enrollment may have reached Core but the response was lost, retain the private config and run `sudo nodedance-agent recover --config /var/lib/nodedance-agent/agent.json`. Recovery checks the saved device credential and does not replay the one-time token. `sudo nodedance-agent uninstall-systemd` stops/removes only the current NodeDance-managed root unit; it preserves the binary and credentials.
+
+Use `--file-root /absolute/path` to limit file-manager access to a specific directory, or `--no-file-root` to disable file management. Docker access is optional. NodeDance does not change Docker socket permissions. If Docker is absent or unavailable, host monitoring continues.
 
 ### Optional Tailscale discovery and SSH-assisted Agent installation
 
 Tailscale is optional. Core startup does not install, configure, or require it. If the Core host has the Tailscale CLI installed and is logged in, an administrator can open **发现节点** in the console; discovery reads that host's local `tailscale status --json`. If the CLI is absent or not logged in, ordinary Core management and manual Agent enrollment continue to work.
 
-SSH-assisted deployment is available only for visible, online Linux peers and requires a signed Agent artifact on the Core. Build Linux `amd64` and/or `arm64` Agent binaries, sign each binary with an Ed25519 release key kept outside the Core host, and place each binary with its detached signature at `linux-amd64/nodedance-agent[.sig]` or `linux-arm64/nodedance-agent[.sig]` under a private artifact directory. Configure the Core service environment with the artifact directory and the base64-encoded raw Ed25519 public key, then restart Core:
+SSH-assisted Agent deployment is available only for visible, online Linux peers and requires a signed Agent artifact on the Core. The installer creates no Agent service account: it prepares root-owned credentials and installs the same root-only systemd service used by manual enrollment. Build Linux `amd64` and/or `arm64` Agent binaries, sign each binary with an Ed25519 release key kept outside the Core host, and place each binary with its detached signature at `linux-amd64/nodedance-agent[.sig]` or `linux-arm64/nodedance-agent[.sig]` under a private artifact directory. Configure the Core service environment with the artifact directory and the base64-encoded raw Ed25519 public key, then restart Core:
 
 ```ini
 Environment=NODEDANCE_AGENT_ARTIFACT_DIR=/var/lib/nodedance-agent-artifacts
@@ -140,7 +130,7 @@ Environment=NODEDANCE_AGENT_SIGNING_PUBLIC_KEY=<base64-encoded-raw-ed25519-publi
 
 Add those lines in `sudo systemctl edit nodedance.service`, save the override, then run `sudo systemctl daemon-reload && sudo systemctl restart nodedance.service`.
 
-The public key is not secret; keep the signing private key off the Core host. In the UI, refresh discovery, select a Linux peer, read its SSH host-key fingerprint, and verify it through an independent trusted channel before confirming. Credentials are held only for the active deployment request and are not stored in task history. The UI displays a manual SSH recovery command. If signed artifacts are not configured, use the manual enrollment procedure above. Tailscale and SSH deployment should be used only when you administer those systems.
+The public key is not secret; keep the signing private key off the Core host. In the UI, refresh discovery, select a Linux peer, read its SSH host-key fingerprint, and verify it through an independent trusted channel before confirming. Credentials are held only for the active deployment request and are not stored in task history. The UI displays a manual SSH recovery command. If signed artifacts are not configured, use the generic **添加 Agent** enrollment flow above. Tailscale and SSH deployment should be used only when you administer those systems.
 
 ## Use probes and alerts
 
@@ -176,14 +166,14 @@ Before replacing a Core binary, create a backup. Replace it only with a v0 build
 
 NodeDance is still at product version `0.0.0`. The current SQLite schema is initialized directly; automatic upgrades from older development schema layouts are not supported. An incompatible development database may be removed and initialized with the current schema. Normal backup/restore applies to a database created by a compatible current v0 build. Product version and SQLite structure are separate concepts.
 
-Agent unit installation recognizes only the current NodeDance-managed unit marker. It refuses to overwrite unrelated or unmarked existing systemd units; do not expect an old unit format to be upgraded automatically. Review and resolve an unmarked existing unit explicitly before installing the current unit.
+Agent systemd installation is root-only. It recognizes only the current NodeDance-managed root unit and refuses to overwrite unrelated, unmarked, shadowed, or changed units. Uninstall removes that unit while preserving the Agent config and identity.
 
 ## Troubleshooting
 
 - **Browser setup or login does not persist:** use HTTPS in production so secure session cookies are accepted. `--dev` is for loopback development only.
 - **Agent remains offline:** check the Core HTTPS/WSS URL, outbound connectivity, enrollment state, and Agent service log with `systemctl status nodedance-agent` and `journalctl -u nodedance-agent`.
-- **Host metrics work but Docker is unavailable:** check Docker Engine status and whether the configured Agent account can access its socket. NodeDance intentionally leaves socket permissions unchanged.
-- **File access is unavailable:** verify that the Agent unit has an explicit `--file-root` and that the service account can access it. The Agent confines file operations to the configured root.
+- **Host metrics work but Docker is unavailable:** check Docker Engine status and whether the Agent can access its socket. NodeDance intentionally leaves socket permissions unchanged.
+- **File access is unavailable:** the root Agent enables full-host browsing by default, except `/proc`, `/sys`, `/dev`, `/run`, and the Agent credential state directory. Check for `NODEDANCE_AGENT_FILE_ACCESS=disabled`; `--file-root` can narrow access.
 - **A probe reports unknown:** check that the node is online and negotiated the probe capability. Unknown means there is no current result; it is not treated as a failed service.
 - **Restore is rejected:** use a complete private backup archive, an existing parent directory, and a destination directory that is absent or empty. Restore does not overwrite existing non-empty data.
 

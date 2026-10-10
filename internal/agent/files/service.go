@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -38,9 +39,12 @@ var (
 const defaultTransferLimit int64 = protocol.DefaultFileLimit
 
 type Service struct {
-	root  *os.Root
-	name  string
-	limit int64
+	root        *os.Root
+	rootFD      int
+	name        string
+	limit       int64
+	fullHost    bool
+	blockedPath []string
 	// afterAtomicReplace is a package-test fault-injection hook for the
 	// otherwise hard-to-reproduce post-commit verification failure path.
 	afterAtomicReplace func()
@@ -56,25 +60,70 @@ type MutationBaseline struct {
 	NewPathFingerprint string
 }
 
-func New(rootPath string, limit int64) (*Service, error) {
+func New(rootPath string, limit int64, protectedPaths ...string) (*Service, error) {
 	if limit == 0 {
 		limit = defaultTransferLimit
 	}
 	if limit < 1 || limit > protocol.MaxFileSize {
 		return nil, errors.New("file transfer limit is outside the protocol hard limit")
 	}
-	root, err := os.OpenRoot(rootPath)
+	absRoot, err := filepath.Abs(rootPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Agent file root: %w", err)
+	}
+	root, err := os.OpenRoot(absRoot)
 	if err != nil {
 		return nil, fmt.Errorf("open Agent file root: %w", err)
 	}
-	return &Service{root: root, name: rootPath, limit: limit}, nil
+	service := &Service{root: root, rootFD: -1, name: absRoot, limit: limit, fullHost: absRoot == string(filepath.Separator)}
+	if service.fullHost {
+		service.blockedPath = []string{"/proc", "/sys", "/dev", "/run"}
+		service.rootFD, err = unix.Open(string(filepath.Separator), unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+		if err != nil {
+			_ = root.Close()
+			return nil, fmt.Errorf("open descriptor for full-host file root: %w", err)
+		}
+		probeFD, probeErr := openAt2(service.rootFD, ".", unix.O_PATH, 0)
+		if probeErr != nil {
+			_ = unix.Close(service.rootFD)
+			_ = root.Close()
+			return nil, fmt.Errorf("full-host file access requires race-safe Linux openat2 support: %w", probeErr)
+		}
+		_ = unix.Close(probeFD)
+	}
+	for _, protected := range protectedPaths {
+		absolute, err := filepath.Abs(protected)
+		if err != nil {
+			_ = root.Close()
+			return nil, fmt.Errorf("resolve protected Agent path: %w", err)
+		}
+		relative, err := filepath.Rel(absRoot, absolute)
+		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+			_ = root.Close()
+			return nil, errors.New("protected Agent path must remain inside the configured file root")
+		}
+		protectedVirtual := "/"
+		if relative != "." {
+			protectedVirtual += filepath.ToSlash(relative)
+		}
+		service.blockedPath = append(service.blockedPath, path.Clean(protectedVirtual))
+	}
+	return service, nil
 }
 
 func (s *Service) Close() error {
 	if s == nil || s.root == nil {
 		return nil
 	}
-	return s.root.Close()
+	var closeErr error
+	if s.rootFD >= 0 {
+		closeErr = unix.Close(s.rootFD)
+		s.rootFD = -1
+	}
+	if err := s.root.Close(); err != nil {
+		return err
+	}
+	return closeErr
 }
 
 func (s *Service) Limit() int64 { return s.limit }
@@ -89,13 +138,245 @@ func (s *Service) normalize(virtual string) (string, string, error) {
 		}
 	}
 	clean := path.Clean(virtual)
+	if s.isBlocked(clean) {
+		return "", "", ErrInvalidPath
+	}
 	if clean == "/" {
 		return ".", "/", nil
 	}
 	if clean != virtual && strings.HasSuffix(virtual, "/..") {
 		return "", "", ErrInvalidPath
 	}
-	return strings.TrimPrefix(clean, "/"), clean, nil
+	name := strings.TrimPrefix(clean, "/")
+	return name, clean, nil
+}
+
+func (s *Service) isBlocked(virtual string) bool {
+	for _, blocked := range s.blockedPath {
+		if virtual == blocked || strings.HasPrefix(virtual, strings.TrimSuffix(blocked, "/")+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// fullHost uses openat2 and pinned parent directory descriptors for each
+// operation. RESOLVE_NO_SYMLINKS makes the special-path and credential checks
+// atomic with path resolution, so a concurrent symlink swap cannot redirect an
+// operation into a protected path inside the host root.
+func (s *Service) open(name string) (*os.File, error) {
+	if !s.fullHost {
+		return s.root.Open(name)
+	}
+	return s.openAtRoot(name, unix.O_RDONLY, 0)
+}
+
+func (s *Service) openFile(name string, flag int, perm os.FileMode) (*os.File, error) {
+	if !s.fullHost {
+		return s.root.OpenFile(name, flag, perm)
+	}
+	return s.openAtRoot(name, flag, uint32(perm.Perm()))
+}
+
+func (s *Service) openAtRoot(name string, flags int, mode uint32) (*os.File, error) {
+	name = strings.TrimPrefix(filepath.ToSlash(name), "/")
+	if name == "" {
+		name = "."
+	}
+	fd, err := openAt2(s.rootFD, name, flags, mode)
+	if err != nil {
+		return nil, safePathError(err)
+	}
+	return os.NewFile(uintptr(fd), name), nil
+}
+
+func openAt2(dirFD int, name string, flags int, mode uint32) (int, error) {
+	how := &unix.OpenHow{
+		Flags:   uint64(flags | unix.O_CLOEXEC),
+		Mode:    uint64(mode),
+		Resolve: unix.RESOLVE_IN_ROOT | unix.RESOLVE_NO_SYMLINKS | unix.RESOLVE_NO_MAGICLINKS,
+	}
+	return unix.Openat2(dirFD, name, how)
+}
+
+func (s *Service) lstat(name string) (os.FileInfo, error) {
+	if !s.fullHost {
+		return s.root.Lstat(name)
+	}
+	name = strings.TrimPrefix(filepath.ToSlash(name), "/")
+	if name == "" {
+		name = "."
+	}
+	fd, err := openAt2(s.rootFD, name, unix.O_PATH|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return nil, safePathError(err)
+	}
+	file := os.NewFile(uintptr(fd), name)
+	defer file.Close()
+	return file.Stat()
+}
+
+func (s *Service) stat(name string) (os.FileInfo, error) {
+	if !s.fullHost {
+		return s.root.Stat(name)
+	}
+	file, err := s.open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return file.Stat()
+}
+
+func (s *Service) parent(name string) (int, string, error) {
+	if name == "." || name == "" {
+		return -1, "", ErrInvalidPath
+	}
+	dirName, base := path.Split(filepath.ToSlash(name))
+	dirName = strings.TrimSuffix(dirName, "/")
+	if dirName == "" {
+		dirName = "."
+	}
+	if base == "" || base == "." || base == ".." {
+		return -1, "", ErrInvalidPath
+	}
+	if !s.fullHost {
+		return -1, base, nil
+	}
+	directory, err := s.openAtRoot(dirName, unix.O_RDONLY|unix.O_DIRECTORY, 0)
+	if err != nil {
+		return -1, "", err
+	}
+	parentFD, err := unix.Dup(int(directory.Fd()))
+	_ = directory.Close()
+	if err != nil {
+		return -1, "", err
+	}
+	unix.CloseOnExec(parentFD)
+	return parentFD, base, nil
+}
+
+func safePathError(err error) error {
+	if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.EXDEV) {
+		return fmt.Errorf("%w: symbolic-link path components are not followed in full-host mode", ErrInvalidPath)
+	}
+	return err
+}
+
+func (s *Service) mkdir(name string, mode os.FileMode) error {
+	if !s.fullHost {
+		return s.root.Mkdir(name, mode)
+	}
+	parentFD, base, err := s.parent(name)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(parentFD)
+	return unix.Mkdirat(parentFD, base, uint32(mode.Perm()))
+}
+
+func (s *Service) remove(name string) error {
+	if !s.fullHost {
+		return s.root.Remove(name)
+	}
+	parentFD, base, err := s.parent(name)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(parentFD)
+	return unix.Unlinkat(parentFD, base, 0)
+}
+
+func (s *Service) removeAll(name string) error {
+	if !s.fullHost {
+		return s.root.RemoveAll(name)
+	}
+	parentFD, base, err := s.parent(name)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(parentFD)
+	return removeTreeAt(parentFD, base)
+}
+
+func removeTreeAt(parentFD int, name string) error {
+	childFD, err := openAt2(parentFD, name, unix.O_RDONLY|unix.O_DIRECTORY, 0)
+	if errors.Is(err, unix.ENOENT) {
+		return err
+	}
+	if errors.Is(err, unix.ENOTDIR) || errors.Is(err, unix.ELOOP) {
+		return unix.Unlinkat(parentFD, name, 0)
+	}
+	if err != nil {
+		return err
+	}
+	directory := os.NewFile(uintptr(childFD), name)
+	entries, readErr := directory.ReadDir(-1)
+	if readErr != nil {
+		_ = directory.Close()
+		return readErr
+	}
+	for _, entry := range entries {
+		if err := removeTreeAt(childFD, entry.Name()); err != nil && !errors.Is(err, unix.ENOENT) {
+			_ = directory.Close()
+			return err
+		}
+	}
+	if err := directory.Close(); err != nil {
+		return err
+	}
+	return unix.Unlinkat(parentFD, name, unix.AT_REMOVEDIR)
+}
+
+func (s *Service) renameNoReplace(oldName, newName string) error {
+	if !s.fullHost {
+		return renameNoReplace(s.root, oldName, newName)
+	}
+	oldParent, oldBase, err := s.parent(oldName)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(oldParent)
+	newParent, newBase, err := s.parent(newName)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(newParent)
+	return unix.Renameat2(oldParent, oldBase, newParent, newBase, unix.RENAME_NOREPLACE)
+}
+
+func (s *Service) renameReplace(oldName, newName string) error {
+	if !s.fullHost {
+		return s.root.Rename(oldName, newName)
+	}
+	oldParent, oldBase, err := s.parent(oldName)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(oldParent)
+	newParent, newBase, err := s.parent(newName)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(newParent)
+	return unix.Renameat(oldParent, oldBase, newParent, newBase)
+}
+
+func (s *Service) linkNoReplace(oldName, newName string) error {
+	if !s.fullHost {
+		return linkUploadWithoutReplace(s.root, oldName, newName)
+	}
+	oldParent, oldBase, err := s.parent(oldName)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(oldParent)
+	newParent, newBase, err := s.parent(newName)
+	if err != nil {
+		return err
+	}
+	defer unix.Close(newParent)
+	return unix.Linkat(oldParent, oldBase, newParent, newBase, 0)
 }
 
 func (s *Service) List(virtual string) ([]protocol.FileEntry, error) {
@@ -103,7 +384,7 @@ func (s *Service) List(virtual string) ([]protocol.FileEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	directory, err := s.root.Open(name)
+	directory, err := s.open(name)
 	if err != nil {
 		return nil, err
 	}
@@ -120,9 +401,12 @@ func (s *Service) List(virtual string) ([]protocol.FileEntry, error) {
 		child := path.Join(canonical, item.Name())
 		childName, _, pathErr := s.normalize(child)
 		if pathErr != nil {
+			if errors.Is(pathErr, ErrInvalidPath) {
+				continue
+			}
 			return nil, ErrInvalidPath
 		}
-		info, statErr := s.root.Lstat(childName)
+		info, statErr := s.lstat(childName)
 		if statErr != nil {
 			return nil, statErr
 		}
@@ -155,7 +439,7 @@ func (s *Service) Stat(virtual string) (protocol.FileEntry, error) {
 	if err != nil {
 		return protocol.FileEntry{}, err
 	}
-	info, err := s.root.Lstat(name)
+	info, err := s.lstat(name)
 	if err != nil {
 		return protocol.FileEntry{}, err
 	}
@@ -185,7 +469,7 @@ func (s *Service) version(name string, info os.FileInfo, includeContent bool) (s
 	hash := sha256.New()
 	fmt.Fprintf(hash, "%d:%d:%d:%d:", info.Size(), info.Mode().Perm(), info.ModTime().UnixNano(), ownerID(info))
 	if includeContent && info.Mode().IsRegular() {
-		file, err := s.root.Open(name)
+		file, err := s.open(name)
 		if err != nil {
 			return "", err
 		}
@@ -206,7 +490,7 @@ func (s *Service) ReadText(virtual string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	file, err := s.root.Open(name)
+	file, err := s.open(name)
 	if err != nil {
 		return "", "", err
 	}
@@ -240,7 +524,7 @@ func (s *Service) Mkdir(virtual string) error {
 	if err != nil {
 		return err
 	}
-	return s.root.Mkdir(name, 0o755)
+	return s.mkdir(name, 0o755)
 }
 
 func (s *Service) Rename(oldVirtual, newVirtual string) error {
@@ -255,7 +539,7 @@ func (s *Service) Rename(oldVirtual, newVirtual string) error {
 	if oldCanonical == "/" || newCanonical == "/" || oldCanonical == newCanonical {
 		return ErrInvalidPath
 	}
-	if err := renameNoReplace(s.root, oldName, newName); errors.Is(err, os.ErrExist) {
+	if err := s.renameNoReplace(oldName, newName); errors.Is(err, os.ErrExist) {
 		return ErrExists
 	} else {
 		return err
@@ -270,7 +554,7 @@ func (s *Service) Delete(virtual string, confirmed bool) error {
 	if err != nil || canonical == "/" {
 		return ErrInvalidPath
 	}
-	return s.root.RemoveAll(name)
+	return s.removeAll(name)
 }
 
 func (s *Service) CaptureMutationBaseline(operation, virtual, newVirtual string) (MutationBaseline, error) {
@@ -297,7 +581,7 @@ func (s *Service) CaptureMutationBaseline(operation, virtual, newVirtual string)
 }
 
 func (s *Service) pathFingerprint(name string) (bool, string, error) {
-	info, err := s.root.Lstat(name)
+	info, err := s.lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, "", nil
 	}
@@ -327,7 +611,7 @@ func (s *Service) VerifyMutation(operation, virtual, newVirtual string, expected
 		if !baseline.BaselineAllowsCreatedTarget() {
 			return false, nil
 		}
-		info, err := s.root.Lstat(name)
+		info, err := s.lstat(name)
 		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
 		}
@@ -339,7 +623,7 @@ func (s *Service) VerifyMutation(operation, virtual, newVirtual string, expected
 		if canonical == "/" || !baseline.TargetExists {
 			return false, ErrInvalidPath
 		}
-		_, err := s.root.Lstat(name)
+		_, err := s.lstat(name)
 		if errors.Is(err, os.ErrNotExist) {
 			return true, nil
 		}
@@ -352,8 +636,8 @@ func (s *Service) VerifyMutation(operation, virtual, newVirtual string, expected
 		if err != nil {
 			return false, err
 		}
-		_, sourceErr := s.root.Lstat(name)
-		_, destinationErr := s.root.Lstat(newName)
+		_, sourceErr := s.lstat(name)
+		_, destinationErr := s.lstat(newName)
 		if !errors.Is(sourceErr, os.ErrNotExist) || destinationErr != nil {
 			if sourceErr != nil && !errors.Is(sourceErr, os.ErrNotExist) {
 				return false, sourceErr
@@ -390,7 +674,7 @@ func (s *Service) verifyFileDigest(name string, expectedSize int64, expectedSHA2
 	if expectedSize < 0 || expectedSize > s.limit || len(expectedSHA256) != 64 {
 		return false, ErrLimitExceeded
 	}
-	info, err := s.root.Lstat(name)
+	info, err := s.lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
@@ -400,7 +684,7 @@ func (s *Service) verifyFileDigest(name string, expectedSize int64, expectedSHA2
 	if !info.Mode().IsRegular() || info.Size() != expectedSize {
 		return false, nil
 	}
-	file, err := s.root.Open(name)
+	file, err := s.open(name)
 	if err != nil {
 		return false, err
 	}
@@ -488,7 +772,7 @@ func (s *Service) BeginUploadAtTemporary(virtual, expectedVersion string, size i
 	if err != nil || target == "." {
 		return nil, ErrInvalidPath
 	}
-	info, statErr := s.root.Lstat(target)
+	info, statErr := s.lstat(target)
 	var initialVersion string
 	if statErr == nil {
 		if !info.Mode().IsRegular() {
@@ -510,7 +794,7 @@ func (s *Service) BeginUploadAtTemporary(virtual, expectedVersion string, size i
 	if err != nil || path.Dir(temporary) != path.Dir(target) || !validUploadTempName(path.Base(target), path.Base(temporary)) {
 		return nil, ErrInvalidPath
 	}
-	file, err := s.root.OpenFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	file, err := s.openFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -547,7 +831,7 @@ func (s *Service) RemoveUploadTemporary(targetVirtual, temporaryVirtual string) 
 	if !validUploadTempName(path.Base(target), path.Base(temporary)) {
 		return ErrInvalidPath
 	}
-	if err := s.root.Remove(temporary); errors.Is(err, os.ErrNotExist) {
+	if err := s.remove(temporary); errors.Is(err, os.ErrNotExist) {
 		return nil
 	} else {
 		return err
@@ -610,7 +894,7 @@ func (u *Upload) CommitWithDigest(expectedDigest string) (protocol.FileEntry, er
 		return protocol.FileEntry{}, err
 	}
 	u.file = nil
-	currentInfo, err := u.service.root.Lstat(u.target)
+	currentInfo, err := u.service.lstat(u.target)
 	if u.initialInfo == nil {
 		if err == nil {
 			return protocol.FileEntry{}, ErrConflict
@@ -635,14 +919,14 @@ func (u *Upload) CommitWithDigest(expectedDigest string) (protocol.FileEntry, er
 		// before the rename and Root.Rename would replace it. Creating a hard
 		// link is atomic and fails with EEXIST instead of overwriting. The temp
 		// file is a sibling, so it is on the same filesystem as the target.
-		if err := linkUploadWithoutReplace(u.service.root, u.temporary, u.target); err != nil {
+		if err := u.service.linkNoReplace(u.temporary, u.target); err != nil {
 			return protocol.FileEntry{}, err
 		}
-		if err := u.service.root.Remove(u.temporary); err == nil {
+		if err := u.service.remove(u.temporary); err == nil {
 			u.closed = true
 		}
 	} else {
-		if err := u.service.root.Rename(u.temporary, u.target); err != nil {
+		if err := u.service.renameReplace(u.temporary, u.target); err != nil {
 			return protocol.FileEntry{}, err
 		}
 		u.closed = true
@@ -650,7 +934,7 @@ func (u *Upload) CommitWithDigest(expectedDigest string) (protocol.FileEntry, er
 	if u.service.afterAtomicReplace != nil {
 		u.service.afterAtomicReplace()
 	}
-	info, err := u.service.root.Lstat(u.target)
+	info, err := u.service.lstat(u.target)
 	if err != nil {
 		return protocol.FileEntry{}, fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
 	}
@@ -681,7 +965,7 @@ func (u *Upload) Abort() {
 		_ = u.file.Close()
 		u.file = nil
 	}
-	_ = u.service.root.Remove(u.temporary)
+	_ = u.service.remove(u.temporary)
 }
 
 func (s *Service) OpenDownload(virtual string) (*os.File, protocol.FileEntry, error) {
@@ -689,7 +973,7 @@ func (s *Service) OpenDownload(virtual string) (*os.File, protocol.FileEntry, er
 	if err != nil {
 		return nil, protocol.FileEntry{}, err
 	}
-	file, err := s.root.Open(name)
+	file, err := s.open(name)
 	if err != nil {
 		return nil, protocol.FileEntry{}, err
 	}
@@ -736,7 +1020,7 @@ func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.File
 	if err != nil || name == "." {
 		return protocol.FileEntry{}, ErrInvalidPath
 	}
-	old, err := s.root.Open(name)
+	old, err := s.open(name)
 	if err != nil {
 		return protocol.FileEntry{}, err
 	}
@@ -766,7 +1050,7 @@ func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.File
 	defer func() {
 		if cleanupReplacement {
 			_ = replacement.Close()
-			_ = s.root.Remove(temporary)
+			_ = s.remove(temporary)
 		}
 	}()
 	if _, err := io.WriteString(replacement, text); err != nil {
@@ -782,7 +1066,7 @@ func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.File
 	if err := replacement.Chmod(info.Mode().Perm()); err != nil {
 		return protocol.FileEntry{}, fmt.Errorf("preserve target mode: %w", err)
 	}
-	latestInfo, err := s.root.Stat(name)
+	latestInfo, err := s.stat(name)
 	if err != nil {
 		return protocol.FileEntry{}, ErrConflict
 	}
@@ -796,14 +1080,14 @@ func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.File
 	if err := replacement.Close(); err != nil {
 		return protocol.FileEntry{}, err
 	}
-	if err := s.root.Rename(temporary, name); err != nil {
+	if err := s.renameReplace(temporary, name); err != nil {
 		return protocol.FileEntry{}, err
 	}
 	cleanupReplacement = false
 	if s.afterAtomicReplace != nil {
 		s.afterAtomicReplace()
 	}
-	newInfo, err := s.root.Lstat(name)
+	newInfo, err := s.lstat(name)
 	if err != nil {
 		return protocol.FileEntry{}, fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
 	}
@@ -825,7 +1109,7 @@ func (s *Service) createSiblingTemporary(target, prefix string) (string, *os.Fil
 		if err != nil {
 			return "", nil, err
 		}
-		file, err := s.root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		file, err := s.openFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 		if err == nil {
 			return name, file, nil
 		}

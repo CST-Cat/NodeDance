@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	"github.com/CST-Cat/NodeDance/internal/core/tailscale"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
@@ -128,30 +127,6 @@ func (s *Server) handleTailscaleAPI(w http.ResponseWriter, r *http.Request, curr
 			return true
 		}
 		writeJSON(w, http.StatusOK, map[string]string{"fingerprint": fingerprint})
-		return true
-	}
-	if r.URL.Path == "/api/v1/discovery/enrollments" {
-		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return true
-		}
-		var request struct {
-			DisplayName string `json:"displayName"`
-		}
-		if !decodeJSON(w, r, &request) {
-			return true
-		}
-		name, ok := normalizeDisplayName(request.DisplayName)
-		if !ok {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid node display name"})
-			return true
-		}
-		enrollment, err := s.agents.CreateEnrollment(r.Context(), name, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
-		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "Agent enrollment creation failed"})
-			return true
-		}
-		writeJSON(w, http.StatusCreated, map[string]any{"nodeId": enrollment.NodeID, "displayName": enrollment.DisplayName, "token": enrollment.Token, "expiresAt": enrollment.ExpiresAt.UTC().Format(time.RFC3339), "expiresInSeconds": int(agents.EnrollmentLifetime.Seconds())})
 		return true
 	}
 	if r.URL.Path == "/api/v1/discovery/deployments" {

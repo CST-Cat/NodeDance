@@ -74,9 +74,23 @@ func DefaultConfigPath() (string, error) {
 	return configHome + string(os.PathSeparator) + "nodedance-agent" + string(os.PathSeparator) + "agent.json", nil
 }
 
+func requireAgentRoot(operation string) error {
+	return agentRootRequirement(os.Geteuid(), operation)
+}
+
+func agentRootRequirement(uid int, operation string) error {
+	if uid == 0 {
+		return nil
+	}
+	return fmt.Errorf("NodeDance Agent %s requires root privileges for full host management", operation)
+}
+
 // Run keeps an enrolled Agent connected with bounded exponential backoff and
 // jitter. It never opens an inbound listener; all protocol traffic is outbound.
 func Run(ctx context.Context, configPath, version string, stderr io.Writer) error {
+	if err := requireAgentRoot("runtime"); err != nil {
+		return err
+	}
 	if configPath == "" {
 		var err error
 		configPath, err = DefaultConfigPath()
@@ -1206,17 +1220,24 @@ func safeConnectionError(err error) string {
 }
 
 func openAgentFileService(configPath string) (*agentfiles.Service, error) {
-	root := os.Getenv("NODEDANCE_AGENT_FILE_ROOT")
-	if root == "" {
+	if err := requireAgentRoot("file service"); err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("NODEDANCE_AGENT_FILE_ACCESS")), "disabled") {
 		return nil, nil
 	}
+	root := os.Getenv("NODEDANCE_AGENT_FILE_ROOT")
 	stateDir, err := filepath.Abs(filepath.Dir(configPath))
 	if err != nil {
 		return nil, fmt.Errorf("resolve Agent state directory for file access: %w", err)
 	}
-	root, err = ValidateFileRoot(root, stateDir)
-	if err != nil {
-		return nil, err
+	if root == "" {
+		root = string(filepath.Separator)
+	} else if filepath.Clean(root) != string(filepath.Separator) {
+		root, err = ValidateFileRoot(root, stateDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 	limit := protocol.DefaultFileLimit
 	if configured := strings.TrimSpace(os.Getenv("NODEDANCE_AGENT_MAX_FILE_BYTES")); configured != "" {
@@ -1225,6 +1246,9 @@ func openAgentFileService(configPath string) (*agentfiles.Service, error) {
 			return nil, errors.New("Agent file transfer limit is invalid")
 		}
 		limit = parsed
+	}
+	if filepath.Clean(root) == string(filepath.Separator) {
+		return agentfiles.New(root, limit, stateDir)
 	}
 	return agentfiles.New(root, limit)
 }

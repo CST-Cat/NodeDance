@@ -81,8 +81,8 @@ func TestCoordinatorKeepsAgentDeploymentAvailableAcrossDockerStates(t *testing.T
 		wantSuppGroup string
 	}{
 		{name: "no Docker socket", dockerLine: "docker|absent", wantDocker: "absent"},
-		{name: "inaccessible Docker socket", dockerLine: "docker|600|0|0|1000", wantDocker: "unavailable"},
-		{name: "group-accessible Docker socket", dockerLine: "docker|660|0|999|1000", waitAvailable: true, wantDocker: "connected", wantSuppGroup: "--supplementary-group '999'"},
+		{name: "inaccessible Docker socket", dockerLine: "docker|600|1000|1000|0", wantDocker: "unavailable"},
+		{name: "group-accessible Docker socket", dockerLine: "docker|660|0|999|0", waitAvailable: true, wantDocker: "connected", wantSuppGroup: "--supplementary-group '999'"},
 	}
 
 	for _, testCase := range cases {
@@ -479,6 +479,8 @@ func TestInspectRemoteRequiresProofOfAbsentSystemdUnit(t *testing.T) {
 		"unit_load_state=\"$(systemctl show --property=LoadState --value nodedance-agent.service)\"",
 		"cannot prove that the effective Agent systemd unit is absent",
 		"/usr/lib/systemd/system/nodedance-agent.service",
+		"grep -Fxq 'User=root' \"$unit_path\"",
+		"grep -Fxq 'Group=root' \"$unit_path\"",
 	} {
 		if !strings.Contains(command, expected) {
 			t.Errorf("remote preflight is missing fail-closed unit check %q", expected)
@@ -486,6 +488,67 @@ func TestInspectRemoteRequiresProofOfAbsentSystemdUnit(t *testing.T) {
 	}
 	if strings.Contains(command, "FragmentPath --value nodedance-agent.service 2>/dev/null || true") {
 		t.Fatal("remote preflight must not convert a FragmentPath query error to an absent unit")
+	}
+	for _, retired := range []string{"NoNewPrivileges=true", "ProtectSystem=strict", "ProtectHome=tmpfs", "User=[a-zA-Z0-9_.-]+"} {
+		if strings.Contains(command, retired) {
+			t.Fatalf("remote preflight still recognizes a restricted service unit through %q", retired)
+		}
+	}
+}
+
+func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve test source path")
+	}
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(testFile), "..", "..", ".."))
+	uiPath := filepath.Join(repoRoot, "web", "src", "components", "TailscaleDiscovery.vue")
+	ui, err := os.ReadFile(uiPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(ui), `<AgentEnrollment compact />`) {
+		t.Fatal("Tailscale discovery page does not expose the shared Agent enrollment flow")
+	}
+	enrollmentUI, err := os.ReadFile(filepath.Join(repoRoot, "web", "src", "components", "AgentEnrollment.vue"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	installer, err := os.ReadFile(filepath.Join(repoRoot, "scripts", "install-agent.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"bash -o pipefail -c",
+		"--proto =https --proto-redir =https --tlsv1.2",
+		"sudo bash -s --",
+		"data-testid=\"agent-install-command\"",
+		"data-testid=\"agent-enrollment-token\"",
+		"隐藏提示输入此 Token",
+	} {
+		if !strings.Contains(string(enrollmentUI), required) {
+			t.Errorf("shared Agent enrollment UI is missing root-only behavior %q", required)
+		}
+	}
+	for _, required := range []string{
+		"--token-stdin",
+		"prepare-systemd-state --require-new",
+		"install-systemd --config \"$CONFIG_PATH\" --enable",
+	} {
+		if !strings.Contains(string(installer), required) {
+			t.Errorf("Agent installer is missing root-only behavior %q", required)
+		}
+	}
+	for _, retired := range []string{
+		"sudo -u",
+		"sudo -u nodedance-agent",
+		"useradd --system",
+		"install-systemd --user nodedance-agent",
+		"nodedance-agent:nodedance-agent",
+	} {
+		if strings.Contains(string(enrollmentUI)+string(installer), retired) {
+			t.Errorf("Agent enrollment still emits restricted service behavior %q", retired)
+		}
 	}
 }
 
@@ -650,21 +713,32 @@ func TestGeneratedInstallValidatesAgentStateBeforeAnySystemWrites(t *testing.T) 
 	}
 	script := remote.installs[0]
 	validateAt := strings.Index(script, `"$TMP/nodedance-agent" validate-systemd-state --config /var/lib/nodedance-agent/agent.json`)
-	accountAt := strings.Index(script, "if ! getent passwd nodedance-agent")
+	prepareAt := strings.Index(script, "state_config=\"$(\"$TMP/nodedance-agent\" prepare-systemd-state --user root)\"")
 	snapshotAt := strings.Index(script, "if [ -x /usr/local/bin/nodedance-agent ]")
 	installAt := strings.Index(script, "install -m 0755 \"$TMP/nodedance-agent\" /usr/local/bin/.nodedance-agent.new")
-	if validateAt < 0 || accountAt < 0 || snapshotAt < 0 || installAt < 0 || validateAt > accountAt || validateAt > snapshotAt || validateAt > installAt {
-		t.Fatal("generated installer must validate state paths before account changes, snapshots, or binary installation")
+	if validateAt < 0 || prepareAt < 0 || snapshotAt < 0 || installAt < 0 || validateAt > prepareAt || prepareAt > snapshotAt || validateAt > installAt {
+		t.Fatal("generated installer must validate state paths before root preparation, snapshots, or binary installation")
 	}
-	for _, unsafe := range []string{
-		"mkdir -p /var/lib/nodedance-agent",
-		"chmod 0700 /var/lib/nodedance-agent",
-		"chown nodedance-agent:nodedance-agent /var/lib/nodedance-agent",
-		"chmod 0600 /var/lib/nodedance-agent/agent.json",
-		"chown nodedance-agent:nodedance-agent /var/lib/nodedance-agent/agent.json",
+	for _, forbidden := range []string{
+		"useradd --system",
+		"getent passwd nodedance-agent",
+		"runuser -u nodedance-agent",
+		"prepare-systemd-state --user nodedance-agent",
+		"install-systemd --user nodedance-agent",
+		"refusing to run Agent as root service account",
 	} {
-		if strings.Contains(script, unsafe) {
-			t.Fatalf("generated installer retained unsafe path-based mutation %q", unsafe)
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("generated installer retained restricted service behavior %q", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"prepare-systemd-state --user root",
+		"install-systemd --user root",
+		"User=root",
+		"Group=root",
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("generated installer is missing root-only service behavior %q", required)
 		}
 	}
 
@@ -750,7 +824,7 @@ func TestGeneratedInstallValidatesAgentStateBeforeAnySystemWrites(t *testing.T) 
 			} {
 				stagedScript = strings.ReplaceAll(stagedScript, path, filepath.Join(root, strings.TrimPrefix(path, "/")))
 			}
-			prefixEnd := strings.Index(stagedScript, "\nif ! getent passwd nodedance-agent")
+			prefixEnd := strings.Index(stagedScript, "\nstate_config=\"$(\"$TMP/nodedance-agent\" prepare-systemd-state --user root)\"")
 			if prefixEnd < 0 {
 				t.Fatal("cannot isolate generated installer preflight")
 			}
