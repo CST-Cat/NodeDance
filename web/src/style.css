@@ -286,3 +286,24 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* The monitoring screens manage their own content gutters so wide cards and
+   the single-node detail retain usable space at tablet and phone widths. */
+.app-shell:has(.nodes-dashboard), .app-shell:has(.node-detail-page) {
+  padding-right: clamp(12px, 2.5vw, 34px);
+  padding-left: clamp(12px, 2.5vw, 34px);
+}
+
+@media (max-width: 720px) {
+  .app-shell:has(.nodes-dashboard), .app-shell:has(.node-detail-page) {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+}
+
+@media (max-width: 380px) {
+  .app-shell:has(.nodes-dashboard), .app-shell:has(.node-detail-page) {
+    padding-right: 6px;
+    padding-left: 6px;
+  }
+}

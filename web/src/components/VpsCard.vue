@@ -57,6 +57,14 @@ function containerTitle(record: DockerContainerRecord): string {
   return preferenceFor(record)?.alias || record.container.name || record.container.id.slice(0, 12)
 }
 
+function containerIcon(record: DockerContainerRecord): string {
+  const icons: Record<string, string> = {
+    server: '▤', globe: '◎', database: '▥', shield: '⬡', terminal: '›_',
+    box: '▣', cloud: '☁', folder: '▰', activity: '⌁',
+  }
+  return icons[preferenceFor(record)?.icon ?? ''] ?? '▣'
+}
+
 function nodeStatusLabel(): string {
   if (props.pending) return '等待注册'
   return props.online ? '在线' : props.node.status === 'revoked' ? '已撤销' : '离线'
@@ -268,7 +276,7 @@ function emitAction(record: DockerContainerRecord, action: ContainerTaskAction) 
       <p v-else-if="inventory && inventory.containers.length > 0 && displayContainers.length === 0" class="vps-card-empty">容器均已隐藏。</p>
       <div v-else-if="inventory && displayContainers.length > 0" class="vps-card-container-list">
         <article v-for="record in displayContainers" :key="record.container.id" class="vps-card-container" :data-stale="dockerStale || record.container.stale">
-          <span class="vps-card-container-icon" aria-hidden="true">{{ preferenceFor(record)?.icon || '▣' }}</span>
+          <span class="vps-card-container-icon" aria-hidden="true">{{ containerIcon(record) }}</span>
           <div class="vps-card-container-copy">
             <strong>{{ containerTitle(record) }}</strong>
             <small>{{ record.container.name || record.container.id.slice(0, 12) }} · {{ record.container.image || '未知镜像' }}</small>

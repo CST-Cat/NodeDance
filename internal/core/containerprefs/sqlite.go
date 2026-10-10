@@ -72,8 +72,12 @@ func (m *SQLiteMigrator) MigrateContainer(ctx context.Context, nodeID, fromID, t
 	if err != nil {
 		return fmt.Errorf("move container preference identity: %w", err)
 	}
-	if _, err := result.RowsAffected(); err != nil {
+	updated, err := result.RowsAffected()
+	if err != nil {
 		return fmt.Errorf("confirm container preference identity move: %w", err)
+	}
+	if updated != 1 {
+		return errors.New("container preference source changed during identity move")
 	}
 	return tx.Commit()
 }

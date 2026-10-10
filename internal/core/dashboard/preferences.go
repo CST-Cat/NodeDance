@@ -8,7 +8,9 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -128,7 +130,13 @@ func (r Repository) GetSettings(ctx context.Context) (Settings, error) {
 	if err != nil {
 		return Settings{}, err
 	}
-	settings.CustomFields = decodeFields(fields)
+	settings.CustomFields, err = decodeFields(fields)
+	if err != nil {
+		return Settings{}, fmt.Errorf("stored dashboard custom fields are invalid: %w", err)
+	}
+	if !validSettings(settings) {
+		return Settings{}, errors.New("stored dashboard settings are invalid")
+	}
 	return settings, nil
 }
 
@@ -147,9 +155,19 @@ func (r Repository) PutSettings(ctx context.Context, settings Settings) error {
 	if r.Now != nil {
 		now = r.Now()
 	}
-	_, err := r.DB.ExecContext(ctx, `UPDATE dashboard_settings SET view_mode=?, group_by=?, sort_by=?, node_group_by=?, node_sort_by=?, featured_limit=?, custom_fields_json=?, updated_at=? WHERE id=1`,
+	result, err := r.DB.ExecContext(ctx, `UPDATE dashboard_settings SET view_mode=?, group_by=?, sort_by=?, node_group_by=?, node_sort_by=?, featured_limit=?, custom_fields_json=?, updated_at=? WHERE id=1`,
 		settings.ViewMode, settings.GroupBy, settings.SortBy, settings.NodeGroupBy, settings.NodeSortBy, settings.FeaturedLimit, fields, now.UTC().UnixNano())
-	return err
+	if err != nil {
+		return err
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("confirm dashboard settings update: %w", err)
+	}
+	if updated != 1 {
+		return errors.New("dashboard settings row is missing")
+	}
+	return nil
 }
 
 func validPreference(item Preference) bool {
@@ -257,13 +275,10 @@ func encodeFields(fields []string) string {
 	return b.String()
 }
 
-func decodeFields(raw string) []string {
-	// Stored only by PutSettings and constrained to the fixed allowlist.
+func decodeFields(raw string) ([]string, error) {
 	var fields []string
-	for _, field := range []string{"state", "ports", "health", "uptime", "image"} {
-		if strings.Contains(raw, `"`+field+`"`) {
-			fields = append(fields, field)
-		}
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		return nil, err
 	}
-	return fields
+	return fields, nil
 }
