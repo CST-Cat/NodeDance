@@ -311,15 +311,28 @@ func (r *Repository) BeginConnection(ctx context.Context, authenticated Identity
 	return Lease{Identity: identity, RotationCommitted: rotationCommitted, LastSeenAt: now}, nil
 }
 
-func (r *Repository) AcceptHeartbeat(ctx context.Context, identity Identity, generation, sequence uint64, offlineAfter time.Duration) (time.Time, error) {
+func (r *Repository) AcceptHeartbeat(ctx context.Context, identity Identity, generation, sequence uint64, offlineAfter time.Duration, capabilities []string) (time.Time, error) {
 	if generation == 0 || sequence == 0 {
 		return time.Time{}, ErrStaleConnection
 	}
 	now := r.now()
 	cutoff := now.Add(-offlineAfter).UnixNano()
-	result, err := r.db.ExecContext(ctx, `UPDATE nodes SET heartbeat_sequence=?, last_seen_at=?, updated_at=?
-		WHERE id=? AND connection_generation=? AND status='online' AND heartbeat_sequence<? AND last_seen_at>?`,
-		sequence, now.UnixNano(), now.UnixNano(), identity.NodeID, generation, sequence, cutoff)
+	query := `UPDATE nodes SET heartbeat_sequence=?, last_seen_at=?, updated_at=?`
+	arguments := []any{sequence, now.UnixNano(), now.UnixNano()}
+	if capabilities != nil {
+		if len(capabilities) > 32 {
+			return time.Time{}, errors.New("Agent capability report exceeds protocol limit")
+		}
+		encoded, err := json.Marshal(capabilities)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("encode Agent capabilities: %w", err)
+		}
+		query += `, capabilities_json=?`
+		arguments = append(arguments, string(encoded))
+	}
+	query += ` WHERE id=? AND connection_generation=? AND status='online' AND heartbeat_sequence<? AND last_seen_at>?`
+	arguments = append(arguments, identity.NodeID, generation, sequence, cutoff)
+	result, err := r.db.ExecContext(ctx, query, arguments...)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("record Agent heartbeat: %w", err)
 	}

@@ -41,18 +41,3 @@ func (o *socketDockerObserver) ApplyDockerBatch(ctx context.Context, batch agent
 	}
 	return o.writer.offerDocker(ctx, envelope)
 }
-
-// unavailableDockerEngine keeps host monitoring and Agent heartbeats alive
-// when local Docker access is misconfigured. It emits a safe unavailable
-// health state through the normal discovery path rather than terminating the
-// authenticated connection.
-type unavailableDockerEngine struct{ err error }
-
-func (e unavailableDockerEngine) Ping(context.Context) error                { return e.err }
-func (e unavailableDockerEngine) ListAll(context.Context) ([]string, error) { return nil, e.err }
-func (e unavailableDockerEngine) Inspect(context.Context, string) (agentdocker.Container, error) {
-	return agentdocker.Container{}, e.err
-}
-func (e unavailableDockerEngine) OpenEvents(context.Context) (agentdocker.EventStream, error) {
-	return agentdocker.EventStream{}, e.err
-}

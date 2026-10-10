@@ -25,7 +25,7 @@ type composeWaiter struct {
 }
 
 func (connection *agentConnection) addComposeWaiter(request protocol.ComposeRequest) (*composeWaiter, error) {
-	if connection == nil || !connection.composeEnabled || connection.ctx == nil || connection.ctx.Err() != nil {
+	if connection == nil || !connection.capabilityEnabled(protocol.CapabilityCompose) || connection.ctx == nil || connection.ctx.Err() != nil {
 		return nil, errors.New("Agent Compose capability is unavailable")
 	}
 	connection.composeMu.Lock()
@@ -61,7 +61,7 @@ func (connection *agentConnection) removeComposeWaiter(operationID string) {
 }
 
 func (connection *agentConnection) enqueueCompose(envelope protocol.Envelope) bool {
-	if connection == nil || connection.ctx == nil || connection.ctx.Err() != nil || !connection.composeEnabled {
+	if connection == nil || connection.ctx == nil || connection.ctx.Err() != nil || !connection.capabilityEnabled(protocol.CapabilityCompose) {
 		return false
 	}
 	select {
@@ -155,7 +155,7 @@ func (s *Server) activeComposeConnectionForNode(nodeID string, generation uint64
 	s.agentConnectionsMu.Lock()
 	defer s.agentConnectionsMu.Unlock()
 	for _, connection := range s.agentConnections {
-		if connection.nodeID == nodeID && connection.composeEnabled && (generation == 0 || connection.generation == generation) && connection.ctx != nil && connection.ctx.Err() == nil {
+		if connection.nodeID == nodeID && connection.capabilityEnabled(protocol.CapabilityCompose) && (generation == 0 || connection.generation == generation) && connection.ctx != nil && connection.ctx.Err() == nil {
 			return connection
 		}
 	}

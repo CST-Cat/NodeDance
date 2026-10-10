@@ -566,7 +566,7 @@ func (s *Server) dispatchDueServiceProbes(ctx context.Context) error {
 			return s.probes.Complete(ctx, protocol.ProbeReport{ProbeID: run.ProbeID, RunID: run.RunID,
 				NodeID: run.NodeID, Status: protocol.ProbeResultUnknown, ErrorCode: code}, generation, s.now())
 		}
-		if !connection.probeEnabled {
+		if !connection.capabilityEnabled(protocol.CapabilityProbes) {
 			if err := unknown("capability_unavailable"); err != nil && !errors.Is(err, coreprobes.ErrRunState) {
 				return err
 			}

@@ -26,7 +26,7 @@ type rebuildPlanBody struct {
 }
 
 func (connection *agentConnection) addRebuildPlanWaiter(requestID string, request protocol.ContainerRebuildPlanRequest) (*rebuildPlanWaiter, error) {
-	if connection == nil || !connection.taskEnabled || connection.ctx == nil || connection.ctx.Err() != nil {
+	if connection == nil || !connection.capabilityEnabled(protocol.CapabilityTaskBridge) || connection.ctx == nil || connection.ctx.Err() != nil {
 		return nil, errors.New("Agent task bridge is unavailable")
 	}
 	connection.rebuildPlanMu.Lock()
@@ -143,7 +143,7 @@ func (s *Server) handleCreateRebuildPlan(w http.ResponseWriter, r *http.Request,
 
 func (s *Server) requestContainerRebuildPlan(ctx context.Context, nodeID string, generation uint64, request protocol.ContainerRebuildPlanRequest) (protocol.ContainerRebuildPlanResponse, error) {
 	connection := s.activeAgentConnectionForNode(nodeID)
-	if connection == nil || connection.generation != generation || !connection.taskEnabled {
+	if connection == nil || connection.generation != generation || !connection.capabilityEnabled(protocol.CapabilityTaskBridge) {
 		return protocol.ContainerRebuildPlanResponse{}, errors.New("Agent task bridge is unavailable")
 	}
 	if _, synced := connection.taskBridgeState(); !synced {

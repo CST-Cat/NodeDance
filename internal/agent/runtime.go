@@ -229,8 +229,11 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
-		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityDocker, protocol.CapabilityTerminal, protocol.CapabilityProbes},
+		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityTerminal, protocol.CapabilityProbes},
 		Permissions:  permissions,
+	}
+	if sharedDocker != nil {
+		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityDocker)
 	}
 	if taskBridge != nil {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityTaskBridge)
@@ -309,18 +312,21 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		fileService = nil
 	}
 	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates, sharedDocker,
-		containsCapability(welcome.Capabilities, protocol.CapabilityDocker), taskBridge,
-		containsCapability(welcome.Capabilities, protocol.CapabilityTaskBridge),
-		containsCapability(welcome.Capabilities, protocol.CapabilityImages), streamBridge,
-		containsCapability(welcome.Capabilities, protocol.CapabilityContainerStreams), composeBridge,
-		containsCapability(welcome.Capabilities, protocol.CapabilityCompose),
-		containsCapability(welcome.Capabilities, protocol.CapabilityTerminal), config.Shell, config.NodeID,
-		containsCapability(welcome.Capabilities, protocol.CapabilityProbes), fileService)
+		taskBridge, streamBridge, composeBridge, config.Shell, config.NodeID, fileService, welcome.Capabilities)
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, sharedDocker *agentdocker.SDKEngine, dockerEnabled bool, taskBridge *taskBridgeRuntime, taskBridgeEnabled, imagesEnabled bool, streamBridge *containerStreamBridge, streamBridgeEnabled bool, composeBridge *agentcompose.Bridge, composeBridgeEnabled, terminalEnabled bool, hostShell, nodeID string, probesEnabled bool, fileService *agentfiles.Service) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, sharedDocker *agentdocker.SDKEngine, taskBridge *taskBridgeRuntime, streamBridge *containerStreamBridge, composeBridge *agentcompose.Bridge, hostShell, nodeID string, fileService *agentfiles.Service, negotiatedCapabilities []string) (returnErr error) {
+	activeCapabilities := append([]string(nil), negotiatedCapabilities...)
+	dockerEnabled := containsCapability(activeCapabilities, protocol.CapabilityDocker)
+	taskBridgeEnabled := containsCapability(activeCapabilities, protocol.CapabilityTaskBridge)
+	imagesEnabled := containsCapability(activeCapabilities, protocol.CapabilityImages)
+	streamBridgeEnabled := containsCapability(activeCapabilities, protocol.CapabilityContainerStreams)
+	composeBridgeEnabled := containsCapability(activeCapabilities, protocol.CapabilityCompose)
+	terminalEnabled := containsCapability(activeCapabilities, protocol.CapabilityTerminal)
+	probesEnabled := containsCapability(activeCapabilities, protocol.CapabilityProbes)
+	filesEnabled := containsCapability(activeCapabilities, protocol.CapabilityFiles)
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
 	defer ticker.Stop()
 	ackTimer := time.NewTimer(heartbeatAckTimeout)
@@ -331,6 +337,28 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			returnErr = errors.New("Agent WebSocket writer did not stop")
 		}
 	}()
+	var sentSequence uint64
+	sendHeartbeat := func() error {
+		sentSequence++
+		capabilities := append([]string{}, activeCapabilities...)
+		envelope := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHeartbeat,
+			Generation: generation, Sequence: sentSequence, Payload: encodePayload(protocol.Heartbeat{Capabilities: capabilities})}
+		return writer.send(ctx, envelope)
+	}
+	degradeCapability := func(capability string, cancel context.CancelFunc, finished <-chan struct{}) error {
+		if cancel != nil {
+			cancel()
+		}
+		if finished != nil {
+			<-finished
+		}
+		var found bool
+		activeCapabilities, found = withoutCapability(activeCapabilities, capability)
+		if !found {
+			return nil
+		}
+		return sendHeartbeat()
+	}
 	var terminalFrames chan protocol.TerminalFrame
 	if terminalEnabled {
 		var dockerClient *mobyclient.Client
@@ -382,18 +410,22 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	}
 	var taskMessages chan protocol.Envelope
 	var taskBridgeDone <-chan error
+	var cancelTask context.CancelFunc
+	var taskFinished <-chan struct{}
 	if taskBridge != nil && taskBridgeEnabled {
 		taskMessages = make(chan protocol.Envelope, 64)
-		taskCtx, cancelTask := context.WithCancel(ctx)
+		taskCtx, cancelTaskFunc := context.WithCancel(ctx)
+		cancelTask = cancelTaskFunc
 		done := make(chan error, 1)
 		finished := make(chan struct{})
 		taskBridgeDone = done
+		taskFinished = finished
 		go func() {
 			defer close(finished)
 			done <- runTaskBridgeSession(taskCtx, writer, taskBridge.runner, taskBridge.rebuild, generation, taskBridge.nodeID, taskBridge.journal.JournalID(), taskMessages)
 		}()
 		defer func() {
-			cancelTask()
+			cancelTaskFunc()
 			timer := time.NewTimer(6 * time.Second)
 			defer timer.Stop()
 			select {
@@ -407,18 +439,22 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	}
 	var streamMessages chan protocol.Envelope
 	var streamBridgeDone <-chan error
+	var cancelStream context.CancelFunc
+	var streamFinished <-chan struct{}
 	if streamBridge != nil && streamBridgeEnabled {
 		streamMessages = make(chan protocol.Envelope, 16)
-		streamCtx, cancelStream := context.WithCancel(ctx)
+		streamCtx, cancelStreamFunc := context.WithCancel(ctx)
+		cancelStream = cancelStreamFunc
 		done := make(chan error, 1)
 		finished := make(chan struct{})
 		streamBridgeDone = done
+		streamFinished = finished
 		go func() {
 			defer close(finished)
 			done <- streamBridge.run(streamCtx, writer, streamMessages, generation)
 		}()
 		defer func() {
-			cancelStream()
+			cancelStreamFunc()
 			timer := time.NewTimer(6 * time.Second)
 			defer timer.Stop()
 			select {
@@ -432,18 +468,22 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	}
 	var composeMessages chan protocol.Envelope
 	var composeBridgeDone <-chan error
+	var cancelCompose context.CancelFunc
+	var composeFinished <-chan struct{}
 	if composeBridge != nil && composeBridgeEnabled {
 		composeMessages = make(chan protocol.Envelope, 16)
-		composeCtx, cancelCompose := context.WithCancel(ctx)
+		composeCtx, cancelComposeFunc := context.WithCancel(ctx)
+		cancelCompose = cancelComposeFunc
 		done := make(chan error, 1)
 		finished := make(chan struct{})
 		composeBridgeDone = done
+		composeFinished = finished
 		go func() {
 			defer close(finished)
 			done <- composeBridge.Run(composeCtx, composeWriterAdapter{writer: writer}, composeMessages, generation)
 		}()
 		defer func() {
-			cancelCompose()
+			cancelComposeFunc()
 			timer := time.NewTimer(6 * time.Second)
 			defer timer.Stop()
 			select {
@@ -457,18 +497,22 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	}
 	var imageMessages chan protocol.Envelope
 	var imageBridgeDone <-chan error
+	var cancelImage context.CancelFunc
+	var imageFinished <-chan struct{}
 	if taskBridge != nil && taskBridge.images != nil && imagesEnabled {
 		imageMessages = make(chan protocol.Envelope, 8)
-		imageCtx, cancelImage := context.WithCancel(ctx)
+		imageCtx, cancelImageFunc := context.WithCancel(ctx)
+		cancelImage = cancelImageFunc
 		done := make(chan error, 1)
 		finished := make(chan struct{})
 		imageBridgeDone = done
+		imageFinished = finished
 		go func() {
 			defer close(finished)
 			done <- runAgentImageSession(imageCtx, writer, taskBridge.images, generation, imageMessages)
 		}()
 		defer func() {
-			cancelImage()
+			cancelImageFunc()
 			timer := time.NewTimer(6 * time.Second)
 			defer timer.Stop()
 			select {
@@ -482,12 +526,16 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	}
 	var fileMessages chan protocol.Envelope
 	var fileBridgeDone <-chan error
-	if fileService != nil {
+	var cancelFile context.CancelFunc
+	var fileFinished <-chan struct{}
+	if fileService != nil && filesEnabled {
 		fileMessages = make(chan protocol.Envelope, 16)
-		fileCtx, cancelFile := context.WithCancel(ctx)
+		fileCtx, cancelFileFunc := context.WithCancel(ctx)
+		cancelFile = cancelFileFunc
 		done := make(chan error, 1)
 		finished := make(chan struct{})
 		fileBridgeDone = done
+		fileFinished = finished
 		var fileTasks *agentfiles.TaskExecutor
 		if taskBridge != nil {
 			fileTasks = taskBridge.files
@@ -498,7 +546,7 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 			done <- bridge.run(fileCtx, fileMessages)
 		}()
 		defer func() {
-			cancelFile()
+			cancelFileFunc()
 			timer := time.NewTimer(6 * time.Second)
 			defer timer.Stop()
 			select {
@@ -512,19 +560,23 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	}
 	var probeMessages chan protocol.Envelope
 	var probeBridgeDone <-chan error
+	var cancelProbe context.CancelFunc
+	var probeFinished <-chan struct{}
 	if probesEnabled {
 		probeMessages = make(chan protocol.Envelope, 64)
-		probeCtx, cancelProbe := context.WithCancel(ctx)
+		probeCtx, cancelProbeFunc := context.WithCancel(ctx)
+		cancelProbe = cancelProbeFunc
 		done := make(chan error, 1)
 		finished := make(chan struct{})
 		probeBridgeDone = done
+		probeFinished = finished
 		bridge := agentprobes.NewBridge(agentprobes.NewExecutor())
 		go func() {
 			defer close(finished)
 			done <- bridge.Run(probeCtx, writer, generation, nodeID, probeMessages)
 		}()
 		defer func() {
-			cancelProbe()
+			cancelProbeFunc()
 			timer := time.NewTimer(6 * time.Second)
 			defer timer.Stop()
 			select {
@@ -537,40 +589,47 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 		}()
 	}
 	var dockerDone <-chan error
+	var cancelDocker context.CancelFunc
+	var dockerFinished <-chan struct{}
 	if dockerEnabled {
-		var engine agentdocker.Engine
 		if sharedDocker == nil {
-			engine = unavailableDockerEngine{err: errors.New("Docker Engine host must be a local unix socket")}
+			activeCapabilities, _ = withoutCapability(activeCapabilities, protocol.CapabilityDocker)
 		} else {
-			engine = sharedDocker
-		}
-		observer := &socketDockerObserver{writer: writer, generation: generation}
-		discoverer, err := agentdocker.NewDiscoverer(engine, observer, agentdocker.Options{})
-		if err == nil {
-			dockerCtx, cancelDocker := context.WithCancel(ctx)
-			dockerResult := make(chan error, 1)
-			dockerFinished := make(chan struct{})
-			dockerDone = dockerResult
-			go func() {
-				dockerResult <- discoverer.Run(dockerCtx)
-				close(dockerFinished)
-			}()
-			// This defer is installed after the writer's join, so LIFO ordering
-			// stops and joins Docker observation before the socket writer closes.
-			defer func() {
-				cancelDocker()
-				select {
-				case <-dockerFinished:
-				case <-time.After(5 * time.Second):
-					if returnErr == nil {
-						returnErr = errors.New("Agent Docker observer did not stop")
+			observer := &socketDockerObserver{writer: writer, generation: generation}
+			discoverer, err := agentdocker.NewDiscoverer(sharedDocker, observer, agentdocker.Options{})
+			if err == nil {
+				dockerCtx, cancelDockerFunc := context.WithCancel(ctx)
+				cancelDocker = cancelDockerFunc
+				dockerResult := make(chan error, 1)
+				dockerFinishedChannel := make(chan struct{})
+				dockerDone = dockerResult
+				dockerFinished = dockerFinishedChannel
+				go func() {
+					dockerResult <- discoverer.Run(dockerCtx)
+					close(dockerFinishedChannel)
+				}()
+				// This defer is installed after the writer's join, so LIFO ordering
+				// stops and joins Docker observation before the socket writer closes.
+				defer func() {
+					cancelDockerFunc()
+					select {
+					case <-dockerFinishedChannel:
+					case <-time.After(5 * time.Second):
+						if returnErr == nil {
+							returnErr = errors.New("Agent Docker observer did not stop")
+						}
 					}
-				}
-			}()
+				}()
+			} else {
+				activeCapabilities, _ = withoutCapability(activeCapabilities, protocol.CapabilityDocker)
+			}
 		}
 	}
-	var sentSequence, acknowledgedSequence uint64
+	var acknowledgedSequence uint64
 	var metricsSequence uint64
+	if err := sendHeartbeat(); err != nil {
+		return errors.New("send Agent heartbeat failed")
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -578,15 +637,19 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 		case <-ackTimer.C:
 			return errors.New("Core heartbeat acknowledgement timed out")
 		case <-ticker.C:
-			sentSequence++
-			envelope := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHeartbeat,
-				Generation: generation, Sequence: sentSequence, Payload: encodePayload(protocol.Heartbeat{})}
-			if err := writer.send(ctx, envelope); err != nil {
+			if err := sendHeartbeat(); err != nil {
 				return errors.New("send Agent heartbeat failed")
 			}
 		case snapshot, ok := <-metricUpdates:
 			if !ok {
 				metricUpdates = nil
+				var found bool
+				activeCapabilities, found = withoutCapability(activeCapabilities, protocol.CapabilityMetrics)
+				if found && ctx.Err() == nil {
+					if err := sendHeartbeat(); err != nil {
+						return errors.New("send Agent capability update failed")
+					}
+				}
 				continue
 			}
 			metricsSequence++
@@ -612,41 +675,68 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 					go streamBridge.fail(ctx, writer, generation, requestID, "slow_consumer")
 				}
 			}
-		case err := <-dockerDone:
-			if err != nil {
-				return errors.New("Agent Docker observer stopped unexpectedly")
+		case <-dockerDone:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := degradeCapability(protocol.CapabilityDocker, cancelDocker, dockerFinished); err != nil {
+				return errors.New("send Agent Docker capability downgrade failed")
 			}
 			dockerDone = nil
-		case err := <-taskBridgeDone:
-			if err != nil {
-				return fmt.Errorf("Agent task bridge stopped unexpectedly: %w", err)
+		case <-taskBridgeDone:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := degradeCapability(protocol.CapabilityTaskBridge, cancelTask, taskFinished); err != nil {
+				return errors.New("send Agent task capability downgrade failed")
 			}
 			taskBridgeDone = nil
-		case err := <-streamBridgeDone:
-			if err != nil {
-				return err
+			taskMessages = nil
+		case <-streamBridgeDone:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := degradeCapability(protocol.CapabilityContainerStreams, cancelStream, streamFinished); err != nil {
+				return errors.New("send Agent stream capability downgrade failed")
 			}
 			streamBridgeDone = nil
-		case err := <-composeBridgeDone:
-			if err != nil {
-				return fmt.Errorf("Agent Compose bridge stopped unexpectedly: %w", err)
+			streamMessages = nil
+		case <-composeBridgeDone:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := degradeCapability(protocol.CapabilityCompose, cancelCompose, composeFinished); err != nil {
+				return errors.New("send Agent Compose capability downgrade failed")
 			}
 			composeBridgeDone = nil
-		case err := <-imageBridgeDone:
-			if err != nil {
-				return fmt.Errorf("Agent image bridge stopped unexpectedly: %w", err)
+			composeMessages = nil
+		case <-imageBridgeDone:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := degradeCapability(protocol.CapabilityImages, cancelImage, imageFinished); err != nil {
+				return errors.New("send Agent image capability downgrade failed")
 			}
 			imageBridgeDone = nil
-		case err := <-fileBridgeDone:
-			if err != nil {
-				return fmt.Errorf("Agent file bridge stopped unexpectedly: %w", err)
+			imageMessages = nil
+		case <-fileBridgeDone:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := degradeCapability(protocol.CapabilityFiles, cancelFile, fileFinished); err != nil {
+				return errors.New("send Agent file capability downgrade failed")
 			}
 			fileBridgeDone = nil
-		case err := <-probeBridgeDone:
-			if err != nil {
-				return fmt.Errorf("Agent service probe bridge stopped unexpectedly: %w", err)
+			fileMessages = nil
+		case <-probeBridgeDone:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if err := degradeCapability(protocol.CapabilityProbes, cancelProbe, probeFinished); err != nil {
+				return errors.New("send Agent probe capability downgrade failed")
 			}
 			probeBridgeDone = nil
+			probeMessages = nil
 		case message := <-reads:
 			if message.err != nil {
 				return errors.New("Core Agent connection closed")
@@ -682,15 +772,25 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				protocol.TypeTaskReconcile, protocol.TypeTaskReportAck, protocol.TypeTaskCancelRequest,
 				protocol.TypeContainerRebuildPlanRequest:
 				if taskMessages == nil {
+					if containsCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge) {
+						continue
+					}
 					return errors.New("Core sent task work without a negotiated task bridge")
 				}
 				select {
 				case taskMessages <- envelope:
 				default:
-					return errors.New("Agent task control queue is full")
+					if err := degradeCapability(protocol.CapabilityTaskBridge, cancelTask, taskFinished); err != nil {
+						return errors.New("send Agent task capability downgrade failed")
+					}
+					taskBridgeDone = nil
+					taskMessages = nil
 				}
 			case protocol.TypeContainerStreamOpen, protocol.TypeContainerStreamClose:
 				if streamMessages == nil || envelope.Sequence != 0 || protocol.ValidateContainerStreamEnvelope(envelope, generation) != nil {
+					if streamMessages == nil && containsCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams) {
+						continue
+					}
 					return errors.New("Core container stream request is invalid or was not negotiated")
 				}
 				if envelope.Type == protocol.TypeContainerStreamClose {
@@ -708,6 +808,9 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				}
 			case protocol.TypeComposeRequest:
 				if composeMessages == nil || envelope.Sequence != 0 || envelope.RequestID == "" || envelope.Generation != generation {
+					if composeMessages == nil && containsCapability(negotiatedCapabilities, protocol.CapabilityCompose) {
+						continue
+					}
 					return errors.New("Core Compose request is invalid or was not negotiated")
 				}
 				var request protocol.ComposeRequest
@@ -727,7 +830,13 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				}
 			case protocol.TypeImageListRequest:
 				var request protocol.ImageListRequest
-				if imageMessages == nil || decodeSocketPayload(envelope.Payload, &request) != nil ||
+				if imageMessages == nil {
+					if containsCapability(negotiatedCapabilities, protocol.CapabilityImages) {
+						continue
+					}
+					return errors.New("Core image list request is invalid or was not negotiated")
+				}
+				if decodeSocketPayload(envelope.Payload, &request) != nil ||
 					protocol.ValidateImageListRequest(envelope, request, generation) != nil {
 					return errors.New("Core image list request is invalid or was not negotiated")
 				}
@@ -736,11 +845,14 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				default:
 					go func() {
 						_ = sendAgentImageResponse(ctx, writer, generation, envelope.RequestID,
-							protocol.ImageListResponse{Page: request.Page, ErrorCode: "engine_unavailable", Images: []protocol.ImageSummary{}})
+							protocol.ImageListResponse{Page: request.Page, ErrorCode: "agent_busy", Images: []protocol.ImageSummary{}})
 					}()
 				}
 			case protocol.TypeTerminalFrame:
 				if !terminalEnabled || terminalFrames == nil {
+					if containsCapability(negotiatedCapabilities, protocol.CapabilityTerminal) {
+						continue
+					}
 					return errors.New("Core requested terminal without negotiated capability")
 				}
 				var frame protocol.TerminalFrame
@@ -752,34 +864,64 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				case <-ctx.Done():
 					return nil
 				default:
-					return errors.New("Core terminal command queue overflow")
+					response := protocol.TerminalFrame{StreamID: frame.StreamID, Action: protocol.TerminalActionError,
+						Message: terminalSafeError(frame.Action, errors.New("terminal command queue is full"))}
+					payload, err := json.Marshal(response)
+					if err != nil {
+						return errors.New("Agent terminal error response could not be encoded")
+					}
+					if err := writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTerminalFrame,
+						Generation: generation, Payload: payload}); err != nil {
+						return errors.New("Agent terminal error response could not be sent")
+					}
 				}
 			case protocol.TypeFileRequest, protocol.TypeFileCancel:
 				if fileMessages == nil || envelope.Sequence != 0 || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
+					if fileMessages == nil && containsCapability(negotiatedCapabilities, protocol.CapabilityFiles) {
+						continue
+					}
 					return errors.New("Core file request is invalid or was not negotiated")
 				}
 				select {
 				case fileMessages <- envelope:
 				default:
-					return errors.New("Agent file control queue is full")
+					if err := degradeCapability(protocol.CapabilityFiles, cancelFile, fileFinished); err != nil {
+						return errors.New("send Agent file capability downgrade failed")
+					}
+					fileBridgeDone = nil
+					fileMessages = nil
 				}
 			case protocol.TypeFileChunk:
 				if fileMessages == nil || envelope.Sequence == 0 || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
+					if fileMessages == nil && containsCapability(negotiatedCapabilities, protocol.CapabilityFiles) {
+						continue
+					}
 					return errors.New("Core file chunk is invalid or was not negotiated")
 				}
 				select {
 				case fileMessages <- envelope:
 				default:
-					return errors.New("Agent file control queue is full")
+					if err := degradeCapability(protocol.CapabilityFiles, cancelFile, fileFinished); err != nil {
+						return errors.New("send Agent file capability downgrade failed")
+					}
+					fileBridgeDone = nil
+					fileMessages = nil
 				}
 			case protocol.TypeProbeDispatch:
 				if probeMessages == nil || envelope.Sequence != 0 {
+					if probeMessages == nil && containsCapability(negotiatedCapabilities, protocol.CapabilityProbes) {
+						continue
+					}
 					return errors.New("Core sent service probe work without a negotiated probe capability")
 				}
 				select {
 				case probeMessages <- envelope:
 				default:
-					return errors.New("Core service probe queue exceeded its bound")
+					if err := degradeCapability(protocol.CapabilityProbes, cancelProbe, probeFinished); err != nil {
+						return errors.New("send Agent probe capability downgrade failed")
+					}
+					probeBridgeDone = nil
+					probeMessages = nil
 				}
 			case protocol.TypeProtocolError:
 				return errors.New("Core rejected Agent protocol message")
@@ -894,6 +1036,19 @@ func containsCapability(capabilities []string, wanted string) bool {
 		}
 	}
 	return false
+}
+
+func withoutCapability(capabilities []string, unwanted string) ([]string, bool) {
+	filtered := make([]string, 0, len(capabilities))
+	removed := false
+	for _, capability := range capabilities {
+		if capability == unwanted {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, capability)
+	}
+	return filtered, removed
 }
 
 func decodeSocketEnvelope(raw []byte) (protocol.Envelope, error) {

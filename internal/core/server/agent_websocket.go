@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -28,17 +30,11 @@ type agentConnection struct {
 	agentID                  string
 	nodeID                   string
 	generation               uint64
-	metricsEnabled           bool
-	dockerEnabled            bool
-	taskEnabled              bool
-	probeEnabled             bool
-	streamEnabled            bool
-	composeEnabled           bool
-	imagesEnabled            bool
-	terminalEnabled          bool
-	filesEnabled             bool
+	capabilityMu             sync.RWMutex
+	negotiatedCapabilities   map[string]struct{}
+	activeCapabilities       map[string]struct{}
 	imageResponseMu          sync.Mutex
-	imageResponses           map[string]chan protocol.ImageListResponse
+	imageResponses           map[string]imageResponseWaiter
 	taskSignal               chan struct{}
 	taskMu                   sync.RWMutex
 	taskJournalID            string
@@ -68,6 +64,125 @@ type agentConnection struct {
 	watchCancel              context.CancelFunc
 	watchStopped             bool
 	watchDone                chan struct{}
+}
+
+type imageResponseWaiter struct {
+	response chan protocol.ImageListResponse
+	page     uint32
+}
+
+func (c *agentConnection) setCapabilities(capabilities []string) {
+	set := make(map[string]struct{}, len(capabilities))
+	for _, capability := range capabilities {
+		set[capability] = struct{}{}
+	}
+	c.capabilityMu.Lock()
+	c.negotiatedCapabilities = set
+	c.activeCapabilities = make(map[string]struct{}, len(set))
+	for capability := range set {
+		c.activeCapabilities[capability] = struct{}{}
+	}
+	c.capabilityMu.Unlock()
+}
+
+func (c *agentConnection) capabilityEnabled(capability string) bool {
+	if c == nil {
+		return false
+	}
+	c.capabilityMu.RLock()
+	_, enabled := c.activeCapabilities[capability]
+	c.capabilityMu.RUnlock()
+	return enabled
+}
+
+func (c *agentConnection) activeCapabilityList() []string {
+	c.capabilityMu.RLock()
+	capabilities := make([]string, 0, len(c.activeCapabilities))
+	for capability := range c.activeCapabilities {
+		capabilities = append(capabilities, capability)
+	}
+	c.capabilityMu.RUnlock()
+	sort.Strings(capabilities)
+	return capabilities
+}
+
+func (c *agentConnection) failComposeWaiters(errorCode string) {
+	if c == nil {
+		return
+	}
+	c.composeMu.Lock()
+	waiters := c.composeWaiters
+	c.composeWaiters = make(map[string]composeWaiter)
+	c.composeMu.Unlock()
+	for operationID, waiter := range waiters {
+		response := protocol.ComposeResponse{OperationID: operationID, Status: "failed", ErrorCode: errorCode}
+		select {
+		case waiter.result <- response:
+		default:
+		}
+	}
+}
+
+func (c *agentConnection) failImageWaiters(errorCode string) {
+	if c == nil {
+		return
+	}
+	c.imageResponseMu.Lock()
+	waiters := c.imageResponses
+	c.imageResponses = make(map[string]imageResponseWaiter)
+	c.imageResponseMu.Unlock()
+	for _, waiter := range waiters {
+		response := protocol.ImageListResponse{Page: waiter.page, ErrorCode: errorCode, Images: []protocol.ImageSummary{}}
+		select {
+		case waiter.response <- response:
+		default:
+		}
+	}
+}
+
+// applyCapabilityReport accepts only a monotonic downgrade within the set
+// negotiated in Hello. Nil is reserved for older Agents that omit the field.
+func (c *agentConnection) applyCapabilityReport(capabilities []string) error {
+	if capabilities == nil {
+		return nil
+	}
+	if len(capabilities) > 32 {
+		return errors.New("Agent capability report exceeds protocol limit")
+	}
+	reported := make(map[string]struct{}, len(capabilities))
+	for _, capability := range capabilities {
+		if !knownAgentCapability(capability) {
+			return errors.New("Agent reported an unknown capability")
+		}
+		if _, duplicate := reported[capability]; duplicate {
+			return errors.New("Agent reported a duplicate capability")
+		}
+		reported[capability] = struct{}{}
+	}
+	c.capabilityMu.Lock()
+	defer c.capabilityMu.Unlock()
+	for capability := range reported {
+		if _, negotiated := c.negotiatedCapabilities[capability]; !negotiated {
+			return errors.New("Agent reported a capability that was not negotiated")
+		}
+		if _, active := c.activeCapabilities[capability]; !active {
+			return errors.New("Agent capability report attempted to re-enable a capability")
+		}
+	}
+	c.activeCapabilities = reported
+	return nil
+}
+
+func knownAgentCapability(capability string) bool {
+	switch capability {
+	case "agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1",
+		protocol.CapabilityMetrics, protocol.CapabilityDocker, protocol.CapabilityTaskBridge,
+		protocol.CapabilityContainerStreams, protocol.CapabilityCompose, protocol.CapabilityImages,
+		protocol.CapabilityTerminal, protocol.CapabilityFiles, protocol.CapabilityProbes:
+		return true
+	default:
+		return false
+	}
 }
 
 type agentRead struct {
@@ -408,7 +523,8 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.closeAgentProtocol(conn, websocket.StatusPolicyViolation, "Agent identity mismatch")
 		return
 	}
-	capabilities, err := json.Marshal(hello.Capabilities)
+	negotiatedCapabilities := negotiateCapabilities(hello.Capabilities)
+	capabilities, err := json.Marshal(negotiatedCapabilities)
 	if err != nil {
 		s.closeAgentProtocol(conn, websocket.StatusInternalError, "could not record Agent capabilities")
 		return
@@ -424,33 +540,24 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	connectionCtx, connectionCancel := context.WithCancel(r.Context())
-	negotiatedCapabilities := negotiateCapabilities(hello.Capabilities)
 	managed := &agentConnection{conn: conn, cancel: connectionCancel, agentID: identity.AgentID, generation: lease.ConnectionGeneration,
-		ctx:            connectionCtx,
-		metricsEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityMetrics),
-		dockerEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityDocker),
-		taskEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityTaskBridge),
-		probeEnabled:   hasCapability(negotiatedCapabilities, protocol.CapabilityProbes),
-		streamEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityContainerStreams), nodeID: identity.NodeID,
-		composeEnabled:  hasCapability(negotiatedCapabilities, protocol.CapabilityCompose),
-		imagesEnabled:   hasCapability(negotiatedCapabilities, protocol.CapabilityImages),
-		terminalEnabled: hasCapability(negotiatedCapabilities, protocol.CapabilityTerminal),
-		filesEnabled:    hasCapability(negotiatedCapabilities, protocol.CapabilityFiles),
-		imageResponses:  make(map[string]chan protocol.ImageListResponse),
-		taskSignal:      make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
+		ctx: connectionCtx, nodeID: identity.NodeID,
+		imageResponses: make(map[string]imageResponseWaiter),
+		taskSignal:     make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
 		commands: make(chan protocol.Envelope, 32), leaseUpdates: make(chan time.Time, 1)}
-	if managed.dockerEnabled {
+	managed.setCapabilities(negotiatedCapabilities)
+	if managed.capabilityEnabled(protocol.CapabilityDocker) {
 		managed.dockerFrames = make(chan dockerFrame, 16)
 	}
-	if managed.streamEnabled {
+	if managed.capabilityEnabled(protocol.CapabilityContainerStreams) {
 		managed.streams = make(map[string]*coreBrowserStream)
 		managed.streamTombstones = make(map[string]struct{})
 	}
-	if managed.composeEnabled {
+	if managed.capabilityEnabled(protocol.CapabilityCompose) {
 		managed.composeWaiters = make(map[string]composeWaiter)
 	}
-	if managed.filesEnabled {
+	if managed.capabilityEnabled(protocol.CapabilityFiles) {
 		managed.fileTransfers = make(map[string]*coreFileTransfer)
 		managed.fileTombstones = make(map[string]struct{})
 	}
@@ -466,7 +573,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.closeAgentProtocol(conn, websocket.StatusPolicyViolation, "could not bind metrics connection")
 		return
 	}
-	if managed.dockerEnabled {
+	if managed.capabilityEnabled(protocol.CapabilityDocker) {
 		if err := s.bindDockerConnection(ctx, coredocker.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID}, lease.ConnectionGeneration); err != nil {
 			s.closeAgentConnection(identity.AgentID, lease.ConnectionGeneration)
 			s.closeAgentProtocol(conn, websocket.StatusInternalError, "could not bind Docker inventory connection")
@@ -505,8 +612,10 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 	}()
 	dockerFailures := make(chan error, 1)
 	var dockerWorkerDone chan struct{}
-	if connection.dockerEnabled {
+	var cancelDockerWorker context.CancelFunc
+	if connection.capabilityEnabled(protocol.CapabilityDocker) {
 		workerCtx, cancelWorker := context.WithCancel(ctx)
+		cancelDockerWorker = cancelWorker
 		dockerWorkerDone = make(chan struct{})
 		go func() {
 			defer close(dockerWorkerDone)
@@ -532,7 +641,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				return
 			}
 		case <-connection.taskSignal:
-			if connection.taskEnabled {
+			if connection.capabilityEnabled(protocol.CapabilityTaskBridge) {
 				if err := s.dispatchAgentTasks(ctx, connection, identity); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not dispatch durable task")
 					return
@@ -569,11 +678,21 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 			switch envelope.Type {
 			case protocol.TypeHeartbeat:
 				var heartbeat protocol.Heartbeat
-				if err := decodeAgentPayload(envelope.Payload, &heartbeat); err != nil || len(heartbeat.Capabilities) != 0 {
+				if err := decodeAgentPayload(envelope.Payload, &heartbeat); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent heartbeat")
 					return
 				}
-				acceptedAt, err := s.agents.AcceptHeartbeat(ctx, identity, connection.generation, envelope.Sequence, s.agentOfflineTimeout)
+				dockerWasEnabled := connection.capabilityEnabled(protocol.CapabilityDocker)
+				streamsWereEnabled := connection.capabilityEnabled(protocol.CapabilityContainerStreams)
+				filesWereEnabled := connection.capabilityEnabled(protocol.CapabilityFiles)
+				composeWasEnabled := connection.capabilityEnabled(protocol.CapabilityCompose)
+				imagesWereEnabled := connection.capabilityEnabled(protocol.CapabilityImages)
+				probesWereEnabled := connection.capabilityEnabled(protocol.CapabilityProbes)
+				if err := connection.applyCapabilityReport(heartbeat.Capabilities); err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent capability update")
+					return
+				}
+				acceptedAt, err := s.agents.AcceptHeartbeat(ctx, identity, connection.generation, envelope.Sequence, s.agentOfflineTimeout, heartbeat.Capabilities)
 				if errors.Is(err, agents.ErrStaleConnection) {
 					_, _ = s.agents.ExpireLease(ctx, identity.NodeID, connection.generation, s.agentOfflineTimeout)
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "stale Agent heartbeat")
@@ -583,6 +702,29 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusInternalError, "could not record Agent heartbeat")
 					return
 				}
+				if dockerWasEnabled && !connection.capabilityEnabled(protocol.CapabilityDocker) && cancelDockerWorker != nil {
+					cancelDockerWorker()
+					if dockerWorkerDone != nil {
+						<-dockerWorkerDone
+					}
+				}
+				if streamsWereEnabled && !connection.capabilityEnabled(protocol.CapabilityContainerStreams) {
+					connection.closeBrowserStreams()
+				}
+				if filesWereEnabled && !connection.capabilityEnabled(protocol.CapabilityFiles) {
+					connection.closeFileTransfers()
+				}
+				if composeWasEnabled && !connection.capabilityEnabled(protocol.CapabilityCompose) {
+					connection.failComposeWaiters("capability_unavailable")
+				}
+				if imagesWereEnabled && !connection.capabilityEnabled(protocol.CapabilityImages) {
+					connection.failImageWaiters("capability_unavailable")
+				}
+				if probesWereEnabled && !connection.capabilityEnabled(protocol.CapabilityProbes) && s.probes != nil {
+					if err := s.probes.MarkNodeUnknown(ctx, identity.NodeID, acceptedAt); err != nil {
+						log.Printf("Agent probe capability became unavailable for node %s: %v", identity.NodeID, err)
+					}
+				}
 				connection.noteHeartbeat(acceptedAt)
 				s.metrics.Notify(identity.NodeID)
 				ack := protocol.HeartbeatAck{AcceptedAt: acceptedAt.UnixNano()}
@@ -590,7 +732,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeMetrics:
-				if !connection.metricsEnabled {
+				if !connection.capabilityEnabled(protocol.CapabilityMetrics) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent metrics capability was not negotiated")
 					return
 				}
@@ -621,7 +763,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				}
 				s.metrics.Notify(identity.NodeID)
 			case protocol.TypeDocker:
-				if !connection.dockerEnabled || envelope.Sequence == 0 {
+				if !connection.capabilityEnabled(protocol.CapabilityDocker) || envelope.Sequence == 0 {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent Docker capability was not negotiated")
 					return
 				}
@@ -640,7 +782,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeTerminalFrame:
-				if !connection.terminalEnabled || envelope.Sequence != 0 {
+				if !connection.capabilityEnabled(protocol.CapabilityTerminal) || envelope.Sequence != 0 {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent terminal capability was not negotiated")
 					return
 				}
@@ -671,7 +813,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeTaskJournalHello, protocol.TypeTaskSnapshotPage, protocol.TypeTaskReport:
-				if !connection.taskEnabled {
+				if !connection.capabilityEnabled(protocol.CapabilityTaskBridge) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent task bridge was not negotiated")
 					return
 				}
@@ -680,7 +822,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeImageListResponse:
-				if !connection.imagesEnabled || envelope.Sequence != 0 || envelope.RequestID == "" {
+				if !connection.capabilityEnabled(protocol.CapabilityImages) || envelope.Sequence != 0 || envelope.RequestID == "" {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent image capability was not negotiated")
 					return
 				}
@@ -692,7 +834,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				connection.resolveImageResponse(envelope.RequestID, response)
 			case protocol.TypeContainerStreamReady, protocol.TypeContainerLog, protocol.TypeContainerStats,
 				protocol.TypeContainerStreamError, protocol.TypeContainerStreamEnd, protocol.TypeContainerStreamHeartbeat:
-				if !connection.streamEnabled {
+				if !connection.capabilityEnabled(protocol.CapabilityContainerStreams) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent container streams were not negotiated")
 					return
 				}
@@ -701,7 +843,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeComposeResponse:
-				if !connection.composeEnabled || envelope.Sequence != 0 || envelope.RequestID == "" {
+				if !connection.capabilityEnabled(protocol.CapabilityCompose) || envelope.Sequence != 0 || envelope.RequestID == "" {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent Compose capability was not negotiated")
 					return
 				}
@@ -710,7 +852,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeFileResponse, protocol.TypeFileChunk:
-				if !connection.filesEnabled {
+				if !connection.capabilityEnabled(protocol.CapabilityFiles) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent file service was not negotiated")
 					return
 				}
@@ -719,7 +861,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeContainerRebuildPlanResponse:
-				if !connection.taskEnabled || envelope.Sequence != 0 {
+				if !connection.capabilityEnabled(protocol.CapabilityTaskBridge) || envelope.Sequence != 0 {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent task bridge was not negotiated")
 					return
 				}
@@ -728,7 +870,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeProbeReport:
-				if !connection.probeEnabled {
+				if !connection.capabilityEnabled(protocol.CapabilityProbes) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent probe capability was not negotiated")
 					return
 				}
@@ -850,23 +992,13 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	supported := map[string]struct{}{"agent.heartbeat.v1": {}, "agent.rotation.v1": {}, "agent.os-permissions.v1": {}, protocol.CapabilityMetrics: {}, protocol.CapabilityDocker: {}, protocol.CapabilityTaskBridge: {}, protocol.CapabilityContainerStreams: {}, protocol.CapabilityCompose: {}, protocol.CapabilityImages: {}, protocol.CapabilityTerminal: {}, protocol.CapabilityFiles: {}, protocol.CapabilityProbes: {}}
 	result := make([]string, 0, len(reported))
 	for _, capability := range reported {
-		if _, ok := supported[capability]; ok {
+		if knownAgentCapability(capability) {
 			result = append(result, capability)
 		}
 	}
 	return result
-}
-
-func hasCapability(capabilities []string, wanted string) bool {
-	for _, capability := range capabilities {
-		if capability == wanted {
-			return true
-		}
-	}
-	return false
 }
 
 func validRuntimePermissions(value protocol.RuntimePermissions) bool {

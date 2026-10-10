@@ -129,7 +129,7 @@ func (stream *coreBrowserStream) matches(envelope protocol.Envelope) error {
 var errBrowserStreamSlowConsumer = errors.New("browser container stream consumer is too slow")
 
 func (connection *agentConnection) addBrowserStream(stream *coreBrowserStream) error {
-	if connection == nil || stream == nil || connection.streams == nil || !connection.streamEnabled || connection.ctx == nil || connection.ctx.Err() != nil {
+	if connection == nil || stream == nil || connection.streams == nil || !connection.capabilityEnabled(protocol.CapabilityContainerStreams) || connection.ctx == nil || connection.ctx.Err() != nil {
 		return errors.New("Agent container stream is unavailable")
 	}
 	connection.streamMu.Lock()
@@ -179,7 +179,7 @@ func (connection *agentConnection) closeBrowserStreams() {
 }
 
 func (connection *agentConnection) takeAgentStream(envelope protocol.Envelope) (*coreBrowserStream, bool, error) {
-	if connection == nil || !connection.streamEnabled {
+	if connection == nil || !connection.capabilityEnabled(protocol.CapabilityContainerStreams) {
 		return nil, false, errors.New("Agent container streams were not negotiated")
 	}
 	if err := protocol.ValidateContainerStreamEnvelope(envelope, connection.generation); err != nil {
@@ -443,7 +443,7 @@ func (s *Server) authorizeContainerStream(ctx context.Context, request browserCo
 		return state, view, nil, errContainerStreamUnavailable
 	}
 	connection := s.activeAgentConnectionForNode(request.nodeID)
-	if connection == nil || connection.generation != view.ActiveGeneration || !connection.streamEnabled || connection.ctx == nil || connection.ctx.Err() != nil {
+	if connection == nil || connection.generation != view.ActiveGeneration || !connection.capabilityEnabled(protocol.CapabilityContainerStreams) || connection.ctx == nil || connection.ctx.Err() != nil {
 		return state, view, nil, errContainerStreamUnavailable
 	}
 	return state, view, connection, nil

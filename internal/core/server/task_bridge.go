@@ -235,7 +235,7 @@ func (s *Server) migrateRebuiltContainerPreferences(ctx context.Context, task co
 
 func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnection, identity agents.Identity) error {
 	journalID, synced := connection.taskBridgeState()
-	if !connection.taskEnabled || !synced || journalID == "" || connection.taskSlots <= 0 {
+	if !connection.capabilityEnabled(protocol.CapabilityTaskBridge) || !synced || journalID == "" || connection.taskSlots <= 0 {
 		return nil
 	}
 	journal := coretasks.AgentConnection{NodeID: identity.NodeID, ConnectionGeneration: connection.generation, JournalID: journalID}
@@ -354,7 +354,7 @@ func (s *Server) signalAgentTasks(nodeID string) {
 	s.agentConnectionsMu.Lock()
 	defer s.agentConnectionsMu.Unlock()
 	for _, connection := range s.agentConnections {
-		if connection.nodeID != nodeID || !connection.taskEnabled {
+		if connection.nodeID != nodeID || !connection.capabilityEnabled(protocol.CapabilityTaskBridge) {
 			continue
 		}
 		select {

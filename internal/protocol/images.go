@@ -57,7 +57,7 @@ func ValidateImageListResponse(envelope Envelope, response ImageListResponse, ge
 		response.Page > 1_000_000 || len(response.Images) > MaxImagePageSize || response.Total > 10_000_000 {
 		return ErrInvalidImageMessage
 	}
-	if response.ErrorCode != "" && response.ErrorCode != "engine_unavailable" {
+	if response.ErrorCode != "" && response.ErrorCode != "engine_unavailable" && response.ErrorCode != "capability_unavailable" && response.ErrorCode != "agent_busy" {
 		return ErrInvalidImageMessage
 	}
 	for index, image := range response.Images {

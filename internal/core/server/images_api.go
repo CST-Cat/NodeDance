@@ -349,7 +349,7 @@ func (s *Server) requestImagePullCancellation(task coretasks.Task) error {
 	s.agentConnectionsMu.Lock()
 	defer s.agentConnectionsMu.Unlock()
 	for _, connection := range s.agentConnections {
-		if connection.nodeID != task.NodeID || !connection.taskEnabled || connection.generation == 0 {
+		if connection.nodeID != task.NodeID || !connection.capabilityEnabled(protocol.CapabilityTaskBridge) || connection.generation == 0 {
 			continue
 		}
 		connection.taskMu.RLock()
@@ -425,7 +425,7 @@ func (s *Server) requestNodeImages(ctx context.Context, nodeID string, request p
 		}
 	}
 	s.agentConnectionsMu.Unlock()
-	if connection == nil || !connection.imagesEnabled || connection.generation != state.Generation {
+	if connection == nil || !connection.capabilityEnabled(protocol.CapabilityImages) || connection.generation != state.Generation {
 		return protocol.ImageListResponse{}, coretasks.ErrNodeOffline
 	}
 	idBytes := make([]byte, 16)
@@ -435,7 +435,7 @@ func (s *Server) requestNodeImages(ctx context.Context, nodeID string, request p
 	requestID := hex.EncodeToString(idBytes)
 	responseCh := make(chan protocol.ImageListResponse, 1)
 	connection.imageResponseMu.Lock()
-	connection.imageResponses[requestID] = responseCh
+	connection.imageResponses[requestID] = imageResponseWaiter{response: responseCh, page: request.Page}
 	connection.imageResponseMu.Unlock()
 	defer func() {
 		connection.imageResponseMu.Lock()
@@ -477,9 +477,9 @@ func (s *Server) requestNodeImages(ctx context.Context, nodeID string, request p
 func (c *agentConnection) resolveImageResponse(requestID string, response protocol.ImageListResponse) {
 	c.imageResponseMu.Lock()
 	defer c.imageResponseMu.Unlock()
-	if waiter := c.imageResponses[requestID]; waiter != nil {
+	if waiter := c.imageResponses[requestID]; waiter.response != nil {
 		select {
-		case waiter <- response:
+		case waiter.response <- response:
 		default:
 		}
 	}

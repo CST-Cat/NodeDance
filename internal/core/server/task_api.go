@@ -360,7 +360,7 @@ func (s *Server) taskBridgeReady(nodeID string, generation uint64) bool {
 func (s *Server) lockTaskBridgeReady(nodeID string, generation uint64) (func(), error) {
 	s.agentConnectionsMu.Lock()
 	for _, connection := range s.agentConnections {
-		if connection.nodeID != nodeID || connection.generation != generation || !connection.taskEnabled {
+		if connection.nodeID != nodeID || connection.generation != generation || !connection.capabilityEnabled(protocol.CapabilityTaskBridge) {
 			continue
 		}
 		connection.taskMu.RLock()

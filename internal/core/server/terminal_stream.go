@@ -115,7 +115,7 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, current 
 	}
 	s.agentConnectionsMu.Lock()
 	connection := s.agentConnections[node.AgentID]
-	if connection == nil || connection.generation != node.ConnectionGeneration || !connection.terminalEnabled {
+	if connection == nil || connection.generation != node.ConnectionGeneration || !connection.capabilityEnabled(protocol.CapabilityTerminal) {
 		connection = nil
 	}
 	s.agentConnectionsMu.Unlock()

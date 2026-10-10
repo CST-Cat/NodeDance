@@ -131,7 +131,7 @@ func fileTaskBadRequest(w http.ResponseWriter) {
 
 func (s *Server) enqueueFileTask(ctx context.Context, current *session, nodeID, key string, intent protocol.TaskIntent, content []byte) (coretasks.EnqueueResult, error) {
 	connection, err := s.activeFileConnection(ctx, nodeID)
-	if err != nil || connection == nil || !connection.filesEnabled {
+	if err != nil || connection == nil || !connection.capabilityEnabled(protocol.CapabilityFiles) {
 		return coretasks.EnqueueResult{}, coretasks.ErrNodeOffline
 	}
 	gate := func(ctx context.Context) (bool, func(), error) {
@@ -146,7 +146,7 @@ func (s *Server) enqueueFileTask(ctx context.Context, current *session, nodeID, 
 				break
 			}
 		}
-		if !active || !connection.filesEnabled || connection.ctx == nil || connection.ctx.Err() != nil {
+		if !active || !connection.capabilityEnabled(protocol.CapabilityFiles) || connection.ctx == nil || connection.ctx.Err() != nil {
 			release()
 			return false, nil, coretasks.ErrNodeOffline
 		}

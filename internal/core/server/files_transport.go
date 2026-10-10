@@ -79,7 +79,7 @@ func (transfer *coreFileTransfer) enqueue(envelope protocol.Envelope, operation 
 }
 
 func (connection *agentConnection) addFileTransfer(transfer *coreFileTransfer) error {
-	if connection == nil || transfer == nil || !connection.filesEnabled || connection.ctx == nil || connection.ctx.Err() != nil {
+	if connection == nil || transfer == nil || !connection.capabilityEnabled(protocol.CapabilityFiles) || connection.ctx == nil || connection.ctx.Err() != nil {
 		return errors.New("Agent file service is unavailable")
 	}
 	connection.fileMu.Lock()
@@ -233,7 +233,7 @@ func (s *Server) closeAllFileTransfers(err error) {
 }
 
 func (s *Server) handleAgentFileMessage(connection *agentConnection, envelope protocol.Envelope) error {
-	if connection == nil || !connection.filesEnabled || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
+	if connection == nil || !connection.capabilityEnabled(protocol.CapabilityFiles) || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
 		return errors.New("Agent file message is unavailable or too large")
 	}
 	transfer, tombstone := connection.findFileTransfer(envelope.RequestID)
@@ -315,7 +315,7 @@ func (s *Server) activeFileConnection(ctx context.Context, nodeID string) (*agen
 	s.agentConnectionsMu.Lock()
 	defer s.agentConnectionsMu.Unlock()
 	for _, connection := range s.agentConnections {
-		if connection.nodeID == nodeID && connection.generation == state.Generation && connection.filesEnabled && connection.ctx != nil && connection.ctx.Err() == nil {
+		if connection.nodeID == nodeID && connection.generation == state.Generation && connection.capabilityEnabled(protocol.CapabilityFiles) && connection.ctx != nil && connection.ctx.Err() == nil {
 			return connection, nil
 		}
 	}
