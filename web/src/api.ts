@@ -684,6 +684,10 @@ export const api = {
     request<TerminalAuthorization>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/terminals`, {
       method: 'POST', body: JSON.stringify(target),
     }, true),
+  cancelTerminal: (nodeId: string, streamId: string) =>
+    request<void>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/terminals/${encodeURIComponent(streamId)}`, {
+      method: 'DELETE',
+    }, true),
   appearance: () => request<Appearance>('/api/v1/public/appearance'),
   saveAppearance: (payload: Pick<Appearance, 'displayName' | 'theme' | 'backgroundColor'>) =>
     request<void>('/api/v1/settings/appearance', {

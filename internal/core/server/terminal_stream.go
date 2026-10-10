@@ -27,6 +27,7 @@ const (
 type terminalStreamManager struct {
 	mu      sync.Mutex
 	tickets map[string]*terminalStream
+	pending map[string]*terminalStream
 	streams map[string]*terminalStream
 	byNode  map[string]int
 }
@@ -65,7 +66,8 @@ type createTerminalResponse struct {
 }
 
 func newTerminalStreamManager() *terminalStreamManager {
-	return &terminalStreamManager{tickets: make(map[string]*terminalStream), streams: make(map[string]*terminalStream), byNode: make(map[string]int)}
+	return &terminalStreamManager{tickets: make(map[string]*terminalStream), pending: make(map[string]*terminalStream),
+		streams: make(map[string]*terminalStream), byNode: make(map[string]int)}
 }
 
 func terminalRoute(path string) (string, bool) {
@@ -77,6 +79,17 @@ func terminalRoute(path string) (string, bool) {
 		return "", false
 	}
 	return parts[0], true
+}
+
+func terminalCancellationRoute(path string) (nodeID, streamID string, ok bool) {
+	if !strings.HasPrefix(path, "/api/v1/nodes/") {
+		return "", "", false
+	}
+	parts := strings.Split(strings.TrimPrefix(path, "/api/v1/nodes/"), "/")
+	if len(parts) != 3 || !validUUID(parts[0]) || parts[1] != "terminals" || !validTerminalStreamID(parts[2]) {
+		return "", "", false
+	}
+	return parts[0], parts[2], true
 }
 
 func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, current *session, nodeID string) {
@@ -177,6 +190,28 @@ func validTerminalContainerID(value string) bool {
 	return true
 }
 
+func validTerminalStreamID(value string) bool {
+	return protocol.ValidateTerminalFrame(protocol.TerminalFrame{StreamID: value, Action: protocol.TerminalActionClose}, false) == nil
+}
+
+func (s *Server) cancelTerminalTicket(w http.ResponseWriter, r *http.Request, current *session, nodeID, streamID string) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.terminalSessionMu.Lock()
+	defer s.terminalSessionMu.Unlock()
+	if !s.dashboardSessionStillValid(r.Context(), current.ID) {
+		s.clearCookies(w)
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+	// This endpoint can only revoke an unused ticket. Once the WebSocket
+	// consumes it, the existing browser close/logout path owns that stream.
+	s.terminals.revokeTicket(current.ID, nodeID, streamID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (m *terminalStreamManager) create(current *session, nodeID, agentID string, generation uint64, targetKind, containerID string, connection *agentConnection, now time.Time) (*terminalStream, string, error) {
 	streamID, _, err := auth.NewToken()
 	if err != nil {
@@ -200,6 +235,7 @@ func (m *terminalStreamManager) create(current *session, nodeID, agentID string,
 		return nil, "", errTerminalLimit
 	}
 	m.tickets[key] = stream
+	m.pending[streamID] = stream
 	m.byNode[nodeID]++
 	m.mu.Unlock()
 	time.AfterFunc(terminalTicketLifetime, func() { m.expireTicket(key, stream) })
@@ -214,6 +250,7 @@ func (m *terminalStreamManager) expireTicket(key string, stream *terminalStream)
 	}
 	stream.closed = true
 	delete(m.tickets, key)
+	delete(m.pending, stream.streamID)
 	if m.byNode[stream.nodeID] > 0 {
 		m.byNode[stream.nodeID]--
 		if m.byNode[stream.nodeID] == 0 {
@@ -233,11 +270,31 @@ func (m *terminalStreamManager) consume(ticket, sessionID string, now time.Time,
 		return nil, false
 	}
 	delete(m.tickets, key)
+	delete(m.pending, stream.streamID)
 	stream.consumed = true
 	stream.conn = conn
 	stream.cancel = cancel
 	m.streams[stream.streamID] = stream
 	return stream, true
+}
+
+func (m *terminalStreamManager) revokeTicket(sessionID, nodeID, streamID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	stream := m.pending[streamID]
+	if stream == nil || stream.closed || stream.consumed || stream.browserSessionID != sessionID || stream.nodeID != nodeID {
+		return false
+	}
+	stream.closed = true
+	delete(m.pending, streamID)
+	delete(m.tickets, stream.ticket)
+	if m.byNode[nodeID] > 0 {
+		m.byNode[nodeID]--
+		if m.byNode[nodeID] == 0 {
+			delete(m.byNode, nodeID)
+		}
+	}
+	return true
 }
 
 func (m *terminalStreamManager) find(streamID string) *terminalStream {
@@ -330,6 +387,7 @@ func (m *terminalStreamManager) close(s *Server, stream *terminalStream, reason 
 	}
 	stream.closed = true
 	delete(m.tickets, stream.ticket)
+	delete(m.pending, stream.streamID)
 	delete(m.streams, stream.streamID)
 	if m.byNode[stream.nodeID] > 0 {
 		m.byNode[stream.nodeID]--

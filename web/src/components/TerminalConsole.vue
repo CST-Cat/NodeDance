@@ -58,7 +58,28 @@ function sendAuxiliary(value: string) {
 }
 
 function close() {
+  dispose()
   emit('close')
+}
+
+function revokePendingTicket(nodeId: string, id: string) {
+  if (!id) return
+  // The Core endpoint is idempotent and only removes an unconsumed ticket.
+  // A consumed stream is still closed through the WebSocket below.
+  void api.cancelTerminal(nodeId, id).catch(() => undefined)
+}
+
+function dispose() {
+  if (disposed) return
+  disposed = true
+  ready = false
+  resizeObserver?.disconnect()
+  if (socket?.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ streamId, action: 'close' }))
+  }
+  socket?.close()
+  terminal?.dispose()
+  revokePendingTicket(props.nodeId, streamId)
 }
 
 async function connect() {
@@ -67,8 +88,13 @@ async function connect() {
       ? { targetKind: 'host' as const }
       : { targetKind: 'container' as const, containerId: props.containerId ?? '' }
     const authorization = await api.createTerminal(props.nodeId, target)
-    if (disposed) return
     streamId = authorization.streamId
+    if (disposed) {
+      // Unmount can race the POST response. Once the stream ID is known, revoke
+      // the exact unused ticket so it does not hold a per-node slot until expiry.
+      revokePendingTicket(props.nodeId, streamId)
+      return
+    }
     const url = new URL('/ws/v1/streams/terminal', window.location.href)
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     url.searchParams.set('ticket', authorization.ticket)
@@ -140,14 +166,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  disposed = true
-  ready = false
-  resizeObserver?.disconnect()
-  if (socket?.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({ streamId, action: 'close' }))
-  }
-  socket?.close()
-  terminal?.dispose()
+  dispose()
 })
 </script>
 
