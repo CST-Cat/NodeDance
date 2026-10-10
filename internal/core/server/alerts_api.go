@@ -17,6 +17,10 @@ func (s *Server) handleAlertAPI(w http.ResponseWriter, r *http.Request, current 
 	if r.URL.Path != prefix && !strings.HasPrefix(r.URL.Path, prefix+"/") {
 		return false
 	}
+	if s.alerts == nil {
+		http.Error(w, "alerts are unavailable", http.StatusServiceUnavailable)
+		return true
+	}
 	path := strings.TrimPrefix(r.URL.Path, prefix)
 	if path == "" {
 		path = "/"

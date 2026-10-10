@@ -3,7 +3,8 @@ package webassets
 
 import "embed"
 
-// Files is populated by `pnpm build` before the Go binary is compiled.
+// Files is populated by the Makefile's frontend prerequisite before either Go
+// binary is compiled.
 //
 //go:embed all:dist
 var Files embed.FS

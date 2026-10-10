@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"log"
 	"time"
 
 	corealerts "github.com/CST-Cat/NodeDance/internal/core/alerts"
@@ -14,8 +16,11 @@ func (s *Server) alertEvaluationScheduler() {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
-		if err := s.evaluateAlerts(s.agentContext); err != nil && s.agentContext.Err() != nil {
-			return
+		if err := s.evaluateAlerts(s.agentContext); err != nil {
+			if s.agentContext.Err() != nil {
+				return
+			}
+			log.Printf("NodeDance alert evaluation failed; retrying: %v", err)
 		}
 		select {
 		case <-s.agentContext.Done():
@@ -26,6 +31,9 @@ func (s *Server) alertEvaluationScheduler() {
 }
 
 func (s *Server) evaluateAlerts(ctx context.Context) error {
+	if s.alerts == nil {
+		return errors.New("alert store is unavailable")
+	}
 	now := s.now().UTC()
 	nodes, err := s.agents.ListNodes(ctx)
 	if err != nil {
@@ -158,8 +166,11 @@ func (s *Server) alertDeliveryScheduler() {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		if err := s.dispatchAlertDelivery(s.agentContext); err != nil && s.agentContext.Err() != nil {
-			return
+		if err := s.dispatchAlertDelivery(s.agentContext); err != nil {
+			if s.agentContext.Err() != nil {
+				return
+			}
+			log.Printf("NodeDance alert delivery failed; retrying: %v", err)
 		}
 		select {
 		case <-s.agentContext.Done():
@@ -170,6 +181,9 @@ func (s *Server) alertDeliveryScheduler() {
 }
 
 func (s *Server) dispatchAlertDelivery(parent context.Context) error {
+	if s.alerts == nil || s.alertSender == nil {
+		return errors.New("alert delivery is unavailable")
+	}
 	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	delivery, channel, secret, claimed, err := s.alerts.ClaimDelivery(ctx, s.now().UTC())

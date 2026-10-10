@@ -9,8 +9,8 @@
     "pnpm": "12.10.1"
   },
   "scripts": {
-    "build": "vite build --outDir ../internal/core/webassets/dist --emptyOutDir",
-    "typecheck": "vue-tsc --noEmit"
+    "build": "vite build --config vite.config.ts --outDir ../internal/core/webassets/dist --emptyOutDir",
+    "typecheck": "vue-tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",

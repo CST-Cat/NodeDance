@@ -24,7 +24,7 @@ typecheck:
 frontend: typecheck
 	pnpm --dir web run build
 
-build:
+build: frontend
 	mkdir -p .build
 	go build -trimpath -o .build/nodedance ./cmd/nodedance
 	go build -trimpath -o .build/nodedance-agent ./cmd/nodedance-agent

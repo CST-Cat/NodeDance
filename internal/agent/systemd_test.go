@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 )
 
 func TestWriteSystemdUnitCreateReinstallAndForeignRefusal(t *testing.T) {
@@ -62,6 +64,35 @@ func TestWriteSystemdUnitCreateReinstallAndForeignRefusal(t *testing.T) {
 			t.Fatalf("unmarked unit changed after refusal: err=%v content=%q", err, written)
 		}
 	})
+}
+
+func TestOpenTaskBridgeKeepsBasicTasksWhenRebuildStoreIsUnavailable(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.Chmod(directory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(directory, "rebuilds.sqlite"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sharedDocker, err := agentdocker.NewSDKEngine("")
+	if err != nil {
+		t.Fatalf("create shared Docker client: %v", err)
+	}
+	defer sharedDocker.Close()
+
+	bridge, err := openTaskBridge(context.Background(), filepath.Join(directory, "agent.json"), "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sharedDocker, nil)
+	if err != nil {
+		t.Fatalf("rebuild storage failure must not disable the task bridge: %v", err)
+	}
+	if bridge == nil || bridge.runner == nil {
+		t.Fatal("basic container task runner was not initialized")
+	}
+	if bridge.rebuild != nil || bridge.store != nil {
+		t.Fatal("unavailable rebuild storage must not leave a partial rebuild capability")
+	}
+	if err := bridge.close(); err != nil {
+		t.Fatalf("close task bridge: %v", err)
+	}
 }
 
 func TestRenderSystemdUnitSupplementaryGroupsUseSystemdFieldSyntax(t *testing.T) {

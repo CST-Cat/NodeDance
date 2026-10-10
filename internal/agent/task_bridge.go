@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"time"
 
@@ -70,17 +71,25 @@ func openTaskBridge(ctx context.Context, configPath, nodeID string, shared *agen
 		}
 		rebuildStore, err = containerrebuild.OpenStore(ctx, filepath.Join(filepath.Dir(configPath), "rebuilds.sqlite"))
 		if err != nil {
-			return closeOnError(fmt.Errorf("open durable Agent container rebuild store: %w", err), nil)
+			log.Printf("NodeDance Agent container rebuilds unavailable; basic container tasks remain enabled: %v", err)
+			rebuildStore = nil
+		} else {
+			dockerEngine, adapterErr := containerrebuild.NewDockerEngine(shared.Client())
+			if adapterErr == nil {
+				rebuildManager, adapterErr = containerrebuild.NewManager(dockerEngine, journal, rebuildStore, containerrebuild.Options{})
+			}
+			if adapterErr != nil {
+				log.Printf("NodeDance Agent container rebuilds unavailable; basic container tasks remain enabled: %v", adapterErr)
+				_ = rebuildStore.Close()
+				rebuildStore = nil
+				rebuildManager = nil
+			}
 		}
-		dockerEngine, engineErr := containerrebuild.NewDockerEngine(shared.Client())
-		if engineErr != nil {
-			return closeOnError(fmt.Errorf("create container rebuild Docker adapter: %w", engineErr), rebuildStore)
+		var actionsOptions containeractions.Options
+		if rebuildManager != nil {
+			actionsOptions.Rebuilder = &agentRebuildExecutor{manager: rebuildManager}
 		}
-		rebuildManager, err = containerrebuild.NewManager(dockerEngine, journal, rebuildStore, containerrebuild.Options{})
-		if err != nil {
-			return closeOnError(fmt.Errorf("create durable container rebuild manager: %w", err), rebuildStore)
-		}
-		dockerExecutor, executorErr := containeractions.New(engine, journal, containeractions.Options{Rebuilder: &agentRebuildExecutor{manager: rebuildManager}})
+		dockerExecutor, executorErr := containeractions.New(engine, journal, actionsOptions)
 		if executorErr != nil {
 			return closeOnError(fmt.Errorf("create durable container action executor: %w", executorErr), rebuildStore)
 		}
@@ -176,16 +185,21 @@ func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, run
 			switch envelope.Type {
 			case protocol.TypeContainerRebuildPlanRequest:
 				var request protocol.ContainerRebuildPlanRequest
-				if err := decodeSocketPayload(envelope.Payload, &request); err != nil || protocol.ValidateContainerRebuildPlanRequest(envelope, request, generation) != nil || rebuild == nil {
+				if err := decodeSocketPayload(envelope.Payload, &request); err != nil || protocol.ValidateContainerRebuildPlanRequest(envelope, request, generation) != nil {
 					return errors.New("Core container rebuild plan request is invalid")
 				}
-				planCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-				plan, planErr := rebuild.Plan(planCtx, request.ContainerID, request.Spec)
-				cancel()
-				response := protocol.ContainerRebuildPlanResponse{Plan: &plan}
-				if planErr != nil {
-					response.Plan = nil
-					response.ErrorCode = rebuildPlanErrorCode(planErr)
+				response := protocol.ContainerRebuildPlanResponse{}
+				if rebuild == nil {
+					response.ErrorCode = "rebuild_unavailable"
+				} else {
+					planCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+					plan, planErr := rebuild.Plan(planCtx, request.ContainerID, request.Spec)
+					cancel()
+					response.Plan = &plan
+					if planErr != nil {
+						response.Plan = nil
+						response.ErrorCode = rebuildPlanErrorCode(planErr)
+					}
 				}
 				if err := protocol.ValidateContainerRebuildPlanResponse(protocol.Envelope{Version: protocol.CurrentVersion,
 					Type: protocol.TypeContainerRebuildPlanResponse, Generation: generation, RequestID: envelope.RequestID}, response, envelope.RequestID, generation); err != nil {

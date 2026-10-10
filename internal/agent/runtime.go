@@ -105,11 +105,11 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	if dockerErr == nil {
 		defer sharedDocker.Close()
 	} else if stderr != nil {
-		fmt.Fprintln(stderr, "Docker Engine unavailable; host monitoring remains active")
+		fmt.Fprintf(stderr, "Docker Engine unavailable; host monitoring remains active: %v\n", dockerErr)
 	}
 	fileService, fileErr := openAgentFileService(configPath)
 	if fileErr != nil && stderr != nil {
-		fmt.Fprintln(stderr, "Agent file service unavailable; monitoring and task execution remain active")
+		fmt.Fprintf(stderr, "Agent file service unavailable; monitoring and task execution remain active: %v\n", fileErr)
 	}
 	if fileService != nil {
 		defer fileService.Close()
@@ -117,7 +117,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	taskBridge, bridgeErr := openTaskBridge(ctx, configPath, config.NodeID, sharedDocker, fileService)
 	if bridgeErr != nil {
 		if stderr != nil {
-			fmt.Fprintln(stderr, "Agent task bridge unavailable; host monitoring remains active")
+			fmt.Fprintf(stderr, "Agent task bridge unavailable; host monitoring remains active: %v\n", bridgeErr)
 		}
 	} else if taskBridge != nil {
 		defer func() {

@@ -254,18 +254,18 @@ func New(version string, options Options) (*Server, error) {
 	s.probes = coreprobes.New(store.DB, options.Now)
 	alertKey, err := loadOrCreateAlertEncryptionKey(store.Dir)
 	if err != nil {
-		_ = store.Close()
-		return nil, err
-	}
-	s.alerts, err = corealerts.NewStore(store.DB, alertKey, options.Now)
-	if err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("initialize alert store: %w", err)
-	}
-	s.alertSender = corealerts.NewSender()
-	if err := s.alerts.RecoverDeliveries(context.Background()); err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("recover alert deliveries: %w", err)
+		log.Printf("NodeDance alerts unavailable; Core management remains active: %v", err)
+	} else {
+		alerts, alertErr := corealerts.NewStore(store.DB, alertKey, options.Now)
+		if alertErr == nil {
+			alertErr = alerts.RecoverDeliveries(context.Background())
+		}
+		if alertErr != nil {
+			log.Printf("NodeDance alerts unavailable; Core management remains active: %v", alertErr)
+		} else {
+			s.alerts = alerts
+			s.alertSender = corealerts.NewSender()
+		}
 	}
 	s.csrfKey, err = loadOrCreateSigningKey(store.Dir)
 	if err != nil {
@@ -290,22 +290,19 @@ func New(version string, options Options) (*Server, error) {
 		return nil, err
 	}
 	if err := s.probes.MarkAllNodesUnknown(context.Background(), options.Now()); err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("mark service probes unknown during startup: %w", err)
+		log.Printf("NodeDance service probe startup state could not be updated; Core management remains active: %v", err)
 	}
 	if err := s.probes.RecoverPending(context.Background(), options.Now()); err != nil {
-		_ = store.Close()
-		return nil, fmt.Errorf("recover pending service probes: %w", err)
+		log.Printf("NodeDance pending service probes could not be recovered; Core management remains active: %v", err)
 	}
 	savedDocker, err := loadDockerNodes(context.Background(), store.DB)
 	if err != nil {
-		_ = store.Close()
-		return nil, err
-	}
-	for _, saved := range savedDocker {
-		if err := s.docker.RestoreStale(saved); err != nil {
-			_ = store.Close()
-			return nil, err
+		log.Printf("NodeDance persisted Docker state could not be restored; Core management remains active: %v", err)
+	} else {
+		for _, saved := range savedDocker {
+			if err := s.docker.RestoreStale(saved); err != nil {
+				log.Printf("NodeDance persisted Docker state for node %s could not be restored: %v", saved.Identity.NodeID, err)
+			}
 		}
 	}
 	s.agentContext, s.agentCancel = context.WithCancel(context.Background())
@@ -315,10 +312,12 @@ func New(version string, options Options) (*Server, error) {
 	go s.historyRetentionWorker()
 	s.agentWait.Add(1)
 	go s.serviceProbeScheduler()
-	s.agentWait.Add(1)
-	go s.alertEvaluationScheduler()
-	s.agentWait.Add(1)
-	go s.alertDeliveryScheduler()
+	if s.alerts != nil {
+		s.agentWait.Add(1)
+		go s.alertEvaluationScheduler()
+		s.agentWait.Add(1)
+		go s.alertDeliveryScheduler()
+	}
 	return s, nil
 }
 
@@ -522,8 +521,11 @@ func (s *Server) serviceProbeScheduler() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
-		if err := s.dispatchDueServiceProbes(s.agentContext); err != nil && s.agentContext.Err() != nil {
-			return
+		if err := s.dispatchDueServiceProbes(s.agentContext); err != nil {
+			if s.agentContext.Err() != nil {
+				return
+			}
+			log.Printf("NodeDance service probe scheduler failed; retrying: %v", err)
 		}
 		select {
 		case <-s.agentContext.Done():
