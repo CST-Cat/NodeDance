@@ -68,7 +68,17 @@ type Request struct {
 	DeleteConfirmed      bool
 	DeleteConfirmationID string
 	Rebuild              *protocol.RebuildSpec
+	CreateSHA256         string
+	ContainerCreate      *protocol.ContainerCreateSpec
 	ConfirmationID       string
+}
+
+// ContainerCreateEngine is an optional capability implemented by the shared
+// Docker SDK adapter. It stays on the same Docker client and task executor as
+// the existing lifecycle operations.
+type ContainerCreateEngine interface {
+	CreateContainer(context.Context, protocol.ContainerCreateSpec, string, string) (Container, error)
+	FindCreatedContainers(context.Context, string, string) ([]Container, error)
 }
 
 type RebuildExecutor interface {
@@ -92,12 +102,15 @@ type RebuildRequest struct {
 type Container struct {
 	ID             string
 	Name           string
+	Image          string
 	Running        bool
 	Paused         bool
 	Restarting     bool
 	StartedAt      string
 	RestartCount   int
 	ComposeManaged bool
+	CreateTaskID   string
+	CreateDigest   string
 }
 
 // Engine contains only the lifecycle calls this component is allowed to make.
@@ -245,6 +258,9 @@ func (e *Executor) ExecuteObserved(ctx context.Context, request Request, onRunni
 	if onRunning != nil {
 		onRunning(running)
 	}
+	if request.Action == protocol.TaskContainerCreate {
+		return e.executeContainerCreate(ctx, request)
+	}
 
 	preflightCtx, preflightCancel := context.WithTimeout(ctx, e.verificationTimeout)
 	before, err := e.engine.Inspect(preflightCtx, request.ContainerID)
@@ -362,6 +378,9 @@ func (e *Executor) Reconcile(ctx context.Context, taskID string) (taskjournal.Sn
 		}
 		return e.rebuilder.Reconcile(ctx, taskID)
 	}
+	if task.Action == string(protocol.TaskContainerCreate) {
+		return e.reconcileContainerCreate(ctx, task)
+	}
 	if task.ExecutionPhase != taskjournal.ExecutionPhaseMutationMayHaveStarted || task.Baseline == nil ||
 		task.Baseline.TargetID != task.TargetID || task.Baseline.Action != task.Action || task.Action != string(ActionRestart) {
 		return task, errors.Join(ErrOutcomeUnknown, ErrBaselineUnverifiable)
@@ -409,7 +428,8 @@ func readHostBootID(context.Context) (string, error) {
 }
 
 func requestIdentity(request Request) (taskstate.Identity, error) {
-	if !protocol.IsFullContainerID(request.ContainerID) || !validText(request.TaskID, taskstate.MaxIdentityBytes) ||
+	creating := request.Action == protocol.TaskContainerCreate
+	if !(protocol.IsFullContainerID(request.ContainerID) || creating && request.ContainerID == protocol.ContainerCreateTargetKey(request.CreateSHA256)) || !validText(request.TaskID, taskstate.MaxIdentityBytes) ||
 		!validText(request.NodeID, taskstate.MaxIdentityBytes) || !validText(request.IdempotencyKey, taskstate.MaxIdempotencyKeyBytes) {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
@@ -417,8 +437,21 @@ func requestIdentity(request Request) (taskstate.Identity, error) {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
 	intent := protocol.TaskIntent{Action: request.Action, ContainerID: request.ContainerID,
-		NewName: request.NewName, DeleteConfirmed: request.DeleteConfirmed, Rebuild: request.Rebuild}
+		NewName: request.NewName, DeleteConfirmed: request.DeleteConfirmed, Rebuild: request.Rebuild, CreateSHA256: request.CreateSHA256}
 	if err := protocol.ValidateTaskIntent(intent); err != nil {
+		return taskstate.Identity{}, ErrInvalidRequest
+	}
+	if creating {
+		if request.DeleteConfirmationID != "" || request.ConfirmationID != "" || request.NewName != "" || request.DeleteConfirmed || request.Rebuild != nil {
+			return taskstate.Identity{}, ErrInvalidRequest
+		}
+		if request.ContainerCreate != nil {
+			digest, err := protocol.ContainerCreateSpecDigest(*request.ContainerCreate)
+			if err != nil || digest != request.CreateSHA256 {
+				return taskstate.Identity{}, ErrInvalidRequest
+			}
+		}
+	} else if request.CreateSHA256 != "" || request.ContainerCreate != nil {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
 	if request.Action == ActionDelete {
@@ -439,6 +472,119 @@ func requestIdentity(request Request) (taskstate.Identity, error) {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
 	return identity, nil
+}
+
+func (e *Executor) executeContainerCreate(ctx context.Context, request Request) (taskjournal.Snapshot, error) {
+	engine, ok := e.engine.(ContainerCreateEngine)
+	if !ok {
+		return e.finishFailed(ctx, request.TaskID, "create_unavailable")
+	}
+	if request.ContainerCreate == nil {
+		return e.finishFailed(ctx, request.TaskID, "missing_create_spec")
+	}
+	digest, err := protocol.ContainerCreateSpecDigest(*request.ContainerCreate)
+	if err != nil || digest != request.CreateSHA256 {
+		return e.finishFailed(ctx, request.TaskID, "invalid_create_spec")
+	}
+	// Query Docker by the task's private labels before issuing a write. This
+	// protects the one-time create from duplicate delivery and supports recovery
+	// when the daemon accepted a request but the response was lost.
+	findCtx, findCancel := context.WithTimeout(ctx, e.verificationTimeout)
+	existing, findErr := engine.FindCreatedContainers(findCtx, request.TaskID, digest)
+	findCancel()
+	if findErr != nil {
+		return e.markUnknown(ctx, request.TaskID, errors.Join(ErrOutcomeUnknown, findErr))
+	}
+	if len(existing) != 0 {
+		if len(existing) == 1 && validCreatedContainer(existing[0], request.TaskID, digest) {
+			return e.finishCreateSucceeded(ctx, request.TaskID, existing[0].ID)
+		}
+		return e.markUnknown(ctx, request.TaskID, ErrOutcomeUnknown)
+	}
+	bootCtx, bootCancel := context.WithTimeout(ctx, e.verificationTimeout)
+	bootID, bootErr := e.bootIDSource(bootCtx)
+	bootCancel()
+	if bootErr != nil || !bootIDPattern.MatchString(bootID) {
+		return e.markUnknown(ctx, request.TaskID, ErrBootIDUnavailable)
+	}
+	startedAt := time.Now().UTC().Format(startedAtLayout)
+	baseline := taskjournal.ExecutionBaseline{TargetID: request.ContainerID, Action: string(request.Action), HostBootID: bootID, StartedAt: startedAt}
+	baselineCtx, baselineCancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	baselineErr := e.journal.PrepareMutation(baselineCtx, request.TaskID, baseline)
+	baselineCancel()
+	if baselineErr != nil {
+		return e.markUnknown(ctx, request.TaskID, errors.Join(ErrBaselinePersistence, baselineErr))
+	}
+	operationCtx, operationCancel := context.WithTimeout(ctx, e.operationTimeout)
+	created, createErr := engine.CreateContainer(operationCtx, *request.ContainerCreate, request.TaskID, digest)
+	operationCancel()
+	if createErr == nil && validCreatedContainer(created, request.TaskID, digest) {
+		return e.finishCreateSucceeded(context.WithoutCancel(ctx), request.TaskID, created.ID)
+	}
+	// A fresh labeled inventory decides whether a create call with an uncertain
+	// response took effect. A missing payload or rejected request cannot be
+	// reported as success, and ambiguous results stay unknown for review.
+	verifyCtx, verifyCancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	observed, verifyErr := engine.FindCreatedContainers(verifyCtx, request.TaskID, digest)
+	verifyCancel()
+	if verifyErr != nil {
+		return e.markUnknown(context.WithoutCancel(ctx), request.TaskID, ErrOutcomeUnknown)
+	}
+	if len(observed) == 1 && validCreatedContainer(observed[0], request.TaskID, digest) {
+		return e.finishCreateSucceeded(context.WithoutCancel(ctx), request.TaskID, observed[0].ID)
+	}
+	if len(observed) == 0 && createErr != nil {
+		return e.finishFailed(context.WithoutCancel(ctx), request.TaskID, "create_failed")
+	}
+	return e.markUnknown(context.WithoutCancel(ctx), request.TaskID, ErrOutcomeUnknown)
+}
+
+func (e *Executor) reconcileContainerCreate(ctx context.Context, task taskjournal.Snapshot) (taskjournal.Snapshot, error) {
+	if ctx == nil || task.Status != taskstate.Unknown || task.ExecutionPhase != taskjournal.ExecutionPhaseMutationMayHaveStarted || task.Baseline == nil || task.Baseline.TargetID != task.TargetID || task.Baseline.Action != task.Action {
+		return task, errors.Join(ErrOutcomeUnknown, ErrBaselineUnverifiable)
+	}
+	const prefix = "container-create:"
+	if !strings.HasPrefix(task.TargetID, prefix) || len(task.TargetID) != len(prefix)+64 {
+		return task, errors.Join(ErrOutcomeUnknown, ErrBaselineUnverifiable)
+	}
+	digest := strings.TrimPrefix(task.TargetID, prefix)
+	engine, ok := e.engine.(ContainerCreateEngine)
+	if !ok {
+		return task, ErrOutcomeUnknown
+	}
+	findCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	created, err := engine.FindCreatedContainers(findCtx, task.TaskID, digest)
+	cancel()
+	if err != nil || len(created) != 1 || !validCreatedContainer(created[0], task.TaskID, digest) {
+		return task, ErrOutcomeUnknown
+	}
+	writeCtx, writeCancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	finishErr := e.journal.Finish(writeCtx, task.TaskID, taskstate.Succeeded, taskstate.Evidence{
+		ExecutionAttempted: task.Evidence.ExecutionAttempted, ExecutionCompleted: true, PostconditionVerified: true,
+		ActualResultConfirmed: true,
+	}, taskjournal.Result{Code: taskjournal.ResultVerified, ObservedState: "created", ResourceRevision: created[0].ID})
+	writeCancel()
+	return e.readAfterFinish(ctx, task.TaskID, finishErr)
+}
+
+func validCreatedContainer(container Container, taskID, digest string) bool {
+	return protocol.IsFullContainerID(container.ID) && container.CreateTaskID == taskID && container.CreateDigest == digest
+}
+
+func (e *Executor) finishCreateSucceeded(ctx context.Context, taskID, containerID string) (taskjournal.Snapshot, error) {
+	if !protocol.IsFullContainerID(containerID) {
+		return e.markUnknown(ctx, taskID, ErrTargetMismatch)
+	}
+	return e.finishSucceededWithRevision(ctx, taskID, "created", containerID)
+}
+
+func (e *Executor) finishSucceededWithRevision(ctx context.Context, taskID, observedState, revision string) (taskjournal.Snapshot, error) {
+	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), e.verificationTimeout)
+	err := e.journal.Finish(finishCtx, taskID, taskstate.Succeeded, taskstate.Evidence{
+		ExecutionAttempted: true, ExecutionCompleted: true, PostconditionVerified: true, ActualResultConfirmed: true,
+	}, taskjournal.Result{Code: taskjournal.ResultVerified, ObservedState: observedState, ResourceRevision: revision})
+	cancel()
+	return e.readAfterFinish(ctx, taskID, err)
 }
 
 func validText(value string, maximum int) bool {

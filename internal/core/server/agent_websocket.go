@@ -271,7 +271,9 @@ func (s *Server) agentOfflineSweeper() {
 		case <-s.agentContext.Done():
 			return
 		case <-ticker.C:
-			s.expireImageCredentials(s.now())
+			now := s.now()
+			s.expireImageCredentials(now)
+			s.expireContainerCreateSpecs(now)
 			s.expireAgentLeases(s.agentContext)
 		}
 	}
@@ -417,6 +419,9 @@ func (s *Server) closeAgentConnection(agentID string, expectedGeneration uint64)
 		closed = connection
 	}
 	s.agentConnectionsMu.Unlock()
+	if closed != nil {
+		s.discardContainerCreateSpecsForSession(closed.nodeID, closed.generation)
+	}
 	if closed != nil && s.terminals != nil {
 		s.terminals.closeAgent(s, closed.agentID, closed.generation, "Agent disconnected")
 	}
@@ -430,6 +435,9 @@ func (s *Server) detachAgentConnection(agentID string, expectedGeneration uint64
 		detached = connection
 	}
 	s.agentConnectionsMu.Unlock()
+	if detached != nil {
+		s.discardContainerCreateSpecsForSession(detached.nodeID, detached.generation)
+	}
 	if detached != nil && s.terminals != nil {
 		s.terminals.closeAgent(s, detached.agentID, detached.generation, "Agent disconnected")
 	}
@@ -446,6 +454,7 @@ func (s *Server) installAgentConnection(connection *agentConnection, agentID str
 	s.agentConnectionsMu.Unlock()
 	if old != nil {
 		old.close()
+		s.discardContainerCreateSpecsForSession(old.nodeID, old.generation)
 		if s.terminals != nil {
 			s.terminals.closeAgent(s, old.agentID, old.generation, "Agent reconnected")
 		}

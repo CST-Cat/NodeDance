@@ -352,6 +352,7 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 	if ctx == nil {
 		return protocol.TaskReport{}, protocol.ErrInvalidTaskMessage
 	}
+	defer protocol.ClearContainerCreateSpec(dispatch.ContainerCreate)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if !r.started {
@@ -417,6 +418,14 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 			credentials := *dispatch.RegistryAuth
 			copyOfDispatch.RegistryAuth = &credentials
 		}
+		if dispatch.ContainerCreate != nil {
+			createSpec := *dispatch.ContainerCreate
+			createSpec.Command = append([]string(nil), dispatch.ContainerCreate.Command...)
+			createSpec.Environment = append([]string(nil), dispatch.ContainerCreate.Environment...)
+			createSpec.Ports = append([]protocol.ContainerCreatePort(nil), dispatch.ContainerCreate.Ports...)
+			createSpec.Mounts = append([]protocol.ContainerCreateMount(nil), dispatch.ContainerCreate.Mounts...)
+			copyOfDispatch.ContainerCreate = &createSpec
+		}
 		select {
 		case r.work <- taskJob{taskID: dispatch.TaskID, dispatch: &copyOfDispatch}:
 		default:
@@ -424,6 +433,10 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 			if copyOfDispatch.RegistryAuth != nil {
 				copyOfDispatch.RegistryAuth.Username, copyOfDispatch.RegistryAuth.Password = "", ""
 			}
+			if copyOfDispatch.FileContent != nil {
+				clear(copyOfDispatch.FileContent.Content)
+			}
+			clearRunnerContainerCreateSpec(copyOfDispatch.ContainerCreate)
 			return protocol.TaskReport{}, ErrCapacityExceeded
 		}
 	}
@@ -761,6 +774,7 @@ func (r *Runner) worker() {
 
 func (r *Runner) runJob(job taskJob) {
 	if job.dispatch != nil {
+		defer clearRunnerContainerCreateSpec(job.dispatch.ContainerCreate)
 		defer func() {
 			if job.dispatch.FileContent != nil {
 				clear(job.dispatch.FileContent.Content)
@@ -826,7 +840,8 @@ func (r *Runner) runJob(job taskJob) {
 			TaskID: job.dispatch.TaskID, NodeID: job.dispatch.NodeID, IdempotencyKey: job.dispatch.IdempotencyKey,
 			Action: job.dispatch.Intent.Action, ContainerID: job.dispatch.TargetID,
 			NewName: job.dispatch.Intent.NewName, DeleteConfirmed: job.dispatch.Intent.DeleteConfirmed,
-			Rebuild: job.dispatch.Intent.Rebuild,
+			Rebuild: job.dispatch.Intent.Rebuild, CreateSHA256: job.dispatch.Intent.CreateSHA256,
+			ContainerCreate: job.dispatch.ContainerCreate,
 		}
 		if request.Action == protocol.TaskRebuildCleanup {
 			request.ConfirmationID = request.ContainerID
@@ -846,6 +861,10 @@ func (r *Runner) runJob(job taskJob) {
 	r.mu.Lock()
 	delete(r.activeTasks, job.taskID)
 	r.mu.Unlock()
+}
+
+func clearRunnerContainerCreateSpec(spec *protocol.ContainerCreateSpec) {
+	protocol.ClearContainerCreateSpec(spec)
 }
 
 func isImageAction(action protocol.TaskAction) bool {

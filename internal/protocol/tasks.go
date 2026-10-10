@@ -31,11 +31,14 @@ const (
 	TypeContainerRebuildPlanRequest  = "container_rebuild_plan_request"
 	TypeContainerRebuildPlanResponse = "container_rebuild_plan_response"
 
-	TaskSnapshotPageSize = 32
-	MaxTaskSnapshotTasks = 10000
-	MaxTaskSnapshotBytes = 4 << 20
-	MaxTaskPayloadBytes  = 768 << 10
-	MaxComposeFileBytes  = 128 << 10
+	TaskSnapshotPageSize     = 32
+	MaxTaskSnapshotTasks     = 10000
+	MaxTaskSnapshotBytes     = 4 << 20
+	MaxTaskPayloadBytes      = 768 << 10
+	MaxComposeFileBytes      = 128 << 10
+	MaxContainerCreateBytes  = 64 << 10
+	ContainerCreateTaskLabel = "io.nodedance.create.task_id"
+	ContainerCreateHashLabel = "io.nodedance.create.request_sha256"
 )
 
 var (
@@ -43,6 +46,8 @@ var (
 	fullContainerID       = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	containerName         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$`)
 	composeContentHash    = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	containerCreateHash   = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	environmentKey        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 )
 
 // TaskAction and TaskIntent are the single canonical safe request representation
@@ -50,29 +55,81 @@ var (
 type TaskAction string
 
 const (
-	TaskStart          TaskAction = "start"
-	TaskStop           TaskAction = "stop"
-	TaskRestart        TaskAction = "restart"
-	TaskPause          TaskAction = "pause"
-	TaskResume         TaskAction = "resume"
-	TaskDelete         TaskAction = "delete"
-	TaskRename         TaskAction = "rename"
-	TaskImagePull      TaskAction = "image_pull"
-	TaskImageDelete    TaskAction = "image_delete"
-	TaskRebuild        TaskAction = "rebuild"
-	TaskRebuildCleanup TaskAction = "rebuild_cleanup"
-	TaskComposeStart   TaskAction = "compose_start"
-	TaskComposeStop    TaskAction = "compose_stop"
-	TaskComposeRestart TaskAction = "compose_restart"
-	TaskComposeDeploy  TaskAction = "compose_deploy"
-	TaskComposeSave    TaskAction = "compose_config_save"
-	TaskFileMkdir      TaskAction = "file_mkdir"
-	TaskFileRename     TaskAction = "file_rename"
-	TaskFileDelete     TaskAction = "file_delete"
-	TaskFileSaveText   TaskAction = "file_save_text"
-	TaskFileUpload     TaskAction = "file_upload"
-	TaskAgentDeploy    TaskAction = "agent_deploy"
+	TaskStart           TaskAction = "start"
+	TaskStop            TaskAction = "stop"
+	TaskRestart         TaskAction = "restart"
+	TaskPause           TaskAction = "pause"
+	TaskResume          TaskAction = "resume"
+	TaskDelete          TaskAction = "delete"
+	TaskRename          TaskAction = "rename"
+	TaskImagePull       TaskAction = "image_pull"
+	TaskImageDelete     TaskAction = "image_delete"
+	TaskRebuild         TaskAction = "rebuild"
+	TaskRebuildCleanup  TaskAction = "rebuild_cleanup"
+	TaskComposeStart    TaskAction = "compose_start"
+	TaskComposeStop     TaskAction = "compose_stop"
+	TaskComposeRestart  TaskAction = "compose_restart"
+	TaskComposeDeploy   TaskAction = "compose_deploy"
+	TaskComposeSave     TaskAction = "compose_config_save"
+	TaskFileMkdir       TaskAction = "file_mkdir"
+	TaskFileRename      TaskAction = "file_rename"
+	TaskFileDelete      TaskAction = "file_delete"
+	TaskFileSaveText    TaskAction = "file_save_text"
+	TaskFileUpload      TaskAction = "file_upload"
+	TaskAgentDeploy     TaskAction = "agent_deploy"
+	TaskContainerCreate TaskAction = "container_create"
 )
+
+// ContainerCreateSpec is delivered only once in TaskDispatch. It is excluded
+// from TaskIntent and both durable task journals; only its digest is persisted.
+type ContainerCreateSpec struct {
+	Image          string                 `json:"image"`
+	Name           string                 `json:"name"`
+	Command        []string               `json:"command,omitempty"`
+	Environment    []string               `json:"environment,omitempty"`
+	Ports          []ContainerCreatePort  `json:"ports,omitempty"`
+	Mounts         []ContainerCreateMount `json:"mounts,omitempty"`
+	Network        string                 `json:"network,omitempty"`
+	RestartPolicy  string                 `json:"restartPolicy"`
+	RestartRetries int                    `json:"restartRetries,omitempty"`
+}
+
+type ContainerCreatePort struct {
+	ContainerPort int    `json:"containerPort"`
+	Protocol      string `json:"protocol"`
+	HostIP        string `json:"hostIp,omitempty"`
+	HostPort      string `json:"hostPort,omitempty"`
+}
+
+type ContainerCreateMount struct {
+	Type     string `json:"type"`
+	Source   string `json:"source,omitempty"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"readOnly,omitempty"`
+}
+
+// ClearContainerCreateSpec best-effort clears the in-memory, one-use task
+// payload after its transport or execution lifetime ends.
+func ClearContainerCreateSpec(spec *ContainerCreateSpec) {
+	if spec == nil {
+		return
+	}
+	for index := range spec.Command {
+		spec.Command[index] = ""
+	}
+	for index := range spec.Environment {
+		spec.Environment[index] = ""
+	}
+	for index := range spec.Mounts {
+		spec.Mounts[index].Source = ""
+		spec.Mounts[index].Target = ""
+	}
+	clear(spec.Command)
+	clear(spec.Environment)
+	clear(spec.Ports)
+	clear(spec.Mounts)
+	spec.Image, spec.Name, spec.Network, spec.RestartPolicy = "", "", "", ""
+}
 
 // ComposeTaskSpec identifies a project from Docker's Compose labels. File
 // content is kept out of the durable task intent and is sent only once in the
@@ -171,6 +228,7 @@ type TaskIntent struct {
 	Compose         *ComposeTaskSpec     `json:"compose,omitempty"`
 	File            *FileTaskSpec        `json:"file,omitempty"`
 	AgentDeploy     *AgentDeployTaskSpec `json:"agent_deploy,omitempty"`
+	CreateSHA256    string               `json:"create_sha256,omitempty"`
 }
 
 // CanonicalTaskIntent returns the exact canonical JSON used in the task
@@ -191,12 +249,19 @@ func CanonicalTaskIntent(intent TaskIntent) ([]byte, error) {
 }
 
 func ValidateTaskIntent(intent TaskIntent) error {
+	if intent.Action != TaskContainerCreate && intent.CreateSHA256 != "" {
+		return ErrInvalidTaskMessage
+	}
 	if intent.Action != TaskAgentDeploy && intent.AgentDeploy != nil {
 		return ErrInvalidTaskMessage
 	}
 	if IsFileTaskAction(intent.Action) {
 		if !validFileTaskSpec(intent) {
 			return fmt.Errorf("%w: file target or operation metadata is invalid", ErrInvalidTaskMessage)
+		}
+	} else if intent.Action == TaskContainerCreate {
+		if !validContainerCreateIntent(intent) {
+			return fmt.Errorf("%w: container create target or request digest is invalid", ErrInvalidTaskMessage)
 		}
 	} else if intent.Action == TaskAgentDeploy {
 		if !validAgentDeployTaskSpec(intent) {
@@ -274,7 +339,124 @@ func ValidateTaskIntent(intent TaskIntent) error {
 		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil || intent.File != nil {
 			return ErrInvalidTaskMessage
 		}
+	case TaskContainerCreate:
+		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil || intent.File != nil || intent.AgentDeploy != nil {
+			return ErrInvalidTaskMessage
+		}
 	default:
+		return ErrInvalidTaskMessage
+	}
+	return nil
+}
+
+func validContainerCreateIntent(intent TaskIntent) bool {
+	return containerCreateHash.MatchString(intent.CreateSHA256) && intent.ContainerID == ContainerCreateTargetKey(intent.CreateSHA256)
+}
+
+func ContainerCreateTargetKey(digest string) string { return "container-create:" + digest }
+
+func ContainerCreateSpecDigest(spec ContainerCreateSpec) (string, error) {
+	if err := ValidateContainerCreateSpec(spec); err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(spec)
+	if err != nil {
+		return "", fmt.Errorf("encode container create request: %w", err)
+	}
+	defer clear(encoded)
+	canonical, err := taskstate.CanonicalJSON(encoded)
+	defer clear(canonical)
+	if err != nil || len(canonical) > MaxContainerCreateBytes {
+		return "", ErrInvalidTaskMessage
+	}
+	digest := sha256.Sum256(canonical)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func ValidateContainerCreateSpec(spec ContainerCreateSpec) error {
+	if !validImageReference(spec.Image) || !containerName.MatchString(spec.Name) || len(spec.Command) > 128 || len(spec.Environment) > 256 || len(spec.Ports) > 128 || len(spec.Mounts) > 64 ||
+		(spec.Network != "" && spec.Network != "host" && !containerName.MatchString(spec.Network)) ||
+		(spec.RestartPolicy != "no" && spec.RestartPolicy != "always" && spec.RestartPolicy != "unless-stopped" && spec.RestartPolicy != "on-failure") ||
+		spec.RestartRetries < 0 || spec.RestartRetries > 1000 || (spec.RestartPolicy != "on-failure" && spec.RestartRetries != 0) {
+		return ErrInvalidTaskMessage
+	}
+	total := 0
+	for _, argument := range spec.Command {
+		if len(argument) > 4096 || strings.ContainsRune(argument, '\x00') {
+			return ErrInvalidTaskMessage
+		}
+		total += len(argument)
+	}
+	seenEnvironment := make(map[string]struct{}, len(spec.Environment))
+	for _, entry := range spec.Environment {
+		if len(entry) > 8192 || strings.ContainsRune(entry, '\x00') {
+			return ErrInvalidTaskMessage
+		}
+		key, _, ok := strings.Cut(entry, "=")
+		if !ok || !environmentKey.MatchString(key) {
+			return ErrInvalidTaskMessage
+		}
+		if _, exists := seenEnvironment[key]; exists {
+			return ErrInvalidTaskMessage
+		}
+		seenEnvironment[key] = struct{}{}
+		total += len(entry)
+	}
+	seenPorts := make(map[string]struct{}, len(spec.Ports))
+	for _, port := range spec.Ports {
+		if port.ContainerPort < 1 || port.ContainerPort > 65535 || (port.Protocol != "tcp" && port.Protocol != "udp") || spec.Network == "host" && (port.HostIP != "" || port.HostPort != "") {
+			return ErrInvalidTaskMessage
+		}
+		if port.HostIP != "" {
+			address, err := netip.ParseAddr(port.HostIP)
+			if err != nil || address.Zone() != "" {
+				return ErrInvalidTaskMessage
+			}
+		}
+		if port.HostPort != "" {
+			value, err := strconv.Atoi(port.HostPort)
+			if err != nil || value < 1 || value > 65535 || strconv.Itoa(value) != port.HostPort {
+				return ErrInvalidTaskMessage
+			}
+		}
+		key := fmt.Sprintf("%d/%s@%s:%s", port.ContainerPort, port.Protocol, port.HostIP, port.HostPort)
+		if _, exists := seenPorts[key]; exists {
+			return ErrInvalidTaskMessage
+		}
+		seenPorts[key] = struct{}{}
+	}
+	seenTargets := make(map[string]struct{}, len(spec.Mounts))
+	for _, mount := range spec.Mounts {
+		if mount.Target == "" || len(mount.Target) > 4096 || !strings.HasPrefix(mount.Target, "/") || path.Clean(mount.Target) != mount.Target || mount.Target == "/" || strings.ContainsRune(mount.Target, '\x00') {
+			return ErrInvalidTaskMessage
+		}
+		if _, exists := seenTargets[mount.Target]; exists {
+			return ErrInvalidTaskMessage
+		}
+		seenTargets[mount.Target] = struct{}{}
+		switch mount.Type {
+		case "bind":
+			if mount.Source == "" || len(mount.Source) > 4096 || !strings.HasPrefix(mount.Source, "/") || path.Clean(mount.Source) != mount.Source || strings.ContainsRune(mount.Source, '\x00') {
+				return ErrInvalidTaskMessage
+			}
+		case "volume":
+			if mount.Source != "" && !containerName.MatchString(mount.Source) {
+				return ErrInvalidTaskMessage
+			}
+		default:
+			return ErrInvalidTaskMessage
+		}
+		total += len(mount.Source) + len(mount.Target)
+	}
+	if total > MaxContainerCreateBytes {
+		return ErrInvalidTaskMessage
+	}
+	encoded, err := json.Marshal(spec)
+	if err != nil {
+		return ErrInvalidTaskMessage
+	}
+	defer clear(encoded)
+	if len(encoded) > MaxContainerCreateBytes {
 		return ErrInvalidTaskMessage
 	}
 	return nil
@@ -472,6 +654,8 @@ func TaskIdentity(taskID, nodeID, idempotencyKey string, intent TaskIntent) (tas
 		resourceKey = "filesystem-path:" + intent.ContainerID
 	} else if intent.Action == TaskAgentDeploy {
 		resourceKey = "agent-deployment:" + intent.AgentDeploy.PeerIdentity
+	} else if intent.Action == TaskContainerCreate {
+		resourceKey = "docker-container-create:" + intent.CreateSHA256
 	}
 	return taskstate.Identity{
 		TaskID: taskID, NodeID: nodeID, IdempotencyKey: idempotencyKey,
@@ -573,6 +757,9 @@ type TaskDispatch struct {
 	// FileContent is a one-delivery UTF-8 text body. Uploads use the existing
 	// bounded file chunk channel and never place file bytes in a task journal.
 	FileContent *FileContent `json:"fileContent,omitempty"`
+	// ContainerCreate is a single-delivery specification. Only its digest is
+	// persisted in the task intent and Agent journal.
+	ContainerCreate *ContainerCreateSpec `json:"containerCreate,omitempty"`
 }
 
 type ComposeContent struct {
@@ -736,6 +923,18 @@ func ValidateTaskDispatch(envelope Envelope, dispatch TaskDispatch, nodeID, jour
 	} else if dispatch.Intent.Action == TaskFileSaveText {
 		// Missing one-use content is handled as a failed task by the Agent.
 	}
+	if dispatch.ContainerCreate != nil {
+		if dispatch.Intent.Action != TaskContainerCreate {
+			return fmt.Errorf("%w: container create payload is invalid for this dispatch", ErrInvalidTaskMessage)
+		}
+		createDigest, err := ContainerCreateSpecDigest(*dispatch.ContainerCreate)
+		if err != nil || createDigest != dispatch.Intent.CreateSHA256 {
+			return fmt.Errorf("%w: container create payload digest does not match the task", ErrInvalidTaskMessage)
+		}
+	} else if dispatch.Intent.Action == TaskContainerCreate {
+		// The Core keeps this specification only in memory. The Agent records a
+		// failed task if the one-use payload is absent.
+	}
 	digest, err := ParseDigest(dispatch.RequestDigest)
 	if err != nil {
 		return err
@@ -861,11 +1060,16 @@ func ValidateTaskReconcile(envelope Envelope, request TaskReconcileRequest, node
 
 func validTaskIdentityFields(taskID, nodeID, journalID, targetID, key string) bool {
 	if taskID == "" || len(taskID) > taskstate.MaxIdentityBytes || nodeID == "" || len(nodeID) > taskstate.MaxIdentityBytes ||
-		journalID == "" || len(journalID) != 64 || !IsFullContainerID(targetID) || key == "" || len(key) > taskstate.MaxIdempotencyKeyBytes {
+		journalID == "" || len(journalID) != 64 || !(IsFullContainerID(targetID) || validContainerCreateTarget(targetID)) || key == "" || len(key) > taskstate.MaxIdempotencyKeyBytes {
 		return false
 	}
 	decoded, err := hex.DecodeString(journalID)
 	return err == nil && len(decoded) == sha256.Size && hex.EncodeToString(decoded) == journalID
+}
+
+func validContainerCreateTarget(targetID string) bool {
+	const prefix = "container-create:"
+	return strings.HasPrefix(targetID, prefix) && containerCreateHash.MatchString(strings.TrimPrefix(targetID, prefix))
 }
 
 func validTaskStatus(status taskstate.Status) bool {

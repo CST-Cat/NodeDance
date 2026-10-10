@@ -69,6 +69,9 @@ func RequestDigest(identity Identity) ([sha256.Size]byte, error) {
 		!validIdentifier(identity.ResourceKey) || !validAction(identity.Action) {
 		return zero, fmt.Errorf("%w: invalid identity field", ErrInvalidRequest)
 	}
+	if identity.Action == "container_create" && !validContainerCreateIdentity(identity) {
+		return zero, fmt.Errorf("%w: invalid container create identity", ErrInvalidRequest)
+	}
 	payload, err := CanonicalJSON(identity.Payload)
 	if err != nil {
 		return zero, fmt.Errorf("%w: payload: %v", ErrInvalidRequest, err)
@@ -89,6 +92,30 @@ func RequestDigest(identity Identity) ([sha256.Size]byte, error) {
 		return zero, fmt.Errorf("%w: encode request identity: %v", ErrInvalidRequest, err)
 	}
 	return sha256.Sum256(canonical), nil
+}
+
+func validContainerCreateIdentity(identity Identity) bool {
+	const targetPrefix = "container-create:"
+	const resourcePrefix = "docker-container-create:"
+	if !strings.HasPrefix(identity.TargetID, targetPrefix) || !strings.HasPrefix(identity.ResourceKey, resourcePrefix) {
+		return false
+	}
+	digest := strings.TrimPrefix(identity.TargetID, targetPrefix)
+	if len(digest) != sha256.Size*2 || identity.ResourceKey != resourcePrefix+digest {
+		return false
+	}
+	for _, value := range digest {
+		if !(value >= '0' && value <= '9' || value >= 'a' && value <= 'f') {
+			return false
+		}
+	}
+	var payload struct {
+		CreateSHA256 string `json:"create_sha256"`
+	}
+	if err := json.Unmarshal(identity.Payload, &payload); err != nil || payload.CreateSHA256 != digest {
+		return false
+	}
+	return true
 }
 
 // CanonicalJSON returns a deterministic JSON encoding of a bounded request

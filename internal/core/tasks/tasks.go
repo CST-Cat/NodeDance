@@ -74,21 +74,22 @@ func SchemaStatements() []string {
 type Action = protocol.TaskAction
 
 const (
-	ActionStart          = protocol.TaskStart
-	ActionStop           = protocol.TaskStop
-	ActionRestart        = protocol.TaskRestart
-	ActionPause          = protocol.TaskPause
-	ActionResume         = protocol.TaskResume
-	ActionDelete         = protocol.TaskDelete
-	ActionRename         = protocol.TaskRename
-	ActionImagePull      = protocol.TaskImagePull
-	ActionImageDelete    = protocol.TaskImageDelete
-	ActionComposeStart   = protocol.TaskComposeStart
-	ActionComposeStop    = protocol.TaskComposeStop
-	ActionComposeRestart = protocol.TaskComposeRestart
-	ActionComposeDeploy  = protocol.TaskComposeDeploy
-	ActionComposeSave    = protocol.TaskComposeSave
-	ActionAgentDeploy    = protocol.TaskAgentDeploy
+	ActionStart           = protocol.TaskStart
+	ActionStop            = protocol.TaskStop
+	ActionRestart         = protocol.TaskRestart
+	ActionPause           = protocol.TaskPause
+	ActionResume          = protocol.TaskResume
+	ActionDelete          = protocol.TaskDelete
+	ActionRename          = protocol.TaskRename
+	ActionImagePull       = protocol.TaskImagePull
+	ActionImageDelete     = protocol.TaskImageDelete
+	ActionComposeStart    = protocol.TaskComposeStart
+	ActionComposeStop     = protocol.TaskComposeStop
+	ActionComposeRestart  = protocol.TaskComposeRestart
+	ActionComposeDeploy   = protocol.TaskComposeDeploy
+	ActionComposeSave     = protocol.TaskComposeSave
+	ActionAgentDeploy     = protocol.TaskAgentDeploy
+	ActionContainerCreate = protocol.TaskContainerCreate
 )
 
 // Intent is the complete allowlisted, non-secret remote container command. No
@@ -336,6 +337,23 @@ func (s *Store) FindLocalByIdempotency(ctx context.Context, key string, intent I
 	}
 	if string(existing) != string(payload) {
 		return Task{}, false, ErrIdempotencyConflict
+	}
+	return task, true, nil
+}
+
+// FindByIdempotency returns any prior Agent task for a node/key pair. Callers
+// use it only to preserve retries when a bounded one-use payload cache is full;
+// EnqueueWithGate remains the authority that validates the request digest.
+func (s *Store) FindByIdempotency(ctx context.Context, nodeID, key string) (Task, bool, error) {
+	if ctx == nil || !validTaskIdentifier(nodeID) || key == "" || len(key) > taskstate.MaxIdempotencyKeyBytes {
+		return Task{}, false, ErrInvalidRequest
+	}
+	task, err := loadByIdempotency(ctx, s.db, nodeID, key)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Task{}, false, nil
+	}
+	if err != nil {
+		return Task{}, false, err
 	}
 	return task, true, nil
 }
@@ -1835,6 +1853,8 @@ func validateIntent(intent Intent, composeManaged bool) (string, []byte, string,
 		resourceKey = "filesystem-path:" + intent.ContainerID
 	} else if intent.Action == ActionAgentDeploy {
 		resourceKey = "agent-deployment:" + intent.AgentDeploy.PeerIdentity
+	} else if intent.Action == ActionContainerCreate {
+		resourceKey = "docker-container-create:" + intent.CreateSHA256
 	}
 	canonical, err := protocol.CanonicalTaskIntent(intent)
 	if err != nil {

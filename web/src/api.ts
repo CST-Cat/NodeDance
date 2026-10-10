@@ -317,7 +317,7 @@ export interface ContainerTask {
   taskId: string
   nodeId: string
   targetId: string
-  action: 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'delete' | 'rename' | 'image_pull' | 'image_delete' | 'rebuild' | 'rebuild_cleanup' | 'compose_start' | 'compose_stop' | 'compose_restart' | 'compose_deploy' | 'compose_config_save'
+  action: 'start' | 'stop' | 'restart' | 'pause' | 'resume' | 'delete' | 'rename' | 'container_create' | 'image_pull' | 'image_delete' | 'rebuild' | 'rebuild_cleanup' | 'compose_start' | 'compose_stop' | 'compose_restart' | 'compose_deploy' | 'compose_config_save'
   status: 'queued' | 'running' | 'succeeded' | 'failed' | 'timed_out' | 'canceled' | 'unknown'
   deliveryState: string
   reconciliationRequired: boolean
@@ -376,6 +376,32 @@ export interface CreateContainerTaskPayload {
   deleteConfirmationId?: string
   rebuild?: RebuildSpec
   confirmationId?: string
+}
+
+export interface ContainerCreatePort {
+  containerPort: number
+  protocol: 'tcp' | 'udp'
+  hostIp?: string
+  hostPort?: string
+}
+
+export interface ContainerCreateMount {
+  type: 'bind' | 'volume'
+  source?: string
+  target: string
+  readOnly?: boolean
+}
+
+export interface ContainerCreateSpec {
+  image: string
+  name: string
+  command?: string[]
+  environment?: string[]
+  ports?: ContainerCreatePort[]
+  mounts?: ContainerCreateMount[]
+  network?: string
+  restartPolicy: 'no' | 'always' | 'unless-stopped' | 'on-failure'
+  restartRetries?: number
 }
 
 export interface TerminalAuthorization {
@@ -611,6 +637,10 @@ export const api = {
   createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload, idempotencyKey: string) =>
     request<{ taskId: string; status: ContainerTask['status'] }>(
       `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,
+      { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
+  createContainerCreateTask: (nodeId: string, payload: ContainerCreateSpec, idempotencyKey: string) =>
+    request<{ taskId: string; status: ContainerTask['status'] }>(
+      `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/create`,
       { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
   nodeFiles: (nodeId: string, path = '/') => request<{ entries: NodeFileEntry[]; path: string }>(
     `/api/v1/nodes/${encodeURIComponent(nodeId)}/files?path=${encodeURIComponent(path)}`),

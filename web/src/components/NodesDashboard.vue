@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { api, type AgentNode, type AgentNodesResponse, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainer, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
+import { api, type AgentNode, type AgentNodesResponse, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainer, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import NodeDetail from './NodeDetail.vue'
 import VpsCard from './VpsCard.vue'
@@ -291,6 +291,21 @@ function submitCardContainerAction(payload: { node: AgentNode; record: DockerInv
 function submitDetailContainerAction(payload: { nodeId: string; containerId: string; task: CreateContainerTaskPayload }) {
   void submitContainerAction(payload.nodeId, payload.containerId, payload.task.action, payload.task)
 }
+async function submitContainerCreateTask(payload: { nodeId: string; spec: ContainerCreateSpec }) {
+  const { nodeId, spec } = payload
+  const node = nodes.value.find((item) => item.nodeId === nodeId), inventory = dockerViews.value[nodeId]
+  const key = `${nodeId}:container-create`
+  if (!node || !inventory || inventory.dockerAvailability !== 'available' || !node.agentId || !nodeIsOnline(node) || dockerIsStale(inventory) || taskSubmitting.value[key]) return
+  taskSubmitting.value = { ...taskSubmitting.value, [key]: true }
+  const errors = { ...taskErrors.value }; delete errors[key]; taskErrors.value = errors
+  try {
+    const accepted = await api.createContainerCreateTask(nodeId, spec, crypto.randomUUID())
+    const current = await api.nodeTask(nodeId, accepted.taskId)
+    taskViews.value = { ...taskViews.value, [current.taskId]: current }
+  } catch (reason) {
+    taskErrors.value = { ...taskErrors.value, [key]: reason instanceof Error ? reason.message : '无法创建容器创建任务。' }
+  } finally { taskSubmitting.value = { ...taskSubmitting.value, [key]: false } }
+}
 onMounted(() => {
   void loadDashboardSettings(); void refreshNodes().catch((reason: unknown) => { busy.value = false; error.value = reason instanceof Error ? reason.message : '无法读取节点列表。' }); connectDashboard()
   refreshTimer = setInterval(() => { void refreshNodes().catch((reason: unknown) => { error.value = reason instanceof Error ? reason.message : '无法刷新节点列表。' }) }, 10_000)
@@ -320,7 +335,7 @@ onBeforeUnmount(() => {
       <section v-for="group in serverCardGroups" :key="group.key" class="vps-card-group" :data-group="group.key"><h2 v-if="group.label" class="vps-group-heading">{{ group.label }}</h2><div class="vps-card-grid"><VpsCard v-for="node in group.nodes" :key="node.nodeId" :node="node" :metrics="views[node.nodeId]" :inventory="dockerViews[node.nodeId]" :node-preference="nodePreference(node)" :container-preferences="nodePreferences[node.nodeId] ?? []" :preference-identities="preferenceIdentities[node.nodeId] ?? {}" :online="nodeIsOnline(node)" :pending="isPendingRegistration(node)" :docker-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : !nodeIsOnline(node)" :preview-limit="dashboardSettings.featuredLimit" :current-time="wallClockNow" :node-reason="nodeReasons[node.nodeId]" :tasks="tasksForNode(node.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" @view="chooseNode" @container-action="submitCardContainerAction"/></div></section>
     </section>
   </section>
-  <NodeDetail v-else :key="selectedNode.nodeId" :node="selectedNode" :metrics="views[selectedNode.nodeId]" :inventory="dockerViews[selectedNode.nodeId]" :preferences="nodePreferences[selectedNode.nodeId] ?? []" :preference-identities="preferenceIdentities[selectedNode.nodeId] ?? {}" :online="nodeIsOnline(selectedNode)" :pending="isPendingRegistration(selectedNode)" :docker-stale="dockerViews[selectedNode.nodeId] ? dockerIsStale(dockerViews[selectedNode.nodeId]) : !nodeIsOnline(selectedNode)" :node-reason="nodeReasons[selectedNode.nodeId]" :tasks="tasksForNode(selectedNode.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" :dashboard-settings="dashboardSettings" :dashboard-settings-saving="dashboardSettingsSaving" :dashboard-settings-message="dashboardSettingsMessage" :dashboard-settings-error="dashboardSettingsError" :current-time="wallClockNow" :initial-section="dashboardSettings.viewMode === 'manage' ? 'docker' : 'overview'" @back="selectedNodeID = ''" @refresh-tasks="(id) => { const node = nodes.find((item) => item.nodeId === id); if (node) void loadTasks(node) }" @preference-saved="acceptSavedPreference" @container-action="submitDetailContainerAction" @settings-change="dashboardSettings = $event" @save-settings="void saveDashboardSettings()"/>
+  <NodeDetail v-else :key="selectedNode.nodeId" :node="selectedNode" :metrics="views[selectedNode.nodeId]" :inventory="dockerViews[selectedNode.nodeId]" :preferences="nodePreferences[selectedNode.nodeId] ?? []" :preference-identities="preferenceIdentities[selectedNode.nodeId] ?? {}" :online="nodeIsOnline(selectedNode)" :pending="isPendingRegistration(selectedNode)" :docker-stale="dockerViews[selectedNode.nodeId] ? dockerIsStale(dockerViews[selectedNode.nodeId]) : !nodeIsOnline(selectedNode)" :node-reason="nodeReasons[selectedNode.nodeId]" :tasks="tasksForNode(selectedNode.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" :dashboard-settings="dashboardSettings" :dashboard-settings-saving="dashboardSettingsSaving" :dashboard-settings-message="dashboardSettingsMessage" :dashboard-settings-error="dashboardSettingsError" :current-time="wallClockNow" :initial-section="dashboardSettings.viewMode === 'manage' ? 'docker' : 'overview'" @back="selectedNodeID = ''" @refresh-tasks="(id) => { const node = nodes.find((item) => item.nodeId === id); if (node) void loadTasks(node) }" @preference-saved="acceptSavedPreference" @container-action="submitDetailContainerAction" @container-create="submitContainerCreateTask" @settings-change="dashboardSettings = $event" @save-settings="void saveDashboardSettings()"/>
 </template>
 
 <style scoped>

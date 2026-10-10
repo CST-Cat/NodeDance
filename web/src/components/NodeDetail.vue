@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { api, type AgentNode, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainerRecord, type DockerInventory, type MetricHistory, type TaskAuditEvent } from '../api'
+import { api, type AgentNode, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainerRecord, type DockerInventory, type MetricHistory, type TaskAuditEvent } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import ContainerRebuildWizard from './ContainerRebuildWizard.vue'
 import ContainerStreams from './ContainerStreams.vue'
@@ -12,6 +12,7 @@ import PreferenceEditor from './PreferenceEditor.vue'
 import TerminalConsole from './TerminalConsole.vue'
 import NodeServiceProbes from './NodeServiceProbes.vue'
 import NodeFiles from './NodeFiles.vue'
+import ContainerCreateForm from './ContainerCreateForm.vue'
 
 const props = defineProps<{
   node: AgentNode
@@ -38,6 +39,7 @@ const emit = defineEmits<{
   refreshTasks: [nodeId: string]
   preferenceSaved: [preference: DashboardPreference]
   containerAction: [payload: { nodeId: string; containerId: string; task: CreateContainerTaskPayload }]
+  containerCreate: [payload: { nodeId: string; spec: ContainerCreateSpec }]
   settingsChange: [settings: DashboardSettings]
   saveSettings: []
 }>()
@@ -71,6 +73,11 @@ const historyResolution = computed(() => historyRange.value === '1y' ? 'hour' : 
 const nodePreference = computed(() => props.preferences.find((item) => item.targetKind === 'node' && item.identity === `node:${props.node.nodeId}`))
 const nodeTitle = computed(() => nodePreference.value?.alias || props.node.displayName)
 const selectedTasks = computed(() => [...props.tasks].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)))
+const createTaskKey = computed(() => `${props.node.nodeId}:container-create`)
+const createTasks = computed(() => selectedTasks.value.filter((task) => task.action === 'container_create').slice(0, 3))
+const canCreateContainers = computed(() => Boolean(props.inventory?.dockerAvailability === 'available' && props.online && props.node.agentId && !props.dockerStale))
+const createSubmitting = computed(() => Boolean(props.taskSubmitting[createTaskKey.value]))
+const createError = computed(() => props.taskErrors[createTaskKey.value] || '')
 const viewMode = settingsField('viewMode')
 const nodeGroupBy = settingsField('nodeGroupBy')
 const nodeSortBy = settingsField('nodeSortBy')
@@ -240,6 +247,10 @@ function submitAction(record: DockerInventory['containers'][number], action: Con
   }
   emit('containerAction', { nodeId: props.node.nodeId, containerId: record.container.id, task: { action } })
 }
+function submitContainerCreate(spec: ContainerCreateSpec) {
+  if (!canCreateContainers.value || createSubmitting.value) return
+  emit('containerCreate', { nodeId: props.node.nodeId, spec })
+}
 function openHostTerminal() { activeTerminal.value = { nodeId: props.node.nodeId, targetKind: 'host', targetLabel: `${nodeTitle.value} · 主机终端` } }
 function openContainerTerminal(record: DockerInventory['containers'][number]) { activeTerminal.value = { nodeId: props.node.nodeId, targetKind: 'container', containerId: record.container.id, targetLabel: `${nodeTitle.value} · ${record.container.name || record.container.id.slice(0, 12)}` } }
 async function loadHistory() {
@@ -344,6 +355,8 @@ onBeforeUnmount(() => {
       <div class="node-terminal-entry"><div><strong>主机终端</strong><small>通过已连接 Agent 打开目标节点的配置 shell。</small></div><button type="button" :disabled="!online" @click="openHostTerminal">打开终端</button></div>
       <section class="docker-panel" aria-labelledby="docker-title" data-testid="docker-inventory">
         <header class="docker-heading"><div><span class="eyebrow">CONTAINER INVENTORY</span><h2 id="docker-title">Docker 容器</h2></div><span v-if="inventory" class="docker-state" :data-available="inventory.dockerAvailability" :data-stale="dockerStale">{{ dockerAvailabilityText(inventory) }}</span></header>
+        <ContainerCreateForm :disabled="!canCreateContainers" :submitting="createSubmitting" :error="createError" @submit="submitContainerCreate" />
+        <section v-if="createTasks.length" class="container-create-results" aria-label="容器创建任务结果"><h3>最近创建任务</h3><article v-for="task in createTasks" :key="task.taskId"><div><strong>{{ taskStatusLabel(task) }}</strong><time :datetime="task.createdAt">{{ new Date(task.createdAt).toLocaleString() }}</time></div><code v-if="task.status === 'succeeded' && task.result.resourceRevision">Container ID：{{ task.result.resourceRevision }}</code><span v-else-if="task.status === 'failed'" class="container-task-error">{{ task.result.code || 'creation_failed' }}</span></article></section>
         <div class="docker-view-controls" aria-label="容器筛选和排序"><label>搜索 <input v-model="containerSearch" type="search" placeholder="名称、镜像、服务或备注" aria-label="搜索容器"></label><label>分组 <select v-model="groupBy"><option value="node">节点</option><option value="compose">Compose 项目</option><option value="state">运行状态</option><option value="none">不分组</option></select></label><label>排序 <select v-model="sortBy"><option value="custom">自定义</option><option value="name">显示名称</option><option value="state">运行状态</option></select></label><button type="button" class="container-action" :disabled="dashboardSettingsSaving" @click="emit('saveSettings')">保存视图</button></div>
         <p v-if="orderError" class="container-task-error" role="alert">{{ orderError }}</p><p v-if="!inventory" class="docker-empty">正在读取此节点的 Docker 状态。</p>
         <p v-else-if="inventory.dockerAvailability === 'unavailable' || inventory.staleReason === 'docker_capability_unavailable'" class="docker-empty">Agent 仍可在线采集主机指标；Docker Engine 当前不可用。{{ dockerStatusReason(inventory) ? `原因：${dockerStatusReason(inventory)}` : '' }}</p>
@@ -383,6 +396,7 @@ onBeforeUnmount(() => {
 .detail-heading .node-detail-note { margin-top:7px; color:#bdcbe0; font-family:inherit; font-size:11px; line-height:1.55; white-space:pre-wrap; }
 .back-button { margin-bottom:12px; }
 .detail-heading-status { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
+.container-create-results { display:grid; gap:6px; margin:8px 0 12px; }.container-create-results h3 { margin:0; color:#a8bdd7; font-size:10px; }.container-create-results article { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border:1px solid rgba(171,196,232,.1); border-radius:7px; padding:8px 10px; background:rgba(18,29,45,.58); }.container-create-results article>div { display:flex; flex-wrap:wrap; align-items:center; gap:9px; }.container-create-results strong,.container-create-results code,.container-create-results time { font-size:9px; overflow-wrap:anywhere; }.container-create-results time { color:#8193aa; }
 .dashboard-tabs { display:flex; gap:6px; overflow-x:auto; margin:0 0 16px; border-bottom:1px solid rgba(171,196,232,.12); padding-bottom:8px; scrollbar-width:thin; }
 .dashboard-tabs button { flex:0 0 auto; min-height:38px; border:1px solid transparent; border-radius:7px; padding:7px 12px; color:#aebbd0; background:transparent; font:inherit; font-size:10px; cursor:pointer; }
 .dashboard-tabs button[aria-current=page] { border-color:rgba(141,201,255,.22); color:#d6ebff; background:rgba(62,119,170,.18); }

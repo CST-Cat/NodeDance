@@ -81,6 +81,8 @@ type Server struct {
 	composeContents            map[string]pendingComposeContent
 	fileContentMu              sync.Mutex
 	fileContents               map[string]pendingFileContent
+	containerCreateMu          sync.Mutex
+	containerCreateSpecs       map[string]pendingContainerCreateSpec
 	imageAuthMu                sync.Mutex
 	imageAuth                  map[string]pendingImageCredential
 	tailscaleResolveMu         sync.Mutex
@@ -225,6 +227,7 @@ func New(version string, options Options) (*Server, error) {
 		imageAuth:                 make(map[string]pendingImageCredential),
 		composeContents:           make(map[string]pendingComposeContent),
 		fileContents:              make(map[string]pendingFileContent),
+		containerCreateSpecs:      make(map[string]pendingContainerCreateSpec),
 		agentOfflineTimeout:       options.AgentOfflineTimeout,
 		agentSweepInterval:        options.AgentSweepInterval,
 		agentConnections:          make(map[string]*agentConnection),
@@ -365,6 +368,7 @@ func (s *Server) Close() error {
 	s.clearAllImageCredentials()
 	s.clearAllComposeContent()
 	s.clearAllFileContent()
+	s.clearAllContainerCreateSpecs()
 	if s.agents != nil {
 		_ = s.agents.MarkAllOffline(context.Background())
 	}

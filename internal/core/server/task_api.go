@@ -6,6 +6,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -64,7 +66,30 @@ type taskAuditEventView struct {
 	OccurredAt string `json:"occurredAt"`
 }
 
+const (
+	containerCreatePayloadLifetime = 10 * time.Minute
+	maxPendingContainerCreateSpecs = 32
+)
+
+type pendingContainerCreateSpec struct {
+	nodeID         string
+	generation     uint64
+	journalID      string
+	idempotencyKey string
+	digest         string
+	content        []byte
+	expires        time.Time
+}
+
 func (s *Server) handleTaskAPI(w http.ResponseWriter, r *http.Request, current *session) bool {
+	if nodeID, ok := containerCreateRoute(r.URL.Path); ok {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return true
+		}
+		s.handleContainerCreateTask(w, r, current, nodeID)
+		return true
+	}
 	if nodeID, containerID, ok := containerActionRoute(r.URL.Path); ok {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -129,7 +154,204 @@ func (s *Server) handleCancelUndeliveredTask(w http.ResponseWriter, r *http.Requ
 	s.clearImageCredentials(taskID)
 	s.clearComposeContent(taskID)
 	s.clearFileContent(taskID)
+	s.clearContainerCreateSpec(taskID)
 	writeJSON(w, http.StatusOK, toTaskView(task))
+}
+
+func (s *Server) handleContainerCreateTask(w http.ResponseWriter, r *http.Request, current *session, nodeID string) {
+	key := r.Header.Get("Idempotency-Key")
+	if key == "" {
+		http.Error(w, "Idempotency-Key is required", http.StatusBadRequest)
+		return
+	}
+	var spec protocol.ContainerCreateSpec
+	defer clearContainerCreateSpec(&spec)
+	if !decodeContainerCreateJSON(w, r, &spec) {
+		return
+	}
+	digest, err := protocol.ContainerCreateSpecDigest(spec)
+	if err != nil {
+		http.Error(w, "invalid container create parameters", http.StatusBadRequest)
+		return
+	}
+	intent := coretasks.Intent{Action: protocol.TaskContainerCreate, ContainerID: protocol.ContainerCreateTargetKey(digest), CreateSHA256: digest}
+	state, view, _, viewErr := s.dockerViewStateForNode(r.Context(), nodeID)
+	var boundJournalID string
+	gate := func(context.Context) (bool, func(), error) {
+		if viewErr != nil {
+			return false, nil, errTaskDockerUnavailable
+		}
+		if !state.Exists {
+			return false, nil, coretasks.ErrNodeNotFound
+		}
+		if state.Status != "online" || !view.AgentOnline || view.DataStale || view.DockerAvailability != "available" || !view.DockerSnapshotFresh {
+			return false, nil, coretasks.ErrNodeOffline
+		}
+		journalID, release, err := s.lockTaskBridgeReadySession(nodeID, state.Generation)
+		if err != nil {
+			return false, nil, err
+		}
+		boundJournalID = journalID
+		return false, release, nil
+	}
+	// Hold the dispatch lock while the task and its non-persistent body are
+	// committed, so a ready Agent cannot claim the task before its parameters
+	// have been staged.
+	_, knownRetry, lookupErr := s.tasks.FindByIdempotency(r.Context(), nodeID, key)
+	if lookupErr != nil {
+		http.Error(w, "task idempotency could not be checked", http.StatusInternalServerError)
+		return
+	}
+	s.containerCreateMu.Lock()
+	s.expireContainerCreateSpecsLocked()
+	if !knownRetry && len(s.containerCreateSpecs) >= maxPendingContainerCreateSpecs {
+		s.containerCreateMu.Unlock()
+		http.Error(w, "container create task queue is full", http.StatusServiceUnavailable)
+		return
+	}
+	result, err := s.tasks.EnqueueWithGate(r.Context(), coretasks.EnqueueRequest{
+		NodeID: nodeID, IdempotencyKey: key, Intent: intent,
+		ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr,
+	}, gate)
+	if err == nil && result.Created && result.Task.Status == taskstate.Queued && result.Task.DeliveryState == "ready" && !result.Task.Evidence.DeliveryCommitted {
+		s.storeContainerCreateSpecLocked(result.Task.TaskID, nodeID, result.Task.AcceptedGeneration, boundJournalID, key, digest, spec)
+	}
+	s.containerCreateMu.Unlock()
+	if err != nil {
+		if errors.Is(err, errTaskDockerUnavailable) {
+			http.Error(w, "Docker inventory unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		s.writeTaskStoreError(w, err)
+		return
+	}
+	if result.Created {
+		s.signalAgentTasks(nodeID)
+	}
+	status := http.StatusAccepted
+	if !result.Created {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, map[string]any{"taskId": result.Task.TaskID, "status": result.Task.Status})
+}
+
+func decodeContainerCreateJSON(w http.ResponseWriter, r *http.Request, target any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, protocol.MaxContainerCreateBytes)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		status := http.StatusBadRequest
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		http.Error(w, "invalid container create request", status)
+		return false
+	}
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		http.Error(w, "invalid container create request", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+func (s *Server) storeContainerCreateSpecLocked(taskID, nodeID string, generation uint64, journalID, idempotencyKey, digest string, spec protocol.ContainerCreateSpec) {
+	encoded, err := json.Marshal(spec)
+	if err != nil {
+		return
+	}
+	if previous, ok := s.containerCreateSpecs[taskID]; ok {
+		clear(previous.content)
+	}
+	s.containerCreateSpecs[taskID] = pendingContainerCreateSpec{nodeID: nodeID, generation: generation, journalID: journalID,
+		idempotencyKey: idempotencyKey, digest: digest, content: encoded,
+		expires: s.now().Add(containerCreatePayloadLifetime)}
+}
+
+func (s *Server) takeContainerCreateSpec(taskID, nodeID string, generation uint64, journalID, digest string) *protocol.ContainerCreateSpec {
+	s.containerCreateMu.Lock()
+	defer s.containerCreateMu.Unlock()
+	s.expireContainerCreateSpecsLocked()
+	entry, ok := s.containerCreateSpecs[taskID]
+	if !ok {
+		return nil
+	}
+	delete(s.containerCreateSpecs, taskID)
+	defer clear(entry.content)
+	if entry.nodeID != nodeID || entry.generation != generation || entry.journalID != journalID || entry.digest != digest || !entry.expires.After(s.now()) {
+		return nil
+	}
+	var spec protocol.ContainerCreateSpec
+	if json.Unmarshal(entry.content, &spec) != nil || protocol.ValidateContainerCreateSpec(spec) != nil {
+		clearContainerCreateSpec(&spec)
+		return nil
+	}
+	return &spec
+}
+
+func (s *Server) expireContainerCreateSpecsLocked() {
+	s.expireContainerCreateSpecsAtLocked(s.now())
+}
+
+func (s *Server) expireContainerCreateSpecs(now time.Time) {
+	s.containerCreateMu.Lock()
+	s.expireContainerCreateSpecsAtLocked(now)
+	s.containerCreateMu.Unlock()
+}
+
+func (s *Server) expireContainerCreateSpecsAtLocked(now time.Time) {
+	for taskID, entry := range s.containerCreateSpecs {
+		if !entry.expires.After(now) {
+			clear(entry.content)
+			delete(s.containerCreateSpecs, taskID)
+		}
+	}
+}
+
+func (s *Server) clearContainerCreateSpec(taskID string) {
+	s.containerCreateMu.Lock()
+	if entry, ok := s.containerCreateSpecs[taskID]; ok {
+		clear(entry.content)
+	}
+	delete(s.containerCreateSpecs, taskID)
+	s.containerCreateMu.Unlock()
+}
+
+func (s *Server) clearAllContainerCreateSpecs() {
+	s.containerCreateMu.Lock()
+	for taskID, entry := range s.containerCreateSpecs {
+		clear(entry.content)
+		delete(s.containerCreateSpecs, taskID)
+	}
+	s.containerCreateMu.Unlock()
+}
+
+func (s *Server) discardContainerCreateSpecsForSession(nodeID string, generation uint64) {
+	if s == nil || nodeID == "" || generation == 0 {
+		return
+	}
+	s.containerCreateMu.Lock()
+	taskIDs := make([]string, 0)
+	for taskID, entry := range s.containerCreateSpecs {
+		if entry.nodeID != nodeID || entry.generation != generation {
+			continue
+		}
+		clear(entry.content)
+		delete(s.containerCreateSpecs, taskID)
+		taskIDs = append(taskIDs, taskID)
+	}
+	s.containerCreateMu.Unlock()
+	for _, taskID := range taskIDs {
+		_, err := s.tasks.CancelUndelivered(context.Background(), nodeID, taskID, sql.NullInt64{}, "unknown")
+		if err != nil && !errors.Is(err, coretasks.ErrNotDelivered) && !errors.Is(err, coretasks.ErrTaskStateConflict) && !errors.Is(err, coretasks.ErrTaskNotFound) {
+			log.Printf("NodeDance could not resolve undelivered container create task %s after Agent disconnect: %v", taskID, err)
+		}
+	}
+}
+
+func clearContainerCreateSpec(spec *protocol.ContainerCreateSpec) {
+	protocol.ClearContainerCreateSpec(spec)
 }
 
 func (s *Server) handleTaskAudit(w http.ResponseWriter, r *http.Request, nodeID, taskID string) {
@@ -358,24 +580,32 @@ func (s *Server) taskBridgeReady(nodeID string, generation uint64) bool {
 // Store.EnqueueWithGate calls this only after its durable idempotency lookup,
 // then holds the pin through new-task commit.
 func (s *Server) lockTaskBridgeReady(nodeID string, generation uint64) (func(), error) {
+	_, release, err := s.lockTaskBridgeReadySession(nodeID, generation)
+	return release, err
+}
+
+// lockTaskBridgeReadySession pins the synchronized Agent session while a new
+// task is committed and any one-use payload is bound to its journal identity.
+func (s *Server) lockTaskBridgeReadySession(nodeID string, generation uint64) (string, func(), error) {
 	s.agentConnectionsMu.Lock()
 	for _, connection := range s.agentConnections {
 		if connection.nodeID != nodeID || connection.generation != generation || !connection.capabilityEnabled(protocol.CapabilityTaskBridge) {
 			continue
 		}
 		connection.taskMu.RLock()
-		if !connection.taskSynced {
+		if !connection.taskSynced || connection.taskJournalID == "" {
 			connection.taskMu.RUnlock()
 			s.agentConnectionsMu.Unlock()
-			return nil, coretasks.ErrJournalNotObserved
+			return "", nil, coretasks.ErrJournalNotObserved
 		}
-		return func() {
+		journalID := connection.taskJournalID
+		return journalID, func() {
 			connection.taskMu.RUnlock()
 			s.agentConnectionsMu.Unlock()
 		}, nil
 	}
 	s.agentConnectionsMu.Unlock()
-	return nil, coretasks.ErrJournalNotObserved
+	return "", nil, coretasks.ErrJournalNotObserved
 }
 
 func (s *Server) writeTaskStoreError(w http.ResponseWriter, err error) {
@@ -419,6 +649,15 @@ func containerActionRoute(path string) (nodeID, containerID string, ok bool) {
 		return "", "", false
 	}
 	return parts[3], parts[5], true
+}
+
+func containerCreateRoute(path string) (nodeID string, ok bool) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 6 || parts[0] != "api" || parts[1] != "v1" || parts[2] != "nodes" ||
+		!validUUID(parts[3]) || parts[4] != "containers" || parts[5] != "create" {
+		return "", false
+	}
+	return parts[3], true
 }
 
 func nodeTaskRoute(path string) (nodeID, taskID string, ok bool) {

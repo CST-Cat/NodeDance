@@ -128,6 +128,7 @@ func (s *Server) acceptAgentTaskSnapshotPage(ctx context.Context, connection *ag
 		if taskstate.IsTerminal(report.Status) {
 			s.clearComposeContent(report.TaskID)
 			s.clearFileContent(report.TaskID)
+			s.clearContainerCreateSpec(report.TaskID)
 		}
 		if report.Status != taskstate.Succeeded {
 			continue
@@ -209,6 +210,7 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 		s.clearImageCredentials(report.TaskID)
 		s.clearComposeContent(report.TaskID)
 		s.clearFileContent(report.TaskID)
+		s.clearContainerCreateSpec(report.TaskID)
 		delete(connection.taskReconcileOutstanding, report.TaskID)
 		delete(connection.taskReconcileAttempted, report.TaskID)
 	}
@@ -261,6 +263,9 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		if task.Intent.Action == protocol.TaskFileSaveText && task.Intent.File != nil {
 			dispatch.FileContent = s.takeFileContent(task.TaskID, task.NodeID, task.Intent.File.SHA256)
 		}
+		if task.Intent.Action == protocol.TaskContainerCreate {
+			dispatch.ContainerCreate = s.takeContainerCreateSpec(task.TaskID, task.NodeID, connection.generation, journalID, task.Intent.CreateSHA256)
+		}
 		payload, err := json.Marshal(dispatch)
 		if err != nil || len(payload) > protocol.MaxTaskPayloadBytes {
 			clear(payload)
@@ -276,6 +281,8 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 				clear(dispatch.FileContent.Content)
 				dispatch.FileContent = nil
 			}
+			clearContainerCreateSpec(dispatch.ContainerCreate)
+			dispatch.ContainerCreate = nil
 			// The safe typed intent was already persisted, but no malformed frame
 			// is allowed to reach an Agent. Marking it unknown is safer than replay.
 			return errors.New("durable task cannot be represented by the task wire contract")
@@ -296,6 +303,8 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			clear(dispatch.FileContent.Content)
 			dispatch.FileContent = nil
 		}
+		clearContainerCreateSpec(dispatch.ContainerCreate)
+		dispatch.ContainerCreate = nil
 		writeErr := s.writeAgentEnvelope(ctx, connection.conn, message)
 		clear(payload)
 		message.Payload = nil
