@@ -793,6 +793,15 @@ func (s *Store) Finish(ctx context.Context, taskID string, status taskstate.Stat
 }
 
 func (s *Store) MarkUnknown(ctx context.Context, taskID string) error {
+	return s.MarkUnknownWithResult(ctx, taskID, Result{Code: ResultUncertain})
+}
+
+func (s *Store) MarkUnknownWithResult(ctx context.Context, taskID string, result Result) error {
+	if result.Code != ResultUncertain || len(result.ObservedState) > 64 || len(result.ResourceRevision) > 128 ||
+		result.ObservedState != "" && result.ObservedState != "recovery_required" && result.ObservedState != "deployment_verified" ||
+		result.ResourceRevision != "" && !validComposeRecoveryCode(result.ResourceRevision) {
+		return ErrInvalidResult
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin unknown task update: %w", err)
@@ -806,10 +815,139 @@ func (s *Store) MarkUnknown(ctx context.Context, taskID string) error {
 		return err
 	}
 	now := s.now().UTC().UnixNano()
-	if _, err := tx.ExecContext(ctx, `UPDATE task_journal SET status='unknown',updated_at_ns=?,finished_at_ns=NULL,result_code=?,progress_phase=? WHERE node_id=? AND task_id=? AND status='running'`, now, ResultUncertain, PhaseReconciling, s.nodeID, taskID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE task_journal SET status='unknown',updated_at_ns=?,finished_at_ns=NULL,result_code=?,observed_state=?,resource_revision=?,progress_phase=? WHERE node_id=? AND task_id=? AND status='running'`,
+		now, result.Code, result.ObservedState, result.ResourceRevision, PhaseReconciling, s.nodeID, taskID); err != nil {
 		return fmt.Errorf("persist unknown task state: %w", err)
 	}
 	return tx.Commit()
+}
+
+const maxComposeConfigBackupBytes = 2 << 20
+
+// StoreComposeConfigBaselineIfAbsent keeps the last source files that were in
+// place before an un-deployed edit. The journal lives in the Agent's private
+// data directory; callers clear this baseline only after a deployment is
+// verified or the previous service definition has been restored.
+func (s *Store) StoreComposeConfigBaselineIfAbsent(ctx context.Context, projectKey string, files [][]byte) (bool, error) {
+	if !validJournalComposeProjectKey(projectKey) || len(files) == 0 || len(files) > 16 {
+		return false, ErrInvalidResult
+	}
+	total := 0
+	for _, content := range files {
+		if len(content) > 128<<10 {
+			return false, ErrInvalidResult
+		}
+		total += len(content)
+		if total > maxComposeConfigBackupBytes {
+			return false, ErrInvalidResult
+		}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin Compose config baseline: %w", err)
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `INSERT INTO compose_config_backups(project_key,file_count,created_at_ns)
+		VALUES(?,?,?) ON CONFLICT(project_key) DO NOTHING`, projectKey, len(files), s.now().UTC().UnixNano())
+	if err != nil {
+		return false, fmt.Errorf("store Compose config baseline: %w", err)
+	}
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("check Compose config baseline: %w", err)
+	}
+	if inserted == 0 {
+		return false, tx.Commit()
+	}
+	for index, content := range files {
+		digest := sha256.Sum256(content)
+		if _, err := tx.ExecContext(ctx, `INSERT INTO compose_config_backup_files(project_key,file_index,content,sha256) VALUES(?,?,?,?)`,
+			projectKey, index, content, hex.EncodeToString(digest[:])); err != nil {
+			return false, fmt.Errorf("store Compose config baseline file: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit Compose config baseline: %w", err)
+	}
+	return true, nil
+}
+
+func (s *Store) LoadComposeConfigBaseline(ctx context.Context, projectKey string) ([][]byte, bool, error) {
+	if !validJournalComposeProjectKey(projectKey) {
+		return nil, false, ErrInvalidResult
+	}
+	var count int
+	if err := s.db.QueryRowContext(ctx, `SELECT file_count FROM compose_config_backups WHERE project_key=?`, projectKey).Scan(&count); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, fmt.Errorf("read Compose config baseline: %w", err)
+	}
+	if count < 1 || count > 16 {
+		return nil, false, ErrInvalidResult
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT file_index,content,sha256 FROM compose_config_backup_files WHERE project_key=? ORDER BY file_index`, projectKey)
+	if err != nil {
+		return nil, false, fmt.Errorf("read Compose config baseline files: %w", err)
+	}
+	defer rows.Close()
+	files := make([][]byte, 0, count)
+	total := 0
+	for rows.Next() {
+		var index int
+		var content []byte
+		var digest string
+		if err := rows.Scan(&index, &content, &digest); err != nil {
+			return nil, false, err
+		}
+		actual := sha256.Sum256(content)
+		if index != len(files) || len(content) > 128<<10 || hex.EncodeToString(actual[:]) != digest {
+			return nil, false, ErrInvalidResult
+		}
+		total += len(content)
+		if total > maxComposeConfigBackupBytes {
+			return nil, false, ErrInvalidResult
+		}
+		files = append(files, append([]byte(nil), content...))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(files) != count {
+		return nil, false, ErrInvalidResult
+	}
+	return files, true, nil
+}
+
+func (s *Store) DeleteComposeConfigBaseline(ctx context.Context, projectKey string) error {
+	if !validJournalComposeProjectKey(projectKey) {
+		return ErrInvalidResult
+	}
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM compose_config_backups WHERE project_key=?`, projectKey); err != nil {
+		return fmt.Errorf("delete Compose config baseline: %w", err)
+	}
+	return nil
+}
+
+func validJournalComposeProjectKey(value string) bool {
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size && hex.EncodeToString(decoded) == value
+}
+
+func validComposeRecoveryCode(value string) bool {
+	if len(value) == 0 || len(value) > 64 || value[0] < 'a' || value[0] > 'z' {
+		return false
+	}
+	for _, character := range value {
+		if character < 'a' || character > 'z' {
+			if character < '0' || character > '9' {
+				if character != '_' {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 // RecoverInterrupted must be called only after the old Agent process is known

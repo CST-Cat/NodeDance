@@ -18,6 +18,10 @@ type taskJournal interface {
 	Get(context.Context, string) (taskjournal.Snapshot, error)
 	Finish(context.Context, string, taskstate.Status, taskstate.Evidence, taskjournal.Result) error
 	MarkUnknown(context.Context, string) error
+	MarkUnknownWithResult(context.Context, string, taskjournal.Result) error
+	StoreComposeConfigBaselineIfAbsent(context.Context, string, [][]byte) (bool, error)
+	LoadComposeConfigBaseline(context.Context, string) ([][]byte, bool, error)
+	DeleteComposeConfigBaseline(context.Context, string) error
 }
 
 type TaskExecutor struct {
@@ -79,6 +83,9 @@ func (e *TaskExecutor) ExecuteCompose(ctx context.Context, dispatch protocol.Tas
 			}
 			return e.finish(ctx, dispatch.TaskID, taskstate.Succeeded, "deployed", dispatch.Intent.Compose.Project.Key)
 		}
+		if err := e.captureBaselineBeforeSave(ctx, dispatch.Intent.Compose.Project, dispatch.Intent.Compose.FileIndex, dispatch.Intent.Compose.BaseSHA256); err != nil {
+			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", "baseline_unavailable")
+		}
 		committed, err := e.manager.SaveConfig(ctx, dispatch.Intent.Compose.Project, dispatch.Intent.Compose.FileIndex,
 			dispatch.Intent.Compose.BaseSHA256, string(dispatch.ComposeContent.Content))
 		if err != nil {
@@ -88,6 +95,41 @@ func (e *TaskExecutor) ExecuteCompose(ctx context.Context, dispatch protocol.Tas
 			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", stableErrorCode(err))
 		}
 		return e.finish(ctx, dispatch.TaskID, taskstate.Succeeded, "saved", dispatch.Intent.Compose.ContentSHA256)
+	}
+	if dispatch.Intent.Action == protocol.TaskComposeDeploy {
+		baseline, err := e.loadOrCaptureBaseline(ctx, dispatch.Intent.Compose.Project)
+		if err != nil {
+			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", "baseline_unavailable")
+		}
+		state, err := e.manager.DeployProject(ctx, dispatch.Intent.Compose.Project, baseline)
+		if err != nil {
+			var deploymentErr *deploymentResultError
+			if errors.As(err, &deploymentErr) {
+				if deploymentErr.unknown {
+					return e.markUnknownWithResult(ctx, dispatch.TaskID, taskjournal.Result{
+						Code: taskjournal.ResultUncertain, ObservedState: "recovery_required", ResourceRevision: deploymentErr.code,
+					})
+				}
+				if err := e.journal.DeleteComposeConfigBaseline(context.WithoutCancel(ctx), dispatch.Intent.Compose.Project.Key); err != nil {
+					return e.markUnknownWithResult(ctx, dispatch.TaskID, taskjournal.Result{
+						Code: taskjournal.ResultUncertain, ObservedState: "recovery_required", ResourceRevision: "baseline_cleanup_failed",
+					})
+				}
+				return e.finish(ctx, dispatch.TaskID, taskstate.Failed, deploymentErr.state, deploymentErr.code)
+			}
+			if errors.Is(err, ErrConfigInvalid) || errors.Is(err, ErrProjectUnavailable) {
+				return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", stableErrorCode(err))
+			}
+			return e.markUnknownWithResult(ctx, dispatch.TaskID, taskjournal.Result{
+				Code: taskjournal.ResultUncertain, ObservedState: "recovery_required", ResourceRevision: "deployment_result_unknown",
+			})
+		}
+		if err := e.journal.DeleteComposeConfigBaseline(context.WithoutCancel(ctx), dispatch.Intent.Compose.Project.Key); err != nil {
+			return e.markUnknownWithResult(ctx, dispatch.TaskID, taskjournal.Result{
+				Code: taskjournal.ResultUncertain, ObservedState: "deployment_verified", ResourceRevision: "baseline_cleanup_failed",
+			})
+		}
+		return e.finish(ctx, dispatch.TaskID, taskstate.Succeeded, state, dispatch.Intent.Compose.Project.Key)
 	}
 	state, err := e.manager.ExecuteProject(ctx, dispatch.Intent.Compose.Project, dispatch.Intent.Action)
 	if err != nil {
@@ -162,6 +204,63 @@ func (e *TaskExecutor) markUnknown(ctx context.Context, taskID string) (taskjour
 		return task, markErr
 	}
 	return task, readErr
+}
+
+func (e *TaskExecutor) markUnknownWithResult(ctx context.Context, taskID string, result taskjournal.Result) (taskjournal.Snapshot, error) {
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	markErr := e.journal.MarkUnknownWithResult(writeCtx, taskID, result)
+	cancel()
+	readCtx, readCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	task, readErr := e.journal.Get(readCtx, taskID)
+	readCancel()
+	if markErr != nil {
+		return task, markErr
+	}
+	return task, readErr
+}
+
+func (e *TaskExecutor) captureBaselineBeforeSave(ctx context.Context, ref protocol.ComposeProjectRef, fileIndex int, baseSHA256 string) error {
+	_, exists, err := e.journal.LoadComposeConfigBaseline(ctx, ref.Key)
+	if err != nil || exists {
+		return err
+	}
+	snapshot, err := e.manager.CaptureProjectConfig(ctx, ref)
+	if err != nil {
+		return err
+	}
+	if fileIndex < 0 || fileIndex >= len(snapshot.Files) {
+		return ErrConfigUnsafe
+	}
+	digest := sha256.Sum256(snapshot.Files[fileIndex])
+	if hex.EncodeToString(digest[:]) != baseSHA256 {
+		return ErrConfigChanged
+	}
+	_, err = e.journal.StoreComposeConfigBaselineIfAbsent(ctx, ref.Key, snapshot.Files)
+	return err
+}
+
+func (e *TaskExecutor) loadOrCaptureBaseline(ctx context.Context, ref protocol.ComposeProjectRef) (ProjectConfigSnapshot, error) {
+	files, exists, err := e.journal.LoadComposeConfigBaseline(ctx, ref.Key)
+	if err != nil {
+		return ProjectConfigSnapshot{}, err
+	}
+	if !exists {
+		current, captureErr := e.manager.CaptureProjectConfig(ctx, ref)
+		if captureErr != nil {
+			return ProjectConfigSnapshot{}, captureErr
+		}
+		if _, err := e.journal.StoreComposeConfigBaselineIfAbsent(ctx, ref.Key, current.Files); err != nil {
+			return ProjectConfigSnapshot{}, err
+		}
+		files, exists, err = e.journal.LoadComposeConfigBaseline(ctx, ref.Key)
+		if err != nil || !exists {
+			return ProjectConfigSnapshot{}, errors.New("Compose deployment baseline is unavailable")
+		}
+	}
+	if len(files) != len(ref.ConfigFiles) {
+		return ProjectConfigSnapshot{}, ErrConfigUnsafe
+	}
+	return ProjectConfigSnapshot{Files: files}, nil
 }
 
 func (e *TaskExecutor) afterError(ctx context.Context, taskID string, cause error) (taskjournal.Snapshot, error) {

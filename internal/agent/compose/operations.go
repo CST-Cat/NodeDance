@@ -6,13 +6,16 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net/netip"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -35,8 +38,21 @@ var (
 	ErrConfigUnsafe       = errors.New("Compose config file is outside the supported safe edit scope")
 	ErrConfigChanged      = errors.New("Compose config file changed since it was opened")
 	ErrConfigInvalid      = errors.New("Compose config is invalid")
+	ErrDeployRejected     = errors.New("Compose deployment was rejected before changing services")
+	ErrDeployPortConflict = fmt.Errorf("%w: host port conflicts with another project", ErrDeployRejected)
+	ErrDeployImageMissing = fmt.Errorf("%w: image could not be prepared", ErrDeployRejected)
 	ErrOperationUncertain = errors.New("Compose operation result could not be verified")
 )
+
+type deploymentResultError struct {
+	state   string
+	code    string
+	unknown bool
+}
+
+func (e *deploymentResultError) Error() string { return "Compose deployment did not complete" }
+
+type ProjectConfigSnapshot struct{ Files [][]byte }
 
 // CreateProject stages a new config without replacing any existing path,
 // validates it with Docker Compose, commits it atomically, and verifies the
@@ -282,6 +298,174 @@ type ConfigDocument struct {
 	Path   string
 }
 
+func (m *Manager) CaptureProjectConfig(ctx context.Context, ref protocol.ComposeProjectRef) (ProjectConfigSnapshot, error) {
+	if err := m.requireLiveProject(ctx, ref); err != nil {
+		return ProjectConfigSnapshot{}, err
+	}
+	snapshot := ProjectConfigSnapshot{Files: make([][]byte, len(ref.ConfigFiles))}
+	total := 0
+	for index := range ref.ConfigFiles {
+		path, err := m.safeConfigPath(ref, index)
+		if err != nil {
+			return ProjectConfigSnapshot{}, err
+		}
+		content, err := readBoundedFile(path, protocol.MaxComposeFileBytes)
+		if err != nil {
+			return ProjectConfigSnapshot{}, ErrConfigUnsafe
+		}
+		total += len(content)
+		if total > 2<<20 {
+			return ProjectConfigSnapshot{}, ErrConfigInvalid
+		}
+		snapshot.Files[index] = content
+	}
+	return snapshot, nil
+}
+
+// restoreProjectConfig replaces registered source files only when they still
+// match the exact contents observed immediately before deployment. This avoids
+// overwriting a concurrent operator edit while recovering an interrupted up.
+func (m *Manager) restoreProjectConfig(ctx context.Context, ref protocol.ComposeProjectRef, prior, attempted ProjectConfigSnapshot) error {
+	if len(prior.Files) != len(ref.ConfigFiles) || len(attempted.Files) != len(ref.ConfigFiles) || protocol.ValidateComposeProjectRef(ref) != nil {
+		return ErrConfigUnsafe
+	}
+	for index := range ref.ConfigFiles {
+		path, err := m.safeConfigPath(ref, index)
+		if err != nil {
+			return ErrConfigUnsafe
+		}
+		current, err := readBoundedFile(path, protocol.MaxComposeFileBytes)
+		if err != nil || !bytes.Equal(current, attempted.Files[index]) {
+			return ErrConfigChanged
+		}
+	}
+	type replacement struct {
+		root *os.Root
+		base string
+		temp string
+	}
+	replacements := make([]replacement, 0, len(ref.ConfigFiles))
+	cleanup := func() {
+		for _, item := range replacements {
+			if item.temp != "" {
+				_ = item.root.Remove(item.temp)
+			}
+			_ = item.root.Close()
+		}
+	}
+	for index, path := range ref.ConfigFiles {
+		parentRoot, base, err := m.openComposeFileParent(ref, index)
+		if err != nil {
+			cleanup()
+			return ErrConfigUnsafe
+		}
+		temp, err := writeComposeCandidateAt(parentRoot, base, prior.Files[index])
+		if err != nil {
+			_ = parentRoot.Close()
+			cleanup()
+			return ErrConfigUnsafe
+		}
+		replacements = append(replacements, replacement{root: parentRoot, base: filepath.Base(path), temp: temp})
+	}
+	for index := range replacements {
+		item := &replacements[index]
+		if err := item.root.Rename(item.temp, item.base); err != nil {
+			cleanup()
+			return ErrOperationUncertain
+		}
+		item.temp = ""
+		directory, err := item.root.Open(".")
+		if err != nil {
+			cleanup()
+			return ErrOperationUncertain
+		}
+		err = directory.Sync()
+		_ = directory.Close()
+		if err != nil {
+			cleanup()
+			return ErrOperationUncertain
+		}
+	}
+	cleanup()
+	verified, err := m.CaptureProjectConfig(ctx, ref)
+	if err != nil || !sameConfigSnapshot(verified, prior) {
+		return ErrOperationUncertain
+	}
+	return nil
+}
+
+func (m *Manager) openComposeFileParent(ref protocol.ComposeProjectRef, index int) (*os.Root, string, error) {
+	if _, err := m.safeConfigPath(ref, index); err != nil {
+		return nil, "", err
+	}
+	root, err := openSafeWorkingRoot(ref.WorkingDirectory)
+	if err != nil {
+		return nil, "", err
+	}
+	relative, err := filepath.Rel(ref.WorkingDirectory, ref.ConfigFiles[index])
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		_ = root.Close()
+		return nil, "", ErrConfigUnsafe
+	}
+	parent := filepath.Dir(relative)
+	if parent == "." {
+		return root, filepath.Base(relative), nil
+	}
+	child, err := root.OpenRoot(parent)
+	_ = root.Close()
+	if err != nil {
+		return nil, "", ErrConfigUnsafe
+	}
+	return child, filepath.Base(relative), nil
+}
+
+func writeComposeCandidateAt(root *os.Root, original string, content []byte) (string, error) {
+	info, err := root.Lstat(original)
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+		return "", ErrConfigUnsafe
+	}
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return "", err
+	}
+	name := ".nodedance-compose-restore-" + hex.EncodeToString(nonce[:]) + ".tmp"
+	file, err := root.OpenFile(name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, info.Mode().Perm())
+	if err != nil {
+		return "", err
+	}
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok && (stat.Uid != uint32(os.Geteuid()) || stat.Gid != uint32(os.Getegid())) {
+		if err := root.Chown(name, int(stat.Uid), int(stat.Gid)); err != nil {
+			_ = file.Close()
+			_ = root.Remove(name)
+			return "", err
+		}
+	}
+	if _, err := file.Write(content); err == nil {
+		err = file.Sync()
+	}
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = root.Remove(name)
+		return "", err
+	}
+	return name, nil
+}
+
+func sameConfigSnapshot(left, right ProjectConfigSnapshot) bool {
+	if len(left.Files) != len(right.Files) {
+		return false
+	}
+	for index := range left.Files {
+		if !bytes.Equal(left.Files[index], right.Files[index]) {
+			return false
+		}
+	}
+	return true
+}
+
 func (m *Manager) ReadConfig(ctx context.Context, ref protocol.ComposeProjectRef, index int) (ConfigDocument, error) {
 	path, err := m.safeConfigPath(ref, index)
 	if err != nil {
@@ -413,7 +597,7 @@ func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjec
 		return "unchanged", ErrConfigInvalid
 	}
 	before, err := m.projectInstances(ctx, ref)
-	if err != nil || len(before) == 0 {
+	if err != nil {
 		return "unknown", ErrProjectUnavailable
 	}
 	var args []string
@@ -422,11 +606,19 @@ func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjec
 	case protocol.TaskComposeStart:
 		args, expected = []string{"up", "-d"}, "running"
 	case protocol.TaskComposeStop:
+		if len(before) == 0 {
+			return "stopped", nil
+		}
 		args, expected = []string{"stop"}, "stopped"
 	case protocol.TaskComposeRestart:
-		args, expected = []string{"restart"}, "running"
+		if len(before) == 0 {
+			args = []string{"up", "-d"}
+		} else {
+			args = []string{"restart"}
+		}
+		expected = "running"
 	case protocol.TaskComposeDeploy:
-		args, expected = []string{"up", "-d", "--force-recreate"}, "running"
+		return "", ErrConfigInvalid
 	default:
 		return "unchanged", ErrConfigInvalid
 	}
@@ -450,21 +642,627 @@ func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjec
 	return expected, nil
 }
 
+func (m *Manager) DeployProject(ctx context.Context, ref protocol.ComposeProjectRef, baseline ProjectConfigSnapshot) (string, error) {
+	if err := m.requireLiveProject(ctx, ref); err != nil {
+		return "unknown", err
+	}
+	before, err := m.projectInstances(ctx, ref)
+	if err != nil {
+		return "unknown", ErrProjectUnavailable
+	}
+	attempted, err := m.CaptureProjectConfig(ctx, ref)
+	if err != nil || len(baseline.Files) != len(ref.ConfigFiles) {
+		return "unknown", ErrConfigUnsafe
+	}
+	if err := m.preflightDeployment(ctx, ref); err != nil {
+		code := "deployment_rejected"
+		if errors.Is(err, ErrConfigInvalid) {
+			code = "config_invalid"
+		} else if errors.Is(err, ErrDeployPortConflict) {
+			code = "port_conflict"
+		} else if errors.Is(err, ErrDeployImageMissing) {
+			code = "image_unavailable"
+		} else if errors.Is(err, ErrDeployRejected) {
+			code = "deployment_preflight_failed"
+		}
+		return m.recoverDeployment(ctx, ref, baseline, attempted, before, code, false, time.Time{})
+	}
+	started := time.Now()
+	commandErr := m.runCompose(ctx, ref, nil, "up", "-d", "--force-recreate")
+	var after []agentdocker.Container
+	if commandErr == nil {
+		after, err = m.waitProjectState(ctx, ref, "running")
+	}
+	if commandErr == nil && err == nil && len(before) > 0 && !allInstancesReplaced(before, after) {
+		err = ErrOperationUncertain
+	}
+	if commandErr == nil && err == nil {
+		current, captureErr := m.CaptureProjectConfig(ctx, ref)
+		if captureErr != nil || !sameConfigSnapshot(current, attempted) {
+			err = ErrConfigChanged
+		}
+	}
+	if commandErr != nil || err != nil {
+		code := "deployment_failed"
+		if errors.Is(err, ErrConfigChanged) {
+			code = "config_changed_during_deploy"
+		}
+		return m.recoverDeployment(ctx, ref, baseline, attempted, before, code, true, started)
+	}
+	return "running", nil
+}
+
+func (m *Manager) recoverDeployment(ctx context.Context, ref protocol.ComposeProjectRef, baseline, attempted ProjectConfigSnapshot, before []agentdocker.Container, failureCode string, mutationAttempted bool, started time.Time) (string, error) {
+	recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), composeOperationLimit)
+	defer cancel()
+	ctx = recoveryCtx
+	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
+		return "unknown", &deploymentResultError{state: "recovery_required", code: "project_identity_conflict", unknown: true}
+	}
+	if err := m.restoreProjectConfig(ctx, ref, baseline, attempted); err != nil {
+		return "unknown", &deploymentResultError{state: "recovery_required", code: "config_restore_failed", unknown: true}
+	}
+	if err := m.runCompose(ctx, ref, nil, "config", "--quiet"); err != nil {
+		return "unknown", &deploymentResultError{state: "recovery_required", code: "saved_config_invalid", unknown: true}
+	}
+	if len(before) == 0 {
+		if mutationAttempted {
+			if err := m.removeCreatedProjectInstances(ctx, ref, before, started); err != nil {
+				return "unknown", &deploymentResultError{state: "recovery_required", code: "unexpected_project_containers", unknown: true}
+			}
+		} else {
+			remaining, err := m.projectInstances(ctx, ref)
+			if err != nil || len(remaining) != 0 {
+				return "unknown", &deploymentResultError{state: "recovery_required", code: "unexpected_project_containers", unknown: true}
+			}
+		}
+		return "restored_offline", &deploymentResultError{state: "restored_offline", code: failureCode}
+	}
+	if !mutationAttempted {
+		current, err := m.projectInstances(ctx, ref)
+		if err != nil || !sameProjectContainerIDs(before, current) || !recoveredProjectMatches(before, current) {
+			return "unknown", &deploymentResultError{state: "recovery_required", code: "service_verification_failed", unknown: true}
+		}
+		return "recovered", &deploymentResultError{state: "recovered", code: failureCode}
+	}
+	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
+		return "unknown", &deploymentResultError{state: "recovery_required", code: "project_identity_conflict", unknown: true}
+	}
+	args := []string{"up", "-d", "--force-recreate"}
+	for service, count := range serviceInstanceCounts(before) {
+		args = append(args, "--scale", service+"="+strconv.Itoa(count))
+	}
+	if err := m.runCompose(ctx, ref, nil, args...); err != nil {
+		return "unknown", &deploymentResultError{state: "recovery_required", code: "service_recovery_failed", unknown: true}
+	}
+	if err := m.restoreContainerStates(ctx, ref, before); err != nil {
+		return "unknown", &deploymentResultError{state: "recovery_required", code: "service_state_recovery_failed", unknown: true}
+	}
+	if err := m.removeUnexpectedProjectInstances(ctx, ref, before, started); err != nil {
+		return "unknown", &deploymentResultError{state: "recovery_required", code: "unexpected_project_containers", unknown: true}
+	}
+	recovered, err := m.waitRecoveredProject(ctx, ref, before)
+	if err != nil {
+		return "unknown", &deploymentResultError{state: "recovery_required", code: "service_verification_failed", unknown: true}
+	}
+	if allInstancesReplaced(before, recovered) {
+		return "recreated", &deploymentResultError{state: "recreated", code: failureCode}
+	}
+	return "recovered", &deploymentResultError{state: "recovered", code: failureCode}
+}
+
+func (m *Manager) removeCreatedProjectInstances(ctx context.Context, ref protocol.ComposeProjectRef, before []agentdocker.Container, started time.Time) error {
+	if started.IsZero() || m.assertProjectNameOwned(ctx, ref) != nil {
+		return ErrOperationUncertain
+	}
+	oldIDs := make(map[string]struct{}, len(before))
+	for _, container := range before {
+		oldIDs[container.ID] = struct{}{}
+	}
+	ids, err := m.engine.ListAll(ctx)
+	if err != nil {
+		return ErrProjectUnavailable
+	}
+	created := make([]agentdocker.Container, 0)
+	for _, id := range ids {
+		container, inspectErr := m.engine.Inspect(ctx, id)
+		if inspectErr != nil {
+			return ErrProjectUnavailable
+		}
+		if container.Compose == nil || container.Compose.Project != ref.Name {
+			continue
+		}
+		identity, identityErr := reference(container.Compose)
+		if identityErr != nil || identity.Key != ref.Key {
+			return ErrProjectConflict
+		}
+		if _, existed := oldIDs[container.ID]; existed {
+			continue
+		}
+		if container.CreatedAt == nil || container.CreatedAt.Before(started.Add(-5*time.Second)) {
+			return ErrOperationUncertain
+		}
+		created = append(created, container)
+	}
+	for _, candidate := range created {
+		current, inspectErr := m.engine.Inspect(ctx, candidate.ID)
+		if inspectErr != nil || current.ID != candidate.ID || current.Compose == nil || current.Compose.Project != ref.Name ||
+			current.CreatedAt == nil || current.CreatedAt.Before(started.Add(-5*time.Second)) {
+			return ErrOperationUncertain
+		}
+		identity, identityErr := reference(current.Compose)
+		if identityErr != nil || identity.Key != ref.Key {
+			return ErrProjectConflict
+		}
+		if err := m.runDocker(ctx, "container", "rm", "--force", "--", current.ID); err != nil {
+			return err
+		}
+	}
+	remaining, err := m.projectInstances(ctx, ref)
+	if err != nil || len(remaining) != 0 {
+		return ErrOperationUncertain
+	}
+	return nil
+}
+
+func (m *Manager) removeUnexpectedProjectInstances(ctx context.Context, ref protocol.ComposeProjectRef, before []agentdocker.Container, started time.Time) error {
+	if started.IsZero() || m.assertProjectNameOwned(ctx, ref) != nil {
+		return ErrOperationUncertain
+	}
+	expected := make(map[string]struct{}, len(before))
+	for _, container := range before {
+		if container.Compose == nil || container.Compose.Service == "" || container.Compose.ContainerNumber == "" {
+			return ErrProjectConflict
+		}
+		key := container.Compose.Service + "\x00" + container.Compose.ContainerNumber
+		if _, duplicate := expected[key]; duplicate {
+			return ErrProjectConflict
+		}
+		expected[key] = struct{}{}
+	}
+	ids, err := m.engine.ListAll(ctx)
+	if err != nil {
+		return ErrProjectUnavailable
+	}
+	candidates := make([]string, 0)
+	seenExpected := make(map[string]struct{}, len(expected))
+	for _, id := range ids {
+		container, inspectErr := m.engine.Inspect(ctx, id)
+		if inspectErr != nil {
+			return ErrProjectUnavailable
+		}
+		if container.Compose == nil || container.Compose.Project != ref.Name {
+			continue
+		}
+		identity, identityErr := reference(container.Compose)
+		if identityErr != nil || identity.Key != ref.Key {
+			return ErrProjectConflict
+		}
+		key := container.Compose.Service + "\x00" + container.Compose.ContainerNumber
+		if _, baselineService := expected[key]; baselineService {
+			if _, alreadySeen := seenExpected[key]; !alreadySeen {
+				seenExpected[key] = struct{}{}
+				continue
+			}
+		}
+		if container.CreatedAt == nil || container.CreatedAt.Before(started.Add(-5*time.Second)) {
+			return ErrOperationUncertain
+		}
+		candidates = append(candidates, container.ID)
+	}
+	for _, candidateID := range candidates {
+		current, inspectErr := m.engine.Inspect(ctx, candidateID)
+		if inspectErr != nil || current.ID != candidateID || current.Compose == nil || current.Compose.Project != ref.Name ||
+			current.CreatedAt == nil || current.CreatedAt.Before(started.Add(-5*time.Second)) {
+			return ErrOperationUncertain
+		}
+		identity, identityErr := reference(current.Compose)
+		if identityErr != nil || identity.Key != ref.Key {
+			return ErrProjectConflict
+		}
+		if _, baselineService := expected[current.Compose.Service+"\x00"+current.Compose.ContainerNumber]; baselineService {
+			return ErrOperationUncertain
+		}
+		if err := m.runDocker(ctx, "container", "rm", "--force", "--", current.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func serviceInstanceCounts(containers []agentdocker.Container) map[string]int {
+	counts := make(map[string]int)
+	for _, container := range containers {
+		if container.Compose != nil && container.Compose.Service != "" {
+			counts[container.Compose.Service]++
+		}
+	}
+	return counts
+}
+
+func (m *Manager) restoreContainerStates(ctx context.Context, ref protocol.ComposeProjectRef, before []agentdocker.Container) error {
+	current, err := m.projectInstances(ctx, ref)
+	if err != nil {
+		return ErrProjectUnavailable
+	}
+	byServiceNumber := make(map[string]agentdocker.Container, len(current))
+	for _, container := range current {
+		if container.Compose == nil {
+			return ErrProjectConflict
+		}
+		byServiceNumber[container.Compose.Service+"\x00"+container.Compose.ContainerNumber] = container
+	}
+	for _, previous := range before {
+		if previous.Compose == nil {
+			return ErrProjectConflict
+		}
+		current, ok := byServiceNumber[previous.Compose.Service+"\x00"+previous.Compose.ContainerNumber]
+		if !ok {
+			return ErrOperationUncertain
+		}
+		if previous.Paused {
+			if !current.Paused && m.runDocker(ctx, "pause", current.ID) != nil {
+				return ErrOperationUncertain
+			}
+		} else if !previous.Running {
+			if current.Running && m.runDocker(ctx, "stop", current.ID) != nil {
+				return ErrOperationUncertain
+			}
+		}
+	}
+	return nil
+}
+
+type composeDeployConfig struct {
+	Services map[string]struct {
+		Image string          `json:"image"`
+		Build json.RawMessage `json:"build"`
+		Ports []struct {
+			HostIP    string          `json:"host_ip"`
+			Published json.RawMessage `json:"published"`
+			Protocol  string          `json:"protocol"`
+		} `json:"ports"`
+	} `json:"services"`
+}
+
+type requestedHostPort struct {
+	ip       string
+	protocol string
+	first    uint16
+	last     uint16
+}
+
+func (m *Manager) preflightDeployment(ctx context.Context, ref protocol.ComposeProjectRef) error {
+	output, err := m.runComposeOutput(ctx, ref, nil, "config", "--format", "json")
+	if err != nil {
+		return ErrConfigInvalid
+	}
+	var config composeDeployConfig
+	if json.Unmarshal([]byte(output), &config) != nil || len(config.Services) == 0 {
+		return ErrConfigInvalid
+	}
+	ports := make([]requestedHostPort, 0)
+	for _, service := range config.Services {
+		if service.Image != "" && len(service.Build) == 0 && string(service.Build) != "null" && !m.imageAvailable(ctx, service.Image) {
+			return ErrDeployImageMissing
+		}
+		for _, port := range service.Ports {
+			published, ok := configPublishedPort(port.Published)
+			if !ok {
+				continue
+			}
+			first, last, valid := parsePublishedRange(published)
+			if !valid {
+				return ErrConfigInvalid
+			}
+			protocolName := strings.ToLower(port.Protocol)
+			if protocolName == "" {
+				protocolName = "tcp"
+			}
+			ports = append(ports, requestedHostPort{ip: port.HostIP, protocol: protocolName, first: first, last: last})
+		}
+	}
+	ids, err := m.engine.ListAll(ctx)
+	if err != nil {
+		return ErrProjectUnavailable
+	}
+	for _, id := range ids {
+		container, err := m.engine.Inspect(ctx, id)
+		if err != nil {
+			return ErrProjectUnavailable
+		}
+		if !container.Running || container.Paused || container.Restarting || container.Compose != nil && container.Compose.Project == ref.Name {
+			continue
+		}
+		for _, desired := range ports {
+			for _, port := range container.Ports {
+				if strings.ToLower(port.Protocol) != desired.protocol {
+					continue
+				}
+				for _, binding := range port.Published {
+					actual, parseErr := strconv.ParseUint(binding.Port, 10, 16)
+					if parseErr == nil && uint16(actual) >= desired.first && uint16(actual) <= desired.last && hostAddressesConflict(desired.ip, binding.IP) {
+						return ErrDeployPortConflict
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func (m *Manager) imageAvailable(ctx context.Context, image string) bool {
+	checkCtx, cancel := context.WithTimeout(ctx, composeValidationLimit)
+	defer cancel()
+	check := osexec.CommandContext(checkCtx, m.dockerPath, "image", "inspect", image)
+	check.Env = os.Environ()
+	check.Stdout, check.Stderr = io.Discard, io.Discard
+	if check.Run() == nil {
+		return true
+	}
+	pullCtx, pullCancel := context.WithTimeout(ctx, composeOperationLimit)
+	defer pullCancel()
+	pull := osexec.CommandContext(pullCtx, m.dockerPath, "image", "pull", image)
+	pull.Env = os.Environ()
+	pull.Stdout, pull.Stderr = io.Discard, io.Discard
+	return pull.Run() == nil
+}
+
+func configPublishedPort(raw json.RawMessage) (string, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return "", false
+	}
+	var text string
+	if raw[0] == '"' {
+		if json.Unmarshal(raw, &text) != nil {
+			return "", false
+		}
+	} else {
+		text = string(raw)
+	}
+	return text, strings.TrimSpace(text) != ""
+}
+
+func parsePublishedRange(value string) (uint16, uint16, bool) {
+	parts := strings.Split(value, "-")
+	if len(parts) > 2 {
+		return 0, 0, false
+	}
+	first, err := strconv.ParseUint(parts[0], 10, 16)
+	if err != nil || first == 0 {
+		return 0, 0, false
+	}
+	last := first
+	if len(parts) == 2 {
+		last, err = strconv.ParseUint(parts[1], 10, 16)
+		if err != nil || last < first {
+			return 0, 0, false
+		}
+	}
+	return uint16(first), uint16(last), true
+}
+
+func hostAddressesConflict(left, right string) bool {
+	parse := func(value string) (netip.Addr, bool) {
+		if value == "" {
+			return netip.Addr{}, true
+		}
+		address, err := netip.ParseAddr(value)
+		if err != nil {
+			return netip.Addr{}, false
+		}
+		return address, true
+	}
+	a, okA := parse(left)
+	b, okB := parse(right)
+	if !okA || !okB {
+		return false
+	}
+	if a.IsValid() && a.IsUnspecified() || b.IsValid() && b.IsUnspecified() || !a.IsValid() || !b.IsValid() {
+		return true
+	}
+	return a.Unmap() == b.Unmap()
+}
+
+func (m *Manager) runDocker(ctx context.Context, args ...string) error {
+	if m.dockerPath == "" {
+		return ErrProjectUnavailable
+	}
+	commandCtx, cancel := context.WithTimeout(ctx, composeOperationLimit)
+	defer cancel()
+	command := osexec.CommandContext(commandCtx, m.dockerPath, args...)
+	command.Env = os.Environ()
+	command.Stdout, command.Stderr = io.Discard, io.Discard
+	if err := command.Run(); err != nil {
+		return ErrOperationUncertain
+	}
+	return nil
+}
+
+func (m *Manager) waitRecoveredProject(ctx context.Context, ref protocol.ComposeProjectRef, before []agentdocker.Container) ([]agentdocker.Container, error) {
+	deadline := time.NewTimer(45 * time.Second)
+	defer deadline.Stop()
+	ticker := time.NewTicker(composeStatePoll)
+	defer ticker.Stop()
+	for {
+		current, err := m.projectInstances(ctx, ref)
+		if err == nil && recoveredProjectMatches(before, current) && m.assertProjectNameOwned(ctx, ref) == nil {
+			return current, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ErrOperationUncertain
+		case <-deadline.C:
+			return nil, ErrOperationUncertain
+		case <-ticker.C:
+		}
+	}
+}
+
+func recoveredProjectMatches(before, current []agentdocker.Container) bool {
+	if len(before) != len(current) || len(before) == 0 {
+		return false
+	}
+	previous := make(map[string]agentdocker.Container, len(before))
+	for _, container := range before {
+		if container.Compose == nil {
+			return false
+		}
+		key := container.Compose.Service + "\x00" + container.Compose.ContainerNumber
+		if _, exists := previous[key]; exists {
+			return false
+		}
+		previous[key] = container
+	}
+	seen := make(map[string]struct{}, len(current))
+	for _, container := range current {
+		if container.Compose == nil {
+			return false
+		}
+		key := container.Compose.Service + "\x00" + container.Compose.ContainerNumber
+		old, ok := previous[key]
+		if !ok {
+			return false
+		}
+		switch {
+		case old.Paused:
+			if !container.Running || !container.Paused || container.Restarting {
+				return false
+			}
+		case old.Running:
+			if !container.Running || container.Paused || container.Restarting {
+				return false
+			}
+		default:
+			if container.Running || container.Paused || container.Restarting {
+				return false
+			}
+		}
+		if old.HealthcheckConfigured && (!container.HealthcheckConfigured || container.Health != old.Health) {
+			return false
+		}
+		if !sameMounts(old.Mounts, container.Mounts) || !samePortContract(old.Ports, container.Ports) {
+			return false
+		}
+		seen[key] = struct{}{}
+	}
+	return len(seen) == len(previous)
+}
+
+func sameProjectContainerIDs(before, current []agentdocker.Container) bool {
+	if len(before) == 0 || len(before) != len(current) {
+		return false
+	}
+	previous := make(map[string]string, len(before))
+	for _, container := range before {
+		if container.Compose == nil || container.Compose.Service == "" || container.Compose.ContainerNumber == "" {
+			return false
+		}
+		key := container.Compose.Service + "\x00" + container.Compose.ContainerNumber
+		if _, duplicate := previous[key]; duplicate {
+			return false
+		}
+		previous[key] = container.ID
+	}
+	seen := make(map[string]struct{}, len(current))
+	for _, container := range current {
+		if container.Compose == nil || container.Compose.Service == "" || container.Compose.ContainerNumber == "" {
+			return false
+		}
+		key := container.Compose.Service + "\x00" + container.Compose.ContainerNumber
+		if container.ID != previous[key] {
+			return false
+		}
+		if _, duplicate := seen[key]; duplicate {
+			return false
+		}
+		seen[key] = struct{}{}
+	}
+	return len(seen) == len(previous)
+}
+
+func sameMounts(left, right []agentdocker.Mount) bool {
+	key := func(mount agentdocker.Mount) string {
+		return strings.Join([]string{mount.Type, mount.Name, mount.Source, mount.Destination, mount.Mode, strconv.FormatBool(mount.ReadWrite)}, "\x00")
+	}
+	if len(left) != len(right) {
+		return false
+	}
+	counts := make(map[string]int, len(left))
+	for _, mount := range left {
+		counts[key(mount)]++
+	}
+	for _, mount := range right {
+		counts[key(mount)]--
+	}
+	for _, count := range counts {
+		if count != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func samePortContract(left, right []agentdocker.Port) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	key := func(port agentdocker.Port) string {
+		return strconv.Itoa(int(port.ContainerPort)) + "/" + strings.ToLower(port.Protocol)
+	}
+	other := make(map[string]agentdocker.Port, len(right))
+	for _, port := range right {
+		other[key(port)] = port
+	}
+	for _, expected := range left {
+		actual, ok := other[key(expected)]
+		if !ok || len(expected.Configured) != len(actual.Configured) || len(expected.Published) != len(actual.Published) {
+			return false
+		}
+		for _, configured := range expected.Configured {
+			found := false
+			for _, candidate := range actual.Configured {
+				found = found || configured == candidate
+			}
+			if !found {
+				return false
+			}
+		}
+		for _, published := range expected.Published {
+			found := false
+			for _, candidate := range actual.Published {
+				found = found || published == candidate
+			}
+			if !found {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func (m *Manager) requireLiveProject(ctx context.Context, ref protocol.ComposeProjectRef) error {
 	if protocol.ValidateComposeProjectRef(ref) != nil {
 		return ErrProjectUnavailable
 	}
-	projects, err := m.List(ctx)
+	root, err := openSafeWorkingRoot(ref.WorkingDirectory)
 	if err != nil {
-		return ErrProjectUnavailable
+		return ErrConfigUnsafe
 	}
-	for _, project := range projects {
-		if project.Ref.Key == ref.Key && project.Ref.Name == ref.Name && project.Ref.WorkingDirectory == ref.WorkingDirectory &&
-			strings.Join(project.Ref.ConfigFiles, "\x00") == strings.Join(ref.ConfigFiles, "\x00") && project.ConfigAvailable {
-			return nil
+	defer root.Close()
+	for index := range ref.ConfigFiles {
+		if _, err := m.safeConfigPath(ref, index); err != nil {
+			return ErrConfigUnsafe
 		}
 	}
-	return ErrProjectUnavailable
+	// Core supplies only a node-scoped project ref retrieved from its Compose
+	// registry. Docker labels are useful inventory, but disappear after an
+	// external `docker compose down`; the canonical registered source remains
+	// sufficient to validate and recreate that project.
+	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *Manager) safeConfigPath(ref protocol.ComposeProjectRef, index int) (string, error) {
@@ -516,7 +1314,10 @@ func (m *Manager) runComposeOutput(ctx context.Context, ref protocol.ComposeProj
 	defer cancel()
 	command := osexec.CommandContext(commandCtx, m.dockerPath, args...)
 	command.Env = os.Environ()
-	var output boundedOutput
+	output := boundedOutput{limit: maxComposeCommandOutput}
+	if len(operation) >= 2 && operation[0] == "config" && operation[1] == "--format" {
+		output.limit = 4 << 20
+	}
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Run(); err != nil {
 		return output.buffer.String(), errors.New("Docker Compose command failed")
@@ -650,10 +1451,13 @@ func writeComposeCandidate(originalPath string, content []byte) (string, error) 
 	return name, nil
 }
 
-type boundedOutput struct{ buffer bytes.Buffer }
+type boundedOutput struct {
+	buffer bytes.Buffer
+	limit  int
+}
 
 func (output *boundedOutput) Write(value []byte) (int, error) {
-	remaining := maxComposeCommandOutput - output.buffer.Len()
+	remaining := output.limit - output.buffer.Len()
 	if remaining > 0 {
 		if len(value) < remaining {
 			_, _ = output.buffer.Write(value)

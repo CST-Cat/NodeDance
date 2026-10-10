@@ -1046,6 +1046,13 @@ func ValidateTaskReport(envelope Envelope, report TaskReport, nodeID, journalID 
 	return nil
 }
 
+func ValidateTaskResult(status taskstate.Status, result TaskResult) error {
+	if !validTaskStatus(status) || !validResult(status, result) {
+		return ErrInvalidTaskMessage
+	}
+	return nil
+}
+
 // ValidateTaskReportAck binds a report acknowledgement to the active
 // connection generation and exact report revision. A task ID alone is not
 // sufficient because a queued acknowledgement can arrive after a terminal
@@ -1108,7 +1115,7 @@ func validResult(status taskstate.Status, result TaskResult) bool {
 	case taskstate.Queued, taskstate.Running:
 		return result == (TaskResult{})
 	case taskstate.Unknown:
-		return result == (TaskResult{}) || result == (TaskResult{Code: "result_pending"})
+		return result == (TaskResult{}) || result == (TaskResult{Code: "result_pending"}) || validComposeRecoveryResult(result)
 	case taskstate.Succeeded:
 		return result.Code == "verified" && result.ObservedState != ""
 	case taskstate.Failed:
@@ -1120,6 +1127,23 @@ func validResult(status taskstate.Status, result TaskResult) bool {
 	default:
 		return false
 	}
+}
+
+func validComposeRecoveryResult(result TaskResult) bool {
+	if result.Code != "result_pending" {
+		return false
+	}
+	switch result.ObservedState {
+	case "recovery_required":
+		switch result.ResourceRevision {
+		case "project_identity_conflict", "config_restore_failed", "saved_config_invalid", "unexpected_project_containers",
+			"service_recovery_failed", "service_state_recovery_failed", "service_verification_failed", "deployment_result_unknown":
+			return true
+		}
+	case "deployment_verified":
+		return result.ResourceRevision == "baseline_cleanup_failed"
+	}
+	return false
 }
 
 func safeTaskToken(value string, maximum int) bool {

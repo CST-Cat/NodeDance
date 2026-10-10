@@ -1451,7 +1451,8 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 			return Task{}, ErrTaskStateConflict
 		}
 	case taskstate.Unknown:
-		if report.Result != (Result{}) && report.Result != (Result{Code: ResultUncertain}) {
+		if report.Result != (Result{}) && report.Result != (Result{Code: ResultUncertain}) &&
+			!validComposeUnknownResult(task.Intent.Action, report.Result) {
 			return Task{}, ErrTaskStateConflict
 		}
 	}
@@ -1491,6 +1492,9 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 				task.StartedAt = timePtr(now)
 				from = taskstate.Running
 			} else {
+				if validComposeUnknownResult(task.Intent.Action, report.Result) {
+					return Task{}, ErrTaskStateConflict
+				}
 				// Core's committed dispatch marker proves only that the task may have
 				// reached Agent. It is Core-owned and is read from the durable row,
 				// never manufactured from an Agent report.
@@ -1538,7 +1542,9 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 			if report.Result.Code != "" && report.Result.Code != ResultUncertain {
 				return Task{}, ErrTaskStateConflict
 			}
-			report.Result = Result{Code: ResultUncertain}
+			if !validComposeUnknownResult(task.Intent.Action, report.Result) {
+				report.Result = Result{Code: ResultUncertain}
+			}
 			report.Progress.Phase = PhaseReconciling
 		}
 		if err := persistProgressTx(ctx, tx, task, merged, report.Progress, report.Result, now); err != nil {
@@ -1550,7 +1556,9 @@ func applyAgentReportTx(ctx context.Context, tx *sql.Tx, connection AgentConnect
 		if report.Result.Code != "" && report.Result.Code != ResultUncertain {
 			return Task{}, ErrTaskStateConflict
 		}
-		report.Result = Result{Code: ResultUncertain}
+		if !validComposeUnknownResult(task.Intent.Action, report.Result) {
+			report.Result = Result{Code: ResultUncertain}
+		}
 		report.Progress.Phase = PhaseReconciling
 	} else if taskstate.IsTerminal(status) {
 		if err := validateResult(status, report.Result); err != nil {
@@ -1583,7 +1591,9 @@ func persistNonterminalTx(ctx context.Context, tx *sql.Tx, task Task, from, to t
 		return err
 	}
 	if to == taskstate.Unknown {
-		result = Result{Code: ResultUncertain}
+		if !validComposeUnknownResult(task.Intent.Action, result) {
+			result = Result{Code: ResultUncertain}
+		}
 		progress.Phase = PhaseReconciling
 	}
 	nowNS := now.UnixNano()
@@ -1592,10 +1602,10 @@ func persistNonterminalTx(ctx context.Context, tx *sql.Tx, task Task, from, to t
 		startedAt = nowNS
 	}
 	_, err := tx.ExecContext(ctx, `UPDATE core_tasks SET status=?,execution_attempted=?,execution_completed=?,failure_confirmed=?,postcondition_verified=?,process_terminated=?,actual_result_confirmed=?,cancellation_confirmed=?,delivery_committed=?,
-		started_at_ns=COALESCE(started_at_ns,?),progress_phase=?,progress_completed=?,progress_total=?,result_code=?,updated_at_ns=?,reconciliation_required=0,delivery_state='sent'
+		started_at_ns=COALESCE(started_at_ns,?),progress_phase=?,progress_completed=?,progress_total=?,result_code=?,observed_state=?,resource_revision=?,updated_at_ns=?,reconciliation_required=0,delivery_state='sent'
 		WHERE node_id=? AND task_id=?`,
 		to, boolInt(evidence.ExecutionAttempted), boolInt(evidence.ExecutionCompleted), boolInt(evidence.FailureConfirmed), boolInt(evidence.PostconditionVerified), boolInt(evidence.ProcessTerminated), boolInt(evidence.ActualResultConfirmed), boolInt(evidence.CancellationConfirmed), boolInt(evidence.DeliveryCommitted),
-		startedAt, progress.Phase, progress.Completed, progress.Total, result.Code, nowNS, task.NodeID, task.TaskID)
+		startedAt, progress.Phase, progress.Completed, progress.Total, result.Code, result.ObservedState, result.ResourceRevision, nowNS, task.NodeID, task.TaskID)
 	if err != nil {
 		return fmt.Errorf("persist Agent task state: %w", err)
 	}
@@ -1607,13 +1617,15 @@ func persistProgressTx(ctx context.Context, tx *sql.Tx, task Task, evidence Evid
 		return ErrInvalidRequest
 	}
 	if task.Status == taskstate.Unknown {
-		result = Result{Code: ResultUncertain}
+		if !validComposeUnknownResult(task.Intent.Action, result) {
+			result = Result{Code: ResultUncertain}
+		}
 		progress.Phase = PhaseReconciling
 	}
 	_, err := tx.ExecContext(ctx, `UPDATE core_tasks SET execution_attempted=?,execution_completed=?,failure_confirmed=?,postcondition_verified=?,process_terminated=?,actual_result_confirmed=?,cancellation_confirmed=?,delivery_committed=?,
-		progress_phase=?,progress_completed=?,progress_total=?,result_code=?,updated_at_ns=?,reconciliation_required=0,delivery_state='sent' WHERE node_id=? AND task_id=?`,
+		progress_phase=?,progress_completed=?,progress_total=?,result_code=?,observed_state=?,resource_revision=?,updated_at_ns=?,reconciliation_required=0,delivery_state='sent' WHERE node_id=? AND task_id=?`,
 		boolInt(evidence.ExecutionAttempted), boolInt(evidence.ExecutionCompleted), boolInt(evidence.FailureConfirmed), boolInt(evidence.PostconditionVerified), boolInt(evidence.ProcessTerminated), boolInt(evidence.ActualResultConfirmed), boolInt(evidence.CancellationConfirmed), boolInt(evidence.DeliveryCommitted),
-		progress.Phase, progress.Completed, progress.Total, result.Code, now.UnixNano(), task.NodeID, task.TaskID)
+		progress.Phase, progress.Completed, progress.Total, result.Code, result.ObservedState, result.ResourceRevision, now.UnixNano(), task.NodeID, task.TaskID)
 	if err != nil {
 		return fmt.Errorf("persist Agent task progress: %w", err)
 	}
@@ -1647,10 +1659,12 @@ func updateStatusTx(ctx context.Context, tx *sql.Tx, taskID, nodeID string, stat
 		return err
 	}
 	if status == taskstate.Unknown {
-		result = Result{Code: ResultUncertain}
+		if !validComposeUnknownResult(task.Intent.Action, result) {
+			result = Result{Code: ResultUncertain}
+		}
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE core_tasks SET status=?,execution_attempted=?,execution_completed=?,failure_confirmed=?,postcondition_verified=?,process_terminated=?,actual_result_confirmed=?,cancellation_confirmed=?,delivery_committed=?,progress_phase=?,result_code=?,updated_at_ns=? WHERE node_id=? AND task_id=?`,
-		status, boolInt(merged.ExecutionAttempted), boolInt(merged.ExecutionCompleted), boolInt(merged.FailureConfirmed), boolInt(merged.PostconditionVerified), boolInt(merged.ProcessTerminated), boolInt(merged.ActualResultConfirmed), boolInt(merged.CancellationConfirmed), boolInt(merged.DeliveryCommitted), progress.Phase, result.Code, now.UnixNano(), nodeID, taskID)
+	_, err = tx.ExecContext(ctx, `UPDATE core_tasks SET status=?,execution_attempted=?,execution_completed=?,failure_confirmed=?,postcondition_verified=?,process_terminated=?,actual_result_confirmed=?,cancellation_confirmed=?,delivery_committed=?,progress_phase=?,result_code=?,observed_state=?,resource_revision=?,updated_at_ns=? WHERE node_id=? AND task_id=?`,
+		status, boolInt(merged.ExecutionAttempted), boolInt(merged.ExecutionCompleted), boolInt(merged.FailureConfirmed), boolInt(merged.PostconditionVerified), boolInt(merged.ProcessTerminated), boolInt(merged.ActualResultConfirmed), boolInt(merged.CancellationConfirmed), boolInt(merged.DeliveryCommitted), progress.Phase, result.Code, result.ObservedState, result.ResourceRevision, now.UnixNano(), nodeID, taskID)
 	return err
 }
 
@@ -1922,6 +1936,15 @@ func validateResult(status taskstate.Status, result Result) error {
 		return ErrTaskStateConflict
 	}
 	return nil
+}
+
+func validComposeUnknownResult(action Action, result Result) bool {
+	if action != ActionComposeDeploy || result.Code != ResultUncertain {
+		return false
+	}
+	return protocol.ValidateTaskResult(taskstate.Unknown, protocol.TaskResult{
+		Code: string(result.Code), ObservedState: result.ObservedState, ResourceRevision: result.ResourceRevision,
+	}) == nil && result.ObservedState != "" && result.ResourceRevision != ""
 }
 
 func safeToken(value string, maximum int) bool {

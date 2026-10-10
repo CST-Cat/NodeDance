@@ -54,3 +54,17 @@ CREATE TABLE IF NOT EXISTS active_resource_claims (
 	task_id TEXT NOT NULL UNIQUE REFERENCES task_journal(task_id) ON DELETE CASCADE,
 	PRIMARY KEY(node_id, resource_key)
 );
+
+CREATE TABLE IF NOT EXISTS compose_config_backups (
+	project_key TEXT PRIMARY KEY,
+	file_count INTEGER NOT NULL CHECK(file_count > 0 AND file_count <= 16),
+	created_at_ns INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS compose_config_backup_files (
+	project_key TEXT NOT NULL REFERENCES compose_config_backups(project_key) ON DELETE CASCADE,
+	file_index INTEGER NOT NULL CHECK(file_index >= 0 AND file_index < 16),
+	content BLOB NOT NULL,
+	sha256 TEXT NOT NULL,
+	PRIMARY KEY(project_key, file_index)
+);

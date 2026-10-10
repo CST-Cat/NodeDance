@@ -132,15 +132,38 @@ func (s *Server) handleComposeProjects(w http.ResponseWriter, r *http.Request, n
 		if idErr == nil {
 			request := protocol.ComposeRequest{OperationID: requestID}
 			response, requestErr := s.requestCompose(r.Context(), connection, request, composeListTimeout)
-			if requestErr == nil && response.Status == "succeeded" && s.composeProjects.RegisterProjects(r.Context(), nodeID, response.Projects) == nil {
+			if requestErr == nil && response.Status == "succeeded" && response.Verified && s.composeProjects.RegisterProjects(r.Context(), nodeID, response.Projects) == nil {
 				inventoryFresh = true
+				liveKeys := make(map[string]struct{}, len(response.Projects))
+				for _, project := range response.Projects {
+					liveKeys[project.Ref.Key] = struct{}{}
+				}
 				for key, project := range projectByKey {
+					if _, live := liveKeys[key]; live {
+						continue
+					}
 					project.Services = []protocol.ComposeService{}
 					project.DataStale = false
+					if !composeProjectConfigAvailable(r.Context(), s, connection, project.Ref) {
+						project.ConfigAvailable = false
+						project.ConfigReason = "config_missing"
+					} else {
+						project.ConfigAvailable = true
+						project.ConfigReason = ""
+					}
 					projectByKey[key] = project
 				}
 				for _, project := range response.Projects {
 					projectByKey[project.Ref.Key] = project
+				}
+				for key, project := range projectByKey {
+					if _, live := liveKeys[key]; live {
+						continue
+					}
+					if err := s.composeProjects.RegisterProjects(r.Context(), nodeID, []protocol.ComposeProject{project}); err != nil {
+						inventoryFresh = false
+						break
+					}
 				}
 			}
 		}
@@ -153,6 +176,25 @@ func (s *Server) handleComposeProjects(w http.ResponseWriter, r *http.Request, n
 	}
 	sortComposeProjects(items)
 	writeJSON(w, http.StatusOK, map[string]any{"projects": items, "serverTime": serverTime, "dataStale": view.DataStale || !inventoryFresh})
+}
+
+func composeProjectConfigAvailable(ctx context.Context, s *Server, connection *agentConnection, ref protocol.ComposeProjectRef) bool {
+	if s == nil || connection == nil || protocol.ValidateComposeProjectRef(ref) != nil || len(ref.ConfigFiles) == 0 {
+		return false
+	}
+	for index := range ref.ConfigFiles {
+		requestID, err := newContainerStreamRequestID()
+		if err != nil {
+			return false
+		}
+		response, err := s.requestCompose(ctx, connection, protocol.ComposeRequest{
+			OperationID: requestID, Action: "config_read", Project: &ref, FileIndex: index,
+		}, composeListTimeout)
+		if err != nil || response.Status != "succeeded" || !response.Verified {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) activeComposeConnectionForNode(nodeID string, generation uint64) *agentConnection {

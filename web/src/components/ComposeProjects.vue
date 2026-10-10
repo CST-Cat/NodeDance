@@ -95,8 +95,19 @@ async function runAction(project: ComposeProject, action: ComposeOperation) {
 function taskMessage(task?: ContainerTask) {
   if (!task) return ''
   if (task.status === 'succeeded') return `${operationLabel(task.action as ComposeOperation)}已核实：${task.result.observedState || task.result.code}`
-  if (task.status === 'failed') return `操作失败：${task.result.code || '已确认失败'}`
-  if (task.status === 'unknown') return '结果待核实；不会自动重试高风险 Compose 操作。'
+  if (task.status === 'failed') {
+    if (task.action === 'compose_deploy' && ['recovered', 'recreated', 'restored_offline'].includes(task.result.observedState || '')) {
+      const restored = task.result.observedState === 'restored_offline' ? '旧配置已恢复，项目仍停止' : '旧配置及服务状态已恢复并核实'
+      return `部署失败（${task.result.resourceRevision || task.result.code}）；${restored}，数据卷保留。`
+    }
+    return `操作失败：${task.result.code || '已确认失败'}`
+  }
+  if (task.status === 'unknown') {
+    if (task.result.observedState === 'recovery_required') {
+      return `部署恢复待人工处理（${task.result.observedState}：${task.result.resourceRevision || '原因未分类'}）。请核对上方工作目录中的配置与容器；必要时在该节点运行对应项目的 docker compose up -d，确认服务正常后再处理待核实任务。`
+    }
+    return '结果待核实；不会自动重试高风险 Compose 操作。'
+  }
   return `${operationLabel(task.action as ComposeOperation)}：${task.status}`
 }
 

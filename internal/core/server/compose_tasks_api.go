@@ -254,6 +254,46 @@ func (s *Server) freshComposeProject(r *http.Request, nodeID, projectKey string)
 			return state, view, connection, project, true
 		}
 	}
+	// A Compose project registration and its source files outlive its containers.
+	// Resolve only the exact node-scoped project key saved by Core; never accept a
+	// working directory or config path from the Web request. Ask this live Agent
+	// to prove each registered file still exists at its canonical path.
+	registered, err := s.composeProjects.Projects(r.Context(), nodeID)
+	if err != nil {
+		return state, view, connection, protocol.ComposeProject{}, false
+	}
+	for _, saved := range registered {
+		project := saved.Value
+		if saved.NodeID != nodeID || project.Ref.Key != projectKey || protocol.ValidateComposeProjectRef(project.Ref) != nil {
+			continue
+		}
+		available := len(project.Ref.ConfigFiles) > 0
+		for index := range project.Ref.ConfigFiles {
+			readID, idErr := newContainerStreamRequestID()
+			if idErr != nil {
+				available = false
+				break
+			}
+			read, readErr := s.requestCompose(r.Context(), connection, protocol.ComposeRequest{
+				OperationID: readID, Action: "config_read", Project: &project.Ref, FileIndex: index,
+			}, composeEditorTimeout)
+			if readErr != nil || read.Status != "succeeded" || !read.Verified {
+				available = false
+				break
+			}
+		}
+		if !available {
+			return state, view, connection, protocol.ComposeProject{}, false
+		}
+		project.ConfigAvailable = true
+		project.ConfigReason = ""
+		project.DataStale = false
+		project.Services = []protocol.ComposeService{}
+		if err := s.composeProjects.RegisterProjects(r.Context(), nodeID, []protocol.ComposeProject{project}); err != nil {
+			return state, view, connection, protocol.ComposeProject{}, false
+		}
+		return state, view, connection, project, true
+	}
 	return state, view, connection, protocol.ComposeProject{}, false
 }
 

@@ -978,6 +978,13 @@ func reportFromSnapshot(snapshot taskjournal.Snapshot, nodeID, journalID string)
 	result := protocol.TaskResult{Code: string(snapshot.Result.Code), ObservedState: snapshot.Result.ObservedState, ResourceRevision: snapshot.Result.ResourceRevision}
 	if snapshot.Status == taskstate.Unknown {
 		result = protocol.TaskResult{Code: string(taskjournal.ResultUncertain)}
+		if snapshot.Result.ObservedState == "recovery_required" || snapshot.Result.ObservedState == "deployment_verified" {
+			// Compose deployment recovery outcomes are already constrained by the
+			// Agent journal to a small code allowlist. Preserve those actionable
+			// states for Core; never forward arbitrary command output or config text.
+			result.ObservedState = snapshot.Result.ObservedState
+			result.ResourceRevision = snapshot.Result.ResourceRevision
+		}
 	}
 	report := protocol.TaskReport{
 		TaskID: snapshot.TaskID, ReportRevision: 1, NodeID: nodeID, JournalID: journalID, TargetID: snapshot.TargetID,
