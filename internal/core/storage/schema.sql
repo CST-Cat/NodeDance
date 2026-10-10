@@ -143,6 +143,14 @@ CREATE TABLE IF NOT EXISTS dashboard_preferences (
 	PRIMARY KEY(node_id, target_kind, identity_key)
 );
 
+CREATE TABLE IF NOT EXISTS node_connection_preferences (
+	node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+	ssh_host TEXT NOT NULL DEFAULT '',
+	ssh_port INTEGER NOT NULL DEFAULT 22 CHECK (ssh_port BETWEEN 1 AND 65535),
+	ssh_user TEXT NOT NULL DEFAULT '',
+	updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS dashboard_settings (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	view_mode TEXT NOT NULL CHECK (view_mode IN ('monitor', 'manage')),

@@ -260,6 +260,9 @@ export interface DashboardPreference {
   icon: string
   notes: string
   serviceUrl: string
+  sshHost: string
+  sshPort: number
+  sshUser: string
   group: string
   sortOrder: number
   visible: boolean

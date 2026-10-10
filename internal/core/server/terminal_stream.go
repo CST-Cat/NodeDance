@@ -141,6 +141,16 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, current 
 			return
 		}
 	}
+	// Serialize the final Session check and ticket creation with logout,
+	// revocation and password changes. A request authenticated just before a
+	// logout must not leave a fresh, usable terminal ticket behind it.
+	s.terminalSessionMu.Lock()
+	defer s.terminalSessionMu.Unlock()
+	if !s.dashboardSessionStillValid(r.Context(), current.ID) {
+		s.clearCookies(w)
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
 	stream, ticket, err := s.terminals.create(current, nodeID, node.AgentID, node.ConnectionGeneration, request.TargetKind, request.ContainerID, connection, s.now())
 	if err != nil {
 		if errors.Is(err, errTerminalLimit) {

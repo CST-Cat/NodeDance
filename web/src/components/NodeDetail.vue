@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api, type AgentNode, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainerRecord, type DockerInventory, type MetricHistory, type TaskAuditEvent } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import ContainerRebuildWizard from './ContainerRebuildWizard.vue'
@@ -32,7 +32,8 @@ const props = defineProps<{
   dashboardSettingsMessage: string
   dashboardSettingsError: string
   currentTime: number
-  initialSection: 'overview' | 'docker'
+  initialSection: 'overview' | 'docker' | 'files'
+  startHostTerminal?: boolean
 }>()
 const emit = defineEmits<{
   back: []
@@ -201,12 +202,12 @@ function preferenceForEditor(record: DockerInventory['containers'][number]): Das
   const existing = preferenceForContainer(record)
   if (existing) return existing
   return { nodeId: props.node.nodeId, targetKind: record.container.compose ? 'compose_service' : 'container', identity,
-    alias: '', icon: '', notes: '', serviceUrl: '', group: '',
+    alias: '', icon: '', notes: '', serviceUrl: '', sshHost: '', sshPort: 22, sshUser: '', group: '',
     sortOrder: props.inventory?.containers.findIndex((item) => item.container.id === record.container.id) ?? 0, visible: true, pinned: false }
 }
 function nodePreferenceForEditor(): DashboardPreference {
   return nodePreference.value ?? { nodeId: props.node.nodeId, targetKind: 'node', identity: `node:${props.node.nodeId}`,
-    alias: '', icon: 'server', notes: '', serviceUrl: '', group: '', sortOrder: -1, visible: true, pinned: true }
+    alias: '', icon: 'server', notes: '', serviceUrl: '', sshHost: '', sshPort: 22, sshUser: '', group: '', sortOrder: -1, visible: true, pinned: true }
 }
 function serviceLinkTitle(record: DockerInventory['containers'][number]): string {
   return props.preferenceIdentities[record.container.id] ? '为此容器或 Compose 服务设置展示偏好' : 'Docker 未提供稳定身份，不能绑定展示偏好'
@@ -342,6 +343,9 @@ watch(rebuildCandidates, (records) => {
     selectedRebuildContainerID.value = records[0]?.container.id ?? ''
   }
 }, { immediate: true })
+onMounted(() => {
+  if (props.startHostTerminal && props.online) openHostTerminal()
+})
 onBeforeUnmount(() => {
   document.removeEventListener('pointermove', movePointerReorder)
   document.removeEventListener('pointerup', endPointerReorder)

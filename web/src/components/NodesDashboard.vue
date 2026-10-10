@@ -14,6 +14,8 @@ interface NodeClock {
 }
 const nodes = ref<AgentNode[]>([])
 const selectedNodeID = ref('')
+const selectedNodeSection = ref<'overview' | 'docker' | 'files'>('overview')
+const startSelectedNodeTerminal = ref(false)
 const views = ref<Record<string, MetricsView>>({})
 const dockerViews = ref<Record<string, DockerInventory>>({})
 const clocks = ref<Record<string, NodeClock>>({})
@@ -188,10 +190,27 @@ const serverCardGroups = computed(() => {
 })
 function tasksForNode(nodeID: string): ContainerTask[] { return Object.values(taskViews.value).filter((task) => task.nodeId === nodeID) }
 function chooseNode(node: AgentNode) {
-  selectedNodeID.value = node.nodeId; error.value = ''
+  openNode(node, dashboardSettings.value.viewMode === 'manage' ? 'docker' : 'overview', false)
+}
+function openNode(node: AgentNode, section: 'overview' | 'docker' | 'files', startTerminal: boolean) {
+  selectedNodeID.value = node.nodeId
+  selectedNodeSection.value = section
+  startSelectedNodeTerminal.value = startTerminal
+  error.value = ''
   void loadPreferences(node)
   if (node.agentId) void Promise.all([loadMetrics(node), loadContainers(node), loadTasks(node)])
   else setNodeReason(node.nodeId, 'awaiting_agent_registration')
+}
+function openNodeShortcut(payload: { node: AgentNode; action: 'terminal' | 'files' | 'manage' }) {
+  const node = nodes.value.find((item) => item.nodeId === payload.node.nodeId)
+  if (!node) return
+  const section = payload.action === 'files' ? 'files' : payload.action === 'manage' ? 'docker' : 'overview'
+  openNode(node, section, payload.action === 'terminal')
+}
+function backToNodes() {
+  selectedNodeID.value = ''
+  selectedNodeSection.value = dashboardSettings.value.viewMode === 'manage' ? 'docker' : 'overview'
+  startSelectedNodeTerminal.value = false
 }
 function acceptSavedPreference(preference: DashboardPreference) {
   const existing = nodePreferences.value[preference.nodeId] ?? []
@@ -332,10 +351,10 @@ onBeforeUnmount(() => {
     <section class="vps-dashboard" aria-label="多 VPS 监控首页" data-testid="multi-vps-dashboard">
       <div class="server-view-controls" aria-label="服务器搜索、筛选、分组和排序"><label>搜索服务器 <input v-model="serverSearch" type="search" placeholder="名称、主机名、分组或备注" aria-label="搜索服务器"></label><label>状态筛选 <select v-model="statusFilter"><option value="all">所有状态</option><option value="online">在线</option><option value="pending">等待注册</option><option value="offline">离线</option><option value="revoked">已撤销</option><option value="hidden">隐藏 VPS</option></select></label><label>服务器分组 <select v-model="dashboardSettings.nodeGroupBy"><option value="status">连接状态</option><option value="group">自定义分组</option><option value="none">不分组</option></select></label><label>服务器排序 <select v-model="dashboardSettings.nodeSortBy"><option value="custom">自定义顺序</option><option value="name">显示名称</option><option value="status">连接状态</option></select></label><label>首页容器上限 <input v-model.number="dashboardSettings.featuredLimit" type="number" min="1" max="20"></label><button type="button" class="container-action" :disabled="dashboardSettingsSaving" @click="void saveDashboardSettings()">{{ dashboardSettingsSaving ? '保存中…' : '保存视图' }}</button><span v-if="dashboardSettingsMessage" role="status">{{ dashboardSettingsMessage }}</span><span v-if="dashboardSettingsError" role="alert">{{ dashboardSettingsError }}</span></div>
       <p v-if="busy && nodes.length === 0" class="dashboard-empty">正在加载 VPS…</p><p v-else-if="nodes.length === 0" class="dashboard-empty">暂无已登记的 VPS。完成 Agent 注册后，节点卡片会显示真实主机指标与 Docker 容器。</p><p v-else-if="serverCardGroups.every((group) => group.nodes.length === 0)" class="dashboard-empty">没有符合当前筛选条件的 VPS。</p>
-      <section v-for="group in serverCardGroups" :key="group.key" class="vps-card-group" :data-group="group.key"><h2 v-if="group.label" class="vps-group-heading">{{ group.label }}</h2><div class="vps-card-grid"><VpsCard v-for="node in group.nodes" :key="node.nodeId" :node="node" :metrics="views[node.nodeId]" :inventory="dockerViews[node.nodeId]" :node-preference="nodePreference(node)" :container-preferences="nodePreferences[node.nodeId] ?? []" :preference-identities="preferenceIdentities[node.nodeId] ?? {}" :online="nodeIsOnline(node)" :pending="isPendingRegistration(node)" :docker-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : !nodeIsOnline(node)" :preview-limit="dashboardSettings.featuredLimit" :current-time="wallClockNow" :node-reason="nodeReasons[node.nodeId]" :tasks="tasksForNode(node.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" @view="chooseNode" @container-action="submitCardContainerAction"/></div></section>
+      <section v-for="group in serverCardGroups" :key="group.key" class="vps-card-group" :data-group="group.key"><h2 v-if="group.label" class="vps-group-heading">{{ group.label }}</h2><div class="vps-card-grid"><VpsCard v-for="node in group.nodes" :key="node.nodeId" :node="node" :metrics="views[node.nodeId]" :inventory="dockerViews[node.nodeId]" :node-preference="nodePreference(node)" :container-preferences="nodePreferences[node.nodeId] ?? []" :preference-identities="preferenceIdentities[node.nodeId] ?? {}" :online="nodeIsOnline(node)" :pending="isPendingRegistration(node)" :docker-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : !nodeIsOnline(node)" :preview-limit="dashboardSettings.featuredLimit" :current-time="wallClockNow" :node-reason="nodeReasons[node.nodeId]" :tasks="tasksForNode(node.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" @view="chooseNode" @quick-action="openNodeShortcut" @container-action="submitCardContainerAction"/></div></section>
     </section>
   </section>
-  <NodeDetail v-else :key="selectedNode.nodeId" :node="selectedNode" :metrics="views[selectedNode.nodeId]" :inventory="dockerViews[selectedNode.nodeId]" :preferences="nodePreferences[selectedNode.nodeId] ?? []" :preference-identities="preferenceIdentities[selectedNode.nodeId] ?? {}" :online="nodeIsOnline(selectedNode)" :pending="isPendingRegistration(selectedNode)" :docker-stale="dockerViews[selectedNode.nodeId] ? dockerIsStale(dockerViews[selectedNode.nodeId]) : !nodeIsOnline(selectedNode)" :node-reason="nodeReasons[selectedNode.nodeId]" :tasks="tasksForNode(selectedNode.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" :dashboard-settings="dashboardSettings" :dashboard-settings-saving="dashboardSettingsSaving" :dashboard-settings-message="dashboardSettingsMessage" :dashboard-settings-error="dashboardSettingsError" :current-time="wallClockNow" :initial-section="dashboardSettings.viewMode === 'manage' ? 'docker' : 'overview'" @back="selectedNodeID = ''" @refresh-tasks="(id) => { const node = nodes.find((item) => item.nodeId === id); if (node) void loadTasks(node) }" @preference-saved="acceptSavedPreference" @container-action="submitDetailContainerAction" @container-create="submitContainerCreateTask" @settings-change="dashboardSettings = $event" @save-settings="void saveDashboardSettings()"/>
+  <NodeDetail v-else :key="selectedNode.nodeId" :node="selectedNode" :metrics="views[selectedNode.nodeId]" :inventory="dockerViews[selectedNode.nodeId]" :preferences="nodePreferences[selectedNode.nodeId] ?? []" :preference-identities="preferenceIdentities[selectedNode.nodeId] ?? {}" :online="nodeIsOnline(selectedNode)" :pending="isPendingRegistration(selectedNode)" :docker-stale="dockerViews[selectedNode.nodeId] ? dockerIsStale(dockerViews[selectedNode.nodeId]) : !nodeIsOnline(selectedNode)" :node-reason="nodeReasons[selectedNode.nodeId]" :tasks="tasksForNode(selectedNode.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" :dashboard-settings="dashboardSettings" :dashboard-settings-saving="dashboardSettingsSaving" :dashboard-settings-message="dashboardSettingsMessage" :dashboard-settings-error="dashboardSettingsError" :current-time="wallClockNow" :initial-section="selectedNodeSection" :start-host-terminal="startSelectedNodeTerminal" @back="backToNodes" @refresh-tasks="(id) => { const node = nodes.find((item) => item.nodeId === id); if (node) void loadTasks(node) }" @preference-saved="acceptSavedPreference" @container-action="submitDetailContainerAction" @container-create="submitContainerCreateTask" @settings-change="dashboardSettings = $event" @save-settings="void saveDashboardSettings()"/>
 </template>
 
 <style scoped>

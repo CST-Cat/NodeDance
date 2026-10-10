@@ -105,6 +105,7 @@ type Server struct {
 	agentLeaseWatchers         map[string]*agentConnection
 	containerStreamSlots       chan struct{}
 	terminals                  *terminalStreamManager
+	terminalSessionMu          sync.Mutex
 	fileTransferLimit          int64
 	nonMetricHistoryRetention  time.Duration
 	historyRetentionInterval   time.Duration

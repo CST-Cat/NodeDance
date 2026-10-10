@@ -171,6 +171,8 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, current *session) {
+	s.terminalSessionMu.Lock()
+	defer s.terminalSessionMu.Unlock()
 	tx, err := s.store.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
@@ -230,6 +232,8 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request, cu
 		http.Error(w, "new password must contain 12 to 1024 UTF-8 bytes", http.StatusBadRequest)
 		return
 	}
+	s.terminalSessionMu.Lock()
+	defer s.terminalSessionMu.Unlock()
 	tx, err := s.store.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
@@ -324,6 +328,8 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request, cur
 			return
 		}
 	}
+	s.terminalSessionMu.Lock()
+	defer s.terminalSessionMu.Unlock()
 	tx, err := s.store.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)

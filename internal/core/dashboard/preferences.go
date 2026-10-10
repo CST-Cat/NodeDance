@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"time"
@@ -56,6 +57,9 @@ type Preference struct {
 	Icon       string `json:"icon"`
 	Notes      string `json:"notes"`
 	ServiceURL string `json:"serviceUrl"`
+	SSHHost    string `json:"sshHost"`
+	SSHPort    int    `json:"sshPort"`
+	SSHUser    string `json:"sshUser"`
 	Group      string `json:"group"`
 	SortOrder  int    `json:"sortOrder"`
 	Visible    bool   `json:"visible"`
@@ -78,8 +82,11 @@ type Repository struct {
 }
 
 func (r Repository) List(ctx context.Context, nodeID string) ([]Preference, error) {
-	rows, err := r.DB.QueryContext(ctx, `SELECT node_id, target_kind, identity_key, alias, icon, notes, service_url, group_name, sort_order, visible, pinned
-		FROM dashboard_preferences WHERE node_id=? ORDER BY sort_order, target_kind, identity_key`, nodeID)
+	rows, err := r.DB.QueryContext(ctx, `SELECT p.node_id, p.target_kind, p.identity_key, p.alias, p.icon, p.notes, p.service_url,
+		COALESCE(c.ssh_host, ''), COALESCE(c.ssh_port, 22), COALESCE(c.ssh_user, ''),
+		p.group_name, p.sort_order, p.visible, p.pinned
+		FROM dashboard_preferences p LEFT JOIN node_connection_preferences c ON c.node_id=p.node_id AND p.target_kind='node'
+		WHERE p.node_id=? ORDER BY p.sort_order, p.target_kind, p.identity_key`, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +96,8 @@ func (r Repository) List(ctx context.Context, nodeID string) ([]Preference, erro
 		var item Preference
 		var visible, pinned int
 		if err := rows.Scan(&item.NodeID, &item.TargetKind, &item.Identity, &item.Alias, &item.Icon,
-			&item.Notes, &item.ServiceURL, &item.Group, &item.SortOrder, &visible, &pinned); err != nil {
+			&item.Notes, &item.ServiceURL, &item.SSHHost, &item.SSHPort, &item.SSHUser,
+			&item.Group, &item.SortOrder, &visible, &pinned); err != nil {
 			return nil, err
 		}
 		item.Visible, item.Pinned = visible == 1, pinned == 1
@@ -113,13 +121,32 @@ func (r Repository) Put(ctx context.Context, item Preference) error {
 	if item.Pinned {
 		pinned = 1
 	}
-	_, err := r.DB.ExecContext(ctx, `INSERT INTO dashboard_preferences(node_id, target_kind, identity_key, alias, icon, notes, service_url, group_name, sort_order, visible, pinned, updated_at)
+	tx, err := r.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.ExecContext(ctx, `INSERT INTO dashboard_preferences(node_id, target_kind, identity_key, alias, icon, notes, service_url, group_name, sort_order, visible, pinned, updated_at)
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(node_id, target_kind, identity_key) DO UPDATE SET alias=excluded.alias, icon=excluded.icon, notes=excluded.notes,
 		service_url=excluded.service_url, group_name=excluded.group_name, sort_order=excluded.sort_order, visible=excluded.visible, pinned=excluded.pinned, updated_at=excluded.updated_at`,
 		item.NodeID, item.TargetKind, item.Identity, strings.TrimSpace(item.Alias), item.Icon, strings.TrimSpace(item.Notes),
 		strings.TrimSpace(item.ServiceURL), strings.TrimSpace(item.Group), item.SortOrder, visible, pinned, now.UTC().UnixNano())
-	return err
+	if err != nil {
+		return err
+	}
+	if item.TargetKind == "node" {
+		port := item.SSHPort
+		if port == 0 {
+			port = 22
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO node_connection_preferences(node_id, ssh_host, ssh_port, ssh_user, updated_at)
+			VALUES(?, ?, ?, ?, ?) ON CONFLICT(node_id) DO UPDATE SET ssh_host=excluded.ssh_host, ssh_port=excluded.ssh_port,
+			ssh_user=excluded.ssh_user, updated_at=excluded.updated_at`, item.NodeID, strings.TrimSpace(item.SSHHost), port, strings.TrimSpace(item.SSHUser), now.UTC().UnixNano()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (r Repository) GetSettings(ctx context.Context) (Settings, error) {
@@ -178,18 +205,19 @@ func validPreference(item Preference) bool {
 	}
 	switch item.TargetKind {
 	case "node":
-		if !validNodeID(item.NodeID) || item.Identity != NodeIdentity(item.NodeID) {
+		if !validNodeID(item.NodeID) || item.Identity != NodeIdentity(item.NodeID) ||
+			!validSSHHost(item.SSHHost) || !validSSHUser(item.SSHUser) || item.SSHPort < 0 || item.SSHPort > 65535 {
 			return false
 		}
 	case "container":
-		if item.Group != "" {
+		if item.Group != "" || item.SSHHost != "" || item.SSHUser != "" || item.SSHPort != 0 && item.SSHPort != 22 {
 			return false
 		}
 		if _, ok := ContainerIdentity(strings.TrimPrefix(item.Identity, "container:")); !strings.HasPrefix(item.Identity, "container:") || !ok {
 			return false
 		}
 	case "compose_service":
-		if item.Group != "" {
+		if item.Group != "" || item.SSHHost != "" || item.SSHUser != "" || item.SSHPort != 0 && item.SSHPort != 22 {
 			return false
 		}
 		identity := strings.TrimPrefix(item.Identity, "compose:")
@@ -209,6 +237,61 @@ func validPreference(item Preference) bool {
 	}
 	parsed, err := url.Parse(item.ServiceURL)
 	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" && parsed.User == nil && parsed.Fragment == "" && len(item.ServiceURL) <= 2048
+}
+
+func validSSHHost(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) > 255 || strings.TrimSpace(value) != value || strings.HasPrefix(value, "-") ||
+		strings.ContainsAny(value, "\x00\r\n\t /@\\'\";|&$`(){}[]<>!") {
+		return false
+	}
+	if net.ParseIP(value) != nil {
+		return true
+	}
+	if strings.Contains(value, ":") {
+		address, zone, hasZone := strings.Cut(value, "%")
+		if !hasZone || zone == "" || strings.Contains(zone, "%") || net.ParseIP(address) == nil {
+			return false
+		}
+		for _, char := range zone {
+			if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '_' || char == '.' || char == '-') {
+				return false
+			}
+		}
+		return true
+	}
+	if len(value) > 253 || strings.HasPrefix(value, ".") || strings.HasSuffix(value, ".") {
+		return false
+	}
+	for _, label := range strings.Split(value, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, char := range label {
+			if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '-') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func validSSHUser(value string) bool {
+	if value == "" {
+		return true
+	}
+	if len(value) > 64 || strings.HasPrefix(value, "-") {
+		return false
+	}
+	for index, char := range value {
+		if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char == '_' ||
+			index > 0 && (char >= '0' && char <= '9' || char == '.' || char == '-')) {
+			return false
+		}
+	}
+	return true
 }
 
 func validNodeID(value string) bool {

@@ -16,7 +16,8 @@ async function save() {
   notice.value = ''
   saving.value = true
   try {
-    const next = { ...form, alias: form.alias.trim(), notes: form.notes.trim(), serviceUrl: form.serviceUrl.trim(), group: form.group.trim() }
+    const next = { ...form, alias: form.alias.trim(), notes: form.notes.trim(), serviceUrl: form.serviceUrl.trim(),
+      sshHost: form.sshHost.trim(), sshUser: form.sshUser.trim(), sshPort: Number(form.sshPort) || 22, group: form.group.trim() }
     await api.saveNodePreference(next.nodeId, next)
     Object.assign(form, next)
     emit('saved', next)
@@ -48,6 +49,16 @@ async function save() {
     <label v-if="form.targetKind === 'node'">VPS 分组
       <input v-model="form.group" maxlength="128" placeholder="未分组">
     </label>
+    <label v-if="form.targetKind === 'node'">SSH 主机
+      <input v-model="form.sshHost" maxlength="255" autocomplete="off" placeholder="主机名或 IP 地址">
+    </label>
+    <label v-if="form.targetKind === 'node'">SSH 端口
+      <input v-model.number="form.sshPort" type="number" min="1" max="65535" step="1" inputmode="numeric" required>
+    </label>
+    <label v-if="form.targetKind === 'node'">SSH 用户
+      <input v-model="form.sshUser" maxlength="64" autocomplete="off" placeholder="登录用户名">
+    </label>
+    <small v-if="form.targetKind === 'node'" class="ssh-preference-note">SSH 信息保存在 Core SQLite 中，节点离线时仍可查看和复制。</small>
     <label v-if="form.targetKind === 'node'">自定义顺序
       <input v-model.number="form.sortOrder" type="number" min="-1000000" max="1000000" step="1" required>
     </label>
@@ -63,6 +74,7 @@ async function save() {
 <style scoped>
 .preference-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; border: 1px solid rgba(171,196,232,.13); border-radius: 9px; padding: 12px; background: rgba(9,17,29,.6); }
 .preference-editor header { grid-column: 1 / -1; display: grid; gap: 4px; }
+.ssh-preference-note { grid-column: 1 / -1; color: #91a2ba; font-size: 9px; }
 .preference-editor header strong { font-size: 11px; }
 .preference-editor header small { color: #91a2ba; font-size: 9px; }
 .preference-editor label { display: grid; min-width: 0; gap: 5px; color: #aebbd0; font-size: 9px; }

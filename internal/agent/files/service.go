@@ -109,7 +109,7 @@ func (s *Service) List(virtual string) ([]protocol.FileEntry, error) {
 	}
 	defer directory.Close()
 	entries, err := directory.ReadDir(protocol.MaxFileEntries + 1)
-	if err != nil {
+	if err != nil && !errors.Is(err, io.EOF) {
 		return nil, err
 	}
 	if len(entries) > protocol.MaxFileEntries {

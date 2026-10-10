@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { AgentNode, ContainerTask, ContainerTaskAction, DashboardPreference, DockerContainerRecord, DockerInventory } from '../api'
 import type { Metric, MetricsView } from '../metrics-contract'
 
@@ -23,10 +23,20 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   view: [node: AgentNode]
+  quickAction: [payload: { node: AgentNode; action: 'terminal' | 'files' | 'manage' }]
   containerAction: [payload: { node: AgentNode; record: DockerContainerRecord; action: ContainerTaskAction }]
 }>()
 
 const title = computed(() => props.nodePreference?.alias || props.node.displayName)
+const sshCommand = computed(() => {
+  const host = props.nodePreference?.sshHost ?? ''
+  const user = props.nodePreference?.sshUser ?? ''
+  const port = props.nodePreference?.sshPort || 22
+  if (!host || !user || host.startsWith('-') || !/^[A-Za-z0-9._:%-]+$/.test(host) ||
+      !/^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/.test(user) || !Number.isInteger(port) || port < 1 || port > 65535) return ''
+  return `ssh -p ${port} ${user}@${host}`
+})
+const sshCopyMessage = ref('')
 const displayContainers = computed(() => {
   const containers = (props.inventory?.containers ?? []).filter((record) => preferenceFor(record)?.visible !== false)
   containers.sort((left, right) => {
@@ -159,6 +169,15 @@ function healthText(record: DockerContainerRecord): string {
   return ({ healthy: '健康', unhealthy: '异常', starting: '启动中', unknown: '未知' } as Record<string, string>)[container.health] ?? container.health
 }
 
+function serviceURL(record: DockerContainerRecord): string {
+  const candidate = preferenceFor(record)?.serviceUrl
+  if (!candidate) return ''
+  try {
+    const url = new URL(candidate)
+    return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password && !url.hash ? url.href : ''
+  } catch { return '' }
+}
+
 function networkText(record: DockerContainerRecord): string {
   const container = record.container
   if (container.hostNetwork) return 'Host Network（共享宿主机网络）'
@@ -247,6 +266,29 @@ function emitAction(record: DockerContainerRecord, action: ContainerTaskAction) 
   if (!canOperate(record)) return
   emit('containerAction', { node: props.node, record, action })
 }
+
+async function copySSHCommand() {
+  if (!sshCommand.value) return
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(sshCommand.value)
+    } else {
+      const input = document.createElement('textarea')
+      input.value = sshCommand.value
+      input.setAttribute('readonly', '')
+      input.style.position = 'fixed'
+      input.style.opacity = '0'
+      document.body.append(input)
+      input.select()
+      const copied = document.execCommand('copy')
+      input.remove()
+      if (!copied) throw new Error('clipboard unavailable')
+    }
+    sshCopyMessage.value = 'SSH 命令已复制。'
+  } catch {
+    sshCopyMessage.value = `无法自动复制，请手动复制：${sshCommand.value}`
+  }
+}
 </script>
 
 <template>
@@ -286,6 +328,7 @@ function emitAction(record: DockerContainerRecord, action: ContainerTaskAction) 
             <small>{{ portText(record) }}</small>
             <small>创建：{{ containerCreated(record) }} · 运行：{{ containerUptime(record) }}</small>
             <small v-if="record.container.healthReason || record.container.unavailableReason" class="vps-card-reason">{{ record.container.healthReason || record.container.unavailableReason }}</small>
+            <a v-if="serviceURL(record)" class="vps-card-service-link" :href="serviceURL(record)" target="_blank" rel="noopener noreferrer">打开服务 ↗</a>
             <small v-if="dockerStale || record.container.stale" class="vps-card-stale">历史状态已过期</small>
             <small v-if="taskLabel(taskFor(record))" class="vps-card-task" role="status">{{ taskLabel(taskFor(record)) }}</small>
             <small v-if="taskErrors[taskKey(record.container.id)]" class="vps-card-error" role="alert">{{ taskErrors[taskKey(record.container.id)] }}</small>
@@ -306,6 +349,13 @@ function emitAction(record: DockerContainerRecord, action: ContainerTaskAction) 
         <p v-if="dockerStale" class="vps-card-stale">Agent 离线或租约过期；显示最近已知数据。</p>
       </div>
     </section>
+    <nav class="vps-card-shortcuts" :aria-label="`${title} 快捷入口`">
+      <button type="button" :disabled="!online" @click="emit('quickAction', { node, action: 'terminal' })">终端</button>
+      <button type="button" :disabled="!online" @click="emit('quickAction', { node, action: 'files' })">文件</button>
+      <button type="button" :disabled="!sshCommand" :title="sshCommand || '请先在节点设置中填写 SSH 主机和用户'" @click="void copySSHCommand()">复制 SSH</button>
+      <button type="button" @click="emit('quickAction', { node, action: 'manage' })">管理</button>
+    </nav>
+    <p v-if="sshCopyMessage" class="vps-card-ssh-status" role="status">{{ sshCopyMessage }}</p>
     <footer class="vps-card-footer">
       <span>{{ nodeReason || (dockerStale ? 'Agent 离线，容器状态已过期' : '') }}</span>
       <button type="button" @click="emit('view', node)">查看完整详情</button>
@@ -342,14 +392,19 @@ function emitAction(record: DockerContainerRecord, action: ContainerTaskAction) 
 .vps-card-container-copy small { color: #91a2ba; font-size: 8px; line-height: 1.45; }
 .vps-card-container-copy .vps-card-stale, .vps-card-container-copy .vps-card-reason, .vps-card-container-copy .vps-card-error { color: #efc58d; }
 .vps-card-container-copy .vps-card-error { color: #ffc1b8; }
+.vps-card-service-link { width:max-content; max-width:100%; border:1px solid rgba(141,201,255,.2); border-radius:5px; padding:4px 7px; color:#cce6ff; background:rgba(62,119,170,.12); font-size:8px; text-decoration:none; overflow-wrap:anywhere; }
 .vps-card-state { align-self: start; border: 1px solid rgba(171,196,232,.16); border-radius: 999px; padding: 4px 7px; color: #aebbd0; font-size: 8px; white-space: nowrap; }
 .vps-card-state[data-running='true'] { border-color: rgba(121,214,156,.24); color: #9ce0b7; }
 .vps-card-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
 .vps-card-actions button, .vps-card-footer button { min-height: 30px; border: 1px solid rgba(141,201,255,.25); border-radius: 6px; padding: 5px 9px; color: #cce6ff; background: rgba(62,119,170,.16); font: inherit; font-size: 9px; cursor: pointer; }
 .vps-card-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .vps-card-more { margin: 0; color: #91a2ba; font-size: 9px; }
+.vps-card-shortcuts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-top:10px; }
+.vps-card-shortcuts button { min-width:0; min-height:36px; border:1px solid rgba(141,201,255,.22); border-radius:6px; padding:6px 8px; color:#cce6ff; background:rgba(62,119,170,.13); font:inherit; font-size:9px; cursor:pointer; }
+.vps-card-shortcuts button:disabled { opacity:.45; cursor:not-allowed; }
+.vps-card-ssh-status { margin:6px 0 0; color:#a9e7bd; font-size:9px; line-height:1.5; overflow-wrap:anywhere; }
 .vps-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; color: #91a2ba; font-size: 9px; overflow-wrap: anywhere; }
 .vps-card-footer button { flex: 0 0 auto; }
 @media (max-width: 800px) { .vps-card-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } }
-@media (max-width: 560px) { .vps-card-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .vps-card-container { grid-template-columns: auto minmax(0,1fr); } .vps-card-state { grid-column: 2; justify-self: start; } .vps-card-footer { align-items: flex-start; flex-direction: column; } .vps-card-footer button { width: 100%; min-height: 40px; } }
+@media (max-width: 560px) { .vps-card-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .vps-card-container { grid-template-columns: auto minmax(0,1fr); } .vps-card-state { grid-column: 2; justify-self: start; } .vps-card-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)); }.vps-card-shortcuts button { min-height:42px; }.vps-card-footer { align-items: flex-start; flex-direction: column; } .vps-card-footer button { width: 100%; min-height: 40px; } }
 </style>

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+
+	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 )
 
 func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
@@ -46,7 +48,7 @@ func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
 	}
 	for _, name := range []string{
 		"admin_user", "nodes", "agent_devices", "docker_node_state", "docker_containers",
-		"metrics_minute", "metrics_hour", "dashboard_preferences", "dashboard_settings",
+		"metrics_minute", "metrics_hour", "dashboard_preferences", "node_connection_preferences", "dashboard_settings",
 		"compose_projects", "core_tasks", "core_task_resource_claims", "core_task_audit_events",
 	} {
 		if !seen[name] {
@@ -74,6 +76,17 @@ func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
 		_ = store.Close()
 		t.Fatal(err)
 	}
+	nodeID := "11111111-1111-4111-8111-111111111111"
+	if _, err := store.DB.ExecContext(ctx, `INSERT INTO nodes(id, display_name, status, created_at, updated_at) VALUES(?, ?, 'offline', 1, 1)`, nodeID, "offline host"); err != nil {
+		_ = store.Close()
+		t.Fatal(err)
+	}
+	preferences := dashboard.Repository{DB: store.DB}
+	if err := preferences.Put(ctx, dashboard.Preference{NodeID: nodeID, TargetKind: "node", Identity: dashboard.NodeIdentity(nodeID),
+		SSHHost: "offline.example.net", SSHPort: 2222, SSHUser: "ops", Visible: true, Pinned: true}); err != nil {
+		_ = store.Close()
+		t.Fatalf("save node SSH preferences: %v", err)
+	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -89,6 +102,13 @@ func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
 	}
 	if featuredLimit != 7 {
 		t.Fatalf("reopening current schema reset stored data: featured_limit=%d, want 7", featuredLimit)
+	}
+	items, err := (dashboard.Repository{DB: store.DB}).List(ctx, nodeID)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("read persisted node preferences: items=%#v err=%v", items, err)
+	}
+	if items[0].SSHHost != "offline.example.net" || items[0].SSHPort != 2222 || items[0].SSHUser != "ops" {
+		t.Fatalf("reopening current schema lost SSH connection settings: %#v", items[0])
 	}
 }
 

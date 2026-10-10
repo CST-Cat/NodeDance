@@ -78,6 +78,10 @@ func (s *Server) handleNodeDashboardAPI(w http.ResponseWriter, r *http.Request) 
 				http.Error(w, "preference node does not match request path", http.StatusBadRequest)
 				return true
 			}
+			if preference.TargetKind == "node" && preference.Identity != dashboard.NodeIdentity(nodeID) {
+				http.Error(w, "node connection preference does not match request path", http.StatusBadRequest)
+				return true
+			}
 			preference.NodeID = nodeID
 			if err := s.dashboardPreferences.Put(r.Context(), preference); errors.Is(err, dashboard.ErrInvalidPreference) {
 				http.Error(w, "invalid dashboard preference", http.StatusBadRequest)
