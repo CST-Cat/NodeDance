@@ -13,10 +13,12 @@ import (
 // generation-bound WebSocket frames. The writer queue is bounded FIFO; it
 // never coalesces snapshot chunks.
 type socketDockerObserver struct {
-	writer     *socketEnvelopeWriter
-	generation uint64
-	mu         sync.Mutex
-	sequence   uint64
+	writer                *socketEnvelopeWriter
+	generation            uint64
+	engineUnavailable     chan struct{}
+	engineUnavailableOnce sync.Once
+	mu                    sync.Mutex
+	sequence              uint64
 }
 
 func (o *socketDockerObserver) ApplyDockerBatch(ctx context.Context, batch agentdocker.Batch) error {
@@ -39,5 +41,17 @@ func (o *socketDockerObserver) ApplyDockerBatch(ctx context.Context, batch agent
 		Version: protocol.CurrentVersion, Type: protocol.TypeDocker,
 		Generation: o.generation, Sequence: sequence, Payload: payload,
 	}
-	return o.writer.offerDocker(ctx, envelope)
+	err = o.writer.offerDocker(ctx, envelope)
+	if batch.Health != nil && batch.Health.Availability == agentdocker.EngineUnavailable &&
+		batch.Health.ErrorKind != "" && batch.Health.ErrorKind != "not_checked" {
+		o.engineUnavailableOnce.Do(func() {
+			if o.engineUnavailable != nil {
+				select {
+				case o.engineUnavailable <- struct{}{}:
+				default:
+				}
+			}
+		})
+	}
+	return err
 }

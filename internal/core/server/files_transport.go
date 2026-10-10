@@ -146,20 +146,49 @@ func (connection *agentConnection) rememberFileTombstoneLocked(id string) {
 }
 
 func (connection *agentConnection) closeFileTransfers() {
+	connection.closeFileTransfersWithError(errors.New("Agent connection ended"))
+}
+
+func (connection *agentConnection) closeFileTransfersWithError(reason error) {
 	if connection == nil {
 		return
+	}
+	if reason == nil {
+		reason = errors.New("Agent connection ended")
 	}
 	connection.fileMu.Lock()
 	for id, transfer := range connection.fileTransfers {
 		connection.rememberFileTombstoneLocked(id)
 		transfer.mu.Lock()
 		if !transfer.closed {
-			transfer.finishLocked(errors.New("Agent connection ended"))
+			transfer.finishLocked(reason)
 		}
 		transfer.mu.Unlock()
 		delete(connection.fileTransfers, id)
 	}
 	connection.fileMu.Unlock()
+}
+
+func validateAgentFileFrame(connection *agentConnection, envelope protocol.Envelope) error {
+	if connection == nil || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
+		return errors.New("Agent file message is unavailable or too large")
+	}
+	switch envelope.Type {
+	case protocol.TypeFileResponse:
+		var response protocol.FileResponse
+		if err := decodeAgentPayload(envelope.Payload, &response); err != nil {
+			return err
+		}
+		return protocol.ValidateFileResponse(envelope, connection.generation, response)
+	case protocol.TypeFileChunk:
+		var chunk protocol.FileChunk
+		if err := decodeAgentPayload(envelope.Payload, &chunk); err != nil {
+			return err
+		}
+		return protocol.ValidateFileChunkEnvelope(envelope, connection.generation, chunk)
+	default:
+		return errors.New("Agent file message type is invalid")
+	}
 }
 
 // closeFileTransfersForSession revokes every active Core-to-Agent file stream

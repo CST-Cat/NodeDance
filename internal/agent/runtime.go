@@ -591,11 +591,13 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	var dockerDone <-chan error
 	var cancelDocker context.CancelFunc
 	var dockerFinished <-chan struct{}
+	var dockerUnavailable <-chan struct{}
 	if dockerEnabled {
 		if sharedDocker == nil {
 			activeCapabilities, _ = withoutCapability(activeCapabilities, protocol.CapabilityDocker)
 		} else {
-			observer := &socketDockerObserver{writer: writer, generation: generation}
+			observer := &socketDockerObserver{writer: writer, generation: generation, engineUnavailable: make(chan struct{}, 1)}
+			dockerUnavailable = observer.engineUnavailable
 			discoverer, err := agentdocker.NewDiscoverer(sharedDocker, observer, agentdocker.Options{})
 			if err == nil {
 				dockerCtx, cancelDockerFunc := context.WithCancel(ctx)
@@ -683,6 +685,17 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				return errors.New("send Agent Docker capability downgrade failed")
 			}
 			dockerDone = nil
+		case <-dockerUnavailable:
+			if ctx.Err() != nil {
+				return nil
+			}
+			if dockerEnabled && containsCapability(activeCapabilities, protocol.CapabilityDocker) {
+				if err := degradeCapability(protocol.CapabilityDocker, cancelDocker, dockerFinished); err != nil {
+					return errors.New("send Agent Docker capability downgrade failed")
+				}
+			}
+			dockerDone = nil
+			dockerUnavailable = nil
 		case <-taskBridgeDone:
 			if ctx.Err() != nil {
 				return nil

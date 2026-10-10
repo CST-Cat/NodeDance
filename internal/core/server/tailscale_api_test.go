@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
+	"github.com/coder/websocket"
 )
 
 func newUnknownDeploymentForTest(t *testing.T, dataDir string) (*storage.Store, *coretasks.Store, coretasks.Task) {
@@ -156,6 +158,222 @@ func TestHeartbeatPersistsLiveCapabilityDowngrade(t *testing.T) {
 	}
 }
 
+func TestCapabilityDowngradeDiscardsInFlightFramesAndKeepsAgentSocket(t *testing.T) {
+	ctx := context.Background()
+	core, err := New("test", Options{DataDir: t.TempDir(), Development: true, AgentOfflineTimeout: 15 * time.Second})
+	if err != nil {
+		t.Fatalf("start local Core: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := core.Close(); err != nil {
+			t.Errorf("stop local Core: %v", err)
+		}
+	})
+	coreHTTP := httptest.NewServer(core)
+	t.Cleanup(coreHTTP.Close)
+
+	caps := []string{protocol.CapabilityMetrics, protocol.CapabilityDocker}
+	conn, identity, welcome := connectProtocolAgentForTest(t, core, coreHTTP.URL, caps)
+	writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHeartbeat,
+		Generation: welcome.Generation, Sequence: 1, Payload: marshalAgentPayload(protocol.Heartbeat{Capabilities: caps})})
+	readProtocolAgentHeartbeatAck(t, conn, welcome.Generation, 1)
+
+	now := time.Now().UTC()
+	waitUntil := func(description string, condition func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			if condition() {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("timed out waiting for %s", description)
+	}
+	containerID := strings.Repeat("a", 64)
+	container := protocol.DockerContainer{ID: containerID, Name: "queued-test", Image: "busybox:latest", ImageID: "sha256:" + strings.Repeat("b", 64),
+		State: "running", Running: true, Health: protocol.DockerHealthNone, Ports: []protocol.DockerPort{}, Networks: []protocol.DockerNetwork{},
+		Mounts: []protocol.DockerMount{}, ObservedAt: now}
+	dockerBatch := protocol.DockerBatch{Sequence: 1, SnapshotID: 1, FullSnapshot: true, SnapshotFinal: true,
+		Changes: []protocol.DockerChange{{Sequence: 1, Action: protocol.DockerChangeUpsert, ContainerID: containerID, Container: &container, ObservedAt: now}},
+		Health:  &protocol.DockerHealth{Sequence: 1, Availability: protocol.DockerAvailabilityAvailable, SnapshotFresh: true, ObservedAt: now}}
+	dockerPayload, err := protocol.MarshalDockerBatch(dockerBatch)
+	if err != nil {
+		t.Fatalf("marshal Docker inventory: %v", err)
+	}
+	writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeDocker,
+		Generation: welcome.Generation, Sequence: 1, Payload: dockerPayload})
+	waitUntil("Core to accept the Docker inventory", func() bool {
+		core.dockerMu.Lock()
+		defer core.dockerMu.Unlock()
+		saved, ok := core.docker.PersistentNode(identity.NodeID)
+		return ok && len(saved.Containers) == 1 && saved.Containers[0].Container.ID == containerID
+	})
+
+	metricsPayload, err := protocol.MarshalMetricsSnapshot(testMetricsSnapshot(now))
+	if err != nil {
+		t.Fatalf("marshal host metrics: %v", err)
+	}
+	writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeMetrics,
+		Generation: welcome.Generation, Sequence: 1, Payload: metricsPayload})
+	waitUntil("Core to accept the first host metrics sequence", func() bool {
+		lease := &coremetrics.Lease{Identity: coremetrics.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID},
+			Generation: welcome.Generation, ValidUntil: time.Now().Add(15 * time.Second), Status: coremetrics.LeaseOnline}
+		view, ok := core.metrics.SnapshotAt(identity.NodeID, lease, time.Now())
+		return ok && view.Sequence == 1
+	})
+
+	writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHeartbeat,
+		Generation: welcome.Generation, Sequence: 2, Payload: marshalAgentPayload(protocol.Heartbeat{Capabilities: []string{}})})
+
+	// These frames follow the control-lane downgrade heartbeat on the socket,
+	// matching lower-priority frames that were queued before it was sent.
+	lateDocker := protocol.DockerBatch{Sequence: 2, Health: &protocol.DockerHealth{Sequence: 2,
+		Availability: protocol.DockerAvailabilityAvailable, SnapshotFresh: true, ObservedAt: now.Add(time.Second)}}
+	lateDockerPayload, err := protocol.MarshalDockerBatch(lateDocker)
+	if err != nil {
+		t.Fatalf("marshal delayed Docker inventory: %v", err)
+	}
+	writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeDocker,
+		Generation: welcome.Generation, Sequence: 2, Payload: lateDockerPayload})
+	writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeMetrics,
+		Generation: welcome.Generation, Sequence: 2, Payload: metricsPayload})
+	writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHeartbeat,
+		Generation: welcome.Generation, Sequence: 3, Payload: marshalAgentPayload(protocol.Heartbeat{Capabilities: []string{}})})
+	readProtocolAgentHeartbeatAck(t, conn, welcome.Generation, 2)
+	readProtocolAgentHeartbeatAck(t, conn, welcome.Generation, 3)
+
+	core.dockerMu.Lock()
+	saved, ok := core.docker.PersistentNode(identity.NodeID)
+	core.dockerMu.Unlock()
+	if !ok || saved.StaleReason != "docker_capability_unavailable" || len(saved.Containers) != 1 ||
+		!saved.Containers[0].Container.Stale || saved.Containers[0].Container.UnavailableReason != "docker_capability_unavailable" {
+		t.Fatalf("Docker inventory was not marked stale on capability downgrade: %#v", saved)
+	}
+	loadedDocker, err := loadDockerNodes(ctx, core.store.DB)
+	if err != nil {
+		t.Fatalf("reload persisted Docker state: %v", err)
+	}
+	persistedStale := false
+	for _, node := range loadedDocker {
+		if node.Identity.NodeID == identity.NodeID && node.StaleReason == "docker_capability_unavailable" && len(node.Containers) == 1 && node.Containers[0].Container.Stale {
+			persistedStale = true
+		}
+	}
+	if !persistedStale {
+		t.Fatal("Docker capability downgrade was not persisted as stale inventory")
+	}
+	lease := &coremetrics.Lease{Identity: coremetrics.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID},
+		Generation: welcome.Generation, ValidUntil: time.Now().Add(15 * time.Second), Status: coremetrics.LeaseOnline}
+	metricView, ok := core.metrics.SnapshotAt(identity.NodeID, lease, time.Now())
+	if !ok || metricView.Sequence != 1 {
+		t.Fatalf("delayed metrics changed the accepted host sequence: found=%v sequence=%d", ok, metricView.Sequence)
+	}
+
+	// The same Docker frame remains forbidden when the capability was never
+	// negotiated in Hello.
+	unnegotiatedConn, _, unnegotiatedWelcome := connectProtocolAgentForTest(t, core, coreHTTP.URL, []string{protocol.CapabilityMetrics})
+	writeProtocolAgentEnvelope(t, unnegotiatedConn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeDocker,
+		Generation: unnegotiatedWelcome.Generation, Sequence: 1, Payload: lateDockerPayload})
+	readCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	_, _, closeErr := unnegotiatedConn.Read(readCtx)
+	if status := websocket.CloseStatus(closeErr); status != websocket.StatusPolicyViolation {
+		t.Fatalf("unnegotiated Docker frame was not rejected with policy violation: err=%v status=%v", closeErr, status)
+	}
+}
+
+func connectProtocolAgentForTest(t *testing.T, core *Server, coreURL string, capabilities []string) (*websocket.Conn, agents.Identity, protocol.Welcome) {
+	t.Helper()
+	ctx := context.Background()
+	enrollment, err := core.agents.CreateEnrollment(ctx, "capability-order-test", "127.0.0.1", sql.NullInt64{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	credential, err := agentruntime.NewCredential()
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestID, err := agentruntime.NewRequestID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := core.agents.ConsumeEnrollment(ctx, auth.DigestToken(enrollment.Token), auth.DigestToken(credential), requestID, "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "ws" + strings.TrimPrefix(coreURL, "http") + "/ws/v1/agent"
+	conn, _, err := websocket.Dial(ctx, endpoint, &websocket.DialOptions{HTTPHeader: http.Header{"Authorization": {"Bearer " + credential}}})
+	if err != nil {
+		t.Fatalf("connect Agent WebSocket: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test complete") })
+	permissions := protocol.RuntimePermissions{OS: "linux", Architecture: "amd64", EffectiveUID: 1000, EffectiveGID: 1000, SupplementaryGroups: []int{}}
+	hello := protocol.Hello{AgentID: identity.AgentID, NodeID: identity.NodeID, AgentVersion: "test", Capabilities: capabilities, Permissions: permissions}
+	helloPayload, err := json.Marshal(hello)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeProtocolAgentEnvelope(t, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: helloPayload})
+	readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	messageType, raw, err := conn.Read(readCtx)
+	if err != nil || messageType != websocket.MessageText {
+		t.Fatalf("read Agent welcome: type=%v err=%v", messageType, err)
+	}
+	var envelope protocol.Envelope
+	if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Type != protocol.TypeWelcome {
+		t.Fatalf("invalid Agent welcome envelope: %s err=%v", raw, err)
+	}
+	var welcome protocol.Welcome
+	if err := json.Unmarshal(envelope.Payload, &welcome); err != nil || welcome.Generation == 0 {
+		t.Fatalf("invalid Agent welcome payload: %s err=%v", envelope.Payload, err)
+	}
+	return conn, agents.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID}, welcome
+}
+
+func writeProtocolAgentEnvelope(t *testing.T, conn *websocket.Conn, envelope protocol.Envelope) {
+	t.Helper()
+	data, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+		t.Fatalf("write Agent envelope %s: %v", envelope.Type, err)
+	}
+}
+
+func readProtocolAgentHeartbeatAck(t *testing.T, conn *websocket.Conn, generation, sequence uint64) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	messageType, raw, err := conn.Read(ctx)
+	if err != nil || messageType != websocket.MessageText {
+		t.Fatalf("read heartbeat acknowledgement: type=%v err=%v", messageType, err)
+	}
+	var envelope protocol.Envelope
+	var acknowledgement protocol.HeartbeatAck
+	if json.Unmarshal(raw, &envelope) != nil || envelope.Type != protocol.TypeHeartbeatAck || envelope.Generation != generation || envelope.Sequence != sequence ||
+		json.Unmarshal(envelope.Payload, &acknowledgement) != nil || acknowledgement.AcceptedAt == 0 {
+		t.Fatalf("invalid heartbeat acknowledgement: %s", raw)
+	}
+}
+
+func testMetric[T any](sampledAt time.Time) protocol.Metric[T] {
+	return protocol.Metric[T]{Status: protocol.MetricUnknown, Reason: "not_sampled", SampledAt: sampledAt}
+}
+
+func testMetricsSnapshot(sampledAt time.Time) protocol.MetricsSnapshot {
+	return protocol.MetricsSnapshot{CollectedAt: sampledAt,
+		System: protocol.MetricsSystem{Hostname: testMetric[string](sampledAt), OS: testMetric[string](sampledAt), Architecture: testMetric[string](sampledAt),
+			Platform: testMetric[string](sampledAt), PlatformFamily: testMetric[string](sampledAt), PlatformVersion: testMetric[string](sampledAt), KernelVersion: testMetric[string](sampledAt)},
+		CPU:    protocol.MetricsCPU{UsagePercent: testMetric[float64](sampledAt), LogicalCores: testMetric[int](sampledAt)},
+		Memory: testMetric[protocol.Memory](sampledAt), Network: protocol.MetricsNetwork{Summary: testMetric[protocol.NetworkRate](sampledAt), Interfaces: []protocol.MetricsInterface{}},
+		Disk: protocol.MetricsDisk{Status: protocol.MetricUnknown, Reason: "not_sampled", SampledAt: sampledAt, Mounts: []protocol.MetricsMount{}}, Uptime: testMetric[protocol.Uptime](sampledAt)}
+}
+
 func TestLocalAgentAndCoreKeepMonitoringAfterProbeWorkerFailure(t *testing.T) {
 	ctx := context.Background()
 	core, err := New("test", Options{DataDir: t.TempDir(), Development: true, AgentOfflineTimeout: 15 * time.Second})
@@ -190,7 +408,9 @@ func TestLocalAgentAndCoreKeepMonitoringAfterProbeWorkerFailure(t *testing.T) {
 		Development: true, Credential: credential, NodeID: identity.NodeID, AgentID: identity.AgentID, CreatedAt: time.Now()}, true); err != nil {
 		t.Fatalf("write local Agent config: %v", err)
 	}
-	t.Setenv("DOCKER_HOST", "tcp://127.0.0.1:2375")
+	// SDK initialization succeeds for a Unix socket URL even though no daemon
+	// listens there. This exercises Engine-unreachable capability degradation.
+	t.Setenv("DOCKER_HOST", "unix:///tmp/nodedance-nonexistent-docker.sock")
 	agentCtx, cancelAgent := context.WithCancel(ctx)
 	agentDone := make(chan error, 1)
 	go func() { agentDone <- agentruntime.Run(agentCtx, configPath, "test", io.Discard) }()
@@ -248,10 +468,10 @@ func TestLocalAgentAndCoreKeepMonitoringAfterProbeWorkerFailure(t *testing.T) {
 				if !hasCapability(protocol.CapabilityProbes) || !hasCapability(protocol.CapabilityMetrics) {
 					continue
 				}
-				if hasCapability(protocol.CapabilityDocker) {
-					t.Fatal("Agent claimed Docker support even though DOCKER_HOST could not initialize an SDK engine")
-				}
 				connection = currentConnection
+				if !connection.capabilityNegotiated(protocol.CapabilityDocker) {
+					t.Fatal("Agent did not negotiate Docker after SDK client initialization succeeded")
+				}
 				if !connection.tryEnqueue(protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeProbeDispatch,
 					Generation: connection.generation, RequestID: "invalid-probe", Payload: json.RawMessage(`{}`)}) {
 					t.Fatal("could not send the invalid probe request to the local Agent")

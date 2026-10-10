@@ -36,6 +36,36 @@ func (s *Server) bindDockerConnection(ctx context.Context, identity coredocker.I
 	return nil
 }
 
+func (s *Server) markDockerUnavailable(ctx context.Context, nodeID, reason string) error {
+	if s == nil || nodeID == "" || reason == "" {
+		return errors.New("Docker unavailable state is invalid")
+	}
+	s.dockerMu.Lock()
+	current := s.docker
+	if current == nil {
+		s.dockerMu.Unlock()
+		return nil
+	}
+	candidate := current.Clone()
+	candidate.MarkStale(nodeID, reason)
+	saved, ok := candidate.PersistentNode(nodeID)
+	if !ok {
+		s.dockerMu.Unlock()
+		return nil
+	}
+	if err := persistDockerNode(ctx, s.store.DB, saved, s.now()); err != nil {
+		current.MarkStale(nodeID, reason)
+		s.dockerMu.Unlock()
+		return err
+	}
+	s.docker = candidate
+	s.dockerMu.Unlock()
+	if s.metrics != nil {
+		s.metrics.Notify(nodeID)
+	}
+	return nil
+}
+
 func (s *Server) runDockerFrames(ctx context.Context, connection *agentConnection, identity coredocker.Identity, failures chan<- error) {
 	for {
 		select {
@@ -43,6 +73,12 @@ func (s *Server) runDockerFrames(ctx context.Context, connection *agentConnectio
 			return
 		case frame := <-connection.dockerFrames:
 			if err := s.acceptDockerFrame(ctx, identity, connection.generation, frame); err != nil {
+				if ctx.Err() != nil {
+					// A capability downgrade cancels the Docker worker while it may
+					// still be persisting the current frame. Cancellation is expected;
+					// the downgrade path marks the retained inventory stale afterward.
+					return
+				}
 				select {
 				case failures <- err:
 				default:

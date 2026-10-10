@@ -95,6 +95,16 @@ func (c *agentConnection) capabilityEnabled(capability string) bool {
 	return enabled
 }
 
+func (c *agentConnection) capabilityNegotiated(capability string) bool {
+	if c == nil {
+		return false
+	}
+	c.capabilityMu.RLock()
+	_, negotiated := c.negotiatedCapabilities[capability]
+	c.capabilityMu.RUnlock()
+	return negotiated
+}
+
 func (c *agentConnection) activeCapabilityList() []string {
 	c.capabilityMu.RLock()
 	capabilities := make([]string, 0, len(c.activeCapabilities))
@@ -685,6 +695,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				dockerWasEnabled := connection.capabilityEnabled(protocol.CapabilityDocker)
 				streamsWereEnabled := connection.capabilityEnabled(protocol.CapabilityContainerStreams)
 				filesWereEnabled := connection.capabilityEnabled(protocol.CapabilityFiles)
+				terminalWasEnabled := connection.capabilityEnabled(protocol.CapabilityTerminal)
 				composeWasEnabled := connection.capabilityEnabled(protocol.CapabilityCompose)
 				imagesWereEnabled := connection.capabilityEnabled(protocol.CapabilityImages)
 				probesWereEnabled := connection.capabilityEnabled(protocol.CapabilityProbes)
@@ -708,11 +719,16 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 						<-dockerWorkerDone
 					}
 				}
+				if dockerWasEnabled && !connection.capabilityEnabled(protocol.CapabilityDocker) {
+					if err := s.markDockerUnavailable(ctx, identity.NodeID, "docker_capability_unavailable"); err != nil {
+						log.Printf("Agent Docker capability became unavailable for node %s: %v", identity.NodeID, err)
+					}
+				}
 				if streamsWereEnabled && !connection.capabilityEnabled(protocol.CapabilityContainerStreams) {
 					connection.closeBrowserStreams()
 				}
 				if filesWereEnabled && !connection.capabilityEnabled(protocol.CapabilityFiles) {
-					connection.closeFileTransfers()
+					connection.closeFileTransfersWithError(errors.New("Agent file capability became unavailable"))
 				}
 				if composeWasEnabled && !connection.capabilityEnabled(protocol.CapabilityCompose) {
 					connection.failComposeWaiters("capability_unavailable")
@@ -725,6 +741,9 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 						log.Printf("Agent probe capability became unavailable for node %s: %v", identity.NodeID, err)
 					}
 				}
+				if terminalWasEnabled && !connection.capabilityEnabled(protocol.CapabilityTerminal) && s.terminals != nil {
+					s.terminals.closeAgent(s, identity.AgentID, connection.generation, "Agent terminal capability became unavailable")
+				}
 				connection.noteHeartbeat(acceptedAt)
 				s.metrics.Notify(identity.NodeID)
 				ack := protocol.HeartbeatAck{AcceptedAt: acceptedAt.UnixNano()}
@@ -732,7 +751,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeMetrics:
-				if !connection.capabilityEnabled(protocol.CapabilityMetrics) {
+				if !connection.capabilityNegotiated(protocol.CapabilityMetrics) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent metrics capability was not negotiated")
 					return
 				}
@@ -740,6 +759,11 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				if envelope.Sequence == 0 || decodeAgentPayload(envelope.Payload, &report) != nil || protocol.ValidateAgentMetricsSnapshot(report) != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent metrics report")
 					return
+				}
+				if !connection.capabilityEnabled(protocol.CapabilityMetrics) {
+					// The control writer can overtake a metrics sample already queued
+					// for the socket. It is valid, but no longer authoritative.
+					continue
 				}
 				lastSeen, active, err := s.agents.ActiveLeaseLastSeen(ctx, identity.NodeID, connection.generation)
 				if err != nil {
@@ -763,7 +787,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				}
 				s.metrics.Notify(identity.NodeID)
 			case protocol.TypeDocker:
-				if !connection.capabilityEnabled(protocol.CapabilityDocker) || envelope.Sequence == 0 {
+				if !connection.capabilityNegotiated(protocol.CapabilityDocker) || envelope.Sequence == 0 {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent Docker capability was not negotiated")
 					return
 				}
@@ -771,6 +795,11 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				if err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent Docker inventory")
 					return
+				}
+				if !connection.capabilityEnabled(protocol.CapabilityDocker) {
+					// The Docker FIFO may contain frames after a control-lane
+					// downgrade. Its inventory is stale, so discard delayed batches.
+					continue
 				}
 				frame := dockerFrame{sequence: envelope.Sequence, batch: batch}
 				select {
@@ -782,7 +811,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeTerminalFrame:
-				if !connection.capabilityEnabled(protocol.CapabilityTerminal) || envelope.Sequence != 0 {
+				if !connection.capabilityNegotiated(protocol.CapabilityTerminal) || envelope.Sequence != 0 {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent terminal capability was not negotiated")
 					return
 				}
@@ -790,6 +819,9 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				if err := decodeAgentPayload(envelope.Payload, &frame); err != nil || protocol.ValidateTerminalFrame(frame, true) != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent terminal frame")
 					return
+				}
+				if !connection.capabilityEnabled(protocol.CapabilityTerminal) {
+					continue
 				}
 				s.terminals.handleAgentFrame(s, connection, identity, frame)
 			case protocol.TypeRotatePrepare:
@@ -813,7 +845,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeTaskJournalHello, protocol.TypeTaskSnapshotPage, protocol.TypeTaskReport:
-				if !connection.capabilityEnabled(protocol.CapabilityTaskBridge) {
+				if !connection.capabilityNegotiated(protocol.CapabilityTaskBridge) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent task bridge was not negotiated")
 					return
 				}
@@ -822,7 +854,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeImageListResponse:
-				if !connection.capabilityEnabled(protocol.CapabilityImages) || envelope.Sequence != 0 || envelope.RequestID == "" {
+				if !connection.capabilityNegotiated(protocol.CapabilityImages) || envelope.Sequence != 0 || envelope.RequestID == "" {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent image capability was not negotiated")
 					return
 				}
@@ -831,46 +863,79 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent image list response")
 					return
 				}
+				if !connection.capabilityEnabled(protocol.CapabilityImages) {
+					continue
+				}
 				connection.resolveImageResponse(envelope.RequestID, response)
 			case protocol.TypeContainerStreamReady, protocol.TypeContainerLog, protocol.TypeContainerStats,
 				protocol.TypeContainerStreamError, protocol.TypeContainerStreamEnd, protocol.TypeContainerStreamHeartbeat:
-				if !connection.capabilityEnabled(protocol.CapabilityContainerStreams) {
+				if !connection.capabilityNegotiated(protocol.CapabilityContainerStreams) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent container streams were not negotiated")
 					return
+				}
+				if !connection.capabilityEnabled(protocol.CapabilityContainerStreams) {
+					if err := protocol.ValidateContainerStreamEnvelope(envelope, connection.generation); err != nil {
+						s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent container stream frame")
+						return
+					}
+					continue
 				}
 				if err := s.handleAgentContainerStreamMessage(connection, envelope); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent container stream frame")
 					return
 				}
 			case protocol.TypeComposeResponse:
-				if !connection.capabilityEnabled(protocol.CapabilityCompose) || envelope.Sequence != 0 || envelope.RequestID == "" {
+				if !connection.capabilityNegotiated(protocol.CapabilityCompose) || envelope.Sequence != 0 || envelope.RequestID == "" {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent Compose capability was not negotiated")
 					return
+				}
+				if !connection.capabilityEnabled(protocol.CapabilityCompose) {
+					if err := s.handleAgentComposeResponse(connection, envelope); err != nil {
+						s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent Compose response")
+						return
+					}
+					continue
 				}
 				if err := s.handleAgentComposeResponse(connection, envelope); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid or unpersisted Agent Compose response")
 					return
 				}
 			case protocol.TypeFileResponse, protocol.TypeFileChunk:
-				if !connection.capabilityEnabled(protocol.CapabilityFiles) {
+				if !connection.capabilityNegotiated(protocol.CapabilityFiles) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent file service was not negotiated")
 					return
+				}
+				if !connection.capabilityEnabled(protocol.CapabilityFiles) {
+					if err := validateAgentFileFrame(connection, envelope); err != nil {
+						s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent file transfer frame")
+						return
+					}
+					continue
 				}
 				if err := s.handleAgentFileMessage(connection, envelope); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent file transfer frame")
 					return
 				}
 			case protocol.TypeContainerRebuildPlanResponse:
-				if !connection.capabilityEnabled(protocol.CapabilityTaskBridge) || envelope.Sequence != 0 {
+				if !connection.capabilityNegotiated(protocol.CapabilityTaskBridge) || envelope.Sequence != 0 {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent task bridge was not negotiated")
 					return
+				}
+				if !connection.capabilityEnabled(protocol.CapabilityTaskBridge) {
+					var response protocol.ContainerRebuildPlanResponse
+					if decodeAgentPayload(envelope.Payload, &response) != nil ||
+						protocol.ValidateContainerRebuildPlanResponse(envelope, response, envelope.RequestID, connection.generation) != nil {
+						s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid container rebuild plan response")
+						return
+					}
+					continue
 				}
 				if err := s.handleAgentRebuildPlanResponse(connection, envelope); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid container rebuild plan response")
 					return
 				}
 			case protocol.TypeProbeReport:
-				if !connection.capabilityEnabled(protocol.CapabilityProbes) {
+				if !connection.capabilityNegotiated(protocol.CapabilityProbes) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent probe capability was not negotiated")
 					return
 				}
@@ -879,6 +944,9 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					protocol.ValidateProbeReport(envelope, report, identity.NodeID, connection.generation) != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent service probe result")
 					return
+				}
+				if !connection.capabilityEnabled(protocol.CapabilityProbes) {
+					continue
 				}
 				lastSeen, active, err := s.agents.ActiveLeaseLastSeen(ctx, identity.NodeID, connection.generation)
 				if err != nil {
