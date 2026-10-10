@@ -728,6 +728,16 @@ func (m *Manager) recoverDeployment(ctx context.Context, ref protocol.ComposePro
 	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
 		return "unknown", &deploymentResultError{state: "recovery_required", code: "project_identity_conflict", unknown: true}
 	}
+	// A partial `up` can leave task-created containers occupying ports needed by
+	// the baseline. Remove only instances whose exact Compose ref, service slot,
+	// and creation time prove they belong to this deployment before recreating
+	// the baseline services.
+	if err := m.removeTaskCreatedProjectInstances(ctx, ref, before, started); err != nil {
+		return "unknown", &deploymentResultError{state: "recovery_required", code: "unexpected_project_containers", unknown: true}
+	}
+	if err := m.assertProjectNameOwned(ctx, ref); err != nil {
+		return "unknown", &deploymentResultError{state: "recovery_required", code: "project_identity_conflict", unknown: true}
+	}
 	args := []string{"up", "-d", "--force-recreate"}
 	for service, count := range serviceInstanceCounts(before) {
 		args = append(args, "--scale", service+"="+strconv.Itoa(count))
@@ -737,9 +747,6 @@ func (m *Manager) recoverDeployment(ctx context.Context, ref protocol.ComposePro
 	}
 	if err := m.restoreContainerStates(ctx, ref, before); err != nil {
 		return "unknown", &deploymentResultError{state: "recovery_required", code: "service_state_recovery_failed", unknown: true}
-	}
-	if err := m.removeUnexpectedProjectInstances(ctx, ref, before, started); err != nil {
-		return "unknown", &deploymentResultError{state: "recovery_required", code: "unexpected_project_containers", unknown: true}
 	}
 	recovered, err := m.waitRecoveredProject(ctx, ref, before)
 	if err != nil {
@@ -805,27 +812,35 @@ func (m *Manager) removeCreatedProjectInstances(ctx context.Context, ref protoco
 	return nil
 }
 
-func (m *Manager) removeUnexpectedProjectInstances(ctx context.Context, ref protocol.ComposeProjectRef, before []agentdocker.Container, started time.Time) error {
+func (m *Manager) removeTaskCreatedProjectInstances(ctx context.Context, ref protocol.ComposeProjectRef, before []agentdocker.Container, started time.Time) error {
 	if started.IsZero() || m.assertProjectNameOwned(ctx, ref) != nil {
 		return ErrOperationUncertain
 	}
-	expected := make(map[string]struct{}, len(before))
+	baselineIDs := make(map[string]string, len(before))
+	baselineSlots := make(map[string]string, len(before))
 	for _, container := range before {
-		if container.Compose == nil || container.Compose.Service == "" || container.Compose.ContainerNumber == "" {
+		if container.ID == "" || container.Compose == nil || container.Compose.Service == "" || container.Compose.ContainerNumber == "" {
+			return ErrProjectConflict
+		}
+		identity, identityErr := reference(container.Compose)
+		if identityErr != nil || identity.Key != ref.Key {
 			return ErrProjectConflict
 		}
 		key := container.Compose.Service + "\x00" + container.Compose.ContainerNumber
-		if _, duplicate := expected[key]; duplicate {
+		if _, duplicate := baselineSlots[key]; duplicate {
 			return ErrProjectConflict
 		}
-		expected[key] = struct{}{}
+		if _, duplicate := baselineIDs[container.ID]; duplicate {
+			return ErrProjectConflict
+		}
+		baselineIDs[container.ID] = key
+		baselineSlots[key] = container.ID
 	}
 	ids, err := m.engine.ListAll(ctx)
 	if err != nil {
 		return ErrProjectUnavailable
 	}
-	candidates := make([]string, 0)
-	seenExpected := make(map[string]struct{}, len(expected))
+	candidates := make([]agentdocker.Container, 0)
 	for _, id := range ids {
 		container, inspectErr := m.engine.Inspect(ctx, id)
 		if inspectErr != nil {
@@ -838,33 +853,47 @@ func (m *Manager) removeUnexpectedProjectInstances(ctx context.Context, ref prot
 		if identityErr != nil || identity.Key != ref.Key {
 			return ErrProjectConflict
 		}
+		if container.Compose.Service == "" || container.Compose.ContainerNumber == "" {
+			return ErrProjectConflict
+		}
 		key := container.Compose.Service + "\x00" + container.Compose.ContainerNumber
-		if _, baselineService := expected[key]; baselineService {
-			if _, alreadySeen := seenExpected[key]; !alreadySeen {
-				seenExpected[key] = struct{}{}
-				continue
+		if baselineKey, baselineID := baselineIDs[container.ID]; baselineID {
+			if baselineKey != key {
+				return ErrProjectConflict
 			}
+			continue
 		}
 		if container.CreatedAt == nil || container.CreatedAt.Before(started.Add(-5*time.Second)) {
 			return ErrOperationUncertain
 		}
-		candidates = append(candidates, container.ID)
+		candidates = append(candidates, container)
 	}
-	for _, candidateID := range candidates {
-		current, inspectErr := m.engine.Inspect(ctx, candidateID)
-		if inspectErr != nil || current.ID != candidateID || current.Compose == nil || current.Compose.Project != ref.Name ||
-			current.CreatedAt == nil || current.CreatedAt.Before(started.Add(-5*time.Second)) {
+	for _, candidate := range candidates {
+		current, inspectErr := m.engine.Inspect(ctx, candidate.ID)
+		if inspectErr != nil || current.ID != candidate.ID || current.Compose == nil || current.Compose.Project != ref.Name ||
+			current.Compose.Service != candidate.Compose.Service || current.Compose.ContainerNumber != candidate.Compose.ContainerNumber ||
+			current.CreatedAt == nil || current.CreatedAt.Before(started.Add(-5*time.Second)) ||
+			candidate.CreatedAt == nil || !current.CreatedAt.Equal(*candidate.CreatedAt) {
 			return ErrOperationUncertain
 		}
 		identity, identityErr := reference(current.Compose)
 		if identityErr != nil || identity.Key != ref.Key {
 			return ErrProjectConflict
 		}
-		if _, baselineService := expected[current.Compose.Service+"\x00"+current.Compose.ContainerNumber]; baselineService {
-			return ErrOperationUncertain
+		if _, baselineID := baselineIDs[current.ID]; baselineID {
+			return ErrProjectConflict
 		}
 		if err := m.runDocker(ctx, "container", "rm", "--force", "--", current.ID); err != nil {
 			return err
+		}
+	}
+	remaining, err := m.projectInstances(ctx, ref)
+	if err != nil {
+		return ErrProjectUnavailable
+	}
+	for _, container := range remaining {
+		if _, isBaseline := baselineIDs[container.ID]; !isBaseline {
+			return ErrOperationUncertain
 		}
 	}
 	return nil
