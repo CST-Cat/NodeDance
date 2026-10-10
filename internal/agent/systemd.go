@@ -186,11 +186,7 @@ func renderSystemdUnit(serviceUser, primaryGroup, configPath, binaryPath, fileRo
 	stateDir := filepath.Dir(configPath)
 	groupLine := ""
 	if len(supplementaryGroups) > 0 {
-		quoted := make([]string, 0, len(supplementaryGroups))
-		for _, group := range supplementaryGroups {
-			quoted = append(quoted, systemdQuote(group))
-		}
-		groupLine = "SupplementaryGroups=" + strings.Join(quoted, " ") + "\n"
+		groupLine = "SupplementaryGroups=" + strings.Join(supplementaryGroups, " ") + "\n"
 	}
 	fileRootLine := ""
 	fileRootMarker := ""

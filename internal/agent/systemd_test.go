@@ -64,6 +64,21 @@ func TestWriteSystemdUnitCreateReinstallAndForeignRefusal(t *testing.T) {
 	})
 }
 
+func TestRenderSystemdUnitSupplementaryGroupsUseSystemdFieldSyntax(t *testing.T) {
+	unit := renderSystemdUnit("nodedance-agent", "1001", "/var/lib/nodedance-agent/agent.json", "/usr/local/bin/nodedance-agent", "", []string{"docker", "123"})
+	if !strings.Contains(unit, "SupplementaryGroups=docker 123\n") {
+		t.Fatalf("SupplementaryGroups must use space-separated unquoted names/GIDs, got unit line:\n%s", unit)
+	}
+	if strings.Contains(unit, `SupplementaryGroups="docker"`) || strings.Contains(unit, `SupplementaryGroups="123"`) {
+		t.Fatalf("SupplementaryGroups values must not be quoted, got unit line:\n%s", unit)
+	}
+	for _, invalid := range []string{"docker group", "docker/extra", "docker;touch /tmp/unsafe"} {
+		if validSupplementaryGroup(invalid) {
+			t.Errorf("invalid supplementary group %q was accepted", invalid)
+		}
+	}
+}
+
 func TestInstallSystemdRejectsRootServiceUser(t *testing.T) {
 	if _, err := InstallSystemd(context.Background(), SystemdInstallOptions{User: "root", UnitDir: t.TempDir()}); err == nil || !strings.Contains(err.Error(), "non-root UID") {
 		t.Fatalf("systemd installation must reject UID 0 before creating a unit, got %v", err)
