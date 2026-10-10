@@ -168,6 +168,8 @@ nodedance restore \
 
 Restore validates the archive, file hashes, required keys, and SQLite integrity before atomically installing the data. It refuses a non-empty destination. Stop the Core before switching it to the restored directory. Verify administrator login, node identities, and required notification settings before returning the restored Core to service.
 
+The database snapshot keeps administrator and Agent credentials, node identities, dashboard preferences, tasks, probes, alerts, notification history, and their related records together. The alert-channel encryption key is included so restored notification secrets remain decryptable.
+
 ## Upgrade and data compatibility
 
 Before replacing a Core binary, create a backup. Replace it only with a v0 build that is compatible with the current SQLite schema. Stop the Core, replace the binary, start it, then verify login and a connected Agent before upgrading other hosts. To roll back, stop the Core and restore the database backup created for the prior build before starting that prior binary; replacing the binary alone is not a supported rollback.

@@ -18,6 +18,10 @@ The Core task store in `internal/core/tasks/` owns remote task identity, idempot
 
 `internal/core/alerts/` evaluates current Core-owned node, metric, Docker, and probe samples, stores alert transitions and maintenance windows, and queues notifications. Evaluation and delivery retry independently and report failures to the Core log. SMTP accepts STARTTLS or implicit TLS only. SMTP secrets are encrypted with a private key in the Core data directory.
 
+## Backup and restore
+
+`nodedance backup` uses SQLite's online backup API to snapshot committed database and WAL contents while the Core is running. The private archive includes the database, authentication and alert-encryption keys, and optional first-run or Tailscale deployment state. `nodedance restore` validates the manifest, file digests, required keys, and SQLite integrity in a private staging directory, then atomically installs the complete snapshot into an absent or empty destination on Linux. The database and matching keys move together, preserving administrator and Agent identities, preferences, tasks, probe/alert history, and notification secret access.
+
 ## Agent
 
 The Agent starts host metric sampling before connecting to the Core. CPU, memory, disk, network, and uptime collection has its own context and does not use Docker. A Docker SDK client is created once by `internal/agent/docker/engine.go` and shared with discovery, task actions, streams, images, Compose, and rebuild adapters. Hello advertises Docker only when that client was initialized; if the configured Docker socket cannot be used, the Agent continues host metrics and heartbeats without claiming Docker support. If a valid client cannot reach the Engine, discovery reports the unavailable Engine state while host monitoring remains active.

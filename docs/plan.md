@@ -421,6 +421,8 @@
 
 阶段 0～7 全部 PASS 后，才申请用户授权 VPS 部署。首先使用一台 VPS，同时运行 Core、Agent 和 Docker Engine。
 
+当前已授予的远程权限仅限于：阶段 0～7 全部 PASS 后，在用户指定的一台已通过 Tailscale 连接的 VPS 上安装、测试并卸载 Agent。此授权不允许修改任何 Tailscale 配置，也不允许操作 Core、Docker 或执行本节其他远程验收；这些额外操作必须另行取得用户明确授权。阶段 0～7 PASS 前不得连接、扫描或登录该 VPS。
+
 完成以下全部验收：
 
 1. Core 初始化、登录与退出。
