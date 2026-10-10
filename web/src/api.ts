@@ -185,6 +185,16 @@ export interface DockerPort {
   published: DockerPortBinding[]
 }
 
+export interface DockerNetwork {
+  name: string
+  id?: string
+  ipv4?: string
+  ipv6?: string
+  gateway?: string
+  ipv6Gateway?: string
+  aliases?: string[]
+}
+
 export interface DockerContainer {
   id: string
   name: string
@@ -194,6 +204,7 @@ export interface DockerContainer {
   running: boolean
   paused: boolean
   restarting: boolean
+  hostNetwork: boolean
   health: string
   healthcheckConfigured: boolean
   healthReason?: string
@@ -204,6 +215,8 @@ export interface DockerContainer {
   finishedAt?: string
   restartCount: number
   ports: DockerPort[]
+  networks: DockerNetwork[]
+  mounts: Array<{ type: string; name?: string; source?: string; destination: string; driver?: string; mode?: string; propagation?: string; readWrite: boolean }>
   observedAt: string
   compose?: { project: string; service: string }
 }

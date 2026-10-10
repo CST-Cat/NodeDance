@@ -12,6 +12,7 @@ import PreferenceEditor from './PreferenceEditor.vue'
 import TerminalConsole from './TerminalConsole.vue'
 import NodeServiceProbes from './NodeServiceProbes.vue'
 import NodeFiles from './NodeFiles.vue'
+import VpsCard from './VpsCard.vue'
 
 interface NodeClock {
   status: string
@@ -63,6 +64,7 @@ const orderError = ref('')
 const busy = ref(true)
 const error = ref('')
 const elapsed = ref(0)
+const wallClockNow = ref(Date.now())
 const socketState = ref<'connecting' | 'connected' | 'retrying'>('connecting')
 let socket: WebSocket | undefined
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined
@@ -134,9 +136,6 @@ const sortedContainers = computed(() => {
   })
 })
 
-const featuredContainers = computed(() => sortedContainers.value.filter((record) => preferenceForContainer(record)?.visible !== false)
-  .slice(0, dashboardSettings.value.featuredLimit))
-
 const serverCardGroups = computed(() => {
   const query = serverSearch.value.trim().toLocaleLowerCase()
   const matching = nodes.value.filter((node) => {
@@ -186,6 +185,7 @@ const serverCardGroups = computed(() => {
 const selectedNodeTasks = computed(() => selectedTasks.value)
 
 function dockerAvailabilityText(inventory: DockerInventory): string {
+  if (inventory.staleReason === 'docker_capability_unavailable') return 'Docker 不可用'
   if (inventory.dockerAvailability === 'available') {
     if (inventory.health?.errorKind === 'api_incompatible') return 'Docker API 不兼容'
     if (dockerIsStale(inventory)) return '数据过期'
@@ -223,14 +223,34 @@ function portText(port: DockerInventory['containers'][number]['container']['port
   const configured = Array.isArray(port.configured) ? port.configured : []
   if (published.length > 0) {
     return published.map((binding) => {
-      const host = binding.ip || '*'
+      const rawHost = binding.ip || '*'
+      const host = rawHost.includes(':') && !rawHost.startsWith('[') ? `[${rawHost}]` : rawHost
       const formattedHost = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host
-      return `${formattedHost}:${binding.port} → ${port.containerPort}/${port.protocol}`
+      const scope = rawHost === '*' || rawHost === '0.0.0.0' || rawHost === '::'
+        ? '（所有宿主机接口）'
+        : rawHost === '::1' || /^127(?:\.\d{1,3}){3}$/.test(rawHost)
+          ? '（仅宿主机回环）'
+          : ''
+      return `${formattedHost}:${binding.port} → ${port.containerPort}/${port.protocol}${scope}`
     }).join('，')
   }
   if (configured.length > 0) return `${port.containerPort}/${port.protocol}（配置映射，当前未发布）`
   if (port.exposed) return `${port.containerPort}/${port.protocol}（仅声明）`
   return `${port.containerPort}/${port.protocol}`
+}
+
+function dockerCanOperate(inventory: DockerInventory | undefined): boolean {
+  return Boolean(inventory?.dockerAvailability === 'available' && inventory.staleReason !== 'docker_capability_unavailable')
+}
+
+function containerNetworkText(container: DockerInventory['containers'][number]['container']): string {
+  if (container.hostNetwork) return 'Host Network：容器共享宿主机网络地址'
+  const networks = container.networks ?? []
+  if (networks.length === 0) return '容器网络地址：未分配或不可用'
+  return networks.map((network) => {
+    const addresses = [network.ipv4 && `IPv4 ${network.ipv4}`, network.ipv6 && `IPv6 ${network.ipv6}`].filter(Boolean)
+    return `${network.name}：${addresses.length ? addresses.join(' · ') : '未分配 IP'}`
+  }).join('；')
 }
 
 function remainingLease(clock: NodeClock): number {
@@ -332,7 +352,7 @@ async function refreshNodes() {
     if (!node.agentId) continue
     if (selected || !(node.nodeId in views.value)) requests.push(loadMetrics(node))
     if (selected || !(node.nodeId in dockerViews.value)) requests.push(loadContainers(node))
-    if (selected) requests.push(loadTasks(node))
+    requests.push(loadTasks(node))
   }
   await Promise.all(requests)
 }
@@ -381,7 +401,6 @@ async function loadPreferences(node: AgentNode) {
 async function loadDashboardSettings() {
   try {
     dashboardSettings.value = await api.dashboardSettings()
-    if (dashboardSettings.value.viewMode === 'manage' && selectedNode.value) activeSection.value = 'docker'
   } catch (reason) {
     dashboardSettingsError.value = reason instanceof Error ? reason.message : '无法读取首页设置。'
   }
@@ -443,15 +462,6 @@ function safeServiceURL(record: DockerInventory['containers'][number]): string {
   }
 }
 
-function metricSummaryValue(status: string | undefined, value: number | undefined, suffix = '%'): string {
-  if (status !== 'known' || value === undefined || !Number.isFinite(value)) {
-    if (status === 'error') return '读取失败'
-    if (status === 'stale') return '已过期'
-    return '未知'
-  }
-  return `${value.toFixed(1)}${suffix}`
-}
-
 function nodePreference(node: AgentNode): DashboardPreference | undefined {
   return nodePreferences.value[node.nodeId]?.find((item) => item.targetKind === 'node' && item.identity === `node:${node.nodeId}`)
 }
@@ -466,49 +476,6 @@ function nodeStatusGroup(node: AgentNode): string {
   return node.status === 'revoked' ? '已撤销' : '离线'
 }
 
-function nodeIcon(icon: string | undefined): string {
-  const icons: Record<string, string> = {
-    server: '▤', globe: '◎', database: '▥', shield: '⬡', terminal: '›_',
-    box: '▣', cloud: '☁', folder: '▰', activity: '⌁',
-  }
-  return (icon && icons[icon]) || '▤'
-}
-
-function nodeContainerPreference(node: AgentNode, record: DockerInventory['containers'][number]): DashboardPreference | undefined {
-  const identity = preferenceIdentities.value[node.nodeId]?.[record.container.id]
-  if (!identity) return undefined
-  const kind = record.container.compose ? 'compose_service' : 'container'
-  return nodePreferences.value[node.nodeId]?.find((item) => item.targetKind === kind && item.identity === identity)
-}
-
-function nodeContainerTitle(node: AgentNode, record: DockerInventory['containers'][number]): string {
-  return nodeContainerPreference(node, record)?.alias || record.container.name || record.container.id.slice(0, 12)
-}
-
-function nodeContainerPreview(node: AgentNode): DockerInventory['containers'] {
-  const records = [...(dockerViews.value[node.nodeId]?.containers ?? [])]
-  return records.sort((left, right) => {
-    const leftPreference = nodeContainerPreference(node, left)
-    const rightPreference = nodeContainerPreference(node, right)
-    if (leftPreference?.pinned !== rightPreference?.pinned) return leftPreference?.pinned ? -1 : 1
-    if ((leftPreference?.sortOrder ?? 0) !== (rightPreference?.sortOrder ?? 0)) {
-      return (leftPreference?.sortOrder ?? 0) - (rightPreference?.sortOrder ?? 0)
-    }
-    return nodeContainerTitle(node, left).localeCompare(nodeContainerTitle(node, right), 'zh-CN')
-  }).slice(0, 3)
-}
-
-function nodeDockerStatus(node: AgentNode): string {
-  const inventory = dockerViews.value[node.nodeId]
-  if (inventory) return dockerAvailabilityText(inventory)
-  if (isPendingRegistration(node)) return '等待 Agent 注册'
-  return nodeIsOnline(node) ? '等待 Docker 状态' : 'Agent 离线'
-}
-
-function nodeContainerPortSummary(record: DockerInventory['containers'][number]): string {
-  return record.container.ports.map((port) => portText(port)).join(' · ')
-}
-
 function containerUptime(record: DockerInventory['containers'][number]): string {
   if (!record.container.running || !record.container.startedAt) return '未知'
   const started = Date.parse(record.container.startedAt)
@@ -520,6 +487,14 @@ function containerUptime(record: DockerInventory['containers'][number]): string 
   if (days > 0) return `${days} 天 ${hours} 小时`
   if (hours > 0) return `${hours} 小时 ${remaining} 分钟`
   return `${remaining} 分钟`
+}
+
+function tasksForNode(nodeID: string): ContainerTask[] {
+  return Object.values(taskViews.value).filter((task) => task.nodeId === nodeID)
+}
+
+function containerActionKey(nodeID: string, containerID: string): string {
+  return `${nodeID}:${containerID}`
 }
 
 async function loadHistory() {
@@ -640,15 +615,15 @@ function endPointerReorder(event: PointerEvent) {
   if (drag.armed && drag.targetID !== drag.sourceID) void persistReorder(drag.sourceID, drag.targetID)
 }
 
-function taskForContainer(containerID: string): ContainerTask | undefined {
+function taskForContainer(containerID: string, nodeID = selectedNodeID.value): ContainerTask | undefined {
   return Object.values(taskViews.value)
-    .filter((task) => task.nodeId === selectedNodeID.value && (task.targetId === containerID ||
+    .filter((task) => task.nodeId === nodeID && (task.targetId === containerID ||
       task.action === 'rebuild' && task.status === 'succeeded' && task.result.resourceRevision === containerID))
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0]
 }
 
-function rollbackTaskForContainer(containerID: string): ContainerTask | undefined {
-  return selectedNodeTasks.value
+function rollbackTaskForContainer(containerID: string, nodeID = selectedNodeID.value): ContainerTask | undefined {
+  return tasksForNode(nodeID)
     .filter((task) => task.action === 'rebuild' && task.status === 'succeeded' &&
       task.targetId === containerID && Boolean(task.result.resourceRevision) && task.result.resourceRevision !== containerID)
     .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0]
@@ -679,10 +654,9 @@ async function toggleTaskAudit(task: ContainerTask) {
   }
 }
 
-async function submitContainerAction(container: DockerInventory['containers'][number]['container'], action: ContainerTaskAction) {
-  const node = selectedNode.value
-  const inventory = selectedDocker.value
-  if (!node || !inventory || !node.agentId || dockerIsStale(inventory) || container.stale || taskSubmitting.value[container.id]) return
+async function submitContainerAction(node: AgentNode, inventory: DockerInventory | undefined, container: DockerInventory['containers'][number]['container'], action: ContainerTaskAction) {
+  const key = containerActionKey(node.nodeId, container.id)
+  if (!inventory || inventory.dockerAvailability !== 'available' || !node.agentId || !nodeIsOnline(node) || dockerIsStale(inventory) || container.stale || taskSubmitting.value[key]) return
 
   let payload: CreateContainerTaskPayload = { action }
   if (action === 'rename') {
@@ -692,31 +666,35 @@ async function submitContainerAction(container: DockerInventory['containers'][nu
     payload = { action, newName: newName.trim() }
   } else if (action === 'delete') {
     if (container.running || container.paused) {
-      taskErrors.value = { ...taskErrors.value, [container.id]: '请先单独停止容器，再提交删除任务。' }
+      taskErrors.value = { ...taskErrors.value, [key]: '请先单独停止容器，再提交删除任务。' }
       return
     }
     const confirmation = window.prompt(`删除不会删除数据卷。请输入完整容器 ID 以确认：\n${container.id}`)
     if (confirmation === null) return
     if (confirmation.trim() !== container.id) {
-      taskErrors.value = { ...taskErrors.value, [container.id]: '删除未提交：确认内容必须与当前完整容器 ID 完全一致。' }
+      taskErrors.value = { ...taskErrors.value, [key]: '删除未提交：确认内容必须与当前完整容器 ID 完全一致。' }
       return
     }
     payload = { action, deleteConfirmed: true, deleteConfirmationId: confirmation.trim() }
   }
 
-  taskSubmitting.value = { ...taskSubmitting.value, [container.id]: true }
+  taskSubmitting.value = { ...taskSubmitting.value, [key]: true }
   const errors = { ...taskErrors.value }
-  delete errors[container.id]
+  delete errors[key]
   taskErrors.value = errors
   try {
     const accepted = await api.createContainerTask(node.nodeId, container.id, payload, crypto.randomUUID())
     const current = await api.nodeTask(node.nodeId, accepted.taskId)
     taskViews.value = { ...taskViews.value, [current.taskId]: current }
   } catch (reason) {
-    taskErrors.value = { ...taskErrors.value, [container.id]: reason instanceof Error ? reason.message : '无法创建容器操作任务。' }
+    taskErrors.value = { ...taskErrors.value, [key]: reason instanceof Error ? reason.message : '无法创建容器操作任务。' }
   } finally {
-    taskSubmitting.value = { ...taskSubmitting.value, [container.id]: false }
+    taskSubmitting.value = { ...taskSubmitting.value, [key]: false }
   }
+}
+
+function submitCardContainerAction(payload: { node: AgentNode; record: DockerInventory['containers'][number]; action: ContainerTaskAction }) {
+  void submitContainerAction(payload.node, dockerViews.value[payload.node.nodeId], payload.record.container, payload.action)
 }
 
 function acceptDockerResponse(result: DockerInventoryMessage) {
@@ -729,6 +707,8 @@ function acceptDockerResponse(result: DockerInventoryMessage) {
         ...record,
         container: {
           ...record.container,
+          networks: Array.isArray(record.container?.networks) ? record.container.networks : [],
+          mounts: Array.isArray(record.container?.mounts) ? record.container.mounts : [],
           ports: Array.isArray(record.container?.ports) ? record.container.ports.map((port) => ({
             ...port,
             configured: Array.isArray(port.configured) ? port.configured : [],
@@ -911,11 +891,17 @@ onMounted(() => {
       error.value = reason instanceof Error ? reason.message : '无法刷新节点列表。'
     })
   }, 10_000)
-  tickTimer = setInterval(() => { elapsed.value = performance.now() }, 250)
+  tickTimer = setInterval(() => {
+    elapsed.value = performance.now()
+    wallClockNow.value = Date.now()
+  }, 1000)
   taskRefreshTimer = setInterval(() => {
-    const node = selectedNode.value
-    const hasActiveTask = Object.values(taskViews.value).some((task) => task.nodeId === selectedNodeID.value && (task.status === 'queued' || task.status === 'running'))
-    if (node && hasActiveTask) void loadTasks(node)
+    const activeNodeIDs = new Set(Object.values(taskViews.value)
+      .filter((task) => task.status === 'queued' || task.status === 'running')
+      .map((task) => task.nodeId))
+    for (const node of nodes.value) {
+      if (activeNodeIDs.has(node.nodeId)) void loadTasks(node)
+    }
   }, 1200)
 })
 
@@ -964,7 +950,7 @@ onBeforeUnmount(() => {
           <button v-for="tab in sectionTabs" :key="tab.id" type="button" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button>
         </nav>
 
-        <section v-if="activeSection === 'overview'" class="vps-dashboard" aria-label="多 VPS 监控首页" data-testid="multi-vps-dashboard">
+        <section class="vps-dashboard" aria-label="多 VPS 监控首页" data-testid="multi-vps-dashboard">
           <div class="server-view-controls" aria-label="服务器筛选和排序">
             <label>搜索服务器 <input v-model="serverSearch" type="search" placeholder="名称、主机名、分组或备注" aria-label="搜索服务器"></label>
             <label>服务器分组 <select v-model="dashboardSettings.nodeGroupBy"><option value="status">连接状态</option><option value="group">自定义分组</option><option value="none">不分组</option></select></label>
@@ -976,34 +962,27 @@ onBeforeUnmount(() => {
           <section v-for="group in serverCardGroups" :key="group.key" class="vps-card-group" :data-group="group.key">
             <h2 v-if="group.label" class="vps-group-heading">{{ group.label }}</h2>
             <div class="vps-card-grid">
-            <article v-for="node in group.nodes" :key="node.nodeId" class="vps-card" :data-node-id="node.nodeId" :data-online="nodeIsOnline(node)">
-            <header class="vps-card-header">
-              <div class="vps-card-heading"><span class="vps-node-icon" aria-hidden="true">{{ nodeIcon(nodePreference(node)?.icon) }}</span><div><span class="eyebrow">VPS<template v-if="nodePreference(node)?.group"> · {{ nodePreference(node)?.group }}</template></span><h2>{{ nodeTitle(node) }}</h2></div></div>
-              <span class="node-detail-status" :data-online="nodeIsOnline(node)">{{ isPendingRegistration(node) ? '等待注册' : nodeIsOnline(node) ? '在线' : '离线' }}</span>
-            </header>
-            <p class="host-summary-id">{{ node.nodeId }} · {{ node.agentVersion || 'Agent 未连接' }}</p>
-            <div class="vps-card-metrics">
-              <div><span>CPU</span><strong>{{ metricSummaryValue(views[node.nodeId]?.metrics.cpu.usagePercent.status, views[node.nodeId]?.metrics.cpu.usagePercent.value ?? undefined) }}</strong></div>
-              <div><span>内存</span><strong>{{ metricSummaryValue(views[node.nodeId]?.metrics.memory.status, views[node.nodeId]?.metrics.memory.value?.usedPercent) }}</strong></div>
-              <div><span>Docker Engine</span><strong>{{ nodeDockerStatus(node) }}</strong></div>
-            </div>
-            <section class="vps-card-docker" :data-available="dockerViews[node.nodeId]?.dockerAvailability || 'unknown'" :data-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : false">
-              <header><strong>Docker 容器</strong><span>{{ dockerViews[node.nodeId]?.containers.length ?? '—' }}</span></header>
-              <p v-if="!dockerViews[node.nodeId]" class="docker-empty">{{ nodeIsOnline(node) ? '正在读取真实容器状态。' : '尚无可确认的容器快照。' }}</p>
-              <p v-else-if="dockerViews[node.nodeId].dockerAvailability === 'unavailable'" class="docker-empty">Engine 不可用。{{ dockerStatusReason(dockerViews[node.nodeId]) }}</p>
-              <p v-else-if="dockerViews[node.nodeId].containers.length === 0" class="docker-empty">{{ dockerIsStale(dockerViews[node.nodeId]) ? '历史容器数据已过期。' : '此节点当前没有容器。' }}</p>
-              <div v-else class="vps-card-container-list">
-                <div v-for="record in nodeContainerPreview(node)" :key="record.container.id" class="vps-card-container" :data-stale="dockerIsStale(dockerViews[node.nodeId]) || record.container.stale">
-                  <span class="service-icon" aria-hidden="true">{{ nodeContainerPreference(node, record)?.icon || '▣' }}</span>
-                  <div><strong>{{ nodeContainerTitle(node, record) }}</strong><small>实际名称：{{ record.container.name || record.container.id.slice(0, 12) }} · {{ record.container.image }}</small><small>{{ record.container.compose ? `Compose · ${record.container.compose.project}/${record.container.compose.service}` : '独立容器' }} · {{ containerHealthText(record.container) }}</small><small v-if="nodeContainerPortSummary(record)">端口：{{ nodeContainerPortSummary(record) }}</small></div>
-                  <span class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span>
-                </div>
-                <p v-if="dockerViews[node.nodeId].containers.length > 3" class="vps-card-more">另有 {{ dockerViews[node.nodeId].containers.length - 3 }} 个容器</p>
-                <p v-if="dockerIsStale(dockerViews[node.nodeId])" class="overview-stale">Agent 离线或租约已过期；以上为最近已知数据。</p>
-              </div>
-            </section>
-            <footer class="vps-card-footer"><span v-if="nodeReasons[node.nodeId]">{{ nodeReasons[node.nodeId] }}</span><button type="button" class="container-action" @click="chooseNode(node)">查看完整详情</button></footer>
-          </article>
+            <VpsCard
+              v-for="node in group.nodes"
+              :key="node.nodeId"
+              :node="node"
+              :metrics="views[node.nodeId]"
+              :inventory="dockerViews[node.nodeId]"
+              :node-preference="nodePreferences[node.nodeId]?.find((item) => item.targetKind === 'node')"
+              :container-preferences="nodePreferences[node.nodeId] ?? []"
+              :preference-identities="preferenceIdentities[node.nodeId] ?? {}"
+              :online="nodeIsOnline(node)"
+              :pending="isPendingRegistration(node)"
+              :docker-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : !nodeIsOnline(node)"
+              :preview-limit="dashboardSettings.featuredLimit"
+              :current-time="wallClockNow"
+              :node-reason="nodeReasons[node.nodeId]"
+              :tasks="tasksForNode(node.nodeId)"
+              :task-submitting="taskSubmitting"
+              :task-errors="taskErrors"
+              @view="chooseNode"
+              @container-action="submitCardContainerAction"
+            />
             </div>
           </section>
         </section>
@@ -1039,7 +1018,7 @@ onBeforeUnmount(() => {
           </div>
           <p v-if="orderError" class="container-task-error" role="alert">{{ orderError }}</p>
           <p v-if="!selectedDocker" class="docker-empty">正在读取此节点的 Docker 状态。</p>
-          <p v-else-if="selectedDocker.dockerAvailability === 'unavailable'" class="docker-empty">
+          <p v-else-if="selectedDocker.dockerAvailability === 'unavailable' || selectedDocker.staleReason === 'docker_capability_unavailable'" class="docker-empty">
             Agent 仍可在线采集主机指标；Docker Engine 当前不可用。{{ dockerStatusReason(selectedDocker) ? `原因：${dockerStatusReason(selectedDocker)}` : '' }}
           </p>
           <p v-else-if="selectedDocker && dockerStatusReason(selectedDocker)" class="docker-empty" data-testid="docker-health-reason">
@@ -1057,12 +1036,13 @@ onBeforeUnmount(() => {
                 <div class="container-actions">
                   <span v-if="rollbackTaskForContainer(record.container.id)" class="container-state container-rollback-state" data-role="rollback">回滚副本</span>
                   <span v-else-if="dashboardSettings.customFields.includes('state')" class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span>
-                  <button type="button" :disabled="!record.container.running || record.container.stale || dockerIsStale(selectedDocker) || !nodeIsOnline(selectedNode) || Boolean(rollbackTaskForContainer(record.container.id))" @click="openContainerTerminal(selectedNode, record.container)">控制台</button>
+                  <button type="button" :disabled="!record.container.running || record.container.stale || !dockerCanOperate(selectedDocker) || dockerIsStale(selectedDocker) || !nodeIsOnline(selectedNode) || Boolean(rollbackTaskForContainer(record.container.id))" @click="openContainerTerminal(selectedNode, record.container)">控制台</button>
                 </div>
               </div>
               <div class="docker-row-meta">
                 <span v-if="dashboardSettings.customFields.includes('health')" :data-health="record.container.health">健康：{{ containerHealthText(record.container) }}</span>
                 <span v-if="dashboardSettings.customFields.includes('uptime')">运行时间：{{ containerUptime(record) }}</span>
+                <span>网络：{{ containerNetworkText(record.container) }}</span>
                 <span v-if="dockerIsStale(selectedDocker) || record.container.stale" class="container-stale">
                   过期数据<template v-if="record.container.unavailableReason">：{{ record.container.unavailableReason }}</template>
                 </span>
@@ -1080,24 +1060,24 @@ onBeforeUnmount(() => {
                 <button class="container-action drag-handle" type="button" aria-label="拖动调整容器顺序" :disabled="orderSaving || dashboardSettings.sortBy !== 'custom' || !preferenceIdentities[selectedNodeID]?.[record.container.id]" @pointerdown="beginPointerReorder($event, record)" title="按住并拖动可调整顺序">⠿</button>
                 <button class="container-action" type="button" :disabled="!containerPreferenceForEditor(record)" :title="serviceLinkTitle(record)" @click="editingPreference = editingPreference === record.container.id ? '' : record.container.id">{{ editingPreference === record.container.id ? '关闭偏好' : '编辑偏好' }}</button>
                 <a v-if="safeServiceURL(record)" class="container-action service-link" :href="safeServiceURL(record)" target="_blank" rel="noopener noreferrer">打开服务 ↗</a>
-                <button v-if="record.container.paused" class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'resume')">恢复</button>
+                <button v-if="record.container.paused" class="container-action" type="button" :disabled="!dockerCanOperate(selectedDocker) || dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[containerActionKey(selectedNodeID, record.container.id)]" @click="submitContainerAction(selectedNode, selectedDocker, record.container, 'resume')">恢复</button>
                 <template v-else-if="record.container.running">
-                  <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'stop')">停止</button>
-                  <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'restart')">重启容器</button>
-                  <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'pause')">暂停</button>
+                  <button class="container-action" type="button" :disabled="!dockerCanOperate(selectedDocker) || dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[containerActionKey(selectedNodeID, record.container.id)]" @click="submitContainerAction(selectedNode, selectedDocker, record.container, 'stop')">停止</button>
+                  <button class="container-action" type="button" :disabled="!dockerCanOperate(selectedDocker) || dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[containerActionKey(selectedNodeID, record.container.id)]" @click="submitContainerAction(selectedNode, selectedDocker, record.container, 'restart')">重启容器</button>
+                  <button class="container-action" type="button" :disabled="!dockerCanOperate(selectedDocker) || dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[containerActionKey(selectedNodeID, record.container.id)]" @click="submitContainerAction(selectedNode, selectedDocker, record.container, 'pause')">暂停</button>
                 </template>
-                <button v-else class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id]" @click="submitContainerAction(record.container, 'start')">启动</button>
-                <button class="container-action" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id] || Boolean(record.container.compose)" :title="record.container.compose ? 'Compose 项目容器不能通过实际重命名修改服务身份' : '重命名独立容器'" @click="submitContainerAction(record.container, 'rename')">重命名</button>
-                <button class="container-action container-action-danger" type="button" :disabled="dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[record.container.id] || record.container.running || record.container.paused || record.container.restarting" :title="record.container.running || record.container.paused || record.container.restarting ? '请先确认容器已停止' : '删除容器并保留数据卷'" @click="submitContainerAction(record.container, 'delete')">删除</button>
-                <ContainerRebuildWizard :node-id="selectedNode.nodeId" :container="record.container" :stale="dockerIsStale(selectedDocker)" :tasks="selectedNodeTasks" />
-                <span v-if="taskSubmitting[record.container.id]" class="container-task-status" role="status">正在提交任务…</span>
+                <button v-else class="container-action" type="button" :disabled="!dockerCanOperate(selectedDocker) || dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[containerActionKey(selectedNodeID, record.container.id)]" @click="submitContainerAction(selectedNode, selectedDocker, record.container, 'start')">启动</button>
+                <button class="container-action" type="button" :disabled="!dockerCanOperate(selectedDocker) || dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[containerActionKey(selectedNodeID, record.container.id)] || Boolean(record.container.compose)" :title="record.container.compose ? 'Compose 项目容器不能通过实际重命名修改服务身份' : '重命名独立容器'" @click="submitContainerAction(selectedNode, selectedDocker, record.container, 'rename')">重命名</button>
+                <button class="container-action container-action-danger" type="button" :disabled="!dockerCanOperate(selectedDocker) || dockerIsStale(selectedDocker) || record.container.stale || taskSubmitting[containerActionKey(selectedNodeID, record.container.id)] || record.container.running || record.container.paused || record.container.restarting" :title="record.container.running || record.container.paused || record.container.restarting ? '请先确认容器已停止' : '删除容器并保留数据卷'" @click="submitContainerAction(selectedNode, selectedDocker, record.container, 'delete')">删除</button>
+                <ContainerRebuildWizard :node-id="selectedNode.nodeId" :container="record.container" :stale="!dockerCanOperate(selectedDocker) || dockerIsStale(selectedDocker)" :tasks="selectedNodeTasks" />
+                <span v-if="taskSubmitting[containerActionKey(selectedNodeID, record.container.id)]" class="container-task-status" role="status">正在提交任务…</span>
                 <span v-if="taskForContainer(record.container.id)" class="container-task-status" :data-status="taskForContainer(record.container.id)?.status" role="status">
                   {{ taskStatusLabel(taskForContainer(record.container.id)!) }}
                 </span>
                 <button v-if="taskForContainer(record.container.id)" class="container-action" type="button" @click="toggleTaskAudit(taskForContainer(record.container.id)!)">
                   {{ taskAuditVisible[taskForContainer(record.container.id)!.taskId] ? '隐藏审计' : '查看审计' }}
                 </button>
-                <span v-if="taskErrors[record.container.id]" class="container-task-error" role="alert">{{ taskErrors[record.container.id] }}</span>
+                <span v-if="taskErrors[containerActionKey(selectedNodeID, record.container.id)]" class="container-task-error" role="alert">{{ taskErrors[containerActionKey(selectedNodeID, record.container.id)] }}</span>
                 <span v-if="taskAuditErrors[taskForContainer(record.container.id)?.taskId || '']" class="container-task-error" role="alert">{{ taskAuditErrors[taskForContainer(record.container.id)?.taskId || ''] }}</span>
                 <ol v-if="taskForContainer(record.container.id) && taskAuditVisible[taskForContainer(record.container.id)!.taskId]" class="container-task-audit" aria-label="容器任务审计">
                   <li v-if="taskAuditLoading[taskForContainer(record.container.id)!.taskId]">正在读取审计记录…</li>
@@ -1197,57 +1177,7 @@ onBeforeUnmount(() => {
 .vps-card-group { display: grid; gap: 9px; }
 .vps-card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); align-items: start; gap: 12px; }
 .vps-group-heading { margin: 0; color: #8bb4f4; font-size: 11px; font-weight: 600; }
-.vps-card { min-width: 0; border: 1px solid rgba(171,196,232,.13); border-radius: 12px; padding: clamp(14px,2vw,20px); background: linear-gradient(145deg,rgba(23,36,56,.88),rgba(9,17,29,.72)); }
-.vps-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.vps-card-heading { display: flex; min-width: 0; align-items: center; gap: 9px; }
-.vps-card-heading > div { min-width: 0; }
-.vps-node-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(141,201,255,.2); border-radius: 9px; color: #a9d5ff; background: rgba(62,119,170,.16); font-size: 17px; }
-.vps-card-header h2 { margin: 4px 0 0; font-size: 16px; overflow-wrap: anywhere; }
-.vps-card-header .node-detail-status { margin: 0; white-space: nowrap; }
-.vps-card-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
-.vps-card-metrics > div { display: grid; min-width: 0; gap: 5px; border: 1px solid rgba(171,196,232,.1); border-radius: 7px; padding: 8px; }
-.vps-card-metrics span, .node-settings-status span { color: #91a2ba; font-size: 9px; }
-.vps-card-metrics strong { color: #eaf0fa; font-size: 11px; overflow-wrap: anywhere; }
-.vps-card-docker { margin-top: 12px; border: 1px solid rgba(171,196,232,.1); border-radius: 8px; padding: 10px; background: rgba(18,29,45,.54); }
-.vps-card-docker > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: #cbd8ea; font-size: 10px; }
-.vps-card-docker > header span { color: #91a2ba; font: 10px ui-monospace,monospace; }
-.vps-card-container-list { display: grid; gap: 7px; margin-top: 8px; }
-.vps-card-container { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 7px; border: 1px solid rgba(171,196,232,.08); border-radius: 7px; padding: 8px; }
-.vps-card-container[data-stale='true'] { border-color: rgba(255,176,129,.22); }
-.vps-card-container > div { display: grid; min-width: 0; gap: 3px; }
-.vps-card-container strong, .vps-card-container small { overflow-wrap: anywhere; }
-.vps-card-container strong { color: #eaf0fa; font-size: 10px; }
-.vps-card-container small { color: #91a2ba; font-size: 8px; line-height: 1.4; }
-.vps-card-container .container-state { font-size: 8px; }
-.vps-card-more { margin: 0; color: #91a2ba; font-size: 9px; }
-.vps-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; color: #91a2ba; font-size: 9px; overflow-wrap: anywhere; }
 .dashboard-empty { grid-column: 1 / -1; margin: 0; border: 1px dashed rgba(171,196,232,.18); border-radius: 10px; padding: 20px; color: #9aabc1; font-size: 11px; line-height: 1.6; }
-.host-summary-card, .featured-containers-card { min-width: 0; border: 1px solid rgba(171,196,232,.13); border-radius: 12px; padding: clamp(14px,2vw,20px); background: linear-gradient(145deg,rgba(23,36,56,.88),rgba(9,17,29,.72)); }
-.host-summary-card > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.host-summary-card h2, .featured-heading h2, .section-toolbar h2 { margin: 4px 0 0; font-size: 16px; overflow-wrap: anywhere; }
-.host-summary-id { margin: 6px 0 12px; color: #8193aa; font: 9px/1.5 ui-monospace,monospace; overflow-wrap: anywhere; }
-.host-summary-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px; }
-.host-summary-metrics > div { display: grid; min-width: 0; gap: 5px; border: 1px solid rgba(171,196,232,.1); border-radius: 7px; padding: 8px; }
-.host-summary-metrics span, .node-settings-status span { color: #91a2ba; font-size: 9px; }
-.host-summary-metrics strong { color: #eaf0fa; font-size: 11px; overflow-wrap: anywhere; }
-.host-summary-card .node-detail-status { margin: 0; }
-.overview-stale { margin: 10px 0 0; border-left: 2px solid #efb77b; padding-left: 9px; color: #efc58d; font-size: 10px; line-height: 1.5; }
-.featured-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
-.featured-container-list { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
-.featured-container { min-width: 0; border: 1px solid rgba(171,196,232,.1); border-radius: 8px; padding: 9px; background: rgba(18,29,45,.68); }
-.featured-container[data-stale='true'] { border-color: rgba(255,176,129,.22); }
-.featured-container-title { display: flex; align-items: center; min-width: 0; gap: 7px; }
-.featured-container-title > div { display: grid; min-width: 0; flex: 1; gap: 3px; }
-.featured-container-title strong, .featured-container-title small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.featured-container-title strong { font-size: 10px; }
-.featured-container-title small { color: #91a2ba; font-size: 8px; }
-.service-icon { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 6px; color: #c5e4ff; background: rgba(105,184,255,.12); font-size: 12px; }
-.featured-note, .featured-port { margin: 6px 0 0; color: #91a2ba; font-size: 9px; overflow-wrap: anywhere; }
-.featured-port { color: #8dc9ff; }
-.featured-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 8px; }
-.featured-actions a, .service-link { color: #cce6ff; text-decoration: none; }
-.featured-actions a { min-height: 32px; display: inline-flex; align-items: center; padding: 5px 8px; font-size: 9px; }
-.featured-actions .container-action { min-height: 32px; padding: 5px 8px; font-size: 9px; }
 .node-list { overflow: hidden; border: 1px solid rgba(171, 196, 232, .13); border-radius: 14px; background: rgba(15, 25, 40, .72); }
 .node-list-heading { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(171, 196, 232, .1); padding: 14px 16px; color: #dce6f5; font-size: 12px; }
 .node-list-heading span { color: #8fa1b9; font-size: 10px; }
@@ -1302,6 +1232,7 @@ onBeforeUnmount(() => {
 .container-reason { margin: 8px 0 0; }
 .container-task-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .container-action { min-height: 34px; border: 1px solid rgba(141, 201, 255, .25); border-radius: 7px; padding: 6px 10px; color: #cce6ff; background: rgba(62, 119, 170, .16); font: inherit; font-size: 10px; cursor: pointer; }
+.service-link { color: #cce6ff; text-decoration: none; }
 .container-action:hover:not(:disabled) { background: rgba(62, 119, 170, .3); }
 .container-action-danger { border-color: rgba(255, 129, 116, .3); color: #ffc1b8; background: rgba(184, 77, 72, .1); }
 .container-action:disabled { opacity: .48; cursor: not-allowed; }
@@ -1335,5 +1266,5 @@ onBeforeUnmount(() => {
 .preference-separation-note { margin-top: 12px; }
 @media (max-width: 760px) { .nodes-layout { grid-template-columns: minmax(0, 1fr); } .node-list { max-height: 270px; overflow: auto; } }
 @media (max-width: 900px) { .node-settings-status { grid-template-columns: repeat(2,minmax(0,1fr)); } .dashboard-settings-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
-@media (max-width: 560px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } .dashboard-tabs { margin-right: -12px; padding-right: 12px; } .featured-container-list { grid-template-columns: minmax(0,1fr); } .host-summary-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } .host-summary-metrics > div { padding: 6px; } .section-toolbar { align-items: flex-start; flex-direction: column; } .history-controls { width: 100%; } .history-controls label { flex: 1; } .server-view-controls, .server-view-controls label, .server-view-controls input, .server-view-controls select, .server-view-controls button { width: 100%; } .docker-view-controls label, .docker-view-controls input, .docker-view-controls select { width: 100%; } .node-settings-status, .dashboard-settings-grid { grid-template-columns: minmax(0,1fr); } .docker-row-title { align-items: flex-start; flex-wrap: wrap; } .node-terminal-entry { align-items: flex-start; flex-direction: column; } .node-terminal-entry button { width: 100%; min-height: 42px; } .container-actions { width: 100%; justify-content: space-between; } .container-actions button { min-height: 42px; flex: 1; } }
+@media (max-width: 560px) { .nodes-dashboard { padding: 22px 14px; } .nodes-heading { flex-direction: column; align-items: flex-start; gap: 14px; } .nodes-heading p { max-width: 250px; } .stream-state { padding: 7px 9px; font-size: 9px; } .node-detail { padding: 12px; } .dashboard-tabs { margin-right: -12px; padding-right: 12px; } .section-toolbar { align-items: flex-start; flex-direction: column; } .history-controls { width: 100%; } .history-controls label { flex: 1; } .server-view-controls, .server-view-controls label, .server-view-controls input, .server-view-controls select, .server-view-controls button { width: 100%; } .docker-view-controls label, .docker-view-controls input, .docker-view-controls select { width: 100%; } .node-settings-status, .dashboard-settings-grid { grid-template-columns: minmax(0,1fr); } .docker-row-title { align-items: flex-start; flex-wrap: wrap; } .node-terminal-entry { align-items: flex-start; flex-direction: column; } .node-terminal-entry button { width: 100%; min-height: 42px; } .container-actions { width: 100%; justify-content: space-between; } .container-actions button { min-height: 42px; flex: 1; } }
 </style>
