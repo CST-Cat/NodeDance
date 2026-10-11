@@ -129,7 +129,7 @@ onBeforeUnmount(disconnect)
             <input v-else v-model="values[name]" :type="schema.writeOnly ? 'password' : ['integer', 'number'].includes(schema.type ?? '') ? 'number' : 'text'" :step="schema.type === 'integer' ? '1' : 'any'" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected" autocomplete="off" />
           </label>
           <label v-if="['upload', 'multipart'].includes(operation.transport)">{{ t('operations.file') }}<input type="file" required @change="file = ($event.target as HTMLInputElement).files?.[0]" /></label>
-          <button type="submit" class="primary" :disabled="busy || connected">{{ busy ? t('operations.running') : t('operations.execute') }}</button>
+          <button type="submit" class="primary-button" :disabled="busy || connected">{{ busy ? t('operations.running') : t('operations.execute') }}</button>
           <button v-if="connected" type="button" @click="disconnect">{{ t('operations.disconnect') }}</button>
         </form>
         <form v-if="connected" @submit.prevent="send"><textarea v-if="operation.transport === 'websocket'" v-model="frame" rows="3" aria-label="JSON" /><input v-else v-model="input" :aria-label="t('operations.input')" /><button type="submit">{{ t('operations.send') }}</button></form>
@@ -141,11 +141,23 @@ onBeforeUnmount(disconnect)
 </template>
 
 <style scoped>
-.operation-console { padding: 24px; }
-.operation-layout { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 24px; }
-aside, form, label { display: flex; flex-direction: column; gap: 8px; }
+.operation-console { padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+h2 { margin: 0 0 10px; font-size: 24px; letter-spacing: -.03em; }
+h3 { margin: 0 0 10px; font-size: 18px; }
+.muted { color: var(--muted); font-size: 13px; line-height: 1.7; }
+.operation-layout { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 28px; margin-top: 24px; }
+aside, form, label { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+label { color: var(--text); font-size: 12px; font-weight: 600; }
 form { gap: 16px; margin-bottom: 20px; }
-aside select { width: 100%; min-height: 360px; }
-pre { max-height: 600px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-muted); padding: 16px; border-radius: 8px; }
-@media (max-width: 700px) { .operation-layout { grid-template-columns: 1fr; } aside select { min-height: 160px; height: 160px; } }
+input, select, textarea { box-sizing: border-box; width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-soft); color: var(--text); font: inherit; }
+textarea { font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+aside select { min-height: 420px; padding: 8px; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
+aside option { padding: 7px 8px; border-radius: 4px; }
+aside option:checked { background: var(--accent-soft); color: var(--accent); }
+button { align-self: flex-start; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 9px 18px; background: var(--surface-soft); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+button.primary-button { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+button:disabled { opacity: .55; cursor: default; }
+.error { color: var(--danger); font-size: 13px; }
+pre { max-height: 600px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); background: var(--surface-soft); color: var(--text); padding: 18px; border-radius: 8px; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
+@media (max-width: 700px) { .operation-console { padding: 18px; } .operation-layout { grid-template-columns: 1fr; gap: 20px; } aside select { min-height: 170px; height: 170px; } }
 </style>

@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.8]
+
+### English
+
+- Style the shared Operations interface with the Web console's light/dark theme, accessible form controls, responsive layout, and bounded result panels.
+
+### 简体中文
+
+- 为共享操作中心补齐 Web 控制台的明暗主题、可访问表单控件、响应式布局和有界结果面板。
+
 ## [0.1.7]
 
 ### English
