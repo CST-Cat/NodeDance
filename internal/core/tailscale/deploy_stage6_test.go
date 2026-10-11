@@ -20,6 +20,7 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
+	agentinstaller "github.com/CST-Cat/NodeDance/internal/installer"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 )
@@ -522,25 +523,31 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{
-		"bash -o pipefail -c",
-		"--proto =https --proto-redir =https --tlsv1.2",
-		"api.github.com/repos/CST-Cat/NodeDance/releases?per_page=100",
-		"agent-v[0-9]+",
-		"releases/download/$tag/install-agent.sh",
-		"sudo bash -s --",
-		"data-testid=\"agent-install-command\"",
-		"data-testid=\"agent-enrollment-token\"",
-		"Agent 连接的 Core 地址",
-		"https://core.example:8180",
-		"正式 Agent 连接必须使用 HTTPS",
-		"系统信任的 TLS 证书",
-		"隐藏提示输入此 Token",
-	} {
-		if !strings.Contains(string(enrollmentUI), required) {
-			t.Errorf("shared Agent enrollment UI is missing root-only behavior %q", required)
+	command, err := agentinstaller.Command("https://core.example:8180", "node", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"bash -o pipefail -c", "--proto =https --proto-redir =https --tlsv1.2", "api.github.com/repos/CST-Cat/NodeDance/releases?per_page=100", "agent-v[0-9]+", "releases/download/$tag/install-agent.sh", "sudo bash -s --"} {
+		if !strings.Contains(command, required) {
+			t.Errorf("shared installer command is missing %q", required)
 		}
 	}
+	for _, required := range []string{"result.installCommand", "data-testid=\"agent-install-command\"", "data-testid=\"agent-enrollment-token\"", "https://core.example:8180", "t('m."} {
+		if !strings.Contains(string(enrollmentUI), required) {
+			t.Errorf("shared Agent enrollment UI is missing %q", required)
+		}
+	}
+
+	catalog, err := os.ReadFile(filepath.Join(repoRoot, "web", "src", "locales", "zh-CN.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"Agent 连接的 Core 地址", "正式 Agent 连接必须使用 HTTPS", "系统信任的 TLS 证书", "隐藏提示输入此 Token"} {
+		if !strings.Contains(string(catalog), required) {
+			t.Errorf("localized enrollment help is missing %q", required)
+		}
+	}
+
 	for _, required := range []string{
 		"--release-tag TAG",
 		"releases/download\"",
@@ -554,7 +561,7 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 			t.Errorf("Agent installer is missing root-only behavior %q", required)
 		}
 	}
-	if strings.Contains(string(enrollmentUI)+string(installer), "releases/latest/download") {
+	if strings.Contains(command+string(enrollmentUI)+string(installer), "releases/latest/download") {
 		t.Fatal("Agent enrollment must not use the repository-wide latest release URL")
 	}
 	if !strings.Contains(string(releaseWorkflow), "- 'agent-v*'") || strings.Contains(string(releaseWorkflow), "- 'v*'") {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/CST-Cat/NodeDance/internal/i18n"
 	"io"
 	"os"
 	"os/signal"
@@ -22,14 +23,22 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) (resultErr error) {
+	var err error
+	ctx, args, err = i18n.Options(ctx, args, os.LookupEnv)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = i18n.From(ctx).Error(resultErr) }()
+	stdout = i18n.Writer(stdout, i18n.From(ctx))
+	stderr = i18n.Writer(stderr, i18n.From(ctx))
 	if len(args) == 0 {
 		printUsage(stdout)
 		return nil
 	}
 	switch args[0] {
 	case "version", "--version":
-		fmt.Fprintf(stdout, "NodeDance Agent %s\n", version)
+		fmt.Fprintf(stdout, i18n.TextFor(stdout, "NodeDance Agent %s\n"), version)
 		return nil
 	case "help", "--help", "-h":
 		printUsage(stdout)
@@ -56,22 +65,23 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 }
 
 func printUsage(output io.Writer) {
-	fmt.Fprintln(output, "NodeDance Agent - outbound-only Linux host management agent")
-	fmt.Fprintln(output, "Usage:")
-	fmt.Fprintln(output, "  nodedance-agent enroll --server https://core.example --token-stdin [--ca-file path] [--config path]")
-	fmt.Fprintln(output, "  nodedance-agent recover [--config path]")
-	fmt.Fprintln(output, "  nodedance-agent run [--config path]")
-	fmt.Fprintln(output, "  nodedance-agent validate-file-root --file-root <absolute-directory> [--state-dir <path>]")
-	fmt.Fprintln(output, "  nodedance-agent validate-systemd-state [--config path]")
-	fmt.Fprintln(output, "  nodedance-agent prepare-systemd-state [--user root] [--require-new]")
-	fmt.Fprintln(output, "  nodedance-agent install-systemd [--user root] [--config path] [--file-root absolute-directory] [--no-file-root] [--supplementary-group <gid>] [--enable]")
-	fmt.Fprintln(output, "  nodedance-agent uninstall-systemd [--unit-dir path]")
-	fmt.Fprintln(output, "The Agent never accepts inbound management connections. Enrollment tokens are read only from stdin.")
+	fmt.Fprintln(output, i18n.TextFor(output, "NodeDance Agent - outbound-only Linux host management agent"))
+	fmt.Fprintln(output, i18n.TextFor(output, "Global language: --lang en|zh-CN (or NODEDANCE_LANG)"))
+	fmt.Fprintln(output, i18n.TextFor(output, "Usage:"))
+	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent enroll --server https://core.example --token-stdin [--ca-file path] [--config path]"))
+	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent recover [--config path]"))
+	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent run [--config path]"))
+	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent validate-file-root --file-root <absolute-directory> [--state-dir <path>]"))
+	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent validate-systemd-state [--config path]"))
+	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent prepare-systemd-state [--user root] [--require-new]"))
+	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent install-systemd [--user root] [--config path] [--file-root absolute-directory] [--no-file-root] [--supplementary-group <gid>] [--enable]"))
+	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent uninstall-systemd [--unit-dir path]"))
+	fmt.Fprintln(output, i18n.TextFor(output, "The Agent never accepts inbound management connections. Enrollment tokens are read only from stdin."))
 }
 
 func runValidateSystemdState(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("validate-systemd-state", stderr)
-	configPath := flags.String("config", "/var/lib/nodedance-agent/agent.json", "Agent config path to validate without following symlinks")
+	configPath := flags.String("config", "/var/lib/nodedance-agent/agent.json", i18n.TextFor(stderr, "Agent config path to validate without following symlinks"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -81,14 +91,14 @@ func runValidateSystemdState(args []string, stdout, stderr io.Writer) error {
 	if err := agent.ValidateSystemdStatePath(*configPath); err != nil {
 		return err
 	}
-	fmt.Fprintln(stdout, "Agent state path is safe")
+	fmt.Fprintln(stdout, i18n.TextFor(stdout, "Agent state path is safe"))
 	return nil
 }
 
 func runPrepareSystemdState(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("prepare-systemd-state", stderr)
-	serviceUser := flags.String("user", "", "root-only Agent service account; omitted defaults to root")
-	requireNew := flags.Bool("require-new", false, "create a fresh state directory and refuse to adopt existing state")
+	serviceUser := flags.String("user", "", i18n.TextFor(stderr, "root-only Agent service account; omitted defaults to root"))
+	requireNew := flags.Bool("require-new", false, i18n.TextFor(stderr, "create a fresh state directory and refuse to adopt existing state"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -111,7 +121,7 @@ func runPrepareSystemdState(args []string, stdout, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(stdout, "created:%s\n", identity)
+		fmt.Fprintf(stdout, i18n.TextFor(stdout, "created:%s\n"), identity)
 		return nil
 	}
 	exists, err := agent.PrepareSystemdStateForUser(*serviceUser, "/var/lib/nodedance-agent/agent.json")
@@ -119,9 +129,9 @@ func runPrepareSystemdState(args []string, stdout, stderr io.Writer) error {
 		return err
 	}
 	if exists {
-		fmt.Fprintln(stdout, "existing")
+		fmt.Fprintln(stdout, i18n.TextFor(stdout, "existing"))
 	} else {
-		fmt.Fprintln(stdout, "new")
+		fmt.Fprintln(stdout, i18n.TextFor(stdout, "new"))
 	}
 	return nil
 }
@@ -131,8 +141,8 @@ func runPrepareSystemdState(args []string, stdout, stderr io.Writer) error {
 // Agent startup without creating configuration or consuming enrollment.
 func runValidateFileRoot(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("validate-file-root", stderr)
-	fileRoot := flags.String("file-root", "", "absolute existing host directory exposed to the Agent file manager")
-	stateDir := flags.String("state-dir", "/var/lib/nodedance-agent", "private Agent state directory")
+	fileRoot := flags.String("file-root", "", i18n.TextFor(stderr, "absolute existing host directory exposed to the Agent file manager"))
+	stateDir := flags.String("state-dir", "/var/lib/nodedance-agent", i18n.TextFor(stderr, "private Agent state directory"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -142,7 +152,7 @@ func runValidateFileRoot(args []string, stdout, stderr io.Writer) error {
 	if _, err := agent.ValidateFileRoot(*fileRoot, *stateDir); err != nil {
 		return err
 	}
-	fmt.Fprintln(stdout, "Agent file root is valid")
+	fmt.Fprintln(stdout, i18n.TextFor(stdout, "Agent file root is valid"))
 	return nil
 }
 
@@ -151,11 +161,11 @@ func runEnroll(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 		return err
 	}
 	flags := newFlagSet("enroll", stderr)
-	server := flags.String("server", "", "Core HTTPS origin; HTTP is limited to literal loopback with --dev")
-	caFile := flags.String("ca-file", "", "additional trusted CA PEM file")
-	configPath := flags.String("config", "", "private Agent config path")
-	dev := flags.Bool("dev", false, "allow HTTP only for literal loopback development Core")
-	tokenStdin := flags.Bool("token-stdin", false, "read one-time enrollment credential from stdin")
+	server := flags.String("server", "", i18n.TextFor(stderr, "Core HTTPS origin; HTTP is limited to literal loopback with --dev"))
+	caFile := flags.String("ca-file", "", i18n.TextFor(stderr, "additional trusted CA PEM file"))
+	configPath := flags.String("config", "", i18n.TextFor(stderr, "private Agent config path"))
+	dev := flags.Bool("dev", false, i18n.TextFor(stderr, "allow HTTP only for literal loopback development Core"))
+	tokenStdin := flags.Bool("token-stdin", false, i18n.TextFor(stderr, "read one-time enrollment credential from stdin"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -173,7 +183,7 @@ func runEnroll(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 		return err
 	}
 	if isTerminalInput(stdin) {
-		fmt.Fprintln(stderr, "Paste the one-time enrollment token, press Enter, then press Ctrl-D on a blank line (Linux/macOS) or Ctrl-Z followed by Enter (Windows) to finish stdin.")
+		fmt.Fprintln(stderr, i18n.TextFor(stderr, "Paste the one-time enrollment token, press Enter, then press Ctrl-D on a blank line (Linux/macOS) or Ctrl-Z followed by Enter (Windows) to finish stdin."))
 	}
 	if err := agent.Enroll(ctx, *server, *caFile, *dev, stdin, path); err != nil {
 		return err
@@ -182,7 +192,7 @@ func runEnroll(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "Agent enrolled: node=%s agent=%s config=%s\n", config.NodeID, config.AgentID, path)
+	fmt.Fprintf(stdout, i18n.TextFor(stdout, "Agent enrolled: node=%s agent=%s config=%s\n"), config.NodeID, config.AgentID, path)
 	return nil
 }
 
@@ -200,7 +210,7 @@ func runRecover(ctx context.Context, args []string, stdout, stderr io.Writer) er
 		return err
 	}
 	flags := newFlagSet("recover", stderr)
-	configPath := flags.String("config", "", "private Agent config path")
+	configPath := flags.String("config", "", i18n.TextFor(stderr, "private Agent config path"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -218,7 +228,7 @@ func runRecover(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "Agent identity recovered: node=%s agent=%s\n", config.NodeID, config.AgentID)
+	fmt.Fprintf(stdout, i18n.TextFor(stdout, "Agent identity recovered: node=%s agent=%s\n"), config.NodeID, config.AgentID)
 	return nil
 }
 
@@ -227,7 +237,7 @@ func runAgent(ctx context.Context, args []string, stderr io.Writer) error {
 		return err
 	}
 	flags := newFlagSet("run", stderr)
-	configPath := flags.String("config", "", "private Agent config path")
+	configPath := flags.String("config", "", i18n.TextFor(stderr, "private Agent config path"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -252,14 +262,14 @@ func requireAgentCommandRoot(operation string, uid int) error {
 
 func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("install-systemd", stderr)
-	serviceUser := flags.String("user", "", "root-only Agent service account; omitted defaults to root")
-	configPath := flags.String("config", "/var/lib/nodedance-agent/agent.json", "existing private Agent config path")
-	unitDir := flags.String("unit-dir", "/etc/systemd/system", "system unit directory")
-	fileRoot := flags.String("file-root", "", "explicit absolute, existing host directory exposed to the Agent file manager")
-	noFileRoot := flags.Bool("no-file-root", false, "disable host file access, even when replacing a previously configured unit")
-	supplementaryGroup := flags.String("supplementary-group", "", "additional Linux group name or numeric GID (used for authorized Docker socket access)")
-	reload := flags.Bool("reload", true, "run systemctl daemon-reload for the system unit directory")
-	enable := flags.Bool("enable", false, "enable and start the installed Agent unit")
+	serviceUser := flags.String("user", "", i18n.TextFor(stderr, "root-only Agent service account; omitted defaults to root"))
+	configPath := flags.String("config", "/var/lib/nodedance-agent/agent.json", i18n.TextFor(stderr, "existing private Agent config path"))
+	unitDir := flags.String("unit-dir", "/etc/systemd/system", i18n.TextFor(stderr, "system unit directory"))
+	fileRoot := flags.String("file-root", "", i18n.TextFor(stderr, "explicit absolute, existing host directory exposed to the Agent file manager"))
+	noFileRoot := flags.Bool("no-file-root", false, i18n.TextFor(stderr, "disable host file access, even when replacing a previously configured unit"))
+	supplementaryGroup := flags.String("supplementary-group", "", i18n.TextFor(stderr, "additional Linux group name or numeric GID (used for authorized Docker socket access)"))
+	reload := flags.Bool("reload", true, i18n.TextFor(stderr, "run systemctl daemon-reload for the system unit directory"))
+	enable := flags.Bool("enable", false, i18n.TextFor(stderr, "enable and start the installed Agent unit"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -290,28 +300,28 @@ func runInstallSystemd(ctx context.Context, args []string, stdout, stderr io.Wri
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdout, "Installed %s\n", path)
+	fmt.Fprintf(stdout, i18n.TextFor(stdout, "Installed %s\n"), path)
 	if !*enable {
-		fmt.Fprintln(stdout, "Enable and start with: systemctl enable --now nodedance-agent.service")
+		fmt.Fprintln(stdout, i18n.TextFor(stdout, "Enable and start with: systemctl enable --now nodedance-agent.service"))
 	}
 	installedUnit, readErr := os.ReadFile(path)
 	unitText := string(installedUnit)
 	switch {
 	case readErr == nil && strings.Contains(unitText, "Environment=NODEDANCE_AGENT_FILE_ACCESS=disabled"):
-		fmt.Fprintln(stdout, "Host file access is disabled by the systemd Agent unit.")
+		fmt.Fprintln(stdout, i18n.TextFor(stdout, "Host file access is disabled by the systemd Agent unit."))
 	case readErr == nil && strings.Contains(unitText, "NODEDANCE_AGENT_FILE_ROOT=\"/\""):
-		fmt.Fprintln(stdout, "Host file access covers the host filesystem; kernel/runtime paths and Agent credentials are protected.")
+		fmt.Fprintln(stdout, i18n.TextFor(stdout, "Host file access covers the host filesystem; kernel/runtime paths and Agent credentials are protected."))
 	case readErr == nil && strings.Contains(unitText, "NODEDANCE_AGENT_FILE_ROOT="):
-		fmt.Fprintln(stdout, "Host file access is confined to the configured absolute file root.")
+		fmt.Fprintln(stdout, i18n.TextFor(stdout, "Host file access is confined to the configured absolute file root."))
 	default:
-		fmt.Fprintln(stdout, "Host file access is disabled; no absolute file root is configured.")
+		fmt.Fprintln(stdout, i18n.TextFor(stdout, "Host file access is disabled; no absolute file root is configured."))
 	}
 	return nil
 }
 
 func runUninstallSystemd(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("uninstall-systemd", stderr)
-	unitDir := flags.String("unit-dir", "/etc/systemd/system", "system unit directory")
+	unitDir := flags.String("unit-dir", "/etc/systemd/system", i18n.TextFor(stderr, "system unit directory"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -321,7 +331,7 @@ func runUninstallSystemd(ctx context.Context, args []string, stdout, stderr io.W
 	if err := agent.UninstallSystemd(ctx, *unitDir); err != nil {
 		return err
 	}
-	fmt.Fprintln(stdout, "Uninstalled the NodeDance Agent systemd unit; Agent configuration and identity were preserved.")
+	fmt.Fprintln(stdout, i18n.TextFor(stdout, "Uninstalled the NodeDance Agent systemd unit; Agent configuration and identity were preserved."))
 	return nil
 }
 

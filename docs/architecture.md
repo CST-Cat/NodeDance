@@ -37,3 +37,11 @@ Vite forwards API and WebSocket traffic to `VITE_CORE_TARGET` during local devel
 ## SQLite schema
 
 Core initializes the current tables and indexes from `internal/core/storage/schema.sql` together with the shared task schema in `internal/core/tasks/schema.sql`. SQLite schema-version ledgers and historical migration files are not maintained. The application does not reset the database at startup; development databases use the current schema, and older schema layouts are not upgraded automatically. The product version remains `0.0.0` independently of the database structure.
+
+## Shared operation layer, CLI and TUI
+
+`internal/control` owns the administrator operation catalog, discoverable input schemas, finite JSON results, the cookie/CSRF-aware HTTP client, authenticated WebSocket dialing, and the terminal authorization/open sequence. Both CLI and TUI call it; validation, execution, confirmations, idempotency and auditing remain in the existing Core/Agent handlers. Client sessions are server-bound, owner-protected, and separate from Agent credentials. `nodedance agent` invokes the separately built Agent executable without importing its runtime. See [CLI/TUI usage](cli.md).
+
+`internal/protocol/capabilities.go` exposes the wire descriptor and capability intersection independently of binary versions. Agent verifies that Welcome contains only offered capabilities. Production dependency-boundary tests guard the separation between Core, Agent and protocol. [The Komari study](komari-communication.md) records the upstream source revisions, adopted principles and transport decisions.
+
+Agent enrollment returns a Core-generated installer command through `internal/installer`; Web, CLI and TUI use the same root-only command and published Agent-tag resolution.

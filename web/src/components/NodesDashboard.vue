@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, type AgentNode, type AgentNodesResponse, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainer, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
 import type { MetricsView } from '../metrics-contract'
@@ -97,11 +98,11 @@ function mergeNodeList(payload: AgentNodesResponse): AgentNode[] | undefined {
 }
 async function loadMetrics(node: AgentNode) {
   try { acceptMetricsResponse(await api.nodeMetrics(node.nodeId)) }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : '无法加载主机指标。' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t('m.433d33e2e1b8') }
 }
 async function loadContainers(node: AgentNode) {
   try { acceptDockerResponse(await api.nodeContainers(node.nodeId)) }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : '无法加载 Docker 容器。' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t('m.f7f31f8592ee') }
 }
 async function loadTasks(node: AgentNode) {
   try {
@@ -109,20 +110,20 @@ async function loadTasks(node: AgentNode) {
     for (const [id, task] of Object.entries(next)) if (task.nodeId === node.nodeId) delete next[id]
     for (const task of result.tasks) next[task.taskId] = task
     taskViews.value = next
-  } catch (reason) { error.value = reason instanceof Error ? reason.message : '无法读取容器操作进度。' }
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : t('m.f63256fb13c3') }
 }
 async function loadPreferences(node: AgentNode) {
   try { nodePreferences.value = { ...nodePreferences.value, [node.nodeId]: (await api.nodePreferences(node.nodeId)).preferences } }
-  catch (reason) { error.value = reason instanceof Error ? reason.message : '无法读取展示偏好。' }
+  catch (reason) { error.value = reason instanceof Error ? reason.message : t('m.1e9242469345') }
 }
 async function loadDashboardSettings() {
   try { dashboardSettings.value = await api.dashboardSettings() }
-  catch (reason) { dashboardSettingsError.value = reason instanceof Error ? reason.message : '无法读取首页设置。' }
+  catch (reason) { dashboardSettingsError.value = reason instanceof Error ? reason.message : t('m.22d4c52f5770') }
 }
 async function saveDashboardSettings() {
   dashboardSettingsSaving.value = true; dashboardSettingsMessage.value = ''; dashboardSettingsError.value = ''
-  try { await api.saveDashboardSettings(dashboardSettings.value); dashboardSettingsMessage.value = '首页设置已保存。' }
-  catch (reason) { dashboardSettingsError.value = reason instanceof Error ? reason.message : '首页设置保存失败。' }
+  try { await api.saveDashboardSettings(dashboardSettings.value); dashboardSettingsMessage.value = t('m.5729552b2210') }
+  catch (reason) { dashboardSettingsError.value = reason instanceof Error ? reason.message : t('m.567fd1d27a30') }
   finally { dashboardSettingsSaving.value = false }
 }
 async function refreshNodes() {
@@ -147,9 +148,9 @@ function nodePreference(node: AgentNode): DashboardPreference | undefined {
 }
 function nodeTitle(node: AgentNode): string { return nodePreference(node)?.alias || node.displayName }
 function nodeStatusGroup(node: AgentNode): string {
-  if (nodeIsOnline(node)) return '在线'
-  if (isPendingRegistration(node)) return '等待注册'
-  return node.status === 'revoked' ? '已撤销' : '离线'
+  if (nodeIsOnline(node)) return t('m.b9086662b1df')
+  if (isPendingRegistration(node)) return t('m.a890b3be09aa')
+  return node.status === 'revoked' ? t('m.fef96e34f77b') : t('m.be1b4f3c6c1c')
 }
 const serverCardGroups = computed(() => {
   const query = serverSearch.value.trim().toLocaleLowerCase()
@@ -159,33 +160,33 @@ const serverCardGroups = computed(() => {
     if (hidden !== (statusFilter.value === 'hidden')) return false
     if (statusFilter.value === 'hidden') return !query || [node.displayName, nodeTitle(node), node.nodeId, preference?.group, preference?.notes, hostname, status]
       .some((value) => value?.toLocaleLowerCase().includes(query))
-    if (statusFilter.value === 'online' && status !== '在线') return false
-    if (statusFilter.value === 'pending' && status !== '等待注册') return false
-    if (statusFilter.value === 'offline' && status !== '离线') return false
-    if (statusFilter.value === 'revoked' && status !== '已撤销') return false
+    if (statusFilter.value === 'online' && status !== t('m.b9086662b1df')) return false
+    if (statusFilter.value === 'pending' && status !== t('m.a890b3be09aa')) return false
+    if (statusFilter.value === 'offline' && status !== t('m.be1b4f3c6c1c')) return false
+    if (statusFilter.value === 'revoked' && status !== t('m.fef96e34f77b')) return false
     return !query || [node.displayName, nodeTitle(node), node.nodeId, preference?.group, preference?.notes, hostname, status]
       .some((value) => value?.toLocaleLowerCase().includes(query))
   })
   const title = (node: AgentNode) => nodeTitle(node)
   const statusRank = (node: AgentNode) => nodeIsOnline(node) ? 0 : isPendingRegistration(node) ? 1 : node.status === 'revoked' ? 3 : 2
   matching.sort((left, right) => {
-    if (dashboardSettings.value.nodeSortBy === 'name') return title(left).localeCompare(title(right), 'zh-CN')
+    if (dashboardSettings.value.nodeSortBy === 'name') return title(left).localeCompare(title(right), locale.value)
     if (dashboardSettings.value.nodeSortBy === 'status') { const rank = statusRank(left) - statusRank(right); if (rank) return rank }
     else {
       const lp = nodePreference(left), rp = nodePreference(right)
       if (lp?.pinned !== rp?.pinned) return lp?.pinned ? -1 : 1
       if ((lp?.sortOrder ?? 0) !== (rp?.sortOrder ?? 0)) return (lp?.sortOrder ?? 0) - (rp?.sortOrder ?? 0)
     }
-    return title(left).localeCompare(title(right), 'zh-CN')
+    return title(left).localeCompare(title(right), locale.value)
   })
   if (dashboardSettings.value.nodeGroupBy === 'none') return [{ key: 'all', label: '', nodes: matching }]
   const groups = new Map<string, AgentNode[]>()
   for (const node of matching) {
-    const label = dashboardSettings.value.nodeGroupBy === 'status' ? nodeStatusGroup(node) : nodePreference(node)?.group.trim() || '未分组'
+    const label = dashboardSettings.value.nodeGroupBy === 'status' ? nodeStatusGroup(node) : nodePreference(node)?.group.trim() || t('m.e86ea3f280d9')
     groups.set(label, [...(groups.get(label) ?? []), node])
   }
-  const statusOrder = ['在线', '等待注册', '离线', '已撤销']
-  return [...groups.keys()].sort((a, b) => dashboardSettings.value.nodeGroupBy === 'status' ? statusOrder.indexOf(a) - statusOrder.indexOf(b) : a.localeCompare(b, 'zh-CN'))
+  const statusOrder = [t('m.b9086662b1df'), t('m.a890b3be09aa'), t('m.be1b4f3c6c1c'), t('m.fef96e34f77b')]
+  return [...groups.keys()].sort((a, b) => dashboardSettings.value.nodeGroupBy === 'status' ? statusOrder.indexOf(a) - statusOrder.indexOf(b) : a.localeCompare(b, locale.value))
     .map((label) => ({ key: label, label, nodes: groups.get(label) ?? [] }))
 })
 function tasksForNode(nodeID: string): ContainerTask[] { return Object.values(taskViews.value).filter((task) => task.nodeId === nodeID) }
@@ -279,7 +280,7 @@ function connectDashboard() {
   socketState.value = socketState.value === 'connected' ? 'retrying' : 'connecting'
   const url = new URL('/ws/v1/dashboard', window.location.href); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   const current = new WebSocket(url); socket = current
-  current.onopen = () => { if (disposed || socket !== current) return; reconnectDelay = 1000; socketState.value = 'connected'; void refreshNodes().catch((reason: unknown) => { busy.value = false; error.value = reason instanceof Error ? reason.message : '无法读取节点列表。' }) }
+  current.onopen = () => { if (disposed || socket !== current) return; reconnectDelay = 1000; socketState.value = 'connected'; void refreshNodes().catch((reason: unknown) => { busy.value = false; error.value = reason instanceof Error ? reason.message : t('m.8fae2c449c13') }) }
   current.onmessage = (message) => { if (!disposed && socket === current) acceptSocketMessage(String(message.data)) }
   current.onclose = () => { if (socket === current) { socket = undefined; scheduleReconnect() } }
   current.onerror = () => { if (socket === current) current.close() }
@@ -301,7 +302,7 @@ async function submitContainerAction(nodeID: string, containerID: string, action
     const accepted = await api.createContainerTask(nodeID, containerID, payload, crypto.randomUUID())
     const current = await api.nodeTask(nodeID, accepted.taskId)
     taskViews.value = { ...taskViews.value, [current.taskId]: current }
-  } catch (reason) { taskErrors.value = { ...taskErrors.value, [key]: reason instanceof Error ? reason.message : '无法创建容器操作任务。' }
+  } catch (reason) { taskErrors.value = { ...taskErrors.value, [key]: reason instanceof Error ? reason.message : t('m.e9b2af7934ab') }
   } finally { taskSubmitting.value = { ...taskSubmitting.value, [key]: false } }
 }
 function submitCardContainerAction(payload: { node: AgentNode; record: DockerInventory['containers'][number]; action: ContainerTaskAction }) {
@@ -322,12 +323,12 @@ async function submitContainerCreateTask(payload: { nodeId: string; spec: Contai
     const current = await api.nodeTask(nodeId, accepted.taskId)
     taskViews.value = { ...taskViews.value, [current.taskId]: current }
   } catch (reason) {
-    taskErrors.value = { ...taskErrors.value, [key]: reason instanceof Error ? reason.message : '无法创建容器创建任务。' }
+    taskErrors.value = { ...taskErrors.value, [key]: reason instanceof Error ? reason.message : t('m.61aabbe69bf5') }
   } finally { taskSubmitting.value = { ...taskSubmitting.value, [key]: false } }
 }
 onMounted(() => {
-  void loadDashboardSettings(); void refreshNodes().catch((reason: unknown) => { busy.value = false; error.value = reason instanceof Error ? reason.message : '无法读取节点列表。' }); connectDashboard()
-  refreshTimer = setInterval(() => { void refreshNodes().catch((reason: unknown) => { error.value = reason instanceof Error ? reason.message : '无法刷新节点列表。' }) }, 10_000)
+  void loadDashboardSettings(); void refreshNodes().catch((reason: unknown) => { busy.value = false; error.value = reason instanceof Error ? reason.message : t('m.8fae2c449c13') }); connectDashboard()
+  refreshTimer = setInterval(() => { void refreshNodes().catch((reason: unknown) => { error.value = reason instanceof Error ? reason.message : t('m.4de430beaf29') }) }, 10_000)
   tickTimer = setInterval(() => { elapsed.value = performance.now(); wallClockNow.value = Date.now() }, 1000)
   taskRefreshTimer = setInterval(() => {
     const active = new Set(Object.values(taskViews.value).filter((task) => task.status === 'queued' || task.status === 'running').map((task) => task.nodeId))
@@ -346,11 +347,11 @@ onBeforeUnmount(() => {
 
 <template>
   <section v-if="!selectedNode" class="nodes-dashboard" aria-labelledby="nodes-title">
-    <header class="nodes-heading"><div><span class="eyebrow">SERVER & CONTAINER CONTROL</span><h1 id="nodes-title">NodeDance<span class="title-period">.</span></h1><p>在一个首页查看服务器状态、容器和历史监控。</p></div><span class="stream-state" :data-state="socketState" role="status"><i aria-hidden="true"></i>{{ socketState === 'connected' ? '实时连接' : socketState === 'retrying' ? '正在重连' : '正在连接' }}</span></header>
-    <div v-if="error" class="nodes-error" role="alert">{{ error }}</div>
-    <section class="vps-dashboard" aria-label="多 VPS 监控首页" data-testid="multi-vps-dashboard">
-      <div class="server-view-controls" aria-label="服务器搜索、筛选、分组和排序"><label>搜索服务器 <input v-model="serverSearch" type="search" placeholder="名称、主机名、分组或备注" aria-label="搜索服务器"></label><label>状态筛选 <select v-model="statusFilter"><option value="all">所有状态</option><option value="online">在线</option><option value="pending">等待注册</option><option value="offline">离线</option><option value="revoked">已撤销</option><option value="hidden">隐藏 VPS</option></select></label><label>服务器分组 <select v-model="dashboardSettings.nodeGroupBy"><option value="status">连接状态</option><option value="group">自定义分组</option><option value="none">不分组</option></select></label><label>服务器排序 <select v-model="dashboardSettings.nodeSortBy"><option value="custom">自定义顺序</option><option value="name">显示名称</option><option value="status">连接状态</option></select></label><label>首页容器上限 <input v-model.number="dashboardSettings.featuredLimit" type="number" min="1" max="20"></label><button type="button" class="container-action" :disabled="dashboardSettingsSaving" @click="void saveDashboardSettings()">{{ dashboardSettingsSaving ? '保存中…' : '保存视图' }}</button><span v-if="dashboardSettingsMessage" role="status">{{ dashboardSettingsMessage }}</span><span v-if="dashboardSettingsError" role="alert">{{ dashboardSettingsError }}</span></div>
-      <p v-if="busy && nodes.length === 0" class="dashboard-empty">正在加载 VPS…</p><p v-else-if="nodes.length === 0" class="dashboard-empty">暂无已登记的 VPS。完成 Agent 注册后，节点卡片会显示真实主机指标与 Docker 容器。</p><p v-else-if="serverCardGroups.every((group) => group.nodes.length === 0)" class="dashboard-empty">没有符合当前筛选条件的 VPS。</p>
+    <header class="nodes-heading"><div><span class="eyebrow">{{ t('label.2e13dc41737f') }}</span><h1 id="nodes-title">NodeDance<span class="title-period">.</span></h1><p>{{ t('m.d11b82b4e5e1') }}</p></div><span class="stream-state" :data-state="socketState" role="status"><i aria-hidden="true"></i>{{ socketState === 'connected' ? t('m.a1b56411cc63') : socketState === 'retrying' ? t('m.7a58d3d9d3e3') : t('m.694186911ae3') }}</span></header>
+    <div v-if="error" class="nodes-error" role="alert">{{ display(error) }}</div>
+    <section class="vps-dashboard" :aria-label="t('m.8a3dfec291d0')" data-testid="multi-vps-dashboard">
+      <div class="server-view-controls" :aria-label="t('m.3fa2b5eb40e0')"><label>{{ t('m.0191c754eec0') }}<input v-model="serverSearch" type="search" :placeholder="t('m.800588838c17')" :aria-label="t('m.0191c754eec0')"></label><label>{{ t('m.9a9acd39e536') }}<select v-model="statusFilter"><option value="all">{{ t('m.2b13e491c90b') }}</option><option value="online">{{ t('m.b9086662b1df') }}</option><option value="pending">{{ t('m.a890b3be09aa') }}</option><option value="offline">{{ t('m.be1b4f3c6c1c') }}</option><option value="revoked">{{ t('m.fef96e34f77b') }}</option><option value="hidden">{{ t('m.58f1163e3fc6') }}</option></select></label><label>{{ t('m.88eac6c5df32') }}<select v-model="dashboardSettings.nodeGroupBy"><option value="status">{{ t('m.b8f945ea49ff') }}</option><option value="group">{{ t('m.c08b046b5470') }}</option><option value="none">{{ t('m.fcd40ee3f05a') }}</option></select></label><label>{{ t('m.13fffdc852b8') }}<select v-model="dashboardSettings.nodeSortBy"><option value="custom">{{ t('m.0f59d3742e06') }}</option><option value="name">{{ t('m.a98585871c53') }}</option><option value="status">{{ t('m.b8f945ea49ff') }}</option></select></label><label>{{ t('m.70006f6c5230') }}<input v-model.number="dashboardSettings.featuredLimit" type="number" min="1" max="20"></label><button type="button" class="container-action" :disabled="dashboardSettingsSaving" @click="void saveDashboardSettings()">{{ dashboardSettingsSaving ? t('m.ff509c9ba052') : t('m.b290bfe6352c') }}</button><span v-if="dashboardSettingsMessage" role="status">{{ display(dashboardSettingsMessage) }}</span><span v-if="dashboardSettingsError" role="alert">{{ display(dashboardSettingsError) }}</span></div>
+      <p v-if="busy && nodes.length === 0" class="dashboard-empty">{{ t('m.c4608c61f330') }}</p><p v-else-if="nodes.length === 0" class="dashboard-empty">{{ t('m.b7858a171812') }}</p><p v-else-if="serverCardGroups.every((group) => group.nodes.length === 0)" class="dashboard-empty">{{ t('m.1af4c85a8053') }}</p>
       <section v-for="group in serverCardGroups" :key="group.key" class="vps-card-group" :data-group="group.key"><h2 v-if="group.label" class="vps-group-heading">{{ group.label }}</h2><div class="vps-card-grid"><VpsCard v-for="node in group.nodes" :key="node.nodeId" :node="node" :metrics="views[node.nodeId]" :inventory="dockerViews[node.nodeId]" :node-preference="nodePreference(node)" :container-preferences="nodePreferences[node.nodeId] ?? []" :preference-identities="preferenceIdentities[node.nodeId] ?? {}" :online="nodeIsOnline(node)" :pending="isPendingRegistration(node)" :docker-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : !nodeIsOnline(node)" :preview-limit="dashboardSettings.featuredLimit" :current-time="wallClockNow" :node-reason="nodeReasons[node.nodeId]" :tasks="tasksForNode(node.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" @view="chooseNode" @quick-action="openNodeShortcut" @container-action="submitCardContainerAction"/></div></section>
     </section>
   </section>

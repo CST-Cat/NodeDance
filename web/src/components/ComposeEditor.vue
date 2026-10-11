@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { composeApi, type ComposeProject } from '../compose-api'
 import type { ContainerTask } from '../api'
@@ -20,7 +21,7 @@ let pollTimer: ReturnType<typeof setTimeout> | undefined
 let generation = 0
 
 const dirty = computed(() => content.value !== savedContent.value)
-const currentFile = computed(() => props.project.ref.configFiles[fileIndex.value] ?? `配置文件 ${fileIndex.value + 1}`)
+const currentFile = computed(() => props.project.ref.configFiles[fileIndex.value] ?? t('m.8b98267611a6', {"0": (fileIndex.value + 1)}))
 
 async function loadConfig() {
   const requestGeneration = ++generation
@@ -33,9 +34,9 @@ async function loadConfig() {
     content.value = result.content
     savedContent.value = result.content
     baseSHA256.value = result.sha256
-    message.value = '已读取远端配置。'
+    message.value = t('m.8d2e18f84c7e')
   } catch (reason) {
-    if (generation === requestGeneration) error.value = reason instanceof Error ? reason.message : '无法读取 Compose 配置。'
+    if (generation === requestGeneration) error.value = reason instanceof Error ? reason.message : t('m.3957ffb3e358')
   } finally {
     if (generation === requestGeneration) loading.value = false
   }
@@ -49,9 +50,9 @@ async function validate() {
   try {
     await composeApi.validateConfig(props.nodeId, props.project.ref.key, fileIndex.value, content.value)
     valid.value = true
-    message.value = 'Docker Compose 校验通过。'
+    message.value = t('m.351d70486605')
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : 'Compose 配置校验失败。'
+    error.value = reason instanceof Error ? reason.message : t('m.29e08c6652a0')
   } finally {
     validating.value = false
   }
@@ -65,19 +66,19 @@ function schedulePoll(taskId: string, requestGeneration: number) {
       task.value = current
       if (current.status === 'succeeded') {
         await loadConfig()
-        message.value = '配置已原子保存并由 Agent 核对。'
+        message.value = t('m.334ef965226e')
         saving.value = false
         return
       }
       if (current.status === 'failed' || current.status === 'unknown' || current.status === 'timed_out' || current.status === 'canceled') {
-        error.value = current.status === 'unknown' ? '保存结果待核实，请重新读取远端文件后再继续。' : '配置未保存；远端文件保持原样。'
+        error.value = current.status === 'unknown' ? t('m.e90270efd29a') : t('m.2a044add4de5')
         saving.value = false
         return
       }
       schedulePoll(taskId, requestGeneration)
     } catch (reason) {
       if (requestGeneration !== generation) return
-      error.value = reason instanceof Error ? reason.message : '无法读取配置保存任务状态。'
+      error.value = reason instanceof Error ? reason.message : t('m.f5ab77abe914')
       saving.value = false
     }
   }, 750)
@@ -96,18 +97,18 @@ async function save() {
     task.value = await composeApi.task(props.nodeId, accepted.taskId)
     if (task.value.status === 'succeeded') {
       await loadConfig()
-      message.value = '配置已原子保存并由 Agent 核对。'
+      message.value = t('m.334ef965226e')
       saving.value = false
       return
     }
     if (task.value.status === 'failed' || task.value.status === 'unknown') {
-      error.value = task.value.status === 'unknown' ? '保存结果待核实，请重新读取远端文件后再继续。' : '配置未保存；远端文件保持原样。'
+      error.value = task.value.status === 'unknown' ? t('m.e90270efd29a') : t('m.2a044add4de5')
       saving.value = false
       return
     }
     schedulePoll(accepted.taskId, requestGeneration)
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '无法保存 Compose 配置。'
+    error.value = reason instanceof Error ? reason.message : t('m.3d63ac5acf31')
     saving.value = false
   }
 }
@@ -116,7 +117,7 @@ function restore() {
   content.value = savedContent.value
   valid.value = false
   error.value = ''
-  message.value = '已恢复到最近一次读取的远端版本。'
+  message.value = t('m.5440ce29fbc9')
 }
 
 function onContentChange() {
@@ -137,27 +138,26 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="compose-editor" aria-label="Compose 配置编辑器" data-testid="compose-editor">
+  <section class="compose-editor" :aria-label="t('m.68caef829d91')" data-testid="compose-editor">
     <header class="compose-editor-heading">
-      <div><span class="eyebrow">CONFIGURATION</span><h3>编辑 Compose 配置</h3></div>
-      <button class="container-action" type="button" :disabled="loading || saving" @click="void loadConfig()">重新读取</button>
+      <div><span class="eyebrow">{{ t('label.d5cde76290bf') }}</span><h3>{{ t('m.a5de4df1d563') }}</h3></div>
+      <button class="container-action" type="button" :disabled="loading || saving" @click="void loadConfig()">{{ t('m.df7392cc96be') }}</button>
     </header>
-    <label class="compose-file-picker">配置文件
-      <select v-model.number="fileIndex" :disabled="loading || saving" @change="onFileChange">
+    <label class="compose-file-picker">{{ t('m.1d27f02ed278') }}<select v-model.number="fileIndex" :disabled="loading || saving" @change="onFileChange">
         <option v-for="(path, index) in project.ref.configFiles" :key="path" :value="index">{{ path.split('/').at(-1) || path }}</option>
       </select>
       <small>{{ currentFile }}</small>
     </label>
-    <p class="compose-editor-risk">保存前会使用 Agent 上的 Docker Compose CLI 校验候选文件。保存采用同目录原子替换和版本摘要检查；部署会重建该项目服务，先检查挂载、端口及服务影响。</p>
-    <textarea v-model="content" aria-label="Compose YAML 配置" spellcheck="false" :disabled="loading || saving" @input="onContentChange" />
+    <p class="compose-editor-risk">{{ t('m.cd673d386eed') }}</p>
+    <textarea v-model="content" :aria-label="t('m.47a8168380df')" spellcheck="false" :disabled="loading || saving" @input="onContentChange" />
     <div class="compose-editor-actions">
-      <button class="container-action" type="button" :disabled="loading || validating || saving" @click="void validate()">{{ validating ? '校验中…' : '校验配置' }}</button>
-      <button class="container-action container-action-danger" type="button" :disabled="!valid || !dirty || saving" @click="void save()">{{ saving ? '保存中…' : '保存配置' }}</button>
-      <button class="container-action" type="button" :disabled="!dirty || saving" @click="restore">恢复到最近读取版本</button>
+      <button class="container-action" type="button" :disabled="loading || validating || saving" @click="void validate()">{{ validating ? t('m.fee0b2ceff3f') : t('m.b26286234be3') }}</button>
+      <button class="container-action container-action-danger" type="button" :disabled="!valid || !dirty || saving" @click="void save()">{{ saving ? t('m.ff509c9ba052') : t('m.6e584e3d5ce6') }}</button>
+      <button class="container-action" type="button" :disabled="!dirty || saving" @click="restore">{{ t('m.131be45b460c') }}</button>
     </div>
-    <p v-if="loading" class="compose-editor-message" role="status">正在读取远端配置…</p>
-    <p v-if="message" class="compose-editor-message" role="status">{{ message }}</p>
-    <p v-if="error" class="compose-editor-error" role="alert">{{ error }}</p>
+    <p v-if="loading" class="compose-editor-message" role="status">{{ t('m.49d3303a0315') }}</p>
+    <p v-if="message" class="compose-editor-message" role="status">{{ display(message) }}</p>
+    <p v-if="error" class="compose-editor-error" role="alert">{{ display(error) }}</p>
   </section>
 </template>
 

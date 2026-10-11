@@ -132,6 +132,20 @@ Add those lines in `sudo systemctl edit nodedance.service`, save the override, t
 
 The public key is not secret; keep the signing private key off the Core host. In the UI, refresh discovery, select a Linux peer, read its SSH host-key fingerprint, and verify it through an independent trusted channel before confirming. Credentials are held only for the active deployment request and are not stored in task history. The UI displays a manual SSH recovery command. If signed artifacts are not configured, use the generic **添加 Agent** enrollment flow above. Tailscale and SSH deployment should be used only when you administer those systems.
 
+## CLI and terminal UI
+
+All administrator operations are discoverable from `nodedance operations` as JSON, including parameter/body schemas. CLI and TUI share the same operation catalog and authenticated API client:
+
+```sh
+export NODEDANCE_SERVER=https://nodedance.example
+nodedance auth login --body @/private/login.json
+nodedance nodes list
+nodedance describe containers.action
+nodedance tui --timeout 0
+```
+
+Remote CLI operations return JSON; logs, metrics and terminal connections use JSONL. The TUI provides searchable operations, parameter forms, file transfers, paginated results and an interactive host/container shell. Local Agent lifecycle commands are available through `sudo nodedance agent ...`, which invokes the separate Agent binary. Read [CLI/TUI usage](docs/cli.md) for authentication, task idempotency, streams and examples, and [the Komari communication study](docs/komari-communication.md) for the protocol design.
+
 ## Use probes and alerts
 
 Service probes are configured from a node's service-probe panel and execute from that node's Agent. Supported targets are HTTP, HTTPS, and TCP. HTTPS certificate validation is enabled; redirects are not followed. Probe timeouts are bounded, and offline or unsupported Agents produce an unknown result rather than a service failure. Three consecutive failures mark a probe unhealthy; two consecutive successes restore healthy status.
@@ -178,3 +192,9 @@ Agent systemd installation is root-only. It recognizes only the current NodeDanc
 - **Restore is rejected:** use a complete private backup archive, an existing parent directory, and a destination directory that is absent or empty. Restore does not overwrite existing non-empty data.
 
 For local API and Web debugging, set `VITE_CORE_TARGET` when the Core is not at `http://127.0.0.1:8180`; Vite forwards `/api` and `/ws` requests to that target.
+
+## Language and releases / 语言与发布
+
+支持 English 和简体中文。Web 顶部切换语言；CLI 使用 `--lang en|zh-CN`，TUI 还可按 `l` 切换。Core 使用 `core-v*`，Agent 使用 `agent-v*` 独立发布，发布说明提供中英双语。
+
+[语言约定](docs/i18n.md) · [发布流程](docs/releases.md) · [Komari 优化学习](docs/komari-optimizations.md)

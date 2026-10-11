@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale, setLocale, type Locale } from "./i18n"
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ApiError, api, SESSION_EXPIRED_EVENT, type Appearance, type Session, type User } from './api'
 import NodesDashboard from './components/NodesDashboard.vue'
@@ -14,7 +15,6 @@ const busy = ref(false)
 const busyLabel = ref('')
 const error = ref('')
 const notice = ref('')
-const setupHint = ref('')
 const initialized = ref(false)
 const currentUser = ref<User | null>(null)
 const sessions = ref<Session[]>([])
@@ -59,7 +59,7 @@ function revisionedImageURL(value: string, kind: ImageKind, revision: number): s
 
 const avatarSrc = computed(() => revisionedImageURL(appearance.avatarUrl, 'avatar', avatarRevision.value))
 const backgroundSrc = computed(() => revisionedImageURL(appearance.backgroundUrl, 'background', backgroundRevision.value))
-const visibleName = computed(() => appearance.displayName || currentUser.value?.displayName || '管理员')
+const visibleName = computed(() => appearance.displayName || currentUser.value?.displayName || t('m.e19796712f1c'))
 
 function clearMessages() {
   error.value = ''
@@ -68,7 +68,7 @@ function clearMessages() {
 
 function errorText(reason: unknown): string {
   if (reason instanceof Error && reason.message) return reason.message
-  return '操作失败，请稍后重试。'
+  return t('m.2c1e5ec62145')
 }
 
 async function loadAppearance() {
@@ -92,7 +92,7 @@ async function enterSettings() {
   const results = await Promise.allSettled([loadAppearance(), loadSessions()])
   const rejected = results.find((item) => item.status === 'rejected')
   if (rejected?.status === 'rejected') {
-    notice.value = '部分设置暂时无法加载，请刷新后重试。'
+    notice.value = t('m.2ccd4dc3ec31')
   }
 }
 
@@ -102,7 +102,6 @@ async function initializeScreen() {
   try {
     const state = await api.setupStatus()
     initialized.value = state.initialized
-    setupHint.value = state.setupHint ?? ''
     await loadAppearance()
 
     if (!state.initialized) {
@@ -128,7 +127,7 @@ async function initializeScreen() {
 async function submitSetup() {
   clearMessages()
   busy.value = true
-  busyLabel.value = '正在初始化…'
+  busyLabel.value = t('m.9866f869b0bd')
   try {
     await api.setup({
       credential: setupForm.credential,
@@ -145,7 +144,7 @@ async function submitSetup() {
     }
     setupForm.credential = ''
     setupForm.password = ''
-    notice.value = 'NodeDance 已完成初始化。'
+    notice.value = t('m.ea48349b4814')
   } catch (reason) {
     error.value = errorText(reason)
   } finally {
@@ -157,7 +156,7 @@ async function submitSetup() {
 async function submitLogin() {
   clearMessages()
   busy.value = true
-  busyLabel.value = '正在登录…'
+  busyLabel.value = t('m.d8712b0d82e6')
   try {
     await api.login(loginPassword.value)
     await enterSettings()
@@ -173,7 +172,7 @@ async function submitLogin() {
 async function saveProfile() {
   clearMessages()
   busy.value = true
-  busyLabel.value = '正在保存…'
+  busyLabel.value = t('m.6bdb4435095e')
   try {
     await api.saveAppearance({
       displayName: appearance.displayName,
@@ -181,7 +180,7 @@ async function saveProfile() {
       backgroundColor: appearance.backgroundColor,
     })
     currentUser.value = { displayName: appearance.displayName }
-    notice.value = '外观设置已保存。'
+    notice.value = t('m.e90110b8adca')
   } catch (reason) {
     error.value = errorText(reason)
   } finally {
@@ -199,7 +198,7 @@ async function handleImageChange(kind: ImageKind, event: Event) {
 
   const acceptedTypes = new Set(['image/png', 'image/jpeg', 'image/gif'])
   if (!acceptedTypes.has(image.type.toLowerCase()) || /\.svgz?$/i.test(image.name)) {
-    error.value = '请选择 PNG、JPEG 或 GIF 图片。SVG 图片不受支持。'
+    error.value = t('m.37492576162f')
     return
   }
 
@@ -209,7 +208,7 @@ async function handleImageChange(kind: ImageKind, event: Event) {
     if (kind === 'avatar') avatarRevision.value += 1
     else backgroundRevision.value += 1
     await loadAppearance()
-    notice.value = kind === 'avatar' ? '头像已更新。' : '背景图片已更新。'
+    notice.value = kind === 'avatar' ? t('m.38e48df5ee98') : t('m.4e208b8c6edc')
   } catch (reason) {
     error.value = errorText(reason)
   } finally {
@@ -224,7 +223,7 @@ async function revokeSession(session: Session) {
   try {
     await api.revokeSession(session.id)
     sessions.value = sessions.value.filter((item) => item.id !== session.id)
-    notice.value = '已撤销该会话。'
+    notice.value = t('m.2f372ae7fc9d')
   } catch (reason) {
     error.value = errorText(reason)
   } finally {
@@ -235,12 +234,12 @@ async function revokeSession(session: Session) {
 async function changePassword() {
   clearMessages()
   if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-    error.value = '两次输入的新密码不一致。'
+    error.value = t('m.a2ba2545a60e')
     return
   }
 
   busy.value = true
-  busyLabel.value = '正在更新密码…'
+  busyLabel.value = t('m.2c62c5fc337d')
   try {
     await api.changePassword(passwordForm.currentPassword, passwordForm.newPassword)
     currentUser.value = null
@@ -251,7 +250,7 @@ async function changePassword() {
     passwordForm.newPassword = ''
     passwordForm.confirmPassword = ''
     screen.value = 'login'
-    notice.value = '密码已更新，请使用新密码重新登录。'
+    notice.value = t('m.37a88dd4c7a5')
   } catch (reason) {
     error.value = errorText(reason)
   } finally {
@@ -268,7 +267,7 @@ async function logout() {
     currentUser.value = null
     sessions.value = []
     screen.value = 'login'
-    notice.value = '已安全退出。'
+    notice.value = t('m.3a7b6d2f0e58')
   } catch (reason) {
     error.value = errorText(reason)
   } finally {
@@ -289,12 +288,12 @@ function handleSessionExpired() {
   uploading.value = ''
   clearMessages()
   screen.value = 'login'
-  notice.value = '登录状态已失效，请重新登录。'
+  notice.value = t('m.bd0bb959fbb4')
 }
 
 function formatTime(value: string): string {
   const time = new Date(value)
-  return Number.isNaN(time.getTime()) ? '—' : time.toLocaleString()
+  return Number.isNaN(time.getTime()) ? '—' : time.toLocaleString(locale.value)
 }
 
 onMounted(() => {
@@ -322,111 +321,112 @@ onBeforeUnmount(() => {
     </div>
 
     <header class="topbar">
-      <a class="wordmark" href="/" aria-label="NodeDance 首页">
+      <a class="wordmark" href="/" :aria-label="t('m.f359facd4191')">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
         <span>NodeDance</span>
       </a>
       <div class="topbar-right">
-        <span class="system-label"><span class="status-dot"></span> 本地管理</span>
-        <button v-if="screen === 'settings'" class="quiet-button" type="button" @click="screen = 'nodes'">节点监控</button>
-        <button v-if="screen === 'nodes'" class="quiet-button" type="button" @click="screen = 'settings'">账户设置</button>
-        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'agent-enrollment'" class="quiet-button" type="button" @click="screen = 'alerts'">告警中心</button>
-        <button v-if="screen === 'alerts'" class="quiet-button" type="button" @click="screen = 'nodes'">返回监控</button>
-        <button v-if="screen === 'nodes' || screen === 'settings'" class="quiet-button" type="button" @click="screen = 'agent-enrollment'">添加 Agent</button>
-        <button v-if="screen === 'nodes' || screen === 'settings'" class="quiet-button" type="button" @click="screen = 'discovery'">发现节点</button>
-        <button v-if="screen === 'agent-enrollment'" class="quiet-button" type="button" @click="screen = 'discovery'">发现节点</button>
-        <button v-if="screen === 'discovery'" class="quiet-button" type="button" @click="screen = 'nodes'">返回监控</button>
-        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'agent-enrollment' || screen === 'alerts'" class="quiet-button" type="button" :disabled="busy" @click="logout">
-          退出登录
-        </button>
+        <select class="language-selector" :aria-label="locale === 'en' ? 'Language' : '语言'" :value="locale" @change="setLocale(($event.target as HTMLSelectElement).value as Locale)">
+          <option value="zh-CN">简体中文</option><option value="en">English</option>
+        </select>
+        <span class="system-label"><span class="status-dot"></span>{{ t('m.13354cb51f27') }}</span>
+        <button v-if="screen === 'settings'" class="quiet-button" type="button" @click="screen = 'nodes'">{{ t('m.07e96c1e12b3') }}</button>
+        <button v-if="screen === 'nodes'" class="quiet-button" type="button" @click="screen = 'settings'">{{ t('m.a720b4000be6') }}</button>
+        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'agent-enrollment'" class="quiet-button" type="button" @click="screen = 'alerts'">{{ t('m.1b92ed81c005') }}</button>
+        <button v-if="screen === 'alerts'" class="quiet-button" type="button" @click="screen = 'nodes'">{{ t('m.684e697456e4') }}</button>
+        <button v-if="screen === 'nodes' || screen === 'settings'" class="quiet-button" type="button" @click="screen = 'agent-enrollment'">{{ t('m.a29c23de8cc4') }}</button>
+        <button v-if="screen === 'nodes' || screen === 'settings'" class="quiet-button" type="button" @click="screen = 'discovery'">{{ t('m.b9359d1b8e15') }}</button>
+        <button v-if="screen === 'agent-enrollment'" class="quiet-button" type="button" @click="screen = 'discovery'">{{ t('m.b9359d1b8e15') }}</button>
+        <button v-if="screen === 'discovery'" class="quiet-button" type="button" @click="screen = 'nodes'">{{ t('m.684e697456e4') }}</button>
+        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'agent-enrollment' || screen === 'alerts'" class="quiet-button" type="button" :disabled="busy" @click="logout">{{ t('m.3ab8cc15939f') }}</button>
       </div>
     </header>
 
     <div v-if="screen === 'loading'" class="center-stage" role="status" aria-live="polite">
       <div class="loader"></div>
-      <p>正在连接 NodeDance Core…</p>
+      <p>{{ t('m.a62a3d2a07c9') }}</p>
     </div>
 
     <section v-else-if="screen === 'unavailable'" class="center-stage">
       <div class="standalone-card">
-        <span class="eyebrow">CORE CONNECTION</span>
-        <h1>暂时无法连接</h1>
-        <p>无法读取服务状态。请确认 NodeDance Core 正在运行，然后重试。</p>
-        <div v-if="error" class="alert alert-error" role="alert">{{ error }}</div>
-        <button class="primary-button" type="button" @click="initializeScreen">重新连接 <span aria-hidden="true">↗</span></button>
+        <span class="eyebrow">{{ t('label.638731745e22') }}</span>
+        <h1>{{ t('m.c579038c5ec3') }}</h1>
+        <p>{{ t('m.3ee483b99392') }}</p>
+        <div v-if="error" class="alert alert-error" role="alert">{{ display(error) }}</div>
+        <button class="primary-button" type="button" @click="initializeScreen">{{ t('m.68891ab35cab') }}<span aria-hidden="true">↗</span></button>
       </div>
     </section>
 
     <section v-else-if="screen === 'setup'" class="auth-layout">
       <div class="auth-copy">
-        <span class="eyebrow">YOUR PRIVATE CONTROL ROOM</span>
-        <h1>一处掌控，<br /><em>从容运维。</em></h1>
-        <p>设置管理员账户，开始管理您的服务器与容器。初始化凭据只使用一次。</p>
-        <div class="feature-row"><span class="feature-symbol">✳</span><span>由您掌控的私有管理空间</span></div>
+        <span class="eyebrow">{{ t('label.fec911d2155d') }}</span>
+        <h1>{{ t('m.b640c195b999') }}<br /><em>{{ t('m.c89b43673182') }}</em></h1>
+        <p>{{ t('m.5abf65737f4c') }}</p>
+        <div class="feature-row"><span class="feature-symbol">✳</span><span>{{ t('m.caa90381315a') }}</span></div>
       </div>
 
       <section class="form-card" aria-labelledby="form-title">
         <div class="card-heading">
-          <span class="eyebrow">FIRST-TIME SETUP</span>
+          <span class="eyebrow">{{ t('label.04b7b6c5d04d') }}</span>
           <span class="step-indicator"><span class="step-current">01</span><span class="step-line"></span>02</span>
         </div>
-        <h2 id="form-title">创建管理员账户</h2>
-        <p class="card-intro">使用本机初始化凭据设置密码与展示名称。</p>
-        <div v-if="error" class="alert alert-error" role="alert">{{ error }}</div>
+        <h2 id="form-title">{{ t('m.bcea39d8590e') }}</h2>
+        <p class="card-intro">{{ t('m.07c18f374537') }}</p>
+        <div v-if="error" class="alert alert-error" role="alert">{{ display(error) }}</div>
 
         <form class="form-stack" @submit.prevent="submitSetup">
           <label class="field">
-            <span>初始化凭据</span>
-            <input v-model="setupForm.credential" name="credential" type="password" autocomplete="one-time-code" required placeholder="粘贴本机凭据" />
-            <small class="field-hint">{{ setupHint || '请在运行 Core 的本机终端获取一次性初始化凭据。' }}</small>
+            <span>{{ t('m.fc482bd2d5bf') }}</span>
+            <input v-model="setupForm.credential" name="credential" type="password" autocomplete="one-time-code" required :placeholder="t('m.f1f7cbf5f906')" />
+            <small class="field-hint">{{ t('m.59b4ebe09d0f') }}</small>
           </label>
           <label class="field">
-            <span>展示名称</span>
-            <input v-model="setupForm.displayName" name="displayName" autocomplete="nickname" required maxlength="80" placeholder="例如：Alex" />
+            <span>{{ t('m.1264cd049636') }}</span>
+            <input v-model="setupForm.displayName" name="displayName" autocomplete="nickname" required maxlength="80" :placeholder="t('m.8a8270b96971')" />
           </label>
           <label class="field">
-            <span>管理员密码</span>
-            <input v-model="setupForm.password" name="password" type="password" autocomplete="new-password" required placeholder="至少 12 个字符" />
-            <small class="field-hint">至少 12 个字符；过长密码会由服务器拒绝。</small>
+            <span>{{ t('m.c19091521d71') }}</span>
+            <input v-model="setupForm.password" name="password" type="password" autocomplete="new-password" required :placeholder="t('m.50a65a87586c')" />
+            <small class="field-hint">{{ t('m.eb0831f61840') }}</small>
           </label>
           <button class="primary-button full-button" type="submit" :disabled="busy">
-            {{ busy ? busyLabel : '完成初始化' }} <span aria-hidden="true">↗</span>
+            {{ busy ? busyLabel : t('m.b95a201cc95d') }} <span aria-hidden="true">↗</span>
           </button>
         </form>
-        <p class="privacy-note"><span aria-hidden="true">◈</span> 凭据仅用于首次初始化，不会上传到其他服务。</p>
+        <p class="privacy-note"><span aria-hidden="true">◈</span>{{ t('m.1e6ae53da093') }}</p>
       </section>
     </section>
 
     <section v-else-if="screen === 'login'" class="auth-layout login-layout">
       <div class="auth-copy login-copy">
-        <span class="eyebrow">NODEDANCE / PRIVATE</span>
-        <h1>欢迎回来<span class="title-period">.</span></h1>
-        <p>输入管理员密码，继续管理您的基础设施。</p>
+        <span class="eyebrow">{{ t('label.111bdc0c1ef5') }}</span>
+        <h1>{{ t('m.cb1d97794707') }}<span class="title-period">.</span></h1>
+        <p>{{ t('m.cd2de59b2219') }}</p>
         <div class="login-identity">
           <div class="preview-avatar">
             <img v-if="avatarSrc" :key="avatarRevision" :src="avatarSrc" alt="" />
             <span v-else aria-hidden="true">{{ (appearance.displayName || 'N').slice(0, 1) }}</span>
           </div>
-          <div><span class="preview-label">WORKSPACE OF</span><strong>{{ appearance.displayName || 'NodeDance' }}</strong></div>
+          <div><span class="preview-label">{{ t('label.e00e2736dd16') }}</span><strong>{{ appearance.displayName || 'NodeDance' }}</strong></div>
         </div>
       </div>
 
       <section class="form-card login-card" aria-labelledby="login-title">
-        <span class="eyebrow">SECURE SIGN IN</span>
-        <h2 id="login-title">管理员登录</h2>
-        <p class="card-intro">使用您的管理员密码继续。</p>
-        <div v-if="notice" class="alert alert-success" role="status">{{ notice }}</div>
-        <div v-if="error" class="alert alert-error" role="alert">{{ error }}</div>
+        <span class="eyebrow">{{ t('label.fe274f9f3a26') }}</span>
+        <h2 id="login-title">{{ t('m.c454c61e78ab') }}</h2>
+        <p class="card-intro">{{ t('m.d62d9f683b33') }}</p>
+        <div v-if="notice" class="alert alert-success" role="status">{{ display(notice) }}</div>
+        <div v-if="error" class="alert alert-error" role="alert">{{ display(error) }}</div>
         <form class="form-stack" @submit.prevent="submitLogin">
           <label class="field">
-            <span>管理员密码</span>
-            <input v-model="loginPassword" name="password" type="password" autocomplete="current-password" required autofocus placeholder="输入密码" />
+            <span>{{ t('m.c19091521d71') }}</span>
+            <input v-model="loginPassword" name="password" type="password" autocomplete="current-password" required autofocus :placeholder="t('m.7673702e6ff6')" />
           </label>
           <button class="primary-button full-button" type="submit" :disabled="busy">
-            {{ busy ? busyLabel : '登录控制台' }} <span aria-hidden="true">↗</span>
+            {{ busy ? busyLabel : t('m.d19038809234') }} <span aria-hidden="true">↗</span>
           </button>
         </form>
-        <p class="privacy-note"><span aria-hidden="true">◈</span> 此连接使用安全会话保护。</p>
+        <p class="privacy-note"><span aria-hidden="true">◈</span>{{ t('m.3834cf7462ca') }}</p>
       </section>
     </section>
 
@@ -440,32 +440,32 @@ onBeforeUnmount(() => {
 
     <section v-else class="settings-layout">
       <aside class="settings-sidebar">
-        <span class="eyebrow">WORKSPACE</span>
-        <h1>设置<span class="title-period">.</span></h1>
-        <p>管理您的个人资料、安全与界面。</p>
+        <span class="eyebrow">{{ t('label.5493ff8e9397') }}</span>
+        <h1>{{ t('m.df3d58c7d84b') }}<span class="title-period">.</span></h1>
+        <p>{{ t('m.e2d752caafea') }}</p>
         <div class="sidebar-profile">
           <div class="profile-avatar">
             <img v-if="avatarSrc" :key="avatarRevision" :src="avatarSrc" alt="" />
             <span v-else aria-hidden="true">{{ visibleName.slice(0, 1) }}</span>
           </div>
-          <div class="profile-summary"><strong>{{ visibleName }}</strong><span>管理员</span></div>
+          <div class="profile-summary"><strong>{{ visibleName }}</strong><span>{{ t('m.e19796712f1c') }}</span></div>
           <span class="profile-dot" aria-hidden="true"></span>
         </div>
-        <div class="side-note"><span class="side-note-icon">✳</span><span>所有更改会安全地<br />保存在本机 Core。</span></div>
+        <div class="side-note"><span class="side-note-icon">✳</span><span>{{ t('m.0246d86fbc36') }}<br />{{ t('m.86d345181d6a') }}</span></div>
       </aside>
 
       <div class="settings-main">
         <div class="settings-heading">
-          <div><span class="eyebrow">ACCOUNT & PREFERENCES</span><h2>账户与外观</h2></div>
-          <span class="secure-badge"><span aria-hidden="true">◈</span> 安全连接</span>
+          <div><span class="eyebrow">{{ t('label.812ff062d7b7') }}</span><h2>{{ t('m.0bb1a9d13722') }}</h2></div>
+          <span class="secure-badge"><span aria-hidden="true">◈</span>{{ t('m.fb458e284aad') }}</span>
         </div>
-        <div v-if="notice" class="alert alert-success page-alert" role="status">{{ notice }}</div>
-        <div v-if="error" class="alert alert-error page-alert" role="alert">{{ error }}</div>
+        <div v-if="notice" class="alert alert-success page-alert" role="status">{{ display(notice) }}</div>
+        <div v-if="error" class="alert alert-error page-alert" role="alert">{{ display(error) }}</div>
 
         <section class="settings-card appearance-card" aria-labelledby="appearance-heading">
           <div class="section-heading">
             <div class="section-icon appearance-icon" aria-hidden="true">◉</div>
-            <div><h3 id="appearance-heading">个人资料与外观</h3><p>调整登录页和工作区的显示方式。</p></div>
+            <div><h3 id="appearance-heading">{{ t('m.ad429c44450e') }}</h3><p>{{ t('m.d6fb19acbade') }}</p></div>
           </div>
 
           <form class="profile-form" @submit.prevent="saveProfile">
@@ -474,88 +474,88 @@ onBeforeUnmount(() => {
                 <img v-if="avatarSrc" :key="avatarRevision" :src="avatarSrc" alt="" />
                 <span v-else aria-hidden="true">{{ visibleName.slice(0, 1) }}</span>
               </div>
-              <div class="upload-copy"><strong>头像</strong><span>PNG、JPEG 或 GIF，SVG 不受支持。</span></div>
+              <div class="upload-copy"><strong>{{ t('m.3ea2d23c902c') }}</strong><span>{{ t('m.b8ed7facdbe2') }}</span></div>
               <label class="secondary-button upload-button">
-                {{ uploading === 'avatar' ? '上传中…' : '更换头像' }}
-                <input aria-label="上传头像" type="file" accept="image/png,image/jpeg,image/gif" :disabled="!!uploading" @change="handleImageChange('avatar', $event)" />
+                {{ uploading === 'avatar' ? t('m.ce1c9d61565f') : t('m.42ece898483f') }}
+                <input :aria-label="t('m.d7d2344d545d')" type="file" accept="image/png,image/jpeg,image/gif" :disabled="!!uploading" @change="handleImageChange('avatar', $event)" />
               </label>
             </div>
 
             <label class="field profile-name-field">
-              <span>展示名称</span>
+              <span>{{ t('m.1264cd049636') }}</span>
               <input v-model="appearance.displayName" name="profileDisplayName" autocomplete="nickname" required maxlength="80" />
-              <small class="field-hint">此名称会显示在登录页与管理界面。</small>
+              <small class="field-hint">{{ t('m.f673747ede6e') }}</small>
             </label>
 
             <div class="field">
-              <span>界面主题</span>
-              <div class="theme-options" role="group" aria-label="界面主题">
+              <span>{{ t('m.8f29293906e7') }}</span>
+              <div class="theme-options" role="group" :aria-label="t('m.8f29293906e7')">
                 <button class="theme-option" :class="{ selected: appearance.theme === 'dark' }" type="button" :aria-pressed="appearance.theme === 'dark'" @click="appearance.theme = 'dark'">
-                  <span class="theme-swatch dark-swatch"><i></i><i></i><i></i></span><span>深色</span>
+                  <span class="theme-swatch dark-swatch"><i></i><i></i><i></i></span><span>{{ t('m.a6b75d068032') }}</span>
                 </button>
                 <button class="theme-option" :class="{ selected: appearance.theme === 'system' }" type="button" :aria-pressed="appearance.theme === 'system'" @click="appearance.theme = 'system'">
-                  <span class="theme-swatch system-swatch"><i></i><i></i><i></i></span><span>跟随系统</span>
+                  <span class="theme-swatch system-swatch"><i></i><i></i><i></i></span><span>{{ t('m.217cfe7db1e3') }}</span>
                 </button>
                 <button class="theme-option" :class="{ selected: appearance.theme === 'light' }" type="button" :aria-pressed="appearance.theme === 'light'" @click="appearance.theme = 'light'">
-                  <span class="theme-swatch light-swatch"><i></i><i></i><i></i></span><span>浅色</span>
+                  <span class="theme-swatch light-swatch"><i></i><i></i><i></i></span><span>{{ t('m.aa0819dfc4d8') }}</span>
                 </button>
               </div>
             </div>
 
             <div class="field color-field">
-              <span>背景颜色</span>
-              <div class="color-control"><input v-model="appearance.backgroundColor" aria-label="背景颜色" type="color" /><code>{{ safeBackgroundColor.toUpperCase() }}</code></div>
+              <span>{{ t('m.882fe2e84241') }}</span>
+              <div class="color-control"><input v-model="appearance.backgroundColor" :aria-label="t('m.882fe2e84241')" type="color" /><code>{{ safeBackgroundColor.toUpperCase() }}</code></div>
             </div>
 
             <div class="background-upload-row">
               <div class="background-preview" :style="{ backgroundColor: safeBackgroundColor }">
-                <img v-if="backgroundSrc" :key="backgroundRevision" :src="backgroundSrc" alt="当前背景图片" />
-                <span v-else>WORKSPACE PREVIEW</span>
+                <img v-if="backgroundSrc" :key="backgroundRevision" :src="backgroundSrc" :alt="t('m.ac485672fc03')" />
+                <span v-else>{{ t('label.c44379727315') }}</span>
               </div>
-              <div class="upload-copy"><strong>登录页背景图片</strong><span>添加一张图片作为登录页的背景。</span></div>
+              <div class="upload-copy"><strong>{{ t('m.99cf84163dfc') }}</strong><span>{{ t('m.b07e86c480d1') }}</span></div>
               <label class="secondary-button upload-button">
-                {{ uploading === 'background' ? '上传中…' : '上传图片' }}
-                <input aria-label="上传背景图片" type="file" accept="image/png,image/jpeg,image/gif" :disabled="!!uploading" @change="handleImageChange('background', $event)" />
+                {{ uploading === 'background' ? t('m.ce1c9d61565f') : t('m.9fbb4750bb39') }}
+                <input :aria-label="t('m.276341ecaf37')" type="file" accept="image/png,image/jpeg,image/gif" :disabled="!!uploading" @change="handleImageChange('background', $event)" />
               </label>
             </div>
 
-            <div class="form-actions"><button class="primary-button" type="submit" :disabled="busy">{{ busy ? busyLabel : '保存外观' }} <span aria-hidden="true">↗</span></button></div>
+            <div class="form-actions"><button class="primary-button" type="submit" :disabled="busy">{{ busy ? busyLabel : t('m.200fec26bd0e') }} <span aria-hidden="true">↗</span></button></div>
           </form>
         </section>
 
         <section class="settings-card security-card" aria-labelledby="security-heading">
           <div class="section-heading">
             <div class="section-icon security-icon" aria-hidden="true">⌑</div>
-            <div><h3 id="security-heading">安全与密码</h3><p>定期更新密码，保护您的管理账户。</p></div>
+            <div><h3 id="security-heading">{{ t('m.1b5365b35720') }}</h3><p>{{ t('m.910e765e0b31') }}</p></div>
           </div>
           <form class="password-form" @submit.prevent="changePassword">
-              <label class="field"><span>当前密码</span><input v-model="passwordForm.currentPassword" type="password" autocomplete="current-password" required /></label>
+              <label class="field"><span>{{ t('m.a114cfb687e6') }}</span><input v-model="passwordForm.currentPassword" type="password" autocomplete="current-password" required /></label>
               <div class="password-pair">
-                <label class="field"><span>新密码</span><input v-model="passwordForm.newPassword" type="password" autocomplete="new-password" required /></label>
-                <label class="field"><span>确认新密码</span><input v-model="passwordForm.confirmPassword" type="password" autocomplete="new-password" required /></label>
+                <label class="field"><span>{{ t('m.515e9c7cf7b2') }}</span><input v-model="passwordForm.newPassword" type="password" autocomplete="new-password" required /></label>
+                <label class="field"><span>{{ t('m.6fde05a916c6') }}</span><input v-model="passwordForm.confirmPassword" type="password" autocomplete="new-password" required /></label>
               </div>
-            <small class="field-hint">新密码至少 12 个字符；超出服务器允许长度时会提示错误。</small>
-            <div class="form-actions"><button class="secondary-button" type="submit" :disabled="busy">更新密码</button></div>
+            <small class="field-hint">{{ t('m.2d990ebc16e1') }}</small>
+            <div class="form-actions"><button class="secondary-button" type="submit" :disabled="busy">{{ t('m.828170843089') }}</button></div>
           </form>
         </section>
 
         <section class="settings-card sessions-card" aria-labelledby="sessions-heading">
           <div class="section-heading session-heading">
             <div class="section-icon session-icon" aria-hidden="true">⌘</div>
-            <div><h3 id="sessions-heading">活跃会话</h3><p>查看并撤销正在访问账户的设备。</p></div>
-            <span class="session-count">{{ sessions.length }} 个</span>
+            <div><h3 id="sessions-heading">{{ t('m.9fd94953b94b') }}</h3><p>{{ t('m.986f34b8224e') }}</p></div>
+            <span class="session-count">{{ sessions.length }}{{ t('m.3a116815bc9d') }}</span>
           </div>
           <div v-if="sessions.length" class="session-list">
             <article v-for="session in sessions" :key="session.id" class="session-item">
               <div class="device-icon" aria-hidden="true">▣</div>
-              <div class="session-info"><strong>{{ session.device || '未知设备' }}<span v-if="session.current" class="current-badge">当前设备</span></strong><span>{{ session.remoteAddr || '未知地址' }}</span><small>最近活动 {{ formatTime(session.lastSeenAt) }}</small></div>
-              <button class="revoke-button" type="button" :disabled="busy || session.current" :aria-label="session.current ? '当前设备会话' : `撤销 ${session.device || '未知设备'} 会话`" @click="revokeSession(session)">{{ session.current ? '当前' : '撤销' }}</button>
+              <div class="session-info"><strong>{{ session.device || t('m.8ca01a9ba438') }}<span v-if="session.current" class="current-badge">{{ t('m.c68978537cf3') }}</span></strong><span>{{ session.remoteAddr || t('m.f4a131451fce') }}</span><small>{{ t('m.41f5cada11ed') }}{{ formatTime(session.lastSeenAt) }}</small></div>
+              <button class="revoke-button" type="button" :disabled="busy || session.current" :aria-label="session.current ? t('m.62a9388a42a8') : t('m.6cfb5f2a5be8', {'0': (session.device || t('m.8ca01a9ba438'))})" @click="revokeSession(session)">{{ session.current ? t('m.cb62ebd689ee') : t('m.926a50b98ece') }}</button>
             </article>
           </div>
-          <p v-else class="empty-sessions">暂无会话信息。</p>
+          <p v-else class="empty-sessions">{{ t('m.214dc45ab589') }}</p>
         </section>
 
-        <footer class="settings-footer"><span>NodeDance Core</span><span>本地管理 · 安全优先</span></footer>
+        <footer class="settings-footer"><span>NodeDance Core</span><span>{{ t('m.c8f8547b3bb6') }}</span></footer>
       </div>
     </section>
   </main>

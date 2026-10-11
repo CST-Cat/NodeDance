@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/CST-Cat/NodeDance/internal/i18n"
 	"io"
 	"strings"
 
@@ -14,8 +15,8 @@ import (
 func runBackup(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("nodedance backup", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	dataDir := flags.String("data-dir", "", "path to Core data directory")
-	output := flags.String("output", "", "new backup file path")
+	dataDir := flags.String("data-dir", "", i18n.TextFor(stderr, "path to Core data directory"))
+	output := flags.String("output", "", i18n.TextFor(stderr, "new backup file path"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -28,15 +29,15 @@ func runBackup(ctx context.Context, args []string, stdout, stderr io.Writer) err
 	if err := corebackup.Create(ctx, *dataDir, *output); err != nil {
 		return err
 	}
-	fmt.Fprintln(stdout, "Core backup created.")
+	fmt.Fprintln(stdout, i18n.TextFor(stdout, "Core backup created."))
 	return nil
 }
 
 func runRestore(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("nodedance restore", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	input := flags.String("input", "", "backup file path")
-	dataDir := flags.String("data-dir", "", "new or empty Core data directory")
+	input := flags.String("input", "", i18n.TextFor(stderr, "backup file path"))
+	dataDir := flags.String("data-dir", "", i18n.TextFor(stderr, "new or empty Core data directory"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -49,6 +50,6 @@ func runRestore(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err := corebackup.Restore(ctx, *input, *dataDir); err != nil {
 		return err
 	}
-	fmt.Fprintln(stdout, "Core data restored.")
+	fmt.Fprintln(stdout, i18n.TextFor(stdout, "Core data restored."))
 	return nil
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { api, type ContainerRebuildPlan, type ContainerTask, type DockerContainer, type RebuildPortBinding, type RebuildSpec } from '../api'
 
@@ -24,18 +25,18 @@ let generation = 0
 
 const taskMessage = computed(() => {
   if (!task.value) return ''
-  if (task.value.status === 'queued') return '任务已保存，等待 Agent。'
-  if (task.value.status === 'running') return `正在执行：${task.value.progress.phase || '重建中'}。`
+  if (task.value.status === 'queued') return t('m.ab502a2e4167')
+  if (task.value.status === 'running') return t('m.dc8605450aaa', {"0": (task.value.progress.phase || t('m.0a68e6a99abe'))})
   if (task.value.status === 'succeeded') return task.value.result.observedState === 'rollback_container_removed_snapshot_retained'
-    ? '重建已验证；旧容器已清理，正在使用的可写层快照保留为新容器镜像。'
-    : '重建已验证完成。'
-  if (task.value.status === 'unknown') return '结果待确认；NodeDance 不会自动重放此操作。'
-  if (task.value.status === 'timed_out') return '任务超时，实际结果待重新确认。'
-  if (task.value.status === 'canceled') return '任务已取消。'
+    ? t('m.efcd16dd368b')
+    : t('m.3c2ee110bf07')
+  if (task.value.status === 'unknown') return t('m.5013ec7ae306')
+  if (task.value.status === 'timed_out') return t('m.3e78f8c0e01b')
+  if (task.value.status === 'canceled') return t('m.d7df27ca8d31')
   if ((task.value.result.observedState ?? '').startsWith('restored:')) {
-    return `重建失败，原容器已恢复：${(task.value.result.observedState ?? '').slice('restored:'.length)}。`
+    return t('m.c4433033c3ce', {"0": ((task.value.result.observedState ?? '').slice('restored:'.length))})
   }
-  return `重建失败：${task.value.result.resourceRevision || task.value.result.code || '原因未分类'}。`
+  return t('m.bab93f6cf8a1', {"0": (task.value.result.resourceRevision || task.value.result.code || t('m.fb2425b0c8e1'))})
 })
 
 const previousTask = computed(() => props.tasks.find((item) =>
@@ -101,7 +102,7 @@ async function preview() {
     plan.value = result
     acknowledged.value = false
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '无法生成重建计划。'
+    error.value = reason instanceof Error ? reason.message : t('m.8dc5598b2ee8')
     plan.value = undefined
   } finally {
     loadingPlan.value = false
@@ -115,7 +116,7 @@ async function waitForTask(taskId: string, requestGeneration: number) {
     task.value = updated
     if (!taskTerminal(updated) && updated.status !== 'unknown') schedulePoll(taskId, requestGeneration)
   } catch (reason) {
-    if (requestGeneration === generation) error.value = reason instanceof Error ? reason.message : '无法读取重建任务状态。'
+    if (requestGeneration === generation) error.value = reason instanceof Error ? reason.message : t('m.b22473f5734c')
   }
 }
 
@@ -126,10 +127,10 @@ function schedulePoll(taskId: string, requestGeneration: number) {
 
 async function submitRebuild() {
   if (!plan.value || !acknowledged.value || submitting.value || props.stale || props.container.stale) return
-  const confirmation = window.prompt(`NodeDance 将短暂停止并重建此独立容器。请输入完整容器 ID 确认：\n${props.container.id}`)
+  const confirmation = window.prompt(t('m.751a2318fd6e', {"0": (props.container.id)}))
   if (confirmation === null) return
   if (confirmation.trim() !== props.container.id) {
-    error.value = '未提交：确认内容必须与当前完整容器 ID 完全一致。'
+    error.value = t('m.25b38b35f7a5')
     return
   }
   submitting.value = true
@@ -141,7 +142,7 @@ async function submitRebuild() {
     task.value = await api.nodeTask(props.nodeId, accepted.taskId)
     if (!taskTerminal(task.value) && task.value.status !== 'unknown') schedulePoll(accepted.taskId, requestGeneration)
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '无法创建受控重建任务。'
+    error.value = reason instanceof Error ? reason.message : t('m.8beb6052b0fc')
   } finally {
     submitting.value = false
   }
@@ -151,12 +152,12 @@ async function cleanupRollbackResources() {
   const rollback = cleanupTask.value
   if (!rollback || cleanupDone.value || cleaning.value || props.stale || props.container.stale) return
   const cleanupDescription = cleanupRestoredFailure.value
-    ? '此操作只清理失败重建遗留且已确认归本任务所有的快照。已恢复的原容器保持不变，数据卷不会删除。'
-    : '此操作只清理已停止的回滚容器。数据卷不会删除；正在使用的可写层快照会保留。'
-  const confirmation = window.prompt(`${cleanupDescription}\n请输入当前完整容器 ID：\n${props.container.id}`)
+    ? t('m.91f8944e8aa7')
+    : t('m.fd78403a0172')
+  const confirmation = window.prompt(t('m.c9dab8fa99dd', {"0": (cleanupDescription), "1": (props.container.id)}))
   if (confirmation === null) return
   if (confirmation.trim() !== props.container.id) {
-    error.value = '未清理：确认内容必须与当前完整容器 ID 完全一致。'
+    error.value = t('m.af34e98d4a24')
     return
   }
   cleaning.value = true
@@ -171,7 +172,7 @@ async function cleanupRollbackResources() {
     task.value = updated
     if (updated.status === 'queued' || updated.status === 'running') schedulePoll(accepted.taskId, ++generation)
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '无法清理回滚资源。'
+    error.value = reason instanceof Error ? reason.message : t('m.ffeb5f93c877')
   } finally {
     cleaning.value = false
   }
@@ -185,61 +186,58 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="rebuild-entry">
-    <button class="container-action" type="button" :disabled="stale || container.stale || Boolean(container.compose)" :title="container.compose ? 'Compose 容器请使用 Compose 项目操作' : '先检查配置与风险，再提交受控重建'" @click="openWizard">
-      受控重建
-    </button>
-    <span v-if="task" class="container-task-status" data-testid="rebuild-task-status" :data-status="task.status" role="status">{{ taskMessage }}</span>
+    <button class="container-action" type="button" :disabled="stale || container.stale || Boolean(container.compose)" :title="container.compose ? t('m.0c6674d92b52') : t('m.f754d1c47f3e')" @click="openWizard">{{ t('m.e6953475e88d') }}</button>
+    <span v-if="task" class="container-task-status" data-testid="rebuild-task-status" :data-status="task.status" role="status">{{ display(taskMessage) }}</span>
     <button v-if="cleanupTask && !cleanupDone" class="container-action" type="button" :disabled="stale || container.stale || cleaning" @click="cleanupRollbackResources">
-      {{ cleaning ? '清理中…' : cleanupRestoredFailure ? '清理重建遗留资源' : '清理回滚容器' }}
+      {{ cleaning ? t('m.248e8cfc2116') : cleanupRestoredFailure ? t('m.606302a043c7') : t('m.4e188c5690ca') }}
     </button>
-    <span v-if="cleanupDone" class="container-task-status" role="status">重建遗留回滚资源已清理，数据卷保留。</span>
+    <span v-if="cleanupDone" class="container-task-status" role="status">{{ t('m.d36c4aa4610f') }}</span>
     <section v-if="opened" class="rebuild-dialog" role="dialog" aria-modal="false" aria-labelledby="rebuild-title" data-testid="container-rebuild-wizard">
       <header class="rebuild-heading">
-        <div><span class="eyebrow">CONTROLLED REBUILD</span><h3 id="rebuild-title">重建 {{ container.name || container.id.slice(0, 12) }}</h3></div>
-        <button class="container-action" type="button" :disabled="submitting" @click="opened = false">关闭</button>
+        <div><span class="eyebrow">{{ t('label.08671c7919d1') }}</span><h3 id="rebuild-title">{{ t('m.4b8d9d4f3850') }}{{ container.name || container.id.slice(0, 12) }}</h3></div>
+        <button class="container-action" type="button" :disabled="submitting" @click="opened = false">{{ t('m.3fd47edce45b') }}</button>
       </header>
-      <p class="rebuild-intro">计划由 Agent 对当前 Docker Inspect 生成。确认停机和数据风险后才会创建持久任务。</p>
-      <label class="rebuild-mode">端口设置
-        <select v-model="mode" :disabled="submitting" @change="plan = undefined">
-          <option value="keep">保留当前端口</option>
-          <option value="replace">替换端口映射</option>
-          <option value="clear">清除所有发布端口</option>
+      <p class="rebuild-intro">{{ t('m.11edce34ba7c') }}</p>
+      <label class="rebuild-mode">{{ t('m.54644705e9c6') }}<select v-model="mode" :disabled="submitting" @change="plan = undefined">
+          <option value="keep">{{ t('m.841bbfd5aeae') }}</option>
+          <option value="replace">{{ t('m.1f329f154394') }}</option>
+          <option value="clear">{{ t('m.7c32fb37345f') }}</option>
         </select>
       </label>
       <div v-if="mode === 'replace'" class="rebuild-bindings">
         <div v-for="(binding, index) in bindings" :key="index" class="rebuild-binding" :data-testid="`rebuild-binding-${index}`">
-          <label>容器端口 <input v-model="binding.containerPort" :aria-label="`容器端口 ${index + 1}`" placeholder="80/tcp" @input="plan = undefined"></label>
-          <label>主机 IP <input v-model="binding.hostIp" :aria-label="`主机 IP ${index + 1}`" placeholder="127.0.0.1 或留空" @input="plan = undefined"></label>
-          <label>主机端口 <input v-model="binding.hostPort" :aria-label="`主机端口 ${index + 1}`" inputmode="numeric" placeholder="18080" @input="plan = undefined"></label>
-          <button class="container-action" type="button" :aria-label="`移除端口映射 ${index + 1}`" @click="removeBinding(index)">移除</button>
+          <label>{{ t('m.9c9980ac48fe') }}<input v-model="binding.containerPort" :aria-label="t('m.99af036931c4', {'0': (index + 1)})" placeholder="80/tcp" @input="plan = undefined"></label>
+          <label>{{ t('m.7782666b6ce5') }}<input v-model="binding.hostIp" :aria-label="t('m.c8c0858dd7d7', {'0': (index + 1)})" :placeholder="t('m.50f9c5e2f0a1')" @input="plan = undefined"></label>
+          <label>{{ t('m.5c474b41c45e') }}<input v-model="binding.hostPort" :aria-label="t('m.c6e031cb1c5f', {'0': (index + 1)})" inputmode="numeric" placeholder="18080" @input="plan = undefined"></label>
+          <button class="container-action" type="button" :aria-label="t('m.6ccdc5171a37', {'0': (index + 1)})" @click="removeBinding(index)">{{ t('m.6135d4159e89') }}</button>
         </div>
-        <button class="container-action" type="button" @click="addBinding">添加端口映射</button>
+        <button class="container-action" type="button" @click="addBinding">{{ t('m.3681abca77fd') }}</button>
       </div>
-      <button class="container-action" type="button" :disabled="loadingPlan || submitting" @click="preview">{{ loadingPlan ? '正在检查…' : '重新生成计划' }}</button>
-      <p v-if="error" class="rebuild-error" role="alert">{{ error }}</p>
-      <p v-if="loadingPlan" class="rebuild-wait" role="status">正在向 Agent 请求最新配置并检查可保留项目。</p>
+      <button class="container-action" type="button" :disabled="loadingPlan || submitting" @click="preview">{{ loadingPlan ? t('m.6b72c3d6855c') : t('m.fda000ea51ab') }}</button>
+      <p v-if="error" class="rebuild-error" role="alert">{{ display(error) }}</p>
+      <p v-if="loadingPlan" class="rebuild-wait" role="status">{{ t('m.c6e3dd69d100') }}</p>
       <div v-if="plan" class="rebuild-plan" data-testid="rebuild-plan">
         <dl class="rebuild-facts">
-          <div><dt>镜像 ID</dt><dd>{{ plan.imageId }}</dd></div>
-          <div><dt>当前状态</dt><dd>{{ plan.wasRunning ? '运行中，重建期间会停止' : '已停止，完成后保持停止' }}</dd></div>
-          <div><dt>可写层</dt><dd>{{ plan.writableLayerBytes }} bytes{{ plan.snapshotRequired ? '，重建前创建本地快照' : '，无需快照' }}</dd></div>
+          <div><dt>{{ t('m.eed0f73e6ed4') }}</dt><dd>{{ plan.imageId }}</dd></div>
+          <div><dt>{{ t('m.82b7cf40b5e6') }}</dt><dd>{{ plan.wasRunning ? t('m.ad5a3b7023cc') : t('m.7942087a70a9') }}</dd></div>
+          <div><dt>{{ t('m.07085db02b1f') }}</dt><dd>{{ plan.writableLayerBytes }} bytes{{ plan.snapshotRequired ? t('m.0c661a382e4c') : t('m.d9dae035a677') }}</dd></div>
         </dl>
-        <p><strong>停机影响：</strong>{{ plan.downtime }}</p>
+        <p><strong>{{ t('m.9ffd3498126c') }}</strong>{{ plan.downtime }}</p>
         <div class="rebuild-columns">
-          <div><h4>保留</h4><ul><li v-for="item in plan.preserved" :key="item">{{ item }}</li></ul></div>
-          <div><h4>变化</h4><ul><li v-for="item in plan.changed" :key="item">{{ item }}</li></ul></div>
+          <div><h4>{{ t('m.670ec25af841') }}</h4><ul><li v-for="item in plan.preserved" :key="item">{{ item }}</li></ul></div>
+          <div><h4>{{ t('m.e329c44530ee') }}</h4><ul><li v-for="item in plan.changed" :key="item">{{ item }}</li></ul></div>
         </div>
         <div class="rebuild-columns">
-          <div><h4>端口变更前</h4><ul><li v-for="item in plan.portsBefore" :key="item">{{ item }}</li><li v-if="!plan.portsBefore.length">无已发布端口</li></ul></div>
-          <div><h4>端口变更后</h4><ul><li v-for="item in plan.portsAfter" :key="item">{{ item }}</li><li v-if="!plan.portsAfter.length">无已发布端口</li></ul></div>
+          <div><h4>{{ t('m.6d355bd867cf') }}</h4><ul><li v-for="item in plan.portsBefore" :key="item">{{ item }}</li><li v-if="!plan.portsBefore.length">{{ t('m.cf159c2050f5') }}</li></ul></div>
+          <div><h4>{{ t('m.f0754c848ad6') }}</h4><ul><li v-for="item in plan.portsAfter" :key="item">{{ item }}</li><li v-if="!plan.portsAfter.length">{{ t('m.cf159c2050f5') }}</li></ul></div>
         </div>
-        <h4>挂载（不作为快照备份）</h4>
-        <ul><li v-for="mount in plan.mounts" :key="`${mount.type}-${mount.destination}`">{{ mount.type }} → {{ mount.destination }}（{{ mount.readWrite ? '可写' : '只读' }}）</li><li v-if="!plan.mounts.length">无挂载</li></ul>
-        <h4>风险和限制</h4>
+        <h4>{{ t('m.a68527cc9644') }}</h4>
+        <ul><li v-for="mount in plan.mounts" :key="`${mount.type}-${mount.destination}`">{{ mount.type }} → {{ mount.destination }}（{{ mount.readWrite ? t('m.a3bc3e79fc0d') : t('m.3b5ec3533b0e') }}）</li><li v-if="!plan.mounts.length">{{ t('m.a687446f9cb9') }}</li></ul>
+        <h4>{{ t('m.c006769c23af') }}</h4>
         <ul class="rebuild-risks"><li v-for="item in plan.risks" :key="item">{{ item }}</li></ul>
-        <label class="rebuild-ack"><input v-model="acknowledged" type="checkbox" :disabled="submitting">我已检查停机影响，理解快照不包含挂载卷和 bind mount 数据。</label>
+        <label class="rebuild-ack"><input v-model="acknowledged" type="checkbox" :disabled="submitting">{{ t('m.2af7ec0d2b15') }}</label>
         <button class="container-action container-action-danger" type="button" data-testid="submit-container-rebuild" :disabled="!acknowledged || submitting || stale || container.stale" @click="submitRebuild">
-          {{ submitting ? '正在提交…' : '提交受控重建' }}
+          {{ submitting ? t('m.26ef00b7d061') : t('m.be23bb9aeb97') }}
         </button>
       </div>
     </section>

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"github.com/CST-Cat/NodeDance/internal/agent/transferbuffer"
 	"io"
 	"os"
 	"path"
@@ -205,7 +206,9 @@ func (e *TaskExecutor) receiveUpload(ctx context.Context, taskID string, spec pr
 	}
 	upload := pending.upload
 	defer upload.Abort()
-	buffer := make([]byte, protocol.MaxFileChunkBytes)
+	lease := transferbuffer.Acquire()
+	defer transferbuffer.Release(lease)
+	buffer := lease[:]
 	for {
 		if err := ctx.Err(); err != nil {
 			return err

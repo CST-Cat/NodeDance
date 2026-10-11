@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/CST-Cat/NodeDance/internal/i18n"
 	"io"
 	"net"
 	"net/http"
@@ -22,16 +23,39 @@ import (
 type LookupEnv func(string) (string, bool)
 
 func Run(ctx context.Context, args []string, lookup LookupEnv, stdout, stderr io.Writer, version string) error {
+	return RunWithInput(ctx, args, lookup, os.Stdin, stdout, stderr, version)
+}
+
+func RunWithInput(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reader, stdout, stderr io.Writer, version string) (resultErr error) {
+	var err error
+	ctx, args, err = i18n.Options(ctx, args, lookup)
+	if err != nil {
+		return err
+	}
+	defer func() { resultErr = i18n.From(ctx).Error(resultErr) }()
+	stdout = i18n.Writer(stdout, i18n.From(ctx))
+	stderr = i18n.Writer(stderr, i18n.From(ctx))
 	if len(args) == 0 {
 		return runServe(ctx, nil, lookup, stdout, stderr, version)
 	}
 	switch args[0] {
 	case "version", "--version":
-		fmt.Fprintf(stdout, "NodeDance %s\n", version)
+		fmt.Fprintf(stdout, i18n.TextFor(stdout, "NodeDance %s\n"), version)
 		return nil
 	case "--help", "-h", "help":
 		printUsage(stdout)
 		return nil
+	case "operations", "describe":
+		return runOperations(args[1:], stdout)
+	case "tui":
+		return runTUI(ctx, args[1:], lookup, stdin, stdout, stderr, version)
+	case "agent":
+		return runAgentCommand(ctx, args[1:], stdin, stdout, stderr)
+	case "call":
+		if len(args) < 2 {
+			return errors.New("usage: nodedance call OPERATION [flags]")
+		}
+		return runControl(ctx, args[1], args[2:], lookup, stdin, stdout, stderr, version)
 	case "serve":
 		return runServe(ctx, args[1:], lookup, stdout, stderr, version)
 	case "backup":
@@ -39,23 +63,28 @@ func Run(ctx context.Context, args []string, lookup LookupEnv, stdout, stderr io
 	case "restore":
 		return runRestore(ctx, args[1:], stdout, stderr)
 	default:
-		return fmt.Errorf("unknown command %q (try 'nodedance --help')", args[0])
+		name, rest := args[0], args[1:]
+		if !strings.Contains(name, ".") && len(rest) > 0 {
+			name += "." + rest[0]
+			rest = rest[1:]
+		}
+		return runControl(ctx, name, rest, lookup, stdin, stdout, stderr, version)
 	}
 }
 
 func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stderr io.Writer, version string) error {
 	flags := flag.NewFlagSet("nodedance serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	listenFlag := flags.String("listen", "", "IP:port to listen on")
-	configFlag := flags.String("config", "", "path to config JSON file")
-	dataDirFlag := flags.String("data-dir", "", "path to Core data directory")
-	maxFileBytesFlag := flags.String("max-file-bytes", "", "maximum single file transfer size in bytes (default 1073741824)")
-	historyRetentionDaysFlag := flags.String("history-retention-days", "", "non-metric task, event, and audit history retention in days (default 90)")
-	publicOriginFlag := flags.String("public-origin", "", "public HTTPS origin used for browser Origin validation")
-	trustedProxiesFlag := flags.String("trusted-proxies", "", "comma-separated trusted proxy IPs or CIDRs")
-	tlsCertFlag := flags.String("tls-cert", "", "TLS certificate PEM file; required with --tls-key for non-loopback listeners")
-	tlsKeyFlag := flags.String("tls-key", "", "TLS private key PEM file; required with --tls-cert for non-loopback listeners")
-	dev := flags.Bool("dev", false, "development mode; requires a loopback address")
+	listenFlag := flags.String("listen", "", i18n.TextFor(stderr, "IP:port to listen on"))
+	configFlag := flags.String("config", "", i18n.TextFor(stderr, "path to config JSON file"))
+	dataDirFlag := flags.String("data-dir", "", i18n.TextFor(stderr, "path to Core data directory"))
+	maxFileBytesFlag := flags.String("max-file-bytes", "", i18n.TextFor(stderr, "maximum single file transfer size in bytes (default 1073741824)"))
+	historyRetentionDaysFlag := flags.String("history-retention-days", "", i18n.TextFor(stderr, "non-metric task, event, and audit history retention in days (default 90)"))
+	publicOriginFlag := flags.String("public-origin", "", i18n.TextFor(stderr, "public HTTPS origin used for browser Origin validation"))
+	trustedProxiesFlag := flags.String("trusted-proxies", "", i18n.TextFor(stderr, "comma-separated trusted proxy IPs or CIDRs"))
+	tlsCertFlag := flags.String("tls-cert", "", i18n.TextFor(stderr, "TLS certificate PEM file; required with --tls-key for non-loopback listeners"))
+	tlsKeyFlag := flags.String("tls-key", "", i18n.TextFor(stderr, "TLS private key PEM file; required with --tls-cert for non-loopback listeners"))
+	dev := flags.Bool("dev", false, i18n.TextFor(stderr, "development mode; requires a loopback address"))
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -168,9 +197,9 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	if tlsCertificate != nil {
 		scheme = "https"
 	}
-	fmt.Fprintf(stdout, "NodeDance listening on %s://%s\n", scheme, listen)
+	fmt.Fprintf(stdout, i18n.TextFor(stdout, "NodeDance listening on %s://%s\n"), scheme, listen)
 	if credentialPath, ok := serverInstance.SetupCredentialPath(); ok {
-		fmt.Fprintf(stdout, "First-run setup credential file: %s\n", credentialPath)
+		fmt.Fprintf(stdout, i18n.TextFor(stdout, "First-run setup credential file: %s\n"), credentialPath)
 	}
 	go func() {
 		if tlsCertificate != nil {
@@ -218,12 +247,18 @@ func loadTransportCertificate(listen, certPath, keyPath string) (*tls.Certificat
 }
 
 func printUsage(w io.Writer) {
-	fmt.Fprintln(w, "NodeDance - unified Linux server and container management")
-	fmt.Fprintln(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--max-file-bytes bytes] [--history-retention-days days] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--tls-cert PEM --tls-key PEM] [--dev]")
-	fmt.Fprintln(w, "       nodedance backup --data-dir DIR --output FILE")
-	fmt.Fprintln(w, "       nodedance restore --input FILE --data-dir NEW_DIR")
-	fmt.Fprintln(w, "       nodedance version")
-	fmt.Fprintln(w, "Default listen address: 127.0.0.1:8180")
+	fmt.Fprintln(w, i18n.TextFor(w, "NodeDance - unified Linux server and container management"))
+	fmt.Fprintln(w, i18n.TextFor(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--max-file-bytes bytes] [--history-retention-days days] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--tls-cert PEM --tls-key PEM] [--dev]"))
+	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance backup --data-dir DIR --output FILE"))
+	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance restore --input FILE --data-dir NEW_DIR"))
+	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance version"))
+	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance operations [NAME]  # JSON operation catalog / schemas"))
+	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance call NAME --server https://core --params JSON --query JSON --body @FILE"))
+	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance nodes list [connection flags]  # resource/action aliases"))
+	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance tui [--server https://core] [connection flags]"))
+	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance agent COMMAND [flags]  # root Agent lifecycle"))
+	fmt.Fprintln(w, i18n.TextFor(w, "Global language: --lang en|zh-CN (or NODEDANCE_LANG)"))
+	fmt.Fprintln(w, i18n.TextFor(w, "Default listen address: 127.0.0.1:8180"))
 }
 
 func lookupValue(lookup LookupEnv, name string) string {

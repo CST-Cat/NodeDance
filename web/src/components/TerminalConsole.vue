@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, computed } from 'vue'
 import { api } from '../api'
 
 const props = defineProps<{
@@ -23,7 +24,9 @@ interface TerminalFrame {
 }
 
 const terminalElement = ref<HTMLDivElement>()
-const status = ref('正在授权终端…')
+const statusKey = ref('m.389cde8ab951')
+const statusParams = ref<Record<string, unknown>>({})
+const status = computed(() => t(statusKey.value, statusParams.value))
 const error = ref('')
 let terminal: Terminal | undefined
 let fit: FitAddon | undefined
@@ -99,7 +102,7 @@ async function connect() {
     url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
     url.searchParams.set('ticket', authorization.ticket)
     socket = new WebSocket(url)
-    socket.onopen = () => { status.value = '正在连接目标…' }
+    socket.onopen = () => { statusKey.value = 'm.790beabf1d6b' }
     socket.onmessage = (event) => {
       if (disposed) return
       let message: { type?: string; frame?: TerminalFrame }
@@ -108,35 +111,36 @@ async function connect() {
       if (message.type !== 'terminal' || !frame || frame.streamId !== streamId) return
       if (frame.action === 'ready') {
         ready = true
-        status.value = '已连接'
+        statusKey.value = 'm.5be0323e8adc'
         fitTerminal()
         terminal?.focus()
       } else if (frame.action === 'output' && frame.data) {
         const bytes = Uint8Array.from(atob(frame.data), (character) => character.charCodeAt(0))
         terminal?.write(decoder.decode(bytes, { stream: true }))
       } else if (frame.action === 'error') {
-        error.value = frame.message || '终端连接失败。'
-        status.value = '连接失败'
+        error.value = frame.message || t('m.df75c0b36f8c')
+        statusKey.value = 'm.89c4766afc85'
       } else if (frame.action === 'exit') {
-        status.value = `进程已退出（${frame.exitCode ?? '未知'}）`
+        statusKey.value = 'm.d75d84cb855d'
+        statusParams.value = {'0': frame.exitCode ?? '—'}
       } else if (frame.action === 'closed') {
-        status.value = '终端已关闭'
+        statusKey.value = 'm.fdfff0a9c49a'
       }
     }
     socket.onerror = () => {
       if (!disposed) {
-        status.value = '连接中断'
-        error.value = '终端数据通道不可用。'
+        statusKey.value = 'm.c306f7fafb4f'
+        error.value = t('m.6bf6e5cd60e6')
       }
     }
     socket.onclose = () => {
       ready = false
-      if (!disposed && !error.value) status.value = '连接已关闭'
+      if (!disposed && !error.value) statusKey.value = 'm.30f12a33e524'
     }
   } catch (reason) {
     if (!disposed) {
-      status.value = '连接失败'
-      error.value = reason instanceof Error ? reason.message : '无法打开终端。'
+      statusKey.value = 'm.89c4766afc85'
+      error.value = reason instanceof Error ? reason.message : t('m.9e8a26146154')
     }
   }
 }
@@ -175,15 +179,15 @@ onBeforeUnmount(() => {
     <section class="terminal-dialog" role="dialog" aria-modal="true" aria-labelledby="terminal-title">
       <header class="terminal-heading">
         <div class="terminal-heading-copy">
-          <span class="terminal-eyebrow">SECURE TERMINAL</span>
+          <span class="terminal-eyebrow">{{ t('label.17001d87d5f0') }}</span>
           <h2 id="terminal-title">{{ targetLabel }}</h2>
           <p>{{ status }}</p>
         </div>
-        <button class="terminal-close" type="button" aria-label="关闭终端" @click="close">×</button>
+        <button class="terminal-close" type="button" :aria-label="t('m.16707b59cf5e')" @click="close">×</button>
       </header>
-      <p v-if="error" class="terminal-error" role="alert">{{ error }}</p>
-      <div ref="terminalElement" class="terminal-screen" data-testid="terminal-screen" aria-label="交互式终端"></div>
-      <nav class="terminal-keys" aria-label="终端辅助按键">
+      <p v-if="error" class="terminal-error" role="alert">{{ display(error) }}</p>
+      <div ref="terminalElement" class="terminal-screen" data-testid="terminal-screen" :aria-label="t('m.ce59564793be')"></div>
+      <nav class="terminal-keys" :aria-label="t('m.151b2f2ae35f')">
         <button type="button" @click="sendAuxiliary('\t')">Tab</button>
         <button type="button" @click="sendAuxiliary('\x03')">Ctrl+C</button>
         <button type="button" @click="sendAuxiliary('\x04')">Ctrl+D</button>
@@ -194,8 +198,8 @@ onBeforeUnmount(() => {
         <button type="button" @click="sendAuxiliary('\x1b[C')">→</button>
       </nav>
       <footer class="terminal-footer">
-        <span>输入内容不会写入审计日志。</span>
-        <button type="button" @click="close">结束会话</button>
+        <span>{{ t('m.b8bd8d5f7f2f') }}</span>
+        <button type="button" @click="close">{{ t('m.3eaf8d1b8148') }}</button>
       </footer>
     </section>
   </div>

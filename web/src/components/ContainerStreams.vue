@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, ref } from 'vue'
 import {
   createContainerStreamSocket,
@@ -35,7 +36,7 @@ let pendingLogChunks: string[] = []
 let pendingLogLength = 0
 let pendingLogBytes = 0
 let logFlushTimer: ReturnType<typeof setInterval> | undefined
-const statsTime = computed(() => statsSnapshot.value?.observed_at ? new Date(statsSnapshot.value.observed_at).toLocaleTimeString() : '等待采样')
+const statsTime = computed(() => statsSnapshot.value?.observed_at ? new Date(statsSnapshot.value.observed_at).toLocaleTimeString(locale.value) : t('m.a3cf429bd3c2'))
 
 const LOG_TEXT_LIMIT = 256 * 1024
 const PENDING_LOG_TEXT_LIMIT = 64 * 1024
@@ -49,22 +50,22 @@ function errorFor(kind: ContainerStreamKind) {
 }
 
 function stateLabel(state: StreamState): string {
-  if (state === 'connecting') return '正在连接'
-  if (state === 'connected') return '实时接收'
-  if (state === 'error') return '连接已关闭'
-  return '未打开'
+  if (state === 'connecting') return t('m.694186911ae3')
+  if (state === 'connected') return t('m.f8d0ccc162bf')
+  if (state === 'error') return t('m.30f12a33e524')
+  return t('m.a0a4c71b52cc')
 }
 
 function explainStreamError(code: string): string {
   const messages: Record<string, string> = {
-    unavailable: '目标暂时不可用。',
-    not_running: '容器当前未运行。',
-    invalid_request: '请求参数无效。',
-    stream_limit: '当前流数量已达上限。',
-    slow_consumer: '接收速度不足，已为保护连接关闭此流。',
-    engine_error: 'Docker Engine 未能提供此数据。',
+    unavailable: t('m.3c2431b9bd9a'),
+    not_running: t('m.d2693f566461'),
+    invalid_request: t('m.999d94cb7d0b'),
+    stream_limit: t('m.70df2879765e'),
+    slow_consumer: t('m.ec57a4831394'),
+    engine_error: t('m.4c13a09d69af'),
   }
-  return messages[code] ?? '数据流发生错误。'
+  return messages[code] ?? t('m.2ea0b2a956a8')
 }
 
 function fail(kind: ContainerStreamKind, message: string) {
@@ -76,7 +77,7 @@ function fail(kind: ContainerStreamKind, message: string) {
 
 function appendLog(frame: ContainerLogFrame) {
   if (frame.containerId !== props.containerId || (frame.channel !== 'stdout' && frame.channel !== 'stderr')) {
-    fail('logs', '日志流返回了其他容器的数据。')
+    fail('logs', t('m.1a594d27c332'))
     return
   }
   if (!logChannels.value.has(frame.channel)) logChannels.value = new Set([...logChannels.value, frame.channel])
@@ -87,7 +88,7 @@ function appendLog(frame: ContainerLogFrame) {
     pendingLogBytes += bytes
     if (decoded) appendPendingLogText(`[${frame.channel}] ${decoded}`)
   } catch {
-    fail('logs', '日志内容无法解码。')
+    fail('logs', t('m.593a3d7e3f1d'))
   }
 }
 
@@ -137,7 +138,7 @@ function stopLogFlush() {
 
 function acceptStats(frame: ContainerStatsFrame) {
   if (!frame.snapshot || frame.snapshot.container_id !== props.containerId) {
-    fail('stats', '实时统计返回了其他容器的数据。')
+    fail('stats', t('m.091a17469205'))
     return
   }
   statsSnapshot.value = frame.snapshot
@@ -176,7 +177,7 @@ function open(kind: ContainerStreamKind) {
     socket = createContainerStreamSocket(kind, props.nodeId, props.containerId)
   } catch {
     stateFor(kind).value = 'error'
-    errorFor(kind).value = '无法创建数据流连接。'
+    errorFor(kind).value = t('m.f5e901036eb9')
     return
   }
   sockets[kind] = socket
@@ -186,18 +187,18 @@ function open(kind: ContainerStreamKind) {
     try {
       envelope = JSON.parse(String(event.data)) as ContainerStreamEnvelope
     } catch {
-      fail(kind, '服务器返回了无法识别的数据。')
+      fail(kind, t('m.47ce61735a6a'))
       return
     }
     if (!envelope || typeof envelope.type !== 'string' || !Number.isSafeInteger(envelope.sequence) || envelope.sequence <= (sequence[kind] ?? 0)) {
-      fail(kind, '数据流顺序无效。')
+      fail(kind, t('m.469dce4e4576'))
       return
     }
     sequence[kind] = envelope.sequence
     if (envelope.type === 'container_stream_ready') {
       const ready = envelope.payload as ContainerStreamReady
       if (ready.kind !== kind || ready.containerId !== props.containerId) {
-        fail(kind, '数据流连接到了其他目标。')
+        fail(kind, t('m.95b4da8af84b'))
         return
       }
       stateFor(kind).value = 'connected'
@@ -221,10 +222,10 @@ function open(kind: ContainerStreamKind) {
       acceptStats(envelope.payload as ContainerStatsFrame)
       return
     }
-    fail(kind, '服务器返回了不匹配的数据流。')
+    fail(kind, t('m.d5fa3fb6358f'))
   }
   socket.onerror = () => {
-    if (stateFor(kind).value === 'connecting' || stateFor(kind).value === 'connected') fail(kind, '数据流连接失败。')
+    if (stateFor(kind).value === 'connecting' || stateFor(kind).value === 'connected') fail(kind, t('m.a6a85e2b610a'))
   }
   socket.onclose = () => {
     if (sockets[kind] !== socket) return
@@ -240,7 +241,7 @@ function open(kind: ContainerStreamKind) {
     }
     if (stateFor(kind).value === 'connecting' || stateFor(kind).value === 'connected') {
       stateFor(kind).value = 'error'
-      errorFor(kind).value = '连接已关闭。请确认节点在线和 Docker 状态新鲜后重试。'
+      errorFor(kind).value = t('m.4c50e0ef9a32')
     }
   }
 }
@@ -265,19 +266,19 @@ function close(kind: ContainerStreamKind) {
 
 function metric(value: { state: string; value?: number; reason?: string } | undefined, suffix = ''): string {
   if (!value || value.state !== 'ok' || typeof value.value !== 'number' || !Number.isFinite(value.value)) {
-    return value?.reason ? `未知：${value.reason}` : '未知'
+    return value?.reason ? t('m.a92ddd73cc1b', {"0": (value.reason)}) : t('m.4d8c1c5b4283')
   }
   return `${value.value.toFixed(1)}${suffix}`
 }
 
 function memoryMetric(): string {
   const memory = statsSnapshot.value?.memory
-  if (!memory || memory.state !== 'ok' || !memory.value) return memory?.reason ? `未知：${memory.reason}` : '未知'
+  if (!memory || memory.state !== 'ok' || !memory.value) return memory?.reason ? t('m.a92ddd73cc1b', {"0": (memory.reason)}) : t('m.4d8c1c5b4283')
   return `${memory.value.used_percent.toFixed(1)}% · ${formatBytes(memory.value.used_bytes)} / ${formatBytes(memory.value.limit_bytes)}`
 }
 
 function formatBytes(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return '未知'
+  if (!Number.isFinite(value) || value < 0) return t('m.4d8c1c5b4283')
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
   let scaled = value
   let index = 0
@@ -286,13 +287,13 @@ function formatBytes(value: number): string {
 }
 
 function rateMetric(metricValue: { state: string; value?: { received_bytes_per_second: number; sent_bytes_per_second: number }; reason?: string } | undefined): string {
-  if (!metricValue || metricValue.state !== 'ok' || !metricValue.value) return metricValue?.reason ? `未知：${metricValue.reason}` : '未知'
+  if (!metricValue || metricValue.state !== 'ok' || !metricValue.value) return metricValue?.reason ? t('m.a92ddd73cc1b', {"0": (metricValue.reason)}) : t('m.4d8c1c5b4283')
   return `↓ ${formatBytes(metricValue.value.received_bytes_per_second)}/s · ↑ ${formatBytes(metricValue.value.sent_bytes_per_second)}/s`
 }
 
 function blockIOMetric(metricValue: { state: string; value?: { read_bytes_per_second: number; write_bytes_per_second: number }; reason?: string } | undefined): string {
-  if (!metricValue || metricValue.state !== 'ok' || !metricValue.value) return metricValue?.reason ? `未知：${metricValue.reason}` : '未知'
-  return `读 ${formatBytes(metricValue.value.read_bytes_per_second)}/s · 写 ${formatBytes(metricValue.value.write_bytes_per_second)}/s`
+  if (!metricValue || metricValue.state !== 'ok' || !metricValue.value) return metricValue?.reason ? t('m.a92ddd73cc1b', {"0": (metricValue.reason)}) : t('m.4d8c1c5b4283')
+  return t('m.17e2e66586d0', {"0": (formatBytes(metricValue.value.read_bytes_per_second)), "1": (formatBytes(metricValue.value.write_bytes_per_second))})
 }
 
 onBeforeUnmount(() => {
@@ -302,33 +303,33 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="container-streams" data-testid="container-streams" :data-container-id="containerId" aria-label="容器实时数据流">
+  <section class="container-streams" data-testid="container-streams" :data-container-id="containerId" :aria-label="t('m.4b0e84bd108a')">
     <div class="container-stream-actions">
-      <button v-if="logState !== 'connecting' && logState !== 'connected'" type="button" :disabled="disabled" @click="open('logs')">查看日志</button>
-      <button v-else type="button" class="active" @click="close('logs')">关闭日志流</button>
-      <span class="stream-label" :data-state="logState" data-testid="stream-log-state" role="status">日志：{{ stateLabel(logState) }}</span>
-      <button v-if="statsState !== 'connecting' && statsState !== 'connected'" type="button" :disabled="disabled || !statsAvailable" @click="open('stats')">实时统计</button>
-      <button v-else type="button" class="active" @click="close('stats')">关闭统计</button>
-      <span class="stream-label" :data-state="statsState" data-testid="stream-stats-state" role="status">统计：{{ stateLabel(statsState) }}</span>
+      <button v-if="logState !== 'connecting' && logState !== 'connected'" type="button" :disabled="disabled" @click="open('logs')">{{ t('m.659875587949') }}</button>
+      <button v-else type="button" class="active" @click="close('logs')">{{ t('m.8949c1484d4d') }}</button>
+      <span class="stream-label" :data-state="logState" data-testid="stream-log-state" role="status">{{ t('m.a1c88ca8b9b4') }}{{ stateLabel(logState) }}</span>
+      <button v-if="statsState !== 'connecting' && statsState !== 'connected'" type="button" :disabled="disabled || !statsAvailable" @click="open('stats')">{{ t('m.5f8faa43a270') }}</button>
+      <button v-else type="button" class="active" @click="close('stats')">{{ t('m.31d2201e9d0b') }}</button>
+      <span class="stream-label" :data-state="statsState" data-testid="stream-stats-state" role="status">{{ t('m.ba07d9987c05') }}{{ stateLabel(statsState) }}</span>
     </div>
 
-    <p v-if="disabled" class="stream-hint" data-testid="stream-disabled">节点或容器状态过期，恢复实时连接后可打开数据流。</p>
-    <p v-else-if="!statsAvailable" class="stream-hint">容器运行后可查看实时统计。</p>
-    <p v-if="logError" class="stream-error" role="alert" data-testid="stream-log-error">{{ logError }}</p>
-    <p v-if="statsError" class="stream-error" role="alert" data-testid="stream-stats-error">{{ statsError }}</p>
+    <p v-if="disabled" class="stream-hint" data-testid="stream-disabled">{{ t('m.4f75ac6c5ef0') }}</p>
+    <p v-else-if="!statsAvailable" class="stream-hint">{{ t('m.a6a6536f5d05') }}</p>
+    <p v-if="logError" class="stream-error" role="alert" data-testid="stream-log-error">{{ display(logError) }}</p>
+    <p v-if="statsError" class="stream-error" role="alert" data-testid="stream-stats-error">{{ display(statsError) }}</p>
 
     <div v-if="logState === 'connected' || logText" class="stream-log-panel">
-      <div class="stream-panel-heading"><strong>容器日志</strong><span data-testid="stream-log-bytes" :data-bytes="logBytes">{{ formatBytes(logBytes) }}</span></div>
-      <pre data-testid="stream-log-output" :data-bytes="logBytes" :data-channels="Array.from(logChannels).join(',')">{{ logText || '等待日志…' }}</pre>
+      <div class="stream-panel-heading"><strong>{{ t('m.11824b8117a5') }}</strong><span data-testid="stream-log-bytes" :data-bytes="logBytes">{{ formatBytes(logBytes) }}</span></div>
+      <pre data-testid="stream-log-output" :data-bytes="logBytes" :data-channels="Array.from(logChannels).join(',')">{{ logText || t('m.073e53c8c4c3') }}</pre>
     </div>
 
     <div v-if="statsState === 'connected' || statsSnapshot" class="stream-stats-panel" data-testid="stream-stats-snapshot" :data-samples="statsSamples">
-      <div class="stream-panel-heading"><strong>实时资源统计</strong><span>{{ statsTime }}</span></div>
+      <div class="stream-panel-heading"><strong>{{ t('m.9633f25598d6') }}</strong><span>{{ statsTime }}</span></div>
       <dl>
         <div><dt>CPU</dt><dd data-testid="stream-cpu">{{ metric(statsSnapshot?.cpu_percent, '%') }}</dd></div>
-        <div><dt>内存</dt><dd data-testid="stream-memory">{{ memoryMetric() }}</dd></div>
-        <div><dt>网络</dt><dd data-testid="stream-network">{{ rateMetric(statsSnapshot?.network) }}</dd></div>
-        <div><dt>磁盘读写</dt><dd data-testid="stream-block-io">{{ blockIOMetric(statsSnapshot?.block_io) }}</dd></div>
+        <div><dt>{{ t('m.7d8f8c37ec78') }}</dt><dd data-testid="stream-memory">{{ memoryMetric() }}</dd></div>
+        <div><dt>{{ t('m.97b31b5d63f5') }}</dt><dd data-testid="stream-network">{{ rateMetric(statsSnapshot?.network) }}</dd></div>
+        <div><dt>{{ t('m.6acb47100357') }}</dt><dd data-testid="stream-block-io">{{ blockIOMetric(statsSnapshot?.block_io) }}</dd></div>
       </dl>
     </div>
   </section>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts'
 import type { MetricHistory } from '../api'
@@ -18,17 +19,17 @@ let observer: ResizeObserver | undefined
 
 const availableKeys = computed(() => {
   const labels = new Map<string, string>([
-    ['cpu.usage_percent', 'CPU 使用率'],
-    ['memory.used_percent', '内存使用率'],
-    ['memory.used_bytes', '已用内存'],
-    ['network.received_bytes_per_second', '网络接收速率'],
-    ['network.sent_bytes_per_second', '网络发送速率'],
+    ['cpu.usage_percent', t('m.1c82e5547854')],
+    ['memory.used_percent', t('m.ace212ad8fd3')],
+    ['memory.used_bytes', t('m.688cab237917')],
+    ['network.received_bytes_per_second', t('m.9cf3b70addc3')],
+    ['network.sent_bytes_per_second', t('m.81c8be973451')],
   ])
   for (const series of props.history?.series ?? []) {
     if (series.key.startsWith('disk:')) {
       const suffix = series.key.endsWith(':used_percent') ? 'used_percent' : 'used_bytes'
       const mount = series.key.slice('disk:'.length, -(`:${suffix}`.length))
-      labels.set(series.key, `${mount} 磁盘${suffix === 'used_percent' ? '使用率' : '已用空间'}`)
+      labels.set(series.key, t('m.c47bd176f3ca', {"0": (mount), "1": (suffix === 'used_percent' ? t('m.9746ae777abb') : t('m.666f1c71e1e0'))}))
     }
   }
   return [...labels.entries()].map(([key, label]) => ({ key, label }))
@@ -63,8 +64,8 @@ function chartOptions(): echarts.EChartsOption {
   return {
     animation: false,
     grid: { left: 54, right: 20, top: 24, bottom: 38 },
-    tooltip: { trigger: 'axis', valueFormatter: (value) => value == null ? '无样本' : `${Number(value).toFixed(2)} ${unit}` },
-    xAxis: { type: 'time', axisLabel: { color: '#91a2ba' }, axisLine: { lineStyle: { color: '#34445b' } } },
+    tooltip: { trigger: 'axis', valueFormatter: (value) => value == null ? t('m.63ef182b7603') : `${Number(value).toFixed(2)} ${unit}` },
+    xAxis: { type: 'time', axisLabel: { color: '#91a2ba', formatter: (value: number) => new Date(value).toLocaleString(locale.value, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }, axisPointer: { label: { formatter: (params: { value: string | number | Date }) => new Date(params.value).toLocaleString(locale.value) } }, axisLine: { lineStyle: { color: '#34445b' } } },
     yAxis: { type: 'value', scale: !percent, name: unit, nameTextStyle: { color: '#91a2ba' }, axisLabel: { color: '#91a2ba' }, splitLine: { lineStyle: { color: 'rgba(145,162,186,.12)' } } },
     series: [{
       name: selectedLabel.value,
@@ -87,11 +88,11 @@ function render() {
     chart ??= echarts.init(host.value, undefined, { renderer: 'canvas' })
     chart.setOption(chartOptions(), true)
   } catch {
-    chartError.value = '历史图表暂时无法显示。'
+    chartError.value = t('m.3ed77cde9795')
   }
 }
 
-watch(() => [props.history, selectedKey.value], render, { deep: true })
+watch(() => [props.history, selectedKey.value, locale.value], render, { deep: true })
 watch(availableKeys, (items) => {
   if (!items.some((item) => item.key === selectedKey.value)) selectedKey.value = items[0]?.key ?? 'cpu.usage_percent'
 })
@@ -115,23 +116,22 @@ onBeforeUnmount(() => {
   <section class="history-panel" aria-labelledby="history-title" data-testid="history-panel">
     <header class="history-heading">
       <div>
-        <span class="eyebrow">METRIC HISTORY</span>
-        <h2 id="history-title">历史监控</h2>
-        <p v-if="history">{{ new Date(history.from).toLocaleString() }} — {{ new Date(history.to).toLocaleString() }} · {{ history.resolution === 'minute' ? '分钟' : '小时' }}聚合</p>
+        <span class="eyebrow">{{ t('label.aacdab5b45f0') }}</span>
+        <h2 id="history-title">{{ t('m.bfb41404e88b') }}</h2>
+        <p v-if="history">{{ new Date(history.from).toLocaleString(locale) }} — {{ new Date(history.to).toLocaleString(locale) }} · {{ history.resolution === 'minute' ? t('m.bd957bc497aa') : t('m.3b6fefc50feb') }}{{ t('m.a4768faecb38') }}</p>
       </div>
-      <label class="history-metric-select">指标
-        <select v-model="selectedKey" aria-label="选择历史指标">
+      <label class="history-metric-select">{{ t('m.b87e67c7dae0') }}<select v-model="selectedKey" :aria-label="t('m.4a2f28a82624')">
           <option v-for="item in availableKeys" :key="item.key" :value="item.key">{{ item.label }}</option>
         </select>
       </label>
     </header>
-    <p v-if="!nodeOnline" class="history-stale" role="status">节点当前离线；以下为已保存的历史数据，空白区间表示没有收到有效样本。</p>
-    <p v-else class="history-note">图表只绘制已收到的有效样本；未知值和断线区间保留为空白，不补零或连线。</p>
-    <div v-if="loading" class="history-state" role="status">正在读取历史指标…</div>
-    <div v-else-if="error" class="history-state history-error" role="alert">{{ error }}</div>
-    <div v-else-if="chartError" class="history-state history-error" role="alert">{{ chartError }}</div>
-    <div v-else ref="host" class="history-chart" data-testid="history-chart" :data-sample-count="sampleCount" :aria-label="`${selectedLabel}历史图表`"></div>
-    <p v-if="!loading && !error && sampleCount === 0" class="history-empty">此时间范围没有该指标的有效样本。</p>
+    <p v-if="!nodeOnline" class="history-stale" role="status">{{ t('m.b116276abf68') }}</p>
+    <p v-else class="history-note">{{ t('m.7a9f26412898') }}</p>
+    <div v-if="loading" class="history-state" role="status">{{ t('m.a980a5f91841') }}</div>
+    <div v-else-if="error" class="history-state history-error" role="alert">{{ display(error) }}</div>
+    <div v-else-if="chartError" class="history-state history-error" role="alert">{{ display(chartError) }}</div>
+    <div v-else ref="host" class="history-chart" data-testid="history-chart" :data-sample-count="sampleCount" :aria-label="t('m.ea8e1f947456', {'0': (selectedLabel)})"></div>
+    <p v-if="!loading && !error && sampleCount === 0" class="history-empty">{{ t('m.f3de6936eb3b') }}</p>
   </section>
 </template>
 

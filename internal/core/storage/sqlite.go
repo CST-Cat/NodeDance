@@ -58,6 +58,14 @@ func Open(ctx context.Context, directory string) (*Store, error) {
 	query.Add("_pragma", "busy_timeout(5000)")
 	query.Add("_pragma", "foreign_keys(1)")
 	query.Add("_pragma", "synchronous(FULL)")
+	// Apply connection-local limits through the driver DSN so replacement
+	// physical connections inherit them as well. Keep FULL durability.
+	query.Add("_pragma", "cache_size(-2048)")
+	query.Add("_pragma", "mmap_size(0)")
+	query.Add("_pragma", "temp_store(FILE)")
+	query.Add("_pragma", "cache_spill(1)")
+	query.Add("_pragma", "wal_autocheckpoint(256)")
+	query.Add("_pragma", "journal_size_limit(1048576)")
 	dsnURL.RawQuery = query.Encode()
 	db, err := sql.Open("sqlite", dsnURL.String())
 	if err != nil {

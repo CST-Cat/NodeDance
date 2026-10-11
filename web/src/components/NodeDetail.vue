@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api, type AgentNode, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainerRecord, type DockerInventory, type MetricHistory, type TaskAuditEvent } from '../api'
 import type { MetricsView } from '../metrics-contract'
@@ -46,14 +47,14 @@ const emit = defineEmits<{
 }>()
 
 const activeSection = ref<'overview' | 'docker' | 'images' | 'compose' | 'rebuild' | 'files' | 'history' | 'events' | 'settings'>(props.initialSection)
-const sectionTabs: Array<{ id: typeof activeSection.value; label: string }> = [
-  { id: 'overview', label: '总览' }, { id: 'docker', label: 'Docker 详情' }, { id: 'images', label: '镜像' },
-  { id: 'compose', label: 'Compose 项目' }, { id: 'rebuild', label: '容器重建' }, { id: 'files', label: '文件管理' }, { id: 'history', label: '历史监控' }, { id: 'events', label: '事件历史' }, { id: 'settings', label: '节点设置' },
-]
-const customFieldOptions = [
-  { id: 'state', label: '运行状态' }, { id: 'ports', label: '端口' }, { id: 'health', label: '健康状态' },
-  { id: 'image', label: '镜像' }, { id: 'uptime', label: '运行时间' },
-]
+const sectionTabs = computed<Array<{ id: typeof activeSection.value; label: string }>>(() => [
+  { id: 'overview', label: t('m.a33db5730556') }, { id: 'docker', label: t('m.eee901e4cc16') }, { id: 'images', label: t('m.176c09844e0f') },
+  { id: 'compose', label: t('m.5f67dd75b01f') }, { id: 'rebuild', label: t('m.474490ab5dc3') }, { id: 'files', label: t('m.b3bd5ac7cc4d') }, { id: 'history', label: t('m.bfb41404e88b') }, { id: 'events', label: t('m.a700a47380fe') }, { id: 'settings', label: t('m.0a09fda5e2a6') },
+])
+const customFieldOptions = computed(() => [
+  { id: 'state', label: t('m.e46b0272bd64') }, { id: 'ports', label: t('m.e71ac32b544b') }, { id: 'health', label: t('m.85788192fbeb') },
+  { id: 'image', label: t('m.176c09844e0f') }, { id: 'uptime', label: t('m.5986e9d976e0') },
+])
 const containerSearch = ref('')
 const editingPreference = ref('')
 const historyView = ref<MetricHistory | null>(null)
@@ -115,24 +116,24 @@ function containerIcon(record: DockerInventory['containers'][number]): string {
 }
 function containerGroupName(record: DockerInventory['containers'][number]): string {
   if (props.dashboardSettings.groupBy === 'none') return ''
-  if (props.dashboardSettings.groupBy === 'compose') return record.container.compose ? `Compose · ${record.container.compose.project}` : '独立容器'
-  if (props.dashboardSettings.groupBy === 'state') return record.container.state || '状态未知'
+  if (props.dashboardSettings.groupBy === 'compose') return record.container.compose ? `Compose · ${record.container.compose.project}` : t('m.ba4ddea11c26')
+  if (props.dashboardSettings.groupBy === 'state') return record.container.state || t('m.93e474c68ed5')
   return nodeTitle.value
 }
 const orderedContainers = computed(() => {
   const containers = [...(props.inventory?.containers ?? [])]
   return containers.sort((left, right) => {
-    const group = containerGroupName(left).localeCompare(containerGroupName(right), 'zh-CN')
+    const group = containerGroupName(left).localeCompare(containerGroupName(right), locale.value)
     if (group && props.dashboardSettings.groupBy !== 'none') return group
     const lp = preferenceForContainer(left), rp = preferenceForContainer(right)
     if (props.dashboardSettings.sortBy === 'state') {
       const state = (left.container.state || '').localeCompare(right.container.state || '')
       if (state) return state
     }
-    if (props.dashboardSettings.sortBy === 'name') return containerTitle(left).localeCompare(containerTitle(right), 'zh-CN')
+    if (props.dashboardSettings.sortBy === 'name') return containerTitle(left).localeCompare(containerTitle(right), locale.value)
     if (lp?.pinned !== rp?.pinned) return lp?.pinned ? -1 : 1
     if ((lp?.sortOrder ?? 0) !== (rp?.sortOrder ?? 0)) return (lp?.sortOrder ?? 0) - (rp?.sortOrder ?? 0)
-    return containerTitle(left).localeCompare(containerTitle(right), 'zh-CN')
+    return containerTitle(left).localeCompare(containerTitle(right), locale.value)
   })
 })
 const sortedContainers = computed(() => {
@@ -146,19 +147,19 @@ const sortedContainers = computed(() => {
   })
 })
 function dockerAvailabilityText(inventory: DockerInventory): string {
-  if (inventory.staleReason === 'docker_capability_unavailable' || inventory.dockerAvailability === 'unavailable') return 'Docker 不可用'
+  if (inventory.staleReason === 'docker_capability_unavailable' || inventory.dockerAvailability === 'unavailable') return t('m.d3e431f9d10b')
   if (inventory.dockerAvailability === 'available') {
-    if (inventory.health?.errorKind === 'api_incompatible') return 'Docker API 不兼容'
-    if (props.dockerStale) return '数据过期'
-    if (inventory.health?.reason) return 'Engine 状态异常'
-    return 'Engine 正常'
+    if (inventory.health?.errorKind === 'api_incompatible') return t('m.d56e55420ff6')
+    if (props.dockerStale) return t('m.1a6858956811')
+    if (inventory.health?.reason) return t('m.04dea0459ab7')
+    return t('m.81e93ba5b0a1')
   }
-  return '等待 Docker 状态'
+  return t('m.c12a50c262ca')
 }
 function dockerStatusReason(inventory: DockerInventory): string { return inventory.health?.reason || inventory.staleReason || '' }
 function containerHealthText(container: DockerInventory['containers'][number]['container']): string {
-  if (!container.healthcheckConfigured || container.health === 'none') return '未配置健康检查'
-  return ({ healthy: '健康', unhealthy: '异常', starting: '启动中', unknown: '未知' } as Record<string, string>)[container.health] ?? container.health
+  if (!container.healthcheckConfigured || container.health === 'none') return t('m.5fac1c671a0d')
+  return ({ healthy: t('m.aa18b6dcd893'), unhealthy: t('m.428fb8bfeecf'), starting: t('m.33439d263173'), unknown: t('m.4d8c1c5b4283') } as Record<string, string>)[container.health] ?? container.health
 }
 function portText(port: DockerInventory['containers'][number]['container']['ports'][number]): string {
   const published = Array.isArray(port.published) ? port.published : []
@@ -166,30 +167,30 @@ function portText(port: DockerInventory['containers'][number]['container']['port
   if (published.length) return published.map((binding) => {
     const rawHost = binding.ip || '*'
     const host = rawHost.includes(':') && !rawHost.startsWith('[') ? `[${rawHost}]` : rawHost
-    const scope = rawHost === '*' || rawHost === '0.0.0.0' || rawHost === '::' ? '（所有宿主机接口）' :
-      rawHost === '::1' || /^127(?:\.\d{1,3}){3}$/.test(rawHost) ? '（仅宿主机回环）' : ''
+    const scope = rawHost === '*' || rawHost === '0.0.0.0' || rawHost === '::' ? t('m.a54cd64d75d5') :
+      rawHost === '::1' || /^127(?:\.\d{1,3}){3}$/.test(rawHost) ? t('m.b07e34088b42') : ''
     return `${host}:${binding.port} → ${port.containerPort}/${port.protocol}${scope}`
   }).join('，')
-  if (configured.length) return `${port.containerPort}/${port.protocol}（配置映射，当前未发布）`
-  if (port.exposed) return `${port.containerPort}/${port.protocol}（仅声明）`
+  if (configured.length) return t('m.639b66233cf4', {"0": (port.containerPort), "1": (port.protocol)})
+  if (port.exposed) return t('m.c39c143634dc', {"0": (port.containerPort), "1": (port.protocol)})
   return `${port.containerPort}/${port.protocol}`
 }
 function containerNetworkText(container: DockerInventory['containers'][number]['container']): string {
-  if (container.hostNetwork) return 'Host Network：容器共享宿主机网络地址'
+  if (container.hostNetwork) return t('m.471522ad66e5')
   const networks = container.networks ?? []
-  if (!networks.length) return '容器网络地址：未分配或不可用'
+  if (!networks.length) return t('m.6537857befe0')
   return networks.map((network) => {
     const addresses = [network.ipv4 && `IPv4 ${network.ipv4}`, network.ipv6 && `IPv6 ${network.ipv6}`].filter(Boolean)
-    return `${network.name}：${addresses.length ? addresses.join(' · ') : '未分配 IP'}`
+    return t('m.838f6df66524', {"0": (network.name), "1": (addresses.length ? addresses.join(' · ') : t('m.9bf769e4c1eb'))})
   }).join('；')
 }
 function containerUptime(record: DockerInventory['containers'][number]): string {
-  if (!record.container.running || !record.container.startedAt) return '未知'
+  if (!record.container.running || !record.container.startedAt) return t('m.4d8c1c5b4283')
   const started = Date.parse(record.container.startedAt)
-  if (!Number.isFinite(started) || started > props.currentTime) return '未知'
+  if (!Number.isFinite(started) || started > props.currentTime) return t('m.4d8c1c5b4283')
   const minutes = Math.floor((props.currentTime - started) / 60_000)
   const days = Math.floor(minutes / 1440), hours = Math.floor(minutes % 1440 / 60), remaining = minutes % 60
-  return days ? `${days} 天 ${hours} 小时` : hours ? `${hours} 小时 ${remaining} 分钟` : `${remaining} 分钟`
+  return days ? t('m.295f367bb72a', {"0": (days), "1": (hours)}) : hours ? t('m.3cde3f0ae16c', {"0": (hours), "1": (remaining)}) : t('m.c65627ead130', {"0": (remaining)})
 }
 function safeServiceURL(record: DockerInventory['containers'][number]): string {
   const candidate = preferenceForContainer(record)?.serviceUrl
@@ -210,7 +211,7 @@ function nodePreferenceForEditor(): DashboardPreference {
     alias: '', icon: 'server', notes: '', serviceUrl: '', sshHost: '', sshPort: 22, sshUser: '', group: '', sortOrder: -1, visible: true, pinned: true }
 }
 function serviceLinkTitle(record: DockerInventory['containers'][number]): string {
-  return props.preferenceIdentities[record.container.id] ? '为此容器或 Compose 服务设置展示偏好' : 'Docker 未提供稳定身份，不能绑定展示偏好'
+  return props.preferenceIdentities[record.container.id] ? t('m.c2ac23b68436') : t('m.3b55a14ddabf')
 }
 function taskKey(containerID: string): string { return `${props.node.nodeId}:${containerID}` }
 function taskForContainer(containerID: string): ContainerTask | undefined {
@@ -222,13 +223,13 @@ function rollbackTaskForContainer(containerID: string): ContainerTask | undefine
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0]
 }
 function taskStatusLabel(task: ContainerTask): string {
-  if (task.status === 'queued') return '任务已保存，等待 Agent'
-  if (task.status === 'running') return `正在执行：${task.progress.phase}`
-  if (task.status === 'succeeded') return `已验证完成：${task.result.observedState || 'Docker 状态已确认'}`
-  if (task.status === 'unknown') return '结果待确认，系统不会自动重试'
-  if (task.status === 'timed_out') return '超时，等待实际状态确认'
-  if (task.status === 'canceled') return '任务已取消'
-  return `执行失败：${task.result.code || '原因未分类'}`
+  if (task.status === 'queued') return t('m.3d531ad52ee4')
+  if (task.status === 'running') return t('m.472b61dd983a', {"0": (task.progress.phase)})
+  if (task.status === 'succeeded') return t('m.52a8bda11dff', {"0": (task.result.observedState || t('m.74a52b93c4f9'))})
+  if (task.status === 'unknown') return t('m.2629197ac89c')
+  if (task.status === 'timed_out') return t('m.7112c0bda6de')
+  if (task.status === 'canceled') return t('m.6f96c2add214')
+  return t('m.e6bbfaf0e706', {"0": (task.result.code || t('m.fb2425b0c8e1'))})
 }
 function canOperate(record: DockerInventory['containers'][number]): boolean {
   return Boolean(props.inventory?.dockerAvailability === 'available' && props.online && props.node.agentId && !props.dockerStale && !record.container.stale && !props.taskSubmitting[taskKey(record.container.id)])
@@ -237,14 +238,14 @@ function submitAction(record: DockerInventory['containers'][number], action: Con
   if (!canOperate(record)) return
   if (action === 'rename') {
     if (record.container.compose) return
-    const newName = window.prompt('输入新的独立容器名称', record.container.name)
+    const newName = window.prompt(t('m.19efbadaa133'), record.container.name)
     if (newName === null) return
     emit('containerAction', { nodeId: props.node.nodeId, containerId: record.container.id, task: { action, newName: newName.trim() } })
     return
   }
   if (action === 'delete') {
     if (record.container.running || record.container.paused || record.container.restarting) return
-    const confirmation = window.prompt(`删除不会删除数据卷。请输入完整容器 ID 以确认：\n${record.container.id}`)
+    const confirmation = window.prompt(t('m.cd8d2b02a176', {"0": (record.container.id)}))
     if (confirmation !== record.container.id) return
     emit('containerAction', { nodeId: props.node.nodeId, containerId: record.container.id, task: { action, deleteConfirmed: true, deleteConfirmationId: confirmation } })
     return
@@ -255,13 +256,13 @@ function submitContainerCreate(spec: ContainerCreateSpec) {
   if (!canCreateContainers.value || createSubmitting.value) return
   emit('containerCreate', { nodeId: props.node.nodeId, spec })
 }
-function openHostTerminal() { activeTerminal.value = { nodeId: props.node.nodeId, targetKind: 'host', targetLabel: `${nodeTitle.value} · 主机终端` } }
+function openHostTerminal() { activeTerminal.value = { nodeId: props.node.nodeId, targetKind: 'host', targetLabel: t('m.d4c37e398335', {"0": (nodeTitle.value)}) } }
 function openContainerTerminal(record: DockerInventory['containers'][number]) { activeTerminal.value = { nodeId: props.node.nodeId, targetKind: 'container', containerId: record.container.id, targetLabel: `${nodeTitle.value} · ${record.container.name || record.container.id.slice(0, 12)}` } }
 async function loadHistory() {
   historyLoading.value = true; historyError.value = ''
   const durations = { '6h': 6, '24h': 24, '7d': 168, '30d': 720, '1y': 8760 }
   try { historyView.value = await api.nodeHistory(props.node.nodeId, historyResolution.value, new Date(Date.now() - durations[historyRange.value] * 3_600_000), new Date()) }
-  catch (reason) { historyView.value = null; historyError.value = reason instanceof Error ? reason.message : '无法读取历史指标。' }
+  catch (reason) { historyView.value = null; historyError.value = reason instanceof Error ? reason.message : t('m.7b26031b0a1a') }
   finally { historyLoading.value = false }
 }
 function selectSection(section: typeof activeSection.value) {
@@ -276,7 +277,7 @@ async function toggleTaskAudit(task: ContainerTask) {
   if (showing || taskAuditViews.value[task.taskId] || taskAuditLoading.value[task.taskId]) return
   taskAuditLoading.value = { ...taskAuditLoading.value, [task.taskId]: true }
   try { taskAuditViews.value = { ...taskAuditViews.value, [task.taskId]: (await api.nodeTaskAudit(task.nodeId, task.taskId)).events } }
-  catch (reason) { taskAuditErrors.value = { ...taskAuditErrors.value, [task.taskId]: reason instanceof Error ? reason.message : '无法读取任务审计记录。' } }
+  catch (reason) { taskAuditErrors.value = { ...taskAuditErrors.value, [task.taskId]: reason instanceof Error ? reason.message : t('m.df3eec8deda0') } }
   finally { taskAuditLoading.value = { ...taskAuditLoading.value, [task.taskId]: false } }
 }
 async function persistReorder(sourceID: string, targetID: string) {
@@ -293,12 +294,12 @@ async function persistReorder(sourceID: string, targetID: string) {
     for (let index = 0; index < identities.length; index += 1) {
       const record = orderedContainers.value.find((item) => props.preferenceIdentities[item.container.id] === identities[index])
       const preference = record && preferenceForEditor(record)
-      if (!preference) throw new Error('缺少稳定容器身份，无法保存顺序。')
+      if (!preference) throw new Error(t('m.96af268964a3'))
       const next = { ...preference, sortOrder: index }
       await api.saveNodePreference(next.nodeId, next)
       emit('preferenceSaved', next)
     }
-  } catch (reason) { orderError.value = reason instanceof Error ? reason.message : '容器顺序保存失败。' }
+  } catch (reason) { orderError.value = reason instanceof Error ? reason.message : t('m.4f4eebba20f3') }
   finally { orderSaving.value = false }
 }
 function beginNativeReorder(record: DockerInventory['containers'][number], event: DragEvent) {
@@ -356,46 +357,46 @@ onBeforeUnmount(() => {
 <template>
   <section class="node-detail-page" aria-labelledby="detail-title" data-testid="node-detail">
     <header class="detail-heading">
-      <div><button class="container-action back-button" type="button" @click="emit('back')">← 所有 VPS</button><span class="eyebrow">SINGLE VPS DETAIL</span><h1 id="detail-title">{{ nodeTitle }}</h1><p>{{ node.displayName }} · {{ node.nodeId }}</p><p v-if="nodePreference?.notes" class="node-detail-note">{{ nodePreference.notes }}</p></div>
-      <div class="detail-heading-status"><span class="node-detail-status" :data-online="online">{{ pending ? '等待注册' : online ? '在线' : '离线' }}</span><span class="docker-state" :data-available="inventory?.dockerAvailability || 'unknown'" :data-stale="dockerStale">{{ inventory ? dockerAvailabilityText(inventory) : online ? '等待 Docker 状态' : 'Docker 状态未知' }}</span></div>
+      <div><button class="container-action back-button" type="button" @click="emit('back')">{{ t('m.40c2548e2416') }}</button><span class="eyebrow">{{ t('label.164ba94c1c7b') }}</span><h1 id="detail-title">{{ nodeTitle }}</h1><p>{{ node.displayName }} · {{ node.nodeId }}</p><p v-if="nodePreference?.notes" class="node-detail-note">{{ nodePreference.notes }}</p></div>
+      <div class="detail-heading-status"><span class="node-detail-status" :data-online="online">{{ pending ? t('m.a890b3be09aa') : online ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c') }}</span><span class="docker-state" :data-available="inventory?.dockerAvailability || 'unknown'" :data-stale="dockerStale">{{ inventory ? dockerAvailabilityText(inventory) : online ? t('m.c12a50c262ca') : t('m.8a6501e8198f') }}</span></div>
     </header>
-    <nav class="dashboard-tabs" aria-label="节点管理视图"><button v-for="tab in sectionTabs" :key="tab.id" type="button" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button></nav>
+    <nav class="dashboard-tabs" :aria-label="t('m.c778eb5beb54')"><button v-for="tab in sectionTabs" :key="tab.id" type="button" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button></nav>
     <MetricsPanel v-if="activeSection === 'overview' && metrics" :key="metrics.nodeId" :view="metrics" />
-    <div v-else-if="activeSection === 'overview'" class="metrics-waiting" data-testid="metrics-waiting"><span class="eyebrow">{{ node.displayName }}</span><h2>{{ pending ? '等待 Agent 注册' : online ? '等待首份主机样本' : '节点当前离线' }}</h2><p v-if="pending">节点已创建，Agent 完成注册后才会开始采集主机数据。</p><p v-else-if="online">CPU、内存、网络与磁盘数据会在 Agent 首次采样后显示。</p><p v-else>保留的最近数据会在重新连接时显示，并明确标记为过期。{{ nodeReason ? `状态原因：${nodeReason}` : '' }}</p><span class="node-detail-status" :data-online="online">{{ pending ? '等待注册' : online ? '在线' : '离线' }}</span></div>
+    <div v-else-if="activeSection === 'overview'" class="metrics-waiting" data-testid="metrics-waiting"><span class="eyebrow">{{ node.displayName }}</span><h2>{{ pending ? t('m.270c0a7750e1') : online ? t('m.78a4908b8949') : t('m.f339ad3bc760') }}</h2><p v-if="pending">{{ t('m.31483a081b8c') }}</p><p v-else-if="online">{{ t('m.ad2b360a6731') }}</p><p v-else>{{ t('m.fcca199d47b9') }}{{ nodeReason ? t('m.fee0ec31e108', {'0': (nodeReason)}) : '' }}</p><span class="node-detail-status" :data-online="online">{{ pending ? t('m.a890b3be09aa') : online ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c') }}</span></div>
 
     <template v-if="activeSection === 'docker'">
-      <div class="node-terminal-entry"><div><strong>主机终端</strong><small>通过已连接 Agent 打开目标节点的配置 shell。</small></div><button type="button" :disabled="!online" @click="openHostTerminal">打开终端</button></div>
+      <div class="node-terminal-entry"><div><strong>{{ t('m.725457c84556') }}</strong><small>{{ t('m.a7c1e29fcce5') }}</small></div><button type="button" :disabled="!online" @click="openHostTerminal">{{ t('m.b89a0e4584f2') }}</button></div>
       <section class="docker-panel" aria-labelledby="docker-title" data-testid="docker-inventory">
-        <header class="docker-heading"><div><span class="eyebrow">CONTAINER INVENTORY</span><h2 id="docker-title">Docker 容器</h2></div><span v-if="inventory" class="docker-state" :data-available="inventory.dockerAvailability" :data-stale="dockerStale">{{ dockerAvailabilityText(inventory) }}</span></header>
+        <header class="docker-heading"><div><span class="eyebrow">{{ t('label.c039e720422e') }}</span><h2 id="docker-title">{{ t('m.7cabcc483eb4') }}</h2></div><span v-if="inventory" class="docker-state" :data-available="inventory.dockerAvailability" :data-stale="dockerStale">{{ dockerAvailabilityText(inventory) }}</span></header>
         <ContainerCreateForm :disabled="!canCreateContainers" :submitting="createSubmitting" :error="createError" @submit="submitContainerCreate" />
-        <section v-if="createTasks.length" class="container-create-results" aria-label="容器创建任务结果"><h3>最近创建任务</h3><article v-for="task in createTasks" :key="task.taskId"><div><strong>{{ taskStatusLabel(task) }}</strong><time :datetime="task.createdAt">{{ new Date(task.createdAt).toLocaleString() }}</time></div><code v-if="task.status === 'succeeded' && task.result.resourceRevision">Container ID：{{ task.result.resourceRevision }}</code><span v-else-if="task.status === 'failed'" class="container-task-error">{{ task.result.code || 'creation_failed' }}</span></article></section>
-        <div class="docker-view-controls" aria-label="容器筛选和排序"><label>搜索 <input v-model="containerSearch" type="search" placeholder="名称、镜像、服务或备注" aria-label="搜索容器"></label><label>分组 <select v-model="groupBy"><option value="node">节点</option><option value="compose">Compose 项目</option><option value="state">运行状态</option><option value="none">不分组</option></select></label><label>排序 <select v-model="sortBy"><option value="custom">自定义</option><option value="name">显示名称</option><option value="state">运行状态</option></select></label><button type="button" class="container-action" :disabled="dashboardSettingsSaving" @click="emit('saveSettings')">保存视图</button></div>
-        <p v-if="orderError" class="container-task-error" role="alert">{{ orderError }}</p><p v-if="!inventory" class="docker-empty">正在读取此节点的 Docker 状态。</p>
-        <p v-else-if="inventory.dockerAvailability === 'unavailable' || inventory.staleReason === 'docker_capability_unavailable'" class="docker-empty">Agent 仍可在线采集主机指标；Docker Engine 当前不可用。{{ dockerStatusReason(inventory) ? `原因：${dockerStatusReason(inventory)}` : '' }}</p>
-        <p v-else-if="dockerStatusReason(inventory)" class="docker-empty" data-testid="docker-health-reason">Docker Engine 当前不能提供完整容器状态，下面保留最近已知容器并标记为过期。原因：{{ dockerStatusReason(inventory) }}</p>
-        <p v-if="inventory && inventory.containers.length === 0" class="docker-empty">{{ dockerStale ? '当前没有可确认的容器列表，等待完整扫描。' : '此节点没有容器。' }}</p><p v-if="inventory && inventory.containers.length > 0 && sortedContainers.length === 0" class="docker-empty">没有符合搜索条件的容器。</p>
+        <section v-if="createTasks.length" class="container-create-results" :aria-label="t('m.7084b942d42e')"><h3>{{ t('m.964c43bb9238') }}</h3><article v-for="task in createTasks" :key="task.taskId"><div><strong>{{ taskStatusLabel(task) }}</strong><time :datetime="task.createdAt">{{ new Date(task.createdAt).toLocaleString(locale) }}</time></div><code v-if="task.status === 'succeeded' && task.result.resourceRevision">Container ID：{{ task.result.resourceRevision }}</code><span v-else-if="task.status === 'failed'" class="container-task-error">{{ task.result.code || 'creation_failed' }}</span></article></section>
+        <div class="docker-view-controls" :aria-label="t('m.4eb61dda65ee')"><label>{{ t('m.44ce7ae909bb') }}<input v-model="containerSearch" type="search" :placeholder="t('m.5a5d5c8b732a')" :aria-label="t('m.8db3ff343ebc')"></label><label>{{ t('m.399ee6934772') }}<select v-model="groupBy"><option value="node">{{ t('m.2410d860f093') }}</option><option value="compose">{{ t('m.5f67dd75b01f') }}</option><option value="state">{{ t('m.e46b0272bd64') }}</option><option value="none">{{ t('m.fcd40ee3f05a') }}</option></select></label><label>{{ t('m.a96c9a854190') }}<select v-model="sortBy"><option value="custom">{{ t('m.4eafa9e925b3') }}</option><option value="name">{{ t('m.a98585871c53') }}</option><option value="state">{{ t('m.e46b0272bd64') }}</option></select></label><button type="button" class="container-action" :disabled="dashboardSettingsSaving" @click="emit('saveSettings')">{{ t('m.b290bfe6352c') }}</button></div>
+        <p v-if="orderError" class="container-task-error" role="alert">{{ display(orderError) }}</p><p v-if="!inventory" class="docker-empty">{{ t('m.8a4a01f575e0') }}</p>
+        <p v-else-if="inventory.dockerAvailability === 'unavailable' || inventory.staleReason === 'docker_capability_unavailable'" class="docker-empty">{{ t('m.758a85e024fd') }}{{ dockerStatusReason(inventory) ? t('m.8504c2226f79', {'0': (dockerStatusReason(inventory))}) : '' }}</p>
+        <p v-else-if="dockerStatusReason(inventory)" class="docker-empty" data-testid="docker-health-reason">{{ t('m.369cbdaf8c6d') }}{{ dockerStatusReason(inventory) }}</p>
+        <p v-if="inventory && inventory.containers.length === 0" class="docker-empty">{{ dockerStale ? t('m.647742c56530') : t('m.0e149c0e416b') }}</p><p v-if="inventory && inventory.containers.length > 0 && sortedContainers.length === 0" class="docker-empty">{{ t('m.b8e005f5fbdf') }}</p>
         <div v-if="inventory && sortedContainers.length" class="docker-list" :data-group-by="dashboardSettings.groupBy">
           <article v-for="record in sortedContainers" :key="record.container.id" class="docker-row" :class="{ 'is-drop-target': dropContainerID === record.container.id, 'is-being-dragged': draggedContainerID === record.container.id }" :data-container-id="record.container.id" :data-preference-identity="preferenceIdentities[record.container.id]" :data-stale="dockerStale || record.container.stale" :data-group="containerGroupName(record)" draggable="true" @dragstart="beginNativeReorder(record, $event)" @dragover.prevent @drop="finishNativeReorder(record)" @dragend="draggedContainerID = ''">
             <div v-if="dashboardSettings.groupBy !== 'none'" class="container-group-label">{{ containerGroupName(record) }}</div>
-            <div class="docker-row-title"><div class="docker-container-copy"><strong><span class="detail-container-icon" aria-hidden="true">{{ containerIcon(record) }}</span> {{ containerTitle(record) }}</strong><small><template v-if="dashboardSettings.customFields.includes('image')">{{ record.container.image || '未知镜像' }}</template><template v-if="record.container.compose"> · {{ record.container.compose.project }}/{{ record.container.compose.service }}</template><template v-if="preferenceForContainer(record)?.notes"> · {{ preferenceForContainer(record)?.notes }}</template></small></div><div class="container-actions"><span v-if="rollbackTaskForContainer(record.container.id)" class="container-state container-rollback-state">回滚副本</span><span v-else-if="dashboardSettings.customFields.includes('state')" class="container-state" :data-running="record.container.running">{{ record.container.state || '未知' }}</span><button type="button" :disabled="!record.container.running || record.container.stale || !online || dockerStale || Boolean(rollbackTaskForContainer(record.container.id))" @click="openContainerTerminal(record)">控制台</button></div></div>
-            <div class="docker-row-meta"><span v-if="dashboardSettings.customFields.includes('health')" :data-health="record.container.health">健康：{{ containerHealthText(record.container) }}</span><span v-if="dashboardSettings.customFields.includes('uptime')">运行时间：{{ containerUptime(record) }}</span><span>网络：{{ containerNetworkText(record.container) }}</span><span v-if="dockerStale || record.container.stale" class="container-stale">过期数据<template v-if="record.container.unavailableReason">：{{ record.container.unavailableReason }}</template></span><span v-else>更新于 {{ new Date(record.receivedAt).toLocaleTimeString() }}</span></div>
-            <div v-if="dashboardSettings.customFields.includes('ports') && (record.container.ports ?? []).length" class="container-ports" aria-label="容器端口"><span v-for="(port, index) in (record.container.ports ?? [])" :key="`${port.containerPort}-${port.protocol}-${index}`">{{ portText(port) }}</span></div><p v-if="record.container.unavailableReason" class="container-reason">{{ record.container.unavailableReason }}</p>
-            <div class="container-task-actions"><p v-if="rollbackTaskForContainer(record.container.id)" class="container-rollback-note" role="note">此实例是已验证重建留下的停止回滚副本，不会作为主服务提供生命周期操作。</p><template v-else>
-              <button class="container-action drag-handle" type="button" aria-label="拖动调整容器顺序" :disabled="orderSaving || dashboardSettings.sortBy !== 'custom' || !preferenceIdentities[record.container.id]" @pointerdown="beginPointerReorder($event, record)" title="按住并拖动可调整顺序">⠿</button>
-              <button class="container-action" type="button" :disabled="!preferenceForEditor(record)" :title="serviceLinkTitle(record)" @click="editingPreference = editingPreference === record.container.id ? '' : record.container.id">{{ editingPreference === record.container.id ? '关闭偏好' : '编辑偏好' }}</button><a v-if="safeServiceURL(record)" class="container-action service-link" :href="safeServiceURL(record)" target="_blank" rel="noopener noreferrer">打开服务 ↗</a>
-              <button v-if="record.container.paused" class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'resume')">恢复</button><template v-else-if="record.container.running"><button class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'stop')">停止</button><button class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'restart')">重启容器</button><button class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'pause')">暂停</button></template><button v-else class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'start')">启动</button>
-              <button class="container-action" type="button" :disabled="!canOperate(record) || Boolean(record.container.compose)" :title="record.container.compose ? 'Compose 项目容器不能通过实际重命名修改服务身份' : '重命名独立容器'" @click="submitAction(record, 'rename')">重命名</button><button class="container-action container-action-danger" type="button" :disabled="!canOperate(record) || record.container.running || record.container.paused || record.container.restarting" title="删除容器并保留数据卷" @click="submitAction(record, 'delete')">删除</button>
-              <span v-if="taskSubmitting[taskKey(record.container.id)]" class="container-task-status" role="status">正在提交任务…</span><span v-if="taskForContainer(record.container.id)" class="container-task-status" :data-status="taskForContainer(record.container.id)?.status" role="status">{{ taskStatusLabel(taskForContainer(record.container.id)!) }}</span><button v-if="taskForContainer(record.container.id)" class="container-action" type="button" @click="toggleTaskAudit(taskForContainer(record.container.id)!)">{{ taskAuditVisible[taskForContainer(record.container.id)!.taskId] ? '隐藏审计' : '查看审计' }}</button><span v-if="taskErrors[taskKey(record.container.id)]" class="container-task-error" role="alert">{{ taskErrors[taskKey(record.container.id)] }}</span><span v-if="taskAuditErrors[taskForContainer(record.container.id)?.taskId || '']" class="container-task-error" role="alert">{{ taskAuditErrors[taskForContainer(record.container.id)?.taskId || ''] }}</span><ol v-if="taskForContainer(record.container.id) && taskAuditVisible[taskForContainer(record.container.id)!.taskId]" class="container-task-audit"><li v-if="taskAuditLoading[taskForContainer(record.container.id)!.taskId]">正在读取审计记录…</li><li v-for="event in (taskAuditViews[taskForContainer(record.container.id)!.taskId] ?? [])" :key="event.id">{{ event.event }} · {{ event.fromStatus || '开始' }} → {{ event.toStatus || '结果未知' }} · {{ new Date(event.occurredAt).toLocaleString() }}</li></ol>
+            <div class="docker-row-title"><div class="docker-container-copy"><strong><span class="detail-container-icon" aria-hidden="true">{{ containerIcon(record) }}</span> {{ containerTitle(record) }}</strong><small><template v-if="dashboardSettings.customFields.includes('image')">{{ record.container.image || t('m.45c82e228c16') }}</template><template v-if="record.container.compose"> · {{ record.container.compose.project }}/{{ record.container.compose.service }}</template><template v-if="preferenceForContainer(record)?.notes"> · {{ preferenceForContainer(record)?.notes }}</template></small></div><div class="container-actions"><span v-if="rollbackTaskForContainer(record.container.id)" class="container-state container-rollback-state">{{ t('m.557f68233fbd') }}</span><span v-else-if="dashboardSettings.customFields.includes('state')" class="container-state" :data-running="record.container.running">{{ record.container.state || t('m.4d8c1c5b4283') }}</span><button type="button" :disabled="!record.container.running || record.container.stale || !online || dockerStale || Boolean(rollbackTaskForContainer(record.container.id))" @click="openContainerTerminal(record)">{{ t('m.d0d07d153161') }}</button></div></div>
+            <div class="docker-row-meta"><span v-if="dashboardSettings.customFields.includes('health')" :data-health="record.container.health">{{ t('m.855aef6c73da') }}{{ containerHealthText(record.container) }}</span><span v-if="dashboardSettings.customFields.includes('uptime')">{{ t('m.77c1f61cd3be') }}{{ containerUptime(record) }}</span><span>{{ t('m.3bc622e323d6') }}{{ containerNetworkText(record.container) }}</span><span v-if="dockerStale || record.container.stale" class="container-stale">{{ t('m.6fe221cef061') }}<template v-if="record.container.unavailableReason">：{{ record.container.unavailableReason }}</template></span><span v-else>{{ t('m.7153f0918a93') }}{{ new Date(record.receivedAt).toLocaleTimeString(locale) }}</span></div>
+            <div v-if="dashboardSettings.customFields.includes('ports') && (record.container.ports ?? []).length" class="container-ports" :aria-label="t('m.9c9980ac48fe')"><span v-for="(port, index) in (record.container.ports ?? [])" :key="`${port.containerPort}-${port.protocol}-${index}`">{{ portText(port) }}</span></div><p v-if="record.container.unavailableReason" class="container-reason">{{ record.container.unavailableReason }}</p>
+            <div class="container-task-actions"><p v-if="rollbackTaskForContainer(record.container.id)" class="container-rollback-note" role="note">{{ t('m.322728a307b5') }}</p><template v-else>
+              <button class="container-action drag-handle" type="button" :aria-label="t('m.ae6e894f4576')" :disabled="orderSaving || dashboardSettings.sortBy !== 'custom' || !preferenceIdentities[record.container.id]" @pointerdown="beginPointerReorder($event, record)" :title="t('m.a1eeffd3e106')">⠿</button>
+              <button class="container-action" type="button" :disabled="!preferenceForEditor(record)" :title="serviceLinkTitle(record)" @click="editingPreference = editingPreference === record.container.id ? '' : record.container.id">{{ editingPreference === record.container.id ? t('m.415df73a7c07') : t('m.8299fda55003') }}</button><a v-if="safeServiceURL(record)" class="container-action service-link" :href="safeServiceURL(record)" target="_blank" rel="noopener noreferrer">{{ t('m.e4fd01edc24f') }}</a>
+              <button v-if="record.container.paused" class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'resume')">{{ t('m.e0534b8a4e46') }}</button><template v-else-if="record.container.running"><button class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'stop')">{{ t('m.ca4d973c0b00') }}</button><button class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'restart')">{{ t('m.f7d763a12cbf') }}</button><button class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'pause')">{{ t('m.8d12fc0d4eb2') }}</button></template><button v-else class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'start')">{{ t('m.56410fc65314') }}</button>
+              <button class="container-action" type="button" :disabled="!canOperate(record) || Boolean(record.container.compose)" :title="record.container.compose ? t('m.fd6779f2f9fe') : t('m.629affaf8b22')" @click="submitAction(record, 'rename')">{{ t('m.0d0cbac2eee5') }}</button><button class="container-action container-action-danger" type="button" :disabled="!canOperate(record) || record.container.running || record.container.paused || record.container.restarting" :title="t('m.6176bf1e7f1a')" @click="submitAction(record, 'delete')">{{ t('m.2f9daa828907') }}</button>
+              <span v-if="taskSubmitting[taskKey(record.container.id)]" class="container-task-status" role="status">{{ t('m.911ee461c36a') }}</span><span v-if="taskForContainer(record.container.id)" class="container-task-status" :data-status="taskForContainer(record.container.id)?.status" role="status">{{ taskStatusLabel(taskForContainer(record.container.id)!) }}</span><button v-if="taskForContainer(record.container.id)" class="container-action" type="button" @click="toggleTaskAudit(taskForContainer(record.container.id)!)">{{ taskAuditVisible[taskForContainer(record.container.id)!.taskId] ? t('m.54e74c1e7504') : t('m.97f395dec8ce') }}</button><span v-if="taskErrors[taskKey(record.container.id)]" class="container-task-error" role="alert">{{ display(taskErrors[taskKey(record.container.id)]) }}</span><span v-if="taskAuditErrors[taskForContainer(record.container.id)?.taskId || '']" class="container-task-error" role="alert">{{ display(taskAuditErrors[taskForContainer(record.container.id)?.taskId || '']) }}</span><ol v-if="taskForContainer(record.container.id) && taskAuditVisible[taskForContainer(record.container.id)!.taskId]" class="container-task-audit"><li v-if="taskAuditLoading[taskForContainer(record.container.id)!.taskId]">{{ t('m.cf62890bdb61') }}</li><li v-for="event in (taskAuditViews[taskForContainer(record.container.id)!.taskId] ?? [])" :key="event.id">{{ event.event }} · {{ event.fromStatus || t('m.d2bb025a2e51') }} → {{ event.toStatus || t('m.fb7e71452c04') }} · {{ new Date(event.occurredAt).toLocaleString(locale) }}</li></ol>
             </template></div>
-            <PreferenceEditor v-if="editingPreference === record.container.id && preferenceForEditor(record)" :preference="preferenceForEditor(record)!" :title="record.container.compose ? `Compose 服务偏好：${record.container.compose.project}/${record.container.compose.service}` : `容器偏好：${record.container.name || record.container.id.slice(0, 12)}`" @saved="acceptPreference"/><ContainerStreams v-if="!rollbackTaskForContainer(record.container.id)" :node-id="node.nodeId" :container-id="record.container.id" :disabled="dockerStale || record.container.stale" :stats-available="record.container.running && !record.container.paused && !record.container.restarting"/>
+            <PreferenceEditor v-if="editingPreference === record.container.id && preferenceForEditor(record)" :preference="preferenceForEditor(record)!" :title="record.container.compose ? t('m.a246b2532b68', {'0': (record.container.compose.project), '1': (record.container.compose.service)}) : t('m.b75c25171acc', {'0': (record.container.name || record.container.id.slice(0, 12))})" @saved="acceptPreference"/><ContainerStreams v-if="!rollbackTaskForContainer(record.container.id)" :node-id="node.nodeId" :container-id="record.container.id" :disabled="dockerStale || record.container.stale" :stats-available="record.container.running && !record.container.paused && !record.container.restarting"/>
           </article>
         </div>
       </section>
     </template>
-    <ImagesPanel v-if="activeSection === 'images'" :key="node.nodeId" :node-id="node.nodeId"/><ComposeProjects v-if="activeSection === 'compose'" :key="node.nodeId" :node-id="node.nodeId"/><section v-if="activeSection === 'rebuild'" class="section-panel container-rebuild-page" aria-label="独立容器受控重建" data-testid="container-rebuild-page"><header class="section-toolbar"><div><span class="eyebrow">CONTROLLED REBUILD</span><h2>独立容器受控重建</h2></div></header><p class="rebuild-safety-note">重建操作从新鲜 Docker Inspect 复制当前配置，只允许安全支持的独立容器；数据卷保留。Compose 服务请从 Compose 页面修改 YAML 并重新部署。</p><p v-if="!rebuildCandidates.length" class="docker-empty">没有可重建的独立容器；Compose 容器和回滚副本不进入此工作流。</p><template v-else><label class="rebuild-container-picker">目标容器<select v-model="selectedRebuildContainerID"><option v-for="record in rebuildCandidates" :key="record.container.id" :value="record.container.id">{{ containerTitle(record) }} · {{ record.container.id.slice(0, 12) }}</option></select></label><ContainerRebuildWizard v-if="selectedRebuildContainer" :node-id="node.nodeId" :container="selectedRebuildContainer.container" :stale="!canOperate(selectedRebuildContainer)" :tasks="tasks"/></template></section><NodeFiles v-if="activeSection === 'files'" :key="node.nodeId" :node-id="node.nodeId" :node-name="node.displayName"/>
-    <section v-if="activeSection === 'history'" class="section-panel" aria-label="历史监控设置"><div class="section-toolbar"><div><span class="eyebrow">PERSISTED METRICS</span><h2>历史监控 · {{ nodeTitle }}</h2></div><div class="history-controls"><label>范围<select v-model="historyRange"><option value="6h">最近 6 小时</option><option value="24h">最近 24 小时</option><option value="7d">最近 7 天</option><option value="30d">最近 30 天</option><option value="1y">最近一年</option></select></label><button class="container-action" type="button" :disabled="historyLoading" @click="void loadHistory()">查询</button></div></div><HistoricalMetrics :history="historyView" :loading="historyLoading" :error="historyError" :node-online="online"/><p class="retention-note">分钟聚合保留 30 天，小时聚合保留一年。Agent 失联期间没有有效样本的区间会显示为空白。</p></section>
-    <section v-if="activeSection === 'events'" class="section-panel" aria-label="节点操作事件历史" data-testid="node-event-history"><header class="section-toolbar"><div><span class="eyebrow">RECENT OPERATIONS</span><h2>操作事件历史 · {{ nodeTitle }}</h2></div><button class="container-action" type="button" @click="emit('refreshTasks', node.nodeId)">刷新</button></header><p class="event-source-note">这里展示 Core 已持久化的容器操作任务及其审计状态；Agent 失联时不推断操作成功。</p><p v-if="selectedTasks.length === 0" class="docker-empty">暂无已记录的容器操作事件。</p><article v-for="task in selectedTasks" :key="task.taskId" class="event-card" :data-status="task.status"><div><strong>{{ task.action }} · {{ task.targetId.slice(0, 12) }}</strong><span class="container-task-status" :data-status="task.status">{{ taskStatusText(task) }}</span><time :datetime="task.createdAt">{{ new Date(task.createdAt).toLocaleString() }}</time></div><button class="container-action" type="button" @click="toggleTaskAudit(task)">{{ taskAuditVisible[task.taskId] ? '隐藏审计' : '查看审计' }}</button><p v-if="taskAuditErrors[task.taskId]" class="container-task-error" role="alert">{{ taskAuditErrors[task.taskId] }}</p><ol v-if="taskAuditVisible[task.taskId]" class="container-task-audit"><li v-if="taskAuditLoading[task.taskId]">正在读取审计记录…</li><li v-for="event in (taskAuditViews[task.taskId] ?? [])" :key="event.id">{{ event.event }} · {{ event.fromStatus || '开始' }} → {{ event.toStatus || '结果未知' }} · {{ new Date(event.occurredAt).toLocaleString() }}</li></ol></article></section>
-    <section v-if="activeSection === 'settings'" class="section-panel node-settings-panel" aria-label="节点设置" data-testid="node-settings"><header class="section-toolbar"><div><span class="eyebrow">DISPLAY & MONITORING</span><h2>节点设置 · {{ nodeTitle }}</h2></div></header><div class="node-settings-status"><div><span>Agent 连接</span><strong>{{ pending ? '等待注册' : online ? '在线' : '离线' }}</strong></div><div><span>Docker Engine</span><strong>{{ inventory ? dockerAvailabilityText(inventory) : '未知' }}</strong></div><div><span>Agent 版本</span><strong>{{ node.agentVersion || '未知' }}</strong></div><div><span>节点身份</span><strong>{{ node.nodeId }}</strong></div></div><PreferenceEditor :preference="nodePreferenceForEditor()" :title="`节点显示偏好：${node.displayName}`" @saved="acceptPreference"/><div class="dashboard-settings-editor"><h3>首页和容器视图</h3><div class="dashboard-settings-grid"><label>默认视图<select v-model="viewMode"><option value="monitor">监控</option><option value="manage">管理</option></select></label><label>VPS 首页分组<select v-model="nodeGroupBy"><option value="status">连接状态</option><option value="group">自定义分组</option><option value="none">不分组</option></select></label><label>VPS 首页排序<select v-model="nodeSortBy"><option value="custom">自定义顺序</option><option value="name">显示名称</option><option value="status">连接状态</option></select></label><label>容器分组方式<select v-model="groupBy"><option value="node">节点</option><option value="compose">Compose 项目</option><option value="state">运行状态</option><option value="none">不分组</option></select></label><label>容器排序方式<select v-model="sortBy"><option value="custom">自定义顺序</option><option value="name">显示名称</option><option value="state">运行状态</option></select></label><label>首页容器上限<input v-model.number="featuredLimit" type="number" min="1" max="20"></label></div><fieldset class="custom-fields"><legend>Docker 详情字段</legend><label v-for="field in customFieldOptions" :key="field.id"><input v-model="customFields" type="checkbox" :value="field.id">{{ field.label }}</label></fieldset><div class="settings-save"><button class="container-action" type="button" :disabled="dashboardSettingsSaving" @click="emit('saveSettings')">{{ dashboardSettingsSaving ? '保存中…' : '保存首页设置' }}</button><span v-if="dashboardSettingsMessage" role="status">{{ dashboardSettingsMessage }}</span><span v-if="dashboardSettingsError" role="alert">{{ dashboardSettingsError }}</span></div></div><p class="preference-separation-note">别名、图标、备注和顺序保存在 NodeDance SQLite 中。容器运行状态、健康状态和端口始终读取 Docker Engine。</p></section>
+    <ImagesPanel v-if="activeSection === 'images'" :key="node.nodeId" :node-id="node.nodeId"/><ComposeProjects v-if="activeSection === 'compose'" :key="node.nodeId" :node-id="node.nodeId"/><section v-if="activeSection === 'rebuild'" class="section-panel container-rebuild-page" :aria-label="t('m.e5634738490a')" data-testid="container-rebuild-page"><header class="section-toolbar"><div><span class="eyebrow">{{ t('label.08671c7919d1') }}</span><h2>{{ t('m.e5634738490a') }}</h2></div></header><p class="rebuild-safety-note">{{ t('m.acc2b82becc5') }}</p><p v-if="!rebuildCandidates.length" class="docker-empty">{{ t('m.59042e079f41') }}</p><template v-else><label class="rebuild-container-picker">{{ t('m.4210fc8f913a') }}<select v-model="selectedRebuildContainerID"><option v-for="record in rebuildCandidates" :key="record.container.id" :value="record.container.id">{{ containerTitle(record) }} · {{ record.container.id.slice(0, 12) }}</option></select></label><ContainerRebuildWizard v-if="selectedRebuildContainer" :node-id="node.nodeId" :container="selectedRebuildContainer.container" :stale="!canOperate(selectedRebuildContainer)" :tasks="tasks"/></template></section><NodeFiles v-if="activeSection === 'files'" :key="node.nodeId" :node-id="node.nodeId" :node-name="node.displayName"/>
+    <section v-if="activeSection === 'history'" class="section-panel" :aria-label="t('m.792a0100ee53')"><div class="section-toolbar"><div><span class="eyebrow">{{ t('label.8f7889f6a879') }}</span><h2>{{ t('m.fdc402785198') }}{{ nodeTitle }}</h2></div><div class="history-controls"><label>{{ t('m.ae72b532f4b8') }}<select v-model="historyRange"><option value="6h">{{ t('m.320e9ce290e8') }}</option><option value="24h">{{ t('m.ab2c18802e55') }}</option><option value="7d">{{ t('m.2b39b90c0558') }}</option><option value="30d">{{ t('m.c5f1c28c0d5f') }}</option><option value="1y">{{ t('m.80c3d880f104') }}</option></select></label><button class="container-action" type="button" :disabled="historyLoading" @click="void loadHistory()">{{ t('m.bcd6771e08ec') }}</button></div></div><HistoricalMetrics :history="historyView" :loading="historyLoading" :error="historyError" :node-online="online"/><p class="retention-note">{{ t('m.b3b9fb911d3a') }}</p></section>
+    <section v-if="activeSection === 'events'" class="section-panel" :aria-label="t('m.5661bd931598')" data-testid="node-event-history"><header class="section-toolbar"><div><span class="eyebrow">RECENT OPERATIONS</span><h2>{{ t('m.7d2e3cfc51fb') }}{{ nodeTitle }}</h2></div><button class="container-action" type="button" @click="emit('refreshTasks', node.nodeId)">{{ t('m.aee887434131') }}</button></header><p class="event-source-note">{{ t('m.30a9a37d5d32') }}</p><p v-if="selectedTasks.length === 0" class="docker-empty">{{ t('m.a9d063f3f3a9') }}</p><article v-for="task in selectedTasks" :key="task.taskId" class="event-card" :data-status="task.status"><div><strong>{{ task.action }} · {{ task.targetId.slice(0, 12) }}</strong><span class="container-task-status" :data-status="task.status">{{ taskStatusText(task) }}</span><time :datetime="task.createdAt">{{ new Date(task.createdAt).toLocaleString(locale) }}</time></div><button class="container-action" type="button" @click="toggleTaskAudit(task)">{{ taskAuditVisible[task.taskId] ? t('m.54e74c1e7504') : t('m.97f395dec8ce') }}</button><p v-if="taskAuditErrors[task.taskId]" class="container-task-error" role="alert">{{ display(taskAuditErrors[task.taskId]) }}</p><ol v-if="taskAuditVisible[task.taskId]" class="container-task-audit"><li v-if="taskAuditLoading[task.taskId]">{{ t('m.cf62890bdb61') }}</li><li v-for="event in (taskAuditViews[task.taskId] ?? [])" :key="event.id">{{ event.event }} · {{ event.fromStatus || t('m.d2bb025a2e51') }} → {{ event.toStatus || t('m.fb7e71452c04') }} · {{ new Date(event.occurredAt).toLocaleString(locale) }}</li></ol></article></section>
+    <section v-if="activeSection === 'settings'" class="section-panel node-settings-panel" :aria-label="t('m.0a09fda5e2a6')" data-testid="node-settings"><header class="section-toolbar"><div><span class="eyebrow">{{ t('label.26ae0bd221f2') }}</span><h2>{{ t('m.1b8b4303f8ba') }}{{ nodeTitle }}</h2></div></header><div class="node-settings-status"><div><span>{{ t('m.f5514ad14eaa') }}</span><strong>{{ pending ? t('m.a890b3be09aa') : online ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c') }}</strong></div><div><span>Docker Engine</span><strong>{{ inventory ? dockerAvailabilityText(inventory) : t('m.4d8c1c5b4283') }}</strong></div><div><span>{{ t('m.e31132b9de5a') }}</span><strong>{{ node.agentVersion || t('m.4d8c1c5b4283') }}</strong></div><div><span>{{ t('m.bf04f29ea311') }}</span><strong>{{ node.nodeId }}</strong></div></div><PreferenceEditor :preference="nodePreferenceForEditor()" :title="t('m.b8d1ded2a785', {'0': (node.displayName)})" @saved="acceptPreference"/><div class="dashboard-settings-editor"><h3>{{ t('m.f917a66dfc4f') }}</h3><div class="dashboard-settings-grid"><label>{{ t('m.b91569c6e33a') }}<select v-model="viewMode"><option value="monitor">{{ t('m.fdc390061698') }}</option><option value="manage">{{ t('m.bb6d995724f4') }}</option></select></label><label>{{ t('m.65cd544c6486') }}<select v-model="nodeGroupBy"><option value="status">{{ t('m.b8f945ea49ff') }}</option><option value="group">{{ t('m.c08b046b5470') }}</option><option value="none">{{ t('m.fcd40ee3f05a') }}</option></select></label><label>{{ t('m.dd74dd92d820') }}<select v-model="nodeSortBy"><option value="custom">{{ t('m.0f59d3742e06') }}</option><option value="name">{{ t('m.a98585871c53') }}</option><option value="status">{{ t('m.b8f945ea49ff') }}</option></select></label><label>{{ t('m.f143cf3535b6') }}<select v-model="groupBy"><option value="node">{{ t('m.2410d860f093') }}</option><option value="compose">{{ t('m.5f67dd75b01f') }}</option><option value="state">{{ t('m.e46b0272bd64') }}</option><option value="none">{{ t('m.fcd40ee3f05a') }}</option></select></label><label>{{ t('m.30d908c60571') }}<select v-model="sortBy"><option value="custom">{{ t('m.0f59d3742e06') }}</option><option value="name">{{ t('m.a98585871c53') }}</option><option value="state">{{ t('m.e46b0272bd64') }}</option></select></label><label>{{ t('m.70006f6c5230') }}<input v-model.number="featuredLimit" type="number" min="1" max="20"></label></div><fieldset class="custom-fields"><legend>{{ t('m.25ebfb95e8d6') }}</legend><label v-for="field in customFieldOptions" :key="field.id"><input v-model="customFields" type="checkbox" :value="field.id">{{ field.label }}</label></fieldset><div class="settings-save"><button class="container-action" type="button" :disabled="dashboardSettingsSaving" @click="emit('saveSettings')">{{ dashboardSettingsSaving ? t('m.ff509c9ba052') : t('m.1d6a782c4ccc') }}</button><span v-if="dashboardSettingsMessage" role="status">{{ display(dashboardSettingsMessage) }}</span><span v-if="dashboardSettingsError" role="alert">{{ display(dashboardSettingsError) }}</span></div></div><p class="preference-separation-note">{{ t('m.02f03b13557b') }}</p></section>
     <NodeServiceProbes :key="node.nodeId" :node-id="node.nodeId" :node-name="node.displayName" :node-online="online"/><TerminalConsole v-if="activeTerminal" v-bind="activeTerminal" @close="activeTerminal = null"/>
   </section>
 </template>

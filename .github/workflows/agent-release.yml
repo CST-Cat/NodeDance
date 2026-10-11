@@ -6,24 +6,46 @@ on:
       - 'agent-v*'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release-agent:
-    runs-on: ubuntu-latest
+  prepare:
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v4
 
-      - name: Validate Agent release tag
+      - name: Validate Agent tag and bilingual release notes
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          [[ "$RELEASE_VERSION" =~ ^agent-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-            printf 'Invalid Agent release tag: %s\n' "$RELEASE_VERSION" >&2
-            exit 1
-          }
+          python3 scripts/release-notes.py render agent "$RELEASE_VERSION" --output /tmp/agent-release-notes.md
+          python3 -m unittest discover -s scripts/tests
+
+      - name: Upload reviewed release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-release-notes
+          path: /tmp/agent-release-notes.md
+          if-no-files-found: error
+          retention-days: 1
+
+  build:
+    name: Agent native ${{ matrix.arch }} build and tests
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -31,14 +53,62 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build Linux Agent artifacts
+      - name: Build and execute native Agent artifact
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
+          [[ "$(go env GOHOSTARCH)" == "$EXPECTED_ARCH" ]]
+          [[ "$(go env GOARCH)" == "$EXPECTED_ARCH" ]]
+          [[ "$(go env GOOS)" == linux ]]
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o dist/nodedance-agent-linux-amd64 ./cmd/nodedance-agent
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o dist/nodedance-agent-linux-arm64 ./cmd/nodedance-agent
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-agent-linux-${EXPECTED_ARCH}" ./cmd/nodedance-agent
+          [[ "$("dist/nodedance-agent-linux-${EXPECTED_ARCH}" --version)" == "NodeDance Agent ${RELEASE_VERSION}" ]]
+
+      - name: Run native root Agent and shared contract tests
+        run: |
+          set -euo pipefail
+          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" \
+            "$(command -v go)" test -count=1 ./internal/agent/... ./internal/protocol/... ./internal/i18n/... ./cmd/nodedance-agent/...
+
+      - name: Upload tested native Agent artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-linux-${{ matrix.arch }}
+          path: dist/nodedance-agent-linux-${{ matrix.arch }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    name: Publish verified Agent release
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Download native Agent artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: agent-linux-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download reviewed bilingual release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: agent-release-notes
+          path: release-inputs
+
+      - name: Package installer and generate checksums
+        run: |
+          set -euo pipefail
+          test -f dist/nodedance-agent-linux-amd64
+          test -f dist/nodedance-agent-linux-arm64
           cp scripts/install-agent.sh dist/install-agent.sh
           chmod 0755 dist/install-agent.sh dist/nodedance-agent-linux-amd64 dist/nodedance-agent-linux-arm64
           (cd dist && sha256sum nodedance-agent-linux-amd64 nodedance-agent-linux-arm64 > SHA256SUMS)
@@ -54,4 +124,6 @@ jobs:
             dist/nodedance-agent-linux-arm64 \
             dist/SHA256SUMS \
             --title "$RELEASE_VERSION" \
-            --generate-notes
+            --verify-tag \
+            --latest=false \
+            --notes-file release-inputs/agent-release-notes.md

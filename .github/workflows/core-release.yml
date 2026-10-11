@@ -1,0 +1,154 @@
+name: Core release
+
+on:
+  push:
+    tags:
+      - 'core-v*'
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Resolve published Agent and validate bilingual release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$RELEASE_REPOSITORY/releases?per_page=100" > /tmp/releases.json
+          python3 scripts/release-notes.py render core "$RELEASE_VERSION" --repository "$RELEASE_REPOSITORY" --releases /tmp/releases.json --output /tmp/core-release-notes.md
+          python3 -m unittest discover -s scripts/tests
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.10.1
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.3
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Build and verify shared Web assets once
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          make frontend
+          tar -C internal/core/webassets -czf /tmp/core-webassets.tar.gz dist
+
+      - name: Upload shared release inputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-release-inputs
+          path: |
+            /tmp/core-release-notes.md
+            /tmp/core-webassets.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  build:
+    name: Core native ${{ matrix.arch }} build and tests
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Download shared Web assets
+        uses: actions/download-artifact@v4
+        with:
+          name: core-release-inputs
+          path: release-inputs
+
+      - name: Restore shared Web assets
+        run: tar -C internal/core/webassets -xzf release-inputs/core-webassets.tar.gz
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build and execute native Core artifact
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          [[ "$(go env GOHOSTARCH)" == "$EXPECTED_ARCH" ]]
+          [[ "$(go env GOARCH)" == "$EXPECTED_ARCH" ]]
+          [[ "$(go env GOOS)" == linux ]]
+          mkdir -p dist
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-linux-${EXPECTED_ARCH}" ./cmd/nodedance
+          [[ "$("dist/nodedance-linux-${EXPECTED_ARCH}" --version)" == "NodeDance ${RELEASE_VERSION}" ]]
+
+      - name: Run native Go tests including root Agent integration
+        run: |
+          set -euo pipefail
+          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" \
+            "$(command -v go)" test -count=1 ./...
+
+      - name: Upload tested native Core artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-linux-${{ matrix.arch }}
+          path: dist/nodedance-linux-${{ matrix.arch }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    name: Publish verified Core release
+    needs: [prepare, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+
+      - name: Download native Core artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: core-linux-*
+          path: dist
+          merge-multiple: true
+
+      - name: Download reviewed bilingual release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: core-release-inputs
+          path: release-inputs
+
+      - name: Restore executable permissions and generate checksums
+        run: |
+          set -euo pipefail
+          test -f dist/nodedance-linux-amd64
+          test -f dist/nodedance-linux-arm64
+          chmod 0755 dist/nodedance-linux-amd64 dist/nodedance-linux-arm64
+          (cd dist && sha256sum nodedance-linux-amd64 nodedance-linux-arm64 > SHA256SUMS)
+
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_VERSION" dist/nodedance-linux-amd64 dist/nodedance-linux-arm64 dist/SHA256SUMS \
+            --title "$RELEASE_VERSION" --verify-tag --latest=true --notes-file release-inputs/core-release-notes.md

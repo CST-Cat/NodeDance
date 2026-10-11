@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { onBeforeUnmount, ref } from 'vue'
 import { composeApi } from '../compose-api'
 import type { ContainerTask } from '../api'
@@ -24,11 +25,11 @@ function validInput() {
 }
 
 function taskMessage(value: ContainerTask) {
-  if (value.status === 'succeeded') return 'Compose up -d 已完成，并通过 Docker Engine 核实容器状态。'
-  if (value.status === 'failed') return `创建失败：${value.result.code || '已确认失败'}`
-  if (value.status === 'unknown' || value.status === 'timed_out') return '创建结果待核实；请先刷新项目清单和 Docker 容器，不要重复提交。'
-  if (value.status === 'canceled') return '创建任务已取消，Agent 未确认部署结果。'
-  return `创建任务：${value.status}`
+  if (value.status === 'succeeded') return t('m.cffa1e3e2c3b')
+  if (value.status === 'failed') return t('m.8fd2915e75c4', {"0": (value.result.code || t('m.f50ce21ae910'))})
+  if (value.status === 'unknown' || value.status === 'timed_out') return t('m.0c4dcb0a3484')
+  if (value.status === 'canceled') return t('m.12632265c570')
+  return t('m.282f0fac39e8', {"0": (value.status)})
 }
 
 function poll(taskId: string) {
@@ -47,14 +48,14 @@ function poll(taskId: string) {
     } catch (reason) {
       if (disposed) return
       submitting.value = false
-      error.value = reason instanceof Error ? reason.message : '无法读取 Compose 创建任务状态。'
+      error.value = reason instanceof Error ? reason.message : t('m.bbf9a9b3593c')
     }
   }, 750)
 }
 
 async function createProject() {
   if (props.disabled || submitting.value || !validInput()) return
-  if (!window.confirm(`在节点 ${props.nodeId} 上为 Compose 项目“${name.value}”保存 compose.yaml 并执行 docker compose up -d？\n\nAgent 只会使用给定工作目录；已存在的 compose.yaml 不会被覆盖。`)) return
+  if (!window.confirm(t('m.0934bc7652a3', {"0": (props.nodeId), "1": (name.value)}))) return
   submitting.value = true
   error.value = ''
   message.value = ''
@@ -75,7 +76,7 @@ async function createProject() {
     }
   } catch (reason) {
     submitting.value = false
-    error.value = reason instanceof Error ? reason.message : '无法提交 Compose 创建任务。'
+    error.value = reason instanceof Error ? reason.message : t('m.748066b2afa5')
   }
 }
 
@@ -86,18 +87,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="compose-create-form" aria-label="创建 Compose 项目" data-testid="compose-create-form">
-    <header><div><span class="eyebrow">NEW PROJECT</span><h3>创建 Compose 项目</h3></div><span>真实执行 docker compose config 与 up -d</span></header>
-    <p class="compose-create-note">工作目录必须已存在于目标 Agent 主机。Agent 会拒绝符号链接目录和已有的 compose.yaml；配置校验通过后才会原子创建文件。</p>
+  <section class="compose-create-form" :aria-label="t('m.2798c23115cf')" data-testid="compose-create-form">
+    <header><div><span class="eyebrow">{{ t('label.7212dcc44ffd') }}</span><h3>{{ t('m.2798c23115cf') }}</h3></div><span>{{ t('m.0da9f2878ec4') }}</span></header>
+    <p class="compose-create-note">{{ t('m.872a816958dc') }}</p>
     <div class="compose-create-fields">
-      <label>项目名称<input v-model.trim="name" autocomplete="off" maxlength="63" placeholder="例如 web-stack" :disabled="submitting"></label>
-      <label>Agent 工作目录<input v-model.trim="workingDirectory" autocomplete="off" placeholder="/srv/web-stack" :disabled="submitting"></label>
+      <label>{{ t('m.867698fb7b0c') }}<input v-model.trim="name" autocomplete="off" maxlength="63" :placeholder="t('m.d1bcd8876f63')" :disabled="submitting"></label>
+      <label>{{ t('m.e9abe5532d97') }}<input v-model.trim="workingDirectory" autocomplete="off" placeholder="/srv/web-stack" :disabled="submitting"></label>
     </div>
     <label class="compose-create-yaml">Compose YAML<textarea v-model="content" spellcheck="false" placeholder="services:\n  app:\n    image: nginx:stable" :disabled="submitting" /></label>
     <div class="compose-create-actions">
-      <button class="container-action container-action-danger" type="button" :disabled="disabled || submitting || !validInput()" @click="void createProject()">{{ submitting ? '等待 Agent 部署…' : '创建并部署' }}</button>
-      <span v-if="message" role="status" :data-status="task?.status">{{ message }}</span>
-      <span v-if="error" role="alert">{{ error }}</span>
+      <button class="container-action container-action-danger" type="button" :disabled="disabled || submitting || !validInput()" @click="void createProject()">{{ submitting ? t('m.92199e4ba37e') : t('m.6db055dc4ece') }}</button>
+      <span v-if="message" role="status" :data-status="task?.status">{{ display(message) }}</span>
+      <span v-if="error" role="alert">{{ display(error) }}</span>
     </div>
   </section>
 </template>

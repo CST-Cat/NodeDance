@@ -72,10 +72,8 @@ type Welcome struct {
 }
 
 type Heartbeat struct {
-	// Capabilities reports the live capability set for the existing Agent
-	// connection. A nil value means the sender predates dynamic reporting;
-	// an empty array is an explicit report that no optional capabilities are
-	// currently available.
+	// Capabilities reports the live capability set. An empty array disables
+	// all optional capabilities; nil leaves the negotiated set unchanged.
 	Capabilities []string `json:"capabilities"`
 }
 

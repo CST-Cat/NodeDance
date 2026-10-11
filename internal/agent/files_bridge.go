@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/CST-Cat/NodeDance/internal/agent/transferbuffer"
 	"io"
 	"os"
 	"sync"
@@ -215,7 +216,9 @@ func (b *agentFileBridge) streamDownload(ctx context.Context, transfer *agentFil
 	defer b.removeTransfer(transfer.id)
 	defer transfer.download.Close()
 	hash := sha256.New()
-	buffer := make([]byte, protocol.MaxFileChunkBytes)
+	lease := transferbuffer.Acquire()
+	defer transferbuffer.Release(lease)
+	buffer := lease[:]
 	for {
 		n, readErr := transfer.download.Read(buffer)
 		if n > 0 {

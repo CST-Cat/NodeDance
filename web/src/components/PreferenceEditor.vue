@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { reactive, ref, watch } from 'vue'
 import { api, type DashboardPreference } from '../api'
 
@@ -21,9 +22,9 @@ async function save() {
     await api.saveNodePreference(next.nodeId, next)
     Object.assign(form, next)
     emit('saved', next)
-    notice.value = '显示偏好已保存。'
+    notice.value = t('m.2f1a6d364d44')
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '偏好保存失败。'
+    error.value = reason instanceof Error ? reason.message : t('m.4c4b8b19ae6a')
   } finally {
     saving.value = false
   }
@@ -32,42 +33,33 @@ async function save() {
 
 <template>
   <form class="preference-editor" @submit.prevent="save">
-    <header><strong>{{ title }}</strong><small>只影响 NodeDance 的展示，不会重命名 Docker 资源。</small></header>
-    <label>显示名称
-      <input v-model="form.alias" maxlength="128" placeholder="留空时使用真实名称">
+    <header><strong>{{ title }}</strong><small>{{ t('m.741981bd96aa') }}</small></header>
+    <label>{{ t('m.a98585871c53') }}<input v-model="form.alias" maxlength="128" :placeholder="t('m.0496871244c3')">
     </label>
-    <label>图标
-      <select v-model="form.icon">
-        <option value="">默认</option><option value="server">服务器</option><option value="globe">网站</option>
-        <option value="database">数据库</option><option value="shield">安全</option><option value="terminal">终端</option>
-        <option value="box">容器</option><option value="cloud">云</option><option value="folder">文件</option><option value="activity">监控</option>
+    <label>{{ t('m.0d720eeea264') }}<select v-model="form.icon">
+        <option value="">{{ t('m.844b8cc8dff7') }}</option><option value="server">{{ t('m.2388cbc6a486') }}</option><option value="globe">{{ t('m.fb8d739d08b9') }}</option>
+        <option value="database">{{ t('m.263200d7d529') }}</option><option value="shield">{{ t('m.afb63a620bdc') }}</option><option value="terminal">{{ t('m.e2a76ef1f12e') }}</option>
+        <option value="box">{{ t('m.6d23f04b2696') }}</option><option value="cloud">{{ t('m.32d42b97294a') }}</option><option value="folder">{{ t('m.39932f24fe11') }}</option><option value="activity">{{ t('m.fdc390061698') }}</option>
       </select>
     </label>
-    <label>备注
-      <textarea v-model="form.notes" maxlength="2048" rows="2" placeholder="可选说明"></textarea>
+    <label>{{ t('m.daede9881787') }}<textarea v-model="form.notes" maxlength="2048" rows="2" :placeholder="t('m.9ad5244a4b67')"></textarea>
     </label>
-    <label v-if="form.targetKind === 'node'">VPS 分组
-      <input v-model="form.group" maxlength="128" placeholder="未分组">
+    <label v-if="form.targetKind === 'node'">{{ t('m.889b28078e5d') }}<input v-model="form.group" maxlength="128" :placeholder="t('m.e86ea3f280d9')">
     </label>
-    <label v-if="form.targetKind === 'node'">SSH 主机
-      <input v-model="form.sshHost" maxlength="255" autocomplete="off" placeholder="主机名或 IP 地址">
+    <label v-if="form.targetKind === 'node'">{{ t('m.2290354d1f88') }}<input v-model="form.sshHost" maxlength="255" autocomplete="off" :placeholder="t('m.5f4aaae405f3')">
     </label>
-    <label v-if="form.targetKind === 'node'">SSH 端口
-      <input v-model.number="form.sshPort" type="number" min="1" max="65535" step="1" inputmode="numeric" required>
+    <label v-if="form.targetKind === 'node'">{{ t('m.1c22cc57aee8') }}<input v-model.number="form.sshPort" type="number" min="1" max="65535" step="1" inputmode="numeric" required>
     </label>
-    <label v-if="form.targetKind === 'node'">SSH 用户
-      <input v-model="form.sshUser" maxlength="64" autocomplete="off" placeholder="登录用户名">
+    <label v-if="form.targetKind === 'node'">{{ t('m.4249329ab914') }}<input v-model="form.sshUser" maxlength="64" autocomplete="off" :placeholder="t('m.c650b8295c49')">
     </label>
-    <small v-if="form.targetKind === 'node'" class="ssh-preference-note">SSH 信息保存在 Core SQLite 中，节点离线时仍可查看和复制。</small>
-    <label v-if="form.targetKind === 'node'">自定义顺序
-      <input v-model.number="form.sortOrder" type="number" min="-1000000" max="1000000" step="1" required>
+    <small v-if="form.targetKind === 'node'" class="ssh-preference-note">{{ t('m.a5d21b75a337') }}</small>
+    <label v-if="form.targetKind === 'node'">{{ t('m.0f59d3742e06') }}<input v-model.number="form.sortOrder" type="number" min="-1000000" max="1000000" step="1" required>
     </label>
-    <label>服务入口
-      <input v-model="form.serviceUrl" type="url" maxlength="2048" placeholder="https://service.example.com">
+    <label>{{ t('m.5d52d4478187') }}<input v-model="form.serviceUrl" type="url" maxlength="2048" placeholder="https://service.example.com">
     </label>
-    <label class="preference-checkbox"><input v-model="form.visible" type="checkbox"> 在首页显示</label>
-    <label class="preference-checkbox"><input v-model="form.pinned" type="checkbox"> 置顶</label>
-    <div class="preference-actions"><button type="submit" :disabled="saving">{{ saving ? '保存中…' : '保存偏好' }}</button><span v-if="notice" role="status">{{ notice }}</span><span v-if="error" role="alert">{{ error }}</span></div>
+    <label class="preference-checkbox"><input v-model="form.visible" type="checkbox">{{ t('m.0264c56e530a') }}</label>
+    <label class="preference-checkbox"><input v-model="form.pinned" type="checkbox">{{ t('m.173f88d28ebf') }}</label>
+    <div class="preference-actions"><button type="submit" :disabled="saving">{{ saving ? t('m.ff509c9ba052') : t('m.f96c9903175e') }}</button><span v-if="notice" role="status">{{ display(notice) }}</span><span v-if="error" role="alert">{{ display(error) }}</span></div>
   </form>
 </template>
 

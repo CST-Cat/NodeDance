@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -89,5 +90,15 @@ func TestAgentCommandsRequireRoot(t *testing.T) {
 				t.Fatalf("non-root CLI command %s was accepted: %v", command, err)
 			}
 		})
+	}
+}
+
+func TestChineseLifecycleHelp(t *testing.T) {
+	var output strings.Builder
+	if err := run(context.Background(), []string{"--lang", "zh-CN", "help"}, strings.NewReader(""), &output, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "仅向外连接") || !strings.Contains(output.String(), "--token-stdin") {
+		t.Fatal(output.String())
 	}
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { api, type AgentNode, type AlertChannel, type AlertDelivery, type AlertEvent, type AlertItem, type AlertRule, type AlertWindow } from '../api'
 
@@ -21,15 +22,15 @@ const editingChannel = ref('')
 const ruleForm = reactive({ name: '', kind: 'cpu' as AlertRule['kind'], nodeId: '', subjectId: '', severity: 'warning' as AlertRule['severity'], threshold: 90, durationSeconds: 300, cooldownSeconds: 300, expectedState: 'running', enabled: true, channelIds: [] as string[] })
 const channelForm = reactive({ name: '', kind: 'webhook' as AlertChannel['kind'], webhookUrl: '', messageTemplate: '', smtpHost: '', smtpPort: 587, smtpSecurityMode: 'starttls' as NonNullable<AlertChannel['config']['smtpSecurityMode']> | '', smtpFrom: '', smtpTo: '', smtpUsername: '', secret: '', enabled: true, revision: 0 })
 const windowForm = reactive({ kind: 'maintenance' as AlertWindow['kind'], scopeType: 'global' as AlertWindow['scopeType'], scopeId: '', startsAt: '', endsAt: '', reason: '' })
-const kindOptions: Array<{ value: AlertRule['kind']; label: string }> = [
-  { value: 'node_offline', label: '节点失联' }, { value: 'cpu', label: 'CPU 使用率' }, { value: 'memory', label: '内存使用率' },
-  { value: 'disk', label: '磁盘使用率' }, { value: 'docker_unavailable', label: 'Docker 不可用' },
-  { value: 'container_state', label: '容器状态' }, { value: 'probe_state', label: '服务探测状态' },
-]
+const kindOptions = computed<Array<{ value: AlertRule['kind']; label: string }>>(() => [
+  { value: 'node_offline', label: t('m.aaf5e5fef170') }, { value: 'cpu', label: t('m.1c82e5547854') }, { value: 'memory', label: t('m.ace212ad8fd3') },
+  { value: 'disk', label: t('m.eef857d05e0c') }, { value: 'docker_unavailable', label: t('m.d3e431f9d10b') },
+  { value: 'container_state', label: t('m.15e1d002ad08') }, { value: 'probe_state', label: t('m.c4134bc129e8') },
+])
 const needsThreshold = computed(() => ['cpu', 'memory', 'disk'].includes(ruleForm.kind))
 const needsSubject = computed(() => ['container_state', 'probe_state'].includes(ruleForm.kind))
 
-function message(reason: unknown) { return reason instanceof Error ? reason.message : '请求失败，请重试。' }
+function message(reason: unknown) { return reason instanceof Error ? reason.message : t('m.a472d51792cc') }
 function clearMessages() { error.value = ''; notice.value = '' }
 async function refresh() {
   loading.value = true; error.value = ''
@@ -46,15 +47,15 @@ async function refresh() {
   if (results[7].status === 'fulfilled') events.value = results[7].value.events
   loading.value = false
 }
-async function acknowledge(item: AlertItem) { clearMessages(); try { await api.acknowledgeAlert(item.id); notice.value = '告警已确认。'; await refresh() } catch (reason) { error.value = message(reason) } }
-async function silence(item: AlertItem) { clearMessages(); try { await api.silenceAlert(item.id, new Date(Date.now() + 60 * 60_000).toISOString(), '管理员静默 1 小时'); notice.value = '告警已静默 1 小时。'; await refresh() } catch (reason) { error.value = message(reason) } }
+async function acknowledge(item: AlertItem) { clearMessages(); try { await api.acknowledgeAlert(item.id); notice.value = t('m.cea97c0a7048'); await refresh() } catch (reason) { error.value = message(reason) } }
+async function silence(item: AlertItem) { clearMessages(); try { await api.silenceAlert(item.id, new Date(Date.now() + 60 * 60_000).toISOString(), t('m.8c345ca1ae04')); notice.value = t('m.2abe886a8b9e'); await refresh() } catch (reason) { error.value = message(reason) } }
 async function saveRule() {
   clearMessages(); saving.value = true
   try {
     const body = { name: ruleForm.name, kind: ruleForm.kind, nodeId: ruleForm.nodeId, subjectId: needsSubject.value ? ruleForm.subjectId : '', severity: ruleForm.severity,
       ...(needsThreshold.value ? { threshold: Number(ruleForm.threshold) } : {}), durationSeconds: Number(ruleForm.durationSeconds), cooldownSeconds: Number(ruleForm.cooldownSeconds),
       expectedState: needsSubject.value ? ruleForm.expectedState : '', channelIds: ruleForm.channelIds, enabled: ruleForm.enabled }
-    await api.createAlertRule(body); ruleForm.name = ''; ruleForm.subjectId = ''; notice.value = '告警规则已保存。'; await refresh()
+    await api.createAlertRule(body); ruleForm.name = ''; ruleForm.subjectId = ''; notice.value = t('m.43fed933b297'); await refresh()
   } catch (reason) { error.value = message(reason) } finally { saving.value = false }
 }
 function editChannel(channel: AlertChannel) {
@@ -65,7 +66,7 @@ function clearChannelForm() { editingChannel.value = ''; channelForm.name = ''; 
 async function saveChannel() {
   const smtpSecurityMode = channelForm.smtpSecurityMode
   if (channelForm.kind === 'smtp' && smtpSecurityMode !== 'starttls' && smtpSecurityMode !== 'implicit_tls') {
-    error.value = '请选择 STARTTLS 或隐式 TLS。旧配置需要先选择一种加密模式后才能保存。'
+    error.value = t('m.4beb86e21302')
     return
   }
   const smtpConfigMode = smtpSecurityMode === 'starttls' || smtpSecurityMode === 'implicit_tls' ? smtpSecurityMode : undefined
@@ -74,24 +75,25 @@ async function saveChannel() {
     const messageTemplate = channelForm.messageTemplate || undefined
     const config = channelForm.kind === 'webhook' ? { webhookUrl: channelForm.webhookUrl, ...(messageTemplate ? { messageTemplate } : {}) } : { smtpHost: channelForm.smtpHost, smtpPort: Number(channelForm.smtpPort), smtpSecurityMode: smtpConfigMode, smtpFrom: channelForm.smtpFrom, smtpTo: channelForm.smtpTo, smtpUsername: channelForm.smtpUsername, ...(messageTemplate ? { messageTemplate } : {}) }
     await api.saveAlertChannel({ name: channelForm.name, kind: channelForm.kind, config, secret: channelForm.secret || undefined, enabled: channelForm.enabled, ...(editingChannel.value ? { revision: channelForm.revision } : {}) }, editingChannel.value || undefined)
-    notice.value = '通知渠道已保存。'; clearChannelForm(); await refresh()
+    notice.value = t('m.628832ec4bdb'); clearChannelForm(); await refresh()
   } catch (reason) { error.value = message(reason) } finally { saving.value = false }
 }
-async function deleteChannel(channel: AlertChannel) { clearMessages(); try { await api.deleteAlertChannel(channel.id, channel.revision); notice.value = '通知渠道已删除。'; await refresh() } catch (reason) { error.value = message(reason) } }
-async function testChannel(channel: AlertChannel) { clearMessages(); try { await api.testAlertChannel(channel.id); notice.value = `已将 ${channel.name} 的测试消息加入投递队列。`; tab.value = 'deliveries'; await refresh() } catch (reason) { error.value = message(reason) } }
+async function deleteChannel(channel: AlertChannel) { clearMessages(); try { await api.deleteAlertChannel(channel.id, channel.revision); notice.value = t('m.ac4a5dec2790'); await refresh() } catch (reason) { error.value = message(reason) } }
+async function testChannel(channel: AlertChannel) { clearMessages(); try { await api.testAlertChannel(channel.id); notice.value = t('m.852b75a2577e', {"0": (channel.name)}); tab.value = 'deliveries'; await refresh() } catch (reason) { error.value = message(reason) } }
 async function saveWindow() {
   clearMessages(); saving.value = true
   try {
     const startsAt = windowForm.startsAt ? new Date(windowForm.startsAt).toISOString() : new Date().toISOString()
     const endsAt = windowForm.endsAt ? new Date(windowForm.endsAt).toISOString() : new Date(Date.now() + 60 * 60_000).toISOString()
     await api.createAlertWindow({ kind: windowForm.kind, scopeType: windowForm.scopeType, ...(windowForm.scopeType === 'global' ? {} : { scopeId: windowForm.scopeId }), startsAt, endsAt, reason: windowForm.reason })
-    notice.value = '静默或维护窗口已创建。'; windowForm.reason = ''; await refresh()
+    notice.value = t('m.1f561856659c'); windowForm.reason = ''; await refresh()
   } catch (reason) { error.value = message(reason) } finally { saving.value = false }
 }
-async function deleteWindow(window: AlertWindow) { try { await api.deleteAlertWindow(window.id); notice.value = '窗口已停用。'; await refresh() } catch (reason) { error.value = message(reason) } }
-async function deleteRule(rule: AlertRule) { try { await api.deleteAlertRule(rule.id, rule.revision); notice.value = '规则已删除。'; await refresh() } catch (reason) { error.value = message(reason) } }
-function when(value?: string) { if (!value) return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString() }
-function ruleLabel(kind: string) { return kindOptions.find((item) => item.value === kind)?.label ?? kind }
+async function deleteWindow(window: AlertWindow) { try { await api.deleteAlertWindow(window.id); notice.value = t('m.7e51b232bf64'); await refresh() } catch (reason) { error.value = message(reason) } }
+async function deleteRule(rule: AlertRule) { try { await api.deleteAlertRule(rule.id, rule.revision); notice.value = t('m.daa8c0f91450'); await refresh() } catch (reason) { error.value = message(reason) } }
+function when(value?: string) { if (!value) return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString(locale.value) }
+function deliveryLabel(status: string) {const labels: Record<string, string> = {retry: t('delivery.retry'), suppressed: t('delivery.suppressed'), pending: t('delivery.pending'), sending: t('delivery.sending'), sent: t('delivery.sent'), delivered: t('delivery.delivered'), retrying: t('delivery.retrying'), failed: t('delivery.failed'), queued: t('delivery.queued')}; return labels[status] ?? status}
+function ruleLabel(kind: string) { return kindOptions.value.find((item) => item.value === kind)?.label ?? kind }
 function activeList() { return tab.value === 'active' ? active.value : history.value }
 
 let refreshTimer: number | undefined
@@ -105,63 +107,63 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) window.clearInterval(ref
 <template>
   <section class="alerts-page">
     <header class="alerts-heading">
-      <div><span class="eyebrow">OPERATIONS / NOTIFICATIONS</span><h1>告警中心<span>.</span></h1><p>管理触发条件、通知渠道与恢复记录。</p></div>
-      <button type="button" class="alert-button subtle" :disabled="loading" @click="refresh">{{ loading ? '刷新中…' : '刷新数据' }}</button>
+      <div><span class="eyebrow">{{ t('label.74b98e3066ff') }}</span><h1>{{ t('m.1b92ed81c005') }}<span>.</span></h1><p>{{ t('m.30dc14a37a07') }}</p></div>
+      <button type="button" class="alert-button subtle" :disabled="loading" @click="refresh">{{ loading ? t('m.7f3c8312816f') : t('m.0468ee76ee3d') }}</button>
     </header>
-    <div v-if="error" class="alert-message danger" role="alert">{{ error }}</div>
-    <div v-if="notice" class="alert-message success" role="status">{{ notice }}</div>
-    <nav class="alert-tabs" aria-label="告警页面">
-      <button v-for="item in ([['active','活动告警'],['history','历史与事件'],['rules','告警规则'],['channels','通知渠道'],['windows','静默与维护'],['deliveries','投递记录']] as Array<[Tab,string]>)" :key="item[0]" type="button" :aria-current="tab === item[0] ? 'page' : undefined" @click="tab = item[0]">{{ item[1] }}<span v-if="item[0] === 'active' && active.length">{{ active.length }}</span></button>
+    <div v-if="error" class="alert-message danger" role="alert">{{ display(error) }}</div>
+    <div v-if="notice" class="alert-message success" role="status">{{ display(notice) }}</div>
+    <nav class="alert-tabs" :aria-label="t('m.6c08cfefefbc')">
+      <button v-for="item in ([['active',t('m.ee404f35c3ce')],['history',t('m.7fe7f1f0fb28')],['rules',t('m.7488ac33d3de')],['channels',t('m.b2354cebb5bc')],['windows',t('m.cb20b84d602a')],['deliveries',t('m.f0c5fa02c974')]] as Array<[Tab,string]>)" :key="item[0]" type="button" :aria-current="tab === item[0] ? 'page' : undefined" @click="tab = item[0]">{{ item[1] }}<span v-if="item[0] === 'active' && active.length">{{ active.length }}</span></button>
     </nav>
 
     <section v-if="tab === 'active' || tab === 'history'" class="alert-card">
-      <div class="section-title"><div><h2>{{ tab === 'active' ? '当前告警' : '已恢复告警' }}</h2><p>{{ tab === 'active' ? '失联节点会抑制其下级重复通知。' : '查看告警生命周期和确认记录。' }}</p></div></div>
+      <div class="section-title"><div><h2>{{ tab === 'active' ? t('m.e713ce880f38') : t('m.f49736f12f80') }}</h2><p>{{ tab === 'active' ? t('m.0fa70890a3d2') : t('m.9bb92d183ceb') }}</p></div></div>
       <div v-if="activeList().length" class="alert-list">
         <article v-for="item in activeList()" :key="item.id" class="alert-row" :data-severity="item.severity">
-          <div class="severity-mark" aria-hidden="true"></div><div class="alert-content"><div class="alert-title"><strong>{{ item.ruleName }}</strong><span class="pill" :class="item.status">{{ item.status === 'active' ? '活动中' : '已恢复' }}</span><span v-if="item.acknowledgedAt" class="pill acknowledged">已确认</span><span v-if="item.suppressionReason" class="pill suppressed">{{ item.suppressionReason === 'node_offline' ? '节点离线抑制' : '通知已抑制' }}</span></div>
-            <p>{{ item.message }}</p><small>{{ item.nodeName }} · {{ item.nodeId }} · 首次 {{ when(item.firstSeenAt) }}<template v-if="item.resolvedAt"> · 恢复 {{ when(item.resolvedAt) }}</template></small></div>
-          <div v-if="item.status === 'active'" class="row-actions"><button type="button" class="alert-button" :disabled="!!item.acknowledgedAt" @click="acknowledge(item)">确认</button><button type="button" class="alert-button subtle" @click="silence(item)">静默 1 小时</button></div>
+          <div class="severity-mark" aria-hidden="true"></div><div class="alert-content"><div class="alert-title"><strong>{{ item.ruleName }}</strong><span class="pill" :class="item.status">{{ item.status === 'active' ? t('m.3c01089ea0e4') : t('m.3617f737f437') }}</span><span v-if="item.acknowledgedAt" class="pill acknowledged">{{ t('m.d56a511f498f') }}</span><span v-if="item.suppressionReason" class="pill suppressed">{{ item.suppressionReason === 'node_offline' ? t('m.c46a19c8d6ca') : t('m.5329772f4d2b') }}</span></div>
+            <p>{{ display(item.message) }}</p><small>{{ item.nodeName }} · {{ item.nodeId }}{{ t('m.a2f8212e41a4') }}{{ when(item.firstSeenAt) }}<template v-if="item.resolvedAt">{{ t('m.daf142e39346') }}{{ when(item.resolvedAt) }}</template></small></div>
+          <div v-if="item.status === 'active'" class="row-actions"><button type="button" class="alert-button" :disabled="!!item.acknowledgedAt" @click="acknowledge(item)">{{ t('m.36f33adaf094') }}</button><button type="button" class="alert-button subtle" @click="silence(item)">{{ t('m.d69600baef4b') }}</button></div>
         </article>
-      </div><div v-else class="empty-state">{{ tab === 'active' ? '当前没有活动告警。' : '还没有已恢复的告警。' }}</div>
-      <div v-if="tab === 'history'" class="event-list"><h3>最近事件</h3><article v-for="event in events" :key="event.id"><span>{{ event.kind }}</span><span>{{ event.message }}</span><time>{{ when(event.occurredAt) }}</time></article><p v-if="!events.length" class="empty-state">暂无告警事件。</p></div>
+      </div><div v-else class="empty-state">{{ tab === 'active' ? t('m.b2f037729dad') : t('m.8eac1ef8ee32') }}</div>
+      <div v-if="tab === 'history'" class="event-list"><h3>{{ t('m.512c5669c853') }}</h3><article v-for="event in events" :key="event.id"><span>{{ event.kind }}</span><span>{{ display(event.message) }}</span><time>{{ when(event.occurredAt) }}</time></article><p v-if="!events.length" class="empty-state">{{ t('m.d3ae2b8f4adf') }}</p></div>
     </section>
 
     <section v-else-if="tab === 'rules'" class="alert-grid">
-      <div class="alert-card"><div class="section-title"><div><h2>现有规则</h2><p>节点首次进入管理后自动建立 CPU、内存、磁盘 90% / 5 分钟默认规则。</p></div></div>
-        <div class="table-wrap"><table><thead><tr><th>规则</th><th>节点</th><th>条件</th><th>持续</th><th>状态</th><th></th></tr></thead><tbody><tr v-for="rule in rules" :key="rule.id"><td>{{ rule.name }}</td><td>{{ nodes.find(n => n.nodeId === rule.nodeId)?.displayName ?? rule.nodeId }}</td><td>{{ ruleLabel(rule.kind) }}<template v-if="rule.threshold !== undefined"> &gt; {{ rule.threshold }}%</template><template v-if="rule.expectedState"> ≠ {{ rule.expectedState }}</template></td><td>{{ rule.durationSeconds }} 秒</td><td>{{ rule.enabled ? '已启用' : '已停用' }}</td><td><button type="button" class="text-button danger-text" @click="deleteRule(rule)">删除</button></td></tr></tbody></table></div>
-        <p v-if="!rules.length" class="empty-state">暂无规则。</p>
+      <div class="alert-card"><div class="section-title"><div><h2>{{ t('m.52ad1003d627') }}</h2><p>{{ t('m.b609ad7cd505') }}</p></div></div>
+        <div class="table-wrap"><table><thead><tr><th>{{ t('m.1123245d1bed') }}</th><th>{{ t('m.2410d860f093') }}</th><th>{{ t('m.16bb1d2b098c') }}</th><th>{{ t('m.1882ae19b6a2') }}</th><th>{{ t('m.6320b4a8722a') }}</th><th></th></tr></thead><tbody><tr v-for="rule in rules" :key="rule.id"><td>{{ rule.name }}</td><td>{{ nodes.find(n => n.nodeId === rule.nodeId)?.displayName ?? rule.nodeId }}</td><td>{{ ruleLabel(rule.kind) }}<template v-if="rule.threshold !== undefined"> &gt; {{ rule.threshold }}%</template><template v-if="rule.expectedState"> ≠ {{ rule.expectedState }}</template></td><td>{{ rule.durationSeconds }}{{ t('m.9dcdc2b289b9') }}</td><td>{{ rule.enabled ? t('m.dfb802238b38') : t('m.a8c3698b5b8c') }}</td><td><button type="button" class="text-button danger-text" @click="deleteRule(rule)">{{ t('m.2f9daa828907') }}</button></td></tr></tbody></table></div>
+        <p v-if="!rules.length" class="empty-state">{{ t('m.915b0451461e') }}</p>
       </div>
-      <form class="alert-card form-card" @submit.prevent="saveRule"><div class="section-title"><div><h2>新增规则</h2><p>每条规则只绑定一个节点和可选通知渠道。</p></div></div>
-        <label>规则名称<input v-model="ruleForm.name" required maxlength="80" placeholder="例如：生产 Web 服务异常" /></label>
-        <label>节点<select v-model="ruleForm.nodeId" required><option v-for="node in nodes" :key="node.nodeId" :value="node.nodeId">{{ node.displayName }} · {{ node.status }}</option></select></label>
-        <label>条件<select v-model="ruleForm.kind"><option v-for="item in kindOptions" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
-        <label v-if="needsThreshold">阈值 (%)<input v-model.number="ruleForm.threshold" type="number" min="0" max="100" step="0.1" required /></label>
-        <label v-if="needsSubject">容器或探测 ID<input v-model="ruleForm.subjectId" required placeholder="UUID 或容器 ID" /></label>
-        <label v-if="needsSubject">期望状态<select v-model="ruleForm.expectedState"><option value="running">运行中</option><option value="stopped">已停止</option><option value="healthy">健康</option><option value="unhealthy">不健康</option></select></label>
-        <div class="inline-fields"><label>持续秒数<input v-model.number="ruleForm.durationSeconds" type="number" min="0" max="86400" /></label><label>冷却秒数<input v-model.number="ruleForm.cooldownSeconds" type="number" min="0" max="86400" /></label></div>
-        <label>级别<select v-model="ruleForm.severity"><option value="info">提示</option><option value="warning">警告</option><option value="critical">严重</option></select></label>
-        <fieldset><legend>通知渠道（留空时使用全部启用渠道）</legend><label v-for="channel in channels" :key="channel.id" class="check-row"><input v-model="ruleForm.channelIds" type="checkbox" :value="channel.id" />{{ channel.name }}</label><span v-if="!channels.length" class="hint">尚未配置通知渠道。</span></fieldset>
-        <label class="check-row"><input v-model="ruleForm.enabled" type="checkbox" />立即启用</label><button type="submit" class="alert-button primary" :disabled="saving || !nodes.length">{{ saving ? '保存中…' : '创建规则' }}</button>
+      <form class="alert-card form-card" @submit.prevent="saveRule"><div class="section-title"><div><h2>{{ t('m.83009fcfe6c1') }}</h2><p>{{ t('m.b8fa37ab5ac0') }}</p></div></div>
+        <label>{{ t('m.18dba51b47c8') }}<input v-model="ruleForm.name" required maxlength="80" :placeholder="t('m.fb8ad27501de')" /></label>
+        <label>{{ t('m.2410d860f093') }}<select v-model="ruleForm.nodeId" required><option v-for="node in nodes" :key="node.nodeId" :value="node.nodeId">{{ node.displayName }} · {{ node.status }}</option></select></label>
+        <label>{{ t('m.16bb1d2b098c') }}<select v-model="ruleForm.kind"><option v-for="item in kindOptions" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
+        <label v-if="needsThreshold">{{ t('m.26a4ac708409') }}<input v-model.number="ruleForm.threshold" type="number" min="0" max="100" step="0.1" required /></label>
+        <label v-if="needsSubject">{{ t('m.ad293c799482') }}<input v-model="ruleForm.subjectId" required :placeholder="t('m.8a90cd8dc652')" /></label>
+        <label v-if="needsSubject">{{ t('m.b3d94c7eff6f') }}<select v-model="ruleForm.expectedState"><option value="running">{{ t('m.1f0eb99b7ed0') }}</option><option value="stopped">{{ t('m.f006455e3baf') }}</option><option value="healthy">{{ t('m.aa18b6dcd893') }}</option><option value="unhealthy">{{ t('m.395a7bf80b24') }}</option></select></label>
+        <div class="inline-fields"><label>{{ t('m.f67bd602eaa1') }}<input v-model.number="ruleForm.durationSeconds" type="number" min="0" max="86400" /></label><label>{{ t('m.c90ed7f53ce4') }}<input v-model.number="ruleForm.cooldownSeconds" type="number" min="0" max="86400" /></label></div>
+        <label>{{ t('m.3d9d02e83d39') }}<select v-model="ruleForm.severity"><option value="info">{{ t('m.f56c6c82203b') }}</option><option value="warning">{{ t('m.a8b7a4480407') }}</option><option value="critical">{{ t('m.73eb0e14e307') }}</option></select></label>
+        <fieldset><legend>{{ t('m.1bcd7265cd39') }}</legend><label v-for="channel in channels" :key="channel.id" class="check-row"><input v-model="ruleForm.channelIds" type="checkbox" :value="channel.id" />{{ channel.name }}</label><span v-if="!channels.length" class="hint">{{ t('m.1c5c0b7d73e4') }}</span></fieldset>
+        <label class="check-row"><input v-model="ruleForm.enabled" type="checkbox" />{{ t('m.e45a3f15b735') }}</label><button type="submit" class="alert-button primary" :disabled="saving || !nodes.length">{{ saving ? t('m.ff509c9ba052') : t('m.63faeddb2a46') }}</button>
       </form>
     </section>
 
     <section v-else-if="tab === 'channels'" class="alert-grid">
-      <div class="alert-card"><div class="section-title"><div><h2>通知渠道</h2><p>凭据只写入加密存储，页面不会回显密钥。</p></div></div><div class="channel-list"><article v-for="channel in channels" :key="channel.id"><div><strong>{{ channel.name }}</strong><span class="pill">{{ channel.kind === 'webhook' ? 'Webhook' : 'SMTP' }}</span><small>{{ channel.kind === 'webhook' ? channel.config.webhookUrl : `${channel.config.smtpHost}:${channel.config.smtpPort} → ${channel.config.smtpTo}` }}</small></div><div class="row-actions"><button type="button" class="alert-button" @click="testChannel(channel)">测试发送</button><button type="button" class="alert-button subtle" @click="editChannel(channel)">编辑</button><button type="button" class="text-button danger-text" @click="deleteChannel(channel)">删除</button></div></article><p v-if="!channels.length" class="empty-state">尚未配置渠道。</p></div></div>
-      <form class="alert-card form-card" @submit.prevent="saveChannel"><div class="section-title"><div><h2>{{ editingChannel ? '编辑通知渠道' : '添加通知渠道' }}</h2><p>Webhook 支持受控的 HTTP 接收器；远程 SMTP 必须使用加密连接。</p></div></div>
-        <label>名称<input v-model="channelForm.name" required maxlength="80" placeholder="运维通知" /></label><label>类型<select v-model="channelForm.kind"><option value="webhook">Webhook</option><option value="smtp">SMTP 邮件</option></select></label>
-        <template v-if="channelForm.kind === 'webhook'"><label>Webhook URL<input v-model="channelForm.webhookUrl" type="url" required placeholder="https://hooks.example/…" /></label><small class="hint">仅管理员指定的 URL 会被请求，重定向不会自动跟随。</small></template>
-        <template v-else><label>SMTP 主机<input v-model="channelForm.smtpHost" required placeholder="smtp.example.com" /></label><label>端口<input v-model.number="channelForm.smtpPort" type="number" min="1" max="65535" required /></label><label>连接加密<select v-model="channelForm.smtpSecurityMode"><option value="" disabled>请选择加密方式</option><option value="starttls">STARTTLS（常用 587）</option><option value="implicit_tls">隐式 TLS（常用 465）</option></select></label><small class="hint">必须使用 STARTTLS 或隐式 TLS；未配置加密模式的旧 SMTP 渠道不会发送，重新保存前需选择一种加密方式。</small><label>发件人<input v-model="channelForm.smtpFrom" type="email" required /></label><label>收件人<input v-model="channelForm.smtpTo" type="email" required /></label><label>用户名（可选）<input v-model="channelForm.smtpUsername" autocomplete="off" /></label><label>密码 / App Password<input v-model="channelForm.secret" type="password" autocomplete="new-password" :placeholder="editingChannel && channels.find(x => x.id === editingChannel)?.hasSecret ? '留空以保留已有密码' : '留空表示无需认证'" /></label></template>
-        <label>通知消息模板（可选）<textarea v-model="channelForm.messageTemplate" maxlength="2048" rows="4" spellcheck="false" placeholder="&#123;&#123;severity&#125;&#125; · &#123;&#123;ruleName&#125;&#125;：&#123;&#123;message&#125;&#125;"></textarea></label><small class="hint">留空使用默认消息。可用字段：&#123;&#123;event&#125;&#125;、&#123;&#123;alertId&#125;&#125;、&#123;&#123;ruleName&#125;&#125;、&#123;&#123;nodeName&#125;&#125;、&#123;&#123;nodeId&#125;&#125;、&#123;&#123;subjectId&#125;&#125;、&#123;&#123;severity&#125;&#125;、&#123;&#123;message&#125;&#125;、&#123;&#123;occurredAt&#125;&#125;。只支持字段替换，最多 2048 字节。</small>
-        <label class="check-row"><input v-model="channelForm.enabled" type="checkbox" />启用渠道</label><div class="row-actions"><button type="submit" class="alert-button primary" :disabled="saving">{{ saving ? '保存中…' : '保存渠道' }}</button><button v-if="editingChannel" type="button" class="alert-button subtle" @click="clearChannelForm">取消编辑</button></div>
+      <div class="alert-card"><div class="section-title"><div><h2>{{ t('m.b2354cebb5bc') }}</h2><p>{{ t('m.3cb6afac5598') }}</p></div></div><div class="channel-list"><article v-for="channel in channels" :key="channel.id"><div><strong>{{ channel.name }}</strong><span class="pill">{{ channel.kind === 'webhook' ? 'Webhook' : 'SMTP' }}</span><small>{{ channel.kind === 'webhook' ? channel.config.webhookUrl : `${channel.config.smtpHost}:${channel.config.smtpPort} → ${channel.config.smtpTo}` }}</small></div><div class="row-actions"><button type="button" class="alert-button" @click="testChannel(channel)">{{ t('m.e4263450f9ec') }}</button><button type="button" class="alert-button subtle" @click="editChannel(channel)">{{ t('m.051836569928') }}</button><button type="button" class="text-button danger-text" @click="deleteChannel(channel)">{{ t('m.2f9daa828907') }}</button></div></article><p v-if="!channels.length" class="empty-state">{{ t('m.6b2cde6d4a15') }}</p></div></div>
+      <form class="alert-card form-card" @submit.prevent="saveChannel"><div class="section-title"><div><h2>{{ editingChannel ? t('m.9536f6b3a7da') : t('m.edb55e6632ce') }}</h2><p>{{ t('m.7582c5883aa1') }}</p></div></div>
+        <label>{{ t('m.d44e9b3d3b31') }}<input v-model="channelForm.name" required maxlength="80" :placeholder="t('m.ab0113166ed7')" /></label><label>{{ t('m.ba40014ff496') }}<select v-model="channelForm.kind"><option value="webhook">Webhook</option><option value="smtp">{{ t('m.06344b933760') }}</option></select></label>
+        <template v-if="channelForm.kind === 'webhook'"><label>{{ t('label.84805a7574a8') }}<input v-model="channelForm.webhookUrl" type="url" required placeholder="https://hooks.example/…" /></label><small class="hint">{{ t('m.ce3a64e47c4d') }}</small></template>
+        <template v-else><label>{{ t('m.5344a59d11c5') }}<input v-model="channelForm.smtpHost" required placeholder="smtp.example.com" /></label><label>{{ t('m.e71ac32b544b') }}<input v-model.number="channelForm.smtpPort" type="number" min="1" max="65535" required /></label><label>{{ t('m.475ebf9f8ba3') }}<select v-model="channelForm.smtpSecurityMode"><option value="" disabled>{{ t('m.45fa6e264d64') }}</option><option value="starttls">{{ t('m.5b097c6cccbc') }}</option><option value="implicit_tls">{{ t('m.906148fea2fc') }}</option></select></label><small class="hint">{{ t('m.c373a9cc1577') }}</small><label>{{ t('m.bae32961a3b5') }}<input v-model="channelForm.smtpFrom" type="email" required /></label><label>{{ t('m.c237b665a6d8') }}<input v-model="channelForm.smtpTo" type="email" required /></label><label>{{ t('m.e67fea90bde6') }}<input v-model="channelForm.smtpUsername" autocomplete="off" /></label><label>{{ t('m.82170ccaa6b5') }}<input v-model="channelForm.secret" type="password" autocomplete="new-password" :placeholder="editingChannel && channels.find(x => x.id === editingChannel)?.hasSecret ? t('m.0c5bcbe51a9f') : t('m.61a7dfb3a2c4')" /></label></template>
+        <label>{{ t('m.fa3b2035a83a') }}<textarea v-model="channelForm.messageTemplate" maxlength="2048" rows="4" spellcheck="false" placeholder="&#123;&#123;severity&#125;&#125; · &#123;&#123;ruleName&#125;&#125;：&#123;&#123;message&#125;&#125;"></textarea></label><small class="hint">{{ t('m.aaedf01e6fae') }}</small>
+        <label class="check-row"><input v-model="channelForm.enabled" type="checkbox" />{{ t('m.848250ce08f9') }}</label><div class="row-actions"><button type="submit" class="alert-button primary" :disabled="saving">{{ saving ? t('m.ff509c9ba052') : t('m.5fb0d9558110') }}</button><button v-if="editingChannel" type="button" class="alert-button subtle" @click="clearChannelForm">{{ t('m.4b29ce8e4093') }}</button></div>
       </form>
     </section>
 
     <section v-else-if="tab === 'windows'" class="alert-grid">
-      <div class="alert-card"><div class="section-title"><div><h2>已安排窗口</h2><p>静默与维护窗口会保留告警状态，只抑制外部通知。</p></div></div><div class="window-list"><article v-for="window in windows" :key="window.id"><div><strong>{{ window.kind === 'maintenance' ? '维护窗口' : '静默窗口' }} · {{ window.scopeType === 'global' ? '全局' : window.scopeType === 'node' ? '节点' : '规则' }}</strong><small>{{ when(window.startsAt) }} — {{ when(window.endsAt) }}</small><p>{{ window.reason }}</p></div><button type="button" class="text-button danger-text" @click="deleteWindow(window)">停用</button></article><p v-if="!windows.length" class="empty-state">没有计划中的窗口。</p></div></div>
-      <form class="alert-card form-card" @submit.prevent="saveWindow"><div class="section-title"><div><h2>安排窗口</h2><p>时间按本地填写，提交时转换为 UTC。</p></div></div><label>类型<select v-model="windowForm.kind"><option value="maintenance">维护</option><option value="silence">静默</option></select></label><label>范围<select v-model="windowForm.scopeType"><option value="global">全局</option><option value="node">单节点</option><option value="rule">单规则</option></select></label><label v-if="windowForm.scopeType !== 'global'">范围 ID<input v-model="windowForm.scopeId" required placeholder="UUID" /></label><div class="inline-fields"><label>开始<input v-model="windowForm.startsAt" type="datetime-local" /></label><label>结束<input v-model="windowForm.endsAt" type="datetime-local" /></label></div><label>原因<input v-model="windowForm.reason" required maxlength="500" placeholder="计划维护" /></label><button type="submit" class="alert-button primary" :disabled="saving">创建窗口</button></form>
+      <div class="alert-card"><div class="section-title"><div><h2>{{ t('m.5b44b4cbe8e7') }}</h2><p>{{ t('m.9ba72a13180d') }}</p></div></div><div class="window-list"><article v-for="window in windows" :key="window.id"><div><strong>{{ window.kind === 'maintenance' ? t('m.1e9fa64d9d1e') : t('m.2edd4433070c') }} · {{ window.scopeType === 'global' ? t('m.63d6b47116de') : window.scopeType === 'node' ? t('m.2410d860f093') : t('m.1123245d1bed') }}</strong><small>{{ when(window.startsAt) }} — {{ when(window.endsAt) }}</small><p>{{ window.reason }}</p></div><button type="button" class="text-button danger-text" @click="deleteWindow(window)">{{ t('m.4e6fd0e28c55') }}</button></article><p v-if="!windows.length" class="empty-state">{{ t('m.20975dbddcfd') }}</p></div></div>
+      <form class="alert-card form-card" @submit.prevent="saveWindow"><div class="section-title"><div><h2>{{ t('m.ad7d42133c82') }}</h2><p>{{ t('m.e4926094a3a4') }}</p></div></div><label>{{ t('m.ba40014ff496') }}<select v-model="windowForm.kind"><option value="maintenance">{{ t('m.21138f1b0642') }}</option><option value="silence">{{ t('m.bf436f2fa459') }}</option></select></label><label>{{ t('m.ae72b532f4b8') }}<select v-model="windowForm.scopeType"><option value="global">{{ t('m.63d6b47116de') }}</option><option value="node">{{ t('m.f8c3f7bee9ee') }}</option><option value="rule">{{ t('m.dff9fdf5372b') }}</option></select></label><label v-if="windowForm.scopeType !== 'global'">{{ t('m.67cdf2db35e4') }}<input v-model="windowForm.scopeId" required placeholder="UUID" /></label><div class="inline-fields"><label>{{ t('m.d2bb025a2e51') }}<input v-model="windowForm.startsAt" type="datetime-local" /></label><label>{{ t('m.c7b24e7997e9') }}<input v-model="windowForm.endsAt" type="datetime-local" /></label></div><label>{{ t('m.f029d9cb4a76') }}<input v-model="windowForm.reason" required maxlength="500" :placeholder="t('m.440715526b90')" /></label><button type="submit" class="alert-button primary" :disabled="saving">{{ t('m.2cb77284fedd') }}</button></form>
     </section>
 
-    <section v-else class="alert-card"><div class="section-title"><div><h2>通知投递历史</h2><p>失败投递会进行最多三次有界尝试；重启后队列状态可恢复。</p></div></div><div class="table-wrap"><table><thead><tr><th>渠道</th><th>类别</th><th>状态</th><th>尝试</th><th>HTTP</th><th>时间</th><th>错误</th></tr></thead><tbody><tr v-for="delivery in deliveries" :key="delivery.id"><td>{{ delivery.channelName }}</td><td>{{ delivery.testSend ? '测试' : delivery.kind.toUpperCase() }}</td><td><span class="pill" :class="delivery.status">{{ delivery.status }}</span></td><td>{{ delivery.attempts }} / {{ delivery.maxAttempts }}</td><td>{{ delivery.httpStatus ?? '—' }}</td><td>{{ when(delivery.deliveredAt ?? delivery.createdAt) }}</td><td>{{ delivery.lastError || '—' }}</td></tr></tbody></table></div><p v-if="!deliveries.length" class="empty-state">暂无投递记录。</p></section>
+    <section v-else class="alert-card"><div class="section-title"><div><h2>{{ t('m.0d09685cc503') }}</h2><p>{{ t('m.da3e796d7d49') }}</p></div></div><div class="table-wrap"><table><thead><tr><th>{{ t('m.c35ffb529d5d') }}</th><th>{{ t('m.0d12cbd6562b') }}</th><th>{{ t('m.6320b4a8722a') }}</th><th>{{ t('m.58a823852f8a') }}</th><th>HTTP</th><th>{{ t('m.8b6ff498515b') }}</th><th>{{ t('m.0bc1fb72ae1b') }}</th></tr></thead><tbody><tr v-for="delivery in deliveries" :key="delivery.id"><td>{{ delivery.channelName }}</td><td>{{ delivery.testSend ? t('m.6aa8f49cc992') : delivery.kind.toUpperCase() }}</td><td><span class="pill" :class="delivery.status">{{ deliveryLabel(delivery.status) }}</span></td><td>{{ delivery.attempts }} / {{ delivery.maxAttempts }}</td><td>{{ delivery.httpStatus ?? '—' }}</td><td>{{ when(delivery.deliveredAt ?? delivery.createdAt) }}</td><td>{{ display(delivery.lastError || '—') }}</td></tr></tbody></table></div><p v-if="!deliveries.length" class="empty-state">{{ t('m.7bf308b00b96') }}</p></section>
   </section>
 </template>
 

@@ -41,6 +41,7 @@ install:
 	install -m 0755 .build/nodedance-agent "$(DESTDIR)$(BINDIR)/nodedance-agent"
 
 check: frontend
+	python3 -m unittest discover -s scripts/tests
 	go test ./...
 
 run:

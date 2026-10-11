@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, type ContainerTask, type DockerImage, type TaskAuditEvent } from '../api'
 
@@ -42,15 +43,15 @@ function setActiveTask(task: ContainerTask) {
 }
 
 function taskStateLabel(task: ContainerTask): string {
-  if (task.status === 'queued') return '等待 Agent 接收'
+  if (task.status === 'queued') return t('m.165cd916f553')
   if (task.status === 'running') return task.progress.total > 0
-    ? `正在执行 ${task.progress.completed.toLocaleString()} / ${task.progress.total.toLocaleString()} 字节`
-    : `正在执行：${task.progress.phase || '处理中'}`
-  if (task.status === 'unknown') return '结果待确认；系统不会自动重试'
-  if (task.status === 'succeeded') return `已验证完成：${task.result.observedState || 'Engine 状态已确认'}`
-  if (task.status === 'canceled') return '已确认取消'
-  if (task.status === 'timed_out') return '超时，等待实际状态确认'
-  return `操作失败：${task.result.observedState || task.result.code || 'Engine 拒绝请求'}`
+    ? t('m.f4854b2456e3', {"0": (task.progress.completed.toLocaleString(locale.value)), "1": (task.progress.total.toLocaleString(locale.value))})
+    : t('m.472b61dd983a', {"0": (task.progress.phase || t('m.694b71bc8013'))})
+  if (task.status === 'unknown') return t('m.e04f5d26341a')
+  if (task.status === 'succeeded') return t('m.52a8bda11dff', {"0": (task.result.observedState || t('m.5b67afa89eb2'))})
+  if (task.status === 'canceled') return t('m.d2fbf2ec8c2d')
+  if (task.status === 'timed_out') return t('m.7112c0bda6de')
+  return t('m.5bc4c4816eeb', {"0": (task.result.observedState || task.result.code || t('m.d885659ddd84'))})
 }
 
 function formatSize(bytes: number): string {
@@ -69,11 +70,11 @@ async function loadImages() {
   try {
     const result = await api.nodeImages(props.nodeId, filter.value, page.value)
     if (disposed) return
-    if (result.errorCode) throw new Error('Docker Engine 当前无法读取镜像列表。')
+    if (result.errorCode) throw new Error(t('m.159467f4355b'))
     images.value = Array.isArray(result.images) ? result.images : []
     total.value = result.total
   } catch (reason) {
-    if (!disposed) error.value = reason instanceof Error ? reason.message : '无法读取 Docker 镜像。'
+    if (!disposed) error.value = reason instanceof Error ? reason.message : t('m.e7515c35320f')
   } finally {
     loading.value = false
   }
@@ -90,7 +91,7 @@ async function loadLatestImageTask() {
       setActiveTask(latest)
     }
   } catch (reason) {
-    if (!disposed) taskError.value = reason instanceof Error ? reason.message : '无法读取镜像操作进度。'
+    if (!disposed) taskError.value = reason instanceof Error ? reason.message : t('m.77293f47bbd9')
   }
 }
 
@@ -106,7 +107,7 @@ async function refreshTask() {
       await loadImages()
     }
   } catch (reason) {
-    if (!disposed) taskError.value = reason instanceof Error ? reason.message : '无法更新镜像操作状态。'
+    if (!disposed) taskError.value = reason instanceof Error ? reason.message : t('m.cac85b60b94d')
   }
 }
 
@@ -127,10 +128,10 @@ async function submitPull() {
     }, crypto.randomUUID())
     reference.value = ''
     setActiveTask(await api.nodeTask(props.nodeId, accepted.taskId))
-    notice.value = '镜像拉取任务已保存。认证信息仅用于本次请求。'
+    notice.value = t('m.ddaed4324a4e')
     await loadImages()
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '无法创建镜像拉取任务。'
+    error.value = reason instanceof Error ? reason.message : t('m.c831f021d9c3')
   } finally {
     auth.username = ''
     auth.password = ''
@@ -142,10 +143,10 @@ async function submitPull() {
 
 async function submitDelete(image: DockerImage) {
   if (image.containers > 0 || deleting.value[image.id]) return
-  const confirmation = window.prompt(`删除不会删除容器数据卷。请输入完整镜像 ID 以确认：\n${image.id}`)
+  const confirmation = window.prompt(t('m.90829b35e800', {"0": (image.id)}))
   if (confirmation === null) return
   if (confirmation.trim() !== image.id) {
-    error.value = '删除未提交：确认内容必须与当前完整镜像 ID 完全一致。'
+    error.value = t('m.b64864a55a31')
     return
   }
   deleting.value = { ...deleting.value, [image.id]: true }
@@ -153,9 +154,9 @@ async function submitDelete(image: DockerImage) {
   try {
     const accepted = await api.createImageDeleteTask(props.nodeId, image.id, crypto.randomUUID())
     setActiveTask(await api.nodeTask(props.nodeId, accepted.taskId))
-    notice.value = '镜像删除任务已保存；Engine 会再次检查容器引用。'
+    notice.value = t('m.3ea800a3051c')
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '无法创建镜像删除任务。'
+    error.value = reason instanceof Error ? reason.message : t('m.2cd1ecc3647f')
   } finally {
     deleting.value = { ...deleting.value, [image.id]: false }
   }
@@ -168,9 +169,9 @@ async function cancelPull() {
   try {
     setActiveTask(await api.cancelNodeTask(props.nodeId, task.taskId))
     cancelPending.value = true
-    notice.value = '已发送取消请求，等待 Agent 停止拉取并核实镜像状态。'
+    notice.value = t('m.0469be03574e')
   } catch (reason) {
-    taskError.value = reason instanceof Error ? reason.message : '无法请求取消拉取。'
+    taskError.value = reason instanceof Error ? reason.message : t('m.c32c64a98d10')
   }
 }
 
@@ -184,7 +185,7 @@ async function toggleAudit() {
     const result = await api.nodeTaskAudit(props.nodeId, activeTask.value.taskId)
     if (!disposed) auditEvents.value = result.events
   } catch (reason) {
-    if (!disposed) auditError.value = reason instanceof Error ? reason.message : '无法读取镜像任务审计记录。'
+    if (!disposed) auditError.value = reason instanceof Error ? reason.message : t('m.74c2941dde99')
   } finally {
     auditLoading.value = false
   }
@@ -223,64 +224,64 @@ onBeforeUnmount(() => {
 <template>
   <section class="images-panel" aria-labelledby="images-title" data-testid="docker-images">
     <header class="images-heading">
-      <div><span class="eyebrow">DOCKER ENGINE</span><h2 id="images-title">镜像</h2></div>
-      <button class="image-button" type="button" :disabled="loading" @click="loadImages">{{ loading ? '正在读取…' : '刷新' }}</button>
+      <div><span class="eyebrow">{{ t('label.525f325a82b5') }}</span><h2 id="images-title">{{ t('m.176c09844e0f') }}</h2></div>
+      <button class="image-button" type="button" :disabled="loading" @click="loadImages">{{ loading ? t('m.86b6d0d63062') : t('m.aee887434131') }}</button>
     </header>
 
     <form class="image-pull-form" @submit.prevent="submitPull">
-      <label class="image-field image-reference">镜像引用<input v-model="reference" name="imageReference" autocomplete="off" placeholder="例如 registry.example/app:1.2.3" required></label>
-      <label class="image-field">Registry 用户名<input v-model="username" name="registryUsername" autocomplete="off" placeholder="可留空"></label>
-      <label class="image-field">Registry 密码<input v-model="password" name="registryPassword" type="password" autocomplete="new-password" placeholder="仅用于本次拉取"></label>
-      <button class="image-button primary" type="submit" :disabled="submitting || !reference.trim()">{{ submitting ? '正在提交…' : '拉取镜像' }}</button>
+      <label class="image-field image-reference">{{ t('m.1357b2ae4279') }}<input v-model="reference" name="imageReference" autocomplete="off" :placeholder="t('m.15c4c6755fbe')" required></label>
+      <label class="image-field">{{ t('m.4867bdab7b06') }}<input v-model="username" name="registryUsername" autocomplete="off" :placeholder="t('m.293b74110f45')"></label>
+      <label class="image-field">{{ t('m.8b7addffb5c2') }}<input v-model="password" name="registryPassword" type="password" autocomplete="new-password" :placeholder="t('m.51dccb462e09')"></label>
+      <button class="image-button primary" type="submit" :disabled="submitting || !reference.trim()">{{ submitting ? t('m.26ef00b7d061') : t('m.2b0005604564') }}</button>
     </form>
-    <p class="image-hint">认证信息不会显示在任务、审计或错误消息中；提交后会立即清空表单。</p>
+    <p class="image-hint">{{ t('m.87bb077c4318') }}</p>
 
     <div class="image-filter-row">
-      <label class="image-field">筛选镜像<input v-model="filterInput" type="search" placeholder="镜像 ID、标签或 digest" @keydown.enter.prevent="applyFilter"></label>
-      <button class="image-button" type="button" @click="applyFilter">筛选</button>
-      <span class="image-total">共 {{ total.toLocaleString() }} 个镜像</span>
+      <label class="image-field">{{ t('m.8a6ab3b06580') }}<input v-model="filterInput" type="search" :placeholder="t('m.f7a89a15336a')" @keydown.enter.prevent="applyFilter"></label>
+      <button class="image-button" type="button" @click="applyFilter">{{ t('m.b5f15473fdc0') }}</button>
+      <span class="image-total">{{ t('m.76e547a8fa54') }}{{ total.toLocaleString(locale) }}{{ t('m.51a215db46d9') }}</span>
     </div>
 
-    <p v-if="error" class="image-message error" role="alert">{{ error }}</p>
-    <p v-if="notice" class="image-message" role="status">{{ notice }}</p>
-    <p v-if="taskError" class="image-message error" role="alert">{{ taskError }}</p>
+    <p v-if="error" class="image-message error" role="alert">{{ display(error) }}</p>
+    <p v-if="notice" class="image-message" role="status">{{ display(notice) }}</p>
+    <p v-if="taskError" class="image-message error" role="alert">{{ display(taskError) }}</p>
 
     <article v-if="activeTask" class="image-task" :data-status="activeTask.status" aria-live="polite">
-      <div><strong>{{ activeTask.action === 'image_pull' ? '镜像拉取' : '镜像删除' }} · {{ activeTask.status }}</strong><span>{{ taskStateLabel(activeTask) }}</span></div>
-      <button v-if="activeTask.action === 'image_pull' && activeTask.status === 'running'" class="image-button" type="button" :disabled="cancelPending" @click="cancelPull">{{ cancelPending ? '正在取消…' : '取消拉取' }}</button>
-      <button class="image-button" type="button" @click="toggleAudit">{{ auditVisible ? '隐藏审计' : '查看审计' }}</button>
+      <div><strong>{{ activeTask.action === 'image_pull' ? t('m.8d6e8b5c37c8') : t('m.a1d1a5cd5594') }} · {{ activeTask.status }}</strong><span>{{ taskStateLabel(activeTask) }}</span></div>
+      <button v-if="activeTask.action === 'image_pull' && activeTask.status === 'running'" class="image-button" type="button" :disabled="cancelPending" @click="cancelPull">{{ cancelPending ? t('m.e8e08b0f61dd') : t('m.a7d9cc0d2cb9') }}</button>
+      <button class="image-button" type="button" @click="toggleAudit">{{ auditVisible ? t('m.54e74c1e7504') : t('m.97f395dec8ce') }}</button>
     </article>
-    <div v-if="activeTask && auditVisible" class="image-audit" aria-label="镜像任务审计">
-      <p v-if="auditLoading">正在读取审计记录…</p>
-      <p v-else-if="auditError" class="error" role="alert">{{ auditError }}</p>
+    <div v-if="activeTask && auditVisible" class="image-audit" :aria-label="t('m.30bf21ac5f41')">
+      <p v-if="auditLoading">{{ t('m.cf62890bdb61') }}</p>
+      <p v-else-if="auditError" class="error" role="alert">{{ display(auditError) }}</p>
       <ol v-else>
         <li v-for="event in auditEvents" :key="event.id">
-          <span>{{ event.event }}<template v-if="event.toStatus"> · {{ event.fromStatus || '开始' }} → {{ event.toStatus }}</template></span>
-          <time :datetime="event.occurredAt">{{ new Date(event.occurredAt).toLocaleString() }}</time>
+          <span>{{ event.event }}<template v-if="event.toStatus"> · {{ event.fromStatus || t('m.d2bb025a2e51') }} → {{ event.toStatus }}</template></span>
+          <time :datetime="event.occurredAt">{{ new Date(event.occurredAt).toLocaleString(locale) }}</time>
         </li>
       </ol>
     </div>
 
     <div v-if="images.length" class="image-list">
       <article v-for="image in images" :key="image.id" class="image-row">
-        <div class="image-row-head"><strong>{{ image.tags.length ? image.tags.join(', ') : '<无标签>' }}</strong><span>{{ formatSize(image.size) }}</span></div>
+        <div class="image-row-head"><strong>{{ image.tags.length ? image.tags.join(', ') : t('m.247781b10fdf') }}</strong><span>{{ formatSize(image.size) }}</span></div>
         <div class="image-row-meta">
           <span class="image-id">{{ image.id }}</span>
-          <span>{{ image.containers }} 个容器引用</span>
-          <span v-if="image.createdAt">创建于 {{ new Date(image.createdAt * 1000).toLocaleString() }}</span>
+          <span>{{ image.containers }}{{ t('m.7a5eafabc37f') }}</span>
+          <span v-if="image.createdAt">{{ t('m.dc4d662d071e') }}{{ new Date(image.createdAt * 1000).toLocaleString(locale) }}</span>
         </div>
         <p v-if="image.digests.length" class="image-digests">{{ image.digests.join(' · ') }}</p>
-        <button class="image-button danger" type="button" :disabled="image.containers > 0 || deleting[image.id]" :title="image.containers > 0 ? '仍有容器引用此镜像' : '删除前会再次检查容器引用'" @click="submitDelete(image)">
-          {{ deleting[image.id] ? '正在提交…' : image.containers > 0 ? '使用中' : '删除镜像' }}
+        <button class="image-button danger" type="button" :disabled="image.containers > 0 || deleting[image.id]" :title="image.containers > 0 ? t('m.1e695283a66a') : t('m.62f417a3db56')" @click="submitDelete(image)">
+          {{ deleting[image.id] ? t('m.26ef00b7d061') : image.containers > 0 ? t('m.fa48e8938940') : t('m.dc61b6b9b500') }}
         </button>
       </article>
     </div>
-    <p v-else-if="!loading && !error" class="images-empty">{{ filter ? '没有匹配的镜像。' : '此节点当前没有镜像。' }}</p>
+    <p v-else-if="!loading && !error" class="images-empty">{{ filter ? t('m.bf11e3fed6b2') : t('m.715c063e56ec') }}</p>
 
-    <nav class="image-pagination" aria-label="镜像分页">
-      <button class="image-button" type="button" :disabled="page === 0 || loading" @click="movePage(-1)">上一页</button>
-      <span>第 {{ page + 1 }} / {{ pageCount }} 页</span>
-      <button class="image-button" type="button" :disabled="page + 1 >= pageCount || loading" @click="movePage(1)">下一页</button>
+    <nav class="image-pagination" :aria-label="t('m.1fa7b5f8794e')">
+      <button class="image-button" type="button" :disabled="page === 0 || loading" @click="movePage(-1)">{{ t('m.c9b9ae7a6144') }}</button>
+      <span>{{ t('m.af50a0fe2a50') }}{{ page + 1 }} / {{ pageCount }}{{ t('m.d24d3c99460c') }}</span>
+      <button class="image-button" type="button" :disabled="page + 1 >= pageCount || loading" @click="movePage(1)">{{ t('m.8a8542f69648') }}</button>
     </nav>
   </section>
 </template>

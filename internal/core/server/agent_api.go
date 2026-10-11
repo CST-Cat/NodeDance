@@ -10,10 +10,12 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
+	"github.com/CST-Cat/NodeDance/internal/installer"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 type createAgentEnrollmentRequest struct {
+	CoreURL     string `json:"coreUrl,omitempty"`
 	DisplayName string `json:"displayName"`
 }
 
@@ -120,13 +122,22 @@ func (s *Server) adminCreateAgentEnrollment(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "invalid node display name", http.StatusBadRequest)
 		return
 	}
+	coreURL := request.CoreURL
+	if coreURL == "" {
+		coreURL = r.Header.Get("Origin")
+	}
+	command, err := installer.Command(coreURL, name, s.development)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	enrollment, err := s.agents.CreateEnrollment(r.Context(), name, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
 	if err != nil {
 		http.Error(w, "enrollment creation failed", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"nodeId": enrollment.NodeID, "displayName": enrollment.DisplayName,
+		"nodeId": enrollment.NodeID, "displayName": enrollment.DisplayName, "installCommand": command,
 		"token": enrollment.Token, "expiresAt": enrollment.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"),
 		"expiresInSeconds": int(agents.EnrollmentLifetime.Seconds()),
 	})

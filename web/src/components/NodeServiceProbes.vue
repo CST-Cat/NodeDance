@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { api, type ServiceProbe, type ServiceProbePayload, type ServiceProbeRun } from '../api'
 
@@ -78,11 +79,11 @@ async function save() {
   error.value = ''
   notice.value = ''
   if (!form.name.trim() || !form.target.trim()) {
-    error.value = '请填写探测名称和目标地址。'
+    error.value = t('m.66e6e7d1ca56')
     return
   }
   if (form.timeoutSeconds < 1 || form.intervalSeconds < 10 || form.intervalSeconds > 86400 || form.timeoutSeconds >= form.intervalSeconds) {
-    error.value = '间隔须为 10–86400 秒，超时须为 1–30 秒且小于间隔。'
+    error.value = t('m.7b6c0d85fbe8')
     return
   }
   saving.value = true
@@ -91,7 +92,7 @@ async function save() {
     if (editingID.value && selected) await api.updateServiceProbe(editingID.value, payload(selected.revision))
     else await api.createServiceProbe(payload())
     closeForm()
-    notice.value = '探测配置已保存；状态由目标节点上的 Agent 按计划更新。'
+    notice.value = t('m.c538fb4a37f3')
     await refresh(true)
   } catch (reason) {
     error.value = message(reason)
@@ -110,7 +111,7 @@ async function toggleEnabled(probe: ServiceProbe) {
       intervalSeconds: probe.intervalSeconds, timeoutSeconds: probe.timeoutSeconds,
       enabled: !probe.enabled, revision: probe.revision,
     })
-    notice.value = probe.enabled ? '探测已停用，历史记录已保留。' : '探测已启用，将从此节点执行。'
+    notice.value = probe.enabled ? t('m.95f6288e13e9') : t('m.c5ad49ccd171')
     await refresh(true)
   } catch (reason) {
     error.value = message(reason)
@@ -118,14 +119,14 @@ async function toggleEnabled(probe: ServiceProbe) {
 }
 
 async function removeProbe(probe: ServiceProbe) {
-  if (!window.confirm(`删除“${probe.name}”配置？已保存的历史记录将保留。`)) return
+  if (!window.confirm(t('m.cc16da771452', {"0": (probe.name)}))) return
   deleting.value = probe.id
   error.value = ''
   notice.value = ''
   try {
     await api.deleteServiceProbe(probe.id, probe.revision)
     probes.value = probes.value.filter((item) => item.id !== probe.id)
-    notice.value = '探测已删除，历史记录仍可查看。'
+    notice.value = t('m.cbeed1058101')
   } catch (reason) {
     error.value = message(reason)
   } finally {
@@ -146,29 +147,29 @@ async function toggleHistory(probe: ServiceProbe) {
 }
 
 function statusLabel(probe: ServiceProbe): string {
-  if (!probe.enabled) return '已停用'
-  if (!props.nodeOnline || probe.status === 'unknown') return '未知'
-  return probe.status === 'healthy' ? '正常' : '异常'
+  if (!probe.enabled) return t('m.a8c3698b5b8c')
+  if (!props.nodeOnline || probe.status === 'unknown') return t('m.4d8c1c5b4283')
+  return probe.status === 'healthy' ? t('m.296de0e31f8c') : t('m.428fb8bfeecf')
 }
 
 function errorLabel(code?: string): string {
   const labels: Record<string, string> = {
-    node_offline: '节点离线', capability_unavailable: 'Agent 不支持探测', dispatch_unavailable: 'Agent 暂不可调度',
-    dispatch_timeout: '等待 Agent 结果超时', core_restarted: 'Core 重启后结果待确认', capacity: 'Agent 探测并发已满',
-    timeout: '连接超时', tls_verification: 'TLS 证书验证失败', http_status_mismatch: 'HTTP 状态码不匹配',
-    dns: 'DNS 解析失败', connection_failed: '连接失败', cancelled: '探测已取消',
+    node_offline: t('m.badb7a4e8552'), capability_unavailable: t('m.9f746c0f8354'), dispatch_unavailable: t('m.d740821f830c'),
+    dispatch_timeout: t('m.71c8b847fdb7'), core_restarted: t('m.a0b5d6b0691a'), capacity: t('m.f96946fb2910'),
+    timeout: t('m.ae5ead4d8907'), tls_verification: t('m.cb33e695a138'), http_status_mismatch: t('m.13ba30326078'),
+    dns: t('m.3a577c9dabb1'), connection_failed: t('m.89c4766afc85'), cancelled: t('m.0294852f2c2c'),
   }
-  return code ? labels[code] || '探测失败' : ''
+  return code ? labels[code] || t('m.c318cf5f0af4') : ''
 }
 
 function formatTime(value?: string): string {
   if (!value) return '—'
   const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString()
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString(locale.value)
 }
 
 function message(reason: unknown): string {
-  return reason instanceof Error && reason.message ? reason.message : '探测操作失败，请稍后重试。'
+  return reason instanceof Error && reason.message ? reason.message : t('m.ebf63ef228d2')
 }
 
 watch(() => props.nodeId, () => {
@@ -194,38 +195,38 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) clearInterval(refreshTim
 <template>
   <section class="service-probes" aria-labelledby="service-probes-heading" data-testid="service-probes">
     <header class="probe-heading">
-      <div><span class="eyebrow">SERVICE CHECKS · {{ nodeName }}</span><h2 id="service-probes-heading">服务探测</h2><p>探测从此节点的 Agent 发起；目标节点离线时状态显示为未知。</p></div>
-      <button class="probe-primary" type="button" @click="beginCreate">添加探测</button>
+      <div><span class="eyebrow">SERVICE CHECKS · {{ nodeName }}</span><h2 id="service-probes-heading">{{ t('m.3fefdc07fa14') }}</h2><p>{{ t('m.46359b5cb550') }}</p></div>
+      <button class="probe-primary" type="button" @click="beginCreate">{{ t('m.41e755cbc3c5') }}</button>
     </header>
-    <p v-if="!nodeOnline" class="probe-note" role="status">此节点当前离线，探测结果不会被记作失败。</p>
-    <div v-if="error" class="probe-message probe-error" role="alert">{{ error }}</div>
-    <div v-if="notice" class="probe-message probe-notice" role="status">{{ notice }}</div>
+    <p v-if="!nodeOnline" class="probe-note" role="status">{{ t('m.12dc4fd08dbb') }}</p>
+    <div v-if="error" class="probe-message probe-error" role="alert">{{ display(error) }}</div>
+    <div v-if="notice" class="probe-message probe-notice" role="status">{{ display(notice) }}</div>
 
     <form v-if="formVisible" class="probe-form" data-testid="probe-form" @submit.prevent="save">
-      <h3>{{ editingID ? '编辑探测' : '新增探测' }}</h3>
+      <h3>{{ editingID ? t('m.5ffc6380c433') : t('m.4a7abfcfad36') }}</h3>
       <div class="probe-fields">
-        <label><span>名称</span><input v-model="form.name" maxlength="80" required placeholder="例如：主站健康检查" /></label>
-        <label><span>协议</span><select v-model="form.kind"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option></select></label>
-        <label class="probe-target"><span>目标地址</span><input v-model="form.target" required maxlength="2048" :placeholder="form.kind === 'tcp' ? 'tcp://127.0.0.1:5432' : `${form.kind}://127.0.0.1:8080/health`" /></label>
-        <label v-if="form.kind !== 'tcp'"><span>预期 HTTP 状态码</span><input v-model.number="form.expectedHttpStatus" type="number" min="100" max="599" required /></label>
-        <label><span>探测间隔（秒）</span><input v-model.number="form.intervalSeconds" type="number" min="10" max="86400" required /></label>
-        <label><span>超时（秒）</span><input v-model.number="form.timeoutSeconds" type="number" min="1" max="30" required /></label>
+        <label><span>{{ t('m.d44e9b3d3b31') }}</span><input v-model="form.name" maxlength="80" required :placeholder="t('m.bd0242098b8e')" /></label>
+        <label><span>{{ t('m.ab2f31f30acf') }}</span><select v-model="form.kind"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option></select></label>
+        <label class="probe-target"><span>{{ t('m.fb60c9043c7a') }}</span><input v-model="form.target" required maxlength="2048" :placeholder="form.kind === 'tcp' ? 'tcp://127.0.0.1:5432' : `${form.kind}://127.0.0.1:8080/health`" /></label>
+        <label v-if="form.kind !== 'tcp'"><span>{{ t('m.3f63bb98cd18') }}</span><input v-model.number="form.expectedHttpStatus" type="number" min="100" max="599" required /></label>
+        <label><span>{{ t('m.455adcae032d') }}</span><input v-model.number="form.intervalSeconds" type="number" min="10" max="86400" required /></label>
+        <label><span>{{ t('m.e814e078437b') }}</span><input v-model.number="form.timeoutSeconds" type="number" min="1" max="30" required /></label>
       </div>
-      <label class="probe-enabled"><input v-model="form.enabled" type="checkbox" /><span>启用定时探测</span></label>
-      <p class="probe-help">TLS 证书验证默认开启。失败 3 次后标记异常，成功 2 次后恢复正常。</p>
-      <div class="probe-form-actions"><button class="probe-primary" type="submit" :disabled="saving">{{ saving ? '正在保存…' : '保存配置' }}</button><button class="probe-secondary" type="button" :disabled="saving" @click="closeForm">取消</button></div>
+      <label class="probe-enabled"><input v-model="form.enabled" type="checkbox" /><span>{{ t('m.6cdc68ea4c5f') }}</span></label>
+      <p class="probe-help">{{ t('m.898892992159') }}</p>
+      <div class="probe-form-actions"><button class="probe-primary" type="submit" :disabled="saving">{{ saving ? t('m.6bdb4435095e') : t('m.6e584e3d5ce6') }}</button><button class="probe-secondary" type="button" :disabled="saving" @click="closeForm">{{ t('m.2cd0f3be8738') }}</button></div>
     </form>
 
-    <p v-if="loading && !probes.length" class="probe-empty" role="status">正在读取服务探测配置…</p>
-    <p v-else-if="nodeProbes().length === 0" class="probe-empty">{{ loading ? '正在读取…' : '此节点还没有服务探测。' }}</p>
+    <p v-if="loading && !probes.length" class="probe-empty" role="status">{{ t('m.e7985076d5fd') }}</p>
+    <p v-else-if="nodeProbes().length === 0" class="probe-empty">{{ loading ? t('m.86b6d0d63062') : t('m.e0ad4994de04') }}</p>
     <div v-else class="probe-list">
       <article v-for="probe in nodeProbes()" :key="probe.id" class="probe-card" :data-probe-id="probe.id">
         <div class="probe-card-heading"><div class="probe-copy"><strong>{{ probe.name }}</strong><code>{{ probe.kind.toUpperCase() }} · {{ probe.target }}</code></div><span class="probe-status" :data-status="!nodeOnline ? 'unknown' : probe.enabled ? probe.status : 'disabled'">{{ statusLabel(probe) }}</span></div>
-        <div class="probe-meta"><span>间隔 {{ probe.intervalSeconds }} 秒</span><span>超时 {{ probe.timeoutSeconds }} 秒</span><span v-if="probe.kind !== 'tcp'">期望 {{ probe.expectedHttpStatus }}</span><span>最近检查 {{ formatTime(probe.lastCheckedAt) }}</span><span v-if="probe.lastErrorCode">{{ errorLabel(probe.lastErrorCode) }}</span></div>
-        <div class="probe-actions"><button type="button" @click="toggleHistory(probe)">{{ visibleHistory[probe.id] ? '收起历史' : '查看历史' }}</button><button type="button" @click="beginEdit(probe)">编辑</button><button type="button" @click="toggleEnabled(probe)">{{ probe.enabled ? '停用' : '启用' }}</button><button type="button" class="probe-delete" :disabled="deleting === probe.id" @click="removeProbe(probe)">{{ deleting === probe.id ? '正在删除…' : '删除' }}</button></div>
-        <ol v-if="visibleHistory[probe.id]" class="probe-history" :aria-label="`${probe.name} 探测历史`">
-          <li v-for="run in history[probe.id] || []" :key="run.runId" :data-status="run.status"><span>{{ formatTime(run.checkedAt) }}</span><strong>{{ run.status === 'healthy' ? '正常' : run.status === 'unhealthy' ? '异常' : run.status === 'pending' ? '等待结果' : '未知' }}</strong><span v-if="run.httpStatus">HTTP {{ run.httpStatus }}</span><span v-if="run.latencyMs !== undefined">{{ run.latencyMs }} ms</span><span v-if="run.errorCode">{{ errorLabel(run.errorCode) }}</span></li>
-          <li v-if="history[probe.id]?.length === 0" class="probe-no-history">暂无已完成的探测记录。</li>
+        <div class="probe-meta"><span>{{ t('m.4f5df723d99d') }}{{ probe.intervalSeconds }}{{ t('m.9dcdc2b289b9') }}</span><span>{{ t('m.e512cf016f96') }}{{ probe.timeoutSeconds }}{{ t('m.9dcdc2b289b9') }}</span><span v-if="probe.kind !== 'tcp'">{{ t('m.ed1f74c64ac9') }}{{ probe.expectedHttpStatus }}</span><span>{{ t('m.28d75d9db816') }}{{ formatTime(probe.lastCheckedAt) }}</span><span v-if="probe.lastErrorCode">{{ errorLabel(probe.lastErrorCode) }}</span></div>
+        <div class="probe-actions"><button type="button" @click="toggleHistory(probe)">{{ visibleHistory[probe.id] ? t('m.a9f4bab69211') : t('m.a5783b941d7d') }}</button><button type="button" @click="beginEdit(probe)">{{ t('m.051836569928') }}</button><button type="button" @click="toggleEnabled(probe)">{{ probe.enabled ? t('m.4e6fd0e28c55') : t('m.f4f0ead1116b') }}</button><button type="button" class="probe-delete" :disabled="deleting === probe.id" @click="removeProbe(probe)">{{ deleting === probe.id ? t('m.4fd4f40094d4') : t('m.2f9daa828907') }}</button></div>
+        <ol v-if="visibleHistory[probe.id]" class="probe-history" :aria-label="t('m.34392b76904a', {'0': (probe.name)})">
+          <li v-for="run in history[probe.id] || []" :key="run.runId" :data-status="run.status"><span>{{ formatTime(run.checkedAt) }}</span><strong>{{ run.status === 'healthy' ? t('m.296de0e31f8c') : run.status === 'unhealthy' ? t('m.428fb8bfeecf') : run.status === 'pending' ? t('m.33037aadf043') : t('m.4d8c1c5b4283') }}</strong><span v-if="run.httpStatus">HTTP {{ run.httpStatus }}</span><span v-if="run.latencyMs !== undefined">{{ run.latencyMs }} ms</span><span v-if="run.errorCode">{{ errorLabel(run.errorCode) }}</span></li>
+          <li v-if="history[probe.id]?.length === 0" class="probe-no-history">{{ t('m.140d051bd612') }}</li>
         </ol>
       </article>
     </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, ref, watch } from 'vue'
 import { api } from '../api'
 
@@ -36,20 +37,10 @@ const agentOriginUsesAllowedTransport = computed(() =>
   (development && agentOrigin.value.startsWith('http://') && agentOriginIsLoopback.value),
 )
 
-const installCommand = computed(() => {
-  const args = [
-    '--server', shellQuote(agentOrigin.value),
-    '--display-name', shellQuote(displayName.value.trim()),
-  ]
-  if (development && agentOriginIsLoopback.value) args.push('--dev')
-  const apiURL = 'https://api.github.com/repos/CST-Cat/NodeDance/releases?per_page=100'
-  const releases = `releases=$(curl --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 "${apiURL}") || { echo 'Could not list Agent releases.' >&2; exit 1; }; tag=$(printf '%s\\n' "$releases" | awk -F'"' '$2 == "tag_name" && $4 ~ /^agent-v[0-9]+\\.[0-9]+\\.[0-9]+$/ { print $4; exit }'); [[ "$tag" =~ ^agent-v[0-9]+\\.[0-9]+\\.[0-9]+$ ]] || { echo 'No published agent-vMAJOR.MINOR.PATCH release was found.' >&2; exit 1; }`
-  const assetURL = 'https://github.com/CST-Cat/NodeDance/releases/download/$tag/install-agent.sh'
-  const pipeline = `${releases}; curl --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 "${assetURL}" | sudo bash -s -- --release-tag "$tag" ${args.join(' ')}`
-  return `bash -o pipefail -c ${shellQuote(pipeline)}`
-})
+const installCommand = ref('')
 
 watch([displayName, agentServer], () => {
+  installCommand.value = ''
   token.value = ''
   expiresAt.value = ''
   notice.value = ''
@@ -58,25 +49,27 @@ watch([displayName, agentServer], () => {
 async function generateEnrollment() {
   error.value = ''
   notice.value = ''
+  installCommand.value = ''
   token.value = ''
   expiresAt.value = ''
   const name = displayName.value.trim()
   if (!agentOriginIsSupported.value || !agentOriginUsesAllowedTransport.value) {
-    error.value = '正式 Agent 连接必须使用 HTTPS；仅开发模式允许使用字面回环地址上的 HTTP。'
+    error.value = t('m.70226817387f')
     return
   }
   if (!name || /[\r\n\0]/.test(name)) {
-    error.value = '请输入单行节点显示名称。'
+    error.value = t('m.bd8975b069f6')
     return
   }
   creating.value = true
   try {
-    const result = await api.createAgentEnrollment(name)
+    const result = await api.createAgentEnrollment(name, agentOrigin.value)
+    installCommand.value = result.installCommand
     token.value = result.token
     expiresAt.value = result.expiresAt
-    notice.value = `已为“${result.displayName}”生成一次性 Token；节点会绑定到当前 Core。`
+    notice.value = t('m.d04e8d433a67', {"0": (result.displayName)})
   } catch (reason) {
-    error.value = reason instanceof Error && reason.message ? reason.message : '无法创建 Agent 注册凭据。'
+    error.value = reason instanceof Error && reason.message ? reason.message : t('m.9ecada108145')
   } finally {
     creating.value = false
   }
@@ -87,14 +80,10 @@ async function copyText(value: string, label: string) {
   notice.value = ''
   try {
     await navigator.clipboard.writeText(value)
-    notice.value = `${label}已复制。`
+    notice.value = t('m.e3852e382b5b', {"0": (label)})
   } catch {
-    error.value = '浏览器未允许剪贴板访问，请手动选择并复制内容。'
+    error.value = t('m.e00feb7956c7')
   }
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`
 }
 
 function isLiteralLoopback(hostname: string): boolean {
@@ -108,29 +97,29 @@ function isLiteralLoopback(hostname: string): boolean {
 <template>
   <main :class="compact ? 'agent-enrollment-compact-page' : 'agent-enrollment-page'" data-testid="agent-enrollment">
     <header v-if="!compact" class="agent-enrollment-heading">
-      <div><span class="eyebrow">AGENT ONBOARDING</span><h1>添加 Agent<span class="title-period">.</span></h1><p>生成一次性注册凭据，并复制绑定到当前 Core 的 Linux 安装命令。</p></div>
-      <button class="quiet-button" type="button" @click="emit('back')">返回控制台</button>
+      <div><span class="eyebrow">{{ t('label.f635eb3c2462') }}</span><h1>{{ t('m.a29c23de8cc4') }}<span class="title-period">.</span></h1><p>{{ t('m.779760698929') }}</p></div>
+      <button class="quiet-button" type="button" @click="emit('back')">{{ t('m.e0e6dc51f626') }}</button>
     </header>
     <section :class="['agent-enrollment-card', { 'agent-enrollment-card-compact': compact }]">
       <div class="agent-enrollment-form">
         <div class="agent-enrollment-section-heading">
-          <div><h2>{{ compact ? '手动安装 Agent' : '生成安装命令' }}</h2><p>此入口可独立使用，不需要启用 Tailscale。Agent 以 root 运行并主动连接当前 Core。</p></div>
+          <div><h2>{{ compact ? t('m.11e4978edcfe') : t('m.8e80901344c8') }}</h2><p>{{ t('m.ef7b7a7a77a6') }}</p></div>
         </div>
-        <label class="field"><span>Agent 连接的 Core 地址</span><input v-model="agentServer" autocomplete="url" placeholder="https://core.example:8180" aria-label="Agent 连接的 Core 地址" /></label>
-        <label class="field"><span>节点显示名称</span><input v-model="displayName" maxlength="80" autocomplete="off" placeholder="例如：production-01" /></label>
-        <p v-if="!agentOriginIsSupported || !agentOriginUsesAllowedTransport" class="alert alert-error" role="alert">正式 Agent 连接必须使用 HTTPS；仅开发模式允许使用字面回环地址上的 HTTP。Core 必须提供系统信任的 TLS 证书。</p>
-        <p v-if="error" class="alert alert-error" role="alert">{{ error }}</p>
-        <p v-if="notice" class="alert alert-success" role="status">{{ notice }}</p>
-        <button class="primary-button" type="button" :disabled="creating || !displayName.trim() || !agentOriginIsSupported || !agentOriginUsesAllowedTransport" @click="generateEnrollment">{{ creating ? '正在生成…' : '生成一次性注册命令' }}</button>
+        <label class="field"><span>{{ t('m.b66f55e3dc3d') }}</span><input v-model="agentServer" autocomplete="url" placeholder="https://core.example:8180" :aria-label="t('m.b66f55e3dc3d')" /></label>
+        <label class="field"><span>{{ t('m.a09f47188571') }}</span><input v-model="displayName" maxlength="80" autocomplete="off" :placeholder="t('m.1b086a50d7b3')" /></label>
+        <p v-if="!agentOriginIsSupported || !agentOriginUsesAllowedTransport" class="alert alert-error" role="alert">{{ t('m.1d5964dbb8d8') }}</p>
+        <p v-if="error" class="alert alert-error" role="alert">{{ display(error) }}</p>
+        <p v-if="notice" class="alert alert-success" role="status">{{ display(notice) }}</p>
+        <button class="primary-button" type="button" :disabled="creating || !displayName.trim() || !agentOriginIsSupported || !agentOriginUsesAllowedTransport" @click="generateEnrollment">{{ creating ? t('m.a8b8730c9611') : t('m.92840286f8cd') }}</button>
         <div v-if="token" class="agent-enrollment-result">
-          <p class="field-hint">Token 仅可使用一次，过期时间：{{ expiresAt }}。Token 不包含在命令、参数或环境变量中。</p>
-          <label class="field"><span>目标 Linux 主机执行的一条命令</span><textarea readonly rows="3" :value="installCommand" data-testid="agent-install-command" /></label>
-          <button class="secondary-button" type="button" @click="copyText(installCommand, '安装命令')">复制安装命令</button>
-          <label class="field"><span>一次性 Token</span><textarea readonly rows="2" :value="token" data-testid="agent-enrollment-token" /></label>
-          <button class="quiet-button" type="button" @click="copyText(token, '一次性 Token')">复制 Token</button>
-          <p class="field-hint">在目标机运行命令后，脚本会在 /dev/tty 隐藏提示输入此 Token；它不会进入命令历史或进程参数。脚本校验发布 SHA256 后会自动注册、安装 systemd 并启动 Agent。</p>
+          <p class="field-hint">{{ t('m.80ee590ed729') }}{{ expiresAt }}{{ t('m.0481941b6b37') }}</p>
+          <label class="field"><span>{{ t('m.304f2c052c67') }}</span><textarea readonly rows="3" :value="installCommand" data-testid="agent-install-command" /></label>
+          <button class="secondary-button" type="button" @click="copyText(installCommand, t('m.bdf7d59b3dc2'))">{{ t('m.fe95745d1ef4') }}</button>
+          <label class="field"><span>{{ t('m.ff2945397e81') }}</span><textarea readonly rows="2" :value="token" data-testid="agent-enrollment-token" /></label>
+          <button class="quiet-button" type="button" @click="copyText(token, t('m.ff2945397e81'))">{{ t('m.a1d078b22f1d') }}</button>
+          <p class="field-hint">{{ t('m.b5debb33710e') }}</p>
         </div>
-        <p class="agent-release-note">安装命令只解析并使用最新已发布的 agent-vMAJOR.MINOR.PATCH Agent tag；Core 发布不会影响 Agent 下载。若没有 Agent release，命令会在调用 sudo 安装脚本前明确退出。</p>
+        <p class="agent-release-note">{{ t('m.f48ceda113e7') }}</p>
       </div>
     </section>
   </main>

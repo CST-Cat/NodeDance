@@ -307,3 +307,5 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
     padding-left: 6px;
   }
 }
+
+.language-selector{background:var(--surface,#151e2d);color:inherit;border:1px solid currentColor;border-radius:8px;padding:7px 10px;font:inherit;max-width:150px}.language-selector:focus-visible{outline:2px solid #60a5fa;outline-offset:3px}

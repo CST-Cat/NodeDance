@@ -1,3 +1,4 @@
+import { t, diagnostic } from "./i18n"
 import type { MetricsView } from './metrics-contract'
 
 export interface SetupStatus {
@@ -505,12 +506,12 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
     if (response.status === 401) clearExpiredSession(path)
 
     if (!response.ok) {
-      let message = `请求失败（${response.status}）`
+      let message = t('m.ad5d5a8f24fc', {"0": (response.status)})
       const body = await response.text()
       try {
         const payload = JSON.parse(body) as { error?: unknown; message?: unknown }
-        if (typeof payload.message === 'string') message = payload.message
-        else if (typeof payload.error === 'string') message = payload.error
+        if (typeof payload.message === 'string') message = diagnostic(payload.message)
+        else if (typeof payload.error === 'string') message = diagnostic(payload.error)
       } catch {
         // Keep the status-based message when the Core returns an empty or non-JSON error.
       }
@@ -524,7 +525,7 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
     try {
       payload = JSON.parse(body)
     } catch {
-      throw new ApiError(response.status, '服务器返回了无法识别的响应。')
+      throw new ApiError(response.status, t('m.e03b23b49908'))
     }
     if ((path === '/api/v1/auth/setup' || path === '/api/v1/auth/login') &&
       typeof payload === 'object' && payload !== null && 'csrfToken' in payload &&
@@ -574,8 +575,8 @@ export const api = {
   probeTailscaleSSH: (peerIdentity: string) => request<{ fingerprint: string }>('/api/v1/discovery/tailscale/host-key', {
     method: 'POST', body: JSON.stringify({ peerIdentity }),
   }, true),
-  createAgentEnrollment: (displayName: string) => request<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number }>('/api/v1/agents/enrollments', {
-    method: 'POST', body: JSON.stringify({ displayName }),
+  createAgentEnrollment: (displayName: string, coreUrl: string) => request<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number; installCommand: string }>('/api/v1/agents/enrollments', {
+    method: 'POST', body: JSON.stringify({ displayName, coreUrl }),
   }, true),
   startTailscaleDeployment: (payload: TailscaleDeployPayload, idempotencyKey: string) => request<TailscaleDeploymentTask>('/api/v1/discovery/deployments', {
     method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload),

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -281,7 +282,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		return errors.New("Core welcome is invalid")
 	}
 	var welcome protocol.Welcome
-	if err := decodeSocketPayload(envelope.Payload, &welcome); err != nil || !validWelcome(config, envelope.Generation, welcome) {
+	if err := decodeSocketPayload(envelope.Payload, &welcome); err != nil || !validWelcome(config, envelope.Generation, welcome) || !protocol.ValidNegotiation(hello.Capabilities, welcome.Capabilities) {
 		return errors.New("Core welcome is invalid")
 	}
 	if onEstablished != nil {
@@ -1083,7 +1084,7 @@ func decodeSocketEnvelope(raw []byte) (protocol.Envelope, error) {
 	if len(raw) == 0 || len(raw) > protocol.MaxMessageBytes {
 		return envelope, errors.New("Agent protocol frame size is invalid")
 	}
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&envelope); err != nil {
 		return envelope, err
@@ -1099,7 +1100,7 @@ func decodeSocketPayload(raw json.RawMessage, target any) error {
 	if len(raw) == 0 || len(raw) > 64*1024 {
 		return errors.New("Agent protocol payload size is invalid")
 	}
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return err

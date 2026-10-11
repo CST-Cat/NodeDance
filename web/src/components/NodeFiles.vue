@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api, type ContainerTask, type CreateFileTaskPayload, type NodeFileEntry } from '../api'
 import { fileModifiedDate, formatFileSize, isEditableTextFile, joinNodePath, parentNodePath } from './files'
@@ -40,7 +41,7 @@ async function load(path = currentPath.value) {
     currentPath.value = response.path
     entries.value = response.entries
   } catch (reason) {
-    if (!disposed) error.value = reason instanceof Error ? reason.message : '无法读取目录。'
+    if (!disposed) error.value = reason instanceof Error ? reason.message : t('m.e2e0acb8ab46')
   } finally {
     if (!disposed) loading.value = false
   }
@@ -51,9 +52,9 @@ async function waitForTask(taskId: string): Promise<ContainerTask> {
     const task = await api.nodeTask(props.nodeId, taskId)
     if (task.status !== 'queued' && task.status !== 'running') return task
     await new Promise((resolve) => window.setTimeout(resolve, 500))
-    if (disposed) throw new Error('文件页面已关闭。')
+    if (disposed) throw new Error(t('m.d42b9624254f'))
   }
-  throw new Error('文件操作仍在运行，请到操作记录查看结果。')
+  throw new Error(t('m.1b76591a88e1'))
 }
 
 async function runFileTask(payload: CreateFileTaskPayload, successMessage: string) {
@@ -64,16 +65,16 @@ async function runFileTask(payload: CreateFileTaskPayload, successMessage: strin
     const accepted = await api.createFileTask(props.nodeId, payload, crypto.randomUUID())
     const task = await waitForTask(accepted.taskId)
     if (task.status === 'succeeded') {
-      message.value = `${successMessage}，Agent 已核实结果。`
+      message.value = t('m.9f6548a67616', {"0": (successMessage)})
       await load()
     } else if (task.status === 'unknown') {
-      message.value = '操作结果待核实；系统不会自动重试。请检查文件后再决定是否重做。'
+      message.value = t('m.a07bf68b2e91')
     } else {
-      throw new Error(`文件操作失败：${task.result.code || task.status}`)
+      throw new Error(t('m.0913aa5a4393', {"0": (task.result.code || task.status)}))
     }
     return task
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '文件操作失败。'
+    error.value = reason instanceof Error ? reason.message : t('m.91488a18c47d')
     return null
   } finally {
     pending.value = false
@@ -84,7 +85,7 @@ async function openText(entry?: NodeFileEntry) {
   error.value = ''
   message.value = ''
   if (!entry) {
-    const name = window.prompt('新文本文件名称')?.trim()
+    const name = window.prompt(t('m.d72fdbdedfdb'))?.trim()
     if (!name || name.includes('/') || name === '.' || name === '..') return
     editorPath.value = joinNodePath(currentPath.value, name)
     editorText.value = ''
@@ -92,7 +93,7 @@ async function openText(entry?: NodeFileEntry) {
     return
   }
   if (entry.kind !== 'file' || entry.size > 32 * 1024) {
-    error.value = '只支持编辑 32 KiB 以内的普通文本文件。'
+    error.value = t('m.55b50af2d703')
     return
   }
   editorLoading.value = true
@@ -102,7 +103,7 @@ async function openText(entry?: NodeFileEntry) {
     editorText.value = result.text
     editorVersion.value = result.version
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '无法读取文本文件。'
+    error.value = reason instanceof Error ? reason.message : t('m.942d34bc82c7')
   } finally {
     editorLoading.value = false
   }
@@ -110,7 +111,7 @@ async function openText(entry?: NodeFileEntry) {
 
 async function saveText() {
   if (!editorPath.value) return
-  const task = await runFileTask({ action: 'save_text', path: editorPath.value, expectedVersion: editorVersion.value, content: editorText.value }, '文本文件已保存')
+  const task = await runFileTask({ action: 'save_text', path: editorPath.value, expectedVersion: editorVersion.value, content: editorText.value }, t('m.3d8ac004269e'))
   if (task?.status === 'succeeded') {
     try {
       const latest = await api.nodeFileText(props.nodeId, editorPath.value)
@@ -124,20 +125,20 @@ async function saveText() {
 }
 
 async function createDirectory() {
-  const name = window.prompt('新文件夹名称')?.trim()
+  const name = window.prompt(t('m.ae51764fbb38'))?.trim()
   if (!name || name.includes('/') || name === '.' || name === '..') return
-  await runFileTask({ action: 'mkdir', path: joinNodePath(currentPath.value, name) }, '文件夹已创建')
+  await runFileTask({ action: 'mkdir', path: joinNodePath(currentPath.value, name) }, t('m.f1edc97079ec'))
 }
 
 async function renameEntry(entry: NodeFileEntry) {
-  const name = window.prompt('新名称', entry.name)?.trim()
+  const name = window.prompt(t('m.92ddb51db6c4'), entry.name)?.trim()
   if (!name || name === entry.name || name.includes('/') || name === '.' || name === '..') return
-  await runFileTask({ action: 'rename', path: entry.path, newPath: joinNodePath(currentPath.value, name) }, '文件已重命名')
+  await runFileTask({ action: 'rename', path: entry.path, newPath: joinNodePath(currentPath.value, name) }, t('m.54dbc5d14e6c'))
 }
 
 async function deleteEntry(entry: NodeFileEntry) {
-  if (!window.confirm(`永久删除「${entry.path}」？\n\n目录会连同其中内容一起删除。此操作不会进入回收站。`)) return
-  await runFileTask({ action: 'delete', path: entry.path, deleteConfirmed: true, confirmationPath: entry.path }, '文件已删除')
+  if (!window.confirm(t('m.051e9916c510', {"0": (entry.path)}))) return
+  await runFileTask({ action: 'delete', path: entry.path, deleteConfirmed: true, confirmationPath: entry.path }, t('m.d3da497e999c'))
 }
 
 function uploadFile() {
@@ -153,12 +154,12 @@ async function acceptUpload(event: Event) {
   let expectedVersion = ''
   const existing = entries.value.find((entry) => entry.path === path)
   if (existing) {
-    if (existing.kind !== 'file' || !window.confirm(`替换现有文件「${path}」？原文件只会在上传完整且校验通过后替换。`)) return
+    if (existing.kind !== 'file' || !window.confirm(t('m.c81ec173997c', {"0": (path)}))) return
     try {
       const latest = await api.nodeFileStat(props.nodeId, path)
       expectedVersion = latest.version || ''
     } catch (reason) {
-      error.value = reason instanceof Error ? reason.message : '无法确认现有文件版本。'
+      error.value = reason instanceof Error ? reason.message : t('m.35c77a3cfed1')
       return
     }
   }
@@ -168,15 +169,15 @@ async function acceptUpload(event: Event) {
   try {
     const task = await api.uploadNodeFile(props.nodeId, path, file, expectedVersion)
     if (task.status === 'succeeded') {
-      message.value = '上传完成，Agent 已校验文件内容。'
+      message.value = t('m.0be4d61c6f18')
       await load()
     } else if (task.status === 'unknown') {
-      message.value = '上传结果待核实；系统不会自动重试。请检查目标文件。'
+      message.value = t('m.aef7e35ce1ec')
     } else {
-      error.value = `上传失败：${task.result.code || task.status}`
+      error.value = t('m.090a5d6ff2c9', {"0": (task.result.code || task.status)})
     }
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : '上传失败。'
+    error.value = reason instanceof Error ? reason.message : t('m.3f42bdcea6f7')
   } finally {
     pending.value = false
   }
@@ -194,43 +195,43 @@ onBeforeUnmount(() => { disposed = true })
 <template>
   <section class="node-files section-panel" aria-labelledby="files-title" data-testid="node-files">
     <header class="files-heading">
-      <div><span class="eyebrow">REMOTE FILES</span><h2 id="files-title">文件管理 · {{ nodeName }}</h2></div>
+      <div><span class="eyebrow">{{ t('label.144c3510385c') }}</span><h2 id="files-title">{{ t('m.55ec425eddc8') }}{{ nodeName }}</h2></div>
       <div class="files-actions">
-        <button class="container-action" type="button" :disabled="pending" @click="void openText()">新建文本</button>
-        <button class="container-action" type="button" :disabled="pending" @click="createDirectory">新建文件夹</button>
-        <button class="container-action" type="button" :disabled="pending" @click="uploadFile">上传文件</button>
-        <button class="container-action" type="button" :disabled="loading || pending" @click="void load()">刷新</button>
+        <button class="container-action" type="button" :disabled="pending" @click="void openText()">{{ t('m.017b0649496c') }}</button>
+        <button class="container-action" type="button" :disabled="pending" @click="createDirectory">{{ t('m.84244abc71de') }}</button>
+        <button class="container-action" type="button" :disabled="pending" @click="uploadFile">{{ t('m.bb5caa9c5976') }}</button>
+        <button class="container-action" type="button" :disabled="loading || pending" @click="void load()">{{ t('m.aee887434131') }}</button>
         <input ref="filePicker" class="file-picker" type="file" @change="acceptUpload">
       </div>
     </header>
-    <p v-if="error" class="files-message files-error" role="alert">{{ error }}</p>
-    <p v-if="message" class="files-message" role="status">{{ message }}</p>
-    <p v-if="pending" class="files-message" role="status">正在等待 Agent 执行并确认文件操作…</p>
-    <nav class="files-breadcrumbs" aria-label="当前目录">
+    <p v-if="error" class="files-message files-error" role="alert">{{ display(error) }}</p>
+    <p v-if="message" class="files-message" role="status">{{ display(message) }}</p>
+    <p v-if="pending" class="files-message" role="status">{{ t('m.f31c81b217a7') }}</p>
+    <nav class="files-breadcrumbs" :aria-label="t('m.257f4442af73')">
       <button v-for="crumb in breadcrumbs" :key="crumb.path" type="button" :aria-current="crumb.path === currentPath ? 'page' : undefined" @click="void load(crumb.path)">{{ crumb.label }}</button>
     </nav>
-    <button v-if="parentPath" class="file-parent" type="button" @click="void load(parentPath)">↑ 上级目录</button>
-    <p v-if="loading" class="files-empty">正在读取目录…</p>
-    <p v-else-if="entries.length === 0" class="files-empty">此目录为空。</p>
-    <div v-else class="file-list" aria-label="目录内容">
+    <button v-if="parentPath" class="file-parent" type="button" @click="void load(parentPath)">{{ t('m.bf0252306b57') }}</button>
+    <p v-if="loading" class="files-empty">{{ t('m.36517d179e0f') }}</p>
+    <p v-else-if="entries.length === 0" class="files-empty">{{ t('m.b372af75428d') }}</p>
+    <div v-else class="file-list" :aria-label="t('m.6bbaf705e8c6')">
       <article v-for="entry in entries" :key="entry.path" class="file-row" :data-kind="entry.kind">
         <button v-if="entry.kind === 'directory'" class="file-name" type="button" @click="void load(entry.path)"><span aria-hidden="true">📁</span>{{ entry.name }}/</button>
         <button v-else-if="isEditableTextFile(entry)" class="file-name" type="button" @click="void openText(entry)"><span aria-hidden="true">📄</span>{{ entry.name }}</button>
         <a v-else class="file-name" :href="downloadURL(entry)" :download="entry.name"><span aria-hidden="true">{{ entry.kind === 'file' ? '📄' : '↗' }}</span>{{ entry.name }}</a>
-        <span class="file-kind">{{ entry.kind === 'directory' ? '目录' : entry.kind === 'symlink' ? '链接' : entry.kind === 'file' ? '文件' : '其他' }}</span>
+        <span class="file-kind">{{ entry.kind === 'directory' ? t('m.52daa71ebc31') : entry.kind === 'symlink' ? t('m.305378ddd2b8') : entry.kind === 'file' ? t('m.39932f24fe11') : t('m.d2909f1647e7') }}</span>
         <span class="file-size">{{ entry.kind === 'file' ? formatFileSize(entry.size) : '—' }}</span>
-        <time v-if="fileModifiedDate(entry)" class="file-date" :datetime="fileModifiedDate(entry)!.toISOString()">{{ fileModifiedDate(entry)!.toLocaleString() }}</time><span v-else class="file-date">—</span>
+        <time v-if="fileModifiedDate(entry)" class="file-date" :datetime="fileModifiedDate(entry)!.toISOString()">{{ fileModifiedDate(entry)!.toLocaleString(locale) }}</time><span v-else class="file-date">—</span>
         <div class="file-row-actions">
-          <button type="button" :disabled="pending || entry.path === '/'" @click="void renameEntry(entry)">重命名</button>
-          <button type="button" class="file-delete" :disabled="pending || entry.path === '/'" @click="void deleteEntry(entry)">删除</button>
+          <button type="button" :disabled="pending || entry.path === '/'" @click="void renameEntry(entry)">{{ t('m.0d0cbac2eee5') }}</button>
+          <button type="button" class="file-delete" :disabled="pending || entry.path === '/'" @click="void deleteEntry(entry)">{{ t('m.2f9daa828907') }}</button>
         </div>
       </article>
     </div>
-    <section v-if="editorPath" class="file-editor" aria-label="文本编辑器">
-      <header><div><span class="eyebrow">{{ editorVersion ? 'EDIT FILE' : 'NEW FILE' }}</span><h3>{{ editorPath }}</h3></div><button type="button" class="container-action" :disabled="pending" @click="editorPath = ''">关闭</button></header>
-      <p v-if="editorLoading" class="files-empty">正在读取文件…</p>
-      <textarea v-else v-model="editorText" spellcheck="false" aria-label="文本内容"></textarea>
-      <footer><span>{{ editorBytes }} / 32 KiB</span><button type="button" :disabled="pending || editorLoading || editorBytes > 32 * 1024" @click="void saveText()">{{ pending ? '保存中…' : '保存文本' }}</button></footer>
+    <section v-if="editorPath" class="file-editor" :aria-label="t('m.c42f23fe05ae')">
+      <header><div><span class="eyebrow">{{ editorVersion ? 'EDIT FILE' : 'NEW FILE' }}</span><h3>{{ editorPath }}</h3></div><button type="button" class="container-action" :disabled="pending" @click="editorPath = ''">{{ t('m.3fd47edce45b') }}</button></header>
+      <p v-if="editorLoading" class="files-empty">{{ t('m.b75809afbe0c') }}</p>
+      <textarea v-else v-model="editorText" spellcheck="false" :aria-label="t('m.479bac57975e')"></textarea>
+      <footer><span>{{ editorBytes }} / 32 KiB</span><button type="button" :disabled="pending || editorLoading || editorBytes > 32 * 1024" @click="void saveText()">{{ pending ? t('m.ff509c9ba052') : t('m.5dd6704c1e9a') }}</button></footer>
     </section>
   </section>
 </template>

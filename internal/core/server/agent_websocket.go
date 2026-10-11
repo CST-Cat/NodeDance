@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -151,7 +152,7 @@ func (c *agentConnection) failImageWaiters(errorCode string) {
 }
 
 // applyCapabilityReport accepts only a monotonic downgrade within the set
-// negotiated in Hello. Nil is reserved for older Agents that omit the field.
+// negotiated in Hello. Nil leaves the current capability set unchanged.
 func (c *agentConnection) applyCapabilityReport(capabilities []string) error {
 	if capabilities == nil {
 		return nil
@@ -183,17 +184,7 @@ func (c *agentConnection) applyCapabilityReport(capabilities []string) error {
 	return nil
 }
 
-func knownAgentCapability(capability string) bool {
-	switch capability {
-	case "agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1",
-		protocol.CapabilityMetrics, protocol.CapabilityDocker, protocol.CapabilityTaskBridge,
-		protocol.CapabilityContainerStreams, protocol.CapabilityCompose, protocol.CapabilityImages,
-		protocol.CapabilityTerminal, protocol.CapabilityFiles, protocol.CapabilityProbes:
-		return true
-	default:
-		return false
-	}
-}
+func knownAgentCapability(capability string) bool { return protocol.KnownCapability(capability) }
 
 type agentRead struct {
 	typeID websocket.MessageType
@@ -1009,7 +1000,7 @@ func decodeAgentEnvelope(raw []byte) (protocol.Envelope, error) {
 	if len(raw) == 0 || len(raw) > protocol.MaxMessageBytes {
 		return envelope, errors.New("Agent frame length is invalid")
 	}
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&envelope); err != nil {
 		return envelope, err
@@ -1025,7 +1016,7 @@ func decodeAgentPayload(raw json.RawMessage, target any) error {
 	if len(raw) == 0 || len(raw) > 64*1024 {
 		return errors.New("Agent payload length is invalid")
 	}
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return err
@@ -1068,13 +1059,7 @@ func validHello(hello protocol.Hello) bool {
 }
 
 func negotiateCapabilities(reported []string) []string {
-	result := make([]string, 0, len(reported))
-	for _, capability := range reported {
-		if knownAgentCapability(capability) {
-			result = append(result, capability)
-		}
-	}
-	return result
+	return protocol.NegotiateCapabilities(reported)
 }
 
 func (s *Server) negotiateCapabilitiesForNode(nodeID string, reported []string) []string {

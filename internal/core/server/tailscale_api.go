@@ -332,10 +332,10 @@ func tailscaleAPIError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	}
 	if errors.Is(err, tailscale.ErrUnavailable) {
-		message = "Core 机器未安装 Tailscale CLI。节点手动安装仍可使用。"
+		message = "Tailscale CLI is not installed on Core; manual Agent installation remains available."
 	}
 	if errors.Is(err, tailscale.ErrNotLoggedIn) {
-		message = "Core 机器尚未登录 Tailscale，或当前账号没有可见节点。"
+		message = "Core is not signed in to Tailscale or has no visible peers."
 	}
 	writeJSON(w, status, map[string]string{"message": message})
 }

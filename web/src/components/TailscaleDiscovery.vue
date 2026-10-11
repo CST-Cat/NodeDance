@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onMounted, reactive, ref } from 'vue'
 import { api, type TailscaleDeploymentTask, type TailscalePeer } from '../api'
 import AgentEnrollment from './AgentEnrollment.vue'
@@ -40,11 +41,11 @@ const rescueCommand = computed(() => {
   if (!selected.value?.ips.length) return ''
   const address = selected.value.ips[0]
   const host = address.includes(':') ? `[${address}]` : address
-  return `ssh -- ${shellQuote(`${credentials.user || '<SSH用户名>'}@${host}`)}`
+  return t('m.9dee018adddc', {"0": (shellQuote(t('m.6a82133ca245', {"0": (credentials.user || t('m.a0b366e8b611')), "1": (host)})))})
 })
 
 function peerLabel(peer: TailscalePeer): string { return peer.name || peer.dnsName || peer.identity }
-function stateLabel(peer: TailscalePeer): string { return peer.online ? '在线' : '离线' }
+function stateLabel(peer: TailscalePeer): string { return peer.online ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c') }
 function clearNotice() { error.value = ''; notice.value = '' }
 
 function changeResolutionOutcome(event: Event) {
@@ -69,7 +70,7 @@ async function discover() {
     const result = await api.tailscalePeers()
     peers.value = result.peers
     if (selected.value) selected.value = peers.value.find((peer) => peer.identity === selected.value?.identity) ?? null
-    if (!peers.value.length) notice.value = '当前 Tailscale 账号没有 Core 可见的其他节点。'
+    if (!peers.value.length) notice.value = t('m.8bcf5c4107b5')
   } catch (reason) {
     peers.value = []
     error.value = message(reason)
@@ -89,7 +90,7 @@ async function refreshDeploymentTasks() {
       task.value = result.tasks[0] ?? null
     }
   } catch (reason) {
-    error.value = `无法恢复未完成的 Agent 部署任务：${message(reason)}`
+    error.value = t('m.5b47ff2c5947', {"0": (message(reason))})
   }
 }
 
@@ -200,28 +201,28 @@ async function pollTask(id: string) {
     try {
       task.value = await api.tailscaleDeployment(id)
     } catch (reason) {
-      error.value = `无法读取部署任务状态：${message(reason)}`
+      error.value = t('m.2eddbfa49d23', {"0": (message(reason))})
       return
     }
     if (taskFinished.value) {
       await refreshDeploymentTasks()
       if (task.value?.status === 'succeeded') {
-        const successMessage = task.value.message || 'Agent 已真实连接到 Core。'
+        const successMessage = task.value.message || t('m.37d815f92ccd')
         await discover()
         if (!error.value) notice.value = successMessage
       } else if (task.value?.status === 'unknown') {
-        error.value = task.value.message || '部署结果待确认，请先检查目标机的 systemd 与 Agent 状态。'
+        error.value = task.value.message || t('m.5ef75da06b52')
       } else {
-        error.value = task.value?.message || 'SSH 部署失败。请检查权限、主机指纹和系统状态后重试。'
+        error.value = task.value?.message || t('m.b6b1127c181b')
       }
       return
     }
   }
-  error.value = '部署任务仍在运行；可以稍后刷新任务状态，不要重复执行可能已完成的部署。'
+  error.value = t('m.e2de9b4ce02d')
 }
 
 function message(reason: unknown): string {
-  return reason instanceof Error && reason.message ? reason.message : '请求失败，请刷新节点列表后重试。'
+  return reason instanceof Error && reason.message ? reason.message : t('m.a8953ce415a5')
 }
 
 function shellQuote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'` }
@@ -232,103 +233,103 @@ onMounted(() => { void discover(); void refreshDeploymentTasks() })
 <template>
   <main class="tailscale-page" data-testid="tailscale-discovery">
     <header class="discovery-heading">
-      <div><span class="eyebrow">NODE DISCOVERY</span><h1>Tailscale 节点发现</h1><p>读取运行 Core 的机器当前可见的 Tailnet 节点。发现不会自动安装或纳管节点。</p></div>
-      <button class="secondary-button" type="button" :disabled="discovering" @click="discover">{{ discovering ? '正在读取…' : '刷新节点' }}</button>
+      <div><span class="eyebrow">{{ t('label.7aaef7e44874') }}</span><h1>{{ t('m.b5af65d9acc5') }}</h1><p>{{ t('m.76702efc45e4') }}</p></div>
+      <button class="secondary-button" type="button" :disabled="discovering" @click="discover">{{ discovering ? t('m.86b6d0d63062') : t('m.778b04988d4f') }}</button>
     </header>
 
-    <div v-if="error" class="alert alert-error" role="alert">{{ error }}</div>
-    <div v-if="notice" class="alert alert-success" role="status">{{ notice }}</div>
+    <div v-if="error" class="alert alert-error" role="alert">{{ display(error) }}</div>
+    <div v-if="notice" class="alert alert-success" role="status">{{ display(notice) }}</div>
 
     <section v-if="unresolvedDeployments.length" class="discovery-card" aria-labelledby="unresolved-deployments-title" data-testid="unresolved-deployments">
-      <div class="discovery-section-heading"><div><h2 id="unresolved-deployments-title">未完成的 Agent 部署</h2><p>任务从 Core Tasks 恢复；未知结果需先检查目标节点，再记录核实结果。</p></div><button class="quiet-button" type="button" @click="refreshDeploymentTasks">刷新任务</button></div>
+      <div class="discovery-section-heading"><div><h2 id="unresolved-deployments-title">{{ t('m.756060e81582') }}</h2><p>{{ t('m.cf0831bd17a7') }}</p></div><button class="quiet-button" type="button" @click="refreshDeploymentTasks">{{ t('m.e4c9549fe2f4') }}</button></div>
       <div class="managed-list"><article v-for="deployment in unresolvedDeployments" :key="deployment.taskId">
         <strong>{{ deployment.peerName || deployment.peerIdentity }}</strong><span>{{ deployment.phase }} · {{ deployment.status }}</span><code>{{ deployment.taskId }}</code>
-        <button class="secondary-button" type="button" @click="inspectDeploymentTask(deployment)">{{ deployment.status === 'unknown' ? '核实并解除占用' : '查看任务' }}</button>
+        <button class="secondary-button" type="button" @click="inspectDeploymentTask(deployment)">{{ deployment.status === 'unknown' ? t('m.196d981f3b71') : t('m.36550b9c5748') }}</button>
       </article></div>
     </section>
 
     <section class="discovery-card" aria-labelledby="candidates-title">
-      <div class="discovery-section-heading"><div><h2 id="candidates-title">可部署的 Linux 节点</h2><p>部署前会逐台确认 SSH 主机指纹、系统、架构、权限及 Agent 签名。</p></div><span class="count-pill">{{ candidates.length }}</span></div>
-      <div v-if="discovering" class="empty-state" role="status">正在读取 Core 本机的 Tailscale 状态…</div>
+      <div class="discovery-section-heading"><div><h2 id="candidates-title">{{ t('m.4bd7d4a845a6') }}</h2><p>{{ t('m.8cb6ae80b062') }}</p></div><span class="count-pill">{{ candidates.length }}</span></div>
+      <div v-if="discovering" class="empty-state" role="status">{{ t('m.41ac7e25e811') }}</div>
       <div v-else-if="candidates.length" class="peer-grid">
         <article v-for="peer in candidates" :key="peer.identity" class="peer-card" :data-identity="peer.identity">
           <div class="peer-main"><span class="peer-icon" aria-hidden="true">⌘</span><div><strong>{{ peerLabel(peer) }}</strong><span>{{ peer.os }} · {{ peer.ips.join(' · ') }}</span></div><span class="peer-state" :data-online="peer.online">{{ stateLabel(peer) }}</span></div>
-          <small class="peer-id">稳定设备身份：{{ peer.identity }}</small>
-          <button class="secondary-button" type="button" :disabled="!peer.online" @click="choose(peer)">{{ peer.online ? '查看部署选项' : '节点离线' }}</button>
+          <small class="peer-id">{{ t('m.314c00531b6b') }}{{ peer.identity }}</small>
+          <button class="secondary-button" type="button" :disabled="!peer.online" @click="choose(peer)">{{ peer.online ? t('m.633ad558df34') : t('m.badb7a4e8552') }}</button>
         </article>
       </div>
-      <div v-else-if="!error && !discovering" class="empty-state">未发现可部署的 Linux 节点。请确认 Core 已登录 Tailnet，且该节点在当前账号的可见范围内。</div>
+      <div v-else-if="!error && !discovering" class="empty-state">{{ t('m.91c31647219d') }}</div>
     </section>
 
     <section v-if="managed.length" class="discovery-card" aria-labelledby="managed-title">
-      <div class="discovery-section-heading"><div><h2 id="managed-title">已关联的受管节点</h2><p>关联使用 Tailscale 稳定设备身份，不依赖机器名或 IP。</p></div><span class="count-pill">{{ managed.length }}</span></div>
-      <div class="managed-list"><article v-for="peer in managed" :key="peer.identity"><strong>{{ peerLabel(peer) }}</strong><span>{{ peer.ips.join(' · ') }}</span><code>{{ peer.nodeId }}</code><span class="peer-state" :data-online="peer.online">{{ peer.online ? 'Tailnet 在线' : 'Tailnet 离线' }}</span></article></div>
+      <div class="discovery-section-heading"><div><h2 id="managed-title">{{ t('m.032d0a11f835') }}</h2><p>{{ t('m.f06dc19bae6e') }}</p></div><span class="count-pill">{{ managed.length }}</span></div>
+      <div class="managed-list"><article v-for="peer in managed" :key="peer.identity"><strong>{{ peerLabel(peer) }}</strong><span>{{ peer.ips.join(' · ') }}</span><code>{{ peer.nodeId }}</code><span class="peer-state" :data-online="peer.online">{{ peer.online ? t('m.af9306d8cc6d') : t('m.b4ba6377da21') }}</span></article></div>
     </section>
 
     <section v-if="unsupported.length" class="discovery-card muted-card" aria-labelledby="unsupported-title">
-      <div class="discovery-section-heading"><div><h2 id="unsupported-title">暂不支持的节点</h2><p>当前 SSH 辅助部署只支持 Linux amd64/arm64。</p></div><span class="count-pill">{{ unsupported.length }}</span></div>
-      <ul class="unsupported-list"><li v-for="peer in unsupported" :key="peer.identity"><strong>{{ peerLabel(peer) }}</strong><span>{{ peer.os || '未知操作系统' }} · {{ peer.ips.join(' · ') }}</span></li></ul>
+      <div class="discovery-section-heading"><div><h2 id="unsupported-title">{{ t('m.a0eefe1a80e8') }}</h2><p>{{ t('m.bf599a08f93f') }}</p></div><span class="count-pill">{{ unsupported.length }}</span></div>
+      <ul class="unsupported-list"><li v-for="peer in unsupported" :key="peer.identity"><strong>{{ peerLabel(peer) }}</strong><span>{{ peer.os || t('m.17cd83b14b04') }} · {{ peer.ips.join(' · ') }}</span></li></ul>
     </section>
 
     <section v-if="selected" class="discovery-card deploy-card" aria-labelledby="deploy-title">
-      <div class="discovery-section-heading"><div><span class="eyebrow">{{ selected.name || selected.identity }}</span><h2 id="deploy-title">部署 Agent</h2><p>目标地址只从刚刚读取的 Tailscale IP 中选择。主机名和 IP 变化不会改变稳定身份。</p></div><button class="quiet-button" type="button" @click="selected = null">关闭</button></div>
+      <div class="discovery-section-heading"><div><span class="eyebrow">{{ selected.name || selected.identity }}</span><h2 id="deploy-title">{{ t('m.3421f410ce27') }}</h2><p>{{ t('m.b5833cce47f3') }}</p></div><button class="quiet-button" type="button" @click="selected = null">{{ t('m.3fd47edce45b') }}</button></div>
       <div class="deploy-columns">
         <div class="deploy-form">
-          <label class="field"><span>NodeDance 显示名称</span><input v-model="form.displayName" maxlength="80" autocomplete="off" /></label>
-          <label class="field"><span>Agent 主机文件根目录（可选）</span><input v-model="form.fileRoot" :disabled="form.disableFileRoot" autocomplete="off" placeholder="/srv/nodedance-files" /><small class="field-hint">新部署留空时禁用文件管理；重装时保留目标机已明确保存的目录。配置后只开放该现有绝对目录，服务账号仍须拥有对应的 Linux 读写权限。</small></label>
-          <label class="check-row"><input v-model="form.disableFileRoot" type="checkbox" /><span>即使目标机已有配置，也明确禁用主机文件管理</span></label>
-          <label class="field"><span>Core HTTPS 地址</span><input v-model="form.coreUrl" inputmode="url" placeholder="https://panel.example.ts.net" /><small class="field-hint">Agent 使用 HTTPS，证书验证始终开启。HTTP 不受支持。</small></label>
-          <label class="field"><span>备用 HTTPS 地址（可选）</span><input v-model="form.fallbackUrl" inputmode="url" placeholder="https://backup.example.net" /></label>
-          <label class="check-row"><input v-model="form.allowFallback" type="checkbox" /><span>明确允许主地址连接失败时尝试备用地址</span></label>
-          <p class="field-hint">未勾选时不会请求备用地址。主地址和备用地址都必须通过标准 TLS 证书验证。</p>
-          <label class="field"><span>SSH 用户</span><input v-model="credentials.user" autocomplete="username" /></label>
-          <div class="auth-mode" role="group" aria-label="SSH 认证方式"><button type="button" :aria-pressed="!form.usePrivateKey" @click="form.usePrivateKey = false">一次性密码</button><button type="button" :aria-pressed="form.usePrivateKey" @click="form.usePrivateKey = true">私钥</button></div>
-          <label v-if="!form.usePrivateKey" class="field"><span>SSH 密码</span><input v-model="credentials.password" type="password" autocomplete="new-password" /><small class="field-hint">只在本次请求的内存中使用，不保存到部署历史。</small></label>
+          <label class="field"><span>{{ t('m.e1290ec94f8d') }}</span><input v-model="form.displayName" maxlength="80" autocomplete="off" /></label>
+          <label class="field"><span>{{ t('m.d62df2018d54') }}</span><input v-model="form.fileRoot" :disabled="form.disableFileRoot" autocomplete="off" placeholder="/srv/nodedance-files" /><small class="field-hint">{{ t('m.bb7758c4aae9') }}</small></label>
+          <label class="check-row"><input v-model="form.disableFileRoot" type="checkbox" /><span>{{ t('m.63805b68bc8a') }}</span></label>
+          <label class="field"><span>{{ t('m.8f7fd0e28ab3') }}</span><input v-model="form.coreUrl" inputmode="url" placeholder="https://panel.example.ts.net" /><small class="field-hint">{{ t('m.6b6c846170b3') }}</small></label>
+          <label class="field"><span>{{ t('m.9ca13b13c082') }}</span><input v-model="form.fallbackUrl" inputmode="url" placeholder="https://backup.example.net" /></label>
+          <label class="check-row"><input v-model="form.allowFallback" type="checkbox" /><span>{{ t('m.78c672bad4da') }}</span></label>
+          <p class="field-hint">{{ t('m.29319276203d') }}</p>
+          <label class="field"><span>{{ t('m.4249329ab914') }}</span><input v-model="credentials.user" autocomplete="username" /></label>
+          <div class="auth-mode" role="group" :aria-label="t('m.18d16b1edffd')"><button type="button" :aria-pressed="!form.usePrivateKey" @click="form.usePrivateKey = false">{{ t('m.c9d0cf7bf3ee') }}</button><button type="button" :aria-pressed="form.usePrivateKey" @click="form.usePrivateKey = true">{{ t('m.3ffe935f9d0f') }}</button></div>
+          <label v-if="!form.usePrivateKey" class="field"><span>{{ t('m.6f0890a1b0b0') }}</span><input v-model="credentials.password" type="password" autocomplete="new-password" /><small class="field-hint">{{ t('m.fe4b4ce6b8aa') }}</small></label>
           <template v-else>
-            <label class="field"><span>SSH 私钥</span><textarea v-model="credentials.privateKey" rows="6" spellcheck="false" autocomplete="off" /></label>
-            <label class="field"><span>私钥口令（如需要）</span><input v-model="credentials.passphrase" type="password" autocomplete="new-password" /></label>
+            <label class="field"><span>{{ t('m.2637e8166d92') }}</span><textarea v-model="credentials.privateKey" rows="6" spellcheck="false" autocomplete="off" /></label>
+            <label class="field"><span>{{ t('m.d2f245e82fd3') }}</span><input v-model="credentials.passphrase" type="password" autocomplete="new-password" /></label>
           </template>
         </div>
         <div class="hostkey-panel">
-          <h3>SSH 主机身份验证</h3>
-          <p>先读取 SSH host key 指纹，并通过你可信的独立渠道核对目标主机。首次接受及后续变化都需要明确确认。</p>
-          <button class="secondary-button" type="button" :disabled="fingerprintLoading" @click="probeHostKey">{{ fingerprintLoading ? '正在读取指纹…' : '读取 SSH host key 指纹' }}</button>
+          <h3>{{ t('m.00487aceb17d') }}</h3>
+          <p>{{ t('m.1f9b1895427a') }}</p>
+          <button class="secondary-button" type="button" :disabled="fingerprintLoading" @click="probeHostKey">{{ fingerprintLoading ? t('m.db728a839413') : t('m.c2df7b3b46e0') }}</button>
           <code v-if="fingerprint" class="fingerprint" data-testid="ssh-fingerprint">{{ fingerprint }}</code>
-          <label v-if="fingerprint" class="check-row"><input v-model="form.confirmHostKey" type="checkbox" /><span>我已通过独立可信渠道核对该指纹</span></label>
-          <label v-if="fingerprint" class="check-row"><input v-model="form.confirmChangedHostKey" type="checkbox" /><span>若它与此前保存的指纹不同，我明确确认接受此次变更</span></label>
-          <button class="primary-button full-button" type="button" :disabled="loading || !fingerprint || !form.confirmHostKey || !credentials.user || !form.displayName" @click="startDeployment">{{ loading ? '部署中…' : '启动 SSH 部署任务' }}</button>
+          <label v-if="fingerprint" class="check-row"><input v-model="form.confirmHostKey" type="checkbox" /><span>{{ t('m.053515f793f4') }}</span></label>
+          <label v-if="fingerprint" class="check-row"><input v-model="form.confirmChangedHostKey" type="checkbox" /><span>{{ t('m.d643c97eee50') }}</span></label>
+          <button class="primary-button full-button" type="button" :disabled="loading || !fingerprint || !form.confirmHostKey || !credentials.user || !form.displayName" @click="startDeployment">{{ loading ? t('m.96461d04f477') : t('m.3795cc8670b9') }}</button>
         </div>
       </div>
 
-      <aside class="ssh-rescue" aria-label="独立 SSH 救援信息">
-        <div><h3>独立 SSH 救援</h3><p>部署失败时仍可从其他终端直接连接目标节点；此连接不依赖 NodeDance Agent。</p></div>
-        <div class="rescue-addresses"><span>当前可见 Tailscale 地址</span><code>{{ selected.ips.join(' · ') || '暂无可用地址' }}</code></div>
+      <aside class="ssh-rescue" :aria-label="t('m.7fe4082935b3')">
+        <div><h3>{{ t('m.6e9f9850c332') }}</h3><p>{{ t('m.4771d6286323') }}</p></div>
+        <div class="rescue-addresses"><span>{{ t('m.25e4ddf9ec12') }}</span><code>{{ selected.ips.join(' · ') || t('m.423dec214508') }}</code></div>
         <pre v-if="selected.ips.length"><code>{{ rescueCommand }}</code></pre>
-        <p class="field-hint">用已核对的 host key 和 SSH 用户登录后，可独立查看 <code>systemctl status nodedance-agent</code>；不要把密码、私钥或一次性注册 Token 添加到此命令。</p>
+        <p class="field-hint">{{ t('m.6392f921944a') }}<code>systemctl status nodedance-agent</code>{{ t('m.5c05a073a592') }}</p>
       </aside>
 
     </section>
 
     <section v-if="task" class="discovery-card" aria-labelledby="deployment-task-title" data-testid="deployment-task-section">
-      <div class="discovery-section-heading"><div><h2 id="deployment-task-title">Agent 部署任务</h2><p>任务状态来自共享 Core Tasks 存储。</p></div><button class="quiet-button" type="button" @click="task = null">关闭</button></div>
-      <div class="task-status" data-testid="deployment-task" :data-status="task.status" role="status"><strong>{{ task.phase }} · {{ task.status }}</strong><span>{{ task.message }}</span><small v-if="task.nodeId">Node ID：{{ task.nodeId }}</small></div>
+      <div class="discovery-section-heading"><div><h2 id="deployment-task-title">{{ t('m.9343a9c6612f') }}</h2><p>{{ t('m.6094de4eb887') }}</p></div><button class="quiet-button" type="button" @click="task = null">{{ t('m.3fd47edce45b') }}</button></div>
+      <div class="task-status" data-testid="deployment-task" :data-status="task.status" role="status"><strong>{{ task.phase }} · {{ task.status }}</strong><span>{{ display(task.message) }}</span><small v-if="task.nodeId">Node ID：{{ task.nodeId }}</small></div>
       <div v-if="task.status === 'unknown'" class="task-status task-review" data-testid="deployment-review">
-        <strong>检查目标 VPS 后解除部署占用</strong>
-        <p>请先通过独立 SSH 检查 systemd、Agent 注册和节点在线状态。确认结果会写入任务审计并释放该 Tailscale peer 的任务占用。</p>
-        <label class="field"><span>核实结果</span><select :value="resolutionOutcome" @change="changeResolutionOutcome">
-          <option value="succeeded">Agent 已安装并上线</option><option value="failed">Agent 未安装或安装失败</option>
+        <strong>{{ t('m.278a2d42ba92') }}</strong>
+        <p>{{ t('m.e972e33c6e32') }}</p>
+        <label class="field"><span>{{ t('m.6e3bdd16a1ec') }}</span><select :value="resolutionOutcome" @change="changeResolutionOutcome">
+          <option value="succeeded">{{ t('m.18786701de8f') }}</option><option value="failed">{{ t('m.981ea9952f00') }}</option>
         </select></label>
-        <label v-if="resolutionOutcome === 'succeeded'" class="field"><span>Docker 状态</span><select :value="resolutionObservedState" @change="changeResolutionObservedState">
-          <option value="connected">Docker 可用</option><option value="unavailable">Docker 不可用</option><option value="absent">主机没有 Docker</option>
+        <label v-if="resolutionOutcome === 'succeeded'" class="field"><span>{{ t('m.e0c379ab2eb0') }}</span><select :value="resolutionObservedState" @change="changeResolutionObservedState">
+          <option value="connected">{{ t('m.83af47139246') }}</option><option value="unavailable">{{ t('m.d3e431f9d10b') }}</option><option value="absent">{{ t('m.8c4ecd0b9c16') }}</option>
         </select></label>
-        <label class="check-row"><input v-model="resolutionConfirmed" type="checkbox" /><span>我已检查目标 VPS，并确认上述真实结果</span></label>
-        <button class="secondary-button" type="button" :disabled="!resolutionConfirmed" @click="resolveUnknownDeployment">记录核实结果</button>
+        <label class="check-row"><input v-model="resolutionConfirmed" type="checkbox" /><span>{{ t('m.64aa1e37e12e') }}</span></label>
+        <button class="secondary-button" type="button" :disabled="!resolutionConfirmed" @click="resolveUnknownDeployment">{{ t('m.b8dead662e24') }}</button>
       </div>
     </section>
 
     <AgentEnrollment compact />
 
-    <footer class="discovery-footer"><span>只展示 Core 运行环境当前有权看到的 Tailnet 节点。</span><button class="quiet-button" type="button" @click="emit('back')">返回控制台</button></footer>
+    <footer class="discovery-footer"><span>{{ t('m.b4e9ecd50535') }}</span><button class="quiet-button" type="button" @click="emit('back')">{{ t('m.e0e6dc51f626') }}</button></footer>
   </main>
 </template>
 

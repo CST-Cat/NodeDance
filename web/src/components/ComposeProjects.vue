@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, type ContainerTask } from '../api'
 import { composeApi, type ComposeOperation, type ComposeProject } from '../compose-api'
@@ -30,21 +31,21 @@ async function refresh() {
   } catch (reason) {
     if (disposed) return
     stale.value = true
-    error.value = reason instanceof Error ? reason.message : '无法读取 Compose 项目。'
+    error.value = reason instanceof Error ? reason.message : t('m.777bbe3013b4')
   } finally {
     if (!disposed) loading.value = false
   }
 }
 
 function operationLabel(action: ComposeOperation) {
-  return ({ start: '启动', stop: '停止', restart: '重启', deploy: '部署', config_save: '保存配置' } as const)[action]
+  return ({ start: t('m.56410fc65314'), stop: t('m.ca4d973c0b00'), restart: t('m.562822892865'), deploy: t('m.3ca7718593c0'), config_save: t('m.6e584e3d5ce6') } as const)[action]
 }
 
 function operationConfirmation(project: ComposeProject, action: ComposeOperation): string | null {
-  const services = project.services.map((service) => `${service.name}（${service.instances.length} 个容器）`).join('、') || '当前无已发现服务容器'
-  if (action === 'stop') return `停止 Compose 项目「${project.ref.name}」的服务？\n\n受影响服务：${services}\n运行中的服务会中断；挂载卷和数据目录不会由 stop 删除。`
-  if (action === 'restart') return `重启 Compose 项目「${project.ref.name}」的所有服务？\n\n受影响服务：${services}\n服务会短暂中断，挂载卷会保留。`
-  if (action === 'deploy') return `部署并强制重新创建 Compose 项目「${project.ref.name}」的服务？\n\n受影响服务：${services}\n\n请先检查配置变更、端口映射和挂载。此操作可能造成停机；Docker 卷不会被删除。`
+  const services = project.services.map((service) => t('m.6d88c1288a7f', {"0": (service.name), "1": (service.instances.length)})).join('、') || t('m.2681214710d2')
+  if (action === 'stop') return t('m.4525ce3335ca', {"0": (project.ref.name), "1": (services)})
+  if (action === 'restart') return t('m.3c8411939878', {"0": (project.ref.name), "1": (services)})
+  if (action === 'deploy') return t('m.bbff0417eee6', {"0": (project.ref.name), "1": (services)})
   return null
 }
 
@@ -63,7 +64,7 @@ function scheduleTaskPoll(projectKey: string, taskId: string) {
     } catch (reason) {
       if (disposed) return
       pending.value = { ...pending.value, [projectKey]: '' }
-      error.value = reason instanceof Error ? reason.message : '无法读取 Compose 操作结果。'
+      error.value = reason instanceof Error ? reason.message : t('m.54c881f3fc7c')
     }
   }, 800)
   timers.add(timer)
@@ -88,25 +89,25 @@ async function runAction(project: ComposeProject, action: ComposeOperation) {
     }
   } catch (reason) {
     pending.value = { ...pending.value, [project.ref.key]: '' }
-    error.value = reason instanceof Error ? reason.message : `无法${operationLabel(action)} Compose 项目。`
+    error.value = reason instanceof Error ? reason.message : t('m.96556b2e2aac', {"0": (operationLabel(action))})
   }
 }
 
 function taskMessage(task?: ContainerTask) {
   if (!task) return ''
-  if (task.status === 'succeeded') return `${operationLabel(task.action as ComposeOperation)}已核实：${task.result.observedState || task.result.code}`
+  if (task.status === 'succeeded') return t('m.10e0cfbae303', {"0": (operationLabel(task.action as ComposeOperation)), "1": (task.result.observedState || task.result.code)})
   if (task.status === 'failed') {
     if (task.action === 'compose_deploy' && ['recovered', 'recreated', 'restored_offline'].includes(task.result.observedState || '')) {
-      const restored = task.result.observedState === 'restored_offline' ? '旧配置已恢复，项目仍停止' : '旧配置及服务状态已恢复并核实'
-      return `部署失败（${task.result.resourceRevision || task.result.code}）；${restored}，数据卷保留。`
+      const restored = task.result.observedState === 'restored_offline' ? t('m.74e19906ba04') : t('m.a40db8641914')
+      return t('m.3c54e7a0bc54', {"0": (task.result.resourceRevision || task.result.code), "1": (restored)})
     }
-    return `操作失败：${task.result.code || '已确认失败'}`
+    return t('m.5bc4c4816eeb', {"0": (task.result.code || t('m.f50ce21ae910'))})
   }
   if (task.status === 'unknown') {
     if (task.result.observedState === 'recovery_required') {
-      return `部署恢复待人工处理（${task.result.observedState}：${task.result.resourceRevision || '原因未分类'}）。请核对上方工作目录中的配置与容器；必要时在该节点运行对应项目的 docker compose up -d，确认服务正常后再处理待核实任务。`
+      return t('m.29dc41c6f776', {"0": (task.result.observedState), "1": (task.result.resourceRevision || t('m.fb2425b0c8e1'))})
     }
-    return '结果待核实；不会自动重试高风险 Compose 操作。'
+    return t('m.d004f1dc1829')
   }
   return `${operationLabel(task.action as ComposeOperation)}：${task.status}`
 }
@@ -127,31 +128,31 @@ onBeforeUnmount(() => {
 <template>
   <section class="compose-projects section-panel" aria-labelledby="compose-projects-title" data-testid="compose-projects">
     <header class="section-toolbar">
-      <div><span class="eyebrow">DOCKER COMPOSE</span><h2 id="compose-projects-title">Compose 项目 · {{ nodeId }}</h2></div>
-      <button class="container-action" type="button" :disabled="loading" @click="void refresh()">{{ loading ? '刷新中…' : '刷新' }}</button>
+      <div><span class="eyebrow">{{ t('label.135e86eb8ca8') }}</span><h2 id="compose-projects-title">{{ t('m.27852c17e6fc') }}{{ nodeId }}</h2></div>
+      <button class="container-action" type="button" :disabled="loading" @click="void refresh()">{{ loading ? t('m.7f3c8312816f') : t('m.aee887434131') }}</button>
     </header>
-    <p v-if="stale" class="compose-stale" role="status">Agent 离线、Docker 不可用或项目清单过期时，操作与编辑会被禁用；历史项目仍可查看。</p>
-    <p v-if="error" class="compose-error" role="alert">{{ error }}</p>
+    <p v-if="stale" class="compose-stale" role="status">{{ t('m.11a3711c480d') }}</p>
+    <p v-if="error" class="compose-error" role="alert">{{ display(error) }}</p>
     <ComposeCreateForm :node-id="nodeId" :disabled="stale" @created="void refresh()" />
-    <p v-if="loading && !projects.length" class="compose-empty">正在读取真实 Docker Compose 标签和容器库存…</p>
-    <p v-else-if="!projects.length" class="compose-empty">没有发现 Compose 项目。没有 Compose 文件时，关联容器仍保留在 Docker 详情中。</p>
+    <p v-if="loading && !projects.length" class="compose-empty">{{ t('m.6025e55b6f68') }}</p>
+    <p v-else-if="!projects.length" class="compose-empty">{{ t('m.55f37d0877f7') }}</p>
     <article v-for="project in projects" :key="project.ref.key" class="compose-project-card" :data-stale="project.dataStale || stale">
       <header class="compose-project-heading">
         <div><span class="eyebrow">{{ project.configAvailable ? 'CONFIG AVAILABLE' : 'CONTAINERS DISCOVERED' }}</span><h3>{{ project.ref.name }}</h3><p>{{ project.ref.workingDirectory }}</p></div>
         <div class="compose-project-actions">
-          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'start')">启动</button>
-          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'stop')">停止</button>
-          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'restart')">重启</button>
-          <button class="container-action container-action-danger" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'deploy')">部署</button>
-          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable" @click="editorProjectKey = project.ref.key">编辑配置</button>
+          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'start')">{{ t('m.56410fc65314') }}</button>
+          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'stop')">{{ t('m.ca4d973c0b00') }}</button>
+          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'restart')">{{ t('m.562822892865') }}</button>
+          <button class="container-action container-action-danger" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'deploy')">{{ t('m.3ca7718593c0') }}</button>
+          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable" @click="editorProjectKey = project.ref.key">{{ t('m.b2b5b9fafa31') }}</button>
         </div>
       </header>
-      <p v-if="!project.configAvailable" class="compose-warning">配置文件当前不可用。对应容器仍可在 Docker 详情中单独查看和管理。</p>
-      <p v-if="pending[project.ref.key]" class="compose-task-line" role="status">正在{{ operationLabel(pending[project.ref.key] as ComposeOperation) }}…</p>
-      <p v-if="taskByProject[project.ref.key]" class="compose-task-line" :data-status="taskByProject[project.ref.key].status" role="status">{{ taskMessage(taskByProject[project.ref.key]) }}</p>
+      <p v-if="!project.configAvailable" class="compose-warning">{{ t('m.083c34e37d43') }}</p>
+      <p v-if="pending[project.ref.key]" class="compose-task-line" role="status">{{ t('m.e6b02a08e69a') }}{{ operationLabel(pending[project.ref.key] as ComposeOperation) }}…</p>
+      <p v-if="taskByProject[project.ref.key]" class="compose-task-line" :data-status="taskByProject[project.ref.key].status" role="status">{{ display(taskMessage(taskByProject[project.ref.key])) }}</p>
       <div v-if="project.services.length" class="compose-services">
         <section v-for="service in project.services" :key="service.name" class="compose-service">
-          <h4>{{ service.name }} <small>{{ service.instances.length }} 个实例</small></h4>
+          <h4>{{ service.name }} <small>{{ service.instances.length }}{{ t('m.3cbb1fb681cc') }}</small></h4>
           <ul>
             <li v-for="instance in service.instances" :key="instance.containerId">
               <span>{{ instance.containerName }}</span><code>{{ instance.containerId.slice(0, 12) }}</code>
@@ -160,7 +161,7 @@ onBeforeUnmount(() => {
           </ul>
         </section>
       </div>
-      <p v-else class="compose-empty">当前未发现容器实例；项目源信息保留，操作仍会由 Agent 验证。</p>
+      <p v-else class="compose-empty">{{ t('m.831759cffa59') }}</p>
     </article>
     <ComposeEditor v-if="editorProject" :node-id="nodeId" :project="editorProject" />
   </section>
