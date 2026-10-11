@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.6]
+
+### English
+
+- Add Chinese-first and English README pages with concise installation guidance and a feature overview.
+
+### 简体中文
+
+- README 默认改为简体中文，增加 English 入口、简洁安装说明和项目功能概览。
+
 ## [0.1.5]
 
 ### English
