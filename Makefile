@@ -33,12 +33,14 @@ build: frontend
 	mkdir -p .build
 	go build -trimpath -o .build/nodedance ./cmd/nodedance
 	go build -trimpath -o .build/nodedance-agent ./cmd/nodedance-agent
+	go build -trimpath -o .build/nodedance-updater ./cmd/nodedance-updater
 
 install:
 	@test -x .build/nodedance -a -x .build/nodedance-agent || { printf '%s\n' 'run make build before make install' >&2; exit 1; }
 	install -d -m 0755 "$(DESTDIR)$(BINDIR)"
 	install -m 0755 .build/nodedance "$(DESTDIR)$(BINDIR)/nodedance"
 	install -m 0755 .build/nodedance-agent "$(DESTDIR)$(BINDIR)/nodedance-agent"
+	install -m 0755 .build/nodedance-updater "$(DESTDIR)$(BINDIR)/nodedance-updater"
 
 check: frontend
 	python3 -m unittest discover -s scripts/tests

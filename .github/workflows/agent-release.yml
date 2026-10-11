@@ -65,18 +65,22 @@ jobs:
           mkdir -p dist
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-agent-linux-${EXPECTED_ARCH}" ./cmd/nodedance-agent
           [[ "$("dist/nodedance-agent-linux-${EXPECTED_ARCH}" --version)" == "NodeDance Agent ${RELEASE_VERSION}" ]]
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-updater-linux-${EXPECTED_ARCH}" ./cmd/nodedance-updater
+          [[ "$("dist/nodedance-updater-linux-${EXPECTED_ARCH}" --version)" == "NodeDance Updater ${RELEASE_VERSION}" ]]
 
       - name: Run native root Agent and shared contract tests
         run: |
           set -euo pipefail
           sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" \
-            "$(command -v go)" test -count=1 ./internal/agent/... ./internal/protocol/... ./internal/i18n/... ./cmd/nodedance-agent/...
+            "$(command -v go)" test -count=1 ./internal/agent/... ./internal/protocol/... ./internal/i18n/... ./cmd/nodedance-agent/... ./internal/update/... ./cmd/nodedance-updater/...
 
       - name: Upload tested native Agent artifact
         uses: actions/upload-artifact@v4
         with:
           name: agent-linux-${{ matrix.arch }}
-          path: dist/nodedance-agent-linux-${{ matrix.arch }}
+          path: |
+            dist/nodedance-agent-linux-${{ matrix.arch }}
+            dist/nodedance-updater-linux-${{ matrix.arch }}
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -143,11 +147,14 @@ jobs:
       - name: Package installer and generate checksums
         run: |
           set -euo pipefail
+          chmod 0755 dist/nodedance-updater-linux-*
+          dist/nodedance-updater-linux-amd64 manifest --component agent --version "${{ github.ref_name }}" > dist/nodedance-update.json
+          cp scripts/install-updater.sh dist/install-updater.sh
           test -f dist/nodedance-agent-linux-amd64
           test -f dist/nodedance-agent-linux-arm64
           cp scripts/install-agent.sh dist/install-agent.sh
           chmod 0755 dist/install-agent.sh dist/nodedance-agent-linux-amd64 dist/nodedance-agent-linux-arm64
-          (cd dist && sha256sum nodedance-agent-linux-amd64 nodedance-agent-linux-arm64 > SHA256SUMS)
+          (cd dist && sha256sum nodedance-agent-linux-amd64 nodedance-agent-linux-arm64 nodedance-updater-linux-amd64 nodedance-updater-linux-arm64 nodedance-update.json install-updater.sh > SHA256SUMS)
 
       - name: Publish GitHub Release assets
         env:
@@ -158,6 +165,10 @@ jobs:
             dist/install-agent.sh \
             dist/nodedance-agent-linux-amd64 \
             dist/nodedance-agent-linux-arm64 \
+            dist/nodedance-updater-linux-amd64 \
+            dist/nodedance-updater-linux-arm64 \
+            dist/nodedance-update.json \
+            dist/install-updater.sh \
             dist/SHA256SUMS \
             --title "$RELEASE_VERSION" \
             --verify-tag \

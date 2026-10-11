@@ -9,8 +9,11 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /out/nodedance-agent ./cmd/nodedance-agent
 
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /out/nodedance-updater ./cmd/nodedance-updater
+
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends util-linux ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/nodedance-updater /usr/local/bin/nodedance-updater
 COPY --from=build /out/nodedance-agent /usr/local/bin/nodedance-agent
 COPY --chmod=0755 deploy/docker/agent-entrypoint.sh /usr/local/bin/agent-entrypoint
 USER 0:0

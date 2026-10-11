@@ -134,3 +134,5 @@ For an API setup against an uninitialized Core, `auth.setup` requires the one-ti
 The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus discover their operations, schemas, routes, and transports from this endpoint. Web uses the same contract for every request, stream, terminal, upload, and download; its Operations page generates forms from the catalog. Adding a Core operation makes it immediately available in all three generic interfaces without updating client operation lists. Core and Agent remain responsible for validation, authorization, auditing, and destructive-action confirmation. Specialized pages only customize presentation. `nodedance operations` without a server provides offline inspection of the contract compiled into that Core binary; use `--server` to inspect the running Core.
 
 连接的 Core 发布 `/api/v1/operations`，CLI 调用与 TUI 菜单从该入口读取操作、schema、路由及传输类型。Web 的请求、流、终端、上传和下载使用同一契约；操作中心依据目录自动生成表单。Core 增加操作后，三端通用入口自动提供，无需分别维护客户端操作清单。验证、授权、审计和危险操作确认仍由 Core 与 Agent 处理，专用页面只定制展示。未指定服务器的 `nodedance operations` 用于离线查看当前 Core 二进制内的契约；使用 `--server` 查看运行中 Core 的实际契约。
+
+正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](updates.md).

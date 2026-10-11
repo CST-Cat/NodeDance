@@ -39,3 +39,5 @@ Agent 注册、恢复、运行、文件服务和 systemd 服务均要求 root �
 - [命令行与终端界面](docs/cli.md)
 - [架构说明](docs/architecture.md)
 - [版本发布说明](docs/releases.md)
+
+正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](docs/updates.md).

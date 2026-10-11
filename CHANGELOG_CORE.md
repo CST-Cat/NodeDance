@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.9]
+
+### English
+
+- Add a shared Core/Agent update API, Web Update center, nodedance update command and automatically discovered TUI operations. Verify component releases and checksums, preserve deployments and private state, persist update jobs, and recover or roll back failed updates through an independent root supervisor.
+
+### 简体中文
+
+- 新增共享 Core/Agent 更新 API、Web 更新中心、nodedance update 命令及 TUI 自动发现操作；校验组件版本与下载、保留部署配置和私有状态，通过独立 root 控制服务持久化进度并恢复或回滚失败更新。
+
 ## [0.1.8]
 
 ### English

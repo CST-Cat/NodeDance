@@ -41,6 +41,7 @@ type Execer interface {
 }
 
 var actions = map[string]struct{}{
+	"update_apply": {}, "update_rollback": {},
 	"setup": {}, "login": {}, "logout": {}, "password_change": {},
 	"session_revoke": {}, "appearance_update": {}, "image_upload": {},
 	"agent_enrollment_create": {}, "agent_enrollment_consume": {},

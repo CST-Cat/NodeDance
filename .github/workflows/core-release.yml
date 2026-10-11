@@ -98,6 +98,8 @@ jobs:
           mkdir -p dist
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-linux-${EXPECTED_ARCH}" ./cmd/nodedance
           [[ "$("dist/nodedance-linux-${EXPECTED_ARCH}" --version)" == "NodeDance ${RELEASE_VERSION}" ]]
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-updater-linux-${EXPECTED_ARCH}" ./cmd/nodedance-updater
+          [[ "$("dist/nodedance-updater-linux-${EXPECTED_ARCH}" --version)" == "NodeDance Updater ${RELEASE_VERSION}" ]]
 
       - name: Run native Go tests including root Agent integration
         run: |
@@ -109,7 +111,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: core-linux-${{ matrix.arch }}
-          path: dist/nodedance-linux-${{ matrix.arch }}
+          path: |
+            dist/nodedance-linux-${{ matrix.arch }}
+            dist/nodedance-updater-linux-${{ matrix.arch }}
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -176,6 +180,9 @@ jobs:
       - name: Create compressed assets, installer, and checksums
         run: |
           set -euo pipefail
+          chmod 0755 dist/nodedance-updater-linux-*
+          dist/nodedance-updater-linux-amd64 manifest --component core --version "${{ github.ref_name }}" > dist/nodedance-update.json
+          cp scripts/install-updater.sh dist/install-updater.sh
           test -f dist/nodedance-linux-amd64
           test -f dist/nodedance-linux-arm64
           chmod 0755 dist/nodedance-linux-amd64 dist/nodedance-linux-arm64
@@ -187,7 +194,7 @@ jobs:
             nodedance-linux-amd64 \
             nodedance-linux-arm64 \
             nodedance-linux-amd64.tar.gz \
-            nodedance-linux-arm64.tar.gz > SHA256SUMS)
+            nodedance-linux-arm64.tar.gz nodedance-updater-linux-amd64 nodedance-updater-linux-arm64 nodedance-update.json install-updater.sh > SHA256SUMS)
 
       - name: Publish GitHub Release assets
         env:
@@ -200,5 +207,9 @@ jobs:
             dist/nodedance-linux-amd64.tar.gz \
             dist/nodedance-linux-arm64.tar.gz \
             dist/install-core.sh \
+            dist/nodedance-updater-linux-amd64 \
+            dist/nodedance-updater-linux-arm64 \
+            dist/nodedance-update.json \
+            dist/install-updater.sh \
             dist/SHA256SUMS \
             --title "$RELEASE_VERSION" --verify-tag --latest=true --notes-file release-inputs/core-release-notes.md

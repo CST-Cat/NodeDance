@@ -1,0 +1,859 @@
+package update
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"golang.org/x/sys/unix"
+)
+
+type Manager struct {
+	Config        Config
+	Resolver      Resolver
+	command       func(context.Context, string, ...string) ([]byte, error)
+	healthTimeout time.Duration
+	Docker        *Docker
+	mu            sync.Mutex
+	jobs          map[string]Job
+	active        bool
+	ctx           context.Context
+	cancel        context.CancelFunc
+	workers       sync.WaitGroup
+	lock          *os.File
+}
+
+func New(config Config, resolver Resolver) (*Manager, error) {
+	if config.SupervisorBinary != "" && config.SupervisorBinary != "/usr/local/libexec/nodedance-updater" {
+		return nil, errors.New("invalid supervisor binary")
+	}
+	if os.Geteuid() != 0 {
+		return nil, errors.New("update controller requires root")
+	}
+	if err := privateDirectory(config.StateDir); err != nil {
+		return nil, err
+	}
+	for component, target := range config.Targets {
+		if component != "core" && component != "agent" {
+			return nil, errors.New("invalid managed component")
+		}
+		if target.Mode != "docker" && target.Mode != "systemd" {
+			return nil, errors.New("managed deployment must be docker or systemd")
+		}
+		if !filepath.IsAbs(target.DataDir) || target.DataDir == "/" || target.DataDir == config.StateDir || strings.HasPrefix(config.StateDir, target.DataDir+"/") || strings.HasPrefix(target.DataDir, config.StateDir+"/") {
+			return nil, errors.New("invalid managed data directory")
+		}
+		real, err := filepath.EvalSymlinks(target.DataDir)
+		if err != nil || real != filepath.Clean(target.DataDir) {
+			return nil, errors.New("managed data directory must not contain symlinks")
+		}
+		info, err := os.Stat(real)
+		if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
+			return nil, errors.New("managed data requires mode 0700")
+		}
+		if component == "agent" {
+			if info.Sys().(*syscall.Stat_t).Uid != 0 {
+				return nil, errors.New("Agent state must be root-owned")
+			}
+			info, err := os.Lstat(filepath.Join(real, "agent.json"))
+			if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Sys().(*syscall.Stat_t).Uid != 0 {
+				return nil, errors.New("Agent config requires a regular 0600 file")
+			}
+		}
+		if target.Mode == "docker" && !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`).MatchString(target.Container) {
+			return nil, errors.New("invalid managed container name")
+		}
+		if target.Mode == "systemd" {
+			expected := "nodedance.service"
+			if component == "agent" {
+				expected = "nodedance-agent.service"
+			}
+			binaryInfo, binaryErr := os.Lstat(target.Binary)
+			realBinary, realErr := filepath.EvalSymlinks(target.Binary)
+			if target.Unit != expected || !filepath.IsAbs(target.Binary) || binaryErr != nil || realErr != nil || realBinary != filepath.Clean(target.Binary) || !binaryInfo.Mode().IsRegular() || binaryInfo.Sys().(*syscall.Stat_t).Uid != 0 || binaryInfo.Mode().Perm()&0022 != 0 {
+				return nil, errors.New("invalid managed systemd service")
+			}
+		}
+		if component == "core" {
+			u, err := url.Parse(target.HealthURL)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.Path != "/api/v1/health" || !localAddress(u.Hostname()) || u.Fragment != "" {
+				return nil, errors.New("Core requires a registered local HTTP health endpoint")
+			}
+		}
+		if target.ComposeFile != "" {
+			info, err := os.Lstat(target.ComposeFile)
+			if err != nil || !info.Mode().IsRegular() || info.Sys().(*syscall.Stat_t).Uid != 0 || info.Mode().Perm()&0077 != 0 {
+				return nil, errors.New("managed Compose file must be regular")
+			}
+		}
+	}
+	lock, err := os.OpenFile(filepath.Join(config.StateDir, "controller.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, err
+	}
+	if err = unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
+		lock.Close()
+		return nil, errors.New("an update controller is already running")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m := &Manager{Config: config, Resolver: resolver, command: execute, healthTimeout: 3 * time.Minute, Docker: NewDocker(), jobs: map[string]Job{}, ctx: ctx, cancel: cancel, lock: lock}
+	entries, err := os.ReadDir(config.StateDir)
+	if err != nil {
+		m.Close()
+		return nil, err
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), ".json") || !idPattern.MatchString(strings.TrimSuffix(entry.Name(), ".json")) {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(config.StateDir, entry.Name()))
+		if err != nil {
+			m.Close()
+			return nil, err
+		}
+		var record journal
+		if err = json.Unmarshal(raw, &record); err != nil {
+			m.Close()
+			return nil, errors.New("invalid durable update journal")
+		}
+		job := record.job()
+		m.jobs[job.ID] = job
+	}
+	for _, job := range m.jobs {
+		if job.Status == "running" || job.Status == "queued" {
+			m.active = true
+			m.workers.Add(1)
+			go func(job Job) {
+				defer m.workers.Done()
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+				defer cancel()
+				var err error
+				if job.Stage != "queued" && job.Stage != "downloading" {
+					recovery := job
+					if job.Parent != "" {
+						var ok bool
+						m.mu.Lock()
+						recovery, ok = m.jobs[job.Parent]
+						m.mu.Unlock()
+						if !ok {
+							err = errors.New("rollback parent journal is missing")
+						}
+					}
+					if err == nil {
+						err = m.rollback(ctx, &recovery)
+					}
+				}
+				if err != nil {
+					job.Status = "rollback_failed"
+					job.Error = err.Error()
+				} else {
+					job.Status = "rolled_back"
+					job.Error = "controller restarted; interrupted update recovered"
+				}
+				m.finish(&job)
+			}(job)
+			break
+		}
+	}
+	return m, nil
+}
+func (m *Manager) Close() {
+	m.cancel()
+	m.workers.Wait()
+	if m.lock != nil {
+		unix.Flock(int(m.lock.Fd()), unix.LOCK_UN)
+		m.lock.Close()
+		m.lock = nil
+	}
+}
+func (m *Manager) persist(job Job) error {
+	raw, err := json.Marshal(job.record())
+	if err != nil {
+		return err
+	}
+	if err = atomicFile(filepath.Join(m.Config.StateDir, job.ID+".json"), raw, 0600); err != nil {
+		return err
+	}
+	m.jobs[job.ID] = job
+	return nil
+}
+func (m *Manager) save(job *Job, stage string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	job.Stage = stage
+	return m.persist(*job)
+}
+func (m *Manager) finish(job *Job) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	now := time.Now().UTC()
+	job.Finished = &now
+	if err := m.persist(*job); err != nil {
+		job.Status = "journal_failed"
+		job.Error = err.Error()
+		m.jobs[job.ID] = *job
+	}
+	m.active = false
+}
+func execute(ctx context.Context, name string, args ...string) ([]byte, error) {
+	command := exec.CommandContext(ctx, name, args...)
+	raw, err := command.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w: %s", name, err, strings.TrimSpace(string(raw)))
+	}
+	return raw, nil
+}
+func (m *Manager) current(ctx context.Context, component string) (string, error) {
+	target, ok := m.Config.Targets[component]
+	if !ok {
+		return "", errors.New("update controller is not configured for this component")
+	}
+	var raw []byte
+	var err error
+	if target.Mode == "docker" {
+		binary := "nodedance"
+		argument := "version"
+		if component == "agent" {
+			binary = "nodedance-agent"
+			argument = "--version"
+		}
+		raw, err = m.command(ctx, "docker", "exec", target.Container, binary, argument)
+	} else {
+		raw, err = m.command(ctx, target.Binary, "--version")
+	}
+	if err != nil {
+		return "", err
+	}
+	for _, word := range strings.Fields(string(raw)) {
+		if ValidTag(component, word) {
+			return word, nil
+		}
+	}
+	return "", errors.New("managed runtime does not report a published component version")
+}
+func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
+	if err := Validate(r); err != nil {
+		return Check{}, err
+	}
+	release, err := m.Resolver.Resolve(ctx, r.Component, r.Version)
+	if err != nil {
+		return Check{}, err
+	}
+	result := Check{Component: r.Component, Latest: release.Version, Release: release, Compatible: release.Protocol == Describe(r.Component, release.Version).Protocol && release.Schema == Schema(r.Component)}
+	target, configured := m.Config.Targets[r.Component]
+	result.Configured = configured
+	result.Mode = target.Mode
+	if configured {
+		result.Current, err = m.current(ctx, r.Component)
+		if err != nil {
+			return result, err
+		}
+	}
+	result.Available = result.Current != "" && Compare(release.Version, result.Current) > 0
+	if !result.Compatible {
+		result.Reason = "release protocol or storage contract is incompatible"
+	}
+	return result, nil
+}
+func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error) {
+	if err := Validate(r); err != nil {
+		return Job{}, err
+	}
+	if !r.Confirm {
+		return Job{}, errors.New("update requires explicit confirmation")
+	}
+	if len(key) < 8 || len(key) > 128 {
+		return Job{}, errors.New("Idempotency-Key must contain 8 to 128 bytes")
+	}
+	m.mu.Lock()
+	for _, job := range m.jobs {
+		if job.IdempotencyKey == key {
+			m.mu.Unlock()
+			if job.Component != r.Component || (r.Version != "" && r.Version != job.Target) || r.JobID != job.Parent {
+				return Job{}, errors.New("idempotency key was used for another update")
+			}
+			return job, nil
+		}
+	}
+	if m.active {
+		m.mu.Unlock()
+		return Job{}, errors.New("another update is running")
+	}
+	m.active = true
+	m.mu.Unlock()
+	accepted := false
+	defer func() {
+		if !accepted {
+			m.mu.Lock()
+			m.active = false
+			m.mu.Unlock()
+		}
+	}()
+	var check Check
+	var parent Job
+	var err error
+	if r.JobID != "" {
+		m.mu.Lock()
+		parent = m.jobs[r.JobID]
+		m.mu.Unlock()
+		if parent.ID == "" || parent.Component != r.Component || parent.Status != "succeeded" || !parent.Switched {
+			return Job{}, errors.New("no successful update is available for rollback")
+		}
+		current, err := m.current(ctx, r.Component)
+		if err != nil || current != parent.Target {
+			return Job{}, errors.New("runtime has changed since the selected update")
+		}
+		check = Check{Current: current, Latest: parent.Current, Mode: parent.Mode}
+	} else {
+		check, err = m.Check(ctx, r)
+		if err != nil {
+			return Job{}, err
+		}
+		if !check.Configured || !check.Compatible || !check.Available {
+			return Job{}, errors.New("no compatible newer release is available")
+		}
+	}
+	var bytes [16]byte
+	if _, err = rand.Read(bytes[:]); err != nil {
+		return Job{}, err
+	}
+	job := Job{ID: hex.EncodeToString(bytes[:]), Component: r.Component, Mode: check.Mode, Current: check.Current, Target: check.Latest, Status: "queued", Stage: "queued", Started: time.Now().UTC(), Parent: r.JobID, IdempotencyKey: key}
+	if err = privateDirectory(filepath.Join(m.Config.StateDir, job.ID)); err != nil {
+		return Job{}, err
+	}
+	m.mu.Lock()
+	err = m.persist(job)
+	m.mu.Unlock()
+	if err != nil {
+		return Job{}, err
+	}
+	accepted = true
+	m.workers.Add(1)
+	go func(job Job, parent Job) {
+		defer m.workers.Done()
+		if parent.ID != "" {
+			ctx, cancel := context.WithTimeout(m.ctx, 5*time.Minute)
+			defer cancel()
+			job.Status = "running"
+			m.save(&job, "rolling_back")
+			err := m.rollback(ctx, &parent)
+			if err != nil {
+				job.Status = "rollback_failed"
+				job.Error = err.Error()
+			} else {
+				job.Status = "succeeded"
+				job.Stage = "rolled_back"
+			}
+			m.finish(&job)
+			if job.Status == "succeeded" {
+				m.refreshSupervisor()
+			}
+			return
+		}
+		m.run(job, check.Release)
+	}(job, parent)
+	return job, nil
+}
+func (m *Manager) Jobs() []Job {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	jobs := make([]Job, 0, len(m.jobs))
+	for _, job := range m.jobs {
+		jobs = append(jobs, job)
+	}
+	sort.Slice(jobs, func(i, j int) bool { return jobs[i].Started.After(jobs[j].Started) })
+	return jobs
+}
+func (m *Manager) Get(component, id string) (Job, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	job, ok := m.jobs[id]
+	if !ok || job.Component != component {
+		return Job{}, errors.New("update job not found")
+	}
+	return job, nil
+}
+func (m *Manager) run(job Job, release Release) {
+	ctx, cancel := context.WithTimeout(m.ctx, 15*time.Minute)
+	defer cancel()
+	job.Status = "running"
+	target := m.Config.Targets[job.Component]
+	err := func() error {
+		if err := m.save(&job, "downloading"); err != nil {
+			return err
+		}
+		workspace := filepath.Join(m.Config.StateDir, job.ID)
+		if job.Component == "agent" {
+			generation, ok := m.agentOnline(ctx, target, 0)
+			if !ok {
+				return errors.New("Agent must be connected before updating")
+			}
+			job.AgentGeneration = generation
+		}
+		if m.Config.SupervisorBinary != "" {
+			helper := release
+			helper.BinaryURL = release.UpdaterURL
+			if helper.BinaryURL == "" {
+				return errors.New("release has no verified update supervisor")
+			}
+			if err := m.Resolver.Download(ctx, helper, filepath.Join(workspace, "supervisor-binary")); err != nil {
+				return err
+			}
+			raw, err := m.command(ctx, filepath.Join(workspace, "supervisor-binary"), "--version")
+			if err != nil || strings.TrimSpace(string(raw)) != "NodeDance Updater "+release.Version {
+				return errors.New("supervisor version verification failed")
+			}
+			if err = copyBinary(m.Config.SupervisorBinary, filepath.Join(workspace, "supervisor-previous")); err != nil {
+				return err
+			}
+		}
+		image := ""
+		binary := filepath.Join(workspace, "release-binary")
+		if target.Mode == "docker" {
+			if err := m.Docker.initialize(ctx); err != nil {
+				return err
+			}
+			var err error
+			image, err = m.Docker.pull(ctx, "ghcr.io/cst-cat/nodedance-"+job.Component+":"+release.Version)
+			if err != nil {
+				return err
+			}
+			old, err := m.Docker.inspect(ctx, target.Container)
+			if err != nil {
+				return err
+			}
+			job.OldContainer, _ = old["Id"].(string)
+			if job.OldContainer == "" {
+				return errors.New("managed container ID is missing")
+			}
+			raw, _ := json.Marshal(old)
+			if err = atomicFile(filepath.Join(workspace, "container.json"), raw, 0600); err != nil {
+				return err
+			}
+		} else {
+			if err := m.Resolver.Download(ctx, release, binary); err != nil {
+				return err
+			}
+			raw, err := m.command(ctx, binary, "--version")
+			if err != nil || !strings.Contains(string(raw), job.Target) {
+				return errors.New("downloaded binary version verification failed")
+			}
+			job.OldBinary = filepath.Join(workspace, "previous-binary")
+			if err = copyBinary(target.Binary, job.OldBinary); err != nil {
+				return err
+			}
+		}
+		if target.ComposeFile != "" {
+			raw, err := os.ReadFile(target.ComposeFile)
+			if err != nil {
+				return err
+			}
+			job.OldCompose = filepath.Join(workspace, "compose.json")
+			if err = atomicFile(job.OldCompose, raw, 0600); err != nil {
+				return err
+			}
+		}
+		if err := m.save(&job, "stopping"); err != nil {
+			return err
+		}
+		if err := m.stop(ctx, job); err != nil {
+			return err
+		}
+		if err := m.save(&job, "backing_up"); err != nil {
+			return err
+		}
+		if err := copyTree(target.DataDir, filepath.Join(workspace, "data")); err != nil {
+			return err
+		}
+		job.Snapshot = true
+		job.Backup = job.ID + "/data"
+		job.Switched = true
+		if err := m.save(&job, "switching"); err != nil {
+			return err
+		}
+		if target.Mode == "docker" {
+			raw, err := os.ReadFile(filepath.Join(workspace, "container.json"))
+			if err != nil {
+				return err
+			}
+			var old map[string]any
+			json.Unmarshal(raw, &old)
+			if err = m.Docker.rename(ctx, job.OldContainer, target.Container+".rollback-"+job.ID); err != nil {
+				return err
+			}
+			if err = m.Docker.disconnect(ctx, job.OldContainer, old); err != nil {
+				return err
+			}
+			job.NewContainer, err = m.Docker.create(ctx, target.Container, image, job.ID, old)
+			if err != nil {
+				return err
+			}
+		} else {
+			if err := installBinary(binary, target.Binary); err != nil {
+				return err
+			}
+		}
+		job.Switched = true
+		if err := m.save(&job, "starting"); err != nil {
+			return err
+		}
+		if err := m.start(ctx, job); err != nil {
+			return err
+		}
+		if err := m.save(&job, "verifying"); err != nil {
+			return err
+		}
+		healthCtx, healthCancel := context.WithTimeout(ctx, m.healthTimeout)
+		defer healthCancel()
+		if err := m.verify(healthCtx, job.Component, job.Target, job.AgentGeneration); err != nil {
+			return err
+		}
+		if target.ComposeFile != "" {
+			if err := m.writeCompose(ctx, target, job.Component, job.Target); err != nil {
+				return err
+			}
+		}
+		if m.Config.SupervisorBinary != "" {
+			if err := installBinary(filepath.Join(workspace, "supervisor-binary"), m.Config.SupervisorBinary); err != nil {
+				return err
+			}
+		}
+		return nil
+	}()
+	if err == nil {
+		job.Status = "succeeded"
+		job.Stage = "complete"
+		m.finish(&job)
+		m.refreshSupervisor()
+		return
+	}
+	job.Error = err.Error()
+	rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer rollbackCancel()
+	if job.Stage != "downloading" && (job.OldContainer != "" || job.OldBinary != "") {
+		m.save(&job, "rolling_back")
+		if err := m.rollback(rollbackCtx, &job); err != nil {
+			job.Status = "rollback_failed"
+			job.Error += "; rollback: " + err.Error()
+		} else {
+			job.Status = "rolled_back"
+			job.Stage = "rolled_back"
+		}
+	} else {
+		job.Status = "failed"
+	}
+	m.finish(&job)
+}
+func copyBinary(source, destination string) error {
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		return err
+	}
+	return atomicFile(destination, raw, 0700)
+}
+func installBinary(source, destination string) error {
+	info, err := os.Lstat(destination)
+	if err != nil || !info.Mode().IsRegular() {
+		return errors.New("managed binary is not a regular file")
+	}
+	raw, err := os.ReadFile(source)
+	if err != nil {
+		return err
+	}
+	return atomicFile(destination, raw, 0755)
+}
+func (m *Manager) stop(ctx context.Context, job Job) error {
+	target := m.Config.Targets[job.Component]
+	if target.Mode == "docker" {
+		return m.Docker.stop(ctx, job.OldContainer)
+	}
+	_, err := m.command(ctx, "systemctl", "stop", target.Unit)
+	return err
+}
+func (m *Manager) start(ctx context.Context, job Job) error {
+	target := m.Config.Targets[job.Component]
+	if target.Mode == "docker" {
+		return m.Docker.start(ctx, job.NewContainer)
+	}
+	_, err := m.command(ctx, "systemctl", "start", target.Unit)
+	return err
+}
+func (m *Manager) verify(ctx context.Context, component, version string, previousGeneration uint64) error {
+	target := m.Config.Targets[component]
+	for {
+		current, err := m.current(ctx, component)
+		ready := err == nil && current == version
+		if ready && target.Mode == "docker" {
+			value, err := m.Docker.inspect(ctx, target.Container)
+			ready = err == nil && healthy(value)
+		}
+		if ready && component == "core" {
+			req, _ := http.NewRequestWithContext(ctx, "GET", target.HealthURL, nil)
+			client, clientErr := healthClient(target.HealthCAFile)
+			if clientErr != nil {
+				return clientErr
+			}
+			response, err := client.Do(req)
+			client.CloseIdleConnections()
+			ready = false
+			if err == nil {
+				var health struct {
+					Status  string `json:"status"`
+					Version string `json:"version"`
+				}
+				json.NewDecoder(response.Body).Decode(&health)
+				response.Body.Close()
+				ready = response.StatusCode == 200 && health.Status == "ok" && health.Version == version
+			}
+		}
+		if ready && component == "agent" {
+			_, ready = m.agentOnline(ctx, target, previousGeneration)
+		}
+
+		if ready {
+			return nil
+		}
+		if err := pause(ctx, time.Second); err != nil {
+			return errors.New("updated runtime failed health or Agent reconnection verification")
+		}
+	}
+}
+func (m *Manager) rollback(ctx context.Context, job *Job) error {
+	target, ok := m.Config.Targets[job.Component]
+	if !ok {
+		return errors.New("managed deployment is unavailable during recovery")
+	}
+	workspace := filepath.Join(m.Config.StateDir, job.ID)
+	if target.Mode == "docker" {
+		if err := m.Docker.initialize(ctx); err != nil {
+			return err
+		}
+		current, err := m.Docker.inspect(ctx, target.Container)
+		if err == nil {
+			currentID, _ := current["Id"].(string)
+			if currentID != job.OldContainer {
+				config, _ := current["Config"].(map[string]any)
+				labels, _ := config["Labels"].(map[string]any)
+				if labels["io.nodedance.update.job"] != job.ID {
+					return errors.New("refusing to replace a container changed outside this update")
+				}
+				_ = m.Docker.stop(ctx, currentID)
+				if err = m.Docker.remove(ctx, currentID); err != nil {
+					return err
+				}
+			} else {
+				_ = m.Docker.stop(ctx, currentID)
+			}
+		}
+	} else {
+		if _, err := m.command(ctx, "systemctl", "stop", target.Unit); err != nil {
+			return err
+		}
+		if job.OldBinary != "" {
+			if err := installBinary(job.OldBinary, target.Binary); err != nil {
+				return err
+			}
+		}
+	}
+	if m.Config.SupervisorBinary != "" {
+		old := filepath.Join(workspace, "supervisor-previous")
+		if _, err := os.Stat(old); err == nil {
+			if err = installBinary(old, m.Config.SupervisorBinary); err != nil {
+				return err
+			}
+		}
+	}
+	if job.Snapshot && job.Switched && job.Component == "core" {
+		if err := restoreTree(filepath.Join(workspace, "data"), target.DataDir, job.ID); err != nil {
+			return err
+		}
+	}
+	if target.ComposeFile != "" && job.OldCompose != "" {
+		raw, err := os.ReadFile(job.OldCompose)
+		if err != nil {
+			return err
+		}
+		if err = atomicFile(target.ComposeFile, raw, 0600); err != nil {
+			return err
+		}
+	}
+	if target.Mode == "docker" {
+		raw, err := os.ReadFile(filepath.Join(workspace, "container.json"))
+		if err != nil {
+			return err
+		}
+		var old map[string]any
+		json.Unmarshal(raw, &old)
+		if err = m.Docker.rename(ctx, job.OldContainer, target.Container); err != nil {
+			return err
+		}
+		value, err := m.Docker.inspect(ctx, job.OldContainer)
+		if err != nil {
+			return err
+		}
+		_ = value
+		if err = m.Docker.connect(ctx, job.OldContainer, old); err != nil {
+			return err
+		}
+		if err = m.Docker.start(ctx, job.OldContainer); err != nil {
+			return err
+		}
+	} else {
+		if _, err := m.command(ctx, "systemctl", "start", target.Unit); err != nil {
+			return err
+		}
+	}
+	return m.verify(ctx, job.Component, job.Current, job.AgentGeneration)
+}
+func (m *Manager) writeCompose(ctx context.Context, target Target, component, version string) error {
+	raw, err := m.command(ctx, "docker", "compose", "-f", target.ComposeFile, "config", "--format", "json")
+	if err != nil {
+		return err
+	}
+	var config map[string]any
+	if err = json.Unmarshal(raw, &config); err != nil {
+		return err
+	}
+	services, _ := config["services"].(map[string]any)
+	found := false
+	for name, value := range services {
+		service, _ := value.(map[string]any)
+		if service["container_name"] == target.Container || name == component {
+			service["image"] = "ghcr.io/cst-cat/nodedance-" + component + ":" + version
+			delete(service, "build")
+			found = true
+		}
+	}
+	if !found {
+		return errors.New("managed container is not present in the registered Compose file")
+	}
+	raw, err = json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return err
+	}
+	return atomicFile(target.ComposeFile, raw, 0600)
+}
+
+func (m *Manager) agentOnline(ctx context.Context, target Target, previous uint64) (uint64, bool) {
+	raw, err := os.ReadFile(filepath.Join(target.DataDir, "agent.json"))
+	if err != nil {
+		return 0, false
+	}
+	var config struct {
+		Server      string `json:"server"`
+		Credential  string `json:"credential"`
+		AgentID     string `json:"agentId"`
+		NodeID      string `json:"nodeId"`
+		CAFile      string `json:"caFile"`
+		Development bool   `json:"development"`
+	}
+	if json.Unmarshal(raw, &config) != nil {
+		return 0, false
+	}
+	address, err := url.Parse(config.Server)
+	if err != nil || address.User != nil || address.Host == "" || address.Scheme != "https" && !(address.Scheme == "http" && config.Development && net.ParseIP(address.Hostname()) != nil && net.ParseIP(address.Hostname()).IsLoopback()) {
+		return 0, false
+	}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	defer transport.CloseIdleConnections()
+	if config.CAFile != "" {
+		raw, err := os.ReadFile(config.CAFile)
+		if err != nil {
+			return 0, false
+		}
+		roots, err := x509.SystemCertPool()
+		if err != nil {
+			roots = x509.NewCertPool()
+		}
+		if !roots.AppendCertsFromPEM(raw) {
+			return 0, false
+		}
+		transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
+	}
+	client := &http.Client{Timeout: 5 * time.Second, Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	request, err := http.NewRequestWithContext(ctx, "GET", strings.TrimSuffix(config.Server, "/")+"/api/v1/agents/identity", nil)
+	if err != nil {
+		return 0, false
+	}
+	request.Header.Set("Authorization", "Bearer "+config.Credential)
+	request.Header.Set("User-Agent", "NodeDance-Updater")
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, false
+	}
+	defer response.Body.Close()
+	var identity struct {
+		AgentID    string `json:"agentId"`
+		NodeID     string `json:"nodeId"`
+		Status     string `json:"status"`
+		Generation uint64 `json:"generation"`
+	}
+	ok := response.StatusCode == 200 && json.NewDecoder(io.LimitReader(response.Body, 64<<10)).Decode(&identity) == nil && identity.AgentID == config.AgentID && identity.NodeID == config.NodeID && identity.Status == "online" && identity.Generation != previous
+	return identity.Generation, ok
+}
+
+func localAddress(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	addresses, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, address := range addresses {
+		value, _, err := net.ParseCIDR(address.String())
+		if err == nil && value.Equal(ip) {
+			return true
+		}
+	}
+	return false
+}
+func healthClient(caFile string) (*http.Client, error) {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	if caFile != "" {
+		raw, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, err
+		}
+		roots, err := x509.SystemCertPool()
+		if err != nil {
+			roots = x509.NewCertPool()
+		}
+		if !roots.AppendCertsFromPEM(raw) {
+			return nil, errors.New("health CA file contains no certificates")
+		}
+		transport.TLSClientConfig.RootCAs = roots
+	}
+	return &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, nil
+}
+
+func (m *Manager) refreshSupervisor() {
+	if m.Config.SupervisorBinary != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_, _ = m.command(ctx, "systemctl", "--no-block", "restart", "nodedance-updater.service")
+	}
+}

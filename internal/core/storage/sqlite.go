@@ -129,3 +129,6 @@ func (s *Store) Close() error {
 	}
 	return s.DB.Close()
 }
+
+// Schema returns the current storage contract for release preflight checks.
+func Schema() string { return schemaSQL + strings.Join(coretasks.SchemaStatements(), "\n") }

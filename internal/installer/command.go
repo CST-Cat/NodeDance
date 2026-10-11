@@ -30,6 +30,7 @@ func Command(server, displayName string, development bool) (string, error) {
 	if dev {
 		script += " --dev"
 	}
+	script += `; sudo -n docker run --rm --privileged --pid=host --network=host --mount type=bind,src=/,dst=/host,readonly "$image" install-updater --component agent --mode docker --container nodedance-agent --data-dir /var/lib/nodedance-agent --core-uid 0 --core-gid 0`
 	return "bash -o pipefail -c " + quote(script), nil
 }
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
@@ -47,5 +48,6 @@ func DockerCommand(server, displayName string, development bool) (string, error)
 		script += " --dev"
 	}
 	script += `; unset token; sudo -n docker run -d --name nodedance-agent --restart unless-stopped --stop-timeout 30 --privileged --pid=host --network=host --mount type=bind,src=/,dst=/host,readonly --mount type=bind,src=/var/lib/nodedance-agent,dst=/var/lib/nodedance-agent "$image"`
+	script += `; sudo -n docker run --rm --privileged --pid=host --network=host --mount type=bind,src=/,dst=/host,readonly "$image" install-updater --component agent --mode docker --container nodedance-agent --data-dir /var/lib/nodedance-agent --core-uid 0 --core-gid 0`
 	return "bash -o pipefail -c " + quote(script), nil
 }

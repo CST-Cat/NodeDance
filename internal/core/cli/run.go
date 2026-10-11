@@ -47,6 +47,8 @@ func RunWithInput(ctx context.Context, args []string, lookup LookupEnv, stdin io
 		return nil
 	case "operations", "describe":
 		return runOperationCatalog(ctx, args[1:], lookup, stdout, stderr)
+	case "update":
+		return runUpdate(ctx, args[1:], lookup, stdin, stdout, stderr)
 	case "tui":
 		return runTUI(ctx, args[1:], lookup, stdin, stdout, stderr, version)
 	case "agent":
@@ -252,6 +254,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, i18n.TextFor(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--max-file-bytes bytes] [--history-retention-days days] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--tls-cert PEM --tls-key PEM] [--dev]"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance backup --data-dir DIR --output FILE"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance restore --input FILE --data-dir NEW_DIR"))
+	fmt.Fprintln(w, "       nodedance update [--check | --yes | --status | --rollback JOB] [--component agent --node-id ID] [connection flags]")
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance version"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance operations [NAME]  # JSON operation catalog / schemas"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance call NAME --server https://core --params JSON --query JSON --body @FILE"))

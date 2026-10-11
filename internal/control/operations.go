@@ -14,6 +14,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/alerts"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/update"
 )
 
 type Catalog struct {
@@ -94,6 +95,14 @@ func typeSchema(t reflect.Type) any {
 	}
 }
 
+func updateSchema() any {
+	body := schema(update.Request{}).(map[string]any)
+	props := body["properties"].(map[string]any)
+	props["component"].(map[string]any)["enum"] = []string{"core", "agent"}
+	body["required"] = []string{"component", "confirm"}
+	return body
+}
+
 func enrollmentSchema() any {
 	body := schema(agents.EnrollmentRequest{}).(map[string]any)
 	properties := body["properties"].(map[string]any)
@@ -106,6 +115,10 @@ func enrollmentSchema() any {
 func buildOperations() []Operation {
 	const node = "/api/v1/nodes/{nodeId}"
 	list := []Operation{
+		op("updates.check", "GET", "/api/v1/updates/check", "Check stable component release and update preflight", nil, "component", "nodeId", "version"),
+		op("updates.status", "GET", "/api/v1/updates/status", "Durable update progress and history", nil, "component", "nodeId", "jobId"),
+		op("updates.apply", "POST", "/api/v1/updates/apply", "Confirm and update managed Core or Agent with failure rollback", updateSchema()),
+		op("updates.rollback", "POST", "/api/v1/updates/rollback", "Confirm rollback of a successful update", updateSchema()),
 		op("core.operations", "GET", "/api/v1/operations", "Shared operation catalog for Web, CLI and TUI", nil),
 		op("core.health", "GET", "/api/v1/health", "Core health and build version", nil),
 		op("core.protocol", "GET", "/api/v1/protocol", "Wire version, capabilities and transport limits", nil),
@@ -198,7 +211,7 @@ func buildOperations() []Operation {
 	for i := range list {
 		o := &list[i]
 		switch o.Name {
-		case "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "deployments.create":
+		case "updates.apply", "updates.rollback", "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "deployments.create":
 			o.Idempotent = true
 		}
 		if o.Name == "terminal.open" {

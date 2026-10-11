@@ -1,6 +1,7 @@
 <script setup lang="ts">
 defineProps<{ name: string }>()
 const paths: Record<string, string> = {
+  refresh: 'M20 7v5h-5 M4 17v-5h5 M6 7a7 7 0 0 1 12-1l2 3 M4 15l2 3a7 7 0 0 0 12-1',
   terminal: 'M4 4h16v16H4z M7 8l3 3-3 3 M12 15h5',
   nodes: 'M4 4h16v6H4z M4 14h16v6H4z M7 7h.01 M7 17h.01 M11 7h6 M11 17h6',
   add: 'M12 5v14 M5 12h14',

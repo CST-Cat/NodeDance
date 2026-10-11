@@ -17,6 +17,9 @@ const (
 )
 
 const (
+	CapabilityUpdate   = "agent.update.v1"
+	TypeUpdateRequest  = "update_request"
+	TypeUpdateResponse = "update_response"
 	TypeHello          = "hello"
 	TypeWelcome        = "welcome"
 	TypeHeartbeat      = "heartbeat"

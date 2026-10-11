@@ -1233,3 +1233,6 @@ func boolInt(value bool) int {
 	}
 	return 0
 }
+
+// Schema returns the current durable Agent task journal contract.
+func Schema() string { return schemaSQL }

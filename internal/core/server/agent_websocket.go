@@ -19,12 +19,15 @@ import (
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/update"
 	"github.com/coder/websocket"
 )
 
 const agentHelloTimeout = 5 * time.Second
 
 type agentConnection struct {
+	updateMu                 sync.Mutex
+	updateWaiters            map[string]chan update.Response
 	conn                     *websocket.Conn
 	ctx                      context.Context
 	cancel                   context.CancelFunc
@@ -881,6 +884,11 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				}
 				if err := s.handleAgentContainerStreamMessage(connection, envelope); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent container stream frame")
+					return
+				}
+			case protocol.TypeUpdateResponse:
+				if err := s.handleUpdateResponse(connection, envelope); err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid update response")
 					return
 				}
 			case protocol.TypeComposeResponse:

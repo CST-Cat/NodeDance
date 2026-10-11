@@ -15,7 +15,7 @@ func Describe() Descriptor {
 	return Descriptor{Version: CurrentVersion, Capabilities: SupportedCapabilities(), MaxMessageBytes: MaxMessageBytes, HeartbeatIntervalSeconds: HeartbeatIntervalSeconds, OfflineAfterSeconds: OfflineAfterSeconds}
 }
 func SupportedCapabilities() []string {
-	return []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", CapabilityMetrics, CapabilityDocker, CapabilityTaskBridge, CapabilityContainerStreams, CapabilityCompose, CapabilityImages, CapabilityTerminal, CapabilityFiles, CapabilityProbes}
+	return []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", CapabilityMetrics, CapabilityDocker, CapabilityTaskBridge, CapabilityContainerStreams, CapabilityCompose, CapabilityImages, CapabilityTerminal, CapabilityFiles, CapabilityProbes, CapabilityUpdate}
 }
 func KnownCapability(capability string) bool {
 	for _, known := range SupportedCapabilities() {

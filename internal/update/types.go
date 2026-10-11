@@ -1,0 +1,205 @@
+// Package update owns release selection and transactional Core/Agent updates.
+// Clients submit these same requests through the Core operation contract.
+package update
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/CST-Cat/NodeDance/internal/agent/containerrebuild"
+	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
+	"io"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/CST-Cat/NodeDance/internal/core/storage"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
+)
+
+const Socket = "/run/nodedance-updater/control.sock"
+const Repository = "CST-Cat/NodeDance"
+
+var tagPattern = regexp.MustCompile(`^(core|agent)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+var idPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
+
+type Request struct {
+	Component string `json:"component"`
+	NodeID    string `json:"nodeId,omitempty"`
+	Version   string `json:"version,omitempty"`
+	JobID     string `json:"jobId,omitempty"`
+	Confirm   bool   `json:"confirm,omitempty"`
+}
+type RPC struct {
+	Action         string  `json:"action"`
+	IdempotencyKey string  `json:"idempotencyKey,omitempty"`
+	Request        Request `json:"request"`
+}
+type Response struct {
+	Status int             `json:"status"`
+	Data   json.RawMessage `json:"data,omitempty"`
+	Error  string          `json:"error,omitempty"`
+}
+type Target struct {
+	Mode         string `json:"mode"`
+	Container    string `json:"container,omitempty"`
+	Binary       string `json:"binary,omitempty"`
+	Unit         string `json:"unit,omitempty"`
+	DataDir      string `json:"dataDir"`
+	HealthCAFile string `json:"healthCaFile,omitempty"`
+	HealthURL    string `json:"healthUrl,omitempty"`
+	ComposeFile  string `json:"composeFile,omitempty"`
+}
+type Config struct {
+	SupervisorBinary string            `json:"supervisorBinary,omitempty"`
+	StateDir         string            `json:"stateDir"`
+	Socket           string            `json:"socket"`
+	CoreUID          uint32            `json:"coreUid"`
+	CoreGID          int               `json:"coreGid"`
+	Targets          map[string]Target `json:"targets"`
+}
+type Manifest struct {
+	Format    int    `json:"format"`
+	Component string `json:"component"`
+	Version   string `json:"version"`
+	Protocol  int    `json:"protocol"`
+	Schema    string `json:"schema,omitempty"`
+}
+
+func Schema(component string) string {
+	source := storage.Schema()
+	if component == "agent" {
+		source = taskjournal.Schema() + containerrebuild.Schema()
+	}
+	sum := sha256.Sum256([]byte(source))
+	return hex.EncodeToString(sum[:])
+}
+func Describe(component, version string) Manifest {
+	return Manifest{Format: 1, Component: component, Version: version, Protocol: protocol.CurrentVersion, Schema: Schema(component)}
+}
+
+type Release struct {
+	Manifest
+	URL         string `json:"url"`
+	Notes       string `json:"notes"`
+	UpdaterURL  string `json:"-"`
+	BinaryURL   string `json:"-"`
+	ChecksumURL string `json:"-"`
+}
+type Check struct {
+	Component  string  `json:"component"`
+	Current    string  `json:"current"`
+	Latest     string  `json:"latest"`
+	Available  bool    `json:"available"`
+	Configured bool    `json:"configured"`
+	Compatible bool    `json:"compatible"`
+	Mode       string  `json:"mode,omitempty"`
+	Reason     string  `json:"reason,omitempty"`
+	Release    Release `json:"release"`
+}
+type Job struct {
+	ID              string     `json:"id"`
+	Component       string     `json:"component"`
+	Mode            string     `json:"mode"`
+	Current         string     `json:"current"`
+	Target          string     `json:"target"`
+	Status          string     `json:"status"`
+	Stage           string     `json:"stage"`
+	Error           string     `json:"error,omitempty"`
+	Started         time.Time  `json:"started"`
+	Finished        *time.Time `json:"finished,omitempty"`
+	Parent          string     `json:"parent,omitempty"`
+	Backup          string     `json:"backup,omitempty"`
+	AgentGeneration uint64     `json:"-"`
+	OldContainer    string     `json:"-"`
+	NewContainer    string     `json:"-"`
+	OldBinary       string     `json:"-"`
+	OldCompose      string     `json:"-"`
+	Snapshot        bool       `json:"-"`
+	Switched        bool       `json:"-"`
+	IdempotencyKey  string     `json:"-"`
+}
+
+// Journal embeds public state and durable recovery details without exposing host paths.
+type journal struct {
+	AgentGeneration uint64
+	Job
+	OldContainer   string
+	NewContainer   string
+	OldBinary      string
+	OldCompose     string
+	Snapshot       bool
+	Switched       bool
+	IdempotencyKey string
+}
+
+func (j Job) record() journal {
+	return journal{Job: j, AgentGeneration: j.AgentGeneration, OldContainer: j.OldContainer, NewContainer: j.NewContainer, OldBinary: j.OldBinary, OldCompose: j.OldCompose, Snapshot: j.Snapshot, Switched: j.Switched, IdempotencyKey: j.IdempotencyKey}
+}
+
+func (j journal) job() Job {
+	j.Job.AgentGeneration = j.AgentGeneration
+	j.Job.OldContainer = j.OldContainer
+	j.Job.NewContainer = j.NewContainer
+	j.Job.OldBinary = j.OldBinary
+	j.Job.OldCompose = j.OldCompose
+	j.Job.Snapshot = j.Snapshot
+	j.Job.Switched = j.Switched
+	j.Job.IdempotencyKey = j.IdempotencyKey
+	return j.Job
+}
+func Validate(r Request) error {
+	if r.Component != "core" && r.Component != "agent" {
+		return errors.New("component must be core or agent")
+	}
+	if r.Version != "" && !ValidTag(r.Component, r.Version) {
+		return errors.New("invalid component release tag")
+	}
+	if r.JobID != "" && !idPattern.MatchString(r.JobID) {
+		return errors.New("invalid update job ID")
+	}
+	return nil
+}
+func ValidTag(component, tag string) bool {
+	m := tagPattern.FindStringSubmatch(tag)
+	if len(m) == 0 || m[1] != component {
+		return false
+	}
+	for i := 2; i < 5; i++ {
+		if _, err := strconv.ParseUint(m[i], 10, 64); err != nil {
+			return false
+		}
+	}
+	return true
+}
+func Compare(a, b string) int {
+	aa, bb := tagPattern.FindStringSubmatch(a), tagPattern.FindStringSubmatch(b)
+	if len(aa) == 0 || len(bb) == 0 {
+		return 0
+	}
+	for i := 2; i < 5; i++ {
+		x, _ := strconv.ParseUint(aa[i], 10, 64)
+		y, _ := strconv.ParseUint(bb[i], 10, 64)
+		if x < y {
+			return -1
+		}
+		if x > y {
+			return 1
+		}
+	}
+	return 0
+}
+func Decode(raw []byte, target any) error {
+	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	if decoder.Decode(new(any)) != io.EOF {
+		return fmt.Errorf("unexpected trailing JSON")
+	}
+	return nil
+}

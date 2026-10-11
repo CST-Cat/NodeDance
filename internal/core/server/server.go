@@ -34,6 +34,7 @@ import (
 )
 
 type Options struct {
+	UpdateSocket              string
 	DataDir                   string
 	Development               bool
 	PublicOrigin              string
@@ -55,6 +56,7 @@ type Options struct {
 }
 
 type Server struct {
+	updateSocket               string
 	version                    string
 	assets                     http.Handler
 	index                      []byte
@@ -208,6 +210,7 @@ func New(version string, options Options) (*Server, error) {
 	}
 	s := &Server{
 		version:                   version,
+		updateSocket:              options.UpdateSocket,
 		assets:                    http.FileServer(http.FS(files)),
 		index:                     index,
 		store:                     store,

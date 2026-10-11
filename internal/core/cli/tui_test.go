@@ -33,6 +33,10 @@ func TestTUILoginAndReturn(t *testing.T) {
 			io.WriteString(w, `{"user":{"displayName":"admin"}}`)
 			return
 		}
+		if r.URL.Path == "/api/v1/updates/status" {
+			io.WriteString(w, `{"jobs":[],"updateStatusDiscovered":true}`)
+			return
+		}
 		if r.URL.Path == "/api/v1/future" {
 			io.WriteString(w, `{"discovered":true}`)
 			return
@@ -102,6 +106,17 @@ func TestTUILoginAndReturn(t *testing.T) {
 	await("Filter: future.inspect")
 	io.WriteString(master, "1\r")
 	await("discovered")
+	io.WriteString(master, "\r")
+	io.WriteString(master, "/updates.status\r")
+	await("Filter: updates.status")
+	io.WriteString(master, "1\r")
+	await("component [")
+	io.WriteString(master, "core\r")
+	await("nodeId [")
+	io.WriteString(master, "\r")
+	await("jobId [")
+	io.WriteString(master, "\r")
+	await("updateStatusDiscovered")
 	io.WriteString(master, "\r")
 	io.WriteString(master, "q\r")
 	select {

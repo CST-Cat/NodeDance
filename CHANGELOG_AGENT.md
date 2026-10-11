@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.5]
+
+### English
+
+- Add authenticated generation-bound update requests and an independent root supervisor for Docker and systemd deployments, with verified releases, credential-preserving restart checks, durable recovery and rollback. Publish updater artifacts and install the supervisor during native and generated Docker enrollment.
+
+### 简体中文
+
+- 新增通过认证且绑定连接代次的更新请求及 Docker/systemd 独立 root 更新控制服务，支持版本校验、保留凭据与重连验证、持久化恢复和回滚；发布更新器并在原生安装及生成的 Docker 注册命令中自动安装。
+
 ## [0.1.4]
 
 ### English

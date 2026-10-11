@@ -53,3 +53,13 @@ jobs:
           docker compose -f deploy/docker/compose.agent.yml config -q
       - name: Test protected persistent state and host Agent deployment
         run: python3 scripts/test-docker.py
+
+      - name: Set up Go for transactional update verification
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify Docker update and failure rollback against real containers
+        run: |
+          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" NODEDANCE_TEST_DOCKER_UPDATE=1 \
+            "$(command -v go)" test -count=1 -v ./internal/update

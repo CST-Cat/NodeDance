@@ -26,6 +26,7 @@ import (
 	agentprobes "github.com/CST-Cat/NodeDance/internal/agent/probes"
 	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/update"
 	"github.com/coder/websocket"
 	mobyclient "github.com/moby/moby/client"
 )
@@ -333,6 +334,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 const agentHelloDeadline = 5 * time.Second
 
 func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, sharedDocker *agentdocker.SDKEngine, taskBridge *taskBridgeRuntime, streamBridge *containerStreamBridge, composeBridge *agentcompose.Bridge, hostShell, nodeID string, fileService *agentfiles.Service, negotiatedCapabilities []string) (returnErr error) {
+	updateSlots := make(chan struct{}, 2)
 	activeCapabilities := append([]string(nil), negotiatedCapabilities...)
 	dockerEnabled := containsCapability(activeCapabilities, protocol.CapabilityDocker)
 	taskBridgeEnabled := containsCapability(activeCapabilities, protocol.CapabilityTaskBridge)
@@ -834,6 +836,32 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 						go streamBridge.reject(ctx, writer, generation, envelope.RequestID, "stream_limit")
 					}
 				}
+			case protocol.TypeUpdateRequest:
+				if !containsCapability(negotiatedCapabilities, protocol.CapabilityUpdate) || envelope.Sequence != 0 || envelope.Generation != generation || envelope.RequestID == "" {
+					return errors.New("invalid update request envelope")
+				}
+				var request update.RPC
+				if decodeSocketPayload(envelope.Payload, &request) != nil || update.Validate(request.Request) != nil || request.Request.Component != "agent" {
+					return errors.New("invalid Agent update request")
+				}
+				select {
+				case updateSlots <- struct{}{}:
+				default:
+					payload, _ := json.Marshal(update.Response{Status: 429, Error: "Agent update channel is busy"})
+					_ = writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeUpdateResponse, Generation: generation, RequestID: envelope.RequestID, Payload: payload})
+					continue
+				}
+				go func(envelope protocol.Envelope, request update.RPC) {
+					defer func() { <-updateSlots }()
+					requestCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+					defer cancel()
+					response, err := update.Call(requestCtx, "", request)
+					if err != nil {
+						response = update.Response{Status: 503, Error: err.Error()}
+					}
+					payload, _ := json.Marshal(response)
+					_ = writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeUpdateResponse, Generation: generation, RequestID: envelope.RequestID, Payload: payload})
+				}(envelope, request)
 			case protocol.TypeComposeRequest:
 				if composeMessages == nil || envelope.Sequence != 0 || envelope.RequestID == "" || envelope.Generation != generation {
 					if composeMessages == nil && containsCapability(negotiatedCapabilities, protocol.CapabilityCompose) {

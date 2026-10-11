@@ -109,27 +109,7 @@ func OpenStore(ctx context.Context, path string) (*Store, error) {
 		_ = db.Close()
 		return nil, errors.New("container rebuild database could not enable WAL mode")
 	}
-	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS container_rebuilds (
-		task_id TEXT PRIMARY KEY,
-		node_id TEXT NOT NULL,
-		original_id TEXT NOT NULL,
-		original_name TEXT NOT NULL,
-		backup_name TEXT NOT NULL,
-		new_id TEXT NOT NULL DEFAULT '',
-		cleanup_task_id TEXT NOT NULL DEFAULT '',
-		cleanup_target_id TEXT NOT NULL DEFAULT '',
-		cleanup_phase TEXT NOT NULL DEFAULT '',
-		snapshot_ref TEXT NOT NULL,
-		snapshot_id TEXT NOT NULL DEFAULT '',
-		previous_running INTEGER NOT NULL CHECK(previous_running IN (0,1)),
-		restart_policy TEXT NOT NULL,
-		phase TEXT NOT NULL,
-		outcome TEXT NOT NULL DEFAULT '',
-		error_code TEXT NOT NULL DEFAULT '',
-		spec_json TEXT NOT NULL,
-		networks_json TEXT NOT NULL DEFAULT '{}',
-		updated_at_ns INTEGER NOT NULL
-	) WITHOUT ROWID`); err != nil {
+	if _, err := db.ExecContext(ctx, schemaSQL); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("initialize rebuild database: %w", err)
 	}
@@ -281,3 +261,28 @@ func secureSidecar(path string) error {
 	}
 	return nil
 }
+
+const schemaSQL = `CREATE TABLE IF NOT EXISTS container_rebuilds (
+		task_id TEXT PRIMARY KEY,
+		node_id TEXT NOT NULL,
+		original_id TEXT NOT NULL,
+		original_name TEXT NOT NULL,
+		backup_name TEXT NOT NULL,
+		new_id TEXT NOT NULL DEFAULT '',
+		cleanup_task_id TEXT NOT NULL DEFAULT '',
+		cleanup_target_id TEXT NOT NULL DEFAULT '',
+		cleanup_phase TEXT NOT NULL DEFAULT '',
+		snapshot_ref TEXT NOT NULL,
+		snapshot_id TEXT NOT NULL DEFAULT '',
+		previous_running INTEGER NOT NULL CHECK(previous_running IN (0,1)),
+		restart_policy TEXT NOT NULL,
+		phase TEXT NOT NULL,
+		outcome TEXT NOT NULL DEFAULT '',
+		error_code TEXT NOT NULL DEFAULT '',
+		spec_json TEXT NOT NULL,
+		networks_json TEXT NOT NULL DEFAULT '{}',
+		updated_at_ns INTEGER NOT NULL
+	) WITHOUT ROWID`
+
+// Schema is the current durable container rebuild state contract.
+func Schema() string { return schemaSQL }

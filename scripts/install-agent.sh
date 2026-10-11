@@ -216,4 +216,11 @@ fi
 unset token
 
 "$AGENT_PATH" install-systemd --config "$CONFIG_PATH" --enable || fail 'systemd installation or Agent Core connection verification failed'
+updater_asset="nodedance-updater-linux-$arch"
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 "$RELEASE_BASE/$release_tag/$updater_asset" -o "$tmp_dir/$updater_asset" || fail 'cannot download update supervisor'
+updater_sha=$(awk -v name="$updater_asset" '$2 == name {print $1}' "$tmp_dir/SHA256SUMS")
+[[ "$updater_sha" =~ ^[[:xdigit:]]{64}$ ]] || fail 'missing update supervisor checksum'
+printf '%s  %s\n' "$updater_sha" "$updater_asset" | (cd "$tmp_dir" && sha256sum --check --status -) || fail 'update supervisor checksum failed'
+chmod 0700 "$tmp_dir/$updater_asset"
+"$tmp_dir/$updater_asset" install --component agent --mode systemd --binary "$AGENT_PATH" --unit nodedance-agent.service --data-dir "$STATE_DIR" --core-uid 0 --core-gid 0 || fail 'Agent is enrolled; update supervisor setup failed, rerun the updater installer'
 printf 'NodeDance Agent is installed and enabled for Core %s. The node name is the name attached to this enrollment token in Core.\n' "$server_url"

@@ -74,7 +74,7 @@ docker compose -f deploy/docker/compose.agent.yml logs --tail 50 agent
 
 更新源码后重新 `up -d --build`；使用发布镜像时更新固定标签，`pull` 后 `up -d --no-build`。更新 Core 前备份数据；保留 Core 数据卷及 Agent 宿主机状态目录。停止服务用对应 Compose 文件执行 `down`；Core 的 `down -v` 会删除其数据卷。
 
-For source builds, rebuild with `up -d --build`. For published images, update the pinned tag, pull, and use `up -d --no-build`. Back up Core before updates and preserve its volume and the Agent host state directory. Use `down` with the respective Compose file to stop; Core's `down -v` deletes its data volume.
+For published deployments, use the [update center or `nodedance update`](updates.md), which verifies releases, preserves deployment settings, backs up state and rolls back failures. Source development builds use `up -d --build`. Keep the Core volume and Agent host state directory; Core's `down -v` deletes its data volume.
 
 ## 本地验证 / Local verification
 
@@ -87,3 +87,5 @@ python3 scripts/test-docker.py
 该测试创建并清理专用临时容器、数据卷和主机目录，验证首次账号生成、持久化、登录、Agent 注册、宿主机指标/文件、保护规则与重启重连。CI 分别在原生 amd64 和 arm64 Linux runner 上执行。
 
 This opt-in test creates and cleans up dedicated containers, a volume, and a host directory. It checks initial credentials, persistence, login, Agent enrollment, host metrics/files, access protection, and reconnects. CI runs it on native amd64 and arm64 Linux runners.
+
+正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](updates.md).
