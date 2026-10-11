@@ -14,11 +14,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-type createAgentEnrollmentRequest struct {
-	CoreURL     string `json:"coreUrl,omitempty"`
-	DisplayName string `json:"displayName"`
-}
-
 type consumeAgentEnrollmentRequest struct {
 	RequestID  string `json:"requestId"`
 	Credential string `json:"credential"`
@@ -113,9 +108,16 @@ func validUUID(value string) bool {
 }
 
 func (s *Server) adminCreateAgentEnrollment(w http.ResponseWriter, r *http.Request, current *session) {
-	var request createAgentEnrollmentRequest
+	var request agents.EnrollmentRequest
 	if !decodeJSON(w, r, &request) {
 		return
+	}
+	if !agents.ValidDeploymentMethod(request.DeploymentMethod) {
+		http.Error(w, "deploymentMethod must be native or docker", http.StatusBadRequest)
+		return
+	}
+	if request.DeploymentMethod == "" {
+		request.DeploymentMethod = agents.DeploymentNative
 	}
 	name, ok := normalizeDisplayName(request.DisplayName)
 	if !ok {
@@ -142,8 +144,13 @@ func (s *Server) adminCreateAgentEnrollment(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "enrollment creation failed", http.StatusInternalServerError)
 		return
 	}
+	selectedCommand := command
+	if request.DeploymentMethod == agents.DeploymentDocker {
+		selectedCommand = dockerCommand
+	}
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"nodeId": enrollment.NodeID, "displayName": enrollment.DisplayName, "installCommand": command, "dockerInstallCommand": dockerCommand,
+		"deploymentMethod": request.DeploymentMethod, "nativeInstallCommand": command,
+		"nodeId": enrollment.NodeID, "displayName": enrollment.DisplayName, "installCommand": selectedCommand, "dockerInstallCommand": dockerCommand,
 		"token": enrollment.Token, "expiresAt": enrollment.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"),
 		"expiresInSeconds": int(agents.EnrollmentLifetime.Seconds()),
 	})

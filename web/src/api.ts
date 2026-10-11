@@ -1,3 +1,4 @@
+import { resolveOperation, type OperationInput } from './operations'
 import { t, diagnostic } from "./i18n"
 import type { MetricsView } from './metrics-contract'
 
@@ -456,12 +457,8 @@ export class ApiError extends Error {
 let csrfToken = ''
 export const SESSION_EXPIRED_EVENT = 'nodedance:session-expired'
 
-function isAnonymousAuthRequest(path: string): boolean {
-  const pathname = path.split('?', 1)[0]
-  return pathname === '/api/v1/auth/csrf' ||
-    pathname === '/api/v1/auth/setup/status' ||
-    pathname === '/api/v1/auth/setup' ||
-    pathname === '/api/v1/auth/login'
+function isAnonymousAuthRequest(name: string): boolean {
+  return ['auth.csrf', 'auth.status', 'auth.setup', 'auth.login'].includes(name)
 }
 
 function clearExpiredSession(path: string) {
@@ -471,7 +468,7 @@ function clearExpiredSession(path: string) {
   }
 }
 
-export async function request<T>(path: string, init: RequestInit = {}, csrf = false, timeoutMs = 60_000): Promise<T> {
+export async function request<T>(path: string, init: RequestInit = {}, csrf = false, timeoutMs = 60_000, name = '', binary = false): Promise<T> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs)
   const abortFromCaller = () => controller.abort(init.signal?.reason)
@@ -487,10 +484,7 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
     }
     if (csrf) {
       if (!csrfToken) {
-        const result = await request<{ token: string }>('/api/v1/auth/csrf', {
-          method: 'GET',
-          signal: controller.signal,
-        })
+        const result = await operationRequest<{ token: string }>('auth.csrf', {}, { signal: controller.signal })
         csrfToken = result.token
       }
       headers.set('X-CSRF-Token', csrfToken)
@@ -504,7 +498,7 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
       cache: 'no-store',
     })
 
-    if (response.status === 401) clearExpiredSession(path)
+    if (response.status === 401) clearExpiredSession(name)
 
     if (!response.ok) {
       let message = t('m.ad5d5a8f24fc', {"0": (response.status)})
@@ -520,6 +514,7 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
     }
 
     if (response.status === 204) return undefined as T
+    if (binary) return await response.blob() as T
     const body = await response.text()
     if (!body) return undefined as T
     let payload: unknown
@@ -528,7 +523,7 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
     } catch {
       throw new ApiError(response.status, t('m.e03b23b49908'))
     }
-    if ((path === '/api/v1/auth/setup' || path === '/api/v1/auth/login') &&
+    if ((name === 'auth.setup' || name === 'auth.login') &&
       typeof payload === 'object' && payload !== null && 'csrfToken' in payload &&
       typeof payload.csrfToken === 'string') {
       csrfToken = payload.csrfToken
@@ -540,168 +535,146 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
   }
 }
 
+export async function operationRequest<T>(name: string, input: OperationInput = {}, init: RequestInit = {}, timeoutMs = 60_000): Promise<T> {
+  const { operation, path } = await resolveOperation(name, input)
+  const mutation = operation.method !== 'GET' && operation.method !== 'HEAD'
+  const headers = new Headers(init.headers)
+  if (operation.requiresIdempotencyKey && !headers.has('Idempotency-Key')) throw new Error('Idempotency-Key is required')
+  if (operation.transport === 'upload' && !headers.has('Content-Type')) headers.set('Content-Type', 'application/octet-stream')
+  return request<T>(path, { ...init, headers, method: operation.method }, mutation, timeoutMs, name, operation.transport === 'download')
+}
+
 export const api = {
-  setupStatus: () => request<SetupStatus>('/api/v1/auth/setup/status'),
+  setupStatus: () => operationRequest<SetupStatus>("auth.status", {}),
   setup: (payload: { credential: string; username?: string; password?: string; displayName?: string }) => {
     csrfToken = ''
-    return request<AuthResponse>('/api/v1/auth/setup', {
-      method: 'POST',
+    return operationRequest<AuthResponse>("auth.setup", {}, {
       body: JSON.stringify(payload),
-    }, true)
+    })
   },
   login: (username: string, password: string) => {
     csrfToken = ''
-    return request<AuthResponse>('/api/v1/auth/login', {
-      method: 'POST',
+    return operationRequest<AuthResponse>("auth.login", {}, {
       body: JSON.stringify({ username, password }),
-    }, true)
+    })
   },
-  me: () => request<{ user: User }>('/api/v1/auth/me'),
+  me: () => operationRequest<{ user: User }>("auth.me", {}),
   logout: async () => {
-    const result = await request<void>('/api/v1/auth/logout', { method: 'POST' }, true)
+    const result = await operationRequest<void>("auth.logout", {})
     csrfToken = ''
     return result
   },
 
   changePassword: async (currentPassword: string, newPassword: string) => {
-    const result = await request<void>('/api/v1/auth/password', {
-      method: 'POST',
+    const result = await operationRequest<void>("auth.password", {}, {
       body: JSON.stringify({ currentPassword, newPassword }),
-    }, true)
+    })
     csrfToken = ''
     return result
   },
-  sessions: () => request<{ sessions: Session[] }>('/api/v1/auth/sessions'),
-  tailscalePeers: () => request<TailscaleDiscoveryResponse>('/api/v1/discovery/tailscale'),
-  probeTailscaleSSH: (peerIdentity: string) => request<{ fingerprint: string }>('/api/v1/discovery/tailscale/host-key', {
-    method: 'POST', body: JSON.stringify({ peerIdentity }),
-  }, true),
-  createAgentEnrollment: (displayName: string, coreUrl: string) => request<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number; installCommand: string; dockerInstallCommand: string }>('/api/v1/agents/enrollments', {
-    method: 'POST', body: JSON.stringify({ displayName, coreUrl }),
-  }, true),
-  startTailscaleDeployment: (payload: TailscaleDeployPayload, idempotencyKey: string) => request<TailscaleDeploymentTask>('/api/v1/discovery/deployments', {
-    method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload),
-  }, true),
-  tailscaleDeployments: () => request<{ tasks: TailscaleDeploymentTask[] }>('/api/v1/discovery/deployments'),
-  tailscaleDeployment: (taskId: string) => request<TailscaleDeploymentTask>(`/api/v1/discovery/deployments/${encodeURIComponent(taskId)}`),
+  sessions: () => operationRequest<{ sessions: Session[] }>("sessions.list", {}),
+  tailscalePeers: () => operationRequest<TailscaleDiscoveryResponse>("discovery.peers", {}),
+  probeTailscaleSSH: (peerIdentity: string) => operationRequest<{ fingerprint: string }>("discovery.host-key", {}, {
+    body: JSON.stringify({ peerIdentity }),
+  }),
+  createAgentEnrollment: (displayName: string, coreUrl: string, deploymentMethod: 'native' | 'docker') => operationRequest<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number; installCommand: string; nativeInstallCommand: string; dockerInstallCommand: string; deploymentMethod: 'native' | 'docker' }>("agents.enrollment", {}, {
+    body: JSON.stringify({ displayName, coreUrl, deploymentMethod }),
+  }),
+  startTailscaleDeployment: (payload: TailscaleDeployPayload, idempotencyKey: string) => operationRequest<TailscaleDeploymentTask>("deployments.create", {}, {
+    headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload),
+  }),
+  tailscaleDeployments: () => operationRequest<{ tasks: TailscaleDeploymentTask[] }>("deployments.list", {}),
+  tailscaleDeployment: (taskId: string) => operationRequest<TailscaleDeploymentTask>("deployments.get", { params: { taskId: String(taskId) } }),
   resolveTailscaleDeployment: (taskId: string, payload: { outcome: 'succeeded' | 'failed'; observedState: string }) =>
-    request<TailscaleDeploymentTask>(`/api/v1/discovery/deployments/${encodeURIComponent(taskId)}/resolve`, {
-      method: 'POST', body: JSON.stringify({ ...payload, confirmed: true }),
-    }, true),
-  nodes: () => request<AgentNodesResponse>('/api/v1/nodes'),
-  nodeMetrics: (nodeId: string) => request<AgentMetricsResponse>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/metrics`),
-  nodeContainers: (nodeId: string) => request<DockerInventoryMessage>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/containers`),
-  dashboardSettings: () => request<DashboardSettings>('/api/v1/dashboard/settings'),
-  saveDashboardSettings: (settings: DashboardSettings) => request<void>('/api/v1/dashboard/settings', {
-    method: 'PUT', body: JSON.stringify(settings),
-  }, true),
-  nodePreferences: (nodeId: string) => request<{ preferences: DashboardPreference[] }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/preferences`),
-  saveNodePreference: (nodeId: string, preference: DashboardPreference) => request<void>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/preferences`, { method: 'PUT', body: JSON.stringify(preference) }, true),
+    operationRequest<TailscaleDeploymentTask>("deployments.resolve", { params: { taskId: String(taskId) } }, {
+      body: JSON.stringify({ ...payload, confirmed: true }),
+    }),
+  nodes: () => operationRequest<AgentNodesResponse>("nodes.list", {}),
+  nodeMetrics: (nodeId: string) => operationRequest<AgentMetricsResponse>("nodes.metrics", { params: { nodeId: String(nodeId) } }),
+  nodeContainers: (nodeId: string) => operationRequest<DockerInventoryMessage>("containers.list", { params: { nodeId: String(nodeId) } }),
+  dashboardSettings: () => operationRequest<DashboardSettings>("dashboard.settings", {}),
+  saveDashboardSettings: (settings: DashboardSettings) => operationRequest<void>("dashboard.save-settings", {}, {
+    body: JSON.stringify(settings),
+  }),
+  nodePreferences: (nodeId: string) => operationRequest<{ preferences: DashboardPreference[] }>("nodes.preferences", { params: { nodeId: String(nodeId) } }),
+  saveNodePreference: (nodeId: string, preference: DashboardPreference) => operationRequest<void>("nodes.save-preference", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(preference) }),
   nodeHistory: (nodeId: string, resolution: 'minute' | 'hour', from: Date, to: Date) => {
     const query = new URLSearchParams({ resolution, from: from.toISOString(), to: to.toISOString() })
-    return request<MetricHistory>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/history?${query}`)
+    return operationRequest<MetricHistory>("nodes.history", { params: { nodeId: String(nodeId) }, query: Object.fromEntries(query) })
   },
-  nodeImages: (nodeId: string, filter = '', page = 0) => request<DockerImagePage>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/images?filter=${encodeURIComponent(filter)}&page=${page}&pageSize=50`),
-  nodeTasks: (nodeId: string) => request<{ tasks: ContainerTask[]; nextCursor: string }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks?limit=50`),
-  nodeTask: (nodeId: string, taskId: string) => request<ContainerTask>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}`),
-  nodeTaskAudit: (nodeId: string, taskId: string) => request<{ events: TaskAuditEvent[] }>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}/audit`),
-  cancelNodeTask: (nodeId: string, taskId: string) => request<ContainerTask & { cancelRequested?: boolean }>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }, true),
-  serviceProbes: () => request<{ probes: ServiceProbe[] }>('/api/v1/probes'),
-  createServiceProbe: (payload: ServiceProbePayload) => request<ServiceProbe>('/api/v1/probes', {
-    method: 'POST', body: JSON.stringify(payload),
-  }, true),
-  updateServiceProbe: (id: string, payload: ServiceProbePayload) => request<ServiceProbe>(`/api/v1/probes/${encodeURIComponent(id)}`, {
-    method: 'PUT', body: JSON.stringify(payload),
-  }, true),
-  deleteServiceProbe: (id: string, revision: number) => request<void>(`/api/v1/probes/${encodeURIComponent(id)}?revision=${revision}`, {
-    method: 'DELETE',
-  }, true),
-  serviceProbeHistory: (id: string) => request<{ runs: ServiceProbeRun[] }>(`/api/v1/probes/${encodeURIComponent(id)}/history?limit=100`),
-  alertRules: (nodeId = '') => request<{ rules: AlertRule[] }>(`/api/v1/alerts/rules${nodeId ? `?nodeId=${encodeURIComponent(nodeId)}` : ''}`),
-  createAlertRule: (payload: Omit<AlertRule, 'id' | 'revision'>) => request<{ rule: AlertRule }>('/api/v1/alerts/rules', { method: 'POST', body: JSON.stringify(payload) }, true),
-  updateAlertRule: (id: string, payload: AlertRule) => request<{ rule: AlertRule }>(`/api/v1/alerts/rules/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }, true),
-  deleteAlertRule: (id: string, revision: number) => request<void>(`/api/v1/alerts/rules/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ revision }) }, true),
-  ensureDefaultAlertRules: (nodeId: string) => request<{ rules: AlertRule[] }>('/api/v1/alerts/rules/defaults', { method: 'POST', body: JSON.stringify({ nodeId }) }, true),
-  alertChannels: () => request<{ channels: AlertChannel[] }>('/api/v1/alerts/channels'),
+  nodeImages: (nodeId: string, filter = '', page = 0) => operationRequest<DockerImagePage>("images.list", { params: { nodeId: String(nodeId) }, query: { filter: String(filter), page: String(page), pageSize: "50" } }),
+  nodeTasks: (nodeId: string) => operationRequest<{ tasks: ContainerTask[]; nextCursor: string }>("tasks.list", { params: { nodeId: String(nodeId) }, query: { limit: "50" } }),
+  nodeTask: (nodeId: string, taskId: string) => operationRequest<ContainerTask>("tasks.get", { params: { nodeId: String(nodeId), taskId: String(taskId) } }),
+  nodeTaskAudit: (nodeId: string, taskId: string) => operationRequest<{ events: TaskAuditEvent[] }>("tasks.audit", { params: { nodeId: String(nodeId), taskId: String(taskId) } }),
+  cancelNodeTask: (nodeId: string, taskId: string) => operationRequest<ContainerTask & { cancelRequested?: boolean }>("tasks.cancel", { params: { nodeId: String(nodeId), taskId: String(taskId) } }),
+  serviceProbes: () => operationRequest<{ probes: ServiceProbe[] }>("probes.list", {}),
+  createServiceProbe: (payload: ServiceProbePayload) => operationRequest<ServiceProbe>("probes.create", {}, {
+    body: JSON.stringify(payload),
+  }),
+  updateServiceProbe: (id: string, payload: ServiceProbePayload) => operationRequest<ServiceProbe>("probes.update", { params: { id: String(id) } }, {
+    body: JSON.stringify(payload),
+  }),
+  deleteServiceProbe: (id: string, revision: number) => operationRequest<void>("probes.delete", { params: { id: String(id) }, query: { revision: String(revision) } }),
+  serviceProbeHistory: (id: string) => operationRequest<{ runs: ServiceProbeRun[] }>("probes.history", { params: { id: String(id) }, query: { limit: "100" } }),
+  alertRules: (nodeId = '') => operationRequest<{ rules: AlertRule[] }>('rules.list', { query: nodeId ? { nodeId } : {} }),
+  createAlertRule: (payload: Omit<AlertRule, 'id' | 'revision'>) => operationRequest<{ rule: AlertRule }>("rules.create", {}, { body: JSON.stringify(payload) }),
+  updateAlertRule: (id: string, payload: AlertRule) => operationRequest<{ rule: AlertRule }>("rules.update", { params: { id: String(id) } }, { body: JSON.stringify(payload) }),
+  deleteAlertRule: (id: string, revision: number) => operationRequest<void>("rules.delete", { params: { id: String(id) } }, { body: JSON.stringify({ revision }) }),
+  ensureDefaultAlertRules: (nodeId: string) => operationRequest<{ rules: AlertRule[] }>("rules.defaults", {}, { body: JSON.stringify({ nodeId }) }),
+  alertChannels: () => operationRequest<{ channels: AlertChannel[] }>("channels.list", {}),
   saveAlertChannel: (payload: { name: string; kind: 'webhook' | 'smtp'; config: AlertChannel['config']; secret?: string; enabled: boolean; revision?: number }, id?: string) =>
-    request<{ channel: AlertChannel }>(id ? `/api/v1/alerts/channels/${encodeURIComponent(id)}` : '/api/v1/alerts/channels', { method: id ? 'PUT' : 'POST', body: JSON.stringify(payload) }, true),
-  deleteAlertChannel: (id: string, revision: number) => request<void>(`/api/v1/alerts/channels/${encodeURIComponent(id)}`, { method: 'DELETE', body: JSON.stringify({ revision }) }, true),
-  testAlertChannel: (id: string) => request<{ status: string }>(`/api/v1/alerts/channels/${encodeURIComponent(id)}/test`, { method: 'POST' }, true),
-  activeAlerts: () => request<{ alerts: AlertItem[] }>('/api/v1/alerts'),
-  alertHistory: () => request<{ alerts: AlertItem[] }>('/api/v1/alerts/history'),
-  alertEvents: () => request<{ events: AlertEvent[] }>('/api/v1/alerts/events'),
-  acknowledgeAlert: (id: string, note = '') => request<void>(`/api/v1/alerts/${encodeURIComponent(id)}/acknowledge`, { method: 'POST', body: JSON.stringify({ note }) }, true),
-  silenceAlert: (id: string, until: string, reason: string) => request<void>(`/api/v1/alerts/${encodeURIComponent(id)}/silence`, { method: 'POST', body: JSON.stringify({ until, reason }) }, true),
-  alertWindows: () => request<{ windows: AlertWindow[] }>('/api/v1/alerts/windows'),
-  createAlertWindow: (payload: Omit<AlertWindow, 'id'>) => request<{ window: AlertWindow }>('/api/v1/alerts/windows', { method: 'POST', body: JSON.stringify(payload) }, true),
-  deleteAlertWindow: (id: string) => request<void>(`/api/v1/alerts/windows/${encodeURIComponent(id)}`, { method: 'DELETE' }, true),
-  alertDeliveries: () => request<{ deliveries: AlertDelivery[] }>('/api/v1/alerts/deliveries'),
+    operationRequest<{ channel: AlertChannel }>(id ? 'channels.update' : 'channels.create', { params: id ? { id } : {} }, { body: JSON.stringify(payload) }),
+  deleteAlertChannel: (id: string, revision: number) => operationRequest<void>("channels.delete", { params: { id: String(id) } }, { body: JSON.stringify({ revision }) }),
+  testAlertChannel: (id: string) => operationRequest<{ status: string }>("channels.test", { params: { id: String(id) } }),
+  activeAlerts: () => operationRequest<{ alerts: AlertItem[] }>("alerts.list", {}),
+  alertHistory: () => operationRequest<{ alerts: AlertItem[] }>("alerts.history", {}),
+  alertEvents: () => operationRequest<{ events: AlertEvent[] }>("alerts.events", {}),
+  acknowledgeAlert: (id: string, note = '') => operationRequest<void>("alerts.acknowledge", { params: { id: String(id) } }, { body: JSON.stringify({ note }) }),
+  silenceAlert: (id: string, until: string, reason: string) => operationRequest<void>("alerts.silence", { params: { id: String(id) } }, { body: JSON.stringify({ until, reason }) }),
+  alertWindows: () => operationRequest<{ windows: AlertWindow[] }>("windows.list", {}),
+  createAlertWindow: (payload: Omit<AlertWindow, 'id'>) => operationRequest<{ window: AlertWindow }>("windows.create", {}, { body: JSON.stringify(payload) }),
+  deleteAlertWindow: (id: string) => operationRequest<void>("windows.delete", { params: { id: String(id) } }),
+  alertDeliveries: () => operationRequest<{ deliveries: AlertDelivery[] }>("deliveries.list", {}),
   createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload, idempotencyKey: string) =>
-    request<{ taskId: string; status: ContainerTask['status'] }>(
-      `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/actions`,
-      { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
+    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("containers.action", { params: { nodeId: String(nodeId), containerId: String(containerId) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
   createContainerCreateTask: (nodeId: string, payload: ContainerCreateSpec, idempotencyKey: string) =>
-    request<{ taskId: string; status: ContainerTask['status'] }>(
-      `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/create`,
-      { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
-  nodeFiles: (nodeId: string, path = '/') => request<{ entries: NodeFileEntry[]; path: string }>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files?path=${encodeURIComponent(path)}`),
-  nodeFileText: (nodeId: string, path: string) => request<{ path: string; text: string; version: string; size: number }>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/text?path=${encodeURIComponent(path)}`),
-  nodeFileStat: (nodeId: string, path: string) => request<NodeFileEntry>(
-    `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/stat?path=${encodeURIComponent(path)}`),
+    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("containers.create", { params: { nodeId: String(nodeId) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
+  nodeFiles: (nodeId: string, path = '/') => operationRequest<{ entries: NodeFileEntry[]; path: string }>("files.list", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }),
+  nodeFileText: (nodeId: string, path: string) => operationRequest<{ path: string; text: string; version: string; size: number }>("files.text", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }),
+  nodeFileStat: (nodeId: string, path: string) => operationRequest<NodeFileEntry>("files.stat", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }),
   createFileTask: (nodeId: string, payload: CreateFileTaskPayload, idempotencyKey: string) =>
-    request<{ taskId: string; status: ContainerTask['status']; action: string }>(
-      `/api/v1/nodes/${encodeURIComponent(nodeId)}/files/tasks`,
-      { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
+    operationRequest<{ taskId: string; status: ContainerTask['status']; action: string }>("files.action", { params: { nodeId: String(nodeId) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
   uploadNodeFile: (nodeId: string, path: string, file: File, expectedVersion = '') =>
-    request<ContainerTask>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/files/upload?path=${encodeURIComponent(path)}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/octet-stream', 'Idempotency-Key': crypto.randomUUID(), 'X-File-Version': expectedVersion },
+    operationRequest<ContainerTask>("files.upload", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }, {
+      headers: { 'Content-Type': 'application/octet-stream', 'Idempotency-Key': crypto.randomUUID(), 'X-File-Version': expectedVersion },
       body: file,
-    }, true, 30 * 60_000),
+    }, 30 * 60_000),
   createImagePullTask: (nodeId: string, payload: { imageReference: string; username?: string; password?: string }, idempotencyKey: string) =>
-    request<{ taskId: string; status: ContainerTask['status'] }>(
-      `/api/v1/nodes/${encodeURIComponent(nodeId)}/images/pull`,
-      { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }, true),
+    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("images.pull", { params: { nodeId: String(nodeId) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
   createImageDeleteTask: (nodeId: string, imageID: string, idempotencyKey: string) =>
-    request<{ taskId: string; status: ContainerTask['status'] }>(
-      `/api/v1/nodes/${encodeURIComponent(nodeId)}/images/${encodeURIComponent(imageID)}`,
-      { method: 'DELETE', headers: { 'Idempotency-Key': idempotencyKey },
-        body: JSON.stringify({ deleteConfirmed: true, confirmationId: imageID }) }, true),
+    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("images.delete", { params: { nodeId: String(nodeId), imageId: String(imageID) } }, { headers: { 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify({ deleteConfirmed: true, confirmationId: imageID }) }),
   planContainerRebuild: (nodeId: string, containerId: string, spec: RebuildSpec) =>
-    request<ContainerRebuildPlan>(
-      `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}/rebuild/plan`,
-      { method: 'POST', body: JSON.stringify({ spec }) }, true),
+    operationRequest<ContainerRebuildPlan>("containers.rebuild-plan", { params: { nodeId: String(nodeId), containerId: String(containerId) } }, { body: JSON.stringify({ spec }) }),
   nodeContainer: (nodeId: string, containerId: string) =>
-    request<{ type: 'node_container'; nodeId: string; container: DockerContainerRecord }>(
-      `/api/v1/nodes/${encodeURIComponent(nodeId)}/containers/${encodeURIComponent(containerId)}`,
-    ),
-  revokeSession: (id: string) => request<void>(`/api/v1/auth/sessions/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  }, true),
+    operationRequest<{ type: 'node_container'; nodeId: string; container: DockerContainerRecord }>("containers.get", { params: { nodeId: String(nodeId), containerId: String(containerId) } }),
+  revokeSession: (id: string) => operationRequest<void>("sessions.revoke", { params: { id: String(id) } }),
   createTerminal: (nodeId: string, target: { targetKind: 'host' } | { targetKind: 'container'; containerId: string }) =>
-    request<TerminalAuthorization>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/terminals`, {
-      method: 'POST', body: JSON.stringify(target),
-    }, true),
+    operationRequest<TerminalAuthorization>("terminal.create", { params: { nodeId: String(nodeId) } }, {
+      body: JSON.stringify(target),
+    }),
   cancelTerminal: (nodeId: string, streamId: string) =>
-    request<void>(`/api/v1/nodes/${encodeURIComponent(nodeId)}/terminals/${encodeURIComponent(streamId)}`, {
-      method: 'DELETE',
-    }, true),
-  appearance: () => request<Appearance>('/api/v1/public/appearance'),
+    operationRequest<void>("terminal.cancel", { params: { nodeId: String(nodeId), streamId: String(streamId) } }),
+  appearance: () => operationRequest<Appearance>("appearance.get", {}),
   saveAppearance: (payload: Pick<Appearance, 'displayName' | 'theme' | 'backgroundColor'>) =>
-    request<void>('/api/v1/settings/appearance', {
-      method: 'PUT',
+    operationRequest<void>("appearance.update", {}, {
       body: JSON.stringify(payload),
-    }, true),
+    }),
   uploadImage: (kind: 'avatar' | 'background', image: File) => {
     const form = new FormData()
     form.append('image', image)
-    return request<void>(`/api/v1/settings/appearance/${kind}`, {
-      method: 'POST',
+    return operationRequest<void>(`appearance.upload-${kind}`, {}, {
       body: form,
-    }, true)
+    })
   },
 }

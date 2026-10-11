@@ -1,3 +1,4 @@
+import { operationURL } from './operations'
 export type ContainerStreamKind = 'logs' | 'stats'
 
 export interface ContainerStreamEnvelope<T = unknown> {
@@ -43,12 +44,8 @@ export interface ContainerStreamError {
   code: string
 }
 
-export function createContainerStreamSocket(kind: ContainerStreamKind, nodeId: string, containerId: string, tail = '200'): WebSocket {
-  const url = new URL(`/ws/v1/streams/${kind}`, window.location.href)
-  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-  url.searchParams.set('nodeId', nodeId)
-  url.searchParams.set('containerId', containerId)
-  if (kind === 'logs') url.searchParams.set('tail', tail)
+export async function createContainerStreamSocket(kind: ContainerStreamKind, nodeId: string, containerId: string, tail = '200'): Promise<WebSocket> {
+  const url = await operationURL(`containers.${kind}`, { query: { nodeId, containerId, ...(kind === 'logs' ? { tail } : {}) } })
   return new WebSocket(url)
 }
 

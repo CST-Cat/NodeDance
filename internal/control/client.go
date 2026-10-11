@@ -386,3 +386,53 @@ func (c *Client) Connect(ctx context.Context, o Operation, in Input) (*websocket
 	conn.SetReadLimit(2 * 1024 * 1024)
 	return conn, nil
 }
+
+// Catalog reads the connected Core's contract, rather than a client-side copy.
+func (c *Client) Catalog(ctx context.Context) (Catalog, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base.String()+"/api/v1/operations", nil)
+	if err != nil {
+		return Catalog{}, err
+	}
+	response, err := c.http.Do(request)
+	if err != nil {
+		return Catalog{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return Catalog{}, fmt.Errorf("read Core operation catalog: HTTP %d", response.StatusCode)
+	}
+	var catalog Catalog
+	if err := json.NewDecoder(io.LimitReader(response.Body, 2*1024*1024)).Decode(&catalog); err != nil {
+		return Catalog{}, err
+	}
+	if catalog.Version != 1 || len(catalog.Operations) == 0 {
+		return Catalog{}, errors.New("invalid Core operation catalog")
+	}
+	seen := map[string]bool{}
+	for _, operation := range catalog.Operations {
+		if operation.Name == "" || seen[operation.Name] || (!strings.HasPrefix(operation.Path, "/api/") && !strings.HasPrefix(operation.Path, "/ws/")) {
+			return Catalog{}, errors.New("invalid Core operation definition")
+		}
+		seen[operation.Name] = true
+		switch operation.Transport {
+		case "json", "upload", "download", "multipart", "websocket", "terminal":
+		default:
+			return Catalog{}, errors.New("invalid Core operation transport")
+		}
+		switch operation.Method {
+		case "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE":
+		default:
+			return Catalog{}, errors.New("invalid Core operation method")
+		}
+	}
+	return catalog, nil
+}
+
+func FindIn(catalog Catalog, name string) (Operation, error) {
+	for _, operation := range catalog.Operations {
+		if operation.Name == name {
+			return operation, nil
+		}
+	}
+	return Operation{}, fmt.Errorf("unknown operation %q", name)
+}

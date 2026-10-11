@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { operationURL } from './operations'
+import OperationConsole from './components/OperationConsole.vue'
 import { t, display, locale, setLocale, type Locale } from "./i18n"
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ApiError, api, SESSION_EXPIRED_EVENT, type Appearance, type Session, type User } from './api'
@@ -8,7 +10,7 @@ import AgentEnrollment from './components/AgentEnrollment.vue'
 import AlertCenter from './components/AlertCenter.vue'
 import UiIcon from './components/UiIcon.vue'
 
-type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'agent-enrollment' | 'alerts'
+type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'agent-enrollment' | 'alerts' | 'operations'
 type ImageKind = 'avatar' | 'background'
 
 const screen = ref<Screen>('loading')
@@ -48,6 +50,7 @@ const navigation = [
   { screen: 'agent-enrollment', label: 'nav.enrollment', icon: 'add' },
   { screen: 'discovery', label: 'nav.discovery', icon: 'discovery' },
   { screen: 'alerts', label: 'nav.alerts', icon: 'alerts' },
+  { screen: 'operations', label: 'nav.operations', icon: 'terminal' },
   { screen: 'settings', label: 'nav.settings', icon: 'settings' },
 ] as const
 const screenTitle = computed(() => t(navigation.find(item => item.screen === screen.value)?.label ?? 'nav.workspace'))
@@ -87,11 +90,12 @@ const safeBackgroundColor = computed(() => /^#[\da-f]{6}$/i.test(appearance.back
 const shellStyle = computed(() => ({ '--page-color': safeBackgroundColor.value }))
 const effectiveTheme = computed(() => appearance.theme === 'system' ? preferredTheme.value : appearance.theme)
 
+const imagePaths = reactive({ avatar: '', background: '' })
 function imageUrl(value: string, kind: ImageKind): string {
   if (!value) return ''
   try {
     const url = new URL(value, window.location.origin)
-    const expectedPath = `/api/v1/public/appearance/${kind}`
+    const expectedPath = imagePaths[kind]
     if (url.origin !== window.location.origin || url.pathname !== expectedPath) return ''
     return url.pathname
   } catch {
@@ -119,7 +123,8 @@ function errorText(reason: unknown): string {
 }
 
 async function loadAppearance() {
-  const result = await api.appearance()
+  const [result, avatar, background] = await Promise.all([api.appearance(), operationURL('appearance.avatar'), operationURL('appearance.background')])
+  imagePaths.avatar = avatar.pathname; imagePaths.background = background.pathname
   Object.assign(appearance, result)
   if (!/^#[\da-f]{6}$/i.test(appearance.backgroundColor)) {
     appearance.backgroundColor = '#101827'
@@ -512,6 +517,8 @@ onBeforeUnmount(() => {
     <NodesDashboard v-else-if="screen === 'nodes'" @enroll="navigate('agent-enrollment')" />
 
     <AgentEnrollment v-else-if="screen === 'agent-enrollment'" @back="screen = 'nodes'" />
+
+    <OperationConsole v-else-if="screen === 'operations'" />
 
     <AlertCenter v-else-if="screen === 'alerts'" />
 

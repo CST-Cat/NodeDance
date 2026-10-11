@@ -1254,5 +1254,19 @@
   "agent.deploymentMethod": "Deployment method",
   "agent.dockerDeployment": "Docker deployment",
   "agent.nativeDeployment": "Direct installation (systemd)",
-  "agent.dockerRequirements": "Requires Linux rootful Docker and root access. Stop the old Agent and preserve its state before replacement. Enter the enrollment token when prompted; it is not included in the command."
+  "agent.dockerRequirements": "Requires Linux rootful Docker and root access. Stop the old Agent and preserve its state before replacement. Enter the enrollment token when prompted; it is not included in the command.",
+  "nav.operations": "Operations",
+  "operations.description": "Available operations and forms are supplied by the connected Core.",
+  "operations.search": "Search operations",
+  "operations.required": "Required",
+  "operations.fileRequired": "Select a file",
+  "operations.connectionFailed": "Connection failed",
+  "operations.downloaded": "Downloaded",
+  "operations.completed": "Completed",
+  "operations.file": "File",
+  "operations.running": "Running…",
+  "operations.execute": "Execute",
+  "operations.disconnect": "Disconnect",
+  "operations.input": "Terminal input",
+  "operations.send": "Send"
 }

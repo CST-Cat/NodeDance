@@ -6,6 +6,21 @@
 
 ### 简体中文
 
+## [0.1.7]
+
+### English
+
+- Publish one Core operation contract and discover it dynamically in Web, CLI, and TUI. Generate Web operation forms, reuse canonical routes for all HTTP and WebSocket transports, and verify server-only operations are available without client changes.
+
+- Share the Agent deployment-method request and schema across Web, CLI, and TUI. Select native/systemd or Docker in CLI with `--deployment-method` and in dedicated TUI enrollment prompts; return the selected command and both installation alternatives.
+- Validate enrollment methods in Core before issuing a token, document the shared request, and test CLI request forwarding and TUI selection.
+
+### 简体中文
+
+- Core 发布统一操作契约，Web、CLI、TUI 动态读取。Web 自动生成操作表单，所有 HTTP 与 WebSocket 传输复用契约路由，并验证新增服务端操作无需客户端改动即可使用。
+- Web、CLI、TUI 共用 Agent 部署方式请求与操作 schema。CLI 使用 `--deployment-method`，TUI 使用专用注册表单，均可选择直接/systemd 安装或 Docker，并返回选中命令及两种安装方案。
+- Core 在签发令牌前验证部署方式，更新共享请求文档并测试 CLI 请求传递与 TUI 选择。
+
 ## [0.1.6]
 
 ### English

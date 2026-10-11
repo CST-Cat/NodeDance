@@ -17,6 +17,10 @@ import (
 
 func TestControlCLI(t *testing.T) {
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/operations" {
+			json.NewEncoder(w).Encode(control.Describe())
+			return
+		}
 		if r.URL.Path == "/api/v1/nodes" {
 			io.WriteString(w, `{"nodes":[]}`)
 			return
@@ -89,5 +93,77 @@ func TestLocalizedCatalogKeepsMachineContract(t *testing.T) {
 	zh.Description = en.Description
 	if !reflect.DeepEqual(en, zh) {
 		t.Fatal("localization changed machine contract")
+	}
+}
+
+func TestCLIEnrollmentSelectsDeploymentMethod(t *testing.T) {
+	for _, method := range []string{"native", "docker"} {
+		t.Run(method, func(t *testing.T) {
+			var received map[string]string
+			host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/v1/operations" {
+					json.NewEncoder(w).Encode(control.Describe())
+					return
+				}
+				switch r.URL.Path {
+				case "/api/v1/auth/csrf":
+					http.SetCookie(w, &http.Cookie{Name: "nodedance_csrf", Value: "csrf", Path: "/"})
+					io.WriteString(w, `{"token":"csrf"}`)
+				case "/api/v1/agents/enrollments":
+					if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+						t.Error(err)
+					}
+					io.WriteString(w, `{"installCommand":"selected command","token":"one-time"}`)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer host.Close()
+			var out strings.Builder
+			args := []string{"agents", "enrollment", "--server", host.URL, "--dev", "--state-dir", filepath.Join(t.TempDir(), "client"), "--body", `{"displayName":"node","coreUrl":"https://core.example"}`, "--deployment-method", method}
+			if err := RunWithInput(context.Background(), args, func(string) (string, bool) { return "", false }, strings.NewReader(""), &out, io.Discard, "test"); err != nil {
+				t.Fatal(err)
+			}
+			if received["deploymentMethod"] != method || received["displayName"] != "node" || received["coreUrl"] != "https://core.example" {
+				t.Fatalf("incorrect request: %v", received)
+			}
+			if !strings.Contains(out.String(), "selected command") {
+				t.Fatal(out.String())
+			}
+		})
+	}
+	var out strings.Builder
+	err := RunWithInput(context.Background(), []string{"agents", "enrollment", "--body", `{"displayName":"node"}`, "--deployment-method", "unsupported"}, func(string) (string, bool) { return "", false }, strings.NewReader(""), &out, io.Discard, "test")
+	if err == nil || !strings.Contains(err.Error(), "native or docker") {
+		t.Fatalf("unsupported method accepted: %v", err)
+	}
+}
+
+func TestCLIUsesOperationAddedOnlyByConnectedCore(t *testing.T) {
+	operation := control.Operation{Name: "future.inspect", Method: "GET", Path: "/api/v1/future/{id}", Parameters: []string{"id"}, Query: []string{}, Transport: "json", Description: "Server-only operation"}
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/operations":
+			json.NewEncoder(w).Encode(control.Catalog{Version: 1, Operations: []control.Operation{operation}})
+		case "/api/v1/future/new":
+			io.WriteString(w, `{"discovered":true}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer host.Close()
+	if _, err := control.Find(operation.Name); err == nil {
+		t.Fatal("fixture operation unexpectedly exists in client")
+	}
+	lookup := func(string) (string, bool) { return "", false }
+	for _, command := range [][]string{{"call", operation.Name, "--params", `{"id":"new"}`}, {"operations", operation.Name}} {
+		args := append(command, "--server", host.URL, "--dev", "--state-dir", filepath.Join(t.TempDir(), "client"))
+		var output strings.Builder
+		if err := RunWithInput(context.Background(), args, lookup, strings.NewReader(""), &output, io.Discard, "test"); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), operation.Name) {
+			t.Fatal("server operation was not discovered")
+		}
 	}
 }

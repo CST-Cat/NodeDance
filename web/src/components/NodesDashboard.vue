@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { operationURL } from '../operations'
 import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, type AgentNode, type AgentNodesResponse, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainer, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
@@ -285,10 +286,12 @@ function acceptSocketMessage(raw: string) {
   if (value.type === 'node_status' && value.state) { if (setClock(value.nodeId, value.state.status, value.state.serverTime, value.state.leaseValidUntil, value.state.generation)) setNodeReason(value.nodeId, value.state.reason); return }
   if (value.type === 'node_containers') acceptDockerResponse(event as DockerInventoryMessage)
 }
-function connectDashboard() {
+async function connectDashboard() {
   if (disposed) return
   socketState.value = socketState.value === 'connected' ? 'retrying' : 'connecting'
-  const url = new URL('/ws/v1/dashboard', window.location.href); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+  let url: URL
+  try { url = await operationURL('dashboard.watch') } catch { scheduleReconnect(); return }
+  if (disposed) return
   const current = new WebSocket(url); socket = current
   current.onopen = () => { if (disposed || socket !== current) return; reconnectDelay = 1000; socketState.value = 'connected'; void refreshNodes().catch((reason: unknown) => { busy.value = false; error.value = reason instanceof Error ? reason.message : t('m.8fae2c449c13') }) }
   current.onmessage = (message) => { if (!disposed && socket === current) acceptSocketMessage(String(message.data)) }

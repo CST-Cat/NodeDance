@@ -308,3 +308,52 @@ func TestOpenTerminalAuthorizesAndSendsTarget(t *testing.T) {
 		t.Fatalf("incorrect input: %v", frame)
 	}
 }
+
+func TestConnectedCorePublishesSharedCatalogWithoutGrantingAccess(t *testing.T) {
+	core, err := server.New("test", server.Options{DataDir: t.TempDir(), Development: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer core.Close()
+	host := httptest.NewServer(core)
+	defer host.Close()
+	client, err := control.NewClient(control.ClientOptions{Server: host.URL, Development: true, StateDir: filepath.Join(t.TempDir(), "client")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	catalog, err := client.Catalog(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal(control.Describe())
+	got, _ := json.Marshal(catalog)
+	if string(want) != string(got) {
+		t.Fatal("Core published a different contract")
+	}
+	operation, _ := control.FindIn(catalog, "nodes.list")
+	if result := client.Execute(context.Background(), operation, control.Input{}, nil, nil); result.Status != http.StatusUnauthorized {
+		t.Fatal("catalog bypassed authentication")
+	}
+}
+
+func TestRemoteCatalogRejectsInvalidDefinitions(t *testing.T) {
+	for _, broken := range []control.Operation{
+		{Name: "bad", Path: "https://evil.example/api/", Method: "GET", Transport: "json"},
+		{Name: "bad", Path: "/api/v1/test", Method: "TRACE", Transport: "json"},
+		{Name: "bad", Path: "/api/v1/test", Method: "GET", Transport: "local"},
+	} {
+		host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			json.NewEncoder(w).Encode(control.Catalog{Version: 1, Operations: []control.Operation{broken}})
+		}))
+		client, err := control.NewClient(control.ClientOptions{Server: host.URL, Development: true, StateDir: filepath.Join(t.TempDir(), "client")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.Catalog(context.Background()); err == nil {
+			t.Fatal("invalid catalog accepted")
+		}
+		client.Close()
+		host.Close()
+	}
+}

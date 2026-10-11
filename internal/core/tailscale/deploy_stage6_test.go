@@ -532,7 +532,7 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 			t.Errorf("shared installer command is missing %q", required)
 		}
 	}
-	for _, required := range []string{"result.installCommand", "data-testid=\"agent-install-command\"", "data-testid=\"agent-enrollment-token\"", "https://core.example:8180", "t('m."} {
+	for _, required := range []string{"result.nativeInstallCommand", "result.dockerInstallCommand", "data-testid=\"agent-deployment-method\"", "data-testid=\"agent-install-command\"", "data-testid=\"agent-enrollment-token\"", "https://core.example:8180", "t('m."} {
 		if !strings.Contains(string(enrollmentUI), required) {
 			t.Errorf("shared Agent enrollment UI is missing %q", required)
 		}

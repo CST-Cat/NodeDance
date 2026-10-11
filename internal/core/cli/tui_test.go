@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/CST-Cat/NodeDance/internal/control"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +17,12 @@ import (
 
 func TestTUILoginAndReturn(t *testing.T) {
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/operations" {
+			catalog := control.Describe()
+			catalog.Operations = append(catalog.Operations, control.Operation{Name: "future.inspect", Description: "Server-only operation", Method: "GET", Path: "/api/v1/future", Parameters: []string{}, Query: []string{}, Transport: "json"})
+			json.NewEncoder(w).Encode(catalog)
+			return
+		}
 		if r.URL.Path == "/api/v1/auth/csrf" {
 			http.SetCookie(w, &http.Cookie{Name: "nodedance_csrf", Value: "csrf", Path: "/"})
 			io.WriteString(w, `{"token":"csrf"}`)
@@ -23,6 +31,10 @@ func TestTUILoginAndReturn(t *testing.T) {
 		if r.URL.Path == "/api/v1/auth/login" {
 			http.SetCookie(w, &http.Cookie{Name: "nodedance_session", Value: "session", Path: "/"})
 			io.WriteString(w, `{"user":{"displayName":"admin"}}`)
+			return
+		}
+		if r.URL.Path == "/api/v1/future" {
+			io.WriteString(w, `{"discovered":true}`)
 			return
 		}
 		http.NotFound(w, r)
@@ -86,6 +98,11 @@ func TestTUILoginAndReturn(t *testing.T) {
 	io.WriteString(master, "tui-password\r")
 	await("Enter to return:")
 	io.WriteString(master, "\r")
+	io.WriteString(master, "/future.inspect\r")
+	await("Filter: future.inspect")
+	io.WriteString(master, "1\r")
+	await("discovered")
+	io.WriteString(master, "\r")
 	io.WriteString(master, "q\r")
 	select {
 	case err := <-done:
@@ -97,5 +114,34 @@ func TestTUILoginAndReturn(t *testing.T) {
 	}
 	if strings.Contains(transcript.String(), "tui-password") {
 		t.Fatal("TUI echoed password")
+	}
+}
+
+func TestTUIEnrollmentFormUsesSharedRequest(t *testing.T) {
+	for _, method := range []string{"native", "docker", ""} {
+		answers := []string{"  node  ", "", "invalid", method}
+		i := 0
+		raw, err := promptAgentEnrollment(func(label string, hidden bool) (string, error) {
+			if hidden {
+				t.Fatalf("non-secret field hidden: %s", label)
+			}
+			answer := answers[i]
+			i++
+			return answer, nil
+		}, "https://core.example")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result map[string]string
+		if err := json.Unmarshal(raw, &result); err != nil {
+			t.Fatal(err)
+		}
+		expected := method
+		if expected == "" {
+			expected = "docker"
+		}
+		if result["deploymentMethod"] != expected || result["displayName"] != "node" || result["coreUrl"] != "https://core.example" {
+			t.Fatalf("unexpected enrollment: %s", raw)
+		}
 	}
 }

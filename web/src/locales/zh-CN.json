@@ -1254,5 +1254,19 @@
   "agent.deploymentMethod": "部署方式",
   "agent.dockerDeployment": "Docker 部署",
   "agent.nativeDeployment": "直接安装（systemd）",
-  "agent.dockerRequirements": "需要 Linux rootful Docker 与 root 权限。替换旧 Agent 前请先停用并保存状态。按提示输入注册令牌，令牌不会写入命令。"
+  "agent.dockerRequirements": "需要 Linux rootful Docker 与 root 权限。替换旧 Agent 前请先停用并保存状态。按提示输入注册令牌，令牌不会写入命令。",
+  "nav.operations": "操作中心",
+  "operations.description": "可用操作和表单由连接的 Core 自动提供。",
+  "operations.search": "搜索操作",
+  "operations.required": "必填",
+  "operations.fileRequired": "请选择文件",
+  "operations.connectionFailed": "连接失败",
+  "operations.downloaded": "已下载",
+  "operations.completed": "已完成",
+  "operations.file": "文件",
+  "operations.running": "执行中…",
+  "operations.execute": "执行",
+  "operations.disconnect": "断开连接",
+  "operations.input": "终端输入",
+  "operations.send": "发送"
 }

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/control"
+	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 )
@@ -74,6 +75,58 @@ func runOperations(args []string, stdout io.Writer) error {
 	}
 	return encoder.Encode(map[string]any{"version": 1, "operations": localizedOperations(stdout)})
 }
+func runOperationCatalog(ctx context.Context, args []string, lookup LookupEnv, stdout, stderr io.Writer) error {
+	remote := lookupValue(lookup, "NODEDANCE_SERVER") != ""
+	for _, arg := range args {
+		if arg == "--server" || strings.HasPrefix(arg, "--server=") {
+			remote = true
+		}
+	}
+	if !remote {
+		return runOperations(args, stdout)
+	}
+	name := ""
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		name, args = args[0], args[1:]
+	}
+	flags := flag.NewFlagSet("operations", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	connection := addConnectionFlags(flags, lookup)
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() > 1 || (flags.NArg() > 0 && name != "") {
+		return errors.New("usage: nodedance operations [NAME] --server URL")
+	}
+	if flags.NArg() == 1 {
+		name = flags.Arg(0)
+	}
+	client, err := connection.client()
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	requestCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	catalog, err := client.Catalog(requestCtx)
+	if err != nil {
+		return err
+	}
+	for i := range catalog.Operations {
+		catalog.Operations[i].Description = i18n.TextFor(stdout, catalog.Operations[i].Description)
+	}
+	encoder := json.NewEncoder(stdout)
+	encoder.SetIndent("", "  ")
+	if name != "" {
+		operation, err := control.FindIn(catalog, name)
+		if err != nil {
+			return err
+		}
+		return encoder.Encode(operation)
+	}
+	return encoder.Encode(catalog)
+}
+
 func readValue(value string, stdin io.Reader) ([]byte, error) {
 	if value == "" {
 		return nil, nil
@@ -107,21 +160,21 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 			return RunWithInput(ctx, append([]string{strings.TrimPrefix(name, "core.")}, args...), lookup, stdin, stdout, stderr, version)
 		}
 	}
-	o, err := control.Find(name)
-	if err != nil {
-		return err
-	}
 	f := flag.NewFlagSet("nodedance "+name, flag.ContinueOnError)
 	f.SetOutput(stderr)
 	connection := addConnectionFlags(f, lookup)
 	params := f.String("params", "", i18n.TextFor(stderr, "path parameters as JSON, @file or -"))
 	query := f.String("query", "", i18n.TextFor(stderr, "query parameters as JSON, @file or -"))
 	body := f.String("body", "", i18n.TextFor(stderr, "JSON body, @private-file or - for stdin"))
+	var deploymentMethod *string
+	if name == "agents.enrollment" {
+		deploymentMethod = f.String("deployment-method", "", i18n.TextFor(stderr, "Agent deployment method: native or docker (overrides JSON body)"))
+	}
 	key := f.String("idempotency-key", "", i18n.TextFor(stderr, "stable key for task submission and retries"))
 	input := f.String("input", "", i18n.TextFor(stderr, "upload file or terminal JSONL input (- for stdin)"))
 	output := f.String("output", "", i18n.TextFor(stderr, "new download file (required for binary downloads)"))
 	fileVersion := f.String("file-version", "", i18n.TextFor(stderr, "expected version for upload"))
-	if err = f.Parse(args); err != nil {
+	if err := f.Parse(args); err != nil {
 		return err
 	}
 	if f.NArg() != 0 {
@@ -151,13 +204,18 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 	if len(b) > 4*1024*1024 {
 		return errors.New("JSON body exceeds 4 MiB")
 	}
+	if deploymentMethod != nil && *deploymentMethod != "" {
+		if !agents.ValidDeploymentMethod(*deploymentMethod) {
+			return errors.New("deployment method must be native or docker")
+		}
+		var request map[string]json.RawMessage
+		if err := json.Unmarshal(b, &request); err != nil || request == nil {
+			return errors.New("Agent enrollment requires a JSON object body")
+		}
+		request["deploymentMethod"], _ = json.Marshal(*deploymentMethod)
+		b, _ = json.Marshal(request)
+	}
 	in := control.Input{Params: p, Query: q, Body: b, IdempotencyKey: *key, FileVersion: *fileVersion}
-	if *input != "" && o.Transport != "upload" && o.Transport != "multipart" && name != "terminal.connect" && name != "terminal.open" {
-		return errors.New("--input is supported only for uploads and terminal.connect")
-	}
-	if *output != "" && o.Transport != "download" {
-		return errors.New("--output is supported only for downloads")
-	}
 	client, err := connection.client()
 	if err != nil {
 		return err
@@ -169,6 +227,20 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 		var stop context.CancelFunc
 		requestCtx, stop = context.WithTimeout(requestCtx, *connection.timeout)
 		defer stop()
+	}
+	catalog, err := client.Catalog(requestCtx)
+	if err != nil {
+		return err
+	}
+	o, err := control.FindIn(catalog, name)
+	if err != nil {
+		return err
+	}
+	if *input != "" && o.Transport != "upload" && o.Transport != "multipart" && name != "terminal.connect" && name != "terminal.open" {
+		return errors.New("--input is supported only for uploads and terminal.connect")
+	}
+	if *output != "" && o.Transport != "download" {
+		return errors.New("--output is supported only for downloads")
 	}
 	var upload io.Reader
 	if *input == "-" {

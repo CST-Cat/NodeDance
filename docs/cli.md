@@ -81,7 +81,17 @@ nodedance files download --params '{"nodeId":"NODE_UUID"}' \
 
 Downloads create new `0600` files, refuse existing destinations, and remove partial files on failure. Uploads use the existing transfer API. File mutations retain Agent traversal/symlink/protected-tree/credential-path checks. File deletion requires `deleteConfirmed: true` and an exact `confirmationPath`. Container/image deletion and rebuild retain their existing exact-target confirmation rules. Probe/rule/channel edits use the current revision.
 
-Create an enrollment with `agents.enrollment` and a body containing `displayName` and optionally `coreUrl` (the URL reachable from the Agent). The response contains the token, expiry, and `installCommand`. The token is separate from the command. The generated installer resolves a published `agent-vMAJOR.MINOR.PATCH` tag, pins its downloads, verifies the release checksum, and installs the root Agent. NodeDance never installs or configures Tailscale.
+Create an enrollment with `agents.enrollment` and a body containing `displayName` and optionally `coreUrl` (the URL reachable from the Agent). Choose `deploymentMethod: "native"` or `"docker"` in the shared JSON request, or pass CLI `--deployment-method native|docker`. The response contains the token, expiry, the selected `installCommand`, plus `nativeInstallCommand` and `dockerInstallCommand`. TUI provides node-name, reachable Core URL, and deployment-method prompts (Enter defaults to Docker). The token is separate from the command.
+
+```sh
+nodedance agents enrollment --server https://core.example \
+  --body '{"displayName":"My node","coreUrl":"https://core.example"}' \
+  --deployment-method docker
+# Use --deployment-method native for the direct/systemd installer.
+nodedance describe agents.enrollment
+```
+
+ The generated installer resolves a published `agent-vMAJOR.MINOR.PATCH` tag, pins its downloads, verifies the release checksum, and installs the root Agent. NodeDance never installs or configures Tailscale.
 
 ## Streams and terminals
 
@@ -118,3 +128,9 @@ Select `terminal.open` for a real interactive host/container shell; it forwards 
 An interactive `nodedance serve` on a new data directory prompts for the administrator username and a hidden password. Press Enter at either prompt to generate that field securely. Without a terminal, Core generates both fields automatically. Read the private `initial-admin.json` file at the path printed by Core and sign in with both fields; Core removes the file after the first successful login. Initialized data directories retain their existing account on restart.
 
 For an API setup against an uninitialized Core, `auth.setup` requires the one-time setup credential. `username` and `password` are optional; omitted or empty values generate random credentials. The setup response returns a generated username and, when generated, the password in `initialCredentials`; save these before discarding the response. `displayName` is optional and is separate from the login username.
+
+## Shared Core operation contract / 共享 Core 操作契约
+
+The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus discover their operations, schemas, routes, and transports from this endpoint. Web uses the same contract for every request, stream, terminal, upload, and download; its Operations page generates forms from the catalog. Adding a Core operation makes it immediately available in all three generic interfaces without updating client operation lists. Core and Agent remain responsible for validation, authorization, auditing, and destructive-action confirmation. Specialized pages only customize presentation. `nodedance operations` without a server provides offline inspection of the contract compiled into that Core binary; use `--server` to inspect the running Core.
+
+连接的 Core 发布 `/api/v1/operations`，CLI 调用与 TUI 菜单从该入口读取操作、schema、路由及传输类型。Web 的请求、流、终端、上传和下载使用同一契约；操作中心依据目录自动生成表单。Core 增加操作后，三端通用入口自动提供，无需分别维护客户端操作清单。验证、授权、审计和危险操作确认仍由 Core 与 Agent 处理，专用页面只定制展示。未指定服务器的 `nodedance operations` 用于离线查看当前 Core 二进制内的契约；使用 `--server` 查看运行中 Core 的实际契约。

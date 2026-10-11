@@ -1,4 +1,4 @@
-// Package control is the operation contract and remote client shared by CLI and TUI.
+// Package control is the Core operation contract shared by Web, CLI and TUI.
 // It uses the Core's public API; it never opens its database or contacts Agents directly.
 package control
 
@@ -10,10 +10,18 @@ import (
 	"sync"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/alerts"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
+
+type Catalog struct {
+	Version    int         `json:"version"`
+	Operations []Operation `json:"operations"`
+}
+
+func Describe() Catalog { return Catalog{Version: 1, Operations: Operations()} }
 
 type Operation struct {
 	Name        string   `json:"name"`
@@ -86,13 +94,22 @@ func typeSchema(t reflect.Type) any {
 	}
 }
 
+func enrollmentSchema() any {
+	body := schema(agents.EnrollmentRequest{}).(map[string]any)
+	properties := body["properties"].(map[string]any)
+	properties["deploymentMethod"].(map[string]any)["enum"] = []string{agents.DeploymentNative, agents.DeploymentDocker}
+	return body
+}
+
 // Operations enumerates every administrator API and local lifecycle entry point.
 // Request validation, authorization, confirmation and auditing remain in Core/Agent.
 func buildOperations() []Operation {
 	const node = "/api/v1/nodes/{nodeId}"
 	list := []Operation{
+		op("core.operations", "GET", "/api/v1/operations", "Shared operation catalog for Web, CLI and TUI", nil),
 		op("core.health", "GET", "/api/v1/health", "Core health and build version", nil),
 		op("core.protocol", "GET", "/api/v1/protocol", "Wire version, capabilities and transport limits", nil),
+		op("auth.csrf", "GET", "/api/v1/auth/csrf", "Issue browser or client CSRF token", nil),
 		op("auth.status", "GET", "/api/v1/auth/setup/status", "First-run setup status", nil),
 		op("auth.setup", "POST", "/api/v1/auth/setup", "Initialize administrator; read credential and password from a private body file or stdin", fields("credential:string username?:string password?:string displayName?:string")),
 		op("auth.login", "POST", "/api/v1/auth/login", "Sign in and save a private, server-bound session", fields("username:string password:string")),
@@ -109,7 +126,7 @@ func buildOperations() []Operation {
 		op("dashboard.settings", "GET", "/api/v1/dashboard/settings", "Dashboard settings", nil),
 		op("dashboard.save-settings", "PUT", "/api/v1/dashboard/settings", "Save dashboard settings", schema(dashboard.Settings{})),
 		op("dashboard.watch", "GET", "/ws/v1/dashboard", "Live dashboard messages as JSONL", nil),
-		op("agents.enrollment", "POST", "/api/v1/agents/enrollments", "Create short-lived one-time Agent enrollment (response contains secret)", fields("displayName:string coreUrl?:string")),
+		op("agents.enrollment", "POST", "/api/v1/agents/enrollments", "Create one-time Agent enrollment with native or Docker installation commands (response contains secret)", enrollmentSchema()),
 		op("agents.revoke", "POST", "/api/v1/agents/{agentId}/revoke", "Revoke Agent identity", nil),
 		op("agents.rotate", "POST", "/api/v1/agents/{agentId}/rotate", "Rotate Agent credential", nil),
 		op("containers.list", "GET", node+"/containers", "Docker inventory", nil),
@@ -223,7 +240,29 @@ func buildOperations() []Operation {
 			list[i].BodySchema = b
 		}
 	}
+	for _, operation := range list {
+		markSecrets(operation.BodySchema)
+	}
 	return list
+}
+
+func markSecrets(value any) {
+	body, ok := value.(map[string]any)
+	if !ok {
+		return
+	}
+	properties, _ := body["properties"].(map[string]any)
+	for name, value := range properties {
+		field, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		lower := strings.ToLower(name)
+		if strings.Contains(lower, "password") || strings.Contains(lower, "token") || strings.Contains(lower, "credential") || strings.Contains(lower, "privatekey") || strings.Contains(lower, "passphrase") {
+			field["writeOnly"] = true
+		}
+		markSecrets(field)
+	}
 }
 
 var operationCatalog = sync.OnceValue(func() []Operation { return buildOperations() })

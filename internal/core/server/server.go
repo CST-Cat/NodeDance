@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/control"
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	corealerts "github.com/CST-Cat/NodeDance/internal/core/alerts"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
@@ -391,6 +392,13 @@ func (s *Server) SetupCredentialPath() (string, bool) {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.setSecurityHeaders(w)
 	switch r.URL.Path {
+	case "/api/v1/operations":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		writeJSON(w, http.StatusOK, control.Describe())
+		return
 	case "/api/v1/protocol":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

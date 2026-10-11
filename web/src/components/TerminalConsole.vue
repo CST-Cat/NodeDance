@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { operationURL } from '../operations'
 import { t, display, locale } from "../i18n"
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
@@ -98,9 +99,8 @@ async function connect() {
       revokePendingTicket(props.nodeId, streamId)
       return
     }
-    const url = new URL('/ws/v1/streams/terminal', window.location.href)
-    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
-    url.searchParams.set('ticket', authorization.ticket)
+    const url = await operationURL('terminal.connect', { query: { ticket: authorization.ticket } })
+    if (disposed) { revokePendingTicket(props.nodeId, streamId); return }
     socket = new WebSocket(url)
     socket.onopen = () => { statusKey.value = 'm.790beabf1d6b' }
     socket.onmessage = (event) => {

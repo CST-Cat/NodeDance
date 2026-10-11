@@ -28,6 +28,7 @@ const logBytes = ref(0)
 const logChannels = ref(new Set<'stdout' | 'stderr'>())
 const statsSnapshot = ref<ContainerStatsFrame['snapshot']>()
 const statsSamples = ref(0)
+const connectionRevision = { logs: 0, stats: 0 }
 const sockets: Partial<Record<ContainerStreamKind, WebSocket>> = {}
 const expectedClose = new Set<ContainerStreamKind>()
 const sequence: Partial<Record<ContainerStreamKind, number>> = {}
@@ -153,7 +154,7 @@ function flushLogDecoders() {
   flushLogBuffer()
 }
 
-function open(kind: ContainerStreamKind) {
+async function open(kind: ContainerStreamKind) {
   if (props.disabled || (kind === 'stats' && !props.statsAvailable) || stateFor(kind).value === 'connecting' || stateFor(kind).value === 'connected') return
   errorFor(kind).value = ''
   if (kind === 'logs') {
@@ -172,10 +173,13 @@ function open(kind: ContainerStreamKind) {
   sequence[kind] = 0
   expectedClose.delete(kind)
   stateFor(kind).value = 'connecting'
+  const revision = ++connectionRevision[kind]
   let socket: WebSocket
   try {
-    socket = createContainerStreamSocket(kind, props.nodeId, props.containerId)
+    socket = await createContainerStreamSocket(kind, props.nodeId, props.containerId)
+    if (revision !== connectionRevision[kind]) { socket.close(); return }
   } catch {
+    if (revision !== connectionRevision[kind]) return
     stateFor(kind).value = 'error'
     errorFor(kind).value = t('m.f5e901036eb9')
     return
@@ -247,6 +251,7 @@ function open(kind: ContainerStreamKind) {
 }
 
 function close(kind: ContainerStreamKind) {
+  connectionRevision[kind]++
   const socket = sockets[kind]
   if (!socket) {
     if (kind === 'logs') stopLogFlush()

@@ -46,7 +46,7 @@ func RunWithInput(ctx context.Context, args []string, lookup LookupEnv, stdin io
 		printUsage(stdout)
 		return nil
 	case "operations", "describe":
-		return runOperations(args[1:], stdout)
+		return runOperationCatalog(ctx, args[1:], lookup, stdout, stderr)
 	case "tui":
 		return runTUI(ctx, args[1:], lookup, stdin, stdout, stderr, version)
 	case "agent":

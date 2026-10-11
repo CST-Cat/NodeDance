@@ -68,8 +68,8 @@ async function generateEnrollment() {
   }
   creating.value = true
   try {
-    const result = await api.createAgentEnrollment(name, agentOrigin.value)
-    installCommand.value = result.installCommand
+    const result = await api.createAgentEnrollment(name, agentOrigin.value, deploymentMethod.value)
+    installCommand.value = result.nativeInstallCommand
     dockerInstallCommand.value = result.dockerInstallCommand
     token.value = result.token
     expiresAt.value = result.expiresAt

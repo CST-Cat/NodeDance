@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "vite build --config vite.config.ts --outDir ../internal/core/webassets/dist --emptyOutDir",
-    "typecheck": "node scripts/check-i18n.cjs && vue-tsc --noEmit --project tsconfig.json"
+    "typecheck": "node scripts/check-i18n.cjs && node scripts/check-operations.cjs && vue-tsc --noEmit --project tsconfig.json"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",

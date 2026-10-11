@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { operationURL } from '../operations'
 import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api, type ContainerTask, type CreateFileTaskPayload, type NodeFileEntry } from '../api'
@@ -30,7 +31,13 @@ const breadcrumbs = computed(() => {
 })
 const editorBytes = computed(() => new TextEncoder().encode(editorText.value).length)
 const parentPath = computed(() => parentNodePath(currentPath.value))
-const downloadURL = (entry: NodeFileEntry) => `/api/v1/nodes/${encodeURIComponent(props.nodeId)}/files/download?path=${encodeURIComponent(entry.path)}`
+async function download(entry: NodeFileEntry) {
+  try {
+    const url = await operationURL('files.download', { params: { nodeId: props.nodeId }, query: { path: entry.path } })
+    if (disposed) return
+    const link = document.createElement('a'); link.href = url.href; link.download = entry.name; link.click()
+  } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
+}
 
 async function load(path = currentPath.value) {
   loading.value = true
@@ -217,7 +224,7 @@ onBeforeUnmount(() => { disposed = true })
       <article v-for="entry in entries" :key="entry.path" class="file-row" :data-kind="entry.kind">
         <button v-if="entry.kind === 'directory'" class="file-name" type="button" @click="void load(entry.path)"><span aria-hidden="true">📁</span>{{ entry.name }}/</button>
         <button v-else-if="isEditableTextFile(entry)" class="file-name" type="button" @click="void openText(entry)"><span aria-hidden="true">📄</span>{{ entry.name }}</button>
-        <a v-else class="file-name" :href="downloadURL(entry)" :download="entry.name"><span aria-hidden="true">{{ entry.kind === 'file' ? '📄' : '↗' }}</span>{{ entry.name }}</a>
+        <a v-else class="file-name" href="#" @click.prevent="download(entry)" :download="entry.name"><span aria-hidden="true">{{ entry.kind === 'file' ? '📄' : '↗' }}</span>{{ entry.name }}</a>
         <span class="file-kind">{{ entry.kind === 'directory' ? t('m.52daa71ebc31') : entry.kind === 'symlink' ? t('m.305378ddd2b8') : entry.kind === 'file' ? t('m.39932f24fe11') : t('m.d2909f1647e7') }}</span>
         <span class="file-size">{{ entry.kind === 'file' ? formatFileSize(entry.size) : '—' }}</span>
         <time v-if="fileModifiedDate(entry)" class="file-date" :datetime="fileModifiedDate(entry)!.toISOString()">{{ fileModifiedDate(entry)!.toLocaleString(locale) }}</time><span v-else class="file-date">—</span>

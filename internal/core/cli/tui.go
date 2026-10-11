@@ -9,9 +9,11 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/CST-Cat/NodeDance/internal/control"
+	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/i18n"
 	"golang.org/x/term"
 )
@@ -71,7 +73,13 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 		return err
 	}
 	defer client.Close()
-	operations := allOperations()
+	catalogCtx, catalogCancel := context.WithTimeout(ctx, 15*time.Second)
+	catalog, err := client.Catalog(catalogCtx)
+	catalogCancel()
+	if err != nil {
+		return err
+	}
+	operations := append(catalog.Operations, localOperations()...)
 	filter := ""
 	page := 0
 	params := map[string]string{}
@@ -232,6 +240,11 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 					return e
 				}
 				in.Body, _ = json.Marshal(map[string]string{"username": username, "password": password})
+			} else if o.Name == "agents.enrollment" {
+				in.Body, err = promptAgentEnrollment(prompt, *connection.server)
+				if err != nil {
+					return err
+				}
 			} else {
 				raw, _ := json.MarshalIndent(o.BodySchema, "", "  ")
 				write(tr("Body schema:\n") + string(raw) + "\n")
@@ -391,5 +404,33 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 		if _, err = prompt("Enter to return", false); err != nil {
 			return err
 		}
+	}
+}
+
+func promptAgentEnrollment(prompt func(string, bool) (string, error), server string) ([]byte, error) {
+	name, err := prompt("Node display name", false)
+	if err != nil {
+		return nil, err
+	}
+	coreURL, err := prompt("Core URL reachable from Agent (blank uses server)", false)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(coreURL) == "" {
+		coreURL = server
+	}
+	for {
+		method, err := prompt("Deployment method (native/docker; blank uses docker)", false)
+		if err != nil {
+			return nil, err
+		}
+		method = strings.TrimSpace(method)
+		if method == "" {
+			method = agents.DeploymentDocker
+		}
+		if !agents.ValidDeploymentMethod(method) {
+			continue
+		}
+		return json.Marshal(agents.EnrollmentRequest{DisplayName: strings.TrimSpace(name), CoreURL: strings.TrimSpace(coreURL), DeploymentMethod: method})
 	}
 }
