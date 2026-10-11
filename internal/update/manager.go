@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -232,10 +233,21 @@ func (m *Manager) current(ctx context.Context, component string) (string, error)
 		binary := "nodedance"
 		argument := "version"
 		if component == "agent" {
-			binary = "nodedance-agent"
-			argument = "--version"
+			// The Agent enters the host mount namespace and root. Docker exec
+			// therefore cannot resolve its original image path. Read the version
+			// from the running container process's executable on the host instead.
+			pidRaw, pidErr := m.command(ctx, "docker", "inspect", "--format", "{{.State.Pid}}", target.Container)
+			if pidErr != nil {
+				return "", pidErr
+			}
+			pid, pidErr := strconv.Atoi(strings.TrimSpace(string(pidRaw)))
+			if pidErr != nil || pid <= 1 {
+				return "", errors.New("managed Agent container has no running process")
+			}
+			raw, err = m.command(ctx, fmt.Sprintf("/proc/%d/exe", pid), "--version")
+		} else {
+			raw, err = m.command(ctx, "docker", "exec", target.Container, binary, argument)
 		}
-		raw, err = m.command(ctx, "docker", "exec", target.Container, binary, argument)
 	} else {
 		raw, err = m.command(ctx, target.Binary, "--version")
 	}

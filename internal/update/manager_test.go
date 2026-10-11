@@ -16,6 +16,36 @@ import (
 
 type fixtureResolver struct{ fail bool }
 
+func TestDockerAgentVersionUsesRunningHostExecutable(t *testing.T) {
+	for _, pid := range []string{"4321\n", "0\n", "1", "-1", "not-a-pid"} {
+		t.Run(strings.TrimSpace(pid), func(t *testing.T) {
+			m := &Manager{Config: Config{Targets: map[string]Target{"agent": {Mode: "docker", Container: "nodedance-agent"}}}}
+			calls := 0
+			m.command = func(_ context.Context, name string, args ...string) ([]byte, error) {
+				calls++
+				if calls == 1 {
+					if name != "docker" || strings.Join(args, " ") != "inspect --format {{.State.Pid}} nodedance-agent" {
+						t.Fatalf("unexpected process lookup: %s %v", name, args)
+					}
+					return []byte(pid), nil
+				}
+				if name != "/proc/4321/exe" || strings.Join(args, " ") != "--version" {
+					t.Fatalf("version must come from the running executable: %s %v", name, args)
+				}
+				return []byte("NodeDance Agent agent-v0.1.6\n"), nil
+			}
+			version, err := m.current(context.Background(), "agent")
+			if pid == "4321\n" {
+				if err != nil || version != "agent-v0.1.6" || calls != 2 {
+					t.Fatalf("version=%q calls=%d err=%v", version, calls, err)
+				}
+			} else if err == nil || calls != 1 {
+				t.Fatalf("invalid/stopped PID must reject execution: calls=%d err=%v", calls, err)
+			}
+		})
+	}
+}
+
 func (f fixtureResolver) Resolve(_ context.Context, c, v string) (Release, error) {
 	if v == "" {
 		v = "core-v0.1.9"

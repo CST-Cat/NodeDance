@@ -80,7 +80,7 @@ sudo bash install-updater.sh --release-tag core-v0.1.9 \
 Health checks verify TLS, including the registered local IP; use a trusted CA for a private certificate. Core data remains owned by its service account in a 0700 directory. The native Agent installer and Core-generated Docker enrollment command install the supervisor automatically. An existing Agent can register it separately without enrolling again:
 
 ```sh
-sudo bash install-updater.sh --release-tag agent-v0.1.5 \
+sudo bash install-updater.sh --release-tag agent-v0.1.6 \
   --component agent --mode docker --container nodedance-agent \
   --data-dir /var/lib/nodedance-agent --core-uid 0 --core-gid 0
 # Native Agent: replace mode/container with:
@@ -101,3 +101,7 @@ The transaction resolves and preflights a published release, verifies downloads 
 Core 回滚会撤销更新后发生的数据变更，执行前必须明确确认。若外部工具已替换容器或版本，控制服务拒绝覆盖它。更新服务注册文件为 `/etc/nodedance-updater/config.json`（root、0600）；Agent 状态始终 root、0700，凭据为普通 0600 文件。
 
 Confirm Core rollback with the understanding that data changes since the update will be undone. The supervisor refuses to overwrite a runtime replaced externally. Its registration file is root-owned 0600; Agent state and credentials retain their root ownership and 0700/0600 permissions.
+
+Docker Agent 进入宿主机挂载命名空间运行，更新器通过已注册容器的运行进程读取实际可执行文件版本，不依赖容器内原始路径。
+
+The Docker Agent runs in the host mount namespace. The updater reads the actual executable version through the registered container's running process, without relying on its original image path.

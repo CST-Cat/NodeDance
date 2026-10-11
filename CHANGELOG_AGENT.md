@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.6]
+
+### English
+
+- Fix Docker Agent update checks and restart verification by reading the executable of the registered container process after it enters the host mount namespace; reject stopped containers and invalid process IDs.
+
+### 简体中文
+
+- 修复 Docker Agent 进入宿主机挂载命名空间后更新检查及重启验证无法找到程序的问题，改为读取已注册容器运行进程的可执行文件；拒绝已停止的容器及无效进程编号。
+
 ## [0.1.5]
 
 ### English
