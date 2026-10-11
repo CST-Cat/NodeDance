@@ -38,9 +38,13 @@ const agentOriginUsesAllowedTransport = computed(() =>
 )
 
 const installCommand = ref('')
+const dockerInstallCommand = ref('')
+const deploymentMethod = ref<'native' | 'docker'>('docker')
+const selectedInstallCommand = computed(() => deploymentMethod.value === 'docker' ? dockerInstallCommand.value : installCommand.value)
 
 watch([displayName, agentServer], () => {
   installCommand.value = ''
+  dockerInstallCommand.value = ''
   token.value = ''
   expiresAt.value = ''
   notice.value = ''
@@ -50,6 +54,7 @@ async function generateEnrollment() {
   error.value = ''
   notice.value = ''
   installCommand.value = ''
+  dockerInstallCommand.value = ''
   token.value = ''
   expiresAt.value = ''
   const name = displayName.value.trim()
@@ -65,6 +70,7 @@ async function generateEnrollment() {
   try {
     const result = await api.createAgentEnrollment(name, agentOrigin.value)
     installCommand.value = result.installCommand
+    dockerInstallCommand.value = result.dockerInstallCommand
     token.value = result.token
     expiresAt.value = result.expiresAt
     notice.value = t('m.d04e8d433a67', {"0": (result.displayName)})
@@ -113,8 +119,10 @@ function isLiteralLoopback(hostname: string): boolean {
         <button class="primary-button" type="button" :disabled="creating || !displayName.trim() || !agentOriginIsSupported || !agentOriginUsesAllowedTransport" @click="generateEnrollment">{{ creating ? t('m.a8b8730c9611') : t('m.92840286f8cd') }}</button>
         <div v-if="token" class="agent-enrollment-result">
           <p class="field-hint">{{ t('m.80ee590ed729') }}{{ expiresAt }}{{ t('m.0481941b6b37') }}</p>
-          <label class="field"><span>{{ t('m.304f2c052c67') }}</span><textarea readonly rows="3" :value="installCommand" data-testid="agent-install-command" /></label>
-          <button class="secondary-button" type="button" @click="copyText(installCommand, t('m.bdf7d59b3dc2'))">{{ t('m.fe95745d1ef4') }}</button>
+          <label class="field"><span>{{ t('agent.deploymentMethod') }}</span><select v-model="deploymentMethod" data-testid="agent-deployment-method"><option value="docker">{{ t('agent.dockerDeployment') }}</option><option value="native">{{ t('agent.nativeDeployment') }}</option></select></label>
+          <p v-if="deploymentMethod === 'docker'" class="field-hint">{{ t('agent.dockerRequirements') }}</p>
+          <label class="field"><span>{{ t('m.304f2c052c67') }}</span><textarea readonly rows="3" :value="selectedInstallCommand" data-testid="agent-install-command" /></label>
+          <button class="secondary-button" type="button" @click="copyText(selectedInstallCommand, t('m.bdf7d59b3dc2'))">{{ t('m.fe95745d1ef4') }}</button>
           <label class="field"><span>{{ t('m.ff2945397e81') }}</span><textarea readonly rows="2" :value="token" data-testid="agent-enrollment-token" /></label>
           <button class="quiet-button" type="button" @click="copyText(token, t('m.ff2945397e81'))">{{ t('m.a1d078b22f1d') }}</button>
           <p class="field-hint">{{ t('m.b5debb33710e') }}</p>
@@ -126,6 +134,6 @@ function isLiteralLoopback(hostname: string): boolean {
 </template>
 
 <style scoped>
-.agent-enrollment-page{width:min(980px,100%);margin:0 auto;padding:clamp(24px,5vw,52px);color:var(--text)}.agent-enrollment-compact-page{color:var(--text)}.agent-enrollment-heading,.agent-enrollment-section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.agent-enrollment-heading{margin-bottom:20px}.agent-enrollment-heading h1{margin:5px 0;font-size:clamp(26px,4vw,38px)}.agent-enrollment-heading p,.agent-enrollment-section-heading p{color:var(--muted-strong);line-height:1.55}.agent-enrollment-card{border:1px solid var(--line);border-radius:16px;background:var(--surface-soft);padding:clamp(16px,3vw,26px)}.agent-enrollment-form{display:grid;gap:13px}.agent-enrollment-section-heading h2{margin:0}.agent-enrollment-result{display:grid;gap:12px;border-top:1px solid var(--line);padding-top:16px}.agent-enrollment-form .field{display:grid;gap:6px}.agent-enrollment-form input,.agent-enrollment-form textarea{box-sizing:border-box;width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface-soft);color:inherit;font:inherit}.agent-enrollment-form textarea{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.8rem;overflow-wrap:anywhere;resize:vertical}.agent-enrollment-form .field-hint,.agent-release-note{margin:0;color:var(--muted-strong);font-size:.82rem;line-height:1.55}.agent-release-note{border-top:1px solid var(--line);padding-top:12px}.agent-enrollment-card-compact{margin-top:18px}
+.agent-enrollment-page{width:min(980px,100%);margin:0 auto;padding:clamp(24px,5vw,52px);color:var(--text)}.agent-enrollment-compact-page{color:var(--text)}.agent-enrollment-heading,.agent-enrollment-section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.agent-enrollment-heading{margin-bottom:20px}.agent-enrollment-heading h1{margin:5px 0;font-size:clamp(26px,4vw,38px)}.agent-enrollment-heading p,.agent-enrollment-section-heading p{color:var(--muted-strong);line-height:1.55}.agent-enrollment-card{border:1px solid var(--line);border-radius:16px;background:var(--surface-soft);padding:clamp(16px,3vw,26px)}.agent-enrollment-form{display:grid;gap:13px}.agent-enrollment-section-heading h2{margin:0}.agent-enrollment-result{display:grid;gap:12px;border-top:1px solid var(--line);padding-top:16px}.agent-enrollment-form .field{display:grid;gap:6px}.agent-enrollment-form input,.agent-enrollment-form textarea,.agent-enrollment-form select{box-sizing:border-box;width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--surface-soft);color:inherit;font:inherit}.agent-enrollment-form textarea{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.8rem;overflow-wrap:anywhere;resize:vertical}.agent-enrollment-form .field-hint,.agent-release-note{margin:0;color:var(--muted-strong);font-size:.82rem;line-height:1.55}.agent-release-note{border-top:1px solid var(--line);padding-top:12px}.agent-enrollment-card-compact{margin-top:18px}
 @media(max-width:640px){.agent-enrollment-heading,.agent-enrollment-section-heading{align-items:flex-start;flex-direction:column}.agent-enrollment-heading button{align-self:flex-start}}
 </style>

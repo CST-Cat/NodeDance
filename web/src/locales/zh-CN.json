@@ -1250,5 +1250,9 @@
   "auth.generatePassword": "留空自动生成高强度随机密码",
   "auth.generatedTitle": "请保存管理员登录凭据",
   "auth.generatedHint": "自动生成的凭据仅在此显示一次，请保存后再关闭。登录账号名与显示名独立。",
-  "auth.saved": "我已保存登录凭据"
+  "auth.saved": "我已保存登录凭据",
+  "agent.deploymentMethod": "部署方式",
+  "agent.dockerDeployment": "Docker 部署",
+  "agent.nativeDeployment": "直接安装（systemd）",
+  "agent.dockerRequirements": "需要 Linux rootful Docker 与 root 权限。替换旧 Agent 前请先停用并保存状态。按提示输入注册令牌，令牌不会写入命令。"
 }

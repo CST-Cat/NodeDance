@@ -44,9 +44,9 @@ sudo install -d -o root -g root -m 0700 /var/lib/nodedance-agent
 docker compose -f deploy/docker/compose.agent.yml build
 ```
 
-在 Core 的“添加 Agent”中生成一次性注册令牌，然后在 **Bash** 中运行（输入令牌不回显，且不放入命令行参数、环境或历史）：
+Core 的“添加 Agent”页面同时提供直接/systemd 安装和 Docker 部署命令。选择 Docker 部署可复制完整命令，随后按提示输入一次性令牌。也可以在页面生成令牌后，手工在 **Bash** 中运行（输入令牌不回显，且不放入命令行参数、环境或历史）：
 
-Generate a one-time enrollment token in Core's Add Agent screen, then run in **Bash** (the token is hidden and is passed through stdin rather than arguments, environment, or history):
+Core's Add Agent screen offers both direct/systemd installation and Docker deployment. Select Docker to copy the full command and enter the one-time token when prompted, or generate a token and run the following manually in **Bash** (the token is hidden and is passed through stdin rather than arguments, environment, or history):
 
 ```bash
 read -r -s -p 'Enrollment token: ' enrollment_token; printf '\n'

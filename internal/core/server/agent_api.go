@@ -131,13 +131,19 @@ func (s *Server) adminCreateAgentEnrollment(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	dockerCommand, err := installer.DockerCommand(coreURL, name, s.development)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	enrollment, err := s.agents.CreateEnrollment(r.Context(), name, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
 	if err != nil {
 		http.Error(w, "enrollment creation failed", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{
-		"nodeId": enrollment.NodeID, "displayName": enrollment.DisplayName, "installCommand": command,
+		"nodeId": enrollment.NodeID, "displayName": enrollment.DisplayName, "installCommand": command, "dockerInstallCommand": dockerCommand,
 		"token": enrollment.Token, "expiresAt": enrollment.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"),
 		"expiresInSeconds": int(agents.EnrollmentLifetime.Seconds()),
 	})

@@ -56,3 +56,26 @@ func TestInstallerPinsTagAndPreservesLiteralName(t *testing.T) {
 		t.Fatalf("missing Agent release did not stop before sudo: %s", raw)
 	}
 }
+
+func TestDockerInstallerCommandPinsImageAndProtectsToken(t *testing.T) {
+	for _, server := range []string{"https://core.example", "http://[::1]:8180"} {
+		command, err := DockerCommand(server, "node' $(false)", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if raw, err := exec.Command("bash", "-n", "-c", command).CombinedOutput(); err != nil {
+			t.Fatalf("invalid Docker command: %s %v", raw, err)
+		}
+		for _, required := range []string{"docker pull", "docker run", "--privileged", "--pid=host", "--network=host", "--token-stdin", "/dev/tty", "ghcr.io/cst-cat/nodedance-agent:$tag", "unset token", "0700"} {
+			if !strings.Contains(command, required) {
+				t.Fatalf("Docker command is missing %q", required)
+			}
+		}
+		if strings.Contains(command, "releases/latest") || strings.Contains(command, "--token ") {
+			t.Fatal("Docker installation must pin an Agent release and keep its token off argv")
+		}
+	}
+	if _, err := DockerCommand("http://100.111.176.125", "node", false); err == nil {
+		t.Fatal("Docker command accepted insecure enrollment transport")
+	}
+}

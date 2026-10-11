@@ -1,4 +1,4 @@
-// Package installer renders the root Agent installer command shared by all UIs.
+// Package installer renders the root Agent installation commands shared by all UIs.
 package installer
 
 import (
@@ -33,3 +33,19 @@ func Command(server, displayName string, development bool) (string, error) {
 	return "bash -o pipefail -c " + quote(script), nil
 }
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
+
+// DockerCommand installs the root Agent into a Docker container using the same
+// one-time enrollment as the native installer. No credential enters argv or env.
+func DockerCommand(server, displayName string, development bool) (string, error) {
+	if _, err := Command(server, displayName, development); err != nil {
+		return "", err
+	}
+	parsed, _ := url.Parse(server)
+	parsed.Path = ""
+	script := `set -Eeuo pipefail; [[ "$(uname -s)" == Linux ]] || { echo 'Linux rootful Docker is required.' >&2; exit 1; }; sudo -v; [[ ! -e /var/lib/nodedance-agent/agent.json && ! -L /var/lib/nodedance-agent ]] || { echo 'Agent state already exists; stop the old Agent and preserve its state before replacing it.' >&2; exit 1; }; if sudo -n docker container inspect nodedance-agent >/dev/null 2>&1; then echo 'Agent container already exists.' >&2; exit 1; fi; if command -v systemctl >/dev/null && systemctl is-active --quiet nodedance-agent.service; then echo 'Stop the existing systemd Agent before Docker enrollment.' >&2; exit 1; fi; releases=$(curl --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 "https://api.github.com/repos/CST-Cat/NodeDance/releases?per_page=100"); tag=$(printf '%s\n' "$releases" | awk -F'"' '$2 == "tag_name" && $4 ~ /^agent-v[0-9]+\.[0-9]+\.[0-9]+$/ { print $4; exit }'); [[ "$tag" =~ ^agent-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'No published Agent release was found.' >&2; exit 1; }; image="ghcr.io/cst-cat/nodedance-agent:$tag"; sudo -n docker pull "$image"; sudo -n install -d -o root -g root -m 0700 /var/lib/nodedance-agent; IFS= read -r -s -p 'Enrollment token: ' token < /dev/tty; printf '\n' > /dev/tty; printf '%s\n' "$token" | sudo -n docker run --rm -i --privileged --pid=host --network=host --mount type=bind,src=/,dst=/host,readonly --mount type=bind,src=/var/lib/nodedance-agent,dst=/var/lib/nodedance-agent "$image" enroll --server ` + quote(parsed.String()) + ` --token-stdin --config /var/lib/nodedance-agent/agent.json`
+	if parsed.Scheme == "http" {
+		script += " --dev"
+	}
+	script += `; unset token; sudo -n docker run -d --name nodedance-agent --restart unless-stopped --stop-timeout 30 --privileged --pid=host --network=host --mount type=bind,src=/,dst=/host,readonly --mount type=bind,src=/var/lib/nodedance-agent,dst=/var/lib/nodedance-agent "$image"`
+	return "bash -o pipefail -c " + quote(script), nil
+}

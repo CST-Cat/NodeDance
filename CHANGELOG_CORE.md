@@ -13,6 +13,7 @@
 - Rebuild the Web console with the Claude design reference: warm surfaces, coral accents, responsive navigation, and coordinated light/dark themes.
 - Generate a strong random administrator username and password on first unattended deployment; interactive startup supports custom values or Enter to generate either. Require username and password at login and remove the private initial-credentials file after successful login.
 - Include initial administrator credentials in protected backups and update Web, CLI, and TUI authentication flows.
+- Offer both direct/systemd and Docker Agent enrollment commands in the Web console, with hidden token input and published Agent image tag pinning.
 - Add a non-root Core Docker image, persistent Compose deployment, native Docker integration checks, and version-pinned amd64/arm64 GHCR publication.
 - Allow HTTP listeners behind HTTPS reverse proxies while retaining browser origin, CSRF, and secure-session protections.
 - Add Chinese-first and English README pages, installation guidance, and bilingual Docker deployment documentation.
@@ -22,6 +23,7 @@
 - 参考 Claude 设计重构 Web：暖色背景、珊瑚色强调、响应式导航与统一的明暗主题。
 - 首次无终端部署自动生成高强度随机管理员账号名与密码；交互启动支持自定义或回车生成。登录要求账号名与密码，首次成功登录后删除私有初始凭证文件。
 - 受保护的备份包含初始管理员凭证，并同步更新 Web、CLI、TUI 认证流程。
+- Web 注册页面同时提供直接/systemd 安装和 Docker 部署命令，隐藏输入注册令牌并固定已发布的 Agent 镜像版本。
 - 增加非 root Core Docker 镜像、持久化 Compose 部署、原生 Docker 集成检查与固定版本的 amd64/arm64 GHCR 镜像发布。
 - 支持在 HTTPS 反向代理后运行 HTTP 监听，保留浏览器 Origin、CSRF 与安全会话保护。
 - 增加简体中文默认 README、English 入口、安装指南及双语 Docker 部署文档。

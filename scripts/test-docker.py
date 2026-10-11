@@ -100,6 +100,10 @@ def main():
         api('/api/v1/auth/login', creds)
         assert docker('exec', core, 'test', '!', '-e', '/var/lib/nodedance/initial-admin.json', check=False).returncode == 0
         enrollment = api('/api/v1/agents/enrollments', {'displayName': 'Docker integration', 'coreUrl': 'https://docker-test.example'})
+        assert 'install-agent.sh' in enrollment['installCommand']
+        assert 'docker run' in enrollment['dockerInstallCommand']
+        assert '--token-stdin' in enrollment['dockerInstallCommand']
+        assert enrollment['token'] not in enrollment['dockerInstallCommand']
         docker('run', '--rm', '--user=0:0', '--entrypoint=sh', '--mount', f'type=bind,src={state},dst=/state', CORE,
                '-c', 'chown 0:0 /state && chmod 0700 /state')
         docker('run', '--rm', '-i', *host_args, AGENT, 'enroll', '--server', origin, '--dev',

@@ -1250,5 +1250,9 @@
   "auth.generatePassword": "Leave blank to generate a strong random password",
   "auth.generatedTitle": "Save your administrator credentials",
   "auth.generatedHint": "These generated credentials are shown once. Save them before dismissing this panel. Your account username is separate from your display name.",
-  "auth.saved": "I have saved these credentials"
+  "auth.saved": "I have saved these credentials",
+  "agent.deploymentMethod": "Deployment method",
+  "agent.dockerDeployment": "Docker deployment",
+  "agent.nativeDeployment": "Direct installation (systemd)",
+  "agent.dockerRequirements": "Requires Linux rootful Docker and root access. Stop the old Agent and preserve its state before replacement. Enter the enrollment token when prompted; it is not included in the command."
 }
