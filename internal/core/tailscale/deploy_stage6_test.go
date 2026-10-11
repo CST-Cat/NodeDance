@@ -532,8 +532,9 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 		"data-testid=\"agent-install-command\"",
 		"data-testid=\"agent-enrollment-token\"",
 		"Agent 连接的 Core 地址",
-		"http://100.x.x.x:8180",
-		"HTTP/WS 不加密应用层流量",
+		"https://core.example:8180",
+		"正式 Agent 连接必须使用 HTTPS",
+		"系统信任的 TLS 证书",
 		"隐藏提示输入此 Token",
 	} {
 		if !strings.Contains(string(enrollmentUI), required) {

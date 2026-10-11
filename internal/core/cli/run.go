@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -52,6 +53,8 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	historyRetentionDaysFlag := flags.String("history-retention-days", "", "non-metric task, event, and audit history retention in days (default 90)")
 	publicOriginFlag := flags.String("public-origin", "", "public HTTPS origin used for browser Origin validation")
 	trustedProxiesFlag := flags.String("trusted-proxies", "", "comma-separated trusted proxy IPs or CIDRs")
+	tlsCertFlag := flags.String("tls-cert", "", "TLS certificate PEM file; required with --tls-key for non-loopback listeners")
+	tlsKeyFlag := flags.String("tls-key", "", "TLS private key PEM file; required with --tls-cert for non-loopback listeners")
 	dev := flags.Bool("dev", false, "development mode; requires a loopback address")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -94,6 +97,10 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 			return err
 		}
 	} else if err := config.ValidateListen(listen); err != nil {
+		return err
+	}
+	tlsCertificate, err := loadTransportCertificate(listen, *tlsCertFlag, *tlsKeyFlag)
+	if err != nil {
 		return err
 	}
 	publicOrigin := firstNonEmpty(*publicOriginFlag, lookupValue(lookup, "NODEDANCE_PUBLIC_ORIGIN"), fileConfig.PublicOrigin)
@@ -151,14 +158,27 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+	if tlsCertificate != nil {
+		httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{*tlsCertificate}}
+	}
 	serveCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	serveErr := make(chan error, 1)
-	fmt.Fprintf(stdout, "NodeDance listening on http://%s\n", listen)
+	scheme := "http"
+	if tlsCertificate != nil {
+		scheme = "https"
+	}
+	fmt.Fprintf(stdout, "NodeDance listening on %s://%s\n", scheme, listen)
 	if credentialPath, ok := serverInstance.SetupCredentialPath(); ok {
 		fmt.Fprintf(stdout, "First-run setup credential file: %s\n", credentialPath)
 	}
-	go func() { serveErr <- httpServer.Serve(listener) }()
+	go func() {
+		if tlsCertificate != nil {
+			serveErr <- httpServer.ServeTLS(listener, "", "")
+			return
+		}
+		serveErr <- httpServer.Serve(listener)
+	}()
 	select {
 	case <-serveCtx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -171,13 +191,35 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
-		return fmt.Errorf("serve HTTP on %s: %w", listen, err)
+		return fmt.Errorf("serve %s on %s: %w", scheme, listen, err)
 	}
+}
+
+func loadTransportCertificate(listen, certPath, keyPath string) (*tls.Certificate, error) {
+	if (certPath == "") != (keyPath == "") {
+		return nil, errors.New("--tls-cert and --tls-key must be provided together")
+	}
+	if certPath == "" {
+		host, _, err := net.SplitHostPort(listen)
+		if err != nil {
+			return nil, fmt.Errorf("inspect Core listener for TLS: %w", err)
+		}
+		ip := net.ParseIP(host)
+		if ip == nil || !ip.IsLoopback() {
+			return nil, errors.New("TLS certificate and key are required when Core listens on a non-loopback address")
+		}
+		return nil, nil
+	}
+	certificate, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("load Core TLS certificate and key: %w", err)
+	}
+	return &certificate, nil
 }
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "NodeDance - unified Linux server and container management")
-	fmt.Fprintln(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--max-file-bytes bytes] [--history-retention-days days] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--dev]")
+	fmt.Fprintln(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--max-file-bytes bytes] [--history-retention-days days] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--tls-cert PEM --tls-key PEM] [--dev]")
 	fmt.Fprintln(w, "       nodedance backup --data-dir DIR --output FILE")
 	fmt.Fprintln(w, "       nodedance restore --input FILE --data-dir NEW_DIR")
 	fmt.Fprintln(w, "       nodedance version")

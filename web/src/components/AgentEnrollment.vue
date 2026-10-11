@@ -31,6 +31,10 @@ const agentOriginIsLoopback = computed(() => {
   if (!agentOrigin.value) return false
   return isLiteralLoopback(new URL(agentOrigin.value).hostname)
 })
+const agentOriginUsesAllowedTransport = computed(() =>
+  agentOrigin.value.startsWith('https://') ||
+  (development && agentOrigin.value.startsWith('http://') && agentOriginIsLoopback.value),
+)
 
 const installCommand = computed(() => {
   const args = [
@@ -57,8 +61,8 @@ async function generateEnrollment() {
   token.value = ''
   expiresAt.value = ''
   const name = displayName.value.trim()
-  if (!agentOriginIsSupported.value) {
-    error.value = 'Agent 地址必须是 HTTP(S) origin，不能包含路径、凭据、查询或片段。'
+  if (!agentOriginIsSupported.value || !agentOriginUsesAllowedTransport.value) {
+    error.value = '正式 Agent 连接必须使用 HTTPS；仅开发模式允许使用字面回环地址上的 HTTP。'
     return
   }
   if (!name || /[\r\n\0]/.test(name)) {
@@ -112,13 +116,12 @@ function isLiteralLoopback(hostname: string): boolean {
         <div class="agent-enrollment-section-heading">
           <div><h2>{{ compact ? '手动安装 Agent' : '生成安装命令' }}</h2><p>此入口可独立使用，不需要启用 Tailscale。Agent 以 root 运行并主动连接当前 Core。</p></div>
         </div>
-        <label class="field"><span>Agent 连接的 Core 地址</span><input v-model="agentServer" autocomplete="url" placeholder="https://core.example 或 http://100.x.x.x:8180" aria-label="Agent 连接的 Core 地址" /></label>
-        <p v-if="agentOrigin.startsWith('http://')" class="field-hint">HTTP/WS 不加密应用层流量；只在已加密的可信私网中使用。公网部署请使用 HTTPS/WSS 和系统信任的证书。</p>
+        <label class="field"><span>Agent 连接的 Core 地址</span><input v-model="agentServer" autocomplete="url" placeholder="https://core.example:8180" aria-label="Agent 连接的 Core 地址" /></label>
         <label class="field"><span>节点显示名称</span><input v-model="displayName" maxlength="80" autocomplete="off" placeholder="例如：production-01" /></label>
-        <p v-if="!agentOriginIsSupported" class="alert alert-error" role="alert">Agent 地址必须是 HTTP(S) origin，不能包含路径、凭据、查询或片段。</p>
+        <p v-if="!agentOriginIsSupported || !agentOriginUsesAllowedTransport" class="alert alert-error" role="alert">正式 Agent 连接必须使用 HTTPS；仅开发模式允许使用字面回环地址上的 HTTP。Core 必须提供系统信任的 TLS 证书。</p>
         <p v-if="error" class="alert alert-error" role="alert">{{ error }}</p>
         <p v-if="notice" class="alert alert-success" role="status">{{ notice }}</p>
-        <button class="primary-button" type="button" :disabled="creating || !displayName.trim() || !agentOriginIsSupported" @click="generateEnrollment">{{ creating ? '正在生成…' : '生成一次性注册命令' }}</button>
+        <button class="primary-button" type="button" :disabled="creating || !displayName.trim() || !agentOriginIsSupported || !agentOriginUsesAllowedTransport" @click="generateEnrollment">{{ creating ? '正在生成…' : '生成一次性注册命令' }}</button>
         <div v-if="token" class="agent-enrollment-result">
           <p class="field-hint">Token 仅可使用一次，过期时间：{{ expiresAt }}。Token 不包含在命令、参数或环境变量中。</p>
           <label class="field"><span>目标 Linux 主机执行的一条命令</span><textarea readonly rows="3" :value="installCommand" data-testid="agent-install-command" /></label>

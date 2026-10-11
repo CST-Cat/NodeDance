@@ -151,7 +151,7 @@ func runEnroll(ctx context.Context, args []string, stdin io.Reader, stdout, stde
 		return err
 	}
 	flags := newFlagSet("enroll", stderr)
-	server := flags.String("server", "", "Core HTTP or HTTPS origin; HTTP uses an unencrypted WebSocket")
+	server := flags.String("server", "", "Core HTTPS origin; HTTP is limited to literal loopback with --dev")
 	caFile := flags.String("ca-file", "", "additional trusted CA PEM file")
 	configPath := flags.String("config", "", "private Agent config path")
 	dev := flags.Bool("dev", false, "allow HTTP only for literal loopback development Core")

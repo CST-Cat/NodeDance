@@ -43,11 +43,11 @@ func ParseServerURL(value string, development bool) (string, error) {
 	switch parsed.Scheme {
 	case "https":
 	case "http":
-		if development && !isLiteralLoopback(parsed.Hostname()) {
-			return "", errors.New("Agent development mode permits HTTP only for a literal loopback address")
+		if !development || !isLiteralLoopback(parsed.Hostname()) {
+			return "", errors.New("Agent connections require HTTPS; HTTP is allowed only for a literal loopback address in development mode")
 		}
 	default:
-		return "", errors.New("server URL must use http or https")
+		return "", errors.New("server URL must use HTTPS; HTTP is limited to literal loopback development")
 	}
 	if parsed.Port() != "" {
 		port, err := strconv.Atoi(parsed.Port())

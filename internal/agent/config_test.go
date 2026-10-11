@@ -2,7 +2,7 @@ package agent
 
 import "testing"
 
-func TestParseServerURLSupportsSchemeSelectedTransport(t *testing.T) {
+func TestParseServerURLRequiresHTTPSOutsideLoopbackDevelopment(t *testing.T) {
 	tests := []struct {
 		name        string
 		server      string
@@ -11,9 +11,10 @@ func TestParseServerURLSupportsSchemeSelectedTransport(t *testing.T) {
 		wantErr     bool
 	}{
 		{name: "public HTTPS", server: "https://core.example", want: "https://core.example"},
-		{name: "private network HTTP", server: "http://100.111.176.125:8180/", want: "http://100.111.176.125:8180"},
+		{name: "private network HTTP rejected", server: "http://100.111.176.125:8180", wantErr: true},
+		{name: "loopback HTTP rejected outside development", server: "http://127.0.0.1:8180", wantErr: true},
 		{name: "development loopback HTTP", server: "http://127.0.0.1:8180", development: true, want: "http://127.0.0.1:8180"},
-		{name: "development rejects remote HTTP", server: "http://100.111.176.125:8180", development: true, wantErr: true},
+		{name: "development rejects private network HTTP", server: "http://100.111.176.125:8180", development: true, wantErr: true},
 		{name: "rejects URL path", server: "https://core.example/path", wantErr: true},
 		{name: "rejects unsupported scheme", server: "ftp://core.example", wantErr: true},
 	}

@@ -63,13 +63,13 @@ func TestAgentHostManagementEntrypointsRejectNonRoot(t *testing.T) {
 	}
 }
 
-func TestAgentWebSocketURLFollowsCoreOriginScheme(t *testing.T) {
+func TestAgentWebSocketURLMapsCoreOriginScheme(t *testing.T) {
 	tests := []struct {
 		server string
 		want   string
 	}{
 		{server: "https://core.example:8443", want: "wss://core.example:8443/ws/v1/agent"},
-		{server: "http://100.111.176.125:8180", want: "ws://100.111.176.125:8180/ws/v1/agent"},
+		{server: "http://127.0.0.1:8180", want: "ws://127.0.0.1:8180/ws/v1/agent"},
 	}
 	for _, test := range tests {
 		got, err := agentWebSocketURL(test.server)
