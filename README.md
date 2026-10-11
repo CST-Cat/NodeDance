@@ -80,7 +80,7 @@ sudo systemctl status nodedance.service
 
 The unit listens on loopback and stores its database and keys under `/var/lib/nodedance`. Configure the reverse proxy for HTTPS, WebSocket upgrades on `/ws/`, and forwarding to `127.0.0.1:8180`. Set `NODEDANCE_TRUSTED_PROXIES` or `trusted_proxies` only to the proxy addresses that actually connect to the Core. Do not expose an unencrypted Core listener to the public Internet. On first start, read the one-time setup credential from the private file path printed in the service log (normally `sudo -u nodedance cat /var/lib/nodedance/setup-credential.txt`), then enter it in the browser setup flow. The Core removes that credential after setup succeeds.
 
-Manage the service with `sudo systemctl restart nodedance.service`, `sudo systemctl stop nodedance.service`, and `sudo journalctl -u nodedance.service`. A local Agent can run on the same Linux host. In production, enroll it against an HTTPS origin with a valid certificate; a reverse proxy can route that origin back to the loopback Core. For local development only, use the loopback `--dev` flow below. The Agent connects outbound over WSS for HTTPS origins and reconnects automatically after temporary Core or network outages.
+Manage the service with `sudo systemctl restart nodedance.service`, `sudo systemctl stop nodedance.service`, and `sudo journalctl -u nodedance.service`. A local Agent can run on the same Linux host. For public deployments, use an HTTPS origin with a certificate trusted by the Agent host; the Agent uses the system trust store, so no CA file is needed for ordinary public certificates. A private CA can be supplied with `--ca-file`. On a trusted, encrypted private network, an explicit HTTP origin is also supported and uses an unencrypted WebSocket. The Agent connects outbound, follows the URL scheme (`https` to WSS, `http` to WS), and reconnects automatically after temporary Core or network outages.
 
 The Core reads JSON configuration from `--config` or `NODEDANCE_CONFIG`; its default is `$XDG_CONFIG_HOME/nodedance/config.json` (or `~/.config/nodedance/config.json` on a typical Linux host). CLI flags take precedence over supported environment variables, which take precedence over the config file. Important options include:
 
@@ -97,7 +97,7 @@ The Core data directory contains the SQLite database and authentication/encrypti
 
 ## Enroll and run an Agent
 
-After signing in to the Core console, choose **添加 Agent**, enter a node display name, and generate a one-time enrollment. The page shows the Core-bound installer command and the short-lived token separately. Copy the command to the target Linux host, run it, then paste the token only into the installer's hidden `/dev/tty` prompt. The token is never part of the command, shell history, process arguments, or environment.
+After signing in to the Core console, choose **添加 Agent**, enter a node display name, and generate a one-time enrollment. Choose the URL the target Agent can reach; it defaults to the current console origin and may be a different Core address on a private network. The page shows the installer command and short-lived token separately. Copy the command to the target Linux host, run it, then paste the token only into the installer's hidden `/dev/tty` prompt. The token is never part of the command, shell history, process arguments, or environment.
 
 The target host command is:
 
@@ -111,7 +111,7 @@ To publish Agent artifacts, add the workflow to the tagged commit, then create a
 
 The Agent runs as root for full host management; `enroll`, `recover`, and `run` reject non-root callers. It verifies the config remains root-owned, regular, and mode `0600` inside a `0700` state directory. Root file management exposes host paths while blocking kernel/runtime trees and Agent credentials. NodeDance does not change Docker socket permissions.
 
-For same-host development against a loopback Core, build with `make build` and use `sudo .build/nodedance-agent enroll --dev --server http://127.0.0.1:8180 --config /var/lib/nodedance-agent/agent.json --token-stdin`. `--dev` accepts only literal loopback HTTP addresses; production URLs must use HTTPS with a valid certificate.
+For same-host development against a loopback Core, build with `make build` and use `sudo .build/nodedance-agent enroll --dev --server http://127.0.0.1:8180 --config /var/lib/nodedance-agent/agent.json --token-stdin`. `--dev` is restricted to literal loopback HTTP. A remote HTTP Agent endpoint is accepted without `--dev`; use it only when the network itself is trusted and encrypted.
 
 The installer writes a NodeDance-managed root service without a filesystem/system write sandbox. It refuses unrelated or unmarked units, reloads systemd, and can enable/start the Agent. Inspect it with `sudo systemctl status nodedance-agent.service`; restart or stop it with `sudo systemctl restart nodedance-agent.service` or `sudo systemctl stop nodedance-agent.service`. If enrollment may have reached Core but the response was lost, retain the private config and run `sudo nodedance-agent recover --config /var/lib/nodedance-agent/agent.json`. Recovery checks the saved device credential and does not replay the one-time token. `sudo nodedance-agent uninstall-systemd` stops/removes only the current NodeDance-managed root unit; it preserves the binary and credentials.
 
@@ -171,7 +171,7 @@ Agent systemd installation is root-only. It recognizes only the current NodeDanc
 ## Troubleshooting
 
 - **Browser setup or login does not persist:** use HTTPS in production so secure session cookies are accepted. `--dev` is for loopback development only.
-- **Agent remains offline:** check the Core HTTPS/WSS URL, outbound connectivity, enrollment state, and Agent service log with `systemctl status nodedance-agent` and `journalctl -u nodedance-agent`.
+- **Agent remains offline:** check the configured Core HTTP/WS or HTTPS/WSS URL, outbound connectivity, enrollment state, and Agent service log with `systemctl status nodedance-agent` and `journalctl -u nodedance-agent`.
 - **Host metrics work but Docker is unavailable:** check Docker Engine status and whether the Agent can access its socket. NodeDance intentionally leaves socket permissions unchanged.
 - **File access is unavailable:** the root Agent enables full-host browsing by default, except `/proc`, `/sys`, `/dev`, `/run`, and the Agent credential state directory. Check for `NODEDANCE_AGENT_FILE_ACCESS=disabled`; `--file-root` can narrow access.
 - **A probe reports unknown:** check that the node is online and negotiated the probe capability. Unknown means there is no current result; it is not treated as a failed service.

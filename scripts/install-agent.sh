@@ -31,9 +31,9 @@ Usage:
 
 Options:
   --release-tag TAG     Published Agent-only tag (agent-vMAJOR.MINOR.PATCH; required)
-  --server URL          Core HTTPS origin (required)
+  --server URL          Core HTTP or HTTPS origin (required)
   --display-name NAME   Display name bound to this one-time enrollment (required)
-  --dev                 Allow HTTP only for a literal loopback Core address
+  --dev                 Mark a local development enrollment; HTTP remains loopback-only
   --help                Show this help
 
 The installer reads the one-time enrollment token through a hidden /dev/tty
@@ -144,7 +144,10 @@ if (( development )); then
     *) fail '--dev allows only http://127.0.0.1 or http://[::1] loopback origins' ;;
   esac
 else
-  [[ "$server_url" == https://* ]] || fail 'Core URL must use HTTPS; --dev is allowed only for literal loopback HTTP'
+  case "$server_url" in
+    https://*|http://*) ;;
+    *) fail 'Core URL must use HTTP or HTTPS' ;;
+  esac
 fi
 
 for tool in awk chmod curl install ln mkdir mktemp rm rmdir sha256sum stat systemctl; do

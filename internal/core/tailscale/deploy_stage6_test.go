@@ -531,6 +531,9 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 		"sudo bash -s --",
 		"data-testid=\"agent-install-command\"",
 		"data-testid=\"agent-enrollment-token\"",
+		"Agent 连接的 Core 地址",
+		"http://100.x.x.x:8180",
+		"HTTP/WS 不加密应用层流量",
 		"隐藏提示输入此 Token",
 	} {
 		if !strings.Contains(string(enrollmentUI), required) {

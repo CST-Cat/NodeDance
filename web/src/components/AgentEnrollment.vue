@@ -11,25 +11,33 @@ const expiresAt = ref('')
 const creating = ref(false)
 const error = ref('')
 const notice = ref('')
-const coreOrigin = window.location.origin
+const agentServer = ref(window.location.origin)
 const development = window.location.protocol === 'http:'
 
-const coreOriginIsSupported = computed(() => {
+const agentOrigin = computed(() => {
   try {
-    const parsed = new URL(coreOrigin)
-    return (parsed.protocol === 'https:' || (parsed.protocol === 'http:' && isLiteralLoopback(parsed.hostname))) &&
-      !parsed.username && !parsed.password && parsed.origin === coreOrigin
+    const parsed = new URL(agentServer.value.trim())
+    return (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
+      !parsed.username && !parsed.password && !parsed.search && !parsed.hash &&
+      (parsed.pathname === '/' || parsed.pathname === '')
+      ? parsed.origin
+      : ''
   } catch {
-    return false
+    return ''
   }
+})
+const agentOriginIsSupported = computed(() => agentOrigin.value !== '')
+const agentOriginIsLoopback = computed(() => {
+  if (!agentOrigin.value) return false
+  return isLiteralLoopback(new URL(agentOrigin.value).hostname)
 })
 
 const installCommand = computed(() => {
   const args = [
-    '--server', shellQuote(coreOrigin),
+    '--server', shellQuote(agentOrigin.value),
     '--display-name', shellQuote(displayName.value.trim()),
   ]
-  if (development) args.push('--dev')
+  if (development && agentOriginIsLoopback.value) args.push('--dev')
   const apiURL = 'https://api.github.com/repos/CST-Cat/NodeDance/releases?per_page=100'
   const releases = `releases=$(curl --fail --silent --show-error --location --proto =https --proto-redir =https --tlsv1.2 "${apiURL}") || { echo 'Could not list Agent releases.' >&2; exit 1; }; tag=$(printf '%s\\n' "$releases" | awk -F'"' '$2 == "tag_name" && $4 ~ /^agent-v[0-9]+\\.[0-9]+\\.[0-9]+$/ { print $4; exit }'); [[ "$tag" =~ ^agent-v[0-9]+\\.[0-9]+\\.[0-9]+$ ]] || { echo 'No published agent-vMAJOR.MINOR.PATCH release was found.' >&2; exit 1; }`
   const assetURL = 'https://github.com/CST-Cat/NodeDance/releases/download/$tag/install-agent.sh'
@@ -37,7 +45,7 @@ const installCommand = computed(() => {
   return `bash -o pipefail -c ${shellQuote(pipeline)}`
 })
 
-watch(displayName, () => {
+watch([displayName, agentServer], () => {
   token.value = ''
   expiresAt.value = ''
   notice.value = ''
@@ -49,8 +57,8 @@ async function generateEnrollment() {
   token.value = ''
   expiresAt.value = ''
   const name = displayName.value.trim()
-  if (!coreOriginIsSupported.value) {
-    error.value = '当前控制台地址必须使用 HTTPS；开发环境仅允许 literal loopback HTTP。'
+  if (!agentOriginIsSupported.value) {
+    error.value = 'Agent 地址必须是 HTTP(S) origin，不能包含路径、凭据、查询或片段。'
     return
   }
   if (!name || /[\r\n\0]/.test(name)) {
@@ -104,12 +112,13 @@ function isLiteralLoopback(hostname: string): boolean {
         <div class="agent-enrollment-section-heading">
           <div><h2>{{ compact ? '手动安装 Agent' : '生成安装命令' }}</h2><p>此入口可独立使用，不需要启用 Tailscale。Agent 以 root 运行并主动连接当前 Core。</p></div>
         </div>
-        <label class="field"><span>当前 Core 地址</span><input :value="coreOrigin" readonly aria-label="当前 Core 地址" /></label>
+        <label class="field"><span>Agent 连接的 Core 地址</span><input v-model="agentServer" autocomplete="url" placeholder="https://core.example 或 http://100.x.x.x:8180" aria-label="Agent 连接的 Core 地址" /></label>
+        <p v-if="agentOrigin.startsWith('http://')" class="field-hint">HTTP/WS 不加密应用层流量；只在已加密的可信私网中使用。公网部署请使用 HTTPS/WSS 和系统信任的证书。</p>
         <label class="field"><span>节点显示名称</span><input v-model="displayName" maxlength="80" autocomplete="off" placeholder="例如：production-01" /></label>
-        <p v-if="!coreOriginIsSupported" class="alert alert-error" role="alert">当前页面地址不适用于 Agent：需要 HTTPS；开发时只接受 literal loopback HTTP。</p>
+        <p v-if="!agentOriginIsSupported" class="alert alert-error" role="alert">Agent 地址必须是 HTTP(S) origin，不能包含路径、凭据、查询或片段。</p>
         <p v-if="error" class="alert alert-error" role="alert">{{ error }}</p>
         <p v-if="notice" class="alert alert-success" role="status">{{ notice }}</p>
-        <button class="primary-button" type="button" :disabled="creating || !displayName.trim() || !coreOriginIsSupported" @click="generateEnrollment">{{ creating ? '正在生成…' : '生成一次性注册命令' }}</button>
+        <button class="primary-button" type="button" :disabled="creating || !displayName.trim() || !agentOriginIsSupported" @click="generateEnrollment">{{ creating ? '正在生成…' : '生成一次性注册命令' }}</button>
         <div v-if="token" class="agent-enrollment-result">
           <p class="field-hint">Token 仅可使用一次，过期时间：{{ expiresAt }}。Token 不包含在命令、参数或环境变量中。</p>
           <label class="field"><span>目标 Linux 主机执行的一条命令</span><textarea readonly rows="3" :value="installCommand" data-testid="agent-install-command" /></label>

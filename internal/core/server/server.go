@@ -453,19 +453,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if !s.secureAgentRequest(r) {
-			http.Error(w, "secure Agent transport required", http.StatusUpgradeRequired)
-			return
-		}
 		s.handleAgentEnroll(w, r)
 		return
 	case "/api/v1/agents/identity":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		if !s.secureAgentRequest(r) {
-			http.Error(w, "secure Agent transport required", http.StatusUpgradeRequired)
 			return
 		}
 		s.handleAgentIdentity(w, r)

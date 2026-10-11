@@ -475,10 +475,6 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Agent credential rejected", http.StatusUnauthorized)
 		return
 	}
-	if !s.secureAgentRequest(r) {
-		http.Error(w, "secure Agent transport required", http.StatusUpgradeRequired)
-		return
-	}
 	if r.Header.Get("Origin") != "" {
 		http.Error(w, "browser origins are not permitted on the Agent channel", http.StatusForbidden)
 		return

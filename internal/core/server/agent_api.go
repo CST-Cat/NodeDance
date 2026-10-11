@@ -32,10 +32,6 @@ type agentIdentityResponse struct {
 }
 
 func (s *Server) handleAgentEnroll(w http.ResponseWriter, r *http.Request) {
-	if !s.secureAgentRequest(r) {
-		http.Error(w, "secure Agent transport required", http.StatusUpgradeRequired)
-		return
-	}
 	enrollmentToken, ok := authorizationCredential(r.Header.Get("Authorization"), "Enrollment")
 	if !ok {
 		http.Error(w, "enrollment rejected", http.StatusUnauthorized)
@@ -62,10 +58,6 @@ func (s *Server) handleAgentEnroll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAgentIdentity(w http.ResponseWriter, r *http.Request) {
-	if !s.secureAgentRequest(r) {
-		http.Error(w, "secure Agent transport required", http.StatusUpgradeRequired)
-		return
-	}
 	credential, ok := authorizationCredential(r.Header.Get("Authorization"), "Bearer")
 	if !ok || !validDeviceCredential(credential) {
 		http.Error(w, "Agent credential rejected", http.StatusUnauthorized)
@@ -85,18 +77,6 @@ func (s *Server) handleAgentIdentity(w http.ResponseWriter, r *http.Request) {
 		credentialState = "pending"
 	}
 	writeJSON(w, http.StatusOK, agentIdentityResponse{AgentID: identity.AgentID, NodeID: identity.NodeID, DisplayName: identity.DisplayName, Status: identity.Status, CredentialState: credentialState, Generation: identity.ConnectionGeneration})
-}
-
-func (s *Server) secureAgentRequest(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
-	}
-	remote := remoteIP(r)
-	if s.isTrustedProxy(remote) {
-		proto := strings.ToLower(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]))
-		return proto == "https"
-	}
-	return s.development && remote != nil && remote.IsLoopback()
 }
 
 func authorizationCredential(header, scheme string) (string, bool) {
