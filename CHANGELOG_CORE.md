@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.5]
+
+### English
+
+- Make the Core installer resolve the latest stable Core release by default while keeping optional tag pinning.
+- Document the latest-release install command; Agent enrollment already resolves the latest stable Agent release.
+
+### 简体中文
+
+- Core 安装脚本默认解析最新正式版，同时保留指定 tag 安装的选项。
+- 文档改为默认安装最新 Core；Agent 注册流程继续自动解析最新正式版 Agent。
+
 ## [0.1.4]
 
 ### English

@@ -3,6 +3,7 @@ set -Eeuo pipefail
 umask 077
 
 readonly RELEASE_BASE="https://github.com/CST-Cat/NodeDance/releases/download"
+readonly RELEASES_API="https://api.github.com/repos/CST-Cat/NodeDance/releases/latest"
 
 release_tag=""
 install_dir="/usr/local/bin"
@@ -14,16 +15,16 @@ usage() {
 NodeDance Core installer
 
 Usage:
-  bash install-core.sh --release-tag core-v0.1.0 [--install-dir /usr/local/bin]
+  bash install-core.sh [--release-tag core-v0.1.0] [--install-dir /usr/local/bin]
 
 Options:
-  --release-tag TAG   Published Core tag (core-vMAJOR.MINOR.PATCH; required)
+  --release-tag TAG   Published Core tag (default: latest stable Core release)
   --install-dir DIR   Install the Core executable into DIR (default: /usr/local/bin)
   --help              Show this help
 
-The installer downloads the selected release's Linux archive, verifies it
-against that release's SHA256SUMS, and installs only the `nodedance` binary.
-It does not change Core data or configure a service.
+By default, the installer resolves the latest stable Core release, then pins
+the archive and checksum downloads to that exact tag. It installs only the
+`nodedance` binary and does not change Core data or configure a service.
 EOF
 }
 
@@ -62,12 +63,18 @@ case "$(uname -m)" in
   *) fail "unsupported Linux architecture: $(uname -m)" ;;
 esac
 
-[[ "$release_tag" =~ ^core-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail '--release-tag must be a published Core tag such as core-v0.1.0'
 [[ -n "$install_dir" ]] || fail '--install-dir cannot be empty'
 
 for tool in awk curl install mkdir mktemp mv rm sha256sum tar uname; do
   command -v "$tool" >/dev/null 2>&1 || fail "required command is missing: $tool"
 done
+
+if [[ -z "$release_tag" ]]; then
+  latest_release=$(curl --fail --silent --show-error --location \
+    --proto '=https' --proto-redir '=https' --tlsv1.2 "$RELEASES_API") || fail 'could not resolve the latest stable Core release'
+  release_tag=$(printf '%s\n' "$latest_release" | awk -F'"' '$2 == "tag_name" { print $4; exit }')
+fi
+[[ "$release_tag" =~ ^core-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'latest release is not a valid stable Core tag; pass --release-tag core-vMAJOR.MINOR.PATCH to pin a release'
 
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/nodedance-core-install.XXXXXXXX")
 archive="nodedance-linux-${arch}.tar.gz"

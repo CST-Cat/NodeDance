@@ -26,17 +26,16 @@ make build
 
 The binaries are written to `.build/nodedance` and `.build/nodedance-agent`. `make check` runs the frontend checks and Go tests. To install already-built binaries, run `sudo make install`; it copies both files to `$(PREFIX)/bin` (default `/usr/local/bin`) without rebuilding as root. `DESTDIR` can stage the install for packaging, for example `make install DESTDIR=/tmp/nodedance-package`.
 
-To install a published Core release on Linux amd64 or arm64, choose a published `core-vMAJOR.MINOR.PATCH` tag and run its version-pinned installer:
+To install the latest published Core release on Linux amd64 or arm64:
 
 ```sh
 set -o pipefail
-CORE_TAG=core-vX.Y.Z # replace with the published Core tag
 curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
-  "https://github.com/CST-Cat/NodeDance/releases/download/${CORE_TAG}/install-core.sh" \
-  | sudo bash -s -- --release-tag "$CORE_TAG"
+  https://github.com/CST-Cat/NodeDance/releases/latest/download/install-core.sh \
+  | sudo bash
 ```
 
-The installer verifies the selected architecture's `.tar.gz` against that release's `SHA256SUMS`, then installs `/usr/local/bin/nodedance`. It replaces an existing regular Core executable, but refuses a symlink or directory at that path. The archive reduces download size; the extracted Core executable keeps its normal size. The installer does not change Core data, install the Agent, or configure systemd. Continue with the persistent service setup below after installation.
+The installer resolves the latest stable `core-vMAJOR.MINOR.PATCH` tag, then verifies that release's architecture-specific `.tar.gz` against its `SHA256SUMS` before installing `/usr/local/bin/nodedance`. Pass `--release-tag core-vX.Y.Z` to pin a specific version. It replaces an existing regular Core executable, but refuses a symlink or directory at that path. The archive reduces download size; the extracted Core executable keeps its normal size. The installer does not change Core data, install the Agent, or configure systemd. Continue with the persistent service setup below after installation.
 
 ## Run the Core
 
