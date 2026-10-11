@@ -137,18 +137,32 @@ jobs:
           name: core-release-inputs
           path: release-inputs
 
-      - name: Restore executable permissions and generate checksums
+      - name: Create compressed assets, installer, and checksums
         run: |
           set -euo pipefail
           test -f dist/nodedance-linux-amd64
           test -f dist/nodedance-linux-arm64
           chmod 0755 dist/nodedance-linux-amd64 dist/nodedance-linux-arm64
-          (cd dist && sha256sum nodedance-linux-amd64 nodedance-linux-arm64 > SHA256SUMS)
+          (cd dist && tar -czf nodedance-linux-amd64.tar.gz nodedance-linux-amd64)
+          (cd dist && tar -czf nodedance-linux-arm64.tar.gz nodedance-linux-arm64)
+          cp scripts/install-core.sh dist/install-core.sh
+          chmod 0755 dist/install-core.sh
+          (cd dist && sha256sum \
+            nodedance-linux-amd64 \
+            nodedance-linux-arm64 \
+            nodedance-linux-amd64.tar.gz \
+            nodedance-linux-arm64.tar.gz > SHA256SUMS)
 
       - name: Publish GitHub Release assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_VERSION" dist/nodedance-linux-amd64 dist/nodedance-linux-arm64 dist/SHA256SUMS \
+          gh release create "$RELEASE_VERSION" \
+            dist/nodedance-linux-amd64 \
+            dist/nodedance-linux-arm64 \
+            dist/nodedance-linux-amd64.tar.gz \
+            dist/nodedance-linux-arm64.tar.gz \
+            dist/install-core.sh \
+            dist/SHA256SUMS \
             --title "$RELEASE_VERSION" --verify-tag --latest=true --notes-file release-inputs/core-release-notes.md

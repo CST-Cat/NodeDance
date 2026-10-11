@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.4]
+
+### English
+
+- Publish gzip-compressed Linux amd64/arm64 Core archives and a version-pinned installer that verifies SHA256 before installing.
+- Keep the raw Core binaries available and include both raw binaries and archives in `SHA256SUMS`.
+
+### 简体中文
+
+- 发布 Linux amd64/arm64 Core gzip 压缩包和固定版本的安装脚本；安装前校验 SHA256。
+- 保留 Core 裸二进制，并将裸二进制和压缩包都纳入 `SHA256SUMS`。
+
 ## [0.1.3]
 
 ### English

@@ -4,7 +4,7 @@ Core and Agent are versioned independently:
 
 | Component / 组件 | Tag / 标签 | Changelog / 更新日志 | Assets / 产物 |
 | --- | --- | --- | --- |
-| Core | `core-vMAJOR.MINOR.PATCH` | `CHANGELOG_CORE.md` | Embedded Web + CLI/TUI Linux amd64/arm64 binaries, SHA256SUMS |
+| Core | `core-vMAJOR.MINOR.PATCH` | `CHANGELOG_CORE.md` | Embedded Web + CLI/TUI Linux amd64/arm64 binaries and `.tar.gz` archives, version-pinned installer, SHA256SUMS |
 | Agent | `agent-vMAJOR.MINOR.PATCH` | `CHANGELOG_AGENT.md` | Root Agent Linux amd64/arm64 binaries, installer, SHA256SUMS |
 
 Core 的 Web、CLI、TUI 同时打包发布。Agent 独立发布，只有 Agent 相关改动才需要更新 Agent 版本。Agent 和 Core 的运行互通取决于协议版本及能力协商，无需发布版本号相同。
@@ -36,6 +36,6 @@ Both workflows use a build matrix: `ubuntu-24.04` for amd64 and `ubuntu-24.04-ar
 
 两个发布工作流都使用 matrix：amd64 对应 `ubuntu-24.04`，arm64 对应 `ubuntu-24.04-arm`。两台机器并行确认原生 Go 架构、编译自身架构的二进制（不覆盖 `GOARCH`）、执行发布二进制检查版本，并运行原生 Go 测试。测试以 root 运行，覆盖 root 专用 Agent 与集成测试。Go 缓存按 runner 架构分别保存；`-count=1` 保证每次发布实际执行测试，不复用测试结果缓存。
 
-Core prepares and checks Web assets once, then shares the same assets with both native builds. Release publication waits for **both** matrix jobs to pass, merges their artifacts, restores executable permissions lost during artifact transfer, and generates one checksum manifest. A failed build or test blocks publication; the other architecture still completes to provide diagnostics.
+Core prepares and checks Web assets once, then shares the same assets with both native builds. Release publication waits for **both** matrix jobs to pass, merges their artifacts, restores executable permissions lost during artifact transfer, creates one `.tar.gz` archive per architecture, and generates one checksum manifest covering both raw binaries and archives. The version-pinned Core installer is published alongside these assets. A failed build or test blocks publication; the other architecture still completes to provide diagnostics.
 
-Core 的 Web 资源只构建和检查一次，两台原生 runner 使用相同资源。发布必须等待**两个架构**全部通过，随后汇总产物、恢复 artifact 传输丢失的执行权限，并生成统一校验清单。任一架构构建或测试失败都会阻止发布，另一架构继续运行以保留诊断结果。
+Core 的 Web 资源只构建和检查一次，两台原生 runner 使用相同资源。发布必须等待**两个架构**全部通过，随后汇总产物、恢复 artifact 传输丢失的执行权限、为每个架构创建一个 `.tar.gz`，并为裸二进制和压缩包生成统一校验清单。固定版本的 Core 安装脚本也会随 release 发布。任一架构构建或测试失败都会阻止发布，另一架构继续运行以保留诊断结果。

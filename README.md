@@ -26,6 +26,18 @@ make build
 
 The binaries are written to `.build/nodedance` and `.build/nodedance-agent`. `make check` runs the frontend checks and Go tests. To install already-built binaries, run `sudo make install`; it copies both files to `$(PREFIX)/bin` (default `/usr/local/bin`) without rebuilding as root. `DESTDIR` can stage the install for packaging, for example `make install DESTDIR=/tmp/nodedance-package`.
 
+To install a published Core release on Linux amd64 or arm64, choose a published `core-vMAJOR.MINOR.PATCH` tag and run its version-pinned installer:
+
+```sh
+set -o pipefail
+CORE_TAG=core-vX.Y.Z # replace with the published Core tag
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+  "https://github.com/CST-Cat/NodeDance/releases/download/${CORE_TAG}/install-core.sh" \
+  | sudo bash -s -- --release-tag "$CORE_TAG"
+```
+
+The installer verifies the selected architecture's `.tar.gz` against that release's `SHA256SUMS`, then installs `/usr/local/bin/nodedance`. It replaces an existing regular Core executable, but refuses a symlink or directory at that path. The archive reduces download size; the extracted Core executable keeps its normal size. The installer does not change Core data, install the Agent, or configure systemd. Continue with the persistent service setup below after installation.
+
 ## Run the Core
 
 For local development, start the Core on loopback with development cookies enabled:
@@ -36,11 +48,9 @@ go run ./cmd/nodedance serve --dev --listen 127.0.0.1:8180 --data-dir ./data
 
 Open `http://127.0.0.1:8180`. On first start, the Core prints the path to a private, one-time setup credential file. Enter that credential in the first-run setup flow and choose an administrator password of at least 12 UTF-8 bytes. The Core removes the credential file after setup succeeds.
 
-For a persistent installation, build and install the binaries, then create a dedicated Core service account and private data directory:
+For a persistent installation, run `sudo make install` after a source build or use the published-release installer above, then create a dedicated Core service account and private data directory:
 
 ```sh
-make build
-sudo make install
 getent passwd nodedance >/dev/null || sudo useradd --system --home-dir /var/lib/nodedance --shell /usr/sbin/nologin nodedance
 sudo install -d -o nodedance -g nodedance -m 0700 /var/lib/nodedance
 ```
