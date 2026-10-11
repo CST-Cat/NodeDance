@@ -10,11 +10,14 @@ import TailscaleDiscovery from './components/TailscaleDiscovery.vue'
 import AgentEnrollment from './components/AgentEnrollment.vue'
 import AlertCenter from './components/AlertCenter.vue'
 import UiIcon from './components/UiIcon.vue'
+import UiDialog from './components/UiDialog.vue'
+import { cancelDialogs } from './dialogs'
 
 type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'agent-enrollment' | 'alerts' | 'operations' | 'updates'
 type ImageKind = 'avatar' | 'background'
 
 const screen = ref<Screen>('loading')
+watch(screen, cancelDialogs)
 const navigationOpen = ref(false)
 const mobileNavigation = ref(false)
 const sidebarElement = ref<HTMLElement>()
@@ -81,7 +84,7 @@ const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPas
 const appearance = reactive<Appearance>({
   displayName: '',
   theme: 'dark',
-  backgroundColor: '#101827',
+  backgroundColor: '#faf9f5',
   avatarUrl: '',
   backgroundUrl: '',
 })
@@ -91,6 +94,9 @@ const safeBackgroundColor = computed(() => /^#[\da-f]{6}$/i.test(appearance.back
   : '#101827')
 const shellStyle = computed(() => ({ '--page-color': safeBackgroundColor.value }))
 const effectiveTheme = computed(() => appearance.theme === 'system' ? preferredTheme.value : appearance.theme)
+watch(effectiveTheme, theme => {
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', theme === 'dark' ? '#181715' : '#faf9f5')
+}, { immediate:true })
 
 const imagePaths = reactive({ avatar: '', background: '' })
 function imageUrl(value: string, kind: ImageKind): string {
@@ -647,5 +653,6 @@ onBeforeUnmount(() => {
         <footer class="settings-footer"><span>NodeDance Core</span><span>{{ t('m.c8f8547b3bb6') }}</span></footer>
       </div>
     </section>
+    <UiDialog/>
   </main>
 </template>

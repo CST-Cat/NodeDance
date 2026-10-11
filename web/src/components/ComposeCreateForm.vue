@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { requestConfirm } from '../dialogs'
 import { t, display, locale } from "../i18n"
 import { onBeforeUnmount, ref } from 'vue'
 import { composeApi } from '../compose-api'
@@ -55,7 +56,7 @@ function poll(taskId: string) {
 
 async function createProject() {
   if (props.disabled || submitting.value || !validInput()) return
-  if (!window.confirm(t('m.0934bc7652a3', {"0": (props.nodeId), "1": (name.value)}))) return
+  if (!await requestConfirm(t('m.0934bc7652a3', {"0": (props.nodeId), "1": (name.value)}))) return
   submitting.value = true
   error.value = ''
   message.value = ''
@@ -94,7 +95,7 @@ onBeforeUnmount(() => {
       <label>{{ t('m.867698fb7b0c') }}<input v-model.trim="name" autocomplete="off" maxlength="63" :placeholder="t('m.d1bcd8876f63')" :disabled="submitting"></label>
       <label>{{ t('m.e9abe5532d97') }}<input v-model.trim="workingDirectory" autocomplete="off" placeholder="/srv/web-stack" :disabled="submitting"></label>
     </div>
-    <label class="compose-create-yaml">Compose YAML<textarea v-model="content" spellcheck="false" placeholder="services:\n  app:\n    image: nginx:stable" :disabled="submitting" /></label>
+    <label class="compose-create-yaml">Compose YAML<textarea v-model="content" spellcheck="false" :placeholder="'services:\n  app:\n    image: nginx:stable'" :disabled="submitting" /></label>
     <div class="compose-create-actions">
       <button class="container-action container-action-danger" type="button" :disabled="disabled || submitting || !validInput()" @click="void createProject()">{{ submitting ? t('m.92199e4ba37e') : t('m.6db055dc4ece') }}</button>
       <span v-if="message" role="status" :data-status="task?.status">{{ display(message) }}</span>
@@ -104,15 +105,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.compose-create-form { display:grid; gap:10px; min-width:0; padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); }
+.compose-create-form { display:grid; gap:10px; min-width:0; padding:14px; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface-soft); }
 .compose-create-form header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .compose-create-form h3 { margin:4px 0 0; font-size: 14px; }
 .compose-create-form header>span,.compose-create-note { color:var(--muted); font-size: 12px; line-height:1.55; }
 .compose-create-note { margin:0; }
 .compose-create-fields { display:grid; grid-template-columns:minmax(150px,.6fr) minmax(220px,1fr); gap:9px; }
 .compose-create-form label { display:grid; gap:5px; min-width:0; color:var(--muted-strong); font-size: 12px; }
-.compose-create-form input,.compose-create-form textarea { box-sizing:border-box; width:100%; border:1px solid var(--line); border-radius:7px; padding:9px; color:var(--text); background:var(--surface-soft); font:inherit; }
-.compose-create-form input { min-height:36px; }
+.compose-create-form input,.compose-create-form textarea { box-sizing:border-box; width:100%; border:1px solid var(--line); border-radius:var(--radius-control); padding:9px; color:var(--text); background:var(--surface-soft); font:inherit; }
+.compose-create-form input { min-height:40px; }
 .compose-create-form textarea { min-height:220px; resize:vertical; background:var(--surface-soft); font: 12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }
 .compose-create-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; font-size: 12px; }
 .compose-create-actions [role="status"] { color:var(--success); }

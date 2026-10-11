@@ -363,29 +363,29 @@ async function copySSHCommand() {
 </template>
 
 <style scoped>
-.vps-card { min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: clamp(14px,2vw,20px); background: var(--surface); color: var(--text); }
+.vps-card { min-width: 0; border: 1px solid var(--line); border-radius:var(--radius-card); padding: clamp(14px,2vw,20px); background: var(--surface); color: var(--text); }
 .vps-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .vps-card-heading { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .vps-card-heading > div { min-width: 0; }
 .vps-card-heading h2 { margin: 4px 0 0; font-size: 16px; overflow-wrap: anywhere; }
-.vps-node-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius: 9px; color: var(--accent); background: var(--line); font-size: 17px; }
+.vps-node-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius:var(--radius-card); color: var(--accent); background: var(--line); font-size: 17px; }
 .vps-card-status { border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; color: var(--danger); font-size: 12px; white-space: nowrap; }
 .vps-card-status[data-online='true'] { color: var(--success); }
 .vps-card-status[data-pending='true'] { color: var(--warning); }
 .vps-card-id { margin: 6px 0 12px; color: var(--muted); font: 11px/1.5 ui-monospace,monospace; overflow-wrap: anywhere; }
 .vps-card-note { margin: -5px 0 12px; color: var(--muted-strong); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .vps-card-metrics { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 7px; }
-.vps-card-metrics > div { display: grid; min-width: 0; gap: 5px; border: 1px solid var(--line); border-radius: 7px; padding: 8px; }
+.vps-card-metrics > div { display: grid; min-width: 0; gap: 5px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 8px; }
 .vps-card-metrics span { color: var(--muted); font-size: 12px; }
 .vps-card-metrics strong { color: var(--text); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
-.vps-card-docker { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: var(--surface-soft); }
+.vps-card-docker { margin-top: 12px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 10px; background: var(--surface-soft); }
 .vps-card-docker > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); font-size: 12px; }
 .vps-card-docker > header span { color: var(--muted); font: 11px ui-monospace,monospace; text-align: right; }
 .vps-card-empty { margin: 8px 0 0; color: var(--muted-strong); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .vps-card-container-list { display: grid; gap: 7px; margin-top: 8px; }
-.vps-card-container { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 7px; border: 1px solid var(--line); border-radius: 7px; padding: 8px; }
+.vps-card-container { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 7px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 8px; }
 .vps-card-container[data-stale='true'] { border-color: var(--danger-line); }
-.vps-card-container-icon { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 6px; color: var(--accent); background: var(--line); font-size: 12px; }
+.vps-card-container-icon { display: grid; width: 24px; height: 24px; place-items: center; border-radius:var(--radius-card); color: var(--accent); background: var(--line); font-size: 12px; }
 .vps-card-container-copy { display: grid; min-width: 0; gap: 4px; }
 .vps-card-container-copy strong, .vps-card-container-copy small { overflow-wrap: anywhere; }
 .vps-card-container-copy strong { color: var(--text); font-size: 12px; }
@@ -396,11 +396,11 @@ async function copySSHCommand() {
 .vps-card-state { align-self: start; border: 1px solid var(--line); border-radius: 999px; padding: 4px 7px; color: var(--muted-strong); font-size: 12px; white-space: nowrap; }
 .vps-card-state[data-running='true'] { border-color: var(--success-line); color: var(--success); }
 .vps-card-actions { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 3px; }
-.vps-card-actions button, .vps-card-footer button { min-height: 30px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; color: var(--accent); background: var(--line); font: inherit; font-size: 12px; cursor: pointer; }
+.vps-card-actions button, .vps-card-footer button { min-height:40px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 5px 9px; color: var(--accent); background: var(--line); font: inherit; font-size: 12px; cursor: pointer; }
 .vps-card-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .vps-card-more { margin: 0; color: var(--muted); font-size: 12px; }
 .vps-card-shortcuts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-top:10px; }
-.vps-card-shortcuts button { min-width:0; min-height:36px; border:1px solid var(--line); border-radius:6px; padding:6px 8px; color:var(--accent); background:var(--line); font:inherit; font-size: 12px; cursor:pointer; }
+.vps-card-shortcuts button { min-width:0; min-height:40px; border:1px solid var(--line); border-radius:var(--radius-control); padding:6px 8px; color:var(--accent); background:var(--line); font:inherit; font-size: 12px; cursor:pointer; }
 .vps-card-shortcuts button:disabled { opacity:.45; cursor:not-allowed; }
 .vps-card-ssh-status { margin:6px 0 0; color:var(--success); font-size: 12px; line-height:1.5; overflow-wrap:anywhere; }
 .vps-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }

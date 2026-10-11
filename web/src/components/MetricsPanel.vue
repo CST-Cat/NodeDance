@@ -196,7 +196,7 @@ const clockOffsetText = computed(() => {
 <style scoped>
 .metrics-panel { --metric-bg: var(--surface-soft); --metric-card: var(--surface-soft); --metric-line: var(--line); --metric-text: var(--text); --metric-muted: var(--muted); width: 100%; color: var(--metric-text); }
 .metrics-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
-.metrics-eyebrow { margin: 0 0 5px; color: var(--accent); font: 600 10px/1.4 ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; }
+.metrics-eyebrow { margin: 0 0 5px; color: var(--accent); font: 500 10px/1.4 ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; }
 .metrics-header h2 { margin: 0; font-size: clamp(22px, 3vw, 29px); letter-spacing: -.04em; }
 .metrics-subtitle { margin: 7px 0 0; color: var(--metric-muted); font-size: 12px; }
 .node-state { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; border: 1px solid var(--metric-line); border-radius: 999px; padding: 8px 12px; font-size: 12px; }
@@ -204,9 +204,9 @@ const clockOffsetText = computed(() => {
 .node-state.is-offline { color: var(--danger); background: var(--danger-soft); }
 .state-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .metrics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.metric-card { min-width: 0; border: 1px solid var(--metric-line); border-radius: 13px; padding: 16px; background: var(--surface); }
+.metric-card { min-width: 0; border: 1px solid var(--metric-line); border-radius:var(--radius-card); padding: 16px; background: var(--surface); }
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.card-heading h3 { margin: 0; color: var(--text); font-size: 12px; font-weight: 600; }
+.card-heading h3 { margin: 0; color: var(--text); font-size: 12px; font-weight:500; }
 .status-pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 7px; color: var(--muted-strong); font-size: 12px; white-space: nowrap; }
 .status-pill[data-status='known'] { border-color: var(--success-line); color: var(--success); }
 .status-pill[data-status='unknown'] { border-color: var(--line); color: var(--muted-strong); }
@@ -228,7 +228,7 @@ const clockOffsetText = computed(() => {
 .interface-row { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(100px, auto) minmax(100px, auto); align-items: center; gap: 12px; margin-top: 12px; border-top: 1px solid var(--metric-line); padding-top: 10px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
 .interface-row > div { display: grid; gap: 3px; }
 .interface-row > div span { color: var(--metric-muted); font-size: 12px; }
-.metrics-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin-top: 14px; border: 1px solid var(--metric-line); border-radius: 13px; padding: 14px 16px; background: var(--surface-soft); }
+.metrics-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin-top: 14px; border: 1px solid var(--metric-line); border-radius:var(--radius-card); padding: 14px 16px; background: var(--surface-soft); }
 .metrics-footer > div { display: grid; min-width: 0; gap: 4px; }
 .metrics-footer span { color: var(--metric-muted); font-size: 12px; }
 .metrics-footer strong { min-width: 0; color: var(--text); font-size: 12px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }

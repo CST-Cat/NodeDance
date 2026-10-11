@@ -1289,5 +1289,8 @@
   "updates.apply": "立即更新",
   "updates.cancel": "取消",
   "updates.history": "更新记录",
-  "updates.empty": "暂无更新任务。"
+  "updates.empty": "暂无更新任务。",
+  "dialog.title": "确认操作",
+  "dialog.cancel": "取消",
+  "dialog.confirm": "确认"
 }

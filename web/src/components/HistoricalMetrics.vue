@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import * as echarts from 'echarts'
+import * as echarts from 'echarts/core'
+import { LineChart } from 'echarts/charts'
+import { GridComponent, TooltipComponent } from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+import type { EChartsOption } from 'echarts'
+
+echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer])
 import type { MetricHistory } from '../api'
 
 const props = defineProps<{
@@ -39,7 +45,7 @@ const availableKeys = computed(() => {
 const selectedLabel = computed(() => availableKeys.value.find((item) => item.key === selectedKey.value)?.label ?? selectedKey.value)
 const sampleCount = computed(() => props.history?.series.find((series) => series.key === selectedKey.value)?.points.length ?? 0)
 
-function chartOptions(): echarts.EChartsOption {
+function chartOptions(): EChartsOption {
   const style = host.value ? getComputedStyle(host.value) : null
   const color = (name: string, fallback: string) => style?.getPropertyValue(name).trim() || fallback
   const muted = color('--muted', '#6c6a64')
@@ -70,7 +76,7 @@ function chartOptions(): echarts.EChartsOption {
   return {
     animation: false,
     grid: { left: 54, right: 20, top: 24, bottom: 38 },
-    tooltip: { backgroundColor: color('--surface', '#fffefa'), borderColor: line, textStyle: { color: color('--text', '#252523') }, trigger: 'axis', valueFormatter: (value) => value == null ? t('m.63ef182b7603') : `${Number(value).toFixed(2)} ${unit}` },
+    tooltip: { backgroundColor: color('--surface', '#efe9de'), borderColor: line, textStyle: { color: color('--text', '#252523') }, trigger: 'axis', valueFormatter: (value) => value == null ? t('m.63ef182b7603') : `${Number(value).toFixed(2)} ${unit}` },
     xAxis: { type: 'time', axisLabel: { color: muted, formatter: (value: number) => new Date(value).toLocaleString(locale.value, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }, axisPointer: { label: { formatter: (params: { value: string | number | Date }) => new Date(params.value).toLocaleString(locale.value) } }, axisLine: { lineStyle: { color: line } } },
     yAxis: { type: 'value', scale: !percent, name: unit, nameTextStyle: { color: muted }, axisLabel: { color: muted }, splitLine: { lineStyle: { color: line } } },
     series: [{
@@ -148,12 +154,12 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.history-panel { margin-top: 18px; border: 1px solid var(--line); border-radius: 12px; padding: clamp(14px, 2vw, 20px); background: var(--surface-soft); color: var(--text); }
+.history-panel { margin-top: 18px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: clamp(14px, 2vw, 20px); background: var(--surface-soft); color: var(--text); }
 .history-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
 .history-heading h2 { margin: 4px 0 0; font-size: 17px; }
 .history-heading p, .history-note, .history-stale, .history-empty { color: var(--muted-strong); font-size: 12px; line-height: 1.6; }
 .history-metric-select { display: grid; gap: 5px; color: var(--muted-strong); font-size: 12px; }
-.history-metric-select select { min-height: 36px; border: 1px solid var(--line); border-radius: 7px; padding: 5px 10px; color: var(--text); background: var(--surface-soft); font: inherit; }
+.history-metric-select select { min-height:40px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 5px 10px; color: var(--text); background: var(--surface-soft); font: inherit; }
 .history-stale { border-left: 2px solid var(--warning); padding-left: 10px; color: var(--warning); }
 .history-chart { width: 100%; height: min(360px, 55vh); min-height: 250px; }
 .history-state { display: grid; min-height: 250px; place-items: center; color: var(--muted-strong); font-size: 12px; }

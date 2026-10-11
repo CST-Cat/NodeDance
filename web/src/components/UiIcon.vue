@@ -1,6 +1,8 @@
 <script setup lang="ts">
 defineProps<{ name: string }>()
 const paths: Record<string, string> = {
+  folder: 'M3 6h7l2 2h9v12H3z M3 6V4h7l2 2',
+  file: 'M5 3h9l5 5v13H5z M14 3v6h5 M8 13h8 M8 17h6',
   refresh: 'M20 7v5h-5 M4 17v-5h5 M6 7a7 7 0 0 1 12-1l2 3 M4 15l2 3a7 7 0 0 0 12-1',
   terminal: 'M4 4h16v16H4z M7 8l3 3-3 3 M12 15h5',
   nodes: 'M4 4h16v6H4z M4 14h16v6H4z M7 7h.01 M7 17h.01 M11 7h6 M11 17h6',

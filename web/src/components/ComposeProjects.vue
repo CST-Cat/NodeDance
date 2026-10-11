@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { requestConfirm } from '../dialogs'
 import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, type ContainerTask } from '../api'
@@ -75,7 +76,7 @@ const timers = new Set<ReturnType<typeof setTimeout>>()
 async function runAction(project: ComposeProject, action: ComposeOperation) {
   if (stale.value || project.dataStale || !project.configAvailable || pending.value[project.ref.key]) return
   const confirmation = operationConfirmation(project, action)
-  if (confirmation && !window.confirm(confirmation)) return
+  if (confirmation && !await requestConfirm(confirmation)) return
   pending.value = { ...pending.value, [project.ref.key]: action }
   error.value = ''
   try {
@@ -172,7 +173,7 @@ onBeforeUnmount(() => {
 .compose-stale,.compose-warning { margin:0; border-left:2px solid var(--warning); padding:7px 10px; color:var(--warning); font-size: 12px; line-height:1.55; }
 .compose-error { margin:0; color:var(--danger); font-size: 12px; }
 .compose-empty { margin:0; color:var(--muted); font-size: 12px; line-height:1.6; }
-.compose-project-card { min-width:0; border:1px solid var(--line); border-radius:10px; padding:14px; background:var(--surface-soft); }
+.compose-project-card { min-width:0; border:1px solid var(--line); border-radius:var(--radius-card); padding:14px; background:var(--surface-soft); }
 .compose-project-card[data-stale="true"] { opacity:.82; }
 .compose-project-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }
 .compose-project-heading h3 { margin:4px 0; font-size: 15px; }

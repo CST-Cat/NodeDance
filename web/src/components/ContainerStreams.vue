@@ -343,7 +343,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .container-streams { display: grid; gap: 8px; min-width: 0; margin-top: 10px; }
 .container-stream-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.container-stream-actions button { min-height: 34px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; color: var(--accent); background: var(--line); font: inherit; font-size: 12px; cursor: pointer; }
+.container-stream-actions button { min-height:40px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 6px 10px; color: var(--accent); background: var(--line); font: inherit; font-size: 12px; cursor: pointer; }
 .container-stream-actions button:hover:not(:disabled) { background: var(--line); }
 .container-stream-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .container-stream-actions button.active { border-color: var(--danger-line); color: var(--warning); }
@@ -352,12 +352,12 @@ onBeforeUnmount(() => {
 .stream-label[data-state='error'], .stream-error { color: var(--danger); }
 .stream-hint { margin: 0; }
 .stream-error { margin: 0; }
-.stream-log-panel, .stream-stats-panel { min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 9px; background: var(--surface-soft); }
+.stream-log-panel, .stream-stats-panel { min-width: 0; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 9px; background: var(--surface-soft); }
 .stream-panel-heading { display: flex; justify-content: space-between; gap: 8px; color: var(--text); font-size: 12px; }
 .stream-panel-heading span { color: var(--muted); font-variant-numeric: tabular-nums; }
 .stream-log-panel pre { max-height: 240px; overflow: auto; margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); font: 11px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .stream-stats-panel dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 9px 0 0; }
-.stream-stats-panel dl > div { min-width: 0; border-radius: 6px; padding: 7px; background: var(--line); }
+.stream-stats-panel dl > div { min-width: 0; border-radius:var(--radius-card); padding: 7px; background: var(--line); }
 .stream-stats-panel dt { color: var(--muted); font-size: 12px; }
 .stream-stats-panel dd { margin: 4px 0 0; color: var(--text); font-size: 12px; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 @media (max-width: 560px) {

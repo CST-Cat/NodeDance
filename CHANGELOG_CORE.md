@@ -10,9 +10,13 @@
 
 ### English
 
+- Audit all Web screens against DESIGN.md: unify warm interaction states, typography, cards and controls; theme confirmations, bundle trimmed fonts, load charts/terminal on demand and fix the initial update check with connected nodes.
+
 - Add a shared Core/Agent update API, Web Update center, nodedance update command and automatically discovered TUI operations. Verify component releases and checksums, preserve deployments and private state, persist update jobs, and recover or roll back failed updates through an independent root supervisor.
 
 ### 简体中文
+
+- 按 DESIGN.md 全面审查 Web：统一暖色交互状态、字体、卡片和控件；统一确认弹窗，打包裁剪字体，按需加载图表/终端，并修复存在已连接节点时的首次更新检查。
 
 - 新增共享 Core/Agent 更新 API、Web 更新中心、nodedance update 命令及 TUI 自动发现操作；校验组件版本与下载、保留部署配置和私有状态，通过独立 root 控制服务持久化进度并恢复或回滚失败更新。
 

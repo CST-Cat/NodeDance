@@ -162,14 +162,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.compose-editor { display: grid; gap: 10px; min-width: 0; margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.compose-editor { display: grid; gap: 10px; min-width: 0; margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius:var(--radius-card); background: var(--surface-soft); }
 .compose-editor-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .compose-editor-heading h3 { margin:4px 0 0; font-size: 14px; }
 .compose-file-picker { display:grid; gap:5px; color:var(--muted-strong); font-size: 12px; }
-.compose-file-picker select { min-height:36px; border:1px solid var(--line); border-radius:7px; padding:7px 9px; color:var(--text); background:var(--surface-soft); font:inherit; }
+.compose-file-picker select { min-height:40px; border:1px solid var(--line); border-radius:var(--radius-control); padding:7px 9px; color:var(--text); background:var(--surface-soft); font:inherit; }
 .compose-file-picker small { overflow-wrap:anywhere; color:var(--muted); }
 .compose-editor-risk { margin:0; color:var(--warning); font-size: 12px; line-height:1.6; }
-.compose-editor textarea { width:100%; min-height:360px; resize:vertical; box-sizing:border-box; border:1px solid var(--line); border-radius:8px; padding:12px; color:var(--text); background:var(--surface-soft); font: 12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; tab-size:2; }
+.compose-editor textarea { width:100%; min-height:360px; resize:vertical; box-sizing:border-box; border:1px solid var(--line); border-radius:var(--radius-control); padding:12px; color:var(--text); background:var(--surface-soft); font: 12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; tab-size:2; }
 .compose-editor-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .compose-editor-message { margin:0; color:var(--success); font-size: 12px; }
 .compose-editor-error { margin:0; color:var(--danger); font-size: 12px; }

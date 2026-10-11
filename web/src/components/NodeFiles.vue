@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { requestPrompt, requestConfirm } from '../dialogs'
+import UiIcon from './UiIcon.vue'
 import { operationURL } from '../operations'
 import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -92,7 +94,7 @@ async function openText(entry?: NodeFileEntry) {
   error.value = ''
   message.value = ''
   if (!entry) {
-    const name = window.prompt(t('m.d72fdbdedfdb'))?.trim()
+    const name = (await requestPrompt(t('m.d72fdbdedfdb')))?.trim()
     if (!name || name.includes('/') || name === '.' || name === '..') return
     editorPath.value = joinNodePath(currentPath.value, name)
     editorText.value = ''
@@ -132,19 +134,19 @@ async function saveText() {
 }
 
 async function createDirectory() {
-  const name = window.prompt(t('m.ae51764fbb38'))?.trim()
+  const name = (await requestPrompt(t('m.ae51764fbb38')))?.trim()
   if (!name || name.includes('/') || name === '.' || name === '..') return
   await runFileTask({ action: 'mkdir', path: joinNodePath(currentPath.value, name) }, t('m.f1edc97079ec'))
 }
 
 async function renameEntry(entry: NodeFileEntry) {
-  const name = window.prompt(t('m.92ddb51db6c4'), entry.name)?.trim()
+  const name = (await requestPrompt(t('m.92ddb51db6c4'), entry.name))?.trim()
   if (!name || name === entry.name || name.includes('/') || name === '.' || name === '..') return
   await runFileTask({ action: 'rename', path: entry.path, newPath: joinNodePath(currentPath.value, name) }, t('m.54dbc5d14e6c'))
 }
 
 async function deleteEntry(entry: NodeFileEntry) {
-  if (!window.confirm(t('m.051e9916c510', {"0": (entry.path)}))) return
+  if (!await requestConfirm(t('m.051e9916c510', {"0": (entry.path)}))) return
   await runFileTask({ action: 'delete', path: entry.path, deleteConfirmed: true, confirmationPath: entry.path }, t('m.d3da497e999c'))
 }
 
@@ -161,7 +163,7 @@ async function acceptUpload(event: Event) {
   let expectedVersion = ''
   const existing = entries.value.find((entry) => entry.path === path)
   if (existing) {
-    if (existing.kind !== 'file' || !window.confirm(t('m.c81ec173997c', {"0": (path)}))) return
+    if (existing.kind !== 'file' || !await requestConfirm(t('m.c81ec173997c', {"0": (path)}))) return
     try {
       const latest = await api.nodeFileStat(props.nodeId, path)
       expectedVersion = latest.version || ''
@@ -222,9 +224,9 @@ onBeforeUnmount(() => { disposed = true })
     <p v-else-if="entries.length === 0" class="files-empty">{{ t('m.b372af75428d') }}</p>
     <div v-else class="file-list" :aria-label="t('m.6bbaf705e8c6')">
       <article v-for="entry in entries" :key="entry.path" class="file-row" :data-kind="entry.kind">
-        <button v-if="entry.kind === 'directory'" class="file-name" type="button" @click="void load(entry.path)"><span aria-hidden="true">📁</span>{{ entry.name }}/</button>
-        <button v-else-if="isEditableTextFile(entry)" class="file-name" type="button" @click="void openText(entry)"><span aria-hidden="true">📄</span>{{ entry.name }}</button>
-        <a v-else class="file-name" href="#" @click.prevent="download(entry)" :download="entry.name"><span aria-hidden="true">{{ entry.kind === 'file' ? '📄' : '↗' }}</span>{{ entry.name }}</a>
+        <button v-if="entry.kind === 'directory'" class="file-name" type="button" @click="void load(entry.path)"><UiIcon name="folder"/>{{ entry.name }}/</button>
+        <button v-else-if="isEditableTextFile(entry)" class="file-name" type="button" @click="void openText(entry)"><UiIcon name="file"/>{{ entry.name }}</button>
+        <a v-else class="file-name" href="#" @click.prevent="download(entry)" :download="entry.name"><UiIcon :name="entry.kind === 'file' ? 'file' : 'discovery'"/>{{ entry.name }}</a>
         <span class="file-kind">{{ entry.kind === 'directory' ? t('m.52daa71ebc31') : entry.kind === 'symlink' ? t('m.305378ddd2b8') : entry.kind === 'file' ? t('m.39932f24fe11') : t('m.d2909f1647e7') }}</span>
         <span class="file-size">{{ entry.kind === 'file' ? formatFileSize(entry.size) : '—' }}</span>
         <time v-if="fileModifiedDate(entry)" class="file-date" :datetime="fileModifiedDate(entry)!.toISOString()">{{ fileModifiedDate(entry)!.toLocaleString(locale) }}</time><span v-else class="file-date">—</span>
@@ -250,20 +252,22 @@ onBeforeUnmount(() => { disposed = true })
 .files-actions,.file-row-actions { display:flex; align-items:center; flex-wrap:wrap; gap:7px; }
 .file-picker { display:none; }
 .files-breadcrumbs { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; }
-.files-breadcrumbs button,.file-parent,.file-row-actions button { border:1px solid var(--line); border-radius:7px; padding:7px 9px; color:var(--text); background:var(--surface-soft); cursor:pointer; }
-.files-breadcrumbs button[aria-current="page"] { color:var(--success); }
+.files-breadcrumbs button,.file-parent,.file-row-actions button { border:1px solid var(--line); border-radius:var(--radius-control); padding:7px 9px; color:var(--text); background:var(--surface-soft); cursor:pointer; }
+.files-breadcrumbs button[aria-current="page"] { color:var(--accent); background:var(--accent-soft); border-color:var(--accent-line); }
 .file-parent { margin:0 0 8px; }
 .files-message,.files-empty { color:var(--muted-strong); font-size: 13px; }
-.files-error { color:var(--warning); }
+.files-error { color:var(--danger); }
 .file-list { display:grid; gap:6px; }
-.file-row { display:grid; grid-template-columns:minmax(180px,1fr) 70px 80px minmax(145px,auto) auto; align-items:center; gap:10px; padding:9px 10px; border:1px solid var(--line); border-radius:8px; background:var(--surface-soft); }
+.file-row { display:grid; grid-template-columns:minmax(180px,1fr) 70px 80px minmax(145px,auto) auto; align-items:center; gap:10px; padding:9px 10px; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface-soft); }
+.file-name :deep(svg) { flex-shrink:0; color:var(--muted); }
 .file-name { display:flex; align-items:center; gap:8px; min-width:0; overflow-wrap:anywhere; color:var(--text); text-align:left; text-decoration:none; background:none; border:0; cursor:pointer; }
 .file-kind,.file-size,.file-date { color:var(--muted-strong); font-size: 12px; }
 .file-row-actions { justify-content:flex-end; }
-.file-row-actions .file-delete { color:var(--warning); }
-.file-editor { margin-top:16px; padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); }
-.file-editor textarea { display:block; width:100%; min-height:280px; margin:12px 0; padding:12px; resize:vertical; border:1px solid var(--line); border-radius:8px; color:var(--text); background:var(--surface-soft); font: 13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.file-row-actions .file-delete { color:var(--danger); }
+.file-editor { margin-top:16px; padding:14px; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface-soft); }
+.file-editor textarea { display:block; width:100%; min-height:280px; margin:12px 0; padding:12px; resize:vertical; border:1px solid var(--line); border-radius:var(--radius-control); color:var(--text); background:var(--surface-soft); font: 13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
 .file-editor footer { color:var(--muted-strong); font-size: 12px; }
-.file-editor footer button { border:0; border-radius:7px; padding:9px 14px; color:var(--surface-soft); background:var(--success); font-weight:700; cursor:pointer; }
+.file-editor footer button { min-height:40px; border:0; border-radius:var(--radius-control); padding:9px 14px; color:#fff; background:var(--accent-fill); font-weight:500; cursor:pointer; }
+.file-editor footer button:hover:not(:disabled) { background:var(--accent-strong); }
 @media(max-width:760px){.file-row{grid-template-columns:minmax(0,1fr) auto;}.file-kind,.file-size,.file-date{display:none}.file-row-actions{grid-column:1/-1;justify-content:flex-start}.files-heading>div:first-child{width:100%}.files-actions{width:100%}.files-actions button{flex:1;min-height:40px}}
 </style>

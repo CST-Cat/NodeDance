@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { requestPrompt } from '../dialogs'
 import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { api, type ContainerTask, type DockerImage, type TaskAuditEvent } from '../api'
@@ -143,7 +144,7 @@ async function submitPull() {
 
 async function submitDelete(image: DockerImage) {
   if (image.containers > 0 || deleting.value[image.id]) return
-  const confirmation = window.prompt(t('m.90829b35e800', {"0": (image.id)}))
+  const confirmation = await requestPrompt(t('m.90829b35e800', {"0": (image.id)}))
   if (confirmation === null) return
   if (confirmation.trim() !== image.id) {
     error.value = t('m.b64864a55a31')
@@ -287,14 +288,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.images-panel { margin-top: 18px; border: 1px solid var(--line); border-radius: 12px; padding: clamp(14px,2vw,20px); background: var(--surface-soft); color: var(--text); }
+.images-panel { margin-top: 18px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: clamp(14px,2vw,20px); background: var(--surface-soft); color: var(--text); }
 .images-heading, .image-row-head, .image-pagination, .image-task { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .images-heading { margin-bottom: 14px; }
 .images-heading h2 { margin: 4px 0 0; font-size: 17px; }
 .image-pull-form { display: grid; grid-template-columns: minmax(180px,2fr) repeat(2,minmax(140px,1fr)) auto; align-items: end; gap: 9px; }
 .image-field { display: grid; min-width: 0; gap: 5px; color: var(--muted-strong); font-size: 12px; }
-.image-field input { min-width: 0; min-height: 36px; border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; color: var(--text); background: var(--surface-soft); font: inherit; font-size: 12px; }
-.image-button { min-height: 34px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; color: var(--accent); background: var(--line); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.image-field input { min-width: 0; min-height:40px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 7px 9px; color: var(--text); background: var(--surface-soft); font: inherit; font-size: 12px; }
+.image-button { min-height:40px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 6px 10px; color: var(--accent); background: var(--line); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .image-button.primary { color: var(--text); background: var(--line); }
 .image-button.danger { color: var(--danger); border-color: var(--danger-line); background: var(--danger-soft); }
 .image-button:disabled { opacity: .45; cursor: not-allowed; }
@@ -302,18 +303,18 @@ onBeforeUnmount(() => {
 .image-filter-row { display: flex; align-items: end; gap: 9px; margin: 15px 0 12px; }
 .image-filter-row .image-field { flex: 1; }
 .image-total { padding: 8px 0; color: var(--muted); font-size: 12px; white-space: nowrap; }
-.image-message { border: 1px solid var(--success-line); border-radius: 7px; padding: 8px 10px; color: var(--success); background: var(--success-soft); font-size: 12px; overflow-wrap: anywhere; }
+.image-message { border: 1px solid var(--success-line); border-radius:var(--radius-card); padding: 8px 10px; color: var(--success); background: var(--success-soft); font-size: 12px; overflow-wrap: anywhere; }
 .image-message.error { color: var(--danger); border-color: var(--danger-line); background: var(--danger-soft); }
-.image-task { border: 1px solid var(--line); border-radius: 8px; padding: 10px; color: var(--accent); background: var(--line); font-size: 12px; }
+.image-task { border: 1px solid var(--line); border-radius:var(--radius-card); padding: 10px; color: var(--accent); background: var(--line); font-size: 12px; }
 .image-task > div { display: grid; gap: 4px; min-width: 0; }
 .image-task span { color: var(--muted-strong); overflow-wrap: anywhere; }
-.image-audit { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--muted-strong); font-size: 12px; }
+.image-audit { border: 1px solid var(--line); border-radius:var(--radius-card); padding: 8px 10px; color: var(--muted-strong); font-size: 12px; }
 .image-audit ol { display: grid; gap: 6px; margin: 0; padding-left: 18px; }
 .image-audit li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; overflow-wrap: anywhere; }
 .image-audit time { color: var(--muted); }
 .image-audit .error { color: var(--danger); }
 .image-list { display: grid; gap: 8px; }
-.image-row { display: grid; gap: 7px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 11px; background: var(--surface-soft); }
+.image-row { display: grid; gap: 7px; min-width: 0; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 11px; background: var(--surface-soft); }
 .image-row-head { align-items: start; color: var(--text); font-size: 12px; }
 .image-row-head strong { min-width: 0; overflow-wrap: anywhere; }
 .image-row-head > span { color: var(--muted-strong); white-space: nowrap; }

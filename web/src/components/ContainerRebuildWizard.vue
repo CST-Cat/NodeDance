@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { requestPrompt } from '../dialogs'
 import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { api, type ContainerRebuildPlan, type ContainerTask, type DockerContainer, type RebuildPortBinding, type RebuildSpec } from '../api'
@@ -127,7 +128,7 @@ function schedulePoll(taskId: string, requestGeneration: number) {
 
 async function submitRebuild() {
   if (!plan.value || !acknowledged.value || submitting.value || props.stale || props.container.stale) return
-  const confirmation = window.prompt(t('m.751a2318fd6e', {"0": (props.container.id)}))
+  const confirmation = await requestPrompt(t('m.751a2318fd6e', {"0": (props.container.id)}))
   if (confirmation === null) return
   if (confirmation.trim() !== props.container.id) {
     error.value = t('m.25b38b35f7a5')
@@ -154,7 +155,7 @@ async function cleanupRollbackResources() {
   const cleanupDescription = cleanupRestoredFailure.value
     ? t('m.91f8944e8aa7')
     : t('m.fd78403a0172')
-  const confirmation = window.prompt(t('m.c9dab8fa99dd', {"0": (cleanupDescription), "1": (props.container.id)}))
+  const confirmation = await requestPrompt(t('m.c9dab8fa99dd', {"0": (cleanupDescription), "1": (props.container.id)}))
   if (confirmation === null) return
   if (confirmation.trim() !== props.container.id) {
     error.value = t('m.af34e98d4a24')
@@ -246,19 +247,19 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .rebuild-entry { display: contents; }
-.rebuild-dialog { flex: 1 0 100%; min-width: 0; margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; padding: clamp(12px, 2.4vw, 18px); background: var(--surface-soft); color: var(--text); }
+.rebuild-dialog { flex: 1 0 100%; min-width: 0; margin-top: 8px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: clamp(12px, 2.4vw, 18px); background: var(--surface-soft); color: var(--text); }
 .rebuild-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .rebuild-heading h3 { margin: 5px 0; font-size: 16px; }
 .rebuild-intro, .rebuild-wait { color: var(--muted-strong); font-size: 12px; line-height: 1.6; }
 .rebuild-mode { display: grid; gap: 6px; max-width: 340px; margin: 12px 0; color: var(--text); font-size: 12px; }
-.rebuild-mode select, .rebuild-binding input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 8px 9px; color: var(--text); background: var(--surface-soft); font: inherit; }
+.rebuild-mode select, .rebuild-binding input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 8px 9px; color: var(--text); background: var(--surface-soft); font: inherit; }
 .rebuild-bindings { display: grid; gap: 8px; margin-bottom: 10px; }
 .rebuild-binding { display: grid; grid-template-columns: 1fr 1.2fr 1fr auto; align-items: end; gap: 8px; }
 .rebuild-binding label { display: grid; gap: 5px; color: var(--muted-strong); font-size: 12px; }
 .rebuild-plan { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .rebuild-plan h4 { margin: 12px 0 5px; color: var(--text); font-size: 12px; }
 .rebuild-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
-.rebuild-facts div { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 8px; }
+.rebuild-facts div { min-width: 0; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 8px; }
 .rebuild-facts dt { color: var(--muted-strong); font-size: 12px; }
 .rebuild-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; }
 .rebuild-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }

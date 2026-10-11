@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "vite build --config vite.config.ts --outDir ../internal/core/webassets/dist --emptyOutDir",
-    "typecheck": "node scripts/check-i18n.cjs && node scripts/check-operations.cjs && vue-tsc --noEmit --project tsconfig.json"
+    "typecheck": "node scripts/check-i18n.cjs && node scripts/check-operations.cjs && vue-tsc --noEmit --project tsconfig.json",
+    "audit:design": "node scripts/audit-design.cjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@types/node": "22.20.5",
     "@vitejs/plugin-vue": "6.0.4",
+    "playwright": "1.64.0",
     "typescript": "5.9.3",
     "vite": "8.3.4",
     "vue-tsc": "3.3.12"

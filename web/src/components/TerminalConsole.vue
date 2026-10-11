@@ -25,6 +25,21 @@ interface TerminalFrame {
 }
 
 const terminalElement = ref<HTMLDivElement>()
+const dialogElement = ref<HTMLElement>()
+let previousFocus: HTMLElement | null = null
+let previousOverflow = ''
+
+function handleDialogKey(event: KeyboardEvent) {
+  // Terminal keystrokes (including Escape and Tab) belong to the remote shell.
+  if ((event.target as HTMLElement).closest('.terminal-screen')) return
+  if (event.key === 'Escape') { event.preventDefault(); close(); return }
+  if (event.key !== 'Tab') return
+  const controls = dialogElement.value?.querySelectorAll<HTMLElement>('button:not(:disabled), textarea, [tabindex="0"]')
+  if (!controls?.length) return
+  const first = controls[0]!, last = controls[controls.length - 1]!
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+}
 const statusKey = ref('m.389cde8ab951')
 const statusParams = ref<Record<string, unknown>>({})
 const status = computed(() => t(statusKey.value, statusParams.value))
@@ -146,13 +161,18 @@ async function connect() {
 }
 
 onMounted(async () => {
+  previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  previousOverflow = document.body.style.overflow
+  document.body.style.overflow = 'hidden'
+  dialogElement.value?.querySelector<HTMLElement>('button')?.focus()
+  const palette = getComputedStyle(terminalElement.value ?? document.documentElement)
   terminal = new Terminal({
     cursorBlink: true,
     convertEol: false,
     scrollback: 3000,
     fontSize: 13,
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-    theme: { background: '#181715', foreground: '#faf9f5', cursor: '#cc785c', selectionBackground: '#534338' },
+    fontFamily: 'JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+    theme: { background: palette.getPropertyValue('--product-canvas').trim(), foreground: palette.getPropertyValue('--product-text').trim(), cursor: palette.getPropertyValue('--accent-fill').trim(), selectionBackground: palette.getPropertyValue('--product-line-strong').trim() },
     allowProposedApi: false,
   })
   fit = new FitAddon()
@@ -170,13 +190,15 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  document.body.style.overflow = previousOverflow
+  if (previousFocus?.isConnected) previousFocus.focus()
   dispose()
 })
 </script>
 
 <template>
   <div class="terminal-backdrop" data-testid="terminal-backdrop" @click.self="close">
-    <section class="terminal-dialog" role="dialog" aria-modal="true" aria-labelledby="terminal-title">
+    <section ref="dialogElement" class="terminal-dialog" @keydown="handleDialogKey" role="dialog" aria-modal="true" aria-labelledby="terminal-title">
       <header class="terminal-heading">
         <div class="terminal-heading-copy">
           <span class="terminal-eyebrow">{{ t('label.17001d87d5f0') }}</span>
@@ -211,21 +233,21 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .terminal-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: rgba(24, 23, 21, .78); backdrop-filter: blur(8px); }
-.terminal-dialog { display: grid; width: min(1040px, 100%); max-height: min(820px, 94dvh); grid-template-rows: auto minmax(240px, 1fr) auto auto; overflow: hidden; border: 1px solid #565046; border-radius: 14px; color: #faf9f5; background: #1f1e1b; box-shadow: 0 24px 90px rgba(0, 0, 0, .5); }
-.terminal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 16px 20px 12px; border-bottom: 1px solid #3d3933; }
+.terminal-dialog { display: grid; width: min(1040px, 100%); max-height: min(820px, 94dvh); grid-template-rows: auto minmax(240px, 1fr) auto auto; overflow: hidden; border: 1px solid var(--product-line-strong); border-radius:var(--radius-card); color: var(--product-text); background: var(--product-surface); box-shadow:none; }
+.terminal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 16px 20px 12px; border-bottom: 1px solid var(--product-line); }
 .terminal-heading-copy { min-width: 0; }
-.terminal-eyebrow { color: #c7b8a6; font: 9px ui-monospace, monospace; letter-spacing: .14em; }
-.terminal-heading h2 { overflow: hidden; margin: 4px 0; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.terminal-heading p { margin: 0; color: #aaa69e; font-size: 11px; }
-.terminal-close { width: 36px; height: 36px; border: 1px solid #3d3933; border-radius: 8px; color: #faf9f5; background: rgba(255, 255, 255, .04); font-size: 22px; cursor: pointer; }
-.terminal-screen { min-height: 0; padding: 12px; background: #181715; touch-action: pan-x pan-y; }
+.terminal-eyebrow { color: var(--product-muted); font: 9px ui-monospace, monospace; letter-spacing: .14em; }
+.terminal-heading h2 { color:var(--product-text); overflow: hidden; margin: 4px 0; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-heading p { margin: 0; color: var(--product-muted); font-size: 11px; }
+.terminal-close { width: 36px; height: 36px; border: 1px solid var(--product-line); border-radius:var(--radius-card); color: var(--product-text); background: var(--product-elevated); font-size: 22px; cursor: pointer; }
+.terminal-screen { min-height: 0; padding: 12px; background: var(--product-canvas); touch-action: pan-x pan-y; }
 .terminal-screen :deep(.xterm) { height: 100%; }
 .terminal-error { margin: 0; padding: 9px 20px; color: #ffc1b8; background: rgba(184, 77, 72, .12); font-size: 11px; overflow-wrap: anywhere; }
-.terminal-keys { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 14px; border-top: 1px solid #3d3933; background: #1f1e1b; }
-.terminal-keys button, .terminal-footer button { min-width: 40px; min-height: 36px; border: 1px solid #3d3933; border-radius: 7px; padding: 6px 10px; color: #faf9f5; background: rgba(255, 255, 255, .045); font: 11px ui-monospace, monospace; cursor: pointer; touch-action: manipulation; }
+.terminal-keys { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 14px; border-top: 1px solid var(--product-line); background: var(--product-surface); }
+.terminal-keys button, .terminal-footer button { min-width: 40px; min-height:40px; border: 1px solid var(--product-line); border-radius:var(--radius-control); padding: 6px 10px; color: var(--product-text); background: var(--product-elevated); font: 11px ui-monospace, monospace; cursor: pointer; touch-action: manipulation; }
 .terminal-keys button:active, .terminal-footer button:active { background: #534338; }
-.terminal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-top: 1px solid #3d3933; }
-.terminal-footer span { color: #aaa69e; font-size: 10px; }
+.terminal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--product-line); }
+.terminal-footer span { color: var(--product-muted); font-size: 10px; }
 .terminal-footer button { color: #ffc1b8; border-color: rgba(255, 129, 116, .25); }
 @media (max-width: 600px) {
   .terminal-backdrop { place-items: stretch; padding: 0; }

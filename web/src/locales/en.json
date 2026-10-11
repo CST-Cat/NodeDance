@@ -1289,5 +1289,8 @@
   "updates.apply": "Update now",
   "updates.cancel": "Cancel",
   "updates.history": "Update history",
-  "updates.empty": "No update jobs yet."
+  "updates.empty": "No update jobs yet.",
+  "dialog.title": "Confirm action",
+  "dialog.cancel": "Cancel",
+  "dialog.confirm": "Confirm"
 }
