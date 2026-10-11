@@ -22,7 +22,7 @@ func TestCreateAndRestorePreservesCoreDatabaseAndKeys(t *testing.T) {
 		t.Fatalf("open source Core data: %v", err)
 	}
 	defer source.Close()
-	if _, err := source.DB.ExecContext(ctx, `INSERT INTO admin_user(id,password_hash,password_salt,password_version,display_name,updated_at) VALUES(1,?,?,?,?,1)`, []byte("password-hash"), []byte("password-salt"), "test", "Backup Admin"); err != nil {
+	if _, err := source.DB.ExecContext(ctx, `INSERT INTO admin_user(id,username,password_hash,password_salt,password_version,display_name,updated_at) VALUES(1,'backup-admin',?,?,?,?,1)`, []byte("password-hash"), []byte("password-salt"), "test", "Backup Admin"); err != nil {
 		t.Fatalf("insert administrator: %v", err)
 	}
 	if _, err := source.DB.ExecContext(ctx, `INSERT INTO nodes(id,display_name,status,created_at,updated_at) VALUES('123e4567-e89b-42d3-a456-426614174000','Backup VPS','online',1,1)`); err != nil {
@@ -33,6 +33,7 @@ func TestCreateAndRestorePreservesCoreDatabaseAndKeys(t *testing.T) {
 	for name, value := range map[string][]byte{
 		"alert-channel-encryption.key": alertKey,
 		"csrf-signing.key":             csrfKey,
+		"initial-admin.json":           []byte(`{"username":"backup-admin","password":"bootstrap-password"}`),
 	} {
 		if err := os.WriteFile(filepath.Join(dataDir, name), value, 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
@@ -60,19 +61,20 @@ func TestCreateAndRestorePreservesCoreDatabaseAndKeys(t *testing.T) {
 		t.Fatalf("open restored Core data: %v", err)
 	}
 	defer restored.Close()
-	var displayName, nodeName string
-	if err := restored.DB.QueryRowContext(ctx, `SELECT display_name FROM admin_user WHERE id=1`).Scan(&displayName); err != nil {
+	var username, displayName, nodeName string
+	if err := restored.DB.QueryRowContext(ctx, `SELECT username, display_name FROM admin_user WHERE id=1`).Scan(&username, &displayName); err != nil {
 		t.Fatalf("read restored administrator: %v", err)
 	}
 	if err := restored.DB.QueryRowContext(ctx, `SELECT display_name FROM nodes WHERE id='123e4567-e89b-42d3-a456-426614174000'`).Scan(&nodeName); err != nil {
 		t.Fatalf("read restored node: %v", err)
 	}
-	if displayName != "Backup Admin" || nodeName != "Backup VPS" {
+	if username != "backup-admin" || displayName != "Backup Admin" || nodeName != "Backup VPS" {
 		t.Fatalf("restored data mismatch: admin=%q node=%q", displayName, nodeName)
 	}
 	for name, want := range map[string][]byte{
 		"alert-channel-encryption.key": alertKey,
 		"csrf-signing.key":             csrfKey,
+		"initial-admin.json":           []byte(`{"username":"backup-admin","password":"bootstrap-password"}`),
 	} {
 		got, err := os.ReadFile(filepath.Join(restoredDir, name))
 		if err != nil {

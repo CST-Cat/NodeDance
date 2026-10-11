@@ -246,26 +246,26 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .rebuild-entry { display: contents; }
-.rebuild-dialog { flex: 1 0 100%; min-width: 0; margin-top: 8px; border: 1px solid rgba(125, 165, 218, .28); border-radius: 10px; padding: clamp(12px, 2.4vw, 18px); background: rgba(6, 13, 23, .94); color: #eaf0fa; }
+.rebuild-dialog { flex: 1 0 100%; min-width: 0; margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; padding: clamp(12px, 2.4vw, 18px); background: var(--surface-soft); color: var(--text); }
 .rebuild-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .rebuild-heading h3 { margin: 5px 0; font-size: 16px; }
-.rebuild-intro, .rebuild-wait { color: #a8b7cc; font-size: 12px; line-height: 1.6; }
-.rebuild-mode { display: grid; gap: 6px; max-width: 340px; margin: 12px 0; color: #cad5e5; font-size: 12px; }
-.rebuild-mode select, .rebuild-binding input { width: 100%; min-width: 0; border: 1px solid rgba(171, 196, 232, .2); border-radius: 7px; padding: 8px 9px; color: #edf3fc; background: #121d2d; font: inherit; }
+.rebuild-intro, .rebuild-wait { color: var(--muted-strong); font-size: 12px; line-height: 1.6; }
+.rebuild-mode { display: grid; gap: 6px; max-width: 340px; margin: 12px 0; color: var(--text); font-size: 12px; }
+.rebuild-mode select, .rebuild-binding input { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 8px 9px; color: var(--text); background: var(--surface-soft); font: inherit; }
 .rebuild-bindings { display: grid; gap: 8px; margin-bottom: 10px; }
 .rebuild-binding { display: grid; grid-template-columns: 1fr 1.2fr 1fr auto; align-items: end; gap: 8px; }
-.rebuild-binding label { display: grid; gap: 5px; color: #aebbd0; font-size: 10px; }
-.rebuild-plan { margin-top: 12px; border-top: 1px solid rgba(171, 196, 232, .12); padding-top: 12px; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
-.rebuild-plan h4 { margin: 12px 0 5px; color: #dce6f5; font-size: 11px; }
+.rebuild-binding label { display: grid; gap: 5px; color: var(--muted-strong); font-size: 12px; }
+.rebuild-plan { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 12px; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.rebuild-plan h4 { margin: 12px 0 5px; color: var(--text); font-size: 12px; }
 .rebuild-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
-.rebuild-facts div { min-width: 0; border: 1px solid rgba(171, 196, 232, .1); border-radius: 7px; padding: 8px; }
-.rebuild-facts dt { color: #9aabc1; font-size: 9px; }
+.rebuild-facts div { min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 8px; }
+.rebuild-facts dt { color: var(--muted-strong); font-size: 12px; }
 .rebuild-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; }
 .rebuild-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.rebuild-plan ul { margin: 4px 0; padding-left: 18px; color: #c1ccdc; }
-.rebuild-risks { color: #ffd092 !important; }
-.rebuild-ack { display: flex; gap: 8px; align-items: flex-start; margin: 14px 0; color: #ffd092; }
+.rebuild-plan ul { margin: 4px 0; padding-left: 18px; color: var(--muted-strong); }
+.rebuild-risks { color: var(--warning) !important; }
+.rebuild-ack { display: flex; gap: 8px; align-items: flex-start; margin: 14px 0; color: var(--warning); }
 .rebuild-ack input { flex: 0 0 auto; margin-top: 3px; }
-.rebuild-error { color: #ffc1b8; }
+.rebuild-error { color: var(--danger); }
 @media (max-width: 600px) { .rebuild-binding { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .rebuild-facts { grid-template-columns: 1fr; } .rebuild-columns { grid-template-columns: 1fr; } }
 </style>

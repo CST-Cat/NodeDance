@@ -50,7 +50,7 @@ func TestCoreSessionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, _ := json.Marshal(map[string]string{"credential": strings.TrimSpace(string(credential)), "password": "long-password-for-tests", "displayName": "admin"})
+	body, _ := json.Marshal(map[string]string{"credential": strings.TrimSpace(string(credential)), "password": "long-password-for-tests", "displayName": "admin", "username": "test-admin"})
 	if r := call(c, "auth.setup", string(body)); r.Error != "" {
 		t.Fatalf("setup: %+v", r)
 	}
@@ -72,7 +72,7 @@ func TestCoreSessionLifecycle(t *testing.T) {
 	if r := call(c2, "auth.me", ""); r.Error != "" {
 		t.Fatalf("persisted session: %+v", r)
 	}
-	if r := call(c2, "auth.login", `{"password":"long-password-for-tests"}`); r.Error != "" {
+	if r := call(c2, "auth.login", `{"username":"test-admin","password":"long-password-for-tests"}`); r.Error != "" {
 		t.Fatalf("login with prior csrf: %+v", r)
 	}
 	if r := call(c2, "auth.logout", ""); r.Error != "" {

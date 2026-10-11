@@ -1,0 +1,15 @@
+.git
+.github
+.cloudflare
+.agy-staff
+.tools
+.build
+.artifacts
+**/node_modules
+internal/core/webassets/dist
+**/*.sqlite*
+**/agent.json
+**/initial-admin.json
+**/setup-credential.txt
+**/*.key
+**/*.pem

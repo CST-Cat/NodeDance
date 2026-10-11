@@ -37,8 +37,8 @@
   "non-metric task, event, and audit history retention in days (default 90)": "任务、事件和审计历史保留天数（默认 90）",
   "public HTTPS origin used for browser Origin validation": "用于浏览器 Origin 校验的公共 HTTPS 地址",
   "comma-separated trusted proxy IPs or CIDRs": "受信任代理 IP 或 CIDR，逗号分隔",
-  "TLS certificate PEM file; required with --tls-key for non-loopback listeners": "TLS 证书 PEM 文件；非回环监听必须同时提供 --tls-key",
-  "TLS private key PEM file; required with --tls-cert for non-loopback listeners": "TLS 私钥 PEM 文件；非回环监听必须同时提供 --tls-cert",
+  "TLS certificate PEM file; must be used with --tls-key": "TLS 证书 PEM 文件；必须与 --tls-key 同时提供",
+  "TLS private key PEM file; must be used with --tls-cert": "TLS 私钥 PEM 文件；必须与 --tls-cert 同时提供",
   "development mode; requires a loopback address": "开发模式；必须使用回环地址",
   "unexpected TUI arguments": "TUI 参数无效",
   "TUI requires a terminal; use nodedance operations and nodedance call for automation": "TUI 需要终端；自动化请使用 nodedance operations 和 nodedance call",
@@ -217,7 +217,6 @@
   "--input is supported only for uploads and terminal.connect": "--input 仅支持上传和 terminal.connect",
   "--output is supported only for downloads": "--output 仅支持下载",
   "--tls-cert and --tls-key must be provided together": "必须同时提供 --tls-cert 和 --tls-key",
-  "TLS certificate and key are required when Core listens on a non-loopback address": "Core 监听非回环地址时必须提供 TLS 证书和私钥",
   "--output is required for download operations": "下载操作必须提供 --output",
   "invalid or missing parameter %s": "参数 %s 无效或缺失",
   "unknown command %q (try 'nodedance-agent --help')": "未知命令 %q（请运行 nodedance-agent --help）",
@@ -408,5 +407,11 @@
   "Tailscale CLI is not installed on Core; manual Agent installation remains available.": "Core 未安装 Tailscale CLI；仍可手动安装 Agent。",
   "Core is not signed in to Tailscale or has no visible peers.": "Core 尚未登录 Tailscale，或当前账户没有可见节点。",
   "Global language: --lang en|zh-CN (or NODEDANCE_LANG)": "全局语言：--lang en|zh-CN（或 NODEDANCE_LANG）",
-  "colocated nodedance-agent must be an executable regular file": "同目录的 nodedance-agent 必须是可执行普通文件"
+  "colocated nodedance-agent must be an executable regular file": "同目录的 nodedance-agent 必须是可执行普通文件",
+  "First deployment: leave each field blank and press Enter to generate secure random credentials.\n": "首次部署：每项留空并按回车，自动生成高强度随机登录凭据。\n",
+  "Administrator username (Enter generates): ": "管理员账号名（回车自动生成）：",
+  "Administrator password (hidden; Enter generates): ": "管理员密码（隐藏输入；回车自动生成）：",
+  "Initial administrator credentials (0600; removed after first login): %s\n": "初始管理员凭据文件（0600；首次登录成功后删除）：%s\n",
+  "Administrator username": "管理员账号名",
+  "username must contain 3 to 80 ASCII letters, digits, underscores or hyphens": "账号名必须为 3 到 80 位英文字母、数字、下划线或连字符"
 }

@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.4]
+
+### English
+
+- Add a root-only Docker image and Compose deployment that enter the host namespaces and root for host metrics, terminals, file management, and Docker/Compose operations.
+- Preserve root-owned 0700 state and 0600 credentials through enrollment, recovery, restarts, and protected host file access.
+- Publish version-pinned amd64/arm64 GHCR images from Agent release tags and verify container enrollment, host access protections, and reconnects in native Docker integration CI.
+- Document Docker deployment, hidden stdin enrollment tokens, persistent state, and host CA/CLI requirements in Chinese and English.
+
+### 简体中文
+
+- 增加仅 root 运行的 Docker 镜像和 Compose 部署，进入宿主机命名空间与根目录，提供宿主机指标、终端、文件与 Docker/Compose 管理。
+- 注册、恢复及重启保留 root 所有的 0700 状态目录与 0600 凭证，并继续执行宿主机文件访问保护。
+- Agent 版本标签发布固定版本的 amd64/arm64 GHCR 镜像；原生 Docker 集成 CI 验证容器注册、宿主机访问保护与重连。
+- 增加双语 Docker 部署文档，说明隐藏输入注册令牌、持久状态及宿主机 CA/CLI 要求。
+
 ## [0.1.3]
 
 ### English

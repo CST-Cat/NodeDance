@@ -63,10 +63,14 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		Credential  string `json:"credential"`
 		Password    string `json:"password"`
+		Username    string `json:"username"`
 		DisplayName string `json:"displayName"`
 	}
 	if !decodeJSON(w, r, &request) {
 		return
+	}
+	if request.DisplayName == "" {
+		request.DisplayName = "NodeDance Admin"
 	}
 	displayName, ok := normalizeDisplayName(request.DisplayName)
 	if !ok {
@@ -100,7 +104,13 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.releasePasswordSlot()
-	passwordHash, salt, err := s.hashSetupPassword(request.Password)
+	generatedUsername, generatedPassword := request.Username == "", request.Password == ""
+	username, password, err := auth.InitialCredentials(request.Username, request.Password)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	passwordHash, salt, err := s.hashSetupPassword(password)
 	if err != nil {
 		http.Error(w, "password must contain 12 to 1024 UTF-8 bytes", http.StatusBadRequest)
 		return
@@ -130,8 +140,8 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	createdAt := s.now().UnixNano()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO admin_user(id, password_hash, password_salt, password_version, display_name, updated_at)
-		VALUES(1, ?, ?, ?, ?, ?)`, passwordHash, salt, auth.CurrentPasswordVersion, displayName, createdAt); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO admin_user(id, username, password_hash, password_salt, password_version, display_name, updated_at)
+		VALUES(1, ?, ?, ?, ?, ?, ?)`, username, passwordHash, salt, auth.CurrentPasswordVersion, displayName, createdAt); err != nil {
 		rollback(http.StatusConflict, "already initialized")
 		return
 	}
@@ -163,11 +173,20 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	s.limiter.succeeded(current.RemoteAddr)
 	s.setSessionCookie(w, token)
 	s.setCSRFCookie(w, csrfToken, s.idleTimeout)
-	writeJSON(w, http.StatusCreated, map[string]any{"user": map[string]string{"displayName": displayName}, "csrfToken": csrfToken})
+	response := map[string]any{"user": map[string]string{"displayName": displayName}, "csrfToken": csrfToken}
+	if generatedUsername || generatedPassword {
+		credentials := map[string]string{"username": username}
+		if generatedPassword {
+			credentials["password"] = password
+		}
+		response["initialCredentials"] = credentials
+	}
+	writeJSON(w, http.StatusCreated, response)
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var request struct {
+		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 	if !decodeJSON(w, r, &request) {
@@ -185,8 +204,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.releasePasswordSlot()
 	var passwordHash, salt []byte
-	var version, displayName string
-	err := s.store.DB.QueryRow(`SELECT password_hash, password_salt, password_version, display_name FROM admin_user WHERE id=1`).Scan(&passwordHash, &salt, &version, &displayName)
+	var version, displayName, username string
+	err := s.store.DB.QueryRow(`SELECT username, password_hash, password_salt, password_version, display_name FROM admin_user WHERE id=1`).Scan(&username, &passwordHash, &salt, &version, &displayName)
 	if errors.Is(err, sql.ErrNoRows) {
 		s.rejectLogin(w, r, remote)
 		return
@@ -195,7 +214,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	if !auth.VerifyPasswordVersion(version, request.Password, passwordHash, salt) {
+	passwordValid := auth.VerifyPasswordVersion(version, request.Password, passwordHash, salt)
+	if !passwordValid || !auth.ValidUsername(request.Username) || subtle.ConstantTimeCompare([]byte(username), []byte(request.Username)) != 1 {
 		s.rejectLogin(w, r, remote)
 		return
 	}
@@ -212,9 +232,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// verified just before a password change cannot create a fresh session
 	// after that change has revoked every existing session.
 	var currentHash, currentSalt []byte
-	var currentVersion, currentDisplayName string
-	err = tx.QueryRowContext(r.Context(), `SELECT password_hash, password_salt, password_version, display_name FROM admin_user WHERE id=1`).Scan(&currentHash, &currentSalt, &currentVersion, &currentDisplayName)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && (currentVersion != version || subtle.ConstantTimeCompare(currentHash, passwordHash) != 1 || subtle.ConstantTimeCompare(currentSalt, salt) != 1) {
+	var currentVersion, currentDisplayName, currentUsername string
+	err = tx.QueryRowContext(r.Context(), `SELECT username, password_hash, password_salt, password_version, display_name FROM admin_user WHERE id=1`).Scan(&currentUsername, &currentHash, &currentSalt, &currentVersion, &currentDisplayName)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && (currentUsername != username || currentVersion != version || subtle.ConstantTimeCompare(currentHash, passwordHash) != 1 || subtle.ConstantTimeCompare(currentSalt, salt) != 1) {
 		_ = tx.Rollback()
 		s.rejectLogin(w, r, remote)
 		return
@@ -239,6 +259,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := tx.Commit(); err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
+		return
+	}
+	if err := os.Remove(s.InitialAdminPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		http.Error(w, "initial administrator credential cleanup failed", http.StatusInternalServerError)
 		return
 	}
 	s.limiter.succeeded(remote)

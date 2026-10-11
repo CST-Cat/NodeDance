@@ -36,7 +36,7 @@ func RunWithInput(ctx context.Context, args []string, lookup LookupEnv, stdin io
 	stdout = i18n.Writer(stdout, i18n.From(ctx))
 	stderr = i18n.Writer(stderr, i18n.From(ctx))
 	if len(args) == 0 {
-		return runServe(ctx, nil, lookup, stdout, stderr, version)
+		return runServe(ctx, nil, lookup, stdin, stdout, stderr, version)
 	}
 	switch args[0] {
 	case "version", "--version":
@@ -57,7 +57,7 @@ func RunWithInput(ctx context.Context, args []string, lookup LookupEnv, stdin io
 		}
 		return runControl(ctx, args[1], args[2:], lookup, stdin, stdout, stderr, version)
 	case "serve":
-		return runServe(ctx, args[1:], lookup, stdout, stderr, version)
+		return runServe(ctx, args[1:], lookup, stdin, stdout, stderr, version)
 	case "backup":
 		return runBackup(ctx, args[1:], stdout, stderr)
 	case "restore":
@@ -72,7 +72,7 @@ func RunWithInput(ctx context.Context, args []string, lookup LookupEnv, stdin io
 	}
 }
 
-func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stderr io.Writer, version string) error {
+func runServe(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reader, stdout, stderr io.Writer, version string) error {
 	flags := flag.NewFlagSet("nodedance serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	listenFlag := flags.String("listen", "", i18n.TextFor(stderr, "IP:port to listen on"))
@@ -82,8 +82,8 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	historyRetentionDaysFlag := flags.String("history-retention-days", "", i18n.TextFor(stderr, "non-metric task, event, and audit history retention in days (default 90)"))
 	publicOriginFlag := flags.String("public-origin", "", i18n.TextFor(stderr, "public HTTPS origin used for browser Origin validation"))
 	trustedProxiesFlag := flags.String("trusted-proxies", "", i18n.TextFor(stderr, "comma-separated trusted proxy IPs or CIDRs"))
-	tlsCertFlag := flags.String("tls-cert", "", i18n.TextFor(stderr, "TLS certificate PEM file; required with --tls-key for non-loopback listeners"))
-	tlsKeyFlag := flags.String("tls-key", "", i18n.TextFor(stderr, "TLS private key PEM file; required with --tls-cert for non-loopback listeners"))
+	tlsCertFlag := flags.String("tls-cert", "", i18n.TextFor(stderr, "TLS certificate PEM file; must be used with --tls-key"))
+	tlsKeyFlag := flags.String("tls-key", "", i18n.TextFor(stderr, "TLS private key PEM file; must be used with --tls-cert"))
 	dev := flags.Bool("dev", false, i18n.TextFor(stderr, "development mode; requires a loopback address"))
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -128,7 +128,7 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	} else if err := config.ValidateListen(listen); err != nil {
 		return err
 	}
-	tlsCertificate, err := loadTransportCertificate(listen, *tlsCertFlag, *tlsKeyFlag)
+	tlsCertificate, err := loadTransportCertificate(*tlsCertFlag, *tlsKeyFlag)
 	if err != nil {
 		return err
 	}
@@ -181,6 +181,15 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 		return err
 	}
 	defer serverInstance.Close()
+	if _, pending := serverInstance.SetupCredentialPath(); pending {
+		username, password, err := promptInitialAdministrator(stdin, stdout)
+		if err != nil {
+			return err
+		}
+		if err := serverInstance.BootstrapAdministrator(ctx, username, password); err != nil {
+			return fmt.Errorf("initialize administrator: %w", err)
+		}
+	}
 	httpServer := &http.Server{
 		Addr:              listen,
 		Handler:           serverInstance,
@@ -198,8 +207,8 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 		scheme = "https"
 	}
 	fmt.Fprintf(stdout, i18n.TextFor(stdout, "NodeDance listening on %s://%s\n"), scheme, listen)
-	if credentialPath, ok := serverInstance.SetupCredentialPath(); ok {
-		fmt.Fprintf(stdout, i18n.TextFor(stdout, "First-run setup credential file: %s\n"), credentialPath)
+	if info, err := os.Lstat(serverInstance.InitialAdminPath()); err == nil && info.Mode().IsRegular() {
+		fmt.Fprintf(stdout, i18n.TextFor(stdout, "Initial administrator credentials (0600; removed after first login): %s\n"), serverInstance.InitialAdminPath())
 	}
 	go func() {
 		if tlsCertificate != nil {
@@ -224,19 +233,11 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdout, stde
 	}
 }
 
-func loadTransportCertificate(listen, certPath, keyPath string) (*tls.Certificate, error) {
+func loadTransportCertificate(certPath, keyPath string) (*tls.Certificate, error) {
 	if (certPath == "") != (keyPath == "") {
 		return nil, errors.New("--tls-cert and --tls-key must be provided together")
 	}
 	if certPath == "" {
-		host, _, err := net.SplitHostPort(listen)
-		if err != nil {
-			return nil, fmt.Errorf("inspect Core listener for TLS: %w", err)
-		}
-		ip := net.ParseIP(host)
-		if ip == nil || !ip.IsLoopback() {
-			return nil, errors.New("TLS certificate and key are required when Core listens on a non-loopback address")
-		}
 		return nil, nil
 	}
 	certificate, err := tls.LoadX509KeyPair(certPath, keyPath)

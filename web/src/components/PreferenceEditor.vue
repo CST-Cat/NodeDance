@@ -64,18 +64,18 @@ async function save() {
 </template>
 
 <style scoped>
-.preference-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; border: 1px solid rgba(171,196,232,.13); border-radius: 9px; padding: 12px; background: rgba(9,17,29,.6); }
+.preference-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; border: 1px solid var(--line); border-radius: 9px; padding: 12px; background: var(--surface-soft); }
 .preference-editor header { grid-column: 1 / -1; display: grid; gap: 4px; }
-.ssh-preference-note { grid-column: 1 / -1; color: #91a2ba; font-size: 9px; }
-.preference-editor header strong { font-size: 11px; }
-.preference-editor header small { color: #91a2ba; font-size: 9px; }
-.preference-editor label { display: grid; min-width: 0; gap: 5px; color: #aebbd0; font-size: 9px; }
-.preference-editor input:not([type=checkbox]), .preference-editor select, .preference-editor textarea { width: 100%; min-width: 0; border: 1px solid rgba(171,196,232,.16); border-radius: 6px; padding: 8px; color: #eaf0fa; background: #111b29; font: inherit; font-size: 10px; }
+.ssh-preference-note { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.preference-editor header strong { font-size: 12px; }
+.preference-editor header small { color: var(--muted); font-size: 12px; }
+.preference-editor label { display: grid; min-width: 0; gap: 5px; color: var(--muted-strong); font-size: 12px; }
+.preference-editor input:not([type=checkbox]), .preference-editor select, .preference-editor textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; padding: 8px; color: var(--text); background: var(--surface-soft); font: inherit; font-size: 12px; }
 .preference-editor textarea { resize: vertical; }
 .preference-editor .preference-checkbox { display: flex; align-items: center; gap: 7px; }
-.preference-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; color: #9ce0b7; font-size: 9px; }
-.preference-actions button { min-height: 34px; border: 1px solid rgba(141,201,255,.25); border-radius: 7px; padding: 6px 10px; color: #cce6ff; background: rgba(62,119,170,.16); font: inherit; cursor: pointer; }
-.preference-actions span[role=alert] { color: #ffc1b8; }
+.preference-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; color: var(--success); font-size: 12px; }
+.preference-actions button { min-height: 34px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; color: var(--accent); background: var(--line); font: inherit; cursor: pointer; }
+.preference-actions span[role=alert] { color: var(--danger); }
 .preference-actions button:disabled { opacity: .5; }
 @media (max-width: 480px) { .preference-editor { grid-template-columns: minmax(0, 1fr); } }
 </style>

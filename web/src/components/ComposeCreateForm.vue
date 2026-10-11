@@ -104,18 +104,18 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.compose-create-form { display:grid; gap:10px; min-width:0; padding:14px; border:1px solid rgba(125,165,218,.24); border-radius:10px; background:rgba(10,20,33,.55); }
+.compose-create-form { display:grid; gap:10px; min-width:0; padding:14px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); }
 .compose-create-form header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.compose-create-form h3 { margin:4px 0 0; font-size:14px; }
-.compose-create-form header>span,.compose-create-note { color:#95a8c1; font-size:10px; line-height:1.55; }
+.compose-create-form h3 { margin:4px 0 0; font-size: 14px; }
+.compose-create-form header>span,.compose-create-note { color:var(--muted); font-size: 12px; line-height:1.55; }
 .compose-create-note { margin:0; }
 .compose-create-fields { display:grid; grid-template-columns:minmax(150px,.6fr) minmax(220px,1fr); gap:9px; }
-.compose-create-form label { display:grid; gap:5px; min-width:0; color:#b6c4d7; font-size:11px; }
-.compose-create-form input,.compose-create-form textarea { box-sizing:border-box; width:100%; border:1px solid rgba(171,196,232,.2); border-radius:7px; padding:9px; color:#edf3fc; background:#121d2d; font:inherit; }
+.compose-create-form label { display:grid; gap:5px; min-width:0; color:var(--muted-strong); font-size: 12px; }
+.compose-create-form input,.compose-create-form textarea { box-sizing:border-box; width:100%; border:1px solid var(--line); border-radius:7px; padding:9px; color:var(--text); background:var(--surface-soft); font:inherit; }
 .compose-create-form input { min-height:36px; }
-.compose-create-form textarea { min-height:220px; resize:vertical; background:#08111d; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }
-.compose-create-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; font-size:11px; }
-.compose-create-actions [role="status"] { color:#a8d9b5; }
-.compose-create-actions [data-status="failed"],.compose-create-actions [data-status="unknown"],.compose-create-actions [role="alert"] { color:#ffc1b8; }
+.compose-create-form textarea { min-height:220px; resize:vertical; background:var(--surface-soft); font: 12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.compose-create-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; font-size: 12px; }
+.compose-create-actions [role="status"] { color:var(--success); }
+.compose-create-actions [data-status="failed"],.compose-create-actions [data-status="unknown"],.compose-create-actions [role="alert"] { color:var(--danger); }
 @media (max-width:600px) { .compose-create-form header { align-items:flex-start; flex-direction:column; } .compose-create-fields { grid-template-columns:1fr; } .compose-create-form textarea { min-height:180px; } }
 </style>

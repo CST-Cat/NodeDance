@@ -96,6 +96,16 @@ func setupCredentialPath(dataDir string) string {
 }
 
 func (s *Server) ensureSetupState() error {
+	if info, err := os.Lstat(s.InitialAdminPath()); err == nil {
+		if !info.Mode().IsRegular() {
+			return errors.New("initial administrator credentials must be a regular file")
+		}
+		if err := os.Chmod(s.InitialAdminPath(), 0o600); err != nil {
+			return fmt.Errorf("secure initial administrator credentials: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	initialized, err := s.isInitialized()
 	if err != nil {
 		return err

@@ -152,7 +152,7 @@ onMounted(async () => {
     scrollback: 3000,
     fontSize: 13,
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-    theme: { background: '#08111d', foreground: '#e4edf8', cursor: '#7ce0a2', selectionBackground: '#33506f' },
+    theme: { background: '#181715', foreground: '#faf9f5', cursor: '#cc785c', selectionBackground: '#534338' },
     allowProposedApi: false,
   })
   fit = new FitAddon()
@@ -210,22 +210,22 @@ onBeforeUnmount(() => {
 </style>
 
 <style scoped>
-.terminal-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: rgba(3, 8, 15, .78); backdrop-filter: blur(8px); }
-.terminal-dialog { display: grid; width: min(1040px, 100%); max-height: min(820px, 94dvh); grid-template-rows: auto minmax(240px, 1fr) auto auto; overflow: hidden; border: 1px solid rgba(153, 185, 226, .22); border-radius: 14px; color: #eaf0fa; background: #0d1725; box-shadow: 0 24px 90px rgba(0, 0, 0, .5); }
-.terminal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 16px 20px 12px; border-bottom: 1px solid rgba(153, 185, 226, .13); }
+.terminal-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 20px; background: rgba(24, 23, 21, .78); backdrop-filter: blur(8px); }
+.terminal-dialog { display: grid; width: min(1040px, 100%); max-height: min(820px, 94dvh); grid-template-rows: auto minmax(240px, 1fr) auto auto; overflow: hidden; border: 1px solid #565046; border-radius: 14px; color: #faf9f5; background: #1f1e1b; box-shadow: 0 24px 90px rgba(0, 0, 0, .5); }
+.terminal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 16px 20px 12px; border-bottom: 1px solid #3d3933; }
 .terminal-heading-copy { min-width: 0; }
-.terminal-eyebrow { color: #88a4c5; font: 9px ui-monospace, monospace; letter-spacing: .14em; }
+.terminal-eyebrow { color: #c7b8a6; font: 9px ui-monospace, monospace; letter-spacing: .14em; }
 .terminal-heading h2 { overflow: hidden; margin: 4px 0; font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
-.terminal-heading p { margin: 0; color: #9aabc1; font-size: 11px; }
-.terminal-close { width: 36px; height: 36px; border: 1px solid rgba(153, 185, 226, .18); border-radius: 8px; color: #dce8f7; background: rgba(255, 255, 255, .04); font-size: 22px; cursor: pointer; }
-.terminal-screen { min-height: 0; padding: 12px; background: #08111d; touch-action: pan-x pan-y; }
+.terminal-heading p { margin: 0; color: #aaa69e; font-size: 11px; }
+.terminal-close { width: 36px; height: 36px; border: 1px solid #3d3933; border-radius: 8px; color: #faf9f5; background: rgba(255, 255, 255, .04); font-size: 22px; cursor: pointer; }
+.terminal-screen { min-height: 0; padding: 12px; background: #181715; touch-action: pan-x pan-y; }
 .terminal-screen :deep(.xterm) { height: 100%; }
 .terminal-error { margin: 0; padding: 9px 20px; color: #ffc1b8; background: rgba(184, 77, 72, .12); font-size: 11px; overflow-wrap: anywhere; }
-.terminal-keys { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 14px; border-top: 1px solid rgba(153, 185, 226, .1); background: #0d1725; }
-.terminal-keys button, .terminal-footer button { min-width: 40px; min-height: 36px; border: 1px solid rgba(153, 185, 226, .2); border-radius: 7px; padding: 6px 10px; color: #dce8f7; background: rgba(255, 255, 255, .045); font: 11px ui-monospace, monospace; cursor: pointer; touch-action: manipulation; }
-.terminal-keys button:active, .terminal-footer button:active { background: rgba(89, 142, 201, .24); }
-.terminal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-top: 1px solid rgba(153, 185, 226, .1); }
-.terminal-footer span { color: #8294aa; font-size: 10px; }
+.terminal-keys { display: flex; flex-wrap: wrap; gap: 7px; padding: 10px 14px; border-top: 1px solid #3d3933; background: #1f1e1b; }
+.terminal-keys button, .terminal-footer button { min-width: 40px; min-height: 36px; border: 1px solid #3d3933; border-radius: 7px; padding: 6px 10px; color: #faf9f5; background: rgba(255, 255, 255, .045); font: 11px ui-monospace, monospace; cursor: pointer; touch-action: manipulation; }
+.terminal-keys button:active, .terminal-footer button:active { background: #534338; }
+.terminal-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-top: 1px solid #3d3933; }
+.terminal-footer span { color: #aaa69e; font-size: 10px; }
 .terminal-footer button { color: #ffc1b8; border-color: rgba(255, 129, 116, .25); }
 @media (max-width: 600px) {
   .terminal-backdrop { place-items: stretch; padding: 0; }

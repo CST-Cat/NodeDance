@@ -287,41 +287,41 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.images-panel { margin-top: 18px; border: 1px solid rgba(171,196,232,.13); border-radius: 12px; padding: clamp(14px,2vw,20px); background: rgba(9,17,29,.46); color: #eaf0fa; }
+.images-panel { margin-top: 18px; border: 1px solid var(--line); border-radius: 12px; padding: clamp(14px,2vw,20px); background: var(--surface-soft); color: var(--text); }
 .images-heading, .image-row-head, .image-pagination, .image-task { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .images-heading { margin-bottom: 14px; }
 .images-heading h2 { margin: 4px 0 0; font-size: 17px; }
 .image-pull-form { display: grid; grid-template-columns: minmax(180px,2fr) repeat(2,minmax(140px,1fr)) auto; align-items: end; gap: 9px; }
-.image-field { display: grid; min-width: 0; gap: 5px; color: #aab9ce; font-size: 10px; }
-.image-field input { min-width: 0; min-height: 36px; border: 1px solid rgba(171,196,232,.17); border-radius: 7px; padding: 7px 9px; color: #eaf0fa; background: rgba(18,29,45,.85); font: inherit; font-size: 11px; }
-.image-button { min-height: 34px; border: 1px solid rgba(141,201,255,.25); border-radius: 7px; padding: 6px 10px; color: #cce6ff; background: rgba(62,119,170,.16); font: inherit; font-size: 10px; cursor: pointer; white-space: nowrap; }
-.image-button.primary { color: #e5f4ff; background: rgba(55,131,196,.32); }
-.image-button.danger { color: #ffc1b8; border-color: rgba(255,129,116,.25); background: rgba(184,77,72,.1); }
+.image-field { display: grid; min-width: 0; gap: 5px; color: var(--muted-strong); font-size: 12px; }
+.image-field input { min-width: 0; min-height: 36px; border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; color: var(--text); background: var(--surface-soft); font: inherit; font-size: 12px; }
+.image-button { min-height: 34px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; color: var(--accent); background: var(--line); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.image-button.primary { color: var(--text); background: var(--line); }
+.image-button.danger { color: var(--danger); border-color: var(--danger-line); background: var(--danger-soft); }
 .image-button:disabled { opacity: .45; cursor: not-allowed; }
-.image-hint, .images-empty { color: #93a4bb; font-size: 10px; line-height: 1.6; }
+.image-hint, .images-empty { color: var(--muted); font-size: 12px; line-height: 1.6; }
 .image-filter-row { display: flex; align-items: end; gap: 9px; margin: 15px 0 12px; }
 .image-filter-row .image-field { flex: 1; }
-.image-total { padding: 8px 0; color: #93a4bb; font-size: 10px; white-space: nowrap; }
-.image-message { border: 1px solid rgba(121,214,156,.2); border-radius: 7px; padding: 8px 10px; color: #a8e4bb; background: rgba(80,186,119,.08); font-size: 10px; overflow-wrap: anywhere; }
-.image-message.error { color: #ffc1b8; border-color: rgba(255,129,116,.24); background: rgba(184,77,72,.1); }
-.image-task { border: 1px solid rgba(141,201,255,.2); border-radius: 8px; padding: 10px; color: #cce6ff; background: rgba(62,119,170,.1); font-size: 10px; }
+.image-total { padding: 8px 0; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.image-message { border: 1px solid var(--success-line); border-radius: 7px; padding: 8px 10px; color: var(--success); background: var(--success-soft); font-size: 12px; overflow-wrap: anywhere; }
+.image-message.error { color: var(--danger); border-color: var(--danger-line); background: var(--danger-soft); }
+.image-task { border: 1px solid var(--line); border-radius: 8px; padding: 10px; color: var(--accent); background: var(--line); font-size: 12px; }
 .image-task > div { display: grid; gap: 4px; min-width: 0; }
-.image-task span { color: #aab9ce; overflow-wrap: anywhere; }
-.image-audit { border: 1px solid rgba(171,196,232,.1); border-radius: 8px; padding: 8px 10px; color: #aab9ce; font-size: 9px; }
+.image-task span { color: var(--muted-strong); overflow-wrap: anywhere; }
+.image-audit { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--muted-strong); font-size: 12px; }
 .image-audit ol { display: grid; gap: 6px; margin: 0; padding-left: 18px; }
 .image-audit li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; overflow-wrap: anywhere; }
-.image-audit time { color: #8497b0; }
-.image-audit .error { color: #ffc1b8; }
+.image-audit time { color: var(--muted); }
+.image-audit .error { color: var(--danger); }
 .image-list { display: grid; gap: 8px; }
-.image-row { display: grid; gap: 7px; min-width: 0; border: 1px solid rgba(171,196,232,.1); border-radius: 8px; padding: 11px; background: rgba(18,29,45,.68); }
-.image-row-head { align-items: start; color: #e4edf9; font-size: 11px; }
+.image-row { display: grid; gap: 7px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 11px; background: var(--surface-soft); }
+.image-row-head { align-items: start; color: var(--text); font-size: 12px; }
 .image-row-head strong { min-width: 0; overflow-wrap: anywhere; }
-.image-row-head > span { color: #aab9ce; white-space: nowrap; }
-.image-row-meta { display: flex; flex-wrap: wrap; gap: 5px 12px; color: #aab9ce; font-size: 9px; }
+.image-row-head > span { color: var(--muted-strong); white-space: nowrap; }
+.image-row-meta { display: flex; flex-wrap: wrap; gap: 5px 12px; color: var(--muted-strong); font-size: 12px; }
 .image-id, .image-digests { overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.image-digests { margin: 0; color: #89bbec; font-size: 9px; }
+.image-digests { margin: 0; color: var(--accent); font-size: 12px; }
 .image-row > .image-button { justify-self: start; }
-.image-pagination { justify-content: center; margin-top: 13px; color: #93a4bb; font-size: 10px; }
+.image-pagination { justify-content: center; margin-top: 13px; color: var(--muted); font-size: 12px; }
 @media (max-width: 900px) { .image-pull-form { grid-template-columns: repeat(2,minmax(0,1fr)); } .image-reference { grid-column: 1 / -1; } }
 @media (max-width: 520px) { .image-pull-form { grid-template-columns: 1fr; } .image-reference { grid-column: auto; } .image-filter-row { flex-wrap: wrap; } .image-filter-row .image-field { flex-basis: 100%; } .image-total { margin-left: auto; } .image-task { align-items: start; flex-direction: column; } }
 </style>

@@ -1,16 +1,61 @@
 <script setup lang="ts">
 import { t, display, locale, setLocale, type Locale } from "./i18n"
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ApiError, api, SESSION_EXPIRED_EVENT, type Appearance, type Session, type User } from './api'
 import NodesDashboard from './components/NodesDashboard.vue'
 import TailscaleDiscovery from './components/TailscaleDiscovery.vue'
 import AgentEnrollment from './components/AgentEnrollment.vue'
 import AlertCenter from './components/AlertCenter.vue'
+import UiIcon from './components/UiIcon.vue'
 
 type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'agent-enrollment' | 'alerts'
 type ImageKind = 'avatar' | 'background'
 
 const screen = ref<Screen>('loading')
+const navigationOpen = ref(false)
+const mobileNavigation = ref(false)
+const sidebarElement = ref<HTMLElement>()
+const navigationToggle = ref<HTMLButtonElement>()
+let colorScheme: MediaQueryList | undefined
+let navigationQuery: MediaQueryList | undefined
+function updateColorScheme(event: MediaQueryListEvent) { preferredTheme.value = event.matches ? 'light' : 'dark' }
+function updateNavigationViewport(event: MediaQueryListEvent) {
+  mobileNavigation.value = event.matches
+  navigationOpen.value = false
+}
+function handleNavigationKeys(event: KeyboardEvent) {
+  if (!mobileNavigation.value || !navigationOpen.value) return
+  if (event.key === 'Escape') {
+    navigationOpen.value = false
+    navigationToggle.value?.focus()
+  } else if (event.key === 'Tab') {
+    const items = sidebarElement.value?.querySelectorAll<HTMLElement>('a, button:not(:disabled)')
+    if (!items?.length) return
+    const first = items[0]!, last = items[items.length - 1]!
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  }
+}
+watch(navigationOpen, async (open) => {
+  if (open && mobileNavigation.value) {
+    await nextTick()
+    sidebarElement.value?.querySelector<HTMLElement>('[aria-current=page]')?.focus()
+  }
+})
+const authenticated = computed(() => !!currentUser.value && !['loading', 'unavailable', 'setup', 'login'].includes(screen.value))
+const navigation = [
+  { screen: 'nodes', label: 'nav.nodes', icon: 'nodes' },
+  { screen: 'agent-enrollment', label: 'nav.enrollment', icon: 'add' },
+  { screen: 'discovery', label: 'nav.discovery', icon: 'discovery' },
+  { screen: 'alerts', label: 'nav.alerts', icon: 'alerts' },
+  { screen: 'settings', label: 'nav.settings', icon: 'settings' },
+] as const
+const screenTitle = computed(() => t(navigation.find(item => item.screen === screen.value)?.label ?? 'nav.workspace'))
+function navigate(target: Screen) {
+  clearMessages()
+  screen.value = target
+  navigationOpen.value = false
+}
 const busy = ref(false)
 const busyLabel = ref('')
 const error = ref('')
@@ -23,7 +68,9 @@ const preferredTheme = ref<'dark' | 'light'>('dark')
 const avatarRevision = ref(0)
 const backgroundRevision = ref(0)
 
-const setupForm = reactive({ credential: '', password: '', displayName: '' })
+const setupForm = reactive({ credential: '', password: '', username: '' })
+const initialCredentials = ref<{ username: string; password?: string } | null>(null)
+const loginUsername = ref('')
 const loginPassword = ref('')
 const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
 const appearance = reactive<Appearance>({
@@ -111,6 +158,7 @@ async function initializeScreen() {
 
     try {
       await enterSettings()
+      screen.value = 'nodes'
     } catch (reason) {
       if (reason instanceof ApiError && reason.status === 401) {
         screen.value = 'login'
@@ -129,21 +177,25 @@ async function submitSetup() {
   busy.value = true
   busyLabel.value = t('m.9866f869b0bd')
   try {
-    await api.setup({
+    const result = await api.setup({
       credential: setupForm.credential,
       password: setupForm.password,
-      displayName: setupForm.displayName,
+      username: setupForm.username,
     })
+    initialCredentials.value = result.initialCredentials ?? null
     initialized.value = true
     try {
       await enterSettings()
     } catch (reason) {
       if (!(reason instanceof ApiError) || reason.status !== 401) throw reason
-      await api.login(setupForm.password)
+      await api.login(result.initialCredentials?.username ?? setupForm.username, result.initialCredentials?.password ?? setupForm.password)
       await enterSettings()
     }
+    initialCredentials.value = result.initialCredentials ?? null
+    screen.value = 'nodes'
     setupForm.credential = ''
     setupForm.password = ''
+    setupForm.username = ''
     notice.value = t('m.ea48349b4814')
   } catch (reason) {
     error.value = errorText(reason)
@@ -158,8 +210,9 @@ async function submitLogin() {
   busy.value = true
   busyLabel.value = t('m.d8712b0d82e6')
   try {
-    await api.login(loginPassword.value)
+    await api.login(loginUsername.value, loginPassword.value)
     await enterSettings()
+    screen.value = 'nodes'
     loginPassword.value = ''
   } catch (reason) {
     error.value = errorText(reason)
@@ -243,6 +296,7 @@ async function changePassword() {
   try {
     await api.changePassword(passwordForm.currentPassword, passwordForm.newPassword)
     currentUser.value = null
+    initialCredentials.value = null
     sessions.value = []
     loginPassword.value = ''
     setupForm.password = ''
@@ -265,6 +319,7 @@ async function logout() {
   try {
     await api.logout()
     currentUser.value = null
+    initialCredentials.value = null
     sessions.value = []
     screen.value = 'login'
     notice.value = t('m.3a7b6d2f0e58')
@@ -276,6 +331,7 @@ async function logout() {
 }
 
 function handleSessionExpired() {
+  initialCredentials.value = null
   currentUser.value = null
   sessions.value = []
   loginPassword.value = ''
@@ -298,49 +354,70 @@ function formatTime(value: string): string {
 
 onMounted(() => {
   window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
-  const colorScheme = window.matchMedia('(prefers-color-scheme: light)')
+  colorScheme = window.matchMedia('(prefers-color-scheme: light)')
   preferredTheme.value = colorScheme.matches ? 'light' : 'dark'
-  colorScheme.addEventListener('change', (event) => {
-    preferredTheme.value = event.matches ? 'light' : 'dark'
-  })
+  colorScheme.addEventListener('change', updateColorScheme)
+  navigationQuery = window.matchMedia('(max-width: 900px)')
+  mobileNavigation.value = navigationQuery.matches
+  navigationQuery.addEventListener('change', updateNavigationViewport)
+  window.addEventListener('keydown', handleNavigationKeys)
   void initializeScreen()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
+  window.removeEventListener('keydown', handleNavigationKeys)
+  colorScheme?.removeEventListener('change', updateColorScheme)
+  navigationQuery?.removeEventListener('change', updateNavigationViewport)
 })
 </script>
 
 <template>
-  <main class="app-shell" :data-theme="effectiveTheme" :data-screen="screen" :style="shellStyle">
-    <div class="ambient ambient-one" aria-hidden="true"></div>
-    <div class="ambient ambient-two" aria-hidden="true"></div>
+  <main class="app-shell" :data-theme="effectiveTheme" :data-screen="screen" :data-authenticated="authenticated" :style="shellStyle">
     <div v-if="screen === 'login' && backgroundSrc" class="login-background" aria-hidden="true">
       <img :key="backgroundRevision" :src="backgroundSrc" alt="" />
       <div class="login-background-shade"></div>
     </div>
 
-    <header class="topbar">
+    <button v-if="authenticated && navigationOpen" class="navigation-scrim" type="button" :aria-label="t('nav.close')" @click="navigationOpen = false"></button>
+    <aside v-if="authenticated" id="workspace-navigation" ref="sidebarElement" class="workspace-sidebar" :inert="mobileNavigation && !navigationOpen" :class="{ 'is-open': navigationOpen }">
       <a class="wordmark" href="/" :aria-label="t('m.f359facd4191')">
-        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span>NodeDance</span>
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>NodeDance</span>
       </a>
+      <div class="workspace-label">{{ t('nav.workspace') }}</div>
+      <nav class="workspace-nav" :aria-label="t('nav.navigation')">
+        <button v-for="item in navigation" :key="item.screen" type="button" :aria-current="screen === item.screen ? 'page' : undefined" @click="navigate(item.screen)">
+          <UiIcon :name="item.icon" /><span>{{ t(item.label) }}</span>
+        </button>
+      </nav>
+      <div class="workspace-account">
+        <div class="profile-avatar"><img v-if="avatarSrc" :src="avatarSrc" alt="" /><span v-else>{{ visibleName.slice(0, 1) }}</span></div>
+        <div class="workspace-account-copy"><strong>{{ visibleName }}</strong><span>{{ t('m.e19796712f1c') }}</span></div>
+        <button class="account-logout" type="button" :disabled="busy" :aria-label="t('m.3ab8cc15939f')" :title="t('m.3ab8cc15939f')" @click="logout"><UiIcon name="logout" /></button>
+      </div>
+    </aside>
+    <header class="topbar">
+      <div v-if="authenticated" class="workspace-breadcrumb">
+        <button ref="navigationToggle" class="navigation-toggle" type="button" :aria-label="t('nav.navigation')" :aria-expanded="navigationOpen" aria-controls="workspace-navigation" @click="navigationOpen = !navigationOpen"><UiIcon :name="navigationOpen ? 'close' : 'menu'" /></button>
+        <span class="breadcrumb-root">{{ t('nav.workspace') }}</span><span class="breadcrumb-divider" aria-hidden="true">/</span><strong>{{ screenTitle }}</strong>
+      </div>
+      <a v-else class="wordmark" href="/" :aria-label="t('m.f359facd4191')"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>NodeDance</span></a>
       <div class="topbar-right">
+        <span class="system-label"><span class="status-dot"></span>{{ t('m.13354cb51f27') }}</span>
         <select class="language-selector" :aria-label="locale === 'en' ? 'Language' : '语言'" :value="locale" @change="setLocale(($event.target as HTMLSelectElement).value as Locale)">
           <option value="zh-CN">简体中文</option><option value="en">English</option>
         </select>
-        <span class="system-label"><span class="status-dot"></span>{{ t('m.13354cb51f27') }}</span>
-        <button v-if="screen === 'settings'" class="quiet-button" type="button" @click="screen = 'nodes'">{{ t('m.07e96c1e12b3') }}</button>
-        <button v-if="screen === 'nodes'" class="quiet-button" type="button" @click="screen = 'settings'">{{ t('m.a720b4000be6') }}</button>
-        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'agent-enrollment'" class="quiet-button" type="button" @click="screen = 'alerts'">{{ t('m.1b92ed81c005') }}</button>
-        <button v-if="screen === 'alerts'" class="quiet-button" type="button" @click="screen = 'nodes'">{{ t('m.684e697456e4') }}</button>
-        <button v-if="screen === 'nodes' || screen === 'settings'" class="quiet-button" type="button" @click="screen = 'agent-enrollment'">{{ t('m.a29c23de8cc4') }}</button>
-        <button v-if="screen === 'nodes' || screen === 'settings'" class="quiet-button" type="button" @click="screen = 'discovery'">{{ t('m.b9359d1b8e15') }}</button>
-        <button v-if="screen === 'agent-enrollment'" class="quiet-button" type="button" @click="screen = 'discovery'">{{ t('m.b9359d1b8e15') }}</button>
-        <button v-if="screen === 'discovery'" class="quiet-button" type="button" @click="screen = 'nodes'">{{ t('m.684e697456e4') }}</button>
-        <button v-if="screen === 'settings' || screen === 'nodes' || screen === 'discovery' || screen === 'agent-enrollment' || screen === 'alerts'" class="quiet-button" type="button" :disabled="busy" @click="logout">{{ t('m.3ab8cc15939f') }}</button>
       </div>
     </header>
+
+    <section v-if="authenticated && initialCredentials" class="initial-credentials-card" aria-labelledby="initial-credentials-title">
+      <h2 id="initial-credentials-title">{{ t('auth.generatedTitle') }}</h2><p>{{ t('auth.generatedHint') }}</p>
+      <dl><div><dt>{{ t('auth.username') }}</dt><dd><code>{{ initialCredentials.username }}</code></dd></div><div v-if="initialCredentials.password"><dt>{{ t('m.c19091521d71') }}</dt><dd><code>{{ initialCredentials.password }}</code></dd></div></dl>
+      <button type="button" class="secondary-button" @click="initialCredentials = null">{{ t('auth.saved') }}</button>
+    </section>
+
+    <div v-if="authenticated && screen !== 'settings' && notice" class="alert alert-success workspace-notice" role="status">{{ display(notice) }}</div>
+    <div v-if="authenticated && screen !== 'settings' && error" class="alert alert-error workspace-notice" role="alert">{{ display(error) }}</div>
 
     <div v-if="screen === 'loading'" class="center-stage" role="status" aria-live="polite">
       <div class="loader"></div>
@@ -381,12 +458,13 @@ onBeforeUnmount(() => {
             <small class="field-hint">{{ t('m.59b4ebe09d0f') }}</small>
           </label>
           <label class="field">
-            <span>{{ t('m.1264cd049636') }}</span>
-            <input v-model="setupForm.displayName" name="displayName" autocomplete="nickname" required maxlength="80" :placeholder="t('m.8a8270b96971')" />
+            <span>{{ t('auth.username') }}</span>
+            <input v-model="setupForm.username" name="username" autocomplete="username" maxlength="80" :placeholder="t('auth.generateUsername')" />
+            <small class="field-hint">{{ t('auth.usernameHint') }}</small>
           </label>
           <label class="field">
             <span>{{ t('m.c19091521d71') }}</span>
-            <input v-model="setupForm.password" name="password" type="password" autocomplete="new-password" required :placeholder="t('m.50a65a87586c')" />
+            <input v-model="setupForm.password" name="password" type="password" autocomplete="new-password" :placeholder="t('auth.generatePassword')" />
             <small class="field-hint">{{ t('m.eb0831f61840') }}</small>
           </label>
           <button class="primary-button full-button" type="submit" :disabled="busy">
@@ -418,9 +496,10 @@ onBeforeUnmount(() => {
         <div v-if="notice" class="alert alert-success" role="status">{{ display(notice) }}</div>
         <div v-if="error" class="alert alert-error" role="alert">{{ display(error) }}</div>
         <form class="form-stack" @submit.prevent="submitLogin">
+          <label class="field"><span>{{ t('auth.username') }}</span><input v-model="loginUsername" name="username" autocomplete="username" required autofocus maxlength="80" :placeholder="t('auth.username')" /></label>
           <label class="field">
             <span>{{ t('m.c19091521d71') }}</span>
-            <input v-model="loginPassword" name="password" type="password" autocomplete="current-password" required autofocus :placeholder="t('m.7673702e6ff6')" />
+            <input v-model="loginPassword" name="password" type="password" autocomplete="current-password" required :placeholder="t('m.7673702e6ff6')" />
           </label>
           <button class="primary-button full-button" type="submit" :disabled="busy">
             {{ busy ? busyLabel : t('m.d19038809234') }} <span aria-hidden="true">↗</span>
@@ -430,7 +509,7 @@ onBeforeUnmount(() => {
       </section>
     </section>
 
-    <NodesDashboard v-else-if="screen === 'nodes'" />
+    <NodesDashboard v-else-if="screen === 'nodes'" @enroll="navigate('agent-enrollment')" />
 
     <AgentEnrollment v-else-if="screen === 'agent-enrollment'" @back="screen = 'nodes'" />
 

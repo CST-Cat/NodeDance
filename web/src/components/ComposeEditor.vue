@@ -162,16 +162,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.compose-editor { display: grid; gap: 10px; min-width: 0; margin-top: 16px; padding: 14px; border: 1px solid rgba(125,165,218,.25); border-radius: 10px; background: rgba(4,12,22,.72); }
+.compose-editor { display: grid; gap: 10px; min-width: 0; margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
 .compose-editor-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; }
-.compose-editor-heading h3 { margin:4px 0 0; font-size:14px; }
-.compose-file-picker { display:grid; gap:5px; color:#b6c4d7; font-size:11px; }
-.compose-file-picker select { min-height:36px; border:1px solid rgba(171,196,232,.2); border-radius:7px; padding:7px 9px; color:#edf3fc; background:#121d2d; font:inherit; }
-.compose-file-picker small { overflow-wrap:anywhere; color:#8295ae; }
-.compose-editor-risk { margin:0; color:#efc58d; font-size:11px; line-height:1.6; }
-.compose-editor textarea { width:100%; min-height:360px; resize:vertical; box-sizing:border-box; border:1px solid rgba(171,196,232,.2); border-radius:8px; padding:12px; color:#eaf0fa; background:#08111d; font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; tab-size:2; }
+.compose-editor-heading h3 { margin:4px 0 0; font-size: 14px; }
+.compose-file-picker { display:grid; gap:5px; color:var(--muted-strong); font-size: 12px; }
+.compose-file-picker select { min-height:36px; border:1px solid var(--line); border-radius:7px; padding:7px 9px; color:var(--text); background:var(--surface-soft); font:inherit; }
+.compose-file-picker small { overflow-wrap:anywhere; color:var(--muted); }
+.compose-editor-risk { margin:0; color:var(--warning); font-size: 12px; line-height:1.6; }
+.compose-editor textarea { width:100%; min-height:360px; resize:vertical; box-sizing:border-box; border:1px solid var(--line); border-radius:8px; padding:12px; color:var(--text); background:var(--surface-soft); font: 12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; tab-size:2; }
 .compose-editor-actions { display:flex; flex-wrap:wrap; gap:8px; }
-.compose-editor-message { margin:0; color:#a8d9b5; font-size:11px; }
-.compose-editor-error { margin:0; color:#ffc1b8; font-size:11px; }
+.compose-editor-message { margin:0; color:var(--success); font-size: 12px; }
+.compose-editor-error { margin:0; color:var(--danger); font-size: 12px; }
 @media (max-width:600px) { .compose-editor textarea { min-height:260px; } }
 </style>

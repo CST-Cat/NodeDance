@@ -8,6 +8,8 @@ The Core owns administrator identity, Agent enrollment, task records, history, p
 
 NodeDance is currently pre-release software. The product version is `0.0.0`; build artifacts from this repository report `dev` unless a build supplies another version. Read the data compatibility note below before replacing a v0 binary.
 
+For container deployment of either component, see [Docker deployment](docker.md).
+
 ## Requirements
 
 - Linux for the Core host and Agent hosts.
@@ -44,7 +46,11 @@ For local development, start the Core on loopback with development cookies enabl
 go run ./cmd/nodedance serve --dev --listen 127.0.0.1:8180 --data-dir ./data
 ```
 
-Open `http://127.0.0.1:8180`. On first start, the Core prints the path to a private, one-time setup credential file. Enter that credential in the first-run setup flow and choose an administrator password of at least 12 UTF-8 bytes. The Core removes the credential file after setup succeeds.
+On the first terminal start, Core asks for an administrator username and a hidden password. Press Enter at either prompt to generate that value automatically, or enter your own. Generated usernames contain 128 random bits; generated passwords contain 256 random bits. Custom usernames must contain 3–80 ASCII letters, digits, underscores or hyphens; custom passwords must contain 12–1024 UTF-8 bytes. The login username is separate from the editable display name.
+
+Core saves the initial login credentials in `initial-admin.json` inside its private `0700` data directory, with file permissions `0600`, and prints only the file path. Read this file locally, open `http://127.0.0.1:8180`, and sign in with both the username and password. The database stores an Argon2id password hash. Core deletes `initial-admin.json` after the first successful login. Restarting an initialized Core preserves its account and password.
+
+When Core starts without a terminal, including systemd, it generates both values automatically without waiting for input. To choose credentials for a service installation, run Core once interactively as the service user with the same data directory before enabling the service, then stop it and start the service.
 
 For a persistent installation, run `sudo make install` after a source build or use the published-release installer above, then create a dedicated Core service account and private data directory:
 
@@ -86,7 +92,7 @@ sudo systemctl enable --now nodedance.service
 sudo systemctl status nodedance.service
 ```
 
-The unit listens on loopback and stores its database and keys under `/var/lib/nodedance`. Configure the reverse proxy for HTTPS, WebSocket upgrades on `/ws/`, and forwarding to `127.0.0.1:8180`. Set `NODEDANCE_TRUSTED_PROXIES` or `trusted_proxies` only to the proxy addresses that actually connect to the Core. For direct access, bind the Core to the required interface and provide a trusted certificate with `--tls-cert` and `--tls-key`; a non-loopback Core listener refuses to start without both files. Do not expose an unencrypted Core listener to the public Internet. On first start, read the one-time setup credential from the private file path printed in the service log (normally `sudo -u nodedance cat /var/lib/nodedance/setup-credential.txt`), then enter it in the browser setup flow. The Core removes that credential after setup succeeds.
+The unit listens on loopback and stores its database and keys under `/var/lib/nodedance`. Configure the reverse proxy for HTTPS, WebSocket upgrades on `/ws/`, and forwarding to `127.0.0.1:8180`. Set `NODEDANCE_TRUSTED_PROXIES` or `trusted_proxies` only to the proxy addresses that actually connect to the Core. For direct access, bind the Core to the required interface. It serves HTTP by default; provide both `--tls-cert` and `--tls-key` to enable TLS at the Core. Plain HTTP is suitable for loopback and trusted private networks; do not expose an unencrypted Core listener directly to the public Internet. On first start, Core generates an administrator username and password automatically. Read them from the private file path printed in the service log (normally `sudo -u nodedance cat /var/lib/nodedance/initial-admin.json`) and use both to sign in. The service log does not contain the password. Core removes this file after the first successful login.
 
 Manage the service with `sudo systemctl restart nodedance.service`, `sudo systemctl stop nodedance.service`, and `sudo journalctl -u nodedance.service`. A local Agent can run on the same Linux host. Production Agent connections require HTTPS/WSS and a certificate trusted by the Agent host; the Agent uses the system trust store, so no custom CA file is needed for ordinary public certificates. A private CA can be supplied with `--ca-file`. Plain HTTP/WS is accepted only for a literal loopback Core address in development mode. The Agent connects outbound over WSS and reconnects automatically after temporary Core or network outages.
 

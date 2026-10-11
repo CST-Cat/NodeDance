@@ -1,0 +1,31 @@
+# syntax=docker/dockerfile:1
+FROM --platform=$BUILDPLATFORM node:22.23.3-bookworm-slim AS web
+WORKDIR /src/web
+RUN npm install --global pnpm@12.10.1
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web/ ./
+RUN pnpm typecheck && pnpm build
+
+FROM --platform=$BUILDPLATFORM golang:1.26.8-bookworm AS build
+ARG TARGETOS TARGETARCH
+ARG VERSION=dev
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+COPY --from=web /src/internal/core/webassets/dist ./internal/core/webassets/dist
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /out/nodedance ./cmd/nodedance
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 nodedance && useradd --uid 10001 --gid 10001 --no-create-home nodedance \
+    && install -d -o nodedance -g nodedance -m 0700 /var/lib/nodedance
+COPY --from=build /out/nodedance /usr/local/bin/nodedance
+USER 10001:10001
+ENV HOME=/var/lib/nodedance NODEDANCE_DATA_DIR=/var/lib/nodedance NODEDANCE_LISTEN=0.0.0.0:8180
+EXPOSE 8180
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s CMD curl --fail --silent http://127.0.0.1:8180/api/v1/health > /dev/null || exit 1
+ENTRYPOINT ["nodedance"]
+CMD ["serve"]

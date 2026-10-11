@@ -1,0 +1,55 @@
+name: Docker deployment
+
+on:
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'web/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'deploy/docker/**'
+      - '.dockerignore'
+      - 'scripts/test-docker.py'
+      - '.github/workflows/docker.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'web/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'deploy/docker/**'
+      - '.dockerignore'
+      - 'scripts/test-docker.py'
+      - '.github/workflows/docker.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Docker integration ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Core and Agent from source
+        run: |
+          docker build -f deploy/docker/Dockerfile.core -t nodedance-core:docker-test .
+          docker build -f deploy/docker/Dockerfile.agent -t nodedance-agent:docker-test .
+      - name: Validate Compose configurations
+        run: |
+          docker compose -f deploy/docker/compose.core.yml config -q
+          docker compose -f deploy/docker/compose.agent.yml config -q
+      - name: Test protected persistent state and host Agent deployment
+        run: python3 scripts/test-docker.py

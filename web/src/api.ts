@@ -438,6 +438,7 @@ export interface CreateFileTaskPayload {
 }
 
 interface AuthResponse {
+  initialCredentials?: { username: string; password?: string }
   user: User
   csrfToken: string
 }
@@ -541,18 +542,18 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
 
 export const api = {
   setupStatus: () => request<SetupStatus>('/api/v1/auth/setup/status'),
-  setup: (payload: { credential: string; password: string; displayName: string }) => {
+  setup: (payload: { credential: string; username?: string; password?: string; displayName?: string }) => {
     csrfToken = ''
     return request<AuthResponse>('/api/v1/auth/setup', {
       method: 'POST',
       body: JSON.stringify(payload),
     }, true)
   },
-  login: (password: string) => {
+  login: (username: string, password: string) => {
     csrfToken = ''
     return request<AuthResponse>('/api/v1/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ username, password }),
     }, true)
   },
   me: () => request<{ user: User }>('/api/v1/auth/me'),

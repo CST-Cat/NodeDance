@@ -1,0 +1,26 @@
+services:
+  agent:
+    image: ${NODEDANCE_AGENT_IMAGE:-nodedance-agent:local}
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.agent
+      args:
+        VERSION: ${AGENT_VERSION:-dev}
+    user: "0:0"
+    privileged: true
+    pid: host
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - type: bind
+        source: /
+        target: /host
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /var/lib/nodedance-agent
+        target: /var/lib/nodedance-agent
+        bind:
+          create_host_path: false
+    stop_grace_period: 30s

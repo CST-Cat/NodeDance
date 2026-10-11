@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS admin_user (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
+	username TEXT NOT NULL UNIQUE,
 	password_hash BLOB NOT NULL,
 	password_salt BLOB NOT NULL,
 	password_version TEXT NOT NULL,

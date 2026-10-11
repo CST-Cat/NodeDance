@@ -21,7 +21,7 @@ nodedance call nodes.metrics --params '{"nodeId":"NODE_UUID"}'
 nodedance containers list --params '{"nodeId":"NODE_UUID"}'
 ```
 
-`resource action`, `resource.action`, and `call resource.action` select the same operation. `--params`, `--query`, and `--body` accept literal JSON, `@file`, or `-` for stdin. Only one input may consume stdin. Passwords, credentials, registry secrets, and single-use terminal tickets should come from private files or stdin. For example, supply `{"password":"..."}` on stdin to `nodedance auth login --body -`; passwords need not enter shell history or process arguments.
+`resource action`, `resource.action`, and `call resource.action` select the same operation. `--params`, `--query`, and `--body` accept literal JSON, `@file`, or `-` for stdin. Only one input may consume stdin. Passwords, credentials, registry secrets, and single-use terminal tickets should come from private files or stdin. For example, supply `{"username":"...","password":"..."}` on stdin to `nodedance auth login --body -`; passwords need not enter shell history or process arguments.
 
 Finite remote calls print one JSON object:
 
@@ -103,7 +103,7 @@ CLI streams print the Core's messages as JSONL. Log and terminal byte data use b
 nodedance tui --server https://core.example --timeout 0
 ```
 
-The TUI uses the same catalog and client as CLI. Search with `/text`, move between pages with `n`/`p`, enter an operation number, and quit with `q`. Select `auth.login` first; password entry is hidden. Forms request path/query parameters, JSON bodies or private input files, and idempotency keys. Results paginate. Binary operations prompt for local filenames. Local lifecycle operations request native argument arrays (for example `["--data-dir","/var/lib/nodedance","--output","/private/core.tar"]`); Agent enrollment reads its token in a hidden prompt.
+The TUI uses the same catalog and client as CLI. Search with `/text`, move between pages with `n`/`p`, enter an operation number, and quit with `q`. Select `auth.login` first and enter both the account username and the hidden password. Forms request path/query parameters, JSON bodies or private input files, and idempotency keys. Results paginate. Binary operations prompt for local filenames. Local lifecycle operations request native argument arrays (for example `["--data-dir","/var/lib/nodedance","--output","/private/core.tar"]`); Agent enrollment reads its token in a hidden prompt.
 
 Select `terminal.open` for a real interactive host/container shell; it forwards keyboard input and terminal resizing. Press **Ctrl-]** to return to NodeDance. Other streams print JSONL and accept `/stop` to return. TUI input requires an actual terminal; LLMs should use the noninteractive CLI.
 
@@ -112,3 +112,9 @@ Select `terminal.open` for a real interactive host/container shell; it forwards 
 支持 English 和简体中文。Web 顶部切换语言；CLI 使用 `--lang en|zh-CN`，TUI 还可按 `l` 切换。Core 使用 `core-v*`，Agent 使用 `agent-v*` 独立发布，发布说明提供中英双语。
 
 [语言约定](i18n.md) · [发布流程](releases.md) · [Komari 优化学习](komari-optimizations.md)
+
+## First deployment
+
+An interactive `nodedance serve` on a new data directory prompts for the administrator username and a hidden password. Press Enter at either prompt to generate that field securely. Without a terminal, Core generates both fields automatically. Read the private `initial-admin.json` file at the path printed by Core and sign in with both fields; Core removes the file after the first successful login. Initialized data directories retain their existing account on restart.
+
+For an API setup against an uninitialized Core, `auth.setup` requires the one-time setup credential. `username` and `password` are optional; omitted or empty values generate random credentials. The setup response returns a generated username and, when generated, the password in `initialCredentials`; save these before discarding the response. `displayName` is optional and is separate from the login username.

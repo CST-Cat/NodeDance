@@ -80,6 +80,8 @@ func TestTUILoginAndReturn(t *testing.T) {
 	io.WriteString(master, "/auth.login\r")
 	await("Filter: auth.login")
 	io.WriteString(master, "1\r")
+	await("Administrator username")
+	io.WriteString(master, "test-admin\r")
 	await("Password (hidden)")
 	io.WriteString(master, "tui-password\r")
 	await("Enter to return:")

@@ -223,11 +223,15 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 		}
 		if o.BodySchema != nil {
 			if o.Name == "auth.login" {
+				username, e := prompt("Administrator username", false)
+				if e != nil {
+					return e
+				}
 				password, e := prompt("Password (hidden)", true)
 				if e != nil {
 					return e
 				}
-				in.Body, _ = json.Marshal(map[string]string{"password": password})
+				in.Body, _ = json.Marshal(map[string]string{"username": username, "password": password})
 			} else {
 				raw, _ := json.MarshalIndent(o.BodySchema, "", "  ")
 				write(tr("Body schema:\n") + string(raw) + "\n")

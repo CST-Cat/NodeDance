@@ -16,6 +16,7 @@ const selectedKey = ref('cpu.usage_percent')
 const chartError = ref('')
 let chart: echarts.ECharts | undefined
 let observer: ResizeObserver | undefined
+let themeObserver: MutationObserver | undefined
 
 const availableKeys = computed(() => {
   const labels = new Map<string, string>([
@@ -39,6 +40,11 @@ const selectedLabel = computed(() => availableKeys.value.find((item) => item.key
 const sampleCount = computed(() => props.history?.series.find((series) => series.key === selectedKey.value)?.points.length ?? 0)
 
 function chartOptions(): echarts.EChartsOption {
+  const style = host.value ? getComputedStyle(host.value) : null
+  const color = (name: string, fallback: string) => style?.getPropertyValue(name).trim() || fallback
+  const muted = color('--muted', '#6c6a64')
+  const line = color('--line', '#e6dfd8')
+  const accent = color('--accent-fill', '#cc785c')
   const history = props.history
   const metric = history?.series.find((item) => item.key === selectedKey.value)
   const from = history ? Date.parse(history.from) : Number.NaN
@@ -64,9 +70,9 @@ function chartOptions(): echarts.EChartsOption {
   return {
     animation: false,
     grid: { left: 54, right: 20, top: 24, bottom: 38 },
-    tooltip: { trigger: 'axis', valueFormatter: (value) => value == null ? t('m.63ef182b7603') : `${Number(value).toFixed(2)} ${unit}` },
-    xAxis: { type: 'time', axisLabel: { color: '#91a2ba', formatter: (value: number) => new Date(value).toLocaleString(locale.value, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }, axisPointer: { label: { formatter: (params: { value: string | number | Date }) => new Date(params.value).toLocaleString(locale.value) } }, axisLine: { lineStyle: { color: '#34445b' } } },
-    yAxis: { type: 'value', scale: !percent, name: unit, nameTextStyle: { color: '#91a2ba' }, axisLabel: { color: '#91a2ba' }, splitLine: { lineStyle: { color: 'rgba(145,162,186,.12)' } } },
+    tooltip: { backgroundColor: color('--surface', '#fffefa'), borderColor: line, textStyle: { color: color('--text', '#252523') }, trigger: 'axis', valueFormatter: (value) => value == null ? t('m.63ef182b7603') : `${Number(value).toFixed(2)} ${unit}` },
+    xAxis: { type: 'time', axisLabel: { color: muted, formatter: (value: number) => new Date(value).toLocaleString(locale.value, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }, axisPointer: { label: { formatter: (params: { value: string | number | Date }) => new Date(params.value).toLocaleString(locale.value) } }, axisLine: { lineStyle: { color: line } } },
+    yAxis: { type: 'value', scale: !percent, name: unit, nameTextStyle: { color: muted }, axisLabel: { color: muted }, splitLine: { lineStyle: { color: line } } },
     series: [{
       name: selectedLabel.value,
       type: 'line',
@@ -74,9 +80,9 @@ function chartOptions(): echarts.EChartsOption {
       connectNulls: false,
       sampling: 'lttb',
       data: normalized,
-      lineStyle: { width: 2, color: '#69b8ff' },
-      itemStyle: { color: '#69b8ff' },
-      areaStyle: { color: 'rgba(105,184,255,.08)' },
+      lineStyle: { width: 2, color: accent },
+      itemStyle: { color: accent },
+      areaStyle: { color: 'rgba(204,120,92,.1)' },
     }],
   }
 }
@@ -102,11 +108,17 @@ onMounted(() => {
   if (host.value) {
     observer = new ResizeObserver(() => chart?.resize())
     observer.observe(host.value)
+    const shell = host.value.closest('.app-shell')
+    if (shell) {
+      themeObserver = new MutationObserver(render)
+      themeObserver.observe(shell, { attributes: true, attributeFilter: ['data-theme'] })
+    }
   }
 })
 
 onBeforeUnmount(() => {
   observer?.disconnect()
+  themeObserver?.disconnect()
   chart?.dispose()
   chart = undefined
 })
@@ -136,16 +148,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.history-panel { margin-top: 18px; border: 1px solid rgba(171, 196, 232, .13); border-radius: 12px; padding: clamp(14px, 2vw, 20px); background: rgba(9, 17, 29, .46); color: #eaf0fa; }
+.history-panel { margin-top: 18px; border: 1px solid var(--line); border-radius: 12px; padding: clamp(14px, 2vw, 20px); background: var(--surface-soft); color: var(--text); }
 .history-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
 .history-heading h2 { margin: 4px 0 0; font-size: 17px; }
-.history-heading p, .history-note, .history-stale, .history-empty { color: #9aabc1; font-size: 11px; line-height: 1.6; }
-.history-metric-select { display: grid; gap: 5px; color: #9aabc1; font-size: 10px; }
-.history-metric-select select { min-height: 36px; border: 1px solid rgba(171, 196, 232, .18); border-radius: 7px; padding: 5px 10px; color: #eaf0fa; background: #111b29; font: inherit; }
-.history-stale { border-left: 2px solid #efb77b; padding-left: 10px; color: #efc58d; }
+.history-heading p, .history-note, .history-stale, .history-empty { color: var(--muted-strong); font-size: 12px; line-height: 1.6; }
+.history-metric-select { display: grid; gap: 5px; color: var(--muted-strong); font-size: 12px; }
+.history-metric-select select { min-height: 36px; border: 1px solid var(--line); border-radius: 7px; padding: 5px 10px; color: var(--text); background: var(--surface-soft); font: inherit; }
+.history-stale { border-left: 2px solid var(--warning); padding-left: 10px; color: var(--warning); }
 .history-chart { width: 100%; height: min(360px, 55vh); min-height: 250px; }
-.history-state { display: grid; min-height: 250px; place-items: center; color: #9aabc1; font-size: 12px; }
-.history-error { color: #ffc1b8; }
+.history-state { display: grid; min-height: 250px; place-items: center; color: var(--muted-strong); font-size: 12px; }
+.history-error { color: var(--danger); }
 .history-empty { margin: -22px 0 12px; text-align: center; pointer-events: none; }
 @media (max-width: 480px) { .history-heading { align-items: flex-start; flex-direction: column; } .history-metric-select { width: 100%; } .history-metric-select select { width: 100%; } }
 </style>

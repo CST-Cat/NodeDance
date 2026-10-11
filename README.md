@@ -14,11 +14,13 @@ NodeDance 是一套自托管的 Linux 多主机监控与管理系统，由 **Cor
 curl -fsSL https://github.com/CST-Cat/NodeDance/releases/latest/download/install-core.sh | sudo bash
 ```
 
-该命令安装 Core 程序。生产环境还需要配置 HTTPS 反向代理并运行 Core 服务，详见[部署指南](docs/installation.en.md#run-the-core)。
+该命令安装 Core 程序。首次交互启动时可自定义登录账号名与密码，每项直接回车即自动生成高强度随机值；systemd 等无终端启动会自动生成两项，并保存在数据目录的 `0600` 权限文件 `initial-admin.json` 中，首次登录成功后删除。生产环境还需要配置 HTTPS 反向代理并运行 Core 服务，详见[部署指南](docs/installation.en.md#run-the-core)。
 
 ### Agent
 
 登录 Core 后进入 **添加 Agent**，填写节点名称并生成安装命令。在目标 Linux 主机上运行该命令，再按提示输入一次性注册令牌。命令会自动选择并固定到最新已发布的 Agent 版本；Agent 以 root 服务运行。
+
+Core 和 Agent 也支持 [Docker 部署](docs/docker.md)，提供独立镜像、Compose 示例和版本化发布。
 
 ## 功能
 

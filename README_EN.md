@@ -16,9 +16,13 @@ curl -fsSL https://github.com/CST-Cat/NodeDance/releases/latest/download/install
 
 This installs the Core program. Production deployments also need an HTTPS reverse proxy and a running Core service. See the [deployment guide](docs/installation.en.md#run-the-core).
 
+On first interactive start, enter a username and password or press Enter to generate either securely. Unattended starts generate both in the private `initial-admin.json` file, removed after the first successful login.
+
 ### Agent
 
 Sign in to Core, open **Add Agent**, enter a node name, and generate the installer command. Run that command on the target Linux host, then enter the one-time enrollment token when prompted. The command selects and pins the latest published Agent version. The Agent runs as a root service.
+
+Core and Agent also support [Docker deployment](docs/docker.md), with separate images, Compose examples, and versioned releases.
 
 ## Features
 

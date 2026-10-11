@@ -4,8 +4,8 @@ Core and Agent are versioned independently:
 
 | Component / 组件 | Tag / 标签 | Changelog / 更新日志 | Assets / 产物 |
 | --- | --- | --- | --- |
-| Core | `core-vMAJOR.MINOR.PATCH` | `CHANGELOG_CORE.md` | Embedded Web + CLI/TUI Linux amd64/arm64 binaries and `.tar.gz` archives, latest-resolving installer, SHA256SUMS |
-| Agent | `agent-vMAJOR.MINOR.PATCH` | `CHANGELOG_AGENT.md` | Root Agent Linux amd64/arm64 binaries, installer, SHA256SUMS |
+| Core | `core-vMAJOR.MINOR.PATCH` | `CHANGELOG_CORE.md` | Embedded Web + CLI/TUI Linux amd64/arm64 binaries and `.tar.gz` archives, latest-resolving installer, SHA256SUMS, version-pinned GHCR Docker image |
+| Agent | `agent-vMAJOR.MINOR.PATCH` | `CHANGELOG_AGENT.md` | Root Agent Linux amd64/arm64 binaries, installer, SHA256SUMS, version-pinned GHCR Docker image |
 
 Core 的 Web、CLI、TUI 同时打包发布。Agent 独立发布，只有 Agent 相关改动才需要更新 Agent 版本。Agent 和 Core 的运行互通取决于协议版本及能力协商，无需发布版本号相同。
 
@@ -39,3 +39,9 @@ Both workflows use a build matrix: `ubuntu-24.04` for amd64 and `ubuntu-24.04-ar
 Core prepares and checks Web assets once, then shares the same assets with both native builds. Release publication waits for **both** matrix jobs to pass, merges their artifacts, restores executable permissions lost during artifact transfer, creates one `.tar.gz` archive per architecture, and generates one checksum manifest covering both raw binaries and archives. The Core installer is published alongside these assets and resolves the latest stable Core release by default; it can also install an explicitly pinned Core tag. A failed build or test blocks publication; the other architecture still completes to provide diagnostics.
 
 Core 的 Web 资源只构建和检查一次，两台原生 runner 使用相同资源。发布必须等待**两个架构**全部通过，随后汇总产物、恢复 artifact 传输丢失的执行权限、为每个架构创建一个 `.tar.gz`，并为裸二进制和压缩包生成统一校验清单。Core 安装脚本也会随 release 发布，默认解析最新正式 Core 版本，也可指定 tag 安装。任一架构构建或测试失败都会阻止发布，另一架构继续运行以保留诊断结果。
+
+## Docker images / Docker 镜像
+
+Release workflows publish `ghcr.io/cst-cat/nodedance-core:core-vX.Y.Z` and `ghcr.io/cst-cat/nodedance-agent:agent-vX.Y.Z` for Linux amd64/arm64 after native binary tests pass. GitHub Release publication also waits for the image job. Images have separate component tags; deployment examples and container integration checks are described in [Docker deployment](docker.md).
+
+原生二进制测试通过后，发布工作流推送两个架构的固定版本 GHCR 镜像；GitHub Release 也等待镜像任务成功。Core 与 Agent 使用各自的标签，部署示例与容器集成检查详见 [Docker 部署](docker.md)。
