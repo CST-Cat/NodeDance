@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { operationURL } from './operations'
+import HostManagement from './components/HostManagement.vue'
 import UpdateCenter from './components/UpdateCenter.vue'
 import OperationConsole from './components/OperationConsole.vue'
 import { t, display, locale, setLocale, type Locale } from "./i18n"
@@ -13,7 +14,7 @@ import UiIcon from './components/UiIcon.vue'
 import UiDialog from './components/UiDialog.vue'
 import { cancelDialogs } from './dialogs'
 
-type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'agent-enrollment' | 'alerts' | 'operations' | 'updates'
+type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'agent-enrollment' | 'alerts' | 'operations' | 'updates' | 'host-management'
 type ImageKind = 'avatar' | 'background'
 
 const screen = ref<Screen>('loading')
@@ -54,6 +55,7 @@ const navigation = [
   { screen: 'agent-enrollment', label: 'nav.enrollment', icon: 'add' },
   { screen: 'discovery', label: 'nav.discovery', icon: 'discovery' },
   { screen: 'alerts', label: 'nav.alerts', icon: 'alerts' },
+  { screen: 'host-management', label: 'host.title', icon: 'terminal' },
   { screen: 'updates', label: 'nav.updates', icon: 'refresh' },
   { screen: 'operations', label: 'nav.operations', icon: 'terminal' },
   { screen: 'settings', label: 'nav.settings', icon: 'settings' },
@@ -526,7 +528,8 @@ onBeforeUnmount(() => {
 
     <AgentEnrollment v-else-if="screen === 'agent-enrollment'" @back="screen = 'nodes'" />
 
-    <UpdateCenter v-else-if="screen === 'updates'" />
+    <HostManagement v-else-if="screen === 'host-management'" />
+      <UpdateCenter v-else-if="screen === 'updates'" />
     <OperationConsole v-else-if="screen === 'operations'" />
 
     <AlertCenter v-else-if="screen === 'alerts'" />

@@ -6,6 +6,21 @@
 
 ### 简体中文
 
+## [0.1.10]
+
+### English
+
+- Expose extended Agent metrics, settings, diagnostics and durable commands through the shared operation contract, with synchronized Web, CLI and TUI access and bilingual Host management screens.
+- Add batch scripts and probes, bounded shared enrollment grants, asset expiry and traffic quota reminders, GPU/host metric history and alerts, and probe latency/failure/loss/jitter statistics.
+- Add the authenticated HTTP Agent channel with sequencing, retry deduplication and acknowledged polling; expand the current monitoring schema while preserving existing data. Upgrade Agents to agent-v0.1.8 to enable the new metrics and host controls.
+
+### 简体中文
+
+- 通过统一操作契约提供 Agent 扩展指标、配置、诊断及持久化命令，同步 Web、CLI、TUI，并增加双语主机管理页面。
+- 新增批量脚本与探测、限时限次数共享注册密钥、资产到期与流量配额提醒、GPU/主机指标历史与告警，以及探测延迟、失败率、丢包率和抖动统计。
+- 新增带帧序号、重试去重及轮询确认的认证 HTTP Agent 通道；扩展当前监控数据结构并保留已有数据。升级 Agent 至 agent-v0.1.8 后可使用新指标与主机控制。
+
+
 ## [0.1.9]
 
 ### English

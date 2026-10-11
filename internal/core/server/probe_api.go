@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/core/audit"
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
@@ -76,6 +77,32 @@ func (s *Server) handleProbeAPI(w http.ResponseWriter, r *http.Request, current 
 	}
 	probeID := parts[0]
 	if len(parts) == 2 {
+		if parts[1] == "quality" && r.Method == http.MethodGet {
+			to := s.now().UTC()
+			from := to.Add(-time.Hour)
+			var err error
+			if v := r.URL.Query().Get("from"); v != "" {
+				from, err = time.Parse(time.RFC3339Nano, v)
+				if err != nil {
+					http.Error(w, "invalid from", 400)
+					return true
+				}
+			}
+			if v := r.URL.Query().Get("to"); v != "" {
+				to, err = time.Parse(time.RFC3339Nano, v)
+				if err != nil {
+					http.Error(w, "invalid to", 400)
+					return true
+				}
+			}
+			q, err := s.probes.Quality(r.Context(), probeID, from, to)
+			if err != nil {
+				http.Error(w, err.Error(), 400)
+			} else {
+				writeJSON(w, 200, q)
+			}
+			return true
+		}
 		if parts[1] != "history" || r.Method != http.MethodGet {
 			if parts[1] == "history" {
 				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -174,7 +201,7 @@ func configFromRequest(request probeConfigRequest, isCreate bool) (coreprobes.Co
 	config := coreprobes.Config{NodeID: request.NodeID, Name: request.Name, Kind: request.Kind,
 		Target: request.Target, ExpectedHTTPStatus: status, IntervalSeconds: request.IntervalSeconds,
 		TimeoutSeconds: request.TimeoutSeconds, Enabled: enabled}
-	if request.Kind == "tcp" {
+	if request.Kind == "tcp" || request.Kind == "icmp" {
 		config.ExpectedHTTPStatus = 0
 	}
 	return config, coreprobes.ValidateConfig(config)

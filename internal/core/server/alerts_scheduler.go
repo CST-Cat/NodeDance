@@ -45,6 +45,7 @@ func (s *Server) evaluateAlerts(ctx context.Context) error {
 	}
 	probesByNode := groupAlertProbeConfigsByNode(probeConfigs)
 	samples := make([]corealerts.Sample, 0, len(nodes)*8)
+	online := map[string]bool{}
 	for _, node := range nodes {
 		if node.Status == "pending" || node.Status == "revoked" || node.NodeID == "" {
 			continue
@@ -57,12 +58,22 @@ func (s *Server) evaluateAlerts(ctx context.Context) error {
 			return err
 		}
 		samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindNodeOffline, Known: true, State: map[bool]string{true: "online", false: "offline"}[state.Status == "online"], ObservedAt: now})
+		asset, err := s.nodeAsset(ctx, node.NodeID)
+		if err != nil {
+			return err
+		}
+		samples = append(samples, assetSamples(node.NodeID, node.DisplayName, asset, nil, now)[0])
 		if state.Status != "online" || lease == nil {
 			continue
 		}
+		online[node.NodeID] = true
 		metricView, ok := s.metrics.SnapshotAt(node.NodeID, lease, now)
 		if ok {
+			samples = append(samples, assetSamples(node.NodeID, node.DisplayName, asset, metricView.Metrics.Host, now)[1])
 			received := metricView.ReceivedAt
+			for key, m := range protocol.HostNumericMetrics(metricView.Metrics.Host) {
+				samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindMetric, SubjectID: key, Known: m.Status == protocol.MetricKnown && m.Value != nil, Value: m.Value, ObservedAt: sampleObserved(m.SampledAt, received)})
+			}
 			cpu := metricView.Metrics.CPU.UsagePercent
 			samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindCPU, Known: cpu.Status == protocol.MetricKnown && cpu.Value != nil, Value: cpu.Value, ObservedAt: sampleObserved(cpu.SampledAt, received)})
 			memory := metricView.Metrics.Memory
@@ -118,6 +129,25 @@ func (s *Server) evaluateAlerts(ctx context.Context) error {
 	rules, err := s.alerts.ListRules(ctx, "")
 	if err != nil {
 		return err
+	}
+	wanted := map[string]bool{}
+	for _, rule := range rules {
+		if rule.Enabled && (rule.Kind == corealerts.KindProbeLatency || rule.Kind == corealerts.KindProbeFailure || rule.Kind == corealerts.KindProbePacketLoss) {
+			wanted[rule.SubjectID] = true
+		}
+	}
+	for _, p := range probeConfigs {
+		if !wanted[p.ID] || !online[p.NodeID] || !p.Enabled {
+			continue
+		}
+		q, err := s.probes.Quality(ctx, p.ID, now.Add(-15*time.Minute), now)
+		if err != nil {
+			return err
+		}
+		at, _ := time.Parse(time.RFC3339Nano, p.LastCheckedAt)
+		fresh := !at.IsZero() && now.Sub(at) <= time.Duration(p.IntervalSeconds*3)*time.Second
+		samples = append(samples, corealerts.Sample{NodeID: p.NodeID, Kind: corealerts.KindProbePacketLoss, SubjectID: p.ID, Known: fresh && q.PacketLossPercent != nil, Value: q.PacketLossPercent, ObservedAt: at})
+		samples = append(samples, corealerts.Sample{NodeID: p.NodeID, Kind: corealerts.KindProbeLatency, SubjectID: p.ID, Known: fresh && q.P95LatencyMS != nil, Value: q.P95LatencyMS, ObservedAt: at}, corealerts.Sample{NodeID: p.NodeID, Kind: corealerts.KindProbeFailure, SubjectID: p.ID, Known: fresh && q.FailurePercent != nil, Value: q.FailurePercent, ObservedAt: at})
 	}
 	known := make(map[string]bool, len(samples))
 	for _, sample := range samples {

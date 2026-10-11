@@ -40,6 +40,7 @@ type collectorSource interface {
 }
 
 type Collector struct {
+	host   *hostCollector
 	source collectorSource
 	now    func() time.Time
 
@@ -92,6 +93,9 @@ func (c *Collector) Sample(ctx context.Context) Snapshot {
 	snapshot.Memory = c.collectMemory(ctx, at)
 	snapshot.Network = c.collectNetwork(ctx, at)
 	snapshot.Uptime = c.collectUptime(ctx, at)
+	if c.host != nil {
+		snapshot.Host = c.host.collect(ctx, at, snapshot.Network.Interfaces)
+	}
 	c.stateMu.Lock()
 	snapshot.Disk = cloneDiskSnapshot(c.latestDisk)
 	c.stateMu.Unlock()
@@ -144,7 +148,7 @@ func (c *Collector) Done() <-chan struct{} {
 
 func (c *Collector) runFast(ctx context.Context) {
 	defer close(c.updates)
-	ticker := time.NewTicker(DefaultFastInterval)
+	ticker := time.NewTimer(c.fastInterval())
 	defer ticker.Stop()
 	for {
 		publishLatest(c.updates, c.Sample(ctx))
@@ -152,12 +156,13 @@ func (c *Collector) runFast(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			ticker.Reset(c.fastInterval())
 		}
 	}
 }
 
 func (c *Collector) runDisk(ctx context.Context) {
-	ticker := time.NewTicker(DefaultDiskInterval)
+	ticker := time.NewTimer(c.diskInterval())
 	defer ticker.Stop()
 	for {
 		c.SampleDisk(ctx)
@@ -165,6 +170,7 @@ func (c *Collector) runDisk(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			ticker.Reset(c.diskInterval())
 		}
 	}
 }
@@ -277,7 +283,11 @@ func (c *Collector) collectMemory(ctx context.Context, at time.Time) Metric[Memo
 	if err != nil {
 		return unknown[Memory](reasonFromError(err), at)
 	}
-	value, reason := memoryUsage(sample)
+	mode := "available"
+	if c.host != nil {
+		mode = c.host.settings().MemoryMode
+	}
+	value, reason := memoryUsageMode(sample, mode)
 	if reason != "" {
 		return unknown[Memory](reason, at)
 	}
@@ -371,6 +381,7 @@ func (c *Collector) collectNetwork(ctx context.Context, at time.Time) NetworkSna
 			linkErr = errInvalidData
 		}
 		included, summaryReason, classifiable := classifyInterface(counter.Name, facts, factsOK, link, linkErr, after.masterKinds[link.master])
+		included, summaryReason = c.filterInterface(counter.Name, included, summaryReason)
 		if !classifiable {
 			classificationKnown = false
 		}
@@ -495,4 +506,17 @@ func cloneDiskSnapshot(in DiskSnapshot) DiskSnapshot {
 		}
 	}
 	return out
+}
+
+func (c *Collector) fastInterval() time.Duration {
+	if c.host != nil {
+		return time.Duration(c.host.settings().FastIntervalSeconds) * time.Second
+	}
+	return DefaultFastInterval
+}
+func (c *Collector) diskInterval() time.Duration {
+	if c.host != nil {
+		return time.Duration(c.host.settings().DiskIntervalSeconds) * time.Second
+	}
+	return DefaultDiskInterval
 }

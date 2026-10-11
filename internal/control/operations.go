@@ -58,7 +58,26 @@ func fields(spec string) any {
 	}
 	return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}
 }
-func schema(value any) any { return typeSchema(reflect.TypeOf(value)) }
+func schema(value any) any {
+	body := typeSchema(reflect.TypeOf(value)).(map[string]any)
+	props, _ := body["properties"].(map[string]any)
+	enum := func(key string, values ...string) {
+		if p, ok := props[key].(map[string]any); ok {
+			p["enum"] = values
+		}
+	}
+	switch value.(type) {
+	case protocol.AgentSettings:
+		enum("memoryMode", "available", "raw", "cached")
+		enum("transport", "auto", "websocket", "http")
+		enum("preferIpVersion", "", "4", "6")
+	case protocol.NodeAsset:
+		enum("trafficAccounting", "sum", "max", "min", "up", "down")
+	case protocol.BatchProbe:
+		enum("kind", "http", "https", "tcp", "icmp")
+	}
+	return body
+}
 func typeSchema(t reflect.Type) any {
 	if t.Kind() == reflect.Pointer {
 		return typeSchema(t.Elem())
@@ -132,6 +151,19 @@ func buildOperations() []Operation {
 		op("sessions.list", "GET", "/api/v1/auth/sessions", "Administrator sessions", nil),
 		op("sessions.revoke", "DELETE", "/api/v1/auth/sessions/{id}", "Revoke selected session", nil),
 		op("nodes.list", "GET", "/api/v1/nodes", "Nodes, online state and Agent capabilities", nil),
+		op("nodes.asset", "GET", node+"/asset", "Node cost, expiry and traffic quota settings", nil),
+		op("nodes.save-asset", "PUT", node+"/asset", "Save node asset and reminder settings", schema(protocol.NodeAsset{})),
+		op("agents.settings", "GET", node+"/agent-settings", "Agent sampling, networking and update settings", nil),
+		op("agents.configure", "PUT", node+"/agent-settings", "Persist Agent settings; connection changes apply on reconnect", schema(protocol.AgentSettings{})),
+		op("agents.diagnostics", "GET", node+"/diagnostics", "Effective Agent configuration with credentials redacted", nil),
+		op("commands.batches", "GET", "/api/v1/commands/batches", "Host command batch history", nil),
+		op("commands.batch", "POST", "/api/v1/commands/batches", "Execute a confirmed script on multiple nodes with per-node idempotency", schema(protocol.BatchCommand{})),
+		op("commands.batch-status", "GET", "/api/v1/commands/batches/{batchId}", "Batch results; offline nodes are explicitly stale", nil),
+		op("commands.batch-cancel", "DELETE", "/api/v1/commands/batches/{batchId}", "Cancel running commands across a batch", nil),
+		op("commands.list", "GET", node+"/commands", "Durable host command history", nil),
+		op("commands.submit", "POST", node+"/commands", "Execute a bounded root host script; confirmation and Idempotency-Key required", schema(protocol.CommandSpec{})),
+		op("commands.get", "GET", node+"/commands/{jobId}", "Host command status, exit code and bounded output", nil),
+		op("commands.cancel", "DELETE", node+"/commands/{jobId}", "Cancel a running host command process group", nil),
 		op("nodes.metrics", "GET", node+"/metrics", "Latest host metrics", nil),
 		op("nodes.history", "GET", node+"/history", "Metric history; from/to are RFC3339, resolution is minute or hour", nil, "from", "to", "resolution"),
 		op("nodes.preferences", "GET", node+"/preferences", "Node and container display preferences", nil),
@@ -139,6 +171,9 @@ func buildOperations() []Operation {
 		op("dashboard.settings", "GET", "/api/v1/dashboard/settings", "Dashboard settings", nil),
 		op("dashboard.save-settings", "PUT", "/api/v1/dashboard/settings", "Save dashboard settings", schema(dashboard.Settings{})),
 		op("dashboard.watch", "GET", "/ws/v1/dashboard", "Live dashboard messages as JSONL", nil),
+		op("agents.grants", "GET", "/api/v1/agents/enrollment-grants", "List bounded enrollment grants without secrets", nil),
+		op("agents.create-grant", "POST", "/api/v1/agents/enrollment-grants", "Create an expiring, revocable shared enrollment key; each Agent gets a separate identity", schema(agents.GrantRequest{})),
+		op("agents.revoke-grant", "DELETE", "/api/v1/agents/enrollment-grants/{grantId}", "Revoke a shared enrollment key", nil),
 		op("agents.enrollment", "POST", "/api/v1/agents/enrollments", "Create one-time Agent enrollment with native or Docker installation commands (response contains secret)", enrollmentSchema()),
 		op("agents.revoke", "POST", "/api/v1/agents/{agentId}/revoke", "Revoke Agent identity", nil),
 		op("agents.rotate", "POST", "/api/v1/agents/{agentId}/rotate", "Rotate Agent credential", nil),
@@ -171,11 +206,14 @@ func buildOperations() []Operation {
 		op("terminal.create", "POST", node+"/terminals", "Authorize host/container terminal; returns a single-use ticket", fields("targetKind:string containerId?:string")),
 		op("terminal.cancel", "DELETE", node+"/terminals/{streamId}", "Cancel pending terminal authorization", nil),
 		op("terminal.connect", "GET", "/ws/v1/streams/terminal", "Bidirectional terminal JSONL frames; ticket from terminal.create, provide it via --query @file", nil, "ticket"),
+		op("probes.batch", "POST", "/api/v1/probes/batch", "Create the same probe on multiple nodes", schema(protocol.BatchProbe{})),
 		op("probes.list", "GET", "/api/v1/probes", "Service probes", nil),
 		op("probes.get", "GET", "/api/v1/probes/{id}", "Probe configuration", nil),
-		op("probes.create", "POST", "/api/v1/probes", "Create HTTP, HTTPS or TCP probe", fields("nodeId:string name:string kind:string target:string expectedHttpStatus?:integer intervalSeconds:integer timeoutSeconds:integer enabled?:boolean revision?:integer")),
+		op("probes.create", "POST", "/api/v1/probes", "Create HTTP, HTTPS, TCP or ICMP probe", fields("nodeId:string name:string kind:string target:string expectedHttpStatus?:integer intervalSeconds:integer timeoutSeconds:integer enabled?:boolean revision?:integer")),
 		op("probes.update", "PUT", "/api/v1/probes/{id}", "Update probe using current revision", nil),
 		op("probes.delete", "DELETE", "/api/v1/probes/{id}", "Delete probe using current revision", nil, "revision"),
+		op("probes.quality", "GET", "/api/v1/probes/{id}/quality", "Latency percentiles and failure rates; offline gaps are unknown", nil, "from", "to"),
+		op("metrics.catalog", "GET", "/api/v1/metrics/catalog", "Host metrics available for history and threshold alerts", nil),
 		op("probes.history", "GET", "/api/v1/probes/{id}/history", "Probe runs", nil, "limit"),
 		op("alerts.list", "GET", "/api/v1/alerts", "Active alerts", nil, "limit"),
 		op("alerts.history", "GET", "/api/v1/alerts/history", "Alert history", nil, "limit"),
@@ -211,7 +249,7 @@ func buildOperations() []Operation {
 	for i := range list {
 		o := &list[i]
 		switch o.Name {
-		case "updates.apply", "updates.rollback", "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "deployments.create":
+		case "probes.batch", "commands.batch", "commands.submit", "updates.apply", "updates.rollback", "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "deployments.create":
 			o.Idempotent = true
 		}
 		if o.Name == "terminal.open" {

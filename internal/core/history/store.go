@@ -212,6 +212,9 @@ func snapshotValues(snapshot protocol.MetricsSnapshot) []value {
 		appendKnown("network.received_bytes_per_second", protocol.MetricKnown, &snapshot.Network.Summary.Value.ReceivedBytesPerSecond)
 		appendKnown("network.sent_bytes_per_second", protocol.MetricKnown, &snapshot.Network.Summary.Value.SentBytesPerSecond)
 	}
+	for key, m := range protocol.HostNumericMetrics(snapshot.Host) {
+		appendKnown(key, m.Status, m.Value)
+	}
 	seenMount := make(map[string]struct{}, len(snapshot.Disk.Mounts))
 	for _, mount := range snapshot.Disk.Mounts {
 		if mount.Mountpoint == "" || len(mount.Mountpoint) > 2048 || mount.Usage.Status != protocol.MetricKnown || mount.Usage.Value == nil {
@@ -236,6 +239,9 @@ func snapshotValues(snapshot protocol.MetricsSnapshot) []value {
 func ValidKey(key string) bool {
 	if len(key) > 4096 || strings.TrimSpace(key) != key {
 		return false
+	}
+	if _, ok := protocol.HostMetricKeys[key]; ok {
+		return true
 	}
 	switch key {
 	case "cpu.usage_percent", "memory.used_percent", "memory.used_bytes", "network.received_bytes_per_second", "network.sent_bytes_per_second":

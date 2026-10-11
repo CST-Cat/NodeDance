@@ -13,29 +13,34 @@ import (
 	"strings"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/agent/networkpolicy"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 const maxProbeResponseBytes = 4096
 
 type Executor struct {
+	settings    func() protocol.AgentSettings
 	client      *http.Client
 	dialContext func(context.Context, string, string) (net.Conn, error)
 }
 
-func NewExecutor() *Executor {
-	dialer := &net.Dialer{Timeout: time.Duration(protocol.MaxProbeTimeoutSeconds) * time.Second, KeepAlive: 30 * time.Second}
+func NewExecutor() *Executor { return NewConfiguredExecutor(protocol.DefaultAgentSettings) }
+func NewConfiguredExecutor(settings func() protocol.AgentSettings) *Executor {
+	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		return networkpolicy.Dial(ctx, network, address, settings())
+	}
 	transport := &http.Transport{
 		Proxy:                 nil, // Probes always originate directly from the managed node.
-		DialContext:           dialer.DialContext,
+		DialContext:           dial,
 		TLSHandshakeTimeout:   time.Duration(protocol.MaxProbeTimeoutSeconds) * time.Second,
 		ResponseHeaderTimeout: time.Duration(protocol.MaxProbeTimeoutSeconds) * time.Second,
 		MaxConnsPerHost:       MaxConcurrent,
 		DisableKeepAlives:     true,
 	}
-	return &Executor{
+	return &Executor{settings: settings,
 		client:      &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
-		dialContext: dialer.DialContext,
+		dialContext: dial,
 	}
 }
 
@@ -56,6 +61,8 @@ func (e *Executor) Execute(parent context.Context, dispatch protocol.ProbeDispat
 		if err == nil && httpStatus != dispatch.ExpectedHTTPStatus {
 			err = errHTTPStatusMismatch
 		}
+	case protocol.ProbeICMP:
+		err = e.checkICMP(ctx, dispatch.Target)
 	case protocol.ProbeTCP:
 		err = e.checkTCP(ctx, dispatch.Target)
 	default:
@@ -98,6 +105,11 @@ func (e *Executor) checkTCP(ctx context.Context, target string) error {
 }
 
 func classifyError(ctx context.Context, err error) string {
+	var dnsError *net.DNSError
+	if errors.As(err, &dnsError) {
+		return "dns"
+	}
+
 	if ctx.Err() == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
 		return "timeout"
 	}
@@ -115,10 +127,6 @@ func classifyError(ctx context.Context, err error) string {
 	var hostnameError x509.HostnameError
 	if errors.As(err, &hostnameError) {
 		return "tls_verification"
-	}
-	var dnsError *net.DNSError
-	if errors.As(err, &dnsError) {
-		return "dns"
 	}
 	var operationError *net.OpError
 	if errors.As(err, &operationError) && (operationError.Timeout() || os.IsTimeout(err)) {

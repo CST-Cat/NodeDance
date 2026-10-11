@@ -24,6 +24,7 @@ export interface MetricsView {
   serverTime: string
   leaseValidUntil: string
   metrics: {
+    host?: HostMetrics
     system: {
       hostname: Metric<string>
       os: Metric<string>
@@ -80,4 +81,17 @@ export interface MetricsView {
       bootTimeUnix?: number
     }>
   }
+}
+
+export interface HostMetrics {
+ memoryMode?:string;fastIntervalSeconds:number; diskIntervalSeconds:number
+ swap:Metric<{totalBytes:number;usedBytes:number;usedPercent:number}>
+ load:Metric<{one:number;five:number;fifteen:number}>
+ processes:Metric<number>;sockets:Metric<{tcp:number;udp:number}>
+ cpu:Metric<{model:string;physicalCores:number}>;virtualization:Metric<string>
+ memory:Metric<{rawUsedBytes?:number;availableBytes?:number;freeBytes:number;cachedBytes:number;bufferedBytes:number;sharedBytes:number}>
+ addresses:Metric<Array<{interface:string;address:string;family:number}>>
+ publicIpv4:Metric<string>;publicIpv6:Metric<string>
+ gpus:Metric<Array<{id:string;name:string;utilization?:number;memoryTotalBytes?:number;memoryUsedBytes?:number;temperatureCelsius?:number}>>
+ traffic:Metric<{receivedBytes:number;sentBytes:number;periodReceivedBytes:number;periodSentBytes:number;periodStart:string;coverageStart:string;lastSample:string;gaps:number}>
 }

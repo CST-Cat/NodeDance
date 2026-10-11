@@ -5,6 +5,7 @@ package alerts
 
 import (
 	"errors"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"math"
 	"net/mail"
 	"net/url"
@@ -22,6 +23,12 @@ const (
 	KindDockerUnavailable = "docker_unavailable"
 	KindContainerState    = "container_state"
 	KindProbeState        = "probe_state"
+	KindAssetExpiry       = "asset_expiry"
+	KindTrafficQuota      = "traffic_quota"
+	KindMetric            = "metric"
+	KindProbeLatency      = "probe_latency"
+	KindProbePacketLoss   = "probe_packet_loss"
+	KindProbeFailure      = "probe_failure"
 
 	SeverityInfo     = "info"
 	SeverityWarning  = "warning"
@@ -211,7 +218,7 @@ func ValidateRule(input RuleInput) error {
 		return errors.New("alert duration and cooldown must be between 0 and 86400 seconds")
 	}
 	switch input.Kind {
-	case KindNodeOffline, KindDockerUnavailable:
+	case KindNodeOffline, KindDockerUnavailable, KindAssetExpiry, KindTrafficQuota:
 		if input.SubjectID != "" || input.Threshold != nil || input.ExpectedState != "" {
 			return errors.New("node-level alert rule has incompatible condition fields")
 		}
@@ -225,6 +232,17 @@ func ValidateRule(input RuleInput) error {
 	case KindContainerState:
 		if input.SubjectID == "" || input.Threshold != nil || (input.ExpectedState != "running" && input.ExpectedState != "healthy" && input.ExpectedState != "stopped" && input.ExpectedState != "unhealthy") {
 			return errors.New("container rule requires a container ID and supported expected state")
+		}
+	case KindMetric:
+		if _, ok := protocol.HostMetricKeys[input.SubjectID]; !ok || input.Threshold == nil || math.IsNaN(*input.Threshold) || math.IsInf(*input.Threshold, 0) || *input.Threshold < 0 || input.ExpectedState != "" {
+			return errors.New("metric rule requires a supported metric subject and nonnegative threshold")
+		}
+	case KindProbeLatency, KindProbeFailure, KindProbePacketLoss:
+		if !uuidPattern.MatchString(input.SubjectID) || input.Threshold == nil || math.IsNaN(*input.Threshold) || math.IsInf(*input.Threshold, 0) || *input.Threshold < 0 || input.ExpectedState != "" {
+			return errors.New("probe quality rule requires a probe ID and nonnegative threshold")
+		}
+		if (input.Kind == KindProbeFailure || input.Kind == KindProbePacketLoss) && *input.Threshold > 100 {
+			return errors.New("probe failure threshold must be 0..100 percent")
 		}
 	case KindProbeState:
 		if !uuidPattern.MatchString(input.SubjectID) || input.Threshold != nil || (input.ExpectedState != "healthy" && input.ExpectedState != "unhealthy") {

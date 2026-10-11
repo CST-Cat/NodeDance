@@ -5,8 +5,8 @@ import type { Metric, MetricStatus, MetricsView } from '../metrics-contract'
 
 const props = defineProps<{ view: MetricsView }>()
 
-const FAST_TTL_MS = 15_000
-const DISK_TTL_MS = 90_000
+const FAST_TTL_MS = computed(() => (props.view.metrics.host?.fastIntervalSeconds ?? 5) * 3_000)
+const DISK_TTL_MS = computed(() => (props.view.metrics.host?.diskIntervalSeconds ?? 30) * 3_000)
 const elapsedSinceView = ref(0)
 let viewStartedAt = 0
 let ticker: ReturnType<typeof setInterval> | undefined
@@ -38,13 +38,13 @@ const nodeOnline = computed(() => props.view.nodeStatus === 'online' && elapsedS
 const nodeStatusText = computed(() => nodeOnline.value ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c'))
 const leaseReason = computed(() => props.view.nodeStatus === 'online' ? 'lease_expired' : 'lease_inactive')
 
-function metricState<T>(metric: Metric<T>, ttlMs = FAST_TTL_MS): MetricStatus {
+function metricState<T>(metric: Metric<T>, ttlMs = FAST_TTL_MS.value): MetricStatus {
   if (metric.status !== 'known' && metric.status !== 'stale') return metric.status
   if (!nodeOnline.value || metric.sampleAgeMillis + elapsedSinceView.value > ttlMs) return 'stale'
   return metric.status
 }
 
-function metricReason<T>(metric: Metric<T>, ttlMs = FAST_TTL_MS): string {
+function metricReason<T>(metric: Metric<T>, ttlMs = FAST_TTL_MS.value): string {
   const state = metricState(metric, ttlMs)
   if (state !== 'stale') return metric.reason ?? ''
   if (!nodeOnline.value) return appendReason(metric.reason, leaseReason.value)
@@ -55,14 +55,14 @@ function metricReason<T>(metric: Metric<T>, ttlMs = FAST_TTL_MS): string {
 function diskState(): MetricStatus {
   const status = props.view.metrics.disk.status
   if (status !== 'known' && status !== 'stale') return status
-  if (!nodeOnline.value || props.view.metrics.disk.sampleAgeMillis + elapsedSinceView.value > DISK_TTL_MS) return 'stale'
+  if (!nodeOnline.value || props.view.metrics.disk.sampleAgeMillis + elapsedSinceView.value > DISK_TTL_MS.value) return 'stale'
   return status
 }
 
 function diskReason(): string {
   if (diskState() !== 'stale') return props.view.metrics.disk.reason ?? ''
   if (!nodeOnline.value) return appendReason(props.view.metrics.disk.reason, leaseReason.value)
-  if (props.view.metrics.disk.sampleAgeMillis + elapsedSinceView.value > DISK_TTL_MS) return appendReason(props.view.metrics.disk.reason, 'sample_expired')
+  if (props.view.metrics.disk.sampleAgeMillis + elapsedSinceView.value > DISK_TTL_MS.value) return appendReason(props.view.metrics.disk.reason, 'sample_expired')
   return props.view.metrics.disk.reason ?? 'stale'
 }
 
@@ -180,6 +180,15 @@ const clockOffsetText = computed(() => {
       </article>
     </div>
 
+    <div v-if="view.metrics.host" class="metrics-grid host-metrics">
+      <article class="metric-card"><div class="card-heading"><h3>Swap</h3><span class="status-pill" :data-status="metricState(view.metrics.host.swap)">{{ statusLabel(metricState(view.metrics.host.swap)) }}</span></div><strong class="primary-value">{{ formatPercent(view.metrics.host.swap.value?.usedPercent) }}</strong><p class="metric-caption">{{ formatBytes(view.metrics.host.swap.value?.usedBytes) }} / {{ formatBytes(view.metrics.host.swap.value?.totalBytes) }}</p><p class="metric-reason">{{ metricReason(view.metrics.host.swap) }}</p></article>
+      <article class="metric-card"><div class="card-heading"><h3>{{ t('host.load') }}</h3><span class="status-pill" :data-status="metricState(view.metrics.host.load)">{{ statusLabel(metricState(view.metrics.host.load)) }}</span></div><strong class="primary-value">{{ view.metrics.host.load.value?.one.toFixed(2) ?? '—' }}</strong><p class="metric-caption">5m: {{ view.metrics.host.load.value?.five.toFixed(2) ?? '—' }} · 15m: {{ view.metrics.host.load.value?.fifteen.toFixed(2) ?? '—' }}</p><p class="metric-reason">{{ metricReason(view.metrics.host.load) }}</p></article>
+      <article class="metric-card"><div class="card-heading"><h3>{{ t('host.processes') }}</h3><span class="status-pill" :data-status="metricState(view.metrics.host.processes)">{{ statusLabel(metricState(view.metrics.host.processes)) }}</span></div><strong class="primary-value">{{ view.metrics.host.processes.value ?? '—' }}</strong><p class="metric-caption">TCP: {{ view.metrics.host.sockets.value?.tcp ?? '—' }} · UDP: {{ view.metrics.host.sockets.value?.udp ?? '—' }} · {{ statusLabel(metricState(view.metrics.host.sockets)) }}</p><p class="metric-reason">{{ metricReason(view.metrics.host.processes) }}</p></article>
+      <article class="metric-card"><div class="card-heading"><h3>{{ t('host.traffic') }}</h3><span class="status-pill" :data-status="metricState(view.metrics.host.traffic)">{{ statusLabel(metricState(view.metrics.host.traffic)) }}</span></div><p class="network-pair">↓ {{ formatBytes(view.metrics.host.traffic.value?.periodReceivedBytes) }} · ↑ {{ formatBytes(view.metrics.host.traffic.value?.periodSentBytes) }}</p><p class="metric-caption">{{ t('host.period') }}: {{ formatTime(view.metrics.host.traffic.value?.periodStart ?? '') }}</p><p class="metric-caption">{{ t('host.total') }}: ↓ {{ formatBytes(view.metrics.host.traffic.value?.receivedBytes) }} · ↑ {{ formatBytes(view.metrics.host.traffic.value?.sentBytes) }}</p><p v-if="view.metrics.host.traffic.reason==='partial_coverage'" class="metric-reason">{{ t('host.partialTraffic') }}</p><p v-else class="metric-reason">{{ metricReason(view.metrics.host.traffic) }}</p></article>
+      <article class="metric-card"><div class="card-heading"><h3>GPU</h3><span class="status-pill" :data-status="metricState(view.metrics.host.gpus,90000)">{{ statusLabel(metricState(view.metrics.host.gpus,90000)) }}</span></div><div v-for="gpu in view.metrics.host.gpus.value" :key="gpu.id" class="mount-row"><strong>{{ gpu.name }}</strong><p>{{ formatPercent(gpu.utilization) }} · {{ formatBytes(gpu.memoryUsedBytes) }} / {{ formatBytes(gpu.memoryTotalBytes) }} · {{ gpu.temperatureCelsius ?? '—' }} °C</p></div><p class="metric-reason">{{ metricReason(view.metrics.host.gpus,90000) }}</p></article>
+      <article class="metric-card"><h3>{{ t('host.hardware') }}</h3><p>{{ view.metrics.host.cpu.value?.model ?? '—' }} · {{ view.metrics.host.cpu.value?.physicalCores ?? '—' }} {{ t('host.physicalCores') }}</p><p>{{ view.metrics.host.virtualization.value ?? '—' }}</p><p class="metric-caption">{{ t('host.cache') }}: {{ formatBytes(view.metrics.host.memory.value?.cachedBytes) }} · {{ t('host.buffers') }}: {{ formatBytes(view.metrics.host.memory.value?.bufferedBytes) }} · {{ view.metrics.host.memoryMode }}</p><p v-for="address in view.metrics.host.addresses.value" :key="address.interface+address.address" class="metric-caption">{{ address.interface }} · {{ address.address }}</p><p class="metric-caption">IPv4: {{ view.metrics.host.publicIpv4.value ?? '—' }} · {{ statusLabel(metricState(view.metrics.host.publicIpv4,900000)) }}</p><p class="metric-caption">IPv6: {{ view.metrics.host.publicIpv6.value ?? '—' }} · {{ statusLabel(metricState(view.metrics.host.publicIpv6,900000)) }}</p></article>
+    </div>
+
     <footer class="metrics-footer">
       <div><span>{{ t('m.1ed65d95a3d5') }}</span><strong>{{ formatTime(view.collectedAt) }}</strong></div>
       <div><span>{{ t('m.91a166714259') }}</span><strong>{{ formatTime(view.receivedAt) }}</strong></div>
@@ -194,6 +203,7 @@ const clockOffsetText = computed(() => {
 </template>
 
 <style scoped>
+.host-metrics { margin-top: 16px; }
 .metrics-panel { --metric-bg: var(--surface-soft); --metric-card: var(--surface-soft); --metric-line: var(--line); --metric-text: var(--text); --metric-muted: var(--muted); width: 100%; color: var(--metric-text); }
 .metrics-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
 .metrics-eyebrow { margin: 0 0 5px; color: var(--accent); font: 500 10px/1.4 ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; }

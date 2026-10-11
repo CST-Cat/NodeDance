@@ -15,7 +15,7 @@ const (
 
 	// CapabilityMetrics is negotiated at connection setup before Core accepts
 	// TypeMetrics frames from an Agent.
-	CapabilityMetrics = "agent.metrics.v1"
+	CapabilityMetrics = "agent.metrics.v2"
 
 	// MaxMetricsPayloadBytes matches the Core Agent payload decoder bound.
 	MaxMetricsPayloadBytes = 64 << 10
@@ -44,6 +44,7 @@ type Metric[T any] struct {
 }
 
 type MetricsSnapshot struct {
+	Host        *MetricsHost   `json:"host,omitempty"`
 	CollectedAt time.Time      `json:"collectedAt"`
 	System      MetricsSystem  `json:"system"`
 	CPU         MetricsCPU     `json:"cpu"`
@@ -153,6 +154,9 @@ func ValidateMetricsSnapshot(snapshot MetricsSnapshot) error {
 }
 
 func validateMetricsSnapshot(snapshot MetricsSnapshot, allowStale bool) error {
+	if err := validateHost(snapshot.Host, allowStale); err != nil {
+		return err
+	}
 	if snapshot.CollectedAt.IsZero() {
 		return errors.New("metrics collectedAt is required")
 	}

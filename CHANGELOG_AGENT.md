@@ -6,6 +6,21 @@
 
 ### 简体中文
 
+## [0.1.8]
+
+### English
+
+- Add extended host/GPU metrics, selectable memory accounting, configurable sampling and networking, custom/public IP reporting, and durable billing-period traffic with explicit partial coverage.
+- Add durable, idempotent root script jobs and cancellation, remote-control disabling, redacted diagnostics and optional supervised automatic updates; preserve private root state and existing file protections.
+- Support authenticated HTTP fallback and compression alongside WebSocket, plus IPv4/IPv6 ICMP probes. Extended metrics use the new agent.metrics.v2 capability; deploy the matching Core to consume them.
+
+### 简体中文
+
+- 新增主机/GPU 扩展指标、可选内存统计、动态采样与网络配置、自定义/公网地址及持久化账期流量，并明确标记不完整覆盖。
+- 新增持久化幂等 root 脚本任务与取消、远程控制禁用、脱敏诊断及可选的受控自动更新；保留 root 私有状态和现有文件保护。
+- 支持认证 HTTP 回退与压缩，以及 IPv4/IPv6 ICMP 探测。扩展指标采用新的 agent.metrics.v2 能力，需部署配套 Core 使用。
+
+
 ## [0.1.7]
 
 ### English

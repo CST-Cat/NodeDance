@@ -1,0 +1,90 @@
+# Agent 能力与 Komari 对照 / Agent capabilities
+
+本次范围为 Linux Agent 能力，以及承载这些能力的 Core、Web、CLI、TUI。OAuth/OIDC、二步验证、主题和插件生态不在本次范围内。
+
+调研依据为 [Komari Agent 源码](https://github.com/komari-monitor/komari-agent)、[Komari Core 源码](https://github.com/komari-monitor/komari)，比对快照分别为 `828afafe` 与 `13cbdca`，并检查了稳定版本 `1.5.11` 与 `1.5.1`。下面列出原有缺口的实现和入口；已经具备的 Docker、Compose、终端、文件管理、凭据轮换、通知渠道和更新回滚继续使用现有实现。上游仅声明类型、未找到执行实现的 traceroute/iperf3 不列为已实现的功能。
+
+| 补齐的能力 | 实现及三端入口 |
+| --- | --- |
+| Swap、1/5/15 分钟负载、进程数、TCP/UDP socket 数 | `nodes.metrics` 的 `metrics.host`；Web 节点概览 |
+| CPU 型号、物理核心、虚拟化类型、缓存/缓冲/原始内存 | 同上；内存统计支持 `available`、`raw`、`cached` |
+| NVIDIA/AMD GPU 使用率、显存、温度 | NVIDIA 驱动的 `nvidia-smi`；AMD 的 sysfs；Web 概览、指标历史、指标告警 |
+| 网卡 IPv4/IPv6、公网地址、自定义上报地址 | 自动读取网卡；公网查询需要配置 HTTPS 纯 IP 响应地址；支持独立 IPv4/IPv6 自定义值 |
+| 累计流量、每月账期与自定义网卡筛选 | 私有持久化账本；Web 概览；`nodes.metrics` / `nodes.history` |
+| 动态采样、挂载点、内存统计、DNS、IP 优先级、GPU、压缩、连接方式 | `agents.settings` / `agents.configure`；Web → 主机管理 → Agent 配置 |
+| root 脚本及多主机批量执行 | `commands.submit/list/get/cancel`、`commands.batch/batches/batch-status/batch-cancel`；Web → 主机管理 → 批量脚本 |
+| ICMP IPv4/IPv6、跨节点相同目标、延迟/失败/丢包/抖动统计 | `probes.create`、`probes.batch`、`probes.quality`；Web 节点探测与多节点探测 |
+| 扩展指标、P95 延迟、探测失败率、ICMP 丢包率告警 | `metric`、`probe_latency`、`probe_failure`、`probe_packet_loss` 规则；Web 告警中心 |
+| 费用、计费周期、到期与流量配额提醒 | `nodes.asset` / `nodes.save-asset`；`asset_expiry` / `traffic_quota` 告警规则；Web 主机管理与告警中心 |
+| 共享注册密钥 | `agents.create-grant/grants/revoke-grant`；Web → 主机管理 → 批量注册；限时、限次数、可撤销，每台 Agent 独立凭据 |
+| HTTP 回退与压缩 | `auto` 优先 WebSocket，握手失败后使用 HTTP；可明确选用 `http` 或 `websocket`；HTTP 使用帧序号、重试去重和轮询确认 |
+| 自动更新与诊断 | `autoUpdate` 经现有更新控制服务执行；`agents.diagnostics` 返回有效配置并隐藏凭据 |
+| 禁用远程终端与 root 脚本 | `disableRemoteControl`；立即拒绝新脚本并取消运行中的脚本，终端会在下次心跳重连后关闭 |
+
+扩展指标采用新的 `agent.metrics.v2` 能力契约，控制请求采用 `agent.host.v1`。能力协商沿用统一协议，不注册旧指标契约或增加转换适配器。
+
+Web 通用操作台、CLI 和 TUI 从连接的 Core `/api/v1/operations` 读取操作、请求结构、方法、路径和传输类型。专用页面通过同一契约调用 Core；CLI/TUI 不连接 Agent、不读取 Core 数据库。`metrics.catalog` 返回可用于扩展指标告警的指标及单位，历史图表自动显示收到的扩展序列。
+
+## 操作示例
+
+先通过现有 CLI 登录 Core。请求体可从私有 JSON 文件或 stdin 读取；用 `describe` 查看连接的 Core 的完整请求结构。
+
+```sh
+nodedance describe agents.configure
+nodedance call agents.settings --params '{"nodeId":"NODE_UUID"}'
+nodedance call agents.configure --params '{"nodeId":"NODE_UUID"}' --body @/private/agent-settings.json
+nodedance call agents.diagnostics --params '{"nodeId":"NODE_UUID"}'
+nodedance call metrics.catalog
+nodedance call nodes.asset --params '{"nodeId":"NODE_UUID"}'
+nodedance call nodes.save-asset --params '{"nodeId":"NODE_UUID"}' --body @/private/node-asset.json
+nodedance call commands.batch --body @/private/batch-script.json --idempotency-key fleet-change-001
+nodedance call commands.batch-status --params '{"batchId":"BATCH_ID"}'
+nodedance call probes.batch --body @/private/batch-probe.json --idempotency-key fleet-probe-001
+nodedance call probes.quality --params '{"id":"PROBE_UUID"}'
+nodedance call agents.create-grant --body @/private/enrollment-grant.json
+nodedance tui
+```
+
+TUI 搜索上述操作名，填写由 Core 提供的参数与请求体，提交后查看 JSON 结果。所有新增操作同样可在 Web 通用操作台调用。
+
+批量脚本请求示例：
+
+```json
+{"nodeIds":["NODE_UUID"],"script":"uname -a\ndf -h","timeoutSeconds":60,"confirm":true}
+```
+
+多节点 ICMP 请求示例：
+
+```json
+{"nodeIds":["NODE_UUID"],"name":"gateway","kind":"icmp","target":"icmp://gateway.example","intervalSeconds":30,"timeoutSeconds":3,"enabled":true}
+```
+
+共享注册请求示例：
+
+```json
+{"displayPrefix":"edge","maxUses":10,"lifetimeSeconds":600,"coreUrl":"https://core.example"}
+```
+
+创建响应只展示一次密钥，并返回原生和 Docker 安装命令。在安装器的注册凭据提示处输入密钥。命令通过现有安装器解析并固定已发布的 `agent-vMAJOR.MINOR.PATCH`，安装仍要求 root。到期或撤销共享密钥不会撤销已注册设备；管理已注册设备使用现有 Agent 撤销操作。
+
+## 数据语义与运行边界
+
+- 主机采样默认 5 秒，可设 1–60 秒；磁盘默认 30 秒，可设 5–300 秒。GPU 每 30 秒、公网地址每 5 分钟在独立任务采样。GPU/查询失败分别报告 unknown，不填零，不阻塞基础采样。磁盘挂载点筛选在执行 statfs 前生效。
+- `memoryMode=available` 使用 total − MemAvailable；`raw` 使用 gopsutil 原始 Used；`cached` 使用 total − Free。主内存指标的 availableBytes 是该策略下 total − used；`host.memory` 保留 Linux 实际 Available、原始 Used、Free、Cached、Buffers、Shared。
+- 账期日为每月 UTC 1–28 日。账本持久化累计与本期观测增量。重启、网卡计数器重置、网卡身份变化、采样空档及跨账期的未分配边界区间会明确标记 `partial_coverage`。没有采样前的历史流量不会被推算。本期配额提醒按已观测流量触发，因此不完整覆盖的数值是下界。
+- 流量配额支持 `sum`（上传+下载）、`max`、`min`、`up`、`down`。到期提前提醒天数和流量提醒百分比由资产设置控制；在告警中心创建相应规则、选择通知渠道。到期提醒可在节点离线时触发，离线流量保持 unknown。
+- 质量查询默认最近一小时，可指定 RFC3339 `from/to`，最多 31 天和 100000 条结果。失败率以已完成的 healthy/unhealthy 为分母；离线和调度空档独立计为 unknown。ICMP 丢包率以成功 echo 与超时 echo 为分母，DNS/连接错误另列，不充当丢包。P95 使用成功探测延迟；抖动使用时间顺序上相邻成功延迟的平均绝对差。告警质量窗口为最近 15 分钟。
+- 脚本最多 32 KiB、超时 1–3600 秒，每台 Agent 最多并行 4 个命令，stdout/stderr 合计保留 128 KiB。提交成功代表已受理，需查询终态。相同幂等键和请求只运行一次，键与不同请求组合被拒绝。Agent 重启时将未完成记录标为 interrupted，不重放脚本。脚本正文不写入 Core 审计；Core 仅持久化请求摘要和每节点结果摘要，完整输出由 Agent 保留。
+- 终端和脚本禁用后仍是 root Agent。恢复开关在下一次心跳重连后重新协商终端能力。配置网络参数在下次连接生效；重连采用现有有界指数退避。TLS 校验、root 权限及文件保护保持现有要求，不提供跳过证书验证模式。
+- state 目录必须 root-owned `0700`，所有 JSON 状态与凭据为 root-owned regular `0600`，拒绝符号链接及可替换的父目录。文件管理仍拒绝遍历、符号链接、Agent 状态/凭据路径以及保护的内核/运行时目录。
+- 自动 Agent 更新默认关闭，依赖已安装并配置的更新控制服务。按 1–168 小时检查已发布 Agent tag，仍执行现有预检、备份、健康检查及回滚。新功能需要运行包含本次实现的 Core 与 Agent；已有服务不会因为修改源码自动升级。
+
+## English overview
+
+The added Linux Agent capabilities include extended host/GPU metrics, selectable memory accounting, interface/public/custom IP reporting, durable billing traffic, configurable sampling/networking/compression, root script jobs and batch execution, IPv4/IPv6 ICMP, shared multi-node probes, quality statistics and threshold alerts, asset expiry/traffic reminders, bounded shared enrollment, HTTP fallback, automatic Agent updates and redacted diagnostics.
+
+Web, CLI and TUI discover the same Core operation contract. Use the commands above or the Web Host management screen; request schemas and authorization remain owned by Core and the shared protocol. Missing hardware, offline periods and incomplete traffic coverage stay explicitly unknown or partial. GPU and public address lookups run separately from the fast collector. Scripts require confirmation, have durable idempotency and bounded output, and are never replayed after a restart. `disableRemoteControl` stops root scripts and closes terminal sessions on the next heartbeat reconnect.
+
+Enrollment grants expire, have a bounded use count and can be revoked; each enrolled Agent gets an independent device credential. Installers still pin a published `agent-v*` tag. Runtime and private state remain root-only, TLS verification stays enabled, and the existing file protections remain enforced. Automatic updates continue to use the installed updater with preflight, backup, health checks and rollback.
+
+OAuth/OIDC, two-factor authentication, themes and plugins are excluded from this change. Windows/macOS Agents are outside NodeDance's Linux product scope. Apply the rebuilt Core/Agent or publish a release through the existing workflows to run these changes; editing this checkout does not upgrade deployed services.

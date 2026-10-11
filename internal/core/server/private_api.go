@@ -15,6 +15,7 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/core/audit"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	_ "image/gif"
 	_ "image/jpeg"
 )
@@ -49,6 +50,18 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 		return
 	}
 
+	if s.handleHostBatchAPI(w, r, current) {
+		return
+	}
+	if s.handleGrantAPI(w, r, current) {
+		return
+	}
+	if s.handleNodeAssetAPI(w, r, current) {
+		return
+	}
+	if s.handleHostAPI(w, r, current) {
+		return
+	}
 	if s.handleDashboardSettingsAPI(w, r) || s.handleNodeDashboardAPI(w, r) {
 		return
 	}
@@ -70,6 +83,13 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 		return
 	}
 	switch r.URL.Path {
+	case "/api/v1/metrics/catalog":
+		if r.Method != "GET" {
+			http.Error(w, "method not allowed", 405)
+			return
+		}
+		writeJSON(w, 200, map[string]any{"metrics": protocol.HostMetricKeys})
+		return
 	case "/api/v1/auth/me":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

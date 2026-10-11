@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { api, type AgentNode, type AlertChannel, type AlertDelivery, type AlertEvent, type AlertItem, type AlertRule, type AlertWindow } from '../api'
+import { api, operationRequest, type AgentNode, type AlertChannel, type AlertDelivery, type AlertEvent, type AlertItem, type AlertRule, type AlertWindow } from '../api'
 
 type Tab = 'active' | 'history' | 'rules' | 'channels' | 'windows' | 'deliveries'
 const tab = ref<Tab>('active')
@@ -25,11 +25,15 @@ const windowForm = reactive({ kind: 'maintenance' as AlertWindow['kind'], scopeT
 const kindOptions = computed<Array<{ value: AlertRule['kind']; label: string }>>(() => [
   { value: 'node_offline', label: t('m.aaf5e5fef170') }, { value: 'cpu', label: t('m.1c82e5547854') }, { value: 'memory', label: t('m.ace212ad8fd3') },
   { value: 'disk', label: t('m.eef857d05e0c') }, { value: 'docker_unavailable', label: t('m.d3e431f9d10b') },
+  {value:'metric',label:t('host.metricAlert')},{value:'probe_latency',label:t('host.latencyAlert')},{value:'probe_packet_loss',label:t('host.lossAlert')},{value:'probe_failure',label:t('host.failureAlert')},{value:'asset_expiry',label:t('host.expiryAlert')},{value:'traffic_quota',label:t('host.quotaAlert')},
   { value: 'container_state', label: t('m.15e1d002ad08') }, { value: 'probe_state', label: t('m.c4134bc129e8') },
 ])
-const needsThreshold = computed(() => ['cpu', 'memory', 'disk'].includes(ruleForm.kind))
-const needsSubject = computed(() => ['container_state', 'probe_state'].includes(ruleForm.kind))
+const needsThreshold = computed(() => ['cpu', 'memory', 'disk','metric','probe_latency','probe_failure','probe_packet_loss'].includes(ruleForm.kind))
+const needsSubject = computed(() => ['container_state', 'probe_state','metric','probe_latency','probe_failure','probe_packet_loss'].includes(ruleForm.kind))
 
+const needsState = computed(()=>['container_state','probe_state'].includes(ruleForm.kind))
+const metricCatalog=ref<Record<string,string>>({})
+onMounted(async()=>{try{metricCatalog.value=await operationRequest<Record<string,string>>('metrics.catalog')}catch{}})
 function message(reason: unknown) { return reason instanceof Error ? reason.message : t('m.a472d51792cc') }
 function clearMessages() { error.value = ''; notice.value = '' }
 async function refresh() {
@@ -54,7 +58,7 @@ async function saveRule() {
   try {
     const body = { name: ruleForm.name, kind: ruleForm.kind, nodeId: ruleForm.nodeId, subjectId: needsSubject.value ? ruleForm.subjectId : '', severity: ruleForm.severity,
       ...(needsThreshold.value ? { threshold: Number(ruleForm.threshold) } : {}), durationSeconds: Number(ruleForm.durationSeconds), cooldownSeconds: Number(ruleForm.cooldownSeconds),
-      expectedState: needsSubject.value ? ruleForm.expectedState : '', channelIds: ruleForm.channelIds, enabled: ruleForm.enabled }
+      expectedState: needsState.value ? ruleForm.expectedState : '', channelIds: ruleForm.channelIds, enabled: ruleForm.enabled }
     await api.createAlertRule(body); ruleForm.name = ''; ruleForm.subjectId = ''; notice.value = t('m.43fed933b297'); await refresh()
   } catch (reason) { error.value = message(reason) } finally { saving.value = false }
 }
@@ -130,16 +134,16 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) window.clearInterval(ref
 
     <section v-else-if="tab === 'rules'" class="alert-grid">
       <div class="alert-card"><div class="section-title"><div><h2>{{ t('m.52ad1003d627') }}</h2><p>{{ t('m.b609ad7cd505') }}</p></div></div>
-        <div class="table-wrap"><table><thead><tr><th>{{ t('m.1123245d1bed') }}</th><th>{{ t('m.2410d860f093') }}</th><th>{{ t('m.16bb1d2b098c') }}</th><th>{{ t('m.1882ae19b6a2') }}</th><th>{{ t('m.6320b4a8722a') }}</th><th></th></tr></thead><tbody><tr v-for="rule in rules" :key="rule.id"><td>{{ rule.name }}</td><td>{{ nodes.find(n => n.nodeId === rule.nodeId)?.displayName ?? rule.nodeId }}</td><td>{{ ruleLabel(rule.kind) }}<template v-if="rule.threshold !== undefined"> &gt; {{ rule.threshold }}%</template><template v-if="rule.expectedState"> ≠ {{ rule.expectedState }}</template></td><td>{{ rule.durationSeconds }}{{ t('m.9dcdc2b289b9') }}</td><td>{{ rule.enabled ? t('m.dfb802238b38') : t('m.a8c3698b5b8c') }}</td><td><button type="button" class="text-button danger-text" @click="deleteRule(rule)">{{ t('m.2f9daa828907') }}</button></td></tr></tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>{{ t('m.1123245d1bed') }}</th><th>{{ t('m.2410d860f093') }}</th><th>{{ t('m.16bb1d2b098c') }}</th><th>{{ t('m.1882ae19b6a2') }}</th><th>{{ t('m.6320b4a8722a') }}</th><th></th></tr></thead><tbody><tr v-for="rule in rules" :key="rule.id"><td>{{ rule.name }}</td><td>{{ nodes.find(n => n.nodeId === rule.nodeId)?.displayName ?? rule.nodeId }}</td><td>{{ ruleLabel(rule.kind) }}<template v-if="rule.threshold !== undefined"> &gt; {{ rule.threshold }}{{ ['cpu','memory','disk','probe_failure','probe_packet_loss'].includes(rule.kind) ? '%' : '' }}</template><template v-if="rule.expectedState"> ≠ {{ rule.expectedState }}</template></td><td>{{ rule.durationSeconds }}{{ t('m.9dcdc2b289b9') }}</td><td>{{ rule.enabled ? t('m.dfb802238b38') : t('m.a8c3698b5b8c') }}</td><td><button type="button" class="text-button danger-text" @click="deleteRule(rule)">{{ t('m.2f9daa828907') }}</button></td></tr></tbody></table></div>
         <p v-if="!rules.length" class="empty-state">{{ t('m.915b0451461e') }}</p>
       </div>
       <form class="alert-card alert-form-card" @submit.prevent="saveRule"><div class="section-title"><div><h2>{{ t('m.83009fcfe6c1') }}</h2><p>{{ t('m.b8fa37ab5ac0') }}</p></div></div>
         <label>{{ t('m.18dba51b47c8') }}<input v-model="ruleForm.name" required maxlength="80" :placeholder="t('m.fb8ad27501de')" /></label>
         <label>{{ t('m.2410d860f093') }}<select v-model="ruleForm.nodeId" required><option v-for="node in nodes" :key="node.nodeId" :value="node.nodeId">{{ node.displayName }} · {{ node.status }}</option></select></label>
         <label>{{ t('m.16bb1d2b098c') }}<select v-model="ruleForm.kind"><option v-for="item in kindOptions" :key="item.value" :value="item.value">{{ item.label }}</option></select></label>
-        <label v-if="needsThreshold">{{ t('m.26a4ac708409') }}<input v-model.number="ruleForm.threshold" type="number" min="0" max="100" step="0.1" required /></label>
-        <label v-if="needsSubject">{{ t('m.ad293c799482') }}<input v-model="ruleForm.subjectId" required :placeholder="t('m.8a90cd8dc652')" /></label>
-        <label v-if="needsSubject">{{ t('m.b3d94c7eff6f') }}<select v-model="ruleForm.expectedState"><option value="running">{{ t('m.1f0eb99b7ed0') }}</option><option value="stopped">{{ t('m.f006455e3baf') }}</option><option value="healthy">{{ t('m.aa18b6dcd893') }}</option><option value="unhealthy">{{ t('m.395a7bf80b24') }}</option></select></label>
+        <label v-if="needsThreshold">{{ t('m.26a4ac708409') }}<input v-model.number="ruleForm.threshold" type="number" min="0" :max="['cpu','memory','disk','probe_failure','probe_packet_loss'].includes(ruleForm.kind)?100:undefined" step="0.1" required /></label>
+        <label v-if="needsSubject">{{ t('m.ad293c799482') }}<select v-if="ruleForm.kind==='metric'" v-model="ruleForm.subjectId" required><option v-for="(unit,key) in metricCatalog" :key="key" :value="key">{{ key }} · {{ unit }}</option></select><input v-else v-model="ruleForm.subjectId" required :placeholder="t('m.8a90cd8dc652')" /></label>
+        <label v-if="needsState">{{ t('m.b3d94c7eff6f') }}<select v-model="ruleForm.expectedState"><option value="running">{{ t('m.1f0eb99b7ed0') }}</option><option value="stopped">{{ t('m.f006455e3baf') }}</option><option value="healthy">{{ t('m.aa18b6dcd893') }}</option><option value="unhealthy">{{ t('m.395a7bf80b24') }}</option></select></label>
         <div class="inline-fields"><label>{{ t('m.f67bd602eaa1') }}<input v-model.number="ruleForm.durationSeconds" type="number" min="0" max="86400" /></label><label>{{ t('m.c90ed7f53ce4') }}<input v-model.number="ruleForm.cooldownSeconds" type="number" min="0" max="86400" /></label></div>
         <label>{{ t('m.3d9d02e83d39') }}<select v-model="ruleForm.severity"><option value="info">{{ t('m.f56c6c82203b') }}</option><option value="warning">{{ t('m.a8b7a4480407') }}</option><option value="critical">{{ t('m.73eb0e14e307') }}</option></select></label>
         <fieldset><legend>{{ t('m.1bcd7265cd39') }}</legend><label v-for="channel in channels" :key="channel.id" class="check-row"><input v-model="ruleForm.channelIds" type="checkbox" :value="channel.id" />{{ channel.name }}</label><span v-if="!channels.length" class="hint">{{ t('m.1c5c0b7d73e4') }}</span></fieldset>

@@ -136,3 +136,9 @@ The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus disco
 连接的 Core 发布 `/api/v1/operations`，CLI 调用与 TUI 菜单从该入口读取操作、schema、路由及传输类型。Web 的请求、流、终端、上传和下载使用同一契约；操作中心依据目录自动生成表单。Core 增加操作后，三端通用入口自动提供，无需分别维护客户端操作清单。验证、授权、审计和危险操作确认仍由 Core 与 Agent 处理，专用页面只定制展示。未指定服务器的 `nodedance operations` 用于离线查看当前 Core 二进制内的契约；使用 `--server` 查看运行中 Core 的实际契约。
 
 正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](updates.md).
+
+## Agent monitoring and fleet operations
+
+The connected Core now exposes `agents.settings/configure/diagnostics`, `commands.submit/list/get/cancel`, `commands.batch/batches/batch-status/batch-cancel`, `probes.batch/quality`, `metrics.catalog`, `nodes.asset/save-asset` and `agents.create-grant/grants/revoke-grant`. They appear automatically in the CLI catalog, TUI operation browser and Web operation console. Use `nodedance describe OPERATION` for the current request schema. Root scripts require `confirm:true` and an idempotency key; accepted commands must be polled to completion. Reuse the same key after an uncertain response to avoid repeating execution. The Web Host management screen adds forms for the same operations.
+
+See [Agent capabilities](agent-capabilities.md) for runnable examples, shared registration, ICMP quality, billing traffic, GPU requirements and root state protections.

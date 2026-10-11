@@ -95,7 +95,7 @@ export interface ServiceProbe {
   id: string
   nodeId: string
   name: string
-  kind: 'http' | 'https' | 'tcp'
+  kind: 'http' | 'https' | 'tcp' | 'icmp'
   target: string
   expectedHttpStatus?: number
   intervalSeconds: number
@@ -136,7 +136,7 @@ export interface ServiceProbePayload {
   revision?: number
 }
 
-export type AlertKind = 'node_offline' | 'cpu' | 'memory' | 'disk' | 'docker_unavailable' | 'container_state' | 'probe_state'
+export type AlertKind = 'node_offline' | 'cpu' | 'memory' | 'disk' | 'docker_unavailable' | 'container_state' | 'probe_state' | 'metric' | 'probe_latency' | 'probe_packet_loss' | 'probe_failure' | 'asset_expiry' | 'traffic_quota'
 export interface AlertRule {
   id: string; name: string; kind: AlertKind; nodeId: string; subjectId?: string
   severity: 'info' | 'warning' | 'critical'; threshold?: number; durationSeconds: number

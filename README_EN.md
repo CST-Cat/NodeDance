@@ -26,10 +26,10 @@ Core and Agent also support [Docker deployment](docs/docker.md), with separate i
 
 ## Features
 
-- **Host monitoring:** CPU, memory, disk, network, and uptime across Linux hosts.
+- **Host monitoring:** CPU, memory, swap, load, processes, sockets, disk, GPU, network addresses, billing traffic, and uptime across Linux hosts.
 - **Docker management:** inspect and manage containers, images, and Compose projects. Docker is optional; host monitoring works without it.
-- **Remote operations:** manage hosts through the Web terminal and file manager, CLI, and terminal UI.
-- **Probes and alerts:** HTTP(S) and TCP probes, alert rules, maintenance windows, and notifications.
+- **Remote operations:** confirmed root scripts and batch execution, Agent settings/diagnostics, Web terminal and file manager, CLI, and terminal UI.
+- **Probes and alerts:** HTTP(S), TCP and IPv4/IPv6 ICMP probes, multi-node targets, latency/loss quality, metric thresholds, asset expiry/traffic quota reminders, maintenance windows, and notifications.
 - **Backup and restore:** preserve Core data, keys, node identities, and history.
 - **Agent enrollment:** register nodes in Core and generate one-command installers. When Tailscale is detected, NodeDance can use the existing network capability for discovery and assisted deployment; it does not install or configure Tailscale.
 
@@ -39,6 +39,7 @@ Agent enrollment, recovery, runtime, file service, and systemd service require r
 
 - [Detailed setup and operations](docs/installation.en.md)
 - [CLI and terminal UI](docs/cli.md)
+- [Agent capabilities and Komari comparison](docs/agent-capabilities.md)
 - [Architecture](docs/architecture.md)
 - [Release notes](docs/releases.md)
 

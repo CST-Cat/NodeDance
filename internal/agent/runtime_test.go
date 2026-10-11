@@ -45,7 +45,7 @@ func TestRuntimeHelloOffersUpdateCapability(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// Capture the real runtime handshake, then let the mock close before welcome.
-	_ = runConnection(ctx, filepath.Join(t.TempDir(), "agent.json"), Config{Server: server.URL, Development: true, Credential: "test-credential", AgentID: "test-agent", NodeID: "test-node"}, "agent-v0.1.7", nil, nil, nil, nil, nil)
+	_ = runConnection(ctx, filepath.Join(t.TempDir(), "agent.json"), Config{Server: server.URL, Development: true, Credential: "test-credential", AgentID: "test-agent", NodeID: "test-node"}, "agent-v0.1.7", nil, nil, nil, nil, nil, nil)
 	select {
 	case hello := <-hellos:
 		if !containsCapability(protocol.NegotiateCapabilities(hello.Capabilities), protocol.CapabilityUpdate) {

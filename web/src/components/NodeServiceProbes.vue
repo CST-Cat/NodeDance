@@ -2,12 +2,13 @@
 import { requestConfirm } from '../dialogs'
 import { t, display, locale } from "../i18n"
 import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { api, type ServiceProbe, type ServiceProbePayload, type ServiceProbeRun } from '../api'
+import { api, operationRequest, type ServiceProbe, type ServiceProbePayload, type ServiceProbeRun } from '../api'
 
 const props = defineProps<{ nodeId: string; nodeName: string; nodeOnline: boolean }>()
 
 const probes = ref<ServiceProbe[]>([])
 const history = ref<Record<string, ServiceProbeRun[]>>({})
+const quality = ref<Record<string, {packetLossPercent?:number;jitterMs?:number;failurePercent?:number;meanLatencyMs?:number;p95LatencyMs?:number;unknown:number}>>({})
 const visibleHistory = ref<Record<string, boolean>>({})
 const loading = ref(false)
 const saving = ref(false)
@@ -71,7 +72,7 @@ function payload(revision?: number): ServiceProbePayload {
     nodeId: props.nodeId, name: form.name.trim(), kind: form.kind, target: form.target.trim(),
     intervalSeconds: Number(form.intervalSeconds), timeoutSeconds: Number(form.timeoutSeconds), enabled: form.enabled,
   }
-  if (form.kind !== 'tcp') value.expectedHttpStatus = Number(form.expectedHttpStatus)
+  if (['http','https'].includes(form.kind)) value.expectedHttpStatus = Number(form.expectedHttpStatus)
   if (revision !== undefined) value.revision = revision
   return value
 }
@@ -138,9 +139,10 @@ async function removeProbe(probe: ServiceProbe) {
 async function toggleHistory(probe: ServiceProbe) {
   const visible = !visibleHistory.value[probe.id]
   visibleHistory.value = { ...visibleHistory.value, [probe.id]: visible }
-  if (!visible || history.value[probe.id]) return
+  if (!visible) return
   try {
-    const result = await api.serviceProbeHistory(probe.id)
+    const [result, stats] = await Promise.all([api.serviceProbeHistory(probe.id),operationRequest<{packetLossPercent?:number;jitterMs?:number;failurePercent?:number;meanLatencyMs?:number;p95LatencyMs?:number;unknown:number}>('probes.quality',{params:{id:probe.id}})])
+ quality.value[probe.id]=stats
     history.value = { ...history.value, [probe.id]: result.runs }
   } catch (reason) {
     error.value = message(reason)
@@ -181,8 +183,9 @@ watch(() => props.nodeId, () => {
 })
 
 watch(() => form.kind, (kind) => {
-  if (kind === 'tcp' && !form.target.startsWith('tcp://')) form.target = form.target ? `tcp://${form.target.replace(/^https?:\/\//, '')}` : ''
-  if (kind !== 'tcp' && form.target.startsWith('tcp://')) form.target = `http${kind === 'https' ? 's' : ''}://${form.target.slice(6)}`
+ const old=form.target.replace(/^(https?|tcp|icmp):\/\//,'')
+ if(kind==='icmp')form.target=`icmp://${old.split('/')[0]?.split(':')[0] ?? ''}`
+ else form.target=`${kind}://${old}`
 })
 
 onMounted(() => {
@@ -207,9 +210,9 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) clearInterval(refreshTim
       <h3>{{ editingID ? t('m.5ffc6380c433') : t('m.4a7abfcfad36') }}</h3>
       <div class="probe-fields">
         <label><span>{{ t('m.d44e9b3d3b31') }}</span><input v-model="form.name" maxlength="80" required :placeholder="t('m.bd0242098b8e')" /></label>
-        <label><span>{{ t('m.ab2f31f30acf') }}</span><select v-model="form.kind"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option></select></label>
+        <label><span>{{ t('m.ab2f31f30acf') }}</span><select v-model="form.kind"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="icmp">ICMP</option></select></label>
         <label class="probe-target"><span>{{ t('m.fb60c9043c7a') }}</span><input v-model="form.target" required maxlength="2048" :placeholder="form.kind === 'tcp' ? 'tcp://127.0.0.1:5432' : `${form.kind}://127.0.0.1:8080/health`" /></label>
-        <label v-if="form.kind !== 'tcp'"><span>{{ t('m.3f63bb98cd18') }}</span><input v-model.number="form.expectedHttpStatus" type="number" min="100" max="599" required /></label>
+        <label v-if="['http','https'].includes(form.kind)"><span>{{ t('m.3f63bb98cd18') }}</span><input v-model.number="form.expectedHttpStatus" type="number" min="100" max="599" required /></label>
         <label><span>{{ t('m.455adcae032d') }}</span><input v-model.number="form.intervalSeconds" type="number" min="10" max="86400" required /></label>
         <label><span>{{ t('m.e814e078437b') }}</span><input v-model.number="form.timeoutSeconds" type="number" min="1" max="30" required /></label>
       </div>
@@ -223,8 +226,9 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) clearInterval(refreshTim
     <div v-else class="probe-list">
       <article v-for="probe in nodeProbes()" :key="probe.id" class="probe-card" :data-probe-id="probe.id">
         <div class="probe-card-heading"><div class="probe-copy"><strong>{{ probe.name }}</strong><code>{{ probe.kind.toUpperCase() }} · {{ probe.target }}</code></div><span class="probe-status" :data-status="!nodeOnline ? 'unknown' : probe.enabled ? probe.status : 'disabled'">{{ statusLabel(probe) }}</span></div>
-        <div class="probe-meta"><span>{{ t('m.4f5df723d99d') }}{{ probe.intervalSeconds }}{{ t('m.9dcdc2b289b9') }}</span><span>{{ t('m.e512cf016f96') }}{{ probe.timeoutSeconds }}{{ t('m.9dcdc2b289b9') }}</span><span v-if="probe.kind !== 'tcp'">{{ t('m.ed1f74c64ac9') }}{{ probe.expectedHttpStatus }}</span><span>{{ t('m.28d75d9db816') }}{{ formatTime(probe.lastCheckedAt) }}</span><span v-if="probe.lastErrorCode">{{ errorLabel(probe.lastErrorCode) }}</span></div>
+        <div class="probe-meta"><span>{{ t('m.4f5df723d99d') }}{{ probe.intervalSeconds }}{{ t('m.9dcdc2b289b9') }}</span><span>{{ t('m.e512cf016f96') }}{{ probe.timeoutSeconds }}{{ t('m.9dcdc2b289b9') }}</span><span v-if="['http','https'].includes(probe.kind)">{{ t('m.ed1f74c64ac9') }}{{ probe.expectedHttpStatus }}</span><span>{{ t('m.28d75d9db816') }}{{ formatTime(probe.lastCheckedAt) }}</span><span v-if="probe.lastErrorCode">{{ errorLabel(probe.lastErrorCode) }}</span></div>
         <div class="probe-actions"><button type="button" @click="toggleHistory(probe)">{{ visibleHistory[probe.id] ? t('m.a9f4bab69211') : t('m.a5783b941d7d') }}</button><button type="button" @click="beginEdit(probe)">{{ t('m.051836569928') }}</button><button type="button" @click="toggleEnabled(probe)">{{ probe.enabled ? t('m.4e6fd0e28c55') : t('m.f4f0ead1116b') }}</button><button type="button" class="probe-delete" :disabled="deleting === probe.id" @click="removeProbe(probe)">{{ deleting === probe.id ? t('m.4fd4f40094d4') : t('m.2f9daa828907') }}</button></div>
+        <p v-if="visibleHistory[probe.id] && quality[probe.id]" class="probe-meta">{{ t('host.quality') }} · {{ t('host.failure') }}: {{ quality[probe.id]?.failurePercent?.toFixed(1) ?? '—' }}% · {{ t('host.packetLoss') }}: {{ quality[probe.id]?.packetLossPercent?.toFixed(1) ?? '—' }}% · {{ t('host.jitter') }}: {{ quality[probe.id]?.jitterMs?.toFixed(1) ?? '—' }} ms · P95: {{ quality[probe.id]?.p95LatencyMs ?? '—' }} ms · {{ t('host.unknown') }}: {{ quality[probe.id]?.unknown }}</p>
         <ol v-if="visibleHistory[probe.id]" class="probe-history" :aria-label="t('m.34392b76904a', {'0': (probe.name)})">
           <li v-for="run in history[probe.id] || []" :key="run.runId" :data-status="run.status"><span>{{ formatTime(run.checkedAt) }}</span><strong>{{ run.status === 'healthy' ? t('m.296de0e31f8c') : run.status === 'unhealthy' ? t('m.428fb8bfeecf') : run.status === 'pending' ? t('m.33037aadf043') : t('m.4d8c1c5b4283') }}</strong><span v-if="run.httpStatus">HTTP {{ run.httpStatus }}</span><span v-if="run.latencyMs !== undefined">{{ run.latencyMs }} ms</span><span v-if="run.errorCode">{{ errorLabel(run.errorCode) }}</span></li>
           <li v-if="history[probe.id]?.length === 0" class="probe-no-history">{{ t('m.140d051bd612') }}</li>

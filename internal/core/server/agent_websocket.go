@@ -26,9 +26,11 @@ import (
 const agentHelloTimeout = 5 * time.Second
 
 type agentConnection struct {
+	hostMu                   sync.Mutex
+	hostWaiters              map[string]chan protocol.HostResponse
 	updateMu                 sync.Mutex
 	updateWaiters            map[string]chan update.Response
-	conn                     *websocket.Conn
+	conn                     protocol.AgentChannel
 	ctx                      context.Context
 	cancel                   context.CancelFunc
 	agentID                  string
@@ -488,14 +490,18 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Agent authentication failed", http.StatusInternalServerError)
 		return
 	}
-	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{})
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionContextTakeover})
 	if err != nil {
 		return
 	}
 	conn.SetReadLimit(protocol.MaxMessageBytes)
 	defer conn.Close(websocket.StatusNormalClosure, "Agent connection closed")
 
-	ctx, cancel := context.WithCancel(r.Context())
+	s.serveAgentChannel(r.Context(), conn, identity, digest)
+}
+
+func (s *Server) serveAgentChannel(parent context.Context, conn protocol.AgentChannel, identity agents.Identity, digest []byte) {
+	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	firstCtx, firstCancel := context.WithTimeout(ctx, agentHelloTimeout)
 	messageType, raw, err := conn.Read(firstCtx)
@@ -551,7 +557,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		s.closeAgentProtocol(conn, websocket.StatusInternalError, "could not create Agent connection lease")
 		return
 	}
-	connectionCtx, connectionCancel := context.WithCancel(r.Context())
+	connectionCtx, connectionCancel := context.WithCancel(parent)
 	managed := &agentConnection{conn: conn, cancel: connectionCancel, agentID: identity.AgentID, generation: lease.ConnectionGeneration,
 		ctx: connectionCtx, nodeID: identity.NodeID,
 		imageResponses: make(map[string]imageResponseWaiter),
@@ -886,6 +892,11 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent container stream frame")
 					return
 				}
+			case protocol.TypeHostResponse:
+				if err := s.handleHostResponse(connection, envelope); err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid host response")
+					return
+				}
 			case protocol.TypeUpdateResponse:
 				if err := s.handleUpdateResponse(connection, envelope); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid update response")
@@ -983,7 +994,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 	}
 }
 
-func (s *Server) writeAgentEnvelope(ctx context.Context, conn *websocket.Conn, envelope protocol.Envelope) error {
+func (s *Server) writeAgentEnvelope(ctx context.Context, conn protocol.AgentChannel, envelope protocol.Envelope) error {
 	data, err := json.Marshal(envelope)
 	if err != nil {
 		return err
@@ -994,12 +1005,12 @@ func (s *Server) writeAgentEnvelope(ctx context.Context, conn *websocket.Conn, e
 	return conn.Write(writeCtx, websocket.MessageText, data)
 }
 
-func (s *Server) writeAgentError(ctx context.Context, conn *websocket.Conn, code, message string) {
+func (s *Server) writeAgentError(ctx context.Context, conn protocol.AgentChannel, code, message string) {
 	envelope := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeProtocolError, Payload: marshalAgentPayload(protocol.ProtocolError{Code: code, Message: message})}
 	_ = s.writeAgentEnvelope(ctx, conn, envelope)
 }
 
-func (s *Server) closeAgentProtocol(conn *websocket.Conn, status websocket.StatusCode, message string) {
+func (s *Server) closeAgentProtocol(conn protocol.AgentChannel, status websocket.StatusCode, message string) {
 	_ = conn.Close(status, message)
 }
 

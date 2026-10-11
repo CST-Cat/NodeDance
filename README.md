@@ -4,6 +4,8 @@
 
 NodeDance 是一套自托管的 Linux 多主机监控与管理系统，由 **Core** 和部署在各主机上的 **Agent** 组成。
 
+[Agent 扩展能力与 Komari 对照](docs/agent-capabilities.md)：扩展指标、GPU、账期流量、ICMP、批量脚本与探测、资产提醒、共享注册、HTTP 回退和自动更新，统一通过 Web / CLI / TUI 管理。
+
 ## 安装
 
 ### Core

@@ -386,6 +386,7 @@ func cloneRecord(in Record) Record {
 
 func cloneSnapshot(in protocol.MetricsSnapshot) protocol.MetricsSnapshot {
 	out := in
+	out.Host = cloneHost(in.Host)
 	out.System.Hostname = cloneMetric(in.System.Hostname)
 	out.System.OS = cloneMetric(in.System.OS)
 	out.System.Architecture = cloneMetric(in.System.Architecture)
@@ -432,6 +433,7 @@ func cloneMetric[T any](in protocol.Metric[T]) protocol.Metric[T] {
 
 func mergeSnapshot(previous, incoming protocol.MetricsSnapshot, elapsed time.Duration) protocol.MetricsSnapshot {
 	out := cloneSnapshot(incoming)
+	out.Host = mergeHost(previous.Host, incoming.Host, elapsed)
 	out.System.Hostname = mergeMetric(previous.System.Hostname, incoming.System.Hostname, elapsed)
 	out.System.OS = mergeMetric(previous.System.OS, incoming.System.OS, elapsed)
 	out.System.Architecture = mergeMetric(previous.System.Architecture, incoming.System.Architecture, elapsed)
@@ -537,6 +539,7 @@ func mountKey(mount protocol.MetricsMount) string {
 }
 
 func markSnapshotStale(snapshot *protocol.MetricsSnapshot, reason string) {
+	staleHost(snapshot.Host, reason)
 	markString := func(metric *protocol.Metric[string]) { markMetricStale(metric, reason) }
 	markString(&snapshot.System.Hostname)
 	markString(&snapshot.System.OS)
@@ -563,6 +566,7 @@ func markSnapshotStale(snapshot *protocol.MetricsSnapshot, reason string) {
 }
 
 func advanceSnapshotAge(snapshot *protocol.MetricsSnapshot, elapsed time.Duration) {
+	advanceHost(snapshot.Host, elapsed)
 	if elapsed <= 0 {
 		return
 	}
@@ -596,24 +600,27 @@ func advanceMetricAge[T any](metric *protocol.Metric[T], elapsed time.Duration) 
 }
 
 func markSnapshotAged(snapshot *protocol.MetricsSnapshot) {
-	markMetricAged(&snapshot.System.Hostname, fastMetricFreshFor)
-	markMetricAged(&snapshot.System.OS, fastMetricFreshFor)
-	markMetricAged(&snapshot.System.Architecture, fastMetricFreshFor)
-	markMetricAged(&snapshot.System.Platform, fastMetricFreshFor)
-	markMetricAged(&snapshot.System.PlatformFamily, fastMetricFreshFor)
-	markMetricAged(&snapshot.System.PlatformVersion, fastMetricFreshFor)
-	markMetricAged(&snapshot.System.KernelVersion, fastMetricFreshFor)
-	markMetricAged(&snapshot.CPU.UsagePercent, fastMetricFreshFor)
-	markMetricAged(&snapshot.CPU.LogicalCores, fastMetricFreshFor)
-	markMetricAged(&snapshot.Memory, fastMetricFreshFor)
-	markMetricAged(&snapshot.Network.Summary, fastMetricFreshFor)
-	markMetricAged(&snapshot.Uptime, fastMetricFreshFor)
-	markDiskAged(&snapshot.Disk)
+	ageHost(snapshot.Host)
+	markMetricAged(&snapshot.System.Hostname, fastTTL(snapshot))
+	markMetricAged(&snapshot.System.OS, fastTTL(snapshot))
+	markMetricAged(&snapshot.System.Architecture, fastTTL(snapshot))
+	markMetricAged(&snapshot.System.Platform, fastTTL(snapshot))
+	markMetricAged(&snapshot.System.PlatformFamily, fastTTL(snapshot))
+	markMetricAged(&snapshot.System.PlatformVersion, fastTTL(snapshot))
+	markMetricAged(&snapshot.System.KernelVersion, fastTTL(snapshot))
+	markMetricAged(&snapshot.CPU.UsagePercent, fastTTL(snapshot))
+	markMetricAged(&snapshot.CPU.LogicalCores, fastTTL(snapshot))
+	markMetricAged(&snapshot.Memory, fastTTL(snapshot))
+	markMetricAged(&snapshot.Network.Summary, fastTTL(snapshot))
+	markMetricAged(&snapshot.Uptime, fastTTL(snapshot))
+	if sampleExpired(snapshot.Disk.SampleAgeMillis, diskTTL(snapshot)) {
+		markMetricStaleDisk(&snapshot.Disk)
+	}
 	for index := range snapshot.Network.Interfaces {
-		markMetricAged(&snapshot.Network.Interfaces[index].Rate, fastMetricFreshFor)
+		markMetricAged(&snapshot.Network.Interfaces[index].Rate, fastTTL(snapshot))
 	}
 	for index := range snapshot.Disk.Mounts {
-		markMetricAged(&snapshot.Disk.Mounts[index].Usage, diskMetricFreshFor)
+		markMetricAged(&snapshot.Disk.Mounts[index].Usage, diskTTL(snapshot))
 	}
 }
 
@@ -670,4 +677,11 @@ func addSampleAge(sampleAgeMillis int64, elapsed time.Duration) int64 {
 		return protocol.MaxMetricSampleAgeMS
 	}
 	return sampleAgeMillis + additional
+}
+
+func markMetricStaleDisk(d *protocol.MetricsDisk) {
+	if d.Status == protocol.MetricKnown || d.Status == protocol.MetricStale {
+		d.Status = protocol.MetricStale
+		d.Reason = appendReason(d.Reason, "sample_expired")
+	}
 }

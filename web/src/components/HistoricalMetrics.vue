@@ -33,6 +33,7 @@ const availableKeys = computed(() => {
     ['network.sent_bytes_per_second', t('m.81c8be973451')],
   ])
   for (const series of props.history?.series ?? []) {
+    if (!labels.has(series.key)) labels.set(series.key,series.key)
     if (series.key.startsWith('disk:')) {
       const suffix = series.key.endsWith(':used_percent') ? 'used_percent' : 'used_bytes'
       const mount = series.key.slice('disk:'.length, -(`:${suffix}`.length))
@@ -65,7 +66,7 @@ function chartOptions(): EChartsOption {
     data.push([at, value !== undefined && Number.isFinite(value) ? value : null])
   }
   const diskPercent = selectedKey.value.startsWith('disk:') && selectedKey.value.endsWith(':used_percent')
-  const percent = selectedKey.value === 'cpu.usage_percent' || selectedKey.value === 'memory.used_percent' || diskPercent
+  const percent = selectedKey.value.endsWith('_percent') || diskPercent
   const byteRate = selectedKey.value.startsWith('network.')
   const bytes = selectedKey.value.endsWith('_bytes')
   let divisor = 1

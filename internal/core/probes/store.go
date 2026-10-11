@@ -383,7 +383,7 @@ func (s *Store) Complete(ctx context.Context, report protocol.ProbeReport, gener
 	if runStatus != "pending" {
 		return ErrRunState
 	}
-	if kind == protocol.ProbeTCP {
+	if kind == protocol.ProbeTCP || kind == protocol.ProbeICMP {
 		if report.HTTPStatus != 0 {
 			return ErrConflict
 		}
@@ -658,7 +658,7 @@ func scanConfig(row scanner) (Config, error) {
 }
 
 func expectedStatus(config Config) any {
-	if config.Kind == protocol.ProbeTCP {
+	if config.Kind == protocol.ProbeTCP || config.Kind == protocol.ProbeICMP {
 		return nil
 	}
 	return config.ExpectedHTTPStatus

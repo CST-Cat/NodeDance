@@ -1,5 +1,6 @@
 // The connected Core owns this contract. All Web transports resolve names here.
 export interface BodySchema {
+  format?: string
   type?: string
   properties?: Record<string, BodySchema>
   required?: string[]

@@ -77,6 +77,11 @@ fs.mkdirSync(out, { recursive: true });
       let body = {};
       let status = 200;
       if (p === "/api/v1/operations") body = catalog;
+      else if (p.endsWith("/agent-settings")) body={settings:{disableRemoteControl:false,memoryMode:"available",customIpv4:"",customIpv6:"",fastIntervalSeconds:5,diskIntervalSeconds:30,includeInterfaces:[],excludeInterfaces:[],includeMountpoints:[],billingDay:1,enableGpu:true,dns:"",preferIpVersion:"",compression:true,transport:"auto",publicIpUrl:"",autoUpdate:false,updateIntervalHours:6}};
+      else if (p.endsWith("/asset")) body={price:9,currency:"USD",billingCycleDays:30,expiryNoticeDays:7,trafficLimitBytes:1099511627776,trafficAccounting:"sum",trafficWarningPercent:90};
+      else if (p.endsWith("/commands/batches")) body={batches:[]};
+      else if (p.endsWith("/agents/enrollment-grants")) body={grants:[]};
+      else if (p.endsWith("/metrics/catalog")) body={"swap.used_percent":"percent","load.one":"load","gpu.temperature_celsius":"celsius"};
       else if (p.endsWith("/agents/enrollments"))
         body = {
           token: "isolated-audit-token",
@@ -401,6 +406,7 @@ fs.mkdirSync(out, { recursive: true });
                 },
               ],
             },
+            host:{fastIntervalSeconds:5,diskIntervalSeconds:30,swap:metric({totalBytes:2147483648,usedBytes:104857600,usedPercent:4.88}),load:metric({one:0.42,five:0.31,fifteen:0.25}),processes:metric(187),sockets:metric({tcp:42,udp:15}),cpu:metric({model:"AMD EPYC 9654",physicalCores:4}),virtualization:metric("kvm/guest"),memory:metric({freeBytes:1234,cachedBytes:1073741824,bufferedBytes:10485760,sharedBytes:2048}),addresses:metric([{interface:"eth0",address:"192.0.2.24",family:4}]),publicIpv4:metric("192.0.2.24"),publicIpv6:{...metric(null),status:"unknown",reason:"unavailable"},gpus:metric([{id:"GPU-audit",name:"NVIDIA Test GPU",utilization:27,memoryUsedBytes:2147483648,memoryTotalBytes:8589934592,temperatureCelsius:61}]),traffic:{...metric({receivedBytes:1099511627776,sentBytes:107374182400,periodReceivedBytes:10737418240,periodSentBytes:1073741824,periodStart:now,coverageStart:now,lastSample:now,gaps:1}),reason:"partial_coverage"}},
             uptime: metric({ seconds: 1284600, bootId: "preview-boot-id" }),
           },
         };
@@ -533,6 +539,7 @@ fs.mkdirSync(out, { recursive: true });
         "Add an Agent",
         "Network discovery",
         "Alerts",
+        "Host management",
         "Updates",
         "Operations",
         "Settings",
@@ -543,6 +550,15 @@ fs.mkdirSync(out, { recursive: true });
     }
     async function auditWorkspace(prefix) {
       await load();
+      if(process.env.NODEDANCE_WEB_DESIGN_HOST_ONLY === "1") {
+        await nav("Host management");
+        await page.locator(".host-page").waitFor();
+        for(let i=0;i<5;i++) {
+          await page.locator(".host-tabs button").nth(i).click();
+          await invariants(prefix+"-host-"+i);
+        }
+        return;
+      }
       await invariants(prefix + "-nodes");
       await page
         .locator(".vps-card")
@@ -608,6 +624,7 @@ fs.mkdirSync(out, { recursive: true });
         }
       }
       for (const label of [
+        "Host management",
         "Add an Agent",
         "Updates",
         "Operations",
@@ -619,6 +636,14 @@ fs.mkdirSync(out, { recursive: true });
         await invariants(
           prefix + "-" + label.toLowerCase().replaceAll(" ", "-"),
         );
+        if(label === "Host management") {
+          await page.locator(".host-page").waitFor();
+          for(let i=0;i<5;i++) {
+            await page.locator(".host-tabs button").nth(i).click();
+            await invariants(prefix+"-host-"+i);
+            await shot(prefix+"-host-"+i);
+          }
+        }
         if (label === "Updates") {
           await page.locator(".update-details a").waitFor();
           assert.equal(
@@ -726,7 +751,7 @@ fs.mkdirSync(out, { recursive: true });
     const bootstrap = new Promise((resolve) => {
       releaseBootstrap = resolve;
     });
-    await page.route("**/api/v1/setup/status", async (route) => {
+    await page.route("**" + catalog.operations.find(o => o.name === "auth.status").path, async (route) => {
       await bootstrap;
       await route.fulfill({
         status: 200,

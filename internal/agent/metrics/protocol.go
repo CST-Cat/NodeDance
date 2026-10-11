@@ -21,6 +21,7 @@ func ToProtocolMetrics(snapshot Snapshot) protocol.MetricsSnapshot {
 func ToProtocolMetricsAt(snapshot Snapshot, serializedAt time.Time) protocol.MetricsSnapshot {
 	out := protocol.MetricsSnapshot{
 		CollectedAt: snapshot.CollectedAt.UTC(),
+		Host:        snapshot.Host,
 		System: protocol.MetricsSystem{
 			Hostname:        toProtocolMetric(snapshot.System.Hostname, serializedAt),
 			OS:              toProtocolMetric(snapshot.System.OS, serializedAt),
@@ -51,6 +52,11 @@ func ToProtocolMetricsAt(snapshot Snapshot, serializedAt time.Time) protocol.Met
 			Mounts:          mapDiskMounts(snapshot.Disk.Mounts, serializedAt),
 		},
 		Uptime: toProtocolUptime(snapshot.Uptime, serializedAt),
+	}
+	if out.Host != nil {
+		host := *out.Host
+		out.Host = &host
+		ageHost(out.Host, serializedAt)
 	}
 	return boundProtocolDetails(out)
 }
@@ -263,4 +269,19 @@ func sampleAgeMillis(sampledAt, serializedAt time.Time) int64 {
 		return protocol.MaxMetricSampleAgeMS
 	}
 	return age.Milliseconds()
+}
+
+func ageHost(h *protocol.MetricsHost, at time.Time) {
+	h.Swap.SampleAgeMillis = sampleAgeMillis(h.Swap.SampledAt, at)
+	h.Load.SampleAgeMillis = sampleAgeMillis(h.Load.SampledAt, at)
+	h.Processes.SampleAgeMillis = sampleAgeMillis(h.Processes.SampledAt, at)
+	h.Sockets.SampleAgeMillis = sampleAgeMillis(h.Sockets.SampledAt, at)
+	h.CPU.SampleAgeMillis = sampleAgeMillis(h.CPU.SampledAt, at)
+	h.Memory.SampleAgeMillis = sampleAgeMillis(h.Memory.SampledAt, at)
+	h.Virtualization.SampleAgeMillis = sampleAgeMillis(h.Virtualization.SampledAt, at)
+	h.Addresses.SampleAgeMillis = sampleAgeMillis(h.Addresses.SampledAt, at)
+	h.PublicIPv4.SampleAgeMillis = sampleAgeMillis(h.PublicIPv4.SampledAt, at)
+	h.PublicIPv6.SampleAgeMillis = sampleAgeMillis(h.PublicIPv6.SampledAt, at)
+	h.GPUs.SampleAgeMillis = sampleAgeMillis(h.GPUs.SampledAt, at)
+	h.Traffic.SampleAgeMillis = sampleAgeMillis(h.Traffic.SampledAt, at)
 }

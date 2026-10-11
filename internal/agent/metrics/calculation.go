@@ -49,16 +49,32 @@ func CPUUsagePercent(previous, current cpu.TimesStat) (float64, string) {
 }
 
 func memoryUsage(sample *mem.VirtualMemoryStat) (Memory, string) {
+	return memoryUsageMode(sample, "available")
+}
+func memoryUsageMode(sample *mem.VirtualMemoryStat, mode string) (Memory, string) {
 	if sample == nil || sample.Total == 0 {
 		return Memory{}, "invalid_data"
 	}
 	if sample.Available > sample.Total {
 		return Memory{}, "invalid_data"
 	}
-	used := sample.Total - sample.Available
+	available := sample.Available
+	switch mode {
+	case "raw":
+		if sample.Used > sample.Total {
+			return Memory{}, "invalid_data"
+		}
+		available = sample.Total - sample.Used
+	case "cached":
+		if sample.Free > sample.Total {
+			return Memory{}, "invalid_data"
+		}
+		available = sample.Free
+	}
+	used := sample.Total - available
 	return Memory{
 		TotalBytes:     sample.Total,
-		AvailableBytes: sample.Available,
+		AvailableBytes: available,
 		UsedBytes:      used,
 		UsedPercent:    100 * float64(used) / float64(sample.Total),
 	}, ""

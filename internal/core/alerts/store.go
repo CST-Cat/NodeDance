@@ -513,7 +513,7 @@ func (s *Store) Evaluate(ctx context.Context, samples []Sample) error {
 		if !ok {
 			continue
 		}
-		if rule.Kind != KindNodeOffline && offline[rule.NodeID] {
+		if rule.Kind != KindNodeOffline && rule.Kind != KindAssetExpiry && offline[rule.NodeID] {
 			if err := s.suppressChild(ctx, tx, rule, now); err != nil {
 				return err
 			}
@@ -595,8 +595,10 @@ func sampleTime(s Sample, now time.Time) time.Time {
 }
 func conditionBad(r Rule, s Sample) bool {
 	switch r.Kind {
-	case KindCPU, KindMemory, KindDisk:
+	case KindCPU, KindMemory, KindDisk, KindMetric, KindProbeLatency, KindProbeFailure, KindProbePacketLoss:
 		return s.Value != nil && r.Threshold != nil && *s.Value > *r.Threshold
+	case KindAssetExpiry, KindTrafficQuota:
+		return s.State == "warning"
 	case KindNodeOffline:
 		return s.State == "offline"
 	case KindDockerUnavailable:
@@ -722,7 +724,7 @@ func defaultMessage(r Rule, s Sample) string {
 		return s.Message
 	}
 	if r.Threshold != nil && s.Value != nil {
-		return fmt.Sprintf("%s is %.1f%% (threshold %.1f%%)", r.Name, *s.Value, *r.Threshold)
+		return fmt.Sprintf("%s is %.2f (threshold %.2f)", r.Name, *s.Value, *r.Threshold)
 	}
 	return fmt.Sprintf("%s condition is %s", r.Name, s.State)
 }

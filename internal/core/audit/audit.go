@@ -14,6 +14,7 @@ import (
 type TargetKind string
 
 const (
+	TargetCommandBatch      TargetKind = "command_batch"
 	TargetNode              TargetKind = "node"
 	TargetAgent             TargetKind = "agent"
 	TargetFile              TargetKind = "file"
@@ -44,11 +45,12 @@ var actions = map[string]struct{}{
 	"update_apply": {}, "update_rollback": {},
 	"setup": {}, "login": {}, "logout": {}, "password_change": {},
 	"session_revoke": {}, "appearance_update": {}, "image_upload": {},
+	"agent_grant_create": {}, "agent_grant_revoke": {}, "node_asset_update": {}, "settings.put": {}, "commands.submit": {}, "commands.cancel": {}, "commands.batch": {}, "commands.batch-cancel": {},
 	"agent_enrollment_create": {}, "agent_enrollment_consume": {},
 	"agent_revoke": {}, "agent_rotation_request": {},
 	"agent_rotation_prepare": {}, "agent_rotation_commit": {},
 	"terminal_start": {}, "terminal_end": {},
-	"probe_create": {}, "probe_update": {}, "probe_enable": {}, "probe_disable": {}, "probe_delete": {},
+	"probe_batch_create": {}, "probe_create": {}, "probe_update": {}, "probe_enable": {}, "probe_disable": {}, "probe_delete": {},
 	"alert_defaults_create": {}, "alert_rule_save": {}, "alert_rule_delete": {},
 	"alert_channel_save": {}, "alert_channel_delete": {}, "alert_channel_test": {},
 	"alert_window_create": {}, "alert_window_delete": {}, "alert_acknowledge": {}, "alert_silence": {},
@@ -82,7 +84,7 @@ func Record(ctx context.Context, execer Execer, event Event) error {
 			if !targetIDPattern.MatchString(event.Target.ID) {
 				return errors.New("host terminal audit target ID must be a canonical node UUID")
 			}
-		case TargetTerminalContainer:
+		case TargetCommandBatch, TargetTerminalContainer:
 			if !containerIDPattern.MatchString(event.Target.ID) {
 				return errors.New("container terminal audit target ID must be a full Docker ID")
 			}

@@ -22,6 +22,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/agent/containerstreams"
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	agentfiles "github.com/CST-Cat/NodeDance/internal/agent/files"
+	"github.com/CST-Cat/NodeDance/internal/agent/hostcontrol"
 	hostmetrics "github.com/CST-Cat/NodeDance/internal/agent/metrics"
 	agentprobes "github.com/CST-Cat/NodeDance/internal/agent/probes"
 	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
@@ -110,7 +111,14 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	if strings.TrimSpace(version) == "" {
 		version = "dev"
 	}
+	hostManager, err := hostcontrol.Open(ctx, filepath.Dir(configPath))
+	if err != nil {
+		return fmt.Errorf("open host control: %w", err)
+	}
+	defer hostManager.Close()
+	go hostManager.RunUpdates()
 	collector := hostmetrics.NewCollector()
+	collector.ConfigureHost(filepath.Dir(configPath), hostManager.Settings)
 	collectorCtx, cancelCollector := context.WithCancel(ctx)
 	metricUpdates := collector.Start(collectorCtx)
 	defer func() {
@@ -154,7 +162,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 		established := false
 		connectionErr := runConnection(ctx, configPath, config, version, metricUpdates, taskBridge, sharedDocker, func() {
 			established = true
-		}, fileService)
+		}, fileService, hostManager)
 		if established {
 			backoff.connected()
 		}
@@ -182,7 +190,7 @@ func Run(ctx context.Context, configPath, version string, stderr io.Writer) erro
 	}
 }
 
-func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, taskBridge *taskBridgeRuntime, sharedDocker *agentdocker.SDKEngine, onEstablished func(), fileService *agentfiles.Service) error {
+func runConnection(ctx context.Context, configPath string, config Config, version string, metricUpdates <-chan hostmetrics.Snapshot, taskBridge *taskBridgeRuntime, sharedDocker *agentdocker.SDKEngine, onEstablished func(), fileService *agentfiles.Service, hostManager *hostcontrol.Manager) error {
 	credential := config.Credential
 	pendingCredentialAlreadyActive := false
 	if config.PendingCredential != "" {
@@ -211,15 +219,23 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		return err
 	}
 	dialCtx, cancelDial := context.WithTimeout(ctx, connectTimeout)
-	client := &http.Client{Transport: &http.Transport{TLSClientConfig: tlsConfig, Proxy: http.ProxyFromEnvironment}}
-	conn, _, err := websocket.Dial(dialCtx, websocketURL, &websocket.DialOptions{
-		HTTPClient: client,
-		HTTPHeader: http.Header{"Authorization": []string{"Bearer " + credential}},
-	})
+	settings := protocol.DefaultAgentSettings()
+	if hostManager != nil {
+		settings = hostManager.Settings()
+	}
+	client := agentHTTPClient(tlsConfig, settings)
+	var conn protocol.AgentChannel
+	if settings.Transport != "http" {
+		conn, _, err = websocket.Dial(dialCtx, websocketURL, &websocket.DialOptions{HTTPClient: client, CompressionMode: agentCompression(settings.Compression), HTTPHeader: http.Header{"Authorization": []string{"Bearer " + credential}}})
+	}
 	cancelDial()
+	if settings.Transport == "http" || err != nil && settings.Transport == "auto" {
+		conn = newHTTPAgentChannel(ctx, client, config.Server, credential, settings.Compression)
+		err = nil
+	}
 	if err != nil {
 		client.CloseIdleConnections()
-		return errors.New("Core WebSocket connection failed")
+		return errors.New("Core Agent connection failed")
 	}
 	defer client.CloseIdleConnections()
 	conn.SetReadLimit(protocol.MaxMessageBytes)
@@ -245,8 +261,11 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 
 	hello := protocol.Hello{
 		AgentID: config.AgentID, NodeID: config.NodeID, AgentVersion: version,
-		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityTerminal, protocol.CapabilityProbes, protocol.CapabilityUpdate},
+		Capabilities: []string{"agent.heartbeat.v1", "agent.rotation.v1", "agent.os-permissions.v1", protocol.CapabilityMetrics, protocol.CapabilityHost, protocol.CapabilityTerminal, protocol.CapabilityProbes, protocol.CapabilityUpdate},
 		Permissions:  permissions,
+	}
+	if settings.DisableRemoteControl {
+		hello.Capabilities, _ = withoutCapability(hello.Capabilities, protocol.CapabilityTerminal)
 	}
 	if sharedDocker != nil {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityDocker)
@@ -328,12 +347,13 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		fileService = nil
 	}
 	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates, sharedDocker,
-		taskBridge, streamBridge, composeBridge, config.Shell, config.NodeID, fileService, welcome.Capabilities)
+		taskBridge, streamBridge, composeBridge, config.Shell, config.NodeID, fileService, welcome.Capabilities, hostManager)
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, sharedDocker *agentdocker.SDKEngine, taskBridge *taskBridgeRuntime, streamBridge *containerStreamBridge, composeBridge *agentcompose.Bridge, hostShell, nodeID string, fileService *agentfiles.Service, negotiatedCapabilities []string) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, sharedDocker *agentdocker.SDKEngine, taskBridge *taskBridgeRuntime, streamBridge *containerStreamBridge, composeBridge *agentcompose.Bridge, hostShell, nodeID string, fileService *agentfiles.Service, negotiatedCapabilities []string, hostManager *hostcontrol.Manager) (returnErr error) {
+	hostSlots := make(chan struct{}, 8)
 	updateSlots := make(chan struct{}, 2)
 	activeCapabilities := append([]string(nil), negotiatedCapabilities...)
 	dockerEnabled := containsCapability(activeCapabilities, protocol.CapabilityDocker)
@@ -342,6 +362,7 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 	streamBridgeEnabled := containsCapability(activeCapabilities, protocol.CapabilityContainerStreams)
 	composeBridgeEnabled := containsCapability(activeCapabilities, protocol.CapabilityCompose)
 	terminalEnabled := containsCapability(activeCapabilities, protocol.CapabilityTerminal)
+	remoteDisabled := hostManager != nil && hostManager.Settings().DisableRemoteControl
 	probesEnabled := containsCapability(activeCapabilities, protocol.CapabilityProbes)
 	filesEnabled := containsCapability(activeCapabilities, protocol.CapabilityFiles)
 	ticker := time.NewTicker(time.Duration(protocol.HeartbeatIntervalSeconds) * time.Second)
@@ -587,7 +608,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 		finished := make(chan struct{})
 		probeBridgeDone = done
 		probeFinished = finished
-		bridge := agentprobes.NewBridge(agentprobes.NewExecutor())
+		settings := protocol.DefaultAgentSettings
+		if hostManager != nil {
+			settings = hostManager.Settings
+		}
+		bridge := agentprobes.NewBridge(agentprobes.NewConfiguredExecutor(settings))
 		go func() {
 			defer close(finished)
 			done <- bridge.Run(probeCtx, writer, generation, nodeID, probeMessages)
@@ -656,6 +681,9 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 		case <-ackTimer.C:
 			return errors.New("Core heartbeat acknowledgement timed out")
 		case <-ticker.C:
+			if hostManager != nil && hostManager.Settings().DisableRemoteControl != remoteDisabled {
+				return errors.New("Agent remote control settings changed")
+			}
 			if err := sendHeartbeat(); err != nil {
 				return errors.New("send Agent heartbeat failed")
 			}
@@ -836,6 +864,26 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 						go streamBridge.reject(ctx, writer, generation, envelope.RequestID, "stream_limit")
 					}
 				}
+			case protocol.TypeHostRequest:
+				if hostManager == nil || !containsCapability(negotiatedCapabilities, protocol.CapabilityHost) || envelope.Sequence != 0 || envelope.RequestID == "" {
+					return errors.New("invalid host request")
+				}
+				var req protocol.HostRequest
+				if decodeSocketPayload(envelope.Payload, &req) != nil {
+					return errors.New("invalid host payload")
+				}
+				select {
+				case hostSlots <- struct{}{}:
+				default:
+					payload := encodePayload(protocol.HostResponse{Status: 429, Error: "host channel is busy"})
+					_ = writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHostResponse, Generation: generation, RequestID: envelope.RequestID, Payload: payload})
+					continue
+				}
+				go func(e protocol.Envelope, req protocol.HostRequest) {
+					defer func() { <-hostSlots }()
+					response := hostManager.Handle(req)
+					_ = writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHostResponse, Generation: generation, RequestID: e.RequestID, Payload: encodePayload(response)})
+				}(envelope, req)
 			case protocol.TypeUpdateRequest:
 				if !containsCapability(negotiatedCapabilities, protocol.CapabilityUpdate) || envelope.Sequence != 0 || envelope.Generation != generation || envelope.RequestID == "" {
 					return errors.New("invalid update request envelope")
@@ -914,6 +962,11 @@ func runHeartbeatLoop(ctx context.Context, conn *websocket.Conn, reads <-chan so
 				var frame protocol.TerminalFrame
 				if envelope.Sequence != 0 || decodeSocketPayload(envelope.Payload, &frame) != nil || protocol.ValidateTerminalFrame(frame, false) != nil {
 					return errors.New("Core terminal frame is invalid")
+				}
+				if frame.Action == protocol.TerminalActionOpen && hostManager != nil && hostManager.Settings().DisableRemoteControl {
+					response := protocol.TerminalFrame{StreamID: frame.StreamID, Action: protocol.TerminalActionError, Message: "remote terminal disabled by Agent settings"}
+					_ = writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTerminalFrame, Generation: generation, Payload: encodePayload(response)})
+					continue
 				}
 				select {
 				case terminalFrames <- frame:
@@ -998,7 +1051,7 @@ func terminalSafeError(action string, err error) string {
 	return "terminal operation failed"
 }
 
-func prepareRotation(ctx context.Context, conn *websocket.Conn, reads <-chan socketRead, configPath string, config Config, generation uint64, rotationID string,
+func prepareRotation(ctx context.Context, conn protocol.AgentChannel, reads <-chan socketRead, configPath string, config Config, generation uint64, rotationID string,
 	send func(context.Context, protocol.Envelope) error) error {
 	if !isUUID(rotationID) {
 		return errors.New("Core credential rotation ID is invalid")
@@ -1057,7 +1110,7 @@ func prepareRotation(ctx context.Context, conn *websocket.Conn, reads <-chan soc
 	}
 }
 
-func socketReadLoop(ctx context.Context, conn *websocket.Conn, messages chan<- socketRead) {
+func socketReadLoop(ctx context.Context, conn protocol.AgentChannel, messages chan<- socketRead) {
 	for {
 		messageType, data, err := conn.Read(ctx)
 		select {
@@ -1071,11 +1124,11 @@ func socketReadLoop(ctx context.Context, conn *websocket.Conn, messages chan<- s
 	}
 }
 
-func writeSocketEnvelope(ctx context.Context, conn *websocket.Conn, envelope protocol.Envelope) error {
+func writeSocketEnvelope(ctx context.Context, conn protocol.AgentChannel, envelope protocol.Envelope) error {
 	return writeSocketEnvelopeWithTimeout(ctx, conn, envelope, 5*time.Second)
 }
 
-func writeSocketEnvelopeWithTimeout(ctx context.Context, conn *websocket.Conn, envelope protocol.Envelope, timeout time.Duration) error {
+func writeSocketEnvelopeWithTimeout(ctx context.Context, conn protocol.AgentChannel, envelope protocol.Envelope, timeout time.Duration) error {
 	data, err := json.Marshal(envelope)
 	if err != nil {
 		return err

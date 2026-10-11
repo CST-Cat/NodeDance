@@ -7,19 +7,18 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
-	"github.com/coder/websocket"
 )
 
 const (
-	controlWriteTimeout    = 5 * time.Second
-	metricWriteTimeout     = time.Second
-	dockerWriteTimeout     = 2 * time.Second
-	streamWriteTimeout     = time.Second
-	terminalWriteTimeout   = 2 * time.Second
-	maxDockerWriteBurst    = 8
-	maxStreamWriteBurst    = 4
-	maxTerminalWriteBurst  = 8
-	maxFileWriteBurst      = 4
+	controlWriteTimeout   = 5 * time.Second
+	metricWriteTimeout    = time.Second
+	dockerWriteTimeout    = 2 * time.Second
+	streamWriteTimeout    = time.Second
+	terminalWriteTimeout  = 2 * time.Second
+	maxDockerWriteBurst   = 8
+	maxStreamWriteBurst   = 4
+	maxTerminalWriteBurst = 8
+	maxFileWriteBurst     = 4
 )
 
 var (
@@ -40,7 +39,7 @@ type envelopeWrite struct {
 // A metrics write has a short deadline so a slow peer cannot hold heartbeat
 // traffic behind an obsolete telemetry frame.
 type socketEnvelopeWriter struct {
-	conn                  *websocket.Conn
+	conn                  protocol.AgentChannel
 	ctx                   context.Context
 	cancel                context.CancelFunc
 	high                  chan envelopeWrite
@@ -58,7 +57,7 @@ type socketEnvelopeWriter struct {
 	done                  chan struct{}
 }
 
-func newSocketEnvelopeWriter(ctx context.Context, conn *websocket.Conn) *socketEnvelopeWriter {
+func newSocketEnvelopeWriter(ctx context.Context, conn protocol.AgentChannel) *socketEnvelopeWriter {
 	writerCtx, cancel := context.WithCancel(ctx)
 	w := &socketEnvelopeWriter{
 		conn: conn, ctx: writerCtx, cancel: cancel,

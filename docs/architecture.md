@@ -6,7 +6,7 @@
 
 ## Core
 
-The Go Core serves the administrator Web application, `/api/v1` HTTP API, and authenticated outbound Agent sessions at `/ws/v1`. Production listeners bound beyond loopback require a configured TLS certificate and matching key; otherwise the Core CLI refuses startup. SQLite stores administrator, Agent, task, metric, and Docker state. Browser mutations require an authenticated session and CSRF validation. Agent identity comes from registered device credentials bound to a node.
+The Go Core serves the administrator Web application, `/api/v1` HTTP API, and authenticated outbound Agent sessions at `/ws/v1/agent`, with acknowledged HTTP fallback at `/api/v1/agents/channel`. Production listeners bound beyond loopback require a configured TLS certificate and matching key; otherwise the Core CLI refuses startup. SQLite stores administrator, Agent, task, metric, and Docker state. Browser mutations require an authenticated session and CSRF validation. Agent identity comes from registered device credentials bound to a node.
 
 Core startup treats the database, administrator security material, and Core task store as required foundations. Alert delivery and probe execution are background capabilities: alert key/store/recovery errors are reported and leave alert routes unavailable, while probe state recovery errors are logged and the scheduler retries independently. Neither scheduler owns the Core HTTP listener or host monitoring. A failure restoring cached Docker inventory is logged and does not prevent Core management from starting.
 
@@ -14,7 +14,7 @@ The Core task store in `internal/core/tasks/` owns remote task identity, idempot
 
 ## Probes and alerts
 
-`internal/core/probes/` stores probe configuration, run history, scheduler claims, and current result state. The Core dispatches bounded HTTP(S) or TCP checks through the enrolled node's Agent capability; the Agent performs the outbound connection. Reports are bound to the current node generation and run ID. Offline, timed-out, and unsupported probes remain unknown rather than being counted as a service failure.
+`internal/core/probes/` stores probe configuration, run history, scheduler claims, and current result state. The Core dispatches bounded HTTP(S), TCP or privileged IPv4/IPv6 ICMP checks through the enrolled node's Agent capability; the Agent performs the outbound connection. Reports are bound to the current node generation and run ID. Offline, timed-out, and unsupported probes remain unknown rather than being counted as a service failure.
 
 `internal/core/alerts/` evaluates current Core-owned node, metric, Docker, and probe samples, stores alert transitions and maintenance windows, and queues notifications. Evaluation and delivery retry independently and report failures to the Core log. SMTP accepts STARTTLS or implicit TLS only. SMTP secrets are encrypted with a private key in the Core data directory.
 
@@ -45,3 +45,9 @@ Core initializes the current tables and indexes from `internal/core/storage/sche
 `internal/protocol/capabilities.go` exposes the wire descriptor and capability intersection independently of binary versions. Agent verifies that Welcome contains only offered capabilities. Production dependency-boundary tests guard the separation between Core, Agent and protocol. [The Komari study](komari-communication.md) records the upstream source revisions, adopted principles and transport decisions.
 
 Agent enrollment returns a Core-generated installer command through `internal/installer`; Web, CLI and TUI use the same root-only command and published Agent-tag resolution.
+
+## Extended Agent management
+
+The `agent.host.v1` capability carries shared Agent settings, redacted diagnostics and durable root script jobs. The same operation contract exposes single-node commands, durable multi-node command/probe batches, asset settings and bounded enrollment grants. Each grant consumer receives an independent credential; its use count is claimed in the enrollment transaction. Settings, traffic and command records are stored as root-owned private JSON. Jobs persist acceptance before execution and never replay on restart.
+
+`agent.metrics.v2` replaces the metrics capability contract; `metrics.host` carries independent metric states. GPU/public IP lookups run separately, disk mount filters apply before statfs, and Core ages metrics using the configured intervals. Extended numeric history and alert subjects come from the shared metric catalog. Probe quality separates unknown gaps from failure and ICMP loss denominators; asset expiry can be evaluated without an online lease, while quota samples require fresh traffic. HTTP and WebSocket use the same Agent protocol, identity, generation, writer and business handlers. See [Agent capabilities](agent-capabilities.md) for operation names, limits and data semantics.

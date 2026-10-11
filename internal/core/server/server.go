@@ -56,6 +56,8 @@ type Options struct {
 }
 
 type Server struct {
+	httpChannelsMu             sync.Mutex
+	httpChannels               map[string]*httpAgentChannel
 	updateSocket               string
 	version                    string
 	assets                     http.Handler
@@ -480,11 +482,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.handleAgentIdentity(w, r)
 		return
+	case "/api/v1/agents/channel":
+		s.handleHTTPAgentChannel(w, r)
+		return
 	case "/ws/v1/agent":
 		s.handleAgentWebSocket(w, r)
 		return
 	case "/ws/v1/streams/logs", "/ws/v1/streams/stats":
 		s.handleContainerStreamWebSocket(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/agents/channel/") {
+		s.handleHTTPAgentChannel(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/ws/") {

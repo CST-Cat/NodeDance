@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS service_probes (
 	id TEXT PRIMARY KEY,
 	node_id TEXT NOT NULL REFERENCES nodes(id),
 	name TEXT NOT NULL,
-	kind TEXT NOT NULL CHECK (kind IN ('http', 'https', 'tcp')),
+	kind TEXT NOT NULL CHECK (kind IN ('http', 'https', 'tcp', 'icmp')),
 	target TEXT NOT NULL,
 	expected_http_status INTEGER,
 	interval_seconds INTEGER NOT NULL CHECK (interval_seconds BETWEEN 10 AND 86400),
@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS service_probes (
 	created_at INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL,
 	deleted_at INTEGER,
-	CHECK ((kind = 'tcp' AND expected_http_status IS NULL) OR (kind IN ('http', 'https') AND expected_http_status BETWEEN 100 AND 599))
+	CHECK ((kind IN ('tcp', 'icmp') AND expected_http_status IS NULL) OR (kind IN ('http', 'https') AND expected_http_status BETWEEN 100 AND 599))
 );
 
 CREATE INDEX IF NOT EXISTS service_probes_due ON service_probes(enabled, deleted_at, next_due_at);
@@ -239,7 +239,7 @@ CREATE TABLE IF NOT EXISTS service_probe_runs (
 	node_id TEXT NOT NULL REFERENCES nodes(id),
 	probe_revision INTEGER NOT NULL,
 	generation INTEGER NOT NULL DEFAULT 0,
-	kind TEXT NOT NULL CHECK (kind IN ('http', 'https', 'tcp')),
+	kind TEXT NOT NULL CHECK (kind IN ('http', 'https', 'tcp', 'icmp')),
 	expected_http_status INTEGER,
 	status TEXT NOT NULL CHECK (status IN ('pending', 'healthy', 'unhealthy', 'unknown')),
 	checked_at INTEGER NOT NULL,
@@ -248,8 +248,10 @@ CREATE TABLE IF NOT EXISTS service_probe_runs (
 	http_status INTEGER,
 	error_code TEXT,
 	timeout_seconds INTEGER NOT NULL,
-	CHECK ((kind = 'tcp' AND expected_http_status IS NULL) OR (kind IN ('http', 'https') AND expected_http_status BETWEEN 100 AND 599))
+	CHECK ((kind IN ('tcp', 'icmp') AND expected_http_status IS NULL) OR (kind IN ('http', 'https') AND expected_http_status BETWEEN 100 AND 599))
 );
+
+CREATE INDEX IF NOT EXISTS service_probe_runs_quality ON service_probe_runs(probe_id, completed_at);
 
 CREATE INDEX IF NOT EXISTS service_probe_runs_probe_time ON service_probe_runs(probe_id, checked_at DESC, run_id DESC);
 CREATE INDEX IF NOT EXISTS service_probe_runs_pending ON service_probe_runs(status, checked_at);
@@ -258,7 +260,7 @@ CREATE INDEX IF NOT EXISTS service_probe_runs_retention ON service_probe_runs(st
 CREATE TABLE IF NOT EXISTS alert_rules (
 	id TEXT PRIMARY KEY,
 	name TEXT NOT NULL,
-	kind TEXT NOT NULL CHECK (kind IN ('node_offline', 'cpu', 'memory', 'disk', 'docker_unavailable', 'container_state', 'probe_state')),
+	kind TEXT NOT NULL CHECK (kind IN ('node_offline', 'cpu', 'memory', 'disk', 'docker_unavailable', 'container_state', 'probe_state', 'asset_expiry', 'traffic_quota', 'metric', 'probe_latency', 'probe_failure', 'probe_packet_loss')),
 	node_id TEXT NOT NULL REFERENCES nodes(id),
 	subject_id TEXT NOT NULL DEFAULT '',
 	severity TEXT NOT NULL CHECK (severity IN ('info', 'warning', 'critical')),
@@ -272,7 +274,7 @@ CREATE TABLE IF NOT EXISTS alert_rules (
 	created_at INTEGER NOT NULL,
 	updated_at INTEGER NOT NULL,
 	deleted_at INTEGER,
-	CHECK ((kind IN ('cpu', 'memory', 'disk') AND threshold BETWEEN 0 AND 100) OR (kind NOT IN ('cpu', 'memory', 'disk') AND threshold IS NULL))
+	CHECK ((kind IN ('cpu', 'memory', 'disk') AND threshold BETWEEN 0 AND 100) OR (kind IN ('metric', 'probe_latency', 'probe_failure', 'probe_packet_loss') AND threshold >= 0) OR (kind NOT IN ('cpu', 'memory', 'disk', 'metric', 'probe_latency', 'probe_failure', 'probe_packet_loss') AND threshold IS NULL))
 );
 
 CREATE INDEX IF NOT EXISTS alert_rules_node ON alert_rules(node_id, enabled, deleted_at, kind);
@@ -382,3 +384,30 @@ CREATE TABLE IF NOT EXISTS alert_windows (
 
 CREATE INDEX IF NOT EXISTS alert_windows_active ON alert_windows(starts_at, ends_at, kind, scope_type, scope_id);
 CREATE INDEX IF NOT EXISTS alert_windows_retention ON alert_windows(ends_at, disabled_at);
+
+CREATE TABLE IF NOT EXISTS host_batches (
+ id TEXT PRIMARY KEY,
+ kind TEXT NOT NULL,
+ request_hash TEXT NOT NULL,
+ nodes_json TEXT NOT NULL,
+ results_json TEXT NOT NULL,
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS node_assets (
+ node_id TEXT PRIMARY KEY REFERENCES nodes(id),
+ settings_json TEXT NOT NULL,
+ updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_enrollment_grants (
+ id TEXT PRIMARY KEY,
+ token_digest BLOB NOT NULL UNIQUE CHECK(length(token_digest)=32),
+ display_prefix TEXT NOT NULL,
+ max_uses INTEGER NOT NULL CHECK(max_uses BETWEEN 1 AND 1000),
+ uses INTEGER NOT NULL DEFAULT 0,
+ expires_at INTEGER NOT NULL,
+ revoked_at INTEGER,
+ created_at INTEGER NOT NULL
+);

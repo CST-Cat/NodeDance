@@ -5,7 +5,10 @@
 // Agent protocol layer.
 package metrics
 
-import "time"
+import (
+	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"time"
+)
 
 type State string
 
@@ -26,13 +29,14 @@ type Metric[T any] struct {
 }
 
 type Snapshot struct {
-	CollectedAt time.Time       `json:"collectedAt"`
-	System      SystemInfo      `json:"system"`
-	CPU         CPUInfo         `json:"cpu"`
-	Memory      Metric[Memory]  `json:"memory"`
-	Network     NetworkSnapshot `json:"network"`
-	Disk        DiskSnapshot    `json:"disk"`
-	Uptime      Metric[Uptime]  `json:"uptime"`
+	Host        *protocol.MetricsHost `json:"host,omitempty"`
+	CollectedAt time.Time             `json:"collectedAt"`
+	System      SystemInfo            `json:"system"`
+	CPU         CPUInfo               `json:"cpu"`
+	Memory      Metric[Memory]        `json:"memory"`
+	Network     NetworkSnapshot       `json:"network"`
+	Disk        DiskSnapshot          `json:"disk"`
+	Uptime      Metric[Uptime]        `json:"uptime"`
 }
 
 type SystemInfo struct {

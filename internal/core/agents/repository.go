@@ -121,7 +121,8 @@ func (r *Repository) CreateEnrollment(ctx context.Context, displayName, remote s
 	return Enrollment{NodeID: nodeID, DisplayName: name, Token: token, ExpiresAt: expires}, nil
 }
 
-// ConsumeEnrollment is a one-time operation. The Agent already generated and
+// ConsumeEnrollment accepts one-use credentials or bounded shared grants.
+// Each device gets a separate identity. The Agent already generated and
 // durably saved its own device credential before calling this method, so a
 // lost HTTP response is recovered through IdentityByCredential without
 // consuming the enrollment token again.
@@ -145,13 +146,32 @@ func (r *Repository) ConsumeEnrollment(ctx context.Context, enrollmentDigest, de
 	if err != nil {
 		return Identity{}, fmt.Errorf("inspect enrollment consumption: %w", err)
 	}
-	if changed != 1 {
-		return Identity{}, ErrEnrollmentRejected
-	}
 	var nodeID, name string
-	if err := tx.QueryRowContext(ctx, `SELECT e.node_id, n.display_name FROM agent_enrollments e
-		JOIN nodes n ON n.id=e.node_id WHERE e.token_digest=?`, enrollmentDigest).Scan(&nodeID, &name); err != nil {
-		return Identity{}, fmt.Errorf("load enrolled node: %w", err)
+	if changed == 1 {
+		if err := tx.QueryRowContext(ctx, `SELECT e.node_id,n.display_name FROM agent_enrollments e JOIN nodes n ON n.id=e.node_id WHERE e.token_digest=?`, enrollmentDigest).Scan(&nodeID, &name); err != nil {
+			return Identity{}, err
+		}
+	} else {
+		result, err := tx.ExecContext(ctx, `UPDATE agent_enrollment_grants SET uses=uses+1 WHERE token_digest=? AND revoked_at IS NULL AND expires_at>? AND uses<max_uses`, enrollmentDigest, now.Unix())
+		if err != nil {
+			return Identity{}, err
+		}
+		n, _ := result.RowsAffected()
+		if n != 1 {
+			return Identity{}, ErrEnrollmentRejected
+		}
+		var prefix string
+		if err := tx.QueryRowContext(ctx, `SELECT display_prefix FROM agent_enrollment_grants WHERE token_digest=?`, enrollmentDigest).Scan(&prefix); err != nil {
+			return Identity{}, err
+		}
+		nodeID, err = newID()
+		if err != nil {
+			return Identity{}, err
+		}
+		name = prefix + "-" + nodeID[:8]
+		if _, err := tx.ExecContext(ctx, `INSERT INTO nodes(id,display_name,status,created_at,updated_at) VALUES(?,?,'pending',?,?)`, nodeID, name, now.UnixNano(), now.UnixNano()); err != nil {
+			return Identity{}, err
+		}
 	}
 	var collision int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM agent_credential_verifiers WHERE digest=?`, deviceDigest).Scan(&collision); err != nil {

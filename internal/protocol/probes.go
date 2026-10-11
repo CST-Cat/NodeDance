@@ -18,6 +18,7 @@ const (
 	ProbeHTTP  = "http"
 	ProbeHTTPS = "https"
 	ProbeTCP   = "tcp"
+	ProbeICMP  = "icmp"
 
 	ProbeResultHealthy   = "healthy"
 	ProbeResultUnhealthy = "unhealthy"
@@ -122,6 +123,11 @@ func ValidateProbeTarget(kind, target string, expectedHTTPStatus int) error {
 		}
 		if expectedHTTPStatus < 100 || expectedHTTPStatus > 599 {
 			return errors.New("expected HTTP status must be between 100 and 599")
+		}
+	case ProbeICMP:
+		u, err := url.Parse(target)
+		if err != nil || u.Scheme != "icmp" || u.Hostname() == "" || u.Port() != "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(u.Hostname(), "/@%") || expectedHTTPStatus != 0 {
+			return errors.New("ICMP target must use icmp://host without a port")
 		}
 	case ProbeTCP:
 		u, err := url.Parse(target)
