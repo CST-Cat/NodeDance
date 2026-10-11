@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.7]
+
+### English
+
+- Advertise the update capability in the actual Agent connection handshake so Web, CLI and TUI can reach the installed supervisor through Core; cover the real runtime hello in a regression test.
+
+### 简体中文
+
+- 在 Agent 实际连接握手中声明更新能力，使 Web、CLI 和 TUI 能通过 Core 调用已安装的更新服务；补充实际运行握手的回归测试。
+
 ## [0.1.6]
 
 ### English
