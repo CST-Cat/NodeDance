@@ -50,7 +50,7 @@ Agent enrollment returns a Core-generated installer command through `internal/in
 
 ## Extended Agent management
 
-The `agent.host.v2` capability carries shared Agent settings, redacted diagnostics and durable root script jobs. The same operation contract exposes single-node commands, durable multi-node command/probe batches, asset settings and bounded enrollment grants. Each grant consumer receives an independent credential; its use count is claimed in the enrollment transaction. Settings, traffic and command records are stored as root-owned private JSON. Jobs persist acceptance before execution and never replay on restart.
+The `agent.host.v1` capability carries shared Agent settings, redacted diagnostics and durable root script jobs. The same operation contract exposes single-node commands, durable multi-node command/probe batches, asset settings and bounded enrollment grants. Each grant consumer receives an independent credential; its use count is claimed in the enrollment transaction. Settings, traffic and command records are stored as root-owned private JSON. Jobs persist acceptance before execution and never replay on restart.
 
 `agent.metrics.v2` replaces the metrics capability contract; `metrics.host` carries independent metric states. GPU/public IP lookups run separately, disk mount filters apply before statfs, and Core ages metrics using the configured intervals. Extended numeric history and alert subjects come from the shared metric catalog. Probe quality separates unknown gaps from failure and ICMP loss denominators; asset expiry can be evaluated without an online lease, while quota samples require fresh traffic. HTTP and WebSocket use the same Agent protocol, identity, generation, writer and business handlers. See [Agent capabilities](agent-capabilities.md) for operation names, limits and data semantics.
 
@@ -62,6 +62,6 @@ Root Agent command acceptance is written before execution. Full output remains i
 
 Core retains partial, stale and uncertain batch records. After interruption, batch observation finds missing child results using the original node idempotency key and reads the Agent job; observation never resubmits commands. Result persistence failures report unknown outcomes; an Agent restart converts surviving running records into interrupted outcomes without replay.
 
-The host protocol is `agent.host.v2`, reflecting the new settings/cleanup contract. Install an Agent advertising that capability before using extended host management; Core negotiates capabilities independently from metric and update support.
+During the current development phase, host management uses the existing `agent.host.v1` capability with the current settings/cleanup contract. Core and Agent should be built from the same development revision; this change does not increment product, release or capability versions.
 
 See [verification results and reproduction](verification.md).

@@ -25,17 +25,17 @@ NODEDANCE_TEST_SOAK_NODES=100 NODEDANCE_TEST_SOAK_SECONDS=600 \
   go test ./internal/core/server -run '^TestCoreCapacitySoak$' -count=1 -v
 ```
 
-Observed run: 600 seconds, 100 simulated Agents, 10,800 metric reports and 32,600 HTTP requests. Each report is checked for acknowledgment and applied node snapshot within two seconds. Real Core protocol channels, SQLite enrollment/history, concurrent administrator reads and retention cleanup execute together.
+Observed run: 600 seconds, 100 simulated Agents, 10,800 metric reports and 32,600 measured Agent-channel HTTP requests (administrator calls are additional). Each report is checked for acknowledgment and applied node snapshot within two seconds. Real Core protocol channels, SQLite enrollment/history, periodic administrator reads and retention cleanup execute in the same run.
 
 | Measurement | Observed |
 | --- | ---: |
 | HTTP request p95 | 97.783 ms |
-| Go live heap after GC | 3,636,448 → 3,833,600 bytes |
+| Test-process live heap after GC | 3,636,448 → 3,833,600 bytes |
 | Goroutines | 375 → 372 |
 | Open file descriptors | 55 → 53 |
 | SQLite database size | 880,640 bytes |
 
-The test passed its bounded heap/goroutine/descriptor assertions. HTTP p95 includes protocol polling and administrator requests; it is not command execution latency. Agents here are protocol simulators, not 100 real servers with Docker workloads. This demonstrates ten-minute behavior at this workload; it does not establish a maximum node count, 24-hour stability, high availability or production network performance.
+The test passed its bounded heap/goroutine/descriptor assertions. HTTP p95 measures the simulated Agent channel requests (negotiation, heartbeat, polling and metric submission), excluding administrator calls; it is not command execution latency. Heap, goroutine and descriptor measurements belong to the whole Go test process, including Core and the load generator. Agents here are protocol simulators, not 100 real servers with Docker workloads. This demonstrates ten-minute behavior at this workload; it does not establish a maximum node count, 24-hour stability, high availability or production network performance.
 
 ## 中文说明
 

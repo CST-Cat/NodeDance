@@ -21,7 +21,7 @@
 | 自动更新与诊断 | `autoUpdate` 经现有更新控制服务执行；`agents.diagnostics` 返回有效配置并隐藏凭据 |
 | 禁用远程终端与 root 脚本 | `disableRemoteControl`；立即拒绝新脚本并取消运行中的脚本，终端会在下次心跳重连后关闭 |
 
-扩展指标采用新的 `agent.metrics.v2` 能力契约，控制请求采用 `agent.host.v2`。能力协商沿用统一协议，不注册旧指标契约或增加转换适配器。
+扩展指标采用新的 `agent.metrics.v2` 能力契约，控制请求采用 `agent.host.v1`。能力协商沿用统一协议，不注册旧指标契约或增加转换适配器。
 
 Web 通用操作台、CLI 和 TUI 从连接的 Core `/api/v1/operations` 读取操作、请求结构、方法、路径和传输类型。专用页面通过同一契约调用 Core；CLI/TUI 不连接 Agent、不读取 Core 数据库。`metrics.catalog` 返回可用于扩展指标告警的指标及单位，历史图表自动显示收到的扩展序列。
 

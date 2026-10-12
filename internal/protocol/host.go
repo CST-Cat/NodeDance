@@ -17,7 +17,7 @@ const (
 	MaxCommandRequestBytes   = 6*MaxCommandScriptBytes + 16*1024
 	MinCommandTimeoutSeconds = 1
 	MaxCommandTimeoutSeconds = 3600
-	CapabilityHost           = "agent.host.v2"
+	CapabilityHost           = "agent.host.v1"
 	TypeHostRequest          = "host_request"
 	TypeHostResponse         = "host_response"
 )
