@@ -18,7 +18,7 @@ The suite discovers private operations from the connected Core's operation contr
 
 | Group | Cases | Expected result |
 | --- | ---: | --- |
-| Discovered private operations, including commands/files/containers/updates/configuration | 107 | 401 despite spoofed role/mode/user headers and an anonymous CSRF token |
+| Discovered private operations, including commands/files/containers/updates/configuration | 109 | 401 despite spoofed role/mode/user headers and an anonymous CSRF token |
 | Internal and opaque public IDs substituted into private resource routes | 15 | 401 |
 | Public scope expansion, arbitrary history, malformed queries and parameter pollution | 12 | 400 |
 | Public method changes and method override | 10 | 405 |
@@ -53,3 +53,5 @@ Generated JSON results and layout screenshots live under `.build/guest-audit/` f
 Grant creation/revocation responses are held in the real browser while navigating to guest mode. Releasing them after host-management unmount must issue no private follow-up reads, including enrollment-grant listing.
 
 真实浏览器在创建／撤销入网授权请求未返回时切入游客模式；退出主机管理页面后释放响应，必须不再触发私有后续读取，包括入网授权列表。
+
+The contract includes paginated file search and passive preview; direct anonymous access remains denied. A real unavailable file-list response from the protocol-only simulated Agent is delayed across guest entry, and releasing it must start no private follow-up requests. 文件搜索／预览仍要求管理员权限；文件管理器退出进入游客后，迟到目录响应不得触发后续私有读取。

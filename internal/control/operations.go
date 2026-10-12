@@ -289,7 +289,9 @@ func buildOperations() []Operation {
 		op("tasks.get", "GET", node+"/tasks/{taskId}", "Task status and result; poll until terminal status", nil),
 		op("tasks.audit", "GET", node+"/tasks/{taskId}/audit", "Task audit trail", nil),
 		op("tasks.cancel", "DELETE", node+"/tasks/{taskId}", "Cancel undelivered task or running image pull", nil),
-		op("files.list", "GET", node+"/files", "List host directory within Agent file policy", nil, "path"),
+		op("files.list", "GET", node+"/files", "Paginated host directory within Agent file policy", nil, "path", "after"),
+		op("files.search", "GET", node+"/files/search", "Bounded paginated filename search", nil, "path", "after", "filter", "recursive", "minSize", "maxSize"),
+		op("files.preview", "GET", node+"/files/preview", "Authenticated passive media preview; active formats download only", nil, "path"),
 		op("files.stat", "GET", node+"/files/stat", "File metadata", nil, "path"),
 		op("files.text", "GET", node+"/files/text", "Read text and version for optimistic writes", nil, "path"),
 		op("files.download", "GET", node+"/files/download", "Download to --output; never overwrite an existing file", nil, "path"),
@@ -352,7 +354,7 @@ func buildOperations() []Operation {
 		if strings.HasPrefix(o.Path, "/ws/") {
 			o.Transport = "websocket"
 		}
-		if o.Name == "files.download" || o.Name == "appearance.avatar" || o.Name == "appearance.background" {
+		if o.Name == "files.download" || o.Name == "files.preview" || o.Name == "appearance.avatar" || o.Name == "appearance.background" {
 			o.Transport = "download"
 		}
 		if o.Name == "files.upload" {

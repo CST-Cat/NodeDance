@@ -1,273 +1,55 @@
 <script setup lang="ts">
-import { requestPrompt, requestConfirm } from '../dialogs'
-import UiIcon from './UiIcon.vue'
-import { operationURL } from '../operations'
-import { t, display, locale } from "../i18n"
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { api, type ContainerTask, type CreateFileTaskPayload, type NodeFileEntry } from '../api'
-import { fileModifiedDate, formatFileSize, isEditableTextFile, joinNodePath, parentNodePath } from './files'
-
-const props = defineProps<{ nodeId: string; nodeName: string }>()
-const currentPath = ref('/')
-const entries = ref<NodeFileEntry[]>([])
-const loading = ref(false)
-const pending = ref(false)
-const error = ref('')
-const message = ref('')
-const editorPath = ref('')
-const editorText = ref('')
-const editorVersion = ref('')
-const editorLoading = ref(false)
-const filePicker = ref<HTMLInputElement>()
-let disposed = false
-
-const breadcrumbs = computed(() => {
-  const parts = currentPath.value.split('/').filter(Boolean)
-  const result: Array<{ label: string; path: string }> = [{ label: '/', path: '/' }]
-  let path = ''
-  for (const part of parts) {
-    path += `/${part}`
-    result.push({ label: part, path })
-  }
-  return result
+import { computed, getCurrentInstance, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import VueFinderPlugin, { VueFinder } from 'vuefinder'
+import en from 'vuefinder/dist/locales/en.js'
+import zhCN from 'vuefinder/dist/locales/zhCN.js'
+import 'vuefinder/dist/style.css'
+import { useViewNavigation } from '../navigation'
+import { useVueFinder } from 'vuefinder'
+import { locale, t } from '../i18n'
+import { createFileManager, type FileObservation } from '../file-manager'
+const app=getCurrentInstance()!.appContext.app
+if(!app.component('vue-finder'))app.use(VueFinderPlugin,{i18n:{en,zhCN}})
+const props=defineProps<{nodeId:string;nodeName:string}>()
+const navigation=useViewNavigation(),finderId=`node-files-${props.nodeId}`
+const ready=ref(false)
+function pathChanged(value:string){const filePath=value.startsWith('node://')?value.slice(7)||'/':value;if(filePath!==(navigation.route.value.filePath??'/'))navigation.go({...navigation.route.value,filePath})}
+watch(()=>navigation.route.value.filePath,value=>{if(ready.value){const ui=useVueFinder(finderId);const target='node://'+(value??'/');if(ui.getPath()!==target)void ui.open(target)}})
+const host=ref<HTMLElement>()
+let controls:MutationObserver|undefined
+function normalizeControls(){for(const item of host.value?.querySelectorAll<HTMLElement>('.vuefinder__toolbar [title], .vuefinder__breadcrumb [title]')??[]){if(['BUTTON','A','INPUT','SELECT'].includes(item.tagName))continue;item.setAttribute('role','button');item.setAttribute('aria-label',item.title);const disabled=/disabled|opacity-50/.test(item.className);item.setAttribute('aria-disabled',String(disabled));item.tabIndex=disabled?-1:0;item.dataset.nodedanceControl='true'}}
+function activateControl(event:KeyboardEvent){const target=event.target as HTMLElement;if(['Enter',' '].includes(event.key)&&target.dataset.nodedanceControl==='true'){event.preventDefault();event.stopPropagation();if(target.getAttribute('aria-disabled')!=='true')target.click()}}
+const manager=ref<Awaited<ReturnType<typeof createFileManager>>>(),error=ref(''),observations=ref<FileObservation[]>([]),theme=ref(document.documentElement.dataset.theme??'light')
+const config=computed(()=>({initialPath:'node://'+(navigation.route.value.filePath??'/'),path:'node://'+(navigation.route.value.filePath??'/'),persist:true,theme:theme.value==='dark'?'midnight':'latte',showHiddenFiles:true,showThumbnails:false}))
+let disposed=false,observer:MutationObserver|undefined
+onMounted(async()=>{
+ controls=new MutationObserver(normalizeControls);if(host.value)controls.observe(host.value,{childList:true,subtree:true,attributes:true,attributeFilter:['class','title']})
+ observer=new MutationObserver(()=>{theme.value=document.documentElement.dataset.theme??'light'});observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']})
+ try{const value=await createFileManager(props.nodeId,items=>{if(!disposed)observations.value=items});if(disposed)value.dispose();else manager.value=value}catch(reason){if(!disposed)error.value=String(reason)}
 })
-const editorBytes = computed(() => new TextEncoder().encode(editorText.value).length)
-const parentPath = computed(() => parentNodePath(currentPath.value))
-async function download(entry: NodeFileEntry) {
-  try {
-    const url = await operationURL('files.download', { params: { nodeId: props.nodeId }, query: { path: entry.path } })
-    if (disposed) return
-    const link = document.createElement('a'); link.href = url.href; link.download = entry.name; link.click()
-  } catch (reason) { if (!disposed) error.value = reason instanceof Error ? reason.message : String(reason) }
-}
-
-async function load(path = currentPath.value) {
-  loading.value = true
-  error.value = ''
-  try {
-    const response = await api.nodeFiles(props.nodeId, path)
-    if (disposed) return
-    currentPath.value = response.path
-    entries.value = response.entries
-  } catch (reason) {
-    if (!disposed) error.value = reason instanceof Error ? reason.message : t('m.e2e0acb8ab46')
-  } finally {
-    if (!disposed) loading.value = false
-  }
-}
-
-async function waitForTask(taskId: string): Promise<ContainerTask> {
-  for (let attempt = 0; attempt < 240; attempt += 1) {
-    const task = await api.nodeTask(props.nodeId, taskId)
-    if (task.status !== 'queued' && task.status !== 'running') return task
-    await new Promise((resolve) => window.setTimeout(resolve, 500))
-    if (disposed) throw new Error(t('m.d42b9624254f'))
-  }
-  throw new Error(t('m.1b76591a88e1'))
-}
-
-async function runFileTask(payload: CreateFileTaskPayload, successMessage: string) {
-  pending.value = true
-  error.value = ''
-  message.value = ''
-  try {
-    const accepted = await api.createFileTask(props.nodeId, payload, crypto.randomUUID())
-    const task = await waitForTask(accepted.taskId)
-    if (task.status === 'succeeded') {
-      message.value = t('m.9f6548a67616', {"0": (successMessage)})
-      await load()
-    } else if (task.status === 'unknown') {
-      message.value = t('m.a07bf68b2e91')
-    } else {
-      throw new Error(t('m.0913aa5a4393', {"0": (task.result.code || task.status)}))
-    }
-    return task
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : t('m.91488a18c47d')
-    return null
-  } finally {
-    pending.value = false
-  }
-}
-
-async function openText(entry?: NodeFileEntry) {
-  error.value = ''
-  message.value = ''
-  if (!entry) {
-    const name = (await requestPrompt(t('m.d72fdbdedfdb')))?.trim()
-    if (!name || name.includes('/') || name === '.' || name === '..') return
-    editorPath.value = joinNodePath(currentPath.value, name)
-    editorText.value = ''
-    editorVersion.value = ''
-    return
-  }
-  if (entry.kind !== 'file' || entry.size > 32 * 1024) {
-    error.value = t('m.55b50af2d703')
-    return
-  }
-  editorLoading.value = true
-  try {
-    const result = await api.nodeFileText(props.nodeId, entry.path)
-    editorPath.value = result.path
-    editorText.value = result.text
-    editorVersion.value = result.version
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : t('m.942d34bc82c7')
-  } finally {
-    editorLoading.value = false
-  }
-}
-
-async function saveText() {
-  if (!editorPath.value) return
-  const task = await runFileTask({ action: 'save_text', path: editorPath.value, expectedVersion: editorVersion.value, content: editorText.value }, t('m.3d8ac004269e'))
-  if (task?.status === 'succeeded') {
-    try {
-      const latest = await api.nodeFileText(props.nodeId, editorPath.value)
-      editorPath.value = latest.path
-      editorText.value = latest.text
-      editorVersion.value = latest.version
-    } catch {
-      editorPath.value = ''
-    }
-  }
-}
-
-async function createDirectory() {
-  const name = (await requestPrompt(t('m.ae51764fbb38')))?.trim()
-  if (!name || name.includes('/') || name === '.' || name === '..') return
-  await runFileTask({ action: 'mkdir', path: joinNodePath(currentPath.value, name) }, t('m.f1edc97079ec'))
-}
-
-async function renameEntry(entry: NodeFileEntry) {
-  const name = (await requestPrompt(t('m.92ddb51db6c4'), entry.name))?.trim()
-  if (!name || name === entry.name || name.includes('/') || name === '.' || name === '..') return
-  await runFileTask({ action: 'rename', path: entry.path, newPath: joinNodePath(currentPath.value, name) }, t('m.54dbc5d14e6c'))
-}
-
-async function deleteEntry(entry: NodeFileEntry) {
-  if (!await requestConfirm(t('m.051e9916c510', {"0": (entry.path)}))) return
-  await runFileTask({ action: 'delete', path: entry.path, deleteConfirmed: true, confirmationPath: entry.path }, t('m.d3da497e999c'))
-}
-
-function uploadFile() {
-  filePicker.value?.click()
-}
-
-async function acceptUpload(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-  const path = joinNodePath(currentPath.value, file.name)
-  let expectedVersion = ''
-  const existing = entries.value.find((entry) => entry.path === path)
-  if (existing) {
-    if (existing.kind !== 'file' || !await requestConfirm(t('m.c81ec173997c', {"0": (path)}))) return
-    try {
-      const latest = await api.nodeFileStat(props.nodeId, path)
-      expectedVersion = latest.version || ''
-    } catch (reason) {
-      error.value = reason instanceof Error ? reason.message : t('m.35c77a3cfed1')
-      return
-    }
-  }
-  pending.value = true
-  error.value = ''
-  message.value = ''
-  try {
-    const task = await api.uploadNodeFile(props.nodeId, path, file, expectedVersion)
-    if (task.status === 'succeeded') {
-      message.value = t('m.0be4d61c6f18')
-      await load()
-    } else if (task.status === 'unknown') {
-      message.value = t('m.aef7e35ce1ec')
-    } else {
-      error.value = t('m.090a5d6ff2c9', {"0": (task.result.code || task.status)})
-    }
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : t('m.3f42bdcea6f7')
-  } finally {
-    pending.value = false
-  }
-}
-
-watch(() => props.nodeId, () => {
-  currentPath.value = '/'
-  editorPath.value = ''
-  void load('/')
-})
-onMounted(() => { disposed = false; void load('/') })
-onBeforeUnmount(() => { disposed = true })
+onBeforeUnmount(()=>{disposed=true;observer?.disconnect();controls?.disconnect();manager.value?.dispose()})
+async function observe(id:string){try{await manager.value?.observe(id)}catch(reason){if(!disposed)error.value=String(reason)}}
 </script>
-
 <template>
-  <section class="node-files section-panel" aria-labelledby="files-title" data-testid="node-files">
-    <header class="files-heading">
-      <div><span class="eyebrow">{{ t('label.144c3510385c') }}</span><h2 id="files-title">{{ t('m.55ec425eddc8') }}{{ nodeName }}</h2></div>
-      <div class="files-actions">
-        <button class="container-action" type="button" :disabled="pending" @click="void openText()">{{ t('m.017b0649496c') }}</button>
-        <button class="container-action" type="button" :disabled="pending" @click="createDirectory">{{ t('m.84244abc71de') }}</button>
-        <button class="container-action" type="button" :disabled="pending" @click="uploadFile">{{ t('m.bb5caa9c5976') }}</button>
-        <button class="container-action" type="button" :disabled="loading || pending" @click="void load()">{{ t('m.aee887434131') }}</button>
-        <input ref="filePicker" class="file-picker" type="file" @change="acceptUpload">
-      </div>
-    </header>
-    <p v-if="error" class="files-message files-error" role="alert">{{ display(error) }}</p>
-    <p v-if="message" class="files-message" role="status">{{ display(message) }}</p>
-    <p v-if="pending" class="files-message" role="status">{{ t('m.f31c81b217a7') }}</p>
-    <nav class="files-breadcrumbs" :aria-label="t('m.257f4442af73')">
-      <button v-for="crumb in breadcrumbs" :key="crumb.path" type="button" :aria-current="crumb.path === currentPath ? 'page' : undefined" @click="void load(crumb.path)">{{ crumb.label }}</button>
-    </nav>
-    <button v-if="parentPath" class="file-parent" type="button" @click="void load(parentPath)">{{ t('m.bf0252306b57') }}</button>
-    <p v-if="loading" class="files-empty">{{ t('m.36517d179e0f') }}</p>
-    <p v-else-if="entries.length === 0" class="files-empty">{{ t('m.b372af75428d') }}</p>
-    <div v-else class="file-list" :aria-label="t('m.6bbaf705e8c6')">
-      <article v-for="entry in entries" :key="entry.path" class="file-row" :data-kind="entry.kind">
-        <button v-if="entry.kind === 'directory'" class="file-name" type="button" @click="void load(entry.path)"><UiIcon name="folder"/>{{ entry.name }}/</button>
-        <button v-else-if="isEditableTextFile(entry)" class="file-name" type="button" @click="void openText(entry)"><UiIcon name="file"/>{{ entry.name }}</button>
-        <a v-else class="file-name" href="#" @click.prevent="download(entry)" :download="entry.name"><UiIcon :name="entry.kind === 'file' ? 'file' : 'discovery'"/>{{ entry.name }}</a>
-        <span class="file-kind">{{ entry.kind === 'directory' ? t('m.52daa71ebc31') : entry.kind === 'symlink' ? t('m.305378ddd2b8') : entry.kind === 'file' ? t('m.39932f24fe11') : t('m.d2909f1647e7') }}</span>
-        <span class="file-size">{{ entry.kind === 'file' ? formatFileSize(entry.size) : '—' }}</span>
-        <time v-if="fileModifiedDate(entry)" class="file-date" :datetime="fileModifiedDate(entry)!.toISOString()">{{ fileModifiedDate(entry)!.toLocaleString(locale) }}</time><span v-else class="file-date">—</span>
-        <div class="file-row-actions">
-          <button type="button" :disabled="pending || entry.path === '/'" @click="void renameEntry(entry)">{{ t('m.0d0cbac2eee5') }}</button>
-          <button type="button" class="file-delete" :disabled="pending || entry.path === '/'" @click="void deleteEntry(entry)">{{ t('m.2f9daa828907') }}</button>
-        </div>
-      </article>
-    </div>
-    <section v-if="editorPath" class="file-editor" :aria-label="t('m.c42f23fe05ae')">
-      <header><div><span class="eyebrow">{{ editorVersion ? 'EDIT FILE' : 'NEW FILE' }}</span><h3>{{ editorPath }}</h3></div><button type="button" class="container-action" :disabled="pending" @click="editorPath = ''">{{ t('m.3fd47edce45b') }}</button></header>
-      <p v-if="editorLoading" class="files-empty">{{ t('m.b75809afbe0c') }}</p>
-      <textarea v-else v-model="editorText" spellcheck="false" :aria-label="t('m.479bac57975e')"></textarea>
-      <footer><span>{{ editorBytes }} / 32 KiB</span><button type="button" :disabled="pending || editorLoading || editorBytes > 32 * 1024" @click="void saveText()">{{ pending ? t('m.ff509c9ba052') : t('m.5dd6704c1e9a') }}</button></footer>
-    </section>
-  </section>
+ <section ref="host" @keydown="activateControl" class="node-files" data-testid="node-files" :aria-label="nodeName">
+  <p v-if="error" role="alert">{{ error }}</p>
+  <VueFinder v-if="manager" :id="finderId" :driver="manager.driver" :locale="locale==='zh-CN'?'zhCN':'en'" :config="config" :features="{language:false,theme:false}" @error="error=String($event)" @ready="ready=true" @path-change="pathChanged" />
+  <p v-else role="status">{{ t('guest.loading') }}</p>
+  <section v-if="observations.length" class="file-observations" :aria-label="t('host.history')"><article v-for="item in observations" :key="item.taskId"><span>{{ item.path }} · {{ item.status }}</span><button type="button" @click="observe(item.taskId)">{{ t('host.refresh') }}</button><button type="button" @click="manager?.forget(item.taskId)">{{ t('operations.forget') }}</button></article></section>
+ </section>
 </template>
-
 <style scoped>
-.files-heading,.files-heading>div,.file-editor header,.file-editor footer { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.files-heading { flex-wrap:wrap; margin-bottom:12px; }
-.files-heading h2,.file-editor h3 { margin:4px 0 0; overflow-wrap:anywhere; }
-.files-actions,.file-row-actions { display:flex; align-items:center; flex-wrap:wrap; gap:7px; }
-.file-picker { display:none; }
-.files-breadcrumbs { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0; }
-.files-breadcrumbs button,.file-parent,.file-row-actions button { border:1px solid var(--line); border-radius:var(--radius-control); padding:7px 9px; color:var(--text); background:var(--surface-soft); cursor:pointer; }
-.files-breadcrumbs button[aria-current="page"] { color:var(--accent); background:var(--accent-soft); border-color:var(--accent-line); }
-.file-parent { margin:0 0 8px; }
-.files-message,.files-empty { color:var(--muted-strong); font-size: 13px; }
-.files-error { color:var(--danger); }
-.file-list { display:grid; gap:6px; }
-.file-row { display:grid; grid-template-columns:minmax(180px,1fr) 70px 80px minmax(145px,auto) auto; align-items:center; gap:10px; padding:9px 10px; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface-soft); }
-.file-name :deep(svg) { flex-shrink:0; color:var(--muted); }
-.file-name { display:flex; align-items:center; gap:8px; min-width:0; overflow-wrap:anywhere; color:var(--text); text-align:left; text-decoration:none; background:none; border:0; cursor:pointer; }
-.file-kind,.file-size,.file-date { color:var(--muted-strong); font-size: 12px; }
-.file-row-actions { justify-content:flex-end; }
-.file-row-actions .file-delete { color:var(--danger); }
-.file-editor { margin-top:16px; padding:14px; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface-soft); }
-.file-editor textarea { display:block; width:100%; min-height:280px; margin:12px 0; padding:12px; resize:vertical; border:1px solid var(--line); border-radius:var(--radius-control); color:var(--text); background:var(--surface-soft); font: 13px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace; }
-.file-editor footer { color:var(--muted-strong); font-size: 12px; }
-.file-editor footer button { min-height:40px; border:0; border-radius:var(--radius-control); padding:9px 14px; color:#fff; background:var(--accent-fill); font-weight:500; cursor:pointer; }
-.file-editor footer button:hover:not(:disabled) { background:var(--accent-strong); }
-@media(max-width:760px){.file-row{grid-template-columns:minmax(0,1fr) auto;}.file-kind,.file-size,.file-date{display:none}.file-row-actions{grid-column:1/-1;justify-content:flex-start}.files-heading>div:first-child{width:100%}.files-actions{width:100%}.files-actions button{flex:1;min-height:40px}}
+.node-files{min-width:0;color:var(--text);border:1px solid var(--line);border-radius:var(--radius-card);overflow:hidden}.node-files>p{padding:16px}.node-files>p[role=alert]{color:var(--danger)}.file-observations{padding:16px;overflow-wrap:anywhere}.file-observations article{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:8px 0}.file-observations button{background:var(--surface);color:var(--text);border:1px solid var(--line);border-radius:var(--radius-control);padding:8px;cursor:pointer}
+</style>
+
+<style>
+.vuefinder__themer{
+ --vf-bg-primary:var(--surface)!important;--vf-bg-secondary:var(--surface-soft)!important;--vf-bg-tertiary:var(--surface)!important;--vf-bg-hover:var(--accent-soft)!important;--vf-bg-selected:var(--accent-soft)!important;--vf-bg-disabled:var(--surface-soft)!important;
+ --vf-text-primary:var(--text)!important;--vf-text-secondary:var(--muted)!important;--vf-text-muted:var(--muted)!important;--vf-border-primary:var(--line)!important;--vf-border-secondary:var(--line)!important;
+ --vf-accent-primary:var(--accent)!important;--vf-accent-hover:var(--accent)!important;--vf-selection-bg:var(--accent-soft)!important;--vf-selection-border:var(--accent)!important;
+ --color-blue-500:var(--accent);--color-blue-900:var(--accent);--color-sky-400:var(--accent);--vf-ring:var(--accent)!important;color:var(--text);accent-color:var(--accent)
+}
+.vuefinder__themer a,.vuefinder__themer a:visited{color:var(--accent)}
+.vuefinder__themer :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.vuefinder__themer ::selection{background:var(--accent-soft);color:var(--text)}
 </style>

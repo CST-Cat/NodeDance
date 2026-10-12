@@ -96,6 +96,8 @@ func describeTransport(o *Operation) {
 	case "windows.create":
 		require("kind", "scopeType", "startsAt", "endsAt")
 	case "files.action":
+		field("action", map[string]any{"enum": []string{"mkdir", "rename", "move", "copy", "archive", "extract", "delete", "save_text"}})
+		field("paths", map[string]any{"maxItems": 100, "items": map[string]any{"type": "string", "maxBytes": 4096}})
 		o.MaxBodyBytes = 6*protocol.MaxTextFileBytes + 8*1024
 		field("content", map[string]any{"maxBytes": protocol.MaxTextFileBytes})
 	case "compose.create", "compose.validate", "compose.action":

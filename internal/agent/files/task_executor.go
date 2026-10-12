@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"reflect"
 	"sync"
 	"time"
 
@@ -110,6 +111,19 @@ func (e *TaskExecutor) ExecuteFile(ctx context.Context, dispatch protocol.TaskDi
 		}
 		defer e.removePending(dispatch.TaskID)
 	}
+	if dispatch.Intent.Action == protocol.TaskFileCopy || dispatch.Intent.Action == protocol.TaskFileArchive || dispatch.Intent.Action == protocol.TaskFileExtract {
+		if onRunning != nil {
+			onRunning(running)
+		}
+		err := e.service.ExecuteExtended(ctx, dispatch.Intent.Action, *dispatch.Intent.File, dispatch.TaskID)
+		if errors.Is(err, ErrMutationResultUnknown) {
+			return e.markUnknown(ctx, dispatch.TaskID)
+		}
+		if err != nil {
+			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", stableFileError(err))
+		}
+		return e.finish(ctx, dispatch.TaskID, taskstate.Succeeded, "completed", protocol.FileTargetKey(dispatch.Intent.File.Path))
+	}
 	var baseline MutationBaseline
 	baseline, err = e.service.CaptureMutationBaseline(fileOperation(dispatch.Intent.Action), dispatch.Intent.File.Path, dispatch.Intent.File.NewPath)
 	if err != nil {
@@ -201,7 +215,7 @@ func (e *TaskExecutor) receiveUpload(ctx context.Context, taskID string, spec pr
 	e.mu.Lock()
 	pending := e.uploads[taskID]
 	e.mu.Unlock()
-	if pending == nil || pending.upload == nil || pending.spec != spec {
+	if pending == nil || pending.upload == nil || !reflect.DeepEqual(pending.spec, spec) {
 		return errors.New("file upload task state is unavailable")
 	}
 	upload := pending.upload
@@ -268,6 +282,19 @@ func (e *TaskExecutor) ReconcileFile(ctx context.Context, taskID string, intent 
 	}
 	if intent.Action == protocol.TaskFileUpload && intent.File != nil {
 		if err := e.service.RemoveUploadTemporary(intent.File.Path, uploadTemporaryPath(intent.File.Path, taskID)); err != nil {
+			return task, err
+		}
+	}
+	if intent.File != nil && (intent.Action == protocol.TaskFileCopy || intent.Action == protocol.TaskFileArchive || intent.Action == protocol.TaskFileExtract) {
+		target := intent.File.NewPath
+		if intent.Action == protocol.TaskFileArchive {
+			target = intent.File.Path
+		}
+		stage := path.Join(path.Dir(target), "."+path.Base(target)+".nodedance-file-"+taskID)
+		if intent.Action == protocol.TaskFileExtract {
+			stage = path.Join(target, ".nodedance-file-"+taskID)
+		}
+		if err := e.service.Delete(stage, true); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return task, err
 		}
 	}

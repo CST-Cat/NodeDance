@@ -4,12 +4,14 @@
 
 ### English
 
+- Integrate complete VueFinder 4.7.6 with lazy editor/assets, shared file tasks, paginated directory/search, no-overwrite copy/move, bounded ZIP archive/extraction, versioned 128 KiB text edits and sandboxed passive media previews. Preserve file-task recovery, guest isolation and browser directory history; add real Core/root Agent browser regression and bundled license notices.
 - Restore command-history cleanup through the audited HTTP entry, stop delayed enrollment-grant follow-up reads after guest entry, and preserve specialized batch command/probe retry identities across reload using the shared operation intent store.
 - Support browser Back/Forward, bookmarks and reload with browser-local view URLs for workspace pages, node details/sections, alert tabs and host management tabs/node selection. Revalidate administrator sessions on management entry, preserve the public guest projection on URL restoration, and prevent stale navigation responses or history restoration from resubmitting tasks.
 - Give guest display its own navigation/entry icon, simplify node cards and detail headings by hiding internal UUIDs, and recover alert metric catalog loading through Refresh. Reject empty JSON responses and missing required payloads instead of exposing JavaScript property errors; verify empty/204 responses and recovery in a real browser.
 
 ### 简体中文
 
+- 完整接入 VueFinder 4.7.6 与按需加载编辑器；补齐目录分页／搜索、禁止覆盖的复制移动、有界 ZIP 压缩解压、128 KiB 版本化文本编辑和受控媒体预览。沿用统一文件任务与恢复机制，保留游客隔离和浏览器目录历史，增加真实 Core／root Agent 浏览器回归及第三方许可证。
 - 修复命令历史清理在 HTTP 审计入口报错；阻止创建／撤销入网授权的迟到响应在游客模式中触发私有读取；批量命令／探测共用执行意图存储，刷新后重试仍复用原执行身份。
 - 为工作区页面、节点详情／标签、告警标签和主机管理标签／节点选择增加浏览器本地视图 URL，支持前进／后退、书签和刷新恢复；进入管理页面重新验证管理员会话，游客 URL 恢复仍仅加载公开数据，阻止迟到导航响应覆盖新页面及历史恢复重复提交任务。
 - 为游客展示设计独立导航／入口图标，移除节点卡片与详情标题中的内部 UUID；告警刷新同步重试指标目录，拒绝空 JSON 响应和缺少必需字段的响应，避免展示 JavaScript 属性错误；用真实浏览器验证空响应／204 及恢复。

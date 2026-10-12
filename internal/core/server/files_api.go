@@ -14,6 +14,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -41,32 +42,59 @@ func (s *Server) handleFilesAPI(w http.ResponseWriter, r *http.Request, current 
 		return true
 	}
 	filePath := r.URL.Query().Get("path")
-	if operation == "list" && filePath == "" {
+	if (operation == "list" || operation == "search") && filePath == "" {
 		filePath = "/"
 	}
 	if operation == "download" && filePath == "" {
 		http.Error(w, "file path is required", http.StatusBadRequest)
 		return true
 	}
-	if operation == "download" {
+	if operation == "download" || operation == "preview" {
 		s.handleFileDownload(w, r, current, nodeID)
 		return true
 	}
 	requestOperation := protocol.FileList
 	switch operation {
+	case "search":
+		requestOperation = protocol.FileSearch
 	case "stat":
 		requestOperation = protocol.FileStat
 	case "text":
 		requestOperation = protocol.FileReadText
 	}
-	response, err := s.runFileOperation(r.Context(), current, nodeID, protocol.FileRequest{Operation: requestOperation, Path: filePath})
+	request := protocol.FileRequest{Operation: requestOperation, Path: filePath, After: r.URL.Query().Get("after"), Filter: r.URL.Query().Get("filter")}
+	for key, target := range map[string]*int64{"minSize": &request.MinSize, "maxSize": &request.MaxSize} {
+		if raw := r.URL.Query().Get(key); raw != "" {
+			value, err := strconv.ParseInt(raw, 10, 64)
+			if err != nil || value < 0 {
+				http.Error(w, "invalid file size filter", 400)
+				return true
+			}
+			*target = value
+		}
+	}
+	if raw := r.URL.Query().Get("recursive"); raw != "" {
+		if raw != "true" && raw != "false" {
+			http.Error(w, "invalid recursive flag", 400)
+			return true
+		}
+		request.Recursive = raw == "true"
+	}
+	if len(request.Filter) > 200 || len(request.After) > 4096 || request.MaxSize > 0 && request.MaxSize < request.MinSize {
+		http.Error(w, "invalid file browse options", 400)
+		return true
+	}
+	response, err := s.runFileOperation(r.Context(), current, nodeID, request)
 	if err != nil {
 		s.writeFileAPIError(w, err)
 		return true
 	}
 	switch operation {
-	case "list":
-		writeJSON(w, http.StatusOK, map[string]any{"entries": response.Entries, "path": filePath})
+	case "list", "search":
+		if response.Entries == nil {
+			response.Entries = []protocol.FileEntry{}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"entries": response.Entries, "path": filePath, "nextAfter": response.NextAfter})
 	case "stat":
 		if response.Entry == nil {
 			http.Error(w, "Agent did not return file metadata", http.StatusBadGateway)
@@ -97,7 +125,7 @@ func filesRoute(requestPath string) (nodeID, operation string, ok bool) {
 	}
 	if len(parts) == 3 {
 		switch parts[2] {
-		case "stat", "text", "download", "tasks", "upload":
+		case "stat", "text", "download", "preview", "search", "tasks", "upload":
 			return parts[0], parts[2], true
 		}
 	}
@@ -308,14 +336,40 @@ func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request, curr
 		http.Error(w, "temporary download storage failed", http.StatusInsufficientStorage)
 		return
 	}
-	w.Header().Set("Content-Type", "application/octet-stream")
+	contentType, disposition := "application/octet-stream", "attachment"
+	if strings.HasSuffix(r.URL.Path, "/preview") {
+		candidate := mime.TypeByExtension(path.Ext(filePath))
+		if safeFilePreviewType(candidate) {
+			contentType = candidate
+			disposition = "inline"
+		}
+		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; frame-ancestors 'self'")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(response.Size, 10))
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": name}))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": name}))
 	w.Header().Set("X-File-Version", response.Entry.Version)
 	w.Header().Set("X-File-SHA256", finalDigest)
 	w.Header().Set("X-NodeDance-Transfer-ID", transfer.requestID)
+	if strings.HasSuffix(r.URL.Path, "/preview") {
+		http.ServeContent(w, r, name, time.Unix(0, response.Entry.ModifiedAt), spool)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	if _, err := io.CopyN(w, spool, response.Size); err != nil {
 		return
 	}
+}
+
+func safeFilePreviewType(value string) bool {
+	kind, _, err := mime.ParseMediaType(value)
+	if err != nil {
+		return false
+	}
+	switch kind {
+	case "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/avif", "application/pdf", "audio/mpeg", "audio/ogg", "audio/wav", "video/mp4", "video/webm", "video/ogg":
+		return true
+	}
+	return false
 }

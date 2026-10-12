@@ -8,6 +8,7 @@ Web 会将页面切换记入浏览器历史。后退、前进可恢复对应页�
 | --- | --- |
 | Node overview / 节点总览 | `#/nodes` |
 | Node detail / 节点详情 | `#/nodes?node=NODE_UUID` |
+| File directory / 文件目录 | `#/nodes?node=NODE_UUID&section=files&path=%2Fsrv` |
 | Node history / 节点历史 | `#/nodes?node=NODE_UUID&section=history` |
 | Alert rules / 告警规则 | `#/alerts?tab=rules` |
 | Host assets / 主机资产 | `#/host-management?node=NODE_UUID&tab=assets` |

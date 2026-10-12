@@ -43,14 +43,35 @@ func (s *Server) handleCreateFileTask(w http.ResponseWriter, r *http.Request, cu
 		return
 	}
 	var action protocol.TaskAction
+	if len(request.Paths) > 0 && request.Action != "archive" {
+		fileTaskBadRequest(w)
+		return
+	}
 	switch request.Action {
+	case "copy", "extract":
+		if !protocol.ValidVirtualFilePath(request.NewPath) || request.ExpectedVersion != "" || request.DeleteConfirmed || request.ConfirmationPath != "" || request.Content != "" {
+			fileTaskBadRequest(w)
+			return
+		}
+		if request.Action == "copy" {
+			action = protocol.TaskFileCopy
+		} else {
+			action = protocol.TaskFileExtract
+		}
+	case "archive":
+		action = protocol.TaskFileArchive
+		if request.NewPath != "" || request.ExpectedVersion != "" || request.DeleteConfirmed || request.ConfirmationPath != "" || request.Content != "" {
+			fileTaskBadRequest(w)
+			return
+		}
+
 	case "mkdir":
 		action = protocol.TaskFileMkdir
 		if request.NewPath != "" || request.ExpectedVersion != "" || request.DeleteConfirmed || request.ConfirmationPath != "" || request.Content != "" {
 			fileTaskBadRequest(w)
 			return
 		}
-	case "rename":
+	case "rename", "move":
 		action = protocol.TaskFileRename
 		if !protocol.ValidVirtualFilePath(request.NewPath) || request.NewPath == request.Path || request.DeleteConfirmed || request.ConfirmationPath != "" || request.Content != "" || request.ExpectedVersion != "" {
 			fileTaskBadRequest(w)
@@ -78,7 +99,7 @@ func (s *Server) handleCreateFileTask(w http.ResponseWriter, r *http.Request, cu
 		return
 	}
 	intent := protocol.TaskIntent{Action: action, ContainerID: protocol.FileTargetKey(request.Path)}
-	intent.File = &protocol.FileTaskSpec{Path: request.Path, NewPath: request.NewPath, ExpectedVersion: request.ExpectedVersion}
+	intent.File = &protocol.FileTaskSpec{Paths: request.Paths, Path: request.Path, NewPath: request.NewPath, ExpectedVersion: request.ExpectedVersion}
 	var content []byte
 	if action == protocol.TaskFileDelete {
 		intent.DeleteConfirmed = true

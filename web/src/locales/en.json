@@ -1451,5 +1451,11 @@
   "guest.state.healthy": "Healthy",
   "guest.state.unhealthy": "Unhealthy",
   "guest.unavailable": "Guest mode is no longer available.",
-  "guest.missingResource": "Unavailable resource · {name}"
+  "guest.missingResource": "Unavailable resource · {name}",
+  "files.invalidContinuation": "Core returned a repeated file continuation. Refresh the directory.",
+  "files.directoryLimit": "This directory exceeds the bounded listing limit. Open a narrower directory.",
+  "files.unknown": "The file operation outcome is unknown. Observe the original task before starting new work.",
+  "files.failed": "File operation failed: {0}",
+  "files.observationLimit": "Resolve the pending file operations before submitting more work.",
+  "files.notDirectory": "Upload target is not a directory."
 }

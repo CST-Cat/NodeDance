@@ -18,6 +18,7 @@ const (
 
 	FileList         = "list"
 	FileStat         = "stat"
+	FileSearch       = "search"
 	FileMkdir        = "mkdir"
 	FileRename       = "rename"
 	FileDelete       = "delete"
@@ -30,12 +31,12 @@ const (
 	FileDownload     = "download"
 	FileDownloadAck  = "download_ack"
 
-	MaxFileControlBytes = 64 << 10
+	MaxFileControlBytes = 256 << 10
 	MaxFileChunkBytes   = 32 << 10
 	DefaultFileLimit    = int64(1 << 30)
 	MaxFileSize         = int64(16 << 30)
 	MaxFileEntries      = 100
-	MaxTextFileBytes    = 32 << 10
+	MaxTextFileBytes    = 128 << 10
 )
 
 var fileRequestID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
@@ -44,6 +45,11 @@ var fileRequestID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[8
 // the administrator Session and binding the transfer to a node generation.
 type FileRequest struct {
 	Operation       string `json:"operation"`
+	After           string `json:"after,omitempty"`
+	Filter          string `json:"filter,omitempty"`
+	Recursive       bool   `json:"recursive,omitempty"`
+	MinSize         int64  `json:"minSize,omitempty"`
+	MaxSize         int64  `json:"maxSize,omitempty"`
 	Path            string `json:"path,omitempty"`
 	TransferID      string `json:"transferId,omitempty"`
 	Sequence        uint64 `json:"sequence,omitempty"`
@@ -67,6 +73,7 @@ type FileEntry struct {
 
 type FileResponse struct {
 	Operation   string      `json:"operation"`
+	NextAfter   string      `json:"nextAfter,omitempty"`
 	Code        string      `json:"code,omitempty"`
 	Message     string      `json:"message,omitempty"`
 	Version     string      `json:"version,omitempty"`
@@ -113,8 +120,11 @@ func ValidateFileRequest(envelope Envelope, generation uint64, request FileReque
 	if strings.ContainsRune(request.Path, '\x00') || len(request.Path) > 4096 {
 		return errors.New("file request path is invalid")
 	}
+	if len(request.After) > 4096 || len(request.Filter) > 200 || request.MinSize < 0 || request.MaxSize < 0 || request.MaxSize > 0 && request.MaxSize < request.MinSize {
+		return errors.New("invalid file browse options")
+	}
 	switch request.Operation {
-	case FileList, FileStat, FileReadText, FileDownload:
+	case FileList, FileSearch, FileStat, FileReadText, FileDownload:
 		if request.Path == "" {
 			return errors.New("file path is required")
 		}
@@ -160,7 +170,7 @@ func ValidateFileResponse(envelope Envelope, generation uint64, response FileRes
 		return errors.New("file response is outside its bound")
 	}
 	switch response.Operation {
-	case FileList, FileStat, FileReadText, FileDownload, FileUploadBegin, FileUploadChunk:
+	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileUploadBegin, FileUploadChunk:
 	default:
 		return errors.New("file response operation is invalid")
 	}

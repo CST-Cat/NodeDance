@@ -40,3 +40,5 @@ Visitors cannot supply node IDs, metric keys or arbitrary time ranges to the pub
 游客模式默认关闭，所有展示项默认不选。管理员明确选择节点、字段和服务，并单独填写公开名称；登录页点击“进入游客模式”才读取展示数据。游客仅能查看 Core 筛选后的状态、指标和历史图表，不能执行控制操作。CLI／TUI／Web 共用配置契约与校验，Web 增加图形选择和预览。匿名接口不接受任意节点、指标或时间范围，公开配置更改及关闭会立即影响后续请求。
 
 Management components stop follow-up reads when they unmount, including grant creation/revocation completing after guest entry. 管理组件退出后停止后续读取；创建／撤销入网授权的迟到响应也不能在游客模式中触发私有列表请求。
+
+The full file manager is administrator-only, including file search, media preview and all mutations. Its disposal aborts reads and prevents follow-up private requests after guest entry. 完整文件管理器仅供管理员使用，游客不能获取搜索、预览或修改能力；进入游客后退出文件管理组件并停止后续请求。

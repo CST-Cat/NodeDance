@@ -76,13 +76,14 @@ func New(rootPath string, limit int64, protectedPaths ...string) (*Service, erro
 		return nil, fmt.Errorf("open Agent file root: %w", err)
 	}
 	service := &Service{root: root, rootFD: -1, name: absRoot, limit: limit, fullHost: absRoot == string(filepath.Separator)}
+	fd, openErr := unix.Open(absRoot, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+	if openErr != nil {
+		_ = root.Close()
+		return nil, openErr
+	}
+	service.rootFD = fd
 	if service.fullHost {
 		service.blockedPath = []string{"/proc", "/sys", "/dev", "/run"}
-		service.rootFD, err = unix.Open(string(filepath.Separator), unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
-		if err != nil {
-			_ = root.Close()
-			return nil, fmt.Errorf("open descriptor for full-host file root: %w", err)
-		}
 		probeFD, probeErr := openAt2(service.rootFD, ".", unix.O_PATH, 0)
 		if probeErr != nil {
 			_ = unix.Close(service.rootFD)
@@ -151,6 +152,15 @@ func (s *Service) normalize(virtual string) (string, string, error) {
 	return name, clean, nil
 }
 
+func (s *Service) containsProtected(virtual string) bool {
+	for _, blocked := range s.blockedPath {
+		if strings.HasPrefix(blocked, strings.TrimSuffix(virtual, "/")+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) isBlocked(virtual string) bool {
 	for _, blocked := range s.blockedPath {
 		if virtual == blocked || strings.HasPrefix(virtual, strings.TrimSuffix(blocked, "/")+"/") {
@@ -165,14 +175,14 @@ func (s *Service) isBlocked(virtual string) bool {
 // atomic with path resolution, so a concurrent symlink swap cannot redirect an
 // operation into a protected path inside the host root.
 func (s *Service) open(name string) (*os.File, error) {
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return s.root.Open(name)
 	}
 	return s.openAtRoot(name, unix.O_RDONLY, 0)
 }
 
 func (s *Service) openFile(name string, flag int, perm os.FileMode) (*os.File, error) {
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return s.root.OpenFile(name, flag, perm)
 	}
 	return s.openAtRoot(name, flag, uint32(perm.Perm()))
@@ -200,7 +210,7 @@ func openAt2(dirFD int, name string, flags int, mode uint32) (int, error) {
 }
 
 func (s *Service) lstat(name string) (os.FileInfo, error) {
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return s.root.Lstat(name)
 	}
 	name = strings.TrimPrefix(filepath.ToSlash(name), "/")
@@ -217,7 +227,7 @@ func (s *Service) lstat(name string) (os.FileInfo, error) {
 }
 
 func (s *Service) stat(name string) (os.FileInfo, error) {
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return s.root.Stat(name)
 	}
 	file, err := s.open(name)
@@ -240,7 +250,7 @@ func (s *Service) parent(name string) (int, string, error) {
 	if base == "" || base == "." || base == ".." {
 		return -1, "", ErrInvalidPath
 	}
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return -1, base, nil
 	}
 	directory, err := s.openAtRoot(dirName, unix.O_RDONLY|unix.O_DIRECTORY, 0)
@@ -264,7 +274,7 @@ func safePathError(err error) error {
 }
 
 func (s *Service) mkdir(name string, mode os.FileMode) error {
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return s.root.Mkdir(name, mode)
 	}
 	parentFD, base, err := s.parent(name)
@@ -276,7 +286,7 @@ func (s *Service) mkdir(name string, mode os.FileMode) error {
 }
 
 func (s *Service) remove(name string) error {
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return s.root.Remove(name)
 	}
 	parentFD, base, err := s.parent(name)
@@ -288,7 +298,7 @@ func (s *Service) remove(name string) error {
 }
 
 func (s *Service) removeAll(name string) error {
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return s.root.RemoveAll(name)
 	}
 	parentFD, base, err := s.parent(name)
@@ -329,7 +339,7 @@ func removeTreeAt(parentFD int, name string) error {
 }
 
 func (s *Service) renameNoReplace(oldName, newName string) error {
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return renameNoReplace(s.root, oldName, newName)
 	}
 	oldParent, oldBase, err := s.parent(oldName)
@@ -346,7 +356,7 @@ func (s *Service) renameNoReplace(oldName, newName string) error {
 }
 
 func (s *Service) renameReplace(oldName, newName string) error {
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return s.root.Rename(oldName, newName)
 	}
 	oldParent, oldBase, err := s.parent(oldName)
@@ -363,7 +373,7 @@ func (s *Service) renameReplace(oldName, newName string) error {
 }
 
 func (s *Service) linkNoReplace(oldName, newName string) error {
-	if !s.fullHost {
+	if s.rootFD < 0 {
 		return linkUploadWithoutReplace(s.root, oldName, newName)
 	}
 	oldParent, oldBase, err := s.parent(oldName)
@@ -536,8 +546,11 @@ func (s *Service) Rename(oldVirtual, newVirtual string) error {
 	if err != nil {
 		return err
 	}
-	if oldCanonical == "/" || newCanonical == "/" || oldCanonical == newCanonical {
+	if oldCanonical == "/" || newCanonical == "/" || oldCanonical == newCanonical || s.containsProtected(oldCanonical) {
 		return ErrInvalidPath
+	}
+	if _, err := s.lstat(oldName); err != nil {
+		return err
 	}
 	if err := s.renameNoReplace(oldName, newName); errors.Is(err, os.ErrExist) {
 		return ErrExists
@@ -551,8 +564,11 @@ func (s *Service) Delete(virtual string, confirmed bool) error {
 		return ErrConfirmation
 	}
 	name, canonical, err := s.normalize(virtual)
-	if err != nil || canonical == "/" {
+	if err != nil || canonical == "/" || s.containsProtected(canonical) {
 		return ErrInvalidPath
+	}
+	if _, err := s.lstat(name); err != nil {
+		return err
 	}
 	return s.removeAll(name)
 }

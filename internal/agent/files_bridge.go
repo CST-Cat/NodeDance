@@ -103,9 +103,9 @@ func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Enve
 
 func (b *agentFileBridge) handle(ctx context.Context, id string, request protocol.FileRequest) error {
 	switch request.Operation {
-	case protocol.FileList:
-		entries, err := b.service.List(request.Path)
-		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entries: entries}, err)
+	case protocol.FileList, protocol.FileSearch:
+		entries, next, err := b.service.Browse(ctx, request.Path, request.After, request.Filter, request.Operation == protocol.FileSearch && request.Recursive, request.MinSize, request.MaxSize)
+		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entries: entries, NextAfter: next}, err)
 	case protocol.FileStat:
 		entry, err := b.service.Stat(request.Path)
 		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry}, err)

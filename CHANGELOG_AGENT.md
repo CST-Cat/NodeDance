@@ -4,7 +4,11 @@
 
 ### English
 
+- Extend the existing file service with bounded cursor browsing/search, staged no-overwrite copy and ZIP archive/extraction, 128 KiB versioned text editing and recovery cleanup. Pin directory descriptors for all file roots and reject credential ancestors during rename/delete.
+
 ### 简体中文
+
+- 扩展现有文件服务，支持有界游标浏览／搜索、暂存后禁止覆盖的复制与 ZIP 压缩解压、128 KiB 版本化文本编辑及恢复清理；所有文件根目录使用固定目录描述符，重命名／删除同时拒绝凭据所在的父目录。
 
 ## [0.1.10]
 

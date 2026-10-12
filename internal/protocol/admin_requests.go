@@ -30,13 +30,14 @@ type ComposeCreateRequest struct {
 }
 
 type FileActionRequest struct {
-	Action           string `json:"action" request:"required"`
-	Path             string `json:"path" request:"required"`
-	NewPath          string `json:"newPath,omitempty"`
-	ExpectedVersion  string `json:"expectedVersion,omitempty"`
-	DeleteConfirmed  bool   `json:"deleteConfirmed,omitempty"`
-	ConfirmationPath string `json:"confirmationPath,omitempty"`
-	Content          string `json:"content,omitempty"`
+	Paths            []string `json:"paths,omitempty"`
+	Action           string   `json:"action" request:"required"`
+	Path             string   `json:"path" request:"required"`
+	NewPath          string   `json:"newPath,omitempty"`
+	ExpectedVersion  string   `json:"expectedVersion,omitempty"`
+	DeleteConfirmed  bool     `json:"deleteConfirmed,omitempty"`
+	ConfirmationPath string   `json:"confirmationPath,omitempty"`
+	Content          string   `json:"content,omitempty"`
 }
 
 type ImagePullRequest struct {

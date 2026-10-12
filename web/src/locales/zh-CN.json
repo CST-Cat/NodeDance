@@ -1451,5 +1451,11 @@
   "guest.state.healthy": "正常",
   "guest.state.unhealthy": "异常",
   "guest.unavailable": "游客模式当前不可用。",
-  "guest.missingResource": "资源不可用 · {name}"
+  "guest.missingResource": "资源不可用 · {name}",
+  "files.invalidContinuation": "Core 返回了重复的目录分页标记，请刷新目录。",
+  "files.directoryLimit": "目录超过有界读取上限，请进入更小的目录。",
+  "files.unknown": "文件操作结果不确定，请先观察原任务，再决定是否重新执行。",
+  "files.failed": "文件操作失败：{0}",
+  "files.observationLimit": "请先处理待确认的文件任务，再提交更多操作。",
+  "files.notDirectory": "上传目标不是目录。"
 }

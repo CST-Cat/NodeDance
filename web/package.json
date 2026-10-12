@@ -10,18 +10,21 @@
   },
   "scripts": {
     "build": "vite build --config vite.config.ts --outDir ../internal/core/webassets/dist --emptyOutDir",
-    "typecheck": "node scripts/check-i18n.cjs && node scripts/check-operations.cjs && vue-tsc --noEmit --project tsconfig.json",
+    "typecheck": "node scripts/check-i18n.cjs && node scripts/check-operations.cjs && node scripts/file-notices.cjs --check && vue-tsc --noEmit --project tsconfig.json",
     "audit:design": "node scripts/audit-design.cjs",
     "audit:interfaces": "pnpm build && node scripts/audit-interfaces.cjs",
     "audit:guest": "pnpm build && node scripts/audit-guest.cjs",
-    "audit:guest-security": "pnpm build && NODEDANCE_GUEST_ATTACKS=1 node scripts/audit-guest.cjs"
+    "audit:guest-security": "pnpm build && NODEDANCE_GUEST_ATTACKS=1 node scripts/audit-guest.cjs",
+    "audit:files": "pnpm build && node scripts/audit-files.cjs",
+    "check:file-notices": "node scripts/file-notices.cjs --check"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
     "echarts": "6.1.0",
     "naive-ui": "2.45.3",
-    "vue": "3.5.43"
+    "vue": "3.5.43",
+    "vuefinder": "4.7.6"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

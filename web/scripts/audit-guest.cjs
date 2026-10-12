@@ -120,6 +120,18 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   guestPrivateRequests.length=0;adminPage.on('request',trackGuest)
   releaseNodes();await adminPage.waitForTimeout(200);await adminPage.unroute('**/api/v1/nodes');adminPage.off('request',trackGuest)
   assert.deepEqual(guestPrivateRequests,[],'An unmounted node page must not start new private reads after entering guest mode')
+  // File-manager reads also honor guest entry after component disposal. This
+  // protocol-only Agent intentionally has no file capability; hold its real
+  // unavailable response, then release it after the public page is visible.
+  let releaseFiles,filesStarted
+  const heldFiles=new Promise(r=>releaseFiles=r),startedFiles=new Promise(r=>filesStarted=r)
+  const filesRoute='**/api/v1/nodes/*/files?*'
+  await adminPage.route(filesRoute,async route=>{const response=await route.fetch();filesStarted();await heldFiles;await route.fulfill({response})})
+  await adminPage.goto(base+`/#/nodes?node=${identity.nodeId}&section=files`);await startedFiles
+  await adminPage.evaluate(()=>{location.hash='/guest'});await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  guestPrivateRequests.length=0;adminPage.on('request',trackGuest)
+  releaseFiles();await adminPage.waitForTimeout(300);await adminPage.unroute(filesRoute);adminPage.off('request',trackGuest)
+  assert.deepEqual(guestPrivateRequests,[],'Disposed file manager must not start private reads after guest entry')
   // Grant creation and revocation must not start private follow-up reads
   // after their host-management component has unmounted into guest mode.
   for(const method of ['POST','DELETE']){

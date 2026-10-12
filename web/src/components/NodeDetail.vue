@@ -14,7 +14,7 @@ import MetricsPanel from './MetricsPanel.vue'
 import PreferenceEditor from './PreferenceEditor.vue'
 const TerminalConsole = defineAsyncComponent(() => import('./TerminalConsole.vue'))
 import NodeServiceProbes from './NodeServiceProbes.vue'
-import NodeFiles from './NodeFiles.vue'
+const NodeFiles = defineAsyncComponent(() => import('./NodeFiles.vue'))
 import ContainerCreateForm from './ContainerCreateForm.vue'
 
 const props = defineProps<{

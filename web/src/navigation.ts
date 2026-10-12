@@ -2,7 +2,7 @@ import { computed, inject, type InjectionKey, type Ref } from 'vue'
 
 const viewScreens = ['guest', 'guest-settings', 'setup', 'login', 'settings', 'nodes', 'discovery', 'agent-enrollment', 'alerts', 'operations', 'updates', 'host-management'] as const
 export type ViewScreen = typeof viewScreens[number]
-export interface ViewRoute { screen: ViewScreen; nodeId?: string; section?: string; tab?: string }
+export interface ViewRoute { screen: ViewScreen; nodeId?: string; section?: string; tab?: string; filePath?: string }
 export interface ViewNavigation {
   route: Readonly<Ref<ViewRoute>>
   go: (route: ViewRoute, replace?: boolean) => void
@@ -23,12 +23,14 @@ export function readViewRoute(): ViewRoute {
   }
   if (route.screen === 'nodes' || route.screen === 'host-management') route.nodeId = field('node')
   if (route.screen === 'nodes' && route.nodeId) route.section = field('section')
+  if(route.screen==='nodes'&&route.nodeId&&route.section==='files'){const value=params.get('path');if(value&&value.startsWith('/')&&value.length<=4096&&!/[\\\0\r\n]/.test(value)&&!value.split('/').includes('..'))route.filePath=value}
   if (route.screen === 'alerts' || route.screen === 'host-management') route.tab = field('tab')
   return route
 }
 
 export function viewHash(route: ViewRoute): string {
   const query = new URLSearchParams()
+  if(route.screen==='nodes'&&route.nodeId&&route.section==='files'&&route.filePath&&route.filePath!=='/')query.set('path',route.filePath)
   if (route.nodeId && (route.screen === 'nodes' || route.screen === 'host-management')) query.set('node', route.nodeId)
   if (route.screen === 'nodes' && route.nodeId && route.section && route.section !== 'overview') query.set('section', route.section)
   if ((route.screen === 'alerts' || route.screen === 'host-management') && route.tab) query.set('tab', route.tab)

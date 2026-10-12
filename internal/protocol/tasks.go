@@ -72,6 +72,9 @@ const (
 	TaskComposeDeploy   TaskAction = "compose_deploy"
 	TaskComposeSave     TaskAction = "compose_config_save"
 	TaskComposeCreate   TaskAction = "compose_create"
+	TaskFileCopy        TaskAction = "file_copy"
+	TaskFileArchive     TaskAction = "file_archive"
+	TaskFileExtract     TaskAction = "file_extract"
 	TaskFileMkdir       TaskAction = "file_mkdir"
 	TaskFileRename      TaskAction = "file_rename"
 	TaskFileDelete      TaskAction = "file_delete"
@@ -162,11 +165,12 @@ type RebuildSpec struct {
 // File contents are carried once in TaskDispatch or streamed through the
 // existing file channel; they are never written to either task journal.
 type FileTaskSpec struct {
-	Path            string `json:"path"`
-	NewPath         string `json:"newPath,omitempty"`
-	ExpectedVersion string `json:"expectedVersion,omitempty"`
-	Size            int64  `json:"size,omitempty"`
-	SHA256          string `json:"sha256,omitempty"`
+	Paths           []string `json:"paths,omitempty"`
+	Path            string   `json:"path"`
+	NewPath         string   `json:"newPath,omitempty"`
+	ExpectedVersion string   `json:"expectedVersion,omitempty"`
+	Size            int64    `json:"size,omitempty"`
+	SHA256          string   `json:"sha256,omitempty"`
 }
 
 // AgentDeployTaskSpec identifies a Tailscale peer for Core-local provisioning.
@@ -333,7 +337,7 @@ func ValidateTaskIntent(intent TaskIntent) error {
 		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.File != nil || !validComposeCreateTaskSpec(intent) {
 			return ErrInvalidTaskMessage
 		}
-	case TaskFileMkdir, TaskFileRename, TaskFileDelete, TaskFileSaveText, TaskFileUpload:
+	case TaskFileMkdir, TaskFileRename, TaskFileDelete, TaskFileSaveText, TaskFileUpload, TaskFileCopy, TaskFileArchive, TaskFileExtract:
 		if intent.NewName != "" || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.Compose != nil {
 			return ErrInvalidTaskMessage
 		}
@@ -503,7 +507,29 @@ func validFileTaskSpec(intent TaskIntent) bool {
 	validVersion := func(value string) bool {
 		return len(value) <= 128 && !strings.ContainsAny(value, "\x00\r\n")
 	}
+	if len(file.Paths) > 0 && intent.Action != TaskFileArchive {
+		return false
+	}
 	switch intent.Action {
+	case TaskFileCopy, TaskFileExtract:
+		return ValidVirtualFilePath(file.NewPath) && file.Path != "/" && file.NewPath != file.Path && file.ExpectedVersion == "" && file.Size == 0 && file.SHA256 == ""
+	case TaskFileArchive:
+		if file.Path == "/" || file.NewPath != "" || file.ExpectedVersion != "" || file.Size != 0 || file.SHA256 != "" || len(file.Paths) < 1 || len(file.Paths) > 100 {
+			return false
+		}
+		seen := map[string]bool{}
+		total := 0
+		for _, item := range file.Paths {
+			total += len(item)
+			if total > 32*1024 {
+				return false
+			}
+			if !ValidVirtualFilePath(item) || item == "/" || seen[path.Base(item)] {
+				return false
+			}
+			seen[path.Base(item)] = true
+		}
+		return true
 	case TaskFileMkdir, TaskFileDelete:
 		return file.Path != "/" && file.NewPath == "" && file.ExpectedVersion == "" && file.Size == 0 && file.SHA256 == ""
 	case TaskFileRename:
@@ -534,7 +560,7 @@ func FileTargetKey(path string) string { return ImageTargetKey("file:" + path) }
 
 func IsFileTaskAction(action TaskAction) bool {
 	switch action {
-	case TaskFileMkdir, TaskFileRename, TaskFileDelete, TaskFileSaveText, TaskFileUpload:
+	case TaskFileMkdir, TaskFileRename, TaskFileDelete, TaskFileSaveText, TaskFileUpload, TaskFileCopy, TaskFileArchive, TaskFileExtract:
 		return true
 	default:
 		return false
