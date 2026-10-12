@@ -417,9 +417,18 @@
   "Create one-time Agent enrollment with native or Docker installation commands (response contains secret)": "创建一次性 Agent 注册，提供直接安装或 Docker 部署命令（响应含密钥）",
   "Node display name": "节点显示名称",
   "Core URL reachable from Agent (blank uses server)": "Agent 可访问的 Core 地址（留空使用当前服务地址）",
-  "Deployment method (native/docker; blank uses docker)": "部署方式（native/docker；留空使用 docker）",
   "terminal session is no longer available": "终端会话已结束或恢复窗口已过期",
   "terminal connection is still attached": "正在等待原终端连接断开",
   "End terminal session or cancel pending authorization": "结束终端会话或取消待使用的授权",
-  "Reattach the same tmux session after transport loss": "连接中断后重新附着同一 tmux 会话"
+  "Reattach the same tmux session after transport loss": "连接中断后重新附着同一 tmux 会话",
+  "Update workflow: preflight, confirm, submit and observe using the connected Core": "更新流程：通过已连接 Core 预检、确认、提交并观察",
+  "Show bundled Agent tmux version": "显示 Agent 内置 tmux 版本",
+  "Wait for completion? (y/N)": "等待任务完成？(y/N)",
+  "Observe (/stop)": "观察任务（/stop 停止观察）",
+  "Observation finished. Press Enter to return.\n": "任务观察结束。按回车返回。\n",
+  "Core catalog unavailable; local maintenance remains available.\n": "Core 操作目录不可用；仍可进行本地维护。\n",
+  "Number: open operation | /text: search | n/p: page | r: refresh Core | l: language | q: quit\n": "数字：打开操作 | /文字：搜索 | n/p：翻页 | r：刷新 Core | l：语言 | q：退出\n",
+  "Deployment method (native/docker; blank uses native)": "部署方式（native/docker；留空使用 native）",
+  "Terminal interface (interactive/jsonl; blank uses interactive)": "终端界面（interactive/jsonl；留空使用 interactive）",
+  "JSONL input file (optional; blank uses line input)": "JSONL 输入文件（可选；留空逐行输入）"
 }

@@ -4,7 +4,7 @@ import type { BodySchema } from '../operations'
 const props = defineProps<{ schema?: BodySchema; values: Record<string, unknown>; omit?: string[] }>()
 function update(key: string, schema: BodySchema, event: Event) {
  const element = event.target as HTMLInputElement
- props.values[key] = schema.type === 'boolean' ? element.checked : schema.type === 'integer' || schema.type === 'number' ? Number(element.value) : schema.type === 'array' ? element.value.split('\n').map(x => x.trim()).filter(Boolean) : element.value
+ props.values[key] = schema.type === 'boolean' ? element instanceof HTMLInputElement && element.type === 'checkbox' ? element.checked : element.value === 'true' : schema.type === 'integer' || schema.type === 'number' ? Number(element.value) : schema.type === 'array' ? element.value.split('\n').map(x => x.trim()).filter(Boolean) : element.value
 }
 function label(key: string) { return t(`host.field.${key}`) }
 </script>
@@ -12,7 +12,7 @@ function label(key: string) { return t(`host.field.${key}`) }
  <div class="contract-fields">
   <label v-for="[key, field] in Object.entries(schema?.properties ?? {}).filter(([key]) => !omit?.includes(key))" :key="key" :class="{ 'check-row': field.type === 'boolean' }">
    <span>{{ label(key) }}</span>
-   <select v-if="field.enum" :value="values[key] ?? ''" @change="update(key, field, $event)"><option v-for="option in field.enum" :key="option" :value="option">{{ option || '—' }}</option></select>
+   <select v-if="field.enum" :value="String(values[key] ?? '')" @change="update(key, field, $event)"><option v-for="option in field.enum" :key="String(option)" :value="String(option)">{{ option === '' ? '—' : option }}</option></select>
    <input v-else-if="field.type === 'boolean'" type="checkbox" :checked="!!values[key]" @change="update(key, field, $event)" />
    <textarea v-else-if="field.type === 'array'" rows="3" :value="Array.isArray(values[key]) ? (values[key] as string[]).join('\n') : ''" @input="update(key, field, $event)"></textarea>
    <textarea v-else-if="key === 'script'" rows="6" :value="String(values[key] ?? '')" spellcheck="false" @input="update(key, field, $event)"></textarea>

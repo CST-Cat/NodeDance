@@ -57,16 +57,9 @@ func validPendingImageCredentialText(value []byte, maxBytes int) bool {
 	return true
 }
 
-type imagePullRequest struct {
-	ImageReference string `json:"imageReference"`
-	Username       string `json:"username,omitempty"`
-	Password       string `json:"password,omitempty"`
-}
+type imagePullRequest = protocol.ImagePullRequest
 
-type imageDeleteRequest struct {
-	DeleteConfirmed bool   `json:"deleteConfirmed"`
-	ConfirmationID  string `json:"confirmationId"`
-}
+type imageDeleteRequest = protocol.ImageDeleteRequest
 
 func imageRoute(path string) (nodeID, operation, target string, ok bool) {
 	if !strings.HasPrefix(path, "/api/v1/nodes/") {

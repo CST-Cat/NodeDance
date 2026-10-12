@@ -1,8 +1,10 @@
-<h1 align="center">NodeDance</h1>
+<h1 align="center"><img src="web/public/logo.svg" width="32" height="32" alt="" /> NodeDance</h1>
 
 <p align="center"><a href="README.md">简体中文</a> | <a href="README_EN.md">English</a></p>
 
 NodeDance is a self-hosted Linux fleet monitoring and management system made up of a **Core** and an **Agent** installed on each host.
+
+Web, CLI and TUI share the Core operation contract. CLI and TUI expose the same terminal capabilities; Web adds graphical interactions. See [interface coverage and verification](docs/interface-coverage.md) and [terminal usage](docs/cli.md).
 
 ## Install
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { t, display, locale } from "../i18n"
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { api } from '../api'
+import { resolveOperation } from '../operations'
 
 const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 const emit = defineEmits<{ back: [] }>()
@@ -39,7 +40,8 @@ const agentOriginUsesAllowedTransport = computed(() =>
 
 const installCommand = ref('')
 const dockerInstallCommand = ref('')
-const deploymentMethod = ref<'native' | 'docker'>('docker')
+const deploymentMethod = ref<'native' | 'docker'>('native')
+onMounted(async()=>{try{const {operation}=await resolveOperation('agents.enrollment');const value=operation.bodySchema?.properties?.deploymentMethod?.default;if(value==='native'||value==='docker')deploymentMethod.value=value}catch(reason){error.value=reason instanceof Error?reason.message:String(reason)}})
 const selectedInstallCommand = computed(() => deploymentMethod.value === 'docker' ? dockerInstallCommand.value : installCommand.value)
 
 watch([displayName, agentServer], () => {

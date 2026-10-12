@@ -13,6 +13,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/alerts"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
+	coretailscale "github.com/CST-Cat/NodeDance/internal/core/tailscale"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/update"
 )
@@ -25,15 +26,37 @@ type Catalog struct {
 func Describe() Catalog { return Catalog{Version: 1, Operations: Operations()} }
 
 type Operation struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Method      string   `json:"method"`
-	Path        string   `json:"path"`
-	Parameters  []string `json:"parameters"`
-	Query       []string `json:"query"`
-	BodySchema  any      `json:"bodySchema,omitempty"`
-	Transport   string   `json:"transport"` // json, download, upload, multipart, websocket, local
-	Idempotent  bool     `json:"requiresIdempotencyKey,omitempty"`
+	Name           string              `json:"name"`
+	Description    string              `json:"description"`
+	Method         string              `json:"method"`
+	Path           string              `json:"path"`
+	Parameters     []string            `json:"parameters"`
+	Query          []string            `json:"query"`
+	BodySchema     any                 `json:"bodySchema,omitempty"`
+	Transport      string              `json:"transport"` // json, download, upload, multipart, websocket, local
+	Idempotent     bool                `json:"requiresIdempotencyKey,omitempty"`
+	Headers        map[string]any      `json:"headers,omitempty"`
+	Upload         *UploadContract     `json:"upload,omitempty"`
+	MaxBodyBytes   int64               `json:"maxBodyBytes,omitempty"`
+	ResponseSchema any                 `json:"responseSchema,omitempty"`
+	Completion     *CompletionContract `json:"completion,omitempty"`
+	Duplex         bool                `json:"duplex,omitempty"`
+}
+
+type UploadContract struct {
+	Field       string `json:"field,omitempty"`
+	ContentType string `json:"contentType"`
+	MaxBytes    int64  `json:"maxBytes,omitempty"`
+}
+
+// References read submitted input or returned data, never client-owned routes.
+type CompletionContract struct {
+	Operation        string            `json:"operation"`
+	Params           map[string]string `json:"params"`
+	Query            map[string]string `json:"query,omitempty"`
+	StatusPath       string            `json:"statusPath"`
+	TerminalStatuses []string          `json:"terminalStatuses"`
+	SuccessStatuses  []string          `json:"successStatuses"`
 }
 
 func op(name, method, path, description string, body any, query ...string) Operation {
@@ -80,7 +103,9 @@ func schema(value any) any {
 }
 func typeSchema(t reflect.Type) any {
 	if t.Kind() == reflect.Pointer {
-		return typeSchema(t.Elem())
+		result := typeSchema(t.Elem()).(map[string]any)
+		result["nullable"] = true
+		return result
 	}
 	if t == reflect.TypeOf(time.Time{}) {
 		return map[string]any{"type": "string", "format": "date-time"}
@@ -96,13 +121,15 @@ func typeSchema(t reflect.Type) any {
 				continue
 			}
 			props[tag[0]] = typeSchema(f.Type)
-			if !strings.Contains(f.Tag.Get("json"), "omitempty") {
+			if f.Tag.Get("request") == "required" {
 				required = append(required, tag[0])
 			}
 		}
 		return map[string]any{"type": "object", "properties": props, "required": required, "additionalProperties": false}
 	case reflect.Slice, reflect.Array:
-		return map[string]any{"type": "array", "items": typeSchema(t.Elem())}
+		return map[string]any{"type": "array", "items": typeSchema(t.Elem()), "nullable": true}
+	case reflect.Map:
+		return map[string]any{"type": "object", "additionalProperties": typeSchema(t.Elem()), "nullable": true}
 	case reflect.Bool:
 		return map[string]any{"type": "boolean"}
 	case reflect.Int, reflect.Int64, reflect.Uint64, reflect.Uint32:
@@ -125,7 +152,8 @@ func updateSchema() any {
 func enrollmentSchema() any {
 	body := schema(agents.EnrollmentRequest{}).(map[string]any)
 	properties := body["properties"].(map[string]any)
-	properties["deploymentMethod"].(map[string]any)["enum"] = []string{agents.DeploymentNative, agents.DeploymentDocker}
+	properties["deploymentMethod"].(map[string]any)["enum"] = []string{"", agents.DeploymentNative, agents.DeploymentDocker}
+	properties["deploymentMethod"].(map[string]any)["default"] = agents.DefaultDeploymentMethod
 	return body
 }
 
@@ -143,11 +171,11 @@ func buildOperations() []Operation {
 		op("core.protocol", "GET", "/api/v1/protocol", "Wire version, capabilities and transport limits", nil),
 		op("auth.csrf", "GET", "/api/v1/auth/csrf", "Issue browser or client CSRF token", nil),
 		op("auth.status", "GET", "/api/v1/auth/setup/status", "First-run setup status", nil),
-		op("auth.setup", "POST", "/api/v1/auth/setup", "Initialize administrator; read credential and password from a private body file or stdin", fields("credential:string username?:string password?:string displayName?:string")),
-		op("auth.login", "POST", "/api/v1/auth/login", "Sign in and save a private, server-bound session", fields("username:string password:string")),
+		op("auth.setup", "POST", "/api/v1/auth/setup", "Initialize administrator; read credential and password from a private body file or stdin", schema(protocol.AuthSetupRequest{})),
+		op("auth.login", "POST", "/api/v1/auth/login", "Sign in and save a private, server-bound session", schema(protocol.AuthLoginRequest{})),
 		op("auth.me", "GET", "/api/v1/auth/me", "Current administrator", nil),
 		op("auth.logout", "POST", "/api/v1/auth/logout", "Revoke current session", nil),
-		op("auth.password", "POST", "/api/v1/auth/password", "Change administrator password; invalidates sessions", fields("currentPassword:string newPassword:string")),
+		op("auth.password", "POST", "/api/v1/auth/password", "Change administrator password; invalidates sessions", schema(protocol.PasswordChangeRequest{})),
 		op("sessions.list", "GET", "/api/v1/auth/sessions", "Administrator sessions", nil),
 		op("sessions.revoke", "DELETE", "/api/v1/auth/sessions/{id}", "Revoke selected session", nil),
 		op("nodes.list", "GET", "/api/v1/nodes", "Nodes, online state and Agent capabilities", nil),
@@ -180,18 +208,18 @@ func buildOperations() []Operation {
 		op("containers.list", "GET", node+"/containers", "Docker inventory", nil),
 		op("containers.get", "GET", node+"/containers/{containerId}", "Inspect full container ID", nil),
 		op("containers.create", "POST", node+"/containers/create", "Create container task", schema(protocol.ContainerCreateSpec{})),
-		op("containers.action", "POST", node+"/containers/{containerId}/actions", "Task: start, stop, restart, pause, resume, rename, delete, rebuild or rebuild_cleanup; deletion requires exact ID confirmation", fields("action:string newName?:string deleteConfirmed?:boolean deleteConfirmationId?:string confirmationId?:string")),
+		op("containers.action", "POST", node+"/containers/{containerId}/actions", "Task: start, stop, restart, pause, resume, rename, delete, rebuild or rebuild_cleanup; deletion requires exact ID confirmation", schema(protocol.ContainerActionRequest{})),
 		op("containers.rebuild-plan", "POST", node+"/containers/{containerId}/rebuild/plan", "Preview rebuild and obtain confirmation ID", nil),
 		op("containers.logs", "GET", "/ws/v1/streams/logs", "Live container logs as JSONL", nil, "nodeId", "containerId", "tail"),
 		op("containers.stats", "GET", "/ws/v1/streams/stats", "Live container stats as JSONL", nil, "nodeId", "containerId"),
 		op("images.list", "GET", node+"/images", "Paginated images", nil, "filter", "page", "pageSize"),
-		op("images.pull", "POST", node+"/images/pull", "Pull image task; registry credentials stay in private input", fields("imageReference:string username?:string password?:string")),
-		op("images.delete", "DELETE", node+"/images/{imageId}", "Delete image task; confirmationId must equal full sha256 image ID", fields("deleteConfirmed:boolean confirmationId:string")),
+		op("images.pull", "POST", node+"/images/pull", "Pull image task; registry credentials stay in private input", schema(protocol.ImagePullRequest{})),
+		op("images.delete", "DELETE", node+"/images/{imageId}", "Delete image task; confirmationId must equal full sha256 image ID", schema(protocol.ImageDeleteRequest{})),
 		op("compose.list", "GET", node+"/compose/projects", "Compose projects and services", nil),
-		op("compose.create", "POST", node+"/compose/projects", "Create and deploy project", fields("name:string workingDirectory:string content:string")),
+		op("compose.create", "POST", node+"/compose/projects", "Create and deploy project", schema(protocol.ComposeCreateRequest{})),
 		op("compose.config", "GET", node+"/compose/projects/{projectKey}/config/{fileIndex}", "Read Compose YAML and digest", nil),
-		op("compose.validate", "POST", node+"/compose/projects/{projectKey}/config/{fileIndex}/validate", "Validate edited Compose YAML", fields("content:string")),
-		op("compose.action", "POST", node+"/compose/projects/{projectKey}/tasks", "Task: start, stop, restart, deploy or config_save; edits use baseSha256", fields("action:string fileIndex?:integer content?:string baseSha256?:string")),
+		op("compose.validate", "POST", node+"/compose/projects/{projectKey}/config/{fileIndex}/validate", "Validate edited Compose YAML", schema(protocol.ComposeValidateRequest{})),
+		op("compose.action", "POST", node+"/compose/projects/{projectKey}/tasks", "Task: start, stop, restart, deploy or config_save; edits use baseSha256", schema(protocol.ComposeActionRequest{})),
 		op("tasks.list", "GET", node+"/tasks", "Task history with pagination", nil, "limit", "after"),
 		op("tasks.get", "GET", node+"/tasks/{taskId}", "Task status and result; poll until terminal status", nil),
 		op("tasks.audit", "GET", node+"/tasks/{taskId}/audit", "Task audit trail", nil),
@@ -201,16 +229,16 @@ func buildOperations() []Operation {
 		op("files.text", "GET", node+"/files/text", "Read text and version for optimistic writes", nil, "path"),
 		op("files.download", "GET", node+"/files/download", "Download to --output; never overwrite an existing file", nil, "path"),
 		op("files.upload", "PUT", node+"/files/upload", "Upload --input; optional --file-version protects existing content", nil, "path"),
-		op("files.action", "POST", node+"/files/tasks", "Task: mkdir, rename, delete or save_text; deletion needs exact confirmationPath", fields("action:string path:string newPath?:string expectedVersion?:string deleteConfirmed?:boolean confirmationPath?:string content?:string")),
-		op("terminal.open", "POST", node+"/terminals", "Open host/container shell; TUI is interactive, CLI uses JSONL frames with automatic streamId", fields("targetKind:string containerId?:string")),
-		op("terminal.create", "POST", node+"/terminals", "Authorize host/container terminal; returns a single-use ticket", fields("targetKind:string containerId?:string")),
+		op("files.action", "POST", node+"/files/tasks", "Task: mkdir, rename, delete or save_text; deletion needs exact confirmationPath", schema(protocol.FileActionRequest{})),
+		op("terminal.open", "POST", node+"/terminals", "Open host/container shell; TUI is interactive, CLI uses JSONL frames with automatic streamId", schema(protocol.TerminalCreateRequest{})),
+		op("terminal.create", "POST", node+"/terminals", "Authorize host/container terminal; returns a single-use ticket", schema(protocol.TerminalCreateRequest{})),
 		op("terminal.resume", "POST", node+"/terminals/{streamId}/resume", "Reattach the same tmux session after transport loss", fields("")),
 		op("terminal.cancel", "DELETE", node+"/terminals/{streamId}", "End terminal session or cancel pending authorization", nil),
 		op("terminal.connect", "GET", "/ws/v1/streams/terminal", "Bidirectional terminal JSONL frames; ticket from terminal.create, provide it via --query @file", nil, "ticket"),
 		op("probes.batch", "POST", "/api/v1/probes/batch", "Create the same probe on multiple nodes", schema(protocol.BatchProbe{})),
 		op("probes.list", "GET", "/api/v1/probes", "Service probes", nil),
 		op("probes.get", "GET", "/api/v1/probes/{id}", "Probe configuration", nil),
-		op("probes.create", "POST", "/api/v1/probes", "Create HTTP, HTTPS, TCP or ICMP probe", fields("nodeId:string name:string kind:string target:string expectedHttpStatus?:integer intervalSeconds:integer timeoutSeconds:integer enabled?:boolean revision?:integer")),
+		op("probes.create", "POST", "/api/v1/probes", "Create HTTP, HTTPS, TCP or ICMP probe", schema(protocol.ProbeConfigRequest{})),
 		op("probes.update", "PUT", "/api/v1/probes/{id}", "Update probe using current revision", nil),
 		op("probes.delete", "DELETE", "/api/v1/probes/{id}", "Delete probe using current revision", nil, "revision"),
 		op("probes.quality", "GET", "/api/v1/probes/{id}/quality", "Latency percentiles and failure rates; offline gaps are unknown", nil, "from", "to"),
@@ -236,13 +264,13 @@ func buildOperations() []Operation {
 		op("windows.delete", "DELETE", "/api/v1/alerts/windows/{id}", "Delete window", nil),
 		op("deliveries.list", "GET", "/api/v1/alerts/deliveries", "Notification delivery history", nil, "limit"),
 		op("discovery.peers", "GET", "/api/v1/discovery/tailscale", "Detect existing Tailscale Linux peers; never configure Tailscale", nil),
-		op("discovery.host-key", "POST", "/api/v1/discovery/tailscale/host-key", "Read SSH host fingerprint for independent verification", fields("peerIdentity:string")),
+		op("discovery.host-key", "POST", "/api/v1/discovery/tailscale/host-key", "Read SSH host fingerprint for independent verification", schema(protocol.HostKeyRequest{})),
 		op("deployments.list", "GET", "/api/v1/discovery/deployments", "Agent deployment tasks", nil),
 		op("deployments.get", "GET", "/api/v1/discovery/deployments/{taskId}", "Agent deployment task", nil),
-		op("deployments.create", "POST", "/api/v1/discovery/deployments", "Deploy root Agent to verified peer", nil),
-		op("deployments.resolve", "POST", "/api/v1/discovery/deployments/{taskId}/resolve", "Record manual recovery outcome", fields("outcome:string observedState:string confirmed:boolean")),
+		op("deployments.create", "POST", "/api/v1/discovery/deployments", "Deploy root Agent to verified peer", schema(coretailscale.DeployRequest{})),
+		op("deployments.resolve", "POST", "/api/v1/discovery/deployments/{taskId}/resolve", "Record manual recovery outcome", schema(protocol.ResolveDeploymentRequest{})),
 		op("appearance.get", "GET", "/api/v1/public/appearance", "Appearance settings", nil),
-		op("appearance.update", "PUT", "/api/v1/settings/appearance", "Update display name and appearance", fields("displayName:string theme:string backgroundColor:string")),
+		op("appearance.update", "PUT", "/api/v1/settings/appearance", "Update display name and appearance", schema(protocol.AppearanceRequest{})),
 	}
 	for _, kind := range []string{"avatar", "background"} {
 		list = append(list, op("appearance."+kind, "GET", "/api/v1/public/appearance/"+kind, "Download appearance image to --output", nil), op("appearance.upload-"+kind, "POST", "/api/v1/settings/appearance/"+kind, "Upload raster image from --input", nil))
@@ -279,21 +307,15 @@ func buildOperations() []Operation {
 		}
 	}
 	for i := range list {
-		if list[i].Name == "containers.action" {
-			list[i].BodySchema.(map[string]any)["properties"].(map[string]any)["rebuild"] = schema(protocol.RebuildSpec{})
-		}
 		if list[i].Name == "containers.rebuild-plan" {
-			list[i].BodySchema = map[string]any{"type": "object", "required": []string{"spec"}, "additionalProperties": false, "properties": map[string]any{"spec": schema(protocol.RebuildSpec{})}}
-		}
-		if list[i].Name == "deployments.create" {
-			b := fields("peerIdentity:string displayName:string fileRoot?:string disableFileRoot?:boolean coreUrl:string fallbackUrl?:string allowFallback:boolean hostFingerprint:string confirmHostKey:boolean confirmChangedHostKey:boolean").(map[string]any)
-			b["properties"].(map[string]any)["credentials"] = fields("user:string password?:string privateKey?:string passphrase?:string")
-			b["required"] = append(b["required"].([]string), "credentials")
-			list[i].BodySchema = b
+			list[i].BodySchema = schema(protocol.RebuildPlanRequest{})
 		}
 	}
 	for _, operation := range list {
 		markSecrets(operation.BodySchema)
+	}
+	for i := range list {
+		describeTransport(&list[i])
 	}
 	return list
 }
@@ -303,6 +325,7 @@ func markSecrets(value any) {
 	if !ok {
 		return
 	}
+	markSecrets(body["items"])
 	properties, _ := body["properties"].(map[string]any)
 	for name, value := range properties {
 		field, ok := value.(map[string]any)
@@ -310,7 +333,7 @@ func markSecrets(value any) {
 			continue
 		}
 		lower := strings.ToLower(name)
-		if strings.Contains(lower, "password") || strings.Contains(lower, "token") || strings.Contains(lower, "credential") || strings.Contains(lower, "privatekey") || strings.Contains(lower, "passphrase") {
+		if lower == "secret" || strings.Contains(lower, "password") || strings.Contains(lower, "token") || strings.Contains(lower, "credential") || strings.Contains(lower, "privatekey") || strings.Contains(lower, "passphrase") {
 			field["writeOnly"] = true
 		}
 		markSecrets(field)
@@ -366,6 +389,24 @@ func cloneOperation(o Operation) Operation {
 	o.Parameters = append([]string{}, o.Parameters...)
 	o.Query = append([]string{}, o.Query...)
 	o.BodySchema = cloneSchema(o.BodySchema)
+	o.ResponseSchema = cloneSchema(o.ResponseSchema)
+	if o.Headers != nil {
+		o.Headers = cloneSchema(o.Headers).(map[string]any)
+	}
+	if o.Upload != nil {
+		copy := *o.Upload
+		o.Upload = &copy
+	}
+	if o.Completion != nil {
+		copy := *o.Completion
+		copy.Params = cloneSchema(copy.Params).(map[string]string)
+		if copy.Query != nil {
+			copy.Query = cloneSchema(copy.Query).(map[string]string)
+		}
+		copy.TerminalStatuses = append([]string{}, copy.TerminalStatuses...)
+		copy.SuccessStatuses = append([]string{}, copy.SuccessStatuses...)
+		o.Completion = &copy
+	}
 	return o
 }
 func Find(name string) (Operation, error) {
@@ -378,7 +419,7 @@ func (o Operation) URLPath(params map[string]string) (string, error) {
 	path := o.Path
 	for _, key := range o.Parameters {
 		v := params[key]
-		if v == "" || v == "." || v == ".." || strings.ContainsAny(v, "/\\\x00") {
+		if v == "" || v == "." || v == ".." || strings.ContainsAny(v, "/\\\x00\r\n") {
 			return "", fmt.Errorf("invalid or missing parameter %s", key)
 		}
 		path = strings.ReplaceAll(path, "{"+key+"}", url.PathEscape(v))

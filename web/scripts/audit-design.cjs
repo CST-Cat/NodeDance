@@ -86,7 +86,7 @@ fs.mkdirSync(out, { recursive: true });
       else if (p.endsWith("/asset")) body={price:9,currency:"USD",billingCycleDays:30,expiryNoticeDays:7,trafficLimitBytes:1099511627776,trafficAccounting:"sum",trafficWarningPercent:90};
       else if (p.endsWith("/commands/batches")) body={batches:[]};
       else if (p.endsWith("/agents/enrollment-grants")) body={grants:[]};
-      else if (p.endsWith("/metrics/catalog")) body={"swap.used_percent":"percent","load.one":"load","gpu.temperature_celsius":"celsius"};
+      else if (p.endsWith("/metrics/catalog")) body={metrics:{"swap.used_percent":"percent","load.one":"load","gpu.temperature_celsius":"celsius"}};
       else if (p.endsWith("/agents/enrollments"))
         body = {
           token: "isolated-audit-token",

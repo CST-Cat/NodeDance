@@ -11,9 +11,13 @@ import (
 )
 
 const (
-	CapabilityHost   = "agent.host.v1"
-	TypeHostRequest  = "host_request"
-	TypeHostResponse = "host_response"
+	MaxCommandScriptBytes    = 32 * 1024
+	MaxCommandRequestBytes   = 6*MaxCommandScriptBytes + 16*1024
+	MinCommandTimeoutSeconds = 1
+	MaxCommandTimeoutSeconds = 3600
+	CapabilityHost           = "agent.host.v1"
+	TypeHostRequest          = "host_request"
+	TypeHostResponse         = "host_response"
 )
 
 // AgentSettings contains no enrollment or device secrets. It is the shared
@@ -243,7 +247,7 @@ type CommandSpec struct {
 }
 
 func ValidateCommand(c CommandSpec) error {
-	if !c.Confirm || strings.TrimSpace(c.Script) == "" || len(c.Script) > 32768 || strings.ContainsRune(c.Script, 0) || c.TimeoutSeconds < 1 || c.TimeoutSeconds > 3600 {
+	if !c.Confirm || strings.TrimSpace(c.Script) == "" || len(c.Script) > MaxCommandScriptBytes || strings.ContainsRune(c.Script, 0) || c.TimeoutSeconds < MinCommandTimeoutSeconds || c.TimeoutSeconds > MaxCommandTimeoutSeconds {
 		return errors.New("command requires confirmation, a script up to 32 KiB and timeout 1..3600 seconds")
 	}
 	return nil

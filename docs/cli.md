@@ -157,6 +157,41 @@ For an API setup against an uninitialized Core, `auth.setup` requires the one-ti
 
 ## Shared Core operation contract / 共享 Core 操作契约
 
+CLI and TUI are two presentations of the same terminal product. Their remote operations come from the connected Core; local maintenance and the update workflow come from one shared terminal registry. TUI remains usable for local maintenance when Core discovery fails; press `r` to retry discovery. Both use the same finite executor, download cleanup, completion observer, stream client and interactive terminal. Web may add graphical interactions, while shared management behavior stays in Core. See the [generated capability matrix](interface-coverage.md).
+
+CLI 与 TUI 是同一终端产品的两种入口。远程操作读取已连接 Core 的契约，本地维护和更新流程使用同一份终端注册表。Core 不可连接时，TUI 仍可进行本地维护，按 `r` 可重新发现。两端共用有限请求、下载清理、任务观察、流与交互终端实现。Web 可增加图形化交互，共享管理行为仍由 Core 统一执行。参见[自动生成的能力对照表](interface-coverage.md)。
+
+The contract includes semantic request headers, multipart field names and upload limits, request byte limits, sensitive-field markers, response shape, and optional completion references. `required` means a JSON property is present; an empty string is valid unless a field constraint or Core business rule rejects it. `omitempty` is an output encoding choice, not input presence. Shared request DTOs and the Core structural validator prevent separately maintained request shapes. Stateful validation, permissions, confirmations and Agent file protections remain server-side.
+
+契约包含语义请求头、multipart 字段名和上传限制、请求大小、敏感字段、响应形状与任务完成观察引用。`required` 表示属性存在，并不自动禁止空字符串；`omitempty` 只描述输出编码。Core 请求解码与契约共用请求类型和结构校验。依赖状态的校验、权限、确认和 Agent 文件保护继续由服务器执行。
+
+### Observation, headers and terminal input / 观察、请求头与终端输入
+
+```sh
+nodedance call containers.create --params @node.json --body @container.json \
+  --idempotency-key SAME_INTENT_KEY --wait --timeout 0
+nodedance call files.upload --params @node.json --query @path.json \
+  --input ./config.txt --file-version OBSERVED_VERSION --idempotency-key SAME_INTENT_KEY
+nodedance call terminal.open --params @node.json --body '{"targetKind":"host"}' \
+  --interactive --timeout 0
+```
+
+`--headers` accepts JSON, `@file`, or stdin for headers declared by the Core contract. `--file-version` is the convenient spelling for `X-File-Version`; use one value when specifying both forms. Upload field names and limits are discovered, including custom multipart fields.
+
+For operations with a `completion` contract, `--wait` prints acceptance first, observes the discovered read operation, and prints the final result. Failed, canceled, timed-out and unknown outcomes exit nonzero. Interrupting observation does not cancel or resubmit the task; use the discovered cancellation operation to cancel work explicitly. TUI offers the same observer and `/stop`; it also exposes the shared `client.update` workflow with native argument arrays. TUI task results and observations retain the same operation identifiers as CLI.
+
+`--interactive` uses the same keyboard/resize/reattachment path as TUI. Without it, terminal input/output stays JSONL for automation. TUI offers interactive or JSONL mode, including an optional JSONL input file, and exposes `terminal.create/connect/resume/cancel` for explicit ticket control. Both support all low-level terminal operations. The initial JSON body can express all target options in either interface.
+
+Web Operations supports declared headers, version conditions, upload metadata, hidden sensitive JSON, and an optional completion observer. The JSON-body option can express explicit `null` and nested values; large integer tokens are preserved. Uncertain retries retain an intent key; copy it before leaving the page. “New execution key” deliberately starts a new intent. Changing the request or selected file creates a different intent. Stopping observation leaves accepted work running. Closing a managed terminal cancels that terminal.
+
+带 `completion` 的操作可使用 `--wait`：先输出提交结果，再观察 Core 指定的读取操作，最后输出结果；失败、取消、超时与未知结果均返回非零退出码。停止观察不会取消或重放任务，取消请调用对应操作。TUI 使用相同观察器和 `/stop`，并提供共用的 `client.update` 流程。`--interactive` 与 TUI 共用键盘、尺寸和重连逻辑，未指定时保留 JSONL 自动化输入输出。
+
+Web 操作中心支持契约声明的请求头、版本条件、上传约定、隐藏敏感 JSON 与任务观察；JSON 模式能传入明确的 `null`，并保留大整数原始值。未知结果重试保留同一键，离开页面前请复制。“新建执行键”明确开启新意图，改变请求或所选文件也会改变意图。停止观察不会停止任务，关闭托管终端会结束该终端。
+
+### Verify synchronization / 验证同步
+
+`make check` regenerates neither code nor documentation: it checks the committed capability matrix against the shared catalogue and runs the Go/Web checks. `pnpm --dir web audit:interfaces` builds an isolated Core and tests actual browser behavior without Agents or privileged services. `audit:design` is the separate light/dark/mobile fixture matrix. Existing rootful Docker/Agent/update tests remain opt-in; they are not implied by browser or catalogue coverage.
+
 The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus discover their operations, schemas, routes, and transports from this endpoint. Web uses the same contract for every request, stream, terminal, upload, and download; its Operations page generates forms from the catalog. Adding a Core operation makes it immediately available in all three generic interfaces without updating client operation lists. Core and Agent remain responsible for validation, authorization, auditing, and destructive-action confirmation. Specialized pages only customize presentation. `nodedance operations` without a server provides offline inspection of the contract compiled into that Core binary; use `--server` to inspect the running Core.
 
 连接的 Core 发布 `/api/v1/operations`，CLI 调用与 TUI 菜单从该入口读取操作、schema、路由及传输类型。Web 的请求、流、终端、上传和下载使用同一契约；操作中心依据目录自动生成表单。Core 增加操作后，三端通用入口自动提供，无需分别维护客户端操作清单。验证、授权、审计和危险操作确认仍由 Core 与 Agent 处理，专用页面只定制展示。未指定服务器的 `nodedance operations` 用于离线查看当前 Core 二进制内的契约；使用 `--server` 查看运行中 Core 的实际契约。

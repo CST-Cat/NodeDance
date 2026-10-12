@@ -45,6 +45,7 @@ install:
 check: frontend
 	python3 -m unittest discover -s scripts/tests
 	go test ./...
+	python3 scripts/interface-coverage.py --check
 
 run:
 	go run ./cmd/nodedance

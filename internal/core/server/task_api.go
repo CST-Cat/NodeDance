@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -18,14 +17,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 )
 
-type containerActionRequest struct {
-	Action               protocol.TaskAction   `json:"action"`
-	NewName              string                `json:"newName,omitempty"`
-	DeleteConfirmed      bool                  `json:"deleteConfirmed,omitempty"`
-	DeleteConfirmationID string                `json:"deleteConfirmationId,omitempty"`
-	Rebuild              *protocol.RebuildSpec `json:"rebuild,omitempty"`
-	ConfirmationID       string                `json:"confirmationId,omitempty"`
-}
+type containerActionRequest = protocol.ContainerActionRequest
 
 type taskView struct {
 	TaskID                 string           `json:"taskId"`
@@ -166,7 +158,7 @@ func (s *Server) handleContainerCreateTask(w http.ResponseWriter, r *http.Reques
 	}
 	var spec protocol.ContainerCreateSpec
 	defer clearContainerCreateSpec(&spec)
-	if !decodeContainerCreateJSON(w, r, &spec) {
+	if !decodeJSON(w, r, &spec) {
 		return
 	}
 	digest, err := protocol.ContainerCreateSpecDigest(spec)
@@ -233,27 +225,6 @@ func (s *Server) handleContainerCreateTask(w http.ResponseWriter, r *http.Reques
 		status = http.StatusOK
 	}
 	writeJSON(w, status, map[string]any{"taskId": result.Task.TaskID, "status": result.Task.Status})
-}
-
-func decodeContainerCreateJSON(w http.ResponseWriter, r *http.Request, target any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, protocol.MaxContainerCreateBytes)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		status := http.StatusBadRequest
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			status = http.StatusRequestEntityTooLarge
-		}
-		http.Error(w, "invalid container create request", status)
-		return false
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		http.Error(w, "invalid container create request", http.StatusBadRequest)
-		return false
-	}
-	return true
 }
 
 func (s *Server) storeContainerCreateSpecLocked(taskID, nodeID string, generation uint64, journalID, idempotencyKey, digest string, spec protocol.ContainerCreateSpec) {

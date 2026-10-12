@@ -33,7 +33,7 @@ const needsSubject = computed(() => ['container_state', 'probe_state','metric','
 
 const needsState = computed(()=>['container_state','probe_state'].includes(ruleForm.kind))
 const metricCatalog=ref<Record<string,string>>({})
-onMounted(async()=>{try{metricCatalog.value=await operationRequest<Record<string,string>>('metrics.catalog')}catch{}})
+onMounted(async()=>{try{metricCatalog.value=(await operationRequest<{metrics:Record<string,string>}>('metrics.catalog')).metrics}catch(reason){error.value=message(reason)}})
 function message(reason: unknown) { return reason instanceof Error ? reason.message : t('m.a472d51792cc') }
 function clearMessages() { error.value = ''; notice.value = '' }
 async function refresh() {

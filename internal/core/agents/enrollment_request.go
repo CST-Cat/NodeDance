@@ -8,8 +8,9 @@ type EnrollmentRequest struct {
 }
 
 const (
-	DeploymentNative = "native"
-	DeploymentDocker = "docker"
+	DeploymentNative        = "native"
+	DeploymentDocker        = "docker"
+	DefaultDeploymentMethod = DeploymentNative
 )
 
 func ValidDeploymentMethod(method string) bool {

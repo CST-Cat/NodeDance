@@ -1,0 +1,140 @@
+// Real Core + browser behavior checks. The isolated Core has no Agent and no
+// privileged update/deployment service. Synthetic routes test transport loss
+// and future operation discovery without performing host-side effects.
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const net = require('node:net')
+const { spawn, execFileSync } = require('node:child_process')
+const { chromium } = require('playwright')
+const root = path.resolve(__dirname, '../..')
+const binary = path.join(root, '.build/interface-audit-core')
+const artifacts = path.join(root, '.build/interface-audit')
+fs.mkdirSync(artifacts, {recursive:true})
+execFileSync('go', ['build', '-o', binary, './cmd/nodedance'], {cwd:root,stdio:'inherit'})
+
+async function port() {
+  const listener = net.createServer()
+  await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve))
+  const result=listener.address().port
+  await new Promise(resolve=>listener.close(resolve))
+  return result
+}
+
+;(async()=>{
+  const dataDir=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-interface-audit-'))
+  const base=`http://127.0.0.1:${await port()}`
+  const core=spawn(binary,['serve','--dev','--listen',new URL(base).host,'--data-dir',dataDir],{cwd:root,stdio:['ignore','pipe','pipe']})
+  let coreOutput=''
+  core.stdout.on('data',data=>coreOutput+=data);core.stderr.on('data',data=>coreOutput+=data)
+  let browser
+  try {
+    let ready=false
+    for(let attempt=0;attempt<100;attempt++){
+      if(core.exitCode!==null)throw new Error('Isolated Core exited: '+coreOutput)
+      try{ready=(await fetch(base+'/api/v1/health')).ok}catch{}
+      if(ready)break
+      await new Promise(resolve=>setTimeout(resolve,100))
+    }
+    assert.ok(ready,'Isolated Core failed to start')
+    browser=await chromium.launch({headless:true})
+    const context=await browser.newContext()
+    await context.addInitScript(()=>localStorage.setItem('nodedance.language','en'))
+    const csrf=await(await context.request.get(base+'/api/v1/auth/csrf')).json()
+    const credentials=JSON.parse(fs.readFileSync(path.join(dataDir,'initial-admin.json'),'utf8'))
+    const login=await context.request.post(base+'/api/v1/auth/login',{data:{username:credentials.username,password:credentials.password},headers:{Origin:base,'X-CSRF-Token':csrf.token}})
+    assert.equal(login.status(),200)
+    const headers={Origin:base,'X-CSRF-Token':(await login.json()).csrfToken}
+    const catalog=await(await context.request.get(base+'/api/v1/operations')).json()
+    const submit={name:'future.submit',description:'Future task',method:'POST',path:'/api/v1/audit/start',parameters:[],query:[],transport:'json',bodySchema:{type:'object',required:['revision'],properties:{revision:{type:'integer'}}},requiresIdempotencyKey:true,headers:{'Idempotency-Key':{type:'string'}},completion:{operation:'future.observe',params:{id:'data.id'},statusPath:'status',terminalStatuses:['succeeded','unknown'],successStatuses:['succeeded']}}
+    const observe={name:'future.observe',description:'Future observation',method:'GET',path:'/api/v1/audit/{id}',parameters:['id'],query:[],transport:'json'}
+    await context.route('**/api/v1/operations',route=>route.fulfill({json:{...catalog,operations:[...catalog.operations,submit,observe]}}))
+    const enrollment=await context.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'Interface audit',coreUrl:base}})
+    assert.equal(enrollment.status(),201)
+    const node=(await enrollment.json()).nodeId
+    const page=await context.newPage()
+    page.setDefaultTimeout(10000)
+    const pageErrors=[];page.on('pageerror',error=>pageErrors.push(error.message))
+    await page.setViewportSize({width:1,height:1});await page.setContent('<html><body></body></html>')
+    const png=await page.screenshot()
+    await page.setViewportSize({width:1440,height:1000});await page.goto(base)
+    await page.getByRole('button',{name:'Operations',exact:true}).click()
+    const select=page.locator('.operation-layout aside select')
+    const form=page.locator('.operation-form form').first()
+    const execute=()=>form.locator('button[type=submit]').click()
+    const field=name=>form.locator('label').filter({hasText:new RegExp('^'+name)}).locator('input,textarea,select').first()
+
+    await select.selectOption('appearance.upload-avatar')
+    await form.locator('input[type=file]').setInputFiles({name:'pixel.png',mimeType:'image/png',buffer:png})
+    let response=page.waitForResponse(r=>r.url().endsWith('/api/v1/settings/appearance/avatar')&&r.request().method()==='POST')
+    await execute();assert.equal((await response).status(),200,'Generic multipart must match real Core')
+
+    await select.selectOption('nodes.save-preference')
+    await field('nodeId').fill(node);await field('targetKind').fill('node');await field('identity').fill('node:'+node)
+    await field('alias').fill('');await field('notes').fill('');await field('sshPort').fill('22')
+    response=page.waitForResponse(r=>r.url().endsWith('/preferences')&&r.request().method()==='PUT')
+    await execute();try{assert.equal((await response).status(),204,'Empty strings and omitted optional fields remain legal')}catch(error){console.error(await form.evaluate(el=>({fields:[...el.querySelectorAll('input,select,textarea')].map(x=>({label:x.parentElement.textContent,value:x.value,valid:x.validity.valid,message:x.validationMessage})),alert:el.parentElement.querySelector('[role=alert]')?.textContent})));throw error}
+
+    const commands=[]
+    await page.route('**/api/v1/nodes/*/commands',route=>{
+      assert.equal(route.request().method(),'POST')
+      commands.push(route.request().headers()['idempotency-key'])
+      return route.fulfill({status:503,body:'Agent unavailable'})
+    })
+    await select.selectOption('commands.submit')
+    await field('nodeId').fill(node);await field('script').fill('true');await field('timeoutSeconds').fill('60');await field('confirm').selectOption('true')
+    for(let i=0;i<2;i++){
+      response=page.waitForResponse(r=>r.url().endsWith('/commands'))
+      await execute();await response
+    }
+    assert.equal(commands.length,2);assert.equal(commands[0],commands[1],'Uncertain retry must reuse intent')
+    await form.getByRole('button',{name:'New execution key'}).click()
+    response=page.waitForResponse(r=>r.url().endsWith('/commands'));await execute();await response
+    assert.notEqual(commands[2],commands[1],'Explicit new execution must obtain a new key')
+
+    await select.selectOption('files.upload');await field('nodeId').fill(node);await field('path').fill('/audit.txt');await field('X-File-Version').fill('observed-version')
+    await form.locator('input[type=file]').setInputFiles({name:'audit.txt',mimeType:'text/plain',buffer:Buffer.from('audit')})
+    let version
+    await page.route('**/api/v1/nodes/*/files/upload?*',route=>{version=route.request().headers()['x-file-version'];return route.fulfill({json:{taskId:'file-audit',status:'succeeded'}})})
+    response=page.waitForResponse(r=>r.url().includes('/files/upload?'));await execute();await response
+    assert.equal(version,'observed-version')
+
+    await select.selectOption('channels.create');assert.equal(await field('secret').getAttribute('type'),'password')
+    await select.selectOption('deployments.create');assert.equal(await field('credentials').getAttribute('type'),'password','Nested credentials must not use a visible JSON textarea')
+
+    let submissions=0,polls=0
+    await page.route('**/api/v1/audit/start',route=>{assert.equal(route.request().postData(),'{"revision":18446744073709551615}');submissions++;return route.fulfill({status:202,json:{id:'work',status:'queued'}})})
+    await page.route('**/api/v1/audit/work',route=>{polls++;return route.fulfill({json:{id:'work',status:polls===1?'running':'succeeded'}})})
+    await select.selectOption('future.submit');await field('revision').fill('18446744073709551615');await form.locator('input[type=checkbox]').last().check();await execute()
+    await page.waitForFunction(()=>document.querySelector('[data-testid=operation-result]')?.textContent.includes('succeeded'))
+    assert.equal(submissions,1);assert.equal(polls,2,'Observation must not repeat submission')
+
+    await page.getByRole('button',{name:'Alerts',exact:true}).click();await page.getByRole('button',{name:'Alert rules',exact:true}).click()
+    const ruleForm=page.locator('.alert-form-card').first()
+    await ruleForm.locator('select').nth(1).selectOption('metric')
+    const metricSelect=ruleForm.locator('select').nth(2)
+    const metrics=await(await context.request.get(base+'/api/v1/metrics/catalog')).json()
+    assert.deepEqual((await metricSelect.locator('option').evaluateAll(options=>options.map(option=>option.value))).sort(),Object.keys(metrics.metrics).sort())
+    await metricSelect.selectOption('swap.used_percent');await ruleForm.locator('input').first().fill('Browser metric rule')
+    response=page.waitForResponse(r=>r.url().endsWith('/api/v1/alerts/rules')&&r.request().method()==='POST')
+    await ruleForm.locator('button[type=submit]').click();assert.equal((await response).status(),200,'Actual metric rule must be accepted')
+
+    await page.getByRole('button',{name:'Operations',exact:true}).click();await select.selectOption('files.upload')
+    for(const theme of ['light','dark'])for(const width of [390,1440]){
+      await page.setViewportSize({width,height:1000})
+      await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+      await page.waitForTimeout(350)
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Layout must not overflow horizontally')
+      await page.screenshot({path:path.join(artifacts,`operations-${theme}-${width}.png`),fullPage:true})
+      assert.ok(await page.locator('.operation-form').isVisible())
+    }
+    assert.deepEqual(pageErrors,[])
+    console.log(`Real Core/Web interface checks passed (${catalog.operations.length} discovered operations; multipart, empty fields, retry intent, version header, secrets, completion, metric rule; 4 layout snapshots).`)
+  }finally{
+    if(browser)await browser.close()
+    core.kill('SIGTERM')
+    if(core.exitCode===null)await new Promise(resolve=>{core.once('exit',resolve);setTimeout(()=>{core.kill('SIGKILL');resolve()},5000).unref()})
+    fs.rmSync(dataDir,{recursive:true,force:true})
+  }
+})().catch(error=>{console.error(error);process.exitCode=1})

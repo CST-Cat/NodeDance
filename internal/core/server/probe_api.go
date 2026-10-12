@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,17 +14,7 @@ import (
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
 )
 
-type probeConfigRequest struct {
-	NodeID             string `json:"nodeId"`
-	Name               string `json:"name"`
-	Kind               string `json:"kind"`
-	Target             string `json:"target"`
-	ExpectedHTTPStatus *int   `json:"expectedHttpStatus,omitempty"`
-	IntervalSeconds    int    `json:"intervalSeconds"`
-	TimeoutSeconds     int    `json:"timeoutSeconds"`
-	Enabled            *bool  `json:"enabled,omitempty"`
-	Revision           int64  `json:"revision,omitempty"`
-}
+type probeConfigRequest = protocol.ProbeConfigRequest
 
 var errProbeNodeNotFound = errors.New("managed node not found")
 

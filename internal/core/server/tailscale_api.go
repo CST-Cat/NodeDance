@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -155,9 +154,7 @@ func (s *Server) handleTailscaleAPI(w http.ResponseWriter, r *http.Request, curr
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return true
 		}
-		var request struct {
-			PeerIdentity string `json:"peerIdentity"`
-		}
+		var request protocol.HostKeyRequest
 		if !decodeJSON(w, r, &request) {
 			return true
 		}
@@ -189,7 +186,7 @@ func (s *Server) handleTailscaleAPI(w http.ResponseWriter, r *http.Request, curr
 			return true
 		}
 		var request tailscale.DeployRequest
-		if !decodeBoundedJSON(w, r, &request, 128<<10) {
+		if !decodeJSON(w, r, &request) {
 			return true
 		}
 		idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
@@ -250,11 +247,7 @@ func (s *Server) handleResolveTailscaleDeployment(w http.ResponseWriter, r *http
 	s.tailscaleResolveMu.Lock()
 	defer s.tailscaleResolveMu.Unlock()
 
-	var request struct {
-		Outcome       string `json:"outcome"`
-		ObservedState string `json:"observedState"`
-		Confirmed     bool   `json:"confirmed"`
-	}
+	var request protocol.ResolveDeploymentRequest
 	if !decodeJSON(w, r, &request) {
 		return
 	}
@@ -333,27 +326,6 @@ func (s *Server) handleResolveTailscaleDeployment(w http.ResponseWriter, r *http
 		return
 	}
 	writeJSON(w, http.StatusOK, resolved)
-}
-
-func decodeBoundedJSON(w http.ResponseWriter, r *http.Request, target any, limit int64) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, limit)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		status := http.StatusBadRequest
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			status = http.StatusRequestEntityTooLarge
-		}
-		http.Error(w, "invalid request", status)
-		return false
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		http.Error(w, "invalid request", http.StatusBadRequest)
-		return false
-	}
-	return true
 }
 
 func clearTailscaleSecrets(request *tailscale.DeployRequest) {

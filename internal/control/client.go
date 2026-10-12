@@ -42,6 +42,7 @@ type Input struct {
 	Body           json.RawMessage   `json:"body,omitempty"`
 	IdempotencyKey string            `json:"idempotencyKey,omitempty"`
 	FileVersion    string            `json:"fileVersion,omitempty"`
+	Headers        map[string]string `json:"headers,omitempty"`
 }
 type Result struct {
 	Operation string          `json:"operation"`
@@ -242,7 +243,7 @@ func (c *Client) request(ctx context.Context, o Operation, in Input, body io.Rea
 	}
 	req.Header.Set("Origin", c.origin)
 	req.Header.Set("User-Agent", "NodeDance CLI/TUI")
-	if o.Method != "GET" {
+	if o.Method != "GET" && o.Method != "HEAD" {
 		token, err := c.csrf(ctx)
 		if err != nil {
 			return nil, err
@@ -250,12 +251,30 @@ func (c *Client) request(ctx context.Context, o Operation, in Input, body io.Rea
 		req.Header.Set("X-CSRF-Token", token)
 	}
 	if o.Idempotent {
-		if in.IdempotencyKey == "" {
+		key := in.IdempotencyKey
+		for name, value := range in.Headers {
+			if strings.EqualFold(name, "Idempotency-Key") {
+				if key != "" && key != value {
+					return nil, errors.New("conflicting idempotency keys")
+				}
+				key = value
+			}
+		}
+		if key == "" {
 			return nil, errors.New("--idempotency-key is required; reuse the same key when retrying the same intent")
 		}
-		req.Header.Set("Idempotency-Key", in.IdempotencyKey)
+		req.Header.Set("Idempotency-Key", key)
+	}
+	for name, value := range in.Headers {
+		if _, ok := o.Headers[http.CanonicalHeaderKey(name)]; !ok {
+			return nil, fmt.Errorf("unknown operation header %s", name)
+		}
+		req.Header.Set(name, value)
 	}
 	if in.FileVersion != "" {
+		if _, ok := o.Headers["X-File-Version"]; !ok {
+			return nil, errors.New("operation does not accept a file version")
+		}
 		req.Header.Set("X-File-Version", in.FileVersion)
 	}
 	return req, nil
@@ -274,6 +293,12 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 	if len(in.Body) > 0 && !json.Valid(in.Body) {
 		return fail(errors.New("body must contain one JSON value"))
 	}
+	if o.MaxBodyBytes > 0 && int64(len(in.Body)) > o.MaxBodyBytes {
+		return fail(errors.New("body exceeds Core request limit"))
+	}
+	if err := ValidateJSON(o.BodySchema, in.Body); err != nil {
+		return fail(err)
+	}
 	if o.Transport == "download" && download == nil {
 		return fail(errors.New("download requires --output"))
 	}
@@ -287,17 +312,19 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 		body = upload
 		contentType = "application/octet-stream"
 		if o.Transport == "multipart" {
-			// Images are bounded by Core; reject oversized input before allocation.
-			data, err := io.ReadAll(io.LimitReader(upload, 8*1024*1024+1))
+			if o.Upload == nil || o.Upload.Field == "" || o.Upload.MaxBytes < 1 {
+				return fail(errors.New("Core omitted multipart upload contract"))
+			}
+			data, err := io.ReadAll(io.LimitReader(upload, o.Upload.MaxBytes+1))
 			if err != nil {
 				return fail(err)
 			}
-			if len(data) > 8*1024*1024 {
-				return fail(errors.New("image exceeds 8 MiB"))
+			if int64(len(data)) > o.Upload.MaxBytes {
+				return fail(errors.New("upload exceeds Core size limit"))
 			}
 			var buf bytes.Buffer
 			writer := multipart.NewWriter(&buf)
-			part, err := writer.CreateFormFile("image", "image")
+			part, err := writer.CreateFormFile(o.Upload.Field, "upload")
 			if err != nil {
 				return fail(err)
 			}
@@ -328,6 +355,9 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 			}
 			if !info.Mode().IsRegular() {
 				return fail(errors.New("upload input must be a regular file"))
+			}
+			if o.Upload != nil && o.Upload.MaxBytes > 0 && info.Size() > o.Upload.MaxBytes {
+				return fail(errors.New("upload exceeds Core size limit"))
 			}
 			req.ContentLength = info.Size()
 		}
@@ -363,6 +393,9 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 			return fail(errors.New("Core returned invalid JSON"))
 		}
 		result.Data = raw
+		if err := ValidateJSON(o.ResponseSchema, raw); err != nil {
+			return fail(fmt.Errorf("Core response violates operation contract: %w", err))
+		}
 	}
 	return result
 }

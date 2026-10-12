@@ -205,7 +205,7 @@ func TestWebSocketUsesSessionAndOrigin(t *testing.T) {
 	}
 	defer c.Close()
 	login, _ := control.Find("auth.login")
-	if r := c.Execute(context.Background(), login, control.Input{Body: json.RawMessage(`{"password":"secret"}`)}, nil, nil); r.Error != "" {
+	if r := c.Execute(context.Background(), login, control.Input{Body: json.RawMessage(`{"username":"test-admin","password":"secret"}`)}, nil, nil); r.Error != "" {
 		t.Fatal(r.Error)
 	}
 	watch, _ := control.Find("dashboard.watch")

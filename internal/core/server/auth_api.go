@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"net/http"
 	"os"
 	"strings"
@@ -60,12 +61,7 @@ func (s *Server) handleSetupStatus(w http.ResponseWriter) {
 }
 
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Credential  string `json:"credential"`
-		Password    string `json:"password"`
-		Username    string `json:"username"`
-		DisplayName string `json:"displayName"`
-	}
+	var request protocol.AuthSetupRequest
 	if !decodeJSON(w, r, &request) {
 		return
 	}
@@ -185,10 +181,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
+	var request protocol.AuthLoginRequest
 	if !decodeJSON(w, r, &request) {
 		return
 	}

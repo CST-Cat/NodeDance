@@ -117,7 +117,7 @@ func (s *Server) adminCreateAgentEnrollment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if request.DeploymentMethod == "" {
-		request.DeploymentMethod = agents.DeploymentNative
+		request.DeploymentMethod = agents.DefaultDeploymentMethod
 	}
 	name, ok := normalizeDisplayName(request.DisplayName)
 	if !ok {

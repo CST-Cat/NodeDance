@@ -77,9 +77,10 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 	catalog, err := client.Catalog(catalogCtx)
 	catalogCancel()
 	if err != nil {
-		return err
+		write(tr("Core catalog unavailable; local maintenance remains available.\n") + err.Error() + "\n")
+		catalog = control.Catalog{Version: 1}
 	}
-	operations := append(catalog.Operations, localOperations()...)
+	operations := terminalOperations(catalog)
 	filter := ""
 	page := 0
 	params := map[string]string{}
@@ -108,7 +109,7 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 		for i := start; i < end; i++ {
 			write(fmt.Sprintf("%2d  %-27s %s\n", i-start+1, selected[i].Name, selected[i].Description))
 		}
-		write("\nNumber: open operation | /text: search | n/p: page | l: language | q: quit\n")
+		write("\nNumber: open operation | /text: search | n/p: page | r: refresh Core | l: language | q: quit\n")
 		choice, err := prompt("Select", false)
 		if errors.Is(err, io.EOF) {
 			return nil
@@ -118,6 +119,18 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 		}
 		choice = strings.TrimSpace(choice)
 		switch choice {
+		case "r":
+			refreshCtx, stop := context.WithTimeout(ctx, 15*time.Second)
+			refreshed, e := client.Catalog(refreshCtx)
+			stop()
+			if e == nil {
+				catalog = refreshed
+				operations = terminalOperations(catalog)
+			} else {
+				write(e.Error() + "\n")
+				prompt("Enter to return", false)
+			}
+			continue
 		case "q", "quit":
 			return nil
 		case "l":
@@ -161,7 +174,13 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 				err = json.Unmarshal(raw, &localArgs)
 			}
 			if err == nil {
-				var tokenInput io.Reader = strings.NewReader("")
+				var tokenInput io.Reader = stdin
+				if o.Name == "client.update" {
+					localArgs = append(localArgs, "--server", *connection.server, "--origin", *connection.origin, "--state-dir", *connection.stateDir, "--ca-file", *connection.caFile, "--timeout", connection.timeout.String())
+					if *connection.dev {
+						localArgs = append(localArgs, "--dev")
+					}
+				}
 				if o.Name == "agent.enroll" {
 					token, e := prompt("Enrollment token (hidden)", true)
 					if e != nil {
@@ -241,7 +260,7 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 				}
 				in.Body, _ = json.Marshal(map[string]string{"username": username, "password": password})
 			} else if o.Name == "agents.enrollment" {
-				in.Body, err = promptAgentEnrollment(prompt, *connection.server)
+				in.Body, err = promptAgentEnrollment(prompt, firstNonEmpty(*connection.origin, *connection.server))
 				if err != nil {
 					return err
 				}
@@ -267,9 +286,33 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 			}
 			in.IdempotencyKey = value
 		}
+		for name, description := range o.Headers {
+			if name == "Idempotency-Key" || name == "X-File-Version" {
+				continue
+			}
+			field, _ := description.(map[string]any)
+			value, e := prompt(name, field["writeOnly"] == true)
+			if e != nil {
+				return e
+			}
+			if value != "" {
+				if in.Headers == nil {
+					in.Headers = map[string]string{}
+				}
+				in.Headers[name] = value
+			}
+		}
+		wait := false
+		if o.Completion != nil {
+			value, e := prompt("Wait for completion? (y/N)", false)
+			if e != nil {
+				return e
+			}
+			wait = strings.EqualFold(strings.TrimSpace(value), "y")
+		}
+
 		var upload io.Reader
 		var uploadFile *os.File
-		var download *os.File
 		outputPath := ""
 		if o.Transport == "upload" || o.Transport == "multipart" {
 			value, e := prompt("Input file", false)
@@ -293,9 +336,6 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 		}
 		if o.Transport == "download" {
 			outputPath, err = prompt("New output file", false)
-			if err == nil {
-				download, err = os.OpenFile(outputPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-			}
 		}
 		if err != nil {
 			write(tr("Error: ") + err.Error() + "\n")
@@ -306,23 +346,51 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 			prompt("Enter to return", false)
 			continue
 		}
+		observed := false
+		terminalJSONL := false
+		var streamInputFile *os.File
+		if o.Transport == "terminal" {
+			value, e := prompt("Terminal interface (interactive/jsonl; blank uses interactive)", false)
+			if e != nil {
+				return e
+			}
+			terminalJSONL = strings.EqualFold(strings.TrimSpace(value), "jsonl")
+		}
+		if o.Duplex && (o.Transport == "websocket" || terminalJSONL) {
+			value, e := prompt("JSONL input file (optional; blank uses line input)", false)
+			if e != nil {
+				return e
+			}
+			if value != "" {
+				streamInputFile, err = os.Open(value)
+				if err != nil {
+					write(tr("Error: ") + err.Error() + "\n")
+					prompt("Enter to return", false)
+					continue
+				}
+			}
+		}
 		requestCtx, cancel := context.WithCancel(ctx)
 		if *connection.timeout > 0 {
 			cancel()
 			requestCtx, cancel = context.WithTimeout(ctx, *connection.timeout)
 		}
-		if o.Transport == "terminal" {
+		if o.Transport == "terminal" && !terminalJSONL {
 			err = interactiveTerminal(requestCtx, client, in, file, stdout)
 			if err != nil {
 				write(tr("Terminal: ") + err.Error() + "\n")
 			}
-		} else if o.Transport == "websocket" {
+		} else if o.Transport == "websocket" || terminalJSONL {
 			write("Stream active. Enter /stop to return. Terminal input uses JSONL frames.\n")
 			pipeReader, pipeWriter := io.Pipe()
 			done := make(chan error, 1)
 			var input io.Reader
-			if o.Name == "terminal.connect" {
-				input = pipeReader
+			if o.Duplex {
+				if streamInputFile != nil {
+					input = streamInputFile
+				} else {
+					input = pipeReader
+				}
 			}
 			go func() {
 				e := streamJSONL(requestCtx, client, o, in, input, screen)
@@ -345,7 +413,7 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 					goto streamDone
 				default:
 				}
-				if input != nil {
+				if input != nil && streamInputFile == nil {
 					if _, e = io.WriteString(pipeWriter, line+"\n"); e != nil {
 						break
 					}
@@ -355,30 +423,42 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 			cancel()
 			pipeWriter.Close()
 			pipeReader.Close()
+			if streamInputFile != nil {
+				streamInputFile.Close()
+			}
 			if !streamEnded {
 				<-done
 			}
 		} else {
-			var writer io.Writer
-			if download != nil {
-				writer = download
-			}
-			result := client.Execute(requestCtx, o, in, upload, writer)
-			if download != nil {
-				if result.Error == "" {
-					if e := download.Sync(); e != nil {
-						result.Error = e.Error()
+			result := executeFinite(requestCtx, client, catalog, o, in, upload, outputPath, false, nil)
+			if wait && result.Error == "" {
+				observed = true
+				accepted, _ := json.Marshal(result)
+				write(string(accepted) + "\n")
+				done := make(chan control.Result, 1)
+				go func() {
+					final := client.Wait(requestCtx, catalog, o, in, result, func(update control.Result) { raw, _ := json.Marshal(update); write(string(raw) + "\n") })
+					if final.Error != "" {
+						write(tr("Error: ") + final.Error + "\n")
+					}
+					done <- final
+					write("Observation finished. Press Enter to return.\n")
+				}()
+				for {
+					value, e := prompt("Observe (/stop)", false)
+					if e != nil || value == "/stop" {
+						cancel()
+						result = <-done
+						break
+					}
+					select {
+					case result = <-done:
+						goto observationDone
+					default:
 					}
 				}
-				if e := download.Close(); e != nil {
-					result.Error = e.Error()
-				}
-				if result.Error != "" {
-					os.Remove(outputPath)
-				} else {
-					result.File = outputPath
-				}
 			}
+		observationDone:
 			raw, _ := json.MarshalIndent(result, "", "  ")
 			// Paginate large results so history and inventory remain inspectable.
 			lines := strings.Split(string(raw), "\n")
@@ -401,6 +481,9 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 		if uploadFile != nil {
 			uploadFile.Close()
 		}
+		if observed {
+			continue
+		}
 		if _, err = prompt("Enter to return", false); err != nil {
 			return err
 		}
@@ -420,13 +503,13 @@ func promptAgentEnrollment(prompt func(string, bool) (string, error), server str
 		coreURL = server
 	}
 	for {
-		method, err := prompt("Deployment method (native/docker; blank uses docker)", false)
+		method, err := prompt("Deployment method (native/docker; blank uses native)", false)
 		if err != nil {
 			return nil, err
 		}
 		method = strings.TrimSpace(method)
 		if method == "" {
-			method = agents.DeploymentDocker
+			method = agents.DefaultDeploymentMethod
 		}
 		if !agents.ValidDeploymentMethod(method) {
 			continue

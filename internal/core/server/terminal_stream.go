@@ -61,10 +61,7 @@ type terminalMessage struct {
 	Frame protocol.TerminalFrame `json:"frame"`
 }
 
-type createTerminalRequest struct {
-	TargetKind  string `json:"targetKind"`
-	ContainerID string `json:"containerId,omitempty"`
-}
+type createTerminalRequest = protocol.TerminalCreateRequest
 
 type createTerminalResponse struct {
 	StreamID  string    `json:"streamId"`

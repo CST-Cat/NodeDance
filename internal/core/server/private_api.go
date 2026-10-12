@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	maxImageUploadBytes = 2 << 20
+	maxImageUploadBytes = protocol.MaxAppearanceImageBytes
 	maxImageStoredBytes = 8 << 20
 	maxImageDimension   = 1024
 	maxImagePixels      = 1024 * 1024
@@ -236,10 +236,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, current *s
 }
 
 func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request, current *session) {
-	var request struct {
-		CurrentPassword string `json:"currentPassword"`
-		NewPassword     string `json:"newPassword"`
-	}
+	var request protocol.PasswordChangeRequest
 	if !decodeJSON(w, r, &request) {
 		return
 	}
@@ -402,11 +399,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request, cur
 }
 
 func (s *Server) handleUpdateAppearance(w http.ResponseWriter, r *http.Request, current *session) {
-	var request struct {
-		DisplayName     string `json:"displayName"`
-		Theme           string `json:"theme"`
-		BackgroundColor string `json:"backgroundColor"`
-	}
+	var request protocol.AppearanceRequest
 	if !decodeJSON(w, r, &request) {
 		return
 	}
@@ -483,7 +476,7 @@ func (s *Server) handleUploadAppearanceImage(w http.ResponseWriter, r *http.Requ
 	if r.MultipartForm != nil {
 		defer r.MultipartForm.RemoveAll()
 	}
-	file, _, err := r.FormFile("image")
+	file, _, err := r.FormFile(protocol.AppearanceImageField)
 	if err != nil {
 		http.Error(w, "image is required", http.StatusBadRequest)
 		return

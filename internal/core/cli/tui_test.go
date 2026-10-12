@@ -153,7 +153,7 @@ func TestTUIEnrollmentFormUsesSharedRequest(t *testing.T) {
 		}
 		expected := method
 		if expected == "" {
-			expected = "docker"
+			expected = "native"
 		}
 		if result["deploymentMethod"] != expected || result["displayName"] != "node" || result["coreUrl"] != "https://core.example" {
 			t.Fatalf("unexpected enrollment: %s", raw)

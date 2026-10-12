@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { t } from '../i18n'
 import { operationRequest } from '../api'
-import { operationCatalog, operationURL, type CoreOperation } from '../operations'
+import { operationCatalog, operationURL, operationBody, operationUpload, schemaHasSecrets, completionInput, completionStatus, type CoreOperation } from '../operations'
+import { requestIntent, intentKey } from '../operation-intent'
 
 const operations = ref<CoreOperation[]>([])
 const filter = ref('')
@@ -10,6 +11,12 @@ const selected = ref('core.health')
 const params = reactive<Record<string, string>>({})
 const query = reactive<Record<string, string>>({})
 const values = reactive<Record<string, string>>({})
+const requestHeaders = reactive<Record<string,string>>({})
+const rawBody = ref('')
+const rawMode = ref(false)
+const waitForCompletion = ref(false)
+let lastIntent = '', lastKey = ''
+let requestAbort: AbortController | undefined
 const file = ref<File>()
 const output = ref('')
 const error = ref('')
@@ -19,19 +26,23 @@ const frame = ref('{}')
 const input = ref('')
 let socket: WebSocket | undefined
 let streamId = ''
-let pendingTerminal: { nodeId: string; streamId: string } | undefined
+const pendingTerminal = ref<{ nodeId: string; streamId: string }>()
+let terminalIntent = ''
 let revision = 0
 const operation = computed(() => operations.value.find(item => item.name === selected.value))
 const matches = computed(() => operations.value.filter(item => `${item.name} ${item.description}`.toLowerCase().includes(filter.value.toLowerCase())))
-const properties = computed(() => Object.entries(operation.value?.bodySchema?.properties ?? {}))
+const properties = computed(() => rawMode.value ? [] : Object.entries(operation.value?.bodySchema?.properties ?? {}))
 function disconnect() {
+  requestAbort?.abort(); requestAbort = undefined; busy.value = false
   revision++; socket?.close(); socket = undefined; connected.value = false; streamId = ''
-  if (pendingTerminal) { void operationRequest('terminal.cancel', { params: pendingTerminal }).catch(() => {}); pendingTerminal = undefined }
+  if (pendingTerminal.value) { void operationRequest('terminal.cancel', { params: pendingTerminal.value }).catch(() => {}); pendingTerminal.value = undefined }
 }
 watch(selected, () => {
   disconnect(); output.value = ''; error.value = ''; file.value = undefined
-  for (const record of [params, query, values]) for (const key of Object.keys(record)) delete record[key]
+  rawBody.value = ''; rawMode.value = false; waitForCompletion.value = false; lastIntent = ''; lastKey = ''
+  for (const record of [params, query, values, requestHeaders]) for (const key of Object.keys(record)) delete record[key]
 })
+watch(operation, current=>{for(const [key,field] of Object.entries(current?.bodySchema?.properties ?? {})) if(field.default!==undefined)values[key]=field.type==='string'?String(field.default):JSON.stringify(field.default)})
 function append(value: unknown) {
   const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
   output.value = (output.value + text + '\n').slice(-262144)
@@ -42,28 +53,35 @@ async function execute() {
   busy.value = true; error.value = ''; output.value = ''
   const generation = ++revision
   try {
-    const body: Record<string, unknown> = {}
-    for (const [key, schema] of properties.value) {
-      const value = values[key] ?? ''
-      if (!value && !current.bodySchema?.required?.includes(key)) continue
-      if (!value) throw new Error(`${key}: ${t('operations.required')}`)
-      body[key] = schema.type === 'boolean' ? value === 'true' : ['integer', 'number'].includes(schema.type ?? '') ? JSON.parse(value) : ['object', 'array'].includes(schema.type ?? '') ? JSON.parse(value) : value
-    }
     const request = { params: { ...params }, query: Object.fromEntries(Object.entries(query).filter(([, value]) => value !== '')) }
-    const headers: Record<string, string> = {}
-    if (current.requiresIdempotencyKey) headers['Idempotency-Key'] = crypto.randomUUID()
-    let requestBody: BodyInit | undefined = current.bodySchema ? JSON.stringify(body) : undefined
+    const headers: Record<string, string> = Object.fromEntries(Object.entries(requestHeaders).filter(([,value])=>value!==''))
+    const jsonBody = operationBody(current, values, rawBody.value,rawMode.value)
+    let requestBody: BodyInit | undefined = jsonBody
     if (current.transport === 'upload' || current.transport === 'multipart') {
       if (!file.value) throw new Error(t('operations.fileRequired'))
-      if (current.transport === 'upload') requestBody = file.value
-      else { const form = new FormData(); form.append('file', file.value); requestBody = form }
+      requestBody = operationUpload(current,file.value)
     }
+    if (current.requiresIdempotencyKey) {
+      const signature = await requestIntent(current.name, request, requestBody, new Headers(headers))
+      if (!headers['Idempotency-Key'] || (signature !== lastIntent && headers['Idempotency-Key'] === lastKey)) headers['Idempotency-Key'] = intentKey(signature)
+      requestHeaders['Idempotency-Key'] = headers['Idempotency-Key']!
+      lastIntent = signature; lastKey = headers['Idempotency-Key']!
+    }
+    if(generation !== revision)return
+    const controller = new AbortController()
+    requestAbort = controller
     if (current.transport === 'websocket' || current.transport === 'terminal') {
       let url: URL
       if (current.transport === 'terminal') {
-        const ticket = await operationRequest<{ streamId: string; ticket: string }>(current.name, request, { body: requestBody, headers })
+        const signature=await requestIntent(current.name,request,requestBody,new Headers(headers))
+        if(generation !== revision)return
+        if(pendingTerminal.value && terminalIntent!==signature) {await operationRequest('terminal.cancel',{params:pendingTerminal.value});pendingTerminal.value=undefined}
+        const ticket = pendingTerminal.value
+          ? await operationRequest<{streamId:string;ticket:string}>('terminal.resume',{params:pendingTerminal.value},{body:'{}',signal:controller.signal})
+          : await operationRequest<{ streamId: string; ticket: string }>(current.name, request, { body: requestBody, headers,signal:controller.signal })
+        terminalIntent=signature
         streamId = ticket.streamId
-        pendingTerminal = { nodeId: request.params.nodeId!, streamId: ticket.streamId }
+        pendingTerminal.value = { nodeId: request.params.nodeId!, streamId: ticket.streamId }
         if (generation !== revision) {
           await operationRequest('terminal.cancel', { params: { nodeId: request.params.nodeId!, streamId: ticket.streamId } }); return
         }
@@ -71,7 +89,7 @@ async function execute() {
       } else url = await operationURL(current.name, request)
       if (generation !== revision) return
       const connection = new WebSocket(url); socket = connection
-      connection.onopen = () => { if (generation === revision) { connected.value = true; pendingTerminal = undefined } }
+      connection.onopen = () => { if (generation === revision) connected.value = true }
       connection.onmessage = event => {
         if (generation !== revision) return
         try {
@@ -84,16 +102,34 @@ async function execute() {
       connection.onclose = () => { if (generation === revision) { connected.value = false; socket = undefined } }
       connection.onerror = () => { if (generation === revision) error.value = t('operations.connectionFailed') }
     } else {
-      const result = await operationRequest<unknown>(current.name, request, { body: requestBody, headers }, current.transport === 'upload' ? 300000 : 60000)
+      const result = await operationRequest<unknown>(current.name, request, { body: requestBody, headers, signal: controller.signal }, current.transport === 'upload' ? 1800000 : 60000)
       if (generation !== revision) return
       if (result instanceof Blob) {
         const url = URL.createObjectURL(result), link = document.createElement('a')
         link.href = url; link.download = (query.path || current.name).split('/').pop()!; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
         append(t('operations.downloaded'))
-      } else append(result ?? t('operations.completed'))
+      } else {
+        append(result ?? t('operations.completed'))
+        if (waitForCompletion.value && current.completion) {
+          const follow = completionInput(current,request,jsonBody,result)
+          while (generation === revision) {
+            let observed: unknown
+            try { observed = await operationRequest(follow.name,follow.input,{signal:controller.signal}) }
+            catch(reason){if(controller.signal.aborted)throw reason; if(reason && typeof reason==='object' && 'status' in reason && Number(reason.status)<500)throw reason; await new Promise(resolve=>setTimeout(resolve,1000)); continue}
+            if(generation !== revision)return
+            append(observed)
+            const status=completionStatus(current,observed)
+            if(current.completion.terminalStatuses.includes(status)) {
+              if(!current.completion.successStatuses.includes(status))throw new Error(`${t('operations.finishedStatus')}: ${status}`)
+              break
+            }
+            await new Promise(resolve=>setTimeout(resolve,1000))
+          }
+        }
+      }
     }
   } catch (reason) { if (generation === revision) error.value = reason instanceof Error ? reason.message : String(reason) }
-  finally { busy.value = false }
+  finally { if(generation === revision) busy.value = false }
 }
 function send() {
   try {
@@ -104,6 +140,11 @@ function send() {
     if (streamId && typeof data === 'object' && !data.streamId) data.streamId = streamId
     socket.send(JSON.stringify(data)); input.value = ''
   } catch (reason) { error.value = String(reason) }
+}
+function newExecution() {
+  if(lastIntent) requestHeaders['Idempotency-Key']=intentKey(lastIntent,true)
+  else requestHeaders['Idempotency-Key']=crypto.randomUUID()
+  lastKey=requestHeaders['Idempotency-Key']!
 }
 onMounted(async () => { try { operations.value = (await operationCatalog()).operations } catch (reason) { error.value = String(reason) } })
 onBeforeUnmount(disconnect)
@@ -123,16 +164,23 @@ onBeforeUnmount(disconnect)
         <form @submit.prevent="execute">
           <label v-for="name in operation.parameters" :key="name">{{ name }} <input v-model="params[name]" required :disabled="busy || connected" /></label>
           <label v-for="name in operation.query" :key="name">{{ name }} <input v-model="query[name]" :type="/ticket|token/i.test(name) ? 'password' : 'text'" :disabled="busy || connected" /></label>
+          <label v-if="operation.bodySchema?.type==='object'" class="check-row"><input v-model="rawMode" type="checkbox" :disabled="busy" />{{ t('operations.rawJSON') }}</label>
           <label v-for="[name, schema] in properties" :key="name">{{ name }}{{ operation.bodySchema?.required?.includes(name) ? ' *' : '' }}
-            <select v-if="schema.enum || schema.type === 'boolean'" v-model="values[name]" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected"><option value="">—</option><option v-for="value in schema.enum ?? ['true', 'false']" :key="value" :value="value">{{ value }}</option></select>
+            <input v-if="schemaHasSecrets(schema)" v-model="values[name]" type="password" :disabled="busy || connected" autocomplete="off" />
+            <select v-else-if="schema.enum || schema.type === 'boolean'" v-model="values[name]" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected"><option value="">—</option><option v-for="value in schema.enum ?? ['true', 'false']" :key="String(value)" :value="String(value)">{{ value }}</option></select>
             <textarea v-else-if="schema.type === 'object' || schema.type === 'array'" v-model="values[name]" rows="4" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected" />
-            <input v-else v-model="values[name]" :type="schema.writeOnly ? 'password' : ['integer', 'number'].includes(schema.type ?? '') ? 'number' : 'text'" :step="schema.type === 'integer' ? '1' : 'any'" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected" autocomplete="off" />
+            <input v-else v-model="values[name]" type="text" :inputmode="schema.type === 'integer' ? 'numeric' : schema.type === 'number' ? 'decimal' : undefined" :minlength="schema.minLength" :maxlength="schema.maxLength" :disabled="busy || connected" autocomplete="off" />
           </label>
-          <label v-if="['upload', 'multipart'].includes(operation.transport)">{{ t('operations.file') }}<input type="file" required @change="file = ($event.target as HTMLInputElement).files?.[0]" /></label>
+          <label v-if="operation.bodySchema && (rawMode || operation.bodySchema.type !== 'object')">JSON <input v-if="schemaHasSecrets(operation.bodySchema)" v-model="rawBody" type="password" :disabled="busy" autocomplete="off" /><textarea v-else v-model="rawBody" rows="5" :disabled="busy" /></label>
+          <label v-for="[name,schema] in Object.entries(operation.headers ?? {})" :key="name">{{ name }}<input v-model="requestHeaders[name]" :type="schemaHasSecrets(schema)?'password':'text'" :disabled="busy || connected" autocomplete="off" /><small>{{ schema.description }}</small></label>
+          <template v-if="operation.requiresIdempotencyKey"><small>{{ t('operations.retryIntent') }}</small><button type="button" :disabled="busy || connected" @click="newExecution">{{ t('operations.newExecution') }}</button></template>
+          <label v-if="operation.completion" class="check-row"><input v-model="waitForCompletion" type="checkbox" :disabled="busy" />{{ t('operations.wait') }}</label>
+          <label v-if="['upload', 'multipart'].includes(operation.transport)">{{ t('operations.file') }}<input type="file" required :disabled="busy || connected" @change="file = ($event.target as HTMLInputElement).files?.[0]" /></label>
           <button type="submit" class="primary-button" :disabled="busy || connected">{{ busy ? t('operations.running') : t('operations.execute') }}</button>
-          <button v-if="connected" type="button" @click="disconnect">{{ t('operations.disconnect') }}</button>
+          <button v-if="connected || pendingTerminal" type="button" @click="disconnect">{{ operation.transport==='terminal'?t('operations.endTerminal'):t('operations.disconnect') }}</button>
+          <button v-if="busy" type="button" @click="disconnect">{{ t('operations.stopWaiting') }}</button>
         </form>
-        <form v-if="connected" @submit.prevent="send"><textarea v-if="operation.transport === 'websocket'" v-model="frame" rows="3" aria-label="JSON" /><input v-else v-model="input" :aria-label="t('operations.input')" /><button type="submit">{{ t('operations.send') }}</button></form>
+        <form v-if="connected && operation.duplex" @submit.prevent="send"><textarea v-if="operation.transport === 'websocket'" v-model="frame" rows="3" aria-label="JSON" /><input v-else v-model="input" :aria-label="t('operations.input')" /><button type="submit">{{ t('operations.send') }}</button></form>
         <p v-if="error" role="alert" class="error">{{ error }}</p>
         <pre v-if="output" data-testid="operation-result">{{ output }}</pre>
       </div>
@@ -158,6 +206,7 @@ button { align-self: flex-start; min-height: 40px; border: 1px solid var(--line)
 button.primary-button { border-color:transparent; }
 button:disabled { opacity: .55; cursor: default; }
 .error { color: var(--danger); font-size: 13px; }
+.check-row { flex-direction:row; align-items:center; }.check-row input { width:18px; min-height:18px; }small { color:var(--muted); font-weight:400; line-height:1.6; }
 pre { max-height: 600px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); background: var(--surface-soft); color: var(--text); padding: 18px; border-radius:var(--radius-card); font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
 @media (max-width: 700px) { .operation-console { padding: 18px; } .operation-layout { grid-template-columns: 1fr; gap: 20px; } aside select { min-height: 170px; height: 170px; } }
 </style>

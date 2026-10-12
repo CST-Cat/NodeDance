@@ -1,8 +1,10 @@
-<h1 align="center">NodeDance</h1>
+<h1 align="center"><img src="web/public/logo.svg" width="32" height="32" alt="" /> NodeDance</h1>
 
 <p align="center"><a href="README.md">简体中文</a> | <a href="README_EN.md">English</a></p>
 
 NodeDance 是一套自托管的 Linux 多主机监控与管理系统，由 **Core** 和部署在各主机上的 **Agent** 组成。
+
+Web、CLI、TUI 共用 Core 操作契约；CLI 与 TUI 完整覆盖同一终端能力，Web 可提供图形化交互。参见[接口能力与验证对照](docs/interface-coverage.md)及[终端使用说明](docs/cli.md)。
 
 [Agent 扩展能力与 Komari 对照](docs/agent-capabilities.md)：扩展指标、GPU、账期流量、ICMP、批量脚本与探测、资产提醒、共享注册、HTTP 回退和自动更新，统一通过 Web / CLI / TUI 管理。
 

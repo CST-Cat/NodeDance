@@ -5,9 +5,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"io"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -24,22 +22,11 @@ import (
 const composePayloadLifetime = 10 * time.Minute
 const maxPendingComposeContents = 32
 
-type composeTaskRequest struct {
-	Action     string `json:"action"`
-	FileIndex  int    `json:"fileIndex,omitempty"`
-	Content    string `json:"content,omitempty"`
-	BaseSHA256 string `json:"baseSha256,omitempty"`
-}
+type composeTaskRequest = protocol.ComposeActionRequest
 
-type composeValidateRequest struct {
-	Content string `json:"content"`
-}
+type composeValidateRequest = protocol.ComposeValidateRequest
 
-type composeCreateRequest struct {
-	Name             string `json:"name"`
-	WorkingDirectory string `json:"workingDirectory"`
-	Content          string `json:"content"`
-}
+type composeCreateRequest = protocol.ComposeCreateRequest
 
 type pendingComposeContent struct {
 	nodeID     string
@@ -429,24 +416,7 @@ func (s *Server) handleCreateComposeTask(w http.ResponseWriter, r *http.Request,
 
 func decodeComposeJSON[T any](w http.ResponseWriter, r *http.Request) (T, bool) {
 	var value T
-	r.Body = http.MaxBytesReader(w, r.Body, 2*protocol.MaxComposeFileBytes+16*1024)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&value); err != nil {
-		var tooLarge *http.MaxBytesError
-		status := http.StatusBadRequest
-		if errors.As(err, &tooLarge) {
-			status = http.StatusRequestEntityTooLarge
-		}
-		http.Error(w, "invalid Compose request", status)
-		return value, false
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		http.Error(w, "invalid Compose request", http.StatusBadRequest)
-		return value, false
-	}
-	return value, true
+	return value, decodeJSON(w, r, &value)
 }
 
 func (s *Server) storeComposeContentLocked(taskID, nodeID string, generation uint64, journalID, digest string, content []byte) {

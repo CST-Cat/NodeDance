@@ -1392,5 +1392,12 @@
   "terminal.reconnectingHint": "Input pauses during reconnecting; it is never replayed.",
   "api.terminalGone": "terminal session is no longer available",
   "api.terminalAttached": "terminal connection is still attached",
-  "terminal.endedHint": "The session has ended. Open a new terminal to continue."
+  "terminal.endedHint": "The session has ended. Open a new terminal to continue.",
+  "operations.retryIntent": "Retry keeps the same intent key. Copy it before leaving this page. Start a new execution only when you intend to run the operation again.",
+  "operations.newExecution": "New execution key",
+  "operations.wait": "Observe task until it finishes",
+  "operations.stopWaiting": "Stop observing (task continues)",
+  "operations.finishedStatus": "Task finished with status",
+  "operations.rawJSON": "Use JSON request body (including explicit null values)",
+  "operations.endTerminal": "End terminal session"
 }

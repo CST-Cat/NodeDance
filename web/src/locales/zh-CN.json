@@ -1392,5 +1392,12 @@
   "terminal.reconnectingHint": "重连期间暂停输入，不会重放已输入的命令。",
   "api.terminalGone": "终端会话已结束或恢复窗口已过期",
   "api.terminalAttached": "正在等待原终端连接断开",
-  "terminal.endedHint": "会话已结束，可重新打开终端建立新会话。"
+  "terminal.endedHint": "会话已结束，可重新打开终端建立新会话。",
+  "operations.retryIntent": "重试保留同一意图键。离开页面前请复制；只有明确需要再次执行时才新建执行。",
+  "operations.newExecution": "新建执行键",
+  "operations.wait": "观察任务直到结束",
+  "operations.stopWaiting": "停止观察（任务继续）",
+  "operations.finishedStatus": "任务结束状态",
+  "operations.rawJSON": "使用 JSON 请求体（可明确传入 null）",
+  "operations.endTerminal": "结束终端会话"
 }

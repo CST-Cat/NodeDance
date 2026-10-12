@@ -1,4 +1,5 @@
-import { resolveOperation, type OperationInput } from './operations'
+import { resolveOperation, operationUpload, validateSchema, type OperationInput } from './operations'
+import { requestIntent, intentKey, finishIntent } from './operation-intent'
 import { t, diagnostic } from "./i18n"
 import type { MetricsView } from './metrics-contract'
 
@@ -508,7 +509,7 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
         if (typeof payload.message === 'string') message = diagnostic(payload.message)
         else if (typeof payload.error === 'string') message = diagnostic(payload.error)
       } catch {
-        // Keep the status-based message when the Core returns an empty or non-JSON error.
+        if (body.trim()) message = diagnostic(body.trim().slice(0,4096))
       }
       throw new ApiError(response.status, message)
     }
@@ -539,9 +540,20 @@ export async function operationRequest<T>(name: string, input: OperationInput = 
   const { operation, path } = await resolveOperation(name, input)
   const mutation = operation.method !== 'GET' && operation.method !== 'HEAD'
   const headers = new Headers(init.headers)
-  if (operation.requiresIdempotencyKey && !headers.has('Idempotency-Key')) throw new Error('Idempotency-Key is required')
+  if(typeof init.body==='string') {
+    validateSchema(operation.bodySchema,JSON.parse(init.body))
+    if(operation.maxBodyBytes && new TextEncoder().encode(init.body).length>operation.maxBodyBytes)throw new Error('Body exceeds Core request limit')
+  }
+  let intent: string | undefined
+  if (operation.requiresIdempotencyKey && !headers.has('Idempotency-Key')) {
+    intent = await requestIntent(name,input,init.body,headers)
+    headers.set('Idempotency-Key',intentKey(intent))
+  }
   if (operation.transport === 'upload' && !headers.has('Content-Type')) headers.set('Content-Type', 'application/octet-stream')
-  return request<T>(path, { ...init, headers, method: operation.method }, mutation, timeoutMs, name, operation.transport === 'download')
+  const result = await request<T>(path, { ...init, headers, method: operation.method }, mutation, timeoutMs, name, operation.transport === 'download')
+  if(result !== undefined) validateSchema(operation.responseSchema,result)
+  if(intent) finishIntent(intent)
+  return result
 }
 
 export const api = {
@@ -646,7 +658,7 @@ export const api = {
     operationRequest<{ taskId: string; status: ContainerTask['status']; action: string }>("files.action", { params: { nodeId: String(nodeId) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
   uploadNodeFile: (nodeId: string, path: string, file: File, expectedVersion = '') =>
     operationRequest<ContainerTask>("files.upload", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }, {
-      headers: { 'Content-Type': 'application/octet-stream', 'Idempotency-Key': crypto.randomUUID(), 'X-File-Version': expectedVersion },
+      headers: { 'Content-Type': 'application/octet-stream', 'X-File-Version': expectedVersion },
       body: file,
     }, 30 * 60_000),
   createImagePullTask: (nodeId: string, payload: { imageReference: string; username?: string; password?: string }, idempotencyKey: string) =>
@@ -673,10 +685,6 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   uploadImage: (kind: 'avatar' | 'background', image: File) => {
-    const form = new FormData()
-    form.append('image', image)
-    return operationRequest<void>(`appearance.upload-${kind}`, {}, {
-      body: form,
-    })
+    return resolveOperation(`appearance.upload-${kind}`).then(({operation})=>operationRequest<void>(operation.name,{}, {body:operationUpload(operation,image)}))
   },
 }

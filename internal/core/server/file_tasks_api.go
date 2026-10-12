@@ -27,15 +27,7 @@ type pendingFileContent struct {
 	expires time.Time
 }
 
-type fileTaskRequest struct {
-	Action           string `json:"action"`
-	Path             string `json:"path"`
-	NewPath          string `json:"newPath,omitempty"`
-	ExpectedVersion  string `json:"expectedVersion,omitempty"`
-	DeleteConfirmed  bool   `json:"deleteConfirmed,omitempty"`
-	ConfirmationPath string `json:"confirmationPath,omitempty"`
-	Content          string `json:"content,omitempty"`
-}
+type fileTaskRequest = protocol.FileActionRequest
 
 func (s *Server) handleCreateFileTask(w http.ResponseWriter, r *http.Request, current *session, nodeID string) {
 	if r.Method != http.MethodPost {
@@ -43,16 +35,7 @@ func (s *Server) handleCreateFileTask(w http.ResponseWriter, r *http.Request, cu
 		return
 	}
 	var request fileTaskRequest
-	r.Body = http.MaxBytesReader(w, r.Body, 2*protocol.MaxTextFileBytes+8*1024)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
-		fileTaskBadRequest(w)
-		return
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		fileTaskBadRequest(w)
+	if !decodeJSON(w, r, &request) {
 		return
 	}
 	if !protocol.ValidVirtualFilePath(request.Path) {

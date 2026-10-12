@@ -402,7 +402,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		writeJSON(w, http.StatusOK, control.Describe())
+		catalog := control.Describe()
+		for i := range catalog.Operations {
+			if catalog.Operations[i].Name == "files.upload" {
+				catalog.Operations[i].Upload.MaxBytes = s.fileTransferLimit
+			}
+		}
+		writeJSON(w, http.StatusOK, catalog)
 		return
 	case "/api/v1/protocol":
 		if r.Method != http.MethodGet {

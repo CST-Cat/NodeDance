@@ -20,6 +20,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
+	"golang.org/x/term"
 )
 
 type connectionFlags struct {
@@ -44,14 +45,14 @@ func (f connectionFlags) client() (*control.Client, error) {
 func localOperations() []control.Operation {
 	result := []control.Operation{}
 	for _, item := range []struct{ name, desc string }{
-		{"core.serve", "Run Core; arguments are the same as nodedance serve"}, {"core.backup", "Back up Core to a new private archive"}, {"core.restore", "Restore Core to a new/empty directory"}, {"core.version", "Show Core version"},
-		{"agent.enroll", "Enroll root Agent; --token-stdin; stdin is never placed in process arguments"}, {"agent.recover", "Recover root Agent enrollment"}, {"agent.run", "Run root Agent"}, {"agent.install-systemd", "Install root Agent systemd service"}, {"agent.uninstall-systemd", "Remove managed Agent unit; preserve credentials"}, {"agent.validate-systemd-state", "Validate protected Agent credentials"}, {"agent.prepare-systemd-state", "Prepare root-owned Agent state"}, {"agent.validate-file-root", "Validate Agent file root"}, {"agent.version", "Show Agent version"},
+		{"client.update", "Update workflow: preflight, confirm, submit and observe using the connected Core"}, {"core.serve", "Run Core; arguments are the same as nodedance serve"}, {"core.backup", "Back up Core to a new private archive"}, {"core.restore", "Restore Core to a new/empty directory"}, {"core.version", "Show Core version"},
+		{"agent.enroll", "Enroll root Agent; --token-stdin; stdin is never placed in process arguments"}, {"agent.recover", "Recover root Agent enrollment"}, {"agent.run", "Run root Agent"}, {"agent.install-systemd", "Install root Agent systemd service"}, {"agent.uninstall-systemd", "Remove managed Agent unit; preserve credentials"}, {"agent.validate-systemd-state", "Validate protected Agent credentials"}, {"agent.prepare-systemd-state", "Prepare root-owned Agent state"}, {"agent.validate-file-root", "Validate Agent file root"}, {"agent.version", "Show Agent version"}, {"agent.tmux-version", "Show bundled Agent tmux version"},
 	} {
 		result = append(result, control.Operation{Name: item.name, Description: item.desc, Method: "LOCAL", Transport: "local", Parameters: []string{}, Query: []string{}, BodySchema: map[string]any{"type": "array", "items": map[string]string{"type": "string"}}})
 	}
 	return result
 }
-func allOperations() []control.Operation { return append(control.Operations(), localOperations()...) }
+func allOperations() []control.Operation { return terminalOperations(control.Describe()) }
 func localizedOperations(w io.Writer) []control.Operation {
 	list := allOperations()
 	for i := range list {
@@ -154,7 +155,13 @@ func decodeMap(value string, stdin io.Reader) (map[string]string, error) {
 func runControl(ctx context.Context, name string, args []string, lookup LookupEnv, stdin io.Reader, stdout, stderr io.Writer, version string) error {
 	for _, o := range localOperations() {
 		if o.Name == name {
+			if name == "client.update" {
+				return runUpdate(ctx, args, lookup, stdin, stdout, stderr)
+			}
 			if strings.HasPrefix(name, "agent.") {
+				if name == "agent.tmux-version" {
+					return runAgentCommand(ctx, append([]string{"--tmux-version"}, args...), stdin, stdout, stderr)
+				}
 				return runAgentCommand(ctx, append([]string{strings.TrimPrefix(name, "agent.")}, args...), stdin, stdout, stderr)
 			}
 			return RunWithInput(ctx, append([]string{strings.TrimPrefix(name, "core.")}, args...), lookup, stdin, stdout, stderr, version)
@@ -170,6 +177,9 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 	if name == "agents.enrollment" {
 		deploymentMethod = f.String("deployment-method", "", i18n.TextFor(stderr, "Agent deployment method: native or docker (overrides JSON body)"))
 	}
+	wait := f.Bool("wait", false, "observe accepted work until terminal status without resubmitting")
+	interactive := f.Bool("interactive", false, "use the same interactive terminal as TUI (terminal transport only)")
+	headers := f.String("headers", "", "operation headers as JSON, @file or -")
 	key := f.String("idempotency-key", "", i18n.TextFor(stderr, "stable key for task submission and retries"))
 	input := f.String("input", "", i18n.TextFor(stderr, "upload file or terminal JSONL input (- for stdin)"))
 	output := f.String("output", "", i18n.TextFor(stderr, "new download file (required for binary downloads)"))
@@ -181,7 +191,7 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 		return fmt.Errorf("unexpected arguments: %v", f.Args())
 	}
 	stdinUses := 0
-	for _, v := range []string{*params, *query, *body, *input} {
+	for _, v := range []string{*params, *query, *body, *input, *headers} {
 		if v == "-" {
 			stdinUses++
 		}
@@ -215,7 +225,11 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 		request["deploymentMethod"], _ = json.Marshal(*deploymentMethod)
 		b, _ = json.Marshal(request)
 	}
-	in := control.Input{Params: p, Query: q, Body: b, IdempotencyKey: *key, FileVersion: *fileVersion}
+	h, err := decodeMap(*headers, stdin)
+	if err != nil {
+		return fmt.Errorf("headers: %w", err)
+	}
+	in := control.Input{Params: p, Query: q, Body: b, IdempotencyKey: *key, FileVersion: *fileVersion, Headers: h}
 	client, err := connection.client()
 	if err != nil {
 		return err
@@ -236,7 +250,7 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 	if err != nil {
 		return err
 	}
-	if *input != "" && o.Transport != "upload" && o.Transport != "multipart" && name != "terminal.connect" && name != "terminal.open" {
+	if *input != "" && o.Transport != "upload" && o.Transport != "multipart" && !o.Duplex {
 		return errors.New("--input is supported only for uploads and terminal.connect")
 	}
 	if *output != "" && o.Transport != "download" {
@@ -253,45 +267,44 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 		defer file.Close()
 		upload = file
 	}
-	if o.Transport == "websocket" || o.Transport == "terminal" {
-		return streamJSONL(requestCtx, client, o, in, upload, stdout)
-	}
-	var download *os.File
-	if o.Transport == "download" {
-		if *output == "" {
-			return errors.New("download requires --output")
+	if *interactive {
+		if o.Transport != "terminal" || *input != "" {
+			return errors.New("interactive requires terminal.open and no input file")
 		}
-		download, err = os.OpenFile(*output, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		tty, ok := stdin.(*os.File)
+		if !ok || !term.IsTerminal(int(tty.Fd())) {
+			return errors.New("interactive terminal requires terminal stdin")
+		}
+		state, err := term.MakeRaw(int(tty.Fd()))
 		if err != nil {
 			return err
 		}
-		defer download.Close()
+		defer term.Restore(int(tty.Fd()), state)
+		return interactiveTerminal(requestCtx, client, in, tty, stdout)
 	}
-	var writer io.Writer
-	if download != nil {
-		writer = download
+	if *wait && o.Completion == nil {
+		return errors.New("Core does not expose completion observation for this operation")
 	}
-	result := client.Execute(requestCtx, o, in, upload, writer)
-	if download != nil {
-		if result.Error == "" {
-			if err = download.Sync(); err != nil {
-				result.Error = err.Error()
-			}
-			if err = download.Close(); err != nil {
-				result.Error = err.Error()
+	if o.Transport == "websocket" || o.Transport == "terminal" {
+		return streamJSONL(requestCtx, client, o, in, upload, stdout)
+	}
+	var observer func(control.Result)
+	if *wait {
+		first := true
+		observer = func(result control.Result) {
+			if first {
+				json.NewEncoder(stdout).Encode(result)
+				first = false
 			}
 		}
-		if result.Error != "" {
-			os.Remove(*output)
-		} else {
-			result.File = *output
-		}
 	}
+	result := executeFinite(requestCtx, client, catalog, o, in, upload, *output, *wait, observer)
 	if err = json.NewEncoder(stdout).Encode(result); err != nil {
 		return err
 	}
 	return result.Err()
 }
+
 func streamJSONL(ctx context.Context, client *control.Client, o control.Operation, in control.Input, input io.Reader, output io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -376,7 +389,7 @@ func streamJSONL(ctx context.Context, client *control.Client, o control.Operatio
 		if _, err = io.WriteString(output, compact.String()); err != nil {
 			return err
 		}
-		if streamID != "" || o.Name == "terminal.connect" {
+		if o.Duplex {
 			var message struct {
 				Frame protocol.TerminalFrame `json:"frame"`
 			}
