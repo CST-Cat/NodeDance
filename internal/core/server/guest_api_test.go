@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -148,6 +149,12 @@ func TestGuestProjectionAndAnonymousBoundaries(t *testing.T) {
 	}
 	if len(view.Nodes) != 1 || view.Nodes[0].Metrics["cpu.usage_percent"].Value == nil || *view.Nodes[0].Metrics["cpu.usage_percent"].Value != 48.5 || view.Nodes[0].History == nil || len(view.Nodes[0].History.Series) != 1 || view.Nodes[0].History.Series[0].Key != "cpu.usage_percent" || len(view.Probes) != 1 || view.Probes[0].Status != "unknown" {
 		t.Fatal(view)
+	}
+	// Carry the real administrator cookie through the exact anonymous route.
+	authenticatedRead := call("guest.display", control.Input{})
+	var authenticatedView guest.Display
+	if authenticatedRead.Err() != nil || json.Unmarshal(authenticatedRead.Data, &authenticatedView) != nil || !reflect.DeepEqual(view, authenticatedView) {
+		t.Fatal("administrator cookie expanded guest data", authenticatedRead)
 	}
 	preview := call("guest.preview", control.Input{})
 	if preview.Err() != nil {
