@@ -120,6 +120,32 @@ async function port() {
     response=page.waitForResponse(r=>r.url().endsWith('/api/v1/alerts/rules')&&r.request().method()==='POST')
     await ruleForm.locator('button[type=submit]').click();assert.equal((await response).status(),200,'Actual metric rule must be accepted')
 
+    let updateSubmissions=0,rollbacks=0
+    const updateJob={id:'audit-update',component:'core',current:'core-v0.1.12',target:'core-v0.1.13',status:'succeeded',stage:'complete',started:'2026-10-12T00:00:00Z',finished:'2026-10-12T00:00:01Z'}
+    await page.route('**/api/v1/updates/check?*',route=>route.fulfill({json:{component:'core',current:'core-v0.1.12',latest:'core-v0.1.13',available:true,compatible:true,configured:true,mode:'docker',release:{url:'https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.13',notes:'UI audit'}}}))
+    await page.route('**/api/v1/updates/status?*',route=>route.fulfill({json:{jobs:updateSubmissions?[updateJob]:[]}}))
+    await page.route('**/api/v1/updates/apply',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,version:'core-v0.1.13'});updateSubmissions++;return route.fulfill({json:updateJob})})
+    await page.route('**/api/v1/updates/rollback',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,jobId:'audit-update'});rollbacks++;return route.fulfill({json:updateJob})})
+    await page.getByRole('button',{name:'Updates',exact:true}).click()
+    const center=page.locator('.update-center')
+    await center.locator('.update-confirm .primary-button').waitFor()
+    assert.equal(await center.locator('input[type=checkbox]').count(),0,'Ordinary update must have no extra confirmation')
+    response=page.waitForResponse(r=>r.url().endsWith('/updates/apply'))
+    await center.locator('.update-confirm .primary-button').click();assert.equal((await response).status(),200)
+    assert.equal(updateSubmissions,1)
+    await center.locator('.update-job button').click()
+    assert.ok(await center.locator('.update-confirm .primary-button').isDisabled(),'Rollback still requires explicit confirmation')
+    await center.locator('input[type=checkbox]').check()
+    response=page.waitForResponse(r=>r.url().endsWith('/updates/rollback'))
+    await center.locator('.update-confirm .primary-button').click();await response;assert.equal(rollbacks,1)
+    for(const theme of ['light','dark'])for(const width of [390,1440]){
+      await page.setViewportSize({width,height:1000})
+      await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+      await page.waitForTimeout(350)
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Update layout must not overflow horizontally')
+      await page.screenshot({path:path.join(artifacts,`updates-${theme}-${width}.png`),fullPage:true})
+    }
+    await page.setViewportSize({width:1440,height:1000});await page.waitForTimeout(350)
     await page.getByRole('button',{name:'Operations',exact:true}).click();await select.selectOption('files.upload')
     for(const theme of ['light','dark'])for(const width of [390,1440]){
       await page.setViewportSize({width,height:1000})
@@ -130,7 +156,7 @@ async function port() {
       assert.ok(await page.locator('.operation-form').isVisible())
     }
     assert.deepEqual(pageErrors,[])
-    console.log(`Real Core/Web interface checks passed (${catalog.operations.length} discovered operations; multipart, empty fields, retry intent, version header, secrets, completion, metric rule; 4 layout snapshots).`)
+    console.log(`Real Core/Web interface checks passed (${catalog.operations.length} discovered operations; multipart, empty fields, retry intent, version header, secrets, completion, metric rule, direct update, confirmed rollback; 8 layout snapshots).`)
   }finally{
     if(browser)await browser.close()
     core.kill('SIGTERM')

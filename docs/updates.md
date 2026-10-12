@@ -12,21 +12,21 @@ The Web **Update center**, `nodedance update`, and TUI `updates.*` operations al
 export NODEDANCE_SERVER=https://nodes.example.com
 nodedance auth login --body @/private/login.json
 nodedance update --check
-nodedance update --yes
+nodedance update
 nodedance update --component agent --node-id NODE_UUID --check
-nodedance update --component agent --node-id NODE_UUID --yes
+nodedance update --component agent --node-id NODE_UUID
 nodedance update --status
 nodedance update --status --job-id JOB_ID
 nodedance update --rollback JOB_ID --yes
 ```
 
-不传 `--yes` 时，更新命令交互确认；`--check` 不执行更新。`--version core-vX.Y.Z` 或 `--component agent --version agent-vX.Y.Z` 固定目标正式版本。默认等待任务完成，服务重启期间自动重试进度查询；`--no-wait` 仅返回已接受的任务。若提交时连接中断，可用 stderr 输出的 `--idempotency-key KEY` 重试原请求，避免重复更新。Agent 进度和回滚命令也需传 `--component agent --node-id NODE_UUID`。
+`update` 默认直接更新到最新正式版本，无需额外确认；只有回滚会交互确认，`--yes` 可跳过回滚确认。`--check` 不执行更新。`--version core-vX.Y.Z` 或 `--component agent --version agent-vX.Y.Z` 固定目标正式版本。默认等待任务完成，服务重启期间自动重试进度查询；`--no-wait` 仅返回已接受的任务。若提交时连接中断，可用 stderr 输出的 `--idempotency-key KEY` 重试原请求，避免重复更新。Agent 进度和回滚命令也需传 `--component agent --node-id NODE_UUID`。
 
-Without `--yes`, the command asks for confirmation. `--check` is read-only. `--version` pins a published component tag. By default, the command waits for completion and retries progress reads during restarts; `--no-wait` returns the accepted job. Reuse the printed `--idempotency-key` when retrying an interrupted submission. Agent status and rollback commands also require the component and node ID.
+`update` directly applies the latest stable release without an extra confirmation. Only rollback asks for confirmation; `--yes` skips that rollback prompt. `--check` is read-only. `--version` pins a published component tag. By default, the command waits for completion and retries progress reads during restarts; `--no-wait` returns the accepted job. Reuse the printed `--idempotency-key` when retrying an interrupted submission. Agent status and rollback commands also require the component and node ID.
 
-Web 选择组件和节点，检查版本并阅读说明，勾选确认后更新。页面保留提交重试键并轮询持久化进度。TUI 从 Core 自动发现四项操作，使用同一请求 schema；`updates.apply` / `updates.rollback` 的请求需要 `confirm: true`。
+Web 选择组件和节点，检查版本并阅读说明，点击更新即执行；回滚才需要勾选确认。页面保留提交重试键并轮询持久化进度。TUI 从 Core 自动发现四项操作，使用同一请求 schema；`updates.apply` / `updates.rollback` 的请求需要 `confirm: true`。
 
-Web selects the component/node, checks the release, displays notes and requires confirmation before applying. It keeps an interrupted submission's retry key and polls durable progress. TUI discovers all four operations automatically and uses the same request schemas and confirmation requirement.
+Web selects the component/node, checks the release, displays notes and applies on clicking Update. Only rollback requires the confirmation checkbox. It keeps an interrupted submission's retry key and polls durable progress. TUI discovers all four operations automatically and uses the same request schemas and confirmation requirement.
 
 ## One-time supervisor setup / 首次配置更新控制服务
 

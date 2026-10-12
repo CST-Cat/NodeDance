@@ -23,7 +23,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	flags.SetOutput(stderr)
 	connection := addConnectionFlags(flags, lookup)
 	checkOnly := flags.Bool("check", false, "check the newest stable component release without updating")
-	yes := flags.Bool("yes", false, "confirm the update or rollback")
+	yes := flags.Bool("yes", false, "skip rollback confirmation")
 	component := flags.String("component", "core", "core or agent")
 	node := flags.String("node-id", "", "Agent node ID")
 	version := flags.String("version", "", "published component tag; default is newest stable")
@@ -116,11 +116,11 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	} else {
 		request.JobID = *rollback
 	}
-	if !*yes {
-		fmt.Fprint(stderr, "Apply update / rollback? [y/N] ")
+	if *rollback != "" && !*yes {
+		fmt.Fprint(stderr, "Roll back to the previous version and restore its data? [y/N] ")
 		line, err := bufio.NewReader(stdin).ReadString('\n')
 		if err != nil || !strings.EqualFold(strings.TrimSpace(line), "y") {
-			return errors.New("update cancelled")
+			return errors.New("rollback cancelled")
 		}
 	}
 	if *key == "" {

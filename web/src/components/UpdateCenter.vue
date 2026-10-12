@@ -28,7 +28,7 @@ async function refresh() {
  catch (e) { if (current === epoch) error.value = message(e) } finally { if (current === epoch) busy.value = false }
 }
 async function submit() {
- if (!confirmed.value) return
+ if (busy.value || !selected.value || (rollbackJob.value ? !confirmed.value : !check.value?.available || !check.value.configured || !check.value.compatible)) return
  busy.value = true; error.value = ''
  const action = rollbackJob.value ? 'rollback' : 'apply'
  const body = { ...query.value, confirm: true, ...(rollbackJob.value ? { jobId: rollbackJob.value } : { version: check.value?.latest }) }
@@ -68,8 +68,8 @@ onBeforeUnmount(() => { stopped = true; epoch++; if (timer) clearTimeout(timer) 
   </div>
   <div v-if="rollbackJob || check?.available && check.configured && check.compatible" class="update-confirm">
    <p>{{ rollbackJob ? t('updates.rollbackWarning') : t('updates.updateWarning') }}</p>
-   <label><input v-model="confirmed" type="checkbox"> {{ t('updates.confirm') }}</label>
-   <button class="primary-button" :disabled="busy || !confirmed" @click="submit">{{ rollbackJob ? t('updates.rollback') : t('updates.apply') }}</button>
+   <label v-if="rollbackJob"><input v-model="confirmed" type="checkbox"> {{ t('updates.confirm') }}</label>
+   <button class="primary-button" :disabled="busy || !!rollbackJob && !confirmed" @click="submit">{{ rollbackJob ? t('updates.rollback') : t('updates.apply') }}</button>
    <button class="secondary-button" v-if="rollbackJob" @click="rollbackJob = ''; confirmed = false">{{ t('updates.cancel') }}</button>
   </div>
  </div>

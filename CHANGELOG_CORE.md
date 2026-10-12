@@ -10,6 +10,7 @@
 
 ### English
 
+- Run ordinary Core/Agent updates directly without a second confirmation in CLI, TUI and Web. Reserve interactive confirmation and the CLI `--yes` option for rollback.
 - Expand the discovered Core operation contract with shared request schemas, upload fields and limits, allowed headers, response shapes and completion metadata. Reuse request types and structural validation across Core and terminal clients.
 - Give CLI and TUI shared operation dispatch, finite execution, local maintenance/update workflows, interactive and JSONL terminals, and task observation without repeating submissions. Generate and verify coverage for 113 remote operations and 15 local/workflow operations.
 - Fix Web multipart uploads, empty optional fields, metric catalog parsing, file version headers, uncertain-retry idempotency keys, credential masking and exact large-integer request values. Align enrollment defaults and support contract-driven completion observation.
@@ -17,6 +18,7 @@
 
 ### 简体中文
 
+- CLI、TUI、Web 的普通 Core／Agent 更新直接执行，不再要求二次确认；交互确认和 CLI `--yes` 仅用于回滚。
 - 扩展 Core 动态操作契约，统一请求结构、上传字段与限制、允许的请求头、响应结构和任务完成元数据；Core 与终端客户端共用请求类型及结构校验。
 - CLI、TUI 共用操作分发、有限请求执行、本地维护与更新流程、交互式及 JSONL 终端，并支持不重复提交的任务观察；生成并核对 113 项远程操作和 15 项本地维护／工作流的能力对照。
 - 修复 Web multipart 上传、可选空字段、指标目录解析、文件版本头、不确定重试的幂等键、敏感凭据显示及大整数请求精度；统一注册默认值，按契约观察任务完成。
