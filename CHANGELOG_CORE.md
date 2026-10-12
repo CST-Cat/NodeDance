@@ -4,6 +4,12 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.15]
+
+### English
+
 - Withdraw deleted probes and revoked nodes from warm guest caches immediately, allow disabling with unavailable selections, and reject malformed public queries. Add 438 real-browser adversarial checks across anonymous management, forged sessions, WebSockets, CSRF, stored HTML injection and bounded refresh storms.
 - Add opt-in guest entry on the login page, explicitly selected node/metric/history/service display, server-filtered public data, and shared CLI/TUI/Web publication settings with administrator preview. Keep all controls private and verify default denial, field isolation, immediate disable and light/dark/mobile behavior.
 
