@@ -120,6 +120,29 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   guestPrivateRequests.length=0;adminPage.on('request',trackGuest)
   releaseNodes();await adminPage.waitForTimeout(200);await adminPage.unroute('**/api/v1/nodes');adminPage.off('request',trackGuest)
   assert.deepEqual(guestPrivateRequests,[],'An unmounted node page must not start new private reads after entering guest mode')
+  // Grant creation and revocation must not start private follow-up reads
+  // after their host-management component has unmounted into guest mode.
+  for(const method of ['POST','DELETE']){
+    await adminPage.goto(base+'/#/host-management?tab=enrollment')
+    await adminPage.locator('.host-page form .primary-button').waitFor()
+    let releaseGrant,grantStarted
+    const heldGrant=new Promise(r=>releaseGrant=r),startedGrant=new Promise(r=>grantStarted=r)
+    const grantRoute='**/api/v1/agents/enrollment-grants**'
+    await adminPage.route(grantRoute,async route=>{
+      if(route.request().method()!==method){await route.continue();return}
+      const response=await route.fetch();assert.equal(response.status(),method==='POST'?201:204)
+      grantStarted();await heldGrant;await route.fulfill({response})
+    })
+    if(method==='POST')await adminPage.locator('.host-page form .primary-button').click()
+    else await adminPage.locator('.host-result button').first().click()
+    await startedGrant
+    await adminPage.evaluate(()=>{location.hash='/guest'});await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+    guestPrivateRequests.length=0;adminPage.on('request',trackGuest)
+    releaseGrant();await adminPage.waitForTimeout(500)
+    await adminPage.unroute(grantRoute);adminPage.off('request',trackGuest)
+    assert.deepEqual(guestPrivateRequests,[],`${method} grant completion must not read private data after guest entry`)
+    assert.equal(await adminPage.locator('#workspace-navigation').count(),0)
+  }
   await adminPage.goto(managementURL);await adminPage.locator('#detail-title').waitFor()
   const guestIcon=await adminPage.getByRole('button',{name:'Guest display',exact:true}).locator('svg path').getAttribute('d')
   const nodeIcon=await adminPage.getByRole('button',{name:'Nodes',exact:true}).locator('svg path').getAttribute('d')

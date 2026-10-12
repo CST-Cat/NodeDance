@@ -88,3 +88,7 @@ Web, CLI and TUI discover the same Core operation contract. Use the commands abo
 Enrollment grants expire, have a bounded use count and can be revoked; each enrolled Agent gets an independent device credential. Installers still pin a published `agent-v*` tag. Runtime and private state remain root-only, TLS verification stays enabled, and the existing file protections remain enforced. Automatic updates continue to use the installed updater with preflight, backup, health checks and rollback.
 
 OAuth/OIDC, two-factor authentication, themes and plugins are excluded from this change. Windows/macOS Agents are outside NodeDance's Linux product scope. Apply the rebuilt Core/Agent or publish a release through the existing workflows to run these changes; editing this checkout does not upgrade deployed services.
+
+Web batch command/probe forms share the generic operation intent store. An uncertain submission retains its retry key across reload or leaving the page; manually re-entering the same request reuses that key. Request bodies and scripts are not persisted. A successful submission clears its intent, so the next explicit submission can create new work.
+
+Web 批量命令／探测表单共用通用操作的执行意图存储。结果不确定时，刷新或离开页面仍保留重试键；手动重新填写同一请求后复用原键，不保存脚本和请求正文。成功提交会清除该意图，下一次明确提交可执行新任务。

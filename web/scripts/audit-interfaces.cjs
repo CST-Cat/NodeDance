@@ -242,6 +242,41 @@ async function port() {
       }
       await page.setViewportSize({width:1440,height:1000})
     }
+    // Specialized batch forms reuse the shared execution intent after a lost
+    // response and reload. Only a completed submission starts a fresh intent.
+    for(const [tab,name,route] of [['Batch scripts','commands.batch','**/api/v1/commands/batches'],['Multi-node probes','probes.batch','**/api/v1/probes/batch']]){
+      const batchKeys=[]
+      await page.route(route,async intercepted=>{
+        if(intercepted.request().method()!=='POST'){await intercepted.continue();return}
+        batchKeys.push(intercepted.request().headers()['idempotency-key'])
+        if(batchKeys.length===1)await intercepted.fulfill({status:503,body:'Simulated lost batch response'})
+        else await intercepted.fulfill({status:201,json:{id:'browser-batch-fixture',results:[]}})
+      })
+      const fillBatch=async()=>{
+        await page.getByRole('button',{name:'Host management',exact:true}).click()
+        await page.locator('.host-tabs').getByRole('button',{name:tab,exact:true}).click()
+        await page.locator('.host-check input').first().check()
+        if(name==='commands.batch'){
+          await page.locator('.contract-fields textarea').fill('printf isolated-browser-fixture')
+          await page.locator('.contract-fields label').filter({hasText:'Confirm root execution'}).locator('select').selectOption('true')
+        }
+        await page.locator('.host-page form .primary-button').waitFor({state:'visible'})
+      }
+      await fillBatch()
+      let batchResponse=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith(name==='commands.batch'?'/commands/batches':'/probes/batch'))
+      await page.locator('.host-page form .primary-button').click();assert.equal((await batchResponse).status(),503)
+      await page.locator('.host-error').filter({hasText:'Simulated lost batch response'}).waitFor()
+      await page.reload();await fillBatch()
+      batchResponse=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith(name==='commands.batch'?'/commands/batches':'/probes/batch'))
+      await page.locator('.host-page form .primary-button').click();assert.equal((await batchResponse).status(),201)
+      await page.locator('.host-page form .primary-button').waitFor()
+      await page.waitForFunction(()=>!document.querySelector('.host-page form .primary-button')?.disabled)
+      assert.equal(batchKeys[0],batchKeys[1],`${name} must retain uncertain execution identity across reload`)
+      batchResponse=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith(name==='commands.batch'?'/commands/batches':'/probes/batch'))
+      await page.locator('.host-page form .primary-button').click();await batchResponse
+      assert.notEqual(batchKeys[1],batchKeys[2],`${name} must permit a fresh execution after success`)
+      await page.unroute(route)
+    }
     // Real browser Back/Forward and reload must restore views and tabs without
     // repeating the mutations exercised earlier in this fixture.
     await page.getByRole('button',{name:'Alerts',exact:true}).click()

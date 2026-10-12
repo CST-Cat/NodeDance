@@ -392,9 +392,14 @@ func TestRootAgentHTTPHostControlEndToEnd(t *testing.T) {
 			if err != nil || string(contents) != "x" {
 				t.Fatal("batch child replayed", string(contents), err)
 			}
-			cleanup, err := s.agentHost(ctx, id.NodeID, protocol.HostRequest{Action: "commands.cleanup"})
-			if err != nil || cleanup.Cleanup == nil {
-				t.Fatal("cleanup operation unavailable", cleanup, err)
+			cleanupRequest := httptest.NewRequest("POST", "/api/v1/nodes/"+id.NodeID+"/commands/cleanup", nil)
+			cleanupResponse := httptest.NewRecorder()
+			if !s.handleHostAPI(cleanupResponse, cleanupRequest, &session{RemoteAddr: "127.0.0.1"}) || cleanupResponse.Code != 200 {
+				t.Fatal("cleanup API unavailable", cleanupResponse.Code, cleanupResponse.Body.String())
+			}
+			var cleanup protocol.HostResponse
+			if err := json.Unmarshal(cleanupResponse.Body.Bytes(), &cleanup); err != nil || cleanup.Cleanup == nil {
+				t.Fatal("cleanup API result", cleanup, err)
 			}
 			for {
 				state, lease, err := s.currentMetricsState(ctx, id.NodeID)
@@ -438,5 +443,31 @@ func TestAssetExpiryFiresWhileNodeIsOffline(t *testing.T) {
 	var count int
 	if err := s.store.DB.QueryRow(`SELECT count(*) FROM alerts WHERE status='active' AND rule_name='Renew subscription'`).Scan(&count); err != nil || count != 1 {
 		t.Fatal("expiry incorrectly suppressed by offline node", count, err)
+	}
+}
+
+// Exercise the authenticated HTTP entry, including CSRF and audit, without a
+// remote resource. An offline Agent should yield 503 after recording the action.
+func TestCommandCleanupHTTPAudit(t *testing.T) {
+	s := featureCore(t)
+	token, csrf := "cleanup-test-session", "cleanup-test-csrf"
+	now := s.now().UnixNano()
+	_, err := s.store.DB.Exec(`INSERT INTO browser_sessions(id,token_digest,csrf_digest,created_at,last_seen_at,user_agent,remote_addr) VALUES(?,?,?,?,?,?,?)`, "cleanup-session", auth.DigestToken(token), auth.DigestToken(csrf), now, now, "test", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("POST", "/api/v1/nodes/8d99ec14-437a-4442-924f-1d110d0a546e/commands/cleanup", nil)
+	r.Header.Set("Origin", "http://example.com")
+	r.Header.Set(csrfHeaderName, csrf)
+	r.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
+	r.AddCookie(&http.Cookie{Name: csrfCookieName, Value: csrf})
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != 503 || !strings.Contains(w.Body.String(), "Agent host control unavailable") {
+		t.Fatalf("cleanup HTTP: %d %s", w.Code, w.Body.String())
+	}
+	var action, outcome string
+	if err := s.store.DB.QueryRow(`SELECT action,outcome FROM audit_entries WHERE action='commands.cleanup'`).Scan(&action, &outcome); err != nil || outcome != "accepted" {
+		t.Fatalf("cleanup audit: %s %s %v", action, outcome, err)
 	}
 }

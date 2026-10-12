@@ -49,3 +49,7 @@ Backend regression tests warm the cache, delete a probe or revoke its Agent thro
 This is reproducible verification of the listed routes, inputs and browser flows, not proof that every possible vulnerability is absent. It does not measure distributed denial of service or test production network/TLS configuration. Previously delivered public data cannot be recalled, and requests already in flight when an administrator withdraws publication may finish with the scope they had already read.
 
 Generated JSON results and layout screenshots live under `.build/guest-audit/` for inspection and can be removed after use. No credentials are included in the report.
+
+Grant creation/revocation responses are held in the real browser while navigating to guest mode. Releasing them after host-management unmount must issue no private follow-up reads, including enrollment-grant listing.
+
+真实浏览器在创建／撤销入网授权请求未返回时切入游客模式；退出主机管理页面后释放响应，必须不再触发私有后续读取，包括入网授权列表。
