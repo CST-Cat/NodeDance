@@ -4,7 +4,7 @@ import type { BodySchema } from '../operations'
 const props = defineProps<{ schema?: BodySchema; values: Record<string, unknown>; omit?: string[] }>()
 function update(key: string, schema: BodySchema, event: Event) {
  const element = event.target as HTMLInputElement
- props.values[key] = schema.type === 'boolean' ? element instanceof HTMLInputElement && element.type === 'checkbox' ? element.checked : element.value === 'true' : schema.type === 'integer' || schema.type === 'number' ? Number(element.value) : schema.type === 'array' ? element.value.split('\n').map(x => x.trim()).filter(Boolean) : element.value
+ props.values[key] = schema.type === 'boolean' ? element instanceof HTMLInputElement && element.type === 'checkbox' ? element.checked : element.value === 'true' : schema.type === 'integer' ? /^-?\d+$/.test(element.value) ? BigInt(element.value) : element.value : schema.type === 'number' ? Number(element.value) : schema.type === 'array' ? element.value.split('\n').map(x => x.trim()).filter(Boolean) : element.value
 }
 function label(key: string) { return t(`host.field.${key}`) }
 </script>
@@ -16,7 +16,7 @@ function label(key: string) { return t(`host.field.${key}`) }
    <input v-else-if="field.type === 'boolean'" type="checkbox" :checked="!!values[key]" @change="update(key, field, $event)" />
    <textarea v-else-if="field.type === 'array'" rows="3" :value="Array.isArray(values[key]) ? (values[key] as string[]).join('\n') : ''" @input="update(key, field, $event)"></textarea>
    <textarea v-else-if="key === 'script'" rows="6" :value="String(values[key] ?? '')" spellcheck="false" @input="update(key, field, $event)"></textarea>
-   <input v-else :type="field.type === 'integer' || field.type === 'number' ? 'number' : 'text'" :step="field.type === 'number' ? 'any' : undefined" :value="values[key] ?? ''" :placeholder="field.format === 'date-time' ? '2026-12-01T00:00:00Z' : undefined" @input="update(key, field, $event)" />
+   <input v-else :type="field.type === 'number' ? 'number' : 'text'" :inputmode="field.type === 'integer' ? 'numeric' : undefined" :step="field.type === 'number' ? 'any' : undefined" :value="values[key] ?? ''" :placeholder="field.format === 'date-time' ? '2026-12-01T00:00:00Z' : undefined" @input="update(key, field, $event)" />
   </label>
  </div>
 </template>

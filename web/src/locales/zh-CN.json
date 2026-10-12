@@ -1399,5 +1399,12 @@
   "operations.stopWaiting": "停止观察（任务继续）",
   "operations.finishedStatus": "任务结束状态",
   "operations.rawJSON": "使用 JSON 请求体（可明确传入 null）",
-  "operations.endTerminal": "结束终端会话"
+  "operations.endTerminal": "结束终端会话",
+  "host.field.commandHistoryRetentionDays": "脚本历史保留天数",
+  "operations.pending": "已提交、待观察的任务",
+  "operations.resume": "恢复观察",
+  "operations.forget": "从此浏览器移除",
+  "operations.uncertain": "尚未确认响应的请求",
+  "operations.restoreKey": "恢复请求键",
+  "operations.restoreHint": "请重新输入相同请求内容或文件。恢复键不会提交任务；内容改变会被 Core 拒绝。"
 }

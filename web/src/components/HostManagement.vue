@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { t } from '../i18n'
 import { api, operationRequest, type AgentNode } from '../api'
-import { operationCatalog, type CoreOperation } from '../operations'
+import { operationCatalog, exactJSON, type CoreOperation } from '../operations'
 import ContractFields from './ContractFields.vue'
 const nodes = ref<AgentNode[]>([]), selected = ref<string[]>([]), nodeId = ref(''), operations = ref<CoreOperation[]>([])
 const tab = ref('settings'), busy = ref(false), error = ref(''), notice = ref('')
@@ -28,11 +28,11 @@ async function loadNode() {await perform(async()=>{
  if(results[1].status==='fulfilled')Object.assign(asset,results[1].value)
  const failed=results.find(r=>r.status==='rejected');if(failed?.status==='rejected')throw failed.reason
 })}
-async function save(name:string,body:Record<string,unknown>){await perform(async()=>{const data={...body};if(data.expiresAt==='')delete data.expiresAt;await operationRequest(name,{params:{nodeId:nodeId.value}},{body:JSON.stringify(data)});notice.value=t('host.saved')})}
-async function submitCommand(){await perform(async()=>{batchKey ||= crypto.randomUUID();currentBatch.value=await operationRequest<Batch>('commands.batch',{}, {headers:{'Idempotency-Key':batchKey},body:JSON.stringify({...command,nodeIds:selected.value})});batchKey='';batches.value=(await operationRequest<{batches:Batch[]}>('commands.batches')).batches})}
-async function submitProbe(){await perform(async()=>{probeKey ||= crypto.randomUUID();const body:Record<string,unknown>={...probe,nodeIds:selected.value};if(!['http','https'].includes(String(probe.kind)))delete body.expectedHttpStatus;currentBatch.value=await operationRequest<Batch>('probes.batch',{}, {headers:{'Idempotency-Key':probeKey},body:JSON.stringify(body)});probeKey='';notice.value=t('host.saved')})}
+async function save(name:string,body:Record<string,unknown>){await perform(async()=>{const data={...body};if(data.expiresAt==='')delete data.expiresAt;await operationRequest(name,{params:{nodeId:nodeId.value}},{body:exactJSON(data)});notice.value=t('host.saved')})}
+async function submitCommand(){await perform(async()=>{batchKey ||= crypto.randomUUID();currentBatch.value=await operationRequest<Batch>('commands.batch',{}, {headers:{'Idempotency-Key':batchKey},body:exactJSON({...command,nodeIds:selected.value})});batchKey='';batches.value=(await operationRequest<{batches:Batch[]}>('commands.batches')).batches})}
+async function submitProbe(){await perform(async()=>{probeKey ||= crypto.randomUUID();const body:Record<string,unknown>={...probe,nodeIds:selected.value};if(!['http','https'].includes(String(probe.kind)))delete body.expectedHttpStatus;currentBatch.value=await operationRequest<Batch>('probes.batch',{}, {headers:{'Idempotency-Key':probeKey},body:exactJSON(body)});probeKey='';notice.value=t('host.saved')})}
 async function inspectBatch(id:string,cancel=false){await perform(async()=>{currentBatch.value=await operationRequest<Batch>(cancel?'commands.batch-cancel':'commands.batch-status',{params:{batchId:id}})})}
-async function createGrant(){await perform(async()=>{grantResult.value=await operationRequest('agents.create-grant',{}, {body:JSON.stringify(grant)});grantList.value=(await operationRequest<{grants:Grant[]}>('agents.grants')).grants})}
+async function createGrant(){await perform(async()=>{grantResult.value=await operationRequest('agents.create-grant',{}, {body:exactJSON(grant)});grantList.value=(await operationRequest<{grants:Grant[]}>('agents.grants')).grants})}
 async function revokeGrant(id:string){await perform(async()=>{await operationRequest('agents.revoke-grant',{params:{grantId:id}});grantList.value=(await operationRequest<{grants:Grant[]}>('agents.grants')).grants})}
 onMounted(async()=>{await perform(async()=>{const [list,catalog,history,grants]=await Promise.all([api.nodes(),operationCatalog(),operationRequest<{batches:Batch[]}>('commands.batches'),operationRequest<{grants:Grant[]}>('agents.grants')]);nodes.value=list.nodes.filter(n=>!['pending','revoked'].includes(n.status));nodeId.value=nodes.value[0]?.nodeId??'';operations.value=catalog.operations;batches.value=history.batches;grantList.value=grants.grants});if(nodeId.value)await loadNode()})
 </script>

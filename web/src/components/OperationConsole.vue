@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { t } from '../i18n'
 import { operationRequest } from '../api'
-import { operationCatalog, operationURL, operationBody, operationUpload, schemaHasSecrets, completionInput, completionStatus, type CoreOperation } from '../operations'
+import { operationCatalog, operationURL, operationBody, exactJSON, operationUpload, schemaHasSecrets, completionInput, completionStatus, type CoreOperation, type OperationInput } from '../operations'
 import { requestIntent, intentKey } from '../operation-intent'
 
 const operations = ref<CoreOperation[]>([])
@@ -15,6 +15,25 @@ const requestHeaders = reactive<Record<string,string>>({})
 const rawBody = ref('')
 const rawMode = ref(false)
 const waitForCompletion = ref(false)
+interface PendingObservation { operation:string; name:string; input:OperationInput }
+const pendingObservations=ref<PendingObservation[]>([])
+const observationStorage='nodedance.pending-observations'
+interface PendingSubmission {operation:string;key:string;input:OperationInput}
+const pendingSubmissions=ref<PendingSubmission[]>([])
+const submissionStorage='nodedance.pending-submissions'
+function saveSubmissions(){try{sessionStorage.setItem(submissionStorage,JSON.stringify(pendingSubmissions.value.slice(-100)))}catch{}}
+function forgetSubmission(item:PendingSubmission){pendingSubmissions.value=pendingSubmissions.value.filter(v=>v.operation!==item.operation||v.key!==item.key);saveSubmissions()}
+function rememberSubmission(item:PendingSubmission){if(Object.keys({...item.input.params,...item.input.query}).some(k=>/ticket|token|password|secret|credential/i.test(k)))return;forgetSubmission(item);pendingSubmissions.value.push(item);saveSubmissions()}
+async function restoreSubmission(item:PendingSubmission){selected.value=item.operation;await nextTick();Object.assign(params,item.input.params);Object.assign(query,item.input.query);requestHeaders['Idempotency-Key']=item.key;lastKey='';error.value=t('operations.restoreHint')}
+
+function saveObservations(){try{sessionStorage.setItem(observationStorage,JSON.stringify(pendingObservations.value.slice(-100)))}catch{}}
+function observationKey(item:PendingObservation){return item.operation+JSON.stringify(item.input)}
+function forgetObservation(item:PendingObservation){pendingObservations.value=pendingObservations.value.filter(v=>observationKey(v)!==observationKey(item));saveObservations()}
+function rememberObservation(item:PendingObservation){
+ if(Object.keys({...item.input.params,...item.input.query}).some(k=>/ticket|token|password|secret|credential/i.test(k)))return
+ forgetObservation(item);pendingObservations.value.push(item);saveObservations()
+}
+
 let lastIntent = '', lastKey = ''
 let requestAbort: AbortController | undefined
 const file = ref<File>()
@@ -44,7 +63,7 @@ watch(selected, () => {
 })
 watch(operation, current=>{for(const [key,field] of Object.entries(current?.bodySchema?.properties ?? {})) if(field.default!==undefined)values[key]=field.type==='string'?String(field.default):JSON.stringify(field.default)})
 function append(value: unknown) {
-  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+  const text = typeof value === 'string' ? value : exactJSON(value)
   output.value = (output.value + text + '\n').slice(-262144)
 }
 async function execute() {
@@ -66,6 +85,7 @@ async function execute() {
       if (!headers['Idempotency-Key'] || (signature !== lastIntent && headers['Idempotency-Key'] === lastKey)) headers['Idempotency-Key'] = intentKey(signature)
       requestHeaders['Idempotency-Key'] = headers['Idempotency-Key']!
       lastIntent = signature; lastKey = headers['Idempotency-Key']!
+      rememberSubmission({operation:current.name,key:lastKey,input:request})
     }
     if(generation !== revision)return
     const controller = new AbortController()
@@ -104,33 +124,45 @@ async function execute() {
     } else {
       const result = await operationRequest<unknown>(current.name, request, { body: requestBody, headers, signal: controller.signal }, current.transport === 'upload' ? 1800000 : 60000)
       if (generation !== revision) return
+      if(current.requiresIdempotencyKey)forgetSubmission({operation:current.name,key:headers['Idempotency-Key']!,input:request})
       if (result instanceof Blob) {
         const url = URL.createObjectURL(result), link = document.createElement('a')
         link.href = url; link.download = (query.path || current.name).split('/').pop()!; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
         append(t('operations.downloaded'))
       } else {
         append(result ?? t('operations.completed'))
-        if (waitForCompletion.value && current.completion) {
-          const follow = completionInput(current,request,jsonBody,result)
-          while (generation === revision) {
-            let observed: unknown
-            try { observed = await operationRequest(follow.name,follow.input,{signal:controller.signal}) }
-            catch(reason){if(controller.signal.aborted)throw reason; if(reason && typeof reason==='object' && 'status' in reason && Number(reason.status)<500)throw reason; await new Promise(resolve=>setTimeout(resolve,1000)); continue}
-            if(generation !== revision)return
-            append(observed)
-            const status=completionStatus(current,observed)
-            if(current.completion.terminalStatuses.includes(status)) {
-              if(!current.completion.successStatuses.includes(status))throw new Error(`${t('operations.finishedStatus')}: ${status}`)
-              break
-            }
-            await new Promise(resolve=>setTimeout(resolve,1000))
-          }
+        if (current.completion) {
+          const follow=completionInput(current,request,jsonBody,result)
+          const pending={operation:current.name,...follow};if(!current.completion.terminalStatuses.includes(completionStatus(current,result)))rememberObservation(pending)
+          if(waitForCompletion.value)await observe(current,pending,generation,controller)
         }
       }
     }
   } catch (reason) { if (generation === revision) error.value = reason instanceof Error ? reason.message : String(reason) }
   finally { if(generation === revision) busy.value = false }
 }
+async function observe(current:CoreOperation,pending:PendingObservation,generation:number,controller:AbortController){
+ const follow=operations.value.find(o=>o.name===pending.name)
+ if(!follow||!['GET','HEAD'].includes(follow.method))throw new Error('Completion must observe a discovered read operation')
+ while(generation===revision){
+  let observed:unknown
+  try{observed=await operationRequest(pending.name,pending.input,{signal:controller.signal})}
+  catch(reason){if(controller.signal.aborted)throw reason;if(reason&&typeof reason==='object'&&'status'in reason&&Number(reason.status)<500)throw reason;await new Promise(resolve=>setTimeout(resolve,1000));continue}
+  if(generation!==revision)return
+  append(observed)
+  const status=completionStatus(current,observed)
+  if(current.completion!.terminalStatuses.includes(status)){forgetObservation(pending);if(!current.completion!.successStatuses.includes(status))throw new Error(`${t('operations.finishedStatus')}: ${status}`);return}
+  await new Promise(resolve=>setTimeout(resolve,1000))
+ }
+}
+async function resumeObservation(pending:PendingObservation){
+ if(busy.value)return
+ const current=operations.value.find(o=>o.name===pending.operation)
+ if(!current?.completion){error.value='Core no longer offers this completion contract';return}
+ const generation=++revision;const controller=new AbortController();requestAbort=controller;busy.value=true;error.value='';output.value=''
+ try{await observe(current,pending,generation,controller)}catch(reason){if(generation===revision)error.value=String(reason)}finally{if(generation===revision)busy.value=false}
+}
+
 function send() {
   try {
     if (!socket || socket.readyState !== WebSocket.OPEN) return
@@ -146,7 +178,9 @@ function newExecution() {
   else requestHeaders['Idempotency-Key']=crypto.randomUUID()
   lastKey=requestHeaders['Idempotency-Key']!
 }
-onMounted(async () => { try { operations.value = (await operationCatalog()).operations } catch (reason) { error.value = String(reason) } })
+onMounted(async () => { try { operations.value = (await operationCatalog()).operations
+ try{const records=JSON.parse(sessionStorage.getItem(submissionStorage)??'[]');if(Array.isArray(records))pendingSubmissions.value=records.slice(-100).filter(v=>v&&typeof v.operation==='string'&&typeof v.key==='string'&&v.key.length<=200&&v.input&&typeof v.input==='object')}catch{}
+ try{const items=JSON.parse(sessionStorage.getItem(observationStorage)??'[]');if(Array.isArray(items))pendingObservations.value=items.slice(-100).filter(v=>v&&typeof v.operation==='string'&&typeof v.name==='string'&&v.input&&typeof v.input==='object')}catch{} } catch (reason) { error.value = String(reason) } })
 onBeforeUnmount(disconnect)
 </script>
 
@@ -154,6 +188,8 @@ onBeforeUnmount(disconnect)
   <section class="panel operation-console">
     <h2>{{ t('nav.operations') }}</h2>
     <p class="muted">{{ t('operations.description') }}</p>
+    <div v-if="pendingSubmissions.length" class="pending-observations"><p class="muted">{{ t('operations.uncertain') }}</p><div v-for="item in pendingSubmissions" :key="item.operation+item.key"><span>{{ item.operation }} · {{ Object.values({ ...item.input.params, ...item.input.query }).join(' / ') }}</span><button type="button" :disabled="busy" @click="restoreSubmission(item)">{{ t('operations.restoreKey') }}</button><button type="button" :disabled="busy" @click="forgetSubmission(item)">{{ t('operations.forget') }}</button></div></div>
+    <div v-if="pendingObservations.length" class="pending-observations"><p class="muted">{{ t('operations.pending') }}</p><div v-for="item in pendingObservations" :key="observationKey(item)"><span>{{ item.operation }} · {{ Object.values({ ...item.input.params, ...item.input.query }).join(' / ') }}</span> <button type="button" :disabled="busy" @click="resumeObservation(item)">{{ t('operations.resume') }}</button> <button type="button" :disabled="busy" @click="forgetObservation(item)">{{ t('operations.forget') }}</button></div></div>
     <div class="operation-layout">
       <aside>
         <input v-model="filter" type="search" :placeholder="t('operations.search')" :aria-label="t('operations.search')" />
@@ -209,4 +245,8 @@ button:disabled { opacity: .55; cursor: default; }
 .check-row { flex-direction:row; align-items:center; }.check-row input { width:18px; min-height:18px; }small { color:var(--muted); font-weight:400; line-height:1.6; }
 pre { max-height: 600px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); background: var(--surface-soft); color: var(--text); padding: 18px; border-radius:var(--radius-card); font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
 @media (max-width: 700px) { .operation-console { padding: 18px; } .operation-layout { grid-template-columns: 1fr; gap: 20px; } aside select { min-height: 170px; height: 170px; } }
+</style>
+
+<style scoped>
+.pending-observations{display:grid;gap:8px;margin-block:16px}.pending-observations>div{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.pending-observations span{flex-basis:100%;overflow-wrap:anywhere}
 </style>

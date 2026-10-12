@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -264,12 +265,14 @@ func TestRootAgentHTTPHostControlEndToEnd(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			var live atomic.Pointer[Server]
+			live.Store(s)
 			host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/ws/v1/agent" {
 					http.Error(w, "WebSocket unavailable", 502)
 					return
 				}
-				s.ServeHTTP(w, r)
+				live.Load().ServeHTTP(w, r)
 			}))
 			defer host.Close()
 			dir := t.TempDir()
@@ -334,6 +337,64 @@ func TestRootAgentHTTPHostControlEndToEnd(t *testing.T) {
 			retry, err := s.agentHost(ctx, id.NodeID, req)
 			if err != nil || retry.Job == nil || retry.Job.ID != jobID {
 				t.Fatal("HTTP command retry lost job", err)
+			}
+			batchMarker := filepath.Join(dir, "batch-marker")
+			batchSpec := protocol.CommandSpec{Script: fmt.Sprintf("printf x >> '%s'", batchMarker), TimeoutSeconds: 3, Confirm: true}
+			batchRequest := protocol.BatchCommand{NodeIDs: []string{id.NodeID}, Script: batchSpec.Script, TimeoutSeconds: 3, Confirm: true}
+			batch, err := s.beginHostBatch(ctx, "lost-batch-response", "command", batchRequest, batchRequest.NodeIDs)
+			if err != nil {
+				t.Fatal(err)
+			}
+			child, err := s.agentHost(ctx, id.NodeID, protocol.HostRequest{Action: "commands.submit", Command: &batchSpec, IdempotencyKey: batchNodeKey(batch.ID, id.NodeID)})
+			if err != nil || child.Job == nil {
+				t.Fatal("batch child not accepted", err)
+			}
+			// Leave results_json empty, then restart Core before it records
+			// the accepted child identity. Observation must recover it.
+			dataDir := s.store.Dir
+			s.Close()
+			s, err = New("restarted", Options{DataDir: dataDir, Development: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			live.Store(s)
+			for s.agentConnectionForNode(id.NodeID) == nil {
+				select {
+				case <-ctx.Done():
+					t.Fatal("Agent did not reconnect", ctx.Err())
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+			for {
+				request := httptest.NewRequest("GET", "/api/v1/commands/batches/"+batch.ID, nil)
+				response := httptest.NewRecorder()
+				if !s.handleHostBatchAPI(response, request, &session{}) || response.Code != 200 {
+					t.Fatal("batch recovery", response.Code, response.Body.String())
+				}
+				var recovered hostBatch
+				if err := json.Unmarshal(response.Body.Bytes(), &recovered); err != nil {
+					t.Fatal(err)
+				}
+				if len(recovered.Results) == 1 && recovered.Results[0].Job != nil && recovered.Results[0].Job.Status == "succeeded" {
+					if recovered.Results[0].JobID != child.Job.ID {
+						t.Fatal("child identity changed")
+					}
+					break
+				}
+				select {
+				case <-ctx.Done():
+					t.Fatal("batch result not recovered")
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+			contents, err := os.ReadFile(batchMarker)
+			if err != nil || string(contents) != "x" {
+				t.Fatal("batch child replayed", string(contents), err)
+			}
+			cleanup, err := s.agentHost(ctx, id.NodeID, protocol.HostRequest{Action: "commands.cleanup"})
+			if err != nil || cleanup.Cleanup == nil {
+				t.Fatal("cleanup operation unavailable", cleanup, err)
 			}
 			for {
 				state, lease, err := s.currentMetricsState(ctx, id.NodeID)

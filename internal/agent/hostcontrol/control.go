@@ -4,6 +4,7 @@ package hostcontrol
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -32,6 +33,8 @@ type Manager struct {
 	ctx      context.Context
 	running  map[string]context.CancelFunc
 	wg       sync.WaitGroup
+	archive  *sql.DB
+	history  map[string]protocol.CommandJob
 }
 
 func Open(ctx context.Context, dir string) (*Manager, error) {
@@ -39,7 +42,13 @@ func Open(ctx context.Context, dir string) (*Manager, error) {
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	m := &Manager{cancel: cancel, settings: protocol.DefaultAgentSettings(), dir: dir, ctx: ctx, running: map[string]context.CancelFunc{}}
+	opened := false
+	defer func() {
+		if !opened {
+			cancel()
+		}
+	}()
+	m := &Manager{cancel: cancel, settings: protocol.DefaultAgentSettings(), dir: dir, ctx: ctx, running: map[string]context.CancelFunc{}, history: map[string]protocol.CommandJob{}}
 	err := localstate.Read(filepath.Join(dir, "settings.json"), &m.settings)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
@@ -50,6 +59,15 @@ func Open(ctx context.Context, dir string) (*Manager, error) {
 	if err := localstate.Directory(filepath.Join(dir, "commands")); err != nil {
 		return nil, err
 	}
+	if err := m.openArchive(); err != nil {
+		cancel()
+		return nil, err
+	}
+	defer func() {
+		if !opened {
+			m.archive.Close()
+		}
+	}()
 	files, err := filepath.Glob(filepath.Join(dir, "commands", "*.json"))
 	if err != nil {
 		return nil, err
@@ -68,7 +86,15 @@ func Open(ctx context.Context, dir string) (*Manager, error) {
 				return nil, err
 			}
 		}
+		j.Output = ""
+		m.history[j.ID] = j
 	}
+	if _, err := m.cleanupLocked(time.Now()); err != nil {
+		return nil, err
+	}
+	opened = true
+	m.wg.Add(1)
+	go m.historyLoop()
 	return m, nil
 }
 func (m *Manager) Settings() protocol.AgentSettings {
@@ -91,6 +117,9 @@ func (m *Manager) Close() {
 	}
 	m.mu.Unlock()
 	m.wg.Wait()
+	if m.archive != nil {
+		m.archive.Close()
+	}
 }
 func (m *Manager) Handle(req protocol.HostRequest) protocol.HostResponse {
 	fail := func(status int, e error) protocol.HostResponse {
@@ -136,7 +165,7 @@ func (m *Manager) Handle(req protocol.HostRequest) protocol.HostResponse {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		var j protocol.CommandJob
-		if e := localstate.Read(m.jobPath(req.JobID), &j); e != nil {
+		if e := m.readJob(req.JobID, &j); e != nil {
 			return fail(404, errors.New("command job not found"))
 		}
 		if req.Action == "commands.cancel" {
@@ -145,17 +174,45 @@ func (m *Manager) Handle(req protocol.HostRequest) protocol.HostResponse {
 			}
 		}
 		return protocol.HostResponse{Status: 200, Job: &j}
+	case "commands.cleanup":
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		result, err := m.cleanupLocked(time.Now())
+		if err != nil {
+			return fail(500, err)
+		}
+		return protocol.HostResponse{Status: 200, Cleanup: &result}
 	case "commands.list":
 		m.mu.Lock()
 		defer m.mu.Unlock()
-		files, _ := filepath.Glob(filepath.Join(m.dir, "commands", "*.json"))
-		jobs := []protocol.CommandJob{}
-		for _, f := range files {
+		jobs := make([]protocol.CommandJob, 0, len(m.history))
+		for _, j := range m.history {
+			j.Output = ""
+			jobs = append(jobs, j)
+		}
+		rows, err := m.archive.Query("SELECT job_json FROM command_archive ORDER BY started_at DESC LIMIT 100")
+		if err != nil {
+			return fail(500, err)
+		}
+		for rows.Next() {
+			var raw string
+			if err := rows.Scan(&raw); err != nil {
+				rows.Close()
+				return fail(500, err)
+			}
 			var j protocol.CommandJob
-			if localstate.Read(f, &j) == nil {
-				j.Output = ""
+			if err := json.Unmarshal([]byte(raw), &j); err != nil {
+				rows.Close()
+				return fail(500, err)
+			}
+			if _, exists := m.history[j.ID]; !exists {
 				jobs = append(jobs, j)
 			}
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return fail(500, err)
 		}
 		sort.Slice(jobs, func(i, j int) bool { return jobs[i].StartedAt.After(jobs[j].StartedAt) })
 		if len(jobs) > 100 {
@@ -184,8 +241,7 @@ func (m *Manager) submit(req protocol.HostRequest) (protocol.CommandJob, error) 
 	if len(req.IdempotencyKey) < 8 || len(req.IdempotencyKey) > 128 {
 		return protocol.CommandJob{}, errors.New("Idempotency-Key must contain 8..128 bytes")
 	}
-	sum := sha256.Sum256([]byte(req.IdempotencyKey))
-	id := hex.EncodeToString(sum[:])
+	id := protocol.CommandJobID(req.IdempotencyKey)
 	data, _ := json.Marshal(req.Command)
 	digest := sha256.Sum256(data)
 	hash := hex.EncodeToString(digest[:])
@@ -198,7 +254,7 @@ func (m *Manager) submit(req protocol.HostRequest) (protocol.CommandJob, error) 
 		return protocol.CommandJob{}, errors.New("Agent is shutting down")
 	}
 	var j protocol.CommandJob
-	if err := localstate.Read(m.jobPath(id), &j); err == nil {
+	if err := m.readJob(id, &j); err == nil {
 		if j.RequestHash != hash {
 			return j, errors.New("idempotency key was used for a different command")
 		}
@@ -209,9 +265,13 @@ func (m *Manager) submit(req protocol.HostRequest) (protocol.CommandJob, error) 
 	if len(m.running) >= 4 {
 		return j, errors.New("Agent command concurrency limit reached")
 	}
-	files, _ := filepath.Glob(filepath.Join(m.dir, "commands", "*.json"))
-	if len(files) >= 10000 {
-		return j, errors.New("command history limit reached")
+	if len(m.history) >= maxCommandHistoryFiles {
+		if _, err := m.cleanupLocked(time.Now()); err != nil {
+			return j, err
+		}
+	}
+	if len(m.history) >= maxCommandHistoryFiles {
+		return j, errors.New("command history is occupied by unresolved work")
 	}
 	j = protocol.CommandJob{ID: id, Status: "running", StartedAt: time.Now().UTC(), RequestHash: hash}
 	if err := localstate.Write(m.jobPath(id), j); err != nil {
@@ -219,6 +279,7 @@ func (m *Manager) submit(req protocol.HostRequest) (protocol.CommandJob, error) 
 	}
 	ctx, cancel := context.WithTimeout(m.ctx, time.Duration(req.Command.TimeoutSeconds)*time.Second)
 	m.running[id] = cancel
+	m.history[id] = j
 	m.wg.Add(1)
 	script := req.Command.Script
 	go func() { defer m.wg.Done(); defer cancel(); m.execute(ctx, j, script) }()
@@ -294,9 +355,13 @@ func (m *Manager) execute(ctx context.Context, j protocol.CommandJob, script str
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := localstate.Write(m.jobPath(j.ID), j); err != nil {
+		j.Status = "unknown"
+		j.Error = "command executed but result persistence failed; inspect before issuing a new command"
 		fmt.Fprintln(os.Stderr, "could not persist command result")
 	}
 	delete(m.running, j.ID)
+	j.Output = ""
+	m.history[j.ID] = j
 }
 
 // Automatic updates use the installed supervisor and the published agent tag

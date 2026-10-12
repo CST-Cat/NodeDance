@@ -312,22 +312,33 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 		}
 
 		var upload io.Reader
-		var uploadFile *os.File
+		var closeUpload func()
 		outputPath := ""
 		if o.Transport == "upload" || o.Transport == "multipart" {
-			value, e := prompt("Input file", false)
+			value, e := prompt("Input file or FIFO path; - for inline content", false)
 			if e != nil {
 				return e
 			}
-			uploadFile, err = os.Open(value)
-			if err == nil {
-				upload = uploadFile
+			if value == "-" {
+				value, err = prompt("Upload content as JSON string (or @file)", false)
+				if err == nil {
+					var raw []byte
+					raw, err = readValue(value, stdin)
+					var content string
+					if err == nil {
+						err = json.Unmarshal(raw, &content)
+					}
+					upload = strings.NewReader(content)
+					closeUpload = func() {}
+				}
+			} else {
+				upload, closeUpload, err = uploadInput(value, stdin)
 			}
 			if o.Transport == "upload" {
 				value, e = prompt("Expected file version (optional)", false)
 				if e != nil {
-					if uploadFile != nil {
-						uploadFile.Close()
+					if closeUpload != nil {
+						closeUpload()
 					}
 					return e
 				}
@@ -340,8 +351,8 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 		if err != nil {
 			write(tr("Error: ") + err.Error() + "\n")
 			err = nil
-			if uploadFile != nil {
-				uploadFile.Close()
+			if closeUpload != nil {
+				closeUpload()
 			}
 			prompt("Enter to return", false)
 			continue
@@ -478,8 +489,8 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 			// Never echo a request body: it can contain passwords and private keys.
 		}
 		cancel()
-		if uploadFile != nil {
-			uploadFile.Close()
+		if closeUpload != nil {
+			closeUpload()
 		}
 		if observed {
 			continue

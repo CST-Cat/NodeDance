@@ -4,7 +4,11 @@
 
 ### English
 
+- Bound JSON/transfer body reads and concurrent requests; preserve precise integer inputs, stream uploads, response schemas and byte-bound headers across the discovered interfaces. Recover batch observation and browser request keys without resubmission; retain uncertain batches and verify root/Docker fault recovery plus a 100-node, 10-minute simulated soak.
+
 ### 简体中文
+
+- 限制请求正文读取时间及并发数，统一整数精度、流式上传、响应结构和请求头字节限制；支持批次观察及浏览器请求键恢复且不重复提交，保留不确定批次；验证 root／Docker 故障恢复及 100 模拟节点 10 分钟运行。
 
 ## [0.1.13]
 

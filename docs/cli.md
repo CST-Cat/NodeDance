@@ -200,6 +200,14 @@ The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus disco
 
 ## Agent monitoring and fleet operations
 
-The connected Core now exposes `agents.settings/configure/diagnostics`, `commands.submit/list/get/cancel`, `commands.batch/batches/batch-status/batch-cancel`, `probes.batch/quality`, `metrics.catalog`, `nodes.asset/save-asset` and `agents.create-grant/grants/revoke-grant`. They appear automatically in the CLI catalog, TUI operation browser and Web operation console. Use `nodedance describe OPERATION` for the current request schema. Root scripts require `confirm:true` and an idempotency key; accepted commands must be polled to completion. Reuse the same key after an uncertain response to avoid repeating execution. The Web Host management screen adds forms for the same operations.
+The connected Core now exposes `agents.settings/configure/diagnostics`, `commands.submit/list/get/cancel/cleanup`, `commands.batch/batches/batch-status/batch-cancel`, `probes.batch/quality`, `metrics.catalog`, `nodes.asset/save-asset` and `agents.create-grant/grants/revoke-grant`. They appear automatically in the CLI catalog, TUI operation browser and Web operation console. Use `nodedance describe OPERATION` for the current request schema. Root scripts require `confirm:true` and an idempotency key; accepted commands must be polled to completion. Reuse the same key after an uncertain response to avoid repeating execution. The Web Host management screen adds forms for the same operations.
 
 See [Agent capabilities](agent-capabilities.md) for runnable examples, shared registration, ICMP quality, billing traffic, GPU requirements and root state protections.
+
+### Exact inputs and recovery / 精确输入与恢复
+
+Integer request and response fields use their published native bounds. Web forms retain int64/uint64 values exactly, including `18446744073709551615`; request headers publish byte limits, including the Agent command/update key range of 8–128 bytes. CLI `--input -` reads uploads directly from stdin, and both CLI and TUI accept regular files or FIFO paths. In TUI, an upload input of `-` prompts for a JSON string or `@file`; use a file/FIFO for arbitrary binary content. Both presentations use the same executor and server transfer limits.
+
+Web Operations records pending observations and uncertain request keys in tab session storage. Refreshing can resume the discovered read operation or restore the original key. It stores no request bodies, uploaded files or credentials; restoring a key requires re-entering the original input. Resuming observation never submits the task again. Closing the tab clears these records; remote job/batch status remains accessible through the Core operation contract.
+
+整数按 Core 公布的原生范围验证，Web 保留 int64／uint64 的完整精度。CLI 上传支持 `--input -` 标准输入，CLI／TUI 都支持普通文件与 FIFO。TUI 输入 `-` 后可提供 JSON 字符串或 `@file`；任意二进制内容使用文件／FIFO。Web 操作台在标签页会话中保留待观察任务和不确定请求的原始键，不保存请求正文、文件或凭据；刷新后可恢复键或继续读取任务状态，观察不会重新提交。命令历史默认保留 90 天，可通过 Agent 设置调整；过期后再次使用旧键可能重新执行，因此重试应在保留窗口内使用原始键和相同输入。

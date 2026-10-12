@@ -93,6 +93,14 @@ async function port() {
     response=page.waitForResponse(r=>r.url().endsWith('/commands'));await execute();await response
     assert.notEqual(commands[2],commands[1],'Explicit new execution must obtain a new key')
 
+    await page.reload();await page.getByRole('button',{name:'Operations',exact:true}).click()
+    await page.locator('.pending-observations button').filter({hasText:'Restore request key'}).last().click()
+    assert.equal(await select.inputValue(),'commands.submit')
+    assert.equal(await field('nodeId').inputValue(),node)
+    await field('script').fill('true');await field('timeoutSeconds').fill('60');await field('confirm').selectOption('true')
+    response=page.waitForResponse(r=>r.url().endsWith('/commands'));await execute();await response
+    assert.equal(commands[3],commands[2],'Reload must restore the uncertain execution key')
+
     await select.selectOption('files.upload');await field('nodeId').fill(node);await field('path').fill('/audit.txt');await field('X-File-Version').fill('observed-version')
     await form.locator('input[type=file]').setInputFiles({name:'audit.txt',mimeType:'text/plain',buffer:Buffer.from('audit')})
     let version
@@ -109,6 +117,21 @@ async function port() {
     await select.selectOption('future.submit');await field('revision').fill('18446744073709551615');await form.locator('input[type=checkbox]').last().check();await execute()
     await page.waitForFunction(()=>document.querySelector('[data-testid=operation-result]')?.textContent.includes('succeeded'))
     assert.equal(submissions,1);assert.equal(polls,2,'Observation must not repeat submission')
+
+    await form.locator('input[type=checkbox]').last().uncheck();await execute()
+    await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem('nodedance.pending-observations')||'[]').length===1)
+    await page.reload();await page.getByRole('button',{name:'Operations',exact:true}).click()
+    await page.getByRole('button',{name:'Resume observation',exact:true}).click()
+    await page.waitForFunction(()=>document.querySelector('[data-testid=operation-result]')?.textContent.includes('succeeded'))
+    assert.equal(submissions,2,'Reload observation must never resubmit')
+
+    const assetResponse=await context.request.get(base+`/api/v1/nodes/${node}/asset`)
+    const asset=await assetResponse.json();asset.trafficLimitBytes=0
+    const exactAsset=JSON.stringify(asset).replace('"trafficLimitBytes":0','"trafficLimitBytes":18446744073709551615')
+    const savedAsset=await context.request.put(base+`/api/v1/nodes/${node}/asset`,{headers:{...headers,'Content-Type':'application/json'},data:exactAsset})
+    assert.equal(savedAsset.status(),200)
+    await select.selectOption('nodes.asset');await field('nodeId').fill(node);await execute()
+    await page.waitForFunction(()=>document.querySelector('[data-testid=operation-result]')?.textContent.includes('18446744073709551615'))
 
     await page.getByRole('button',{name:'Alerts',exact:true}).click();await page.getByRole('button',{name:'Alert rules',exact:true}).click()
     const ruleForm=page.locator('.alert-form-card').first()
@@ -155,8 +178,35 @@ async function port() {
       await page.screenshot({path:path.join(artifacts,`operations-${theme}-${width}.png`),fullPage:true})
       assert.ok(await page.locator('.operation-form').isVisible())
     }
+    await page.setViewportSize({width:1440,height:1000})
+    const nodeList=await(await context.request.get(base+'/api/v1/nodes')).json()
+    await page.route('**/api/v1/nodes',route=>route.fulfill({json:{...nodeList,nodes:nodeList.nodes.map(n=>({...n,status:'online'}))}}))
+    const settingFields=catalog.operations.find(o=>o.name==='agents.configure').bodySchema.properties
+    const settings=Object.fromEntries(Object.entries(settingFields).filter(([,f])=>f.default!==undefined).map(([k,f])=>[k,f.default]))
+    await page.route('**/api/v1/nodes/*/agent-settings',route=>route.fulfill({json:{status:200,settings}}))
+    await page.getByRole('button',{name:'Host management',exact:true}).click()
+    for(const tab of ['Agent settings','Assets and quotas']){
+      await page.locator('.host-tabs').getByRole('button',{name:tab,exact:true}).click()
+      if(tab==='Agent settings')await page.waitForFunction(()=>[...document.querySelectorAll('.contract-fields label')].find(x=>x.textContent.includes('Command history retention'))?.querySelector('input')?.value==='90')
+      if(tab==='Assets and quotas'){
+        const quota=page.locator('.contract-fields label').filter({hasText:'Traffic quota (bytes)'}).locator('input')
+        await quota.waitFor();assert.equal(await quota.inputValue(),'18446744073709551615')
+        await quota.fill('9007199254740993')
+        response=page.waitForResponse(r=>r.url().endsWith('/asset')&&r.request().method()==='PUT')
+        await page.locator('.host-card form button.primary-button').click()
+        const saved=await response;assert.equal(saved.status(),200);assert.ok(saved.request().postData().includes('"trafficLimitBytes":9007199254740993'))
+      }
+      for(const theme of ['light','dark'])for(const width of [390,1440]){
+        await page.setViewportSize({width,height:1000})
+        await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+        await page.waitForTimeout(350)
+        assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Host forms must not overflow')
+        await page.screenshot({path:path.join(artifacts,`host-${tab.split(' ')[0]}-${theme}-${width}.png`),fullPage:true})
+      }
+      await page.setViewportSize({width:1440,height:1000})
+    }
     assert.deepEqual(pageErrors,[])
-    console.log(`Real Core/Web interface checks passed (${catalog.operations.length} discovered operations; multipart, empty fields, retry intent, version header, secrets, completion, metric rule, direct update, confirmed rollback; 8 layout snapshots).`)
+    console.log(`Real Core/Web interface checks passed (${catalog.operations.length} discovered operations; multipart, empty fields, retry intent, version header, secrets, completion, metric rule, direct update, confirmed rollback; 16 layout snapshots).`)
   }finally{
     if(browser)await browser.close()
     core.kill('SIGTERM')

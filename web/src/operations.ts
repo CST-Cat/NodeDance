@@ -1,5 +1,6 @@
 // The connected Core owns this contract. All Web transports resolve names here.
 export interface BodySchema {
+  anyOf?: BodySchema[]
   format?: string
   type?: string
   properties?: Record<string, BodySchema>
@@ -11,9 +12,12 @@ export interface BodySchema {
   nullable?: boolean
   minimum?: number
   maximum?: number
+  maximumInteger?: string
+  minimumInteger?: string
   minLength?: number
   maxLength?: number
   maxBytes?: number
+  minBytes?: number
   minItems?: number
   maxItems?: number
   additionalProperties?: boolean | BodySchema
@@ -42,11 +46,43 @@ export function schemaHasSecrets(schema?: BodySchema): boolean {
 
 // Presence is different from a nonempty string. Untouched optional fields are
 // omitted; explicitly cleared fields and required strings retain "".
+// Decode numeric tokens before JS can round them. Big integers stay bigint in
+// typed contract fields and are written as JSON numbers, never quoted strings.
+export function parseExactJSON(raw: string): unknown {
+  JSON.parse(raw) // Validate the complete grammar first.
+  const tokens=raw.match(/"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|[{}\[\]:,]/g) ?? []
+  let i=0
+  const read=(): unknown=>{
+    const token=tokens[i++]!
+    if(token==='{'){const value:Record<string,unknown>={};while(tokens[i]!=='}'){const key=JSON.parse(tokens[i++]!);i++;Object.defineProperty(value,key,{value:read(),enumerable:true,writable:true,configurable:true});if(tokens[i]===',')i++}i++;return value}
+    if(token==='['){const value:unknown[]=[];while(tokens[i]!==']'){value.push(read());if(tokens[i]===',')i++}i++;return value}
+    if(/^-?\d+$/.test(token)){const n=BigInt(token);if(n>BigInt(Number.MAX_SAFE_INTEGER)||n<BigInt(Number.MIN_SAFE_INTEGER))return n}
+    return JSON.parse(token)
+  }
+  return read()
+}
+export function exactJSON(value: unknown): string {
+  if(typeof value==='bigint')return String(value)
+  if(Array.isArray(value))return '['+value.map(v=>exactJSON(v ?? null)).join(',')+']'
+  if(value && typeof value==='object')return '{'+Object.entries(value).filter(([,v])=>v!==undefined).map(([k,v])=>JSON.stringify(k)+':'+exactJSON(v)).join(',')+'}'
+  return JSON.stringify(value)
+}
+export function decodeContractJSON(raw:string,schema?:BodySchema):unknown {
+  const visit=(value:unknown,s?:BodySchema):unknown=>{
+    if(s?.anyOf)s=s.anyOf.find(variant=>{try{validateSchema(variant,value);return true}catch{return false}})
+    if(typeof value==='bigint')return s?.type==='integer'?value:Number(value)
+    if(Array.isArray(value))return value.map(v=>visit(v,s?.items))
+    if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,visit(v,s?.properties?.[k] ?? (typeof s?.additionalProperties==='object'?s.additionalProperties:undefined))]))
+    return value
+  }
+  return visit(parseExactJSON(raw),schema)
+}
+
 export function operationBody(operation: CoreOperation, values: Record<string,string>, raw = '', rawMode=false): string | undefined {
   const schema = operation.bodySchema
   if (!schema) return undefined
   if (rawMode || schema.type !== 'object') {
-    const value=JSON.parse(raw); validateSchema(schema,value); const result=raw.trim()
+    const value=parseExactJSON(raw); validateSchema(schema,value); const result=raw.trim()
     if(operation.maxBodyBytes && new TextEncoder().encode(result).length>operation.maxBodyBytes)throw new Error('Body exceeds Core request limit')
     return result
   }
@@ -57,7 +93,7 @@ export function operationBody(operation: CoreOperation, values: Record<string,st
     const value = String(values[key] ?? '')
     if (field.type === 'string') {body[key] = value;encoded.push(`${JSON.stringify(key)}:${JSON.stringify(value)}`)}
     else if (value === '' && !schema.required?.includes(key)) continue
-    else {body[key] = JSON.parse(value);encoded.push(`${JSON.stringify(key)}:${value.trim()}`)}
+    else {body[key] = parseExactJSON(value);encoded.push(`${JSON.stringify(key)}:${exactJSON(body[key])}`)}
   }
   validateSchema(schema,body)
   const result=`{${encoded.join(',')}}`
@@ -67,6 +103,7 @@ export function operationBody(operation: CoreOperation, values: Record<string,st
 
 export function validateSchema(schema: BodySchema | undefined,value: unknown,path='body'): void {
   if(!schema || (value===null && schema.nullable))return
+  if(schema.anyOf){if(schema.anyOf.some(variant=>{try{validateSchema(variant,value,path);return true}catch{return false}}))return;throw new Error(path+': does not match any published response shape')}
   const fail=(rule:string):never=>{throw new Error(`${path}: ${rule}`)}
   if(schema.enum && !schema.enum.includes(value as string))fail('value is not in the allowed enum')
   if(schema.type==='object'){
@@ -89,9 +126,12 @@ export function validateSchema(schema: BodySchema | undefined,value: unknown,pat
     const text=value as string
     if(schema.minLength!==undefined && [...text].length<schema.minLength)fail('string is too short')
     if(schema.maxLength!==undefined && [...text].length>schema.maxLength)fail('string is too long')
+    if(schema.minBytes!==undefined && new TextEncoder().encode(text).length<schema.minBytes)fail('string below byte minimum')
     if(schema.maxBytes!==undefined && new TextEncoder().encode(text).length>schema.maxBytes)fail('string exceeds byte limit')
   }else if(schema.type==='integer'||schema.type==='number'){
-    if(typeof value!=='number'||!Number.isFinite(value)||(schema.type==='integer'&&!Number.isInteger(value)))fail(`expected ${schema.type}`)
+    if(!(schema.type==='integer'&&typeof value==='bigint') && (typeof value!=='number'||!Number.isFinite(value)||(schema.type==='integer'&&!Number.isInteger(value))))fail(`expected ${schema.type}`)
+    if(schema.minimumInteger!==undefined && BigInt(value as bigint|number)<BigInt(schema.minimumInteger))fail('integer below exact minimum')
+    if(schema.maximumInteger!==undefined && BigInt(value as bigint|number)>BigInt(schema.maximumInteger))fail('integer exceeds exact maximum')
     if(schema.minimum!==undefined && (value as number)<schema.minimum)fail('value below minimum')
     if(schema.maximum!==undefined && (value as number)>schema.maximum)fail('value above maximum')
   }else if(schema.type==='boolean' && typeof value!=='boolean')fail('expected boolean')

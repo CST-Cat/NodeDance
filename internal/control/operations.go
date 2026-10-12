@@ -3,6 +3,7 @@
 package control
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -91,6 +92,14 @@ func schema(value any) any {
 	}
 	switch value.(type) {
 	case protocol.AgentSettings:
+		raw, _ := json.Marshal(protocol.DefaultAgentSettings())
+		var defaults map[string]any
+		json.Unmarshal(raw, &defaults)
+		for key, value := range defaults {
+			if field, ok := props[key].(map[string]any); ok {
+				field["default"] = value
+			}
+		}
 		enum("memoryMode", "available", "raw", "cached")
 		enum("transport", "auto", "websocket", "http")
 		enum("preferIpVersion", "", "4", "6")
@@ -106,6 +115,9 @@ func typeSchema(t reflect.Type) any {
 		result := typeSchema(t.Elem()).(map[string]any)
 		result["nullable"] = true
 		return result
+	}
+	if t == reflect.TypeOf(json.RawMessage{}) {
+		return map[string]any{}
 	}
 	if t == reflect.TypeOf(time.Time{}) {
 		return map[string]any{"type": "string", "format": "date-time"}
@@ -132,8 +144,18 @@ func typeSchema(t reflect.Type) any {
 		return map[string]any{"type": "object", "additionalProperties": typeSchema(t.Elem()), "nullable": true}
 	case reflect.Bool:
 		return map[string]any{"type": "boolean"}
-	case reflect.Int, reflect.Int64, reflect.Uint64, reflect.Uint32:
-		return map[string]any{"type": "integer"}
+	case reflect.Uint64:
+		return map[string]any{"type": "integer", "format": "uint64", "minimum": 0, "maximumInteger": "18446744073709551615"}
+	case reflect.Uint32:
+		return map[string]any{"type": "integer", "minimum": 0, "maximum": 4294967295}
+	case reflect.Interface:
+		return map[string]any{}
+	case reflect.Uint8, reflect.Uint16:
+		return map[string]any{"type": "integer", "minimum": 0, "maximum": (1 << t.Bits()) - 1}
+	case reflect.Int8, reflect.Int16, reflect.Int32:
+		return map[string]any{"type": "integer", "minimum": -(1 << (t.Bits() - 1)), "maximum": (1 << (t.Bits() - 1)) - 1}
+	case reflect.Int, reflect.Int64:
+		return map[string]any{"type": "integer", "format": "int64", "minimumInteger": "-9223372036854775808", "maximumInteger": "9223372036854775807"}
 	case reflect.Float64:
 		return map[string]any{"type": "number"}
 	default:
@@ -188,6 +210,7 @@ func buildOperations() []Operation {
 		op("commands.batch", "POST", "/api/v1/commands/batches", "Execute a confirmed script on multiple nodes with per-node idempotency", schema(protocol.BatchCommand{})),
 		op("commands.batch-status", "GET", "/api/v1/commands/batches/{batchId}", "Batch results; offline nodes are explicitly stale", nil),
 		op("commands.batch-cancel", "DELETE", "/api/v1/commands/batches/{batchId}", "Cancel running commands across a batch", nil),
+		op("commands.cleanup", "POST", node+"/commands/cleanup", "Clean expired command history and compact completed output; retain retry identities within the retention window", nil),
 		op("commands.list", "GET", node+"/commands", "Durable host command history", nil),
 		op("commands.submit", "POST", node+"/commands", "Execute a bounded root host script; confirmation and Idempotency-Key required", schema(protocol.CommandSpec{})),
 		op("commands.get", "GET", node+"/commands/{jobId}", "Host command status, exit code and bounded output", nil),

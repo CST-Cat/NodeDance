@@ -129,6 +129,8 @@ func (s *Server) handleHostAPI(w http.ResponseWriter, r *http.Request, current *
 				http.Error(w, "method not allowed", 405)
 				return true
 			}
+		} else if parts[2] == "cleanup" && r.Method == "POST" {
+			req.Action = "commands.cleanup"
 		} else {
 			req.JobID = parts[2]
 			if r.Method == "GET" {

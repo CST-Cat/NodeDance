@@ -45,7 +45,7 @@ func (f connectionFlags) client() (*control.Client, error) {
 func localOperations() []control.Operation {
 	result := []control.Operation{}
 	for _, item := range []struct{ name, desc string }{
-		{"client.update", "Update workflow: preflight, confirm, submit and observe using the connected Core"}, {"core.serve", "Run Core; arguments are the same as nodedance serve"}, {"core.backup", "Back up Core to a new private archive"}, {"core.restore", "Restore Core to a new/empty directory"}, {"core.version", "Show Core version"},
+		{"client.update", "Update workflow: preflight, submit and observe using the connected Core; confirm rollback"}, {"core.serve", "Run Core; arguments are the same as nodedance serve"}, {"core.backup", "Back up Core to a new private archive"}, {"core.restore", "Restore Core to a new/empty directory"}, {"core.version", "Show Core version"},
 		{"agent.enroll", "Enroll root Agent; --token-stdin; stdin is never placed in process arguments"}, {"agent.recover", "Recover root Agent enrollment"}, {"agent.run", "Run root Agent"}, {"agent.install-systemd", "Install root Agent systemd service"}, {"agent.uninstall-systemd", "Remove managed Agent unit; preserve credentials"}, {"agent.validate-systemd-state", "Validate protected Agent credentials"}, {"agent.prepare-systemd-state", "Prepare root-owned Agent state"}, {"agent.validate-file-root", "Validate Agent file root"}, {"agent.version", "Show Agent version"}, {"agent.tmux-version", "Show bundled Agent tmux version"},
 	} {
 		result = append(result, control.Operation{Name: item.name, Description: item.desc, Method: "LOCAL", Transport: "local", Parameters: []string{}, Query: []string{}, BodySchema: map[string]any{"type": "array", "items": map[string]string{"type": "string"}}})
@@ -257,15 +257,13 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 		return errors.New("--output is supported only for downloads")
 	}
 	var upload io.Reader
-	if *input == "-" {
-		upload = stdin
-	} else if *input != "" {
-		file, err := os.Open(*input)
+	if *input != "" {
+		var closeInput func()
+		upload, closeInput, err = uploadInput(*input, stdin)
 		if err != nil {
 			return err
 		}
-		defer file.Close()
-		upload = file
+		defer closeInput()
 	}
 	if *interactive {
 		if o.Transport != "terminal" || *input != "" {

@@ -1399,5 +1399,12 @@
   "operations.stopWaiting": "Stop observing (task continues)",
   "operations.finishedStatus": "Task finished with status",
   "operations.rawJSON": "Use JSON request body (including explicit null values)",
-  "operations.endTerminal": "End terminal session"
+  "operations.endTerminal": "End terminal session",
+  "host.field.commandHistoryRetentionDays": "Command history retention (days)",
+  "operations.pending": "Submitted work awaiting observation",
+  "operations.resume": "Resume observation",
+  "operations.forget": "Remove from this browser",
+  "operations.uncertain": "Requests awaiting a confirmed response",
+  "operations.restoreKey": "Restore request key",
+  "operations.restoreHint": "Re-enter the same body or file. Restoring the key does not submit work; changed content will be rejected by Core."
 }

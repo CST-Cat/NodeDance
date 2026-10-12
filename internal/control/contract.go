@@ -1,8 +1,12 @@
 package control
 
 import (
+	"github.com/CST-Cat/NodeDance/internal/taskstate"
+	"github.com/CST-Cat/NodeDance/internal/update"
 	"strings"
 
+	"github.com/CST-Cat/NodeDance/internal/core/alerts"
+	"github.com/CST-Cat/NodeDance/internal/core/probes"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
@@ -16,7 +20,7 @@ func describeTransport(o *Operation) {
 		o.MaxBodyBytes = 16 * 1024
 	}
 	if o.Idempotent {
-		o.Headers = map[string]any{"Idempotency-Key": map[string]any{"type": "string", "minLength": 1, "description": "Reuse for retries of the same intent"}}
+		o.Headers = map[string]any{"Idempotency-Key": map[string]any{"type": "string", "minLength": 1, "maxBytes": taskstate.MaxIdempotencyKeyBytes, "description": "Reuse for retries of the same intent"}}
 	}
 	if o.Transport == "multipart" {
 		o.Upload = &UploadContract{Field: protocol.AppearanceImageField, ContentType: "multipart/form-data", MaxBytes: protocol.MaxAppearanceImageBytes}
@@ -27,6 +31,12 @@ func describeTransport(o *Operation) {
 	if o.Transport == "upload" {
 		o.Upload = &UploadContract{ContentType: "application/octet-stream", MaxBytes: protocol.DefaultFileLimit}
 		o.Headers["X-File-Version"] = map[string]any{"type": "string", "description": "Expected existing file version; omit only for an unconditional write"}
+	}
+	if o.Idempotent && (strings.HasPrefix(o.Name, "commands.") || strings.HasPrefix(o.Name, "updates.") || o.Name == "probes.batch" || o.Name == "deployments.create") {
+		h := o.Headers["Idempotency-Key"].(map[string]any)
+		delete(h, "minLength")
+		h["minBytes"] = 8
+		h["maxBytes"] = 128
 	}
 	props := func() map[string]any {
 		if b, ok := o.BodySchema.(map[string]any); ok {
@@ -47,6 +57,8 @@ func describeTransport(o *Operation) {
 		}
 	}
 	switch o.Name {
+	case "agents.configure":
+		field("commandHistoryRetentionDays", map[string]any{"minimum": 1, "maximum": 3650, "default": 90})
 	case "commands.submit", "commands.batch":
 		o.MaxBodyBytes = protocol.MaxCommandRequestBytes
 		require("script", "timeoutSeconds", "confirm")
@@ -101,13 +113,16 @@ func describeTransport(o *Operation) {
 	case "commands.submit":
 		completion("commands.get", "jobId", "data.job.id", "job.status")
 		o.Completion.Params["nodeId"] = "params.nodeId"
+		o.Completion.TerminalStatuses = []string{"succeeded", "failed", "cancelled", "timed_out", "interrupted", "unknown"}
 	case "deployments.create":
 		completion("deployments.get", "taskId", "data.taskId", "status")
 	case "updates.apply", "updates.rollback":
 		completion("updates.status", "", "", "status")
 		o.Completion.Params = map[string]string{}
 		o.Completion.Query = map[string]string{"component": "body.component", "nodeId": "body.nodeId", "jobId": "data.id"}
+		o.Completion.TerminalStatuses = []string{"succeeded", "failed", "rolled_back", "rollback_failed", "journal_failed"}
 	}
+	describeResponse(o)
 }
 
 // MatchRoute shares published request bounds with the Core decoders. Multiple
@@ -136,4 +151,88 @@ func MatchRoute(method, path string) (Operation, bool) {
 		}
 	}
 	return Operation{}, false
+}
+
+func responseObject(required []string, properties map[string]any) map[string]any {
+	return map[string]any{"type": "object", "required": required, "properties": properties}
+}
+func describeResponse(o *Operation) {
+	text := map[string]any{"type": "string"}
+	job := schema(protocol.CommandJob{}).(map[string]any)
+	job["required"] = []string{"id", "status"}
+	task := responseObject([]string{"taskId", "status"}, map[string]any{"taskId": text, "status": text, "nodeId": text, "progress": responseObject(nil, map[string]any{"completed": map[string]any{"type": "integer"}, "total": map[string]any{"type": "integer"}})})
+	list := func(key string, item any) any {
+		return responseObject([]string{key}, map[string]any{key: map[string]any{"type": "array", "items": item}})
+	}
+	wrapped := func(key string, item any) any { return responseObject([]string{key}, map[string]any{key: item}) }
+	switch o.Name {
+	case "core.operations":
+		o.ResponseSchema = schema(Catalog{})
+	case "core.protocol":
+		o.ResponseSchema = schema(protocol.Descriptor{})
+	case "auth.me":
+		o.ResponseSchema = wrapped("user", responseObject([]string{"displayName"}, map[string]any{"displayName": text}))
+	case "auth.login", "auth.setup":
+		o.ResponseSchema = responseObject([]string{"user", "csrfToken"}, map[string]any{"user": map[string]any{"type": "object"}, "csrfToken": text})
+	case "sessions.list":
+		o.ResponseSchema = list("sessions", map[string]any{"type": "object"})
+	case "nodes.preferences":
+		o.ResponseSchema = list("preferences", map[string]any{"type": "object"})
+	case "alerts.list", "alerts.history":
+		o.ResponseSchema = list("alerts", schema(alerts.Alert{}))
+	case "alerts.events":
+		o.ResponseSchema = list("events", schema(alerts.Event{}))
+	case "rules.list", "rules.defaults":
+		o.ResponseSchema = list("rules", schema(alerts.Rule{}))
+	case "rules.create", "rules.update":
+		o.ResponseSchema = wrapped("rule", schema(alerts.Rule{}))
+	case "channels.list":
+		o.ResponseSchema = list("channels", schema(alerts.Channel{}))
+	case "channels.create", "channels.update":
+		o.ResponseSchema = wrapped("channel", schema(alerts.Channel{}))
+	case "windows.list":
+		o.ResponseSchema = list("windows", schema(alerts.Window{}))
+	case "windows.create":
+		o.ResponseSchema = wrapped("window", schema(alerts.Window{}))
+	case "probes.list":
+		o.ResponseSchema = list("probes", schema(probes.Config{}))
+	case "probes.get", "probes.create", "probes.update":
+		o.ResponseSchema = schema(probes.Config{})
+	case "probes.history":
+		o.ResponseSchema = list("runs", schema(probes.Run{}))
+	case "commands.batches":
+		o.ResponseSchema = list("batches", map[string]any{"type": "object"})
+	case "updates.status":
+		j := schema(update.Job{}).(map[string]any)
+		j["required"] = []string{"id", "status"}
+		o.ResponseSchema = map[string]any{"anyOf": []any{j, list("jobs", j)}}
+	case "core.health":
+		o.ResponseSchema = responseObject([]string{"status", "version"}, map[string]any{"status": text, "version": text})
+	case "auth.csrf":
+		o.ResponseSchema = responseObject([]string{"token"}, map[string]any{"token": text})
+	case "nodes.asset", "nodes.save-asset":
+		o.ResponseSchema = schema(protocol.NodeAsset{})
+	case "agents.settings", "agents.configure", "agents.diagnostics", "commands.get", "commands.submit", "commands.cancel", "commands.list", "commands.cleanup":
+		r := schema(protocol.HostResponse{}).(map[string]any)
+		r["required"] = []string{"status"}
+		r["properties"].(map[string]any)["job"] = job
+		if o.Name == "commands.submit" || o.Name == "commands.get" || o.Name == "commands.cancel" {
+			r["required"] = []string{"status", "job"}
+		}
+		o.ResponseSchema = r
+	case "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "tasks.get", "tasks.cancel":
+		o.ResponseSchema = task
+	case "tasks.list":
+		o.ResponseSchema = responseObject([]string{"tasks"}, map[string]any{"tasks": map[string]any{"type": "array", "items": task}, "nextCursor": text})
+	case "updates.check":
+		o.ResponseSchema = schema(update.Check{})
+	case "updates.apply", "updates.rollback":
+		r := schema(update.Job{}).(map[string]any)
+		r["required"] = []string{"id", "status"}
+		o.ResponseSchema = r
+	case "nodes.list":
+		o.ResponseSchema = responseObject([]string{"nodes"}, map[string]any{"nodes": map[string]any{"type": "array", "items": map[string]any{"type": "object"}}})
+	case "terminal.create", "terminal.open", "terminal.resume":
+		o.ResponseSchema = responseObject([]string{"streamId", "ticket"}, map[string]any{"streamId": text, "ticket": text, "expiresAt": text})
+	}
 }

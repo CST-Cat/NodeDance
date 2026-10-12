@@ -430,5 +430,7 @@
   "Number: open operation | /text: search | n/p: page | r: refresh Core | l: language | q: quit\n": "数字：打开操作 | /文字：搜索 | n/p：翻页 | r：刷新 Core | l：语言 | q：退出\n",
   "Deployment method (native/docker; blank uses native)": "部署方式（native/docker；留空使用 native）",
   "Terminal interface (interactive/jsonl; blank uses interactive)": "终端界面（interactive/jsonl；留空使用 interactive）",
-  "JSONL input file (optional; blank uses line input)": "JSONL 输入文件（可选；留空逐行输入）"
+  "JSONL input file (optional; blank uses line input)": "JSONL 输入文件（可选；留空逐行输入）",
+  "Input file or FIFO path; - for inline content": "输入文件或 FIFO 路径；- 表示直接输入内容",
+  "Upload content as JSON string (or @file)": "上传内容的 JSON 字符串（或 @file）"
 }

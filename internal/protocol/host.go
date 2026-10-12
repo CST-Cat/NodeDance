@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"math"
 	"net"
@@ -15,7 +17,7 @@ const (
 	MaxCommandRequestBytes   = 6*MaxCommandScriptBytes + 16*1024
 	MinCommandTimeoutSeconds = 1
 	MaxCommandTimeoutSeconds = 3600
-	CapabilityHost           = "agent.host.v1"
+	CapabilityHost           = "agent.host.v2"
 	TypeHostRequest          = "host_request"
 	TypeHostResponse         = "host_response"
 )
@@ -23,30 +25,34 @@ const (
 // AgentSettings contains no enrollment or device secrets. It is the shared
 // configuration contract for all administrator interfaces and the Agent.
 type AgentSettings struct {
-	DisableRemoteControl bool     `json:"disableRemoteControl"`
-	MemoryMode           string   `json:"memoryMode"`
-	CustomIPv4           string   `json:"customIpv4,omitempty"`
-	CustomIPv6           string   `json:"customIpv6,omitempty"`
-	FastIntervalSeconds  int      `json:"fastIntervalSeconds"`
-	DiskIntervalSeconds  int      `json:"diskIntervalSeconds"`
-	IncludeInterfaces    []string `json:"includeInterfaces"`
-	ExcludeInterfaces    []string `json:"excludeInterfaces"`
-	IncludeMountpoints   []string `json:"includeMountpoints"`
-	BillingDay           int      `json:"billingDay"`
-	EnableGPU            bool     `json:"enableGpu"`
-	DNS                  string   `json:"dns,omitempty"`
-	PreferIPVersion      string   `json:"preferIpVersion,omitempty"`
-	Compression          bool     `json:"compression"`
-	Transport            string   `json:"transport"`
-	PublicIPURL          string   `json:"publicIpUrl,omitempty"`
-	AutoUpdate           bool     `json:"autoUpdate"`
-	UpdateIntervalHours  int      `json:"updateIntervalHours"`
+	DisableRemoteControl        bool     `json:"disableRemoteControl"`
+	MemoryMode                  string   `json:"memoryMode" request:"required"`
+	CustomIPv4                  string   `json:"customIpv4,omitempty"`
+	CustomIPv6                  string   `json:"customIpv6,omitempty"`
+	FastIntervalSeconds         int      `json:"fastIntervalSeconds" request:"required"`
+	DiskIntervalSeconds         int      `json:"diskIntervalSeconds" request:"required"`
+	IncludeInterfaces           []string `json:"includeInterfaces"`
+	ExcludeInterfaces           []string `json:"excludeInterfaces"`
+	IncludeMountpoints          []string `json:"includeMountpoints"`
+	BillingDay                  int      `json:"billingDay" request:"required"`
+	EnableGPU                   bool     `json:"enableGpu"`
+	DNS                         string   `json:"dns,omitempty"`
+	PreferIPVersion             string   `json:"preferIpVersion,omitempty"`
+	Compression                 bool     `json:"compression"`
+	Transport                   string   `json:"transport" request:"required"`
+	PublicIPURL                 string   `json:"publicIpUrl,omitempty"`
+	AutoUpdate                  bool     `json:"autoUpdate"`
+	UpdateIntervalHours         int      `json:"updateIntervalHours" request:"required"`
+	CommandHistoryRetentionDays int      `json:"commandHistoryRetentionDays" request:"required"`
 }
 
 func DefaultAgentSettings() AgentSettings {
-	return AgentSettings{MemoryMode: "available", FastIntervalSeconds: 5, DiskIntervalSeconds: 30, BillingDay: 1, EnableGPU: true, Compression: true, Transport: "auto", UpdateIntervalHours: 6, IncludeInterfaces: []string{}, ExcludeInterfaces: []string{}, IncludeMountpoints: []string{}}
+	return AgentSettings{MemoryMode: "available", FastIntervalSeconds: 5, DiskIntervalSeconds: 30, BillingDay: 1, EnableGPU: true, Compression: true, Transport: "auto", UpdateIntervalHours: 6, CommandHistoryRetentionDays: 90, IncludeInterfaces: []string{}, ExcludeInterfaces: []string{}, IncludeMountpoints: []string{}}
 }
 func ValidateAgentSettings(s AgentSettings) error {
+	if s.CommandHistoryRetentionDays < 1 || s.CommandHistoryRetentionDays > 3650 {
+		return errors.New("command history retention must be between 1 and 3650 days")
+	}
 	if s.FastIntervalSeconds < 1 || s.FastIntervalSeconds > 60 || s.DiskIntervalSeconds < 5 || s.DiskIntervalSeconds > 300 || s.BillingDay < 1 || s.BillingDay > 28 || s.UpdateIntervalHours < 1 || s.UpdateIntervalHours > 168 {
 		return errors.New("invalid sampling, billing or update interval")
 	}
@@ -254,6 +260,7 @@ func ValidateCommand(c CommandSpec) error {
 }
 
 type CommandJob struct {
+	Archived    bool       `json:"archived,omitempty"`
 	ID          string     `json:"id"`
 	Status      string     `json:"status"`
 	StartedAt   time.Time  `json:"startedAt"`
@@ -271,13 +278,19 @@ type HostRequest struct {
 	JobID          string         `json:"jobId,omitempty"`
 	IdempotencyKey string         `json:"idempotencyKey,omitempty"`
 }
+type CommandCleanup struct {
+	Archived int `json:"archived"`
+	Expired  int `json:"expired"`
+	Retained int `json:"retained"`
+}
 type HostResponse struct {
-	Status      int            `json:"status"`
-	Error       string         `json:"error,omitempty"`
-	Settings    *AgentSettings `json:"settings,omitempty"`
-	Job         *CommandJob    `json:"job,omitempty"`
-	Jobs        []CommandJob   `json:"jobs,omitempty"`
-	Diagnostics map[string]any `json:"diagnostics,omitempty"`
+	Cleanup     *CommandCleanup `json:"cleanup,omitempty"`
+	Status      int             `json:"status"`
+	Error       string          `json:"error,omitempty"`
+	Settings    *AgentSettings  `json:"settings,omitempty"`
+	Job         *CommandJob     `json:"job,omitempty"`
+	Jobs        []CommandJob    `json:"jobs,omitempty"`
+	Diagnostics map[string]any  `json:"diagnostics,omitempty"`
 }
 
 // HostMetricKeys is shared by history, alert validation and presentation.
@@ -391,4 +404,9 @@ func ValidateNodeAsset(a NodeAsset) error {
 		return errors.New("invalid traffic accounting")
 	}
 	return nil
+}
+
+func CommandJobID(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return hex.EncodeToString(sum[:])
 }

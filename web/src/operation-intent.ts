@@ -1,6 +1,9 @@
 // Only hashes and random keys are retained. Request bodies and credentials are
 // never persisted. A failed/uncertain submission retains the same intent key.
 const pending = new Map<string,string>()
+const storageKey='nodedance.pending-operation-keys'
+try { const records=JSON.parse(sessionStorage.getItem(storageKey) ?? '[]');if(Array.isArray(records))for(const record of records.slice(-100))if(Array.isArray(record)&&/^[a-f0-9]{64}$/.test(record[0])&&typeof record[1]==='string'&&record[1].length<=128)pending.set(record[0],record[1]) }catch{/* Storage can be unavailable. */}
+function persist(){try{while(pending.size>100)pending.delete(pending.keys().next().value!);sessionStorage.setItem(storageKey,JSON.stringify([...pending]))}catch{/* In-memory retries still work. */}}
 const files = new WeakMap<Blob,string>()
 export async function requestIntent(name: string, input: unknown, body?: BodyInit | null, headers?: Headers): Promise<string> {
   let content: string | undefined
@@ -28,7 +31,7 @@ export async function requestIntent(name: string, input: unknown, body?: BodyIni
 export function intentKey(intent: string, fresh=false): string {
   if(fresh) pending.delete(intent)
   let key=pending.get(intent)
-  if(!key){key=crypto.randomUUID();pending.set(intent,key)}
+  if(!key){key=crypto.randomUUID();pending.set(intent,key);persist()}
   return key
 }
-export function finishIntent(intent: string): void {pending.delete(intent)}
+export function finishIntent(intent: string): void {pending.delete(intent);persist()}

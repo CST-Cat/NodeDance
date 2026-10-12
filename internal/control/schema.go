@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"reflect"
+	"strconv"
 	"unicode/utf8"
 )
 
@@ -27,6 +29,7 @@ func ValidateJSON(schema any, raw []byte) error {
 	}
 	var value any
 	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
 	if err := decoder.Decode(&value); err != nil {
 		return fmt.Errorf("invalid JSON: %w", err)
 	}
@@ -41,6 +44,14 @@ func validateValue(description, value any, path string) error {
 	s, ok := description.(map[string]any)
 	if !ok {
 		return nil
+	}
+	if variants, ok := s["anyOf"].([]any); ok {
+		for _, variant := range variants {
+			if validateValue(variant, value, path) == nil {
+				return nil
+			}
+		}
+		return fmt.Errorf("%s: does not match any published response shape", path)
 	}
 	if value == nil && s["nullable"] == true {
 		return nil
@@ -57,7 +68,7 @@ func validateValue(description, value any, path string) error {
 			}
 		case []any:
 			for _, v := range values {
-				if reflect.DeepEqual(value, v) {
+				if enumEqual(value, v) {
 					allowed = true
 				}
 			}
@@ -129,12 +140,45 @@ func validateValue(description, value any, path string) error {
 		if n, ok := schemaNumber(s["maxLength"]); ok && float64(utf8.RuneCountInString(v)) > n {
 			return fail("string is too long")
 		}
+		if n, ok := schemaNumber(s["minBytes"]); ok && float64(len(v)) < n {
+			return fail("string below byte minimum")
+		}
 		if n, ok := schemaNumber(s["maxBytes"]); ok && float64(len(v)) > n {
 			return fail("string exceeds byte limit")
 		}
 	case "integer", "number":
-		v, ok := value.(float64)
-		if !ok || (s["type"] == "integer" && math.Trunc(v) != v) {
+		var v float64
+		n, ok := value.(json.Number)
+		if ok {
+			v, _ = strconv.ParseFloat(string(n), 64)
+		} else {
+			v, ok = value.(float64)
+		}
+		if s["format"] == "int64" && n != "" {
+			if _, err := strconv.ParseInt(string(n), 10, 64); err != nil {
+				return fail("expected int64")
+			}
+		}
+		if s["format"] == "uint64" && n != "" {
+			if _, err := strconv.ParseUint(string(n), 10, 64); err != nil {
+				return fail("expected uint64")
+			}
+		}
+		if max, exists := s["maximumInteger"].(string); exists && n != "" {
+			a, aOK := new(big.Int).SetString(string(n), 10)
+			b, bOK := new(big.Int).SetString(max, 10)
+			if !aOK || !bOK || a.Cmp(b) > 0 {
+				return fail("integer exceeds exact maximum")
+			}
+		}
+		if min, exists := s["minimumInteger"].(string); exists && n != "" {
+			a, aOK := new(big.Int).SetString(string(n), 10)
+			b, bOK := new(big.Int).SetString(min, 10)
+			if !aOK || !bOK || a.Cmp(b) < 0 {
+				return fail("integer below exact minimum")
+			}
+		}
+		if !ok || math.IsInf(v, 0) || math.IsNaN(v) || (s["type"] == "integer" && math.Trunc(v) != v) {
 			return fail("expected " + s["type"].(string))
 		}
 		if n, ok := schemaNumber(s["minimum"]); ok && v < n {
@@ -149,6 +193,26 @@ func validateValue(description, value any, path string) error {
 		}
 	}
 	return nil
+}
+
+func enumEqual(a, b any) bool {
+	if reflect.DeepEqual(a, b) {
+		return true
+	}
+	an, aok := a.(json.Number)
+	if !aok {
+		return false
+	}
+	raw, err := json.Marshal(b)
+	if err != nil {
+		return false
+	}
+	ar, ok := new(big.Rat).SetString(string(an))
+	if !ok {
+		return false
+	}
+	br, ok := new(big.Rat).SetString(string(raw))
+	return ok && ar.Cmp(br) == 0
 }
 
 func schemaNumber(v any) (float64, bool) {

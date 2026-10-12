@@ -77,6 +77,10 @@ func (c *Client) Wait(ctx context.Context, catalog Catalog, o Operation, in Inpu
 		accepted.Error = err.Error()
 		return accepted
 	}
+	if follow.Method != "GET" && follow.Method != "HEAD" {
+		accepted.Error = "completion must observe a read operation"
+		return accepted
+	}
 	for {
 		result := c.Execute(ctx, follow, next, nil, nil)
 		if observe != nil {

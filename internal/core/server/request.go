@@ -6,6 +6,7 @@ import (
 	"errors"
 	"github.com/CST-Cat/NodeDance/internal/control"
 	"io"
+	"net"
 	"net/http"
 )
 
@@ -20,6 +21,11 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		status := http.StatusBadRequest
+		var timeout net.Error
+		if errors.As(err, &timeout) && timeout.Timeout() {
+			status = http.StatusRequestTimeout
+			w.Header().Set("Connection", "close")
+		}
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			status = http.StatusRequestEntityTooLarge
@@ -37,6 +43,11 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, target any) bool {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		status := http.StatusBadRequest
+		var timeout net.Error
+		if errors.As(err, &timeout) && timeout.Timeout() {
+			status = http.StatusRequestTimeout
+			w.Header().Set("Connection", "close")
+		}
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			status = http.StatusRequestEntityTooLarge

@@ -34,6 +34,9 @@ import (
 )
 
 type Options struct {
+	JSONReadTimeout           time.Duration
+	TransferReadTimeout       time.Duration
+	MaxConcurrentRequests     int
 	UpdateSocket              string
 	DataDir                   string
 	Development               bool
@@ -56,6 +59,9 @@ type Options struct {
 }
 
 type Server struct {
+	requestSlots               chan struct{}
+	jsonReadTimeout            time.Duration
+	transferReadTimeout        time.Duration
 	httpChannelsMu             sync.Mutex
 	httpChannels               map[string]*httpAgentChannel
 	updateSocket               string
@@ -130,6 +136,18 @@ type session struct {
 func New(version string, options Options) (*Server, error) {
 	if options.DataDir == "" {
 		return nil, errors.New("data directory is required")
+	}
+	if options.JSONReadTimeout == 0 {
+		options.JSONReadTimeout = 15 * time.Second
+	}
+	if options.TransferReadTimeout == 0 {
+		options.TransferReadTimeout = 30 * time.Minute
+	}
+	if options.MaxConcurrentRequests == 0 {
+		options.MaxConcurrentRequests = 256
+	}
+	if options.JSONReadTimeout <= 0 || options.TransferReadTimeout <= 0 || options.MaxConcurrentRequests < 1 || options.MaxConcurrentRequests > 4096 {
+		return nil, errors.New("invalid request resource limits")
 	}
 	if options.SessionIdleTimeout == 0 {
 		options.SessionIdleTimeout = config.DefaultSessionIdleTimeout
@@ -211,11 +229,12 @@ func New(version string, options Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
-		version:                   version,
-		updateSocket:              options.UpdateSocket,
-		assets:                    http.FileServer(http.FS(files)),
-		index:                     index,
-		store:                     store,
+		version:      version,
+		updateSocket: options.UpdateSocket,
+		assets:       http.FileServer(http.FS(files)),
+		index:        index,
+		store:        store,
+		requestSlots: make(chan struct{}, options.MaxConcurrentRequests), jsonReadTimeout: options.JSONReadTimeout, transferReadTimeout: options.TransferReadTimeout,
 		dataDir:                   store.Dir,
 		development:               options.Development,
 		publicOrigin:              strings.TrimSuffix(options.PublicOrigin, "/"),
@@ -396,6 +415,41 @@ func (s *Server) SetupCredentialPath() (string, bool) {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.setSecurityHeaders(w)
+	operation, known := control.MatchRoute(r.Method, r.URL.Path)
+	// Bound rejected bodies too: net/http may drain unread request content.
+	if r.Body != nil && r.ContentLength != 0 {
+		duration := s.jsonReadTimeout
+		if known && (operation.Transport == "upload" || operation.Transport == "multipart") {
+			duration = s.transferReadTimeout
+		}
+		_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(duration))
+		// net/http resets the deadline at the next request. Keeping it prevents
+		// a slow rejected or timed-out body being drained indefinitely.
+	}
+	if r.URL.Path != "/api/v1/health" {
+		select {
+		case s.requestSlots <- struct{}{}:
+			defer func() { <-s.requestSlots }()
+		default:
+			w.Header().Set("Retry-After", "1")
+			w.Header().Set("Connection", "close")
+			http.Error(w, "Core request capacity reached", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	if known {
+		for name, description := range operation.Headers {
+			if value := r.Header.Get(name); value != "" {
+				raw, _ := json.Marshal(value)
+				if err := control.ValidateJSON(description, raw); err != nil {
+					w.Header().Set("Connection", "close")
+					http.Error(w, name+": "+err.Error(), http.StatusBadRequest)
+					return
+				}
+			}
+		}
+	}
+
 	switch r.URL.Path {
 	case "/api/v1/operations":
 		if r.Method != http.MethodGet {

@@ -139,7 +139,7 @@ func TestTaskRequestAndDownload(t *testing.T) {
 				t.Error("missing security/idempotency headers")
 			}
 			w.WriteHeader(202)
-			io.WriteString(w, `{"taskId":"task"}`)
+			io.WriteString(w, `{"taskId":"task","status":"queued"}`)
 		case "/api/v1/nodes/node/files/download":
 			w.Write([]byte{0, 255, 1})
 		default:
@@ -183,7 +183,7 @@ func TestWebSocketUsesSessionAndOrigin(t *testing.T) {
 		}
 		if r.URL.Path == "/api/v1/auth/login" {
 			http.SetCookie(w, &http.Cookie{Name: "nodedance_session", Value: "session", Path: "/"})
-			io.WriteString(w, `{}`)
+			io.WriteString(w, `{"user":{"displayName":"test"},"csrfToken":"csrf"}`)
 			return
 		}
 		cookie, e := r.Cookie("nodedance_session")

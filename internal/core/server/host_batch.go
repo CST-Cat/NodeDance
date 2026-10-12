@@ -282,6 +282,20 @@ func (s *Server) handleHostBatchAPI(w http.ResponseWriter, r *http.Request, curr
 			return true
 		}
 	}
+	// Recover accepted children even when Core lost the HTTP response before
+	// saving results. Derived identity is shared with Agent; never resubmit here.
+	known := map[string]hostBatchResult{}
+	for _, v := range b.Results {
+		known[v.NodeID] = v
+	}
+	b.Results = nil
+	for _, node := range b.NodeIDs {
+		v, ok := known[node]
+		if !ok {
+			v = hostBatchResult{NodeID: node, Stale: true}
+		}
+		b.Results = append(b.Results, v)
+	}
 	var wg sync.WaitGroup
 	slots := make(chan struct{}, 4)
 	for i, v := range b.Results {
@@ -291,7 +305,7 @@ func (s *Server) handleHostBatchAPI(w http.ResponseWriter, r *http.Request, curr
 			slots <- struct{}{}
 			defer func() { <-slots }()
 			if v.JobID == "" {
-				return
+				v.JobID = protocol.CommandJobID(batchNodeKey(b.ID, v.NodeID))
 			}
 			action := "commands.get"
 			if r.Method == "DELETE" {
@@ -305,10 +319,18 @@ func (s *Server) handleHostBatchAPI(w http.ResponseWriter, r *http.Request, curr
 				b.Results[i].Error = e.Error()
 				return
 			}
-			if response.Job != nil {
-				b.Results[i].Job = response.Job
-				b.Results[i].Stale = false
+			if response.Error != "" || response.Job == nil {
+				b.Results[i].Stale = true
+				b.Results[i].Error = response.Error
+				if response.Job == nil && response.Error == "" {
+					b.Results[i].Error = "Agent omitted command result"
+				}
+				return
 			}
+			b.Results[i].JobID = response.Job.ID
+			b.Results[i].Job = response.Job
+			b.Results[i].Stale = false
+			b.Results[i].Error = ""
 		}(i, v)
 	}
 	wg.Wait()

@@ -36,7 +36,7 @@ Vite forwards API and WebSocket traffic to `VITE_CORE_TARGET` during local devel
 
 ## SQLite schema
 
-Core initializes the current tables and indexes from `internal/core/storage/schema.sql` together with the shared task schema in `internal/core/tasks/schema.sql`. SQLite schema-version ledgers and historical migration files are not maintained. The application does not reset the database at startup; development databases use the current schema, and older schema layouts are not upgraded automatically. The product version remains `0.0.0` independently of the database structure.
+Core initializes the current tables and indexes from `internal/core/storage/schema.sql` together with the shared task schema in `internal/core/tasks/schema.sql`. SQLite schema-version ledgers and historical migration files are not maintained. The application does not reset the database at startup; development databases use the current schema, and older schema layouts are not upgraded automatically.
 
 ## Shared operation layer, CLI and TUI
 
@@ -50,6 +50,18 @@ Agent enrollment returns a Core-generated installer command through `internal/in
 
 ## Extended Agent management
 
-The `agent.host.v1` capability carries shared Agent settings, redacted diagnostics and durable root script jobs. The same operation contract exposes single-node commands, durable multi-node command/probe batches, asset settings and bounded enrollment grants. Each grant consumer receives an independent credential; its use count is claimed in the enrollment transaction. Settings, traffic and command records are stored as root-owned private JSON. Jobs persist acceptance before execution and never replay on restart.
+The `agent.host.v2` capability carries shared Agent settings, redacted diagnostics and durable root script jobs. The same operation contract exposes single-node commands, durable multi-node command/probe batches, asset settings and bounded enrollment grants. Each grant consumer receives an independent credential; its use count is claimed in the enrollment transaction. Settings, traffic and command records are stored as root-owned private JSON. Jobs persist acceptance before execution and never replay on restart.
 
 `agent.metrics.v2` replaces the metrics capability contract; `metrics.host` carries independent metric states. GPU/public IP lookups run separately, disk mount filters apply before statfs, and Core ages metrics using the configured intervals. Extended numeric history and alert subjects come from the shared metric catalog. Probe quality separates unknown gaps from failure and ICMP loss denominators; asset expiry can be evaluated without an online lease, while quota samples require fresh traffic. HTTP and WebSocket use the same Agent protocol, identity, generation, writer and business handlers. See [Agent capabilities](agent-capabilities.md) for operation names, limits and data semantics.
+
+## Bounded requests and durable command history
+
+Core limits ordinary request-body reads to 15 seconds and upload/multipart reads to 30 minutes. At most 256 requests may execute concurrently (health remains reachable); saturated requests return HTTP 503 with `Retry-After: 1`. Existing per-operation body limits, transfer limits, authentication and rate limits also apply. The server options expose these resource limits for embedding and verification. WebSocket lifetimes retain their separate stream policy.
+
+Root Agent command acceptance is written before execution. Full output remains in private JSON files; at 10,000 files, completed outcomes are compacted in batches of at least 128 into the root-owned `0600` command-history SQLite archive. Compaction preserves request hashes and job IDs, so uncertain retries still resolve to the accepted job. Lists use cached summaries and a bounded archive query instead of rereading every full output. Hourly cleanup and the discovered `commands.cleanup` operation use `commandHistoryRetentionDays` (default 90, range 1–3650). Finished known outcomes expire after that window; a key reused after expiration can execute again. Running, unknown and interrupted outcomes retain their identities. If uncertain outcomes alone fill the limit, new work is refused rather than discarding execution evidence.
+
+Core retains partial, stale and uncertain batch records. After interruption, batch observation finds missing child results using the original node idempotency key and reads the Agent job; observation never resubmits commands. Result persistence failures report unknown outcomes; an Agent restart converts surviving running records into interrupted outcomes without replay.
+
+The host protocol is `agent.host.v2`, reflecting the new settings/cleanup contract. Install an Agent advertising that capability before using extended host management; Core negotiates capabilities independently from metric and update support.
+
+See [verification results and reproduction](verification.md).

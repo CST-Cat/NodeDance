@@ -18,6 +18,7 @@ const (
 
 // Result reports rows deleted by one atomic cleanup transaction.
 type Result struct {
+	HostBatches     int64
 	AuditEntries    int64
 	CoreTaskEvents  int64
 	CoreTasks       int64
@@ -119,6 +120,17 @@ func Cleanup(ctx context.Context, db *sql.DB, now time.Time, retention time.Dura
 	if result.AlertWindows, err = remove("expired alert windows", `DELETE FROM alert_windows
 		WHERE (disabled_at IS NOT NULL AND disabled_at < ?)
 		OR (disabled_at IS NULL AND ends_at < ?)`, cutoffNanos, cutoffNanos); err != nil {
+		return Result{}, err
+	}
+	// Only complete, observed batches can expire. Partial/offline/unknown work
+	// retains its identity; the cleanup never guesses that dispatch did not run.
+	if result.HostBatches, err = remove("completed host batches", `DELETE FROM host_batches
+ WHERE created_at<? AND json_array_length(results_json)=json_array_length(nodes_json)
+ AND json_array_length(results_json)>0
+ AND NOT EXISTS (SELECT 1 FROM json_each(host_batches.results_json) r
+ WHERE COALESCE(json_extract(r.value,'$.stale'),0)<>0
+ OR (host_batches.kind='command' AND COALESCE(json_extract(r.value,'$.job.status'),'') NOT IN ('succeeded','failed','cancelled','timed_out'))
+ OR (host_batches.kind='probe' AND COALESCE(json_extract(r.value,'$.probeId'),'')=''))`, cutoffNanos); err != nil {
 		return Result{}, err
 	}
 	if err := tx.Commit(); err != nil {

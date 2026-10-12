@@ -59,3 +59,15 @@ func executeFinite(ctx context.Context, client *control.Client, catalog control.
 func terminalOperations(catalog control.Catalog) []control.Operation {
 	return append(append([]control.Operation{}, catalog.Operations...), localOperations()...)
 }
+
+// Upload paths and stdin streams have one binding for both terminal views.
+func uploadInput(path string, stdin io.Reader) (io.Reader, func(), error) {
+	if path == "-" {
+		return stdin, func() {}, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return f, func() { f.Close() }, nil
+}

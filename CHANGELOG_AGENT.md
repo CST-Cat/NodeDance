@@ -4,7 +4,11 @@
 
 ### English
 
+- Publish agent.host.v2 with configurable command history retention and a shared cleanup operation. Compact completed command output into a private SQLite archive while retaining retry identities; preserve uncertain jobs and report result-persistence failures honestly.
+
 ### 简体中文
+
+- 发布 agent.host.v2，增加命令历史保留设置与共用清理操作；将已完成命令压缩到私有 SQLite 归档并保留去重身份，保留不确定任务，明确报告结果写盘失败。
 
 ## [0.1.9]
 

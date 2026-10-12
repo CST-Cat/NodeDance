@@ -1,4 +1,4 @@
-import { resolveOperation, operationUpload, validateSchema, type OperationInput } from './operations'
+import { resolveOperation, operationUpload, validateSchema, parseExactJSON, decodeContractJSON, type BodySchema, type OperationInput } from './operations'
 import { requestIntent, intentKey, finishIntent } from './operation-intent'
 import { t, diagnostic } from "./i18n"
 import type { MetricsView } from './metrics-contract'
@@ -469,7 +469,7 @@ function clearExpiredSession(path: string) {
   }
 }
 
-export async function request<T>(path: string, init: RequestInit = {}, csrf = false, timeoutMs = 60_000, name = '', binary = false): Promise<T> {
+export async function request<T>(path: string, init: RequestInit = {}, csrf = false, timeoutMs = 60_000, name = '', binary = false, responseSchema?: BodySchema): Promise<T> {
   const controller = new AbortController()
   const timeout = window.setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), timeoutMs)
   const abortFromCaller = () => controller.abort(init.signal?.reason)
@@ -505,7 +505,7 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
       let message = t('m.ad5d5a8f24fc', {"0": (response.status)})
       const body = await response.text()
       try {
-        const payload = JSON.parse(body) as { error?: unknown; message?: unknown }
+        const payload = decodeContractJSON(body,responseSchema) as { error?: unknown; message?: unknown }
         if (typeof payload.message === 'string') message = diagnostic(payload.message)
         else if (typeof payload.error === 'string') message = diagnostic(payload.error)
       } catch {
@@ -520,7 +520,7 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
     if (!body) return undefined as T
     let payload: unknown
     try {
-      payload = JSON.parse(body)
+      payload = decodeContractJSON(body,responseSchema)
     } catch {
       throw new ApiError(response.status, t('m.e03b23b49908'))
     }
@@ -541,7 +541,7 @@ export async function operationRequest<T>(name: string, input: OperationInput = 
   const mutation = operation.method !== 'GET' && operation.method !== 'HEAD'
   const headers = new Headers(init.headers)
   if(typeof init.body==='string') {
-    validateSchema(operation.bodySchema,JSON.parse(init.body))
+    validateSchema(operation.bodySchema,parseExactJSON(init.body))
     if(operation.maxBodyBytes && new TextEncoder().encode(init.body).length>operation.maxBodyBytes)throw new Error('Body exceeds Core request limit')
   }
   let intent: string | undefined
@@ -549,8 +549,9 @@ export async function operationRequest<T>(name: string, input: OperationInput = 
     intent = await requestIntent(name,input,init.body,headers)
     headers.set('Idempotency-Key',intentKey(intent))
   }
+  for(const [key,definition] of Object.entries(operation.headers ?? {})){const value=headers.get(key);if(value!==null)validateSchema(definition,value,'headers.'+key)}
   if (operation.transport === 'upload' && !headers.has('Content-Type')) headers.set('Content-Type', 'application/octet-stream')
-  const result = await request<T>(path, { ...init, headers, method: operation.method }, mutation, timeoutMs, name, operation.transport === 'download')
+  const result = await request<T>(path, { ...init, headers, method: operation.method }, mutation, timeoutMs, name, operation.transport === 'download', operation.responseSchema)
   if(result !== undefined) validateSchema(operation.responseSchema,result)
   if(intent) finishIntent(intent)
   return result

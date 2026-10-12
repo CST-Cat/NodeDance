@@ -263,11 +263,19 @@ func (c *Client) request(ctx context.Context, o Operation, in Input, body io.Rea
 		if key == "" {
 			return nil, errors.New("--idempotency-key is required; reuse the same key when retrying the same intent")
 		}
+		raw, _ := json.Marshal(key)
+		if err := ValidateJSON(o.Headers["Idempotency-Key"], raw); err != nil {
+			return nil, err
+		}
 		req.Header.Set("Idempotency-Key", key)
 	}
 	for name, value := range in.Headers {
 		if _, ok := o.Headers[http.CanonicalHeaderKey(name)]; !ok {
 			return nil, fmt.Errorf("unknown operation header %s", name)
+		}
+		raw, _ := json.Marshal(value)
+		if err := ValidateJSON(o.Headers[http.CanonicalHeaderKey(name)], raw); err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
 		}
 		req.Header.Set(name, value)
 	}
@@ -353,13 +361,12 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 			if err != nil {
 				return fail(err)
 			}
-			if !info.Mode().IsRegular() {
-				return fail(errors.New("upload input must be a regular file"))
-			}
-			if o.Upload != nil && o.Upload.MaxBytes > 0 && info.Size() > o.Upload.MaxBytes {
+			if info.Mode().IsRegular() && o.Upload != nil && o.Upload.MaxBytes > 0 && info.Size() > o.Upload.MaxBytes {
 				return fail(errors.New("upload exceeds Core size limit"))
 			}
-			req.ContentLength = info.Size()
+			if info.Mode().IsRegular() {
+				req.ContentLength = info.Size()
+			}
 		}
 	}
 	response, err := c.http.Do(req)
