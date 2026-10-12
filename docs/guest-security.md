@@ -2,6 +2,16 @@
 
 Run `pnpm --dir web audit:guest-security`. The script builds an isolated real Core with a temporary database and a protocol-only simulated Agent, signs in a separate administrator browser context, publishes explicit aliases/fields, and enters guest mode through the login button in Chromium. Attack requests originate from that guest page. Production servers, real Agent installations and Docker resources are not targets.
 
+The pnpm command is the existing project convenience entry, not a requirement of the security tests. With Web dependencies and Playwright Chromium already installed, an equivalent direct run from the repository root is:
+
+```sh
+cd web
+node node_modules/vite/bin/vite.js build --config vite.config.ts --outDir ../internal/core/webassets/dist --emptyOutDir
+NODEDANCE_GUEST_ATTACKS=1 node scripts/audit-guest.cjs
+```
+
+If current Web assets have already been built, run `NODEDANCE_GUEST_ATTACKS=1 node web/scripts/audit-guest.cjs` from the repository root. The audit itself compiles the Core using Go and runs Chromium through Playwright.
+
 The suite discovers private operations from the connected Core's operation contract rather than keeping another operation list. Responses, not hidden buttons, determine whether an attack succeeds. Administrator requests create the fixture and withdraw its resources; they are not counted as successful guest operations.
 
 ## Verified cases
