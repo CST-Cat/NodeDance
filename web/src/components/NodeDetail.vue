@@ -35,7 +35,6 @@ const props = defineProps<{
   dashboardSettingsError: string
   currentTime: number
   initialSection: 'overview' | 'docker' | 'files'
-  startHostTerminal?: boolean
 }>()
 const emit = defineEmits<{
   back: []
@@ -346,7 +345,6 @@ watch(rebuildCandidates, (records) => {
   }
 }, { immediate: true })
 onMounted(() => {
-  if (props.startHostTerminal && props.online) openHostTerminal()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('pointermove', movePointerReorder)

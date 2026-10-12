@@ -14,17 +14,22 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/agent/terminal/tmuxbundle"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/creack/pty"
 	"github.com/moby/moby/client"
 )
 
 type SystemProvider struct {
-	shell  string
-	docker *client.Client
+	shell           string
+	docker          *client.Client
+	mu              sync.Mutex
+	directory       string
+	socketDirectory string
+	stateDirectory  string
 }
 
-func NewSystemProvider(shell string, dockerClient *client.Client) *SystemProvider {
+func NewSystemProvider(shell string, dockerClient *client.Client, stateDirectory string) *SystemProvider {
 	shell = strings.TrimSpace(shell)
 	if shell == "" {
 		shell = strings.TrimSpace(os.Getenv("SHELL"))
@@ -32,51 +37,76 @@ func NewSystemProvider(shell string, dockerClient *client.Client) *SystemProvide
 	if shell == "" {
 		shell = "/bin/sh"
 	}
-	return &SystemProvider{shell: shell, docker: dockerClient}
+	return &SystemProvider{shell: shell, docker: dockerClient, stateDirectory: stateDirectory}
 }
 
 func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFrame) (Endpoint, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	switch request.TargetKind {
-	case protocol.TerminalTargetHost:
-		return p.openHost(request.Rows, request.Columns)
-	case protocol.TerminalTargetContainer:
-		return p.openContainer(ctx, request)
-	default:
-		return nil, errors.New("unsupported terminal target")
-	}
-}
-
-func (p *SystemProvider) openHost(rows, columns uint16) (Endpoint, error) {
 	if !filepath.IsAbs(p.shell) || strings.ContainsAny(p.shell, "\x00\r\n") {
 		return nil, errors.New("configured host shell must be an absolute executable path")
 	}
 	info, err := os.Stat(p.shell)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
+	if err != nil || !info.Mode().IsRegular() || info.Mode()&0111 == 0 {
 		return nil, errors.New("configured host shell is unavailable")
 	}
-	command := exec.Command(p.shell, "-i")
-	command.Env = terminalEnvironment(p.shell)
-	file, err := pty.StartWithSize(command, &pty.Winsize{Rows: rows, Cols: columns})
-	if err != nil {
-		return nil, errors.New("could not start configured host shell")
+	args := []string{p.shell, "-i"}
+	if request.TargetKind == protocol.TerminalTargetContainer {
+		if p.docker == nil {
+			return nil, errors.New("Docker Engine is unavailable")
+		}
+		inspect, err := p.docker.ContainerInspect(ctx, request.ContainerID, client.ContainerInspectOptions{})
+		if err != nil || inspect.Container.ID != request.ContainerID || inspect.Container.State == nil || !inspect.Container.State.Running {
+			return nil, errors.New("target container is unavailable or not running")
+		}
+		// Docker Agent enters the host mount namespace through an open image
+		// executable. Its original pathname need not exist on the host. The
+		// running process's executable inode is the authoritative child binary.
+		executable := fmt.Sprintf("/proc/%d/exe", os.Getpid())
+		args = []string{executable, "terminal-container", request.ContainerID}
+	} else if request.TargetKind != protocol.TerminalTargetHost {
+		return nil, errors.New("unsupported terminal target")
 	}
-	endpoint := &hostEndpoint{file: file, command: command, waitDone: make(chan struct{})}
-	go func() {
-		err := command.Wait()
-		endpoint.waitMu.Lock()
-		endpoint.waitErr = err
-		endpoint.waitMu.Unlock()
-		close(endpoint.waitDone)
-	}()
-	return endpoint, nil
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.directory == "" {
+		directory, err := tmuxbundle.Install(p.stateDirectory)
+		if err != nil {
+			return nil, err
+		}
+		config := "set -g status off\nset -g default-terminal tmux-256color\nset -g history-limit 3000\nset -g destroy-unattached off\n"
+		if err := os.WriteFile(filepath.Join(directory, "tmux.conf"), []byte(config), 0600); err != nil {
+			_ = os.RemoveAll(directory)
+			return nil, err
+		}
+		socketDirectory, err := os.MkdirTemp("/run", "nodedance-terminal-")
+		if err != nil {
+			_ = os.RemoveAll(directory)
+			return nil, err
+		}
+		p.socketDirectory = socketDirectory
+		p.directory = directory
+	}
+	return newTmuxEndpoint(ctx, p.directory, p.socketDirectory, terminalEnvironment(p.shell), request, args)
+}
+
+// Close is called only after the manager has terminated all its tmux servers.
+func (p *SystemProvider) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.directory == "" {
+		return nil
+	}
+	_ = os.RemoveAll(p.socketDirectory)
+	err := os.RemoveAll(p.directory)
+	p.directory = ""
+	return err
 }
 
 func terminalEnvironment(shell string) []string {
 	values := []string{"TERM=xterm-256color", "SHELL=" + shell}
-	for _, key := range []string{"PATH", "HOME", "USER", "LANG", "LC_ALL"} {
+	for _, key := range []string{"PATH", "HOME", "USER", "LANG", "LC_ALL", "DOCKER_HOST"} {
 		if value := os.Getenv(key); value != "" {
 			values = append(values, key+"="+value)
 		}
@@ -84,40 +114,21 @@ func terminalEnvironment(shell string) []string {
 	return values
 }
 
-type hostEndpoint struct {
+type ptyClient struct {
 	file      *os.File
 	command   *exec.Cmd
 	waitDone  chan struct{}
-	waitMu    sync.Mutex
-	waitErr   error
 	closeOnce sync.Once
 }
 
-func (e *hostEndpoint) Read(data []byte) (int, error)  { return e.file.Read(data) }
-func (e *hostEndpoint) Write(data []byte) (int, error) { return e.file.Write(data) }
+func (e *ptyClient) Read(data []byte) (int, error)  { return e.file.Read(data) }
+func (e *ptyClient) Write(data []byte) (int, error) { return e.file.Write(data) }
 
-func (e *hostEndpoint) Resize(rows, columns uint16) error {
+func (e *ptyClient) Resize(rows, columns uint16) error {
 	return pty.Setsize(e.file, &pty.Winsize{Rows: rows, Cols: columns})
 }
 
-func (e *hostEndpoint) ExitCode() *int {
-	<-e.waitDone
-	e.waitMu.Lock()
-	err := e.waitErr
-	e.waitMu.Unlock()
-	code := 0
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			code = exitErr.ExitCode()
-		} else {
-			code = -1
-		}
-	}
-	return &code
-}
-
-func (e *hostEndpoint) Close() error {
+func (e *ptyClient) Close() error {
 	var closeErr error
 	e.closeOnce.Do(func() {
 		if e.command.Process != nil {
@@ -133,14 +144,14 @@ func (e *hostEndpoint) Close() error {
 			select {
 			case <-e.waitDone:
 			case <-time.After(3 * time.Second):
-				closeErr = errors.New("host shell did not stop after terminal close")
+				closeErr = errors.New("tmux client did not stop after terminal close")
 			}
 		}
 	})
 	return closeErr
 }
 
-func (p *SystemProvider) openContainer(ctx context.Context, request protocol.TerminalFrame) (Endpoint, error) {
+func (p *SystemProvider) openContainer(ctx, attachCtx context.Context, request protocol.TerminalFrame) (*containerEndpoint, error) {
 	if p.docker == nil {
 		return nil, errors.New("Docker Engine is unavailable")
 	}
@@ -167,17 +178,18 @@ func (p *SystemProvider) openContainer(ctx context.Context, request protocol.Ter
 	if err != nil || execResult.ID == "" {
 		return nil, errors.New("could not create Docker terminal Exec; container may not contain /bin/sh")
 	}
-	attached, err := cli.ExecAttach(ctx, execResult.ID, client.ExecAttachOptions{
+	attached, err := cli.ExecAttach(attachCtx, execResult.ID, client.ExecAttachOptions{
 		TTY: true, ConsoleSize: client.ConsoleSize{Height: uint(request.Rows), Width: uint(request.Columns)},
 	})
 	if err != nil || attached.Conn == nil || attached.Reader == nil {
 		return nil, errors.New("could not attach Docker terminal Exec")
 	}
+	endpoint := &containerEndpoint{cli: cli, response: attached, execID: execResult.ID}
 	if err := waitForContainerExecStart(ctx, cli, execResult.ID); err != nil {
-		_ = attached.Conn.Close()
+		_ = endpoint.Close()
 		return nil, errors.New("container shell is unavailable or exited before starting")
 	}
-	return &containerEndpoint{cli: cli, response: attached, execID: execResult.ID}, nil
+	return endpoint, nil
 }
 
 func waitForContainerExecStart(ctx context.Context, cli *client.Client, execID string) error {

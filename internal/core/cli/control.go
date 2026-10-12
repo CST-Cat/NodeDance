@@ -295,7 +295,7 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 func streamJSONL(ctx context.Context, client *control.Client, o control.Operation, in control.Input, input io.Reader, output io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var conn *websocket.Conn
+	var conn control.StreamConnection
 	var streamID string
 	var err error
 	if o.Transport == "terminal" {

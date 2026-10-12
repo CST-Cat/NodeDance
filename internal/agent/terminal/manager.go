@@ -25,6 +25,8 @@ type Endpoint interface {
 	io.ReadWriteCloser
 	Resize(rows, columns uint16) error
 	ExitCode() *int
+	Attach() error
+	Detach() error
 }
 
 type Provider interface {
@@ -77,6 +79,23 @@ func (m *Manager) Handle(ctx context.Context, frame protocol.TerminalFrame, emit
 	switch frame.Action {
 	case protocol.TerminalActionOpen:
 		return m.open(ctx, frame, emit)
+	case protocol.TerminalActionAttach, protocol.TerminalActionDetach:
+		current := m.lookup(frame.StreamID)
+		if current == nil {
+			return errors.New("terminal session is not active")
+		}
+		current.mu.Lock()
+		defer current.mu.Unlock()
+		if current.endpoint == nil {
+			return errors.New("terminal session is still opening")
+		}
+		if frame.Action == protocol.TerminalActionDetach {
+			return current.endpoint.Detach()
+		}
+		if err := current.endpoint.Attach(); err != nil {
+			return err
+		}
+		return current.emit(protocol.TerminalFrame{StreamID: current.id, Action: protocol.TerminalActionReady})
 	case protocol.TerminalActionInput:
 		current := m.lookup(frame.StreamID)
 		if current == nil {

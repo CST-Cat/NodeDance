@@ -663,6 +663,8 @@ export const api = {
     operationRequest<TerminalAuthorization>("terminal.create", { params: { nodeId: String(nodeId) } }, {
       body: JSON.stringify(target),
     }),
+  resumeTerminal: (nodeId: string, streamId: string) =>
+    operationRequest<TerminalAuthorization>("terminal.resume", { params: { nodeId, streamId } }, { body: JSON.stringify({}) }),
   cancelTerminal: (nodeId: string, streamId: string) =>
     operationRequest<void>("terminal.cancel", { params: { nodeId: String(nodeId), streamId: String(streamId) } }),
   appearance: () => operationRequest<Appearance>("appearance.get", {}),

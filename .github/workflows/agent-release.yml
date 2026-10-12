@@ -63,8 +63,10 @@ jobs:
           [[ "$(go env GOARCH)" == "$EXPECTED_ARCH" ]]
           [[ "$(go env GOOS)" == linux ]]
           mkdir -p dist
+          python3 scripts/vendor-tmux.py --check
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-agent-linux-${EXPECTED_ARCH}" ./cmd/nodedance-agent
           [[ "$("dist/nodedance-agent-linux-${EXPECTED_ARCH}" --version)" == "NodeDance Agent ${RELEASE_VERSION}" ]]
+          [[ "$("dist/nodedance-agent-linux-${EXPECTED_ARCH}" --tmux-version)" == "tmux 3.7c" ]]
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-updater-linux-${EXPECTED_ARCH}" ./cmd/nodedance-updater
           [[ "$("dist/nodedance-updater-linux-${EXPECTED_ARCH}" --version)" == "NodeDance Updater ${RELEASE_VERSION}" ]]
 
@@ -73,6 +75,12 @@ jobs:
           set -euo pipefail
           sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" \
             "$(command -v go)" test -count=1 ./internal/agent/... ./internal/protocol/... ./internal/i18n/... ./cmd/nodedance-agent/... ./internal/update/... ./cmd/nodedance-updater/...
+
+      - name: Verify bundled tmux Docker terminal bridge
+        run: |
+          set -euo pipefail
+          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" NODEDANCE_TEST_DOCKER=1 \
+            "$(command -v go)" test -count=1 ./internal/agent/terminal -run TestBundledTmuxDocker -timeout 60s
 
       - name: Upload tested native Agent artifact
         uses: actions/upload-artifact@v4

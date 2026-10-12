@@ -1,0 +1,9 @@
+{
+  "version": "3.7c",
+  "base": "https://github.com/tmux/tmux-builds/releases/download/v3.7c/",
+  "assets": {
+    "linux-amd64.tar.gz": {"name": "tmux-3.7c-linux-x86_64.tar.gz", "sha256": "cc56bd1cc873eb6089c615f0496b072385bda8a6d944069f38564a5d49c128aa", "machine": 62},
+    "linux-arm64.tar.gz": {"name": "tmux-3.7c-linux-arm64.tar.gz", "sha256": "29dcb978da2a4b0cf6790f9e004865dac239a3ba03bbf776dddacce23d03831b", "machine": 183}
+  },
+  "licenses": {"name": "LICENSES.tar.gz", "sha256": "094905d3ba42397c65fecd817dc29736dd14bd35e75600441403a365125f47d1"}
+}

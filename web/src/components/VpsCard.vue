@@ -4,6 +4,8 @@ import { computed, ref } from 'vue'
 import type { AgentNode, ContainerTask, ContainerTaskAction, DashboardPreference, DockerContainerRecord, DockerInventory } from '../api'
 import type { Metric, MetricsView } from '../metrics-contract'
 
+const dockerExpanded = ref(false)
+
 const props = defineProps<{
   node: AgentNode
   metrics?: MetricsView
@@ -297,7 +299,7 @@ async function copySSHCommand() {
     <header class="vps-card-header">
       <div class="vps-card-heading">
         <span class="vps-node-icon" aria-hidden="true">{{ nodeIcon(nodePreference?.icon) }}</span>
-        <div><span class="eyebrow">VPS<template v-if="nodePreference?.group"> · {{ nodePreference.group }}</template></span><h2>{{ title }}</h2></div>
+        <div><span class="eyebrow">VPS<template v-if="nodePreference?.group"> · {{ nodePreference.group }}</template></span><h2><button class="vps-name" type="button" @click="emit('view', node)">{{ title }}</button></h2></div>
       </div>
       <span class="vps-card-status" :data-online="online" :data-pending="pending" role="status">{{ nodeStatusLabel() }}</span>
     </header>
@@ -312,7 +314,8 @@ async function copySSHCommand() {
       <div><span>{{ t('m.5986e9d976e0') }}</span><strong>{{ uptimeSummary() }}</strong></div>
     </div>
 
-    <section class="vps-card-docker" :data-available="inventory?.dockerAvailability || 'unknown'" :data-stale="dockerStale">
+    <button class="docker-toggle" type="button" :aria-expanded="dockerExpanded" :aria-controls="`docker-${node.nodeId}`" @click="dockerExpanded = !dockerExpanded">{{ t(dockerExpanded ? 'dashboard.hideDocker' : 'dashboard.showDocker') }} <span aria-hidden="true">{{ dockerExpanded ? '−' : '+' }}</span></button>
+    <section v-if="dockerExpanded" :id="`docker-${node.nodeId}`" class="vps-card-docker" :data-available="inventory?.dockerAvailability || 'unknown'" :data-stale="dockerStale">
       <header><strong>{{ t('m.7cabcc483eb4') }}</strong><span>{{ inventory?.containers.length ?? '—' }} · {{ dockerStatus() }}</span></header>
       <p v-if="!inventory" class="vps-card-empty">{{ pending ? t('m.0470e99d0fc7') : online ? t('m.5a7828919f0f') : t('m.16f23efa02f5') }}</p>
       <p v-else-if="inventory.dockerAvailability === 'unavailable' || inventory.staleReason === 'docker_capability_unavailable'" class="vps-card-empty">{{ t('m.0b7e6af1b292') }}{{ inventory.health?.reason || inventory.staleReason || '' }}</p>
@@ -356,13 +359,17 @@ async function copySSHCommand() {
     </nav>
     <p v-if="sshCopyMessage" class="vps-card-ssh-status" role="status">{{ display(sshCopyMessage) }}</p>
     <footer class="vps-card-footer">
-      <span>{{ nodeReason || (dockerStale ? t('m.5662971e4f8b') : '') }}</span>
+      <span>{{ nodeReason || (dockerExpanded && dockerStale ? t('m.5662971e4f8b') : '') }}</span>
       <button type="button" @click="emit('view', node)">{{ t('m.1ee33cf03dd4') }}</button>
     </footer>
   </article>
 </template>
 
 <style scoped>
+.vps-card-heading .vps-name { padding:0; border:0; min-height:40px; color:var(--text); background:transparent; text-align:left; font:inherit; overflow-wrap:anywhere; }
+.vps-card-heading .vps-name:hover { color:var(--accent); }
+.docker-toggle { display:flex; justify-content:space-between; align-items:center; width:100%; margin-top:12px; color:var(--accent); }
+
 .vps-card { min-width: 0; border: 1px solid var(--line); border-radius:var(--radius-card); padding: clamp(14px,2vw,20px); background: var(--surface); color: var(--text); }
 .vps-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .vps-card-heading { display: flex; min-width: 0; align-items: center; gap: 9px; }

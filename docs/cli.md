@@ -105,7 +105,7 @@ nodedance terminal open --timeout 0 \
   --params '{"nodeId":"NODE_UUID"}' --body '{"targetKind":"host"}' --input -
 ```
 
-CLI streams print the Core's messages as JSONL. Log and terminal byte data use base64. `terminal.open` obtains a single-use ticket and sends the open frame automatically. Its JSONL input may omit `streamId`; the client supplies it. Input frames include `{"action":"input","data":"bHMK"}` (`ls` followed by newline), `{"action":"resize","rows":40,"columns":120}`, or `{"action":"close"}`. For a container, use `targetKind: "container"` and a full `containerId`. `terminal.create`, `terminal.connect`, and `terminal.cancel` remain discoverable for clients that need to manage authorization separately.
+CLI streams print the Core's messages as JSONL. Log and terminal byte data use base64. `terminal.open` obtains a single-use ticket; Core opens the shell once and the client sets its initial dimensions. Its JSONL input may omit `streamId`; the client supplies it. Input frames include `{"action":"input","data":"bHMK"}` (`ls` followed by newline), `{"action":"resize","rows":40,"columns":120}`, or `{"action":"close"}`. For a container, use `targetKind: "container"` and a full `containerId`. `terminal.create`, `terminal.connect`, `terminal.resume`, and `terminal.cancel` remain discoverable for clients that need to manage authorization separately.
 
 ## TUI
 
@@ -116,6 +116,28 @@ nodedance tui --server https://core.example --timeout 0
 The TUI uses the same catalog and client as CLI. Search with `/text`, move between pages with `n`/`p`, enter an operation number, and quit with `q`. Select `auth.login` first and enter both the account username and the hidden password. Forms request path/query parameters, JSON bodies or private input files, and idempotency keys. Results paginate. Binary operations prompt for local filenames. Local lifecycle operations request native argument arrays (for example `["--data-dir","/var/lib/nodedance","--output","/private/core.tar"]`); Agent enrollment reads its token in a hidden prompt.
 
 Select `terminal.open` for a real interactive host/container shell; it forwards keyboard input and terminal resizing. Press **Ctrl-]** to return to NodeDance. Other streams print JSONL and accept `/stop` to return. TUI input requires an actual terminal; LLMs should use the noninteractive CLI.
+
+## Terminal recovery / 终端恢复
+
+Agent 内置完整上游 tmux 3.7c（Linux amd64、arm64 静态构建），无需在主机或容器安装 tmux。Web、CLI 的 `terminal.open` 与 TUI 使用同一 Core 操作契约：连接断开时分离 tmux 客户端，重连时附着原会话，由 tmux 重绘终端画面。Core 每 5 秒发送 WebSocket ping；客户端重连期间暂停输入，不重放命令。总览中的终端保持弹窗，点击 VPS 名称进入详情。
+
+Agent embeds complete upstream tmux 3.7c static builds for Linux amd64 and arm64; no host or container installation is required. Web, CLI `terminal.open` and TUI share the Core operation contract: transport loss detaches the tmux client, and reconnecting attaches the original session and lets tmux repaint the screen. Core sends WebSocket pings every five seconds. Input pauses during recovery and is never replayed. The overview terminal remains a modal; clicking a VPS name opens its details.
+
+主机 shell 和 Docker Exec 终端均由 Agent 的独立 tmux 服务器管理。Docker 通过 root-only Agent 子进程桥接现有 Docker API，不安装 Docker CLI、不修改目标容器。完整 tmux 的窗口、分屏和复制模式保留；主机终端可直接调用内置 `tmux`。NodeDance 会在 tmux 客户端单独退出后自动重新附着；结束会话请使用 Web 的关闭按钮或 CLI/TUI 的 **Ctrl-]**。
+
+Host shells and Docker Exec terminals run under dedicated Agent tmux servers. A root-only Agent child bridges the existing Docker API without installing Docker CLI or modifying the target container. Complete tmux window, pane and copy-mode functionality is retained; managed host shells can invoke the embedded `tmux` directly. NodeDance automatically reattaches if the tmux client alone exits. To end the managed session, use Web close or **Ctrl-]** in CLI/TUI.
+
+每个节点最多两个终端；分离的会话仍占用名额并阻止 Agent 更新。30 分钟无输入策略、登录授权检查和审计继续生效。主动关闭终端、CLI/TUI 返回、注销、撤销权限、Core/Agent 停止或 Agent–Core 连接换代都会结束会话。这不是主机重启后的进程恢复。
+
+Each node permits two terminals; detached sessions occupy a slot and block Agent updates. The 30-minute idle policy, login authorization checks and auditing remain in force. Explicit close, leaving CLI/TUI, logout, revocation, Core/Agent shutdown or an Agent–Core connection generation change end the managed session. Host reboot does not restore processes.
+
+`terminal.resume` 接收空对象 `{}`（也可省略请求体），路径参数为 `nodeId`、`streamId`。Core 校验同一登录会话、节点和 Agent 连接后返回新的单次票据；调用 `terminal.connect` 即可重新附着，客户端不得发送 `open`、`attach` 或 `detach`。`terminal.cancel` 结束服务器及其所有窗口。恢复不使用输出序号、缓存或补发。
+
+`terminal.resume` accepts `{}` or an omitted body with `nodeId` and `streamId` path parameters. After verifying the same login session, node and Agent connection, Core returns a fresh single-use ticket for `terminal.connect`. Clients must not send `open`, `attach` or `detach`. `terminal.cancel` ends the server and all its windows. Recovery uses no output cursors, history cache or replay.
+
+构建与许可证见 [内置 tmux](bundled-tmux.md)。`nodedance-agent --tmux-version` 显示固定版本。原生 Agent、Docker 镜像、安装器和更新器使用同一个嵌入构建，不需要额外下载运行时依赖。
+
+See [bundled tmux](bundled-tmux.md) for provenance and licenses. `nodedance-agent --tmux-version` reports the pinned version. Native Agent, Docker image, installer and updater use the same embedded build without additional runtime downloads.
 
 ## Language and releases / 语言与发布
 

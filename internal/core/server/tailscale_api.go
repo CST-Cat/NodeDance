@@ -332,10 +332,10 @@ func tailscaleAPIError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	}
 	if errors.Is(err, tailscale.ErrUnavailable) {
-		message = "Tailscale CLI is not installed on Core; manual Agent installation remains available."
+		message = "Core cannot find Tailscale CLI or its local socket. For container deployments, expose the existing host socket to Core; manual Agent installation remains available."
 	}
 	if errors.Is(err, tailscale.ErrNotLoggedIn) {
-		message = "Core is not signed in to Tailscale or has no visible peers."
+		message = "Core is not signed in to Tailscale."
 	}
 	writeJSON(w, status, map[string]string{"message": message})
 }

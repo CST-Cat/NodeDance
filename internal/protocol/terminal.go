@@ -13,6 +13,9 @@ const (
 	TerminalActionOutput = "output"
 	TerminalActionResize = "resize"
 	TerminalActionClose  = "close"
+	// Attach and detach are Core-to-Agent lifecycle actions, never client input.
+	TerminalActionAttach = "attach"
+	TerminalActionDetach = "detach"
 	TerminalActionClosed = "closed"
 	TerminalActionError  = "error"
 	TerminalActionExit   = "exit"
@@ -103,8 +106,8 @@ func ValidateTerminalFrame(frame TerminalFrame, fromAgent bool) error {
 		if frame.Rows == 0 || frame.Columns == 0 || len(frame.Data) != 0 || frame.Message != "" || frame.ExitCode != nil {
 			return errors.New("invalid terminal resize frame")
 		}
-	case TerminalActionClose:
-		if len(frame.Data) != 0 || frame.Message != "" || frame.ExitCode != nil {
+	case TerminalActionClose, TerminalActionAttach, TerminalActionDetach:
+		if len(frame.Data) != 0 || frame.Message != "" || frame.ExitCode != nil || frame.TargetKind != "" || frame.ContainerID != "" || frame.Rows != 0 || frame.Columns != 0 {
 			return errors.New("invalid terminal close frame")
 		}
 	default:

@@ -3,12 +3,14 @@ package control_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -247,10 +249,12 @@ func TestCatalog(t *testing.T) {
 	}
 }
 
-func TestOpenTerminalAuthorizesAndSendsTarget(t *testing.T) {
+func TestOpenTerminalAuthorizesAndResizesOnce(t *testing.T) {
 	frames := make(chan map[string]any, 2)
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/api/v1/operations":
+			json.NewEncoder(w).Encode(control.Describe())
 		case "/api/v1/auth/csrf":
 			http.SetCookie(w, &http.Cookie{Name: "nodedance_csrf", Value: "csrf", Path: "/"})
 			io.WriteString(w, `{"token":"csrf"}`)
@@ -295,8 +299,8 @@ func TestOpenTerminalAuthorizesAndSendsTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.CloseNow()
-	if frame := <-frames; frame["action"] != "open" || frame["targetKind"] != "host" || frame["rows"] != float64(40) || frame["streamId"] != streamID {
-		t.Fatalf("incorrect open: %v", frame)
+	if frame := <-frames; frame["action"] != "resize" || frame["targetKind"] != nil || frame["rows"] != float64(40) || frame["streamId"] != streamID {
+		t.Fatalf("incorrect initial resize: %v", frame)
 	}
 	if _, _, err = conn.Read(ctx); err != nil {
 		t.Fatal(err)
@@ -355,5 +359,107 @@ func TestRemoteCatalogRejectsInvalidDefinitions(t *testing.T) {
 		}
 		client.Close()
 		host.Close()
+	}
+}
+
+func TestTerminalClientReattachesTmuxWithoutReplayingInput(t *testing.T) {
+	var creates, resumes, inputs atomic.Int32
+	streamID := strings.Repeat("b", 32)
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/operations":
+			json.NewEncoder(w).Encode(control.Describe())
+		case "/api/v1/auth/csrf":
+			http.SetCookie(w, &http.Cookie{Name: "nodedance_csrf", Value: "csrf", Path: "/"})
+			io.WriteString(w, `{"token":"csrf"}`)
+		case "/api/v1/nodes/node/terminals":
+			creates.Add(1)
+			json.NewEncoder(w).Encode(map[string]string{"streamId": streamID, "ticket": "initial-ticket"})
+		case "/api/v1/nodes/node/terminals/" + streamID + "/resume":
+			resumes.Add(1)
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			if len(body) != 0 {
+				t.Error("resume carries obsolete output cursor")
+			}
+			json.NewEncoder(w).Encode(map[string]string{"streamId": streamID, "ticket": "resumed-ticket"})
+		case "/api/v1/nodes/node/terminals/" + streamID:
+			w.WriteHeader(204)
+		case "/ws/v1/streams/terminal":
+			conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
+			if err != nil {
+				return
+			}
+			defer conn.CloseNow()
+			send := func(action, text string) {
+				raw, _ := json.Marshal(map[string]any{"type": "terminal", "frame": protocol.TerminalFrame{StreamID: streamID, Action: action, Data: []byte(text)}})
+				conn.Write(r.Context(), websocket.MessageText, raw)
+			}
+			if r.URL.Query().Get("ticket") == "initial-ticket" {
+				_, raw, err := conn.Read(r.Context())
+				if err != nil {
+					return
+				}
+				var resize protocol.TerminalFrame
+				json.Unmarshal(raw, &resize)
+				if resize.Action != "resize" {
+					t.Errorf("client repeated open: %s", raw)
+				}
+				send("ready", "")
+				send("output", "before")
+			} else {
+				send("ready", "")
+				send("output", "\x1b[2J\x1b[Htmux redraw")
+				_, _, _ = conn.Read(r.Context()) // resize after ready
+				_, raw, err := conn.Read(r.Context())
+				if err == nil {
+					var frame protocol.TerminalFrame
+					json.Unmarshal(raw, &frame)
+					if frame.Action == "input" {
+						inputs.Add(1)
+					}
+				}
+			}
+		}
+	}))
+	defer host.Close()
+	client, err := control.NewClient(control.ClientOptions{Server: host.URL, Development: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	ctx, stop := context.WithTimeout(context.Background(), 5*time.Second)
+	defer stop()
+	terminal, id, err := client.OpenTerminal(ctx, control.Input{Params: map[string]string{"nodeId": "node"}, Body: json.RawMessage(`{"targetKind":"host"}`)}, 24, 80)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer terminal.CloseNow()
+	var outputs []string
+	for len(outputs) < 2 {
+		_, raw, err := terminal.Read(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var frame struct {
+			Frame protocol.TerminalFrame `json:"frame"`
+		}
+		json.Unmarshal(raw, &frame)
+		if frame.Frame.Action == "output" {
+			outputs = append(outputs, string(frame.Frame.Data))
+		}
+	}
+	if fmt.Sprint(outputs) != "[before \x1b[2J\x1b[Htmux redraw]" || creates.Load() != 1 || resumes.Load() != 1 {
+		t.Fatalf("outputs %v, creates %d, resumes %d", outputs, creates.Load(), resumes.Load())
+	}
+	if err := control.SendTerminal(ctx, terminal, protocol.TerminalFrame{StreamID: id, Action: "input", Data: []byte("one command\n")}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for inputs.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if inputs.Load() != 1 {
+		t.Fatalf("command sent %d times", inputs.Load())
 	}
 }

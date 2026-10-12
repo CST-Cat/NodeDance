@@ -65,6 +65,12 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 	if s.handleDashboardSettingsAPI(w, r) || s.handleNodeDashboardAPI(w, r) {
 		return
 	}
+	if strings.HasSuffix(r.URL.Path, "/resume") {
+		if nodeID, streamID, ok := terminalCancellationRoute(strings.TrimSuffix(r.URL.Path, "/resume")); ok {
+			s.resumeTerminal(w, r, current, nodeID, streamID)
+			return
+		}
+	}
 	if nodeID, streamID, ok := terminalCancellationRoute(r.URL.Path); ok {
 		s.cancelTerminalTicket(w, r, current, nodeID, streamID)
 		return

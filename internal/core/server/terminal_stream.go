@@ -20,7 +20,7 @@ import (
 
 const (
 	terminalTicketLifetime = time.Minute
-	terminalBrowserQueue   = 16
+	terminalBrowserQueue   = 32
 	terminalBrowserReadMax = protocol.MaxTerminalFrameJSON
 )
 
@@ -51,7 +51,14 @@ type terminalStream struct {
 	agent            *agentConnection
 	conn             *websocket.Conn
 	out              chan protocol.TerminalFrame
+	attachment       uint64
+	opened           bool
 	cancel           context.CancelFunc
+}
+
+type terminalMessage struct {
+	Type  string                 `json:"type"`
+	Frame protocol.TerminalFrame `json:"frame"`
 }
 
 type createTerminalRequest struct {
@@ -177,6 +184,7 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, current 
 }
 
 var errTerminalLimit = errors.New("terminal concurrency limit reached")
+var errInvalidTerminalFrame = errors.New("invalid terminal browser frame")
 
 func validTerminalContainerID(value string) bool {
 	if len(value) != 64 {
@@ -206,9 +214,18 @@ func (s *Server) cancelTerminalTicket(w http.ResponseWriter, r *http.Request, cu
 		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return
 	}
-	// This endpoint can only revoke an unused ticket. Once the WebSocket
-	// consumes it, the existing browser close/logout path owns that stream.
-	s.terminals.revokeTicket(current.ID, nodeID, streamID)
+
+	s.terminals.mu.Lock()
+	stream := s.terminals.streams[streamID]
+	if stream == nil {
+		stream = s.terminals.pending[streamID]
+	}
+	owned := stream != nil && stream.browserSessionID == current.ID && stream.nodeID == nodeID
+	s.terminals.mu.Unlock()
+	if owned {
+		s.terminals.close(s, stream, "browser closed terminal", true)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -248,8 +265,13 @@ func (m *terminalStreamManager) expireTicket(key string, stream *terminalStream)
 		m.mu.Unlock()
 		return
 	}
-	stream.closed = true
 	delete(m.tickets, key)
+	if stream.opened {
+		delete(m.pending, stream.streamID)
+		m.mu.Unlock()
+		return
+	}
+	stream.closed = true
 	delete(m.pending, stream.streamID)
 	if m.byNode[stream.nodeID] > 0 {
 		m.byNode[stream.nodeID]--
@@ -266,7 +288,7 @@ func (m *terminalStreamManager) consume(ticket, sessionID string, now time.Time,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	stream := m.tickets[key]
-	if stream == nil || stream.consumed || stream.closed || stream.browserSessionID != sessionID || !now.Before(stream.expires) {
+	if stream == nil || stream.consumed || stream.closed || stream.conn != nil || stream.browserSessionID != sessionID || !now.Before(stream.expires) {
 		return nil, false
 	}
 	delete(m.tickets, key)
@@ -274,27 +296,9 @@ func (m *terminalStreamManager) consume(ticket, sessionID string, now time.Time,
 	stream.consumed = true
 	stream.conn = conn
 	stream.cancel = cancel
+	stream.attachment++
 	m.streams[stream.streamID] = stream
 	return stream, true
-}
-
-func (m *terminalStreamManager) revokeTicket(sessionID, nodeID, streamID string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	stream := m.pending[streamID]
-	if stream == nil || stream.closed || stream.consumed || stream.browserSessionID != sessionID || stream.nodeID != nodeID {
-		return false
-	}
-	stream.closed = true
-	delete(m.pending, streamID)
-	delete(m.tickets, stream.ticket)
-	if m.byNode[nodeID] > 0 {
-		m.byNode[nodeID]--
-		if m.byNode[nodeID] == 0 {
-			delete(m.byNode, nodeID)
-		}
-	}
-	return true
 }
 
 func (m *terminalStreamManager) find(streamID string) *terminalStream {
@@ -331,7 +335,10 @@ func (m *terminalStreamManager) handleAgentFrame(s *Server, connection *agentCon
 		return
 	}
 	if frame.Action == protocol.TerminalActionReady {
-		if !s.recordTerminalAudit(stream, "terminal_start", "succeeded") {
+		m.mu.Lock()
+		alreadyStarted := stream.started
+		m.mu.Unlock()
+		if !alreadyStarted && !s.recordTerminalAudit(stream, "terminal_start", "succeeded") {
 			m.close(s, stream, "terminal audit could not be saved", true)
 			return
 		}
@@ -343,12 +350,7 @@ func (m *terminalStreamManager) handleAgentFrame(s *Server, connection *agentCon
 		stream.started = true
 		m.mu.Unlock()
 	}
-	select {
-	case stream.out <- frame:
-	default:
-		m.close(s, stream, "terminal output queue overflow", true)
-		return
-	}
+
 	if frame.Action == protocol.TerminalActionError {
 		m.mu.Lock()
 		started := stream.started
@@ -356,11 +358,32 @@ func (m *terminalStreamManager) handleAgentFrame(s *Server, connection *agentCon
 		if !started {
 			s.recordTerminalAudit(stream, "terminal_start", "failed")
 		}
-		m.close(s, stream, "Agent rejected terminal target", false)
 	}
-	if frame.Action == protocol.TerminalActionClosed {
-		m.close(s, stream, "terminal closed", false)
+	m.mu.Lock()
+	if stream.closed {
+		m.mu.Unlock()
+		return
 	}
+	// Detached output belongs to tmux, which repaints when a new client attaches.
+	if stream.conn == nil {
+		m.mu.Unlock()
+		if frame.Action == protocol.TerminalActionClosed || frame.Action == protocol.TerminalActionError || frame.Action == protocol.TerminalActionExit {
+			m.close(s, stream, "terminal closed", true)
+		}
+		return
+	}
+	select {
+	case stream.out <- frame:
+		m.mu.Unlock()
+	default:
+		cancel := stream.cancel
+		m.mu.Unlock()
+		// A slow transport reattaches to tmux rather than losing its shell.
+		if cancel != nil {
+			cancel()
+		}
+	}
+
 }
 
 func (s *Server) recordTerminalAudit(stream *terminalStream, action, outcome string) bool {
@@ -452,7 +475,7 @@ func (m *terminalStreamManager) closeMatching(s *Server, predicate func(*termina
 		if predicate(stream) {
 			if _, exists := seen[stream]; !exists {
 				seen[stream] = struct{}{}
-				active = append(active, closingStream{stream: stream, notify: stream.consumed})
+				active = append(active, closingStream{stream: stream, notify: stream.opened})
 			}
 		}
 	}
@@ -460,7 +483,7 @@ func (m *terminalStreamManager) closeMatching(s *Server, predicate func(*termina
 		if predicate(stream) {
 			if _, exists := seen[stream]; !exists {
 				seen[stream] = struct{}{}
-				active = append(active, closingStream{stream: stream, notify: stream.consumed})
+				active = append(active, closingStream{stream: stream, notify: stream.opened})
 			}
 		}
 	}
@@ -496,17 +519,43 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request,
 		_ = conn.Close(websocket.StatusPolicyViolation, "terminal authorization rejected")
 		return
 	}
-	defer s.terminals.close(s, stream, "browser closed terminal", true)
+
+	attachment := stream.attachment
+	explicitClose := false
+	closeReason := "browser closed terminal"
+	defer func() {
+		cancel()
+		conn.CloseNow()
+		if explicitClose {
+			s.terminals.close(s, stream, closeReason, true)
+		} else {
+			s.terminals.detach(s, stream, attachment)
+		}
+	}()
 	if !s.terminalAgentCurrent(stream) {
-		_ = conn.Close(websocket.StatusPolicyViolation, "Agent connection changed")
+		explicitClose = true
 		return
 	}
-	openPayload, _ := json.Marshal(protocol.TerminalFrame{StreamID: stream.streamID, Action: protocol.TerminalActionOpen,
-		TargetKind: stream.targetKind, ContainerID: stream.containerID, Rows: 24, Columns: 80})
-	if !stream.agent.tryEnqueue(protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTerminalFrame, Generation: stream.generation, Payload: openPayload}) {
-		_ = conn.Close(websocket.StatusTryAgainLater, "Agent command queue is busy")
+	s.terminals.mu.Lock()
+	opened := stream.opened
+	s.terminals.mu.Unlock()
+	action := protocol.TerminalActionAttach
+	frame := protocol.TerminalFrame{StreamID: stream.streamID, Action: action}
+	if !opened {
+		frame.Action = protocol.TerminalActionOpen
+		frame.TargetKind = stream.targetKind
+		frame.ContainerID = stream.containerID
+		frame.Rows = 24
+		frame.Columns = 80
+	}
+	payload, _ := json.Marshal(frame)
+	if !stream.agent.tryEnqueue(protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTerminalFrame, Generation: stream.generation, Payload: payload}) {
+		explicitClose = true
 		return
 	}
+	s.terminals.mu.Lock()
+	stream.opened = true
+	s.terminals.mu.Unlock()
 	readDone := make(chan error, 1)
 	go func() {
 		for {
@@ -516,14 +565,14 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request,
 				return
 			}
 			if messageType != websocket.MessageText || len(raw) == 0 || len(raw) > terminalBrowserReadMax {
-				readDone <- errors.New("invalid terminal browser frame")
+				readDone <- errInvalidTerminalFrame
 				return
 			}
 			var frame protocol.TerminalFrame
 			decoder := json.NewDecoder(strings.NewReader(string(raw)))
 			decoder.DisallowUnknownFields()
-			if decoder.Decode(&frame) != nil || protocol.ValidateTerminalFrame(frame, false) != nil || frame.StreamID != stream.streamID {
-				readDone <- errors.New("invalid terminal browser frame")
+			if decoder.Decode(&frame) != nil || protocol.ValidateTerminalFrame(frame, false) != nil || frame.StreamID != stream.streamID || (frame.Action != protocol.TerminalActionInput && frame.Action != protocol.TerminalActionResize && frame.Action != protocol.TerminalActionClose) {
+				readDone <- errInvalidTerminalFrame
 				return
 			}
 			payload, err := json.Marshal(frame)
@@ -543,20 +592,37 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request,
 		select {
 		case <-ctx.Done():
 			return
-		case <-readDone:
+		case err := <-readDone:
+			explicitClose = err == nil || errors.Is(err, errInvalidTerminalFrame)
+			if errors.Is(err, errInvalidTerminalFrame) {
+				closeReason = "invalid terminal browser frame"
+			}
 			return
 		case frame := <-stream.out:
-			writeCtx, cancelWrite := context.WithTimeout(ctx, 5*time.Second)
-			err := conn.Write(writeCtx, websocket.MessageText, marshalAgentPayload(map[string]any{"type": "terminal", "frame": frame}))
-			cancelWrite()
+			writeCtx, stop := context.WithTimeout(ctx, 5*time.Second)
+			err := conn.Write(writeCtx, websocket.MessageText, marshalAgentPayload(terminalMessage{Type: "terminal", Frame: frame}))
+			stop()
 			if err != nil {
 				return
 			}
-		case <-ticker.C:
-			if !s.dashboardSessionStillValid(ctx, stream.browserSessionID) {
+			if frame.Action == protocol.TerminalActionClosed || frame.Action == protocol.TerminalActionError {
+				closeReason = "terminal closed"
+				if frame.Action == protocol.TerminalActionError {
+					closeReason = "Agent rejected terminal target"
+				}
+				explicitClose = true
 				return
 			}
-			if !s.terminalAgentCurrent(stream) {
+		case <-ticker.C:
+			if !s.dashboardSessionStillValid(ctx, stream.browserSessionID) || !s.terminalAgentCurrent(stream) {
+				closeReason = "terminal authorization expired"
+				explicitClose = true
+				return
+			}
+			pingCtx, stop := context.WithTimeout(ctx, 5*time.Second)
+			err := conn.Ping(pingCtx)
+			stop()
+			if err != nil {
 				return
 			}
 		}
@@ -571,4 +637,92 @@ func (s *Server) terminalAgentCurrent(stream *terminalStream) bool {
 	current := s.agentConnections[stream.agentID] == stream.agent && stream.agent.generation == stream.generation
 	s.agentConnectionsMu.Unlock()
 	return current
+}
+
+// detach disconnects only the tmux client. tmux owns the shell and screen;
+// Agent idle expiry and authentication revocation remain authoritative.
+func (m *terminalStreamManager) detach(s *Server, stream *terminalStream, attachment uint64) {
+	m.mu.Lock()
+	if stream.closed || stream.attachment != attachment {
+		m.mu.Unlock()
+		return
+	}
+	payload, _ := json.Marshal(protocol.TerminalFrame{StreamID: stream.streamID, Action: protocol.TerminalActionDetach})
+	queued := stream.agent.tryEnqueue(protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeTerminalFrame, Generation: stream.generation, Payload: payload})
+	stream.conn = nil
+	stream.cancel = nil
+	for {
+		select {
+		case <-stream.out:
+		default:
+			m.mu.Unlock()
+			if !queued {
+				m.close(s, stream, "Agent terminal queue is busy", true)
+			} else {
+				m.checkDetachedAuthorization(s, stream, attachment)
+			}
+			return
+		}
+	}
+}
+
+func (m *terminalStreamManager) checkDetachedAuthorization(s *Server, stream *terminalStream, attachment uint64) {
+	time.AfterFunc(min(s.websocketCheckInterval, 5*time.Second), func() {
+		m.mu.Lock()
+		detached := !stream.closed && stream.conn == nil && stream.attachment == attachment
+		m.mu.Unlock()
+		if !detached {
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if !s.dashboardSessionStillValid(ctx, stream.browserSessionID) || !s.terminalAgentCurrent(stream) {
+			m.close(s, stream, "terminal authorization expired", true)
+			return
+		}
+		m.checkDetachedAuthorization(s, stream, attachment)
+	})
+}
+
+func (s *Server) resumeTerminal(w http.ResponseWriter, r *http.Request, current *session, nodeID, streamID string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var request struct{}
+	if r.ContentLength != 0 && !decodeJSON(w, r, &request) {
+		return
+	}
+	s.terminalSessionMu.Lock()
+	defer s.terminalSessionMu.Unlock()
+	if !s.dashboardSessionStillValid(r.Context(), current.ID) {
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+	stream := s.terminals.find(streamID)
+	if stream == nil || stream.browserSessionID != current.ID || stream.nodeID != nodeID || !s.terminalAgentCurrent(stream) {
+		http.Error(w, "terminal session is no longer available", http.StatusGone)
+		return
+	}
+	ticket, digest, err := auth.NewToken()
+	if err != nil {
+		http.Error(w, "could not create terminal authorization", http.StatusInternalServerError)
+		return
+	}
+	key := hex.EncodeToString(digest)
+	s.terminals.mu.Lock()
+	if stream.closed || !stream.opened || stream.conn != nil {
+		s.terminals.mu.Unlock()
+		http.Error(w, "terminal connection is still attached", http.StatusConflict)
+		return
+	}
+	delete(s.terminals.tickets, stream.ticket)
+	stream.ticket, stream.expires, stream.consumed = key, s.now().Add(terminalTicketLifetime), false
+	s.terminals.tickets[key] = stream
+	s.terminals.pending[streamID] = stream
+	expires := stream.expires
+	s.terminals.mu.Unlock()
+	time.AfterFunc(terminalTicketLifetime, func() { s.terminals.expireTicket(key, stream) })
+	// A fresh ticket grants attachment only; it cannot create a new shell.
+	writeJSON(w, http.StatusCreated, createTerminalResponse{StreamID: streamID, Ticket: ticket, ExpiresAt: expires.UTC()})
 }

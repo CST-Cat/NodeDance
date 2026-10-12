@@ -1,5 +1,5 @@
-// Package tailscale reads the local Tailscale CLI's administrator-visible peer
-// list. It deliberately has no API keys or remote-control surface of its own.
+// Package tailscale reads peers from the existing local Tailscale CLI or daemon
+// socket. It never installs, starts, or configures Tailscale.
 package tailscale
 
 import (
@@ -7,15 +7,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 )
 
 var (
 	ErrUnavailable = errors.New("Tailscale CLI is unavailable")
-	ErrNotLoggedIn = errors.New("Tailscale is not logged in or has no visible peers")
+	ErrNotLoggedIn = errors.New("Tailscale is not logged in")
 )
 
 type Runner interface {
@@ -25,7 +29,56 @@ type Runner interface {
 type ExecRunner struct{}
 
 func (ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+	if name == "tailscale" {
+		binary, err := findCLI([]string{"/usr/local/bin/tailscale", "/usr/bin/tailscale", "/bin/tailscale", "/opt/homebrew/bin/tailscale", "/Applications/Tailscale.app/Contents/MacOS/Tailscale"})
+		if err != nil {
+			if errors.Is(err, exec.ErrNotFound) && len(args) == 2 && args[0] == "status" && args[1] == "--json" {
+				return localStatus(ctx, "/var/run/tailscale/tailscaled.sock")
+			}
+			return nil, err
+		}
+		name = binary
+	}
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+// Services can have a smaller PATH than an interactive administrator shell.
+func findCLI(candidates []string) (string, error) {
+	if binary, err := exec.LookPath("tailscale"); err == nil {
+		return binary, nil
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.Mode().IsRegular() && info.Mode().Perm()&0111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", exec.ErrNotFound
+}
+
+// Query an existing daemon without installing, starting, or configuring it.
+// This also supports Core containers with the host's socket explicitly mounted.
+func localStatus(ctx context.Context, socket string) ([]byte, error) {
+	if _, err := os.Stat(socket); errors.Is(err, os.ErrNotExist) {
+		return nil, exec.ErrNotFound
+	}
+	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", socket)
+	}}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://local-tailscaled.sock/localapi/v0/status", nil)
+	if err != nil {
+		return nil, err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("query existing Tailscale socket: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Tailscale socket returned HTTP %d", response.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(response.Body, 8<<20))
 }
 
 type Peer struct {
@@ -70,7 +123,7 @@ func (d Discovery) List(ctx context.Context) ([]Peer, error) {
 		if errors.Is(err, exec.ErrNotFound) {
 			return nil, ErrUnavailable
 		}
-		return nil, fmt.Errorf("read local Tailscale status: %w: %s", ErrNotLoggedIn, strings.TrimSpace(string(output)))
+		return nil, fmt.Errorf("read local Tailscale status: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	var status statusEnvelope
 	if err := json.Unmarshal(output, &status); err != nil {
@@ -128,9 +181,6 @@ func (d Discovery) List(ctx context.Context) ([]Peer, error) {
 		if err := appendPeer("", raw); err != nil {
 			return nil, fmt.Errorf("parse Tailscale peer: %w", err)
 		}
-	}
-	if len(peers) == 0 {
-		return nil, ErrNotLoggedIn
 	}
 	sort.Slice(peers, func(i, j int) bool { return peers[i].Identity < peers[j].Identity })
 	return peers, nil

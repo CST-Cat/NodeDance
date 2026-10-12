@@ -152,7 +152,6 @@
   "Task: mkdir, rename, delete or save_text; deletion needs exact confirmationPath": "文件任务：mkdir、rename、delete 或 save_text；删除需要精确 confirmationPath",
   "Open host/container shell; TUI is interactive, CLI uses JSONL frames with automatic streamId": "打开主机/容器 shell；TUI 交互操作，CLI 使用自动填充 streamId 的 JSONL 帧",
   "Authorize host/container terminal; returns a single-use ticket": "授权主机/容器终端；返回一次性票据",
-  "Cancel pending terminal authorization": "取消待使用的终端授权",
   "Bidirectional terminal JSONL frames; ticket from terminal.create, provide it via --query @file": "双向终端 JSONL 帧；通过 --query @file 提供 terminal.create 返回的票据",
   "Service probes": "服务探测",
   "Probe configuration": "探测配置",
@@ -404,8 +403,8 @@
   "invalid stream request": "流请求无效",
   "container stream limit reached": "容器流已达到数量上限",
   "container stream unavailable": "容器流不可用",
-  "Tailscale CLI is not installed on Core; manual Agent installation remains available.": "Core 未安装 Tailscale CLI；仍可手动安装 Agent。",
-  "Core is not signed in to Tailscale or has no visible peers.": "Core 尚未登录 Tailscale，或当前账户没有可见节点。",
+  "Core cannot find Tailscale CLI or its local socket. For container deployments, expose the existing host socket to Core; manual Agent installation remains available.": "Core 无法找到 Tailscale CLI 或本地 socket。若 Core 运行在容器中，请挂载宿主机已有的 Tailscale socket；仍可手动安装 Agent。",
+  "Core is not signed in to Tailscale.": "Core 尚未登录 Tailscale。",
   "Global language: --lang en|zh-CN (or NODEDANCE_LANG)": "全局语言：--lang en|zh-CN（或 NODEDANCE_LANG）",
   "colocated nodedance-agent must be an executable regular file": "同目录的 nodedance-agent 必须是可执行普通文件",
   "First deployment: leave each field blank and press Enter to generate secure random credentials.\n": "首次部署：每项留空并按回车，自动生成高强度随机登录凭据。\n",
@@ -418,5 +417,9 @@
   "Create one-time Agent enrollment with native or Docker installation commands (response contains secret)": "创建一次性 Agent 注册，提供直接安装或 Docker 部署命令（响应含密钥）",
   "Node display name": "节点显示名称",
   "Core URL reachable from Agent (blank uses server)": "Agent 可访问的 Core 地址（留空使用当前服务地址）",
-  "Deployment method (native/docker; blank uses docker)": "部署方式（native/docker；留空使用 docker）"
+  "Deployment method (native/docker; blank uses docker)": "部署方式（native/docker；留空使用 docker）",
+  "terminal session is no longer available": "终端会话已结束或恢复窗口已过期",
+  "terminal connection is still attached": "正在等待原终端连接断开",
+  "End terminal session or cancel pending authorization": "结束终端会话或取消待使用的授权",
+  "Reattach the same tmux session after transport loss": "连接中断后重新附着同一 tmux 会话"
 }

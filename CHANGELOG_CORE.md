@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.11]
+
+### English
+
+- Resolve the system color scheme before first paint, remember theme/sidebar preferences, and add sidebar collapse and resizing.
+- Collapse Docker details by default in VPS cards; keep terminal shortcuts in overview modals and open node details from VPS names.
+- Detect existing Tailscale binaries outside the service PATH or through the existing daemon socket; distinguish empty Tailnets and actionable discovery errors.
+- Reattach Agent-managed tmux sessions through the shared Core contract in Web, CLI and TUI; keep authentication, idle expiry and explicit end controls, and remove custom output replay.
+
+### 简体中文
+
+- 首屏绘制前识别系统深浅色，记忆主题与侧栏偏好，支持侧栏折叠及拖动宽度。
+- VPS 卡片默认折叠 Docker 信息；总览中的终端直接弹窗，点击 VPS 名称进入详情。
+- 从服务 PATH 之外的标准路径或现有 daemon socket 检测 Tailscale，区分空 Tailnet 与可操作的发现错误。
+- Web、CLI、TUI 通过统一 Core 契约重新附着 Agent 管理的 tmux 会话；保留权限、空闲清理与主动结束控制，删除自写输出补发。
+
 ## [0.1.10]
 
 ### English

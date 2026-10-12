@@ -403,7 +403,9 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 		if sharedDocker != nil {
 			dockerClient = sharedDocker.Client()
 		}
-		manager := agentterminal.NewManager(agentterminal.NewSystemProvider(hostShell, dockerClient))
+		provider := agentterminal.NewSystemProvider(hostShell, dockerClient, filepath.Dir(configPath))
+		defer provider.Close()
+		manager := agentterminal.NewManager(provider)
 		terminalFrames = make(chan protocol.TerminalFrame, 64)
 		terminalCtx, cancelTerminal := context.WithCancel(ctx)
 		terminalDone := make(chan struct{})

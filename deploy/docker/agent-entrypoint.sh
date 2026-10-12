@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 case "${1:-}" in
-  version|--version|help|--help|-h) exec /usr/local/bin/nodedance-agent "$@" ;;
+  version|--version|--tmux-version|help|--help|-h) exec /usr/local/bin/nodedance-agent "$@" ;;
   install-updater|run|enroll|recover) ;;
   *) echo 'Docker Agent supports run, enroll, recover, and version.' >&2; exit 1 ;;
 esac

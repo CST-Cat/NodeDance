@@ -22,10 +22,42 @@ watch(screen, cancelDialogs)
 const navigationOpen = ref(false)
 const mobileNavigation = ref(false)
 const sidebarElement = ref<HTMLElement>()
+const sidebarCollapsed = ref(false)
+const sidebarWidth = ref(240)
+try {
+  const saved = JSON.parse(localStorage.getItem('nodedance.sidebar') || 'null')
+  if (saved) {
+    sidebarCollapsed.value = saved.collapsed === true
+    if (Number.isFinite(saved.width)) sidebarWidth.value = Math.max(200, Math.min(400, saved.width))
+  }
+} catch {}
+watch([sidebarCollapsed, sidebarWidth], () => {
+  try { localStorage.setItem('nodedance.sidebar', JSON.stringify({ collapsed: sidebarCollapsed.value, width: sidebarWidth.value })) } catch {}
+})
+function toggleNavigation() {
+  if (mobileNavigation.value) navigationOpen.value = !navigationOpen.value
+  else sidebarCollapsed.value = !sidebarCollapsed.value
+}
+function resizeSidebar(event: PointerEvent) {
+  if (mobileNavigation.value || sidebarCollapsed.value || event.button !== 0) return
+  const handle = event.currentTarget as HTMLElement
+  handle.setPointerCapture(event.pointerId)
+  const start = event.clientX, width = sidebarWidth.value
+  const move = (next: PointerEvent) => { sidebarWidth.value = Math.max(200, Math.min(400, width + next.clientX - start)) }
+  const stop = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('lostpointercapture', stop) }
+  handle.addEventListener('pointermove', move)
+  handle.addEventListener('lostpointercapture', stop)
+}
+function resizeSidebarKeys(event: KeyboardEvent) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+  event.preventDefault()
+  sidebarWidth.value = event.key === 'Home' ? 200 : event.key === 'End' ? 400
+    : Math.max(200, Math.min(400, sidebarWidth.value + (event.key === 'ArrowRight' ? 10 : -10)))
+}
 const navigationToggle = ref<HTMLButtonElement>()
 let colorScheme: MediaQueryList | undefined
 let navigationQuery: MediaQueryList | undefined
-function updateColorScheme(event: MediaQueryListEvent) { preferredTheme.value = event.matches ? 'light' : 'dark' }
+function updateColorScheme(event: MediaQueryListEvent) { preferredTheme.value = event.matches ? 'dark' : 'light' }
 function updateNavigationViewport(event: MediaQueryListEvent) {
   mobileNavigation.value = event.matches
   navigationOpen.value = false
@@ -74,7 +106,7 @@ const initialized = ref(false)
 const currentUser = ref<User | null>(null)
 const sessions = ref<Session[]>([])
 const uploading = ref<ImageKind | ''>('')
-const preferredTheme = ref<'dark' | 'light'>('dark')
+const preferredTheme = ref<'dark' | 'light'>(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 const avatarRevision = ref(0)
 const backgroundRevision = ref(0)
 
@@ -85,7 +117,7 @@ const loginPassword = ref('')
 const passwordForm = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
 const appearance = reactive<Appearance>({
   displayName: '',
-  theme: 'dark',
+  theme: (document.documentElement.dataset.themePreference as Appearance['theme']) || 'system',
   backgroundColor: '#faf9f5',
   avatarUrl: '',
   backgroundUrl: '',
@@ -94,9 +126,12 @@ const appearance = reactive<Appearance>({
 const safeBackgroundColor = computed(() => /^#[\da-f]{6}$/i.test(appearance.backgroundColor)
   ? appearance.backgroundColor
   : '#101827')
-const shellStyle = computed(() => ({ '--page-color': safeBackgroundColor.value }))
+const shellStyle = computed(() => ({ '--page-color': safeBackgroundColor.value, '--sidebar-width': `${sidebarCollapsed.value && !mobileNavigation.value ? 76 : sidebarWidth.value}px` }))
 const effectiveTheme = computed(() => appearance.theme === 'system' ? preferredTheme.value : appearance.theme)
 watch(effectiveTheme, theme => {
+  document.documentElement.dataset.theme = theme
+  document.documentElement.style.colorScheme = theme
+  document.documentElement.style.backgroundColor = theme === 'dark' ? '#181715' : '#faf9f5'
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', theme === 'dark' ? '#181715' : '#faf9f5')
 }, { immediate:true })
 
@@ -132,6 +167,10 @@ function errorText(reason: unknown): string {
   return t('m.2c1e5ec62145')
 }
 
+function rememberTheme() {
+  try { localStorage.setItem('nodedance.theme', appearance.theme) } catch {}
+}
+
 async function loadAppearance() {
   const [result, avatar, background] = await Promise.all([api.appearance(), operationURL('appearance.avatar'), operationURL('appearance.background')])
   imagePaths.avatar = avatar.pathname; imagePaths.background = background.pathname
@@ -139,7 +178,8 @@ async function loadAppearance() {
   if (!/^#[\da-f]{6}$/i.test(appearance.backgroundColor)) {
     appearance.backgroundColor = '#101827'
   }
-  if (appearance.theme !== 'light' && appearance.theme !== 'dark' && appearance.theme !== 'system') appearance.theme = 'dark'
+  if (appearance.theme !== 'light' && appearance.theme !== 'dark' && appearance.theme !== 'system') appearance.theme = 'system'
+  rememberTheme()
 }
 
 async function loadSessions() {
@@ -247,6 +287,7 @@ async function saveProfile() {
       theme: appearance.theme,
       backgroundColor: appearance.backgroundColor,
     })
+    rememberTheme()
     currentUser.value = { displayName: appearance.displayName }
     notice.value = t('m.e90110b8adca')
   } catch (reason) {
@@ -369,8 +410,8 @@ function formatTime(value: string): string {
 
 onMounted(() => {
   window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
-  colorScheme = window.matchMedia('(prefers-color-scheme: light)')
-  preferredTheme.value = colorScheme.matches ? 'light' : 'dark'
+  colorScheme = window.matchMedia('(prefers-color-scheme: dark)')
+  preferredTheme.value = colorScheme.matches ? 'dark' : 'light'
   colorScheme.addEventListener('change', updateColorScheme)
   navigationQuery = window.matchMedia('(max-width: 900px)')
   mobileNavigation.value = navigationQuery.matches
@@ -395,13 +436,13 @@ onBeforeUnmount(() => {
     </div>
 
     <button v-if="authenticated && navigationOpen" class="navigation-scrim" type="button" :aria-label="t('nav.close')" @click="navigationOpen = false"></button>
-    <aside v-if="authenticated" id="workspace-navigation" ref="sidebarElement" class="workspace-sidebar" :inert="mobileNavigation && !navigationOpen" :class="{ 'is-open': navigationOpen }">
+    <aside v-if="authenticated" id="workspace-navigation" ref="sidebarElement" class="workspace-sidebar" :inert="mobileNavigation && !navigationOpen" :class="{ 'is-open': navigationOpen, 'is-collapsed': sidebarCollapsed && !mobileNavigation }">
       <a class="wordmark" href="/" :aria-label="t('m.f359facd4191')">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>NodeDance</span>
       </a>
       <div class="workspace-label">{{ t('nav.workspace') }}</div>
       <nav class="workspace-nav" :aria-label="t('nav.navigation')">
-        <button v-for="item in navigation" :key="item.screen" type="button" :aria-current="screen === item.screen ? 'page' : undefined" @click="navigate(item.screen)">
+        <button v-for="item in navigation" :key="item.screen" type="button" :title="t(item.label)" :aria-label="t(item.label)" :aria-current="screen === item.screen ? 'page' : undefined" @click="navigate(item.screen)">
           <UiIcon :name="item.icon" /><span>{{ t(item.label) }}</span>
         </button>
       </nav>
@@ -410,10 +451,11 @@ onBeforeUnmount(() => {
         <div class="workspace-account-copy"><strong>{{ visibleName }}</strong><span>{{ t('m.e19796712f1c') }}</span></div>
         <button class="account-logout" type="button" :disabled="busy" :aria-label="t('m.3ab8cc15939f')" :title="t('m.3ab8cc15939f')" @click="logout"><UiIcon name="logout" /></button>
       </div>
+      <div v-if="!mobileNavigation && !sidebarCollapsed" class="sidebar-resize" role="separator" aria-orientation="vertical" tabindex="0" :aria-label="t('nav.resize')" :aria-valuemin="200" :aria-valuemax="400" :aria-valuenow="sidebarWidth" @pointerdown="resizeSidebar" @keydown="resizeSidebarKeys"></div>
     </aside>
     <header class="topbar">
       <div v-if="authenticated" class="workspace-breadcrumb">
-        <button ref="navigationToggle" class="navigation-toggle" type="button" :aria-label="t('nav.navigation')" :aria-expanded="navigationOpen" aria-controls="workspace-navigation" @click="navigationOpen = !navigationOpen"><UiIcon :name="navigationOpen ? 'close' : 'menu'" /></button>
+        <button ref="navigationToggle" class="navigation-toggle" type="button" :aria-label="t(mobileNavigation ? 'nav.navigation' : sidebarCollapsed ? 'nav.expand' : 'nav.collapse')" :aria-expanded="mobileNavigation ? navigationOpen : !sidebarCollapsed" aria-controls="workspace-navigation" @click="toggleNavigation"><UiIcon :name="navigationOpen ? 'close' : 'menu'" /></button>
         <span class="breadcrumb-root">{{ t('nav.workspace') }}</span><span class="breadcrumb-divider" aria-hidden="true">/</span><strong>{{ screenTitle }}</strong>
       </div>
       <a v-else class="wordmark" href="/" :aria-label="t('m.f359facd4191')"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>NodeDance</span></a>
@@ -588,7 +630,7 @@ onBeforeUnmount(() => {
             <div class="field">
               <span>{{ t('m.8f29293906e7') }}</span>
               <div class="theme-options" role="group" :aria-label="t('m.8f29293906e7')">
-                <button class="theme-option" :class="{ selected: appearance.theme === 'dark' }" type="button" :aria-pressed="appearance.theme === 'dark'" @click="appearance.theme = 'dark'">
+                <button class="theme-option" :class="{ selected: appearance.theme === 'dark' }" type="button" :aria-pressed="appearance.theme === 'dark'" @click="appearance.theme = 'system'">
                   <span class="theme-swatch dark-swatch"><i></i><i></i><i></i></span><span>{{ t('m.a6b75d068032') }}</span>
                 </button>
                 <button class="theme-option" :class="{ selected: appearance.theme === 'system' }" type="button" :aria-pressed="appearance.theme === 'system'" @click="appearance.theme = 'system'">

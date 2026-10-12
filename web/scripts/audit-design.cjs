@@ -28,6 +28,11 @@ fs.mkdirSync(out, { recursive: true });
       populated = false,
       unavailable = false,
       discoveryAvailable = false;
+    const terminalOnly = process.env.NODEDANCE_WEB_TERMINAL_ONLY === "1";
+    const terminalID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let terminalCreates = 0, terminalResumes = 0, terminalEnds = 0;
+    let terminalSocketCount = 0;
+    const resumeBodies = [];
     page.setDefaultTimeout(8000);
     const errors = [];
     page.on("pageerror", (e) => {
@@ -92,6 +97,14 @@ fs.mkdirSync(out, { recursive: true });
           dockerInstallCommand:
             "sudo docker run --privileged --name nodedance-agent ghcr.io/cst-cat/nodedance-agent:agent-v0.1.5",
         };
+      else if (terminalOnly && p.includes("/terminal")) {
+        if (route.request().method() === "DELETE") { terminalEnds++; status = 204; }
+        else if (p.endsWith("/resume")) {
+          terminalResumes++; resumeBodies.push(route.request().postDataJSON());
+          if (terminalResumes === 1) { status = 503; body = {message:"temporary outage"}; }
+          else body = { streamId: terminalID, ticket: "resumed-ticket", expiresAt: now };
+        } else {terminalCreates++; body = {streamId:terminalID,ticket:"initial-ticket",expiresAt:now};}
+      }
       else if (p.includes("/terminal")) {
         status = 503;
         body = { error: "Terminal unavailable in isolated design audit" };
@@ -445,7 +458,17 @@ fs.mkdirSync(out, { recursive: true });
         body: status === 204 ? "" : JSON.stringify(body),
       });
     });
-    await page.routeWebSocket("**/ws/**", (ws) => {});
+    await page.routeWebSocket("**/ws/**", (ws) => {
+      if (!terminalOnly || !ws.url().includes("/streams/terminal")) return;
+      terminalSocketCount++;
+      const send = (action, text) => ws.send(JSON.stringify({type:"terminal",frame:{streamId:terminalID,action,...(text ? {data:Buffer.from(text).toString('base64')} : {})}}));
+      if (terminalSocketCount === 1) {
+        send("ready"); send("output","FIRST\r\n");
+        setTimeout(() => ws.close({code:1012,reason:"isolated transport drop"}), 350);
+      } else {
+        send("ready"); send("output","\x1b[2J\x1b[HFIRST\r\nRESTORED\r\n");
+      }
+    });
 
     async function load() {
       await page.goto(webURL);
@@ -532,7 +555,7 @@ fs.mkdirSync(out, { recursive: true });
       await shot(label);
     }
     async function nav(label) {
-      if (await page.locator(".navigation-toggle").isVisible())
+      if (page.viewportSize().width <= 900 && await page.locator(".navigation-toggle").isVisible())
         await page.locator(".navigation-toggle").click();
       const index = [
         "Nodes",
@@ -560,10 +583,44 @@ fs.mkdirSync(out, { recursive: true });
         return;
       }
       await invariants(prefix + "-nodes");
+      const card = page.locator(".vps-card").first();
+      assert.equal(await card.locator(".vps-card-docker").count(), 0);
+      await card.locator(".docker-toggle").click();
+      await card.locator(".vps-card-docker").waitFor();
+      await invariants(prefix + "-nodes-docker-expanded");
+      await card.locator(".docker-toggle").click();
+      await card.locator(".vps-card-shortcuts button").first().click();
+      await page.locator(".terminal-dialog").waitFor();
+      assert.equal(await page.locator(".node-detail-page").count(), 0);
+      await invariants(prefix + "-overview-terminal");
+      await page.locator(".terminal-close").click();
+      if (page.viewportSize().width > 900) {
+        const handle = page.locator(".sidebar-resize");
+        await handle.focus();
+        await page.keyboard.press("End");
+        assert.equal(await handle.getAttribute("aria-valuenow"), "400");
+        const box = await handle.boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + 100);
+        await page.mouse.down();
+        await page.mouse.move(box.x - 50, box.y + 100);
+        await page.mouse.up();
+        const width = await handle.getAttribute("aria-valuenow");
+        assert(Number(width) < 400);
+        await page.locator(".navigation-toggle").click();
+        await page.locator(".workspace-sidebar.is-collapsed").waitFor();
+        await invariants(prefix + "-sidebar-collapsed");
+        await load();
+        await page.locator(".workspace-sidebar.is-collapsed").waitFor();
+        await page.locator(".navigation-toggle").click();
+        assert.equal(await handle.getAttribute("aria-valuenow"), width);
+        await invariants(prefix + "-sidebar-resized");
+        await handle.focus();
+        await page.keyboard.press("Home");
+      }
       await page
         .locator(".vps-card")
         .first()
-        .locator(".vps-card-footer button")
+        .locator(".vps-name")
         .click();
       await page.locator(".node-detail-page").waitFor();
       await page.locator(".probe-heading .probe-primary").click();
@@ -690,6 +747,40 @@ fs.mkdirSync(out, { recursive: true });
       }
     }
 
+
+    if (terminalOnly) {
+      populated = true;
+      await load();
+      if (process.env.NODEDANCE_WEB_TERMINAL_LANG === "zh-CN") await page.locator('.language-selector').selectOption('zh-CN');
+      for (const state of [
+        {theme:"light",width:1440,height:1050}, {theme:"dark",width:1440,height:1050},
+        {theme:"light",width:390,height:844}, {theme:"dark",width:390,height:844},
+        {theme:"light",width:320,height:740}, {theme:"dark",width:320,height:740},
+      ]) {
+        theme=state.theme; terminalCreates=terminalResumes=terminalEnds=terminalSocketCount=0; resumeBodies.length=0;
+        await page.setViewportSize(state);
+        await load();
+        await page.locator('.vps-card').first().locator('.vps-card-shortcuts button').first().click();
+        await page.locator('.terminal-dialog').waitFor();
+        await page.waitForFunction(() => document.querySelector('.terminal-heading p')?.textContent?.match(/reattaching|重新附着/));
+        await invariants(`${theme}-${state.width}-terminal-reconnecting`);
+        await page.waitForFunction(() => document.querySelector('.xterm-rows')?.textContent?.includes('RESTORED'));
+        const contents = await page.locator('.xterm-rows').textContent();
+        assert.equal((contents.match(/FIRST/g)||[]).length,1,'output replayed twice');
+        assert.equal(terminalCreates,1,'recovery opened a new shell');
+        assert.equal(terminalResumes,2,'transient resume failure was not retried');
+        assert.deepEqual(resumeBodies,[{},{}]);
+        assert.equal(await page.locator('.node-detail-page').count(),0);
+        await invariants(`${theme}-${state.width}-terminal-restored`);
+        await page.locator('.terminal-close').click();
+        await page.waitForTimeout(100);
+        assert(terminalEnds>0,'close did not terminate retained session');
+      }
+      assert.deepEqual(errors,[]);
+      fs.writeFileSync(path.join(out,'terminal-report.json'),JSON.stringify({passed:true,snapshots},null,2)+'\n');
+      console.log('Terminal recovery matrix passed: '+snapshots.length+' snapshots.');
+      return;
+    }
     await load();
     await invariants("empty-light");
     populated = true;
@@ -759,11 +850,21 @@ fs.mkdirSync(out, { recursive: true });
         body: JSON.stringify({ initialized: true }),
       });
     });
+    await page.evaluate(() => localStorage.setItem('nodedance.theme', 'system'));
+    await page.emulateMedia({ colorScheme: 'light' });
+    theme = 'system';
     await page.goto(webURL);
     await page.locator("[data-screen=loading]").waitFor();
-    await invariants("core-loading");
+    assert.equal(await page.locator('.app-shell').getAttribute('data-theme'), 'light');
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.theme), 'light');
+    await invariants("core-loading-system-light");
     releaseBootstrap();
     await page.locator("[data-screen=nodes]").waitFor();
+    assert.equal(await page.locator('.app-shell').getAttribute('data-theme'), 'light');
+    await page.emulateMedia({ colorScheme: 'dark' });
+    await page.waitForFunction(() => document.querySelector('.app-shell').dataset.theme === 'dark');
+    await load();
+    assert.equal(await page.locator('.app-shell').getAttribute('data-theme'), 'dark');
     assert.deepEqual(errors, []);
     fs.writeFileSync(
       path.join(out, "report.json"),

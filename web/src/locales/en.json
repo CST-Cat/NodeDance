@@ -1216,8 +1216,8 @@
   "api.5db6c09d3282": "invalid stream request",
   "api.95614aae325e": "container stream limit reached",
   "api.2b0d94d279ca": "container stream unavailable",
-  "api.040ceaf75a61": "Tailscale CLI is not installed on Core; manual Agent installation remains available.",
-  "api.9af0f6478144": "Core is not signed in to Tailscale or has no visible peers.",
+  "api.040ceaf75a61": "Core cannot find Tailscale CLI or its local socket. For container deployments, expose the existing host socket to Core; manual Agent installation remains available.",
+  "api.9af0f6478144": "Core is not signed in to Tailscale.",
   "delivery.pending": "Pending",
   "delivery.sending": "Sending",
   "delivery.sent": "Sent",
@@ -1381,5 +1381,16 @@
   "host.field.disableRemoteControl": "Disable terminal and root scripts",
   "host.field.memoryMode": "Memory accounting",
   "host.field.customIpv4": "Reported IPv4 override",
-  "host.field.customIpv6": "Reported IPv6 override"
+  "host.field.customIpv6": "Reported IPv6 override",
+  "nav.resize": "Resize sidebar",
+  "nav.expand": "Expand sidebar",
+  "nav.collapse": "Collapse sidebar",
+  "dashboard.showDocker": "Show Docker details",
+  "dashboard.hideDocker": "Hide Docker details",
+  "terminal.reconnecting": "Connection lost · reattaching the terminal…",
+  "terminal.unavailable": "The shell could not be resumed. Open a new terminal.",
+  "terminal.reconnectingHint": "Input pauses during reconnecting; it is never replayed.",
+  "api.terminalGone": "terminal session is no longer available",
+  "api.terminalAttached": "terminal connection is still attached",
+  "terminal.endedHint": "The session has ended. Open a new terminal to continue."
 }

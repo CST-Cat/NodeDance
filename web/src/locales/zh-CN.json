@@ -1216,8 +1216,8 @@
   "api.5db6c09d3282": "流请求无效",
   "api.95614aae325e": "容器流已达到数量上限",
   "api.2b0d94d279ca": "容器流不可用",
-  "api.040ceaf75a61": "Core 未安装 Tailscale CLI；仍可手动安装 Agent。",
-  "api.9af0f6478144": "Core 尚未登录 Tailscale，或当前账户没有可见节点。",
+  "api.040ceaf75a61": "Core 无法找到 Tailscale CLI 或本地 socket。若 Core 运行在容器中，请挂载宿主机已有的 Tailscale socket；仍可手动安装 Agent。",
+  "api.9af0f6478144": "Core 尚未登录 Tailscale。",
   "delivery.pending": "等待中",
   "delivery.sending": "发送中",
   "delivery.sent": "已发送",
@@ -1381,5 +1381,16 @@
   "host.field.disableRemoteControl": "禁用终端与 root 脚本",
   "host.field.memoryMode": "内存统计方式",
   "host.field.customIpv4": "上报 IPv4 自定义值",
-  "host.field.customIpv6": "上报 IPv6 自定义值"
+  "host.field.customIpv6": "上报 IPv6 自定义值",
+  "nav.resize": "调整侧边栏宽度",
+  "nav.expand": "展开侧边栏",
+  "nav.collapse": "折叠侧边栏",
+  "dashboard.showDocker": "展开 Docker 信息",
+  "dashboard.hideDocker": "收起 Docker 信息",
+  "terminal.reconnecting": "连接已断开 · 正在重新附着终端…",
+  "terminal.unavailable": "原终端无法恢复，请重新打开终端。",
+  "terminal.reconnectingHint": "重连期间暂停输入，不会重放已输入的命令。",
+  "api.terminalGone": "终端会话已结束或恢复窗口已过期",
+  "api.terminalAttached": "正在等待原终端连接断开",
+  "terminal.endedHint": "会话已结束，可重新打开终端建立新会话。"
 }

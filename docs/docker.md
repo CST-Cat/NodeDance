@@ -31,6 +31,28 @@ docker compose -f deploy/docker/compose.core.yml up -d
 
 Access the Web console through an HTTPS reverse proxy with WebSocket forwarding. Set `NODEDANCE_PUBLIC_ORIGIN` and `NODEDANCE_TRUSTED_PROXIES` (the actual proxy IP/CIDR) using a Compose override. A host proxy connects to 127.0.0.1:8180; a container proxy should share a Docker network and connect to core:8180. `CORE_PORT` / `CORE_BIND_ADDRESS` change the published port/address. Core requires no Docker socket or privileges. See the [transport configuration](installation.en.md).
 
+## 可选 Tailscale 发现 / Optional Tailscale discovery
+
+Core 读取自身环境中的 Tailscale，而非访问 Web 的浏览器所在机器。检测优先使用 CLI（PATH 与常见安装路径），缺少 CLI 时读取已有 `/var/run/tailscale/tailscaled.sock` 的状态。已登录但没有其他节点时返回空列表。Web、CLI、TUI 的发现操作都使用同一个 Core 操作契约和检测结果。
+
+Core detects Tailscale in its own environment, not on the browser's machine. It checks the CLI in PATH and standard installation locations, then queries an existing `/var/run/tailscale/tailscaled.sock` if the CLI is absent. A running Tailnet without peers returns an empty list. Web, CLI and TUI share this discovery behavior through the Core operation contract.
+
+容器无法自动看到宿主机的 Tailscale。宿主机已运行 Tailscale 时，可以在 Compose 覆盖文件中添加以下挂载，然后重新创建 Core 容器。socket 必须允许 Core 的 UID 读取状态；只读挂载不限制 socket API 的权限。NodeDance 仅查询状态，不安装、启动或修改 Tailscale。
+
+Containers need an explicit mount to reach host Tailscale. If Tailscale already runs on the host, add this Compose override and recreate Core. The socket must permit Core's UID to query status; a read-only mount does not restrict socket API permissions. NodeDance only queries status and never installs, starts or reconfigures Tailscale.
+
+```yaml
+services:
+  core:
+    volumes:
+      - type: bind
+        source: /var/run/tailscale/tailscaled.sock
+        target: /var/run/tailscale/tailscaled.sock
+        read_only: true
+        bind:
+          create_host_path: false
+```
+
 ## Agent
 
 Agent 管理宿主机，需要 **Linux rootful Docker、root 用户、privileged、host PID 与网络、宿主机根目录挂载**。入口通过 `nsenter` 进入宿主机命名空间与根目录，让指标、终端、文件服务和 Docker/Compose 操作使用真实宿主机环境。Docker Desktop 的容器只能看到其 Linux 虚拟机，不能用此方式管理桌面宿主机。不要同时运行该节点的 systemd Agent 与 Docker Agent。

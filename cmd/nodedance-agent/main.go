@@ -12,6 +12,8 @@ import (
 	"syscall"
 
 	"github.com/CST-Cat/NodeDance/internal/agent"
+	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
+	"github.com/CST-Cat/NodeDance/internal/agent/terminal/tmuxbundle"
 )
 
 var version = "dev"
@@ -24,6 +26,15 @@ func main() {
 }
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) (resultErr error) {
+	// Internal tmux child: preserve raw terminal bytes before language handling.
+	if len(args) > 0 && args[0] == "terminal-container" {
+		input, inputOK := stdin.(*os.File)
+		output, outputOK := stdout.(*os.File)
+		if len(args) != 2 || !inputOK || !outputOK {
+			return fmt.Errorf("invalid terminal container child")
+		}
+		return agentterminal.RunContainerShell(ctx, args[1], input, output)
+	}
 	var err error
 	ctx, args, err = i18n.Options(ctx, args, os.LookupEnv)
 	if err != nil {
@@ -39,6 +50,9 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	switch args[0] {
 	case "version", "--version":
 		fmt.Fprintf(stdout, i18n.TextFor(stdout, "NodeDance Agent %s\n"), version)
+		return nil
+	case "--tmux-version":
+		fmt.Fprintln(stdout, "tmux "+tmuxbundle.Version)
 		return nil
 	case "help", "--help", "-h":
 		printUsage(stdout)

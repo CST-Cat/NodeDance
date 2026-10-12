@@ -31,6 +31,8 @@ Core and Agent also support [Docker deployment](docs/docker.md), with separate i
 - **Remote operations:** confirmed root scripts and batch execution, Agent settings/diagnostics, Web terminal and file manager, CLI, and terminal UI.
 - **Probes and alerts:** HTTP(S), TCP and IPv4/IPv6 ICMP probes, multi-node targets, latency/loss quality, metric thresholds, asset expiry/traffic quota reminders, maintenance windows, and notifications.
 - **Backup and restore:** preserve Core data, keys, node identities, and history.
+- **Terminal recovery:** Agent embeds complete tmux; Web, CLI and TUI reattach the same session after transport loss and tmux repaints the screen. Input is never replayed. See [terminal recovery](docs/cli.md#terminal-recovery--终端恢复).
+- **Web navigation:** resolve the system color scheme before first paint and remember saved themes. Collapse or resize the desktop sidebar (200–400px); both persist in the current browser. Node cards hide Docker details until expanded. Click a VPS name for details; the terminal shortcut opens a modal over the current overview. Mobile navigation uses a drawer.
 - **Agent enrollment:** register nodes in Core and generate one-command installers. When Tailscale is detected, NodeDance can use the existing network capability for discovery and assisted deployment; it does not install or configure Tailscale.
 
 Agent enrollment, recovery, runtime, file service, and systemd service require root access.

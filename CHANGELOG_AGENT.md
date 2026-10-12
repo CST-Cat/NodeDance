@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.9]
+
+### English
+
+- Embed complete upstream tmux 3.7c static builds for Linux amd64/arm64, with pinned checksums, terminfo and all dependency notices; no runtime installation is required.
+- Manage host and Docker terminal sessions with dedicated tmux servers; detach/attach preserves the original shell and jobs, while new Docker panes stay in the selected container.
+- Use the running Agent executable inode for Docker bridge children after host namespace entry; terminate every Docker Exec before closing its connection on session end.
+- Exercise real shell/job recovery, full pane support, Docker bridge cleanup and root-only state in native release checks; retain credential and filesystem protections.
+
+### 简体中文
+
+- 内置完整上游 tmux 3.7c，支持 Linux amd64/arm64 静态构建，固定校验值并附带终端描述及所有依赖许可证，无需运行时安装。
+- 主机及 Docker 终端使用独立 tmux 服务器；分离/附着保留原 shell 和任务，Docker 新窗格继续进入选定容器。
+- 进入宿主机命名空间后，Docker 桥接子进程使用运行中 Agent 的实际可执行文件；结束会话时先终止所有 Docker Exec，再关闭连接。
+- 原生发布检查覆盖真实 shell/任务恢复、完整分屏、Docker 桥接清理及 root 私有状态，保留凭据和文件系统保护。
+
 ## [0.1.8]
 
 ### English
