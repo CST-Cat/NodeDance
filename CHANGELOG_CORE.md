@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.12]
+
+### English
+
+- Read host Tailscale peers through the authenticated deployment supervisor, fixing network discovery for existing Core containers without adding mounts or changing Tailscale. Web, CLI and TUI share the same discovery operation; built-in Core updates refresh the supervisor and preserve deployment configuration.
+
+### 简体中文
+
+- 通过认证的宿主机控制服务只读查询 Tailscale 节点，修复现有 Core 容器的网络发现，无需新增挂载或修改 Tailscale。Web、CLI、TUI 共用发现操作；内置 Core 更新同步升级宿主机服务并保留部署配置。
+
 ## [0.1.11]
 
 ### English

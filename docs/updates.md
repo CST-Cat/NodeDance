@@ -30,9 +30,9 @@ Web selects the component/node, checks the release, displays notes and requires 
 
 ## One-time supervisor setup / 首次配置更新控制服务
 
-更新需要部署主机上的独立 root 服务 `nodedance-updater.service`。Core 继续以非 root 运行，只能通过受 UID/GID 限制的 Unix socket 请求已注册组件的更新，没有 Docker socket 权限或任意命令入口。Agent 使用现有认证 WebSocket 代理更新请求，控制服务独立于 Agent 重启。
+更新需要部署主机上的独立 root 服务 `nodedance-updater.service`。Core 继续以非 root 运行，只能通过受 UID/GID 限制的 Unix socket 请求已注册组件的更新，没有 Docker socket 权限或任意命令入口。该服务也提供一个固定的只读 Tailscale 节点查询，供已注册 Core 读取宿主机网络能力，无需修改容器挂载。Agent 使用现有认证 WebSocket 代理更新请求，控制服务独立于 Agent 重启。
 
-A separate root supervisor owns the deployment transaction. Core remains unprivileged and accesses only a UID/GID protected Unix socket; it receives no Docker socket or arbitrary command execution. Remote Agent requests travel through its authenticated generation-bound channel. The supervisor remains running when the application restarts.
+A separate root supervisor owns the deployment transaction. Core remains unprivileged and accesses only a UID/GID protected Unix socket; it receives no Docker socket or arbitrary command execution. A fixed read-only Tailscale peer query also lets registered Core deployments discover the host network without new container mounts. Remote Agent requests travel through its authenticated generation-bound channel. The supervisor remains running when the application restarts.
 
 从组件正式 release 下载 `install-updater.sh`，脚本校验同版本更新器的 SHA256。执行一次，注册实际运行的容器或 systemd 单元、数据目录、健康检查地址；禁止注册任意 systemd 服务。
 

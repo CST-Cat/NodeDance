@@ -1216,7 +1216,7 @@
   "api.5db6c09d3282": "流请求无效",
   "api.95614aae325e": "容器流已达到数量上限",
   "api.2b0d94d279ca": "容器流不可用",
-  "api.040ceaf75a61": "Core 无法找到 Tailscale CLI 或本地 socket。若 Core 运行在容器中，请挂载宿主机已有的 Tailscale socket；仍可手动安装 Agent。",
+  "api.040ceaf75a61": "Core 部署环境中没有可用的 Tailscale。已配置宿主机服务的部署会自动读取宿主机状态；仍可手动安装 Agent。",
   "api.9af0f6478144": "Core 尚未登录 Tailscale。",
   "delivery.pending": "等待中",
   "delivery.sending": "发送中",

@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/core/tailscale"
 	"golang.org/x/sys/unix"
 )
 
@@ -48,6 +49,32 @@ func Call(ctx context.Context, socket string, rpc RPC) (Response, error) {
 	return result, nil
 }
 func (m *Manager) Handle(ctx context.Context, rpc RPC) Response {
+	if rpc.Action == "tailscale-peers" {
+		// This fixed read never accepts a command, path, target node or update options.
+		if rpc.Request != (Request{Component: "core"}) || rpc.IdempotencyKey != "" {
+			return Response{Status: 400, Error: "host discovery requires only component core"}
+		}
+		if _, ok := m.Config.Targets["core"]; !ok {
+			return Response{Status: 403, Error: "Core is not registered on this host"}
+		}
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		peers, err := (tailscale.Discovery{Runner: m.tailscaleRunner}).List(ctx)
+		if errors.Is(err, tailscale.ErrUnavailable) {
+			return Response{Status: 404, Error: "Tailscale is unavailable on the deployment host"}
+		}
+		if errors.Is(err, tailscale.ErrNotLoggedIn) {
+			return Response{Status: 412, Error: "Deployment host is not signed in to Tailscale"}
+		}
+		if err != nil {
+			return Response{Status: 503, Error: "Cannot read deployment host Tailscale status"}
+		}
+		raw, err := json.Marshal(peers)
+		if err != nil || len(raw) > 900<<10 {
+			return Response{Status: 502, Error: "Host discovery response exceeds its limit"}
+		}
+		return Response{Status: 200, Data: raw}
+	}
 	if err := Validate(rpc.Request); err != nil {
 		return Response{Status: 400, Error: err.Error()}
 	}

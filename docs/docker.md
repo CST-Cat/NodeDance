@@ -33,25 +33,13 @@ Access the Web console through an HTTPS reverse proxy with WebSocket forwarding.
 
 ## 可选 Tailscale 发现 / Optional Tailscale discovery
 
-Core 读取自身环境中的 Tailscale，而非访问 Web 的浏览器所在机器。检测优先使用 CLI（PATH 与常见安装路径），缺少 CLI 时读取已有 `/var/run/tailscale/tailscaled.sock` 的状态。已登录但没有其他节点时返回空列表。Web、CLI、TUI 的发现操作都使用同一个 Core 操作契约和检测结果。
+已配置 `nodedance-updater.service` 的 Core 通过已有、受 UID/GID 限制的宿主机控制 socket 读取宿主机 Tailscale 节点。容器无需额外挂载 Tailscale socket；内置 Core 更新同时更新宿主机服务，保留现有容器配置。此入口仅返回节点信息，不提供 Tailscale 控制 API 或任意命令。NodeDance 不安装、启动或配置 Tailscale。
 
-Core detects Tailscale in its own environment, not on the browser's machine. It checks the CLI in PATH and standard installation locations, then queries an existing `/var/run/tailscale/tailscaled.sock` if the CLI is absent. A running Tailnet without peers returns an empty list. Web, CLI and TUI share this discovery behavior through the Core operation contract.
+Supervised Core deployments read host Tailscale peers through the existing UID/GID-protected supervisor socket. Containers need no additional Tailscale socket mount. Built-in Core updates refresh the supervisor while preserving container configuration. This fixed read returns peer information only, without exposing the Tailscale control API or arbitrary commands. NodeDance never installs, starts or configures Tailscale.
 
-容器无法自动看到宿主机的 Tailscale。宿主机已运行 Tailscale 时，可以在 Compose 覆盖文件中添加以下挂载，然后重新创建 Core 容器。socket 必须允许 Core 的 UID 读取状态；只读挂载不限制 socket API 的权限。NodeDance 仅查询状态，不安装、启动或修改 Tailscale。
+未配置宿主机服务时，Core 读取自身环境的 CLI（PATH 与常见安装路径），或已有的 `/var/run/tailscale/tailscaled.sock`。发现来源是 Core 部署环境，而非浏览器所在机器。已登录但没有其他节点时返回空列表。Web、CLI（`nodedance discovery peers`）和 TUI 的发现操作共用 Core 操作契约、权限与检测结果。
 
-Containers need an explicit mount to reach host Tailscale. If Tailscale already runs on the host, add this Compose override and recreate Core. The socket must permit Core's UID to query status; a read-only mount does not restrict socket API permissions. NodeDance only queries status and never installs, starts or reconfigures Tailscale.
-
-```yaml
-services:
-  core:
-    volumes:
-      - type: bind
-        source: /var/run/tailscale/tailscaled.sock
-        target: /var/run/tailscale/tailscaled.sock
-        read_only: true
-        bind:
-          create_host_path: false
-```
+Without a supervisor, Core reads its own CLI (PATH and standard locations) or existing `/var/run/tailscale/tailscaled.sock`. Discovery reflects the Core deployment environment, not the browser's machine. A running Tailnet without peers returns an empty list. Web, CLI (`nodedance discovery peers`) and TUI share the Core operation contract, permissions and discovery results.
 
 ## Agent
 

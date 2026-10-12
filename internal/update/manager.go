@@ -24,22 +24,24 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/core/tailscale"
 	"golang.org/x/sys/unix"
 )
 
 type Manager struct {
-	Config        Config
-	Resolver      Resolver
-	command       func(context.Context, string, ...string) ([]byte, error)
-	healthTimeout time.Duration
-	Docker        *Docker
-	mu            sync.Mutex
-	jobs          map[string]Job
-	active        bool
-	ctx           context.Context
-	cancel        context.CancelFunc
-	workers       sync.WaitGroup
-	lock          *os.File
+	tailscaleRunner tailscale.Runner
+	Config          Config
+	Resolver        Resolver
+	command         func(context.Context, string, ...string) ([]byte, error)
+	healthTimeout   time.Duration
+	Docker          *Docker
+	mu              sync.Mutex
+	jobs            map[string]Job
+	active          bool
+	ctx             context.Context
+	cancel          context.CancelFunc
+	workers         sync.WaitGroup
+	lock            *os.File
 }
 
 func New(config Config, resolver Resolver) (*Manager, error) {

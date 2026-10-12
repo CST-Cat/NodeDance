@@ -111,9 +111,16 @@ type rawPeer struct {
 	Active       bool            `json:"Active"`
 }
 
-type Discovery struct{ Runner Runner }
+type Discovery struct {
+	Runner Runner
+	// ReadPeers supplies the deployment host's normalized, read-only view.
+	ReadPeers func(context.Context) ([]Peer, error)
+}
 
 func (d Discovery) List(ctx context.Context) ([]Peer, error) {
+	if d.ReadPeers != nil {
+		return d.ReadPeers(ctx)
+	}
 	runner := d.Runner
 	if runner == nil {
 		runner = ExecRunner{}

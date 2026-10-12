@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,13 +18,51 @@ import (
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
+	"github.com/CST-Cat/NodeDance/internal/update"
 )
+
+// Supervised deployments read the host through the already mounted, authenticated
+// control socket. Core never receives direct access to the Tailscale control API.
+func (s *Server) tailscaleDiscovery() tailscale.Discovery {
+	socket := s.updateSocket
+	if socket == "" {
+		socket = update.Socket
+	}
+	if _, err := os.Stat(socket); errors.Is(err, os.ErrNotExist) {
+		return tailscale.Discovery{}
+	}
+	return tailscale.Discovery{ReadPeers: func(ctx context.Context) ([]tailscale.Peer, error) {
+		ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
+		defer cancel()
+		response, err := update.Call(ctx, socket, update.RPC{Action: "tailscale-peers", Request: update.Request{Component: "core"}})
+		if err != nil {
+			return nil, err
+		}
+		switch response.Status {
+		case 404:
+			return nil, tailscale.ErrUnavailable
+		case 412:
+			return nil, tailscale.ErrNotLoggedIn
+		case 200:
+			var peers []tailscale.Peer
+			if response.Error != "" {
+				return nil, errors.New(response.Error)
+			}
+			if err := json.Unmarshal(response.Data, &peers); err != nil {
+				return nil, fmt.Errorf("invalid host discovery response: %w", err)
+			}
+			return peers, nil
+		default:
+			return nil, fmt.Errorf("host discovery failed: %s", response.Error)
+		}
+	}}
+}
 
 func (s *Server) tailscaleService(current *session) *tailscale.Service {
 	service := &tailscale.Service{
 		State: tailscale.NewStateStore(s.dataDir),
 		Dependencies: tailscale.Dependencies{
-			Discovery: tailscale.Discovery{},
+			Discovery: s.tailscaleDiscovery(),
 			Artifacts: tailscale.DirectoryArtifacts{},
 			Transport: tailscale.RealSSHTransport{},
 			Create: func(ctx context.Context, name string) (tailscale.Enrollment, error) {
@@ -332,7 +372,7 @@ func tailscaleAPIError(w http.ResponseWriter, err error) {
 		status = http.StatusConflict
 	}
 	if errors.Is(err, tailscale.ErrUnavailable) {
-		message = "Core cannot find Tailscale CLI or its local socket. For container deployments, expose the existing host socket to Core; manual Agent installation remains available."
+		message = "Tailscale is unavailable in the Core deployment environment. Supervised deployments read the host automatically; manual Agent installation remains available."
 	}
 	if errors.Is(err, tailscale.ErrNotLoggedIn) {
 		message = "Core is not signed in to Tailscale."

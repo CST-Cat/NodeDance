@@ -1216,7 +1216,7 @@
   "api.5db6c09d3282": "invalid stream request",
   "api.95614aae325e": "container stream limit reached",
   "api.2b0d94d279ca": "container stream unavailable",
-  "api.040ceaf75a61": "Core cannot find Tailscale CLI or its local socket. For container deployments, expose the existing host socket to Core; manual Agent installation remains available.",
+  "api.040ceaf75a61": "Tailscale is unavailable in the Core deployment environment. Supervised deployments read the host automatically; manual Agent installation remains available.",
   "api.9af0f6478144": "Core is not signed in to Tailscale.",
   "delivery.pending": "Pending",
   "delivery.sending": "Sending",
