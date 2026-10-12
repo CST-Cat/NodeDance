@@ -303,7 +303,7 @@ async function copySSHCommand() {
       </div>
       <span class="vps-card-status" :data-online="online" :data-pending="pending" role="status">{{ nodeStatusLabel() }}</span>
     </header>
-    <p class="vps-card-id">{{ node.nodeId }} · {{ node.agentVersion || t('m.d07581c22bb2') }}</p>
+    <p class="vps-card-version">{{ node.agentVersion || t('m.d07581c22bb2') }}</p>
     <p v-if="nodePreference?.notes" class="vps-card-note">{{ nodePreference.notes }}</p>
 
     <div class="vps-card-metrics" :aria-label="t('m.e41b8d592e33')">
@@ -379,7 +379,7 @@ async function copySSHCommand() {
 .vps-card-status { border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; color: var(--danger); font-size: 12px; white-space: nowrap; }
 .vps-card-status[data-online='true'] { color: var(--success); }
 .vps-card-status[data-pending='true'] { color: var(--warning); }
-.vps-card-id { margin: 6px 0 12px; color: var(--muted); font: 11px/1.5 ui-monospace,monospace; overflow-wrap: anywhere; }
+.vps-card-version { margin: 6px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .vps-card-note { margin: -5px 0 12px; color: var(--muted-strong); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .vps-card-metrics { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 7px; }
 .vps-card-metrics > div { display: grid; min-width: 0; gap: 5px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 8px; }

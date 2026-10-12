@@ -133,7 +133,36 @@ async function port() {
     await select.selectOption('nodes.asset');await field('nodeId').fill(node);await execute()
     await page.waitForFunction(()=>document.querySelector('[data-testid=operation-result]')?.textContent.includes('18446744073709551615'))
 
-    await page.getByRole('button',{name:'Alerts',exact:true}).click();await page.getByRole('button',{name:'Alert rules',exact:true}).click()
+    // A successful HTTP status without the required JSON payload must become a
+    // useful error, and Refresh must retry the metric catalog as well as lists.
+    let metricReply='empty',metricReads=0
+    await page.route('**/api/v1/metrics/catalog',route=>{
+      metricReads++
+      if(metricReply==='empty')return route.fulfill({status:200,body:''})
+      if(metricReply==='no-content')return route.fulfill({status:204})
+      return route.continue()
+    })
+    await page.getByRole('button',{name:'Alerts',exact:true}).click()
+    await page.locator('.alerts-page [role=alert]').filter({hasText:'Server returned an unrecognized response.'}).waitFor()
+    assert.equal(metricReads,1)
+    metricReply='no-content'
+    response=page.waitForResponse(r=>r.url().endsWith('/api/v1/metrics/catalog'))
+    await page.getByRole('button',{name:'Refresh data',exact:true}).click();assert.equal((await response).status(),204)
+    await page.locator('.alerts-page [role=alert]').filter({hasText:'Server returned an unrecognized response.'}).waitFor()
+    assert.equal(metricReads,2)
+    metricReply='valid'
+    response=page.waitForResponse(r=>r.url().endsWith('/api/v1/metrics/catalog'))
+    await page.getByRole('button',{name:'Refresh data',exact:true}).click();assert.equal((await response).status(),200)
+    await page.waitForFunction(()=>!document.querySelector('.alerts-page [role=alert]'))
+    assert.equal(metricReads,3,'Refresh must recover the catalog without reentering the page')
+    for(const theme of ['light','dark'])for(const width of [390,1440]){
+      await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+      await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(350)
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Alert layout must not overflow')
+      await page.screenshot({path:path.join(artifacts,`alerts-${theme}-${width}.png`),fullPage:true})
+    }
+    await page.setViewportSize({width:1440,height:1000})
+    await page.getByRole('button',{name:'Alert rules',exact:true}).click()
     const ruleForm=page.locator('.alert-form-card').first()
     await ruleForm.locator('select').nth(1).selectOption('metric')
     const metricSelect=ruleForm.locator('select').nth(2)
@@ -142,6 +171,14 @@ async function port() {
     await metricSelect.selectOption('swap.used_percent');await ruleForm.locator('input').first().fill('Browser metric rule')
     response=page.waitForResponse(r=>r.url().endsWith('/api/v1/alerts/rules')&&r.request().method()==='POST')
     await ruleForm.locator('button[type=submit]').click();assert.equal((await response).status(),200,'Actual metric rule must be accepted')
+
+    for(const theme of ['light','dark'])for(const width of [390,1440]){
+      await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+      await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(350)
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Alert rule layout must not overflow')
+      await page.screenshot({path:path.join(artifacts,`alert-rules-${theme}-${width}.png`),fullPage:true})
+    }
+    await page.setViewportSize({width:1440,height:1000})
 
     let updateSubmissions=0,rollbacks=0
     const updateJob={id:'audit-update',component:'core',current:'core-v0.1.12',target:'core-v0.1.13',status:'succeeded',stage:'complete',started:'2026-10-12T00:00:00Z',finished:'2026-10-12T00:00:01Z'}
@@ -164,7 +201,7 @@ async function port() {
     for(const theme of ['light','dark'])for(const width of [390,1440]){
       await page.setViewportSize({width,height:1000})
       await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
-      await page.waitForTimeout(350)
+      await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(350)
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Update layout must not overflow horizontally')
       await page.screenshot({path:path.join(artifacts,`updates-${theme}-${width}.png`),fullPage:true})
     }
@@ -173,7 +210,7 @@ async function port() {
     for(const theme of ['light','dark'])for(const width of [390,1440]){
       await page.setViewportSize({width,height:1000})
       await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
-      await page.waitForTimeout(350)
+      await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(350)
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Layout must not overflow horizontally')
       await page.screenshot({path:path.join(artifacts,`operations-${theme}-${width}.png`),fullPage:true})
       assert.ok(await page.locator('.operation-form').isVisible())
@@ -206,7 +243,7 @@ async function port() {
       await page.setViewportSize({width:1440,height:1000})
     }
     assert.deepEqual(pageErrors,[])
-    console.log(`Real Core/Web interface checks passed (${catalog.operations.length} discovered operations; multipart, empty fields, retry intent, version header, secrets, completion, metric rule, direct update, confirmed rollback; 16 layout snapshots).`)
+    console.log(`Real Core/Web interface checks passed (${catalog.operations.length} discovered operations; multipart, empty fields, retry intent, version header, secrets, completion, metric rule, direct update, confirmed rollback; 24 layout snapshots).`)
   }finally{
     if(browser)await browser.close()
     core.kill('SIGTERM')

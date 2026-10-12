@@ -4,7 +4,11 @@
 
 ### English
 
+- Give guest display its own navigation/entry icon, simplify node cards and detail headings by hiding internal UUIDs, and recover alert metric catalog loading through Refresh. Reject empty JSON responses and missing required payloads instead of exposing JavaScript property errors; verify empty/204 responses and recovery in a real browser.
+
 ### 简体中文
+
+- 为游客展示设计独立导航／入口图标，移除节点卡片与详情标题中的内部 UUID；告警刷新同步重试指标目录，拒绝空 JSON 响应和缺少必需字段的响应，避免展示 JavaScript 属性错误；用真实浏览器验证空响应／204 及恢复。
 
 ## [0.1.15]
 

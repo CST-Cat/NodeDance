@@ -33,12 +33,11 @@ const needsSubject = computed(() => ['container_state', 'probe_state','metric','
 
 const needsState = computed(()=>['container_state','probe_state'].includes(ruleForm.kind))
 const metricCatalog=ref<Record<string,string>>({})
-onMounted(async()=>{try{metricCatalog.value=(await operationRequest<{metrics:Record<string,string>}>('metrics.catalog')).metrics}catch(reason){error.value=message(reason)}})
 function message(reason: unknown) { return reason instanceof Error ? reason.message : t('m.a472d51792cc') }
 function clearMessages() { error.value = ''; notice.value = '' }
 async function refresh() {
   loading.value = true; error.value = ''
-  const results = await Promise.allSettled([api.nodes(), api.activeAlerts(), api.alertHistory(), api.alertRules(), api.alertChannels(), api.alertWindows(), api.alertDeliveries(), api.alertEvents()])
+  const results = await Promise.allSettled([api.nodes(), api.activeAlerts(), api.alertHistory(), api.alertRules(), api.alertChannels(), api.alertWindows(), api.alertDeliveries(), api.alertEvents(), operationRequest<{metrics:Record<string,string>}>('metrics.catalog')])
   const failure = results.find((item) => item.status === 'rejected')
   if (failure?.status === 'rejected') error.value = message(failure.reason)
   if (results[0].status === 'fulfilled') { nodes.value = results[0].value.nodes; if (!ruleForm.nodeId) ruleForm.nodeId = nodes.value[0]?.nodeId ?? '' }
@@ -49,6 +48,7 @@ async function refresh() {
   if (results[5].status === 'fulfilled') windows.value = results[5].value.windows
   if (results[6].status === 'fulfilled') deliveries.value = results[6].value.deliveries
   if (results[7].status === 'fulfilled') events.value = results[7].value.events
+  if (results[8].status === 'fulfilled') metricCatalog.value = results[8].value.metrics
   loading.value = false
 }
 async function acknowledge(item: AlertItem) { clearMessages(); try { await api.acknowledgeAlert(item.id); notice.value = t('m.cea97c0a7048'); await refresh() } catch (reason) { error.value = message(reason) } }

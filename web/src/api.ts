@@ -514,10 +514,13 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
       throw new ApiError(response.status, message)
     }
 
-    if (response.status === 204) return undefined as T
+    if (response.status === 204) {
+      if (responseSchema?.required?.length) throw new ApiError(response.status, t('m.e03b23b49908'))
+      return undefined as T
+    }
     if (binary) return await response.blob() as T
     const body = await response.text()
-    if (!body) return undefined as T
+    if (!body.trim()) throw new ApiError(response.status, t('m.e03b23b49908'))
     let payload: unknown
     try {
       payload = decodeContractJSON(body,responseSchema)

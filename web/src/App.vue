@@ -94,7 +94,7 @@ const navigation = [
   { screen: 'host-management', label: 'host.title', icon: 'terminal' },
   { screen: 'updates', label: 'nav.updates', icon: 'refresh' },
   { screen: 'operations', label: 'nav.operations', icon: 'terminal' },
-  { screen:'guest-settings',label:'guest.settings',icon:'nodes' },
+  { screen:'guest-settings',label:'guest.settings',icon:'guest' },
   { screen: 'settings', label: 'nav.settings', icon: 'settings' },
 ] as const
 const screenTitle = computed(() => t(navigation.find(item => item.screen === screen.value)?.label ?? 'nav.workspace'))
@@ -571,7 +571,7 @@ onBeforeUnmount(() => {
             {{ busy ? busyLabel : t('m.d19038809234') }} <span aria-hidden="true">↗</span>
           </button>
         </form>
-        <button v-if="guestEnabled" class="secondary-button full-button guest-entry" type="button" :disabled="busy" @click="navigate('guest')">{{t('guest.enter')}}</button>
+        <button v-if="guestEnabled" class="secondary-button full-button guest-entry" type="button" :disabled="busy" @click="navigate('guest')"><UiIcon name="guest" />{{t('guest.enter')}}</button>
         <p class="privacy-note"><span aria-hidden="true">◈</span>{{ t('m.3834cf7462ca') }}</p>
       </section>
     </section>
@@ -715,5 +715,5 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.guest-entry{margin-top:16px}
+.guest-entry{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:16px}
 </style>

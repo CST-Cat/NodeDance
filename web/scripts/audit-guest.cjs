@@ -24,7 +24,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const credential=crypto.randomBytes(32).toString('hex'),agentHeaders={Authorization:'Bearer '+credential}
   const enrolled=await visitor.request.post(base+'/api/v1/agents/enroll',{headers:{Authorization:'Enrollment '+enrollment.token},data:{requestId:crypto.randomUUID(),credential}});assert.equal(enrolled.status(),201);const identity=await enrolled.json()
   const capabilities=['agent.heartbeat.v1','agent.os-permissions.v1','agent.metrics.v2']
-  const opened=await visitor.request.post(base+'/api/v1/agents/channel',{headers:agentHeaders,data:{version:1,type:'hello',payload:{agentId:identity.agentId,nodeId:identity.nodeId,agentVersion:'audit',capabilities,permissions:{os:'linux',architecture:'amd64',effectiveUid:0,effectiveGid:0,supplementaryGroups:[0]}}}});assert.equal(opened.status(),201)
+  const opened=await visitor.request.post(base+'/api/v1/agents/channel',{headers:agentHeaders,data:{version:1,type:'hello',payload:{agentId:identity.agentId,nodeId:identity.nodeId,agentVersion:'agent-v0.1.10',capabilities,permissions:{os:'linux',architecture:'amd64',effectiveUid:0,effectiveGid:0,supplementaryGroups:[0]}}}});assert.equal(opened.status(),201)
   const channel=base+'/api/v1/agents/channel/'+(await opened.json()).channelId
   const welcome=await visitor.request.get(channel,{headers:agentHeaders}),generation=(await welcome.json()).payload.generation;let ack=welcome.headers()['x-channel-sequence'],write=0,sequence=0
   function snapshot(){const at=new Date().toISOString(),unknown=()=>({status:'unknown',reason:'unavailable',sampledAt:at,sampleAgeMillis:0}),known=value=>({status:'known',value,sampledAt:at,sampleAgeMillis:0});return {collectedAt:at,system:{hostname:known('PRIVATE HOST NAME'),os:unknown(),architecture:unknown(),platform:unknown(),platformFamily:unknown(),platformVersion:unknown(),kernelVersion:unknown()},cpu:{usagePercent:known(25),logicalCores:known(2)},memory:known({totalBytes:8192,availableBytes:4096,usedBytes:4096,usedPercent:50}),network:{summary:known({receivedBytesPerSecond:1048576,sentBytesPerSecond:524288}),interfaces:[],detailsTruncated:false},disk:{status:'unknown',reason:'unavailable',sampledAt:at,sampleAgeMillis:0,mounts:[],detailsTruncated:false},uptime:known({seconds:86400,bootId:'audit-boot'})}}
@@ -46,13 +46,35 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   assert.equal((await visitor.request.get(base+'/api/v1/guest/settings',{headers:{'X-Mode':'admin'}})).status(),401,'A browser mode marker cannot authenticate')
   await display.getByRole('button',{name:'Back to login',exact:true}).click();await page.locator('#login-title').waitFor();assert.equal(await page.locator('#workspace-navigation').count(),0,'Guest exit must revalidate the session')
   await page.getByRole('button',{name:'Enter guest mode',exact:true}).click();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
-  const adminPage=await admin.newPage();adminPage.setDefaultTimeout(10000);adminPage.on('pageerror',e=>errors.push(e.message));await adminPage.goto(base);await adminPage.getByRole('button',{name:'Guest display',exact:true}).click()
+  const adminPage=await admin.newPage();adminPage.setDefaultTimeout(10000);adminPage.on('pageerror',e=>errors.push(e.message));await adminPage.goto(base)
+  const card=adminPage.locator('.vps-card').first();await card.waitFor()
+  assert.ok(!(await card.innerText()).includes(identity.nodeId),'Node cards must hide internal UUIDs')
+  assert.equal(await card.locator('.vps-card-version').innerText(),'agent-v0.1.10')
+  for(const theme of ['light','dark'])for(const width of [390,1440]){
+   await adminPage.setViewportSize({width,height:1000});await adminPage.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+   await adminPage.evaluate(()=>window.scrollTo(0,0));await adminPage.waitForTimeout(350)
+   assert.ok(await adminPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Node card layout overflow')
+   await adminPage.screenshot({path:path.join(artifacts,`nodes-${theme}-${width}.png`),fullPage:true})
+  }
+  await card.locator('.vps-name').click();await adminPage.locator('#detail-title').waitFor()
+  assert.ok(!(await adminPage.locator('.detail-heading').innerText()).includes(identity.nodeId),'Node detail headings must hide internal UUIDs')
+  for(const theme of ['light','dark'])for(const width of [390,1440]){
+   await adminPage.setViewportSize({width,height:1000});await adminPage.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+   await adminPage.evaluate(()=>window.scrollTo(0,0));await adminPage.waitForTimeout(350)
+   assert.ok(await adminPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Node detail layout overflow')
+   await adminPage.screenshot({path:path.join(artifacts,`node-detail-${theme}-${width}.png`),fullPage:true})
+  }
+  await adminPage.setViewportSize({width:1440,height:1000})
+  const guestIcon=await adminPage.getByRole('button',{name:'Guest display',exact:true}).locator('svg path').getAttribute('d')
+  const nodeIcon=await adminPage.getByRole('button',{name:'Nodes',exact:true}).locator('svg path').getAttribute('d')
+  assert.ok(guestIcon && guestIcon!==nodeIcon,'Guest display must have its own icon')
+  await adminPage.getByRole('button',{name:'Guest display',exact:true}).click()
   const form=adminPage.locator('.guest-settings');await form.locator('input[type=checkbox]').first().waitFor();assert.equal(await form.locator('input[type=checkbox]').filter({visible:true}).count()>0,true)
   await form.getByRole('button',{name:'Preview saved guest view',exact:true}).click();await form.locator('[data-testid=guest-display]').getByRole('heading',{name:'Public node',exact:true}).waitFor()
   // Exercise settings UI with the same server-owned policy, without changing selections.
   const response=adminPage.waitForResponse(r=>r.url().endsWith('/guest/settings')&&r.request().method()==='PUT');await form.getByRole('button',{name:'Save display settings',exact:true}).click();assert.equal((await response).status(),200)
   current=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings
-  for(const [name,p] of [['guest',page],['settings',adminPage]])for(const theme of ['light','dark'])for(const width of [390,1440]){await p.setViewportSize({width,height:1000});await p.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await p.waitForTimeout(350);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} overflow`);await p.screenshot({path:path.join(artifacts,`${name}-${theme}-${width}.png`),fullPage:true})}
+  for(const [name,p] of [['guest',page],['settings',adminPage]])for(const theme of ['light','dark'])for(const width of [390,1440]){await p.setViewportSize({width,height:1000});await p.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await p.evaluate(()=>window.scrollTo(0,0));await p.waitForTimeout(350);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} overflow`);await p.screenshot({path:path.join(artifacts,`${name}-${theme}-${width}.png`),fullPage:true})}
   if(process.env.NODEDANCE_GUEST_ATTACKS==='1'){
    console.log('GUEST SECURITY: starting browser attack matrix')
    const attacks=await require('./guest-attacks.cjs')({base,page,visitor,admin,headers,current,identity,probe,stopReporting:async()=>{clearInterval(keepalive);while(sending)await new Promise(r=>setTimeout(r,10))},artifacts})
@@ -61,6 +83,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   }
   const disabled=await admin.request.put(base+'/api/v1/guest/settings',{headers,data:{...current,enabled:false}});assert.equal(disabled.status(),200)
   await display.getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-testid=guest-display] h2'));assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
-  assert.deepEqual(errors,[]);console.log('Guest audit passed: real Core policy, anonymous entry, explicit projection with administrator cookies, session-checked exit, mode-spoof denial, administrator preview/save, immediate disable; 12 light/dark/mobile snapshots.')
+  assert.deepEqual(errors,[]);console.log('Guest audit passed: real Core policy, anonymous entry, explicit projection with administrator cookies, session-checked exit, mode-spoof denial, administrator preview/save, immediate disable; 20 light/dark/mobile snapshots.')
  }finally{if(keepalive)clearInterval(keepalive);if(browser)await browser.close();core.kill('SIGTERM');if(core.exitCode===null)await new Promise(r=>{core.once('exit',r);setTimeout(()=>{core.kill('SIGKILL');r()},5000).unref()});fs.rmSync(directory,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1})

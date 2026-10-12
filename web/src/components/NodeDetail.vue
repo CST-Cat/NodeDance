@@ -356,7 +356,7 @@ onBeforeUnmount(() => {
 <template>
   <section class="node-detail-page" aria-labelledby="detail-title" data-testid="node-detail">
     <header class="detail-heading">
-      <div><button class="container-action back-button" type="button" @click="emit('back')">{{ t('m.40c2548e2416') }}</button><span class="eyebrow">{{ t('label.164ba94c1c7b') }}</span><h1 id="detail-title">{{ nodeTitle }}</h1><p>{{ node.displayName }} · {{ node.nodeId }}</p><p v-if="nodePreference?.notes" class="node-detail-note">{{ nodePreference.notes }}</p></div>
+      <div><button class="container-action back-button" type="button" @click="emit('back')">{{ t('m.40c2548e2416') }}</button><span class="eyebrow">{{ t('label.164ba94c1c7b') }}</span><h1 id="detail-title">{{ nodeTitle }}</h1><p v-if="nodeTitle !== node.displayName || node.agentVersion"><template v-if="nodeTitle !== node.displayName">{{ node.displayName }}<template v-if="node.agentVersion"> · </template></template>{{ node.agentVersion }}</p><p v-if="nodePreference?.notes" class="node-detail-note">{{ nodePreference.notes }}</p></div>
       <div class="detail-heading-status"><span class="node-detail-status" :data-online="online">{{ pending ? t('m.a890b3be09aa') : online ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c') }}</span><span class="docker-state" :data-available="inventory?.dockerAvailability || 'unknown'" :data-stale="dockerStale">{{ inventory ? dockerAvailabilityText(inventory) : online ? t('m.c12a50c262ca') : t('m.8a6501e8198f') }}</span></div>
     </header>
     <nav class="dashboard-tabs" :aria-label="t('m.c778eb5beb54')"><button v-for="tab in sectionTabs" :key="tab.id" type="button" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button></nav>
