@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/CST-Cat/NodeDance/internal/control"
+	"github.com/CST-Cat/NodeDance/internal/update"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +27,7 @@ func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(catalog)
 		case "/api/v1/discovered/check":
-			io.WriteString(w, `{"component":"core","current":"core-v0.1.8","latest":"core-v0.1.9","available":true,"compatible":true,"configured":true}`)
+			json.NewEncoder(w).Encode(update.Check{Component: "core", Current: "core-v0.1.8", Latest: "core-v0.1.9", Available: true, Compatible: true, Configured: true, Release: update.Release{Manifest: update.Describe("core", "core-v0.1.9"), URL: "https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.9"}})
 		case "/api/v1/auth/csrf":
 			io.WriteString(w, `{"token":"csrf"}`)
 		case "/api/v1/discovered/apply":

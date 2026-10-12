@@ -150,6 +150,22 @@ func typeSchema(t reflect.Type) any {
 		for i := 0; i < t.NumField(); i++ {
 			f := t.Field(i)
 			tag := strings.Split(f.Tag.Get("json"), ",")
+			if f.Anonymous && tag[0] == "" {
+				// encoding/json promotes untagged embedded struct fields,
+				// including the manifest in an update release response.
+				embedded := f.Type
+				if embedded.Kind() == reflect.Pointer {
+					embedded = embedded.Elem()
+				}
+				if embedded.Kind() == reflect.Struct {
+					inline := typeSchema(embedded).(map[string]any)
+					for name, field := range inline["properties"].(map[string]any) {
+						props[name] = field
+					}
+					required = append(required, inline["required"].([]string)...)
+					continue
+				}
+			}
 			if tag[0] == "" || tag[0] == "-" {
 				continue
 			}
