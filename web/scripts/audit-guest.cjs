@@ -53,6 +53,12 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const response=adminPage.waitForResponse(r=>r.url().endsWith('/guest/settings')&&r.request().method()==='PUT');await form.getByRole('button',{name:'Save display settings',exact:true}).click();assert.equal((await response).status(),200)
   current=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings
   for(const [name,p] of [['guest',page],['settings',adminPage]])for(const theme of ['light','dark'])for(const width of [390,1440]){await p.setViewportSize({width,height:1000});await p.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await p.waitForTimeout(350);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} overflow`);await p.screenshot({path:path.join(artifacts,`${name}-${theme}-${width}.png`),fullPage:true})}
+  if(process.env.NODEDANCE_GUEST_ATTACKS==='1'){
+   console.log('GUEST SECURITY: starting browser attack matrix')
+   const attacks=await require('./guest-attacks.cjs')({base,page,visitor,admin,headers,current,identity,probe,stopReporting:async()=>{clearInterval(keepalive);while(sending)await new Promise(r=>setTimeout(r,10))},artifacts})
+   current=attacks.policy
+   assert.equal(attacks.failures.length,0,'Guest attack findings: '+JSON.stringify(attacks.failures))
+  }
   const disabled=await admin.request.put(base+'/api/v1/guest/settings',{headers,data:{...current,enabled:false}});assert.equal(disabled.status(),200)
   await display.getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-testid=guest-display] h2'));assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
   assert.deepEqual(errors,[]);console.log('Guest audit passed: real Core policy, anonymous entry, explicit projection with administrator cookies, session-checked exit, mode-spoof denial, administrator preview/save, immediate disable; 12 light/dark/mobile snapshots.')

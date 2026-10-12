@@ -62,7 +62,7 @@ type Server struct {
 	guestMu                    sync.Mutex
 	guestSlots                 chan struct{}
 	guestCache                 *guestDisplay
-	guestRevision              int64
+	guestScope                 [32]byte
 	requestSlots               chan struct{}
 	jsonReadTimeout            time.Duration
 	transferReadTimeout        time.Duration

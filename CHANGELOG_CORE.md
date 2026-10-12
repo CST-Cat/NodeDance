@@ -4,10 +4,12 @@
 
 ### English
 
+- Withdraw deleted probes and revoked nodes from warm guest caches immediately, allow disabling with unavailable selections, and reject malformed public queries. Add 438 real-browser adversarial checks across anonymous management, forged sessions, WebSockets, CSRF, stored HTML injection and bounded refresh storms.
 - Add opt-in guest entry on the login page, explicitly selected node/metric/history/service display, server-filtered public data, and shared CLI/TUI/Web publication settings with administrator preview. Keep all controls private and verify default denial, field isolation, immediate disable and light/dark/mobile behavior.
 
 ### 简体中文
 
+- 即时从游客缓存移除已删除探测项和已撤销节点，允许保留失效选择直接关闭游客展示，并拒绝畸形公开查询；增加 438 项真实浏览器攻击检查，覆盖匿名管理、伪造会话、WebSocket、CSRF、存储型 HTML 注入及有界并发刷新。
 - 增加登录页游客入口、明确选择的节点／指标／历史／服务展示及 Core 筛选后的公开数据；CLI／TUI／Web 共用公开配置，支持管理员预览；所有控制操作保持私有，验证默认不公开、字段隔离、即时关闭及浅色／深色／移动端布局。
 
 ## [0.1.14]

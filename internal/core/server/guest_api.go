@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -29,7 +30,7 @@ func (s *Server) handleGuestPublic(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", 405)
 		return
 	}
-	if len(r.URL.Query()) != 0 {
+	if r.URL.RawQuery != "" {
 		http.Error(w, "guest queries are not supported", 400)
 		return
 	}
@@ -67,15 +68,26 @@ func (s *Server) handleGuestPublic(w http.ResponseWriter, r *http.Request) {
 func (s *Server) cachedGuestDisplay(ctx context.Context, settings guest.Settings) (*guestDisplay, error) {
 	s.guestMu.Lock()
 	defer s.guestMu.Unlock()
-	if s.guestCache != nil && s.guestRevision == settings.Revision && s.now().Sub(s.guestCache.GeneratedAt) >= 0 && s.now().Sub(s.guestCache.GeneratedAt) < 15*time.Second {
+	// Resource removal changes the public scope independently of publication
+	// settings. Recheck it on every read, even when metric data is cached.
+	settings, err := (guest.Store{DB: s.store.DB}).AvailableResources(ctx, settings)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(settings)
+	if err != nil {
+		return nil, err
+	}
+	scope := sha256.Sum256(raw)
+	if s.guestCache != nil && s.guestScope == scope && s.now().Sub(s.guestCache.GeneratedAt) >= 0 && s.now().Sub(s.guestCache.GeneratedAt) < 15*time.Second {
 		return s.guestCache, nil
 	}
-	data, err := s.buildGuestDisplay(ctx, settings)
+	data, err := s.assembleGuestDisplay(ctx, settings)
 	if err != nil {
 		return nil, err
 	}
 	s.guestCache = &data
-	s.guestRevision = settings.Revision
+	s.guestScope = scope
 	return &data, nil
 }
 
@@ -148,6 +160,13 @@ func guestValue[T any](metric protocol.Metric[T], convert func(T) float64) guest
 	return out
 }
 func (s *Server) buildGuestDisplay(ctx context.Context, settings guest.Settings) (guestDisplay, error) {
+	settings, err := (guest.Store{DB: s.store.DB}).AvailableResources(ctx, settings)
+	if err != nil {
+		return guestDisplay{}, err
+	}
+	return s.assembleGuestDisplay(ctx, settings)
+}
+func (s *Server) assembleGuestDisplay(ctx context.Context, settings guest.Settings) (guestDisplay, error) {
 	out := guestDisplay{Title: settings.Title, GeneratedAt: s.now().UTC(), RefreshSeconds: 30, Nodes: []guestNode{}, Probes: []guestProbe{}}
 	descriptors := map[string]guest.Metric{}
 	for _, m := range guest.Metrics() {

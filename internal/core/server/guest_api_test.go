@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -246,6 +247,77 @@ func TestGuestUnknownMetricsNeverExposeStaleValues(t *testing.T) {
 	}
 	if len(out.Nodes) != 1 || out.Nodes[0].Status != "offline" || out.Nodes[0].Metrics["cpu.usage_percent"].Value != nil {
 		t.Fatal("stale value masquerades as current", out)
+	}
+}
+
+func TestGuestWithdrawsRemovedResourcesFromWarmCache(t *testing.T) {
+	for _, removal := range []string{"probe deletion", "agent revocation"} {
+		t.Run(removal, func(t *testing.T) {
+			s := featureCore(t)
+			ctx := context.Background()
+			identity := guestFixtureNode(t, s, 0)
+			probe, err := s.probes.Create(ctx, coreprobes.Config{NodeID: identity.NodeID, Name: "Private", Kind: "tcp", Target: "tcp://127.0.0.1:9", IntervalSeconds: 60, TimeoutSeconds: 3}, audit.Event{Action: "probe_create", Outcome: "succeeded"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			store := guest.Store{DB: s.store.DB}
+			policy := guest.Defaults()
+			policy.Enabled = true
+			policy.Metrics = []string{"cpu.usage_percent"}
+			policy.Nodes = []guest.Resource{{ID: identity.NodeID, Name: "Public node"}}
+			policy.Probes = []guest.Resource{{ID: probe.ID, Name: "Public service"}}
+			policy, err = store.Save(ctx, policy, audit.Event{Action: "guest_display_update", Outcome: "succeeded"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			read := func() guest.Display {
+				t.Helper()
+				response := httptest.NewRecorder()
+				s.ServeHTTP(response, httptest.NewRequest("GET", "/api/v1/public/guest/display", nil))
+				var view guest.Display
+				if response.Code != 200 || json.Unmarshal(response.Body.Bytes(), &view) != nil {
+					t.Fatal(response.Code, response.Body.String())
+				}
+				return view
+			}
+			initial := read()
+			if len(initial.Nodes) != 1 || len(initial.Probes) != 1 {
+				t.Fatal(initial)
+			}
+			if removal == "probe deletion" {
+				err = s.probes.Delete(ctx, probe.ID, probe.Revision, audit.Event{Action: "probe_delete", Outcome: "succeeded"})
+			} else {
+				_, err = s.agents.Revoke(ctx, identity.AgentID, "", sql.NullInt64{})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			view := read()
+			if len(view.Probes) != 0 || removal == "agent revocation" && len(view.Nodes) != 0 {
+				t.Fatal("removed resource survived warm cache", view)
+			}
+			if len(initial.Probes) != 1 || len(initial.Nodes) != 1 {
+				t.Fatal("already issued snapshot was mutated", initial)
+			}
+			preview, err := s.buildGuestDisplay(ctx, policy)
+			if err != nil || len(preview.Probes) != 0 || removal == "agent revocation" && len(preview.Nodes) != 0 {
+				t.Fatal("preview differs from public scope", preview, err)
+			}
+			probeOnly := policy
+			probeOnly.Nodes = nil
+			if _, err = store.Save(ctx, probeOnly, audit.Event{Action: "guest_display_update", Outcome: "succeeded"}); !errors.Is(err, guest.ErrInvalid) {
+				t.Fatal("cannot republish unavailable selections", err)
+			}
+			policy.Enabled = false
+			if _, err = store.Save(ctx, policy, audit.Event{Action: "guest_display_update", Outcome: "succeeded"}); err != nil {
+				t.Fatal("unavailable selection prevented immediate disable", err)
+			}
+			response := httptest.NewRecorder()
+			s.ServeHTTP(response, httptest.NewRequest("GET", "/api/v1/public/guest/display", nil))
+			if response.Code != 404 {
+				t.Fatal("disabled display remained public", response.Code)
+			}
+		})
 	}
 }
 
