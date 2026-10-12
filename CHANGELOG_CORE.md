@@ -4,6 +4,12 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.16]
+
+### English
+
 - Integrate complete VueFinder 4.7.6 with lazy editor/assets, shared file tasks, paginated directory/search, no-overwrite copy/move, bounded ZIP archive/extraction, versioned 128 KiB text edits and sandboxed passive media previews. Preserve file-task recovery, guest isolation and browser directory history; add real Core/root Agent browser regression and bundled license notices.
 - Restore command-history cleanup through the audited HTTP entry, stop delayed enrollment-grant follow-up reads after guest entry, and preserve specialized batch command/probe retry identities across reload using the shared operation intent store.
 - Support browser Back/Forward, bookmarks and reload with browser-local view URLs for workspace pages, node details/sections, alert tabs and host management tabs/node selection. Revalidate administrator sessions on management entry, preserve the public guest projection on URL restoration, and prevent stale navigation responses or history restoration from resubmitting tasks.

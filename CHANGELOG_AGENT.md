@@ -4,6 +4,12 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.11]
+
+### English
+
 - Extend the existing file service with bounded cursor browsing/search, staged no-overwrite copy and ZIP archive/extraction, 128 KiB versioned text editing and recovery cleanup. Pin directory descriptors for all file roots and reject credential ancestors during rename/delete.
 
 ### 简体中文
