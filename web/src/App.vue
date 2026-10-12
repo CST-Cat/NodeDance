@@ -5,7 +5,7 @@ import HostManagement from './components/HostManagement.vue'
 import UpdateCenter from './components/UpdateCenter.vue'
 import OperationConsole from './components/OperationConsole.vue'
 import { t, display, locale, setLocale, type Locale } from "./i18n"
-import { defineAsyncComponent, computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { defineAsyncComponent, computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
 import { ApiError, api, SESSION_EXPIRED_EVENT, type Appearance, type Session, type User } from './api'
 import NodesDashboard from './components/NodesDashboard.vue'
 import TailscaleDiscovery from './components/TailscaleDiscovery.vue'
@@ -14,11 +14,12 @@ import AlertCenter from './components/AlertCenter.vue'
 import UiIcon from './components/UiIcon.vue'
 import UiDialog from './components/UiDialog.vue'
 import { cancelDialogs } from './dialogs'
+import { navigationKey, readViewRoute, viewHash, writeViewRoute, type ViewRoute, type ViewScreen } from './navigation'
 
 const GuestDisplay=defineAsyncComponent(()=>import('./components/GuestDisplay.vue'))
 const GuestSettings=defineAsyncComponent(()=>import('./components/GuestSettings.vue'))
 
-type Screen = 'guest' | 'guest-settings' | 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'agent-enrollment' | 'alerts' | 'operations' | 'updates' | 'host-management'
+type Screen = ViewScreen | 'loading' | 'unavailable'
 type ImageKind = 'avatar' | 'background'
 
 const screen = ref<Screen>('loading')
@@ -98,11 +99,46 @@ const navigation = [
   { screen: 'settings', label: 'nav.settings', icon: 'settings' },
 ] as const
 const screenTitle = computed(() => t(navigation.find(item => item.screen === screen.value)?.label ?? 'nav.workspace'))
-function navigate(target: Screen) {
-  clearMessages()
-  screen.value = target
+const activeRoute = ref<ViewRoute>(readViewRoute())
+let routeSequence = 0
+let handledLocation = ''
+let loginDestination: ViewRoute = { screen: 'nodes' }
+provide(navigationKey, { route: activeRoute, go: goToRoute })
+
+function displayRoute(route: ViewRoute) {
+  activeRoute.value = route
+  screen.value = route.screen
   navigationOpen.value = false
+  writeViewRoute(route, true)
+  handledLocation = window.location.href
+  void nextTick(() => window.scrollTo(0, 0))
 }
+function goToRoute(route: ViewRoute, replace = false) {
+  if (window.location.hash === viewHash(route) && screen.value === route.screen) return
+  writeViewRoute(route, replace)
+  handledLocation = window.location.href
+  void activateRoute(readViewRoute())
+}
+function navigate(target: ViewScreen, replace = false) { goToRoute({ screen: target }, replace) }
+function handleHistoryPageShow(event: PageTransitionEvent) {
+  if (!event.persisted) return
+  currentUser.value = null
+  sessions.value = []
+  loginPassword.value = ''
+  setupForm.password = ''
+  setupForm.credential = ''
+  passwordForm.currentPassword = ''
+  passwordForm.newPassword = ''
+  passwordForm.confirmPassword = ''
+  handledLocation = window.location.href
+  void activateRoute(readViewRoute())
+}
+function handleHistoryNavigation() {
+  if (handledLocation === window.location.href) return
+  handledLocation = window.location.href
+  void activateRoute(readViewRoute())
+}
+
 const busy = ref(false)
 const busyLabel = ref('')
 const error = ref('')
@@ -194,47 +230,77 @@ async function loadSessions() {
   sessions.value = result.sessions
 }
 
-async function enterSettings() {
+async function enterSettings(sequence = routeSequence) {
   const result = await api.me()
+  if (sequence !== routeSequence) return false
   currentUser.value = result.user
-  screen.value = 'settings'
   const results = await Promise.allSettled([loadAppearance(), loadSessions()])
   const rejected = results.find((item) => item.status === 'rejected')
+  if (sequence !== routeSequence) return false
   if (rejected?.status === 'rejected') {
     notice.value = t('m.2ccd4dc3ec31')
   }
+  return true
 }
 
-async function initializeScreen() {
-  screen.value = 'loading'
+async function activateRoute(target: ViewRoute) {
+  const sequence = ++routeSequence
+  navigationOpen.value = false
+  busy.value = false
+  busyLabel.value = ''
+  uploading.value = ''
+  cancelDialogs()
   clearMessages()
+  if (target.screen !== 'login') loginPassword.value = ''
+  if (target.screen !== 'setup') { setupForm.password = ''; setupForm.credential = '' }
+  if (target.screen === 'guest') {
+    currentUser.value = null
+    sessions.value = []
+    displayRoute({ screen: 'guest' })
+    return
+  }
+  if (!currentUser.value) screen.value = 'loading'
   try {
-    const state = await api.setupStatus()
-    initialized.value = state.initialized
-    await loadAppearance()
-
-    if (!state.initialized) {
-      screen.value = 'setup'
+    if (!initialized.value) {
+      const state = await api.setupStatus()
+      if (sequence !== routeSequence) return
+      initialized.value = state.initialized
+      await loadAppearance()
+      if (sequence !== routeSequence) return
+    }
+    if (!initialized.value) { displayRoute({ screen: 'setup' }); return }
+    if (target.screen === 'login') {
+      currentUser.value = null
+      sessions.value = []
+      displayRoute({ screen: 'login' })
       return
     }
-
-    try {
-      await enterSettings()
-      screen.value = 'nodes'
-    } catch (reason) {
-      if (reason instanceof ApiError && reason.status === 401) {
-        screen.value = 'login'
-        return
-      }
-      throw reason
+    const result = await api.me()
+    if (sequence !== routeSequence) return
+    currentUser.value = result.user
+    if (target.screen === 'settings') {
+      const results = await Promise.allSettled([loadAppearance(), loadSessions()])
+      if (sequence !== routeSequence) return
+      if (results.some(item => item.status === 'rejected')) notice.value = t('m.2ccd4dc3ec31')
     }
+    displayRoute(target.screen === 'setup' ? { screen: 'nodes' } : target)
   } catch (reason) {
+    if (sequence !== routeSequence) return
+    if (reason instanceof ApiError && reason.status === 401) {
+      currentUser.value = null
+      sessions.value = []
+      loginDestination = target
+      displayRoute({ screen: 'login' })
+      return
+    }
     error.value = errorText(reason)
     screen.value = 'unavailable'
   }
 }
+async function initializeScreen() { await activateRoute(readViewRoute()) }
 
 async function submitSetup() {
+  const sequence = routeSequence
   clearMessages()
   busy.value = true
   busyLabel.value = t('m.9866f869b0bd')
@@ -244,43 +310,43 @@ async function submitSetup() {
       password: setupForm.password,
       username: setupForm.username,
     })
+    if (sequence !== routeSequence) return
     initialCredentials.value = result.initialCredentials ?? null
     initialized.value = true
     try {
-      await enterSettings()
+      if (!await enterSettings(sequence)) return
     } catch (reason) {
       if (!(reason instanceof ApiError) || reason.status !== 401) throw reason
       await api.login(result.initialCredentials?.username ?? setupForm.username, result.initialCredentials?.password ?? setupForm.password)
-      await enterSettings()
+      if (!await enterSettings(sequence)) return
     }
     initialCredentials.value = result.initialCredentials ?? null
-    screen.value = 'nodes'
+    navigate('nodes', true)
     setupForm.credential = ''
     setupForm.password = ''
     setupForm.username = ''
     notice.value = t('m.ea48349b4814')
   } catch (reason) {
-    error.value = errorText(reason)
+    if (sequence === routeSequence) error.value = errorText(reason)
   } finally {
-    busy.value = false
-    busyLabel.value = ''
+    if (sequence === routeSequence) { busy.value = false; busyLabel.value = '' }
   }
 }
 
 async function submitLogin() {
+  const sequence = routeSequence
   clearMessages()
   busy.value = true
   busyLabel.value = t('m.d8712b0d82e6')
   try {
     await api.login(loginUsername.value, loginPassword.value)
-    await enterSettings()
-    screen.value = 'nodes'
+    if (sequence !== routeSequence || !await enterSettings(sequence)) return
+    goToRoute(loginDestination, true)
     loginPassword.value = ''
   } catch (reason) {
-    error.value = errorText(reason)
+    if (sequence === routeSequence) error.value = errorText(reason)
   } finally {
-    busy.value = false
-    busyLabel.value = ''
+    if (sequence === routeSequence) { busy.value = false; busyLabel.value = '' }
   }
 }
 
@@ -348,6 +414,7 @@ async function revokeSession(session: Session) {
 }
 
 async function changePassword() {
+  const sequence = routeSequence
   clearMessages()
   if (passwordForm.newPassword !== passwordForm.confirmPassword) {
     error.value = t('m.a2ba2545a60e')
@@ -358,6 +425,7 @@ async function changePassword() {
   busyLabel.value = t('m.2c62c5fc337d')
   try {
     await api.changePassword(passwordForm.currentPassword, passwordForm.newPassword)
+    if (sequence !== routeSequence) { handleSessionExpired(); return }
     currentUser.value = null
     initialCredentials.value = null
     sessions.value = []
@@ -366,7 +434,8 @@ async function changePassword() {
     passwordForm.currentPassword = ''
     passwordForm.newPassword = ''
     passwordForm.confirmPassword = ''
-    screen.value = 'login'
+    loginDestination = { screen: 'nodes' }
+    navigate('login', true)
     notice.value = t('m.37a88dd4c7a5')
   } catch (reason) {
     error.value = errorText(reason)
@@ -377,14 +446,17 @@ async function changePassword() {
 }
 
 async function logout() {
+  const sequence = routeSequence
   clearMessages()
   busy.value = true
   try {
     await api.logout()
+    if (sequence !== routeSequence) { handleSessionExpired(); return }
     currentUser.value = null
     initialCredentials.value = null
     sessions.value = []
-    screen.value = 'login'
+    loginDestination = { screen: 'nodes' }
+    navigate('login', true)
     notice.value = t('m.3a7b6d2f0e58')
   } catch (reason) {
     error.value = errorText(reason)
@@ -408,7 +480,10 @@ function handleSessionExpired() {
   busyLabel.value = ''
   uploading.value = ''
   clearMessages()
-  screen.value = 'login'
+  const destination = readViewRoute()
+  if (!['login', 'guest', 'setup'].includes(destination.screen)) loginDestination = destination
+  routeSequence++
+  displayRoute({ screen: 'login' })
   notice.value = t('m.bd0bb959fbb4')
 }
 
@@ -426,12 +501,20 @@ onMounted(() => {
   mobileNavigation.value = navigationQuery.matches
   navigationQuery.addEventListener('change', updateNavigationViewport)
   window.addEventListener('keydown', handleNavigationKeys)
+  window.addEventListener('pageshow', handleHistoryPageShow)
+  window.addEventListener('popstate', handleHistoryNavigation)
+  window.addEventListener('hashchange', handleHistoryNavigation)
+  handledLocation = window.location.href
   void initializeScreen()
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
   window.removeEventListener('keydown', handleNavigationKeys)
+  window.removeEventListener('pageshow', handleHistoryPageShow)
+  window.removeEventListener('popstate', handleHistoryNavigation)
+  window.removeEventListener('hashchange', handleHistoryNavigation)
+  routeSequence++
   colorScheme?.removeEventListener('change', updateColorScheme)
   navigationQuery?.removeEventListener('change', updateNavigationViewport)
 })
@@ -576,11 +659,11 @@ onBeforeUnmount(() => {
       </section>
     </section>
 
-    <GuestDisplay v-else-if="screen==='guest'" @back="initializeScreen" />
+    <GuestDisplay v-else-if="screen==='guest'" @back="navigate('nodes')" />
     <GuestSettings v-else-if="screen==='guest-settings'" />
     <NodesDashboard v-else-if="screen === 'nodes'" @enroll="navigate('agent-enrollment')" />
 
-    <AgentEnrollment v-else-if="screen === 'agent-enrollment'" @back="screen = 'nodes'" />
+    <AgentEnrollment v-else-if="screen === 'agent-enrollment'" @back="navigate('nodes')" />
 
     <HostManagement v-else-if="screen === 'host-management'" />
       <UpdateCenter v-else-if="screen === 'updates'" />
@@ -588,7 +671,7 @@ onBeforeUnmount(() => {
 
     <AlertCenter v-else-if="screen === 'alerts'" />
 
-    <TailscaleDiscovery v-else-if="screen === 'discovery'" @back="screen = 'nodes'" />
+    <TailscaleDiscovery v-else-if="screen === 'discovery'" @back="navigate('nodes')" />
 
     <section v-else class="settings-layout">
       <aside class="settings-sidebar">

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { operationURL } from '../operations'
 import { t, display, locale } from "../i18n"
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api, type AgentNode, type AgentNodesResponse, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainer, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import NodeDetail from './NodeDetail.vue'
 import VpsCard from './VpsCard.vue'
 import UiIcon from './UiIcon.vue'
+import { useViewNavigation } from '../navigation'
 
 const TerminalConsole = defineAsyncComponent(() => import('./TerminalConsole.vue'))
 const terminalNode = ref<AgentNode | null>(null)
@@ -28,8 +29,8 @@ interface NodeClock {
   startedAt: number
 }
 const nodes = ref<AgentNode[]>([])
-const selectedNodeID = ref('')
-const selectedNodeSection = ref<'overview' | 'docker' | 'files'>('overview')
+const viewNavigation = useViewNavigation()
+const selectedNodeID = computed(() => viewNavigation.route.value.nodeId ?? '')
 const views = ref<Record<string, MetricsView>>({})
 const dockerViews = ref<Record<string, DockerInventory>>({})
 const clocks = ref<Record<string, NodeClock>>({})
@@ -140,10 +141,13 @@ async function saveDashboardSettings() {
   finally { dashboardSettingsSaving.value = false }
 }
 async function refreshNodes() {
-  const merged = mergeNodeList(await api.nodes())
+  if (disposed) return
+  const payload = await api.nodes()
+  if (disposed) return
+  const merged = mergeNodeList(payload)
   if (!merged) { busy.value = false; return }
   nodes.value = merged
-  if (selectedNodeID.value && !merged.some((node) => node.nodeId === selectedNodeID.value)) selectedNodeID.value = ''
+  if (selectedNodeID.value && !merged.some((node) => node.nodeId === selectedNodeID.value)) viewNavigation.go({ screen: 'nodes' }, true)
   busy.value = false
   const requests: Promise<unknown>[] = []
   for (const node of merged) {
@@ -207,12 +211,7 @@ function chooseNode(node: AgentNode) {
   openNode(node, dashboardSettings.value.viewMode === 'manage' ? 'docker' : 'overview')
 }
 function openNode(node: AgentNode, section: 'overview' | 'docker' | 'files') {
-  selectedNodeID.value = node.nodeId
-  selectedNodeSection.value = section
-  error.value = ''
-  void loadPreferences(node)
-  if (node.agentId) void Promise.all([loadMetrics(node), loadContainers(node), loadTasks(node)])
-  else setNodeReason(node.nodeId, 'awaiting_agent_registration')
+  viewNavigation.go({ screen: 'nodes', nodeId: node.nodeId, section })
 }
 function openNodeShortcut(payload: { node: AgentNode; action: 'terminal' | 'files' | 'manage' }) {
   const node = nodes.value.find((item) => item.nodeId === payload.node.nodeId)
@@ -221,10 +220,17 @@ function openNodeShortcut(payload: { node: AgentNode; action: 'terminal' | 'file
   const section = payload.action === 'files' ? 'files' : payload.action === 'manage' ? 'docker' : 'overview'
   openNode(node, section)
 }
-function backToNodes() {
-  selectedNodeID.value = ''
-  selectedNodeSection.value = dashboardSettings.value.viewMode === 'manage' ? 'docker' : 'overview'
-}
+function backToNodes() { viewNavigation.go({ screen: 'nodes' }) }
+watch(() => viewNavigation.route.value, route => {
+  terminalNode.value = null
+  const node = nodes.value.find(item => item.nodeId === route.nodeId)
+  if (!node) return
+  error.value = ''
+  void loadPreferences(node)
+  if (node.agentId) void Promise.all([loadMetrics(node), loadContainers(node), loadTasks(node)])
+  else setNodeReason(node.nodeId, 'awaiting_agent_registration')
+})
+
 function acceptSavedPreference(preference: DashboardPreference) {
   const existing = nodePreferences.value[preference.nodeId] ?? []
   const without = existing.filter((item) => !(item.targetKind === preference.targetKind && item.identity === preference.identity))
@@ -373,7 +379,7 @@ onBeforeUnmount(() => {
       <section v-for="group in serverCardGroups" :key="group.key" class="vps-card-group" :data-group="group.key"><h2 v-if="group.label" class="vps-group-heading">{{ group.label }}</h2><div class="vps-card-grid"><VpsCard v-for="node in group.nodes" :key="node.nodeId" :node="node" :metrics="views[node.nodeId]" :inventory="dockerViews[node.nodeId]" :node-preference="nodePreference(node)" :container-preferences="nodePreferences[node.nodeId] ?? []" :preference-identities="preferenceIdentities[node.nodeId] ?? {}" :online="nodeIsOnline(node)" :pending="isPendingRegistration(node)" :docker-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : !nodeIsOnline(node)" :preview-limit="dashboardSettings.featuredLimit" :current-time="wallClockNow" :node-reason="nodeReasons[node.nodeId]" :tasks="tasksForNode(node.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" @view="chooseNode" @quick-action="openNodeShortcut" @container-action="submitCardContainerAction"/></div></section>
     </section>
   </section>
-  <NodeDetail v-else :key="selectedNode.nodeId" :node="selectedNode" :metrics="views[selectedNode.nodeId]" :inventory="dockerViews[selectedNode.nodeId]" :preferences="nodePreferences[selectedNode.nodeId] ?? []" :preference-identities="preferenceIdentities[selectedNode.nodeId] ?? {}" :online="nodeIsOnline(selectedNode)" :pending="isPendingRegistration(selectedNode)" :docker-stale="dockerViews[selectedNode.nodeId] ? dockerIsStale(dockerViews[selectedNode.nodeId]) : !nodeIsOnline(selectedNode)" :node-reason="nodeReasons[selectedNode.nodeId]" :tasks="tasksForNode(selectedNode.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" :dashboard-settings="dashboardSettings" :dashboard-settings-saving="dashboardSettingsSaving" :dashboard-settings-message="dashboardSettingsMessage" :dashboard-settings-error="dashboardSettingsError" :current-time="wallClockNow" :initial-section="selectedNodeSection" @back="backToNodes" @refresh-tasks="(id) => { const node = nodes.find((item) => item.nodeId === id); if (node) void loadTasks(node) }" @preference-saved="acceptSavedPreference" @container-action="submitDetailContainerAction" @container-create="submitContainerCreateTask" @settings-change="dashboardSettings = $event" @save-settings="void saveDashboardSettings()"/>
+  <NodeDetail v-else :key="selectedNode.nodeId" :node="selectedNode" :metrics="views[selectedNode.nodeId]" :inventory="dockerViews[selectedNode.nodeId]" :preferences="nodePreferences[selectedNode.nodeId] ?? []" :preference-identities="preferenceIdentities[selectedNode.nodeId] ?? {}" :online="nodeIsOnline(selectedNode)" :pending="isPendingRegistration(selectedNode)" :docker-stale="dockerViews[selectedNode.nodeId] ? dockerIsStale(dockerViews[selectedNode.nodeId]) : !nodeIsOnline(selectedNode)" :node-reason="nodeReasons[selectedNode.nodeId]" :tasks="tasksForNode(selectedNode.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" :dashboard-settings="dashboardSettings" :dashboard-settings-saving="dashboardSettingsSaving" :dashboard-settings-message="dashboardSettingsMessage" :dashboard-settings-error="dashboardSettingsError" :current-time="wallClockNow" @back="backToNodes" @refresh-tasks="(id) => { const node = nodes.find((item) => item.nodeId === id); if (node) void loadTasks(node) }" @preference-saved="acceptSavedPreference" @container-action="submitDetailContainerAction" @container-create="submitContainerCreateTask" @settings-change="dashboardSettings = $event" @save-settings="void saveDashboardSettings()"/>
   <TerminalConsole v-if="terminalNode" :key="terminalNode.nodeId" :node-id="terminalNode.nodeId" target-kind="host" :target-label="nodeTitle(terminalNode)" @close="terminalNode = null" />
 </template>
 

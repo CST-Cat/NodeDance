@@ -1,6 +1,6 @@
 # Guest display / 游客展示
 
-Guest mode is an optional read-only presentation of explicitly published Core data. It is disabled by default: node status, metric fields, nodes, services and history are all unselected. On the login page, visitors must choose **Enter guest mode** before the browser requests display data. The public entry endpoint only reports whether guest mode is enabled. Direct callers can access published data without pressing the button; Core's publication policy, not a browser flag, enforces the boundary.
+Guest mode is an optional read-only presentation of explicitly published Core data. It is disabled by default: node status, metric fields, nodes, services and history are all unselected. On the login page, visitors must choose **Enter guest mode** before the browser requests display data. The public entry endpoint only reports whether guest mode is enabled. The explicit `#/guest` URL enters the same public view and restores it on refresh; browser Back/Forward between guest and management rechecks the administrator session. Direct callers can access published data without pressing the button; Core's publication policy, not a browser flag, enforces the boundary.
 
 ## Configure / 配置
 

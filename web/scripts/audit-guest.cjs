@@ -41,6 +41,17 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await page.getByRole('button',{name:'Enter guest mode',exact:true}).click();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   const display=page.locator('[data-testid=guest-display]');try{await display.getByText('25.0 %',{exact:true}).waitFor()}catch(e){console.error('Guest response:',raw,'Guest text:',await display.textContent());throw e};await display.getByRole('button',{name:'Refresh',exact:true}).click()
   assert.deepEqual(privateReads,[],'Guest screen must not load private APIs');assert.equal(await page.locator('#workspace-navigation').count(),0)
+  assert.equal(new URL(page.url()).hash,'#/guest')
+  await page.goBack();await page.locator('#login-title').waitFor();assert.equal(new URL(page.url()).hash,'#/login')
+  await page.goForward();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  const restoredReads=[];const observeRestore=r=>{const p=new URL(r.url()).pathname;if(p.startsWith('/api/')&&!p.startsWith('/api/v1/public/')&&p!=='/api/v1/operations')restoredReads.push(p)}
+  page.on('request',observeRestore);await page.reload();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor();page.off('request',observeRestore)
+  assert.deepEqual(restoredReads,[],'Restoring a guest URL must not fetch administrator data')
+  assert.equal(new URL(page.url()).hash,'#/guest')
+
+  await page.evaluate(()=>{history.replaceState({authenticated:true,role:'admin'},'',location.href);location.hash='/guest-settings'})
+  await page.locator('#login-title').waitFor();assert.equal(await page.locator('#workspace-navigation').count(),0,'A history marker cannot grant administrator access')
+  await page.goBack();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   assert.equal((await visitor.request.get(base+'/api/v1/nodes')).status(),401);assert.equal((await visitor.request.post(base+'/api/v1/updates/apply',{data:{component:'core',confirm:true}})).status(),401)
   await page.evaluate(()=>{localStorage.setItem('nodedance.mode','admin');sessionStorage.setItem('nodedance.mode','admin');document.querySelector('.app-shell').dataset.authenticated='true'})
   assert.equal((await visitor.request.get(base+'/api/v1/guest/settings',{headers:{'X-Mode':'admin'}})).status(),401,'A browser mode marker cannot authenticate')
@@ -64,7 +75,52 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
    assert.ok(await adminPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Node detail layout overflow')
    await adminPage.screenshot({path:path.join(artifacts,`node-detail-${theme}-${width}.png`),fullPage:true})
   }
-  await adminPage.setViewportSize({width:1440,height:1000})
+  await adminPage.setViewportSize({width:1440,height:1000});await adminPage.waitForTimeout(350)
+  const detailURL=adminPage.url();assert.ok(new URL(detailURL).hash.includes('node='+identity.nodeId))
+  await adminPage.goBack();await card.waitFor();assert.equal(new URL(adminPage.url()).hash,'#/nodes')
+  await adminPage.goForward();await adminPage.locator('#detail-title').waitFor();assert.equal(adminPage.url(),detailURL)
+  const historyTab=adminPage.locator('.dashboard-tabs button').nth(6)
+  await historyTab.click();await adminPage.waitForFunction(()=>location.hash.includes('section=history'))
+  await adminPage.reload();await adminPage.locator('#detail-title').waitFor();assert.equal(await adminPage.locator('.dashboard-tabs button').nth(6).getAttribute('aria-current'),'page')
+  await adminPage.goBack();await adminPage.locator('.dashboard-tabs button').first().waitFor();await adminPage.waitForFunction(()=>document.querySelector('.dashboard-tabs button')?.getAttribute('aria-current')==='page')
+  assert.ok(!new URL(adminPage.url()).hash.includes('section='))
+  // A valid administrator cookie still gets only public requests on guest URL
+  // restore; returning to management requires a fresh valid session.
+  const savedAdminCookies=await admin.cookies(base),managementURL=adminPage.url()
+  const guestPrivateRequests=[]
+  const trackGuest=r=>{const p=new URL(r.url()).pathname;if(p.startsWith('/api/')&&!p.startsWith('/api/v1/public/')&&p!=='/api/v1/operations')guestPrivateRequests.push(p)}
+  adminPage.on('request',trackGuest)
+  await adminPage.evaluate(()=>{location.hash='/guest'})
+  await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  await adminPage.reload();await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  adminPage.off('request',trackGuest);assert.deepEqual(guestPrivateRequests,[],'Administrator cookies must not expand guest history restoration')
+  await adminPage.goBack();await adminPage.locator('#detail-title').waitFor();assert.equal(adminPage.url(),managementURL)
+  // Hold a real authenticated permission read, switch to guest, and release the
+  // old response. It must not overwrite the newer public navigation.
+  let releaseGuard,guardStarted
+  const held=new Promise(r=>releaseGuard=r),started=new Promise(r=>guardStarted=r)
+  await adminPage.route('**/api/v1/auth/me',async route=>{const response=await route.fetch();assert.equal(response.status(),200);guardStarted();await held;await route.fulfill({response})})
+  await adminPage.evaluate(()=>{location.hash='/alerts'});await started
+  guestPrivateRequests.length=0;adminPage.on('request',trackGuest)
+  await adminPage.evaluate(()=>{location.hash='/guest'});await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  releaseGuard();await adminPage.waitForTimeout(200);await adminPage.unroute('**/api/v1/auth/me')
+  adminPage.off('request',trackGuest);assert.deepEqual(guestPrivateRequests,[],'A stale permission response must not load a private page after entering guest mode')
+  assert.equal(new URL(adminPage.url()).hash,'#/guest');assert.equal(await adminPage.locator('#workspace-navigation').count(),0)
+  await admin.clearCookies();await adminPage.goBack();await adminPage.locator('#login-title').waitFor()
+  assert.equal(await adminPage.locator('#workspace-navigation').count(),0,'Back to management must reject a missing administrator session')
+  await admin.addCookies(savedAdminCookies);await adminPage.goto(managementURL);await adminPage.locator('#detail-title').waitFor()
+  // A node-list response that completes after its page unmounts must not
+  // trigger follow-up private metric/container/preference reads in guest mode.
+  await adminPage.getByRole('button',{name:'Guest display',exact:true}).click();await adminPage.locator('.guest-settings').waitFor()
+  let releaseNodes,nodesStarted
+  const heldNodes=new Promise(r=>releaseNodes=r),startedNodes=new Promise(r=>nodesStarted=r)
+  await adminPage.route('**/api/v1/nodes',async route=>{const response=await route.fetch();nodesStarted();await heldNodes;await route.fulfill({response})})
+  await adminPage.getByRole('button',{name:'Nodes',exact:true}).click();await startedNodes
+  await adminPage.evaluate(()=>{location.hash='/guest'});await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  guestPrivateRequests.length=0;adminPage.on('request',trackGuest)
+  releaseNodes();await adminPage.waitForTimeout(200);await adminPage.unroute('**/api/v1/nodes');adminPage.off('request',trackGuest)
+  assert.deepEqual(guestPrivateRequests,[],'An unmounted node page must not start new private reads after entering guest mode')
+  await adminPage.goto(managementURL);await adminPage.locator('#detail-title').waitFor()
   const guestIcon=await adminPage.getByRole('button',{name:'Guest display',exact:true}).locator('svg path').getAttribute('d')
   const nodeIcon=await adminPage.getByRole('button',{name:'Nodes',exact:true}).locator('svg path').getAttribute('d')
   assert.ok(guestIcon && guestIcon!==nodeIcon,'Guest display must have its own icon')

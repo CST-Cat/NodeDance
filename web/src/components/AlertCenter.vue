@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { t, display, locale } from "../i18n"
+import { useViewTab } from '../navigation'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { api, operationRequest, type AgentNode, type AlertChannel, type AlertDelivery, type AlertEvent, type AlertItem, type AlertRule, type AlertWindow } from '../api'
 
 type Tab = 'active' | 'history' | 'rules' | 'channels' | 'windows' | 'deliveries'
-const tab = ref<Tab>('active')
+const tab = useViewTab<Tab>('tab', 'active', () => ['active', 'history', 'rules', 'channels', 'windows', 'deliveries'])
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')

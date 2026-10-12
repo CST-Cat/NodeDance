@@ -34,7 +34,7 @@ The suite discovers private operations from the connected Core's operation contr
 | Warm-cache field withdrawal, probe deletion, Agent revocation, disable with unavailable selections, global disable | 5 | Updated public scope immediately; disabled display returns 404 |
 | **Total** | **438** | **No failed cases after fixes** |
 
-The same run checks default-disabled entry, absence of display requests before guest selection, identical public projections with administrator cookies, session validation when leaving guest mode, browser-mode spoof denial, administrator save/preview, a dedicated guest icon distinct from node inventory, and twenty light/dark/mobile layouts, including node cards and detail headings without visible internal UUIDs. These existing checks are separate from the 438 attack cases. Counts grow when the Core operation contract grows.
+The same run checks default-disabled entry, absence of display requests before guest selection, identical public projections with administrator cookies, session validation when leaving guest mode, browser-mode spoof denial, administrator save/preview, a dedicated guest icon distinct from node inventory, and twenty light/dark/mobile layouts, including node cards and detail headings without visible internal UUIDs. The browser checks also cover Back/Forward and reload in guest mode, forged history markers, administrator-cookie guest URL restoration without private requests, a missing session on returning to management, and a delayed authenticated response arriving after a newer guest navigation. These existing checks are separate from the 438 attack cases. Counts grow when the Core operation contract grows.
 
 ## Findings and fixes
 

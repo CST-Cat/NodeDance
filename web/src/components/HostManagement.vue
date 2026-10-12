@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useViewNavigation, useViewTab } from '../navigation'
 import { t } from '../i18n'
 import { api, operationRequest, type AgentNode } from '../api'
 import { operationCatalog, exactJSON, type CoreOperation } from '../operations'
 import ContractFields from './ContractFields.vue'
 const nodes = ref<AgentNode[]>([]), selected = ref<string[]>([]), nodeId = ref(''), operations = ref<CoreOperation[]>([])
-const tab = ref('settings'), busy = ref(false), error = ref(''), notice = ref('')
+const viewNavigation = useViewNavigation()
+const hostTabs = ['settings','assets','commands','probes','enrollment'] as const
+const tab = useViewTab('tab', 'settings', () => hostTabs)
+const busy = ref(false), error = ref(''), notice = ref('')
 const settings = reactive<Record<string,unknown>>({}), asset = reactive<Record<string,unknown>>({})
 const command = reactive<Record<string,unknown>>({ script: '', timeoutSeconds: 60, confirm: false })
 const probe = reactive<Record<string,unknown>>({ name:'', kind:'icmp', target:'icmp://', intervalSeconds:30, timeoutSeconds:3, enabled:true })
@@ -17,10 +21,12 @@ const batches = ref<Batch[]>([]), currentBatch = ref<Batch>(), grantList = ref<G
 const diagnostics = ref('')
 function schema(name:string) {return operations.value.find(o=>o.name===name)?.bodySchema}
 const settingsSchema = computed(()=>schema('agents.configure')), assetSchema=computed(()=>schema('nodes.save-asset'))
+let disposed = false
+onBeforeUnmount(()=>{disposed=true})
 let batchKey = '', probeKey = ''
 watch([command, selected],()=>{batchKey=''}, {deep:true})
 watch([probe, selected],()=>{probeKey=''}, {deep:true})
-async function perform(work:()=>Promise<void>) {if(busy.value)return;busy.value=true;error.value='';notice.value='';try{await work()}catch(e){error.value=e instanceof Error?e.message:String(e)}finally{busy.value=false}}
+async function perform(work:()=>Promise<void>) {if(disposed||busy.value)return;busy.value=true;error.value='';notice.value='';try{await work()}catch(e){error.value=e instanceof Error?e.message:String(e)}finally{busy.value=false}}
 async function loadNode() {await perform(async()=>{
  const id=nodeId.value; for(const value of [settings,asset])for(const k of Object.keys(value))delete value[k]
  const results=await Promise.allSettled([operationRequest<{settings:Record<string,unknown>}>('agents.settings',{params:{nodeId:id}}),operationRequest<Record<string,unknown>>('nodes.asset',{params:{nodeId:id}})])
@@ -29,20 +35,26 @@ async function loadNode() {await perform(async()=>{
  const failed=results.find(r=>r.status==='rejected');if(failed?.status==='rejected')throw failed.reason
 })}
 async function save(name:string,body:Record<string,unknown>){await perform(async()=>{const data={...body};if(data.expiresAt==='')delete data.expiresAt;await operationRequest(name,{params:{nodeId:nodeId.value}},{body:exactJSON(data)});notice.value=t('host.saved')})}
-async function submitCommand(){await perform(async()=>{batchKey ||= crypto.randomUUID();currentBatch.value=await operationRequest<Batch>('commands.batch',{}, {headers:{'Idempotency-Key':batchKey},body:exactJSON({...command,nodeIds:selected.value})});batchKey='';batches.value=(await operationRequest<{batches:Batch[]}>('commands.batches')).batches})}
+async function submitCommand(){await perform(async()=>{batchKey ||= crypto.randomUUID();currentBatch.value=await operationRequest<Batch>('commands.batch',{}, {headers:{'Idempotency-Key':batchKey},body:exactJSON({...command,nodeIds:selected.value})});batchKey='';if(disposed)return;batches.value=(await operationRequest<{batches:Batch[]}>('commands.batches')).batches})}
 async function submitProbe(){await perform(async()=>{probeKey ||= crypto.randomUUID();const body:Record<string,unknown>={...probe,nodeIds:selected.value};if(!['http','https'].includes(String(probe.kind)))delete body.expectedHttpStatus;currentBatch.value=await operationRequest<Batch>('probes.batch',{}, {headers:{'Idempotency-Key':probeKey},body:exactJSON(body)});probeKey='';notice.value=t('host.saved')})}
 async function inspectBatch(id:string,cancel=false){await perform(async()=>{currentBatch.value=await operationRequest<Batch>(cancel?'commands.batch-cancel':'commands.batch-status',{params:{batchId:id}})})}
 async function createGrant(){await perform(async()=>{grantResult.value=await operationRequest('agents.create-grant',{}, {body:exactJSON(grant)});grantList.value=(await operationRequest<{grants:Grant[]}>('agents.grants')).grants})}
 async function revokeGrant(id:string){await perform(async()=>{await operationRequest('agents.revoke-grant',{params:{grantId:id}});grantList.value=(await operationRequest<{grants:Grant[]}>('agents.grants')).grants})}
-onMounted(async()=>{await perform(async()=>{const [list,catalog,history,grants]=await Promise.all([api.nodes(),operationCatalog(),operationRequest<{batches:Batch[]}>('commands.batches'),operationRequest<{grants:Grant[]}>('agents.grants')]);nodes.value=list.nodes.filter(n=>!['pending','revoked'].includes(n.status));nodeId.value=nodes.value[0]?.nodeId??'';operations.value=catalog.operations;batches.value=history.batches;grantList.value=grants.grants});if(nodeId.value)await loadNode()})
+function selectNode(){viewNavigation.go({...viewNavigation.route.value,nodeId:nodeId.value||undefined});void loadNode()}
+watch(()=>viewNavigation.route.value.nodeId,id=>{
+ if(!nodes.value.length)return
+ const next=nodes.value.find(n=>n.nodeId===id)?.nodeId??nodes.value[0]!.nodeId
+ if(next!==nodeId.value){nodeId.value=next;void loadNode()}
+})
+onMounted(async()=>{await perform(async()=>{const [list,catalog,history,grants]=await Promise.all([api.nodes(),operationCatalog(),operationRequest<{batches:Batch[]}>('commands.batches'),operationRequest<{grants:Grant[]}>('agents.grants')]);nodes.value=list.nodes.filter(n=>!['pending','revoked'].includes(n.status));nodeId.value=nodes.value.find(n=>n.nodeId===viewNavigation.route.value.nodeId)?.nodeId??nodes.value[0]?.nodeId??'';operations.value=catalog.operations;batches.value=history.batches;grantList.value=grants.grants});if(nodeId.value)await loadNode()})
 </script>
 <template>
  <section class="host-page">
   <header><div><h1>{{ t('host.title') }}</h1><p>{{ t('host.subtitle') }}</p></div></header>
-  <nav class="host-tabs" :aria-label="t('host.title')"><button v-for="item in ['settings','assets','commands','probes','enrollment']" :key="item" :aria-pressed="tab===item" @click="tab=item">{{ t(`host.tab.${item}`) }}</button></nav>
+  <nav class="host-tabs" :aria-label="t('host.title')"><button v-for="item in hostTabs" :key="item" :aria-pressed="tab===item" @click="tab=item">{{ t(`host.tab.${item}`) }}</button></nav>
   <p v-if="error" role="alert" class="host-error">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
   <section v-if="tab==='settings'||tab==='assets'" class="host-card">
-   <label class="host-node">{{ t('host.node') }}<select v-model="nodeId" :disabled="busy" @change="loadNode"><option v-for="node in nodes" :key="node.nodeId" :value="node.nodeId">{{ node.displayName }} · {{ node.status }}</option></select></label>
+   <label class="host-node">{{ t('host.node') }}<select v-model="nodeId" :disabled="busy" @change="selectNode"><option v-for="node in nodes" :key="node.nodeId" :value="node.nodeId">{{ node.displayName }} · {{ node.status }}</option></select></label>
    <template v-if="nodeId">
     <form v-if="tab==='settings'" @submit.prevent="save('agents.configure',settings)"><p>{{ t('host.settingsHint') }}</p><ContractFields :schema="settingsSchema" :values="settings" /><div class="host-actions"><button class="primary-button" :disabled="busy || !Object.keys(settings).length">{{ t('host.save') }}</button><button type="button" :disabled="busy" @click="perform(async()=>{diagnostics=JSON.stringify(await operationRequest('agents.diagnostics',{params:{nodeId}}),null,2)})">{{ t('host.diagnostics') }}</button></div><pre v-if="diagnostics">{{ diagnostics }}</pre></form>
     <form v-else @submit.prevent="save('nodes.save-asset',asset)"><p>{{ t('host.assetsHint') }}</p><ContractFields :schema="assetSchema" :values="asset" /><button class="primary-button" :disabled="busy || !Object.keys(asset).length">{{ t('host.save') }}</button></form>

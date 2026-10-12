@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { requestPrompt } from '../dialogs'
+import { useViewTab } from '../navigation'
 import { t, display, locale } from "../i18n"
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { api, type AgentNode, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainerRecord, type DockerInventory, type MetricHistory, type TaskAuditEvent } from '../api'
@@ -34,7 +35,6 @@ const props = defineProps<{
   dashboardSettingsMessage: string
   dashboardSettingsError: string
   currentTime: number
-  initialSection: 'overview' | 'docker' | 'files'
 }>()
 const emit = defineEmits<{
   back: []
@@ -46,11 +46,12 @@ const emit = defineEmits<{
   saveSettings: []
 }>()
 
-const activeSection = ref<'overview' | 'docker' | 'images' | 'compose' | 'rebuild' | 'files' | 'history' | 'events' | 'settings'>(props.initialSection)
-const sectionTabs = computed<Array<{ id: typeof activeSection.value; label: string }>>(() => [
+const sectionTabs = computed(() => [
   { id: 'overview', label: t('m.a33db5730556') }, { id: 'docker', label: t('m.eee901e4cc16') }, { id: 'images', label: t('m.176c09844e0f') },
-  { id: 'compose', label: t('m.5f67dd75b01f') }, { id: 'rebuild', label: t('m.474490ab5dc3') }, { id: 'files', label: t('m.b3bd5ac7cc4d') }, { id: 'history', label: t('m.bfb41404e88b') }, { id: 'events', label: t('m.a700a47380fe') }, { id: 'settings', label: t('m.0a09fda5e2a6') },
-])
+  { id: 'compose', label: t('m.5f67dd75b01f') }, { id: 'rebuild', label: t('m.474490ab5dc3') }, { id: 'files', label: t('m.b3bd5ac7cc4d') },
+  { id: 'history', label: t('m.bfb41404e88b') }, { id: 'events', label: t('m.a700a47380fe') }, { id: 'settings', label: t('m.0a09fda5e2a6') },
+] as const)
+const activeSection = useViewTab('section', 'overview', () => sectionTabs.value.map(tab => tab.id))
 const customFieldOptions = computed(() => [
   { id: 'state', label: t('m.e46b0272bd64') }, { id: 'ports', label: t('m.e71ac32b544b') }, { id: 'health', label: t('m.85788192fbeb') },
   { id: 'image', label: t('m.176c09844e0f') }, { id: 'uptime', label: t('m.5986e9d976e0') },
@@ -267,9 +268,13 @@ async function loadHistory() {
 }
 function selectSection(section: typeof activeSection.value) {
   activeSection.value = section
+
+}
+watch(activeSection, section => {
+  activeTerminal.value = null
   if (section === 'history') void loadHistory()
   if (section === 'events') emit('refreshTasks', props.node.nodeId)
-}
+}, { immediate: true })
 function taskStatusText(task: ContainerTask): string { return taskStatusLabel(task) }
 async function toggleTaskAudit(task: ContainerTask) {
   const showing = Boolean(taskAuditVisible.value[task.taskId])
