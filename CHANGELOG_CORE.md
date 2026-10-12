@@ -4,7 +4,11 @@
 
 ### English
 
+- Add opt-in guest entry on the login page, explicitly selected node/metric/history/service display, server-filtered public data, and shared CLI/TUI/Web publication settings with administrator preview. Keep all controls private and verify default denial, field isolation, immediate disable and light/dark/mobile behavior.
+
 ### 简体中文
+
+- 增加登录页游客入口、明确选择的节点／指标／历史／服务展示及 Core 筛选后的公开数据；CLI／TUI／Web 共用公开配置，支持管理员预览；所有控制操作保持私有，验证默认不公开、字段隔离、即时关闭及浅色／深色／移动端布局。
 
 ## [0.1.14]
 

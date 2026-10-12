@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { t, display, locale } from "../i18n"
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, useId, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as echarts from 'echarts/core'
 import { LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent } from 'echarts/components'
@@ -15,8 +15,10 @@ const props = defineProps<{
   loading: boolean
   error: string
   nodeOnline: boolean
+  availableOnly?: boolean
 }>()
 
+const headingId=useId()
 const host = ref<HTMLElement>()
 const selectedKey = ref('cpu.usage_percent')
 const chartError = ref('')
@@ -33,14 +35,14 @@ const availableKeys = computed(() => {
     ['network.sent_bytes_per_second', t('m.81c8be973451')],
   ])
   for (const series of props.history?.series ?? []) {
-    if (!labels.has(series.key)) labels.set(series.key,series.key)
+    if (!labels.has(series.key)) labels.set(series.key,series.key==='disk.used_percent'?t('guest.metric.disk.used_percent'):series.key)
     if (series.key.startsWith('disk:')) {
       const suffix = series.key.endsWith(':used_percent') ? 'used_percent' : 'used_bytes'
       const mount = series.key.slice('disk:'.length, -(`:${suffix}`.length))
       labels.set(series.key, t('m.c47bd176f3ca', {"0": (mount), "1": (suffix === 'used_percent' ? t('m.9746ae777abb') : t('m.666f1c71e1e0'))}))
     }
   }
-  return [...labels.entries()].map(([key, label]) => ({ key, label }))
+  return [...labels.entries()].filter(([key])=>!props.availableOnly || props.history?.series.some(series=>series.key===key)).map(([key, label]) => ({ key, label }))
 })
 
 const selectedLabel = computed(() => availableKeys.value.find((item) => item.key === selectedKey.value)?.label ?? selectedKey.value)
@@ -78,12 +80,12 @@ function chartOptions(): EChartsOption {
     animation: false,
     grid: { left: 54, right: 20, top: 24, bottom: 38 },
     tooltip: { backgroundColor: color('--surface', '#efe9de'), borderColor: line, textStyle: { color: color('--text', '#252523') }, trigger: 'axis', valueFormatter: (value) => value == null ? t('m.63ef182b7603') : `${Number(value).toFixed(2)} ${unit}` },
-    xAxis: { type: 'time', axisLabel: { color: muted, formatter: (value: number) => new Date(value).toLocaleString(locale.value, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }, axisPointer: { label: { formatter: (params: { value: string | number | Date }) => new Date(params.value).toLocaleString(locale.value) } }, axisLine: { lineStyle: { color: line } } },
+    xAxis: { type: 'time', splitNumber: 4, axisLabel: { color: muted, hideOverlap:true, formatter: (value: number) => to-from>172800000?new Date(value).toLocaleDateString(locale.value,{month:'short',day:'numeric'}):new Date(value).toLocaleTimeString(locale.value,{hour:'2-digit',minute:'2-digit'}) }, axisPointer: { label: { formatter: (params: { value: string | number | Date }) => new Date(params.value).toLocaleString(locale.value) } }, axisLine: { lineStyle: { color: line } } },
     yAxis: { type: 'value', scale: !percent, name: unit, nameTextStyle: { color: muted }, axisLabel: { color: muted }, splitLine: { lineStyle: { color: line } } },
     series: [{
       name: selectedLabel.value,
       type: 'line',
-      showSymbol: false,
+      showSymbol: (metric?.points.length ?? 0) < 2,
       connectNulls: false,
       sampling: 'lttb',
       data: normalized,
@@ -108,7 +110,7 @@ function render() {
 watch(() => [props.history, selectedKey.value, locale.value], render, { deep: true })
 watch(availableKeys, (items) => {
   if (!items.some((item) => item.key === selectedKey.value)) selectedKey.value = items[0]?.key ?? 'cpu.usage_percent'
-})
+}, { immediate:true })
 
 onMounted(() => {
   render()
@@ -132,11 +134,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="history-panel" aria-labelledby="history-title" data-testid="history-panel">
+  <section class="history-panel" :aria-labelledby="headingId" data-testid="history-panel">
     <header class="history-heading">
       <div>
         <span class="eyebrow">{{ t('label.aacdab5b45f0') }}</span>
-        <h2 id="history-title">{{ t('m.bfb41404e88b') }}</h2>
+        <h2 :id="headingId">{{ t('m.bfb41404e88b') }}</h2>
         <p v-if="history">{{ new Date(history.from).toLocaleString(locale) }} — {{ new Date(history.to).toLocaleString(locale) }} · {{ history.resolution === 'minute' ? t('m.bd957bc497aa') : t('m.3b6fefc50feb') }}{{ t('m.a4768faecb38') }}</p>
       </div>
       <label class="history-metric-select">{{ t('m.b87e67c7dae0') }}<select v-model="selectedKey" :aria-label="t('m.4a2f28a82624')">

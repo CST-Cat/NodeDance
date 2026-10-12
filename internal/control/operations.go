@@ -14,6 +14,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/alerts"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
+	"github.com/CST-Cat/NodeDance/internal/core/guest"
 	coretailscale "github.com/CST-Cat/NodeDance/internal/core/tailscale"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/update"
@@ -91,6 +92,26 @@ func schema(value any) any {
 		}
 	}
 	switch value.(type) {
+	case guest.Settings:
+		props["title"].(map[string]any)["minLength"] = 1
+		props["title"].(map[string]any)["maxLength"] = 80
+		props["revision"].(map[string]any)["minimum"] = 0
+		for _, key := range []string{"nodes", "probes"} {
+			name := props[key].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)["name"].(map[string]any)
+			name["minLength"] = 1
+			name["maxLength"] = 80
+		}
+		props["metrics"].(map[string]any)["items"].(map[string]any)["enum"] = func() []string {
+			keys := []string{}
+			for _, m := range guest.Metrics() {
+				keys = append(keys, m.Key)
+			}
+			return keys
+		}()
+		props["historyHours"].(map[string]any)["enum"] = []any{0, 1, 6, 24}
+		for _, key := range []string{"nodes", "probes"} {
+			props[key].(map[string]any)["maxItems"] = 20
+		}
 	case protocol.AgentSettings:
 		raw, _ := json.Marshal(protocol.DefaultAgentSettings())
 		var defaults map[string]any
@@ -219,6 +240,11 @@ func buildOperations() []Operation {
 		op("nodes.history", "GET", node+"/history", "Metric history; from/to are RFC3339, resolution is minute or hour", nil, "from", "to", "resolution"),
 		op("nodes.preferences", "GET", node+"/preferences", "Node and container display preferences", nil),
 		op("nodes.save-preference", "PUT", node+"/preferences", "Save display and connection preference", schema(dashboard.Preference{})),
+		op("guest.settings", "GET", "/api/v1/guest/settings", "Guest display policy and permitted metric choices", nil),
+		op("guest.configure", "PUT", "/api/v1/guest/settings", "Publish explicitly selected read-only data; empty by default", schema(guest.Settings{})),
+		op("guest.preview", "GET", "/api/v1/guest/preview", "Administrator preview of the saved guest projection", nil),
+		op("guest.entry", "GET", "/api/v1/public/guest", "Whether guest mode is enabled; no display data", nil),
+		op("guest.display", "GET", "/api/v1/public/guest/display", "Only explicitly published guest display data", nil),
 		op("dashboard.settings", "GET", "/api/v1/dashboard/settings", "Dashboard settings", nil),
 		op("dashboard.save-settings", "PUT", "/api/v1/dashboard/settings", "Save dashboard settings", schema(dashboard.Settings{})),
 		op("dashboard.watch", "GET", "/ws/v1/dashboard", "Live dashboard messages as JSONL", nil),

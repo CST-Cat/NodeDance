@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { operationURL } from './operations'
+import { operationRequest } from './api'
 import HostManagement from './components/HostManagement.vue'
 import UpdateCenter from './components/UpdateCenter.vue'
 import OperationConsole from './components/OperationConsole.vue'
 import { t, display, locale, setLocale, type Locale } from "./i18n"
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { defineAsyncComponent, computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ApiError, api, SESSION_EXPIRED_EVENT, type Appearance, type Session, type User } from './api'
 import NodesDashboard from './components/NodesDashboard.vue'
 import TailscaleDiscovery from './components/TailscaleDiscovery.vue'
@@ -14,7 +15,10 @@ import UiIcon from './components/UiIcon.vue'
 import UiDialog from './components/UiDialog.vue'
 import { cancelDialogs } from './dialogs'
 
-type Screen = 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'agent-enrollment' | 'alerts' | 'operations' | 'updates' | 'host-management'
+const GuestDisplay=defineAsyncComponent(()=>import('./components/GuestDisplay.vue'))
+const GuestSettings=defineAsyncComponent(()=>import('./components/GuestSettings.vue'))
+
+type Screen = 'guest' | 'guest-settings' | 'loading' | 'unavailable' | 'setup' | 'login' | 'settings' | 'nodes' | 'discovery' | 'agent-enrollment' | 'alerts' | 'operations' | 'updates' | 'host-management'
 type ImageKind = 'avatar' | 'background'
 
 const screen = ref<Screen>('loading')
@@ -81,7 +85,7 @@ watch(navigationOpen, async (open) => {
     sidebarElement.value?.querySelector<HTMLElement>('[aria-current=page]')?.focus()
   }
 })
-const authenticated = computed(() => !!currentUser.value && !['loading', 'unavailable', 'setup', 'login'].includes(screen.value))
+const authenticated = computed(() => !!currentUser.value && !['guest', 'loading', 'unavailable', 'setup', 'login'].includes(screen.value))
 const navigation = [
   { screen: 'nodes', label: 'nav.nodes', icon: 'nodes' },
   { screen: 'agent-enrollment', label: 'nav.enrollment', icon: 'add' },
@@ -90,6 +94,7 @@ const navigation = [
   { screen: 'host-management', label: 'host.title', icon: 'terminal' },
   { screen: 'updates', label: 'nav.updates', icon: 'refresh' },
   { screen: 'operations', label: 'nav.operations', icon: 'terminal' },
+  { screen:'guest-settings',label:'guest.settings',icon:'nodes' },
   { screen: 'settings', label: 'nav.settings', icon: 'settings' },
 ] as const
 const screenTitle = computed(() => t(navigation.find(item => item.screen === screen.value)?.label ?? 'nav.workspace'))
@@ -102,6 +107,8 @@ const busy = ref(false)
 const busyLabel = ref('')
 const error = ref('')
 const notice = ref('')
+const guestEnabled = ref(false)
+watch(screen,async current=>{if(current!=='login')return;guestEnabled.value=false;try{guestEnabled.value=(await operationRequest<{enabled:boolean}>('guest.entry')).enabled}catch{guestEnabled.value=false}})
 const initialized = ref(false)
 const currentUser = ref<User | null>(null)
 const sessions = ref<Session[]>([])
@@ -387,6 +394,8 @@ async function logout() {
 }
 
 function handleSessionExpired() {
+  if(screen.value==='guest'){currentUser.value=null;sessions.value=[];return}
+  if(!currentUser.value)return
   initialCredentials.value = null
   currentUser.value = null
   sessions.value = []
@@ -562,10 +571,13 @@ onBeforeUnmount(() => {
             {{ busy ? busyLabel : t('m.d19038809234') }} <span aria-hidden="true">↗</span>
           </button>
         </form>
+        <button v-if="guestEnabled" class="secondary-button full-button guest-entry" type="button" :disabled="busy" @click="navigate('guest')">{{t('guest.enter')}}</button>
         <p class="privacy-note"><span aria-hidden="true">◈</span>{{ t('m.3834cf7462ca') }}</p>
       </section>
     </section>
 
+    <GuestDisplay v-else-if="screen==='guest'" @back="initializeScreen" />
+    <GuestSettings v-else-if="screen==='guest-settings'" />
     <NodesDashboard v-else-if="screen === 'nodes'" @enroll="navigate('agent-enrollment')" />
 
     <AgentEnrollment v-else-if="screen === 'agent-enrollment'" @back="screen = 'nodes'" />
@@ -701,3 +713,7 @@ onBeforeUnmount(() => {
     <UiDialog/>
   </main>
 </template>
+
+<style scoped>
+.guest-entry{margin-top:16px}
+</style>

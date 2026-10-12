@@ -65,3 +65,7 @@ Core retains partial, stale and uncertain batch records. After interruption, bat
 During the current development phase, host management uses the existing `agent.host.v1` capability with the current settings/cleanup contract. Core and Agent should be built from the same development revision; this change does not increment product, release or capability versions.
 
 See [verification results and reproduction](verification.md).
+
+## Guest display
+
+Core owns opt-in publication policy, dedicated public response types and bounded cached projections of existing metric/history/probe data. The login page exposes guest entry only when enabled; visitors receive no management capabilities. Administrator configuration and saved-policy preview use the shared discovered operation contract in all interfaces. See [guest display](guest-display.md).

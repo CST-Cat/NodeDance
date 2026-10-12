@@ -411,3 +411,12 @@ CREATE TABLE IF NOT EXISTS agent_enrollment_grants (
  revoked_at INTEGER,
  created_at INTEGER NOT NULL
 );
+
+-- Guest publication is independent from private dashboard visibility.
+CREATE TABLE IF NOT EXISTS guest_display (
+ id INTEGER PRIMARY KEY CHECK(id=1),
+ revision INTEGER NOT NULL,
+ settings_json TEXT NOT NULL
+);
+INSERT OR IGNORE INTO guest_display(id,revision,settings_json) VALUES(1,0,
+ '{"revision":0,"enabled":false,"title":"NodeDance","showStatus":false,"metrics":[],"historyHours":0,"nodes":[],"probes":[]}');

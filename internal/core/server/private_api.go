@@ -45,6 +45,9 @@ type browserSessionView struct {
 }
 
 func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, current *session) {
+	if s.handleGuestSettings(w, r) {
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/updates/") {
 		s.handleUpdates(w, r)
 		return

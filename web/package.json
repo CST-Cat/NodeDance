@@ -12,7 +12,8 @@
     "build": "vite build --config vite.config.ts --outDir ../internal/core/webassets/dist --emptyOutDir",
     "typecheck": "node scripts/check-i18n.cjs && node scripts/check-operations.cjs && vue-tsc --noEmit --project tsconfig.json",
     "audit:design": "node scripts/audit-design.cjs",
-    "audit:interfaces": "pnpm build && node scripts/audit-interfaces.cjs"
+    "audit:interfaces": "pnpm build && node scripts/audit-interfaces.cjs",
+    "audit:guest": "pnpm build && node scripts/audit-guest.cjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",

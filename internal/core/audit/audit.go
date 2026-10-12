@@ -42,7 +42,8 @@ type Execer interface {
 }
 
 var actions = map[string]struct{}{
-	"update_apply": {}, "update_rollback": {},
+	"guest_display_update": {},
+	"update_apply":         {}, "update_rollback": {},
 	"setup": {}, "login": {}, "logout": {}, "password_change": {},
 	"session_revoke": {}, "appearance_update": {}, "image_upload": {},
 	"agent_grant_create": {}, "agent_grant_revoke": {}, "node_asset_update": {}, "settings.put": {}, "commands.submit": {}, "commands.cancel": {}, "commands.batch": {}, "commands.batch-cancel": {},

@@ -59,6 +59,10 @@ type Options struct {
 }
 
 type Server struct {
+	guestMu                    sync.Mutex
+	guestSlots                 chan struct{}
+	guestCache                 *guestDisplay
+	guestRevision              int64
 	requestSlots               chan struct{}
 	jsonReadTimeout            time.Duration
 	transferReadTimeout        time.Duration
@@ -229,6 +233,7 @@ func New(version string, options Options) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
+		guestSlots:   make(chan struct{}, 4),
 		version:      version,
 		updateSocket: options.UpdateSocket,
 		assets:       http.FileServer(http.FS(files)),
@@ -513,6 +518,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleLogin(w, r)
+		return
+	case "/api/v1/public/guest", "/api/v1/public/guest/display":
+		s.handleGuestPublic(w, r)
 		return
 	case "/api/v1/public/appearance":
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {

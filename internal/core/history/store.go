@@ -126,6 +126,23 @@ func (s Store) Cleanup(ctx context.Context, now time.Time) error {
 }
 
 func (s Store) Query(ctx context.Context, nodeID, resolution string, from, to time.Time) (Response, error) {
+	return s.query(ctx, nodeID, resolution, from, to, nil)
+}
+
+// QueryKeys uses the same aggregation and bounds as Query while avoiding reads
+// of unselected series for a guest projection.
+func (s Store) QueryKeys(ctx context.Context, nodeID, resolution string, from, to time.Time, keys []string) (Response, error) {
+	if len(keys) == 0 || len(keys) > 6 {
+		return Response{}, ErrInvalidQuery
+	}
+	for _, key := range keys {
+		if !ValidKey(key) {
+			return Response{}, ErrInvalidQuery
+		}
+	}
+	return s.query(ctx, nodeID, resolution, from, to, keys)
+}
+func (s Store) query(ctx context.Context, nodeID, resolution string, from, to time.Time, selected []string) (Response, error) {
 	if s.DB == nil || nodeID == "" || from.IsZero() || to.IsZero() || !from.Before(to) {
 		return Response{}, ErrInvalidQuery
 	}
@@ -138,17 +155,27 @@ func (s Store) Query(ctx context.Context, nodeID, resolution string, from, to ti
 	from, to = from.UTC(), to.UTC()
 	fromBucket := ceilBucket(from.Unix(), step)
 	toBucketExclusive := ceilBucket(to.Unix(), step)
+	filterSQL := ""
+	filterArgs := []any{}
+	if len(selected) > 0 {
+		filterSQL = " AND metric_key IN (" + strings.TrimSuffix(strings.Repeat("?,", len(selected)), ",") + ")"
+		for _, key := range selected {
+			filterArgs = append(filterArgs, key)
+		}
+	}
 	query := `SELECT metric_key, bucket_at, sample_count, sample_sum, minimum, maximum FROM metrics_minute
-		WHERE node_id=? AND bucket_at>=? AND bucket_at<? ORDER BY metric_key, bucket_at`
-	args := []any{nodeID, fromBucket, toBucketExclusive}
+		WHERE node_id=? AND bucket_at>=? AND bucket_at<?` + filterSQL + ` ORDER BY metric_key, bucket_at`
+	args := append([]any{nodeID, fromBucket, toBucketExclusive}, filterArgs...)
 	if resolution == "hour" {
 		query = `SELECT metric_key, bucket_at, SUM(sample_count), SUM(sample_sum), MIN(minimum), MAX(maximum)
 			FROM (
-				SELECT metric_key, bucket_at, sample_count, sample_sum, minimum, maximum FROM metrics_hour WHERE node_id=? AND bucket_at>=? AND bucket_at<?
+				SELECT metric_key, bucket_at, sample_count, sample_sum, minimum, maximum FROM metrics_hour WHERE node_id=? AND bucket_at>=? AND bucket_at<?` + filterSQL + `
 				UNION ALL
-				SELECT metric_key, (bucket_at / ?)*?, sample_count, sample_sum, minimum, maximum FROM metrics_minute WHERE node_id=? AND bucket_at>=? AND bucket_at<?
+				SELECT metric_key, (bucket_at / ?)*?, sample_count, sample_sum, minimum, maximum FROM metrics_minute WHERE node_id=? AND bucket_at>=? AND bucket_at<?` + filterSQL + `
 			) GROUP BY metric_key, bucket_at ORDER BY metric_key, bucket_at`
-		args = []any{nodeID, fromBucket, toBucketExclusive, HourSeconds, HourSeconds, nodeID, fromBucket, toBucketExclusive}
+		args = append([]any{nodeID, fromBucket, toBucketExclusive}, filterArgs...)
+		args = append(args, HourSeconds, HourSeconds, nodeID, fromBucket, toBucketExclusive)
+		args = append(args, filterArgs...)
 	}
 	rows, err := s.DB.QueryContext(ctx, query, args...)
 	if err != nil {

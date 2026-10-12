@@ -211,3 +211,5 @@ Integer request and response fields use their published native bounds. Web forms
 Web Operations records pending observations and uncertain request keys in tab session storage. Refreshing can resume the discovered read operation or restore the original key. It stores no request bodies, uploaded files or credentials; restoring a key requires re-entering the original input. Resuming observation never submits the task again. Closing the tab clears these records; remote job/batch status remains accessible through the Core operation contract.
 
 整数按 Core 公布的原生范围验证，Web 保留 int64／uint64 的完整精度。CLI 上传支持 `--input -` 标准输入，CLI／TUI 都支持普通文件与 FIFO。TUI 输入 `-` 后可提供 JSON 字符串或 `@file`；任意二进制内容使用文件／FIFO。Web 操作台在标签页会话中保留待观察任务和不确定请求的原始键，不保存请求正文、文件或凭据；刷新后可恢复键或继续读取任务状态，观察不会重新提交。命令历史默认保留 90 天，可通过 Agent 设置调整；过期后再次使用旧键可能重新执行，因此重试应在保留窗口内使用原始键和相同输入。
+
+Guest display is configured with the discovered `guest.settings/configure/preview` operations in CLI and TUI. Anonymous `guest.entry/display` read only the enabled flag and explicitly published projection. See [configuration, limits and behavior](guest-display.md).

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/CST-Cat/NodeDance/internal/core/alerts"
+	"github.com/CST-Cat/NodeDance/internal/core/guest"
 	"github.com/CST-Cat/NodeDance/internal/core/probes"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
@@ -57,6 +58,8 @@ func describeTransport(o *Operation) {
 		}
 	}
 	switch o.Name {
+	case "guest.configure":
+		o.MaxBodyBytes = 64 * 1024
 	case "agents.configure":
 		field("commandHistoryRetentionDays", map[string]any{"minimum": 1, "maximum": 3650, "default": 90})
 	case "commands.submit", "commands.batch":
@@ -166,6 +169,14 @@ func describeResponse(o *Operation) {
 	}
 	wrapped := func(key string, item any) any { return responseObject([]string{key}, map[string]any{key: item}) }
 	switch o.Name {
+	case "guest.settings":
+		o.ResponseSchema = responseObject([]string{"settings", "metrics", "historyHours"}, map[string]any{"settings": schema(guest.Settings{}), "metrics": map[string]any{"type": "array", "items": schema(guest.Metric{})}, "historyHours": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}})
+	case "guest.configure":
+		o.ResponseSchema = schema(guest.Settings{})
+	case "guest.entry":
+		o.ResponseSchema = responseObject([]string{"enabled"}, map[string]any{"enabled": map[string]any{"type": "boolean"}})
+	case "guest.preview", "guest.display":
+		o.ResponseSchema = schema(guest.Display{})
 	case "core.operations":
 		o.ResponseSchema = schema(Catalog{})
 	case "core.protocol":
