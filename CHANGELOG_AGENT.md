@@ -4,6 +4,12 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.10]
+
+### English
+
 - Extend agent.host.v1 with configurable command history retention and a shared cleanup operation. Compact completed command output into a private SQLite archive while retaining retry identities; preserve uncertain jobs and report result-persistence failures honestly.
 
 ### 简体中文

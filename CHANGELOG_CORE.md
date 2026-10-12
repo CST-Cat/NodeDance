@@ -4,6 +4,12 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.14]
+
+### English
+
 - Bound JSON/transfer body reads and concurrent requests; preserve precise integer inputs, stream uploads, response schemas and byte-bound headers across the discovered interfaces. Recover batch observation and browser request keys without resubmission; retain uncertain batches and verify root/Docker fault recovery plus a 100-node, 10-minute simulated soak.
 
 ### 简体中文
