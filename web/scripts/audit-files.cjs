@@ -59,17 +59,35 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   const empty=await context.request.get(endpoint('files.list',{path:'/browser-dir'}));assert.deepEqual((await empty.json()).entries,[])
   // Exercise the actual VueFinder create/edit/upload dialogs, not just APIs.
   await page.locator('.node-files [title="New File"]').click()
-  await page.locator('.vuefinder__new-file-modal__input').fill('browser.txt')
+  await page.locator('.vuefinder__new-file-modal__input').fill('browser.json')
   await page.locator('.vuefinder__modal-layout__footer').getByRole('button',{name:'Create',exact:true}).click()
-  await page.getByText('browser.txt',{exact:true}).first().waitFor()
-  assert.equal(fs.readFileSync(path.join(files,'browser.txt'),'utf8'),'')
-  await page.getByText('browser.txt',{exact:true}).first().locator('xpath=ancestor::div[contains(@class,"vf-explorer-item")][1]').dblclick()
+  await page.getByText('browser.json',{exact:true}).first().waitFor()
+  assert.equal(fs.readFileSync(path.join(files,'browser.json'),'utf8'),'')
+  const previewVersion=await(await context.request.get(endpoint('files.text',{path:'/browser.json'}))).json()
+  await action({action:'save_text',path:'/browser.json',content:JSON.stringify({server:'example.test',enabled:true,notes:'Disposable preview fixture'},null,2),expectedVersion:previewVersion.version})
+  await page.getByText('browser.json',{exact:true}).first().locator('xpath=ancestor::div[contains(@class,"vf-explorer-item")][1]').dblclick()
   await page.locator('.cm-content').waitFor()
+  async function checkFileDialog(mode){
+   for(const theme of ['light','dark'])for(const width of [390,1440]){
+    await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(300)
+    const colors=await page.locator('.vuefinder__modal-layout').evaluate(el=>{
+     const selectors=['.vuefinder__modal-layout__body','.vuefinder__modal-layout__content','.cm-editor','.cm-scroller','.cm-content','.cm-gutters']
+     return selectors.map(selector=>{const item=el.querySelector(selector),style=getComputedStyle(item);return {selector,bg:style.backgroundColor,color:style.color}})
+    })
+    for(const value of colors)assert.match(value.bg,/^rgb\(/,`${theme}/${mode} ${value.selector} must be opaque: ${value.bg}`)
+    const luminance=color=>{const channels=color.match(/[\d.]+/g).slice(0,3).map(v=>{const n=Number(v)/255;return n<=.04045?n/12.92:((n+.055)/1.055)**2.4});return channels[0]*.2126+channels[1]*.7152+channels[2]*.0722}
+    for(const value of colors.slice(4)){const bg=luminance(value.bg),fg=luminance(value.color);assert.ok((Math.max(bg,fg)+.05)/(Math.min(bg,fg)+.05)>=4.5,`${theme}/${mode} ${value.selector} text contrast`)}
+    const body=await page.locator('.vuefinder__modal-layout__body').boundingBox();assert.ok(body.x>=0&&body.x+body.width<=width+1,'File dialog fits viewport')
+    await page.screenshot({path:path.join(artifacts,`file-${mode}-${theme}-${width}.png`),fullPage:true})
+   }
+  }
+  await checkFileDialog('preview')
   await page.getByRole('button',{name:'Edit',exact:true}).click()
   await page.locator('.cm-content[contenteditable=true]').fill('browser edited fixture')
+  await checkFileDialog('edit')
   await page.getByRole('button',{name:'Save',exact:true}).click()
-  for(let i=0;i<100&&fs.readFileSync(path.join(files,'browser.txt'),'utf8')!=='browser edited fixture';i++)await page.waitForTimeout(25)
-  assert.equal(fs.readFileSync(path.join(files,'browser.txt'),'utf8'),'browser edited fixture')
+  for(let i=0;i<100&&fs.readFileSync(path.join(files,'browser.json'),'utf8')!=='browser edited fixture';i++)await page.waitForTimeout(25)
+  assert.equal(fs.readFileSync(path.join(files,'browser.json'),'utf8'),'browser edited fixture')
   await page.getByRole('button',{name:'Edit',exact:true}).waitFor()
   await page.locator('.vuefinder__modal-layout').getByRole('button',{name:'Close',exact:true}).last().click()
   await page.locator('.vuefinder__modal-layout').waitFor({state:'hidden'})

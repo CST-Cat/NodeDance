@@ -4,7 +4,11 @@
 
 ### English
 
+- Restore solid, theme-aware file preview/editor dialogs outside the application container; improve mobile dialog spacing and add real-browser opacity/contrast regression checks.
+
 ### 简体中文
+
+- 修复文件预览／编辑弹窗脱离应用容器后丢失主题、背景透明的问题；改善移动端弹窗留白，并增加真实浏览器不透明背景／文字对比度回归检查。
 
 ## [0.1.16]
 

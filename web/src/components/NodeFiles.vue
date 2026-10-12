@@ -49,6 +49,16 @@ async function observe(id:string){try{await manager.value?.observe(id)}catch(rea
  --vf-accent-primary:var(--accent)!important;--vf-accent-hover:var(--accent)!important;--vf-selection-bg:var(--accent-soft)!important;--vf-selection-border:var(--accent)!important;
  --color-blue-500:var(--accent);--color-blue-900:var(--accent);--color-sky-400:var(--accent);--vf-ring:var(--accent)!important;color:var(--text);accent-color:var(--accent)
 }
+/* Teleported dialogs inherit the shared root theme, above the application shell. */
+.vuefinder__modal-layout{z-index:10000}
+.vuefinder__modal-layout__overlay{background:rgb(20 20 19 / 55%)}
+.vuefinder__modal-layout__body{border:1px solid var(--line);background:var(--canvas);color:var(--text);border-radius:var(--radius-card)}
+.vuefinder__modal-layout__content{background:var(--canvas);color:var(--text)}
+.vuefinder__codemirror-editor,.vuefinder__codemirror-editor .cm-editor,.vuefinder__codemirror-editor .cm-scroller,.vuefinder__codemirror-editor .cm-content{background:var(--canvas);color:var(--text)}
+.vuefinder__codemirror-editor .cm-gutters{background:var(--surface-soft);color:var(--muted-strong)}
+.vuefinder__codemirror-editor--readonly .cm-content{color:var(--text)}
+.vuefinder__codemirror-wrap-toggle{background:var(--surface);opacity:1}
+@media(max-width:640px){.vuefinder__modal-layout__wrapper{align-items:center;padding:12px}.vuefinder__modal-layout__body{max-height:calc(100dvh - 24px);overflow:auto;margin:0}.vuefinder__codemirror-editor{max-height:65dvh}.vuefinder__modal-layout__footer .vf-btn{min-height:44px}}
 .vuefinder__themer a,.vuefinder__themer a:visited{color:var(--accent)}
 .vuefinder__themer :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .vuefinder__themer ::selection{background:var(--accent-soft);color:var(--text)}

@@ -12,7 +12,7 @@
   --product-line-strong: #565046;
   --display-font: 'Copernicus', 'Tiempos Headline', 'EB Garamond', 'Cormorant Garamond', 'Iowan Old Style', 'Palatino Linotype', 'Noto Serif CJK SC', 'Songti SC', Georgia, serif;
 }
-.app-shell {
+:root, .app-shell {
   --canvas: #faf9f5;
   --surface: #efe9de;
   --surface-raised: #e8e0d2;
@@ -38,6 +38,8 @@
   --warning-soft: #f6eddb;
   --warning-line: #dfc395;
   color-scheme: light;
+}
+.app-shell {
   position: relative;
   isolation: isolate;
   min-height: 100dvh;
@@ -45,7 +47,7 @@
   color: var(--text);
   background: var(--canvas);
 }
-.app-shell[data-theme='dark'] {
+:root[data-theme='dark'], .app-shell[data-theme='dark'] {
   --canvas: #181715;
   --surface: #1f1e1b;
   --surface-raised: #252320;
