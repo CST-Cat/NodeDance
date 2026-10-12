@@ -104,8 +104,10 @@ def main():
         assert 'docker run' in enrollment['dockerInstallCommand']
         assert '--token-stdin' in enrollment['dockerInstallCommand']
         assert enrollment['token'] not in enrollment['dockerInstallCommand']
-        docker('run', '--rm', '--user=0:0', '--entrypoint=sh', '--mount', f'type=bind,src={state},dst=/state', CORE,
-               '-c', 'chown 0:0 /state && chmod 0700 /state')
+        # Root Agent state must also have protected, root-owned ancestors.
+        # The temporary fixture starts out owned by the CI runner.
+        docker('run', '--rm', '--user=0:0', '--entrypoint=sh', '--mount', f'type=bind,src={root},dst=/fixture', CORE,
+               '-c', 'chown 0:0 /fixture /fixture/state && chmod 0700 /fixture /fixture/state')
         docker('run', '--rm', '-i', *host_args, AGENT, 'enroll', '--server', origin, '--dev',
                '--token-stdin', '--config', config, input=enrollment['token'] + '\n')
         modes = docker('run', '--rm', '--user=0:0', '--entrypoint=stat', '--mount', f'type=bind,src={state},dst=/state', CORE,
@@ -139,7 +141,7 @@ def main():
             docker('rm', '-f', container, check=False)
         docker('volume', 'rm', volume, check=False)
         docker('run', '--rm', '--user=0:0', '--entrypoint=sh', '--mount', f'type=bind,src={root},dst=/cleanup', CORE,
-               '-c', 'rm -rf /cleanup/state', check=False)
+               '-c', 'rm -rf /cleanup/state && chown "$1:$2" /cleanup', 'cleanup', str(os.getuid()), str(os.getgid()), check=False)
         shutil.rmtree(root)
 
 
