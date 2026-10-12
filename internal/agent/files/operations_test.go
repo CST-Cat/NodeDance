@@ -4,10 +4,12 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -75,7 +77,7 @@ func TestBrowsePagesAndSearch(t *testing.T) {
 }
 func TestExtendedCopyArchiveExtractAndConflict(t *testing.T) {
 	s, root := extendedService(t)
-	if err := os.Mkdir(filepath.Join(root, "source"), 0755); err != nil {
+	if err := os.Mkdir(filepath.Join(root, "source"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "source", "data.txt"), []byte("original"), 0640); err != nil {
@@ -84,6 +86,9 @@ func TestExtendedCopyArchiveExtractAndConflict(t *testing.T) {
 	ctx := context.Background()
 	if err := s.ExecuteExtended(ctx, protocol.TaskFileCopy, protocol.FileTaskSpec{Path: "/source", NewPath: "/copy"}, "copy-job"); err != nil {
 		t.Fatal(err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "copy")); err != nil || info.Mode().Perm() != 0700 {
+		t.Fatal("copy widened directory permissions", info, err)
 	}
 	if data, err := os.ReadFile(filepath.Join(root, "copy", "data.txt")); err != nil || string(data) != "original" {
 		t.Fatal(string(data), err)
@@ -99,6 +104,9 @@ func TestExtendedCopyArchiveExtractAndConflict(t *testing.T) {
 	}
 	if err := s.ExecuteExtended(ctx, protocol.TaskFileExtract, protocol.FileTaskSpec{Path: "/bundle.zip", NewPath: "/extract"}, "extract-job"); err != nil {
 		t.Fatal(err)
+	}
+	if info, err := os.Stat(filepath.Join(root, "extract", "source")); err != nil || info.Mode().Perm() != 0700 {
+		t.Fatal("extract widened directory permissions", info, err)
 	}
 	if data, err := os.ReadFile(filepath.Join(root, "extract", "source", "data.txt")); err != nil || string(data) != "original" {
 		t.Fatal(string(data), err)
@@ -183,5 +191,47 @@ func TestFileMutationsRejectProtectedAncestors(t *testing.T) {
 	}
 	if data, err := os.ReadFile(secret); err != nil || string(data) != "protected" {
 		t.Fatal("credentials changed", err)
+	}
+}
+
+func TestBrowseLongEscapedPathsFitEnvelopeWithVersions(t *testing.T) {
+	s, root := extendedService(t)
+	virtual := "/" + strings.TrimSuffix(strings.Repeat(strings.Repeat("p", 100)+"/", 20), "/")
+	directory := filepath.Join(root, strings.TrimPrefix(virtual, "/"))
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 210; i++ {
+		name := fmt.Sprintf("entry-%03d-", i) + strings.Repeat("<", 150)
+		if err := os.WriteFile(filepath.Join(directory, name), []byte("content"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after, total := "", 0
+	for {
+		entries, next, err := s.Browse(context.Background(), virtual, after, "", false, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payload, err := json.Marshal(protocol.FileResponse{Operation: protocol.FileList, Entries: entries, NextAfter: next})
+		if err != nil || len(payload) > protocol.MaxFileControlBytes-512 {
+			t.Fatal("oversized control page", len(payload), err)
+		}
+		for _, entry := range entries {
+			if entry.Version == "" {
+				t.Fatal("missing version")
+			}
+		}
+		total += len(entries)
+		if next == "" {
+			break
+		}
+		if next <= after {
+			t.Fatal("cursor did not advance")
+		}
+		after = next
+	}
+	if total != 210 {
+		t.Fatal("lost entries", total)
 	}
 }

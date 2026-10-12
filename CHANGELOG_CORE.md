@@ -4,10 +4,12 @@
 
 ### English
 
+- Audit VueFinder integration: use discovered upload limits, align size filters and ZIP naming, keep upload queues progressing after item failures, preserve original edit versions across refresh, and support modal focus/full-screen keyboard controls. Expand isolated browser and file-envelope regressions.
 - Restore solid, theme-aware file preview/editor dialogs outside the application container; improve mobile dialog spacing and add real-browser opacity/contrast regression checks.
 
 ### 简体中文
 
+- 完整核查 VueFinder 接入：上传上限跟随发现契约，统一大小过滤与 ZIP 命名，单项上传失败后继续队列，刷新目录仍保留编辑原版本，补齐弹窗焦点与全屏键盘操作；扩展隔离浏览器及文件控制消息回归。
 - 修复文件预览／编辑弹窗脱离应用容器后丢失主题、背景透明的问题；改善移动端弹窗留白，并增加真实浏览器不透明背景／文字对比度回归检查。
 
 ## [0.1.16]

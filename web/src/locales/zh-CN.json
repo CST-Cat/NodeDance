@@ -1457,5 +1457,6 @@
   "files.unknown": "文件操作结果不确定，请先观察原任务，再决定是否重新执行。",
   "files.failed": "文件操作失败：{0}",
   "files.observationLimit": "请先处理待确认的文件任务，再提交更多操作。",
-  "files.notDirectory": "上传目标不是目录。"
+  "files.notDirectory": "上传目标不是目录。",
+  "files.reopen": "请重新打开文件后再保存，以恢复原文件版本检查。"
 }

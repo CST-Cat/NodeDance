@@ -8,10 +8,15 @@ for(const [name,pkg]of[['core','./cmd/nodedance'],['agent','./cmd/nodedance-agen
 async function port(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const value=s.address().port;await new Promise(r=>s.close(r));return value}
 async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await Promise.race([new Promise(r=>p.once('exit',r)),new Promise(r=>setTimeout(r,5000))]);if(p.exitCode===null)p.kill('SIGKILL')}
 ;(async()=>{
+ // Build the production Driver separately for exhaustive browser/API probes.
+ // This test-only module is served by Playwright; no test hook enters the app.
+ const {build}=await import('vite')
+ await build({configFile:false,logLevel:'error',define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{lib:{entry:path.join(root,'web/src/file-manager.ts'),formats:['es'],fileName:'driver-audit'},outDir:path.join(artifacts,'driver'),emptyOutDir:true}})
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-file-audit-')),data=path.join(dir,'core'),files=path.join(dir,'files'),state=execFileSync('sudo',['mktemp','-d','/run/nodedance-file-audit-XXXXXX'],{encoding:'utf8'}).trim(),base=`http://127.0.0.1:${await port()}`
  fs.mkdirSync(files);fs.mkdirSync(path.join(files,'many'));fs.mkdirSync(path.join(files,'out'))
  fs.writeFileSync(path.join(files,'hello.txt'),'hello fixture\n');fs.writeFileSync(path.join(files,'image.png'),Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZMsAAAAASUVORK5CYII=','base64'))
  for(let i=0;i<205;i++)fs.writeFileSync(path.join(files,'many',`entry-${String(i).padStart(3,'0')}.txt`),'fixture')
+ fs.mkdirSync(path.join(files,'private-dir'),{mode:0700});fs.writeFileSync(path.join(files,'private-dir','child.txt'),'private fixture',{mode:0644})
  fs.symlinkSync('hello.txt',path.join(files,'link'))
  const core=spawn(path.join(artifacts,'core'),['serve','--dev','--listen',new URL(base).host,'--data-dir',data],{cwd:root,stdio:['ignore','pipe','pipe']});let logs='',browser,agent
  core.stdout.on('data',v=>logs+=v);core.stderr.on('data',v=>logs+=v)
@@ -50,7 +55,49 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   const page=await context.newPage();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',e=>errors.push(e.message))
   await page.goto(base+`/#/nodes?node=${node}&section=files`)
   await page.locator('.vuefinder').waitFor();await page.getByText('hello.txt',{exact:true}).first().waitFor()
-  if(process.env.NODEDANCE_FILES_DEBUG)console.log('CONTROLS',await page.locator('.node-files [title]').evaluateAll(items=>items.map(e=>({text:e.textContent,title:e.title,tag:e.tagName,role:e.getAttribute('role')}))))
+  await page.route('**/__file-driver-audit.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(artifacts,'driver','driver-audit.mjs'))}))
+  await page.evaluate(async node=>{const {createFileManager}=await import('/__file-driver-audit.js');window.fileDriverAudit=await createFileManager(node,()=>{})},node)
+  async function driverCall(method,args){return page.evaluate(({method,args})=>window.fileDriverAudit.driver[method](args),{method,args})}
+  const rootPath='node:///'
+  await driverCall('rename',{path:rootPath,item:'node:///hello.txt',name:'driver-renamed.txt'})
+  await assert.rejects(driverCall('copy',{path:rootPath,sources:['node:///driver-renamed.txt'],destination:'node:///browser-target'}))
+  // A failed copy must preserve the source and allow the next valid operation.
+  assert.ok(fs.existsSync(path.join(files,'driver-renamed.txt')))
+  await driverCall('createFolder',{path:rootPath,name:'driver-target'})
+  await driverCall('copy',{path:rootPath,sources:['node:///driver-renamed.txt','node:///private-dir'],destination:'node:///driver-target'})
+  assert.equal(fs.statSync(path.join(files,'driver-target','private-dir')).mode&0777,0700,'Copy preserves restrictive directory mode')
+  await driverCall('move',{path:rootPath,sources:['node:///driver-renamed.txt'],destination:'node:///out'})
+  assert.equal(fs.readFileSync(path.join(files,'driver-target','driver-renamed.txt'),'utf8'),'edited fixture\n')
+  await driverCall('archive',{path:rootPath,name:'driver-bundle',items:[{path:'node:///driver-target',type:'dir'}]})
+  assert.ok(fs.existsSync(path.join(files,'driver-bundle.zip')),'Archive name gets the extension promised by the dialog')
+  await driverCall('createFolder',{path:rootPath,name:'driver-extract'})
+  await driverCall('unarchive',{path:rootPath,item:'node:///driver-bundle.zip',destination:'node:///driver-extract'})
+  assert.equal(fs.readFileSync(path.join(files,'driver-extract','driver-target','driver-renamed.txt'),'utf8'),'edited fixture\n')
+  assert.equal(fs.statSync(path.join(files,'driver-extract','driver-target','private-dir')).mode&0777,0700,'ZIP extraction preserves restrictive directory mode')
+  await driverCall('delete',{path:'node:///driver-target',items:[{path:'node:///driver-target/driver-renamed.txt',type:'file'}]})
+  assert.ok(!fs.existsSync(path.join(files,'driver-target','driver-renamed.txt')))
+  await assert.rejects(driverCall('rename',{path:'node:///out',item:'node:///out/driver-renamed.txt',name:'hello.txt'}))
+  // Restore the root fixture through a new path, without overwriting out/hello.txt.
+  await driverCall('move',{path:rootPath,sources:['node:///out/driver-renamed.txt'],destination:rootPath})
+  await driverCall('rename',{path:rootPath,item:'node:///driver-renamed.txt',name:'hello.txt'})
+  const sparse=path.join(files,'size-filter.bin'),fd=fs.openSync(sparse,'w');fs.ftruncateSync(fd,11*1024*1024);fs.closeSync(fd)
+  for(const [size,expected]of [['small',0],['medium',0],['large',1]])assert.equal((await driverCall('search',{path:rootPath,filter:'size-filter',size})).length,expected)
+  await assert.rejects(driverCall('save',{path:'node:///out/hello.txt',content:'unopened editor must not overwrite'}))
+  assert.equal(fs.readFileSync(path.join(files,'out','hello.txt'),'utf8'),'hello fixture\n')
+  const original=await driverCall('getContent',{path:'node:///hello.txt'})
+  const external=await(await context.request.get(endpoint('files.text',{path:'/hello.txt'}))).json()
+  await action({action:'save_text',path:'/hello.txt',content:'changed outside editor',expectedVersion:external.version})
+  await driverCall('list',{path:rootPath})
+  await assert.rejects(driverCall('save',{path:'node:///hello.txt',content:'must not overwrite external change'}))
+  assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'changed outside editor')
+  await driverCall('getContent',{path:'node:///hello.txt'});await driverCall('save',{path:'node:///hello.txt',content:original.content})
+  const previewURL=await driverCall('getPreviewUrl',{path:'node:///image.png'}),downloadURL=await driverCall('getDownloadUrl',{path:'node:///hello.txt'})
+  const imageUpload=page.waitForRequest(r=>r.url().includes('/files/upload')&&r.url().includes('image.png'))
+  await driverCall('save',{path:'node:///image.png',content:'data:image/png;base64,'+fs.readFileSync(path.join(files,'image.png')).toString('base64')})
+  assert.ok((await imageUpload).headers()['x-file-version'],'Image edits preserve version conflict protection')
+  assert.equal((await context.request.get(base+previewURL)).status(),200);assert.match((await context.request.get(base+downloadURL)).headers()['content-disposition'],/attachment/)
+  await page.evaluate(()=>window.fileDriverAudit.dispose())
+  await page.reload();await page.getByText('hello.txt',{exact:true}).first().waitFor()
   await page.getByRole('button',{name:'New Folder',exact:true}).focus();await page.keyboard.press('Enter')
   await page.locator('.vuefinder__new-folder-modal__input').fill('browser-dir')
   await page.locator('.vuefinder__modal-layout__footer').getByRole('button',{name:'Create',exact:true}).click()
@@ -67,6 +114,8 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   await action({action:'save_text',path:'/browser.json',content:JSON.stringify({server:'example.test',enabled:true,notes:'Disposable preview fixture'},null,2),expectedVersion:previewVersion.version})
   await page.getByText('browser.json',{exact:true}).first().locator('xpath=ancestor::div[contains(@class,"vf-explorer-item")][1]').dblclick()
   await page.locator('.cm-content').waitFor()
+  for(let i=0;i<12;i++){await page.keyboard.press('Tab');assert.ok(await page.locator('.vuefinder__modal-layout').evaluate(el=>el.contains(document.activeElement)),'Modal keyboard focus stays inside dialog')}
+  for(let i=0;i<12;i++){await page.keyboard.press('Shift+Tab');assert.ok(await page.locator('.vuefinder__modal-layout').evaluate(el=>el.contains(document.activeElement)),'Reverse modal focus stays inside dialog')}
   async function checkFileDialog(mode){
    for(const theme of ['light','dark'])for(const width of [390,1440]){
     await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(300)
@@ -108,6 +157,38 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   assert.equal((await folderUploaded).status(),200)
   assert.equal(fs.readFileSync(path.join(files,'upload-folder','child.txt'),'utf8'),'directory upload fixture')
   await page.locator('.vuefinder__modal-layout').getByRole('button',{name:'Close',exact:true}).last().click();await page.locator('.vuefinder__modal-layout').waitFor({state:'hidden'})
+  // The upstream default 10 MB cap must not reject uploads allowed by Core.
+  const largeUpload=path.join(dir,'large-upload.bin');fs.writeFileSync(largeUpload,Buffer.alloc(11*1024*1024,7))
+  await page.locator('.node-files [title="Upload"]').click()
+  await page.locator('.vuefinder__modal-layout input[type=file]:not([webkitdirectory])').setInputFiles(largeUpload)
+  const largeUploaded=page.waitForResponse(r=>r.url().includes('/files/upload')&&r.request().method()===operation('files.upload').method)
+  await page.locator('.vuefinder__modal-layout__footer').getByRole('button',{name:'Upload',exact:true}).click()
+  assert.equal((await largeUploaded).status(),200);assert.equal(fs.statSync(path.join(files,'large-upload.bin')).size,11*1024*1024)
+  await page.locator('.vuefinder__modal-layout').getByRole('button',{name:'Close',exact:true}).last().click();await page.locator('.vuefinder__modal-layout').waitFor({state:'hidden'})
+  // A conflicting first file must not strand the rest of a multi-file queue.
+  await page.locator('.node-files [title="Upload"]').click()
+  await page.locator('.vuefinder__modal-layout input[type=file]:not([webkitdirectory])').setInputFiles([{name:'hello.txt',mimeType:'text/plain',buffer:Buffer.from('conflict')},{name:'after-conflict.txt',mimeType:'text/plain',buffer:Buffer.from('queue continues')}])
+  const afterConflict=page.waitForResponse(r=>r.url().includes('/files/upload')&&r.url().includes('after-conflict.txt'))
+  await page.locator('.vuefinder__modal-layout__footer').getByRole('button',{name:'Upload',exact:true}).click()
+  assert.equal((await afterConflict).status(),200);assert.equal(fs.readFileSync(path.join(files,'after-conflict.txt'),'utf8'),'queue continues');assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'edited fixture\n')
+  await page.locator('.vuefinder__modal-layout').getByRole('button',{name:'Close',exact:true}).last().click();await page.locator('.vuefinder__modal-layout').waitFor({state:'hidden'})
+  // Actual archive dialog must produce the ZIP filename it promises.
+  await page.getByText('browser.json',{exact:true}).first().locator('xpath=ancestor::div[contains(@class,"vf-explorer-item")][1]').click()
+  await page.locator('.node-files [title="Archive"]').click()
+  await page.locator('.vuefinder__archive-modal__input').fill('browser-archive')
+  await page.locator('.vuefinder__modal-layout__footer').getByRole('button',{name:'Archive',exact:true}).click()
+  await page.getByText('browser-archive.zip',{exact:true}).first().waitFor()
+  assert.ok(fs.existsSync(path.join(files,'browser-archive.zip')))
+  await page.getByRole('button',{name:'Toggle Full Screen',exact:true}).click()
+  await page.locator('.vuefinder__main__fixed').waitFor()
+  assert.ok(await page.locator('.vuefinder').evaluate(el=>!el.closest('.node-files')),'Full screen teleports out of node page')
+  const fullBg=await page.locator('.vuefinder__main__fixed').evaluate(el=>getComputedStyle(el).backgroundColor);assert.match(fullBg,/^rgb\(/,'Full screen retains an opaque theme')
+  await page.getByRole('button',{name:'Toggle Full Screen',exact:true}).focus();await page.keyboard.press('Enter')
+  await page.locator('.vuefinder__main__fixed').waitFor({state:'hidden'})
+  await page.locator('.language-selector').selectOption('zh-CN')
+  await page.waitForFunction(()=>document.querySelector('.vuefinder__toolbar [title]')?.title!=='New Folder')
+  await page.locator('.language-selector').selectOption('en')
+  await page.getByRole('button',{name:'New Folder',exact:true}).waitFor()
   const showLast=async()=>{await page.getByText('entry-000.txt',{exact:true}).first().waitFor();await page.locator('.vuefinder').evaluate(el=>{for(const item of el.querySelectorAll('*'))if(item.clientHeight>0&&item.scrollHeight>item.clientHeight)item.scrollTop=item.scrollHeight});await page.getByText('entry-204.txt',{exact:true}).first().waitFor()}
   await page.getByText('many',{exact:true}).first().dblclick();await showLast()
   await page.goBack();await page.getByText('hello.txt',{exact:true}).first().waitFor()

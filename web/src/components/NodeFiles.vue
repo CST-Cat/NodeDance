@@ -16,24 +16,25 @@ const ready=ref(false)
 function pathChanged(value:string){const filePath=value.startsWith('node://')?value.slice(7)||'/':value;if(filePath!==(navigation.route.value.filePath??'/'))navigation.go({...navigation.route.value,filePath})}
 watch(()=>navigation.route.value.filePath,value=>{if(ready.value){const ui=useVueFinder(finderId);const target='node://'+(value??'/');if(ui.getPath()!==target)void ui.open(target)}})
 const host=ref<HTMLElement>()
-let controls:MutationObserver|undefined
-function normalizeControls(){for(const item of host.value?.querySelectorAll<HTMLElement>('.vuefinder__toolbar [title], .vuefinder__breadcrumb [title]')??[]){if(['BUTTON','A','INPUT','SELECT'].includes(item.tagName))continue;item.setAttribute('role','button');item.setAttribute('aria-label',item.title);const disabled=/disabled|opacity-50/.test(item.className);item.setAttribute('aria-disabled',String(disabled));item.tabIndex=disabled?-1:0;item.dataset.nodedanceControl='true'}}
-function activateControl(event:KeyboardEvent){const target=event.target as HTMLElement;if(['Enter',' '].includes(event.key)&&target.dataset.nodedanceControl==='true'){event.preventDefault();event.stopPropagation();if(target.getAttribute('aria-disabled')!=='true')target.click()}}
+let controls:MutationObserver|undefined,dialog:HTMLElement|null=null,returnFocus:HTMLElement|null=null
+function normalizeControls(){const root=document.querySelector<HTMLElement>(`[data-nodedance-files="${finderId}"]`);const current=document.querySelector<HTMLElement>('.vuefinder__modal-layout');if(current!==dialog){if(current){returnFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;current.focus()}else {manager.value?.endPreview();if(returnFocus?.isConnected)returnFocus.focus()}dialog=current}for(const item of root?.querySelectorAll<HTMLElement>('.vuefinder__toolbar [title], .vuefinder__breadcrumb [title]')??[]){if(['BUTTON','A','INPUT','SELECT'].includes(item.tagName))continue;item.setAttribute('role','button');item.setAttribute('aria-label',item.title);const disabled=/disabled|opacity-50/.test(item.className);item.setAttribute('aria-disabled',String(disabled));item.tabIndex=disabled?-1:0;item.dataset.nodedanceControl='true'}}
+function activateControl(event:KeyboardEvent){if(event.key==='Tab'&&dialog){const items=[...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"],[contenteditable="true"]')].filter(item=>item.getClientRects().length&&item.tabIndex>=0);const first=items[0],last=items.at(-1);if(!first){event.preventDefault();dialog.focus();return}if(!dialog.contains(document.activeElement)||document.activeElement===dialog||event.shiftKey&&document.activeElement===first||!event.shiftKey&&document.activeElement===last){event.preventDefault();(event.shiftKey?last:first)?.focus()}return}const target=event.target as HTMLElement;if(['Enter',' '].includes(event.key)&&target.dataset.nodedanceControl==='true'){event.preventDefault();event.stopPropagation();if(target.getAttribute('aria-disabled')!=='true')target.click()}}
 const manager=ref<Awaited<ReturnType<typeof createFileManager>>>(),error=ref(''),observations=ref<FileObservation[]>([]),theme=ref(document.documentElement.dataset.theme??'light')
-const config=computed(()=>({initialPath:'node://'+(navigation.route.value.filePath??'/'),path:'node://'+(navigation.route.value.filePath??'/'),persist:true,theme:theme.value==='dark'?'midnight':'latte',showHiddenFiles:true,showThumbnails:false}))
+const config=computed(()=>({initialPath:'node://'+(navigation.route.value.filePath??'/'),path:'node://'+(navigation.route.value.filePath??'/'),persist:true,maxFileSize:manager.value?.maxFileSize,theme:theme.value==='dark'?'midnight':'latte',showHiddenFiles:true,showThumbnails:false}))
 let disposed=false,observer:MutationObserver|undefined
 onMounted(async()=>{
- controls=new MutationObserver(normalizeControls);if(host.value)controls.observe(host.value,{childList:true,subtree:true,attributes:true,attributeFilter:['class','title']})
+ document.addEventListener('keydown',activateControl,true)
+ controls=new MutationObserver(normalizeControls);if(host.value)controls.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['class','title']})
  observer=new MutationObserver(()=>{theme.value=document.documentElement.dataset.theme??'light'});observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']})
  try{const value=await createFileManager(props.nodeId,items=>{if(!disposed)observations.value=items});if(disposed)value.dispose();else manager.value=value}catch(reason){if(!disposed)error.value=String(reason)}
 })
-onBeforeUnmount(()=>{disposed=true;observer?.disconnect();controls?.disconnect();manager.value?.dispose()})
+onBeforeUnmount(()=>{disposed=true;document.removeEventListener('keydown',activateControl,true);observer?.disconnect();controls?.disconnect();manager.value?.dispose()})
 async function observe(id:string){try{await manager.value?.observe(id)}catch(reason){if(!disposed)error.value=String(reason)}}
 </script>
 <template>
- <section ref="host" @keydown="activateControl" class="node-files" data-testid="node-files" :aria-label="nodeName">
+ <section ref="host" class="node-files" data-testid="node-files" :aria-label="nodeName">
   <p v-if="error" role="alert">{{ error }}</p>
-  <VueFinder v-if="manager" :id="finderId" :driver="manager.driver" :locale="locale==='zh-CN'?'zhCN':'en'" :config="config" :features="{language:false,theme:false}" @error="error=String($event)" @ready="ready=true" @path-change="pathChanged" />
+  <VueFinder v-if="manager" :id="finderId" :data-nodedance-files="finderId" :driver="manager.driver" :locale="locale==='zh-CN'?'zhCN':'en'" :config="config" :features="{language:false,theme:false}" @notify="$event.type==='success' && (error='')" @error="error=String($event)" @ready="ready=true" @path-change="pathChanged" />
   <p v-else role="status">{{ t('guest.loading') }}</p>
   <section v-if="observations.length" class="file-observations" :aria-label="t('host.history')"><article v-for="item in observations" :key="item.taskId"><span>{{ item.path }} · {{ item.status }}</span><button type="button" @click="observe(item.taskId)">{{ t('host.refresh') }}</button><button type="button" @click="manager?.forget(item.taskId)">{{ t('operations.forget') }}</button></article></section>
  </section>
@@ -56,6 +57,7 @@ async function observe(id:string){try{await manager.value?.observe(id)}catch(rea
 .vuefinder__modal-layout__content{background:var(--canvas);color:var(--text)}
 .vuefinder__codemirror-editor,.vuefinder__codemirror-editor .cm-editor,.vuefinder__codemirror-editor .cm-scroller,.vuefinder__codemirror-editor .cm-content{background:var(--canvas);color:var(--text)}
 .vuefinder__codemirror-editor .cm-gutters{background:var(--surface-soft);color:var(--muted-strong)}
+.vuefinder__codemirror-editor .cm-activeLineGutter{background:var(--accent-soft);color:var(--text)}
 .vuefinder__codemirror-editor--readonly .cm-content{color:var(--text)}
 .vuefinder__codemirror-wrap-toggle{background:var(--surface);opacity:1}
 @media(max-width:640px){.vuefinder__modal-layout__wrapper{align-items:center;padding:12px}.vuefinder__modal-layout__body{max-height:calc(100dvh - 24px);overflow:auto;margin:0}.vuefinder__codemirror-editor{max-height:65dvh}.vuefinder__modal-layout__footer .vf-btn{min-height:44px}}

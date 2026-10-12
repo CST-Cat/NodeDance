@@ -166,6 +166,22 @@ func (s *Service) ExecuteExtended(ctx context.Context, action protocol.TaskActio
 				return err
 			}
 		}
+		// Apply explicit directory permissions after children are written.
+		// Restrictive source modes must not be widened by default Mkdir modes.
+		directories := make([]*zip.File, 0)
+		for _, file := range archive.File {
+			if file.FileInfo().IsDir() {
+				directories = append(directories, file)
+			}
+		}
+		sort.Slice(directories, func(i, j int) bool {
+			return strings.Count(directories[i].Name, "/") > strings.Count(directories[j].Name, "/")
+		})
+		for _, file := range directories {
+			if err := s.directoryMode(path.Join(stage, strings.TrimSuffix(file.Name, "/")), file.Mode()); err != nil {
+				return err
+			}
+		}
 		names := make([]string, 0, len(tops))
 		for name := range tops {
 			names = append(names, name)
@@ -282,7 +298,7 @@ func (s *Service) copyTree(ctx context.Context, source, target string, depth int
 				}
 			}
 			if errors.Is(err, io.EOF) {
-				return nil
+				return s.directoryMode(target, info.Mode())
 			}
 		}
 	}
@@ -373,4 +389,24 @@ func (s *Service) zipTree(ctx context.Context, archive *zip.Writer, source, rela
 		return ErrConflict
 	}
 	return err
+}
+
+func (s *Service) directoryMode(virtual string, mode os.FileMode) error {
+	name, _, err := s.normalize(virtual)
+	if err != nil {
+		return err
+	}
+	directory, err := s.open(name)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	info, err := directory.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return ErrInvalidPath
+	}
+	return directory.Chmod(mode.Perm())
 }

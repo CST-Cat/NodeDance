@@ -51,6 +51,15 @@ func (s *Service) Browse(ctx context.Context, virtual, after, filter string, rec
 		items = items[:protocol.MaxFileEntries]
 		next = items[len(items)-1].Path
 	}
+	for index := range items {
+		if items[index].Kind == "file" {
+			meta, err := s.Stat(items[index].Path)
+			if err != nil {
+				return nil, "", err
+			}
+			items[index].Version = meta.Version
+		}
+	}
 	for {
 		payload, err := json.Marshal(protocol.FileResponse{Operation: protocol.FileList, Entries: items, NextAfter: next})
 		if err != nil {
@@ -65,15 +74,7 @@ func (s *Service) Browse(ctx context.Context, virtual, after, filter string, rec
 		items = items[:len(items)-1]
 		next = items[len(items)-1].Path
 	}
-	for index := range items {
-		if items[index].Kind == "file" {
-			meta, err := s.Stat(items[index].Path)
-			if err != nil {
-				return nil, "", err
-			}
-			items[index].Version = meta.Version
-		}
-	}
+
 	return items, next, nil
 }
 

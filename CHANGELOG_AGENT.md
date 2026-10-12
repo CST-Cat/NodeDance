@@ -4,7 +4,11 @@
 
 ### English
 
+- Size file browse pages after version metadata is attached, and preserve basic directory permissions during copy and ZIP extraction. Add escaped long-path envelope and restrictive-directory regressions.
+
 ### 简体中文
+
+- 附加版本信息后再限制目录分页消息大小；复制与 ZIP 解压保留目录基本权限，增加长路径转义消息与严格目录权限回归。
 
 ## [0.1.11]
 

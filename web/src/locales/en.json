@@ -1457,5 +1457,6 @@
   "files.unknown": "The file operation outcome is unknown. Observe the original task before starting new work.",
   "files.failed": "File operation failed: {0}",
   "files.observationLimit": "Resolve the pending file operations before submitting more work.",
-  "files.notDirectory": "Upload target is not a directory."
+  "files.notDirectory": "Upload target is not a directory.",
+  "files.reopen": "Reopen the file before saving to restore its original version."
 }
