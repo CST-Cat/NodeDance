@@ -14,11 +14,19 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/agent"
 	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
 	"github.com/CST-Cat/NodeDance/internal/agent/terminal/tmuxbundle"
+	"github.com/CST-Cat/NodeDance/internal/update"
 )
 
 var version = "dev"
 
 func main() {
+	if handled, err := update.Internal(os.Args[1:], os.Stdout, os.Stderr); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "nodedance-agent:", err)
 		os.Exit(1)
@@ -59,6 +67,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return nil
 	case "enroll":
 		return runEnroll(ctx, args[1:], stdin, stdout, stderr)
+	case "update":
+		return update.Local(ctx, "agent", "/var/lib/nodedance-agent", args[1:], stdin, stdout, stderr)
 	case "recover":
 		return runRecover(ctx, args[1:], stdout, stderr)
 	case "run":
@@ -82,6 +92,7 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, i18n.TextFor(output, "NodeDance Agent - outbound-only Linux host management agent"))
 	fmt.Fprintln(output, i18n.TextFor(output, "Global language: --lang en|zh-CN (or NODEDANCE_LANG)"))
 	fmt.Fprintln(output, i18n.TextFor(output, "Usage:"))
+	fmt.Fprintln(output, "  nodedance agent update [--check | --status]  # local root Agent maintenance")
 	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent enroll --server https://core.example --token-stdin [--ca-file path] [--config path]"))
 	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent recover [--config path]"))
 	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent run [--config path]"))

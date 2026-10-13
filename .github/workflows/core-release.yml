@@ -97,8 +97,6 @@ jobs:
           mkdir -p dist
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-linux-${EXPECTED_ARCH}" ./cmd/nodedance
           [[ "$("dist/nodedance-linux-${EXPECTED_ARCH}" --version)" == "NodeDance ${RELEASE_VERSION}" ]]
-          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${RELEASE_VERSION}" -o "dist/nodedance-updater-linux-${EXPECTED_ARCH}" ./cmd/nodedance-updater
-          [[ "$("dist/nodedance-updater-linux-${EXPECTED_ARCH}" --version)" == "NodeDance Updater ${RELEASE_VERSION}" ]]
 
       - name: Run native Go tests including root Agent integration
         run: |
@@ -112,7 +110,6 @@ jobs:
           name: core-linux-${{ matrix.arch }}
           path: |
             dist/nodedance-linux-${{ matrix.arch }}
-            dist/nodedance-updater-linux-${{ matrix.arch }}
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -189,21 +186,19 @@ jobs:
       - name: Create compressed assets, installer, and checksums
         run: |
           set -euo pipefail
-          chmod 0755 dist/nodedance-updater-linux-*
-          dist/nodedance-updater-linux-amd64 manifest --component core --version "${{ github.ref_name }}" > dist/nodedance-update.json
-          cp scripts/install-updater.sh dist/install-updater.sh
           test -f dist/nodedance-linux-amd64
           test -f dist/nodedance-linux-arm64
           chmod 0755 dist/nodedance-linux-amd64 dist/nodedance-linux-arm64
           (cd dist && tar -czf nodedance-linux-amd64.tar.gz nodedance-linux-amd64)
           (cd dist && tar -czf nodedance-linux-arm64.tar.gz nodedance-linux-arm64)
+          dist/nodedance-linux-amd64 __update-manifest core "${{ github.ref_name }}" > dist/nodedance-update.json
           cp scripts/install-core.sh dist/install-core.sh
           chmod 0755 dist/install-core.sh
           (cd dist && sha256sum \
             nodedance-linux-amd64 \
             nodedance-linux-arm64 \
             nodedance-linux-amd64.tar.gz \
-            nodedance-linux-arm64.tar.gz nodedance-updater-linux-amd64 nodedance-updater-linux-arm64 nodedance-update.json install-updater.sh > SHA256SUMS)
+            nodedance-linux-arm64.tar.gz nodedance-update.json > SHA256SUMS)
 
       - name: Wait for the exact paired Agent and render final release notes
         timeout-minutes: 12
@@ -217,6 +212,9 @@ jobs:
           mkdir -p release-inputs
           for attempt in {1..60}; do
             if gh api "repos/$RELEASE_REPOSITORY/releases/tags/$agent_tag" > /tmp/agent-release.json 2>/tmp/agent-release-error; then
+              gh api --paginate "repos/$RELEASE_REPOSITORY/releases?per_page=100" \
+                --jq '.[] | select(.draft == false and .prerelease == false) | .tag_name' > /tmp/published-agent-tags
+              python3 -c 'import re,sys; paired=sys.argv[1]; tags=[paired]+open("/tmp/published-agent-tags").read().splitlines(); valid=[t for t in tags if re.fullmatch(r"agent-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)",t)]; latest=max(valid,key=lambda t:tuple(map(int,t[7:].split(".")))); sys.exit(0 if paired==latest else "Core pairing must use newest stable Agent: "+latest)' "$agent_tag"
               if python3 scripts/release-notes.py render core "$RELEASE_VERSION" --repository "$RELEASE_REPOSITORY" \
                 --agent-tag "$agent_tag" --agent-release /tmp/agent-release.json --output release-inputs/core-release-notes.md; then
                 exit 0
@@ -269,9 +267,6 @@ jobs:
             dist/nodedance-linux-amd64.tar.gz \
             dist/nodedance-linux-arm64.tar.gz \
             dist/install-core.sh \
-            dist/nodedance-updater-linux-amd64 \
-            dist/nodedance-updater-linux-arm64 \
             dist/nodedance-update.json \
-            dist/install-updater.sh \
             dist/SHA256SUMS \
             --title "$RELEASE_VERSION" --verify-tag --latest=true --notes-file release-inputs/core-release-notes.md

@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"flag"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/core/config"
 	"github.com/CST-Cat/NodeDance/internal/core/server"
+	"github.com/CST-Cat/NodeDance/internal/update"
 )
 
 type LookupEnv func(string) (string, bool)
@@ -208,6 +210,23 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdin io.Rea
 	if tlsCertificate != nil {
 		scheme = "https"
 	}
+	host, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		return err
+	}
+	if host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	runtime := update.Target{HealthURL: scheme + "://" + net.JoinHostPort(host, port) + "/api/v1/health"}
+	if tlsCertificate != nil {
+		runtime.HealthCAFile = *tlsCertFlag
+		if cert, err := x509.ParseCertificate(tlsCertificate.Certificate[0]); err == nil && len(cert.DNSNames) > 0 {
+			runtime.HealthServerName = cert.DNSNames[0]
+		}
+	}
+	if err := update.RecordRuntime(dataDir, runtime); err != nil {
+		return err
+	}
 	fmt.Fprintf(stdout, i18n.TextFor(stdout, "NodeDance listening on %s://%s\n"), scheme, listen)
 	if info, err := os.Lstat(serverInstance.InitialAdminPath()); err == nil && info.Mode().IsRegular() {
 		fmt.Fprintf(stdout, i18n.TextFor(stdout, "Initial administrator credentials (0600; removed after first login): %s\n"), serverInstance.InitialAdminPath())
@@ -255,6 +274,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance backup --data-dir DIR --output FILE"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance restore --input FILE --data-dir NEW_DIR"))
 	fmt.Fprintln(w, "       nodedance update [--check | --yes | --status | --rollback JOB] [--component agent --node-id ID] [connection flags]")
+	fmt.Fprintln(w, "       nodedance agent update [--check | --status | --rollback JOB]  # local root Agent")
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance version"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance operations [NAME]  # JSON operation catalog / schemas"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance call NAME --server https://core --params JSON --query JSON --body @FILE"))

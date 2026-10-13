@@ -85,7 +85,7 @@ nodedance files download --params '{"nodeId":"NODE_UUID"}' \
 
 Downloads create new `0600` files, refuse existing destinations, and remove partial files on failure. Uploads use the existing transfer API. File mutations retain Agent traversal/symlink/protected-tree/credential-path checks. File deletion requires `deleteConfirmed: true` and an exact `confirmationPath`. Container/image deletion and rebuild retain their existing exact-target confirmation rules. Probe/rule/channel edits use the current revision.
 
-Create an enrollment with `agents.enrollment` and a body containing `displayName` and optionally `coreUrl` (the URL reachable from the Agent). Choose `deploymentMethod: "native"` or `"docker"` in the shared JSON request, or pass CLI `--deployment-method native|docker`. The response contains the token, expiry, the selected `installCommand`, plus `nativeInstallCommand` and `dockerInstallCommand`. TUI provides node-name, reachable Core URL, and deployment-method prompts using the default declared by Core. Both installer commands contain the issued enrollment token, so the copied command installs and enrolls without an extra token prompt. They pin the published Agent release paired with Core; Web displays expiry in Beijing time (UTC+8), and API timestamps remain ISO UTC.
+Create an enrollment with `agents.enrollment` and a body containing `displayName` and optionally `coreUrl` (the URL reachable from the Agent). Choose `deploymentMethod: "native"` or `"docker"` in the shared JSON request, or pass CLI `--deployment-method native|docker`. The response contains the token, expiry, the selected `installCommand`, plus `nativeInstallCommand` and `dockerInstallCommand`. TUI provides node-name, reachable Core URL, and deployment-method prompts using the default declared by Core. Both installer commands contain the issued enrollment token, so the copied command installs and enrolls without an extra token prompt. They default to the latest stable published Agent at execution time without a hardcoded tag; Web displays expiry in Beijing time (UTC+8), and API timestamps remain ISO UTC.
 
 ```sh
 nodedance agents enrollment --server https://core.example \
@@ -95,7 +95,7 @@ nodedance agents enrollment --server https://core.example \
 nodedance describe agents.enrollment
 ```
 
- The generated installer resolves a published `agent-vMAJOR.MINOR.PATCH` tag, pins its downloads, verifies the release checksum, and installs the root Agent. NodeDance never installs or configures Tailscale.
+ The generated installer resolves the newest stable published `agent-vMAJOR.MINOR.PATCH` release at execution time, verifies the release checksum, and installs the root Agent. NodeDance never installs or configures Tailscale.
 
 ## Streams and terminals
 
@@ -141,7 +141,7 @@ Each node permits two terminals; detached sessions occupy a slot and block Agent
 
 构建与许可证见 [内置 tmux](bundled-tmux.md)。`nodedance-agent --tmux-version` 显示固定版本。原生 Agent、Docker 镜像、安装器和更新器使用同一个嵌入构建，不需要额外下载运行时依赖。
 
-See [bundled tmux](bundled-tmux.md) for provenance and licenses. `nodedance-agent --tmux-version` reports the pinned version. Native Agent, Docker image, installer and updater use the same embedded build without additional runtime downloads.
+See [bundled tmux](bundled-tmux.md) for provenance and licenses. `nodedance-agent --tmux-version` reports the pinned version. Native Agent, Docker image, installer and built-in updates use the same embedded build without additional runtime downloads.
 
 ## Language and releases / 语言与发布
 
@@ -223,3 +223,5 @@ File editing supports up to 8 MiB UTF-8 text. Body input and text response bound
 `feeds.*` operations are discovered from Core and available through CLI, TUI and Web. Refresh intervals accept integer minutes from 1 through 10080, default 30. `feeds.refresh --wait` uses the shared completion observer; `feeds.cancel` stops queued/running refresh. See [subscription inputs, notifications and examples](rss.md).
 
 Node lifecycle is shared with Web: discover `nodes.renew-enrollment` to regenerate native/Docker commands for an existing pending node (body: `coreUrl`, `deploymentMethod`), and `nodes.delete` to remove any node state (body: `confirm: true`). Both use `nodeId` as a path parameter and are available in CLI/TUI generic operation forms. Renewal invalidates previous tokens; deletion does not uninstall Agent or stop already dispatched remote work.
+
+`nodedance update` defaults to updating the connected Core; `nodedance agent update` defaults to the local managed Agent. Neither needs a separate update program, registration step or additional update parameters. / 两个默认更新命令均无需独立更新程序、登记步骤或额外更新参数。

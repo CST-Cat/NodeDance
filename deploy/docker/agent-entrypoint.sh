@@ -2,7 +2,7 @@
 set -eu
 case "${1:-}" in
   version|--version|--tmux-version|help|--help|-h) exec /usr/local/bin/nodedance-agent "$@" ;;
-  install-updater|run|enroll|recover) ;;
+  run|enroll|recover|update) ;;
   *) echo 'Docker Agent supports run, enroll, recover, and version.' >&2; exit 1 ;;
 esac
 if [ "$(id -u)" != 0 ]; then
@@ -15,11 +15,6 @@ if [ ! -d /host/proc/1 ] || [ "$(readlink /proc/1/ns/pid)" != "$(readlink /host/
 fi
 # Keep the static executable open across the switch into the host root/mounts.
 # All runtime services then see the real host paths, shells, Docker CLI and CA store.
-if [ "${1:-}" = install-updater ]; then
- shift
- set -- install "$@"
- exec 3</usr/local/bin/nodedance-updater
-else
- exec 3</usr/local/bin/nodedance-agent
-fi
+exec 3</usr/local/bin/nodedance-agent
+
 exec nsenter --target 1 --mount --uts --ipc --net --pid --cgroup --root --wd --no-fork -- /proc/self/fd/3 "$@"

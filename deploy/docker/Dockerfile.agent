@@ -10,7 +10,6 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /out/nodedance-agent ./cmd/nodedance-agent
 
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o /out/nodedance-updater ./cmd/nodedance-updater
 
 FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends util-linux ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -23,9 +22,7 @@ CMD ["run", "--config", "/var/lib/nodedance-agent/agent.json"]
 FROM runtime AS release
 ARG TARGETARCH
 COPY --chmod=0755 dist/nodedance-agent-linux-${TARGETARCH} /usr/local/bin/nodedance-agent
-COPY --chmod=0755 dist/nodedance-updater-linux-${TARGETARCH} /usr/local/bin/nodedance-updater
 
 # The default target remains a complete build from source for development/CI.
 FROM runtime AS source
-COPY --from=build /out/nodedance-updater /usr/local/bin/nodedance-updater
 COPY --from=build /out/nodedance-agent /usr/local/bin/nodedance-agent

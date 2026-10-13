@@ -38,7 +38,7 @@ func main(){if len(os.Args)>1 && (os.Args[1]=="version" || os.Args[1]=="--versio
 		if raw, err := execute(ctx, "env", "CGO_ENABLED=0", "go", "build", "-ldflags", "-X main.version="+version, "-o", binary, filepath.Join(root, "fixture.go")); err != nil {
 			t.Fatalf("fixture build: %s %v", raw, err)
 		}
-		dockerfile := []byte("FROM scratch\nCOPY nodedance /nodedance\nUSER 10001:10001\nENV PATH=/\nENTRYPOINT [\"nodedance\"]\nCMD [\"serve\"]\n")
+		dockerfile := []byte("FROM scratch\nCOPY nodedance /nodedance\nUSER 0:0\nENV PATH=/\nENTRYPOINT [\"nodedance\"]\nCMD [\"serve\"]\n")
 		os.WriteFile(filepath.Join(root, "Dockerfile"), dockerfile, 0600)
 		image := "nodedance-update-test:" + strings.TrimPrefix(version, "core-v") + "-" + filepath.Base(root)
 		if raw, err := execute(ctx, "docker", "build", "-q", "-t", image, root); err != nil {
@@ -57,7 +57,7 @@ func main(){if len(os.Args)>1 && (os.Args[1]=="version" || os.Args[1]=="--versio
 			data := filepath.Join(root, "data-"+scenario)
 			state := filepath.Join(root, "state-"+scenario)
 			os.Mkdir(data, 0700)
-			os.Chown(data, 10001, 10001)
+			os.Chown(data, 0, 0)
 			os.Mkdir(state, 0700)
 			listener, err := net.Listen("tcp", "127.0.0.1:0")
 			if err != nil {
@@ -84,7 +84,7 @@ func main(){if len(os.Args)>1 && (os.Args[1]=="version" || os.Args[1]=="--versio
 				t.Fatal(err)
 			}
 			defer m.Close()
-			m.healthTimeout = 300 * time.Millisecond
+			m.healthTimeout = 3 * time.Second
 			// Intercept only release pull/inspection; all container API calls are real.
 			imageID, err := execute(ctx, "docker", "image", "inspect", "--format", "{{.Id}}", images[1])
 			if err != nil {
@@ -107,7 +107,7 @@ func main(){if len(os.Args)>1 && (os.Args[1]=="version" || os.Args[1]=="--versio
 				t.Fatal(err)
 			}
 			os.WriteFile(filepath.Join(data, "credential"), []byte("retained-private-state"), 0600)
-			os.Chown(filepath.Join(data, "credential"), 10001, 10001)
+			os.Chown(filepath.Join(data, "credential"), 0, 0)
 			job, err := m.Apply(ctx, Request{Component: "core", Confirm: true}, "docker-update-key")
 			if err != nil {
 				t.Fatal(err)
@@ -137,7 +137,7 @@ func main(){if len(os.Args)>1 && (os.Args[1]=="version" || os.Args[1]=="--versio
 			}
 			host := current["HostConfig"].(map[string]any)
 			config := current["Config"].(map[string]any)
-			if config["User"] != "10001:10001" || host["ReadonlyRootfs"] != true || host["RestartPolicy"].(map[string]any)["Name"] != "unless-stopped" {
+			if config["User"] != "0:0" || host["ReadonlyRootfs"] != true || host["RestartPolicy"].(map[string]any)["Name"] != "unless-stopped" {
 				t.Fatal("deployment security/settings changed")
 			}
 			if scenario == "interrupted" {

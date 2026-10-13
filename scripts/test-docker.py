@@ -72,7 +72,8 @@ def main():
     def start_core():
         docker('run', '-d', '--name', core, '--read-only', '--cap-drop=ALL',
                '--security-opt=no-new-privileges:true', '--tmpfs', '/tmp:mode=1777',
-               '-p', f'127.0.0.1:{port}:8180', '-v', volume + ':/var/lib/nodedance', CORE)
+               '-p', f'127.0.0.1:{port}:8180', '-v', volume + ':/var/lib/nodedance',
+               '-v', '/var/run/docker.sock:/var/run/docker.sock', CORE)
         eventually(lambda: api('/api/v1/health').get('status') == 'ok')
 
     host_args = ['--privileged', '--pid=host', '--network=host', '--mount', 'type=bind,src=/,dst=/host,readonly']
@@ -82,15 +83,16 @@ def main():
         assert docker('run', '--rm', AGENT, '--version').stdout.startswith('NodeDance Agent ')
         assert docker('run', '--rm', AGENT, 'run', check=False).returncode != 0
         assert docker('run', '--rm', '--user=10001:10001', AGENT, 'run', check=False).returncode != 0
+        assert docker('run', '--rm', '--user=10001:10001', '--entrypoint=/usr/local/bin/nodedance-agent', AGENT, 'update', check=False).returncode != 0
         docker('volume', 'create', volume)
         start_core()
         saved = docker('exec', core, 'cat', '/var/lib/nodedance/initial-admin.json').stdout
         creds = json.loads(saved)
         permissions = docker('exec', core, 'stat', '-c', '%a:%u', '/var/lib/nodedance', '/var/lib/nodedance/initial-admin.json').stdout.splitlines()
-        assert permissions == ['700:10001', '600:10001']
+        assert permissions == ['700:0', '600:0']
         logs = docker('logs', core)
         assert creds['username'] not in logs.stdout + logs.stderr and creds['password'] not in logs.stdout + logs.stderr
-        assert docker('exec', core, 'id', '-u').stdout.strip() == '10001'
+        assert docker('exec', core, 'id', '-u').stdout.strip() == '0'
         assert '<html' in urllib.request.urlopen(origin, timeout=10).read().decode().lower()
         docker('stop', '-t', '10', core)
         docker('rm', core)
@@ -99,12 +101,14 @@ def main():
         api('/api/v1/auth/csrf')
         api('/api/v1/auth/login', creds)
         assert docker('exec', core, 'test', '!', '-e', '/var/lib/nodedance/initial-admin.json', check=False).returncode == 0
+        assert api('/api/v1/updates/status?component=core') == {'jobs': []}
+        assert docker('exec', core, 'test', '!', '-e', '/usr/local/bin/nodedance-updater', check=False).returncode == 0
         enrollment = api('/api/v1/agents/enrollments', {'displayName': 'Docker integration', 'coreUrl': 'https://docker-test.example'})
-        paired_tag = Path(__file__).resolve().parents[1].joinpath('agent-release.version').read_text().strip()
         for field, mode in [('installCommand', 'native'), ('dockerInstallCommand', 'docker')]:
             command = enrollment[field]
-            assert f'/releases/download/{paired_tag}/install-agent.sh' in command
-            assert f'--release-tag {paired_tag}' in command
+            assert 'raw.githubusercontent.com/CST-Cat/NodeDance/main/scripts/install-agent.sh' in command
+            assert '--release-tag' not in command
+            assert 'agent-v' not in command
             assert f'--mode {mode}' in command
             assert f'--token {enrollment["token"]}' in command
             assert '--server https://docker-test.example' in command
@@ -142,7 +146,7 @@ def main():
         docker('restart', '-t', '10', agent)
         eventually(lambda: (n := online()) and n['generation'] > node['generation'])
         assert docker('exec', core, 'curl', '--fail', '--silent', 'http://127.0.0.1:8180/api/v1/health').returncode == 0
-        print('Docker integration passed: Core non-root/read-only, Web/health, private generated credentials, volume persistence/login cleanup; Agent root enrollment, host metrics/filesystem, traversal/symlink/credential protection and reconnect.')
+        print('Docker integration passed: Core root/read-only, Web/health, private generated credentials, volume persistence/login cleanup; Agent root enrollment, host metrics/filesystem, traversal/symlink/credential protection and reconnect.')
     finally:
         for container in (agent, core):
             docker('rm', '-f', container, check=False)

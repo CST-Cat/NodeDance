@@ -28,10 +28,10 @@ usage() {
 NodeDance Agent installer
 
 Usage:
-  bash install-agent.sh --release-tag agent-v0.1.0 --mode native --server https://core.example --token TOKEN
+  bash install-agent.sh --mode native --server https://core.example --token TOKEN
 
 Options:
-  --release-tag TAG     Published Agent-only tag (agent-vMAJOR.MINOR.PATCH; required)
+  --release-tag TAG     Published Agent-only tag (optional; default latest stable Agent)
   --server URL          Core HTTP or HTTPS origin (required)
   --mode MODE           native (systemd) or docker; default native
   --token TOKEN         Enrollment token included in the generated command (required)
@@ -148,7 +148,7 @@ esac
 [[ -n "$server_url" ]] || fail 'the generated command must include --server'
 [[ "$mode" == native || "$mode" == docker ]] || fail '--mode must be native or docker'
 [[ "$token" =~ ^[a-f0-9]{64}$ ]] || fail '--token requires a valid enrollment token'
-[[ "$release_tag" =~ ^agent-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail '--release-tag must be a published Agent-only tag such as agent-v0.1.0'
+[[ -z "$release_tag" || "$release_tag" =~ ^agent-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail '--release-tag must be a published Agent-only tag such as agent-v0.1.0'
 if (( development )); then
   case "$server_url" in
     http://127.0.0.1|http://127.0.0.1:*|http://\[::1\]|http://\[::1\]:*) ;;
@@ -179,6 +179,40 @@ else
 fi
 
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/nodedance-agent-install.XXXXXXXX")
+# Resolve at execution time so a saved installation command always defaults to
+# the latest stable Agent, independently of the Core release namespace.
+if [[ -z "$release_tag" ]]; then
+  command -v python3 >/dev/null || fail 'python3 is required to resolve the latest Agent release'
+  for ((page=1; page<=20; page++)); do
+    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+      --output "$tmp_dir/releases.json" "https://api.github.com/repos/CST-Cat/NodeDance/releases?per_page=100&page=$page" \
+      || fail 'could not resolve the latest stable Agent release'
+    selection=$(python3 - "$tmp_dir/releases.json" "$release_tag" <<'PY_RELEASE'
+import json, re, sys
+with open(sys.argv[1]) as source:
+    entries = json.load(source)
+if not isinstance(entries, list) or len(entries) > 100:
+    raise SystemExit("invalid release listing")
+pattern = re.compile(r"agent-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
+tags = [sys.argv[2]] if sys.argv[2] else []
+for entry in entries:
+    if not isinstance(entry, dict):
+        raise SystemExit("invalid release entry")
+    tag = entry.get("tag_name", "")
+    if isinstance(tag, str) and pattern.fullmatch(tag) and entry.get("draft") is False and entry.get("prerelease") is False:
+        tags.append(tag)
+latest = max(tags, key=lambda tag: tuple(map(int, pattern.fullmatch(tag).groups())), default="")
+print(str(len(entries)) + ":" + latest)
+PY_RELEASE
+    ) || fail 'invalid Agent release listing'
+    count=${selection%%:*}
+    release_tag=${selection#*:}
+    if ((count < 100)); then break; fi
+    ((page < 20)) || fail 'Agent release listing exceeds supported limit'
+  done
+  [[ -n "$release_tag" ]] || fail 'no stable published Agent release is available'
+fi
+printf 'Installing Agent %s (%s).\n' "$release_tag" "$mode"
 asset="nodedance-agent-linux-${arch}"
 manifest_url="${RELEASE_BASE}/${release_tag}/SHA256SUMS"
 asset_url="${RELEASE_BASE}/${release_tag}/${asset}"
@@ -193,12 +227,6 @@ printf '%s  %s\n' "$expected_sha" "$asset" | (cd "$tmp_dir" && sha256sum --check
 
 chmod 0700 "$tmp_dir/$asset"
 state_validator="$tmp_dir/$asset"
-updater_asset="nodedance-updater-linux-$arch"
-curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 "$RELEASE_BASE/$release_tag/$updater_asset" -o "$tmp_dir/$updater_asset" || fail 'cannot download update supervisor'
-updater_sha=$(awk -v name="$updater_asset" '$2 == name {print $1}' "$tmp_dir/SHA256SUMS")
-[[ "$updater_sha" =~ ^[[:xdigit:]]{64}$ ]] || fail 'missing update supervisor checksum'
-printf '%s  %s\n' "$updater_sha" "$updater_asset" | (cd "$tmp_dir" && sha256sum --check --status -) || fail 'update supervisor checksum failed'
-chmod 0700 "$tmp_dir/$updater_asset"
 
 prepare_state() {
   local prepare_result
@@ -215,7 +243,7 @@ if [[ "$mode" == docker ]]; then
   image="ghcr.io/cst-cat/nodedance-agent:$release_tag"
   docker pull "$image" || fail 'cannot pull the pinned Agent image'
   prepare_state
-  docker_host_args=(--privileged --pid=host --network=host --mount type=bind,src=/,dst=/host,readonly --mount "type=bind,src=$STATE_DIR,dst=$STATE_DIR")
+  docker_host_args=(--user=0:0 --privileged --pid=host --network=host --mount type=bind,src=/,dst=/host,readonly --mount "type=bind,src=$STATE_DIR,dst=$STATE_DIR")
   enroll_args=(enroll --server "$server_url" --token-stdin --config "$CONFIG_PATH")
   if (( development )); then enroll_args+=(--dev); fi
   enrollment_started=1
@@ -223,7 +251,6 @@ if [[ "$mode" == docker ]]; then
   unset token
   valid_agent_config || fail 'Docker enrollment did not create valid root-only credentials'
   docker run -d --name nodedance-agent --restart unless-stopped --stop-timeout 30 "${docker_host_args[@]}" "$image" || fail 'Agent enrolled; Docker startup failed'
-  "$tmp_dir/$updater_asset" install --component agent --mode docker --container nodedance-agent --data-dir "$STATE_DIR" --core-uid 0 --core-gid 0 || fail 'Agent enrolled; Docker update supervisor setup failed'
   printf 'NodeDance Docker Agent is installed for Core %s.\n' "$server_url"
   exit 0
 fi
@@ -257,5 +284,4 @@ fi
 unset token
 
 "$AGENT_PATH" install-systemd --config "$CONFIG_PATH" --enable || fail 'systemd installation or Agent Core connection verification failed'
-"$tmp_dir/$updater_asset" install --component agent --mode systemd --binary "$AGENT_PATH" --unit nodedance-agent.service --data-dir "$STATE_DIR" --core-uid 0 --core-gid 0 || fail 'Agent is enrolled; update supervisor setup failed, rerun the updater installer'
 printf 'NodeDance Agent is installed and enabled for Core %s. The node name is the name attached to this enrollment token in Core.\n' "$server_url"

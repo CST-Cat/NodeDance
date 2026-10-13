@@ -57,7 +57,7 @@ func TestCoreSessionLifecycle(t *testing.T) {
 		t.Fatalf("setup: %+v", r)
 	}
 	enrollment := call(c, "agents.enrollment", `{"displayName":"node","coreUrl":"https://core.example"}`)
-	if enrollment.Error != "" || !strings.Contains(string(enrollment.Data), "installCommand") || !strings.Contains(string(enrollment.Data), "agent-v") {
+	if enrollment.Error != "" || !strings.Contains(string(enrollment.Data), "installCommand") || !strings.Contains(string(enrollment.Data), "raw.githubusercontent.com/CST-Cat/NodeDance/main/scripts/install-agent.sh") || strings.Contains(string(enrollment.Data), "--release-tag") {
 		t.Fatalf("shared installer: %+v", enrollment)
 	}
 	if r := call(c, "core.protocol", ""); r.Error != "" || !strings.Contains(string(r.Data), "capabilities") {
@@ -461,5 +461,42 @@ func TestTerminalClientReattachesTmuxWithoutReplayingInput(t *testing.T) {
 	}
 	if inputs.Load() != 1 {
 		t.Fatalf("command sent %d times", inputs.Load())
+	}
+}
+
+func TestSavedConnectionKeepsExplicitHTTPPolicyAndPrivateSessionBoundary(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "client")
+	if err := os.Mkdir(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(state, "session.json")
+	write := func(server string) {
+		raw, _ := json.Marshal(map[string]any{"server": server, "origin": server, "development": true, "cookies": []any{}})
+		if err := os.WriteFile(file, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("http://127.0.0.1:8180")
+	client, err := control.NewClient(control.ClientOptions{StateDir: state, UseSavedConnection: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !client.Connection().Development || client.Connection().Server != "http://127.0.0.1:8180" {
+		t.Fatal("saved explicit loopback development selection was lost")
+	}
+	client.Close()
+	if _, err = control.NewClient(control.ClientOptions{StateDir: state, UseSavedConnection: true, Explicit: map[string]bool{"dev": true}, Development: false}); err == nil {
+		t.Fatal("explicit --dev=false was ignored")
+	}
+	write("http://10.0.0.1:8180")
+	if _, err = control.NewClient(control.ClientOptions{StateDir: state, UseSavedConnection: true}); err == nil {
+		t.Fatal("saved defaults enabled plaintext non-loopback connection")
+	}
+	write("https://core.example")
+	if err = os.Chmod(file, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = control.NewClient(control.ClientOptions{StateDir: state, UseSavedConnection: true}); err == nil {
+		t.Fatal("unprotected session supplied connection defaults")
 	}
 }

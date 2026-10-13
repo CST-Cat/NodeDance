@@ -6,6 +6,20 @@
 
 ### 简体中文
 
+## [0.1.15]
+
+### English
+
+- Default installation to the latest stable published Agent without a hardcoded tag, and explicitly run Docker enrollment/runtime as root.
+
+- Add a default built-in Agent update command and use the same binary for transient update workers; remove updater installation and separate release assets while preserving transaction checks and recovery.
+
+### 简体中文
+
+- 安装默认选择最新正式 Agent，不在命令中固定 tag；Docker 注册及运行显式使用 root。
+
+- 增加默认内置 Agent 更新命令，并使用同一二进制执行临时更新任务；移除 updater 安装和独立发布产物，保留更新校验与故障恢复。
+
 ## [0.1.14]
 
 ### English

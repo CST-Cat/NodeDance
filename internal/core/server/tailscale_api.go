@@ -19,20 +19,16 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/update"
 )
 
-// Supervised deployments read the host through the already mounted, authenticated
-// control socket. Core never receives direct access to the Tailscale control API.
 func (s *Server) tailscaleDiscovery() tailscale.Discovery {
-	socket := s.updateSocket
-	if socket == "" {
-		socket = update.Socket
-	}
-	if _, err := os.Stat(socket); errors.Is(err, os.ErrNotExist) {
-		return tailscale.Discovery{}
+	if s.updateInvoke == nil {
+		if _, err := os.Stat("/.dockerenv"); errors.Is(err, os.ErrNotExist) {
+			return tailscale.Discovery{}
+		}
 	}
 	return tailscale.Discovery{ReadPeers: func(ctx context.Context) ([]tailscale.Peer, error) {
 		ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 		defer cancel()
-		response, err := update.Call(ctx, socket, update.RPC{Action: "tailscale-peers", Request: update.Request{Component: "core"}})
+		response, err := s.invokeUpdate(ctx, update.RPC{Action: "tailscale-peers", Request: update.Request{Component: "core"}})
 		if err != nil {
 			return nil, err
 		}

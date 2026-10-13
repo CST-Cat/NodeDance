@@ -1,5 +1,6 @@
 """Root installers against private fixtures; network, Docker and systemd are mocked."""
 import hashlib
+import json
 import os
 from pathlib import Path
 import platform
@@ -12,7 +13,7 @@ TOKEN = 'a' * 64
 
 @unittest.skipUnless(os.geteuid() == 0, 'root-only installer fixtures require root')
 class AgentInstallerTest(unittest.TestCase):
-    def run_installer(self, mode, *, bad_checksum=False, enrollment_failure=False, existing_state=False):
+    def run_installer(self, mode, *, bad_checksum=False, enrollment_failure=False, existing_state=False, releases=None, pinned=False):
         with tempfile.TemporaryDirectory(prefix='nodedance-installer-test-') as directory:
             folder = Path(directory)
             fixtures, tools = folder/'fixtures', folder/'tools'
@@ -31,10 +32,15 @@ case "$1" in
  *) exit 19;;
 esac
 ''')
-            updater = fixtures/agent.name.replace('nodedance-agent','nodedance-updater')
-            updater.write_text('#!/bin/bash\nset -eu\nprintf "updater:%s\\n" "$*" >> "$TEST_LOG"\n')
-            for binary in (agent,updater): binary.chmod(0o700)
-            (fixtures/'SHA256SUMS').write_text(''.join((('0'*64 if bad_checksum and binary==agent else hashlib.sha256(binary.read_bytes()).hexdigest())+'  '+binary.name+'\n') for binary in (agent,updater)))
+            agent.chmod(0o700)
+            (fixtures/'SHA256SUMS').write_text(('0'*64 if bad_checksum else hashlib.sha256(agent.read_bytes()).hexdigest())+'  '+agent.name+'\n')
+            if releases is None:
+                releases = [{'tag_name':tag, 'draft':draft, 'prerelease':pre} for tag,draft,pre in (
+                    ('core-v9.9.9',False,False), ('agent-v1.2.3',False,False),
+                    ('agent-v1.2.2',False,False), ('agent-v9.0.0',False,True),
+                    ('agent-v8.0.0',True,False))]
+            for page in range(len(releases)//100+1):
+                (fixtures/f'releases-page-{page+1}.json').write_text(json.dumps(releases[page*100:(page+1)*100]))
             mocks = {
                 'curl': '''#!/bin/bash
 set -eu
@@ -47,7 +53,11 @@ while (($#)); do
  *) shift;;
  esac
 done
-cp "$TEST_FIXTURES/${url##*/}" "$output"
+if [[ "$url" == https://api.github.com/* ]]; then
+ cp "$TEST_FIXTURES/releases-page-${url##*page=}.json" "$output"
+else
+ cp "$TEST_FIXTURES/${url##*/}" "$output"
+fi
 if ((status)); then printf 200; fi
 ''',
                 'systemctl': '''#!/bin/bash
@@ -61,7 +71,7 @@ case "$1" in
  container) exit 1;;
  pull) printf 'pull:%s\\n' "$2" >> "$TEST_LOG";;
  run)
-  [[ " $* " == *" --privileged "* && " $* " == *" --pid=host "* && " $* " == *" --network=host "* ]] || exit 22
+  [[ " $* " == *" --user=0:0 "* && " $* " == *" --privileged "* && " $* " == *" --pid=host "* && " $* " == *" --network=host "* ]] || exit 22
   if [[ " $* " == *" enroll "* ]]; then "$TEST_FIXTURES/nodedance-agent-linux-$TEST_ARCH" enroll;
   else echo docker-started >> "$TEST_LOG"; fi;;
  *) exit 21;;
@@ -73,7 +83,7 @@ esac
             text=SOURCE.read_text().replace('readonly STATE_DIR="/var/lib/nodedance-agent"',f'readonly STATE_DIR="{state}"').replace('readonly BIN_DIR="/usr/local/bin"',f'readonly BIN_DIR="{binary_dir}"')
             installer=folder/'installer.sh'; installer.write_text(text)
             env={**os.environ,'PATH':str(tools)+':/usr/bin:/bin','TEST_STATE':str(state),'TEST_LOG':str(log),'TEST_FIXTURES':str(fixtures),'TEST_TOKEN':TOKEN,'TEST_ARCH':agent.name.rsplit('-',1)[1],'TEST_ENROLL_FAILURE':str(int(enrollment_failure))}
-            result=subprocess.run(['bash',str(installer),'--release-tag','agent-v1.2.3','--mode',mode,'--server','https://core.example','--token',TOKEN],env=env,stdin=subprocess.DEVNULL,capture_output=True,text=True)
+            result=subprocess.run(['bash',str(installer),*(['--release-tag','agent-v1.2.3'] if pinned else []),'--mode',mode,'--server','https://core.example','--token',TOKEN],env=env,stdin=subprocess.DEVNULL,capture_output=True,text=True)
             actions=log.read_text() if log.exists() else ''
             config=state/'agent.json'
             return {'code':result.returncode,'error':result.stderr,'actions':actions,'config':config.read_text() if config.exists() else None,'state_mode':state.stat().st_mode&0o777 if state.exists() else None,'config_mode':config.stat().st_mode&0o777 if config.exists() else None,'native_binary':(binary_dir/'nodedance-agent').exists()}
@@ -84,9 +94,8 @@ esac
                 r=self.run_installer(mode)
                 self.assertEqual(r['code'],0,r['error']); self.assertEqual(r['state_mode'],0o700); self.assertEqual(r['config_mode'],0o600)
                 self.assertIn('enrolled',r['actions']); self.assertNotIn(TOKEN,r['actions'])
-                self.assertIn('--mode '+('systemd' if mode=='native' else 'docker'),r['actions'])
-                self.assertEqual(r['native_binary'],mode=='native')
                 self.assertIn('native-started' if mode=='native' else 'docker-started',r['actions'])
+                self.assertEqual(r['native_binary'],mode=='native')
                 if mode=='docker': self.assertIn('pull:ghcr.io/cst-cat/nodedance-agent:agent-v1.2.3',r['actions'])
 
     def test_checksum_failure_and_existing_state_cannot_mutate_install(self):
@@ -102,4 +111,23 @@ esac
             with self.subTest(mode=mode):
                 r=self.run_installer(mode,enrollment_failure=True)
                 self.assertNotEqual(r['code'],0); self.assertEqual(r['config'],'{}\n'); self.assertEqual(r['state_mode'],0o700); self.assertEqual(r['config_mode'],0o600)
-                self.assertNotIn('started',r['actions']); self.assertNotIn('updater:',r['actions']); self.assertIn('preserved',r['error'])
+                self.assertNotIn('started',r['actions']); self.assertIn('preserved',r['error'])
+
+    def test_latest_agent_uses_numeric_versions_and_all_pages(self):
+        entries=[{'tag_name':'core-v9.0.0','draft':False,'prerelease':False}]*100
+        entries += [{'tag_name':tag,'draft':False,'prerelease':False} for tag in ('agent-v1.9.0','agent-v1.10.0')]
+        r=self.run_installer('docker',releases=entries)
+        self.assertEqual(r['code'],0,r['error'])
+        self.assertIn('pull:ghcr.io/cst-cat/nodedance-agent:agent-v1.10.0',r['actions'])
+
+    def test_no_stable_agent_stops_before_mutation(self):
+        r=self.run_installer('docker',releases=[])
+        self.assertNotEqual(r['code'],0)
+        self.assertIn('no stable published Agent',r['error'])
+        self.assertEqual(r['actions'],'')
+        self.assertIsNone(r['config'])
+
+    def test_explicit_tag_is_optional(self):
+        r=self.run_installer('docker',releases=[],pinned=True)
+        self.assertEqual(r['code'],0,r['error'])
+        self.assertIn('pull:ghcr.io/cst-cat/nodedance-agent:agent-v1.2.3',r['actions'])

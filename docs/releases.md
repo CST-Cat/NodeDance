@@ -23,7 +23,7 @@ python3 scripts/release-notes.py promote core core-v0.1.0
 # Agent and Core tags may then be pushed together; builds run independently.
 ```
 
-Only `agent-v*` tags trigger `.github/workflows/agent-release.yml`; only `core-v*` tags trigger `.github/workflows/core-release.yml`. Both reject invalid semver or missing bilingual notes. `agent-release.version` pins the exact Agent paired with Core at the tagged commit. Core validates that pairing and its changelog before building, without a release API dependency. Only final publication waits for that exact stable, published Agent (up to ten minutes); a different/newer release cannot replace the pairing. Its **exact tag URL is the first line** of the Core description. Publishing Agent marks `--latest=false`; Core marks `--latest=true`.
+Only `agent-v*` tags trigger `.github/workflows/agent-release.yml`; only `core-v*` tags trigger `.github/workflows/core-release.yml`. Both reject invalid semver or missing bilingual notes. `agent-release.version` pins the exact Agent paired with Core at the tagged commit. Core validates that pairing and its changelog before building, without a release API dependency. Core publication also rejects a pairing older than the newest stable published Agent. Only final publication waits for that exact stable, published Agent (up to ten minutes); a different/newer release cannot replace the pairing. Its **exact tag URL is the first line** of the Core description. Publishing Agent marks `--latest=false`; Core marks `--latest=true`.
 
 两个工作流分别由自己的标签触发，并拒绝无效版本或缺少双语说明的发布。创建 Core tag 前，`agent-release.version` 必须写明本次配对的 Agent tag。构建与测试不等待 Agent 发布；最终发布最多等待十分钟，确认这个确切版本已正式发布、不是草稿或预发布，再写入说明第一行。不会自动换成恰好最新的其他版本。两种 tag 可以一起推送，使构建并行；超时只阻止 Core 最终发布，不修改配对版本。Agent 不占用仓库全局 latest，Core 为全局 latest。
 
@@ -47,7 +47,7 @@ Core 的 Web 资源只构建和检查一次，两台原生 runner 使用相同�
 
 ## Docker images / Docker 镜像
 
-Each native matrix job packages its tested artifacts using the Dockerfile's `release` target. The `runtime` stage is shared with the default `source` target, so user IDs, packages, entrypoints and health checks have one definition. Release packaging has no Go/Web compilation dependency. `scripts/release_images.py verify` checks the image's architecture, runtime UID, executable versions and byte-for-byte SHA256 equality with the tested native artifacts. Agent updater binaries are checked as well.
+Each native matrix job packages its tested artifacts using the Dockerfile's `release` target. The `runtime` stage is shared with the default `source` target, so user IDs, packages, entrypoints and health checks have one definition. Release packaging has no Go/Web compilation dependency. `scripts/release_images.py verify` checks the image's architecture, runtime UID, executable versions and byte-for-byte SHA256 equality with the tested native artifacts. Only the component binaries are packaged; update execution is built into those binaries.
 
 每个原生 runner 在测试通过后，直接将同一份产物装入 `release` 目标镜像；arm64 的系统包安装也在 arm64 上执行，不启用 QEMU。镜像内二进制必须与经过测试的 artifact 字节一致，架构、版本、运行 UID 和 Agent 更新器都会验证。Core 的 Web 只在 prepare 构建一次，并已嵌入 Core 二进制。
 
@@ -59,6 +59,8 @@ The release jobs use architecture-specific registry caches with `mode=min`; they
 
 Source builds remain available through the default target. The native Docker CI builds those source images, then `python3 scripts/release_images.py test` extracts their binaries and packages them in a temporary context with **no Go or Web sources**, exercising both release targets and artifact equality. [Docker deployment](docker.md) documents runtime integration checks. Do not infer an end-to-end speedup from local packaging alone: measure runner queue time, native tests, registry cache import/export and final publication on the next authorized release.
 
-The paired `agent-release.version` file is embedded into Core and supplies the tag in generated native/Docker installation commands. If `scripts/install-agent.sh` changes, publish the Agent containing that script and update the pairing before publishing Core. The one-command installer accepts `--mode native|docker` and `--token`; Core must pair with an Agent release containing this installer.
+The paired `agent-release.version` file is embedded into Core for release publication checks. Generated native/Docker installation commands do not hardcode it: the installer resolves the latest stable published Agent at execution time. If `scripts/install-agent.sh` changes, publish the Agent containing that script and update the pairing before publishing Core. The one-command installer accepts `--mode native|docker` and `--token`; Core must pair with an Agent release containing this installer.
 
-`agent-release.version` 随 Core 编译嵌入，生成的直接／Docker 安装命令使用其中的固定 Agent 标签。修改 `scripts/install-agent.sh` 后，必须发布包含该脚本的 Agent，并在发布 Core 前更新配对版本。一条命令安装入口使用 `--mode native|docker` 和 `--token`，Core 必须配对包含此安装脚本的 Agent 发布。
+`agent-release.version` 随 Core 编译嵌入，用于发布配对检查。生成的原生／Docker 安装命令不固定该标签，安装时自动解析最新正式 Agent release。修改 `scripts/install-agent.sh` 后，必须发布包含该脚本的 Agent，并在发布 Core 前更新配对版本。一条命令安装入口使用 `--mode native|docker` 和 `--token`，Core 必须配对包含此安装脚本的 Agent 发布。
+
+Core and Agent releases include their component binaries, installer, update manifest and checksums. Updates run through the component binary; no separate updater assets or installation are required. / Core 与 Agent 的更新由组件二进制执行，发布包不包含独立 updater 程序或安装脚本。

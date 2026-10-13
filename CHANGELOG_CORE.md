@@ -6,6 +6,20 @@
 
 ### 简体中文
 
+## [0.1.21]
+
+### English
+
+- Standardize maintenance commands as `nodedance update` and `nodedance agent update`; generate native/Docker Agent installation commands that select the latest stable Agent at execution time.
+
+- Build update execution into the Core binary with automatic deployment discovery and transient workers; remove separate updater assets and setup. Standard managed deployments provide the host permissions needed for update and recovery.
+
+### 简体中文
+
+- 统一维护入口为 `nodedance update` 与 `nodedance agent update`；原生／Docker 安装命令在执行时自动选择最新正式 Agent。
+
+- 将更新执行内置于 Core 二进制，自动识别部署并按需启动临时工作进程；移除独立 updater 发布产物和配置步骤。标准受管理部署提供完成更新与恢复所需的宿主机权限。
+
 ## [0.1.20]
 
 ### English

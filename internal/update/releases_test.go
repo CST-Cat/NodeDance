@@ -30,7 +30,7 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 			releases := []map[string]any{}
 			for _, tag := range []string{"agent-v99.0.0", "core-v0.1.8", "core-v0.1.9", "core-v0.2.0"} {
 				assets := []map[string]string{}
-				for _, name := range []string{"nodedance-update.json", "SHA256SUMS", "nodedance-updater-linux-" + runtime.GOARCH, asset} {
+				for _, name := range []string{"nodedance-update.json", "SHA256SUMS", asset} {
 					assets = append(assets, map[string]string{"name": name, "browser_download_url": "https://github.com/" + Repository + "/releases/download/" + tag + "/" + name})
 				}
 				releases = append(releases, map[string]any{"tag_name": tag, "prerelease": tag == "core-v0.2.0", "assets": assets})

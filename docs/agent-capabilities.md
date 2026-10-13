@@ -65,7 +65,7 @@ TUI 搜索上述操作名，填写由 Core 提供的参数与请求体，提交�
 {"displayPrefix":"edge","maxUses":10,"lifetimeSeconds":600,"coreUrl":"https://core.example"}
 ```
 
-创建响应只展示一次密钥，并返回原生和 Docker 安装命令。在安装器的注册凭据提示处输入密钥。命令通过现有安装器解析并固定已发布的 `agent-vMAJOR.MINOR.PATCH`，安装仍要求 root。到期或撤销共享密钥不会撤销已注册设备；管理已注册设备使用现有 Agent 撤销操作。
+创建响应只展示一次密钥，并返回包含该密钥的原生和 Docker 安装命令。复制所选命令即可执行，无需另行输入注册凭据。生成命令不固定 tag，执行时自动查找最新正式 Agent release，通过 `sudo bash` 以 root 执行安装器。Docker 安装自动为注册和运行容器设置 `--user=0:0`、privileged、宿主机 PID／网络与目录挂载，无需手工追加 Docker 参数。到期或撤销共享密钥不会撤销已注册设备；管理已注册设备使用现有 Agent 撤销操作。
 
 ## 数据语义与运行边界
 
@@ -85,7 +85,7 @@ The added Linux Agent capabilities include extended host/GPU metrics, selectable
 
 Web, CLI and TUI discover the same Core operation contract. Use the commands above or the Web Host management screen; request schemas and authorization remain owned by Core and the shared protocol. Missing hardware, offline periods and incomplete traffic coverage stay explicitly unknown or partial. GPU and public address lookups run separately from the fast collector. Scripts require confirmation, have durable idempotency and bounded output, and are never replayed after a restart. `disableRemoteControl` stops root scripts and closes terminal sessions on the next heartbeat reconnect.
 
-Enrollment grants expire, have a bounded use count and can be revoked; each enrolled Agent gets an independent device credential. Installers still pin a published `agent-v*` tag. Runtime and private state remain root-only, TLS verification stays enabled, and the existing file protections remain enforced. Automatic updates continue to use the installed updater with preflight, backup, health checks and rollback.
+Enrollment grants expire, have a bounded use count and can be revoked; each enrolled Agent gets an independent device credential. Generated commands resolve the latest stable published `agent-v*` release at execution time. Runtime and private state remain root-only, TLS verification stays enabled, and the existing file protections remain enforced. Automatic updates continue to use the built-in product transaction with preflight, backup, health checks and rollback.
 
 OAuth/OIDC, two-factor authentication, themes and plugins are excluded from this change. Windows/macOS Agents are outside NodeDance's Linux product scope. Apply the rebuilt Core/Agent or publish a release through the existing workflows to run these changes; editing this checkout does not upgrade deployed services.
 

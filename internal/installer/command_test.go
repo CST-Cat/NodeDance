@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/CST-Cat/NodeDance"
 )
 
 func TestNativeInstallerPreservesFailureAndIncludesEnrollment(t *testing.T) {
@@ -41,9 +39,8 @@ func TestNativeInstallerPreservesFailureAndIncludesEnrollment(t *testing.T) {
 	}
 }
 
-func TestCommandsPinPairedAgentAndDeliverLiteralToken(t *testing.T) {
+func TestCommandsDefaultToLatestAgentAndDeliverLiteralToken(t *testing.T) {
 	token := strings.Repeat("b", 64)
-	tag := strings.TrimSpace(nodedance.PairedAgentRelease)
 	for _, mode := range []string{"native", "docker"} {
 		render := Command
 		if mode == "docker" {
@@ -61,13 +58,16 @@ func TestCommandsPinPairedAgentAndDeliverLiteralToken(t *testing.T) {
 		if err != nil {
 			t.Fatalf("mock installer: %s %v", raw, err)
 		}
-		for _, required := range []string{tag, "--mode\n" + mode, "--server\nhttps://core.example", "--token\n" + token} {
+		for _, required := range []string{"bash\n-s\n--\n--mode\n" + mode, "--mode\n" + mode, "--server\nhttps://core.example", "--token\n" + token} {
 			if !strings.Contains(string(raw), required) {
 				t.Fatalf("command lost %q: %s", required, raw)
 			}
 		}
-		if !strings.Contains(command, "/releases/download/"+tag+"/install-agent.sh") || strings.Contains(command, "releases/latest") || strings.Contains(command, "api.github.com") || strings.Contains(command, "/dev/tty") {
-			t.Fatal("command must directly use its published paired Agent installer")
+		if !strings.Contains(command, "| sudo bash -s --") {
+			t.Fatal("generated installer must elevate the installer shell to root")
+		}
+		if !strings.Contains(command, "raw.githubusercontent.com/CST-Cat/NodeDance/main/scripts/install-agent.sh") || strings.Contains(command, "--release-tag") || strings.Contains(command, "agent-v") || strings.Contains(command, "releases/latest") || strings.Contains(command, "api.github.com") || strings.Contains(command, "/dev/tty") {
+			t.Fatal("command must use the default latest Agent installer without pinning a release")
 		}
 	}
 }

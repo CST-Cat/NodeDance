@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -13,22 +12,12 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/update"
 )
 
-func TestUpdateAPIRequiresSessionCSRFConfirmationAndUsesSupervisor(t *testing.T) {
-	socket := filepath.Join(t.TempDir(), "controller.sock")
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestUpdateAPIRequiresSessionCSRFConfirmationAndUsesBuiltInExecutor(t *testing.T) {
 	received := make(chan update.RPC, 4)
-	supervisor := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var rpc update.RPC
-		json.NewDecoder(r.Body).Decode(&rpc)
+	core, err := New("core-v0.1.9", Options{DataDir: t.TempDir(), Development: true, UpdateInvoke: func(ctx context.Context, rpc update.RPC) (update.Response, error) {
 		received <- rpc
-		json.NewEncoder(w).Encode(update.Response{Status: 202, Data: json.RawMessage(`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"queued"}`)})
-	})}
-	go supervisor.Serve(listener)
-	defer supervisor.Close()
-	core, err := New("core-v0.1.9", Options{DataDir: t.TempDir(), Development: true, UpdateSocket: socket})
+		return update.Response{Status: 202, Data: json.RawMessage(`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"queued"}`)}, nil
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +62,6 @@ func TestUpdateAPIRequiresSessionCSRFConfirmationAndUsesSupervisor(t *testing.T)
 		t.Fatalf("invalid forwarded request: %+v", rpc)
 	}
 	if len(received) != 0 {
-		t.Fatal("invalid requests reached supervisor")
+		t.Fatal("invalid requests reached update executor")
 	}
 }

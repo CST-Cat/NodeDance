@@ -52,11 +52,10 @@ Core saves the initial login credentials in `initial-admin.json` inside its priv
 
 When Core starts without a terminal, including systemd, it generates both values automatically without waiting for input. To choose credentials for a service installation, run Core once interactively as the service user with the same data directory before enabling the service, then stop it and start the service.
 
-For a persistent installation, run `sudo make install` after a source build or use the published-release installer above, then create a dedicated Core service account and private data directory:
+For a persistent installation, run `sudo make install` after a source build or use the published-release installer above, then create the private root-owned data directory for the managed Core service:
 
 ```sh
-getent passwd nodedance >/dev/null || sudo useradd --system --home-dir /var/lib/nodedance --shell /usr/sbin/nologin nodedance
-sudo install -d -o nodedance -g nodedance -m 0700 /var/lib/nodedance
+sudo install -d -o root -g root -m 0700 /var/lib/nodedance
 ```
 
 Create the service unit only when the destination path is absent. This command uses a temporary file and a no-clobber hard link, so an existing unit or symlink is not overwritten:
@@ -69,8 +68,8 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-User=nodedance
-Group=nodedance
+User=root
+Group=root
 Environment=NODEDANCE_LISTEN=127.0.0.1:8180
 Environment=NODEDANCE_DATA_DIR=/var/lib/nodedance
 Environment=NODEDANCE_PUBLIC_ORIGIN=https://nodedance.example
@@ -92,7 +91,7 @@ sudo systemctl enable --now nodedance.service
 sudo systemctl status nodedance.service
 ```
 
-The unit listens on loopback and stores its database and keys under `/var/lib/nodedance`. Configure the reverse proxy for HTTPS, WebSocket upgrades on `/ws/`, and forwarding to `127.0.0.1:8180`. Set `NODEDANCE_TRUSTED_PROXIES` or `trusted_proxies` only to the proxy addresses that actually connect to the Core. For direct access, bind the Core to the required interface. It serves HTTP by default; provide both `--tls-cert` and `--tls-key` to enable TLS at the Core. Plain HTTP is suitable for loopback and trusted private networks; do not expose an unencrypted Core listener directly to the public Internet. On first start, Core generates an administrator username and password automatically. Read them from the private file path printed in the service log (normally `sudo -u nodedance cat /var/lib/nodedance/initial-admin.json`) and use both to sign in. The service log does not contain the password. Core removes this file after the first successful login.
+The unit listens on loopback and stores its database and keys under `/var/lib/nodedance`. Configure the reverse proxy for HTTPS, WebSocket upgrades on `/ws/`, and forwarding to `127.0.0.1:8180`. Set `NODEDANCE_TRUSTED_PROXIES` or `trusted_proxies` only to the proxy addresses that actually connect to the Core. For direct access, bind the Core to the required interface. It serves HTTP by default; provide both `--tls-cert` and `--tls-key` to enable TLS at the Core. Plain HTTP is suitable for loopback and trusted private networks; do not expose an unencrypted Core listener directly to the public Internet. On first start, Core generates an administrator username and password automatically. Read them from the private file path printed in the service log (normally `sudo cat /var/lib/nodedance/initial-admin.json`) and use both to sign in. The service log does not contain the password. Core removes this file after the first successful login.
 
 Manage the service with `sudo systemctl restart nodedance.service`, `sudo systemctl stop nodedance.service`, and `sudo journalctl -u nodedance.service`. A local Agent can run on the same Linux host. Production Agent connections require HTTPS/WSS and a certificate trusted by the Agent host; the Agent uses the system trust store, so no custom CA file is needed for ordinary public certificates. A private CA can be supplied with `--ca-file`. Plain HTTP/WS is accepted only for a literal loopback Core address in development mode. The Agent connects outbound over WSS and reconnects automatically after temporary Core or network outages.
 
@@ -113,9 +112,9 @@ The Core data directory contains the SQLite database and authentication/encrypti
 
 After signing in to the Core console, choose **添加 Agent**, enter a node display name, and generate a one-time enrollment. Choose the URL the target Agent can reach; it defaults to the current console origin and may be a different Core address on a private network. Native/systemd and Docker are side-by-side choices, visible before generating the command. Copy the complete command to the target Linux host and run it; it includes the short-lived token and does not prompt for it again. Expiry is displayed in Beijing time (UTC+8), while the API retains an ISO UTC timestamp.
 
-The generated command uses the published `agent-vMAJOR.MINOR.PATCH` release paired with its Core build. `agent-release.version` is embedded into Core; the release workflow checks that the exact paired Agent release is published. Installer and binary downloads are pinned to that Agent tag. The installer supports Linux `amd64` and `arm64`, verifies the matching Agent binary against that release's SHA256 manifest, prepares root-owned state, enrolls through `nodedance-agent enroll --token-stdin`, then installs, enables, and starts the root systemd service or the rootful Docker container and update supervisor, according to the selected mode. It refuses existing Agent state, binaries, or a same-name service, and will not overwrite existing config or service files. If enrollment may have reached Core but the response was lost, it preserves the protected config and provides the recovery command.
+The generated command downloads the current installation script and defaults to the latest stable published Agent at execution time, without a hardcoded tag. Python 3 parses the paginated release listing, excludes Core tags, drafts and prereleases, and compares Agent version numbers. The selected release supplies the matching binary, checksum manifest and Docker image. `agent-release.version` remains a Core publication pairing check. The installer supports Linux `amd64` and `arm64`, verifies the matching Agent binary against that release's SHA256 manifest, prepares root-owned state, enrolls through `nodedance-agent enroll --token-stdin`, then installs, enables, and starts the root systemd service or the rootful Docker container, according to the selected mode. It refuses existing Agent state, binaries, or a same-name service, and will not overwrite existing config or service files. If enrollment may have reached Core but the response was lost, it preserves the protected config and provides the recovery command.
 
-To publish Agent artifacts, add the workflow to the tagged commit, then create and push an Agent-only tag such as `agent-v0.1.0`. Only `agent-v*` tags trigger `.github/workflows/agent-release.yml`; it builds Linux amd64/arm64 binaries, creates `SHA256SUMS`, and attaches those files plus the installer to a release with the same tag. Core release tags do not trigger this workflow. If no published Agent tag is present, the generated command stops before invoking `sudo`.
+To publish Agent artifacts, add the workflow to the tagged commit, then create and push an Agent-only tag such as `agent-v0.1.0`. Only `agent-v*` tags trigger `.github/workflows/agent-release.yml`; it builds Linux amd64/arm64 binaries, creates `SHA256SUMS`, and attaches those files plus the installer to a release with the same tag. Core release tags do not trigger this workflow. Generated commands do not specify a release tag; the installer uses Python 3 to parse the release listing and selects the newest stable Agent at execution time. If none exists, installation stops before creating credentials or starting a container.
 
 The Agent runs as root for full host management; `enroll`, `recover`, and `run` reject non-root callers. It verifies the config remains root-owned, regular, and mode `0600` inside a `0700` state directory. Root file management exposes host paths while blocking kernel/runtime trees and Agent credentials. NodeDance does not change Docker socket permissions.
 

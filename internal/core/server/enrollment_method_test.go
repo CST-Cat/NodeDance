@@ -58,5 +58,10 @@ func TestEnrollmentCommandsCarryTokenAndSelectDeploymentMethod(t *testing.T) {
 		if !strings.Contains(body.NativeCommand, "--token "+body.Token) || !strings.Contains(body.DockerCommand, "--token "+body.Token) {
 			t.Fatal("single-command enrollment is missing its issued token")
 		}
+		for mode, command := range map[string]string{"native": body.NativeCommand, "docker": body.DockerCommand} {
+			if !strings.Contains(command, "| sudo bash -s --") || !strings.Contains(command, "--mode "+mode) || strings.Contains(command, "--release-tag") || strings.Contains(command, "agent-v") {
+				t.Fatalf("%s installation must select its mode and run the installer as root", mode)
+			}
+		}
 	}
 }

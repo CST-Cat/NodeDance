@@ -144,7 +144,7 @@ CLI and TUI share `terminalOperations`, `executeFinite`, the Core client, JSONL 
 | `windows.delete` | json | id | — | — | discovered / shared execution / discovered |
 | `windows.list` | json | — | — | — | discovered / shared execution / discovered |
 
-## Local maintenance and terminal workflows (15)
+## Local maintenance and terminal workflows (16)
 
 | Operation | CLI and TUI | Web |
 | --- | --- | --- |
@@ -155,6 +155,7 @@ CLI and TUI share `terminalOperations`, `executeFinite`, the Core client, JSONL 
 | `agent.run` | shared local dispatch | local host operation; no remote Web privilege |
 | `agent.tmux-version` | shared local dispatch | local host operation; no remote Web privilege |
 | `agent.uninstall-systemd` | shared local dispatch | local host operation; no remote Web privilege |
+| `agent.update` | shared local dispatch | local host operation; no remote Web privilege |
 | `agent.validate-file-root` | shared local dispatch | local host operation; no remote Web privilege |
 | `agent.validate-systemd-state` | shared local dispatch | local host operation; no remote Web privilege |
 | `agent.version` | shared local dispatch | local host operation; no remote Web privilege |

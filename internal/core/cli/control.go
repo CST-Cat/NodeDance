@@ -19,11 +19,13 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/control"
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/update"
 	"github.com/coder/websocket"
 	"golang.org/x/term"
 )
 
 type connectionFlags struct {
+	flags                            *flag.FlagSet
 	server, origin, stateDir, caFile *string
 	dev                              *bool
 	timeout                          *time.Duration
@@ -33,20 +35,32 @@ func addConnectionFlags(f *flag.FlagSet, lookup LookupEnv) connectionFlags {
 	configHome, _ := os.UserConfigDir()
 	stderr := f.Output()
 	return connectionFlags{
-		server:   f.String("server", firstNonEmpty(lookupValue(lookup, "NODEDANCE_SERVER"), "https://127.0.0.1:8180"), i18n.TextFor(stderr, "Core HTTPS origin")),
+		flags:    f,
+		server:   f.String("server", lookupValue(lookup, "NODEDANCE_SERVER"), i18n.TextFor(stderr, "Core HTTPS origin")),
 		origin:   f.String("origin", lookupValue(lookup, "NODEDANCE_ORIGIN"), i18n.TextFor(stderr, "public Core origin when connecting through another address")),
 		stateDir: f.String("state-dir", firstNonEmpty(lookupValue(lookup, "NODEDANCE_CLIENT_STATE_DIR"), filepath.Join(configHome, "nodedance-client")), i18n.TextFor(stderr, "private CLI session directory (0700)")),
 		caFile:   f.String("ca-file", "", i18n.TextFor(stderr, "private CA PEM file")), dev: f.Bool("dev", false, i18n.TextFor(stderr, "allow HTTP only to literal loopback")), timeout: f.Duration("timeout", 60*time.Second, i18n.TextFor(stderr, "request/stream timeout; 0 disables deadline")),
 	}
 }
 func (f connectionFlags) client() (*control.Client, error) {
-	return control.NewClient(control.ClientOptions{Server: *f.server, Origin: *f.origin, StateDir: *f.stateDir, CAFile: *f.caFile, Development: *f.dev})
+	explicit := map[string]bool{}
+	f.flags.Visit(func(flag *flag.Flag) { explicit[flag.Name] = true })
+	client, err := control.NewClient(control.ClientOptions{Server: *f.server, Origin: *f.origin, StateDir: *f.stateDir, CAFile: *f.caFile, Development: *f.dev, UseSavedConnection: true, Explicit: explicit})
+	if err == nil {
+		resolved := client.Connection()
+		*f.server = resolved.Server
+		*f.origin = resolved.Origin
+		*f.caFile = resolved.CAFile
+		*f.dev = resolved.Development
+	}
+	return client, err
 }
+
 func localOperations() []control.Operation {
 	result := []control.Operation{}
 	for _, item := range []struct{ name, desc string }{
 		{"client.update", "Update workflow: preflight, submit and observe using the connected Core; confirm rollback"}, {"core.serve", "Run Core; arguments are the same as nodedance serve"}, {"core.backup", "Back up Core to a new private archive"}, {"core.restore", "Restore Core to a new/empty directory"}, {"core.version", "Show Core version"},
-		{"agent.enroll", "Enroll root Agent; --token-stdin; stdin is never placed in process arguments"}, {"agent.recover", "Recover root Agent enrollment"}, {"agent.run", "Run root Agent"}, {"agent.install-systemd", "Install root Agent systemd service"}, {"agent.uninstall-systemd", "Remove managed Agent unit; preserve credentials"}, {"agent.validate-systemd-state", "Validate protected Agent credentials"}, {"agent.prepare-systemd-state", "Prepare root-owned Agent state"}, {"agent.validate-file-root", "Validate Agent file root"}, {"agent.version", "Show Agent version"}, {"agent.tmux-version", "Show bundled Agent tmux version"},
+		{"agent.enroll", "Enroll root Agent; --token-stdin; stdin is never placed in process arguments"}, {"agent.recover", "Recover root Agent enrollment"}, {"agent.update", "Update the local root Agent to the latest stable release"}, {"agent.run", "Run root Agent"}, {"agent.install-systemd", "Install root Agent systemd service"}, {"agent.uninstall-systemd", "Remove managed Agent unit; preserve credentials"}, {"agent.validate-systemd-state", "Validate protected Agent credentials"}, {"agent.prepare-systemd-state", "Prepare root-owned Agent state"}, {"agent.validate-file-root", "Validate Agent file root"}, {"agent.version", "Show Agent version"}, {"agent.tmux-version", "Show bundled Agent tmux version"},
 	} {
 		result = append(result, control.Operation{Name: item.name, Description: item.desc, Method: "LOCAL", Transport: "local", Parameters: []string{}, Query: []string{}, BodySchema: map[string]any{"type": "array", "items": map[string]string{"type": "string"}}})
 	}
@@ -422,6 +436,9 @@ func streamJSONL(ctx context.Context, client *control.Client, o control.Operatio
 	}
 }
 func runAgentCommand(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "update" {
+		return update.Local(ctx, "agent", "/var/lib/nodedance-agent", args[1:], stdin, stdout, stderr)
+	}
 	// Prefer a colocated Agent so a local build or extracted distribution is
 	// not shadowed by an unrelated executable on PATH. Agent stays separate.
 	path := ""

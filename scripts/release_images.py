@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
@@ -18,7 +19,7 @@ def docker(*args):
 
 
 def binaries(component):
-    return ['nodedance-agent', 'nodedance-updater'] if component == 'agent' else ['nodedance']
+    return ['nodedance-agent'] if component == 'agent' else ['nodedance']
 
 
 def extract(image, component, architecture, destination):
@@ -35,7 +36,7 @@ def verify(image, component, architecture, version, artifacts):
     info = json.loads(docker('image', 'inspect', image))[0]
     if info['Os'] != 'linux' or info['Architecture'] != architecture:
         raise ValueError('release image architecture does not match its native artifacts')
-    expected_user = '0:0' if component == 'agent' else '10001:10001'
+    expected_user = '0:0'
     if info['Config']['User'] != expected_user:
         raise ValueError('release image changed its runtime identity')
     with tempfile.TemporaryDirectory(prefix='nodedance-image-verify-') as directory:
@@ -47,8 +48,7 @@ def verify(image, component, architecture, version, artifacts):
             actual = hashlib.sha256((extracted / name).read_bytes()).digest()
             if actual != expected:
                 raise ValueError(f'image binary differs from tested artifact: {name}')
-            prefix = {'nodedance': 'NodeDance', 'nodedance-agent': 'NodeDance Agent',
-                      'nodedance-updater': 'NodeDance Updater'}[binary]
+            prefix = {'nodedance': 'NodeDance', 'nodedance-agent': 'NodeDance Agent'}[binary]
             output = docker('run', '--rm', '--entrypoint', f'/usr/local/bin/{binary}', image, '--version')
             if output != f'{prefix} {version}':
                 raise ValueError(f'image binary version mismatch: {binary}')
@@ -69,7 +69,7 @@ def test(architecture, version):
         entrypoint.parent.mkdir(parents=True)
         shutil.copyfile(ROOT / 'deploy/docker/agent-entrypoint.sh', entrypoint)
         for component in ['core', 'agent']:
-            source = f'nodedance-{component}:docker-test'
+            source = os.environ.get(f'TEST_{component.upper()}_IMAGE', f'nodedance-{component}:docker-test')
             extract(source, component, architecture, artifacts)
             image = f'nodedance-release-test:{component}-{uuid.uuid4().hex[:12]}'
             try:

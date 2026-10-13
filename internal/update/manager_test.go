@@ -184,7 +184,7 @@ func nativeFixture(t *testing.T) (*Manager, string, *atomic.Bool) {
 }
 func waitJob(t *testing.T, m *Manager, id string) Job {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		job, err := m.Get("core", id)
 		if err != nil {

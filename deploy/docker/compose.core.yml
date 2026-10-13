@@ -11,6 +11,7 @@ services:
       - "${CORE_BIND_ADDRESS:-127.0.0.1}:${CORE_PORT:-8180}:8180"
     volumes:
       - core-data:/var/lib/nodedance
+      - /var/run/docker.sock:/var/run/docker.sock
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777

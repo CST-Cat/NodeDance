@@ -63,7 +63,7 @@ func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
 	var response update.Response
 	var err error
 	if request.Component == "core" {
-		response, err = update.Call(ctx, s.updateSocket, rpc)
+		response, err = s.invokeUpdate(ctx, rpc)
 	} else {
 		response, err = s.agentUpdate(ctx, request.NodeID, rpc)
 	}
@@ -135,4 +135,11 @@ func (s *Server) handleUpdateResponse(c *agentConnection, e protocol.Envelope) e
 		}
 	}
 	return nil
+}
+
+func (s *Server) invokeUpdate(ctx context.Context, rpc update.RPC) (update.Response, error) {
+	if s.updateInvoke != nil {
+		return s.updateInvoke(ctx, rpc)
+	}
+	return update.Invoke(ctx, "core", s.dataDir, rpc)
 }

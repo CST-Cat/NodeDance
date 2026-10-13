@@ -43,7 +43,7 @@ func (g *GitHub) fetch(ctx context.Context, address string, limit int64) ([]byte
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("User-Agent", "NodeDance-Updater")
+	request.Header.Set("User-Agent", "NodeDance")
 	request.Header.Set("Accept", "application/vnd.github+json")
 	response, err := g.HTTP.Do(request)
 	if err != nil {
@@ -126,8 +126,6 @@ func (g *GitHub) Resolve(ctx context.Context, component, tag string) (Release, e
 			return Release{}, errors.New("unexpected release asset URL")
 		}
 		switch asset.Name {
-		case "nodedance-updater-linux-" + runtime.GOARCH:
-			release.UpdaterURL = asset.URL
 		case "nodedance-update.json":
 			manifestURL = asset.URL
 		case "SHA256SUMS":
@@ -136,7 +134,7 @@ func (g *GitHub) Resolve(ctx context.Context, component, tag string) (Release, e
 			release.BinaryURL = asset.URL
 		}
 	}
-	if manifestURL == "" || release.BinaryURL == "" || release.ChecksumURL == "" || release.UpdaterURL == "" {
+	if manifestURL == "" || release.BinaryURL == "" || release.ChecksumURL == "" {
 		return Release{}, errors.New("release does not include an update manifest and verified native artifacts")
 	}
 	raw, err := g.fetch(ctx, manifestURL, 64<<10)
@@ -176,7 +174,7 @@ func (g *GitHub) Download(ctx context.Context, release Release, path string) err
 	if err != nil {
 		return err
 	}
-	request.Header.Set("User-Agent", "NodeDance-Updater")
+	request.Header.Set("User-Agent", "NodeDance")
 	response, err := g.HTTP.Do(request)
 	if err != nil {
 		return err

@@ -151,7 +151,7 @@ func (m *Manager) Handle(req protocol.HostRequest) protocol.HostResponse {
 		return protocol.HostResponse{Status: 200, Settings: &saved}
 	case "diagnostics":
 		s := m.Settings()
-		return protocol.HostResponse{Status: 200, Settings: &s, Diagnostics: map[string]any{"uid": os.Geteuid(), "pid": os.Getpid(), "stateDirectory": m.dir, "credential": "[redacted]", "settingsApply": "sampling on next interval; connection settings on reconnect", "updateSupervisorSocket": "/run/nodedance-updater/control.sock"}}
+		return protocol.HostResponse{Status: 200, Settings: &s, Diagnostics: map[string]any{"uid": os.Geteuid(), "pid": os.Getpid(), "stateDirectory": m.dir, "credential": "[redacted]", "settingsApply": "sampling on next interval; connection settings on reconnect", "updates": "built-in"}}
 	case "commands.submit":
 		j, err := m.submit(req)
 		if err != nil {
@@ -379,14 +379,14 @@ func (m *Manager) RunUpdates() {
 		if s.AutoUpdate {
 			ctx, cancel := context.WithTimeout(m.ctx, 60*time.Second)
 			r := update.Request{Component: "agent"}
-			response, err := update.Call(ctx, "", update.RPC{Action: "check", Request: r})
+			response, err := update.Invoke(ctx, "agent", m.dir, update.RPC{Action: "check", Request: r})
 			if err == nil && response.Status == 200 {
 				var check update.Check
 				if json.Unmarshal(response.Data, &check) == nil && check.Available && check.Compatible && check.Configured {
 					r.Confirm = true
 					r.Version = check.Release.Version
 					key := "auto-agent-" + r.Version
-					_, _ = update.Call(ctx, "", update.RPC{Action: "apply", Request: r, IdempotencyKey: key})
+					_, _ = update.Invoke(ctx, "agent", m.dir, update.RPC{Action: "apply", Request: r, IdempotencyKey: key})
 				}
 			}
 			cancel()

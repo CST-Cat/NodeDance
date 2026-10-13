@@ -905,7 +905,7 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 					defer func() { <-updateSlots }()
 					requestCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 					defer cancel()
-					response, err := update.Call(requestCtx, "", request)
+					response, err := update.Invoke(requestCtx, "agent", filepath.Dir(configPath), request)
 					if err != nil {
 						response = update.Response{Status: 503, Error: err.Error()}
 					}

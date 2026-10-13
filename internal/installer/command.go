@@ -7,11 +7,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-
-	"github.com/CST-Cat/NodeDance"
 )
 
-var agentTag = regexp.MustCompile(`^agent-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 var shellWord = regexp.MustCompile(`^[A-Za-z0-9:/._-]+$`)
 var enrollmentToken = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
@@ -47,11 +44,7 @@ func command(server, token, mode string, development bool) (string, error) {
 	if !enrollmentToken.MatchString(token) {
 		return "", errors.New("invalid Agent enrollment token")
 	}
-	tag := strings.TrimSpace(nodedance.PairedAgentRelease)
-	if !agentTag.MatchString(tag) {
-		return "", errors.New("Core has no valid paired Agent release")
-	}
-	script := "curl -fsSL --proto =https --proto-redir =https --tlsv1.2 https://github.com/CST-Cat/NodeDance/releases/download/" + tag + "/install-agent.sh | sudo bash -s -- --release-tag " + tag + " --mode " + mode + " --server " + quote(server) + " --token " + token
+	script := "curl -fsSL --proto =https --proto-redir =https --tlsv1.2 https://raw.githubusercontent.com/CST-Cat/NodeDance/main/scripts/install-agent.sh | sudo bash -s -- --mode " + mode + " --server " + quote(server) + " --token " + token
 	if strings.HasPrefix(server, "http:") {
 		script += " --dev"
 	}

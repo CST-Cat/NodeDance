@@ -94,9 +94,9 @@ fs.mkdirSync(out, { recursive: true });
           displayName: "Audit node",
           expiresAt: now,
           nativeInstallCommand:
-            "sudo bash install-agent.sh --release-tag agent-v0.1.5",
+            "curl -fsSL https://raw.githubusercontent.com/CST-Cat/NodeDance/main/scripts/install-agent.sh | sudo bash -s -- --mode native --server https://core.example --token isolated-audit-token",
           dockerInstallCommand:
-            "sudo docker run --privileged --name nodedance-agent ghcr.io/cst-cat/nodedance-agent:agent-v0.1.5",
+            "curl -fsSL https://raw.githubusercontent.com/CST-Cat/NodeDance/main/scripts/install-agent.sh | sudo bash -s -- --mode docker --server https://core.example --token isolated-audit-token",
         };
       else if (terminalOnly && p.includes("/terminal")) {
         if (route.request().method() === "DELETE") { terminalEnds++; status = 204; }

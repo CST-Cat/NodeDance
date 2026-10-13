@@ -32,13 +32,14 @@ import (
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/core/webassets"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/update"
 )
 
 type Options struct {
 	JSONReadTimeout           time.Duration
 	TransferReadTimeout       time.Duration
 	MaxConcurrentRequests     int
-	UpdateSocket              string
+	UpdateInvoke              func(context.Context, update.RPC) (update.Response, error)
 	DataDir                   string
 	Development               bool
 	PublicOrigin              string
@@ -66,7 +67,7 @@ type Server struct {
 	transferReadTimeout        time.Duration
 	httpChannelsMu             sync.Mutex
 	httpChannels               map[string]*httpAgentChannel
-	updateSocket               string
+	updateInvoke               func(context.Context, update.RPC) (update.Response, error)
 	version                    string
 	assets                     http.Handler
 	index                      []byte
@@ -233,7 +234,7 @@ func New(version string, options Options) (*Server, error) {
 	s := &Server{
 		guestSlots:   make(chan struct{}, 4),
 		version:      version,
-		updateSocket: options.UpdateSocket,
+		updateInvoke: options.UpdateInvoke,
 		assets:       http.FileServer(http.FS(files)),
 		index:        index,
 		store:        store,

@@ -71,3 +71,11 @@ RSS 增量回归从连接的 Core 契约发现全部 feeds.* 私有操作，验�
 Agent enrollment responses contain token-bearing native and Docker installation commands. These responses and reusable enrollment grants remain administrator-only; guest projections exclude tokens and installation commands even when administrator cookies are present. The isolated browser attack suite verifies anonymous enrollment denial and command/token exclusion from public display.
 
 Node deletion and pending-enrollment renewal are private Core operations and are covered by the discovered anonymous/forged-identity operation matrix. Renewed tokens and commands never enter the public projection. The browser suite warms publication, deletes a selected node, verifies immediate withdrawal and verifies that its enrollment credential is rejected.
+
+内置更新使用相同的私有 `updates.*` 契约、管理员会话、CSRF 和节点权限检查。临时工作进程不新增公开更新入口，也不因游客访问而执行；游客浏览器矩阵继续逐操作验证拒绝边界。
+
+Built-in updates retain the private `updates.*` contract, administrator session, CSRF and node checks. Transient workers add no public update endpoint and are not executed by guest entry; the browser matrix continues to discover and deny private operations.
+
+终端默认连接信息仅从当前用户受保护的会话文件恢复；显式选择不同 Core 时拒绝携带旧会话，HTTP 仍仅允许已明确选择的开发模式与字面量回环地址。
+
+Terminal defaults are restored only from the current user’s protected session file. An explicit different Core rejects the saved identity; HTTP remains restricted to explicit development selection and literal loopback addresses.

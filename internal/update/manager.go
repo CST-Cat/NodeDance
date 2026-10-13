@@ -46,9 +46,6 @@ type Manager struct {
 }
 
 func New(config Config, resolver Resolver) (*Manager, error) {
-	if config.SupervisorBinary != "" && config.SupervisorBinary != "/usr/local/libexec/nodedance-updater" {
-		return nil, errors.New("invalid supervisor binary")
-	}
 	if os.Geteuid() != 0 {
 		return nil, errors.New("update controller requires root")
 	}
@@ -74,10 +71,13 @@ func New(config Config, resolver Resolver) (*Manager, error) {
 			return nil, errors.New("managed data requires mode 0700")
 		}
 		if component == "agent" {
+			if filepath.Dir(agentConfig(target)) != real {
+				return nil, errors.New("Agent credentials must remain inside the private state directory")
+			}
 			if info.Sys().(*syscall.Stat_t).Uid != 0 {
 				return nil, errors.New("Agent state must be root-owned")
 			}
-			info, err := os.Lstat(filepath.Join(real, "agent.json"))
+			info, err := os.Lstat(agentConfig(target))
 			if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || info.Sys().(*syscall.Stat_t).Uid != 0 {
 				return nil, errors.New("Agent config requires a regular 0600 file")
 			}
@@ -408,9 +408,6 @@ func (m *Manager) runRollback(job, parent Job) {
 		job.Status, job.Stage = "succeeded", "rolled_back"
 	}
 	m.finish(&job)
-	if job.Status == "succeeded" {
-		m.refreshSupervisor()
-	}
 }
 
 func (m *Manager) Jobs() []Job {
@@ -449,23 +446,7 @@ func (m *Manager) run(job Job, release Release) {
 			}
 			job.AgentGeneration = generation
 		}
-		if m.Config.SupervisorBinary != "" {
-			helper := release
-			helper.BinaryURL = release.UpdaterURL
-			if helper.BinaryURL == "" {
-				return errors.New("release has no verified update supervisor")
-			}
-			if err := m.Resolver.Download(ctx, helper, filepath.Join(workspace, "supervisor-binary")); err != nil {
-				return err
-			}
-			raw, err := m.command(ctx, filepath.Join(workspace, "supervisor-binary"), "--version")
-			if err != nil || strings.TrimSpace(string(raw)) != "NodeDance Updater "+release.Version {
-				return errors.New("supervisor version verification failed")
-			}
-			if err = copyBinary(m.Config.SupervisorBinary, filepath.Join(workspace, "supervisor-previous")); err != nil {
-				return err
-			}
-		}
+
 		image := ""
 		binary := filepath.Join(workspace, "release-binary")
 		if target.Mode == "docker" {
@@ -572,18 +553,13 @@ func (m *Manager) run(job Job, release Release) {
 				return err
 			}
 		}
-		if m.Config.SupervisorBinary != "" {
-			if err := installBinary(filepath.Join(workspace, "supervisor-binary"), m.Config.SupervisorBinary); err != nil {
-				return err
-			}
-		}
+
 		return nil
 	}()
 	if err == nil {
 		job.Status = "succeeded"
 		job.Stage = "complete"
 		m.finish(&job)
-		m.refreshSupervisor()
 		return
 	}
 	job.Error = err.Error()
@@ -648,7 +624,7 @@ func (m *Manager) verify(ctx context.Context, component, version string, previou
 		}
 		if ready && component == "core" {
 			req, _ := http.NewRequestWithContext(ctx, "GET", target.HealthURL, nil)
-			client, clientErr := healthClient(target.HealthCAFile)
+			client, clientErr := healthClient(target.HealthCAFile, target.HealthServerName)
 			if clientErr != nil {
 				return clientErr
 			}
@@ -714,14 +690,7 @@ func (m *Manager) rollback(ctx context.Context, job *Job) error {
 			}
 		}
 	}
-	if m.Config.SupervisorBinary != "" {
-		old := filepath.Join(workspace, "supervisor-previous")
-		if _, err := os.Stat(old); err == nil {
-			if err = installBinary(old, m.Config.SupervisorBinary); err != nil {
-				return err
-			}
-		}
-	}
+
 	if job.Snapshot && job.Switched && job.Component == "core" {
 		if err := restoreTree(filepath.Join(workspace, "data"), target.DataDir, job.ID); err != nil {
 			return err
@@ -794,7 +763,7 @@ func (m *Manager) writeCompose(ctx context.Context, target Target, component, ve
 }
 
 func (m *Manager) agentOnline(ctx context.Context, target Target, previous uint64) (uint64, bool) {
-	raw, err := os.ReadFile(filepath.Join(target.DataDir, "agent.json"))
+	raw, err := os.ReadFile(agentConfig(target))
 	if err != nil {
 		return 0, false
 	}
@@ -835,7 +804,7 @@ func (m *Manager) agentOnline(ctx context.Context, target Target, previous uint6
 		return 0, false
 	}
 	request.Header.Set("Authorization", "Bearer "+config.Credential)
-	request.Header.Set("User-Agent", "NodeDance-Updater")
+	request.Header.Set("User-Agent", "NodeDance")
 	response, err := client.Do(request)
 	if err != nil {
 		return 0, false
@@ -871,9 +840,9 @@ func localAddress(host string) bool {
 	}
 	return false
 }
-func healthClient(caFile string) (*http.Client, error) {
+func healthClient(caFile, serverName string) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: serverName}
 	if caFile != "" {
 		raw, err := os.ReadFile(caFile)
 		if err != nil {
@@ -891,10 +860,9 @@ func healthClient(caFile string) (*http.Client, error) {
 	return &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, nil
 }
 
-func (m *Manager) refreshSupervisor() {
-	if m.Config.SupervisorBinary != "" {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_, _ = m.command(ctx, "systemctl", "--no-block", "restart", "nodedance-updater.service")
+func agentConfig(target Target) string {
+	if target.AgentConfig != "" {
+		return target.AgentConfig
 	}
+	return filepath.Join(target.DataDir, "agent.json")
 }

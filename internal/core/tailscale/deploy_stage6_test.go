@@ -527,7 +527,7 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"bash -o pipefail -c", "--proto =https --proto-redir =https --tlsv1.2", "github.com/CST-Cat/NodeDance/releases/download/agent-v", "--token ", "--mode native", "sudo bash -s --"} {
+	for _, required := range []string{"bash -o pipefail -c", "--proto =https --proto-redir =https --tlsv1.2", "raw.githubusercontent.com/CST-Cat/NodeDance/main/scripts/install-agent.sh", "--token ", "--mode native", "sudo bash -s --"} {
 		if !strings.Contains(command, required) {
 			t.Errorf("shared installer command is missing %q", required)
 		}

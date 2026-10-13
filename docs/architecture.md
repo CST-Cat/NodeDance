@@ -50,7 +50,7 @@ CLI and TUI share the terminal operation registry and finite executor, including
 
 Agent enrollment returns a Core-generated installer command through `internal/installer`; Web, CLI and TUI use the same root-only command and published Agent-tag resolution.
 
-The native command runs the pinned `install-agent.sh`, which installs its systemd update supervisor and owns the final exit status. Docker enrollment has its own command and Docker supervisor step; the native command does not invoke Docker.
+The native and Docker commands run `install-agent.sh` without a fixed tag; it selects the newest stable Agent release at execution time, which performs root-only enrollment and starts the chosen runtime. Core and Agent contain update execution themselves and launch a transient worker using the same binary when needed. No separate update package or persistent update service is installed.
 
 ## Extended Agent management
 

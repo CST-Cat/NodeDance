@@ -20,7 +20,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-const Socket = "/run/nodedance-updater/control.sock"
 const Repository = "CST-Cat/NodeDance"
 
 var tagPattern = regexp.MustCompile(`^(core|agent)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
@@ -44,22 +43,20 @@ type Response struct {
 	Error  string          `json:"error,omitempty"`
 }
 type Target struct {
-	Mode         string `json:"mode"`
-	Container    string `json:"container,omitempty"`
-	Binary       string `json:"binary,omitempty"`
-	Unit         string `json:"unit,omitempty"`
-	DataDir      string `json:"dataDir"`
-	HealthCAFile string `json:"healthCaFile,omitempty"`
-	HealthURL    string `json:"healthUrl,omitempty"`
-	ComposeFile  string `json:"composeFile,omitempty"`
+	AgentConfig      string `json:"agentConfig,omitempty"`
+	Mode             string `json:"mode"`
+	Container        string `json:"container,omitempty"`
+	Binary           string `json:"binary,omitempty"`
+	Unit             string `json:"unit,omitempty"`
+	DataDir          string `json:"dataDir"`
+	HealthCAFile     string `json:"healthCaFile,omitempty"`
+	HealthServerName string `json:"healthServerName,omitempty"`
+	HealthURL        string `json:"healthUrl,omitempty"`
+	ComposeFile      string `json:"composeFile,omitempty"`
 }
 type Config struct {
-	SupervisorBinary string            `json:"supervisorBinary,omitempty"`
-	StateDir         string            `json:"stateDir"`
-	Socket           string            `json:"socket"`
-	CoreUID          uint32            `json:"coreUid"`
-	CoreGID          int               `json:"coreGid"`
-	Targets          map[string]Target `json:"targets"`
+	StateDir string            `json:"stateDir"`
+	Targets  map[string]Target `json:"targets"`
 }
 type Manifest struct {
 	Format    int    `json:"format"`
@@ -85,7 +82,6 @@ type Release struct {
 	Manifest
 	URL         string `json:"url"`
 	Notes       string `json:"notes"`
-	UpdaterURL  string `json:"-"`
 	BinaryURL   string `json:"-"`
 	ChecksumURL string `json:"-"`
 }

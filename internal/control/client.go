@@ -27,14 +27,21 @@ type Client struct {
 	origin      string
 	http        *http.Client
 	sessionPath string
+	caFile      string
+	development bool
 }
 type ClientOptions struct {
 	Server, Origin, StateDir, CAFile string
 	Development                      bool
+	UseSavedConnection               bool
+	Explicit                         map[string]bool
 }
 type savedSession struct {
-	Server  string         `json:"server"`
-	Cookies []*http.Cookie `json:"cookies"`
+	Origin      string         `json:"origin,omitempty"`
+	CAFile      string         `json:"caFile,omitempty"`
+	Development bool           `json:"development,omitempty"`
+	Server      string         `json:"server"`
+	Cookies     []*http.Cookie `json:"cookies"`
 }
 type Input struct {
 	Params         map[string]string `json:"params,omitempty"`
@@ -60,6 +67,39 @@ func (r Result) Err() error {
 }
 
 func NewClient(options ClientOptions) (*Client, error) {
+	var saved savedSession
+	if options.StateDir != "" {
+		if err := privateDir(options.StateDir); err != nil {
+			return nil, err
+		}
+		raw, err := readPrivateFile(filepath.Join(options.StateDir, "session.json"))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
+		if err == nil && json.Unmarshal(raw, &saved) != nil {
+			return nil, errors.New("invalid saved CLI session")
+		}
+	}
+	if options.UseSavedConnection {
+		if options.Server == "" {
+			options.Server = saved.Server
+		}
+		if options.Server == saved.Server {
+			if options.Origin == "" && !options.Explicit["origin"] {
+				options.Origin = saved.Origin
+			}
+			if options.CAFile == "" && !options.Explicit["ca-file"] {
+				options.CAFile = saved.CAFile
+			}
+			if !options.Explicit["dev"] {
+				options.Development = options.Development || saved.Development
+			}
+		}
+		if options.Server == "" {
+			options.Server = "https://127.0.0.1:8180"
+		}
+	}
+
 	base, err := url.Parse(options.Server)
 	if err != nil || base.Host == "" || base.User != nil || base.RawQuery != "" || base.Fragment != "" || (base.Path != "" && base.Path != "/") {
 		return nil, errors.New("--server must be an HTTPS origin without credentials, path, query or fragment")
@@ -96,27 +136,17 @@ func NewClient(options ClientOptions) (*Client, error) {
 		transport.TLSClientConfig.RootCAs = roots
 	}
 	jar, _ := cookiejar.New(nil)
-	c := &Client{base: base, origin: origin, http: &http.Client{Transport: transport, Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	c := &Client{base: base, origin: origin, caFile: options.CAFile, development: options.Development, http: &http.Client{Transport: transport, Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	if options.StateDir != "" {
-		if err := privateDir(options.StateDir); err != nil {
-			return nil, err
-		}
 		c.sessionPath = filepath.Join(options.StateDir, "session.json")
-		raw, err := readPrivateFile(c.sessionPath)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
-		if err == nil {
-			var saved savedSession
-			if err = json.Unmarshal(raw, &saved); err != nil {
-				return nil, errors.New("invalid saved CLI session")
-			}
+		if saved.Server != "" {
 			if saved.Server != base.String() {
 				return nil, errors.New("saved session belongs to a different server; select another --state-dir")
 			}
 			jar.SetCookies(base, saved.Cookies)
 		}
 	}
+
 	return c, nil
 }
 func (c *Client) Close() { c.http.CloseIdleConnections() }
@@ -166,7 +196,7 @@ func (c *Client) save() error {
 	if err := privateDir(filepath.Dir(c.sessionPath)); err != nil {
 		return err
 	}
-	raw, err := json.Marshal(savedSession{Server: c.base.String(), Cookies: c.http.Jar.Cookies(c.base)})
+	raw, err := json.Marshal(savedSession{Server: c.base.String(), Origin: c.origin, CAFile: c.caFile, Development: c.development, Cookies: c.http.Jar.Cookies(c.base)})
 	if err != nil {
 		return err
 	}
@@ -493,4 +523,8 @@ func FindIn(catalog Catalog, name string) (Operation, error) {
 		}
 	}
 	return Operation{}, fmt.Errorf("unknown operation %q", name)
+}
+
+func (c *Client) Connection() ClientOptions {
+	return ClientOptions{Server: c.base.String(), Origin: c.origin, CAFile: c.caFile, Development: c.development}
 }
