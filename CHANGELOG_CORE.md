@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.19]
+
+### English
+
+- Redesign VPS Docker management around a selectable, paginated container table and one shared top toolbar. Remove drag sorting and repeated row action buttons; provide batch lifecycle actions and deletion with independent task results, stable retry identities and exact per-target confirmations.
+- Keep selected-container details, terminal, logs/monitoring, display preferences, audit and rebuild accessible from the toolbar. Add isolated browser regressions for selection, filtering, pagination, changed-state confirmation, Compose restrictions, stale/offline guards, focus and eight bilingual light/dark/mobile layouts.
+
+### 简体中文
+
+- 将 VPS Docker 管理改为支持多选、分页的容器表格与统一顶部工具栏，移除拖拽排序和逐行重复操作按钮；批量生命周期操作与删除保留独立任务结果、稳定重试身份及逐目标完整 ID 确认。
+- 从工具栏访问所选容器详情、终端、日志／监控、显示设置、审计与重建；新增隔离浏览器回归，覆盖选择、筛选、分页、确认期间状态变化、Compose 限制、陈旧／离线数据保护、焦点及八种双语浅色／深色／移动端布局。
+
 ## [0.1.18]
 
 ### English

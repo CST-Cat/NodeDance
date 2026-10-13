@@ -78,21 +78,25 @@ const customFieldOptions = computed(() => [
   { id: 'image', label: t('m.176c09844e0f') }, { id: 'uptime', label: t('m.5986e9d976e0') },
 ])
 const containerSearch = ref('')
-const editingPreference = ref('')
+const containerState = ref('all')
+const pageSize = ref(20)
+const containerPage = ref(1)
+const selectedContainerIDs = ref<string[]>([])
+const selectionBusy = ref(false)
+const detailPanel = ref<'info' | 'streams' | 'preferences' | 'audit' | ''>('')
+const primaryActions = computed(() => [
+  {action: 'start' as const, label: t('m.56410fc65314')}, {action: 'stop' as const, label: t('m.ca4d973c0b00')},
+  {action: 'restart' as const, label: t('m.562822892865')}, {action: 'rename' as const, label: t('m.0d0cbac2eee5')}, {action: 'delete' as const, label: t('m.2f9daa828907')},
+])
 const historyView = ref<MetricHistory | null>(null)
 const historyLoading = ref(false)
 const historyError = ref('')
 const historyRange = ref<'6h' | '24h' | '7d' | '30d' | '1y'>('24h')
-const draggedContainerID = ref('')
-const dropContainerID = ref('')
-const orderSaving = ref(false)
-const orderError = ref('')
 const taskAuditViews = ref<Record<string, TaskAuditEvent[]>>({})
 const taskAuditVisible = ref<Record<string, boolean>>({})
 const taskAuditLoading = ref<Record<string, boolean>>({})
 const taskAuditErrors = ref<Record<string, string>>({})
 const activeTerminal = ref<{ nodeId: string; targetKind: 'host' | 'container'; containerId?: string; targetLabel: string } | null>(null)
-const pointerDrag = ref<{ pointerId: number; sourceID: string; targetID: string; startX: number; startY: number; armed: boolean } | null>(null)
 const historyResolution = computed(() => historyRange.value === '1y' ? 'hour' : 'minute')
 const nodePreference = computed(() => props.preferences.find((item) => item.targetKind === 'node' && item.identity === `node:${props.node.nodeId}`))
 const nodeTitle = computed(() => nodePreference.value?.alias || props.node.displayName)
@@ -132,42 +136,81 @@ function preferenceForContainer(record: DockerInventory['containers'][number]): 
 function containerTitle(record: DockerInventory['containers'][number]): string {
   return preferenceForContainer(record)?.alias || record.container.name || record.container.id.slice(0, 12)
 }
-function containerIcon(record: DockerInventory['containers'][number]): string {
-  const icons: Record<string, string> = { server: '▤', globe: '◎', database: '▥', shield: '⬡', terminal: '›_', box: '▣', cloud: '☁', folder: '▰', activity: '⌁' }
-  return icons[preferenceForContainer(record)?.icon ?? ''] ?? '▣'
+function containerGroupName(record: DockerContainerRecord): string {
+  if (groupBy.value === 'compose') return record.container.compose?.project || ''
+  if (groupBy.value === 'state') return record.container.state || ''
+  return ''
 }
-function containerGroupName(record: DockerInventory['containers'][number]): string {
-  if (props.dashboardSettings.groupBy === 'none') return ''
-  if (props.dashboardSettings.groupBy === 'compose') return record.container.compose ? `Compose · ${record.container.compose.project}` : t('m.ba4ddea11c26')
-  if (props.dashboardSettings.groupBy === 'state') return record.container.state || t('m.93e474c68ed5')
-  return nodeTitle.value
-}
-const orderedContainers = computed(() => {
-  const containers = [...(props.inventory?.containers ?? [])]
-  return containers.sort((left, right) => {
-    const group = containerGroupName(left).localeCompare(containerGroupName(right), locale.value)
-    if (group && props.dashboardSettings.groupBy !== 'none') return group
+const orderedContainers = computed(() => [...(props.inventory?.containers ?? [])].sort((left, right) => {
+  const group = containerGroupName(left).localeCompare(containerGroupName(right), locale.value)
+  if (group) return group
+  if (sortBy.value === 'state') {
+    const state = (left.container.state || '').localeCompare(right.container.state || '', locale.value)
+    if (state) return state
+  }
+  if (sortBy.value === 'custom') {
     const lp = preferenceForContainer(left), rp = preferenceForContainer(right)
-    if (props.dashboardSettings.sortBy === 'state') {
-      const state = (left.container.state || '').localeCompare(right.container.state || '')
-      if (state) return state
-    }
-    if (props.dashboardSettings.sortBy === 'name') return containerTitle(left).localeCompare(containerTitle(right), locale.value)
     if (lp?.pinned !== rp?.pinned) return lp?.pinned ? -1 : 1
-    if ((lp?.sortOrder ?? 0) !== (rp?.sortOrder ?? 0)) return (lp?.sortOrder ?? 0) - (rp?.sortOrder ?? 0)
-    return containerTitle(left).localeCompare(containerTitle(right), locale.value)
-  })
-})
+    const order = (lp?.sortOrder ?? 0) - (rp?.sortOrder ?? 0)
+    if (order) return order
+  }
+  return containerTitle(left).localeCompare(containerTitle(right), locale.value)
+}))
 const sortedContainers = computed(() => {
   const query = containerSearch.value.trim().toLocaleLowerCase()
-  if (!query) return orderedContainers.value
   return orderedContainers.value.filter((record) => {
+    const c = record.container
+    if (containerState.value === 'running' && (!c.running || c.paused || c.restarting)) return false
+    if (containerState.value === 'paused' && !c.paused) return false
+    if (containerState.value === 'stopped' && (c.running || c.paused || c.restarting)) return false
+    if (containerState.value === 'restarting' && !c.restarting) return false
+    if (!query) return true
     const preference = preferenceForContainer(record)
     return [containerTitle(record), record.container.name, record.container.image, record.container.id,
       record.container.compose?.project, record.container.compose?.service, preference?.notes]
       .some((value) => value?.toLocaleLowerCase().includes(query))
   })
 })
+const pageCount = computed(() => Math.max(1, Math.ceil(sortedContainers.value.length / pageSize.value)))
+const pageContainers = computed(() => sortedContainers.value.slice((containerPage.value - 1) * pageSize.value, containerPage.value * pageSize.value))
+const selectedContainers = computed(() => orderedContainers.value.filter(record => selectedContainerIDs.value.includes(record.container.id)))
+const singleContainer = computed(() => selectedContainers.value.length === 1 ? selectedContainers.value[0] : undefined)
+const allPageSelected = computed(() => pageContainers.value.length > 0 && pageContainers.value.every(record => selectedContainerIDs.value.includes(record.container.id)))
+const somePageSelected = computed(() => !allPageSelected.value && pageContainers.value.some(record => selectedContainerIDs.value.includes(record.container.id)))
+function toggleContainer(id: string, selected: boolean) {
+  selectedContainerIDs.value = selected ? [...new Set([...selectedContainerIDs.value, id])] : selectedContainerIDs.value.filter(value => value !== id)
+}
+function togglePage(selected: boolean) {
+  const ids = new Set(pageContainers.value.map(record => record.container.id))
+  selectedContainerIDs.value = selected ? [...new Set([...selectedContainerIDs.value, ...ids])] : selectedContainerIDs.value.filter(id => !ids.has(id))
+}
+function inspectContainer(record: DockerContainerRecord) {
+  selectedContainerIDs.value = [record.container.id]
+  detailPanel.value = 'info'
+}
+function closeMoreMenu(event: MouseEvent | KeyboardEvent) {
+  if (event.type !== 'keydown' && !(event.target as HTMLElement).closest('button:not(:disabled), a')) return
+  const menu = (event.currentTarget as HTMLElement).closest('details')
+  menu?.removeAttribute('open')
+  menu?.querySelector('summary')?.focus()
+}
+function showPanel(panel: typeof detailPanel.value) {
+  if (!singleContainer.value) return
+  detailPanel.value = panel
+  if (panel === 'audit') {
+    const task = taskForContainer(singleContainer.value.container.id)
+    if (task && !taskAuditVisible.value[task.taskId]) void toggleTaskAudit(task)
+  }
+}
+watch([containerSearch, containerState, pageSize], () => { containerPage.value = 1 })
+watch(sortedContainers, records => {
+  // Hidden or removed rows cannot remain targets of the toolbar.
+  const ids = new Set(records.map(record => record.container.id))
+  const remaining = selectedContainerIDs.value.filter(id => ids.has(id))
+  if (remaining.length !== selectedContainerIDs.value.length) selectedContainerIDs.value = remaining
+  containerPage.value = Math.min(containerPage.value, pageCount.value)
+})
+watch(selectedContainerIDs, () => { detailPanel.value = '' }, {flush: 'sync'})
 function dockerAvailabilityText(inventory: DockerInventory): string {
   if (inventory.staleReason === 'docker_capability_unavailable' || inventory.dockerAvailability === 'unavailable') return t('m.d3e431f9d10b')
   if (inventory.dockerAvailability === 'available') {
@@ -232,9 +275,6 @@ function nodePreferenceForEditor(): DashboardPreference {
   return nodePreference.value ?? { nodeId: props.node.nodeId, targetKind: 'node', identity: `node:${props.node.nodeId}`,
     alias: '', icon: 'server', notes: '', serviceUrl: '', sshHost: '', sshPort: 22, sshUser: '', group: '', sortOrder: -1, visible: true, pinned: true }
 }
-function serviceLinkTitle(record: DockerInventory['containers'][number]): string {
-  return props.preferenceIdentities[record.container.id] ? t('m.c2ac23b68436') : t('m.3b55a14ddabf')
-}
 function taskKey(containerID: string): string { return `${props.node.nodeId}:${containerID}` }
 function taskForContainer(containerID: string): ContainerTask | undefined {
   return [...props.tasks].filter((task) => task.targetId === containerID || task.action === 'rebuild' && task.status === 'succeeded' && task.result.resourceRevision === containerID)
@@ -256,23 +296,48 @@ function taskStatusLabel(task: ContainerTask): string {
 function canOperate(record: DockerInventory['containers'][number]): boolean {
   return Boolean(props.inventory?.dockerAvailability === 'available' && props.online && props.node.agentId && !props.dockerStale && !record.container.stale && !props.taskSubmitting[taskKey(record.container.id)])
 }
-async function submitAction(record: DockerInventory['containers'][number], action: ContainerTaskAction) {
-  if (!canOperate(record)) return
-  if (action === 'rename') {
-    if (record.container.compose) return
-    const newName = await requestPrompt(t('m.19efbadaa133'), record.container.name)
-    if (newName === null) return
-    emit('containerAction', { nodeId: props.node.nodeId, containerId: record.container.id, task: { action, newName: newName.trim() } })
-    return
-  }
-  if (action === 'delete') {
-    if (record.container.running || record.container.paused || record.container.restarting) return
-    const confirmation = await requestPrompt(t('m.cd8d2b02a176', {"0": (record.container.id)}))
-    if (confirmation !== record.container.id) return
-    emit('containerAction', { nodeId: props.node.nodeId, containerId: record.container.id, task: { action, deleteConfirmed: true, deleteConfirmationId: confirmation } })
-    return
-  }
-  emit('containerAction', { nodeId: props.node.nodeId, containerId: record.container.id, task: { action } })
+function actionReady(record: DockerContainerRecord, action: ContainerTaskAction): boolean {
+  if (!canOperate(record) || rollbackTaskForContainer(record.container.id)) return false
+  const c = record.container
+  if (action === 'rename') return !c.compose
+  if (action === 'delete' || action === 'start') return !c.running && !c.paused && !c.restarting
+  if (action === 'resume') return c.paused
+  if (action === 'stop') return c.running && !c.paused && !c.restarting
+  return c.running && !c.paused && !c.restarting
+}
+function selectionCan(action: ContainerTaskAction): boolean {
+  return !selectionBusy.value && selectedContainers.value.length > 0 && (action !== 'rename' || selectedContainers.value.length === 1) && selectedContainers.value.every(record => actionReady(record, action))
+}
+async function submitSelection(action: ContainerTaskAction) {
+  if (!selectionCan(action)) return
+  const ids = selectedContainers.value.map(record => record.container.id)
+  selectionBusy.value = true
+  try {
+    let newName: string | undefined
+    if (action === 'rename') {
+      const value = await requestPrompt(t('m.19efbadaa133'), selectedContainers.value[0].container.name)
+      if (value === null) return
+      newName = value.trim()
+    }
+    if (action === 'delete') {
+      const value = await requestPrompt(ids.length === 1 ? t('m.cd8d2b02a176', {'0': ids[0]}) : t('docker.confirmDelete', {'0': ids.length, '1': ids.join(', ')}))
+      if (value === null) return
+      const confirmed = value.split(/[\s,]+/).filter(Boolean)
+      if (confirmed.length !== ids.length || new Set(confirmed).size !== ids.length || !ids.every(id => confirmed.includes(id))) return
+    }
+    // Refresh may change state while a confirmation dialog is open.
+    const records = ids.map(id => props.inventory?.containers.find(record => record.container.id === id))
+    if (!records.every((record): record is DockerContainerRecord => Boolean(record && actionReady(record, action)))) return
+    for (const record of records) {
+      emit('containerAction', { nodeId: props.node.nodeId, containerId: record.container.id,
+        task: { action, ...(newName !== undefined ? {newName} : {}), ...(action === 'delete' ? {deleteConfirmed: true, deleteConfirmationId: record.container.id} : {}) } })
+    }
+  } finally { selectionBusy.value = false }
+}
+function openSelectedRebuild() {
+  if (!singleContainer.value) return
+  selectedRebuildContainerID.value = singleContainer.value.container.id
+  activeSection.value = 'rebuild'
 }
 function submitContainerCreate(spec: ContainerCreateSpec) {
   if (!canCreateContainers.value || createSubmitting.value) return
@@ -293,6 +358,7 @@ function selectSection(section: typeof activeSection.value) {
 }
 watch(activeSection, section => {
   activeTerminal.value = null
+  selectedContainerIDs.value = []
   if (section === 'history') void loadHistory()
   if (section === 'events') emit('refreshTasks', props.node.nodeId)
 }, { immediate: true })
@@ -306,64 +372,6 @@ async function toggleTaskAudit(task: ContainerTask) {
   catch (reason) { taskAuditErrors.value = { ...taskAuditErrors.value, [task.taskId]: reason instanceof Error ? reason.message : t('m.df3eec8deda0') } }
   finally { taskAuditLoading.value = { ...taskAuditLoading.value, [task.taskId]: false } }
 }
-async function persistReorder(sourceID: string, targetID: string) {
-  if (sourceID === targetID || props.dashboardSettings.sortBy !== 'custom') return
-  const source = orderedContainers.value.find((item) => item.container.id === sourceID), target = orderedContainers.value.find((item) => item.container.id === targetID)
-  const sourceIdentity = props.preferenceIdentities[sourceID], targetIdentity = props.preferenceIdentities[targetID]
-  if (!source || !target || !sourceIdentity || !targetIdentity || sourceIdentity === targetIdentity || containerGroupName(source) !== containerGroupName(target)) return
-  const identities = [...new Set(orderedContainers.value.map((item) => props.preferenceIdentities[item.container.id]).filter((item): item is string => Boolean(item)))]
-  const from = identities.indexOf(sourceIdentity), to = identities.indexOf(targetIdentity)
-  if (from < 0 || to < 0) return
-  const [moved] = identities.splice(from, 1); identities.splice(to, 0, moved)
-  orderSaving.value = true; orderError.value = ''
-  try {
-    for (let index = 0; index < identities.length; index += 1) {
-      const record = orderedContainers.value.find((item) => props.preferenceIdentities[item.container.id] === identities[index])
-      const preference = record && preferenceForEditor(record)
-      if (!preference) throw new Error(t('m.96af268964a3'))
-      const next = { ...preference, sortOrder: index }
-      await api.saveNodePreference(next.nodeId, next)
-      emit('preferenceSaved', next)
-    }
-  } catch (reason) { orderError.value = reason instanceof Error ? reason.message : t('m.4f4eebba20f3') }
-  finally { orderSaving.value = false }
-}
-function beginNativeReorder(record: DockerInventory['containers'][number], event: DragEvent) {
-  if (props.dashboardSettings.sortBy !== 'custom') { event.preventDefault(); return }
-  draggedContainerID.value = record.container.id
-  event.dataTransfer?.setData('text/plain', record.container.id)
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
-}
-function finishNativeReorder(record: DockerInventory['containers'][number]) {
-  if (draggedContainerID.value) void persistReorder(draggedContainerID.value, record.container.id)
-  draggedContainerID.value = ''
-}
-function beginPointerReorder(event: PointerEvent, record: DockerInventory['containers'][number]) {
-  if (props.dashboardSettings.sortBy !== 'custom') return
-  event.preventDefault()
-  pointerDrag.value = { pointerId: event.pointerId, sourceID: record.container.id, targetID: record.container.id, startX: event.clientX, startY: event.clientY, armed: false }
-  document.addEventListener('pointermove', movePointerReorder)
-  document.addEventListener('pointerup', endPointerReorder, { once: true })
-  document.addEventListener('pointercancel', endPointerReorder, { once: true })
-}
-function movePointerReorder(event: PointerEvent) {
-  const drag = pointerDrag.value
-  if (!drag || event.pointerId !== drag.pointerId) return
-  if (Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY) > 12) drag.armed = true
-  if (!drag.armed) return
-  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>('[data-container-id]')
-  if (target?.dataset.containerId) { drag.targetID = target.dataset.containerId; dropContainerID.value = drag.targetID }
-}
-function endPointerReorder(event: PointerEvent) {
-  const drag = pointerDrag.value
-  if (!drag || event.pointerId !== drag.pointerId) return
-  pointerDrag.value = null
-  document.removeEventListener('pointermove', movePointerReorder)
-  document.removeEventListener('pointerup', endPointerReorder)
-  document.removeEventListener('pointercancel', endPointerReorder)
-  dropContainerID.value = ''
-  if (drag.armed && drag.targetID !== drag.sourceID) void persistReorder(drag.sourceID, drag.targetID)
-}
 function acceptPreference(value: DashboardPreference) { emit('preferenceSaved', value) }
 watch(rebuildCandidates, (records) => {
   if (!records.some((record) => record.container.id === selectedRebuildContainerID.value)) {
@@ -372,9 +380,6 @@ watch(rebuildCandidates, (records) => {
 }, { immediate: true })
 onBeforeUnmount(() => {
   probeSummaryEpoch++
-  document.removeEventListener('pointermove', movePointerReorder)
-  document.removeEventListener('pointerup', endPointerReorder)
-  document.removeEventListener('pointercancel', endPointerReorder)
 })
 </script>
 
@@ -399,27 +404,65 @@ onBeforeUnmount(() => {
         <header class="docker-heading"><div><span class="eyebrow">{{ t('label.c039e720422e') }}</span><h2 id="docker-title">{{ t('m.7cabcc483eb4') }}</h2></div><span v-if="inventory" class="docker-state" :data-available="inventory.dockerAvailability" :data-stale="dockerStale">{{ dockerAvailabilityText(inventory) }}</span></header>
         <ContainerCreateForm :disabled="!canCreateContainers" :submitting="createSubmitting" :error="createError" @submit="submitContainerCreate" />
         <section v-if="createTasks.length" class="container-create-results" :aria-label="t('m.7084b942d42e')"><h3>{{ t('m.964c43bb9238') }}</h3><article v-for="task in createTasks" :key="task.taskId"><div><strong>{{ taskStatusLabel(task) }}</strong><time :datetime="task.createdAt">{{ new Date(task.createdAt).toLocaleString(locale) }}</time></div><code v-if="task.status === 'succeeded' && task.result.resourceRevision">Container ID：{{ task.result.resourceRevision }}</code><span v-else-if="task.status === 'failed'" class="container-task-error">{{ task.result.code || 'creation_failed' }}</span></article></section>
-        <div class="docker-view-controls" :aria-label="t('m.4eb61dda65ee')"><label>{{ t('m.44ce7ae909bb') }}<input v-model="containerSearch" type="search" :placeholder="t('m.5a5d5c8b732a')" :aria-label="t('m.8db3ff343ebc')"></label><label>{{ t('m.399ee6934772') }}<select v-model="groupBy"><option value="node">{{ t('m.2410d860f093') }}</option><option value="compose">{{ t('m.5f67dd75b01f') }}</option><option value="state">{{ t('m.e46b0272bd64') }}</option><option value="none">{{ t('m.fcd40ee3f05a') }}</option></select></label><label>{{ t('m.a96c9a854190') }}<select v-model="sortBy"><option value="custom">{{ t('m.4eafa9e925b3') }}</option><option value="name">{{ t('m.a98585871c53') }}</option><option value="state">{{ t('m.e46b0272bd64') }}</option></select></label><button type="button" class="container-action" :disabled="dashboardSettingsSaving" @click="emit('saveSettings')">{{ t('m.b290bfe6352c') }}</button></div>
-        <p v-if="orderError" class="container-task-error" role="alert">{{ display(orderError) }}</p><p v-if="!inventory" class="docker-empty">{{ t('m.8a4a01f575e0') }}</p>
-        <p v-else-if="inventory.dockerAvailability === 'unavailable' || inventory.staleReason === 'docker_capability_unavailable'" class="docker-empty">{{ t('m.758a85e024fd') }}{{ dockerStatusReason(inventory) ? t('m.8504c2226f79', {'0': (dockerStatusReason(inventory))}) : '' }}</p>
-        <p v-else-if="dockerStatusReason(inventory)" class="docker-empty" data-testid="docker-health-reason">{{ t('m.369cbdaf8c6d') }}{{ dockerStatusReason(inventory) }}</p>
-        <p v-if="inventory && inventory.containers.length === 0" class="docker-empty">{{ dockerStale ? t('m.647742c56530') : t('m.0e149c0e416b') }}</p><p v-if="inventory && inventory.containers.length > 0 && sortedContainers.length === 0" class="docker-empty">{{ t('m.b8e005f5fbdf') }}</p>
-        <div v-if="inventory && sortedContainers.length" class="docker-list" :data-group-by="dashboardSettings.groupBy">
-          <article v-for="record in sortedContainers" :key="record.container.id" class="docker-row" :class="{ 'is-drop-target': dropContainerID === record.container.id, 'is-being-dragged': draggedContainerID === record.container.id }" :data-container-id="record.container.id" :data-preference-identity="preferenceIdentities[record.container.id]" :data-stale="dockerStale || record.container.stale" :data-group="containerGroupName(record)" draggable="true" @dragstart="beginNativeReorder(record, $event)" @dragover.prevent @drop="finishNativeReorder(record)" @dragend="draggedContainerID = ''">
-            <div v-if="dashboardSettings.groupBy !== 'none'" class="container-group-label">{{ containerGroupName(record) }}</div>
-            <div class="docker-row-title"><div class="docker-container-copy"><strong><span class="detail-container-icon" aria-hidden="true">{{ containerIcon(record) }}</span> {{ containerTitle(record) }}</strong><small><template v-if="dashboardSettings.customFields.includes('image')">{{ record.container.image || t('m.45c82e228c16') }}</template><template v-if="record.container.compose"> · {{ record.container.compose.project }}/{{ record.container.compose.service }}</template><template v-if="preferenceForContainer(record)?.notes"> · {{ preferenceForContainer(record)?.notes }}</template></small></div><div class="container-actions"><span v-if="rollbackTaskForContainer(record.container.id)" class="container-state container-rollback-state">{{ t('m.557f68233fbd') }}</span><span v-else-if="dashboardSettings.customFields.includes('state')" class="container-state" :data-running="record.container.running">{{ record.container.state || t('m.4d8c1c5b4283') }}</span><button type="button" :disabled="!record.container.running || record.container.stale || !online || dockerStale || Boolean(rollbackTaskForContainer(record.container.id))" @click="openContainerTerminal(record)">{{ t('m.d0d07d153161') }}</button></div></div>
-            <div class="docker-row-meta"><span v-if="dashboardSettings.customFields.includes('health')" :data-health="record.container.health">{{ t('m.855aef6c73da') }}{{ containerHealthText(record.container) }}</span><span v-if="dashboardSettings.customFields.includes('uptime')">{{ t('m.77c1f61cd3be') }}{{ containerUptime(record) }}</span><span>{{ t('m.3bc622e323d6') }}{{ containerNetworkText(record.container) }}</span><span v-if="dockerStale || record.container.stale" class="container-stale">{{ t('m.6fe221cef061') }}<template v-if="record.container.unavailableReason">：{{ record.container.unavailableReason }}</template></span><span v-else>{{ t('m.7153f0918a93') }}{{ new Date(record.receivedAt).toLocaleTimeString(locale) }}</span></div>
-            <div v-if="dashboardSettings.customFields.includes('ports') && (record.container.ports ?? []).length" class="container-ports" :aria-label="t('m.9c9980ac48fe')"><span v-for="(port, index) in (record.container.ports ?? [])" :key="`${port.containerPort}-${port.protocol}-${index}`">{{ portText(port) }}</span></div><p v-if="record.container.unavailableReason" class="container-reason">{{ record.container.unavailableReason }}</p>
-            <div class="container-task-actions"><p v-if="rollbackTaskForContainer(record.container.id)" class="container-rollback-note" role="note">{{ t('m.322728a307b5') }}</p><template v-else>
-              <button class="container-action drag-handle" type="button" :aria-label="t('m.ae6e894f4576')" :disabled="orderSaving || dashboardSettings.sortBy !== 'custom' || !preferenceIdentities[record.container.id]" @pointerdown="beginPointerReorder($event, record)" :title="t('m.a1eeffd3e106')">⠿</button>
-              <button class="container-action" type="button" :disabled="!preferenceForEditor(record)" :title="serviceLinkTitle(record)" @click="editingPreference = editingPreference === record.container.id ? '' : record.container.id">{{ editingPreference === record.container.id ? t('m.415df73a7c07') : t('m.8299fda55003') }}</button><a v-if="safeServiceURL(record)" class="container-action service-link" :href="safeServiceURL(record)" target="_blank" rel="noopener noreferrer">{{ t('m.e4fd01edc24f') }}</a>
-              <button v-if="record.container.paused" class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'resume')">{{ t('m.e0534b8a4e46') }}</button><template v-else-if="record.container.running"><button class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'stop')">{{ t('m.ca4d973c0b00') }}</button><button class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'restart')">{{ t('m.f7d763a12cbf') }}</button><button class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'pause')">{{ t('m.8d12fc0d4eb2') }}</button></template><button v-else class="container-action" type="button" :disabled="!canOperate(record)" @click="submitAction(record, 'start')">{{ t('m.56410fc65314') }}</button>
-              <button class="container-action" type="button" :disabled="!canOperate(record) || Boolean(record.container.compose)" :title="record.container.compose ? t('m.fd6779f2f9fe') : t('m.629affaf8b22')" @click="submitAction(record, 'rename')">{{ t('m.0d0cbac2eee5') }}</button><button class="container-action container-action-danger" type="button" :disabled="!canOperate(record) || record.container.running || record.container.paused || record.container.restarting" :title="t('m.6176bf1e7f1a')" @click="submitAction(record, 'delete')">{{ t('m.2f9daa828907') }}</button>
-              <span v-if="taskSubmitting[taskKey(record.container.id)]" class="container-task-status" role="status">{{ t('m.911ee461c36a') }}</span><span v-if="taskForContainer(record.container.id)" class="container-task-status" :data-status="taskForContainer(record.container.id)?.status" role="status">{{ taskStatusLabel(taskForContainer(record.container.id)!) }}</span><button v-if="taskForContainer(record.container.id)" class="container-action" type="button" @click="toggleTaskAudit(taskForContainer(record.container.id)!)">{{ taskAuditVisible[taskForContainer(record.container.id)!.taskId] ? t('m.54e74c1e7504') : t('m.97f395dec8ce') }}</button><span v-if="taskErrors[taskKey(record.container.id)]" class="container-task-error" role="alert">{{ display(taskErrors[taskKey(record.container.id)]) }}</span><span v-if="taskAuditErrors[taskForContainer(record.container.id)?.taskId || '']" class="container-task-error" role="alert">{{ display(taskAuditErrors[taskForContainer(record.container.id)?.taskId || '']) }}</span><ol v-if="taskForContainer(record.container.id) && taskAuditVisible[taskForContainer(record.container.id)!.taskId]" class="container-task-audit"><li v-if="taskAuditLoading[taskForContainer(record.container.id)!.taskId]">{{ t('m.cf62890bdb61') }}</li><li v-for="event in (taskAuditViews[taskForContainer(record.container.id)!.taskId] ?? [])" :key="event.id">{{ event.event }} · {{ event.fromStatus || t('m.d2bb025a2e51') }} → {{ event.toStatus || t('m.fb7e71452c04') }} · {{ new Date(event.occurredAt).toLocaleString(locale) }}</li></ol>
-            </template></div>
-            <PreferenceEditor v-if="editingPreference === record.container.id && preferenceForEditor(record)" :preference="preferenceForEditor(record)!" :title="record.container.compose ? t('m.a246b2532b68', {'0': (record.container.compose.project), '1': (record.container.compose.service)}) : t('m.b75c25171acc', {'0': (record.container.name || record.container.id.slice(0, 12))})" @saved="acceptPreference"/><ContainerStreams v-if="!rollbackTaskForContainer(record.container.id)" :node-id="node.nodeId" :container-id="record.container.id" :disabled="dockerStale || record.container.stale" :stats-available="record.container.running && !record.container.paused && !record.container.restarting"/>
-          </article>
+        <div class="docker-view-controls">
+          <label>{{ t('m.44ce7ae909bb') }}<input v-model="containerSearch" type="search" :placeholder="t('m.5a5d5c8b732a')" :aria-label="t('m.8db3ff343ebc')"></label>
+          <label>{{ t('docker.state') }}<select v-model="containerState"><option value="all">{{ t('docker.allStates') }}</option><option value="running">{{ t('docker.running') }}</option><option value="stopped">{{ t('docker.stopped') }}</option><option value="paused">{{ t('docker.paused') }}</option><option value="restarting">{{ t('docker.restarting') }}</option></select></label>
+          <label>{{ t('m.a96c9a854190') }}<select v-model="sortBy"><option value="custom">{{ t('m.4eafa9e925b3') }}</option><option value="name">{{ t('m.a98585871c53') }}</option><option value="state">{{ t('m.e46b0272bd64') }}</option></select></label>
         </div>
+        <div class="docker-selection-bar">
+          <label><input type="checkbox" :checked="allPageSelected" :indeterminate="somePageSelected" :disabled="!pageContainers.length || selectionBusy" @change="togglePage(($event.target as HTMLInputElement).checked)">{{ t('docker.selectPage') }}</label>
+          <span role="status">{{ t('docker.selected', {'0': selectedContainers.length, '1': sortedContainers.length}) }}</span>
+          <button class="container-action" type="button" :disabled="!selectedContainers.length || selectionBusy" @click="selectedContainerIDs = []">{{ t('docker.clearSelection') }}</button>
+        </div>
+        <div class="docker-toolbar" role="group" :aria-label="t('docker.toolbar')" data-testid="docker-toolbar">
+          <button v-for="{action, label} in primaryActions" :key="action" class="container-action" :class="{'container-action-danger': action === 'delete'}" type="button" :data-action="action" :disabled="!selectionCan(action)" :title="action === 'rename' ? t('docker.singleOnly') : t('docker.allApplicable')" @click="void submitSelection(action)">{{ label }}</button>
+          <details class="docker-more" @keydown.esc.prevent="closeMoreMenu">
+            <summary>{{ t('docker.more') }}</summary>
+            <div class="docker-more-menu" @click="closeMoreMenu">
+              <button class="container-action" type="button" :disabled="!selectionCan('pause')" @click="void submitSelection('pause')">{{ t('m.8d12fc0d4eb2') }}</button>
+              <button class="container-action" type="button" :disabled="!selectionCan('resume')" @click="void submitSelection('resume')">{{ t('m.e0534b8a4e46') }}</button>
+              <button class="container-action" type="button" :disabled="!singleContainer || !selectionCan('restart')" @click="singleContainer && openContainerTerminal(singleContainer)">{{ t('m.d0d07d153161') }}</button>
+              <button class="container-action" type="button" :disabled="!singleContainer" @click="showPanel('info')">{{ t('docker.details') }}</button>
+              <button class="container-action" type="button" :disabled="!singleContainer || Boolean(rollbackTaskForContainer(singleContainer.container.id))" @click="showPanel('streams')">{{ t('docker.streams') }}</button>
+              <button class="container-action" type="button" :disabled="!singleContainer || !preferenceForEditor(singleContainer) || Boolean(rollbackTaskForContainer(singleContainer.container.id))" @click="showPanel('preferences')">{{ t('m.8299fda55003') }}</button>
+              <button class="container-action" type="button" :disabled="!singleContainer || !taskForContainer(singleContainer.container.id)" @click="showPanel('audit')">{{ t('m.97f395dec8ce') }}</button>
+              <button class="container-action" type="button" :disabled="!singleContainer || !canOperate(singleContainer) || Boolean(singleContainer.container.compose) || Boolean(rollbackTaskForContainer(singleContainer.container.id))" @click="openSelectedRebuild">{{ t('docker.rebuild') }}</button>
+              <a v-if="singleContainer && safeServiceURL(singleContainer)" class="container-action service-link" :href="safeServiceURL(singleContainer)" target="_blank" rel="noopener noreferrer">{{ t('m.e4fd01edc24f') }}</a>
+            </div>
+          </details>
+        </div>
+        <p class="docker-selection-help">{{ t('docker.selectionHelp') }}</p>
+        <section v-if="singleContainer && detailPanel" class="container-detail" data-testid="container-detail">
+          <header><h3>{{ containerTitle(singleContainer) }}</h3><button class="container-action" type="button" @click="detailPanel = ''">{{ t('docker.closeDetails') }}</button></header>
+          <template v-if="detailPanel === 'info'"><dl><dt>ID</dt><dd><code>{{ singleContainer.container.id }}</code></dd><dt>{{ t('docker.image') }}</dt><dd>{{ singleContainer.container.image }}</dd><dt>{{ t('docker.network') }}</dt><dd>{{ containerNetworkText(singleContainer.container) }}</dd><dt>{{ t('docker.observed') }}</dt><dd>{{ new Date(singleContainer.receivedAt).toLocaleString(locale) }}</dd></dl><p v-if="preferenceForContainer(singleContainer)?.notes">{{ preferenceForContainer(singleContainer)?.notes }}</p><p v-if="singleContainer.container.unavailableReason" class="container-task-error">{{ singleContainer.container.unavailableReason }}</p><p v-if="rollbackTaskForContainer(singleContainer.container.id)" class="container-rollback-note">{{ t('m.322728a307b5') }}</p></template>
+          <ContainerStreams v-if="detailPanel === 'streams'" :key="singleContainer.container.id" :node-id="node.nodeId" :container-id="singleContainer.container.id" :disabled="!online || dockerStale || singleContainer.container.stale" :stats-available="singleContainer.container.running && !singleContainer.container.paused && !singleContainer.container.restarting"/>
+          <PreferenceEditor v-if="detailPanel === 'preferences' && preferenceForEditor(singleContainer)" :key="singleContainer.container.id" :preference="preferenceForEditor(singleContainer)!" :title="containerTitle(singleContainer)" @saved="acceptPreference"/>
+          <template v-if="detailPanel === 'audit' && taskForContainer(singleContainer.container.id)"><p v-if="taskAuditErrors[taskForContainer(singleContainer.container.id)!.taskId]" class="container-task-error" role="alert">{{ display(taskAuditErrors[taskForContainer(singleContainer.container.id)!.taskId]) }}</p><ol class="container-task-audit"><li v-if="taskAuditLoading[taskForContainer(singleContainer.container.id)!.taskId]">{{ t('m.cf62890bdb61') }}</li><li v-for="event in (taskAuditViews[taskForContainer(singleContainer.container.id)!.taskId] ?? [])" :key="event.id">{{ event.event }} · {{ event.fromStatus || t('m.d2bb025a2e51') }} → {{ event.toStatus || t('m.fb7e71452c04') }} · {{ new Date(event.occurredAt).toLocaleString(locale) }}</li></ol></template>
+        </section>
+        <p v-if="!inventory" class="docker-empty">{{ t('m.8a4a01f575e0') }}</p>
+        <p v-else-if="inventory.dockerAvailability === 'unavailable' || inventory.staleReason === 'docker_capability_unavailable'" class="docker-empty">{{ t('m.758a85e024fd') }}{{ dockerStatusReason(inventory) ? t('m.8504c2226f79', {'0': dockerStatusReason(inventory)}) : '' }}</p>
+        <p v-else-if="dockerStatusReason(inventory)" class="docker-empty" data-testid="docker-health-reason">{{ t('m.369cbdaf8c6d') }}{{ dockerStatusReason(inventory) }}</p>
+        <p v-if="inventory && !inventory.containers.length" class="docker-empty">{{ dockerStale ? t('m.647742c56530') : t('m.0e149c0e416b') }}</p>
+        <p v-else-if="inventory && !sortedContainers.length" class="docker-empty">{{ t('m.b8e005f5fbdf') }}</p>
+        <div v-if="pageContainers.length" class="docker-table-scroll">
+          <table class="container-table" data-testid="docker-table">
+            <caption class="visually-hidden">{{ t('docker.list') }}</caption>
+            <thead><tr><th scope="col"><span class="visually-hidden">{{ t('docker.selection') }}</span></th><th scope="col">{{ t('docker.name') }}</th><th v-if="dashboardSettings.customFields.includes('image')" scope="col">{{ t('docker.image') }}</th><th v-if="dashboardSettings.customFields.includes('state') || dashboardSettings.customFields.includes('health')" scope="col">{{ t('docker.state') }}</th><th v-if="dashboardSettings.customFields.includes('ports')" scope="col">{{ t('docker.ports') }}</th><th v-if="dashboardSettings.customFields.includes('uptime')" scope="col">{{ t('docker.uptime') }}</th><th scope="col">{{ t('docker.task') }}</th></tr></thead>
+            <tbody><tr v-for="record in pageContainers" :key="record.container.id" class="docker-row" :data-container-id="record.container.id" :data-selected="selectedContainerIDs.includes(record.container.id)" :data-stale="dockerStale || record.container.stale">
+              <td class="container-select"><input type="checkbox" :checked="selectedContainerIDs.includes(record.container.id)" :disabled="selectionBusy" :aria-label="t('docker.selectContainer', {'0': containerTitle(record)})" @change="toggleContainer(record.container.id, ($event.target as HTMLInputElement).checked)"></td>
+              <td :data-label="t('docker.name')"><button class="container-name" type="button" @click="inspectContainer(record)">{{ containerTitle(record) }}</button><small>{{ record.container.id.slice(0, 12) }}<template v-if="containerTitle(record) !== record.container.name"> · {{ record.container.name }}</template></small><small v-if="record.container.compose">{{ record.container.compose.project }}/{{ record.container.compose.service }}</small></td>
+              <td v-if="dashboardSettings.customFields.includes('image')" :data-label="t('docker.image')"><code>{{ record.container.image || t('m.45c82e228c16') }}</code></td>
+              <td v-if="dashboardSettings.customFields.includes('state') || dashboardSettings.customFields.includes('health')" :data-label="t('docker.state')"><span v-if="rollbackTaskForContainer(record.container.id)" class="container-state container-rollback-state">{{ t('m.557f68233fbd') }}</span><span v-else-if="dashboardSettings.customFields.includes('state')" class="container-state" :data-running="record.container.running">{{ record.container.state || t('m.4d8c1c5b4283') }}</span><small v-if="dashboardSettings.customFields.includes('health')" :data-health="record.container.health">{{ containerHealthText(record.container) }}</small><small v-if="dockerStale || record.container.stale" class="container-stale">{{ t('m.6fe221cef061') }}</small></td>
+              <td v-if="dashboardSettings.customFields.includes('ports')" :data-label="t('docker.ports')"><span v-for="(port, index) in (record.container.ports ?? [])" :key="index" class="container-port">{{ portText(port) }}</span><span v-if="!record.container.ports?.length">—</span></td>
+              <td v-if="dashboardSettings.customFields.includes('uptime')" :data-label="t('docker.uptime')">{{ containerUptime(record) }}</td>
+              <td :data-label="t('docker.task')"><span v-if="taskSubmitting[taskKey(record.container.id)]" role="status">{{ t('m.911ee461c36a') }}</span><span v-else-if="taskForContainer(record.container.id)" class="container-task-status" :data-status="taskForContainer(record.container.id)?.status">{{ taskStatusLabel(taskForContainer(record.container.id)!) }}</span><span v-else>—</span><small v-if="taskErrors[taskKey(record.container.id)]" class="container-task-error" role="alert">{{ display(taskErrors[taskKey(record.container.id)]) }}</small></td>
+            </tr></tbody>
+          </table>
+        </div>
+        <nav v-if="sortedContainers.length" class="docker-pagination" :aria-label="t('docker.pagination')">
+          <label>{{ t('docker.pageSize') }}<select v-model.number="pageSize"><option :value="20">20</option><option :value="50">50</option><option :value="100">100</option></select></label>
+          <span>{{ t('docker.page', {'0': containerPage, '1': pageCount}) }}</span><button class="container-action" type="button" :disabled="containerPage <= 1" @click="containerPage--">{{ t('docker.previous') }}</button><button class="container-action" type="button" :disabled="containerPage >= pageCount" @click="containerPage++">{{ t('docker.next') }}</button>
+        </nav>
       </section>
     </template>
     <ImagesPanel v-if="activeSection === 'images'" :key="node.nodeId" :node-id="node.nodeId"/><ComposeProjects v-if="activeSection === 'compose'" :key="node.nodeId" :node-id="node.nodeId"/><section v-if="activeSection === 'rebuild'" class="section-panel container-rebuild-page" :aria-label="t('m.e5634738490a')" data-testid="container-rebuild-page"><header class="section-toolbar"><div><span class="eyebrow">{{ t('label.08671c7919d1') }}</span><h2>{{ t('m.e5634738490a') }}</h2></div></header><p class="rebuild-safety-note">{{ t('m.acc2b82becc5') }}</p><p v-if="!rebuildCandidates.length" class="docker-empty">{{ t('m.59042e079f41') }}</p><template v-else><label class="rebuild-container-picker">{{ t('m.4210fc8f913a') }}<select v-model="selectedRebuildContainerID"><option v-for="record in rebuildCandidates" :key="record.container.id" :value="record.container.id">{{ containerTitle(record) }} · {{ record.container.id.slice(0, 12) }}</option></select></label><ContainerRebuildWizard v-if="selectedRebuildContainer" :key="selectedRebuildContainer.container.id" :node-id="node.nodeId" :container="selectedRebuildContainer.container" :stale="!canOperate(selectedRebuildContainer)" :tasks="tasks"/></template></section><NodeFiles v-if="activeSection === 'files'" :key="node.nodeId" :node-id="node.nodeId" :node-name="node.displayName"/>
@@ -453,21 +496,65 @@ onBeforeUnmount(() => {
 .node-detail-status[data-online=true],.docker-state[data-available=available][data-stale=false] { color:var(--success); }
 .node-terminal-entry { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:16px; border:1px solid var(--surface-soft); border-radius:var(--radius-card); padding:12px 14px; background:var(--surface-soft); }
 .node-terminal-entry>div { display:grid; gap:4px; }.node-terminal-entry strong { color:var(--accent); font-size: 12px; }.node-terminal-entry small { color:var(--accent); font-size: 12px; line-height:1.5; }
-.node-terminal-entry button,.container-actions button { min-height:40px; border:1px solid var(--accent-line); border-radius:var(--radius-control); padding:6px 10px; color:var(--accent); background:var(--surface-soft); font-size: 12px; cursor:pointer; }
-.node-terminal-entry button:disabled,.container-actions button:disabled { opacity:.45; cursor:not-allowed; }
+.node-terminal-entry button { min-height:40px; border:1px solid var(--accent-line); border-radius:var(--radius-control); padding:6px 10px; color:var(--accent); background:var(--surface-soft); font-size: 12px; cursor:pointer; }
+.node-terminal-entry button:disabled { opacity:.45; cursor:not-allowed; }
 .docker-panel,.section-panel { min-width:0; margin-top:16px; border:1px solid var(--line); border-radius:var(--radius-card); padding:clamp(14px,2vw,20px); background:var(--surface-soft); }
 .docker-heading,.section-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }.docker-heading h2,.section-toolbar h2 { margin:4px 0 0; font-size: 17px; }
 .docker-view-controls,.history-controls { display:flex; flex-wrap:wrap; align-items:end; gap:8px; margin:12px 0; }.docker-view-controls label,.history-controls label { display:grid; min-width:120px; gap:5px; color:var(--muted-strong); font-size: 12px; }
 .docker-view-controls input,.docker-view-controls select,.history-controls select,.dashboard-settings-grid select,.dashboard-settings-grid input { min-height:40px; min-width:0; border:1px solid var(--line); border-radius:var(--radius-control); padding:7px 9px; color:var(--text); background:var(--surface-soft); font:inherit; font-size: 12px; }
-.docker-view-controls input { width:min(320px,58vw); }.docker-list { display:grid; gap:9px; }.docker-row { min-width:0; border:1px solid var(--line); border-radius:var(--radius-card); padding:12px; background:var(--surface-soft); }.docker-row[data-stale=true] { border-color:var(--danger-line); }
-.docker-row.is-drop-target { outline:2px solid var(--accent-line); outline-offset:2px; }.docker-row.is-being-dragged { opacity:.55; }.drag-handle { touch-action:none; user-select:none; cursor:grab; }.drag-handle:active { cursor:grabbing; }
-.docker-row-title { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }.docker-container-copy { display:grid; min-width:0; gap:4px; }.docker-container-copy strong { overflow-wrap:anywhere; font-size: 12px; }.detail-container-icon { color:var(--accent); }.docker-container-copy small { overflow-wrap:anywhere; color:var(--muted); font-size: 12px; }.container-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-.container-group-label { margin:0 0 8px; color:var(--accent); font-size: 12px; font-weight:500; }.docker-row-meta { display:flex; flex-wrap:wrap; gap:7px 14px; margin-top:9px; color:var(--muted-strong); font-size: 12px; }.container-ports { display:grid; gap:4px; margin-top:8px; color:var(--accent); font-size: 12px; overflow-wrap:anywhere; }
-.container-state { border:1px solid var(--line); border-radius:999px; padding:5px 9px; color:var(--muted-strong); font-size: 12px; white-space:nowrap; }.container-state[data-running=true] { color:var(--success); border-color:var(--success-line); }.container-stale,.container-task-error { color:var(--danger); }.container-rollback-state,.container-rollback-note { color:var(--warning); }.container-rollback-note { flex:1 0 100%; margin:4px 0; font-size: 12px; line-height:1.6; }
-.container-reason,.docker-empty,.event-source-note,.retention-note,.preference-separation-note { color:var(--muted-strong); font-size: 12px; line-height:1.6; overflow-wrap:anywhere; }.container-task-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:10px; }.service-link { color:var(--accent); text-decoration:none; }.container-task-status,.container-task-error { font-size: 12px; overflow-wrap:anywhere; }.container-task-audit { flex-basis:100%; margin:4px 0 0; padding:8px 8px 8px 26px; border:1px solid var(--line); border-radius:var(--radius-card); color:var(--muted-strong); font-size: 12px; }.container-task-audit li { padding:3px 0; }
+.docker-view-controls input { width:min(360px,58vw); }
+.docker-selection-bar,.docker-toolbar,.docker-pagination { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:12px 0; }
+.docker-selection-bar { color:var(--muted-strong); font-size:12px; }
+.docker-selection-bar label { display:inline-flex; align-items:center; gap:8px; min-height:40px; }
+.docker-selection-bar input,.container-select input { width:18px; height:18px; accent-color:var(--accent); cursor:pointer; }
+.docker-selection-bar input:disabled,.container-select input:disabled { cursor:not-allowed; opacity:.5; }
+.docker-selection-bar button { margin-left:auto; }
+.docker-selection-help { margin:0 0 12px; color:var(--muted); font-size:12px; line-height:1.6; }
+.docker-more { position:relative; }
+.docker-more summary { display:flex; align-items:center; min-height:40px; border:1px solid var(--line); border-radius:var(--radius-control); padding:8px 12px; color:var(--accent); background:var(--surface); font-size:13px; cursor:pointer; list-style:none; }
+.docker-more summary::after { content:'⌄'; margin-left:9px; }
+.docker-more summary:hover,.docker-more[open] summary { background:var(--accent-soft); border-color:var(--accent-line); }
+.docker-more summary:active { background:var(--line); }
+.docker-more summary:focus-visible,.container-name:focus-visible,.docker-selection-bar input:focus-visible,.container-select input:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
+.docker-more-menu { position:absolute; z-index:12; top:calc(100% + 6px); right:0; display:grid; gap:4px; width:240px; max-width:calc(100vw - 64px); border:1px solid var(--line); border-radius:var(--radius-card); padding:8px; background:var(--surface); box-shadow:0 8px 28px #0002; }
+.docker-more-menu .container-action { justify-content:flex-start; }
+.visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; }
+.docker-table-scroll { max-width:100%; overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius-card); }
+.container-table { width:100%; border-collapse:collapse; table-layout:fixed; text-align:left; font-size:12px; }
+.container-table th { padding:12px 10px; color:var(--muted-strong); background:var(--surface); font-weight:500; border-bottom:1px solid var(--line); }
+.container-table th:first-child { width:40px; }
+.container-table td { padding:12px 10px; border-bottom:1px solid var(--line); vertical-align:top; overflow-wrap:anywhere; color:var(--text); line-height:1.6; }
+.container-table tbody tr:last-child td { border-bottom:0; }
+.container-table tr[data-selected=true] { background:var(--accent-soft); }
+.container-table tr[data-stale=true] { color:var(--muted); }
+.container-table small { display:block; margin-top:4px; color:var(--muted-strong); font-size:11px; overflow-wrap:anywhere; }
+.container-table code { font-size:11px; }
+.container-name { display:block; max-width:100%; border:0; padding:0; color:var(--accent); background:transparent; font:inherit; text-align:left; overflow-wrap:anywhere; cursor:pointer; }
+.container-name:hover { text-decoration:underline; }.container-name:active { color:var(--text); }
+.container-port { display:block; margin-bottom:4px; font-size:11px; }
+.container-state { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:3px 8px; color:var(--muted-strong); font-size:11px; }
+.container-state[data-running=true] { color:var(--success); border-color:var(--success-line); }
+.container-stale,.container-task-error { color:var(--danger)!important; }.container-rollback-state,.container-rollback-note { color:var(--warning); }
+.container-task-status,.container-task-error { font-size:12px; overflow-wrap:anywhere; }
+.container-reason,.docker-empty,.event-source-note,.retention-note,.preference-separation-note { color:var(--muted-strong); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.service-link { color:var(--accent); text-decoration:none; }.service-link:visited { color:var(--accent); }
+.container-task-audit { margin:8px 0 0; padding:8px 8px 8px 26px; border:1px solid var(--line); border-radius:var(--radius-card); color:var(--muted-strong); font-size:12px; }.container-task-audit li { padding:3px 0; }
+.docker-pagination { justify-content:flex-end; color:var(--muted-strong); font-size:12px; }
+.docker-pagination label { display:flex; align-items:center; gap:8px; margin-right:auto; }
+.docker-pagination select { min-height:40px; border:1px solid var(--line); border-radius:var(--radius-control); padding:7px; color:var(--text); background:var(--surface); }
+.container-detail { margin-top:16px; padding:16px; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface); }
+.container-detail header { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; }.container-detail h3 { margin:0; font-size:17px; font-weight:400; overflow-wrap:anywhere; }
+.container-detail dl { display:grid; grid-template-columns:auto minmax(0,1fr); gap:8px 16px; color:var(--text); font-size:12px; line-height:1.6; }.container-detail dt { color:var(--muted); }.container-detail dd { margin:0; overflow-wrap:anywhere; }.container-detail p { color:var(--muted-strong); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+@media(max-width:760px) {
+  .container-table,.container-table tbody { display:block; }.container-table thead { display:none; }
+  .container-table tr { display:grid; grid-template-columns:34px minmax(0,1fr); padding:10px 8px; border-bottom:1px solid var(--line); }
+  .container-table tr:last-child { border-bottom:0; }.container-table td { display:block; grid-column:2; padding:5px 8px; border:0; }
+  .container-table td.container-select { grid-column:1; grid-row:1; padding:5px 0; }.container-table td[data-label]::before { content:attr(data-label); display:block; color:var(--muted); font-size:11px; margin-bottom:3px; }
+  .docker-pagination { justify-content:flex-start; }.docker-pagination label { flex:1 0 100%; }.container-detail { padding:12px; }
+}
 .history-controls { margin:0; }.history-controls select { min-width:150px; }.retention-note,.event-source-note,.preference-separation-note { font-size: 12px; }.event-card { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; margin-top:8px; border:1px solid var(--line); border-radius:var(--radius-card); padding:10px; background:var(--surface-soft); }.event-card>div:first-child { display:grid; gap:5px; }.event-card strong { font-size: 12px; overflow-wrap:anywhere; }.event-card time { color:var(--muted); font-size: 12px; }.event-card .container-task-audit,.event-card>p { grid-column:1/-1; }
 .node-settings-status { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin:12px 0; }.node-settings-status>div { display:grid; min-width:0; gap:5px; border:1px solid var(--line); border-radius:var(--radius-card); padding:9px; }.node-settings-status strong { color:var(--text); font-size: 12px; overflow-wrap:anywhere; }.dashboard-settings-editor { margin-top:16px; border-top:1px solid var(--line); padding-top:14px; }.dashboard-settings-editor h3 { margin:0 0 12px; font-size: 12px; }.dashboard-settings-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; }.dashboard-settings-grid label { display:grid; min-width:0; gap:5px; color:var(--muted-strong); font-size: 12px; }.custom-fields { display:flex; flex-wrap:wrap; gap:8px 14px; margin:12px 0; border:1px solid var(--line); border-radius:var(--radius-card); padding:10px; }.custom-fields legend { padding:0 5px; color:var(--muted-strong); font-size: 12px; }.custom-fields label { display:inline-flex; align-items:center; gap:5px; color:var(--muted-strong); font-size: 12px; }.settings-save { display:flex; flex-wrap:wrap; align-items:center; gap:9px; color:var(--success); font-size: 12px; }.settings-save span[role=alert] { color:var(--danger); }
 .rebuild-safety-note { margin:0 0 12px; border-left:2px solid var(--warning); padding-left:10px; color:var(--warning); font-size: 12px; line-height:1.6; }.rebuild-container-picker { display:grid; max-width:680px; gap:6px; margin:10px 0; color:var(--muted-strong); font-size: 12px; }.rebuild-container-picker select { min-height:40px; min-width:0; border:1px solid var(--line); border-radius:var(--radius-control); padding:7px 9px; color:var(--text); background:var(--surface-soft); font:inherit; }
 @media(max-width:900px) { .node-settings-status { grid-template-columns:repeat(2,minmax(0,1fr)); }.dashboard-settings-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
-@media(max-width:560px) { .node-detail-page { padding:20px 14px; }.detail-heading { align-items:flex-start; flex-direction:column; }.detail-heading-status { justify-content:flex-start; }.section-toolbar,.docker-heading { align-items:flex-start; flex-direction:column; }.history-controls { width:100%; }.history-controls label,.history-controls select { width:100%; }.docker-view-controls,.docker-view-controls label,.docker-view-controls input,.docker-view-controls select,.docker-view-controls button { width:100%; }.node-settings-status,.dashboard-settings-grid { grid-template-columns:minmax(0,1fr); }.docker-row-title { align-items:flex-start; flex-wrap:wrap; }.container-actions { width:100%; }.container-actions button { min-height:42px; flex:1; }.node-terminal-entry { align-items:flex-start; flex-direction:column; }.node-terminal-entry button { width:100%; min-height:42px; } }
+@media(max-width:560px) { .node-detail-page { padding:20px 14px; }.detail-heading { align-items:flex-start; flex-direction:column; }.detail-heading-status { justify-content:flex-start; }.section-toolbar,.docker-heading { align-items:flex-start; flex-direction:column; }.history-controls { width:100%; }.history-controls label,.history-controls select { width:100%; }.docker-view-controls,.docker-view-controls label,.docker-view-controls input,.docker-view-controls select,.docker-view-controls button { width:100%; }.node-settings-status,.dashboard-settings-grid { grid-template-columns:minmax(0,1fr); }node-terminal-entry { align-items:flex-start; flex-direction:column; }.node-terminal-entry button { width:100%; min-height:42px; } }
 </style>
