@@ -309,6 +309,11 @@ async function port() {
     await dockerPage.setViewportSize({width:1440,height:1000})
     try { await require('./docker-regressions.cjs')({page:dockerPage,base,node,artifacts,catalog}) }
     finally { await dockerPage.close() }
+    const enrollmentPage=await context.newPage()
+    enrollmentPage.setDefaultTimeout(10000)
+    await enrollmentPage.setViewportSize({width:1440,height:1000})
+    try { await require('./enrollment-regressions.cjs')({page:enrollmentPage,base,artifacts,catalog}) }
+    finally { await enrollmentPage.close() }
     await page.getByRole('button',{name:'Nodes',exact:true}).click();await page.locator('.nodes-dashboard').waitFor()
     await page.getByRole('button',{name:'Alerts',exact:true}).click();await page.locator('.alerts-page').waitFor()
     await page.getByRole('button',{name:'Sign out',exact:true}).click();await page.locator('#login-title').waitFor()

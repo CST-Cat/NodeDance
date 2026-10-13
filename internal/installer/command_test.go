@@ -6,107 +6,94 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/CST-Cat/NodeDance"
 )
 
-func TestNativeInstallerUsesOnlyItsInstallerAndPreservesFailure(t *testing.T) {
-	command, err := Command("https://core.example", "fixture", false)
+func TestNativeInstallerPreservesFailureAndIncludesEnrollment(t *testing.T) {
+	token := strings.Repeat("a", 64)
+	command, err := Command("https://core.example", token, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Shell functions replace every external side effect. A native install must
-	// finish with the installer's status, including a partially failed install.
-	fixture := `curl() { case "$*" in *api.github.com*) printf '%s\n' '{"tag_name":"agent-v1.2.3"}';; *) printf '%s\n' 'fixture';; esac; }; sudo() { if [[ "$1" != bash ]]; then printf 'UNEXPECTED_DOCKER'; return 0; fi; cat >/dev/null; return "$FIXTURE_INSTALL_STATUS"; }; export -f curl sudo; `
+	fixture := `curl() { printf '%s\n' 'fixture'; }; sudo() { [[ "$1" == bash ]] || { printf 'UNEXPECTED_DOCKER'; return 1; }; cat >/dev/null; return "$FIXTURE_INSTALL_STATUS"; }; export -f curl sudo; `
 	for _, status := range []int{0, 23} {
 		t.Run(strconv.Itoa(status), func(t *testing.T) {
 			cmd := exec.Command("bash", "-c", fixture+command)
 			cmd.Env = append(os.Environ(), "FIXTURE_INSTALL_STATUS="+strconv.Itoa(status))
 			output, err := cmd.CombinedOutput()
 			if len(output) != 0 {
-				t.Errorf("native installer invoked an unrelated command: %s", output)
+				t.Fatalf("unexpected installer output: %s", output)
 			}
 			if status == 0 && err != nil {
-				t.Fatalf("native install failed: %v", err)
+				t.Fatal(err)
 			}
 			if status != 0 {
-				exit, ok := err.(*exec.ExitError)
-				if !ok || exit.ExitCode() != status {
+				if exit, ok := err.(*exec.ExitError); !ok || exit.ExitCode() != status {
 					t.Fatalf("installer failure was hidden: %v", err)
 				}
 			}
 		})
 	}
+	failure := `curl() { return 22; }; sudo() { cat >/dev/null; return 0; }; export -f curl sudo; `
+	if _, err := exec.Command("bash", "-c", failure+command).CombinedOutput(); err == nil {
+		t.Fatal("download failure was hidden")
+	}
 }
 
-func TestInstallerCommandQuotingAndTransport(t *testing.T) {
-	for _, server := range []string{"http://example.com", "http://localhost:8180", "https://u:p@example.com", "https://example.com/path", "https://example.com?token=secret"} {
-		if _, err := Command(server, "node", true); err == nil {
-			t.Fatalf("accepted %s", server)
+func TestCommandsPinPairedAgentAndDeliverLiteralToken(t *testing.T) {
+	token := strings.Repeat("b", 64)
+	tag := strings.TrimSpace(nodedance.PairedAgentRelease)
+	for _, mode := range []string{"native", "docker"} {
+		render := Command
+		if mode == "docker" {
+			render = DockerCommand
 		}
-	}
-	for _, test := range []struct {
-		server, name string
-		dev          bool
-	}{{"https://example.com", "node' $(touch /tmp/never-execute) `false`", false}, {"http://[::1]:8180", "local", true}} {
-		command, err := Command(test.server, test.name, test.dev)
+		command, err := render("https://core.example", token, false)
 		if err != nil {
 			t.Fatal(err)
 		}
-		// Parse only: this must never execute curl or installer commands.
-		if raw, err := exec.Command("bash", "-n", "-c", command).CombinedOutput(); err != nil {
-			t.Fatalf("invalid quoting: %s %v", raw, err)
+		if len(command) > 600 {
+			t.Fatalf("installer command is unnecessarily long: %d", len(command))
 		}
-		if !strings.Contains(command, "--release-tag") || strings.Contains(command, "releases/latest") || !strings.Contains(command, "agent-v[0-9]+") {
-			t.Fatal("Agent release pin missing")
-		}
-		if test.dev && !strings.Contains(command, "--dev") {
-			t.Fatal("dev flag missing")
-		}
-	}
-}
-
-func TestInstallerPinsTagAndPreservesLiteralName(t *testing.T) {
-	name := "node' $(printf INJECTION) `printf INJECTION`"
-	command, err := Command("https://core.example", name, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Export harmless stand-ins into the inner bash. Never access the network,
-	// invoke sudo, or execute a downloaded script. Drain stdin like bash -s
-	// so the mock does not race the producer into SIGPIPE with pipefail.
-	fixture := `curl() { case "$*" in *api.github.com*) printf '%s\n' '[' '{"tag_name":"core-v9.0.0"},' '{"tag_name":"agent-v1.2.3"}' ']';; *) printf '%s\n' 'fixture';; esac; }; sudo() { cat >/dev/null; printf '%s\n' "$@"; }; export -f curl sudo; `
-	raw, err := exec.Command("bash", "-c", fixture+command).CombinedOutput()
-	if err != nil {
-		t.Fatalf("mock installer: %s %v", raw, err)
-	}
-	if !strings.Contains(string(raw), "agent-v1.2.3") || !strings.Contains(string(raw), name) || strings.Contains(string(raw), "core-v9.0.0") {
-		t.Fatalf("wrong pinned tag or shell escaping: %s", raw)
-	}
-	empty := `curl() { printf '%s\n' '[]'; }; sudo() { printf 'SUDO_INVOKED'; }; export -f curl sudo; `
-	raw, err = exec.Command("bash", "-c", empty+command).CombinedOutput()
-	if err == nil || strings.Contains(string(raw), "SUDO_INVOKED") {
-		t.Fatalf("missing Agent release did not stop before sudo: %s", raw)
-	}
-}
-
-func TestDockerInstallerCommandPinsImageAndProtectsToken(t *testing.T) {
-	for _, server := range []string{"https://core.example", "http://[::1]:8180"} {
-		command, err := DockerCommand(server, "node' $(false)", true)
+		fixture := `curl() { printf '%s\n' 'fixture'; }; sudo() { cat >/dev/null; printf '%s\n' "$@"; }; export -f curl sudo; `
+		raw, err := exec.Command("bash", "-c", fixture+command).CombinedOutput()
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("mock installer: %s %v", raw, err)
 		}
-		if raw, err := exec.Command("bash", "-n", "-c", command).CombinedOutput(); err != nil {
-			t.Fatalf("invalid Docker command: %s %v", raw, err)
-		}
-		for _, required := range []string{"docker pull", "docker run", "--privileged", "--pid=host", "--network=host", "--token-stdin", "/dev/tty", "ghcr.io/cst-cat/nodedance-agent:$tag", "unset token", "0700"} {
-			if !strings.Contains(command, required) {
-				t.Fatalf("Docker command is missing %q", required)
+		for _, required := range []string{tag, "--mode\n" + mode, "--server\nhttps://core.example", "--token\n" + token} {
+			if !strings.Contains(string(raw), required) {
+				t.Fatalf("command lost %q: %s", required, raw)
 			}
 		}
-		if strings.Contains(command, "releases/latest") || strings.Contains(command, "--token ") {
-			t.Fatal("Docker installation must pin an Agent release and keep its token off argv")
+		if !strings.Contains(command, "/releases/download/"+tag+"/install-agent.sh") || strings.Contains(command, "releases/latest") || strings.Contains(command, "api.github.com") || strings.Contains(command, "/dev/tty") {
+			t.Fatal("command must directly use its published paired Agent installer")
 		}
 	}
-	if _, err := DockerCommand("http://100.111.176.125", "node", false); err == nil {
-		t.Fatal("Docker command accepted insecure enrollment transport")
+}
+
+func TestCommandsRejectUnsafeTokensAndURLs(t *testing.T) {
+	token := strings.Repeat("c", 64)
+	for _, render := range []func(string, string, bool) (string, error){Command, DockerCommand} {
+		for _, server := range []string{"http://example.com", "http://localhost:8180", "https://u:p@example.com", "https://example.com/path", "https://example.com?token=secret"} {
+			if _, err := render(server, token, true); err == nil {
+				t.Fatalf("accepted %s", server)
+			}
+		}
+		for _, value := range []string{"", strings.Repeat("a", 63), strings.Repeat("a", 65), "$(touch /tmp/never-execute)", strings.Repeat("a", 63) + "'"} {
+			if _, err := render("https://core.example", value, false); err == nil {
+				t.Fatal("accepted invalid token")
+			}
+		}
+		command, err := render("http://[::1]:8180", token, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(command, "--dev") {
+			t.Fatal("dev flag missing")
+		}
+		if raw, err := exec.Command("bash", "-n", "-c", command).CombinedOutput(); err != nil {
+			t.Fatalf("invalid shell quoting: %s %v", raw, err)
+		}
 	}
 }

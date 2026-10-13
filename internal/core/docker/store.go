@@ -1113,3 +1113,11 @@ func expireStageLocked(state *nodeState, now time.Time, ttl time.Duration) bool 
 	}
 	return true
 }
+
+// ForgetNode discards cached data and rejects late reports from a removed node.
+func (s *Store) ForgetNode(nodeID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.bindings, nodeID)
+	delete(s.nodes, nodeID)
+}

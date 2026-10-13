@@ -22,7 +22,7 @@ On first interactive start, enter a username and password or press Enter to gene
 
 ### Agent
 
-Sign in to Core, open **Add Agent**, enter a node name, and generate the installer command. Run that command on the target Linux host, then enter the one-time enrollment token when prompted. The command selects and pins the latest published Agent version. The Agent runs as a root service.
+Sign in to Core, open **Add Agent**, enter a node name, and generate the installer command. Choose the side-by-side native/systemd or Docker option and run the complete command on the target Linux host. The enrollment token is included; no second token input is required. The command pins the published Agent release paired with Core. Agent runs as root; expiry is shown in Beijing time (UTC+8).
 
 Core and Agent also support [Docker deployment](docs/docker.md), with separate images, Compose examples, and versioned releases.
 
@@ -51,3 +51,5 @@ Agent enrollment, recovery, runtime, file service, and systemd service require r
 正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](docs/updates.md).
 
 The Core includes [RSS/Atom subscriptions](docs/rss.md), with adjustable refresh intervals (minimum 1 minute, default 30 minutes), shared read state, keyword notifications and digests.
+
+Node details expose Delete node for pending, online, offline and revoked nodes. Deletion removes Core data and credentials; it does not uninstall the remote Agent or stop dispatched work. Pending nodes expose Installation command: regenerate and repeatedly copy native/Docker commands without creating a new node. Regeneration immediately invalidates previous tokens.

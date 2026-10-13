@@ -11,7 +11,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 )
 
-func TestEnrollmentMethodSelectsCommandBeforeIssuingToken(t *testing.T) {
+func TestEnrollmentCommandsCarryTokenAndSelectDeploymentMethod(t *testing.T) {
 	s, err := New("test", Options{DataDir: t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
@@ -55,8 +55,8 @@ func TestEnrollmentMethodSelectsCommandBeforeIssuingToken(t *testing.T) {
 		if body.DeploymentMethod != expected || body.InstallCommand != selected || body.Token == "" || body.NativeCommand == "" || body.DockerCommand == "" {
 			t.Fatalf("enrollment contract mismatch for %q", method)
 		}
-		if strings.Contains(body.InstallCommand, body.Token) {
-			t.Fatal("enrollment token leaked into command")
+		if !strings.Contains(body.NativeCommand, "--token "+body.Token) || !strings.Contains(body.DockerCommand, "--token "+body.Token) {
+			t.Fatal("single-command enrollment is missing its issued token")
 		}
 	}
 }

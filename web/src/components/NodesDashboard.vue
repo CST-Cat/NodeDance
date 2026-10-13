@@ -220,6 +220,14 @@ function openNodeShortcut(payload: { node: AgentNode; action: 'terminal' | 'file
   const section = payload.action === 'files' ? 'files' : payload.action === 'manage' ? 'docker' : 'overview'
   openNode(node, section)
 }
+function acceptNodeDeletion() {
+ const nodeID = selectedNodeID.value
+ nodes.value = nodes.value.filter(node => node.nodeId !== nodeID)
+ for (const cache of [views, dockerViews, clocks, nodeReasons, nodePreferences, preferenceIdentities]) delete cache.value[nodeID]
+ taskViews.value = Object.fromEntries(Object.entries(taskViews.value).filter(([, task]) => task.nodeId !== nodeID))
+ backToNodes()
+ void refreshNodes().catch(reason => { error.value = reason instanceof Error ? reason.message : String(reason) })
+}
 function backToNodes() { viewNavigation.go({ screen: 'nodes' }) }
 watch(() => viewNavigation.route.value, route => {
   terminalNode.value = null
@@ -379,7 +387,7 @@ onBeforeUnmount(() => {
       <section v-for="group in serverCardGroups" :key="group.key" class="vps-card-group" :data-group="group.key"><h2 v-if="group.label" class="vps-group-heading">{{ group.label }}</h2><div class="vps-card-grid"><VpsCard v-for="node in group.nodes" :key="node.nodeId" :node="node" :metrics="views[node.nodeId]" :inventory="dockerViews[node.nodeId]" :node-preference="nodePreference(node)" :container-preferences="nodePreferences[node.nodeId] ?? []" :preference-identities="preferenceIdentities[node.nodeId] ?? {}" :online="nodeIsOnline(node)" :pending="isPendingRegistration(node)" :docker-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : !nodeIsOnline(node)" :preview-limit="dashboardSettings.featuredLimit" :current-time="wallClockNow" :node-reason="nodeReasons[node.nodeId]" :tasks="tasksForNode(node.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" @view="chooseNode" @quick-action="openNodeShortcut" @container-action="submitCardContainerAction"/></div></section>
     </section>
   </section>
-  <NodeDetail v-else :key="selectedNode.nodeId" :node="selectedNode" :metrics="views[selectedNode.nodeId]" :inventory="dockerViews[selectedNode.nodeId]" :preferences="nodePreferences[selectedNode.nodeId] ?? []" :preference-identities="preferenceIdentities[selectedNode.nodeId] ?? {}" :online="nodeIsOnline(selectedNode)" :pending="isPendingRegistration(selectedNode)" :docker-stale="dockerViews[selectedNode.nodeId] ? dockerIsStale(dockerViews[selectedNode.nodeId]) : !nodeIsOnline(selectedNode)" :node-reason="nodeReasons[selectedNode.nodeId]" :tasks="tasksForNode(selectedNode.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" :dashboard-settings="dashboardSettings" :dashboard-settings-saving="dashboardSettingsSaving" :dashboard-settings-message="dashboardSettingsMessage" :dashboard-settings-error="dashboardSettingsError" :current-time="wallClockNow" @back="backToNodes" @refresh-tasks="(id) => { const node = nodes.find((item) => item.nodeId === id); if (node) void loadTasks(node) }" @preference-saved="acceptSavedPreference" @container-action="submitDetailContainerAction" @container-create="submitContainerCreateTask" @settings-change="dashboardSettings = $event" @save-settings="void saveDashboardSettings()"/>
+  <NodeDetail v-else :key="selectedNode.nodeId" :node="selectedNode" :metrics="views[selectedNode.nodeId]" :inventory="dockerViews[selectedNode.nodeId]" :preferences="nodePreferences[selectedNode.nodeId] ?? []" :preference-identities="preferenceIdentities[selectedNode.nodeId] ?? {}" :online="nodeIsOnline(selectedNode)" :pending="isPendingRegistration(selectedNode)" :docker-stale="dockerViews[selectedNode.nodeId] ? dockerIsStale(dockerViews[selectedNode.nodeId]) : !nodeIsOnline(selectedNode)" :node-reason="nodeReasons[selectedNode.nodeId]" :tasks="tasksForNode(selectedNode.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" :dashboard-settings="dashboardSettings" :dashboard-settings-saving="dashboardSettingsSaving" :dashboard-settings-message="dashboardSettingsMessage" :dashboard-settings-error="dashboardSettingsError" :current-time="wallClockNow" @back="backToNodes" @deleted="acceptNodeDeletion" @refresh-tasks="(id) => { const node = nodes.find((item) => item.nodeId === id); if (node) void loadTasks(node) }" @preference-saved="acceptSavedPreference" @container-action="submitDetailContainerAction" @container-create="submitContainerCreateTask" @settings-change="dashboardSettings = $event" @save-settings="void saveDashboardSettings()"/>
   <TerminalConsole v-if="terminalNode" :key="terminalNode.nodeId" :node-id="terminalNode.nodeId" target-kind="host" :target-label="nodeTitle(terminalNode)" @close="terminalNode = null" />
 </template>
 

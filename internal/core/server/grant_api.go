@@ -50,19 +50,23 @@ func (s *Server) handleGrantAPI(w http.ResponseWriter, r *http.Request, current 
 		if v.CoreURL == "" {
 			v.CoreURL = r.Header.Get("Origin")
 		}
-		command, err := installer.Command(v.CoreURL, v.DisplayPrefix, s.development)
-		if err != nil {
-			http.Error(w, err.Error(), 400)
-			return true
-		}
-		docker, err := installer.DockerCommand(v.CoreURL, v.DisplayPrefix, s.development)
-		if err != nil {
+		if err := installer.ValidateServer(v.CoreURL, s.development); err != nil {
 			http.Error(w, err.Error(), 400)
 			return true
 		}
 		g, err := s.agents.CreateGrant(r.Context(), v, current.RemoteAddr, sql.NullInt64{Int64: 1, Valid: true})
 		if err != nil {
 			http.Error(w, "cannot create grant", 500)
+			return true
+		}
+		command, err := installer.Command(v.CoreURL, g.Token, s.development)
+		if err != nil {
+			http.Error(w, "cannot render installation command", 500)
+			return true
+		}
+		docker, err := installer.DockerCommand(v.CoreURL, g.Token, s.development)
+		if err != nil {
+			http.Error(w, "cannot render Docker installation command", 500)
 			return true
 		}
 		w.Header().Set("Cache-Control", "no-store")

@@ -769,3 +769,93 @@ func validRuntimePermissions(value protocol.RuntimePermissions) bool {
 	}
 	return validText(value.OS) && validText(value.Architecture)
 }
+
+// RenewEnrollment replaces an unconsumed credential without creating another node.
+func (r *Repository) RenewEnrollment(ctx context.Context, nodeID, remote string, actor sql.NullInt64) (Enrollment, error) {
+	token, digest, err := newSecret()
+	if err != nil {
+		return Enrollment{}, err
+	}
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Enrollment{}, err
+	}
+	defer tx.Rollback()
+	var name string
+	err = tx.QueryRowContext(ctx, `SELECT display_name FROM nodes WHERE id=? AND status='pending' AND NOT EXISTS(SELECT 1 FROM agent_devices WHERE node_id=nodes.id)`, nodeID).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Enrollment{}, ErrConflict
+	}
+	if err != nil {
+		return Enrollment{}, err
+	}
+	now := r.now()
+	expires := now.Add(EnrollmentLifetime)
+	if _, err = tx.ExecContext(ctx, `DELETE FROM agent_enrollments WHERE node_id=?`, nodeID); err != nil {
+		return Enrollment{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO agent_enrollments(token_digest,node_id,expires_at,created_at) VALUES(?,?,?,?)`, digest, nodeID, expires.Unix(), now.Unix()); err != nil {
+		return Enrollment{}, err
+	}
+	if err = audit.Record(ctx, tx, audit.Event{OccurredAt: now, Action: "agent_enrollment_renew", Outcome: "succeeded", ActorID: actor, RemoteAddr: remote, Target: audit.Target{Kind: audit.TargetNode, ID: nodeID}}); err != nil {
+		return Enrollment{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return Enrollment{}, err
+	}
+	return Enrollment{NodeID: nodeID, DisplayName: name, Token: token, ExpiresAt: expires}, nil
+}
+
+// DeleteNode removes Core-owned state and credentials. It does not uninstall the
+// remote Agent or claim that already dispatched remote work has been stopped.
+func (r *Repository) DeleteNode(ctx context.Context, nodeID, remote string, actor sql.NullInt64) (Identity, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Identity{}, err
+	}
+	defer tx.Rollback()
+	var identity Identity
+	err = tx.QueryRowContext(ctx, `SELECT n.id,n.display_name,COALESCE(d.id,'') FROM nodes n LEFT JOIN agent_devices d ON d.node_id=n.id WHERE n.id=?`, nodeID).Scan(&identity.NodeID, &identity.DisplayName, &identity.AgentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Identity{}, ErrNotFound
+	}
+	if err != nil {
+		return Identity{}, err
+	}
+	// Discarding node history abandons recovery of outstanding tasks. Do not
+	// assert successful execution or confirmed cancellation of remote work.
+	queries := []string{
+		`UPDATE core_tasks SET status='failed',result_code='node_deleted',failure_confirmed=0 WHERE node_id=? AND status IN ('queued','running','unknown')`,
+		`DELETE FROM core_task_audit_events WHERE node_id=?`,
+		`DELETE FROM core_task_resource_claims WHERE node_id=?`,
+		`DELETE FROM core_tasks WHERE node_id=?`,
+		`DELETE FROM core_task_agent_state WHERE node_id=?`,
+		`DELETE FROM alert_deliveries WHERE alert_id IN (SELECT id FROM alerts WHERE node_id=?)`,
+		`DELETE FROM alert_events WHERE alert_id IN (SELECT id FROM alerts WHERE node_id=?)`,
+		`DELETE FROM alerts WHERE node_id=?`,
+		`DELETE FROM alert_windows WHERE (scope_type='node' AND scope_id=?) OR (scope_type='rule' AND scope_id IN (SELECT id FROM alert_rules WHERE node_id=?))`,
+		`DELETE FROM alert_rules WHERE node_id=?`,
+		`DELETE FROM service_probe_runs WHERE node_id=?`,
+		`DELETE FROM service_probes WHERE node_id=?`,
+		`DELETE FROM node_assets WHERE node_id=?`,
+		`DELETE FROM agent_enrollments WHERE node_id=?`,
+		`DELETE FROM agent_devices WHERE node_id=?`,
+		`DELETE FROM nodes WHERE id=?`,
+	}
+	for _, query := range queries {
+		args := []any{nodeID}
+		if strings.Count(query, "?") == 2 {
+			args = append(args, nodeID)
+		}
+		if _, err = tx.ExecContext(ctx, query, args...); err != nil {
+			return Identity{}, fmt.Errorf("remove node state: %w", err)
+		}
+	}
+	if err = audit.Record(ctx, tx, audit.Event{OccurredAt: r.now(), Action: "node_delete", Outcome: "succeeded", ActorID: actor, RemoteAddr: remote, Target: audit.Target{Kind: audit.TargetNode, ID: nodeID}}); err != nil {
+		return Identity{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return Identity{}, err
+	}
+	return identity, nil
+}

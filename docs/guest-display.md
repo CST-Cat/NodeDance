@@ -52,3 +52,7 @@ History charts retain their canvas host during loading and render after asynchro
 2026-10-13 收尾审查以新 Web 资产复验默认关闭、管理员 Cookie 下相同公开投影、返回管理时有效会话及策略/资源撤回的浏览器行为。测试从实际 Core operation contract 发现覆盖；见 [69 文件报告](code-review-69-files.md)。
 
 RSS／Atom 订阅中心为管理员私有能力，不进入游客字段、订阅源或条目投影。携带管理员 cookie 的公开请求仍只得到原有游客数据，详见 [订阅权限](rss.md)。
+
+Agent enrollment responses contain token-bearing native and Docker installation commands. These responses and reusable enrollment grants remain administrator-only; guest projections exclude tokens and installation commands even when administrator cookies are present. The isolated browser attack suite verifies anonymous enrollment denial and command/token exclusion from public display.
+
+Deleting a node withdraws it from public display immediately, including warm cached displays. Deleted probe and node selections are filtered on each public read; administrator-only deletion and enrollment renewal controls do not appear on guest screens.

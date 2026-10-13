@@ -85,7 +85,7 @@ nodedance files download --params '{"nodeId":"NODE_UUID"}' \
 
 Downloads create new `0600` files, refuse existing destinations, and remove partial files on failure. Uploads use the existing transfer API. File mutations retain Agent traversal/symlink/protected-tree/credential-path checks. File deletion requires `deleteConfirmed: true` and an exact `confirmationPath`. Container/image deletion and rebuild retain their existing exact-target confirmation rules. Probe/rule/channel edits use the current revision.
 
-Create an enrollment with `agents.enrollment` and a body containing `displayName` and optionally `coreUrl` (the URL reachable from the Agent). Choose `deploymentMethod: "native"` or `"docker"` in the shared JSON request, or pass CLI `--deployment-method native|docker`. The response contains the token, expiry, the selected `installCommand`, plus `nativeInstallCommand` and `dockerInstallCommand`. TUI provides node-name, reachable Core URL, and deployment-method prompts (Enter defaults to Docker). The token is separate from the command.
+Create an enrollment with `agents.enrollment` and a body containing `displayName` and optionally `coreUrl` (the URL reachable from the Agent). Choose `deploymentMethod: "native"` or `"docker"` in the shared JSON request, or pass CLI `--deployment-method native|docker`. The response contains the token, expiry, the selected `installCommand`, plus `nativeInstallCommand` and `dockerInstallCommand`. TUI provides node-name, reachable Core URL, and deployment-method prompts using the default declared by Core. Both installer commands contain the issued enrollment token, so the copied command installs and enrolls without an extra token prompt. They pin the published Agent release paired with Core; Web displays expiry in Beijing time (UTC+8), and API timestamps remain ISO UTC.
 
 ```sh
 nodedance agents enrollment --server https://core.example \
@@ -221,3 +221,5 @@ File editing supports up to 8 MiB UTF-8 text. Body input and text response bound
 ## RSS subscriptions / RSS 订阅
 
 `feeds.*` operations are discovered from Core and available through CLI, TUI and Web. Refresh intervals accept integer minutes from 1 through 10080, default 30. `feeds.refresh --wait` uses the shared completion observer; `feeds.cancel` stops queued/running refresh. See [subscription inputs, notifications and examples](rss.md).
+
+Node lifecycle is shared with Web: discover `nodes.renew-enrollment` to regenerate native/Docker commands for an existing pending node (body: `coreUrl`, `deploymentMethod`), and `nodes.delete` to remove any node state (body: `confirm: true`). Both use `nodeId` as a path parameter and are available in CLI/TUI generic operation forms. Renewal invalidates previous tokens; deletion does not uninstall Agent or stop already dispatched remote work.

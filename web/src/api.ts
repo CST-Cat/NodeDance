@@ -593,6 +593,8 @@ export const api = {
   probeTailscaleSSH: (peerIdentity: string) => operationRequest<{ fingerprint: string }>("discovery.host-key", {}, {
     body: JSON.stringify({ peerIdentity }),
   }),
+  deleteNode: (nodeId: string) => operationRequest<{deleted: boolean}>("nodes.delete", {params: {nodeId}}, {body: JSON.stringify({confirm: true})}),
+  renewAgentEnrollment: (nodeId: string, coreUrl: string, deploymentMethod: 'native' | 'docker') => operationRequest<{nodeId: string; displayName: string; expiresAt: string; nativeInstallCommand: string; dockerInstallCommand: string}>("nodes.renew-enrollment", {params: {nodeId}}, {body: JSON.stringify({coreUrl, deploymentMethod})}),
   createAgentEnrollment: (displayName: string, coreUrl: string, deploymentMethod: 'native' | 'docker') => operationRequest<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number; installCommand: string; nativeInstallCommand: string; dockerInstallCommand: string; deploymentMethod: 'native' | 'docker' }>("agents.enrollment", {}, {
     body: JSON.stringify({ displayName, coreUrl, deploymentMethod }),
   }),

@@ -119,8 +119,10 @@ func (s *Server) adminCreateAgentEnrollment(w http.ResponseWriter, r *http.Reque
 	if request.DeploymentMethod == "" {
 		request.DeploymentMethod = agents.DefaultDeploymentMethod
 	}
+	nodeID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/nodes/"), "/enrollment")
+	renewing := strings.HasPrefix(r.URL.Path, "/api/v1/nodes/")
 	name, ok := normalizeDisplayName(request.DisplayName)
-	if !ok {
+	if !ok && !renewing {
 		http.Error(w, "invalid node display name", http.StatusBadRequest)
 		return
 	}
@@ -128,20 +130,34 @@ func (s *Server) adminCreateAgentEnrollment(w http.ResponseWriter, r *http.Reque
 	if coreURL == "" {
 		coreURL = r.Header.Get("Origin")
 	}
-	command, err := installer.Command(coreURL, name, s.development)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	dockerCommand, err := installer.DockerCommand(coreURL, name, s.development)
-	if err != nil {
+	if err := installer.ValidateServer(coreURL, s.development); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	enrollment, err := s.agents.CreateEnrollment(r.Context(), name, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
+	var enrollment agents.Enrollment
+	var err error
+	if renewing {
+		enrollment, err = s.agents.RenewEnrollment(r.Context(), nodeID, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
+	} else {
+		enrollment, err = s.agents.CreateEnrollment(r.Context(), name, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
+	}
+	if errors.Is(err, agents.ErrConflict) {
+		http.Error(w, "node is no longer awaiting enrollment", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		http.Error(w, "enrollment creation failed", http.StatusInternalServerError)
+		return
+	}
+	command, err := installer.Command(coreURL, enrollment.Token, s.development)
+	if err != nil {
+		http.Error(w, "cannot render Agent installation command", http.StatusInternalServerError)
+		return
+	}
+	dockerCommand, err := installer.DockerCommand(coreURL, enrollment.Token, s.development)
+	if err != nil {
+		http.Error(w, "cannot render Docker installation command", http.StatusInternalServerError)
 		return
 	}
 	selectedCommand := command
@@ -263,4 +279,37 @@ func (s *Server) sendAgentRotation(agentID, rotationID string) {
 		return
 	}
 	connection.enqueue(protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeRotateRequest, Generation: connection.generation, RequestID: rotationID})
+}
+
+func (s *Server) adminDeleteNode(w http.ResponseWriter, r *http.Request, current *session, nodeID string) {
+	var request struct {
+		Confirm bool `json:"confirm"`
+	}
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if !request.Confirm {
+		http.Error(w, "confirm must be true", http.StatusBadRequest)
+		return
+	}
+	s.dockerMu.Lock()
+	identity, err := s.agents.DeleteNode(r.Context(), nodeID, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
+	if err == nil {
+		s.docker.ForgetNode(nodeID)
+		s.metrics.ForgetNode(nodeID)
+	}
+	s.dockerMu.Unlock()
+	if errors.Is(err, agents.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, "node deletion failed", http.StatusInternalServerError)
+		return
+	}
+	if identity.AgentID != "" {
+		s.closeAgentConnection(identity.AgentID, 0)
+	}
+	s.clearImageCredentialsForNode(nodeID)
+	writeJSON(w, http.StatusOK, map[string]any{"nodeId": nodeID, "deleted": true})
 }

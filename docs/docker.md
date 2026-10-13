@@ -54,17 +54,9 @@ sudo install -d -o root -g root -m 0700 /var/lib/nodedance-agent
 docker compose -f deploy/docker/compose.agent.yml build
 ```
 
-Core 的“添加 Agent”页面同时提供直接/systemd 安装和 Docker 部署命令。选择 Docker 部署可复制完整命令，随后按提示输入一次性令牌。也可以在页面生成令牌后，手工在 **Bash** 中运行（输入令牌不回显，且不放入命令行参数、环境或历史）：
+Core 的“添加 Agent”页面在生成命令前以左右两个选项显示直接安装（systemd）和 Docker 部署。选择 Docker，填写节点名称和可达 Core 地址，生成并复制完整命令，在目标 Linux 主机运行即可；一次性 Token 已包含在命令中，无需再次输入。命令下载与当前 Core 配对的已发布 Agent 安装脚本，固定镜像版本，校验原生产物 SHA256，自动注册、启动容器并安装更新监督服务。Token 过期时间显示北京时间（UTC+8）。
 
-Core's Add Agent screen offers both direct/systemd installation and Docker deployment. Select Docker to copy the full command and enter the one-time token when prompted, or generate a token and run the following manually in **Bash** (the token is hidden and is passed through stdin rather than arguments, environment, or history):
-
-```bash
-read -r -s -p 'Enrollment token: ' enrollment_token; printf '\n'
-printf '%s\n' "$enrollment_token" | docker compose -f deploy/docker/compose.agent.yml run --rm -T agent \
-  enroll --server https://nodes.example.com --token-stdin --config /var/lib/nodedance-agent/agent.json
-unset enrollment_token
-docker compose -f deploy/docker/compose.agent.yml up -d
-```
+Core's Add Agent screen presents native/systemd and Docker side by side before command generation. Select Docker, enter the node name and reachable Core address, then copy and run the complete command on the target Linux host. It includes the one-time token without a second prompt, pins the published Agent release paired with Core, verifies native release checksums, enrolls, starts the container and registers the update supervisor. Expiry is displayed in Beijing time (UTC+8).
 
 配置文件持久保存在宿主机 `/var/lib/nodedance-agent/agent.json`，必须 root 所有、普通文件、`0600`，目录为 `0700`。入口进入宿主机后，`--config`、`--ca-file` 等路径均为 **宿主机路径**。私有 CA 请先放置在宿主机，再传入 `--ca-file`。恢复注册时将 `enroll` 换成 `recover`，使用 Core 新签发的恢复令牌。容器重启直接读取现有配置，不需要再次注册。
 

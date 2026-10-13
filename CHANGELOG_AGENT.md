@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.14]
+
+### English
+
+- Unify root-only native and Docker installation in the published installer with an explicit deployment mode and supplied enrollment token; preserve protected state and recovery diagnostics on partial failures.
+- Verify and install the update supervisor for both deployment modes, retaining pinned release artifacts and root credential protection.
+
+### 简体中文
+
+- 在发布安装器中统一 root 专用原生与 Docker 安装，显式指定部署方式并使用命令携带的注册凭据；部分失败时保留受保护状态与恢复诊断。
+- 两种部署方式均校验并安装更新监督器，继续固定发布产物并保护 root 凭据。
+
 ## [0.1.13]
 
 ### English

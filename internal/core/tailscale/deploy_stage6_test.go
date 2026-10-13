@@ -523,16 +523,16 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	command, err := agentinstaller.Command("https://core.example:8180", "node", false)
+	command, err := agentinstaller.Command("https://core.example:8180", strings.Repeat("a", 64), false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"bash -o pipefail -c", "--proto =https --proto-redir =https --tlsv1.2", "api.github.com/repos/CST-Cat/NodeDance/releases?per_page=100", "agent-v[0-9]+", "releases/download/$tag/install-agent.sh", "sudo bash -s --"} {
+	for _, required := range []string{"bash -o pipefail -c", "--proto =https --proto-redir =https --tlsv1.2", "github.com/CST-Cat/NodeDance/releases/download/agent-v", "--token ", "--mode native", "sudo bash -s --"} {
 		if !strings.Contains(command, required) {
 			t.Errorf("shared installer command is missing %q", required)
 		}
 	}
-	for _, required := range []string{"result.nativeInstallCommand", "result.dockerInstallCommand", "data-testid=\"agent-deployment-method\"", "data-testid=\"agent-install-command\"", "data-testid=\"agent-enrollment-token\"", "https://core.example:8180", "t('m."} {
+	for _, required := range []string{"result.nativeInstallCommand", "result.dockerInstallCommand", "data-testid=\"agent-deployment-method\"", "data-testid=\"agent-install-command\"", "data-testid=\"agent-enrollment-expiry\"", "https://core.example:8180", "t('m."} {
 		if !strings.Contains(string(enrollmentUI), required) {
 			t.Errorf("shared Agent enrollment UI is missing %q", required)
 		}
@@ -542,7 +542,7 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"Agent 连接的 Core 地址", "正式 Agent 连接必须使用 HTTPS", "系统信任的 TLS 证书", "隐藏提示输入此 Token"} {
+	for _, required := range []string{"Agent 连接的 Core 地址", "正式 Agent 连接必须使用 HTTPS", "系统信任的 TLS 证书", "一条命令完成安装与注册"} {
 		if !strings.Contains(string(catalog), required) {
 			t.Errorf("localized enrollment help is missing %q", required)
 		}

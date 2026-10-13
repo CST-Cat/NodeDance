@@ -75,6 +75,9 @@ func describeTransport(o *Operation) {
 		field("script", map[string]any{"minLength": 1, "maxBytes": protocol.MaxCommandScriptBytes})
 		field("timeoutSeconds", map[string]any{"minimum": protocol.MinCommandTimeoutSeconds, "maximum": protocol.MaxCommandTimeoutSeconds})
 		field("confirm", map[string]any{"enum": []any{true}})
+	case "nodes.delete":
+		require("confirm")
+		field("confirm", map[string]any{"enum": []any{true}})
 	case "agents.enrollment":
 		require("displayName")
 	case "containers.create":

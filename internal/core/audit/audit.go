@@ -49,7 +49,7 @@ var actions = map[string]struct{}{
 	"setup": {}, "login": {}, "logout": {}, "password_change": {},
 	"session_revoke": {}, "appearance_update": {}, "image_upload": {},
 	"agent_grant_create": {}, "agent_grant_revoke": {}, "node_asset_update": {}, "settings.put": {}, "commands.submit": {}, "commands.cancel": {}, "commands.cleanup": {}, "commands.batch": {}, "commands.batch-cancel": {},
-	"agent_enrollment_create": {}, "agent_enrollment_consume": {},
+	"node_delete": {}, "agent_enrollment_renew": {}, "agent_enrollment_create": {}, "agent_enrollment_consume": {},
 	"agent_revoke": {}, "agent_rotation_request": {},
 	"agent_rotation_prepare": {}, "agent_rotation_commit": {},
 	"terminal_start": {}, "terminal_end": {},

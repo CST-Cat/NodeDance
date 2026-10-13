@@ -16,6 +16,14 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  console.log('GUEST SECURITY: private operations',privateOperations.length)
  for(let i=0;i<privateOperations.length;i+=8){await Promise.all(privateOperations.slice(i,i+8).map(async o=>{const r=await browserRequest(target(o),o.method,payload,hostileHeaders);record('catalog:'+o.name,r.status===401,{status:r.status})}))}
 
+ // Enrollment token-bearing installation commands remain private.
+ const enrollment=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE INSTALL NAME',coreUrl:base,deploymentMethod:'docker'}})
+ assert.equal(enrollment.status(),201);const install=await enrollment.json()
+ for(const command of [install.nativeInstallCommand,install.dockerInstallCommand])assert.ok(command.includes('--token '+install.token))
+ const projection=await browserRequest('/api/v1/public/guest/display')
+ record('private-install-command-projection',projection.status===200&&!projection.body.includes(install.token)&&!projection.body.includes('PRIVATE INSTALL NAME'))
+ const anonymousInstall=await browserRequest('/api/v1/agents/enrollments','POST',{displayName:'forged-install',coreUrl:base},hostileHeaders)
+ record('private-install-command-anonymous',anonymousInstall.status===401)
  // Private RSS subscriptions never enter guest projections, even with admin cookies.
  const rss=await admin.request.post(base+'/api/v1/feeds',{headers,data:{name:'PRIVATE RSS NAME',url:'https://example.invalid/feed?token=RSS_PRIVATE_TOKEN',enabled:false,keywords:[],channelIds:[],notificationMode:'off'}})
  assert.equal(rss.status(),200);const subscription=await rss.json()
@@ -78,6 +86,15 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const afterDelete=await browserRequest('/api/v1/public/guest/display');record('warm-cache-deleted-probe',afterDelete.status===200&&!JSON.parse(afterDelete.body).probes.some(p=>p.name==='Public service'),{status:afterDelete.status,probes:JSON.parse(afterDelete.body).probes.length})
  await stopReporting();const revoked=await admin.request.post(base+'/api/v1/agents/'+identity.agentId+'/revoke',{headers});assert.equal(revoked.status(),200)
  const afterRevoke=await browserRequest('/api/v1/public/guest/display');record('warm-cache-revoked-node',afterRevoke.status===200&&JSON.parse(afterRevoke.body).nodes.length===0,{status:afterRevoke.status,nodes:JSON.parse(afterRevoke.body).nodes.length})
+ // A deleted node must disappear immediately even with a warmed public cache.
+ const fresh=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'Deletion fixture',coreUrl:base}});assert.equal(fresh.status(),201)
+ const candidate=await fresh.json()
+ const enrolled=await admin.request.post(base+'/api/v1/agents/enroll',{headers:{Origin:base,Authorization:'Enrollment '+candidate.token},data:{credential:'d'.repeat(64),requestId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'}});assert.equal(enrolled.status(),201)
+ const deletionPolicy=await save({nodes:[{id:candidate.nodeId,name:'Published deletion fixture'}],probes:[]});assert.equal(deletionPolicy.status(),200)
+ const warm=await browserRequest('/api/v1/public/guest/display');assert.ok(JSON.parse(warm.body).nodes.some(n=>n.name==='Published deletion fixture'))
+ const removed=await admin.request.delete(base+'/api/v1/nodes/'+candidate.nodeId,{headers,data:{confirm:true}});assert.equal(removed.status(),200)
+ const afterNodeDelete=await browserRequest('/api/v1/public/guest/display');record('warm-cache-deleted-node',afterNodeDelete.status===200&&JSON.parse(afterNodeDelete.body).nodes.length===0,{status:afterNodeDelete.status})
+ const rejected=await admin.request.post(base+'/api/v1/agents/enroll',{headers:{Origin:base,Authorization:'Enrollment '+candidate.token},data:{credential:'e'.repeat(64),requestId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc'}});record('deleted-node-enrollment-rejected',rejected.status()===401,{status:rejected.status()})
  const disabled=await save({enabled:false});record('disable-with-unavailable-selected-resources',disabled.status()===200,{status:disabled.status()})
  if(!disabled.ok())assert.equal((await save({enabled:false,nodes:[],probes:[]})).status(),200)
  const closed=await browserRequest('/api/v1/public/guest/display');record('warm-cache-global-disable',closed.status===404,{status:closed.status})

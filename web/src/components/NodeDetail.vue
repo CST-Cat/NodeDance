@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { requestPrompt } from '../dialogs'
+import { requestPrompt, requestConfirm } from '../dialogs'
 import { useViewTab } from '../navigation'
 import { t, display, locale } from "../i18n"
 import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
@@ -15,6 +15,7 @@ import PreferenceEditor from './PreferenceEditor.vue'
 const TerminalConsole = defineAsyncComponent(() => import('./TerminalConsole.vue'))
 import NodeServiceProbes from './NodeServiceProbes.vue'
 const NodeFiles = defineAsyncComponent(() => import('./NodeFiles.vue'))
+import AgentEnrollment from './AgentEnrollment.vue'
 import ContainerCreateForm from './ContainerCreateForm.vue'
 
 const props = defineProps<{
@@ -38,6 +39,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{
   back: []
+  deleted: []
   refreshTasks: [nodeId: string]
   preferenceSaved: [preference: DashboardPreference]
   containerAction: [payload: { nodeId: string; containerId: string; task: CreateContainerTaskPayload }]
@@ -45,6 +47,21 @@ const emit = defineEmits<{
   settingsChange: [settings: DashboardSettings]
   saveSettings: []
 }>()
+
+const deletingNode = ref(false)
+const nodeActionError = ref('')
+const enrollmentOpen = ref(false)
+async function deleteNode() {
+ if (deletingNode.value) return
+ deletingNode.value = true; nodeActionError.value = ''
+ try {
+  if (!await requestConfirm(t('node.deleteConfirm', {'0': props.node.displayName}))) return
+  await api.deleteNode(props.node.nodeId); emit('deleted')
+ }
+ catch (reason) { nodeActionError.value = reason instanceof Error ? reason.message : String(reason) }
+ finally { deletingNode.value = false }
+}
+watch(() => props.pending, pending => { if (!pending) enrollmentOpen.value = false })
 
 const sectionTabs = computed(() => [
   { id: 'overview', label: t('m.a33db5730556') }, { id: 'probes', label: t('m.3fefdc07fa14') }, { id: 'docker', label: t('m.eee901e4cc16') }, { id: 'images', label: t('m.176c09844e0f') },
@@ -389,6 +406,12 @@ onBeforeUnmount(() => {
       <div><div class="detail-heading-navigation"><button class="container-action back-button" type="button" @click="emit('back')">{{ t('m.40c2548e2416') }}</button><span class="eyebrow">{{ t('label.164ba94c1c7b') }}</span></div><h1 id="detail-title">{{ nodeTitle }}</h1><p v-if="nodeTitle !== node.displayName || node.agentVersion"><template v-if="nodeTitle !== node.displayName">{{ node.displayName }}<template v-if="node.agentVersion"> · </template></template>{{ node.agentVersion }}</p><p v-if="nodePreference?.notes" class="node-detail-note">{{ nodePreference.notes }}</p></div>
       <div class="detail-heading-status"><span class="node-detail-status" :data-online="online">{{ pending ? t('m.a890b3be09aa') : online ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c') }}</span><span class="docker-state" :data-available="inventory?.dockerAvailability || 'unknown'" :data-stale="dockerStale">{{ inventory ? dockerAvailabilityText(inventory) : online ? t('m.c12a50c262ca') : t('m.8a6501e8198f') }}</span></div>
     </header>
+    <div class="node-management-actions" data-testid="node-management-actions">
+      <button v-if="pending" class="secondary-button" type="button" :aria-expanded="enrollmentOpen" data-testid="node-install-command" @click="enrollmentOpen = !enrollmentOpen">{{ t('node.installCommand') }}</button>
+      <button class="secondary-button node-delete-button" type="button" :disabled="deletingNode" data-testid="node-delete" @click="deleteNode">{{ deletingNode ? t('m.ff509c9ba052') : t('node.delete') }}</button>
+    </div>
+    <p v-if="nodeActionError" role="alert">{{ display(nodeActionError) }}</p>
+    <AgentEnrollment v-if="pending && enrollmentOpen" class="node-enrollment-panel" compact :node-id="node.nodeId" />
     <nav class="dashboard-tabs" :aria-label="t('m.c778eb5beb54')"><button v-for="tab in sectionTabs" :key="tab.id" type="button" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button></nav>
     <div v-if="activeSection === 'overview' && probeCounts.total" class="probe-overview-summary" data-testid="probe-overview-summary">
       <div><p>{{ t('node.probes.summary', {'0': probeCounts.total, '1': probeCounts.healthy, '2': probeCounts.unhealthy, '3': probeCounts.unknown, '4': probeCounts.disabled}) }}</p><small v-if="probeSummaryLoadedAt">{{ t('node.probes.loaded', {'0': probeSummaryLoadedAt.toLocaleString(locale)}) }}</small></div>
@@ -474,6 +497,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.node-enrollment-panel { margin-bottom:24px; }
+.node-management-actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}.node-delete-button{color:var(--danger,var(--accent))}.node-management-actions button{min-height:44px}
+
 .node-detail-page { width: min(1480px,100%); min-width: 0; margin: 0 auto; padding: clamp(20px,4vw,44px); color: var(--text); }
 .detail-heading { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:20px; }
 .probe-overview-summary { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin:16px 0; border:1px solid var(--line); border-radius:var(--radius-card); padding:12px 16px; background:var(--surface-soft); }

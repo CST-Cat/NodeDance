@@ -22,7 +22,7 @@ curl -fsSL https://github.com/CST-Cat/NodeDance/releases/latest/download/install
 
 ### Agent
 
-登录 Core 后进入 **添加 Agent**，填写节点名称并生成安装命令。在目标 Linux 主机上运行该命令，再按提示输入一次性注册令牌。命令会自动选择并固定到最新已发布的 Agent 版本；Agent 以 root 服务运行。
+登录 Core 后进入 **添加 Agent**，填写节点名称并生成安装命令。选择左右排列的直接安装或 Docker 部署，复制完整命令到目标 Linux 主机运行即可，无需再次输入 Token。命令固定使用与 Core 配对的已发布 Agent 版本；Agent 以 root 运行，Token 过期时间显示北京时间。
 
 Core 和 Agent 也支持 [Docker 部署](docs/docker.md)，提供独立镜像、Compose 示例和版本化发布。
 
@@ -50,3 +50,5 @@ Agent 注册、恢复、运行、文件服务和 systemd 服务均要求 root �
 正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](docs/updates.md).
 
 Core 内置 [RSS／Atom 订阅中心](docs/rss.md)，支持多档刷新（最低 1 分钟，默认 30 分钟）、共享阅读状态、关键词通知和摘要。
+
+节点详情页顶部提供“删除节点”，支持等待注册、在线、离线和已撤销节点。删除会移除 Core 数据及凭据，不会卸载远端 Agent 或停止已下发任务。等待注册节点可打开“安装命令”，重新生成并重复复制 systemd/Docker 命令；原节点保持不变，旧 Token 立即失效。

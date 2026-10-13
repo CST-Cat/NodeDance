@@ -21,6 +21,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await page.goto(base);await page.locator('#login-title').waitFor();assert.equal(await page.getByRole('button',{name:'Enter guest mode',exact:true}).count(),0)
   assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
   const enrollment=await(await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE HOST NAME',coreUrl:base}})).json()
+  for(const command of [enrollment.nativeInstallCommand,enrollment.dockerInstallCommand])assert.ok(command.includes('--token '+enrollment.token),'Administrator enrollment supplies a complete installation command')
   const credential=crypto.randomBytes(32).toString('hex'),agentHeaders={Authorization:'Bearer '+credential}
   const enrolled=await visitor.request.post(base+'/api/v1/agents/enroll',{headers:{Authorization:'Enrollment '+enrollment.token},data:{requestId:crypto.randomUUID(),credential}});assert.equal(enrolled.status(),201);const identity=await enrolled.json()
   const capabilities=['agent.heartbeat.v1','agent.os-permissions.v1','agent.metrics.v2']

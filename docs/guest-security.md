@@ -67,3 +67,7 @@ Management deployment polling stops after its view unmounts; a late SSH fingerpr
 2026-10-13，使用新构建 Web 资产和隔离真实 Core/协议模拟 Agent，再次通过完整访客安全套件。公共投影、匿名边界和撤销语义保持原约束；当前 Core 终端/更新响应复用严格有界 JSON 解码。实际 WebSocket 回归确认尾随 JSON 不会作为终端输入转发，跨会话和撤销测试保留。详细结果及覆盖范围见 [69 文件报告](code-review-69-files.md)。
 
 RSS 增量回归从连接的 Core 契约发现全部 feeds.* 私有操作，验证匿名拒绝；另创建含私密标记的停用订阅，检查管理员 cookie 与游客公开响应一致且不包含源名称或 URL 令牌，并核验删除。临时订阅不执行外部抓取。
+
+Agent enrollment responses contain token-bearing native and Docker installation commands. These responses and reusable enrollment grants remain administrator-only; guest projections exclude tokens and installation commands even when administrator cookies are present. The isolated browser attack suite verifies anonymous enrollment denial and command/token exclusion from public display.
+
+Node deletion and pending-enrollment renewal are private Core operations and are covered by the discovered anonymous/forged-identity operation matrix. Renewed tokens and commands never enter the public projection. The browser suite warms publication, deletes a selected node, verifies immediate withdrawal and verifies that its enrollment credential is rejected.

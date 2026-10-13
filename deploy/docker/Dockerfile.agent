@@ -4,6 +4,7 @@ ARG TARGETOS TARGETARCH
 ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY release.go agent-release.version ./
 RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/

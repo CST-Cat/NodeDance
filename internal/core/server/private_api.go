@@ -164,6 +164,21 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 		s.adminListAgents(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/nodes/") {
+		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/nodes/"), "/")
+		if validUUID(parts[0]) && (len(parts) == 1 || (len(parts) == 2 && parts[1] == "enrollment")) {
+			if len(parts) == 1 && r.Method == http.MethodDelete {
+				s.adminDeleteNode(w, r, current, parts[0])
+				return
+			}
+			if len(parts) == 2 && r.Method == http.MethodPost {
+				s.adminCreateAgentEnrollment(w, r, current)
+				return
+			}
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/nodes/") && strings.HasSuffix(r.URL.Path, "/metrics") {
 		parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/nodes/"), "/")
 		if len(parts) != 2 || parts[1] != "metrics" || !validUUID(parts[0]) {

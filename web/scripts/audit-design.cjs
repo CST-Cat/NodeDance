@@ -727,10 +727,9 @@ fs.mkdirSync(out, { recursive: true });
             .fill("Audit node");
           await page.locator(".agent-enrollment-form .primary-button").click();
           await page.locator("[data-testid=agent-install-command]").waitFor();
+          await page.locator("[data-testid=agent-deployment-method]").getByRole('button',{name:/^(Docker deployment|Docker 部署)$/}).click();
           await invariants(prefix + "-docker-command");
-          await page
-            .locator("[data-testid=agent-deployment-method]")
-            .selectOption("native");
+          await page.locator("[data-testid=agent-deployment-method]").getByRole('button',{name:/^(Direct installation \(systemd\)|直接安装（systemd）)$/}).click();
           await invariants(prefix + "-native-command");
         }
         if (label === "Network discovery") {

@@ -6,6 +6,20 @@
 
 ### 简体中文
 
+## [0.1.20]
+
+### English
+
+- Add node deletion and pending-node enrollment renewal through the discovered Core operation contract, with credential revocation, state cleanup and immediate guest publication withdrawal.
+- Simplify native and Docker enrollment to complete copyable commands pinned to the paired Agent release; show enrollment expiry in Beijing time and retain installation access on pending-node details.
+- Expand isolated browser coverage for enrollment, node removal, guest boundaries and bilingual light/dark/mobile layouts; include paired release metadata in source Docker builds.
+
+### 简体中文
+
+- 通过 Core 发现契约增加节点删除与待注册节点安装命令重新生成，撤销凭据、清理节点状态并立即撤回游客公开数据。
+- 简化原生与 Docker 注册为完整可复制命令，固定配对 Agent 发布版本；以北京时间展示凭据有效期，并在待注册节点详情保留安装入口。
+- 扩展注册、节点删除、游客边界及双语浅色／深色／移动端的隔离浏览器回归；源码 Docker 构建包含配对发布元数据。
+
 ## [0.1.19]
 
 ### English

@@ -221,6 +221,12 @@ func updateSchema() any {
 	return body
 }
 
+func renewalSchema() any {
+	body := enrollmentSchema().(map[string]any)
+	delete(body["properties"].(map[string]any), "displayName")
+	return body
+}
+
 func enrollmentSchema() any {
 	body := schema(agents.EnrollmentRequest{}).(map[string]any)
 	properties := body["properties"].(map[string]any)
@@ -280,6 +286,8 @@ func buildOperations() []Operation {
 		op("agents.grants", "GET", "/api/v1/agents/enrollment-grants", "List bounded enrollment grants without secrets", nil),
 		op("agents.create-grant", "POST", "/api/v1/agents/enrollment-grants", "Create an expiring, revocable shared enrollment key; each Agent gets a separate identity", schema(agents.GrantRequest{})),
 		op("agents.revoke-grant", "DELETE", "/api/v1/agents/enrollment-grants/{grantId}", "Revoke a shared enrollment key", nil),
+		op("nodes.delete", "DELETE", "/api/v1/nodes/{nodeId}", "Delete a node in any state, its Core data and credentials; does not uninstall Agent or stop remote work; confirm required", fields("confirm:boolean")),
+		op("nodes.renew-enrollment", "POST", "/api/v1/nodes/{nodeId}/enrollment", "Replace pending enrollment token and return installation commands; previous command becomes invalid", renewalSchema()),
 		op("agents.enrollment", "POST", "/api/v1/agents/enrollments", "Create one-time Agent enrollment with native or Docker installation commands (response contains secret)", enrollmentSchema()),
 		op("agents.revoke", "POST", "/api/v1/agents/{agentId}/revoke", "Revoke Agent identity", nil),
 		op("agents.rotate", "POST", "/api/v1/agents/{agentId}/rotate", "Rotate Agent credential", nil),
