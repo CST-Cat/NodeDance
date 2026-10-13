@@ -100,10 +100,17 @@ def main():
         api('/api/v1/auth/login', creds)
         assert docker('exec', core, 'test', '!', '-e', '/var/lib/nodedance/initial-admin.json', check=False).returncode == 0
         enrollment = api('/api/v1/agents/enrollments', {'displayName': 'Docker integration', 'coreUrl': 'https://docker-test.example'})
-        assert 'install-agent.sh' in enrollment['installCommand']
-        assert 'docker run' in enrollment['dockerInstallCommand']
-        assert '--token-stdin' in enrollment['dockerInstallCommand']
-        assert enrollment['token'] not in enrollment['dockerInstallCommand']
+        paired_tag = Path(__file__).resolve().parents[1].joinpath('agent-release.version').read_text().strip()
+        for field, mode in [('installCommand', 'native'), ('dockerInstallCommand', 'docker')]:
+            command = enrollment[field]
+            assert f'/releases/download/{paired_tag}/install-agent.sh' in command
+            assert f'--release-tag {paired_tag}' in command
+            assert f'--mode {mode}' in command
+            assert f'--token {enrollment["token"]}' in command
+            assert '--server https://docker-test.example' in command
+            assert 'sudo bash' in command
+        logs = docker('logs', core)
+        assert enrollment['token'] not in logs.stdout + logs.stderr
         # Root Agent state must also have protected, root-owned ancestors.
         # The temporary fixture starts out owned by the CI runner.
         docker('run', '--rm', '--user=0:0', '--entrypoint=sh', '--mount', f'type=bind,src={root},dst=/fixture', CORE,
