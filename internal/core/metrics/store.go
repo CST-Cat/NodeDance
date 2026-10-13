@@ -446,7 +446,7 @@ func mergeSnapshot(previous, incoming protocol.MetricsSnapshot, elapsed time.Dur
 	out.Memory = mergeMetric(previous.Memory, incoming.Memory, elapsed)
 	out.Network = mergeNetwork(previous.Network, incoming.Network, elapsed)
 	out.Disk = mergeDisk(previous.Disk, incoming.Disk, elapsed)
-	out.Uptime = mergeMetric(previous.Uptime, incoming.Uptime, elapsed)
+	out.Uptime = mergeMetric(previous.Uptime, out.Uptime, elapsed)
 	return out
 }
 
@@ -638,13 +638,6 @@ func markMetricAged[T any](metric *protocol.Metric[T], maxAge time.Duration) {
 	if sampleExpired(metric.SampleAgeMillis, maxAge) {
 		metric.Status = protocol.MetricStale
 		metric.Reason = appendReason(metric.Reason, "sample_expired")
-	}
-}
-
-func markDiskAged(disk *protocol.MetricsDisk) {
-	if (disk.Status == protocol.MetricKnown || disk.Status == protocol.MetricStale) && sampleExpired(disk.SampleAgeMillis, diskMetricFreshFor) {
-		disk.Status = protocol.MetricStale
-		disk.Reason = appendReason(disk.Reason, "sample_expired")
 	}
 }
 

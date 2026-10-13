@@ -207,16 +207,12 @@ func requireManagedNode(ctx context.Context, s *Server, nodeID string) error {
 	if !validUUID(nodeID) {
 		return errors.New("invalid node ID")
 	}
-	nodes, err := s.agents.ListNodes(ctx)
-	if err != nil {
-		return err
+	var exists int
+	err := s.store.DB.QueryRowContext(ctx, `SELECT 1 FROM nodes WHERE id=?`, nodeID).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return errProbeNodeNotFound
 	}
-	for _, node := range nodes {
-		if node.NodeID == nodeID {
-			return nil
-		}
-	}
-	return errProbeNodeNotFound
+	return err
 }
 
 func writeProbeMutationResult(w http.ResponseWriter, r *http.Request, item coreprobes.Config, err error) {

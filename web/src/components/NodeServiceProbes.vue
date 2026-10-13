@@ -17,6 +17,7 @@ const error = ref('')
 const notice = ref('')
 const formVisible = ref(false)
 const editingID = ref('')
+const editingRevision = ref<number>()
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 
 const form = reactive({
@@ -28,6 +29,7 @@ const nodeProbes = () => probes.value.filter((probe) => probe.nodeId === props.n
 
 function resetForm() {
   editingID.value = ''
+  editingRevision.value = undefined
   Object.assign(form, { name: '', kind: 'http', target: '', expectedHttpStatus: 200, intervalSeconds: 30, timeoutSeconds: 3, enabled: true })
 }
 
@@ -54,6 +56,7 @@ function beginEdit(probe: ServiceProbe) {
   error.value = ''
   notice.value = ''
   editingID.value = probe.id
+  editingRevision.value = probe.revision
   Object.assign(form, {
     name: probe.name, kind: probe.kind, target: probe.target,
     expectedHttpStatus: probe.expectedHttpStatus || 200,
@@ -80,18 +83,9 @@ function payload(revision?: number): ServiceProbePayload {
 async function save() {
   error.value = ''
   notice.value = ''
-  if (!form.name.trim() || !form.target.trim()) {
-    error.value = t('m.66e6e7d1ca56')
-    return
-  }
-  if (form.timeoutSeconds < 1 || form.intervalSeconds < 10 || form.intervalSeconds > 86400 || form.timeoutSeconds >= form.intervalSeconds) {
-    error.value = t('m.7b6c0d85fbe8')
-    return
-  }
   saving.value = true
   try {
-    const selected = probes.value.find((probe) => probe.id === editingID.value)
-    if (editingID.value && selected) await api.updateServiceProbe(editingID.value, payload(selected.revision))
+    if (editingID.value) await api.updateServiceProbe(editingID.value, payload(editingRevision.value))
     else await api.createServiceProbe(payload())
     closeForm()
     notice.value = t('m.c538fb4a37f3')

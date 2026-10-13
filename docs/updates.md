@@ -98,6 +98,10 @@ sudo bash install-updater.sh --release-tag agent-v0.1.7 \
 
 The transaction resolves and preflights a published release, verifies downloads before stopping anything, takes an offline private state backup, replaces only the registered runtime, then checks the reported version and service health or same-identity Agent reconnection. Failure restores the prior runtime automatically. Core data returns to its pre-update snapshot; Agent credentials and task state remain current. The update supervisor is also verified and refreshed with the release. Durable root-owned job journals recover interrupted transactions after supervisor restart. Backups and stopped prior containers are retained for rollback.
 
+控制器关闭时立即拒绝新任务，取消正在进行的任务接收检查，并等待接收检查和已启动的更新工作结束后才释放进程锁。发布查询不能在关闭后重新接收任务，避免新旧控制器同时接管更新。
+
+Shutdown rejects new work and cancels pending admission checks. The controller retains its process lock until both admission and execution finish, so a late release lookup cannot accept work after ownership has been released.
+
 Core 回滚会撤销更新后发生的数据变更，执行前必须明确确认。若外部工具已替换容器或版本，控制服务拒绝覆盖它。更新服务注册文件为 `/etc/nodedance-updater/config.json`（root、0600）；Agent 状态始终 root、0700，凭据为普通 0600 文件。
 
 Confirm Core rollback with the understanding that data changes since the update will be undone. The supervisor refuses to overwrite a runtime replaced externally. Its registration file is root-owned 0600; Agent state and credentials retain their root ownership and 0700/0600 permissions.

@@ -19,10 +19,7 @@ let pollTimer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
 
 function validInput() {
-  return /^[a-z0-9][a-z0-9_-]{0,62}$/.test(name.value) && workingDirectory.value.startsWith('/') &&
-    workingDirectory.value !== '/' && !workingDirectory.value.includes('\0') &&
-    !workingDirectory.value.split('/').some((part) => part === '..' || part === '.') &&
-    content.value.trim().length > 0 && new TextEncoder().encode(content.value).length <= 128 * 1024
+  return Boolean(name.value.trim() && workingDirectory.value.trim() && content.value.trim())
 }
 
 function taskMessage(value: ContainerTask) {
@@ -66,7 +63,7 @@ async function createProject() {
       name: name.value,
       workingDirectory: workingDirectory.value,
       content: content.value,
-    }, crypto.randomUUID())
+    })
     const current = await composeApi.task(props.nodeId, accepted.taskId)
     task.value = current
     message.value = taskMessage(current)

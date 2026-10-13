@@ -10,15 +10,20 @@ spec.loader.exec_module(notes)
 BODY = '## [1.2.3]\n\n### English\n- Fix connections.\n\n### 简体中文\n- 修复连接。\n'
 
 class ReleaseNotesTest(unittest.TestCase):
-    def test_core_pins_latest_published_agent_across_pages(self):
-        def release(tag, date, **kw):
-            return dict(tag_name=tag, published_at=date, **kw)
-        pages = [[release('core-v9.0.0', '2026-10-10'), release('agent-v2.0.0', '2026-10-11', draft=True)],
-                 [release('agent-v1.1.0', '2026-10-09', prerelease=True), release('agent-v1.0.0', '2026-10-08'),
-                  release('agent-v0.9.0', '2026-10-07')]]
-        rendered = notes.render('core', 'core-v1.2.3', BODY, pages, 'owner/repo')
-        self.assertTrue(rendered.startswith('Latest Agent / 最新 Agent: [agent-v1.0.0](https://github.com/owner/repo/releases/tag/agent-v1.0.0)\n'))
+    def test_core_pins_exact_published_agent(self):
+        release = dict(tag_name='agent-v1.0.0', published_at='2026-10-08', draft=False, prerelease=False)
+        rendered = notes.render('core', 'core-v1.2.3', BODY, release, 'owner/repo', 'agent-v1.0.0')
+        self.assertTrue(rendered.startswith('Agent / 对应 Agent: [agent-v1.0.0](https://github.com/owner/repo/releases/tag/agent-v1.0.0)\n'))
         self.assertIn('修复连接', rendered)
+        for overrides in [dict(tag_name='agent-v2.0.0'), dict(draft=True), dict(prerelease=True), dict(published_at=None)]:
+            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                notes.render('core', 'core-v1.2.3', BODY, release | overrides, 'owner/repo', 'agent-v1.0.0')
+
+    def test_core_validation_can_run_before_agent_publication(self):
+        self.assertEqual(notes.validate('core', 'core-v1.2.3', BODY, 'agent-v1.0.0'), notes.extract(BODY, '1.2.3'))
+        for tag in [None, '', 'core-v1.0.0', 'agent-v01.0.0', 'agent-v1.0.0-rc1']:
+            with self.subTest(tag=tag), self.assertRaises(ValueError):
+                notes.validate('core', 'core-v1.2.3', BODY, tag)
 
     def test_invalid_notes_and_missing_agent_fail(self):
         for body in ['## [Unreleased]\n', BODY.replace('- 修复连接。', ''), BODY + BODY]:
@@ -28,7 +33,7 @@ class ReleaseNotesTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 notes.render('agent', tag, BODY)
         with self.assertRaises(ValueError):
-            notes.render('core', 'core-v1.2.3', BODY, [], 'owner/repo')
+            notes.render('core', 'core-v1.2.3', BODY, None, 'owner/repo', 'agent-v1.0.0')
 
     def test_promote_keeps_component_history_and_resets_unreleased(self):
         with tempfile.TemporaryDirectory() as directory:

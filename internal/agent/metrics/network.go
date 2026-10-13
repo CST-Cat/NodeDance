@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -117,8 +116,4 @@ func stableInterfaceIdentity(iface net.InterfaceStat, link linkMetadata) (string
 		identity += "/" + mac
 	}
 	return identity, ""
-}
-
-func masterName(path string) string {
-	return filepath.Base(path)
 }

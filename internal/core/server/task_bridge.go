@@ -224,8 +224,7 @@ func (s *Server) acceptAgentTaskReport(ctx context.Context, connection *agentCon
 }
 
 // migrateRebuiltContainerPreferences moves only a verified successful rebuild's
-// display preferences through the production SQLite adapter or an explicitly
-// injected test/alternate adapter.
+// display preferences in the same SQLite store as the dashboard.
 func (s *Server) migrateRebuiltContainerPreferences(ctx context.Context, task coretasks.Task) error {
 	if task.Status != taskstate.Succeeded || task.Intent.Action != protocol.TaskRebuild ||
 		!protocol.IsFullContainerID(task.Intent.ContainerID) || !protocol.IsFullContainerID(task.Result.ResourceRevision) ||

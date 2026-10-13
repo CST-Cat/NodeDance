@@ -2,6 +2,7 @@
 package localstate
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"golang.org/x/sys/unix"
@@ -10,6 +11,8 @@ import (
 	"path/filepath"
 	"syscall"
 )
+
+const maxStateBytes = 4 << 20
 
 func Directory(path string) error {
 	if os.Geteuid() != 0 {
@@ -75,7 +78,16 @@ func Read(path string, v any) error {
 	if !ok || !info.Mode().IsRegular() || st.Uid != 0 || info.Mode().Perm() != 0600 {
 		return errors.New("Agent state file must be root-owned regular 0600")
 	}
-	decoder := json.NewDecoder(io.LimitReader(f, 4<<20))
+	// Read one byte beyond the limit so a truncated reader cannot disguise
+	// trailing data as EOF. Apply the same bound before replacing state.
+	data, err := io.ReadAll(io.LimitReader(f, maxStateBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(data) > maxStateBytes {
+		return errors.New("Agent state exceeds 4 MiB")
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(v); err != nil {
 		return err
@@ -101,6 +113,9 @@ func Write(path string, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
+	}
+	if len(data) > maxStateBytes {
+		return errors.New("Agent state exceeds 4 MiB")
 	}
 	f, err := os.CreateTemp(filepath.Dir(path), ".state-")
 	if err != nil {

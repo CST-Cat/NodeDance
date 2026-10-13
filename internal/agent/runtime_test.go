@@ -77,6 +77,14 @@ func TestAgentHostManagementEntrypointsRejectNonRoot(t *testing.T) {
 		call func() error
 	}{
 		{
+			name: "credential read",
+			call: func() error { _, err := LoadConfig(configPath); return err },
+		},
+		{
+			name: "credential write",
+			call: func() error { return SaveConfig(configPath, Config{}, true) },
+		},
+		{
 			name: "enroll",
 			call: func() error {
 				return Enroll(context.Background(), "http://127.0.0.1:8180", "", true, strings.NewReader(""), configPath)

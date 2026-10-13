@@ -217,3 +217,7 @@ Guest display is configured with the discovered `guest.settings/configure/previe
 File management supports pagination/search, no-overwrite copy/move, ZIP archive/extraction and versioned edits through the same discovered `files.*` and `tasks.*` operations in CLI/TUI. See [full file manager](file-manager.md) for fields, bounds and outcome semantics. 文件分页／搜索、复制移动、ZIP 压缩解压与版本化编辑由 CLI／TUI／Web 共用契约；字段、限制与结果语义见文件管理文档。
 
 File editing supports up to 8 MiB UTF-8 text. Body input and text response bounds come from the connected operation contract, including JSON escaping overhead; CLI and TUI share the same bounded input reader and executor. `files.action.format` offers ZIP/TAR/TAR.GZ creation, while extraction also supports TAR.BZ2; see [file management](file-manager.md).
+
+## RSS subscriptions / RSS 订阅
+
+`feeds.*` operations are discovered from Core and available through CLI, TUI and Web. Refresh intervals accept integer minutes from 1 through 10080, default 30. `feeds.refresh --wait` uses the shared completion observer; `feeds.cancel` stops queued/running refresh. See [subscription inputs, notifications and examples](rss.md).

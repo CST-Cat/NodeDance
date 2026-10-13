@@ -6,7 +6,7 @@
 
 ## Core
 
-The Go Core serves the administrator Web application, `/api/v1` HTTP API, and authenticated outbound Agent sessions at `/ws/v1/agent`, with acknowledged HTTP fallback at `/api/v1/agents/channel`. Production listeners bound beyond loopback require a configured TLS certificate and matching key; otherwise the Core CLI refuses startup. SQLite stores administrator, Agent, task, metric, and Docker state. Browser mutations require an authenticated session and CSRF validation. Agent identity comes from registered device credentials bound to a node.
+The Go Core serves the administrator Web application, `/api/v1` HTTP API, and authenticated outbound Agent sessions at `/ws/v1/agent`, with acknowledged HTTP fallback at `/api/v1/agents/channel`. Core can serve TLS with a configured certificate and matching key, or serve HTTP behind a TLS reverse proxy. Production browser access uses an HTTPS public origin; proxy deployments configure that origin and trusted proxy addresses. SQLite stores administrator, Agent, task, metric, and Docker state. Browser mutations require an authenticated session and CSRF validation. Agent identity comes from registered device credentials bound to a node.
 
 Core startup treats the database, administrator security material, and Core task store as required foundations. Alert delivery and probe execution are background capabilities: alert key/store/recovery errors are reported and leave alert routes unavailable, while probe state recovery errors are logged and the scheduler retries independently. Neither scheduler owns the Core HTTP listener or host monitoring. A failure restoring cached Docker inventory is logged and does not prevent Core management from starting.
 
@@ -21,6 +21,8 @@ The Core task store in `internal/core/tasks/` owns remote task identity, idempot
 ## Backup and restore
 
 `nodedance backup` uses SQLite's online backup API to snapshot committed database and WAL contents while the Core is running. The private archive includes the database, authentication and alert-encryption keys, and optional first-run or Tailscale deployment state. `nodedance restore` validates the manifest, file digests, required keys, and SQLite integrity in a private staging directory, then atomically installs the complete snapshot into an absent or empty destination on Linux. The database and matching keys move together, preserving administrator and Agent identities, preferences, tasks, probe/alert history, and notification secret access.
+
+Backup hashing, copying and restore extraction check cancellation between reads; SQLite snapshots copy bounded page batches. Key entries are limited to 32 bytes before extraction, independently of the database size limit. Cancellation is checked before installing the completed archive or restored directory.
 
 ## Agent
 
@@ -48,6 +50,8 @@ CLI and TUI share the terminal operation registry and finite executor, including
 
 Agent enrollment returns a Core-generated installer command through `internal/installer`; Web, CLI and TUI use the same root-only command and published Agent-tag resolution.
 
+The native command runs the pinned `install-agent.sh`, which installs its systemd update supervisor and owns the final exit status. Docker enrollment has its own command and Docker supervisor step; the native command does not invoke Docker.
+
 ## Extended Agent management
 
 The `agent.host.v1` capability carries shared Agent settings, redacted diagnostics and durable root script jobs. The same operation contract exposes single-node commands, durable multi-node command/probe batches, asset settings and bounded enrollment grants. Each grant consumer receives an independent credential; its use count is claimed in the enrollment transaction. Settings, traffic and command records are stored as root-owned private JSON. Jobs persist acceptance before execution and never replay on restart.
@@ -69,3 +73,7 @@ See [verification results and reproduction](verification.md).
 ## Guest display
 
 Core owns opt-in publication policy, dedicated public response types and bounded cached projections of existing metric/history/probe data. The login page exposes guest entry only when enabled; visitors receive no management capabilities. Administrator configuration and saved-policy preview use the shared discovered operation contract in all interfaces. See [guest display](guest-display.md).
+
+## Core subscriptions
+
+Core owns RSS/Atom fetches, subscription revisions, bounded entries, shared read state and independent notification delivery. All interfaces discover feeds.* from the Core contract; Agents and guest projections are not involved. See [RSS subscriptions](rss.md).

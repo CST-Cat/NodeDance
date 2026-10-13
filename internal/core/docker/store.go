@@ -749,16 +749,22 @@ func (s *Store) SnapshotAt(nodeID string, lease *Lease, now time.Time) (View, bo
 	if s == nil || strings.TrimSpace(nodeID) != nodeID || nodeID == "" || now.IsZero() {
 		return View{}, false
 	}
-	s.ExpireStaging(now)
-	s.mu.RLock()
+	s.mu.Lock()
 	state := s.nodes[nodeID]
 	if state == nil {
-		s.mu.RUnlock()
+		s.mu.Unlock()
 		return View{}, false
+	}
+	expireStageLocked(state, now, s.options.SnapshotTTL)
+	if ignored := state.ignored; ignored != nil && now.Sub(ignored.startedAt) > s.options.SnapshotTTL {
+		state.ignored = nil
+		if !ignored.expired {
+			state.staleReason = "snapshot_staging_expired"
+		}
 	}
 	copy := cloneNodeStateForView(state)
 	active, bound := s.bindings[nodeID]
-	s.mu.RUnlock()
+	s.mu.Unlock()
 
 	view := View{
 		AgentID: copy.identity.AgentID, NodeID: copy.identity.NodeID,

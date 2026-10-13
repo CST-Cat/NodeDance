@@ -16,6 +16,80 @@ import (
 
 type fixtureResolver struct{ fail bool }
 
+func TestRollbackJournalFailureLeavesRuntimeUntouched(t *testing.T) {
+	m, _, running := nativeFixture(t)
+	job := Job{ID: strings.Repeat("c", 32), Component: "core", Status: "queued", Stage: "queued"}
+	// A non-regular destination deterministically rejects the stage write,
+	// including when this test runs as root.
+	if err := os.Mkdir(filepath.Join(m.Config.StateDir, job.ID+".json"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	commands := 0
+	m.command = func(context.Context, string, ...string) ([]byte, error) {
+		commands++
+		return nil, errors.New("runtime must not be touched without durable intent")
+	}
+	m.runRollback(job, Job{ID: strings.Repeat("d", 32), Component: "core"})
+	result, err := m.Get("core", job.ID)
+	if err != nil || result.Status != "journal_failed" || result.Finished == nil || commands != 0 || !running.Load() {
+		t.Fatalf("rollback continued after journal failure: %+v, commands=%d, err=%v", result, commands, err)
+	}
+}
+
+type pausedResolver struct {
+	fixtureResolver
+	started chan struct{}
+	release chan struct{}
+}
+
+func (r pausedResolver) Resolve(ctx context.Context, component, version string) (Release, error) {
+	close(r.started)
+	<-r.release
+	return r.fixtureResolver.Resolve(ctx, component, version)
+}
+
+func TestClosedControllerRejectsNewUpdates(t *testing.T) {
+	m, _, _ := nativeFixture(t)
+	m.Close()
+	if job, err := m.Apply(context.Background(), Request{Component: "core", Confirm: true}, "after-close-key"); err == nil {
+		t.Fatalf("closed controller accepted new work: %+v", job)
+	}
+	if len(m.Jobs()) != 0 {
+		t.Fatal("closed controller persisted a new update")
+	}
+}
+
+func TestControllerCloseWaitsForAdmissionAndPreventsLateAcceptance(t *testing.T) {
+	m, _, running := nativeFixture(t)
+	resolver := pausedResolver{started: make(chan struct{}), release: make(chan struct{})}
+	m.Resolver = resolver
+	result := make(chan error, 1)
+	go func() {
+		_, err := m.Apply(context.Background(), Request{Component: "core", Confirm: true}, "closing-controller")
+		result <- err
+	}()
+	<-resolver.started
+	closed := make(chan struct{})
+	go func() { m.Close(); close(closed) }()
+	select {
+	case <-closed:
+		t.Error("controller released ownership while update admission was still running")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(resolver.release)
+	if err := <-result; err == nil {
+		t.Error("update was accepted after shutdown started")
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("controller did not finish shutdown")
+	}
+	if !running.Load() || len(m.Jobs()) != 0 {
+		t.Fatal("shutdown allowed an update to affect the runtime or journal")
+	}
+}
+
 func TestDockerAgentVersionUsesRunningHostExecutable(t *testing.T) {
 	for _, pid := range []string{"4321\n", "0\n", "1", "-1", "not-a-pid"} {
 		t.Run(strings.TrimSpace(pid), func(t *testing.T) {

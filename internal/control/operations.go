@@ -14,6 +14,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/alerts"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
+	"github.com/CST-Cat/NodeDance/internal/core/feeds"
 	"github.com/CST-Cat/NodeDance/internal/core/guest"
 	coretailscale "github.com/CST-Cat/NodeDance/internal/core/tailscale"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -93,6 +94,17 @@ func schema(value any) any {
 		}
 	}
 	switch value.(type) {
+	case feeds.Input:
+		for _, key := range []string{"intervalMinutes", "digestMinutes"} {
+			props[key].(map[string]any)["minimum"] = 1
+			props[key].(map[string]any)["maximum"] = 10080
+		}
+		props["intervalMinutes"].(map[string]any)["default"] = 30
+		props["digestMinutes"].(map[string]any)["default"] = 60
+		enum("notificationMode", "off", "immediate", "digest")
+		props["name"].(map[string]any)["minLength"] = 1
+		props["name"].(map[string]any)["maxBytes"] = 120
+		props["url"].(map[string]any)["maxBytes"] = 2048
 	case guest.Settings:
 		props["title"].(map[string]any)["minLength"] = 1
 		props["title"].(map[string]any)["maxLength"] = 80
@@ -330,6 +342,18 @@ func buildOperations() []Operation {
 		op("windows.list", "GET", "/api/v1/alerts/windows", "Silence and maintenance windows", nil),
 		op("windows.create", "POST", "/api/v1/alerts/windows", "Create silence or maintenance window", schema(alerts.WindowInput{})),
 		op("windows.delete", "DELETE", "/api/v1/alerts/windows/{id}", "Delete window", nil),
+		op("feeds.options", "GET", "/api/v1/feeds/options", "Subscription refresh intervals and limits", nil),
+		op("feeds.list", "GET", "/api/v1/feeds", "RSS and Atom subscriptions", nil),
+		op("feeds.create", "POST", "/api/v1/feeds", "Create a Core-local subscription", schema(feeds.Input{})),
+		op("feeds.get", "GET", "/api/v1/feeds/{id}", "Subscription refresh status", nil),
+		op("feeds.update", "PUT", "/api/v1/feeds/{id}", "Update subscription using current revision", schema(feeds.Input{})),
+		op("feeds.delete", "DELETE", "/api/v1/feeds/{id}", "Delete subscription and its entries; confirm required", fields("revision:integer confirm:boolean")),
+		op("feeds.refresh", "POST", "/api/v1/feeds/{id}/refresh", "Queue refresh; coalesce pending requests", nil),
+		op("feeds.cancel", "POST", "/api/v1/feeds/{id}/cancel", "Cancel queued or running refresh", nil),
+		op("feeds.items", "GET", "/api/v1/feeds/{id}/items", "Subscription entries with pagination and search", nil, "offset", "limit", "unread", "search"),
+		op("feeds.read", "PUT", "/api/v1/feeds/{id}/items/{itemId}", "Set shared read state", fields("read:boolean")),
+		op("feeds.deliveries", "GET", "/api/v1/feeds/{id}/deliveries", "Subscription notification history", nil),
+		op("feeds.retry-delivery", "POST", "/api/v1/feeds/{id}/deliveries/{deliveryId}/retry", "Retry failed subscription notification", nil),
 		op("deliveries.list", "GET", "/api/v1/alerts/deliveries", "Notification delivery history", nil, "limit"),
 		op("discovery.peers", "GET", "/api/v1/discovery/tailscale", "Detect existing Tailscale Linux peers; never configure Tailscale", nil),
 		op("discovery.host-key", "POST", "/api/v1/discovery/tailscale/host-key", "Read SSH host fingerprint for independent verification", schema(protocol.HostKeyRequest{})),
@@ -346,6 +370,8 @@ func buildOperations() []Operation {
 	for i := range list {
 		o := &list[i]
 		switch o.Name {
+		case "feeds.refresh":
+			o.Completion = &CompletionContract{Operation: "feeds.get", Params: map[string]string{"id": "params.id"}, StatusPath: "status", TerminalStatuses: []string{"succeeded", "failed", "canceled", "inactive"}, SuccessStatuses: []string{"succeeded"}}
 		case "probes.batch", "commands.batch", "commands.submit", "updates.apply", "updates.rollback", "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "deployments.create":
 			o.Idempotent = true
 		}

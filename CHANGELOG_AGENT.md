@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.13]
+
+### English
+
+- Harden container rebuild recovery, task lifecycles, terminal and stream cleanup, probe execution, metrics persistence and systemd handling; remove redundant compatibility paths and add focused regressions.
+- Improve file service safety and bounded transfer behavior, correct host/network metric reporting, and make agent release images use native build artifacts with reusable build inputs.
+
+### 简体中文
+
+- 加固容器重建恢复、任务生命周期、终端与流清理、探测执行、指标持久化及 systemd 处理；移除冗余兼容路径并补充针对性回归。
+- 改进文件服务安全与有界传输、修正主机／网络指标，并让 Agent 发布镜像复用原生构建产物与构建输入。
+
 ## [0.1.12]
 
 ### English

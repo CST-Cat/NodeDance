@@ -618,7 +618,7 @@ func TestRemoteInstallUnitQueryFailureAbortsBeforeWritesOrReload(t *testing.T) {
 	remote := &stage6Remote{}
 	preflight := Preflight{OS: "linux", Arch: "x86_64", UID: 0, UnitState: "absent"}
 	artifact := Artifact{Bytes: []byte("stage6-local-artifact"), OS: "linux", Arch: "x86_64"}
-	if err := InstallRemoteWithFileRootOptions(context.Background(), remote, preflight, artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, "", false); err != nil {
+	if err := InstallRemote(context.Background(), remote, preflight, artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if len(remote.installs) != 1 {
@@ -667,7 +667,7 @@ func TestInstallRemotePassesSystemdPreflightFingerprintToInstaller(t *testing.T)
 			remote := &stage6Remote{}
 			preflight := Preflight{OS: "linux", Arch: "x86_64", UID: 0, UnitState: state.unit, UnitSHA256: state.sum}
 			artifact := Artifact{Bytes: []byte("stage6-local-artifact"), OS: "linux", Arch: "x86_64"}
-			err := InstallRemoteWithFileRootOptions(context.Background(), remote, preflight, artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, "", false)
+			err := InstallRemote(context.Background(), remote, preflight, artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, "", false)
 			if err != nil {
 				t.Fatalf("build deployment script: %v", err)
 			}
@@ -733,7 +733,7 @@ func TestGeneratedInstallValidatesAgentStateBeforeAnySystemWrites(t *testing.T) 
 	remote := &stage6Remote{}
 	preflight := Preflight{OS: "linux", Arch: arch, UID: 0, UnitState: "absent"}
 	artifact := Artifact{Bytes: artifactBytes, OS: "linux", Arch: arch, SHA256: hex.EncodeToString(digest[:])}
-	if err := InstallRemoteWithFileRootOptions(context.Background(), remote, preflight, artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, "", false); err != nil {
+	if err := InstallRemote(context.Background(), remote, preflight, artifact, "https://core.example", Enrollment{NodeID: "node-1", Token: "one-time-token"}, "", false); err != nil {
 		t.Fatalf("generate Agent installation script: %v", err)
 	}
 	if len(remote.installs) != 1 {

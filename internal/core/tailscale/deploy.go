@@ -176,7 +176,7 @@ func (s *Service) deploy(ctx context.Context, request DeployRequest, beforeInsta
 	if err := beforeInstall(peer, enrollment.NodeID); err != nil {
 		return DeploymentResult{NodeID: enrollment.NodeID, PeerIdentity: peer.Identity}, err
 	}
-	if err := InstallRemoteWithFileRootOptions(ctx, remote, preflight, artifact, selectedURL, enrollment, request.FileRoot, request.DisableFileRoot); err != nil {
+	if err := InstallRemote(ctx, remote, preflight, artifact, selectedURL, enrollment, request.FileRoot, request.DisableFileRoot); err != nil {
 		return DeploymentResult{NodeID: enrollment.NodeID, PeerIdentity: peer.Identity}, fmt.Errorf("%w: remote Agent installation result must be inspected before retrying: %v", ErrOutcomeUnknown, err)
 	}
 	if s.WaitOnline != nil {

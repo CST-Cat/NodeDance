@@ -49,3 +49,5 @@ Agent enrollment, recovery, runtime, file service, and systemd service require r
 - [Release notes](docs/releases.md)
 
 正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](docs/updates.md).
+
+The Core includes [RSS/Atom subscriptions](docs/rss.md), with adjustable refresh intervals (minimum 1 minute, default 30 minutes), shared read state, keyword notifications and digests.

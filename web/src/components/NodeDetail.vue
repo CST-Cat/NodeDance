@@ -2,8 +2,8 @@
 import { requestPrompt } from '../dialogs'
 import { useViewTab } from '../navigation'
 import { t, display, locale } from "../i18n"
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { api, type AgentNode, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainerRecord, type DockerInventory, type MetricHistory, type TaskAuditEvent } from '../api'
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
+import { api, type AgentNode, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainerRecord, type DockerInventory, type MetricHistory, type ServiceProbe, type TaskAuditEvent } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import ContainerRebuildWizard from './ContainerRebuildWizard.vue'
 import ContainerStreams from './ContainerStreams.vue'
@@ -47,11 +47,32 @@ const emit = defineEmits<{
 }>()
 
 const sectionTabs = computed(() => [
-  { id: 'overview', label: t('m.a33db5730556') }, { id: 'docker', label: t('m.eee901e4cc16') }, { id: 'images', label: t('m.176c09844e0f') },
+  { id: 'overview', label: t('m.a33db5730556') }, { id: 'probes', label: t('m.3fefdc07fa14') }, { id: 'docker', label: t('m.eee901e4cc16') }, { id: 'images', label: t('m.176c09844e0f') },
   { id: 'compose', label: t('m.5f67dd75b01f') }, { id: 'rebuild', label: t('m.474490ab5dc3') }, { id: 'files', label: t('m.b3bd5ac7cc4d') },
   { id: 'history', label: t('m.bfb41404e88b') }, { id: 'events', label: t('m.a700a47380fe') }, { id: 'settings', label: t('m.0a09fda5e2a6') },
 ] as const)
 const activeSection = useViewTab('section', 'overview', () => sectionTabs.value.map(tab => tab.id))
+const overviewProbes = ref<ServiceProbe[]>([])
+const probeSummaryError = ref('')
+const probeSummaryLoadedAt = ref<Date>()
+let probeSummaryEpoch = 0
+const probeCounts = computed(() => {
+  const enabled = overviewProbes.value.filter(probe => probe.enabled)
+  const healthy = props.online ? enabled.filter(probe => probe.status === 'healthy').length : 0
+  const unhealthy = props.online ? enabled.filter(probe => probe.status === 'unhealthy').length : 0
+  return { total: overviewProbes.value.length, healthy, unhealthy, unknown: enabled.length - healthy - unhealthy, disabled: overviewProbes.value.length - enabled.length }
+})
+watch([() => props.node.nodeId, activeSection], async ([nodeId, section]) => {
+  const epoch = ++probeSummaryEpoch
+  overviewProbes.value = []; probeSummaryError.value = ''; probeSummaryLoadedAt.value = undefined
+  if (section !== 'overview') return
+  try {
+    const response = await api.serviceProbes()
+    if (epoch === probeSummaryEpoch) { overviewProbes.value = response.probes.filter(probe => probe.nodeId === nodeId); probeSummaryLoadedAt.value = new Date() }
+  } catch (reason) {
+    if (epoch === probeSummaryEpoch) probeSummaryError.value = reason instanceof Error ? reason.message : t('m.ebf63ef228d2')
+  }
+}, { immediate: true })
 const customFieldOptions = computed(() => [
   { id: 'state', label: t('m.e46b0272bd64') }, { id: 'ports', label: t('m.e71ac32b544b') }, { id: 'health', label: t('m.85788192fbeb') },
   { id: 'image', label: t('m.176c09844e0f') }, { id: 'uptime', label: t('m.5986e9d976e0') },
@@ -349,9 +370,8 @@ watch(rebuildCandidates, (records) => {
     selectedRebuildContainerID.value = records[0]?.container.id ?? ''
   }
 }, { immediate: true })
-onMounted(() => {
-})
 onBeforeUnmount(() => {
+  probeSummaryEpoch++
   document.removeEventListener('pointermove', movePointerReorder)
   document.removeEventListener('pointerup', endPointerReorder)
   document.removeEventListener('pointercancel', endPointerReorder)
@@ -361,10 +381,15 @@ onBeforeUnmount(() => {
 <template>
   <section class="node-detail-page" aria-labelledby="detail-title" data-testid="node-detail">
     <header class="detail-heading">
-      <div><button class="container-action back-button" type="button" @click="emit('back')">{{ t('m.40c2548e2416') }}</button><span class="eyebrow">{{ t('label.164ba94c1c7b') }}</span><h1 id="detail-title">{{ nodeTitle }}</h1><p v-if="nodeTitle !== node.displayName || node.agentVersion"><template v-if="nodeTitle !== node.displayName">{{ node.displayName }}<template v-if="node.agentVersion"> · </template></template>{{ node.agentVersion }}</p><p v-if="nodePreference?.notes" class="node-detail-note">{{ nodePreference.notes }}</p></div>
+      <div><div class="detail-heading-navigation"><button class="container-action back-button" type="button" @click="emit('back')">{{ t('m.40c2548e2416') }}</button><span class="eyebrow">{{ t('label.164ba94c1c7b') }}</span></div><h1 id="detail-title">{{ nodeTitle }}</h1><p v-if="nodeTitle !== node.displayName || node.agentVersion"><template v-if="nodeTitle !== node.displayName">{{ node.displayName }}<template v-if="node.agentVersion"> · </template></template>{{ node.agentVersion }}</p><p v-if="nodePreference?.notes" class="node-detail-note">{{ nodePreference.notes }}</p></div>
       <div class="detail-heading-status"><span class="node-detail-status" :data-online="online">{{ pending ? t('m.a890b3be09aa') : online ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c') }}</span><span class="docker-state" :data-available="inventory?.dockerAvailability || 'unknown'" :data-stale="dockerStale">{{ inventory ? dockerAvailabilityText(inventory) : online ? t('m.c12a50c262ca') : t('m.8a6501e8198f') }}</span></div>
     </header>
     <nav class="dashboard-tabs" :aria-label="t('m.c778eb5beb54')"><button v-for="tab in sectionTabs" :key="tab.id" type="button" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button></nav>
+    <div v-if="activeSection === 'overview' && probeCounts.total" class="probe-overview-summary" data-testid="probe-overview-summary">
+      <div><p>{{ t('node.probes.summary', {'0': probeCounts.total, '1': probeCounts.healthy, '2': probeCounts.unhealthy, '3': probeCounts.unknown, '4': probeCounts.disabled}) }}</p><small v-if="probeSummaryLoadedAt">{{ t('node.probes.loaded', {'0': probeSummaryLoadedAt.toLocaleString(locale)}) }}</small></div>
+      <button type="button" class="secondary-button" @click="selectSection('probes')">{{ t('node.probes.open') }}</button>
+    </div>
+    <p v-if="activeSection === 'overview' && probeSummaryError" role="alert" class="probe-summary-error">{{ display(probeSummaryError) }}</p>
     <MetricsPanel v-if="activeSection === 'overview' && metrics" :key="metrics.nodeId" :view="metrics" />
     <div v-else-if="activeSection === 'overview'" class="metrics-waiting" data-testid="metrics-waiting"><span class="eyebrow">{{ node.displayName }}</span><h2>{{ pending ? t('m.270c0a7750e1') : online ? t('m.78a4908b8949') : t('m.f339ad3bc760') }}</h2><p v-if="pending">{{ t('m.31483a081b8c') }}</p><p v-else-if="online">{{ t('m.ad2b360a6731') }}</p><p v-else>{{ t('m.fcca199d47b9') }}{{ nodeReason ? t('m.fee0ec31e108', {'0': (nodeReason)}) : '' }}</p><span class="node-detail-status" :data-online="online">{{ pending ? t('m.a890b3be09aa') : online ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c') }}</span></div>
 
@@ -397,21 +422,26 @@ onBeforeUnmount(() => {
         </div>
       </section>
     </template>
-    <ImagesPanel v-if="activeSection === 'images'" :key="node.nodeId" :node-id="node.nodeId"/><ComposeProjects v-if="activeSection === 'compose'" :key="node.nodeId" :node-id="node.nodeId"/><section v-if="activeSection === 'rebuild'" class="section-panel container-rebuild-page" :aria-label="t('m.e5634738490a')" data-testid="container-rebuild-page"><header class="section-toolbar"><div><span class="eyebrow">{{ t('label.08671c7919d1') }}</span><h2>{{ t('m.e5634738490a') }}</h2></div></header><p class="rebuild-safety-note">{{ t('m.acc2b82becc5') }}</p><p v-if="!rebuildCandidates.length" class="docker-empty">{{ t('m.59042e079f41') }}</p><template v-else><label class="rebuild-container-picker">{{ t('m.4210fc8f913a') }}<select v-model="selectedRebuildContainerID"><option v-for="record in rebuildCandidates" :key="record.container.id" :value="record.container.id">{{ containerTitle(record) }} · {{ record.container.id.slice(0, 12) }}</option></select></label><ContainerRebuildWizard v-if="selectedRebuildContainer" :node-id="node.nodeId" :container="selectedRebuildContainer.container" :stale="!canOperate(selectedRebuildContainer)" :tasks="tasks"/></template></section><NodeFiles v-if="activeSection === 'files'" :key="node.nodeId" :node-id="node.nodeId" :node-name="node.displayName"/>
+    <ImagesPanel v-if="activeSection === 'images'" :key="node.nodeId" :node-id="node.nodeId"/><ComposeProjects v-if="activeSection === 'compose'" :key="node.nodeId" :node-id="node.nodeId"/><section v-if="activeSection === 'rebuild'" class="section-panel container-rebuild-page" :aria-label="t('m.e5634738490a')" data-testid="container-rebuild-page"><header class="section-toolbar"><div><span class="eyebrow">{{ t('label.08671c7919d1') }}</span><h2>{{ t('m.e5634738490a') }}</h2></div></header><p class="rebuild-safety-note">{{ t('m.acc2b82becc5') }}</p><p v-if="!rebuildCandidates.length" class="docker-empty">{{ t('m.59042e079f41') }}</p><template v-else><label class="rebuild-container-picker">{{ t('m.4210fc8f913a') }}<select v-model="selectedRebuildContainerID"><option v-for="record in rebuildCandidates" :key="record.container.id" :value="record.container.id">{{ containerTitle(record) }} · {{ record.container.id.slice(0, 12) }}</option></select></label><ContainerRebuildWizard v-if="selectedRebuildContainer" :key="selectedRebuildContainer.container.id" :node-id="node.nodeId" :container="selectedRebuildContainer.container" :stale="!canOperate(selectedRebuildContainer)" :tasks="tasks"/></template></section><NodeFiles v-if="activeSection === 'files'" :key="node.nodeId" :node-id="node.nodeId" :node-name="node.displayName"/>
     <section v-if="activeSection === 'history'" class="section-panel" :aria-label="t('m.792a0100ee53')"><div class="section-toolbar"><div><span class="eyebrow">{{ t('label.8f7889f6a879') }}</span><h2>{{ t('m.fdc402785198') }}{{ nodeTitle }}</h2></div><div class="history-controls"><label>{{ t('m.ae72b532f4b8') }}<select v-model="historyRange"><option value="6h">{{ t('m.320e9ce290e8') }}</option><option value="24h">{{ t('m.ab2c18802e55') }}</option><option value="7d">{{ t('m.2b39b90c0558') }}</option><option value="30d">{{ t('m.c5f1c28c0d5f') }}</option><option value="1y">{{ t('m.80c3d880f104') }}</option></select></label><button class="container-action" type="button" :disabled="historyLoading" @click="void loadHistory()">{{ t('m.bcd6771e08ec') }}</button></div></div><HistoricalMetrics :history="historyView" :loading="historyLoading" :error="historyError" :node-online="online"/><p class="retention-note">{{ t('m.b3b9fb911d3a') }}</p></section>
     <section v-if="activeSection === 'events'" class="section-panel" :aria-label="t('m.5661bd931598')" data-testid="node-event-history"><header class="section-toolbar"><div><span class="eyebrow">RECENT OPERATIONS</span><h2>{{ t('m.7d2e3cfc51fb') }}{{ nodeTitle }}</h2></div><button class="container-action" type="button" @click="emit('refreshTasks', node.nodeId)">{{ t('m.aee887434131') }}</button></header><p class="event-source-note">{{ t('m.30a9a37d5d32') }}</p><p v-if="selectedTasks.length === 0" class="docker-empty">{{ t('m.a9d063f3f3a9') }}</p><article v-for="task in selectedTasks" :key="task.taskId" class="event-card" :data-status="task.status"><div><strong>{{ task.action }} · {{ task.targetId.slice(0, 12) }}</strong><span class="container-task-status" :data-status="task.status">{{ taskStatusText(task) }}</span><time :datetime="task.createdAt">{{ new Date(task.createdAt).toLocaleString(locale) }}</time></div><button class="container-action" type="button" @click="toggleTaskAudit(task)">{{ taskAuditVisible[task.taskId] ? t('m.54e74c1e7504') : t('m.97f395dec8ce') }}</button><p v-if="taskAuditErrors[task.taskId]" class="container-task-error" role="alert">{{ display(taskAuditErrors[task.taskId]) }}</p><ol v-if="taskAuditVisible[task.taskId]" class="container-task-audit"><li v-if="taskAuditLoading[task.taskId]">{{ t('m.cf62890bdb61') }}</li><li v-for="event in (taskAuditViews[task.taskId] ?? [])" :key="event.id">{{ event.event }} · {{ event.fromStatus || t('m.d2bb025a2e51') }} → {{ event.toStatus || t('m.fb7e71452c04') }} · {{ new Date(event.occurredAt).toLocaleString(locale) }}</li></ol></article></section>
     <section v-if="activeSection === 'settings'" class="section-panel node-settings-panel" :aria-label="t('m.0a09fda5e2a6')" data-testid="node-settings"><header class="section-toolbar"><div><span class="eyebrow">{{ t('label.26ae0bd221f2') }}</span><h2>{{ t('m.1b8b4303f8ba') }}{{ nodeTitle }}</h2></div></header><div class="node-settings-status"><div><span>{{ t('m.f5514ad14eaa') }}</span><strong>{{ pending ? t('m.a890b3be09aa') : online ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c') }}</strong></div><div><span>Docker Engine</span><strong>{{ inventory ? dockerAvailabilityText(inventory) : t('m.4d8c1c5b4283') }}</strong></div><div><span>{{ t('m.e31132b9de5a') }}</span><strong>{{ node.agentVersion || t('m.4d8c1c5b4283') }}</strong></div><div><span>{{ t('m.bf04f29ea311') }}</span><strong>{{ node.nodeId }}</strong></div></div><PreferenceEditor :preference="nodePreferenceForEditor()" :title="t('m.b8d1ded2a785', {'0': (node.displayName)})" @saved="acceptPreference"/><div class="dashboard-settings-editor"><h3>{{ t('m.f917a66dfc4f') }}</h3><div class="dashboard-settings-grid"><label>{{ t('m.b91569c6e33a') }}<select v-model="viewMode"><option value="monitor">{{ t('m.fdc390061698') }}</option><option value="manage">{{ t('m.bb6d995724f4') }}</option></select></label><label>{{ t('m.65cd544c6486') }}<select v-model="nodeGroupBy"><option value="status">{{ t('m.b8f945ea49ff') }}</option><option value="group">{{ t('m.c08b046b5470') }}</option><option value="none">{{ t('m.fcd40ee3f05a') }}</option></select></label><label>{{ t('m.dd74dd92d820') }}<select v-model="nodeSortBy"><option value="custom">{{ t('m.0f59d3742e06') }}</option><option value="name">{{ t('m.a98585871c53') }}</option><option value="status">{{ t('m.b8f945ea49ff') }}</option></select></label><label>{{ t('m.f143cf3535b6') }}<select v-model="groupBy"><option value="node">{{ t('m.2410d860f093') }}</option><option value="compose">{{ t('m.5f67dd75b01f') }}</option><option value="state">{{ t('m.e46b0272bd64') }}</option><option value="none">{{ t('m.fcd40ee3f05a') }}</option></select></label><label>{{ t('m.30d908c60571') }}<select v-model="sortBy"><option value="custom">{{ t('m.0f59d3742e06') }}</option><option value="name">{{ t('m.a98585871c53') }}</option><option value="state">{{ t('m.e46b0272bd64') }}</option></select></label><label>{{ t('m.70006f6c5230') }}<input v-model.number="featuredLimit" type="number" min="1" max="20"></label></div><fieldset class="custom-fields"><legend>{{ t('m.25ebfb95e8d6') }}</legend><label v-for="field in customFieldOptions" :key="field.id"><input v-model="customFields" type="checkbox" :value="field.id">{{ field.label }}</label></fieldset><div class="settings-save"><button class="container-action" type="button" :disabled="dashboardSettingsSaving" @click="emit('saveSettings')">{{ dashboardSettingsSaving ? t('m.ff509c9ba052') : t('m.1d6a782c4ccc') }}</button><span v-if="dashboardSettingsMessage" role="status">{{ display(dashboardSettingsMessage) }}</span><span v-if="dashboardSettingsError" role="alert">{{ display(dashboardSettingsError) }}</span></div></div><p class="preference-separation-note">{{ t('m.02f03b13557b') }}</p></section>
-    <NodeServiceProbes :key="node.nodeId" :node-id="node.nodeId" :node-name="node.displayName" :node-online="online"/><TerminalConsole v-if="activeTerminal" v-bind="activeTerminal" @close="activeTerminal = null"/>
+    <NodeServiceProbes v-if="activeSection === 'probes'" :key="node.nodeId" :node-id="node.nodeId" :node-name="node.displayName" :node-online="online"/><TerminalConsole v-if="activeTerminal" v-bind="activeTerminal" @close="activeTerminal = null"/>
   </section>
 </template>
 
 <style scoped>
 .node-detail-page { width: min(1480px,100%); min-width: 0; margin: 0 auto; padding: clamp(20px,4vw,44px); color: var(--text); }
 .detail-heading { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom:20px; }
+.probe-overview-summary { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin:16px 0; border:1px solid var(--line); border-radius:var(--radius-card); padding:12px 16px; background:var(--surface-soft); }
+.probe-overview-summary p { margin:0; color:var(--muted-strong); font-size:13px; line-height:1.6; }
+.probe-overview-summary small { color:var(--muted); font-size:12px; line-height:1.6; }
+.probe-summary-error { color:var(--danger); font-size:13px; line-height:1.6; }
 .detail-heading h1 { margin:6px 0 4px; font-size:clamp(24px,3vw,34px); overflow-wrap:anywhere; }
 .detail-heading p { margin:0; color:var(--muted); font: 11px/1.5 ui-monospace,monospace; overflow-wrap:anywhere; }
 .detail-heading .node-detail-note { margin-top:7px; color:var(--muted-strong); font-family:inherit; font-size: 12px; line-height:1.55; white-space:pre-wrap; }
-.back-button { margin-bottom:12px; }
+.detail-heading-navigation { display:flex; flex-wrap:wrap; align-items:center; gap:12px 16px; margin-bottom:12px; }
+.back-button { margin:0; flex-shrink:0; white-space:nowrap; }
 .detail-heading-status { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
 .container-create-results { display:grid; gap:6px; margin:8px 0 12px; }.container-create-results h3 { margin:0; color:var(--muted-strong); font-size: 12px; }.container-create-results article { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border:1px solid var(--line); border-radius:var(--radius-card); padding:8px 10px; background:var(--surface-soft); }.container-create-results article>div { display:flex; flex-wrap:wrap; align-items:center; gap:9px; }.container-create-results strong,.container-create-results code,.container-create-results time { font-size: 12px; overflow-wrap:anywhere; }.container-create-results time { color:var(--muted); }
 .dashboard-tabs { display:flex; gap:6px; overflow-x:auto; margin:0 0 16px; border-bottom:1px solid var(--line); padding-bottom:8px; scrollbar-width:thin; }

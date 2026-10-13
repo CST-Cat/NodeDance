@@ -6,13 +6,11 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"database/sql"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"strings"
 	"time"
 
@@ -373,24 +371,7 @@ func (s *Store) ListChannels(ctx context.Context, onlyID string) ([]Channel, err
 	}
 	return out, rows.Err()
 }
-func (s *Store) channelForSend(ctx context.Context, channelID string) (Channel, string, error) {
-	var c Channel
-	var raw string
-	var sealed []byte
-	var enabled int
-	err := s.db.QueryRowContext(ctx, `SELECT id,name,kind,config_json,secret_ciphertext,enabled,revision,created_at,updated_at FROM alert_channels WHERE id=? AND deleted_at IS NULL`, channelID).Scan(&c.ID, &c.Name, &c.Kind, &raw, &sealed, &enabled, &c.Revision, &c.CreatedAt, &c.UpdatedAt)
-	if err != nil {
-		return c, "", err
-	}
-	if enabled != 1 {
-		return c, "", errors.New("notification channel disabled")
-	}
-	if err = json.Unmarshal([]byte(raw), &c.Config); err != nil {
-		return c, "", err
-	}
-	secret, err := s.open(sealed)
-	return c, secret, err
-}
+
 func (s *Store) DeleteChannel(ctx context.Context, channelID string, revision int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -701,9 +682,16 @@ func (s *Store) fireOrRemind(ctx context.Context, tx *sql.Tx, r Rule, sample Sam
 		return err
 	}
 	if suppressed {
-		_, err = tx.ExecContext(ctx, `UPDATE alerts SET suppression_reason='window' WHERE id=?`, current.ID)
+		changed, err := tx.ExecContext(ctx, `UPDATE alerts SET suppression_reason='window' WHERE id=? AND suppression_reason!='window'`, current.ID)
 		if err != nil {
 			return err
+		}
+		count, err := changed.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			return nil
 		}
 		return insertEvent(ctx, tx, current.ID, "suppressed", now, "Notification suppressed by silence or maintenance window")
 	}
@@ -1074,6 +1062,25 @@ func (s *Store) ClaimDelivery(ctx context.Context, now time.Time) (Delivery, Cha
 	if e != nil {
 		return d, Channel{}, "", false, e
 	}
+	if d.AlertID != "" {
+		var rule Rule
+		var acknowledged sql.NullInt64
+		var reason string
+		if err := tx.QueryRowContext(ctx, `SELECT rule_id,node_id,acknowledged_at,suppression_reason FROM alerts WHERE id=?`, d.AlertID).
+			Scan(&rule.ID, &rule.NodeID, &acknowledged, &reason); err != nil {
+			return d, Channel{}, "", false, err
+		}
+		suppressed, err := s.notificationSuppressed(ctx, tx, rule, d.AlertID, now)
+		if err != nil {
+			return d, Channel{}, "", false, err
+		}
+		if suppressed || acknowledged.Valid || reason == "node_offline" || reason == "rule_changed" {
+			if _, err := tx.ExecContext(ctx, `UPDATE alert_deliveries SET status='suppressed',last_error='notification suppressed before delivery',claimed_at=NULL,updated_at=? WHERE id=? AND status IN ('queued','retry')`, stamp(now), d.ID); err != nil {
+				return d, Channel{}, "", false, err
+			}
+			return d, Channel{}, "", false, tx.Commit()
+		}
+	}
 	d.TestSend = test == 1
 	res, e := tx.ExecContext(ctx, `UPDATE alert_deliveries SET status='sending',attempts=attempts+1,claimed_at=?,updated_at=? WHERE id=? AND status IN ('queued','retry')`, stamp(now), stamp(now), d.ID)
 	if e != nil {
@@ -1218,10 +1225,20 @@ func (s *Store) ListDeliveries(ctx context.Context, limit int) ([]Delivery, erro
 	return out, rows.Err()
 }
 
-// Helpers used by the scheduler to make output stable in tests and reports.
-func SortSamples(samples []Sample) {
-	sort.Slice(samples, func(i, j int) bool {
-		return sampleKey(samples[i].NodeID, samples[i].Kind, samples[i].SubjectID) < sampleKey(samples[j].NodeID, samples[j].Kind, samples[j].SubjectID)
-	})
+// NotificationChannel returns a currently enabled channel and its decrypted secret
+// for Core-owned notification producers. It is never exposed through an API.
+func (s *Store) NotificationChannel(ctx context.Context, id string) (Channel, string, error) {
+	c, e := s.GetChannel(ctx, id)
+	if e != nil {
+		return c, "", e
+	}
+	if !c.Enabled {
+		return c, "", errors.New("notification channel is disabled")
+	}
+	var sealed []byte
+	if e = s.db.QueryRowContext(ctx, `SELECT secret_ciphertext FROM alert_channels WHERE id=? AND revision=? AND enabled=1 AND deleted_at IS NULL`, id, c.Revision).Scan(&sealed); e != nil {
+		return c, "", e
+	}
+	secret, e := s.open(sealed)
+	return c, secret, e
 }
-func EncodeSecretForTest(secret []byte) string { return base64.StdEncoding.EncodeToString(secret) }

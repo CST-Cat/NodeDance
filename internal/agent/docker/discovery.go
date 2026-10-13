@@ -529,12 +529,12 @@ func (q *reconcileQueue) next(ctx context.Context) (string, uint64, bool) {
 	for {
 		q.mu.Lock()
 		if len(q.pending) > 0 {
-			ids := make([]string, 0, len(q.pending))
-			for id := range q.pending {
-				ids = append(ids, id)
+			id := ""
+			for candidate := range q.pending {
+				if id == "" || candidate < id {
+					id = candidate
+				}
 			}
-			sort.Strings(ids)
-			id := ids[0]
 			revision := q.pending[id]
 			delete(q.pending, id)
 			q.mu.Unlock()
@@ -865,22 +865,6 @@ func (c *stateCache) currentBatch() (uint64, uint64, []Container, Health) {
 		items = append(items, cloneContainer(c.containers[id]))
 	}
 	return c.snapshotID, c.sequence, items, cloneHealth(c.health)
-}
-
-func (c *stateCache) setHealthChange(update func(*Health)) (Health, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	before := cloneHealth(c.health)
-	update(&c.health)
-	current := cloneHealth(c.health)
-	current.ObservedAt = time.Time{}
-	before.ObservedAt = time.Time{}
-	if reflect.DeepEqual(before, current) {
-		return cloneHealth(c.health), false
-	}
-	c.sequence++
-	c.health.ObservedAt = c.now()
-	return cloneHealth(c.health), true
 }
 
 func cloneHealth(value Health) Health {

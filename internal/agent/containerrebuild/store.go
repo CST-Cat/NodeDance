@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -87,6 +88,12 @@ func OpenStore(ctx context.Context, path string) (*Store, error) {
 	fileInfo, err := os.Lstat(absolute)
 	if err != nil || !fileInfo.Mode().IsRegular() || fileInfo.Mode().Perm()&0077 != 0 {
 		return nil, errors.New("container rebuild database must be a private regular file")
+	}
+	// Reject unsafe existing sidecars before SQLite can read or modify them.
+	for _, sidecar := range []string{absolute + "-wal", absolute + "-shm"} {
+		if err := secureSidecar(sidecar); err != nil {
+			return nil, err
+		}
 	}
 	dsn := url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}
 	query := url.Values{}
@@ -250,7 +257,7 @@ func boolInt(value bool) int {
 }
 
 func secureSidecar(path string) error {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0600)
 	if err != nil {
 		return fmt.Errorf("secure rebuild database sidecar: %w", err)
 	}

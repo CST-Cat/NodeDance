@@ -35,6 +35,17 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const policy={...options.settings,enabled:true,showStatus:true,metrics:['cpu.usage_percent','network.received_bytes_per_second'],historyHours:1,nodes:[{id:identity.nodeId,name:'Public node'}],probes:[{id:probe.id,name:'Public service'}]}
   const saved=await admin.request.put(base+'/api/v1/guest/settings',{headers,data:policy});assert.equal(saved.status(),200);let current=await saved.json()
   const raw=await(await visitor.request.get(base+'/api/v1/public/guest/display')).text();for(const secret of [identity.nodeId,identity.agentId,'PRIVATE HOST NAME','PRIVATE PROBE NAME','tcp://','hostname','memory.used_percent','credential'])assert.ok(!raw.includes(secret),secret)
+  const publicDisplay=JSON.parse(raw);let historyPoints=0
+  for(const node of publicDisplay.nodes){
+   assert.ok(node.history,'Selected history must be included')
+   const from=Date.parse(node.history.from),to=Date.parse(node.history.to)
+   assert.ok(Number.isFinite(from)&&Number.isFinite(to)&&from<to)
+   for(const series of node.history.series)for(const point of series.points){
+    const bucket=Date.parse(point.bucketAt);historyPoints++
+    assert.ok(bucket>=from&&bucket<to,'Guest history bucket must respect the exact [from,to) window')
+   }
+  }
+  assert.ok(historyPoints>0,'History bounds must be checked against actual persisted fixture samples')
   const privilegedGuest=await admin.request.get(base+'/api/v1/public/guest/display');assert.equal(privilegedGuest.status(),200);assert.deepEqual(await privilegedGuest.json(),JSON.parse(raw),'Administrator cookie must not expand guest projection')
   await page.reload();await page.getByRole('button',{name:'Enter guest mode',exact:true}).waitFor();assert.equal(guestReads,0,'Display data must not be loaded before guest selection')
   for(const theme of ['light','dark'])for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(350);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(artifacts,`login-${theme}-${width}.png`),fullPage:true})}
@@ -79,10 +90,28 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const detailURL=adminPage.url();assert.ok(new URL(detailURL).hash.includes('node='+identity.nodeId))
   await adminPage.goBack();await card.waitFor();assert.equal(new URL(adminPage.url()).hash,'#/nodes')
   await adminPage.goForward();await adminPage.locator('#detail-title').waitFor();assert.equal(adminPage.url(),detailURL)
-  const historyTab=adminPage.locator('.dashboard-tabs button').nth(6)
+  const detailTabs=adminPage.locator('.dashboard-tabs')
+  const overviewTab=detailTabs.getByRole('button',{name:'Overview',exact:true})
+  const probesTab=detailTabs.getByRole('button',{name:'Service probes',exact:true})
+  const historyTab=detailTabs.getByRole('button',{name:'History',exact:true})
+  const probesPanel=adminPage.getByTestId('service-probes')
+  assert.equal(await probesPanel.count(),0,'Overview must not contain the full service probe panel')
+  await probesTab.click();await probesPanel.waitFor()
+  assert.ok(new URL(adminPage.url()).hash.includes('section=probes'),'Service probes have their own detail URL')
+  assert.equal(await probesTab.getAttribute('aria-current'),'page')
+  await adminPage.reload();await probesPanel.waitFor()
+  assert.equal(await probesTab.getAttribute('aria-current'),'page','Reload preserves the service probes tab')
+  await adminPage.goBack();await adminPage.waitForFunction(()=>!location.hash.includes('section='))
+  await probesPanel.waitFor({state:'detached'})
+  assert.equal(await overviewTab.getAttribute('aria-current'),'page')
+  assert.equal(await probesPanel.count(),0,'Returning to overview removes the full service probe panel')
   await historyTab.click();await adminPage.waitForFunction(()=>location.hash.includes('section=history'))
-  await adminPage.reload();await adminPage.locator('#detail-title').waitFor();assert.equal(await adminPage.locator('.dashboard-tabs button').nth(6).getAttribute('aria-current'),'page')
-  await adminPage.goBack();await adminPage.locator('.dashboard-tabs button').first().waitFor();await adminPage.waitForFunction(()=>document.querySelector('.dashboard-tabs button')?.getAttribute('aria-current')==='page')
+  assert.equal(await probesPanel.count(),0,'History must not retain the service probe panel')
+  await adminPage.locator('[data-testid=history-chart] canvas').waitFor()
+  assert.ok(await adminPage.locator('[data-testid=history-chart] canvas').isVisible(),'First asynchronous history load initializes the actual chart')
+  await adminPage.reload();await adminPage.locator('#detail-title').waitFor();assert.equal(await historyTab.getAttribute('aria-current'),'page')
+  await adminPage.goBack();await overviewTab.waitFor();await adminPage.waitForFunction(()=>!location.hash.includes('section='))
+  assert.equal(await overviewTab.getAttribute('aria-current'),'page','Browser Back restores overview after history')
   assert.ok(!new URL(adminPage.url()).hash.includes('section='))
   // A valid administrator cookie still gets only public requests on guest URL
   // restore; returning to management requires a fresh valid session.

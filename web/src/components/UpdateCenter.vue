@@ -32,12 +32,9 @@ async function submit() {
  busy.value = true; error.value = ''
  const action = rollbackJob.value ? 'rollback' : 'apply'
  const body = { ...query.value, confirm: true, ...(rollbackJob.value ? { jobId: rollbackJob.value } : { version: check.value?.latest }) }
- // Keep the key for retry if Core/Agent restarts before the response arrives.
- const keyName = 'nodedance-update:' + JSON.stringify(body)
- const key = sessionStorage.getItem(keyName) ?? crypto.randomUUID()
- sessionStorage.setItem(keyName, key)
- try { const job = await operationRequest<Job>('updates.' + action, {}, { body: JSON.stringify(body), headers: { 'Idempotency-Key': key } }); jobs.value = [job, ...jobs.value.filter(item => item.id !== job.id)]; sessionStorage.removeItem(keyName); confirmed.value = false; rollbackJob.value = ''; if (job.finished) void refresh() }
- catch (e) { error.value = message(e) } finally { busy.value = false }
+ const current = epoch
+ try { const job = await operationRequest<Job>('updates.' + action, {}, { body: JSON.stringify(body) }); if (current !== epoch) return; jobs.value = [job, ...jobs.value.filter(item => item.id !== job.id)]; confirmed.value = false; rollbackJob.value = ''; if (job.finished) void refresh() }
+ catch (e) { if (current === epoch) error.value = message(e) } finally { if (current === epoch) busy.value = false }
 }
 watch(query, () => { epoch++; check.value = undefined; jobs.value = []; rollbackJob.value = ''; confirmed.value = false; if (timer) clearTimeout(timer); void history(); void refresh() })
 onMounted(async () => { try { nodes.value = (await api.nodes()).nodes; nodeId.value = nodes.value[0]?.nodeId ?? '' } catch (e) { error.value = message(e) }; if (timer) clearTimeout(timer); void history(); void refresh() })

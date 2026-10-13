@@ -234,12 +234,16 @@ func (s *Server) handleFileDownload(w http.ResponseWriter, r *http.Request, curr
 		return
 	}
 	var response protocol.FileResponse
-	if decodeAgentPayload(first.Payload, &response) != nil || response.Entry == nil {
+	if first.Type != protocol.TypeFileResponse || decodeAgentPayload(first.Payload, &response) != nil || response.Operation != protocol.FileDownload {
 		http.Error(w, "Agent download metadata is invalid", http.StatusBadGateway)
 		return
 	}
 	if response.Code != "" {
 		s.writeFileAPIError(w, fileRemoteError{code: response.Code})
+		return
+	}
+	if response.Entry == nil {
+		http.Error(w, "Agent download metadata is invalid", http.StatusBadGateway)
 		return
 	}
 	if response.Operation != protocol.FileDownload || response.Size != response.Entry.Size || response.Size < 0 || response.Size > s.fileTransferLimit {

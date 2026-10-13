@@ -23,6 +23,7 @@ import (
 	coreprefs "github.com/CST-Cat/NodeDance/internal/core/containerprefs"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
+	"github.com/CST-Cat/NodeDance/internal/core/feeds"
 	corehistory "github.com/CST-Cat/NodeDance/internal/core/history"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
@@ -52,13 +53,10 @@ type Options struct {
 	NonMetricHistoryRetention time.Duration
 	HistoryRetentionInterval  time.Duration
 	Now                       func() time.Time
-	// PreferenceMigrator overrides the production SQLite-backed display-
-	// preference identity migration. NopMigrator is available for explicit
-	// disabled/test configurations only.
-	PreferenceMigrator coreprefs.Migrator
 }
 
 type Server struct {
+	feeds                      *feeds.Store
 	guestMu                    sync.Mutex
 	guestSlots                 chan struct{}
 	guestCache                 *guestDisplay
@@ -124,7 +122,7 @@ type Server struct {
 	fileTransferLimit          int64
 	nonMetricHistoryRetention  time.Duration
 	historyRetentionInterval   time.Duration
-	preferenceMigrator         coreprefs.Migrator
+	preferenceMigrator         *coreprefs.SQLiteMigrator
 }
 
 type session struct {
@@ -268,10 +266,7 @@ func New(version string, options Options) (*Server, error) {
 		fileTransferLimit:         options.FileTransferLimit,
 		nonMetricHistoryRetention: options.NonMetricHistoryRetention,
 		historyRetentionInterval:  options.HistoryRetentionInterval,
-		preferenceMigrator:        options.PreferenceMigrator,
-	}
-	if s.preferenceMigrator == nil {
-		s.preferenceMigrator = coreprefs.NewSQLiteMigrator(store.DB)
+		preferenceMigrator:        coreprefs.NewSQLiteMigrator(store.DB),
 	}
 	s.composeProjects, err = corecompose.NewStore(store.DB, corecompose.Options{Now: options.Now})
 	if err != nil {
@@ -344,7 +339,29 @@ func New(version string, options Options) (*Server, error) {
 			}
 		}
 	}
+	s.feeds = feeds.New(store.DB, s.now)
+	if err := s.feeds.Recover(context.Background()); err != nil {
+		log.Printf("NodeDance subscription recovery failed: %v", err)
+		s.feeds = nil
+	}
 	s.agentContext, s.agentCancel = context.WithCancel(context.Background())
+	if s.feeds != nil {
+		s.agentWait.Add(1)
+		go func() {
+			defer s.agentWait.Done()
+			s.feeds.Run(s.agentContext, func(ctx context.Context, id, payload string) error {
+				if s.alerts == nil || s.alertSender == nil {
+					return errors.New("notifications are unavailable")
+				}
+				c, secret, e := s.alerts.NotificationChannel(ctx, id)
+				if e != nil {
+					return e
+				}
+				_, e = s.alertSender.Send(ctx, c, secret, payload)
+				return e
+			})
+		}()
+	}
 	s.agentWait.Add(1)
 	go s.agentOfflineSweeper()
 	s.agentWait.Add(1)
@@ -703,6 +720,9 @@ func (s *Server) agentConnectionForNode(nodeID string) *agentConnection {
 func isMetricsTelemetryRead(r *http.Request) bool {
 	if r == nil || r.Method != http.MethodGet {
 		return false
+	}
+	if r.URL.Path == "/api/v1/feeds" || strings.HasPrefix(r.URL.Path, "/api/v1/feeds/") {
+		return true
 	}
 	if r.URL.Path == "/api/v1/alerts" || strings.HasPrefix(r.URL.Path, "/api/v1/alerts/") {
 		return true

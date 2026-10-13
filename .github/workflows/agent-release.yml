@@ -32,8 +32,11 @@ jobs:
           retention-days: 1
 
   build:
-    name: Agent native ${{ matrix.arch }} build and tests
+    name: Agent native ${{ matrix.arch }} build, tests and image
     needs: prepare
+    permissions:
+      contents: read
+      packages: write
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -93,48 +96,64 @@ jobs:
           compression-level: 0
           retention-days: 1
 
-  image:
-    name: Publish agent Docker image
-    needs: [prepare, build]
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - name: Set up native image builder
+        uses: docker/setup-buildx-action@v3
+
       - name: Resolve lowercase image name
         env:
           REPOSITORY_OWNER: ${{ github.repository_owner }}
         run: echo "IMAGE=ghcr.io/${REPOSITORY_OWNER,,}/nodedance-agent" >> "$GITHUB_ENV"
+
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and publish version-pinned amd64 and arm64 image
+
+      - name: Package tested native artifacts and push by digest
+        id: image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: deploy/docker/Dockerfile.agent
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ env.IMAGE }}:${{ github.ref_name }}
-          build-args: VERSION=${{ github.ref_name }}
+          target: release
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ github.ref_name }}
             org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=agent-image
-          cache-to: type=gha,mode=max,scope=agent-image
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache-${{ matrix.arch }},mode=min
+
+      - name: Verify image contains the tested artifacts
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          python3 scripts/release_images.py verify --component agent --architecture "$EXPECTED_ARCH" \
+            --image "$IMAGE@$DIGEST" --version "$RELEASE_VERSION" --artifacts dist
+          mkdir -p image-digests
+          printf '%s\n' "$DIGEST" > "image-digests/$EXPECTED_ARCH"
+
+      - name: Upload verified image digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-image-${{ matrix.arch }}
+          path: image-digests/${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 1
 
   publish:
     name: Publish verified Agent release
-    needs: [prepare, build, image]
+    needs: [prepare, build]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      packages: write
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v4
@@ -163,6 +182,33 @@ jobs:
           cp scripts/install-agent.sh dist/install-agent.sh
           chmod 0755 dist/install-agent.sh dist/nodedance-agent-linux-amd64 dist/nodedance-agent-linux-arm64
           (cd dist && sha256sum nodedance-agent-linux-amd64 nodedance-agent-linux-arm64 nodedance-updater-linux-amd64 nodedance-updater-linux-arm64 nodedance-update.json install-updater.sh > SHA256SUMS)
+
+      - name: Download verified native image digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: agent-image-*
+          path: image-digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish verified multi-platform image
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${REPOSITORY_OWNER,,}/nodedance-agent"
+          amd64=$(cat image-digests/amd64)
+          arm64=$(cat image-digests/arm64)
+          [[ "$amd64" =~ ^sha256:[0-9a-f]{64}$ && "$arm64" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker buildx imagetools create --tag "$image:$RELEASE_VERSION" "$image@$amd64" "$image@$arm64"
+          docker buildx imagetools inspect "$image:$RELEASE_VERSION"
 
       - name: Publish GitHub Release assets
         env:

@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 const (
@@ -244,13 +246,8 @@ func sendLogFrame(ctx context.Context, frames chan<- LogFrame, frame LogFrame) e
 }
 
 func validateID(id string) error {
-	if len(id) != 64 {
+	if !protocol.IsFullContainerID(id) {
 		return ErrInvalidContainerID
-	}
-	for _, char := range id {
-		if !(char >= '0' && char <= '9') && !(char >= 'a' && char <= 'f') {
-			return ErrInvalidContainerID
-		}
 	}
 	return nil
 }

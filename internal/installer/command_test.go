@@ -1,10 +1,41 @@
 package installer
 
 import (
+	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+func TestNativeInstallerUsesOnlyItsInstallerAndPreservesFailure(t *testing.T) {
+	command, err := Command("https://core.example", "fixture", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Shell functions replace every external side effect. A native install must
+	// finish with the installer's status, including a partially failed install.
+	fixture := `curl() { case "$*" in *api.github.com*) printf '%s\n' '{"tag_name":"agent-v1.2.3"}';; *) printf '%s\n' 'fixture';; esac; }; sudo() { if [[ "$1" != bash ]]; then printf 'UNEXPECTED_DOCKER'; return 0; fi; cat >/dev/null; return "$FIXTURE_INSTALL_STATUS"; }; export -f curl sudo; `
+	for _, status := range []int{0, 23} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			cmd := exec.Command("bash", "-c", fixture+command)
+			cmd.Env = append(os.Environ(), "FIXTURE_INSTALL_STATUS="+strconv.Itoa(status))
+			output, err := cmd.CombinedOutput()
+			if len(output) != 0 {
+				t.Errorf("native installer invoked an unrelated command: %s", output)
+			}
+			if status == 0 && err != nil {
+				t.Fatalf("native install failed: %v", err)
+			}
+			if status != 0 {
+				exit, ok := err.(*exec.ExitError)
+				if !ok || exit.ExitCode() != status {
+					t.Fatalf("installer failure was hidden: %v", err)
+				}
+			}
+		})
+	}
+}
 
 func TestInstallerCommandQuotingAndTransport(t *testing.T) {
 	for _, server := range []string{"http://example.com", "http://localhost:8180", "https://u:p@example.com", "https://example.com/path", "https://example.com?token=secret"} {

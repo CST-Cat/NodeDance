@@ -221,3 +221,41 @@ func TestExpiredReattachTicketDoesNotEndTmux(t *testing.T) {
 	}
 	s.terminals.closeBrowserSession(s, current.ID, "session revoked")
 }
+
+func TestTerminalRejectsTrailingJSONBeforeForwardingInput(t *testing.T) {
+	s, current, agent, stream, ticket := terminalFixture(t)
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { s.handleTerminalWebSocket(w, r, current) }))
+	defer host.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(host.URL, "http")+"?ticket="+ticket, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": {host.URL}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.CloseNow()
+	select {
+	case <-agent.commands:
+	case <-ctx.Done():
+		t.Fatal("terminal did not open")
+	}
+	raw, err := json.Marshal(protocol.TerminalFrame{StreamID: stream.streamID, Action: protocol.TerminalActionInput, Data: []byte("x")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, []byte(" {}")...)
+	if err := conn.Write(ctx, websocket.MessageText, raw); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case envelope := <-agent.commands:
+		var frame protocol.TerminalFrame
+		if err := json.Unmarshal(envelope.Payload, &frame); err != nil {
+			t.Fatal(err)
+		}
+		if frame.Action != protocol.TerminalActionClose {
+			t.Fatal("malformed frame reached Agent", frame.Action)
+		}
+	case <-ctx.Done():
+		t.Fatal("invalid frame did not close terminal")
+	}
+}

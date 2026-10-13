@@ -274,6 +274,10 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 				raw, e = readOperationValue(value, strings.NewReader(""), o.MaxBodyBytes)
 				if e != nil {
 					write(e.Error() + "\n")
+					if _, err := prompt("Enter to return", false); err != nil {
+						return err
+					}
+					continue
 				} else {
 					in.Body = raw
 				}

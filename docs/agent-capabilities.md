@@ -92,3 +92,5 @@ OAuth/OIDC, two-factor authentication, themes and plugins are excluded from this
 Web batch command/probe forms share the generic operation intent store. An uncertain submission retains its retry key across reload or leaving the page; manually re-entering the same request reuses that key. Request bodies and scripts are not persisted. A successful submission clears its intent, so the next explicit submission can create new work.
 
 Web 批量命令／探测表单共用通用操作的执行意图存储。结果不确定时，刷新或离开页面仍保留重试键；手动重新填写同一请求后复用原键，不保存脚本和请求正文。成功提交会清除该意图，下一次明确提交可执行新任务。
+
+Web 的节点详情提供独立“服务探测”标签，集中管理目标、启停、结果和历史。未配置的总览不占用空面板；已配置时总览显示一次读取的简短摘要，可跳转到服务探测。切换其他标签停止界面列表轮询，不会停用 Core／Agent 已配置的探测任务。

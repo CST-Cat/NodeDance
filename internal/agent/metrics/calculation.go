@@ -48,9 +48,6 @@ func CPUUsagePercent(previous, current cpu.TimesStat) (float64, string) {
 	return math.Max(0, math.Min(100, percent)), ""
 }
 
-func memoryUsage(sample *mem.VirtualMemoryStat) (Memory, string) {
-	return memoryUsageMode(sample, "available")
-}
 func memoryUsageMode(sample *mem.VirtualMemoryStat, mode string) (Memory, string) {
 	if sample == nil || sample.Total == 0 {
 		return Memory{}, "invalid_data"

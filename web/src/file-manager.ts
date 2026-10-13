@@ -75,9 +75,14 @@ export async function createFileManager(nodeId: string, changed: (items: FileObs
   getDownloadUrl:options=>url('files.download',virtual(options.path)),
   async search(options){const sizes:Record<string,Record<string,string>>={small:{maxSize:String(1024*1024-1)},medium:{minSize:String(1024*1024),maxSize:String(10*1024*1024)},large:{minSize:String(10*1024*1024+1)}};return pages('files.search',{path:virtual(options.path??'/'),filter:options.filter,recursive:String(options.deep??false),...sizes[options.size??'all']},options.signal)},
   async save(options){const path=virtual(options.path);const version=versions.get(path);if(!version)throw Error(t('files.reopen'))
-   if(/^data:image\/(png|jpeg|webp|gif);base64,/.test(options.content)){const [header,data]=options.content.split(',',2),bytes=Uint8Array.from(atob(data!),c=>c.charCodeAt(0));await upload(path,new File([bytes],path.split('/').pop()!,{type:header!.slice(5,header!.indexOf(';')),lastModified:0}),version,options.signal)}
-   else await action({action:'save_text',path,content:options.content,expectedVersion:version??''},options.signal)
-   const meta=await read<NodeFileEntry>('files.stat',{path},options.signal);active();if(meta.version)versions.set(path,meta.version);return options.content
+   if(/^data:image\/(png|jpeg|webp|gif);base64,/.test(options.content)){const [header,data]=options.content.split(',',2),bytes=Uint8Array.from(atob(data!),c=>c.charCodeAt(0));await upload(path,new File([bytes],path.split('/').pop()!,{type:header!.slice(5,header!.indexOf(';')),lastModified:0}),version,options.signal);versions.delete(path)}
+   else {await action({action:'save_text',path,content:options.content,expectedVersion:version},options.signal)
+    versions.delete(path)
+    const current=await read<{text:string;version:string}>('files.text',{path},options.signal);active()
+    if(current.text!==options.content)throw Error(t('files.reopen'))
+    versions.set(path,current.version)
+   }
+   return options.content
   },
   configureUploader(uppy,context){
    const uploads=new Map<string,AbortController>()

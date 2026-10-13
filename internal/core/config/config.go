@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -276,18 +277,18 @@ func Load(path string) (File, error) {
 	if err := decoder.Decode(&value); err != nil {
 		return File{}, fmt.Errorf("parse config %q: %w", path, err)
 	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return File{}, fmt.Errorf("config %q must contain exactly one JSON value", path)
+	}
 	if value.Listen != "" {
 		if err := ValidateListen(value.Listen); err != nil {
 			return File{}, fmt.Errorf("config %q: %w", path, err)
 		}
 	}
 	if value.PublicOrigin != "" {
-		if err := ValidatePublicOrigin(value.PublicOrigin, false); err != nil {
-			// An HTTP origin is permitted only when runServe has accepted --dev.
-			parsed, parseErr := url.Parse(value.PublicOrigin)
-			if parseErr != nil || parsed.Scheme != "http" || parsed.Host == "" || parsed.Path != "" && parsed.Path != "/" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-				return File{}, fmt.Errorf("config %q: %w", path, err)
-			}
+		// Validate both schemes here; runServe permits HTTP only with --dev.
+		if err := ValidatePublicOrigin(value.PublicOrigin, true); err != nil {
+			return File{}, fmt.Errorf("config %q: %w", path, err)
 		}
 	}
 	if _, err := ParseTrustedProxies(value.TrustedProxies); err != nil {

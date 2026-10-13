@@ -520,7 +520,7 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 		composeFinished = finished
 		go func() {
 			defer close(finished)
-			done <- composeBridge.Run(composeCtx, composeWriterAdapter{writer: writer}, composeMessages, generation)
+			done <- composeBridge.Run(composeCtx, writer, composeMessages, generation)
 		}()
 		defer func() {
 			cancelComposeFunc()

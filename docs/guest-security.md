@@ -16,6 +16,8 @@ The suite discovers private operations from the connected Core's operation contr
 
 ## Verified cases
 
+The table below records a historical run; current operation and attack totals are discovered at runtime. The browser suite also checks persisted guest history points against the exact `[from, to)` timestamps. Go regressions cover fractional-second minute/hour boundaries for both full and selected-key history queries. Node detail regressions select tabs by accessible name, verify service-probe reload and browser Back, and ensure the full probe panel does not remain on overview or history.
+
 | Group | Cases | Expected result |
 | --- | ---: | --- |
 | Discovered private operations, including commands/files/containers/updates/configuration | 109 | 401 despite spoofed role/mode/user headers and an anonymous CSRF token |
@@ -57,3 +59,11 @@ Grant creation/revocation responses are held in the real browser while navigatin
 The contract includes paginated file search and passive preview; direct anonymous access remains denied. A real unavailable file-list response from the protocol-only simulated Agent is delayed across guest entry, and releasing it must start no private follow-up requests. 文件搜索／预览仍要求管理员权限；文件管理器退出进入游客后，迟到目录响应不得触发后续私有读取。
 
 Archive format denial cases are derived from the connected `files.action.format` enum, including TAR and TAR.GZ. No case count is frozen in the scripts.
+
+Management deployment polling stops after its view unmounts; a late SSH fingerprint response is bound to the peer it requested. The fresh-assets guest suite also checks first-load history canvas initialization without adding private guest data reads.
+
+## 69 文件收尾审查验证
+
+2026-10-13，使用新构建 Web 资产和隔离真实 Core/协议模拟 Agent，再次通过完整访客安全套件。公共投影、匿名边界和撤销语义保持原约束；当前 Core 终端/更新响应复用严格有界 JSON 解码。实际 WebSocket 回归确认尾随 JSON 不会作为终端输入转发，跨会话和撤销测试保留。详细结果及覆盖范围见 [69 文件报告](code-review-69-files.md)。
+
+RSS 增量回归从连接的 Core 契约发现全部 feeds.* 私有操作，验证匿名拒绝；另创建含私密标记的停用订阅，检查管理员 cookie 与游客公开响应一致且不包含源名称或 URL 令牌，并核验删除。临时订阅不执行外部抓取。

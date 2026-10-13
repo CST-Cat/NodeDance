@@ -2,8 +2,6 @@ package images
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -13,7 +11,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 	"github.com/containerd/errdefs"
 	"github.com/distribution/reference"
-	"github.com/moby/moby/api/types/registry"
 )
 
 const (
@@ -114,18 +111,16 @@ func (e *Executor) pull(ctx context.Context, dispatch protocol.TaskDispatch, _ t
 			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, failureEvidence(), taskjournal.Result{
 				Code: taskjournal.ResultFailed, ObservedState: "invalid_auth"})
 		}
-		encoded, err := json.Marshal(registry.AuthConfig{Username: dispatch.RegistryAuth.Username, Password: dispatch.RegistryAuth.Password})
+		encoded, err := EncodeRegistryCredentials(dispatch.RegistryAuth.Username, dispatch.RegistryAuth.Password)
 		// Avoid retaining the credential-bearing fields after constructing Docker's
 		// one-operation header. These values are never journaled or logged.
-		dispatch.RegistryAuth.Username = ""
-		dispatch.RegistryAuth.Password = ""
+		wipeCredentials(dispatch.RegistryAuth)
 		dispatch.RegistryAuth = nil
 		if err != nil {
 			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, failureEvidence(), taskjournal.Result{
 				Code: taskjournal.ResultFailed, ObservedState: "invalid_auth"})
 		}
-		authHeader = base64.URLEncoding.EncodeToString(encoded)
-		clear(encoded)
+		authHeader = encoded
 	}
 	operationCtx, operationCancel := context.WithTimeout(ctx, e.operationTimeout)
 	progressAt := time.Time{}

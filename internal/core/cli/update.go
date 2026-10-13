@@ -44,13 +44,13 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	}
 	defer client.Close()
 	request := update.Request{Component: *component, NodeID: *node, Version: *version, Confirm: true}
-	requestContext := func() (context.Context, context.CancelFunc) {
+	requestContext := func(parent context.Context) (context.Context, context.CancelFunc) {
 		if *connection.timeout == 0 {
-			return context.WithCancel(ctx)
+			return context.WithCancel(parent)
 		}
-		return context.WithTimeout(ctx, *connection.timeout)
+		return context.WithTimeout(parent, *connection.timeout)
 	}
-	catalogCtx, cancel := requestContext()
+	catalogCtx, cancel := requestContext(ctx)
 	defer cancel()
 	catalog, err := client.Catalog(catalogCtx)
 	if err != nil {
@@ -58,7 +58,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	}
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
-	invoke := func(action string, r update.Request, key string) (control.Result, error) {
+	invoke := func(parent context.Context, action string, r update.Request, key string) (control.Result, error) {
 		operation, err := control.FindIn(catalog, "updates."+action)
 		if err != nil {
 			return control.Result{}, err
@@ -78,21 +78,21 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 		} else {
 			input.Body, _ = json.Marshal(r)
 		}
-		requestCtx, cancel := requestContext()
+		requestCtx, cancel := requestContext(parent)
 		defer cancel()
 		result := client.Execute(requestCtx, operation, input, nil, nil)
 		return result, result.Err()
 	}
 	if *status {
 		request.JobID = *jobID
-		result, err := invoke("status", request, "")
+		result, err := invoke(ctx, "status", request, "")
 		if err != nil {
 			return err
 		}
 		return encoder.Encode(json.RawMessage(result.Data))
 	}
 	if *rollback == "" {
-		result, err := invoke("check", request, "")
+		result, err := invoke(ctx, "check", request, "")
 		if err != nil {
 			return err
 		}
@@ -135,7 +135,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	if *rollback != "" {
 		action = "rollback"
 	}
-	result, err := invoke(action, request, *key)
+	result, err := invoke(ctx, action, request, *key)
 	if err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 			return errors.New("update wait expired; use nodedance update --status --job-id " + job.ID)
 		case <-time.After(2 * time.Second):
 		}
-		result, err = invoke("status", request, "")
+		result, err = invoke(waitCtx, "status", request, "")
 		if err != nil {
 			if result.Status >= 400 && result.Status < 500 {
 				return err

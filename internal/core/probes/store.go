@@ -431,7 +431,7 @@ func (s *Store) Complete(ctx context.Context, report protocol.ProbeReport, gener
 }
 
 func (s *Store) ExpirePending(ctx context.Context, at time.Time) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT run_id,probe_id,node_id,generation,timeout_seconds FROM service_probe_runs WHERE status='pending'`)
+	rows, err := s.db.QueryContext(ctx, `SELECT run_id,probe_id,node_id,generation,timeout_seconds,checked_at FROM service_probe_runs WHERE status='pending'`)
 	if err != nil {
 		return err
 	}
@@ -439,12 +439,13 @@ func (s *Store) ExpirePending(ctx context.Context, at time.Time) error {
 		runID, probeID, nodeID string
 		generation             uint64
 		timeout                int
+		checkedAt              int64
 	}
 	var pending []pendingRun
 	for rows.Next() {
 		var item pendingRun
 		var generation int64
-		if err := rows.Scan(&item.runID, &item.probeID, &item.nodeID, &generation, &item.timeout); err != nil {
+		if err := rows.Scan(&item.runID, &item.probeID, &item.nodeID, &generation, &item.timeout, &item.checkedAt); err != nil {
 			rows.Close()
 			return err
 		}
@@ -458,13 +459,7 @@ func (s *Store) ExpirePending(ctx context.Context, at time.Time) error {
 	rows.Close()
 	now := at.UTC()
 	for _, item := range pending {
-		var checkedAt int64
-		if err := s.db.QueryRowContext(ctx, `SELECT checked_at FROM service_probe_runs WHERE run_id=? AND status='pending'`, item.runID).Scan(&checkedAt); errors.Is(err, sql.ErrNoRows) {
-			continue
-		} else if err != nil {
-			return err
-		}
-		if now.Sub(time.Unix(0, checkedAt)) < time.Duration(item.timeout+5)*time.Second {
+		if now.Sub(time.Unix(0, item.checkedAt)) < time.Duration(item.timeout+5)*time.Second {
 			continue
 		}
 		report := protocol.ProbeReport{ProbeID: item.probeID, RunID: item.runID, NodeID: item.nodeID, Status: protocol.ProbeResultUnknown, ErrorCode: "dispatch_timeout"}

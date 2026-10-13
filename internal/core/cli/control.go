@@ -256,9 +256,6 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 		return err
 	}
 	if deploymentMethod != nil && *deploymentMethod != "" {
-		if !agents.ValidDeploymentMethod(*deploymentMethod) {
-			return errors.New("deployment method must be native or docker")
-		}
 		var request map[string]json.RawMessage
 		if err := json.Unmarshal(b, &request); err != nil || request == nil {
 			return errors.New("Agent enrollment requires a JSON object body")

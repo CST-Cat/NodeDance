@@ -95,6 +95,8 @@ func probeHostKeyOnPort(ctx context.Context, peer Peer, port int) (string, error
 		return "", fmt.Errorf("connect to discovered Tailscale SSH endpoint: %w", err)
 	}
 	defer conn.Close()
+	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopClose()
 	_ = conn.SetDeadline(time.Now().Add(sshHandshakeTimeout))
 	var fingerprint string
 	config := &ssh.ClientConfig{User: "nodedance-host-key-probe", HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
@@ -161,6 +163,8 @@ func connectSSHOnPort(ctx context.Context, peer Peer, credentials SSHCredentials
 	if err != nil {
 		return nil, fmt.Errorf("connect to discovered Tailscale SSH endpoint: %w", err)
 	}
+	stopClose := context.AfterFunc(dialCtx, func() { _ = conn.Close() })
+	defer stopClose()
 	_ = conn.SetDeadline(time.Now().Add(sshHandshakeTimeout))
 	clientConn, channels, requests, err := ssh.NewClientConn(conn, remoteAddress, config)
 	if err != nil {
@@ -191,6 +195,11 @@ type sshRemote struct {
 func (r *sshRemote) Close() error { return r.client.Close() }
 
 func (r *sshRemote) Run(ctx context.Context, command string, input []byte) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	stopClose := context.AfterFunc(ctx, func() { _ = r.client.Close() })
+	defer stopClose()
 	session, err := r.client.NewSession()
 	if err != nil {
 		return nil, err
@@ -203,7 +212,7 @@ func (r *sshRemote) Run(ctx context.Context, command string, input []byte) ([]by
 		return nil, err
 	}
 	if err := session.Start(command); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: SSH command start was not confirmed: %v", ErrOutcomeUnknown, err)
 	}
 	if len(input) > 0 {
 		if _, err := stdin.Write(input); err != nil {
@@ -214,7 +223,7 @@ func (r *sshRemote) Run(ctx context.Context, command string, input []byte) ([]by
 	}
 	if err := stdin.Close(); err != nil {
 		_ = r.client.Close()
-		return output.Bytes(), err
+		return output.Bytes(), fmt.Errorf("%w: SSH input completion was not confirmed: %v", ErrOutcomeUnknown, err)
 	}
 	done := make(chan error, 1)
 	go func() { done <- session.Wait() }()
@@ -370,9 +379,9 @@ if [ -S /var/run/docker.sock ]; then
   service_uid=0
   printf 'docker|%s|%s|%s|%s\n' "$(stat -c %a /var/run/docker.sock)" "$(stat -c %u /var/run/docker.sock)" "$(stat -c %g /var/run/docker.sock)" "$service_uid"
 elif [ -e /var/run/docker.sock ]; then
-  echo docker|invalid
+  echo 'docker|invalid'
 else
-  echo docker|absent
+  echo 'docker|absent'
 fi`
 	output, err := remote.Run(ctx, "sh -s", []byte(command))
 	if err != nil {
@@ -590,19 +599,9 @@ FILE_ROOT="$(printf '%%s' '%s' | base64 -d)"
 	return nil
 }
 
-func InstallRemote(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, coreURL string, enrollment Enrollment) error {
-	return InstallRemoteWithFileRootOptions(ctx, remote, preflight, artifact, coreURL, enrollment, "", false)
-}
-
-// InstallRemoteWithFileRoot passes an optional admin-selected host directory
-// as base64 data through the SSH script and then as one quoted process
-// argument. The target Agent installer performs filesystem canonicalization
-// and the full file-root policy check before generating the unit.
-func InstallRemoteWithFileRoot(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, coreURL string, enrollment Enrollment, fileRoot string) error {
-	return InstallRemoteWithFileRootOptions(ctx, remote, preflight, artifact, coreURL, enrollment, fileRoot, false)
-}
-
-func InstallRemoteWithFileRootOptions(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, coreURL string, enrollment Enrollment, fileRoot string, disableFileRoot bool) error {
+// InstallRemote installs the verified Agent artifact with the requested file
+// policy. The target installer validates the directory before generating the unit.
+func InstallRemote(ctx context.Context, remote Remote, preflight Preflight, artifact Artifact, coreURL string, enrollment Enrollment, fileRoot string, disableFileRoot bool) error {
 	coreURL, err := validateCoreURL(coreURL)
 	if err != nil {
 		return err

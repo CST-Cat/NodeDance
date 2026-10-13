@@ -92,7 +92,7 @@ func ValidateTerminalFrame(frame TerminalFrame, fromAgent bool) error {
 		if frame.TargetKind != TerminalTargetHost && frame.TargetKind != TerminalTargetContainer {
 			return errors.New("terminal target kind is invalid")
 		}
-		if frame.TargetKind == TerminalTargetHost && frame.ContainerID != "" || frame.TargetKind == TerminalTargetContainer && !validFullContainerID(frame.ContainerID) {
+		if frame.TargetKind == TerminalTargetHost && frame.ContainerID != "" || frame.TargetKind == TerminalTargetContainer && !IsFullContainerID(frame.ContainerID) {
 			return errors.New("terminal target ID is invalid")
 		}
 		if len(frame.Data) != 0 || frame.Message != "" || frame.ExitCode != nil {
@@ -114,16 +114,4 @@ func ValidateTerminalFrame(frame TerminalFrame, fromAgent bool) error {
 		return errors.New("unsupported browser terminal action")
 	}
 	return nil
-}
-
-func validFullContainerID(value string) bool {
-	if len(value) != 64 {
-		return false
-	}
-	for _, character := range value {
-		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
-			return false
-		}
-	}
-	return true
 }

@@ -239,7 +239,9 @@ func (b *agentFileBridge) streamDownload(ctx context.Context, transfer *agentFil
 		if errors.Is(readErr, io.EOF) {
 			sequence := b.nextSequence(transfer)
 			chunk := protocol.FileChunk{TransferID: transfer.id, Sequence: sequence, Final: true, SHA256: hex.EncodeToString(hash.Sum(nil))}
-			_ = b.offerChunk(ctx, transfer, chunk)
+			if err := b.offerChunk(ctx, transfer, chunk); err != nil {
+				b.sendFailure(context.Background(), transfer.id, protocol.FileDownload, "transfer_failed")
+			}
 			return
 		}
 		if readErr != nil {

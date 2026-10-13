@@ -212,6 +212,8 @@ func (e *TaskExecutor) receiveUpload(ctx context.Context, taskID string, spec pr
 		return err
 	}
 	defer reader.Close()
+	stopClose := context.AfterFunc(ctx, func() { _ = reader.CloseWithError(ctx.Err()) })
+	defer stopClose()
 	e.mu.Lock()
 	pending := e.uploads[taskID]
 	e.mu.Unlock()
@@ -228,6 +230,9 @@ func (e *TaskExecutor) receiveUpload(ctx context.Context, taskID string, spec pr
 			return err
 		}
 		n, readErr := reader.Read(buffer)
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if n > 0 {
 			if err := upload.WriteChunk(buffer[:n]); err != nil {
 				return err

@@ -62,6 +62,9 @@ func (b *observerBus) run(ctx context.Context) {
 
 func (b *observerBus) next(ctx context.Context) (Batch, bool, bool) {
 	for {
+		if ctx.Err() != nil {
+			return Batch{}, false, false
+		}
 		b.mu.Lock()
 		if b.closed {
 			b.mu.Unlock()
@@ -75,6 +78,7 @@ func (b *observerBus) next(ctx context.Context) (Batch, bool, bool) {
 		if len(b.queue) > 0 {
 			batch := b.queue[0]
 			copy(b.queue, b.queue[1:])
+			b.queue[len(b.queue)-1] = Batch{}
 			b.queue = b.queue[:len(b.queue)-1]
 			b.mu.Unlock()
 			return batch, false, true

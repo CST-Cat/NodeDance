@@ -426,7 +426,7 @@ func writeComposeCandidateAt(root *os.Root, original string, content []byte) (st
 			return "", err
 		}
 	}
-	if _, err := file.Write(content); err == nil {
+	if _, err = file.Write(content); err == nil {
 		err = file.Sync()
 	}
 	closeErr := file.Close()
@@ -536,6 +536,10 @@ func (m *Manager) SaveConfig(ctx context.Context, ref protocol.ComposeProjectRef
 	}
 	committed = true
 	restoreOriginal := func() bool {
+		current, readErr := readBoundedFile(path, protocol.MaxComposeFileBytes)
+		if readErr != nil || !bytes.Equal(current, []byte(content)) {
+			return false
+		}
 		restoreTemp, restoreErr := writeComposeCandidate(path, old)
 		if restoreErr != nil {
 			return false
@@ -1401,7 +1405,7 @@ func (o *taskComposeOverride) write(services map[string]map[string]string) error
 	if err != nil {
 		return err
 	}
-	if _, err := file.Write(content); err == nil {
+	if _, err = file.Write(content); err == nil {
 		err = file.Sync()
 	}
 	closeErr := file.Close()
@@ -1559,7 +1563,7 @@ func allInstancesRestarted(before, after []agentdocker.Container) bool {
 }
 
 func readBoundedFile(path string, limit int64) ([]byte, error) {
-	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW, 0)
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}

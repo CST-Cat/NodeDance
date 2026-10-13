@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 const statsSubscriberQueue = 1
@@ -37,46 +39,6 @@ var (
 	ErrStatsContainerID    = errors.New("Docker stats record belongs to a different container")
 	ErrStatsStreamEnded    = errors.New("Docker stats stream ended unexpectedly")
 )
-
-type MetricState string
-
-const (
-	MetricOK      MetricState = "ok"
-	MetricUnknown MetricState = "unknown"
-)
-
-type Metric[T any] struct {
-	State     MetricState `json:"state"`
-	Value     *T          `json:"value,omitempty"`
-	Reason    string      `json:"reason,omitempty"`
-	SampledAt *time.Time  `json:"sampled_at,omitempty"`
-}
-
-type MemoryUsage struct {
-	UsedBytes   uint64  `json:"used_bytes"`
-	CacheBytes  uint64  `json:"cache_bytes"`
-	LimitBytes  uint64  `json:"limit_bytes"`
-	UsedPercent float64 `json:"used_percent"`
-}
-
-type NetworkRate struct {
-	ReceivedBytesPerSecond float64 `json:"received_bytes_per_second"`
-	SentBytesPerSecond     float64 `json:"sent_bytes_per_second"`
-}
-
-type BlockIORate struct {
-	ReadBytesPerSecond  float64 `json:"read_bytes_per_second"`
-	WriteBytesPerSecond float64 `json:"write_bytes_per_second"`
-}
-
-type StatsSnapshot struct {
-	ContainerID string              `json:"container_id"`
-	ObservedAt  *time.Time          `json:"observed_at,omitempty"`
-	CPUPercent  Metric[float64]     `json:"cpu_percent"`
-	Memory      Metric[MemoryUsage] `json:"memory"`
-	Network     Metric[NetworkRate] `json:"network"`
-	BlockIO     Metric[BlockIORate] `json:"block_io"`
-}
 
 type StatsEngine interface {
 	OpenStats(context.Context, string) (io.ReadCloser, error)
@@ -113,12 +75,12 @@ type statsStream struct {
 // superseded samples rather than causing unbounded memory growth or blocking
 // Docker's shared stats reader.
 type StatsSubscription struct {
-	Updates <-chan StatsSnapshot
+	Updates <-chan protocol.ContainerStatsSnapshot
 	Errors  <-chan error
 
 	manager  *StatsManager
 	stream   *statsStream
-	updates  chan StatsSnapshot
+	updates  chan protocol.ContainerStatsSnapshot
 	errors   chan error
 	done     chan struct{}
 	once     sync.Once
@@ -170,7 +132,7 @@ func (m *StatsManager) Subscribe(ctx context.Context, id string) (*StatsSubscrip
 		m.streams[id] = stream
 		start = true
 	}
-	updates := make(chan StatsSnapshot, statsSubscriberQueue)
+	updates := make(chan protocol.ContainerStatsSnapshot, statsSubscriberQueue)
 	errorsOut := make(chan error, 1)
 	done := make(chan struct{})
 	sub := &StatsSubscription{Updates: updates, Errors: errorsOut, manager: m, stream: stream,
@@ -454,7 +416,7 @@ func validateStatsJSON(data []byte) error {
 	return nil
 }
 
-func (m *StatsManager) publish(stream *statsStream, snapshot StatsSnapshot) {
+func (m *StatsManager) publish(stream *statsStream, snapshot protocol.ContainerStatsSnapshot) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.streams[stream.id] != stream || stream.ctx.Err() != nil {
@@ -477,7 +439,7 @@ func (m *StatsManager) publish(stream *statsStream, snapshot StatsSnapshot) {
 	}
 }
 
-func cloneStatsSnapshot(snapshot StatsSnapshot) StatsSnapshot {
+func cloneStatsSnapshot(snapshot protocol.ContainerStatsSnapshot) protocol.ContainerStatsSnapshot {
 	if snapshot.ObservedAt != nil {
 		observedAt := *snapshot.ObservedAt
 		snapshot.ObservedAt = &observedAt
@@ -489,7 +451,7 @@ func cloneStatsSnapshot(snapshot StatsSnapshot) StatsSnapshot {
 	return snapshot
 }
 
-func cloneMetric[T any](metric Metric[T]) Metric[T] {
+func cloneMetric[T any](metric protocol.ContainerStreamMetric[T]) protocol.ContainerStreamMetric[T] {
 	if metric.Value != nil {
 		value := *metric.Value
 		metric.Value = &value
@@ -594,20 +556,20 @@ type rawBlockIOEntry struct {
 	Value uint64 `json:"value"`
 }
 
-func calculateStats(id string, current rawDockerStats, previous *rawDockerStats) StatsSnapshot {
+func calculateStats(id string, current rawDockerStats, previous *rawDockerStats) protocol.ContainerStatsSnapshot {
 	at := time.Time{}
 	if current.Read != nil {
 		at = current.Read.UTC()
 	}
-	return StatsSnapshot{ContainerID: id, ObservedAt: optionalTime(at),
+	return protocol.ContainerStatsSnapshot{ContainerID: id, ObservedAt: optionalTime(at),
 		CPUPercent: calculateCPU(current, at),
 		Memory:     calculateMemory(current, at),
 		Network:    calculateNetwork(current, previous, at),
 		BlockIO:    calculateBlockIO(current, previous, at)}
 }
 
-func calculateCPU(sample rawDockerStats, at time.Time) Metric[float64] {
-	unknown := func(reason string) Metric[float64] { return unknownMetric[float64](reason, at) }
+func calculateCPU(sample rawDockerStats, at time.Time) protocol.ContainerStreamMetric[float64] {
+	unknown := func(reason string) protocol.ContainerStreamMetric[float64] { return unknownMetric[float64](reason, at) }
 	if sample.Read == nil || sample.Read.IsZero() || sample.PreRead == nil || sample.PreRead.IsZero() {
 		return unknown("warming_up")
 	}
@@ -645,30 +607,30 @@ func calculateCPU(sample rawDockerStats, at time.Time) Metric[float64] {
 	return knownMetric(percent, at)
 }
 
-func calculateMemory(sample rawDockerStats, at time.Time) Metric[MemoryUsage] {
+func calculateMemory(sample rawDockerStats, at time.Time) protocol.ContainerStreamMetric[protocol.ContainerMemoryUsage] {
 	if sample.Read == nil || sample.Read.IsZero() {
-		return unknownMetric[MemoryUsage]("sample_time_unavailable", at)
+		return unknownMetric[protocol.ContainerMemoryUsage]("sample_time_unavailable", at)
 	}
 	if sample.MemoryStats == nil || sample.MemoryStats.Usage == nil || sample.MemoryStats.Limit == nil {
-		return unknownMetric[MemoryUsage]("unavailable", at)
+		return unknownMetric[protocol.ContainerMemoryUsage]("unavailable", at)
 	}
 	cache, ok := memoryCache(sample.MemoryStats.Stats)
 	if !ok {
-		return unknownMetric[MemoryUsage]("cache_unavailable", at)
+		return unknownMetric[protocol.ContainerMemoryUsage]("cache_unavailable", at)
 	}
 	usage, limit := *sample.MemoryStats.Usage, *sample.MemoryStats.Limit
 	if cache > usage {
-		return unknownMetric[MemoryUsage]("invalid_data", at)
+		return unknownMetric[protocol.ContainerMemoryUsage]("invalid_data", at)
 	}
 	if limit == 0 {
-		return unknownMetric[MemoryUsage]("limit_unavailable", at)
+		return unknownMetric[protocol.ContainerMemoryUsage]("limit_unavailable", at)
 	}
 	used := usage - cache
 	percent := 100 * float64(used) / float64(limit)
 	if math.IsNaN(percent) || math.IsInf(percent, 0) {
-		return unknownMetric[MemoryUsage]("invalid_data", at)
+		return unknownMetric[protocol.ContainerMemoryUsage]("invalid_data", at)
 	}
-	return knownMetric(MemoryUsage{UsedBytes: used, CacheBytes: cache, LimitBytes: limit, UsedPercent: percent}, at)
+	return knownMetric(protocol.ContainerMemoryUsage{UsedBytes: used, CacheBytes: cache, LimitBytes: limit, UsedPercent: percent}, at)
 }
 
 func memoryCache(stats map[string]uint64) (uint64, bool) {
@@ -683,85 +645,85 @@ func memoryCache(stats map[string]uint64) (uint64, bool) {
 	return 0, false
 }
 
-func calculateNetwork(current rawDockerStats, previous *rawDockerStats, at time.Time) Metric[NetworkRate] {
+func calculateNetwork(current rawDockerStats, previous *rawDockerStats, at time.Time) protocol.ContainerStreamMetric[protocol.ContainerNetworkRate] {
 	if current.Networks == nil {
-		return unknownMetric[NetworkRate]("unavailable", at)
+		return unknownMetric[protocol.ContainerNetworkRate]("unavailable", at)
 	}
 	if previous == nil {
-		return unknownMetric[NetworkRate]("warming_up", at)
+		return unknownMetric[protocol.ContainerNetworkRate]("warming_up", at)
 	}
 	if previous.Networks == nil {
-		return unknownMetric[NetworkRate]("warming_up", at)
+		return unknownMetric[protocol.ContainerNetworkRate]("warming_up", at)
 	}
 	if !sameNetworkSet(current.Networks, previous.Networks) {
-		return unknownMetric[NetworkRate]("interface_set_changed", at)
+		return unknownMetric[protocol.ContainerNetworkRate]("interface_set_changed", at)
 	}
 	seconds, reason := trustedStatsSampleInterval(current, *previous)
 	if reason != "" {
-		return unknownMetric[NetworkRate](reason, at)
+		return unknownMetric[protocol.ContainerNetworkRate](reason, at)
 	}
 	var rxDelta, txDelta uint64
 	for name, now := range current.Networks {
 		old := previous.Networks[name]
 		if now.RxBytes == nil || now.TxBytes == nil || old.RxBytes == nil || old.TxBytes == nil {
-			return unknownMetric[NetworkRate]("invalid_data", at)
+			return unknownMetric[protocol.ContainerNetworkRate]("invalid_data", at)
 		}
 		if *now.RxBytes < *old.RxBytes || *now.TxBytes < *old.TxBytes {
-			return unknownMetric[NetworkRate]("counter_reset", at)
+			return unknownMetric[protocol.ContainerNetworkRate]("counter_reset", at)
 		}
 		var ok bool
 		rxDelta, ok = addCounter(rxDelta, *now.RxBytes-*old.RxBytes)
 		if !ok {
-			return unknownMetric[NetworkRate]("invalid_data", at)
+			return unknownMetric[protocol.ContainerNetworkRate]("invalid_data", at)
 		}
 		txDelta, ok = addCounter(txDelta, *now.TxBytes-*old.TxBytes)
 		if !ok {
-			return unknownMetric[NetworkRate]("invalid_data", at)
+			return unknownMetric[protocol.ContainerNetworkRate]("invalid_data", at)
 		}
 	}
-	return knownMetric(NetworkRate{ReceivedBytesPerSecond: float64(rxDelta) / seconds,
+	return knownMetric(protocol.ContainerNetworkRate{ReceivedBytesPerSecond: float64(rxDelta) / seconds,
 		SentBytesPerSecond: float64(txDelta) / seconds}, at)
 }
 
-func calculateBlockIO(current rawDockerStats, previous *rawDockerStats, at time.Time) Metric[BlockIORate] {
+func calculateBlockIO(current rawDockerStats, previous *rawDockerStats, at time.Time) protocol.ContainerStreamMetric[protocol.ContainerBlockIORate] {
 	currentIO, reason := blockIOCounters(current.BlkioStats)
 	if reason != "" {
-		return unknownMetric[BlockIORate](reason, at)
+		return unknownMetric[protocol.ContainerBlockIORate](reason, at)
 	}
 	if previous == nil {
-		return unknownMetric[BlockIORate]("warming_up", at)
+		return unknownMetric[protocol.ContainerBlockIORate]("warming_up", at)
 	}
 	previousIO, reason := blockIOCounters(previous.BlkioStats)
 	if reason != "" {
 		if reason == "unavailable" {
-			return unknownMetric[BlockIORate]("warming_up", at)
+			return unknownMetric[protocol.ContainerBlockIORate]("warming_up", at)
 		}
-		return unknownMetric[BlockIORate](reason, at)
+		return unknownMetric[protocol.ContainerBlockIORate](reason, at)
 	}
 	if !sameIOSet(currentIO, previousIO) {
-		return unknownMetric[BlockIORate]("device_set_changed", at)
+		return unknownMetric[protocol.ContainerBlockIORate]("device_set_changed", at)
 	}
 	seconds, reason := trustedStatsSampleInterval(current, *previous)
 	if reason != "" {
-		return unknownMetric[BlockIORate](reason, at)
+		return unknownMetric[protocol.ContainerBlockIORate](reason, at)
 	}
 	var readDelta, writeDelta uint64
 	for device, now := range currentIO {
 		old := previousIO[device]
 		if now.read < old.read || now.write < old.write {
-			return unknownMetric[BlockIORate]("counter_reset", at)
+			return unknownMetric[protocol.ContainerBlockIORate]("counter_reset", at)
 		}
 		var ok bool
 		readDelta, ok = addCounter(readDelta, now.read-old.read)
 		if !ok {
-			return unknownMetric[BlockIORate]("invalid_data", at)
+			return unknownMetric[protocol.ContainerBlockIORate]("invalid_data", at)
 		}
 		writeDelta, ok = addCounter(writeDelta, now.write-old.write)
 		if !ok {
-			return unknownMetric[BlockIORate]("invalid_data", at)
+			return unknownMetric[protocol.ContainerBlockIORate]("invalid_data", at)
 		}
 	}
-	return knownMetric(BlockIORate{ReadBytesPerSecond: float64(readDelta) / seconds,
+	return knownMetric(protocol.ContainerBlockIORate{ReadBytesPerSecond: float64(readDelta) / seconds,
 		WriteBytesPerSecond: float64(writeDelta) / seconds}, at)
 }
 
@@ -873,12 +835,12 @@ func addCounter(a, b uint64) (uint64, bool) {
 	return a + b, true
 }
 
-func knownMetric[T any](value T, at time.Time) Metric[T] {
-	return Metric[T]{State: MetricOK, Value: &value, SampledAt: optionalTime(at)}
+func knownMetric[T any](value T, at time.Time) protocol.ContainerStreamMetric[T] {
+	return protocol.ContainerStreamMetric[T]{State: "ok", Value: &value, SampledAt: optionalTime(at)}
 }
 
-func unknownMetric[T any](reason string, at time.Time) Metric[T] {
-	return Metric[T]{State: MetricUnknown, Reason: reason, SampledAt: optionalTime(at)}
+func unknownMetric[T any](reason string, at time.Time) protocol.ContainerStreamMetric[T] {
+	return protocol.ContainerStreamMetric[T]{State: "unknown", Reason: reason, SampledAt: optionalTime(at)}
 }
 
 func optionalTime(at time.Time) *time.Time {

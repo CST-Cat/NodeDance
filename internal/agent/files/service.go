@@ -39,15 +39,15 @@ var (
 const defaultTransferLimit int64 = protocol.DefaultFileLimit
 
 type Service struct {
-	root        *os.Root
-	rootFD      int
-	name        string
+	root        *os.File
 	limit       int64
-	fullHost    bool
 	blockedPath []string
 	// afterAtomicReplace is a package-test fault-injection hook for the
 	// otherwise hard-to-reproduce post-commit verification failure path.
 	afterAtomicReplace func()
+	// afterTextRead lets package tests reproduce path replacement between
+	// reading content and returning its optimistic-write version.
+	afterTextRead func()
 }
 
 // MutationBaseline stores opaque metadata fingerprints only. It lets recovery
@@ -71,36 +71,33 @@ func New(rootPath string, limit int64, protectedPaths ...string) (*Service, erro
 	if err != nil {
 		return nil, fmt.Errorf("resolve Agent file root: %w", err)
 	}
-	root, err := os.OpenRoot(absRoot)
+	fd, err := unix.Open(absRoot, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open Agent file root: %w", err)
 	}
-	service := &Service{root: root, rootFD: -1, name: absRoot, limit: limit, fullHost: absRoot == string(filepath.Separator)}
-	fd, openErr := unix.Open(absRoot, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
-	if openErr != nil {
-		_ = root.Close()
-		return nil, openErr
-	}
-	service.rootFD = fd
-	if service.fullHost {
-		service.blockedPath = []string{"/proc", "/sys", "/dev", "/run"}
-		probeFD, probeErr := openAt2(service.rootFD, ".", unix.O_PATH, 0)
-		if probeErr != nil {
-			_ = unix.Close(service.rootFD)
+	root := os.NewFile(uintptr(fd), absRoot)
+	opened := false
+	defer func() {
+		if !opened {
 			_ = root.Close()
-			return nil, fmt.Errorf("full-host file access requires race-safe Linux openat2 support: %w", probeErr)
 		}
-		_ = unix.Close(probeFD)
+	}()
+	service := &Service{root: root, limit: limit}
+	if absRoot == string(filepath.Separator) {
+		service.blockedPath = []string{"/proc", "/sys", "/dev", "/run"}
 	}
+	probeFD, probeErr := openAt2(fd, ".", unix.O_PATH, 0)
+	if probeErr != nil {
+		return nil, fmt.Errorf("Agent file access requires race-safe Linux openat2 support: %w", probeErr)
+	}
+	_ = unix.Close(probeFD)
 	for _, protected := range protectedPaths {
 		absolute, err := filepath.Abs(protected)
 		if err != nil {
-			_ = root.Close()
 			return nil, fmt.Errorf("resolve protected Agent path: %w", err)
 		}
 		relative, err := filepath.Rel(absRoot, absolute)
 		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
-			_ = root.Close()
 			return nil, errors.New("protected Agent path must remain inside the configured file root")
 		}
 		protectedVirtual := "/"
@@ -109,6 +106,7 @@ func New(rootPath string, limit int64, protectedPaths ...string) (*Service, erro
 		}
 		service.blockedPath = append(service.blockedPath, path.Clean(protectedVirtual))
 	}
+	opened = true
 	return service, nil
 }
 
@@ -116,15 +114,7 @@ func (s *Service) Close() error {
 	if s == nil || s.root == nil {
 		return nil
 	}
-	var closeErr error
-	if s.rootFD >= 0 {
-		closeErr = unix.Close(s.rootFD)
-		s.rootFD = -1
-	}
-	if err := s.root.Close(); err != nil {
-		return err
-	}
-	return closeErr
+	return s.root.Close()
 }
 
 func (s *Service) Limit() int64 { return s.limit }
@@ -170,21 +160,15 @@ func (s *Service) isBlocked(virtual string) bool {
 	return false
 }
 
-// fullHost uses openat2 and pinned parent directory descriptors for each
+// All file roots use openat2 and pinned parent directory descriptors for each
 // operation. RESOLVE_NO_SYMLINKS makes the special-path and credential checks
 // atomic with path resolution, so a concurrent symlink swap cannot redirect an
 // operation into a protected path inside the host root.
 func (s *Service) open(name string) (*os.File, error) {
-	if s.rootFD < 0 {
-		return s.root.Open(name)
-	}
 	return s.openAtRoot(name, unix.O_RDONLY, 0)
 }
 
 func (s *Service) openFile(name string, flag int, perm os.FileMode) (*os.File, error) {
-	if s.rootFD < 0 {
-		return s.root.OpenFile(name, flag, perm)
-	}
 	return s.openAtRoot(name, flag, uint32(perm.Perm()))
 }
 
@@ -193,7 +177,7 @@ func (s *Service) openAtRoot(name string, flags int, mode uint32) (*os.File, err
 	if name == "" {
 		name = "."
 	}
-	fd, err := openAt2(s.rootFD, name, flags, mode)
+	fd, err := openAt2(int(s.root.Fd()), name, flags, mode)
 	if err != nil {
 		return nil, safePathError(err)
 	}
@@ -210,14 +194,11 @@ func openAt2(dirFD int, name string, flags int, mode uint32) (int, error) {
 }
 
 func (s *Service) lstat(name string) (os.FileInfo, error) {
-	if s.rootFD < 0 {
-		return s.root.Lstat(name)
-	}
 	name = strings.TrimPrefix(filepath.ToSlash(name), "/")
 	if name == "" {
 		name = "."
 	}
-	fd, err := openAt2(s.rootFD, name, unix.O_PATH|unix.O_NOFOLLOW, 0)
+	fd, err := openAt2(int(s.root.Fd()), name, unix.O_PATH|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, safePathError(err)
 	}
@@ -227,9 +208,6 @@ func (s *Service) lstat(name string) (os.FileInfo, error) {
 }
 
 func (s *Service) stat(name string) (os.FileInfo, error) {
-	if s.rootFD < 0 {
-		return s.root.Stat(name)
-	}
 	file, err := s.open(name)
 	if err != nil {
 		return nil, err
@@ -250,9 +228,6 @@ func (s *Service) parent(name string) (int, string, error) {
 	if base == "" || base == "." || base == ".." {
 		return -1, "", ErrInvalidPath
 	}
-	if s.rootFD < 0 {
-		return -1, base, nil
-	}
 	directory, err := s.openAtRoot(dirName, unix.O_RDONLY|unix.O_DIRECTORY, 0)
 	if err != nil {
 		return -1, "", err
@@ -268,15 +243,12 @@ func (s *Service) parent(name string) (int, string, error) {
 
 func safePathError(err error) error {
 	if errors.Is(err, unix.ELOOP) || errors.Is(err, unix.EXDEV) {
-		return fmt.Errorf("%w: symbolic-link path components are not followed in full-host mode", ErrInvalidPath)
+		return fmt.Errorf("%w: symbolic-link path components are not followed", ErrInvalidPath)
 	}
 	return err
 }
 
 func (s *Service) mkdir(name string, mode os.FileMode) error {
-	if s.rootFD < 0 {
-		return s.root.Mkdir(name, mode)
-	}
 	parentFD, base, err := s.parent(name)
 	if err != nil {
 		return err
@@ -286,9 +258,6 @@ func (s *Service) mkdir(name string, mode os.FileMode) error {
 }
 
 func (s *Service) remove(name string) error {
-	if s.rootFD < 0 {
-		return s.root.Remove(name)
-	}
 	parentFD, base, err := s.parent(name)
 	if err != nil {
 		return err
@@ -298,9 +267,6 @@ func (s *Service) remove(name string) error {
 }
 
 func (s *Service) removeAll(name string) error {
-	if s.rootFD < 0 {
-		return s.root.RemoveAll(name)
-	}
 	parentFD, base, err := s.parent(name)
 	if err != nil {
 		return err
@@ -339,9 +305,6 @@ func removeTreeAt(parentFD int, name string) error {
 }
 
 func (s *Service) renameNoReplace(oldName, newName string) error {
-	if s.rootFD < 0 {
-		return renameNoReplace(s.root, oldName, newName)
-	}
 	oldParent, oldBase, err := s.parent(oldName)
 	if err != nil {
 		return err
@@ -356,9 +319,6 @@ func (s *Service) renameNoReplace(oldName, newName string) error {
 }
 
 func (s *Service) renameReplace(oldName, newName string) error {
-	if s.rootFD < 0 {
-		return s.root.Rename(oldName, newName)
-	}
 	oldParent, oldBase, err := s.parent(oldName)
 	if err != nil {
 		return err
@@ -373,9 +333,6 @@ func (s *Service) renameReplace(oldName, newName string) error {
 }
 
 func (s *Service) linkNoReplace(oldName, newName string) error {
-	if s.rootFD < 0 {
-		return linkUploadWithoutReplace(s.root, oldName, newName)
-	}
 	oldParent, oldBase, err := s.parent(oldName)
 	if err != nil {
 		return err
@@ -476,8 +433,7 @@ func makeEntry(name, virtual string, info os.FileInfo) protocol.FileEntry {
 }
 
 func (s *Service) version(name string, info os.FileInfo, includeContent bool) (string, error) {
-	hash := sha256.New()
-	fmt.Fprintf(hash, "%d:%d:%d:%d:", info.Size(), info.Mode().Perm(), info.ModTime().UnixNano(), ownerID(info))
+	hash := fileVersionHash(info)
 	if includeContent && info.Mode().IsRegular() {
 		file, err := s.open(name)
 		if err != nil {
@@ -493,6 +449,12 @@ func (s *Service) version(name string, info os.FileInfo, includeContent bool) (s
 		}
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func fileVersionHash(info os.FileInfo) hash.Hash {
+	h := sha256.New()
+	fmt.Fprintf(h, "%d:%d:%d:%d:", info.Size(), info.Mode().Perm(), info.ModTime().UnixNano(), ownerID(info))
+	return h
 }
 
 func (s *Service) ReadText(virtual string) (string, string, error) {
@@ -525,8 +487,14 @@ func (s *Service) ReadText(virtual string) (string, string, error) {
 	if !utf8.Valid(data) || strings.IndexByte(string(data), 0) >= 0 {
 		return "", "", ErrNotText
 	}
-	version, err := s.version(name, info, true)
-	return string(data), version, err
+	if s.afterTextRead != nil {
+		s.afterTextRead()
+	}
+	// Bind the version to exactly the bytes returned from this opened file.
+	// Reopening the path can hash a replacement the user has never read.
+	h := fileVersionHash(info)
+	_, _ = h.Write(data)
+	return string(data), hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func (s *Service) Mkdir(virtual string) error {
@@ -735,20 +703,6 @@ type Upload struct {
 	closed          bool
 }
 
-func (u *Upload) Written() int64 {
-	if u == nil {
-		return 0
-	}
-	return u.written
-}
-
-func (u *Upload) TemporaryPath() string {
-	if u == nil || u.temporary == "" {
-		return ""
-	}
-	return "/" + u.temporary
-}
-
 func (s *Service) BeginUpload(virtual, expectedVersion string, size int64, digest string) (*Upload, error) {
 	temporary, err := s.ReserveUploadTemporaryPath(virtual)
 	if err != nil {
@@ -932,7 +886,7 @@ func (u *Upload) CommitWithDigest(expectedDigest string) (protocol.FileEntry, er
 	}
 	if u.initialInfo == nil {
 		// A prior Lstat is not enough: another process could create the target
-		// before the rename and Root.Rename would replace it. Creating a hard
+		// before the rename and an ordinary rename would replace it. Creating a hard
 		// link is atomic and fails with EEXIST instead of overwriting. The temp
 		// file is a sibling, so it is on the same filesystem as the target.
 		if err := u.service.linkNoReplace(u.temporary, u.target); err != nil {
@@ -960,16 +914,6 @@ func (u *Upload) CommitWithDigest(expectedDigest string) (protocol.FileEntry, er
 		return protocol.FileEntry{}, fmt.Errorf("%w: %v", ErrMutationResultUnknown, err)
 	}
 	return entry, nil
-}
-
-func linkUploadWithoutReplace(root *os.Root, temporary, target string) error {
-	if err := root.Link(temporary, target); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return ErrConflict
-		}
-		return err
-	}
-	return nil
 }
 
 func (u *Upload) Abort() {
@@ -1028,9 +972,13 @@ func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.File
 		if err != nil {
 			return protocol.FileEntry{}, err
 		}
-		if err := upload.WriteChunk([]byte(text)); err != nil {
-			upload.Abort()
-			return protocol.FileEntry{}, err
+		for offset := 0; offset < len(text); {
+			end := min(offset+protocol.MaxFileChunkBytes, len(text))
+			if err := upload.WriteChunk([]byte(text[offset:end])); err != nil {
+				upload.Abort()
+				return protocol.FileEntry{}, err
+			}
+			offset = end
 		}
 		entry, err := upload.CommitWithDigest(hex.EncodeToString(digest[:]))
 		return entry, err

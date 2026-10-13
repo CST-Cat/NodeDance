@@ -347,8 +347,14 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 		}
 	}
 	if o.Name == "auth.login" || o.Name == "auth.setup" {
-		jar, _ := cookiejar.New(nil)
-		c.http.Jar = jar
+		// CookieJar supports concurrent access; replacing the http.Client's
+		// Jar while a stream/request uses it does not. Expire the old origin
+		// cookies in place before obtaining fresh login/setup CSRF state.
+		cookies := c.http.Jar.Cookies(c.base)
+		for _, cookie := range cookies {
+			cookie.MaxAge = -1
+		}
+		c.http.Jar.SetCookies(c.base, cookies)
 	}
 	req, err := c.request(ctx, o, in, body)
 	if err != nil {
@@ -445,8 +451,16 @@ func (c *Client) Catalog(ctx context.Context) (Catalog, error) {
 	if response.StatusCode != http.StatusOK {
 		return Catalog{}, fmt.Errorf("read Core operation catalog: HTTP %d", response.StatusCode)
 	}
+	const catalogLimit = 2 << 20
+	raw, err := io.ReadAll(io.LimitReader(response.Body, catalogLimit+1))
+	if err != nil {
+		return Catalog{}, err
+	}
+	if len(raw) > catalogLimit {
+		return Catalog{}, errors.New("Core operation catalog exceeds its size limit")
+	}
 	var catalog Catalog
-	if err := json.NewDecoder(io.LimitReader(response.Body, 2*1024*1024)).Decode(&catalog); err != nil {
+	if err := json.Unmarshal(raw, &catalog); err != nil {
 		return Catalog{}, err
 	}
 	if catalog.Version != 1 || len(catalog.Operations) == 0 {

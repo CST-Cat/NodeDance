@@ -43,7 +43,7 @@ type SystemdInstallOptions struct {
 
 // ValidateSystemdStatePath checks the Agent state directory and config without
 // following any existing symlink. It performs no filesystem mutations, so an
-// SSH installer can reject unsafe paths before creating the service account or
+// SSH installer can reject unsafe paths before preparing root-owned state or
 // replacing the installed binary.
 func ValidateSystemdStatePath(configPath string) error {
 	dirFD, missing, err := openSystemdStateDirectory(configPath, false)
@@ -274,32 +274,8 @@ func openSystemdConfig(dirFD int, name string) (int, bool, error) {
 }
 
 func readSystemdConfig(fd int) (Config, error) {
-	if _, err := unix.Seek(fd, 0, 0); err != nil {
-		return Config{}, fmt.Errorf("rewind Agent config: %w", err)
-	}
-	data := make([]byte, 0, 4096)
-	buffer := make([]byte, 4096)
-	for {
-		count, err := unix.Read(fd, buffer)
-		if errors.Is(err, unix.EINTR) {
-			continue
-		}
-		if err != nil {
-			return Config{}, fmt.Errorf("read Agent config: %w", err)
-		}
-		if count == 0 {
-			break
-		}
-		data = append(data, buffer[:count]...)
-		if len(data) > systemdStateConfigMaxBytes {
-			return Config{}, errors.New("Agent config is too large")
-		}
-	}
-	config, err := decodeConfig(data)
-	if err != nil {
-		return Config{}, fmt.Errorf("validate existing Agent config: %w", err)
-	}
-	return config, nil
+	_, config, err := readSystemdConfigSnapshot(fd)
+	return config, err
 }
 
 func setSystemdStateMetadata(fd, uid, gid int, mode uint32, label string) error {
@@ -331,7 +307,7 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 	if err != nil {
 		return "", err
 	}
-	serviceName, err := resolveSystemdServiceName(options.User, unitPath)
+	serviceName, err := resolveSystemdServiceName(options.User)
 	if err != nil {
 		return "", err
 	}
@@ -386,9 +362,7 @@ func InstallSystemd(ctx context.Context, options SystemdInstallOptions) (string,
 		return "", errors.New("installing a system unit requires root privileges")
 	}
 	stateDir := filepath.Dir(options.ConfigPath)
-	fileRootOptions := options
-	fileRootOptions.User = serviceUser.Username
-	fileRoot, err := resolveSystemdFileRoot(fileRootOptions, unitPath, stateDir)
+	fileRoot, err := resolveSystemdFileRoot(options, unitPath, stateDir)
 	if err != nil {
 		return "", err
 	}
@@ -1103,41 +1077,6 @@ func validateSystemdServiceUID(username string, uid int) error {
 	return nil
 }
 
-func validateSystemdConfig(path string, serviceUID int) error {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return fmt.Errorf("resolve systemd Agent config path: %w", err)
-	}
-	path = filepath.Clean(absolute)
-	if err := rejectSymlinkPath(path); err != nil {
-		return err
-	}
-	directoryInfo, err := os.Lstat(filepath.Dir(path))
-	if err != nil {
-		return fmt.Errorf("inspect systemd Agent state directory: %w", err)
-	}
-	if !directoryInfo.IsDir() || directoryInfo.Mode()&os.ModeSymlink != 0 || directoryInfo.Mode().Perm() != 0o700 {
-		return errors.New("systemd Agent config requires a dedicated 0700 directory")
-	}
-	if err := checkOwnerUID(directoryInfo, serviceUID, "systemd Agent state directory"); err != nil {
-		return err
-	}
-	configInfo, err := os.Lstat(path)
-	if err != nil {
-		return fmt.Errorf("inspect systemd Agent config: %w", err)
-	}
-	if !configInfo.Mode().IsRegular() || configInfo.Mode()&os.ModeSymlink != 0 || configInfo.Mode().Perm() != 0o600 {
-		return errors.New("systemd Agent config must be a regular 0600 file")
-	}
-	if err := checkOwnerUID(configInfo, serviceUID, "systemd Agent config"); err != nil {
-		return err
-	}
-	if _, err := loadConfigForUID(path, serviceUID); err != nil {
-		return fmt.Errorf("validate systemd Agent config: %w", err)
-	}
-	return nil
-}
-
 // ValidateFileRoot applies the same path policy to foreground Agents and
 // systemd installations. The root must already exist and be a real directory;
 // rejecting symlinked path components keeps the path named by the service
@@ -1228,8 +1167,8 @@ func resolveSystemdFileRoot(options SystemdInstallOptions, unitPath, stateDir st
 }
 
 func readPersistedSystemdFilePolicy(unitPath string) (root string, disabled, found bool, err error) {
-	data, err := os.ReadFile(unitPath)
-	if errors.Is(err, os.ErrNotExist) {
+	data, _, absent, err := readSystemdUnitFile(unitPath)
+	if absent {
 		return "", false, false, nil
 	}
 	if err != nil {
@@ -1354,7 +1293,7 @@ func readSystemdUnitFile(path string) ([]byte, os.FileInfo, bool, error) {
 	return contents, info, false, nil
 }
 
-func resolveSystemdServiceName(requested, _ string) (string, error) {
+func resolveSystemdServiceName(requested string) (string, error) {
 	if requested = strings.TrimSpace(requested); requested != "" {
 		if requested != "root" {
 			return "", errors.New("NodeDance Agent systemd service only supports the root account")

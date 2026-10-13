@@ -129,7 +129,7 @@ func Create(ctx context.Context, dataDir, outputPath string) (retErr error) {
 
 	archiveManifest := manifest{Format: archiveFormat, Version: archiveVersion, Files: make([]manifestFile, 0, len(files))}
 	for _, file := range files {
-		entry, err := describeFile(file)
+		entry, err := describeFile(ctx, file)
 		if err != nil {
 			return err
 		}
@@ -140,7 +140,7 @@ func Create(ctx context.Context, dataDir, outputPath string) (retErr error) {
 		return fmt.Errorf("encode backup manifest: %w", err)
 	}
 
-	return writeArchive(output, outputParent, manifestBytes, files, archiveManifest.Files)
+	return writeArchive(ctx, output, outputParent, manifestBytes, files, archiveManifest.Files)
 }
 
 // Restore validates the whole archive into a private sibling directory before
@@ -211,6 +211,9 @@ func Restore(ctx context.Context, inputPath, dataDir string) (retErr error) {
 		return fmt.Errorf("restored SQLite database failed integrity check: %w", err)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := installRestoreStage(stage, destination, initialTarget, targetExists); err != nil {
 		return err
 	}
@@ -315,7 +318,11 @@ func createSQLiteSnapshot(ctx context.Context, sourcePath, snapshotPath string) 
 			return fmt.Errorf("initialize online SQLite backup: %w", err)
 		}
 		for more := true; more; {
-			more, err = backup.Step(-1)
+			if err := ctx.Err(); err != nil {
+				_ = backup.Finish()
+				return err
+			}
+			more, err = backup.Step(128)
 			if err != nil {
 				_ = backup.Finish()
 				return fmt.Errorf("copy online SQLite snapshot: %w", err)
@@ -356,7 +363,7 @@ func checkSQLiteIntegrity(ctx context.Context, path string) error {
 	return nil
 }
 
-func describeFile(file sourceFile) (manifestFile, error) {
+func describeFile(ctx context.Context, file sourceFile) (manifestFile, error) {
 	if !validArchivePath(file.archivePath) || !allowedPath(file.archivePath) {
 		return manifestFile{}, errors.New("Core backup contains an unsupported path")
 	}
@@ -366,7 +373,7 @@ func describeFile(file sourceFile) (manifestFile, error) {
 	}
 	defer f.Close()
 	h := sha256.New()
-	size, err := io.Copy(h, f)
+	size, err := io.Copy(h, contextReader{ctx: ctx, source: f})
 	if err != nil {
 		return manifestFile{}, fmt.Errorf("hash Core backup file %s: %w", file.archivePath, err)
 	}
@@ -376,7 +383,10 @@ func describeFile(file sourceFile) (manifestFile, error) {
 	return manifestFile{Path: file.archivePath, Size: size, SHA256: hex.EncodeToString(h.Sum(nil))}, nil
 }
 
-func writeArchive(output, outputParent string, manifestBytes []byte, files []sourceFile, entries []manifestFile) error {
+func writeArchive(ctx context.Context, output, outputParent string, manifestBytes []byte, files []sourceFile, entries []manifestFile) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	temp, err := os.CreateTemp(outputParent, ".nodedance-backup-*")
 	if err != nil {
 		return fmt.Errorf("create temporary backup file: %w", err)
@@ -412,7 +422,7 @@ func writeArchive(output, outputParent string, manifestBytes []byte, files []sou
 			return fmt.Errorf("open backup entry %s: %w", entry.Path, err)
 		}
 		h := sha256.New()
-		written, copyErr := io.CopyN(io.MultiWriter(writer, h), source, entry.Size)
+		written, copyErr := io.CopyN(io.MultiWriter(writer, h), contextReader{ctx: ctx, source: source}, entry.Size)
 		stat, statErr := source.Stat()
 		closeErr := source.Close()
 		if copyErr != nil || statErr != nil || closeErr != nil || written != entry.Size || stat.Size() != entry.Size || hex.EncodeToString(h.Sum(nil)) != entry.SHA256 {
@@ -432,6 +442,9 @@ func writeArchive(output, outputParent string, manifestBytes []byte, files []sou
 	if err := temp.Close(); err != nil {
 		return fmt.Errorf("close backup archive: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if err := os.Link(tempPath, output); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return errors.New("backup output already exists")
@@ -445,7 +458,10 @@ func writeArchive(output, outputParent string, manifestBytes []byte, files []sou
 }
 
 func extractAndVerify(ctx context.Context, input io.Reader, stage string) error {
-	reader := tar.NewReader(input)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	reader := tar.NewReader(contextReader{ctx: ctx, source: input})
 	header, err := reader.Next()
 	if err != nil || header.Name != manifestName || header.Typeflag != tar.TypeReg || header.Size < 1 || header.Size > maxManifest {
 		return errors.New("backup archive manifest is missing or invalid")
@@ -470,6 +486,9 @@ func extractAndVerify(ctx context.Context, input io.Reader, stage string) error 
 	for _, entry := range archiveManifest.Files {
 		if !validArchivePath(entry.Path) || !allowedPath(entry.Path) || entry.Size < 0 || entry.Size > maxFileSizeFor(entry.Path) || len(entry.SHA256) != sha256.Size*2 {
 			return errors.New("backup archive contains an unsafe or invalid path")
+		}
+		if (entry.Path == alertKeyName || entry.Path == csrfKeyName) && entry.Size != 32 {
+			return errors.New("backup archive key must contain exactly 32 bytes")
 		}
 		if _, exists := entries[entry.Path]; exists {
 			return errors.New("backup archive contains duplicate paths")
@@ -561,6 +580,8 @@ func allowedPath(name string) bool {
 
 func maxFileSizeFor(name string) int64 {
 	switch name {
+	case alertKeyName, csrfKeyName:
+		return 32
 	case setupName:
 		return 1024
 	case initialAdminName:
@@ -570,6 +591,21 @@ func maxFileSizeFor(name string) int64 {
 	default:
 		return maxFileSize
 	}
+}
+
+// Check cancellation between bounded copy reads without a detached worker.
+// Input files are regular files; this does not promise to interrupt a kernel
+// read already blocked on a failing filesystem.
+type contextReader struct {
+	ctx    context.Context
+	source io.Reader
+}
+
+func (r contextReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.source.Read(p)
 }
 
 func inspectRestoreTarget(destination string) (os.FileInfo, bool, error) {

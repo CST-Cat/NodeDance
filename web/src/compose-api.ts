@@ -49,7 +49,7 @@ export interface ComposeCreateRequest {
 
 export const composeApi = {
   projects: (nodeId: string) => operationRequest<ComposeProjectsResponse>("compose.list", { params: { nodeId: String(nodeId) } }),
-  createProject: (nodeId: string, payload: ComposeCreateRequest, idempotencyKey: string) => operationRequest<{ taskId: string; status: ContainerTask['status'] }>("compose.create", { params: { nodeId: String(nodeId) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
+  createProject: (nodeId: string, payload: ComposeCreateRequest) => operationRequest<{ taskId: string; status: ContainerTask['status'] }>("compose.create", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(payload) }),
   config: (nodeId: string, projectKey: string, fileIndex: number) => operationRequest<ComposeConfigDocument>("compose.config", { params: { nodeId: String(nodeId), projectKey: String(projectKey), fileIndex: String(fileIndex) } }),
   validateConfig: (nodeId: string, projectKey: string, fileIndex: number, content: string) => operationRequest<{ valid: boolean }>("compose.validate", { params: { nodeId: String(nodeId), projectKey: String(projectKey), fileIndex: String(fileIndex) } }, { body: JSON.stringify({ content }) }),
   createTask: (nodeId: string, projectKey: string, payload: {
@@ -57,6 +57,6 @@ export const composeApi = {
     fileIndex?: number
     content?: string
     baseSha256?: string
-  }, idempotencyKey: string) => operationRequest<{ taskId: string; status: ContainerTask['status'] }>("compose.action", { params: { nodeId: String(nodeId), projectKey: String(projectKey) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
+  }) => operationRequest<{ taskId: string; status: ContainerTask['status'] }>("compose.action", { params: { nodeId: String(nodeId), projectKey: String(projectKey) } }, { body: JSON.stringify(payload) }),
   task: (nodeId: string, taskId: string) => api.nodeTask(nodeId, taskId),
 }

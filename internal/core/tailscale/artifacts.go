@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"golang.org/x/sys/unix"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,23 +59,11 @@ func (l DirectoryArtifacts) Load(osName, arch string) (Artifact, error) {
 		return Artifact{}, errors.New("configured Agent signing public key is invalid")
 	}
 	path := filepath.Join(dir, "linux-"+arch, "nodedance-agent")
-	info, err := os.Lstat(path)
-	if err != nil {
-		return Artifact{}, fmt.Errorf("load signed Agent artifact: %w", err)
+	binary, _, err := readBoundedRegularFile(path, maxAgentArtifactSize)
+	if err != nil || len(binary) == 0 {
+		return Artifact{}, fmt.Errorf("load bounded regular Agent artifact: %w", errors.Join(err, errors.New("invalid Agent artifact")))
 	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Size() < 1 || info.Size() > maxAgentArtifactSize {
-		return Artifact{}, errors.New("Agent artifact must be a bounded regular non-symlink file")
-	}
-	binary, err := os.ReadFile(path)
-	if err != nil {
-		return Artifact{}, fmt.Errorf("read Agent artifact: %w", err)
-	}
-	signaturePath := path + ".sig"
-	sigInfo, err := os.Lstat(signaturePath)
-	if err != nil || !sigInfo.Mode().IsRegular() || sigInfo.Mode()&os.ModeSymlink != 0 {
-		return Artifact{}, errors.New("Agent signature must be a regular non-symlink file")
-	}
-	signature, err := os.ReadFile(signaturePath)
+	signature, _, err := readBoundedRegularFile(path+".sig", 4096)
 	if err != nil {
 		return Artifact{}, fmt.Errorf("read Agent signature: %w", err)
 	}
@@ -85,4 +75,30 @@ func (l DirectoryArtifacts) Load(osName, arch string) (Artifact, error) {
 	}
 	digest := sha256.Sum256(binary)
 	return Artifact{Bytes: binary, SHA256: hex.EncodeToString(digest[:]), OS: osName, Arch: arch, Signature: append([]byte(nil), signature...)}, nil
+}
+
+// Check and read the same descriptor so replacements cannot bypass the bound
+// or turn a validated regular file into a symlink or blocking device.
+func readBoundedRegularFile(path string, limit int64) ([]byte, os.FileInfo, error) {
+	fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	file := os.NewFile(uintptr(fd), path)
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, nil, err
+	}
+	if !info.Mode().IsRegular() || info.Size() > limit {
+		return nil, nil, errors.New("file must be a bounded regular non-symlink file")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, nil, errors.New("file exceeds size limit")
+	}
+	return data, info, nil
 }

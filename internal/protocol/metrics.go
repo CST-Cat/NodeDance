@@ -239,11 +239,7 @@ func validateDisk(disk MetricsDisk, allowStale bool) error {
 		return err
 	}
 	if err := validateStatus("disk", disk.Status, disk.Reason, disk.SampledAt, len(disk.Mounts) > 0, allowStale); err != nil {
-		// `not_sampled` is the only valid zero timestamp: the Collector has not
-		// completed its first asynchronous 30-second scan yet.
-		if !(disk.Status == MetricUnknown && disk.Reason == "not_sampled" && disk.SampledAt.IsZero()) {
-			return err
-		}
+		return err
 	}
 	if len(disk.Reason) > 128 {
 		return errors.New("disk.reason exceeds 128 bytes")

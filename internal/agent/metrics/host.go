@@ -165,7 +165,7 @@ func (h *hostCollector) collect(ctx context.Context, at time.Time, interfaces []
 		v.PublicIPv6 = hostKnown(s.CustomIPv6, at)
 		v.PublicIPv6.Reason = "configured_override"
 	}
-	v.Traffic = h.collectTraffic(at, s, interfaces)
+	v.Traffic = h.collectTraffic(ctx, at, s, interfaces)
 	return v
 }
 func (h *hostCollector) collectSlow(ctx context.Context, at time.Time, s protocol.AgentSettings, ip, gpu bool) {
@@ -299,17 +299,21 @@ func BillingPeriod(at time.Time, day int) time.Time {
 	}
 	return start
 }
-func (h *hostCollector) collectTraffic(at time.Time, s protocol.AgentSettings, interfaces []NetworkInterface) protocol.Metric[protocol.Traffic] {
+func (h *hostCollector) collectTraffic(ctx context.Context, at time.Time, s protocol.AgentSettings, interfaces []NetworkInterface) protocol.Metric[protocol.Traffic] {
+	if ctx.Err() != nil {
+		return hostUnknown[protocol.Traffic]("read_failed", at)
+	}
 	if !h.initialized {
-		err := localstate.Read(h.path, &h.traffic)
+		var loaded trafficState
+		err := localstate.Read(h.path, &loaded)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return hostUnknown[protocol.Traffic]("state_unavailable", at)
 		}
+		h.traffic = loaded
 		h.initialized = true
 	}
-	if h.traffic.Counters == nil {
-		h.traffic.Counters = map[string]trafficCounter{}
-	}
+	// Keep the last accepted baseline intact until the replacement is durable.
+	previous := h.traffic.Counters
 	period := BillingPeriod(at, s.BillingDay)
 	v := h.traffic.Value
 	selection := fmt.Sprint(s.IncludeInterfaces, s.ExcludeInterfaces)
@@ -325,7 +329,7 @@ func (h *hostCollector) collectTraffic(at time.Time, s protocol.AgentSettings, i
 		v.Gaps = 0
 		if selectionChanged || v.LastSample.IsZero() {
 			v.CoverageStart = at
-			h.traffic.Counters = map[string]trafficCounter{}
+			previous = nil
 		} else {
 			v.CoverageStart = period
 			v.Gaps++
@@ -334,8 +338,11 @@ func (h *hostCollector) collectTraffic(at time.Time, s protocol.AgentSettings, i
 	if !v.LastSample.IsZero() && at.Sub(v.LastSample) > time.Duration(s.FastIntervalSeconds*3)*time.Second {
 		v.Gaps++
 	}
-	boot, _ := h.source.bootID(context.Background())
-	counters, e := h.source.networkCounters(context.Background())
+	boot, e := h.source.bootID(ctx)
+	if e != nil || strings.TrimSpace(boot) == "" {
+		return hostUnknown[protocol.Traffic]("boot_id_unavailable", at)
+	}
+	counters, e := h.source.networkCounters(ctx)
 	if e != nil {
 		return hostUnknown[protocol.Traffic]("read_failed", at)
 	}
@@ -355,7 +362,7 @@ func (h *hostCollector) collectTraffic(at time.Time, s protocol.AgentSettings, i
 		}
 		id := boot + "/" + strconv.Itoa(meta.ifindex)
 		next := trafficCounter{RX: n.BytesRecv, TX: n.BytesSent, Identity: id}
-		if prev, ok := h.traffic.Counters[n.Name]; ok {
+		if prev, ok := previous[n.Name]; ok {
 			if prev.Identity == id && next.RX >= prev.RX && next.TX >= prev.TX {
 				rx, tx := next.RX-prev.RX, next.TX-prev.TX
 				v.ReceivedBytes += rx
@@ -370,13 +377,16 @@ func (h *hostCollector) collectTraffic(at time.Time, s protocol.AgentSettings, i
 		}
 		current[n.Name] = next
 	}
-	for name := range h.traffic.Counters {
+	for name := range previous {
 		if _, exists := current[name]; !exists {
 			v.Gaps++
 		}
 	}
 	v.LastSample = at
 	next := trafficState{Value: v, Counters: current, Selection: selection}
+	if ctx.Err() != nil {
+		return hostUnknown[protocol.Traffic]("read_failed", at)
+	}
 	if e := localstate.Write(h.path, next); e != nil {
 		return hostUnknown[protocol.Traffic]("state_write_failed", at)
 	}

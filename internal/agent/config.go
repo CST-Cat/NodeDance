@@ -99,15 +99,14 @@ func ReadEnrollmentToken(reader io.Reader) (string, error) {
 }
 
 func LoadConfig(path string) (Config, error) {
-	return loadConfigForUID(path, os.Geteuid())
-}
-
-func loadConfigForUID(path string, ownerUID int) (Config, error) {
+	if err := requireAgentRoot("credential access"); err != nil {
+		return Config{}, err
+	}
 	path, err := canonicalCredentialPath(path)
 	if err != nil {
 		return Config{}, err
 	}
-	if err := checkPrivateDirectoryForUID(filepath.Dir(path), ownerUID, false); err != nil {
+	if err := checkPrivateDirectory(filepath.Dir(path), false); err != nil {
 		return Config{}, err
 	}
 	info, err := os.Lstat(path)
@@ -120,7 +119,7 @@ func loadConfigForUID(path string, ownerUID int) (Config, error) {
 	if info.Mode().Perm() != 0o600 {
 		return Config{}, fmt.Errorf("Agent credential file mode is %#o, want 0600", info.Mode().Perm())
 	}
-	if err := checkOwnerUID(info, ownerUID, "Agent credential file"); err != nil {
+	if err := checkOwner(info, "Agent credential file"); err != nil {
 		return Config{}, err
 	}
 	data, err := os.ReadFile(path)
@@ -173,8 +172,8 @@ func decodeConfig(data []byte) (Config, error) {
 }
 
 func SaveConfig(path string, config Config, exclusive bool) error {
-	if config.Schema == 0 {
-		config.Schema = ConfigSchema
+	if err := requireAgentRoot("credential access"); err != nil {
+		return err
 	}
 	if config.Schema != ConfigSchema || config.Server == "" || !isCredential(config.Credential) || !validConfiguredShell(config.Shell) {
 		return errors.New("refusing to save invalid Agent configuration")
@@ -306,10 +305,6 @@ func validateConfigTransition(previous, next Config) error {
 }
 
 func checkPrivateDirectory(directory string, create bool) error {
-	return checkPrivateDirectoryForUID(directory, os.Geteuid(), create)
-}
-
-func checkPrivateDirectoryForUID(directory string, ownerUID int, create bool) error {
 	absolute, err := filepath.Abs(directory)
 	if err != nil {
 		return fmt.Errorf("resolve private Agent credential directory: %w", err)
@@ -336,7 +331,7 @@ func checkPrivateDirectoryForUID(directory string, ownerUID int, create bool) er
 	if info.Mode().Perm() != 0o700 {
 		return fmt.Errorf("Agent credential directory mode is %#o; use a dedicated directory with mode 0700", info.Mode().Perm())
 	}
-	return checkOwnerUID(info, ownerUID, "Agent credential directory")
+	return checkOwner(info, "Agent credential directory")
 }
 
 func canonicalCredentialPath(path string) (string, error) {
@@ -379,13 +374,9 @@ func rejectSymlinkPath(path string) error {
 }
 
 func checkOwner(info os.FileInfo, label string) error {
-	return checkOwnerUID(info, os.Geteuid(), label)
-}
-
-func checkOwnerUID(info os.FileInfo, ownerUID int, label string) error {
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || int(stat.Uid) != ownerUID {
-		return fmt.Errorf("%s must be owned by the selected service user", label)
+	if !ok || stat.Uid != 0 {
+		return fmt.Errorf("%s must be owned by root", label)
 	}
 	return nil
 }

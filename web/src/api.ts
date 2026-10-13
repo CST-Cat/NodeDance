@@ -651,24 +651,24 @@ export const api = {
   createAlertWindow: (payload: Omit<AlertWindow, 'id'>) => operationRequest<{ window: AlertWindow }>("windows.create", {}, { body: JSON.stringify(payload) }),
   deleteAlertWindow: (id: string) => operationRequest<void>("windows.delete", { params: { id: String(id) } }),
   alertDeliveries: () => operationRequest<{ deliveries: AlertDelivery[] }>("deliveries.list", {}),
-  createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload, idempotencyKey: string) =>
-    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("containers.action", { params: { nodeId: String(nodeId), containerId: String(containerId) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
-  createContainerCreateTask: (nodeId: string, payload: ContainerCreateSpec, idempotencyKey: string) =>
-    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("containers.create", { params: { nodeId: String(nodeId) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
+  createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload) =>
+    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("containers.action", { params: { nodeId: String(nodeId), containerId: String(containerId) } }, { body: JSON.stringify(payload) }),
+  createContainerCreateTask: (nodeId: string, payload: ContainerCreateSpec) =>
+    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("containers.create", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(payload) }),
   nodeFiles: (nodeId: string, path = '/') => operationRequest<{ entries: NodeFileEntry[]; path: string }>("files.list", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }),
   nodeFileText: (nodeId: string, path: string) => operationRequest<{ path: string; text: string; version: string; size: number }>("files.text", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }),
   nodeFileStat: (nodeId: string, path: string) => operationRequest<NodeFileEntry>("files.stat", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }),
-  createFileTask: (nodeId: string, payload: CreateFileTaskPayload, idempotencyKey: string) =>
-    operationRequest<{ taskId: string; status: ContainerTask['status']; action: string }>("files.action", { params: { nodeId: String(nodeId) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
+  createFileTask: (nodeId: string, payload: CreateFileTaskPayload) =>
+    operationRequest<{ taskId: string; status: ContainerTask['status']; action: string }>("files.action", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(payload) }),
   uploadNodeFile: (nodeId: string, path: string, file: File, expectedVersion = '') =>
     operationRequest<ContainerTask>("files.upload", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }, {
       headers: { 'Content-Type': 'application/octet-stream', 'X-File-Version': expectedVersion },
       body: file,
     }, 30 * 60_000),
-  createImagePullTask: (nodeId: string, payload: { imageReference: string; username?: string; password?: string }, idempotencyKey: string) =>
-    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("images.pull", { params: { nodeId: String(nodeId) } }, { headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload) }),
-  createImageDeleteTask: (nodeId: string, imageID: string, idempotencyKey: string) =>
-    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("images.delete", { params: { nodeId: String(nodeId), imageId: String(imageID) } }, { headers: { 'Idempotency-Key': idempotencyKey },
+  createImagePullTask: (nodeId: string, payload: { imageReference: string; username?: string; password?: string }) =>
+    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("images.pull", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(payload) }),
+  createImageDeleteTask: (nodeId: string, imageID: string) =>
+    operationRequest<{ taskId: string; status: ContainerTask['status'] }>("images.delete", { params: { nodeId: String(nodeId), imageId: String(imageID) } }, {
         body: JSON.stringify({ deleteConfirmed: true, confirmationId: imageID }) }),
   planContainerRebuild: (nodeId: string, containerId: string, spec: RebuildSpec) =>
     operationRequest<ContainerRebuildPlan>("containers.rebuild-plan", { params: { nodeId: String(nodeId), containerId: String(containerId) } }, { body: JSON.stringify({ spec }) }),

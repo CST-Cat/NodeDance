@@ -52,6 +52,7 @@ function operationConfirmation(project: ComposeProject, action: ComposeOperation
 
 function scheduleTaskPoll(projectKey: string, taskId: string) {
   const timer = setTimeout(async () => {
+    timers.delete(timer)
     try {
       const current = await api.nodeTask(props.nodeId, taskId)
       if (disposed) return
@@ -80,7 +81,7 @@ async function runAction(project: ComposeProject, action: ComposeOperation) {
   pending.value = { ...pending.value, [project.ref.key]: action }
   error.value = ''
   try {
-    const accepted = await composeApi.createTask(props.nodeId, project.ref.key, { action }, crypto.randomUUID())
+    const accepted = await composeApi.createTask(props.nodeId, project.ref.key, { action })
     taskByProject.value = { ...taskByProject.value, [project.ref.key]: await api.nodeTask(props.nodeId, accepted.taskId) }
     const task = taskByProject.value[project.ref.key]
     if (task.status === 'queued' || task.status === 'running') scheduleTaskPoll(project.ref.key, accepted.taskId)
@@ -164,7 +165,7 @@ onBeforeUnmount(() => {
       </div>
       <p v-else class="compose-empty">{{ t('m.831759cffa59') }}</p>
     </article>
-    <ComposeEditor v-if="editorProject" :node-id="nodeId" :project="editorProject" />
+    <ComposeEditor v-if="editorProject" :key="nodeId + ':' + editorProject.ref.key" :node-id="nodeId" :project="editorProject" />
   </section>
 </template>
 

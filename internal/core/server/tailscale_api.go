@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	"github.com/CST-Cat/NodeDance/internal/core/tailscale"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -75,13 +74,9 @@ func (s *Server) tailscaleService(current *session) *tailscale.Service {
 				ticker := time.NewTicker(time.Second)
 				defer ticker.Stop()
 				for {
-					nodes, err := s.agents.ListNodes(ctx)
-					if err == nil {
-						for _, node := range nodes {
-							if node.NodeID == nodeID && node.Status == "online" && node.HasLastSeen && s.now().Sub(node.LastSeen) <= 30*time.Second {
-								return nil
-							}
-						}
+					state, lease, err := s.currentMetricsState(ctx, nodeID)
+					if err == nil && state.Status == "online" && lease != nil {
+						return nil
 					}
 					select {
 					case <-ctx.Done():
@@ -94,23 +89,15 @@ func (s *Server) tailscaleService(current *session) *tailscale.Service {
 				ticker := time.NewTicker(time.Second)
 				defer ticker.Stop()
 				for {
-					nodes, err := s.agents.ListNodes(ctx)
-					if err == nil {
-						for _, node := range nodes {
-							if node.NodeID != nodeID || !node.HasLastSeen {
-								continue
-							}
-							lease := &coredocker.Lease{Identity: coredocker.Identity{AgentID: node.AgentID, NodeID: node.NodeID}, Generation: node.ConnectionGeneration, ValidUntil: node.LastSeen.Add(s.agentOfflineTimeout), Status: coredocker.LeaseOnline}
-							view, found := s.docker.SnapshotAt(nodeID, lease, s.now())
-							if !found || view.Health == nil {
-								continue
-							}
-							switch view.DockerAvailability {
-							case protocol.DockerAvailabilityAvailable:
+					state, view, _, err := s.dockerViewStateForNode(ctx, nodeID)
+					if err == nil && state.Status == "online" && view.Health != nil && view.AgentOnline {
+						switch view.DockerAvailability {
+						case protocol.DockerAvailabilityAvailable:
+							if !view.DataStale {
 								return true, nil
-							case protocol.DockerAvailabilityUnavailable:
-								return false, nil
 							}
+						case protocol.DockerAvailabilityUnavailable:
+							return false, nil
 						}
 					}
 					select {

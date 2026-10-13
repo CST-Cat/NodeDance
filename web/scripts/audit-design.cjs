@@ -9,6 +9,7 @@ const webURL = process.env.NODEDANCE_WEB_AUDIT_URL || "http://127.0.0.1:5190";
 const coreURL =
   process.env.NODEDANCE_CORE_AUDIT_URL || "http://127.0.0.1:18192";
 const snapshots = [];
+const enMessages = require("../src/locales/en.json"), zhMessages = require("../src/locales/zh-CN.json");
 fs.mkdirSync(out, { recursive: true });
 (async () => {
   const catalogResponse = await fetch(coreURL + "/api/v1/operations", {
@@ -557,18 +558,11 @@ fs.mkdirSync(out, { recursive: true });
     async function nav(label) {
       if (page.viewportSize().width <= 900 && await page.locator(".navigation-toggle").isVisible())
         await page.locator(".navigation-toggle").click();
-      const index = [
-        "Nodes",
-        "Add an Agent",
-        "Network discovery",
-        "Alerts",
-        "Host management",
-        "Updates",
-        "Operations",
-        "Settings",
-      ].indexOf(label);
-      assert(index >= 0);
-      await page.locator(".workspace-nav button").nth(index).click();
+      const key = Object.keys(enMessages).find(key => /^(nav\.|host\.title$|guest\.settings$)/.test(key) && enMessages[key] === label);
+      assert.ok(key, 'Unknown navigation label: ' + label);
+      const language = await page.locator('html').getAttribute('lang');
+      const title = language === 'zh-CN' ? zhMessages[key] : enMessages[key];
+      await page.locator('.workspace-nav').getByRole('button', {name:title, exact:true}).click();
       await page.waitForTimeout(250);
     }
     async function auditWorkspace(prefix) {
@@ -623,6 +617,8 @@ fs.mkdirSync(out, { recursive: true });
         .locator(".vps-name")
         .click();
       await page.locator(".node-detail-page").waitFor();
+      assert.equal(await page.getByTestId("service-probes").count(), 0);
+      await page.locator(".dashboard-tabs").getByRole("button", {name: /^(Service probes|服务探测)$/}).click();
       await page.locator(".probe-heading .probe-primary").click();
       await invariants(prefix + "-probe-form");
       await page.locator(".probe-form .probe-secondary").click();
@@ -633,11 +629,12 @@ fs.mkdirSync(out, { recursive: true });
         await invariants(prefix + "-terminal");
         await page.locator(".terminal-close").click();
       }
-      const tabs = await page.locator(".dashboard-tabs button").count();
-      for (let i = 0; i < tabs; i++) {
-        await page.locator(".dashboard-tabs button").nth(i).click();
-        await invariants(prefix + "-detail-" + i);
-        if (i === 1) {
+      const tabs = await page.locator(".dashboard-tabs button").allTextContents();
+      for (const label of tabs) {
+        await page.locator(".dashboard-tabs").getByRole("button", {name: label, exact: true}).click();
+        const section = new URLSearchParams(new URL(page.url()).hash.split("?")[1]).get("section") || "overview";
+        await invariants(prefix + "-detail-" + section);
+        if (section === "docker") {
           await page.locator(".node-terminal-entry button").click();
           await page.locator(".terminal-dialog").waitFor();
           await invariants(prefix + "-terminal");
@@ -647,32 +644,37 @@ fs.mkdirSync(out, { recursive: true });
           await page.locator(".container-create-form summary").click();
           await invariants(prefix + "-container-create");
         }
-        if (i === 3) {
+        if (section === "compose") {
           await page.locator(".compose-create-form").waitFor();
           await invariants(prefix + "-compose-create");
           await page.locator(".compose-project-actions button").last().click();
           await page.locator(".compose-editor textarea").waitFor();
           await invariants(prefix + "-compose-editor");
         }
-        if (i === 5) {
-          await page.locator(".file-delete").first().click();
-          await page.locator(".ui-dialog[open]").waitFor();
-          await invariants(prefix + "-confirm-dialog");
-          await page.keyboard.press("Escape");
-          assert.equal(await page.locator(".ui-dialog[open]").count(), 0);
-          await page.locator(".file-row-actions button").first().click();
-          await page.locator(".ui-dialog[open] input").waitFor();
-          assert.equal(
-            await page.locator(".ui-dialog input").inputValue(),
-            "hello.txt",
-          );
-          await invariants(prefix + "-prompt-dialog");
-          await page.locator(".ui-dialog button").first().click();
-          await page.locator(".file-name").first().click();
-          await page.locator(".file-editor textarea").waitFor();
-          await invariants(prefix + "-file-editor");
+        if (section === "files") {
+          await page.locator('.vuefinder').waitFor();
+          const file = page.getByText('hello.txt', {exact:true}).first().locator('xpath=ancestor::div[contains(@class,"vf-explorer-item")][1]');
+          await file.waitFor();
+          await file.click({button:'right'});
+          await page.getByText(/^(Delete|删除)$/, {exact:true}).last().click();
+          await page.locator('.vuefinder__delete-modal__content').waitFor();
+          await invariants(prefix + '-confirm-dialog');
+          await page.keyboard.press('Escape');
+          await page.locator('.vuefinder__modal-layout').waitFor({state:'detached'});
+          await file.click({button:'right'});
+          await page.getByText(/^(Rename|重命名)$/, {exact:true}).last().click();
+          await page.locator('.vuefinder__rename-modal__input').waitFor();
+          assert.equal(await page.locator('.vuefinder__rename-modal__input').inputValue(), 'hello.txt');
+          await invariants(prefix + '-prompt-dialog');
+          await page.keyboard.press('Escape');
+          await page.locator('.vuefinder__modal-layout').waitFor({state:'detached'});
+          await file.dblclick();
+          await page.locator('.cm-content').waitFor();
+          await invariants(prefix + '-file-editor');
+          await page.keyboard.press('Escape');
+          await page.locator('.vuefinder__modal-layout').waitFor({state:'detached'});
         }
-        if (i === 4) {
+        if (section === "rebuild") {
           const toggle = page.locator(".rebuild-entry>button").first();
           if (await toggle.count()) {
             await toggle.click();
@@ -705,8 +707,9 @@ fs.mkdirSync(out, { recursive: true });
           await page.locator(".update-details a").waitFor();
           assert.equal(
             await page.locator(".update-confirm .primary-button").isDisabled(),
-            true,
+            false,
           );
+          assert.equal(await page.locator('.update-confirm input[type=checkbox]').count(), 0, 'Ordinary update uses the shared direct apply operation');
           await invariants(prefix + "-release-details");
           await page.keyboard.press("Tab");
           await page.locator(".update-details a").focus();

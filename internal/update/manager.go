@@ -38,6 +38,7 @@ type Manager struct {
 	mu              sync.Mutex
 	jobs            map[string]Job
 	active          bool
+	closed          bool
 	ctx             context.Context
 	cancel          context.CancelFunc
 	workers         sync.WaitGroup
@@ -179,8 +180,13 @@ func New(config Config, resolver Resolver) (*Manager, error) {
 	return m, nil
 }
 func (m *Manager) Close() {
+	m.mu.Lock()
+	m.closed = true
 	m.cancel()
+	m.mu.Unlock()
 	m.workers.Wait()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.lock != nil {
 		unix.Flock(int(m.lock.Fd()), unix.LOCK_UN)
 		m.lock.Close()
@@ -298,6 +304,10 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 		return Job{}, errors.New("Idempotency-Key must contain 8 to 128 bytes")
 	}
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return Job{}, errors.New("update controller is shutting down")
+	}
 	for _, job := range m.jobs {
 		if job.IdempotencyKey == key {
 			m.mu.Unlock()
@@ -312,7 +322,14 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 		return Job{}, errors.New("another update is running")
 	}
 	m.active = true
+	// Admission includes release lookup and durable acceptance. Shutdown must
+	// retain the controller lock until both admission and execution have exited.
+	m.workers.Add(1)
 	m.mu.Unlock()
+	defer m.workers.Done()
+	ctx, cancel := context.WithCancel(ctx)
+	stop := context.AfterFunc(m.ctx, cancel)
+	defer func() { stop(); cancel() }()
 	accepted := false
 	defer func() {
 		if !accepted {
@@ -354,7 +371,11 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 		return Job{}, err
 	}
 	m.mu.Lock()
-	err = m.persist(job)
+	if m.closed {
+		err = errors.New("update controller is shutting down")
+	} else {
+		err = m.persist(job)
+	}
 	m.mu.Unlock()
 	if err != nil {
 		return Job{}, err
@@ -364,28 +385,34 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 	go func(job Job, parent Job) {
 		defer m.workers.Done()
 		if parent.ID != "" {
-			ctx, cancel := context.WithTimeout(m.ctx, 5*time.Minute)
-			defer cancel()
-			job.Status = "running"
-			m.save(&job, "rolling_back")
-			err := m.rollback(ctx, &parent)
-			if err != nil {
-				job.Status = "rollback_failed"
-				job.Error = err.Error()
-			} else {
-				job.Status = "succeeded"
-				job.Stage = "rolled_back"
-			}
-			m.finish(&job)
-			if job.Status == "succeeded" {
-				m.refreshSupervisor()
-			}
+			m.runRollback(job, parent)
 			return
 		}
 		m.run(job, check.Release)
 	}(job, parent)
 	return job, nil
 }
+
+func (m *Manager) runRollback(job, parent Job) {
+	ctx, cancel := context.WithTimeout(m.ctx, 5*time.Minute)
+	defer cancel()
+	job.Status = "running"
+	if err := m.save(&job, "rolling_back"); err != nil {
+		job.Status, job.Error = "failed", err.Error()
+		m.finish(&job)
+		return
+	}
+	if err := m.rollback(ctx, &parent); err != nil {
+		job.Status, job.Error = "rollback_failed", err.Error()
+	} else {
+		job.Status, job.Stage = "succeeded", "rolled_back"
+	}
+	m.finish(&job)
+	if job.Status == "succeeded" {
+		m.refreshSupervisor()
+	}
+}
+
 func (m *Manager) Jobs() []Job {
 	m.mu.Lock()
 	defer m.mu.Unlock()

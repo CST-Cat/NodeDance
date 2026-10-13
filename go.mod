@@ -6,10 +6,17 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/containerd/errdefs v1.0.0
 	github.com/creack/pty v1.1.24
+	github.com/mmcdole/gofeed v1.5.0
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.1
 	github.com/shirou/gopsutil/v4 v4.26.9
+	golang.org/x/net v0.58.0
 	modernc.org/sqlite v1.60.1
+)
+
+require (
+	github.com/mmcdole/goxpp/v2 v2.0.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 )
 
 require (

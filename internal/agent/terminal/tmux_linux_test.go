@@ -159,3 +159,35 @@ func privateTestState(t *testing.T) string {
 	}
 	return directory
 }
+
+func TestTmuxCloseInterruptsBlockedClientWrite(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	defer writer.Close()
+	exited := make(chan struct{})
+	close(exited)
+	endpoint := &tmuxEndpoint{client: &ptyClient{file: writer, command: &exec.Cmd{}, waitDone: exited}, changed: make(chan struct{}), binary: filepath.Join(t.TempDir(), "no-tmux-process")}
+	written := make(chan error, 1)
+	go func() { _, err := endpoint.Write(make([]byte, 1<<20)); written <- err }()
+	// Reading one byte confirms the oversized write has started; the unread
+	// remainder keeps the pipe full until Close interrupts it.
+	var first [1]byte
+	if _, err := reader.Read(first[:]); err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan struct{})
+	go func() { _ = endpoint.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		reader.Close()
+		<-closed
+		t.Error("tmux mutex prevented client close")
+	}
+	if err := <-written; err == nil {
+		t.Fatal("blocked write unexpectedly completed")
+	}
+}

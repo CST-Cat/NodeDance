@@ -33,18 +33,19 @@ func (b *Bridge) Run(ctx context.Context, writer EnvelopeWriter, generation uint
 	if b == nil || b.Executor == nil || b.Slots == nil || generation == 0 || nodeID == "" {
 		return errors.New("Agent probe bridge is not initialized")
 	}
-	type outcome struct {
-		report protocol.ProbeReport
-	}
-	results := make(chan outcome, MaxConcurrent)
+	ctx, cancel := context.WithCancel(ctx)
+	results := make(chan protocol.ProbeReport, MaxConcurrent)
 	var workers sync.WaitGroup
-	defer workers.Wait()
+	defer func() {
+		cancel()
+		workers.Wait()
+	}()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case completed := <-results:
-			if err := b.writeReport(ctx, writer, generation, completed.report); err != nil {
+		case report := <-results:
+			if err := b.writeReport(ctx, writer, generation, report); err != nil {
 				return err
 			}
 		case envelope, ok := <-incoming:
@@ -62,7 +63,11 @@ func (b *Bridge) Run(ctx context.Context, writer EnvelopeWriter, generation uint
 				go func(dispatch protocol.ProbeDispatch) {
 					defer workers.Done()
 					defer func() { <-b.Slots }()
-					results <- outcome{report: b.Executor.Execute(ctx, dispatch)}
+					report := b.Executor.Execute(ctx, dispatch)
+					select {
+					case results <- report:
+					case <-ctx.Done():
+					}
 				}(dispatch)
 			default:
 				report := protocol.ProbeReport{ProbeID: dispatch.ProbeID, RunID: dispatch.RunID, NodeID: nodeID,
@@ -76,11 +81,20 @@ func (b *Bridge) Run(ctx context.Context, writer EnvelopeWriter, generation uint
 }
 
 func (b *Bridge) writeReport(ctx context.Context, writer EnvelopeWriter, generation uint64, report protocol.ProbeReport) error {
+	if ctx.Err() != nil {
+		return nil
+	}
 	if report.Status == "" {
 		return errors.New("Agent probe executor returned an empty result")
 	}
-	return writer.Send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeProbeReport,
+	err := writer.Send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeProbeReport,
 		Generation: generation, RequestID: report.RunID, Payload: mustMarshalProbe(report)})
+	// A completed report can race parent cancellation in Run's select. A
+	// write failure during shutdown must retain graceful cancellation semantics.
+	if ctx.Err() != nil {
+		return nil
+	}
+	return err
 }
 
 func decodeProbePayload(raw []byte, target any) error {

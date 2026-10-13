@@ -48,3 +48,5 @@ Agent 注册、恢复、运行、文件服务和 systemd 服务均要求 root �
 - [版本发布说明](docs/releases.md)
 
 正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](docs/updates.md).
+
+Core 内置 [RSS／Atom 订阅中心](docs/rss.md)，支持多档刷新（最低 1 分钟，默认 30 分钟）、共享阅读状态、关键词通知和摘要。

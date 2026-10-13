@@ -538,15 +538,6 @@ var (
 	errTaskContainerNotFound = errors.New("container not found in fresh Docker inventory")
 )
 
-func (s *Server) taskBridgeReady(nodeID string, generation uint64) bool {
-	release, err := s.lockTaskBridgeReady(nodeID, generation)
-	if err != nil {
-		return false
-	}
-	release()
-	return true
-}
-
 // lockTaskBridgeReady pins the active synchronized connection until release.
 // Store.EnqueueWithGate calls this only after its durable idempotency lookup,
 // then holds the pin through new-task commit.

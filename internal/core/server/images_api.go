@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -280,12 +279,6 @@ func (s *Server) claimNextImageTask(ctx context.Context, connection coretasks.Ag
 	return task, true, &credentials, nil
 }
 
-func (s *Server) storeImageCredentials(taskID, nodeID string, credentials protocol.RegistryCredentials) {
-	s.imageAuthMu.Lock()
-	s.storeImageCredentialsLocked(taskID, nodeID, credentials)
-	s.imageAuthMu.Unlock()
-}
-
 func (s *Server) storeImageCredentialsLocked(taskID, nodeID string, credentials protocol.RegistryCredentials) {
 	s.expireImageCredentialsLocked(s.now())
 	if previous, ok := s.imageAuth[taskID]; ok {
@@ -293,26 +286,6 @@ func (s *Server) storeImageCredentialsLocked(taskID, nodeID string, credentials 
 	}
 	s.imageAuth[taskID] = pendingImageCredential{nodeID: nodeID, username: []byte(credentials.Username),
 		password: []byte(credentials.Password), expiresAt: s.now().Add(imageCredentialLifetime)}
-}
-
-func (s *Server) takeImageCredentials(taskID, nodeID string) *protocol.RegistryCredentials {
-	s.imageAuthMu.Lock()
-	s.expireImageCredentialsLocked(s.now())
-	entry, ok := s.imageAuth[taskID]
-	if ok {
-		delete(s.imageAuth, taskID)
-	}
-	s.imageAuthMu.Unlock()
-	if !ok {
-		return nil
-	}
-	if entry.nodeID != nodeID {
-		entry.clear()
-		return nil
-	}
-	credentials := protocol.RegistryCredentials{Username: string(entry.username), Password: string(entry.password)}
-	entry.clear()
-	return &credentials
 }
 
 func (s *Server) clearImageCredentials(taskID string) {
@@ -479,19 +452,7 @@ func (c *agentConnection) resolveImageResponse(requestID string, response protoc
 }
 
 func decodeImagePayload(raw []byte, target any) error {
-	if len(raw) == 0 || len(raw) > protocol.MaxMessageBytes {
-		return errors.New("image payload exceeds its bound")
-	}
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	var extra any
-	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return errors.New("image payload has trailing data")
-	}
-	return nil
+	return decodeAgentPayloadLimit(raw, target, protocol.MaxMessageBytes)
 }
 
 func writeImageAPIError(w http.ResponseWriter, err error) {

@@ -88,6 +88,9 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 	if s.handleProbeAPI(w, r, current) {
 		return
 	}
+	if s.handleFeedAPI(w, r) {
+		return
+	}
 	if s.handleAlertAPI(w, r, current) {
 		return
 	}

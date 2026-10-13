@@ -23,6 +23,8 @@ Use `nodedance describe guest.configure --server CORE_ORIGIN` for the current sc
 - Explicitly selected node online/offline status.
 - CPU usage, memory usage, root filesystem usage, network download/upload rate and uptime; each is independently opt-in.
 - Selected historical metrics over 1, 6 or 24 hours. One-hour history uses minute aggregates; 6/24-hour history uses hour aggregates. Uptime has no history series. Disk history is mapped from the root mount into a public metric key without exposing mount metadata.
+
+History buckets use the exact half-open interval `[from, to)`, including fractional seconds. The shared history query rounds each boundary up to a bucket boundary without first dropping subsecond precision; guest and administrator reads use the same rule.
 - Selected service probe status and observed response latency, using public aliases. Disabled, stale or offline-node probes are unknown; visitors do not initiate probes.
 
 Limits: 20 selected nodes and 20 selected probes. The Core owns metric choices and history bounds; new resources and fields do not become public automatically. Revoked/pending nodes and deleted probes are omitted when a snapshot is built. Unknown/stale/error metric values are omitted rather than reported as zero or current values.
@@ -44,3 +46,9 @@ Management components stop follow-up reads when they unmount, including grant cr
 The full file manager is administrator-only, including file search, media preview and all mutations. Its disposal aborts reads and prevents follow-up private requests after guest entry. 完整文件管理器仅供管理员使用，游客不能获取搜索、预览或修改能力；进入游客后退出文件管理组件并停止后续请求。
 
 Expanded text editing and archive formats remain administrator-only through the same discovered Core file operation. Guest entry does not expose file data or controls.
+
+History charts retain their canvas host during loading and render after asynchronous data arrives. Browser regressions verify actual canvas initialization on the first history load; charts also observe the shared root theme in guest and management views.
+
+2026-10-13 收尾审查以新 Web 资产复验默认关闭、管理员 Cookie 下相同公开投影、返回管理时有效会话及策略/资源撤回的浏览器行为。测试从实际 Core operation contract 发现覆盖；见 [69 文件报告](code-review-69-files.md)。
+
+RSS／Atom 订阅中心为管理员私有能力，不进入游客字段、订阅源或条目投影。携带管理员 cookie 的公开请求仍只得到原有游客数据，详见 [订阅权限](rss.md)。

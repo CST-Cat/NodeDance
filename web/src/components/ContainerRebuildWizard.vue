@@ -139,7 +139,7 @@ async function submitRebuild() {
   const requestGeneration = ++generation
   try {
     const accepted = await api.createContainerTask(props.nodeId, props.container.id,
-      { action: 'rebuild', rebuild: specFromForm() }, crypto.randomUUID())
+      { action: 'rebuild', rebuild: specFromForm() })
     task.value = await api.nodeTask(props.nodeId, accepted.taskId)
     if (!taskTerminal(task.value) && task.value.status !== 'unknown') schedulePoll(accepted.taskId, requestGeneration)
   } catch (reason) {
@@ -168,7 +168,7 @@ async function cleanupRollbackResources() {
       action: 'rebuild_cleanup',
       rebuild: { cleanupTaskId: rollback.taskId },
       confirmationId: props.container.id,
-    }, crypto.randomUUID())
+    })
     const updated = await api.nodeTask(props.nodeId, accepted.taskId)
     task.value = updated
     if (updated.status === 'queued' || updated.status === 'running') schedulePoll(accepted.taskId, ++generation)

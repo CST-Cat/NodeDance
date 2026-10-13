@@ -155,13 +155,8 @@ func (p *SystemProvider) openContainer(ctx, attachCtx context.Context, request p
 	if p.docker == nil {
 		return nil, errors.New("Docker Engine is unavailable")
 	}
-	if len(request.ContainerID) != 64 {
+	if !protocol.IsFullContainerID(request.ContainerID) {
 		return nil, errors.New("container target must be a full Docker ID")
-	}
-	for _, character := range request.ContainerID {
-		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
-			return nil, errors.New("container target must be a full Docker ID")
-		}
 	}
 	cli := p.docker
 	inspectCtx, cancelInspect := context.WithTimeout(ctx, 10*time.Second)
@@ -243,7 +238,9 @@ type containerEndpoint struct {
 func (e *containerEndpoint) Read(data []byte) (int, error)  { return e.response.Reader.Read(data) }
 func (e *containerEndpoint) Write(data []byte) (int, error) { return e.response.Conn.Write(data) }
 func (e *containerEndpoint) Resize(rows, columns uint16) error {
-	_, err := e.cli.ExecResize(context.Background(), e.execID, client.ExecResizeOptions{Height: uint(rows), Width: uint(columns)})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := e.cli.ExecResize(ctx, e.execID, client.ExecResizeOptions{Height: uint(rows), Width: uint(columns)})
 	if err != nil {
 		return fmt.Errorf("resize Docker terminal: %w", err)
 	}

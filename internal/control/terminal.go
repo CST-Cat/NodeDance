@@ -122,6 +122,7 @@ type TerminalSession struct {
 	ready            bool
 	rows, columns    uint16
 	resizeOnReady    bool
+	readCancel       context.CancelFunc
 }
 
 func (t *TerminalSession) Write(ctx context.Context, kind websocket.MessageType, data []byte) error {
@@ -160,8 +161,12 @@ func (t *TerminalSession) CloseNow() error {
 	}
 	t.closed = true
 	conn := t.conn
+	readCancel := t.readCancel
 	t.conn = nil
 	t.mu.Unlock()
+	if readCancel != nil {
+		readCancel()
+	}
 	if conn != nil {
 		conn.CloseNow()
 	}
@@ -178,6 +183,15 @@ func (t *TerminalSession) CloseNow() error {
 	return t.client.Execute(ctx, operation, Input{Params: map[string]string{"nodeId": t.nodeID, "streamId": t.streamID}}, nil, nil).Err()
 }
 func (t *TerminalSession) Read(ctx context.Context) (websocket.MessageType, []byte, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	t.mu.Lock()
+	if t.closed {
+		t.mu.Unlock()
+		return 0, nil, errors.New("terminal is closed")
+	}
+	t.readCancel = cancel
+	t.mu.Unlock()
 	for {
 		t.mu.Lock()
 		conn, closed := t.conn, t.closed

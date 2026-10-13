@@ -220,9 +220,12 @@ func (r *Runner) Start(ctx context.Context) error {
 		return errors.New("Agent task runner has no available task executor")
 	}
 	r.starting = true
+	r.processCtx, r.processCancel = context.WithCancel(ctx)
+	r.wg.Add(1)
 	r.mu.Unlock()
+	defer r.wg.Done()
 
-	recoveryCtx, cancel := context.WithTimeout(ctx, r.options.JournalWriteTimeout)
+	recoveryCtx, cancel := context.WithTimeout(r.processCtx, r.options.JournalWriteTimeout)
 	_, err := r.journal.RecoverInterrupted(recoveryCtx)
 	cancel()
 
@@ -230,6 +233,7 @@ func (r *Runner) Start(ctx context.Context) error {
 	defer r.mu.Unlock()
 	r.starting = false
 	if err != nil {
+		r.processCancel()
 		return fmt.Errorf("recover durable Agent tasks before dispatch: %w", err)
 	}
 	if r.stopped {
@@ -238,7 +242,6 @@ func (r *Runner) Start(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r.processCtx, r.processCancel = context.WithCancel(ctx)
 	r.started = true
 	for worker := 0; worker < r.options.Workers; worker++ {
 		r.wg.Add(1)
@@ -739,18 +742,14 @@ func (r *Runner) Stop(ctx context.Context) error {
 		return errors.New("Agent task runner stop context is nil")
 	}
 	r.mu.Lock()
-	if !r.started {
-		r.stopped = true
-		r.mu.Unlock()
-		r.joinOnce.Do(func() { close(r.joinDone) })
-		return nil
-	}
 	if !r.stopped {
 		r.stopped = true
 		r.activeGeneration = 0
 		r.activeJournalID = ""
 		r.synchronized = false
-		r.processCancel()
+		if r.processCancel != nil {
+			r.processCancel()
+		}
 	}
 	r.mu.Unlock()
 	r.joinOnce.Do(func() {
@@ -1003,9 +1002,4 @@ func reportFromSnapshot(snapshot taskjournal.Snapshot, nodeID, journalID string)
 		return protocol.TaskReport{}, err
 	}
 	return report, nil
-}
-
-func mustReport(snapshot taskjournal.Snapshot, nodeID, journalID string) protocol.TaskReport {
-	report, _ := reportFromSnapshot(snapshot, nodeID, journalID)
-	return report
 }

@@ -43,15 +43,19 @@ async function loadConfig() {
 }
 
 async function validate() {
+  const requestGeneration = generation
+  const submittedContent = content.value
   validating.value = true
   error.value = ''
   message.value = ''
   valid.value = false
   try {
-    await composeApi.validateConfig(props.nodeId, props.project.ref.key, fileIndex.value, content.value)
+    await composeApi.validateConfig(props.nodeId, props.project.ref.key, fileIndex.value, submittedContent)
+    if (generation !== requestGeneration || content.value !== submittedContent) return
     valid.value = true
     message.value = t('m.351d70486605')
   } catch (reason) {
+    if (generation !== requestGeneration || content.value !== submittedContent) return
     error.value = reason instanceof Error ? reason.message : t('m.29e08c6652a0')
   } finally {
     validating.value = false
@@ -93,7 +97,7 @@ async function save() {
   try {
     const accepted = await composeApi.createTask(props.nodeId, props.project.ref.key, {
       action: 'config_save', fileIndex: fileIndex.value, content: content.value, baseSha256: baseSHA256.value,
-    }, crypto.randomUUID())
+    })
     task.value = await composeApi.task(props.nodeId, accepted.taskId)
     if (task.value.status === 'succeeded') {
       await loadConfig()

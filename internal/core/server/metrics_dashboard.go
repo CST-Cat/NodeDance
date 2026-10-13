@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 	"time"
 
@@ -30,42 +32,39 @@ type dashboardMetricsMessage struct {
 func (s *Server) currentMetricsState(ctx context.Context, nodeID string) (dashboardNodeState, *coremetrics.Lease, error) {
 	now := s.now()
 	state := dashboardNodeState{NodeID: nodeID, Status: "offline", ServerTime: now.UTC()}
-	nodes, err := s.agents.ListNodes(ctx)
+	var status string
+	var lastSeen sql.NullInt64
+	err := s.store.DB.QueryRowContext(ctx, `SELECT n.status,n.connection_generation,n.last_seen_at,COALESCE(d.id,'')
+		FROM nodes n LEFT JOIN agent_devices d ON d.node_id=n.id WHERE n.id=?`, nodeID).
+		Scan(&status, &state.Generation, &lastSeen, &state.AgentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return state, nil, nil
+	}
 	if err != nil {
 		return state, nil, err
 	}
-	for _, node := range nodes {
-		if node.NodeID != nodeID {
-			continue
-		}
-		state.Exists = true
-		state.AgentID = node.AgentID
-		state.Generation = node.ConnectionGeneration
-		if node.Status == "pending" || node.AgentID == "" {
-			state.Status = "pending"
-			state.Reason = "awaiting_agent_registration"
-			return state, nil, nil
-		}
-		if node.Status == "revoked" {
-			state.Status = "revoked"
-			state.Reason = "agent_revoked"
-			return state, nil, nil
-		}
-		if node.HasLastSeen {
-			state.LeaseValidUntil = node.LastSeen.Add(s.agentOfflineTimeout).UTC()
-		}
-		if node.Status == "online" && node.AgentID != "" && node.ConnectionGeneration != 0 && node.HasLastSeen &&
-			!now.Before(node.LastSeen) && now.Before(node.LastSeen.Add(s.agentOfflineTimeout)) {
-			state.Status = "online"
-			return state, &coremetrics.Lease{
-				Identity:   coremetrics.Identity{AgentID: node.AgentID, NodeID: node.NodeID},
-				Generation: node.ConnectionGeneration, ValidUntil: node.LastSeen.Add(s.agentOfflineTimeout),
-				Status: coremetrics.LeaseOnline,
-			}, nil
-		}
-		state.Reason = "agent_offline"
+	state.Exists = true
+	if status == "pending" || state.AgentID == "" {
+		state.Status, state.Reason = "pending", "awaiting_agent_registration"
 		return state, nil, nil
 	}
+	if status == "revoked" {
+		state.Status, state.Reason = "revoked", "agent_revoked"
+		return state, nil, nil
+	}
+	seen := time.Unix(0, lastSeen.Int64).UTC()
+	if lastSeen.Valid {
+		state.LeaseValidUntil = seen.Add(s.agentOfflineTimeout).UTC()
+	}
+	if status == "online" && state.Generation != 0 && lastSeen.Valid &&
+		!now.Before(seen) && now.Before(state.LeaseValidUntil) {
+		state.Status = "online"
+		return state, &coremetrics.Lease{
+			Identity:   coremetrics.Identity{AgentID: state.AgentID, NodeID: nodeID},
+			Generation: state.Generation, ValidUntil: state.LeaseValidUntil, Status: coremetrics.LeaseOnline,
+		}, nil
+	}
+	state.Reason = "agent_offline"
 	return state, nil, nil
 }
 

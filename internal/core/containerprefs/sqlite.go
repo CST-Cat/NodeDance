@@ -1,3 +1,5 @@
+// Package containerprefs moves persistent display preferences when a rebuild
+// replaces a container ID. Repeated Agent task reports make the move idempotent.
 package containerprefs
 
 import (
@@ -5,7 +7,18 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
+
+var ErrIdentityConflict = errors.New("container preference identity already has different values")
+
+type preferences struct {
+	Alias, Icon, Note, ServiceURL string
+	Pinned, Visible               bool
+	Order                         int
+}
 
 // SQLiteMigrator moves standalone-container display preferences in the
 // dashboard_preferences table. The identity key includes both the node ID
@@ -19,12 +32,10 @@ func NewSQLiteMigrator(db *sql.DB) *SQLiteMigrator {
 }
 
 func (m *SQLiteMigrator) MigrateContainer(ctx context.Context, nodeID, fromID, toID string) error {
-	from := Identity{NodeID: nodeID, ContainerID: fromID}
-	to := Identity{NodeID: nodeID, ContainerID: toID}
 	if m == nil || m.DB == nil {
 		return errors.New("container preference SQLite database is unavailable")
 	}
-	if !validIdentity(from) || !validIdentity(to) {
+	if strings.TrimSpace(nodeID) == "" || len(nodeID) > 128 || !protocol.IsFullContainerID(fromID) || !protocol.IsFullContainerID(toID) {
 		return errors.New("container preference migration identity is invalid")
 	}
 	if fromID == toID {
@@ -57,9 +68,8 @@ func (m *SQLiteMigrator) MigrateContainer(ctx context.Context, nodeID, fromID, t
 		if newValue != oldValue {
 			return ErrIdentityConflict
 		}
-		// A retry may observe both rows if an earlier implementation copied
-		// instead of moving. Keep the replacement and remove only the identical
-		// source row, in this same transaction.
+		// Equal preferences on both identities can be coalesced without losing
+		// administrator changes. Conflicting values above keep both rows intact.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM dashboard_preferences
 			WHERE node_id=? AND target_kind='container' AND identity_key=?`, nodeID, fromKey); err != nil {
 			return fmt.Errorf("remove migrated container preference source: %w", err)
@@ -82,17 +92,17 @@ func (m *SQLiteMigrator) MigrateContainer(ctx context.Context, nodeID, fromID, t
 	return tx.Commit()
 }
 
-func readPreference(ctx context.Context, tx *sql.Tx, nodeID, identityKey string) (Preferences, bool, error) {
-	var value Preferences
+func readPreference(ctx context.Context, tx *sql.Tx, nodeID, identityKey string) (preferences, bool, error) {
+	var value preferences
 	var visible, pinned int
 	err := tx.QueryRowContext(ctx, `SELECT alias, icon, notes, service_url, sort_order, visible, pinned
 		FROM dashboard_preferences WHERE node_id=? AND target_kind='container' AND identity_key=?`, nodeID, identityKey).
 		Scan(&value.Alias, &value.Icon, &value.Note, &value.ServiceURL, &value.Order, &visible, &pinned)
 	if errors.Is(err, sql.ErrNoRows) {
-		return Preferences{}, false, nil
+		return preferences{}, false, nil
 	}
 	if err != nil {
-		return Preferences{}, false, err
+		return preferences{}, false, err
 	}
 	value.Visible = visible == 1
 	value.Pinned = pinned == 1

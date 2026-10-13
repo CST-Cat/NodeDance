@@ -32,3 +32,7 @@ History stores view identifiers only. Credentials, form contents, confirmations 
 历史只保存视图标识，不写入凭据、表单内容、确认信息或已提交命令。恢复视图执行读取和观察；创建、重试、取消、回滚共享任务仍需用户明确调用对应 Core 操作。交互终端不会由 URL 自动重新创建。
 
 `web/scripts/audit-interfaces.cjs` verifies page/tab history and reload while asserting that previously submitted tasks, updates and rollbacks are not resubmitted. `web/scripts/audit-guest.cjs` verifies node detail/section restoration and guest history/session boundaries, including a delayed permission response. The scripts run isolated Core fixtures and real Chromium.
+
+订阅中心的私有视图为 `#/feeds`，进入时使用现有管理员会话检查。订阅地址和表单不写入导航历史。详见 [RSS／Atom 订阅](rss.md)。
+
+VPS 服务探测位于详情的独立标签 `#/nodes?node=NODE_UUID&section=probes`，可刷新和直接定位。完整配置、状态和历史仅在此标签显示；离开时停止 Web 列表轮询，Core／Agent 后台探测继续运行。总览只在已配置探测时显示简短状态摘要和入口，标明最近读取时间，进入总览读取一次，不保持探测列表轮询。没有配置时不显示空面板。

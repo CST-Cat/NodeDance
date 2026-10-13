@@ -9,6 +9,8 @@ import (
 	"sync"
 )
 
+const maxDeploymentStateBytes = 4 << 20
+
 var ErrChangedHostKey = errors.New("SSH host key changed; explicit reconfirmation is required")
 
 type State struct {
@@ -33,19 +35,15 @@ func (s *StateStore) Read() (State, error) {
 
 func (s *StateStore) readLocked() (State, error) {
 	state := State{Pins: map[string]string{}, Managed: map[string]string{}}
-	info, err := os.Lstat(s.path)
+	data, info, err := readBoundedRegularFile(s.path, maxDeploymentStateBytes)
 	if errors.Is(err, os.ErrNotExist) {
 		return state, nil
 	}
 	if err != nil {
-		return State{}, fmt.Errorf("inspect Tailscale deployment state: %w", err)
-	}
-	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 || info.Mode().Perm()&0o077 != 0 {
-		return State{}, errors.New("Tailscale deployment state must be a private regular file")
-	}
-	data, err := os.ReadFile(s.path)
-	if err != nil {
 		return State{}, fmt.Errorf("read Tailscale deployment state: %w", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return State{}, errors.New("Tailscale deployment state must be a private regular file")
 	}
 	if err := json.Unmarshal(data, &state); err != nil {
 		return State{}, fmt.Errorf("parse Tailscale deployment state: %w", err)
@@ -91,6 +89,9 @@ func (s *StateStore) saveLocked(state State) error {
 	if err != nil {
 		return err
 	}
+	if len(data) > maxDeploymentStateBytes {
+		return errors.New("Tailscale deployment state exceeds size limit")
+	}
 	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return fmt.Errorf("create private Tailscale state directory: %w", err)
 	}
@@ -118,7 +119,12 @@ func (s *StateStore) saveLocked(state State) error {
 	if err := os.Rename(tmpPath, s.path); err != nil {
 		return fmt.Errorf("commit Tailscale deployment state: %w", err)
 	}
-	return nil
+	dir, err := os.Open(filepath.Dir(s.path))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }
 
 func (s *StateStore) CheckPin(identity, presented string, confirmedChanged bool) error {

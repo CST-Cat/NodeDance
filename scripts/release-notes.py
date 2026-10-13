@@ -28,38 +28,38 @@ def extract(text, version):
     return validate_notes(text[entries[i].end():entries[i+1].start() if i+1 < len(entries) else len(text)])
 
 
-def latest_agent(data, repository):
-    # gh --paginate --slurp returns a list of pages, including repositories
-    # whose newest Agent release is beyond the first hundred Core releases.
-    entries = [entry for page in data for entry in page] if data and isinstance(data[0], list) else data
-    valid = [r for r in entries if not r.get('draft') and not r.get('prerelease')
-             and re.fullmatch('agent-v' + VERSION, r.get('tag_name', '')) and r.get('published_at')]
-    if not valid:
-        raise ValueError('publish a stable Agent release before releasing Core')
-    selected = max(valid, key=lambda r: (r['published_at'], r['tag_name']))
-    tag = selected['tag_name']
-    return tag, f'https://github.com/{repository}/releases/tag/{tag}'
-
-
-def render(component, tag, changelog, releases=None, repository=None):
+def validate(component, tag, changelog, agent_tag=None):
     if not re.fullmatch(component + '-v' + VERSION, tag):
         raise ValueError(f'invalid {component} tag: {tag}')
     notes = extract(changelog, tag.split('-v', 1)[1])
     if component == 'core':
+        if not agent_tag or not re.fullmatch('agent-v' + VERSION, agent_tag):
+            raise ValueError('Core requires an explicit agent-vMAJOR.MINOR.PATCH pairing')
+    return notes
+
+
+def render(component, tag, changelog, agent_release=None, repository=None, agent_tag=None):
+    notes = validate(component, tag, changelog, agent_tag)
+    if component == 'core':
         if not repository or not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repository):
             raise ValueError('valid owner/repository required')
-        agent, url = latest_agent(releases or [], repository)
-        notes = f'Latest Agent / 最新 Agent: [{agent}]({url})\n\n' + notes
+        if (not isinstance(agent_release, dict) or agent_release.get('tag_name') != agent_tag
+                or agent_release.get('draft') is not False or agent_release.get('prerelease') is not False
+                or not agent_release.get('published_at')):
+            raise ValueError(f'paired Agent {agent_tag} is not a published stable release')
+        url = f'https://github.com/{repository}/releases/tag/{agent_tag}'
+        notes = f'Agent / 对应 Agent: [{agent_tag}]({url})\n\n' + notes
     return notes
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=['render', 'promote'])
+    p.add_argument('command', choices=['render', 'validate', 'promote'])
     p.add_argument('component', choices=['core', 'agent'])
     p.add_argument('tag', help='core-vX.Y.Z or agent-vX.Y.Z')
     p.add_argument('--repository')
-    p.add_argument('--releases', type=Path)
+    p.add_argument('--agent-tag', help='exact paired Agent tag for Core')
+    p.add_argument('--agent-release', type=Path, help='GitHub API response for the exact paired Agent release')
     p.add_argument('--output', type=Path)
     a = p.parse_args()
     try:
@@ -76,9 +76,11 @@ def main():
                 raise ValueError('exactly one Unreleased heading required')
             text = text.replace('## [Unreleased]', '## [Unreleased]\n\n### English\n\n### 简体中文\n\n## [' + version + ']', 1)
             path.write_text(text)
+        elif a.command == 'validate':
+            validate(a.component, a.tag, text, a.agent_tag)
         else:
-            data = json.loads(a.releases.read_text()) if a.releases else []
-            notes = render(a.component, a.tag, text, data, a.repository)
+            data = json.loads(a.agent_release.read_text()) if a.agent_release else None
+            notes = render(a.component, a.tag, text, data, a.repository, a.agent_tag)
             if a.output:
                 a.output.write_text(notes)
             else:

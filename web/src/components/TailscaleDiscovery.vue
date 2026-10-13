@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { t, display, locale } from "../i18n"
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { api, type TailscaleDeploymentTask, type TailscalePeer } from '../api'
 import AgentEnrollment from './AgentEnrollment.vue'
 
@@ -17,6 +17,7 @@ const task = ref<TailscaleDeploymentTask | null>(null)
 const unresolvedDeployments = ref<TailscaleDeploymentTask[]>([])
 const activeDeploymentKey = ref('')
 const activeDeploymentSignature = ref('')
+let disposed = false
 const resolutionOutcome = ref<'succeeded' | 'failed'>('succeeded')
 const resolutionObservedState = ref('connected')
 const resolutionConfirmed = ref(false)
@@ -64,10 +65,12 @@ function changeResolutionObservedState(event: Event) {
 }
 
 async function discover() {
+  if (disposed) return
   clearNotice()
   discovering.value = true
   try {
     const result = await api.tailscalePeers()
+    if (disposed) return
     peers.value = result.peers
     if (selected.value) selected.value = peers.value.find((peer) => peer.identity === selected.value?.identity) ?? null
     if (!peers.value.length) notice.value = t('m.8bcf5c4107b5')
@@ -80,8 +83,10 @@ async function discover() {
 }
 
 async function refreshDeploymentTasks() {
+  if (disposed) return
   try {
     const result = await api.tailscaleDeployments()
+    if (disposed) return
     unresolvedDeployments.value = result.tasks
     if (task.value) {
       const current = result.tasks.find((candidate) => candidate.taskId === task.value?.taskId)
@@ -119,20 +124,22 @@ function choose(peer: TailscalePeer) {
 
 async function probeHostKey() {
   if (!selected.value) return
+  const peerIdentity = selected.value.identity
   clearNotice()
   fingerprintLoading.value = true
   try {
-    const result = await api.probeTailscaleSSH(selected.value.identity)
+    const result = await api.probeTailscaleSSH(peerIdentity)
+    if (disposed || selected.value?.identity !== peerIdentity) return
     fingerprint.value = result.fingerprint
   } catch (reason) {
-    error.value = message(reason)
+    if (!disposed && selected.value?.identity === peerIdentity) error.value = message(reason)
   } finally {
     fingerprintLoading.value = false
   }
 }
 
 async function startDeployment() {
-  if (!selected.value || !fingerprint.value) return
+  if (disposed || loading.value || !selected.value || !fingerprint.value) return
   clearNotice()
   loading.value = true
   const auth = form.usePrivateKey
@@ -164,6 +171,7 @@ async function startDeployment() {
   }
   try {
     const accepted = await api.startTailscaleDeployment(payload, activeDeploymentKey.value)
+    if (disposed) return
     task.value = accepted
     unresolvedDeployments.value = [accepted, ...unresolvedDeployments.value.filter((item) => item.taskId !== accepted.taskId)]
     activeDeploymentKey.value = ''
@@ -198,8 +206,11 @@ async function resolveUnknownDeployment() {
 async function pollTask(id: string) {
   for (let attempt = 0; attempt < 360; attempt += 1) {
     await new Promise((resolve) => window.setTimeout(resolve, 1500))
+    if (disposed || task.value?.taskId !== id) return
     try {
-      task.value = await api.tailscaleDeployment(id)
+      const current = await api.tailscaleDeployment(id)
+      if (disposed || task.value?.taskId !== id) return
+      task.value = current
     } catch (reason) {
       error.value = t('m.2eddbfa49d23', {"0": (message(reason))})
       return
@@ -228,6 +239,10 @@ function message(reason: unknown): string {
 function shellQuote(value: string): string { return `'${value.replaceAll("'", "'\\''")}'` }
 
 onMounted(() => { void discover(); void refreshDeploymentTasks() })
+onBeforeUnmount(() => {
+  disposed = true
+  credentials.password = credentials.privateKey = credentials.passphrase = ''
+})
 </script>
 
 <template>

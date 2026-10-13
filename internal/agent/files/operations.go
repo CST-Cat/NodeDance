@@ -18,7 +18,8 @@ func (s *Service) ExecuteExtended(ctx context.Context, action protocol.TaskActio
 	if action == protocol.TaskFileArchive {
 		target = spec.Path
 	}
-	if _, _, err := s.normalize(target); err != nil {
+	_, target, err := s.normalize(target)
+	if err != nil {
 		return err
 	}
 	if target == "/" && action != protocol.TaskFileExtract {
@@ -41,7 +42,8 @@ func (s *Service) ExecuteExtended(ctx context.Context, action protocol.TaskActio
 	}()
 	switch action {
 	case protocol.TaskFileCopy:
-		if target == spec.Path || strings.HasPrefix(target, spec.Path+"/") {
+		source := path.Clean(spec.Path)
+		if target == source || strings.HasPrefix(target, strings.TrimSuffix(source, "/")+"/") {
 			return ErrInvalidPath
 		}
 		count := 0
@@ -58,7 +60,8 @@ func (s *Service) ExecuteExtended(ctx context.Context, action protocol.TaskActio
 		committed = true
 	case protocol.TaskFileArchive:
 		for _, source := range spec.Paths {
-			if source == target || strings.HasPrefix(target, source+"/") {
+			source = path.Clean(source)
+			if source == target || strings.HasPrefix(target, strings.TrimSuffix(source, "/")+"/") {
 				return ErrInvalidPath
 			}
 		}

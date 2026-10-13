@@ -107,7 +107,7 @@ function render() {
   }
 }
 
-watch(() => [props.history, selectedKey.value, locale.value], render, { deep: true })
+watch(() => [props.history, selectedKey.value, locale.value], render, { deep: true, flush: 'post' })
 watch(availableKeys, (items) => {
   if (!items.some((item) => item.key === selectedKey.value)) selectedKey.value = items[0]?.key ?? 'cpu.usage_percent'
 }, { immediate:true })
@@ -117,11 +117,8 @@ onMounted(() => {
   if (host.value) {
     observer = new ResizeObserver(() => chart?.resize())
     observer.observe(host.value)
-    const shell = host.value.closest('.app-shell')
-    if (shell) {
-      themeObserver = new MutationObserver(render)
-      themeObserver.observe(shell, { attributes: true, attributeFilter: ['data-theme'] })
-    }
+    themeObserver = new MutationObserver(render)
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
   }
 })
 
@@ -151,7 +148,7 @@ onBeforeUnmount(() => {
     <div v-if="loading" class="history-state" role="status">{{ t('m.a980a5f91841') }}</div>
     <div v-else-if="error" class="history-state history-error" role="alert">{{ display(error) }}</div>
     <div v-else-if="chartError" class="history-state history-error" role="alert">{{ display(chartError) }}</div>
-    <div v-else ref="host" class="history-chart" data-testid="history-chart" :data-sample-count="sampleCount" :aria-label="t('m.ea8e1f947456', {'0': (selectedLabel)})"></div>
+    <div v-show="!loading && !error && !chartError" ref="host" class="history-chart" data-testid="history-chart" :data-sample-count="sampleCount" :aria-label="t('m.ea8e1f947456', {'0': (selectedLabel)})"></div>
     <p v-if="!loading && !error && sampleCount === 0" class="history-empty">{{ t('m.f3de6936eb3b') }}</p>
   </section>
 </template>

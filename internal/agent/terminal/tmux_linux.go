@@ -169,11 +169,13 @@ func (e *tmuxEndpoint) recoverClient(client *ptyClient) bool {
 }
 func (e *tmuxEndpoint) Write(data []byte) (int, error) {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.client == nil {
+	client := e.client
+	e.mu.Unlock()
+	if client == nil {
 		return 0, errors.New("terminal is detached")
 	}
-	return e.client.Write(data)
+	// Closing/detaching must be able to interrupt a blocked PTY write.
+	return client.Write(data)
 }
 func (e *tmuxEndpoint) Resize(rows, columns uint16) error {
 	e.mu.Lock()

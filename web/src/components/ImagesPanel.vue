@@ -126,7 +126,7 @@ async function submitPull() {
     const accepted = await api.createImagePullTask(props.nodeId, {
       imageReference,
       ...(auth.username || auth.password ? { username: auth.username, password: auth.password } : {}),
-    }, crypto.randomUUID())
+    })
     reference.value = ''
     setActiveTask(await api.nodeTask(props.nodeId, accepted.taskId))
     notice.value = t('m.ddaed4324a4e')
@@ -153,7 +153,7 @@ async function submitDelete(image: DockerImage) {
   deleting.value = { ...deleting.value, [image.id]: true }
   error.value = ''
   try {
-    const accepted = await api.createImageDeleteTask(props.nodeId, image.id, crypto.randomUUID())
+    const accepted = await api.createImageDeleteTask(props.nodeId, image.id)
     setActiveTask(await api.nodeTask(props.nodeId, accepted.taskId))
     notice.value = t('m.3ea800a3051c')
   } catch (reason) {

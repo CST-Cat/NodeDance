@@ -105,6 +105,8 @@ target="${install_dir%/}/nodedance"
 
 staged_binary=$(mktemp "${install_dir%/}/.nodedance.install.XXXXXXXX") || fail "cannot create a temporary binary in $install_dir"
 install -m 0755 -- "$tmp_dir/$binary" "$staged_binary" || fail 'cannot stage the Core binary'
+installed_version=$("$staged_binary" --version) || fail 'staged Core binary cannot execute on this machine'
+[[ "$installed_version" == "NodeDance $release_tag" ]] || fail 'staged Core binary does not match the requested release version'
 mv -fT -- "$staged_binary" "$target" || fail "cannot install Core at $target"
 staged_binary=""
 

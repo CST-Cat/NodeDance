@@ -11,7 +11,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
  // Build the production Driver separately for exhaustive browser/API probes.
  // This test-only module is served by Playwright; no test hook enters the app.
  const {build}=await import('vite')
- await build({configFile:false,logLevel:'error',define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{lib:{entry:path.join(root,'web/src/file-manager.ts'),formats:['es'],fileName:'driver-audit'},outDir:path.join(artifacts,'driver'),emptyOutDir:true}})
+ await build({configFile:false,logLevel:'error',define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{lib:{entry:path.join(root,'web/src/file-manager.ts'),formats:['es'],fileName:()=> 'driver-audit.js'},outDir:path.join(artifacts,'driver'),emptyOutDir:true}})
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-file-audit-')),data=path.join(dir,'core'),files=path.join(dir,'files'),state=execFileSync('sudo',['mktemp','-d','/run/nodedance-file-audit-XXXXXX'],{encoding:'utf8'}).trim(),base=`http://127.0.0.1:${await port()}`
  fs.mkdirSync(files);fs.mkdirSync(path.join(files,'many'));fs.mkdirSync(path.join(files,'out'))
  fs.writeFileSync(path.join(files,'hello.txt'),'hello fixture\n');fs.writeFileSync(path.join(files,'image.png'),Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZMsAAAAASUVORK5CYII=','base64'))
@@ -36,6 +36,13 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   agent=spawn('sudo',['env',`NODEDANCE_AGENT_FILE_ROOT=${files}`,'DOCKER_HOST=unix:///nonexistent/nodedance-file-fixture.sock',path.join(artifacts,'agent'),'run','--config',path.join(state,'agent.json')],{stdio:['ignore','pipe','pipe']});agent.stderr.on('data',v=>logs+=v)
   const endpoint=(name,query={})=>{const o=operation(name);return base+o.path.replace('{nodeId}',node)+(Object.keys(query).length?'?'+new URLSearchParams(query):'')}
   let online=false;for(let i=0;i<200;i++){const response=await context.request.get(endpoint('files.list',{path:'/'}));if(response.ok()){online=true;break};await new Promise(r=>setTimeout(r,100))};assert.ok(online,logs)
+  // Selected roots use the same symlink/traversal rejection as full-host roots.
+  // All targets below remain inside this disposable fixture.
+  for(const filePath of ['/link','/../hello.txt','/many/../hello.txt']){
+   const rejected=await context.request.get(endpoint('files.text',{path:filePath}))
+   assert.equal(rejected.status(),400,`Unsafe file path accepted: ${filePath}`)
+  }
+  assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'hello fixture\n')
   async function action(body,key=crypto.randomUUID()){
    const response=await context.request.post(endpoint('files.action'),{headers:{...headers,'Idempotency-Key':key},data:body});assert.ok(response.ok(),await response.text());const accepted=await response.json()
    for(let i=0;i<200;i++){const task=await(await context.request.get(base+operation('tasks.get').path.replace('{nodeId}',node).replace('{taskId}',accepted.taskId))).json();if(!['queued','running'].includes(task.status)){assert.equal(task.status,'succeeded',JSON.stringify(task));return task};await new Promise(r=>setTimeout(r,25))};throw Error('File task timeout')
@@ -51,12 +58,13 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   await action({action:'save_text',path:'/hello.txt',content:'edited fixture\n',expectedVersion:text.version})
   const bad=await context.request.post(endpoint('files.action'),{headers:{...headers,'Idempotency-Key':crypto.randomUUID()},data:{action:'save_text',path:'/hello.txt',content:'stale',expectedVersion:text.version}});assert.ok(bad.ok());const badTask=await bad.json()
   let failed;for(let i=0;i<100;i++){failed=await(await context.request.get(base+operation('tasks.get').path.replace('{nodeId}',node).replace('{taskId}',badTask.taskId))).json();if(failed.status==='failed')break;await new Promise(r=>setTimeout(r,25))};assert.equal(failed.status,'failed');assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'edited fixture\n')
+  for(const name of ['files.download','files.preview'])assert.equal((await context.request.get(endpoint(name,{path:'/missing.txt'}))).status(),404,'Missing downloads preserve Agent not-found semantics')
   const preview=await context.request.get(endpoint('files.preview',{path:'/image.png'}),{headers:{Range:'bytes=0-7'}});assert.equal(preview.status(),206);assert.ok(preview.headers()['content-security-policy'].includes('sandbox'))
   const visitor=await browser.newContext();assert.equal((await visitor.request.get(endpoint('files.preview',{path:'/image.png'}))).status(),401)
   const page=await context.newPage();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',e=>errors.push(e.message))
   await page.goto(base+`/#/nodes?node=${node}&section=files`)
   await page.locator('.vuefinder').waitFor();await page.getByText('hello.txt',{exact:true}).first().waitFor()
-  await page.route('**/__file-driver-audit.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(artifacts,'driver','driver-audit.mjs'))}))
+  await page.route('**/__file-driver-audit.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(artifacts,'driver','driver-audit.js'))}))
   await page.evaluate(async node=>{const {createFileManager}=await import('/__file-driver-audit.js');window.fileDriverAudit=await createFileManager(node,()=>{})},node)
   async function driverCall(method,args){return page.evaluate(({method,args})=>window.fileDriverAudit.driver[method](args),{method,args})}
   const rootPath='node:///'
@@ -91,6 +99,19 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   await driverCall('list',{path:rootPath})
   await assert.rejects(driverCall('save',{path:'node:///hello.txt',content:'must not overwrite external change'}))
   assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'changed outside editor')
+  await driverCall('getContent',{path:'node:///hello.txt'});await driverCall('save',{path:'node:///hello.txt',content:original.content})
+  // A writer may replace the file after our save completes but before readback.
+  let replaceAfterSave=true
+  await page.route('**/api/v1/nodes/*/files/text?*',async route=>{
+   if(replaceAfterSave&&new URL(route.request().url()).searchParams.get('path')==='/hello.txt'){
+    replaceAfterSave=false;fs.writeFileSync(path.join(files,'hello.txt'),'replacement after save')
+   }
+   await route.continue()
+  })
+  await assert.rejects(driverCall('save',{path:'node:///hello.txt',content:'first saved text'}))
+  await assert.rejects(driverCall('save',{path:'node:///hello.txt',content:'must not overwrite unseen replacement'}))
+  assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'replacement after save')
+  await page.unroute('**/api/v1/nodes/*/files/text?*')
   await driverCall('getContent',{path:'node:///hello.txt'});await driverCall('save',{path:'node:///hello.txt',content:original.content})
   const previewURL=await driverCall('getPreviewUrl',{path:'node:///image.png'}),downloadURL=await driverCall('getDownloadUrl',{path:'node:///hello.txt'})
   const imageUpload=page.waitForRequest(r=>r.url().includes('/files/upload')&&r.url().includes('image.png'))

@@ -15,7 +15,6 @@ const restartPolicy = ref<ContainerCreateSpec['restartPolicy']>('no')
 const restartRetries = ref(0)
 const ports = ref<ContainerCreatePort[]>([])
 const mounts = ref<ContainerCreateMount[]>([])
-const validationError = ref('')
 
 function addPort() { ports.value = [...ports.value, { containerPort: 0, protocol: 'tcp', hostIp: '', hostPort: '' }] }
 function removePort(index: number) { ports.value = ports.value.filter((_, current) => current !== index) }
@@ -23,25 +22,16 @@ function addMount() { mounts.value = [...mounts.value, { type: 'bind', source: '
 function removeMount(index: number) { mounts.value = mounts.value.filter((_, current) => current !== index) }
 
 function submit() {
-  validationError.value = ''
   const command = commandText.value.split(/\r?\n/).filter((argument) => argument.length > 0)
   const environment = environmentText.value.split(/\r?\n/).filter((entry) => entry.trim().length > 0)
   const configuredPorts: ContainerCreatePort[] = []
   for (const port of ports.value) {
     if (port.containerPort === 0 && !port.hostIp && !port.hostPort) continue
-    if (!Number.isInteger(port.containerPort) || port.containerPort < 1 || port.containerPort > 65535 || port.hostPort && !/^([1-9][0-9]{0,4})$/.test(port.hostPort) || port.hostPort && Number(port.hostPort) > 65535) {
-      validationError.value = t('m.a7ede4e0fcab')
-      return
-    }
     configuredPorts.push({ ...port, hostIp: port.hostIp || undefined, hostPort: port.hostPort || undefined })
   }
   const configuredMounts: ContainerCreateMount[] = []
   for (const mount of mounts.value) {
     if (!mount.source && !mount.target) continue
-    if (!mount.target.startsWith('/') || mount.type === 'bind' && !(mount.source || '').startsWith('/')) {
-      validationError.value = t('m.d682fcb924ad')
-      return
-    }
     configuredMounts.push({ ...mount, source: mount.source || undefined })
   }
   const spec: ContainerCreateSpec = {
@@ -53,10 +43,6 @@ function submit() {
     network: network.value.trim() || undefined,
     restartPolicy: restartPolicy.value,
     restartRetries: restartPolicy.value === 'on-failure' ? restartRetries.value : undefined,
-  }
-  if (!spec.image || !spec.name) {
-    validationError.value = t('m.7c610017b146')
-    return
   }
   emit('submit', spec)
 }
@@ -96,7 +82,6 @@ function submit() {
         <button type="button" class="container-action" @click="addMount">{{ t('m.78c8f87622ca') }}</button>
       </fieldset>
       <p class="create-form-note">{{ t('m.4576641fd0a6') }}</p>
-      <p v-if="validationError" class="create-form-error" role="alert">{{ display(validationError) }}</p>
       <p v-if="props.error" class="create-form-error" role="alert">{{ display(props.error) }}</p>
       <button class="container-action create-submit" type="submit" :disabled="props.disabled || props.submitting">{{ props.submitting ? t('m.18931020ad52') : t('m.cb34cd41fbba') }}</button>
     </form>

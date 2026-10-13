@@ -420,3 +420,38 @@ CREATE TABLE IF NOT EXISTS guest_display (
 );
 INSERT OR IGNORE INTO guest_display(id,revision,settings_json) VALUES(1,0,
  '{"revision":0,"enabled":false,"title":"NodeDance","showStatus":false,"metrics":[],"historyHours":0,"nodes":[],"probes":[]}');
+
+CREATE TABLE IF NOT EXISTS feed_subscriptions (
+ id TEXT PRIMARY KEY, config_json TEXT NOT NULL, revision INTEGER NOT NULL,
+ status TEXT NOT NULL, run_id TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
+ last_checked INTEGER NOT NULL DEFAULT 0, last_success INTEGER NOT NULL DEFAULT 0,
+ next_check INTEGER NOT NULL DEFAULT 0, failures INTEGER NOT NULL DEFAULT 0,
+ etag TEXT NOT NULL DEFAULT '', modified TEXT NOT NULL DEFAULT '', initialized INTEGER NOT NULL DEFAULT 0,
+ last_started INTEGER NOT NULL DEFAULT 0, next_digest INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS feed_due ON feed_subscriptions(status,next_check);
+
+CREATE TABLE IF NOT EXISTS feed_items (
+ id TEXT PRIMARY KEY, feed_id TEXT NOT NULL REFERENCES feed_subscriptions(id) ON DELETE CASCADE,
+ title TEXT NOT NULL, summary TEXT NOT NULL, url TEXT NOT NULL, published INTEGER,
+ first_seen INTEGER NOT NULL, last_seen INTEGER NOT NULL, is_read INTEGER NOT NULL DEFAULT 0,
+ notify_pending INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS feed_items_page ON feed_items(feed_id,first_seen DESC,id);
+
+CREATE TABLE IF NOT EXISTS feed_deliveries (
+ id TEXT PRIMARY KEY, feed_id TEXT NOT NULL REFERENCES feed_subscriptions(id) ON DELETE CASCADE,
+ channel_id TEXT NOT NULL, revision INTEGER NOT NULL, payload TEXT NOT NULL,
+ status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '',
+ next_attempt INTEGER NOT NULL, created INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS feed_delivery_due ON feed_deliveries(status,next_attempt);
+
+CREATE INDEX IF NOT EXISTS feed_delivery_history ON feed_deliveries(feed_id,created DESC,id);
+
+CREATE INDEX IF NOT EXISTS feed_delivery_retention ON feed_deliveries(created);
+
+CREATE INDEX IF NOT EXISTS feed_notification_pending ON feed_items(feed_id,first_seen,id) WHERE notify_pending=1;

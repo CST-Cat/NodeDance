@@ -16,7 +16,8 @@
     "audit:guest": "pnpm build && node scripts/audit-guest.cjs",
     "audit:guest-security": "pnpm build && NODEDANCE_GUEST_ATTACKS=1 node scripts/audit-guest.cjs",
     "audit:files": "pnpm build && node scripts/audit-files.cjs",
-    "check:file-notices": "node scripts/file-notices.cjs --check"
+    "check:file-notices": "node scripts/file-notices.cjs --check",
+    "audit:feeds": "pnpm build && node scripts/audit-feeds.cjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.11.0",

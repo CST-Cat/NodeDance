@@ -170,6 +170,14 @@ func (b *containerStreamBridge) runLogs(ctx context.Context, writer streamEnvelo
 		case frame, ok := <-frames:
 			if !ok {
 				if ctx.Err() == nil {
+					// The reader closes Errors before Frames. Drain a pending
+					// failure before declaring the stream successfully complete.
+					if errorsIn != nil {
+						if err := <-errorsIn; err != nil {
+							b.writeStreamError(ctx, writer, generation, stream, "engine_error")
+							return
+						}
+					}
 					_ = b.writeStreamTerminal(ctx, writer, generation, stream, protocol.TypeContainerStreamEnd, protocol.ContainerStreamClose{})
 				}
 				return
@@ -216,25 +224,13 @@ func (b *containerStreamBridge) runStats(ctx context.Context, writer streamEnvel
 				}
 				return
 			}
-			payload, err := encodeStreamStats(snapshot)
-			if err != nil || b.writeStreamFrame(ctx, writer, generation, stream, protocol.TypeContainerStats, payload) != nil {
+			payload := protocol.ContainerStreamStats{Snapshot: snapshot}
+			if b.writeStreamFrame(ctx, writer, generation, stream, protocol.TypeContainerStats, payload) != nil {
 				b.writeStreamError(ctx, writer, generation, stream, "slow_consumer")
 				return
 			}
 		}
 	}
-}
-
-func encodeStreamStats(snapshot containerstreams.StatsSnapshot) (protocol.ContainerStreamStats, error) {
-	encoded, err := json.Marshal(snapshot)
-	if err != nil {
-		return protocol.ContainerStreamStats{}, err
-	}
-	var wireSnapshot protocol.ContainerStatsSnapshot
-	if err := json.Unmarshal(encoded, &wireSnapshot); err != nil {
-		return protocol.ContainerStreamStats{}, err
-	}
-	return protocol.ContainerStreamStats{Snapshot: wireSnapshot}, nil
 }
 
 func (b *containerStreamBridge) writeStreamFrame(ctx context.Context, writer streamEnvelopeWriter, generation uint64, stream *agentContainerStream, kind string, payload any) error {

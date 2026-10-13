@@ -303,6 +303,7 @@ async function port() {
     await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})))
     await page.waitForFunction(()=>document.querySelector('.host-tabs [aria-pressed=true]')?.textContent==='Assets and quotas')
     assert.equal(permissionReads,1,'Restoring a cached document must revalidate its administrator session')
+    await require('./review-regressions.cjs')({page,context,base,node,headers,artifacts})
     await page.getByRole('button',{name:'Nodes',exact:true}).click();await page.locator('.nodes-dashboard').waitFor()
     await page.getByRole('button',{name:'Alerts',exact:true}).click();await page.locator('.alerts-page').waitFor()
     await page.getByRole('button',{name:'Sign out',exact:true}).click();await page.locator('#login-title').waitFor()

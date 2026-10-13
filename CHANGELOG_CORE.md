@@ -6,6 +6,20 @@
 
 ### 简体中文
 
+## [0.1.18]
+
+### English
+
+- Add Core-hosted RSS/Atom feed subscriptions with adjustable polling from one minute to one day, a 30-minute default, shared CLI/TUI operations and a dedicated Web screen.
+- Improve alert delivery, backups, metrics ownership, file and container operations, update recovery, Tailscale workflows and request handling; remove obsolete duplicate paths and add targeted regressions.
+- Refine node details and service-probe navigation, improve release/build workflows and Web accessibility, and strengthen guest, file-manager, interface and feed browser audits.
+
+### 简体中文
+
+- 在 Core 内置 RSS／Atom 订阅，支持 1 分钟至 1 天多档轮询、默认 30 分钟，并通过共享 CLI／TUI 操作及独立 Web 页面管理。
+- 改进告警投递、备份、指标归属、文件与容器操作、更新恢复、Tailscale 流程及请求处理；移除过时重复路径并补充针对性回归。
+- 优化节点详情与服务探测导航、发布／构建流程及 Web 可访问性，并加强游客、文件管理、接口与订阅浏览器审计。
+
 ## [0.1.17]
 
 ### English

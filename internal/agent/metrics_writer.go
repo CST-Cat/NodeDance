@@ -157,12 +157,6 @@ func (w *socketEnvelopeWriter) takeStreamFailures() map[string]error {
 	return failed
 }
 
-func (w *socketEnvelopeWriter) clearStreamFailure(requestID string) {
-	w.streamFailureMu.Lock()
-	delete(w.failedStreams, requestID)
-	w.streamFailureMu.Unlock()
-}
-
 func (w *socketEnvelopeWriter) markStreamFailure(requestID string, err error) {
 	if requestID == "" {
 		return
@@ -263,140 +257,79 @@ func (w *socketEnvelopeWriter) offerMetrics(envelope protocol.Envelope) {
 
 func (w *socketEnvelopeWriter) run() {
 	defer close(w.done)
-	dockerBurst := 0
-	streamBurst := 0
-	terminalBurst := 0
-	fileBurst := 0
-	for {
-		select {
-		case <-w.ctx.Done():
-			return
-		default:
+	// Weighted rotation bounds each data lane's burst. Even a permanently
+	// nonempty Docker queue yields to every other ready lane. Control work
+	// is checked before every frame, including frames within a burst.
+	lanes := [...]struct {
+		queue   chan protocol.Envelope
+		burst   int
+		timeout time.Duration
+		stream  bool
+	}{
+		{w.docker, maxDockerWriteBurst, dockerWriteTimeout, false},
+		{w.metrics, 1, metricWriteTimeout, false},
+		{w.terminal, maxTerminalWriteBurst, terminalWriteTimeout, false},
+		{w.streams, maxStreamWriteBurst, streamWriteTimeout, true},
+		{w.files, maxFileWriteBurst, streamWriteTimeout, false},
+	}
+	current, burst := 0, 0
+	writeLane := func(index int, envelope protocol.Envelope) {
+		if current != index {
+			current, burst = index, 0
 		}
-		// Check control work before waiting on either queue, which avoids
-		// selecting a queued metrics frame while a heartbeat is already ready.
-		select {
-		case request := <-w.high:
-			w.write(request.envelope, request.result, controlWriteTimeout, request.stream)
-			continue
-		default:
-		}
-		// Snapshot/event frames remain FIFO, but an always-nonempty Docker
-		// queue must not starve the latest coalesced host metrics sample.
-		if dockerBurst >= maxDockerWriteBurst {
-			select {
-			case envelope := <-w.metrics:
-				w.write(envelope, nil, metricWriteTimeout, false)
-				dockerBurst = 0
-				continue
-			default:
-			}
-		}
-		if terminalBurst >= maxTerminalWriteBurst {
-			select {
-			case envelope := <-w.metrics:
-				w.write(envelope, nil, metricWriteTimeout, false)
-				terminalBurst = 0
-				dockerBurst = 0
-				continue
-			default:
-			}
-			select {
-			case envelope := <-w.docker:
-				w.write(envelope, nil, dockerWriteTimeout, false)
-				dockerBurst++
-				terminalBurst = 0
-				streamBurst = 0
-				continue
-			default:
-			}
-			terminalBurst = 0
-		}
-		if streamBurst >= maxStreamWriteBurst {
-			select {
-			case envelope := <-w.metrics:
-				w.write(envelope, nil, metricWriteTimeout, false)
-				streamBurst = 0
-				dockerBurst = 0
-				continue
-			default:
-			}
-			select {
-			case envelope := <-w.docker:
-				w.write(envelope, nil, dockerWriteTimeout, false)
-				dockerBurst++
-				streamBurst = 0
-				continue
-			default:
-			}
-			streamBurst = 0
-		}
-		if fileBurst >= maxFileWriteBurst {
-			select {
-			case envelope := <-w.docker:
-				w.write(envelope, nil, dockerWriteTimeout, false)
-				dockerBurst++
-				streamBurst = 0
-				fileBurst = 0
-				continue
-			default:
-			}
-			select {
-			case envelope := <-w.streams:
-				w.writeStream(envelope)
-				streamBurst++
-				fileBurst = 0
-				continue
-			default:
-			}
-			select {
-			case envelope := <-w.metrics:
-				w.write(envelope, nil, metricWriteTimeout, false)
-				fileBurst = 0
-				continue
-			default:
-			}
-			fileBurst = 0
-		}
-		select {
-		case envelope := <-w.docker:
-			w.write(envelope, nil, dockerWriteTimeout, false)
-			dockerBurst++
-			streamBurst = 0
-			continue
-		default:
-		}
-		select {
-		case <-w.ctx.Done():
-			return
-		case request := <-w.high:
-			w.write(request.envelope, request.result, controlWriteTimeout, request.stream)
-		case envelope := <-w.docker:
-			w.write(envelope, nil, dockerWriteTimeout, false)
-			dockerBurst++
-			streamBurst = 0
-			terminalBurst = 0
-			fileBurst = 0
-		case envelope := <-w.streams:
+		lane := lanes[index]
+		if lane.stream {
 			w.writeStream(envelope)
-			streamBurst++
-			terminalBurst = 0
-			fileBurst = 0
-		case envelope := <-w.terminal:
-			w.write(envelope, nil, terminalWriteTimeout, false)
-			terminalBurst++
-			streamBurst = 0
-			fileBurst = 0
-		case envelope := <-w.files:
-			w.write(envelope, nil, streamWriteTimeout, false)
-			fileBurst++
-			terminalBurst = 0
+		} else {
+			w.write(envelope, nil, lane.timeout, false)
+		}
+		burst++
+		if burst >= lane.burst {
+			current, burst = (index+1)%len(lanes), 0
+		}
+	}
+	for {
+		if w.ctx.Err() != nil {
+			return
+		}
+		select {
+		case request := <-w.high:
+			w.write(request.envelope, request.result, controlWriteTimeout, request.stream)
+			continue
+		default:
+		}
+		sent := false
+		for checked := 0; checked < len(lanes); checked++ {
+			select {
+			case envelope := <-lanes[current].queue:
+				writeLane(current, envelope)
+				sent = true
+			default:
+				current, burst = (current+1)%len(lanes), 0
+			}
+			if sent {
+				break
+			}
+		}
+		if sent {
+			continue
+		}
+		// All lanes were empty; sleep until work or cancellation arrives.
+		select {
+		case <-w.ctx.Done():
+			return
+		case request := <-w.high:
+			w.write(request.envelope, request.result, controlWriteTimeout, request.stream)
+		case envelope := <-w.docker:
+			writeLane(0, envelope)
 		case envelope := <-w.metrics:
-			w.write(envelope, nil, metricWriteTimeout, false)
-			dockerBurst = 0
-			streamBurst = 0
-			terminalBurst = 0
-			fileBurst = 0
+			writeLane(1, envelope)
+		case envelope := <-w.terminal:
+			writeLane(2, envelope)
+		case envelope := <-w.streams:
+			writeLane(3, envelope)
+		case envelope := <-w.files:
+			writeLane(4, envelope)
 		}
 	}
 }

@@ -319,7 +319,7 @@ async function submitContainerAction(nodeID: string, containerID: string, action
   const errors = { ...taskErrors.value }; delete errors[key]; taskErrors.value = errors
   try {
     const payload = { ...options, action }
-    const accepted = await api.createContainerTask(nodeID, containerID, payload, crypto.randomUUID())
+    const accepted = await api.createContainerTask(nodeID, containerID, payload)
     const current = await api.nodeTask(nodeID, accepted.taskId)
     taskViews.value = { ...taskViews.value, [current.taskId]: current }
   } catch (reason) { taskErrors.value = { ...taskErrors.value, [key]: reason instanceof Error ? reason.message : t('m.e9b2af7934ab') }
@@ -339,7 +339,7 @@ async function submitContainerCreateTask(payload: { nodeId: string; spec: Contai
   taskSubmitting.value = { ...taskSubmitting.value, [key]: true }
   const errors = { ...taskErrors.value }; delete errors[key]; taskErrors.value = errors
   try {
-    const accepted = await api.createContainerCreateTask(nodeId, spec, crypto.randomUUID())
+    const accepted = await api.createContainerCreateTask(nodeId, spec)
     const current = await api.nodeTask(nodeId, accepted.taskId)
     taskViews.value = { ...taskViews.value, [current.taskId]: current }
   } catch (reason) {

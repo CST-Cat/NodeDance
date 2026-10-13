@@ -280,7 +280,7 @@ func TestRootAgentHTTPHostControlEndToEnd(t *testing.T) {
 				t.Fatal(err)
 			}
 			path := filepath.Join(dir, "agent.json")
-			config := agentruntime.Config{Server: host.URL, Development: true, Credential: cred, AgentID: id.AgentID, NodeID: id.NodeID, Shell: "/bin/sh"}
+			config := agentruntime.Config{Schema: agentruntime.ConfigSchema, Server: host.URL, Development: true, Credential: cred, AgentID: id.AgentID, NodeID: id.NodeID, Shell: "/bin/sh"}
 			if err := agentruntime.SaveConfig(path, config, true); err != nil {
 				t.Fatal(err)
 			}

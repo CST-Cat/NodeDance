@@ -30,7 +30,6 @@ func Command(server, displayName string, development bool) (string, error) {
 	if dev {
 		script += " --dev"
 	}
-	script += `; sudo -n docker run --rm --privileged --pid=host --network=host --mount type=bind,src=/,dst=/host,readonly "$image" install-updater --component agent --mode docker --container nodedance-agent --data-dir /var/lib/nodedance-agent --core-uid 0 --core-gid 0`
 	return "bash -o pipefail -c " + quote(script), nil
 }
 func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }

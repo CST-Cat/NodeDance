@@ -15,6 +15,14 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const privateOperations=catalog.operations.filter(o=>!publicPaths.has(o.path)&&!o.path.startsWith('/api/v1/public/'))
  console.log('GUEST SECURITY: private operations',privateOperations.length)
  for(let i=0;i<privateOperations.length;i+=8){await Promise.all(privateOperations.slice(i,i+8).map(async o=>{const r=await browserRequest(target(o),o.method,payload,hostileHeaders);record('catalog:'+o.name,r.status===401,{status:r.status})}))}
+
+ // Private RSS subscriptions never enter guest projections, even with admin cookies.
+ const rss=await admin.request.post(base+'/api/v1/feeds',{headers,data:{name:'PRIVATE RSS NAME',url:'https://example.invalid/feed?token=RSS_PRIVATE_TOKEN',enabled:false,keywords:[],channelIds:[],notificationMode:'off'}})
+ assert.equal(rss.status(),200);const subscription=await rss.json()
+ for(const suffix of ['', '/'+subscription.id, '/'+subscription.id+'/items', '/'+subscription.id+'/deliveries']){const r=await browserRequest('/api/v1/feeds'+suffix);record('private-RSS:'+suffix,r.status===401,{status:r.status})}
+ const rssGuest=await browserRequest('/api/v1/public/guest/display'),rssAdmin=await admin.request.get(base+'/api/v1/public/guest/display'),rssAdminBody=await rssAdmin.text()
+ record('RSS-excluded-with-admin-cookie',rssGuest.status===200&&rssAdmin.status()===200&&rssGuest.body===rssAdminBody&&!rssAdminBody.includes('PRIVATE RSS NAME')&&!rssAdminBody.includes('RSS_PRIVATE_TOKEN'),{status:rssGuest.status})
+ const rssDelete=await admin.request.delete(base+'/api/v1/feeds/'+subscription.id,{headers,data:{revision:subscription.revision,confirm:true}});record('private-RSS-removal',rssDelete.status()===204,{status:rssDelete.status()})
  const fileAction=catalog.operations.find(o=>o.name==='files.action');assert.ok(fileAction)
  for(const format of fileAction.bodySchema.properties.format.enum){
   const r=await browserRequest(target(fileAction),fileAction.method,{action:'archive',path:'/tmp/guest.'+format,format,paths:['/etc/shadow']},hostileHeaders)

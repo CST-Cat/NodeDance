@@ -713,17 +713,6 @@ func (r *Repository) AgentChannel(ctx context.Context, agentID string) (Identity
 	return identity, requested.Valid || pending.Valid, nil
 }
 
-func (r *Repository) FindLease(ctx context.Context, agentID string) (Identity, error) {
-	var identity Identity
-	err := r.db.QueryRowContext(ctx, `SELECT d.id, d.node_id, n.display_name, n.status, n.connection_generation
-		FROM agent_devices d JOIN nodes n ON n.id=d.node_id WHERE d.id=? AND d.revoked_at IS NULL`, agentID).
-		Scan(&identity.AgentID, &identity.NodeID, &identity.DisplayName, &identity.Status, &identity.ConnectionGeneration)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Identity{}, ErrNotFound
-	}
-	return identity, err
-}
-
 func newSecret() (string, []byte, error) {
 	buffer := make([]byte, 32)
 	if _, err := rand.Read(buffer); err != nil {

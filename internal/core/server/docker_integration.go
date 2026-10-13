@@ -183,11 +183,6 @@ func isRejectedDockerSnapshot(err error) bool {
 		errors.Is(err, coredocker.ErrSnapshotLimit)
 }
 
-func (s *Server) dockerSnapshot(nodeID string, lease *coredocker.Lease, now time.Time) (coredocker.View, bool) {
-	view, _, ok := s.dockerSnapshotWithRevision(nodeID, lease, now)
-	return view, ok
-}
-
 func (s *Server) dockerSnapshotWithRevision(nodeID string, lease *coredocker.Lease, now time.Time) (coredocker.View, uint64, bool) {
 	s.dockerMu.Lock()
 	store := s.docker

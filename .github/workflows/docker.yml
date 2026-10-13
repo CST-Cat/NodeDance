@@ -11,6 +11,11 @@ on:
       - 'deploy/docker/**'
       - '.dockerignore'
       - 'scripts/test-docker.py'
+      - 'scripts/release_images.py'
+      - 'scripts/release-notes.py'
+      - 'scripts/tests/**'
+      - 'agent-release.version'
+      - '.github/workflows/*-release.yml'
       - '.github/workflows/docker.yml'
   push:
     branches: [main]
@@ -23,6 +28,11 @@ on:
       - 'deploy/docker/**'
       - '.dockerignore'
       - 'scripts/test-docker.py'
+      - 'scripts/release_images.py'
+      - 'scripts/release-notes.py'
+      - 'scripts/tests/**'
+      - 'agent-release.version'
+      - '.github/workflows/*-release.yml'
       - '.github/workflows/docker.yml'
   workflow_dispatch:
 
@@ -51,6 +61,10 @@ jobs:
         run: |
           docker compose -f deploy/docker/compose.core.yml config -q
           docker compose -f deploy/docker/compose.agent.yml config -q
+      - name: Verify release packaging without source compilation
+        run: |
+          python3 -m unittest discover -s scripts/tests
+          python3 scripts/release_images.py test --architecture ${{ matrix.arch }}
       - name: Test protected persistent state and host Agent deployment
         run: python3 scripts/test-docker.py
 

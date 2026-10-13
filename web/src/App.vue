@@ -3,6 +3,7 @@ import { operationURL } from './operations'
 import { operationRequest } from './api'
 import HostManagement from './components/HostManagement.vue'
 import UpdateCenter from './components/UpdateCenter.vue'
+import FeedsCenter from './components/FeedsCenter.vue'
 import OperationConsole from './components/OperationConsole.vue'
 import { t, display, locale, setLocale, type Locale } from "./i18n"
 import { defineAsyncComponent, computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
@@ -92,9 +93,10 @@ const navigation = [
   { screen: 'agent-enrollment', label: 'nav.enrollment', icon: 'add' },
   { screen: 'discovery', label: 'nav.discovery', icon: 'discovery' },
   { screen: 'alerts', label: 'nav.alerts', icon: 'alerts' },
-  { screen: 'host-management', label: 'host.title', icon: 'terminal' },
+  { screen: 'host-management', label: 'host.title', icon: 'host' },
   { screen: 'updates', label: 'nav.updates', icon: 'refresh' },
-  { screen: 'operations', label: 'nav.operations', icon: 'terminal' },
+  { screen: 'feeds', label: 'feeds.title', icon: 'subscriptions' },
+  { screen: 'operations', label: 'nav.operations', icon: 'operations' },
   { screen:'guest-settings',label:'guest.settings',icon:'guest' },
   { screen: 'settings', label: 'nav.settings', icon: 'settings' },
 ] as const
@@ -667,6 +669,7 @@ onBeforeUnmount(() => {
 
     <HostManagement v-else-if="screen === 'host-management'" />
       <UpdateCenter v-else-if="screen === 'updates'" />
+      <FeedsCenter v-else-if="screen === 'feeds'" />
     <OperationConsole v-else-if="screen === 'operations'" />
 
     <AlertCenter v-else-if="screen === 'alerts'" />
@@ -725,7 +728,7 @@ onBeforeUnmount(() => {
             <div class="field">
               <span>{{ t('m.8f29293906e7') }}</span>
               <div class="theme-options" role="group" :aria-label="t('m.8f29293906e7')">
-                <button class="theme-option" :class="{ selected: appearance.theme === 'dark' }" type="button" :aria-pressed="appearance.theme === 'dark'" @click="appearance.theme = 'system'">
+                <button class="theme-option" :class="{ selected: appearance.theme === 'dark' }" type="button" :aria-pressed="appearance.theme === 'dark'" @click="appearance.theme = 'dark'">
                   <span class="theme-swatch dark-swatch"><i></i><i></i><i></i></span><span>{{ t('m.a6b75d068032') }}</span>
                 </button>
                 <button class="theme-option" :class="{ selected: appearance.theme === 'system' }" type="button" :aria-pressed="appearance.theme === 'system'" @click="appearance.theme = 'system'">

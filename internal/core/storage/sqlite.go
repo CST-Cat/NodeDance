@@ -87,9 +87,6 @@ func Open(ctx context.Context, directory string) (*Store, error) {
 	if _, err := db.ExecContext(ctx, `PRAGMA journal_mode=WAL`); err != nil {
 		return fail(fmt.Errorf("enable sqlite WAL: %w", err))
 	}
-	if err := expandMonitoringConstraints(ctx, db); err != nil {
-		return fail(err)
-	}
 	if err := initializeCurrentSchema(ctx, db); err != nil {
 		return fail(err)
 	}

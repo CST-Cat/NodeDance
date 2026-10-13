@@ -1,6 +1,6 @@
 import { computed, inject, type InjectionKey, type Ref } from 'vue'
 
-const viewScreens = ['guest', 'guest-settings', 'setup', 'login', 'settings', 'nodes', 'discovery', 'agent-enrollment', 'alerts', 'operations', 'updates', 'host-management'] as const
+const viewScreens = ['guest', 'guest-settings', 'setup', 'login', 'settings', 'nodes', 'discovery', 'agent-enrollment', 'alerts', 'operations', 'updates', 'feeds', 'host-management'] as const
 export type ViewScreen = typeof viewScreens[number]
 export interface ViewRoute { screen: ViewScreen; nodeId?: string; section?: string; tab?: string; filePath?: string }
 export interface ViewNavigation {

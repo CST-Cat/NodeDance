@@ -110,7 +110,7 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, current 
 		return
 	}
 	if request.TargetKind == protocol.TerminalTargetHost && request.ContainerID != "" ||
-		request.TargetKind == protocol.TerminalTargetContainer && !validTerminalContainerID(request.ContainerID) {
+		request.TargetKind == protocol.TerminalTargetContainer && !protocol.IsFullContainerID(request.ContainerID) {
 		http.Error(w, "invalid terminal target", http.StatusBadRequest)
 		return
 	}
@@ -182,18 +182,6 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, current 
 
 var errTerminalLimit = errors.New("terminal concurrency limit reached")
 var errInvalidTerminalFrame = errors.New("invalid terminal browser frame")
-
-func validTerminalContainerID(value string) bool {
-	if len(value) != 64 {
-		return false
-	}
-	for _, character := range value {
-		if !(character >= '0' && character <= '9' || character >= 'a' && character <= 'f') {
-			return false
-		}
-	}
-	return true
-}
 
 func validTerminalStreamID(value string) bool {
 	return protocol.ValidateTerminalFrame(protocol.TerminalFrame{StreamID: value, Action: protocol.TerminalActionClose}, false) == nil
@@ -566,9 +554,7 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request,
 				return
 			}
 			var frame protocol.TerminalFrame
-			decoder := json.NewDecoder(strings.NewReader(string(raw)))
-			decoder.DisallowUnknownFields()
-			if decoder.Decode(&frame) != nil || protocol.ValidateTerminalFrame(frame, false) != nil || frame.StreamID != stream.streamID || (frame.Action != protocol.TerminalActionInput && frame.Action != protocol.TerminalActionResize && frame.Action != protocol.TerminalActionClose) {
+			if decodeAgentPayloadLimit(raw, &frame, terminalBrowserReadMax) != nil || protocol.ValidateTerminalFrame(frame, false) != nil || frame.StreamID != stream.streamID || (frame.Action != protocol.TerminalActionInput && frame.Action != protocol.TerminalActionResize && frame.Action != protocol.TerminalActionClose) {
 				readDone <- errInvalidTerminalFrame
 				return
 			}

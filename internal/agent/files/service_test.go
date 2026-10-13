@@ -13,6 +13,51 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
+func TestRejectedFileRootDoesNotLeakDescriptors(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	for range 8 {
+		service, err := New(root, protocol.DefaultFileLimit, outside)
+		if err == nil {
+			service.Close()
+			t.Fatal("protected path outside the selected root was accepted")
+		}
+	}
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		target, err := os.Readlink(filepath.Join("/proc/self/fd", entry.Name()))
+		if err == nil && target == root {
+			t.Errorf("rejected file service leaked descriptor %s", entry.Name())
+		}
+	}
+}
+
+func TestClosedFileServiceCannotReopenItsRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "kept.txt"), []byte("kept"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	service, err := New(root, protocol.DefaultFileLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.ReadText("/kept.txt"); err == nil {
+		t.Fatal("closed file service reopened a read")
+	}
+	if err := service.Mkdir("/created"); err == nil {
+		t.Fatal("closed file service reopened a mutation")
+	}
+	if _, err := os.Stat(filepath.Join(root, "created")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("closed service modified the fixture: %v", err)
+	}
+}
+
 func TestRootServiceProvidesHostFilesAndProtectsSpecialPaths(t *testing.T) {
 	stateDir := filepath.Join(t.TempDir(), "agent-state")
 	if err := os.Mkdir(stateDir, 0o700); err != nil {
@@ -188,7 +233,7 @@ func TestRootServiceFailsClosedDuringProtectedSymlinkReplacement(t *testing.T) {
 	}
 }
 
-func TestConfiguredRootRemainsConfinedByOsRoot(t *testing.T) {
+func TestConfiguredRootRemainsConfinedByOpenat2(t *testing.T) {
 	fileRoot := filepath.Join(t.TempDir(), "allowed")
 	if err := os.Mkdir(fileRoot, 0o700); err != nil {
 		t.Fatal(err)
@@ -209,7 +254,7 @@ func TestConfiguredRootRemainsConfinedByOsRoot(t *testing.T) {
 		t.Fatalf("list configured root: %v", err)
 	}
 	if _, _, err := service.ReadText("/escape/secret.txt"); err == nil {
-		t.Fatal("configured file root followed a symlink outside its os.Root boundary")
+		t.Fatal("configured file root followed a symlink outside its openat2 boundary")
 	}
 	if _, err := service.Stat("/../../etc/passwd"); !errors.Is(err, ErrInvalidPath) {
 		t.Fatalf("configured file root accepted traversal: %v", err)

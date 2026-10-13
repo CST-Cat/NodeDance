@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -153,8 +154,8 @@ func (s Store) query(ctx context.Context, nodeID, resolution string, from, to ti
 		return Response{}, ErrInvalidQuery
 	}
 	from, to = from.UTC(), to.UTC()
-	fromBucket := ceilBucket(from.Unix(), step)
-	toBucketExclusive := ceilBucket(to.Unix(), step)
+	fromBucket := ceilBucket(from, step)
+	toBucketExclusive := ceilBucket(to, step)
 	filterSQL := ""
 	filterArgs := []any{}
 	if len(selected) > 0 {
@@ -203,13 +204,7 @@ func (s Store) query(ctx context.Context, nodeID, resolution string, from, to ti
 		keys = append(keys, key)
 	}
 	// Stable output simplifies the client and acceptance evidence.
-	for i := 0; i < len(keys); i++ {
-		for j := i + 1; j < len(keys); j++ {
-			if keys[j] < keys[i] {
-				keys[i], keys[j] = keys[j], keys[i]
-			}
-		}
-	}
+	sort.Strings(keys)
 	out := make([]Series, 0, len(keys))
 	for _, key := range keys {
 		out = append(out, Series{Key: key, Points: series[key]})
@@ -288,9 +283,11 @@ func ValidKey(key string) bool {
 
 func finite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
 
-func ceilBucket(unix, step int64) int64 {
-	if unix%step == 0 {
-		return unix
+func ceilBucket(at time.Time, step int64) int64 {
+	interval := time.Duration(step) * time.Second
+	bucket := at.Truncate(interval)
+	if !bucket.Equal(at) {
+		bucket = bucket.Add(interval)
 	}
-	return (unix/step + 1) * step
+	return bucket.Unix()
 }

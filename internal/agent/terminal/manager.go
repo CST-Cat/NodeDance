@@ -103,9 +103,9 @@ func (m *Manager) Handle(ctx context.Context, frame protocol.TerminalFrame, emit
 		}
 		current.mu.Lock()
 		endpoint := current.endpoint
+		current.mu.Unlock()
 		if endpoint != nil {
 			_, err := endpoint.Write(frame.Data)
-			current.mu.Unlock()
 			if err != nil {
 				m.close(current, true)
 				return errors.New("write terminal input failed")
@@ -113,7 +113,6 @@ func (m *Manager) Handle(ctx context.Context, frame protocol.TerminalFrame, emit
 			current.touch()
 			return nil
 		}
-		current.mu.Unlock()
 		return errors.New("terminal session is still opening")
 	case protocol.TerminalActionResize:
 		current := m.lookup(frame.StreamID)
@@ -158,6 +157,12 @@ func (m *Manager) open(parent context.Context, frame protocol.TerminalFrame, emi
 	current := &session{id: frame.StreamID, ctx: ctx, cancel: cancel, emit: emit, activity: make(chan struct{}, 1), closed: make(chan struct{}), readerDone: make(chan struct{})}
 	m.sessions[current.id] = current
 	m.mu.Unlock()
+	readerStarted := false
+	defer func() {
+		if !readerStarted {
+			close(current.readerDone)
+		}
+	}()
 
 	endpoint, err := m.provider.Open(ctx, frame)
 	if err != nil {
@@ -165,20 +170,20 @@ func (m *Manager) open(parent context.Context, frame protocol.TerminalFrame, emi
 		cancel()
 		return err
 	}
-	m.mu.Lock()
-	stillActive := m.sessions[current.id] == current
-	m.mu.Unlock()
-	if !stillActive {
-		_ = endpoint.Close()
-		return context.Canceled
-	}
 	current.mu.Lock()
+	if ctx.Err() != nil {
+		current.mu.Unlock()
+		_ = endpoint.Close()
+		m.close(current, false)
+		return ctx.Err()
+	}
 	current.endpoint = endpoint
 	current.mu.Unlock()
 	if err := emit(protocol.TerminalFrame{StreamID: current.id, Action: protocol.TerminalActionReady}); err != nil {
 		m.close(current, false)
 		return errors.New("terminal ready frame could not be queued")
 	}
+	readerStarted = true
 	go func() {
 		defer close(current.readerDone)
 		m.readOutput(current)
@@ -231,6 +236,7 @@ func (m *Manager) expireIdle(current *session) {
 	for {
 		select {
 		case <-current.ctx.Done():
+			m.close(current, false)
 			return
 		case <-current.activity:
 			if !timer.Stop() {

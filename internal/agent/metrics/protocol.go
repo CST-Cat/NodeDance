@@ -80,30 +80,39 @@ func boundProtocolDetails(snapshot protocol.MetricsSnapshot) protocol.MetricsSna
 	}
 
 	originalInterfaces := snapshot.Network.Interfaces
-	originalMounts := snapshot.Disk.Mounts
-	low, high := 0, len(originalMounts)
+	originalDisk := snapshot.Disk
+	// Include truncation metadata and the empty-disk state in every size
+	// check, not just after selecting a prefix that barely fits.
+	setMounts := func(count int) {
+		snapshot.Disk = originalDisk
+		snapshot.Disk.Mounts = originalDisk.Mounts[:count]
+		if count != len(originalDisk.Mounts) {
+			snapshot.Disk.DetailsTruncated = true
+			snapshot.Disk.TruncationReason = "metrics_payload_limit"
+			if count == 0 {
+				snapshot.Disk.Status = protocol.MetricUnknown
+				snapshot.Disk.Reason = "metrics_payload_limit"
+			}
+		}
+	}
+	low, high := 0, len(originalDisk.Mounts)
 	for low < high {
 		mid := (low + high + 1) / 2
-		snapshot.Disk.Mounts = originalMounts[:mid]
+		setMounts(mid)
 		if metricsPayloadSize(snapshot) <= protocol.MaxMetricsPayloadBytes {
 			low = mid
 		} else {
 			high = mid - 1
 		}
 	}
-	snapshot.Disk.Mounts = originalMounts[:low]
-	if low != len(originalMounts) {
-		snapshot.Disk.DetailsTruncated = true
-		snapshot.Disk.TruncationReason = "metrics_payload_limit"
-	}
+	setMounts(low)
 	if metricsPayloadSize(snapshot) <= protocol.MaxMetricsPayloadBytes {
 		return snapshot
 	}
 
-	snapshot.Disk.Mounts = nil
-	if len(originalMounts) > 0 {
-		snapshot.Disk.DetailsTruncated = true
-		snapshot.Disk.TruncationReason = "metrics_payload_limit"
+	if len(originalInterfaces) > 0 {
+		snapshot.Network.DetailsTruncated = true
+		snapshot.Network.TruncationReason = "metrics_payload_limit"
 	}
 	low, high = 0, len(originalInterfaces)
 	for low < high {
@@ -116,10 +125,6 @@ func boundProtocolDetails(snapshot protocol.MetricsSnapshot) protocol.MetricsSna
 		}
 	}
 	snapshot.Network.Interfaces = originalInterfaces[:low]
-	if low != len(originalInterfaces) {
-		snapshot.Network.DetailsTruncated = true
-		snapshot.Network.TruncationReason = "metrics_payload_limit"
-	}
 	return snapshot
 }
 

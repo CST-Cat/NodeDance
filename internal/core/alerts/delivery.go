@@ -35,6 +35,12 @@ func (s *Sender) Send(ctx context.Context, channel Channel, secret, payload stri
 	if s == nil {
 		s = NewSender()
 	}
+	timeout := s.Timeout
+	if timeout <= 0 {
+		timeout = 8 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	switch channel.Kind {
 	case ChannelWebhook:
 		return s.sendWebhook(ctx, channel.Config.WebhookURL, secret, payload)
@@ -87,6 +93,8 @@ func (s *Sender) sendSMTP(ctx context.Context, config ChannelConfig, secret, pay
 		return errors.New("SMTP connection failed")
 	}
 	defer conn.Close()
+	stopClose := context.AfterFunc(dialCtx, func() { _ = conn.Close() })
+	defer stopClose()
 	deadline := time.Now().Add(timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
@@ -175,6 +183,25 @@ func (s *Sender) smtpTLSConfig(serverName string) *tls.Config {
 }
 
 func smtpNotificationText(payload string) (string, error) {
+	var feed struct {
+		Event string `json:"event"`
+		Name  string `json:"feedName"`
+		Items []struct {
+			Title string `json:"title"`
+			URL   string `json:"url"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(payload), &feed); err != nil {
+		return "", err
+	}
+	if feed.Event == "feed_entries" || feed.Event == "feed_digest" {
+		lines := []string{"Subscription: " + escapeSMTPText(feed.Name)}
+		for _, item := range feed.Items {
+			lines = append(lines, escapeSMTPText(item.Title), escapeSMTPText(item.URL))
+		}
+		return strings.Join(lines, "\r\n"), nil
+	}
+
 	var notification Notification
 	if err := json.Unmarshal([]byte(payload), &notification); err != nil {
 		return "", err

@@ -347,11 +347,11 @@ func TestSystemdRootOnlyUnitAndServiceIdentity(t *testing.T) {
 	if !isNodeDanceSystemdUnit(rootDisabled) {
 		t.Fatal("root unit with file access disabled is not recognized as NodeDance-managed")
 	}
-	if got, err := resolveSystemdServiceName("", "/unused"); err != nil || got != "root" {
+	if got, err := resolveSystemdServiceName(""); err != nil || got != "root" {
 		t.Fatalf("omitted systemd identity did not default to root: user=%q err=%v", got, err)
 	}
 	for _, user := range []string{"nobody", "systemd", "toor"} {
-		if _, err := resolveSystemdServiceName(user, "/unused"); err == nil || !strings.Contains(err.Error(), "only supports the root account") {
+		if _, err := resolveSystemdServiceName(user); err == nil || !strings.Contains(err.Error(), "only supports the root account") {
 			t.Errorf("non-root service identity %q was accepted: %v", user, err)
 		}
 	}

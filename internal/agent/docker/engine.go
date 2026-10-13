@@ -512,10 +512,3 @@ func parseDockerPort(value string) (string, bool) {
 	}
 	return strconv.FormatUint(n, 10), true
 }
-
-func canonicalIP(address netip.Addr) string {
-	if !address.IsValid() {
-		return ""
-	}
-	return address.String()
-}

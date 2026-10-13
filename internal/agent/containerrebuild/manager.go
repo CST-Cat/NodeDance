@@ -123,6 +123,8 @@ func (m *Manager) ExecuteObserved(ctx context.Context, request Request, onRunnin
 }
 
 func (m *Manager) executeNew(ctx context.Context, request Request) (taskjournal.Snapshot, error) {
+	ctx, operationCancel := context.WithTimeout(ctx, m.opts.OperationTimeout)
+	defer operationCancel()
 	inspectCtx, cancel := context.WithTimeout(ctx, m.opts.VerifyTimeout)
 	current, err := m.engine.Inspect(inspectCtx, request.ContainerID)
 	cancel()
@@ -167,7 +169,11 @@ func (m *Manager) executeNew(ctx context.Context, request Request) (taskjournal.
 		}
 		return m.rollback(ctx, record, sanitizedCode(err))
 	}
-	return m.finishSucceeded(ctx, request.TaskID, "running", record.NewID)
+	state := "stopped"
+	if record.PreviousRunning {
+		state = "running"
+	}
+	return m.finishSucceeded(ctx, request.TaskID, state, record.NewID)
 }
 
 func (m *Manager) runForward(ctx context.Context, record *Record, initial Container) error {
@@ -298,8 +304,11 @@ func (m *Manager) runForward(ctx context.Context, record *Record, initial Contai
 				return err
 			}
 			newID, createErr := m.engine.Create(ctx, record.OriginalName, config, hostConfig, endpoints)
-			if createErr != nil || newID == "" {
+			if createErr != nil {
 				return createErr
+			}
+			if !protocol.IsFullContainerID(newID) {
+				return ErrRecordConflict
 			}
 			record.NewID = newID
 		}
@@ -361,16 +370,22 @@ func (m *Manager) runForward(ctx context.Context, record *Record, initial Contai
 }
 
 func (m *Manager) rollback(ctx context.Context, record Record, code string) (taskjournal.Snapshot, error) {
+	ctx, rollbackCancel := context.WithTimeout(context.WithoutCancel(ctx), m.opts.OperationTimeout)
+	defer rollbackCancel()
 	if record.Outcome == "succeeded" {
-		return m.finishSucceeded(ctx, record.TaskID, "running", record.NewID)
+		state := "stopped"
+		if record.PreviousRunning {
+			state = "running"
+		}
+		return m.finishSucceeded(ctx, record.TaskID, state, record.NewID)
 	}
 	record.Phase = PhaseRollingBack
 	record.ErrorCode = boundedCode(code)
-	if err := m.store.Save(context.WithoutCancel(ctx), record); err != nil {
+	if err := m.store.Save(ctx, record); err != nil {
 		return m.markUnknown(ctx, record.TaskID, err)
 	}
 	if record.NewID == "" {
-		if candidate, err := m.engine.Inspect(context.WithoutCancel(ctx), record.OriginalName); err == nil {
+		if candidate, err := m.engine.Inspect(ctx, record.OriginalName); err == nil {
 			if candidate.Config == nil || candidate.Config.Labels[markerTaskLabel] != record.TaskID {
 				return m.markUnknown(ctx, record.TaskID, ErrRecordConflict)
 			}
@@ -378,32 +393,32 @@ func (m *Manager) rollback(ctx context.Context, record Record, code string) (tas
 		}
 	}
 	if record.NewID != "" {
-		newContainer, err := m.engine.Inspect(context.WithoutCancel(ctx), record.NewID)
+		newContainer, err := m.engine.Inspect(ctx, record.NewID)
 		if err == nil {
 			if newContainer.Config == nil || newContainer.Config.Labels[markerTaskLabel] != record.TaskID {
 				return m.markUnknown(ctx, record.TaskID, ErrRecordConflict)
 			}
 			if newContainer.Running || newContainer.Paused || newContainer.Restarting {
-				if err := m.engine.Stop(context.WithoutCancel(ctx), record.NewID, maxStopTimeout); err != nil {
+				if err := m.engine.Stop(ctx, record.NewID, maxStopTimeout); err != nil {
 					return m.markUnknown(ctx, record.TaskID, err)
 				}
 			}
-			if err := m.engine.Remove(context.WithoutCancel(ctx), record.NewID); err != nil {
+			if err := m.engine.Remove(ctx, record.NewID); err != nil {
 				return m.markUnknown(ctx, record.TaskID, err)
 			}
 		} else if !isNotFound(err) {
 			return m.markUnknown(ctx, record.TaskID, err)
 		}
 	}
-	old, err := m.engine.Inspect(context.WithoutCancel(ctx), record.OriginalID)
+	old, err := m.engine.Inspect(ctx, record.OriginalID)
 	if err != nil || old.ID != record.OriginalID {
 		return m.markUnknown(ctx, record.TaskID, ErrRecordConflict)
 	}
 	if strings.TrimPrefix(old.Name, "/") == record.BackupName {
-		if err := m.reconnectNetworks(context.WithoutCancel(ctx), record.OriginalID, record.Networks); err != nil {
+		if err := m.reconnectNetworks(ctx, record.OriginalID, record.Networks); err != nil {
 			return m.markUnknown(ctx, record.TaskID, err)
 		}
-		if err := m.engine.Rename(context.WithoutCancel(ctx), record.OriginalID, record.OriginalName); err != nil {
+		if err := m.engine.Rename(ctx, record.OriginalID, record.OriginalName); err != nil {
 			return m.markUnknown(ctx, record.TaskID, err)
 		}
 	} else if strings.TrimPrefix(old.Name, "/") != record.OriginalName {
@@ -413,25 +428,25 @@ func (m *Manager) rollback(ctx context.Context, record Record, code string) (tas
 	if err := json.Unmarshal([]byte(record.RestartPolicy), &policy); err != nil {
 		return m.markUnknown(ctx, record.TaskID, ErrRecordConflict)
 	}
-	if err := m.engine.UpdateRestartPolicy(context.WithoutCancel(ctx), record.OriginalID, policy); err != nil {
+	if err := m.engine.UpdateRestartPolicy(ctx, record.OriginalID, policy); err != nil {
 		return m.markUnknown(ctx, record.TaskID, err)
 	}
-	old, err = m.engine.Inspect(context.WithoutCancel(ctx), record.OriginalID)
+	old, err = m.engine.Inspect(ctx, record.OriginalID)
 	if err != nil {
 		return m.markUnknown(ctx, record.TaskID, err)
 	}
 	if record.PreviousRunning && !old.Running {
-		if err := m.engine.Start(context.WithoutCancel(ctx), record.OriginalID); err != nil {
+		if err := m.engine.Start(ctx, record.OriginalID); err != nil {
 			return m.markUnknown(ctx, record.TaskID, err)
 		}
 	} else if !record.PreviousRunning && old.Running {
-		if err := m.engine.Stop(context.WithoutCancel(ctx), record.OriginalID, maxStopTimeout); err != nil {
+		if err := m.engine.Stop(ctx, record.OriginalID, maxStopTimeout); err != nil {
 			return m.markUnknown(ctx, record.TaskID, err)
 		}
 	}
 	record.Phase, record.Outcome = PhaseRolledBack, "failed"
 	record.ErrorCode = boundedCode(code)
-	if err := m.store.Save(context.WithoutCancel(ctx), record); err != nil {
+	if err := m.store.Save(ctx, record); err != nil {
 		return m.markUnknown(ctx, record.TaskID, err)
 	}
 	return m.finishRestoredFailure(ctx, record.TaskID, record.ErrorCode, record.OriginalID)
@@ -1140,24 +1155,4 @@ func firstNonEmpty(values ...string) string {
 
 func isNotFound(err error) bool {
 	return err != nil && errdefs.IsNotFound(err)
-}
-
-func expectedBinding(spec protocol.RebuildSpec, current Container) (network.PortMap, error) {
-	if current.Config == nil || current.HostConfig == nil {
-		return nil, ErrUnsupportedConfiguration
-	}
-	return buildPortMap(current.HostConfig.PortBindings, current.Config.ExposedPorts, spec)
-}
-
-func equalNetworkSettings(a, b map[string]*network.EndpointSettings) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for key, value := range a {
-		other, ok := b[key]
-		if !ok || value == nil || other == nil || strings.Join(value.Aliases, "\x00") != strings.Join(other.Aliases, "\x00") {
-			return false
-		}
-	}
-	return true
 }

@@ -862,7 +862,7 @@ func ValidateTaskCancelRequest(envelope Envelope, request TaskCancelRequest, nod
 	if envelope.Version != CurrentVersion || envelope.Type != TypeTaskCancelRequest || envelope.Generation != generation ||
 		generation == 0 || envelope.Sequence != 0 || envelope.RequestID == "" || envelope.RequestID != request.TaskID ||
 		!validNodeIdentity(request.TaskID) || request.JournalID != journalID ||
-		!validNodeIdentity(nodeID) || !validJournalIdentity(journalID) {
+		!validNodeIdentity(nodeID) || !validJournalID(journalID) {
 		return ErrInvalidTaskMessage
 	}
 	return nil
@@ -878,14 +878,6 @@ func validNodeIdentity(value string) bool {
 		}
 	}
 	return true
-}
-
-func validJournalIdentity(value string) bool {
-	if len(value) != 64 {
-		return false
-	}
-	decoded, err := hex.DecodeString(value)
-	return err == nil && len(decoded) == sha256.Size && hex.EncodeToString(decoded) == value
 }
 
 type TaskEvidence struct {
@@ -1167,7 +1159,7 @@ func validComposeRecoveryResult(result TaskResult) bool {
 	case "recovery_required":
 		switch result.ResourceRevision {
 		case "project_identity_conflict", "config_restore_failed", "saved_config_invalid", "unexpected_project_containers",
-			"service_recovery_failed", "service_state_recovery_failed", "service_verification_failed", "deployment_result_unknown":
+			"service_recovery_failed", "service_state_recovery_failed", "service_verification_failed", "deployment_result_unknown", "baseline_cleanup_failed":
 			return true
 		}
 	case "deployment_verified":
