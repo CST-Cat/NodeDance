@@ -10,7 +10,7 @@ const (
 	// MinimumVersion is the oldest wire version accepted by Core.
 	MinimumVersion = 1
 	// MaxMessageBytes bounds every Agent WebSocket frame before JSON decoding.
-	MaxMessageBytes = 1 << 20
+	MaxMessageBytes = 16 << 20
 	// HeartbeatInterval is the Agent's default heartbeat period.
 	HeartbeatIntervalSeconds = 5
 	OfflineAfterSeconds      = 30

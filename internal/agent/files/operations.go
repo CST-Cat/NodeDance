@@ -1,13 +1,11 @@
 package files
 
 import (
-	"archive/zip"
 	"context"
 	"errors"
 	"io"
 	"os"
 	"path"
-	"sort"
 	"strings"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -64,18 +62,7 @@ func (s *Service) ExecuteExtended(ctx context.Context, action protocol.TaskActio
 				return ErrInvalidPath
 			}
 		}
-		if err := s.writeNew(ctx, stage, 0600, func(out io.Writer) error {
-			archive := zip.NewWriter(out)
-			count := 0
-			var total int64
-			for _, source := range spec.Paths {
-				if err := s.zipTree(ctx, archive, source, path.Base(source), 0, &count, &total); err != nil {
-					_ = archive.Close()
-					return err
-				}
-			}
-			return archive.Close()
-		}); err != nil {
+		if err := s.createArchive(ctx, stage, spec); err != nil {
 			return err
 		}
 		if err := ctx.Err(); err != nil {
@@ -91,118 +78,8 @@ func (s *Service) ExecuteExtended(ctx context.Context, action protocol.TaskActio
 			return err
 		}
 		defer source.Close()
-		archive, err := zip.NewReader(source, entry.Size)
-		if err != nil {
-			return ErrNotText
-		}
-		if len(archive.File) > maxWalkEntries {
-			return ErrLimitExceeded
-		}
-		if err := s.Mkdir(stage); err != nil {
+		if err := s.extractArchive(ctx, source, entry.Size, stage, target); err != nil {
 			return err
-		}
-		tops := map[string]bool{}
-		seen := map[string]bool{}
-		var total uint64
-		// Validate the complete manifest before creating any extracted file.
-		for _, file := range archive.File {
-			name := strings.TrimSuffix(file.Name, "/")
-			if name == "" || strings.ContainsAny(name, "\\\x00") || strings.HasPrefix(name, "/") || path.Clean(name) != name || file.Mode()&os.ModeSymlink != 0 || file.Mode()&os.ModeType != 0 && !file.FileInfo().IsDir() {
-				return ErrInvalidPath
-			}
-			for _, part := range strings.Split(name, "/") {
-				if part == ".." || part == "." || part == "" {
-					return ErrInvalidPath
-				}
-			}
-			if len(strings.Split(name, "/")) > maxWalkDepth || seen[name] {
-				return ErrInvalidPath
-			}
-			seen[name] = true
-			if _, _, err := s.normalize(path.Join(target, name)); err != nil {
-				return err
-			}
-			if file.UncompressedSize64 > uint64(s.limit) || total > uint64(s.limit)-file.UncompressedSize64 {
-				return ErrLimitExceeded
-			}
-			total += file.UncompressedSize64
-			tops[strings.Split(name, "/")[0]] = true
-		}
-		for top := range tops {
-			if _, err := s.Stat(path.Join(target, top)); err == nil {
-				return ErrExists
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-		}
-		for _, file := range archive.File {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			name := strings.TrimSuffix(file.Name, "/")
-			dest := path.Join(stage, name)
-			if err := s.ensureDirs(path.Dir(dest), stage); err != nil {
-				return err
-			}
-			if file.FileInfo().IsDir() {
-				if err := s.Mkdir(dest); err != nil && !errors.Is(err, os.ErrExist) {
-					return err
-				}
-				continue
-			}
-			input, err := file.Open()
-			if err != nil {
-				return err
-			}
-			err = s.writeNew(ctx, dest, file.Mode().Perm(), func(out io.Writer) error {
-				n, err := io.Copy(out, io.LimitReader(input, int64(file.UncompressedSize64)+1))
-				if err == nil && n != int64(file.UncompressedSize64) {
-					return ErrLimitExceeded
-				}
-				return err
-			})
-			_ = input.Close()
-			if err != nil {
-				return err
-			}
-		}
-		// Apply explicit directory permissions after children are written.
-		// Restrictive source modes must not be widened by default Mkdir modes.
-		directories := make([]*zip.File, 0)
-		for _, file := range archive.File {
-			if file.FileInfo().IsDir() {
-				directories = append(directories, file)
-			}
-		}
-		sort.Slice(directories, func(i, j int) bool {
-			return strings.Count(directories[i].Name, "/") > strings.Count(directories[j].Name, "/")
-		})
-		for _, file := range directories {
-			if err := s.directoryMode(path.Join(stage, strings.TrimSuffix(file.Name, "/")), file.Mode()); err != nil {
-				return err
-			}
-		}
-		names := make([]string, 0, len(tops))
-		for name := range tops {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		moved := 0
-		for _, name := range names {
-			err := ctx.Err()
-			if err == nil {
-				err = s.Rename(path.Join(stage, name), path.Join(target, name))
-			}
-			if err != nil {
-				if moved > 0 {
-					return ErrMutationResultUnknown
-				}
-				return err
-			}
-			moved++
-		}
-		if err := s.Delete(stage, true); err != nil {
-			return ErrMutationResultUnknown
 		}
 		committed = true
 	default:
@@ -322,7 +199,7 @@ func (s *Service) copyTree(ctx context.Context, source, target string, depth int
 		return err
 	})
 }
-func (s *Service) zipTree(ctx context.Context, archive *zip.Writer, source, relative string, depth int, count *int, total *int64) error {
+func (s *Service) archiveTree(ctx context.Context, add func(os.FileInfo, string) (io.Writer, error), source, relative string, depth int, count *int, total *int64) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -341,16 +218,7 @@ func (s *Service) zipTree(ctx context.Context, archive *zip.Writer, source, rela
 	if !info.IsDir() && !info.Mode().IsRegular() {
 		return ErrInvalidPath
 	}
-	header, err := zip.FileInfoHeader(info)
-	if err != nil {
-		return err
-	}
-	header.Name = relative
-	header.Method = zip.Deflate
-	if info.IsDir() {
-		header.Name += "/"
-	}
-	writer, err := archive.CreateHeader(header)
+	writer, err := add(info, relative)
 	if err != nil {
 		return err
 	}
@@ -366,7 +234,7 @@ func (s *Service) zipTree(ctx context.Context, archive *zip.Writer, source, rela
 				return err
 			}
 			for _, item := range items {
-				if err := s.zipTree(ctx, archive, path.Join(source, item.Name()), path.Join(relative, item.Name()), depth+1, count, total); err != nil {
+				if err := s.archiveTree(ctx, add, path.Join(source, item.Name()), path.Join(relative, item.Name()), depth+1, count, total); err != nil {
 					return err
 				}
 			}

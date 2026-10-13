@@ -129,17 +129,38 @@ func runOperationCatalog(ctx context.Context, args []string, lookup LookupEnv, s
 }
 
 func readValue(value string, stdin io.Reader) ([]byte, error) {
+	return readOperationValue(value, stdin, 4<<20)
+}
+func readOperationValue(value string, stdin io.Reader, limit int64) ([]byte, error) {
 	if value == "" {
 		return nil, nil
 	}
+	if limit <= 0 {
+		limit = 4 << 20
+	}
+	var input io.Reader
 	if value == "-" {
-		return io.ReadAll(io.LimitReader(stdin, 4*1024*1024+1))
+		input = stdin
+	} else if strings.HasPrefix(value, "@") {
+		file, err := os.Open(strings.TrimPrefix(value, "@"))
+		if err != nil {
+			return nil, err
+		}
+		defer file.Close()
+		input = file
+	} else {
+		input = strings.NewReader(value)
 	}
-	if strings.HasPrefix(value, "@") {
-		return os.ReadFile(strings.TrimPrefix(value, "@"))
+	data, err := io.ReadAll(io.LimitReader(input, limit+1))
+	if err != nil {
+		return nil, err
 	}
-	return []byte(value), nil
+	if int64(len(data)) > limit {
+		return nil, errors.New("input exceeds operation limit")
+	}
+	return data, nil
 }
+
 func decodeMap(value string, stdin io.Reader) (map[string]string, error) {
 	raw, err := readValue(value, stdin)
 	if err != nil {
@@ -207,29 +228,9 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 	if err != nil {
 		return fmt.Errorf("query: %w", err)
 	}
-	b, err := readValue(*body, stdin)
-	if err != nil {
-		return err
+	if deploymentMethod != nil && *deploymentMethod != "" && !agents.ValidDeploymentMethod(*deploymentMethod) {
+		return errors.New("deployment method must be native or docker")
 	}
-	if len(b) > 4*1024*1024 {
-		return errors.New("JSON body exceeds 4 MiB")
-	}
-	if deploymentMethod != nil && *deploymentMethod != "" {
-		if !agents.ValidDeploymentMethod(*deploymentMethod) {
-			return errors.New("deployment method must be native or docker")
-		}
-		var request map[string]json.RawMessage
-		if err := json.Unmarshal(b, &request); err != nil || request == nil {
-			return errors.New("Agent enrollment requires a JSON object body")
-		}
-		request["deploymentMethod"], _ = json.Marshal(*deploymentMethod)
-		b, _ = json.Marshal(request)
-	}
-	h, err := decodeMap(*headers, stdin)
-	if err != nil {
-		return fmt.Errorf("headers: %w", err)
-	}
-	in := control.Input{Params: p, Query: q, Body: b, IdempotencyKey: *key, FileVersion: *fileVersion, Headers: h}
 	client, err := connection.client()
 	if err != nil {
 		return err
@@ -250,6 +251,27 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 	if err != nil {
 		return err
 	}
+	b, err := readOperationValue(*body, stdin, o.MaxBodyBytes)
+	if err != nil {
+		return err
+	}
+	if deploymentMethod != nil && *deploymentMethod != "" {
+		if !agents.ValidDeploymentMethod(*deploymentMethod) {
+			return errors.New("deployment method must be native or docker")
+		}
+		var request map[string]json.RawMessage
+		if err := json.Unmarshal(b, &request); err != nil || request == nil {
+			return errors.New("Agent enrollment requires a JSON object body")
+		}
+		request["deploymentMethod"], _ = json.Marshal(*deploymentMethod)
+		b, _ = json.Marshal(request)
+	}
+	h, err := decodeMap(*headers, stdin)
+	if err != nil {
+		return fmt.Errorf("headers: %w", err)
+	}
+	in := control.Input{Params: p, Query: q, Body: b, IdempotencyKey: *key, FileVersion: *fileVersion, Headers: h}
+
 	if *input != "" && o.Transport != "upload" && o.Transport != "multipart" && !o.Duplex {
 		return errors.New("--input is supported only for uploads and terminal.connect")
 	}

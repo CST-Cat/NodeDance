@@ -42,3 +42,5 @@ Visitors cannot supply node IDs, metric keys or arbitrary time ranges to the pub
 Management components stop follow-up reads when they unmount, including grant creation/revocation completing after guest entry. 管理组件退出后停止后续读取；创建／撤销入网授权的迟到响应也不能在游客模式中触发私有列表请求。
 
 The full file manager is administrator-only, including file search, media preview and all mutations. Its disposal aborts reads and prevents follow-up private requests after guest entry. 完整文件管理器仅供管理员使用，游客不能获取搜索、预览或修改能力；进入游客后退出文件管理组件并停止后续请求。
+
+Expanded text editing and archive formats remain administrator-only through the same discovered Core file operation. Guest entry does not expose file data or controls.

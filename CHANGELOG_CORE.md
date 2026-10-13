@@ -4,11 +4,19 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.17]
+
+### English
+
+- Raise versioned UTF-8 file editing to 8 MiB with operation-derived terminal input/response limits and bounded text transport; support ZIP/TAR/TAR.GZ creation plus TAR.BZ2 extraction, and expose formats in VueFinder menus/dialogs. Replace recursive regex tokenization for large escaped JSON and retain full-size browser/CLI regressions.
 - Audit VueFinder integration: use discovered upload limits, align size filters and ZIP naming, keep upload queues progressing after item failures, preserve original edit versions across refresh, and support modal focus/full-screen keyboard controls. Expand isolated browser and file-envelope regressions.
 - Restore solid, theme-aware file preview/editor dialogs outside the application container; improve mobile dialog spacing and add real-browser opacity/contrast regression checks.
 
 ### 简体中文
 
+- 将版本化 UTF-8 文件编辑提高到 8 MiB，终端输入／响应限制跟随契约，文本传输保持有界；支持创建 ZIP／TAR／TAR.GZ 及解压 TAR.BZ2，并同步 VueFinder 菜单／弹窗。替换大正文会栈溢出的 JSON 正则扫描，保留满上限浏览器／CLI 回归。
 - 完整核查 VueFinder 接入：上传上限跟随发现契约，统一大小过滤与 ZIP 命名，单项上传失败后继续队列，刷新目录仍保留编辑原版本，补齐弹窗焦点与全屏键盘操作；扩展隔离浏览器及文件控制消息回归。
 - 修复文件预览／编辑弹窗脱离应用容器后丢失主题、背景透明的问题；改善移动端弹窗留白，并增加真实浏览器不透明背景／文字对比度回归检查。
 

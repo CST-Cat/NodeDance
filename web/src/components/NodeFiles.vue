@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { computed, getCurrentInstance, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import VueFinderPlugin, { VueFinder } from 'vuefinder'
-import en from 'vuefinder/dist/locales/en.js'
-import zhCN from 'vuefinder/dist/locales/zhCN.js'
+import upstreamEn from 'vuefinder/dist/locales/en.js'
+import upstreamZhCN from 'vuefinder/dist/locales/zhCN.js'
 import 'vuefinder/dist/style.css'
+import enMessages from '../locales/en.json'
+import zhMessages from '../locales/zh-CN.json'
 import { useViewNavigation } from '../navigation'
 import { useVueFinder } from 'vuefinder'
 import { locale, t } from '../i18n'
 import { createFileManager, type FileObservation } from '../file-manager'
+const archivePrompt='Archive name. (.zip file will be created)'
+const en={...upstreamEn,[archivePrompt]:enMessages['files.archiveName']}
+const zhCN={...upstreamZhCN,[archivePrompt]:zhMessages['files.archiveName']}
 const app=getCurrentInstance()!.appContext.app
 if(!app.component('vue-finder'))app.use(VueFinderPlugin,{i18n:{en,zhCN}})
 const props=defineProps<{nodeId:string;nodeName:string}>()

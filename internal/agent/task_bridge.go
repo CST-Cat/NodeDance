@@ -256,7 +256,7 @@ func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, run
 				}
 			case protocol.TypeTaskDispatch:
 				var dispatch protocol.TaskDispatch
-				decodeErr := decodeSocketPayload(envelope.Payload, &dispatch)
+				decodeErr := decodeSocketPayloadLimit(envelope.Payload, &dispatch, protocol.MaxTextControlBytes)
 				clear(envelope.Payload)
 				if decodeErr != nil {
 					wipeRegistryCredentials(dispatch.RegistryAuth)

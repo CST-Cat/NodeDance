@@ -28,21 +28,22 @@ type Catalog struct {
 func Describe() Catalog { return Catalog{Version: 1, Operations: Operations()} }
 
 type Operation struct {
-	Name           string              `json:"name"`
-	Description    string              `json:"description"`
-	Method         string              `json:"method"`
-	Path           string              `json:"path"`
-	Parameters     []string            `json:"parameters"`
-	Query          []string            `json:"query"`
-	BodySchema     any                 `json:"bodySchema,omitempty"`
-	Transport      string              `json:"transport"` // json, download, upload, multipart, websocket, local
-	Idempotent     bool                `json:"requiresIdempotencyKey,omitempty"`
-	Headers        map[string]any      `json:"headers,omitempty"`
-	Upload         *UploadContract     `json:"upload,omitempty"`
-	MaxBodyBytes   int64               `json:"maxBodyBytes,omitempty"`
-	ResponseSchema any                 `json:"responseSchema,omitempty"`
-	Completion     *CompletionContract `json:"completion,omitempty"`
-	Duplex         bool                `json:"duplex,omitempty"`
+	Name             string              `json:"name"`
+	Description      string              `json:"description"`
+	Method           string              `json:"method"`
+	Path             string              `json:"path"`
+	Parameters       []string            `json:"parameters"`
+	Query            []string            `json:"query"`
+	BodySchema       any                 `json:"bodySchema,omitempty"`
+	Transport        string              `json:"transport"` // json, download, upload, multipart, websocket, local
+	Idempotent       bool                `json:"requiresIdempotencyKey,omitempty"`
+	Headers          map[string]any      `json:"headers,omitempty"`
+	Upload           *UploadContract     `json:"upload,omitempty"`
+	MaxResponseBytes int64               `json:"maxResponseBytes,omitempty"`
+	MaxBodyBytes     int64               `json:"maxBodyBytes,omitempty"`
+	ResponseSchema   any                 `json:"responseSchema,omitempty"`
+	Completion       *CompletionContract `json:"completion,omitempty"`
+	Duplex           bool                `json:"duplex,omitempty"`
 }
 
 type UploadContract struct {
@@ -296,7 +297,7 @@ func buildOperations() []Operation {
 		op("files.text", "GET", node+"/files/text", "Read text and version for optimistic writes", nil, "path"),
 		op("files.download", "GET", node+"/files/download", "Download to --output; never overwrite an existing file", nil, "path"),
 		op("files.upload", "PUT", node+"/files/upload", "Upload --input; optional --file-version protects existing content", nil, "path"),
-		op("files.action", "POST", node+"/files/tasks", "Task: mkdir, rename, delete or save_text; deletion needs exact confirmationPath", schema(protocol.FileActionRequest{})),
+		op("files.action", "POST", node+"/files/tasks", "File tasks including ZIP/TAR/TAR.GZ creation and ZIP/TAR/TAR.GZ/TAR.BZ2 extraction; deletion needs exact confirmationPath", schema(protocol.FileActionRequest{})),
 		op("terminal.open", "POST", node+"/terminals", "Open host/container shell; TUI is interactive, CLI uses JSONL frames with automatic streamId", schema(protocol.TerminalCreateRequest{})),
 		op("terminal.create", "POST", node+"/terminals", "Authorize host/container terminal; returns a single-use ticket", schema(protocol.TerminalCreateRequest{})),
 		op("terminal.resume", "POST", node+"/terminals/{streamId}/resume", "Reattach the same tmux session after transport loss", fields("")),

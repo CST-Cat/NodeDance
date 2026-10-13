@@ -35,6 +35,7 @@ export interface CoreOperation {
   headers?: Record<string, BodySchema & { description?: string }>
   upload?: { field?: string; contentType: string; maxBytes?: number }
   maxBodyBytes?: number
+  maxResponseBytes?: number
   responseSchema?: BodySchema
   completion?: { operation: string; params: Record<string,string>; query?: Record<string,string>; statusPath: string; terminalStatuses: string[]; successStatuses: string[] }
   duplex?: boolean
@@ -50,7 +51,21 @@ export function schemaHasSecrets(schema?: BodySchema): boolean {
 // typed contract fields and are written as JSON numbers, never quoted strings.
 export function parseExactJSON(raw: string): unknown {
   JSON.parse(raw) // Validate the complete grammar first.
-  const tokens=raw.match(/"(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null|[{}\[\]:,]/g) ?? []
+  // Scan strings iteratively: a repeated regex over multi-MiB escaped text
+  // can overflow the JS regex engine's stack even though JSON.parse accepts it.
+  const tokens:string[]=[]
+  for(let offset=0;offset<raw.length;){
+    const character=raw[offset]!
+    if(character.charCodeAt(0)<=32){offset++;continue}
+    const start=offset
+    if(character==='"'){offset++;while(offset<raw.length){const next=raw[offset++]!;if(next==='\\')offset++;else if(next==='"')break}}
+    else if(character==='-'||character>='0'&&character<='9'){offset++;while(offset<raw.length&&/[0-9eE+.\-]/.test(raw[offset]!))offset++}
+    else if(character==='t')offset+=4
+    else if(character==='f')offset+=5
+    else if(character==='n')offset+=4
+    else offset++
+    tokens.push(raw.slice(start,offset))
+  }
   let i=0
   const read=(): unknown=>{
     const token=tokens[i++]!

@@ -388,12 +388,16 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 		}
 		return result
 	}
-	raw, err := io.ReadAll(io.LimitReader(response.Body, 16*1024*1024+1))
+	responseLimit := int64(16 * 1024 * 1024)
+	if o.MaxResponseBytes > 0 {
+		responseLimit = o.MaxResponseBytes
+	}
+	raw, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
 	if err != nil {
 		return fail(err)
 	}
-	if len(raw) > 16*1024*1024 {
-		return fail(errors.New("response exceeds 16 MiB"))
+	if int64(len(raw)) > responseLimit {
+		return fail(errors.New("response exceeds operation limit"))
 	}
 	if len(bytes.TrimSpace(raw)) > 0 {
 		if !json.Valid(raw) {

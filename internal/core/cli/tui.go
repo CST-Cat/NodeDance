@@ -271,7 +271,7 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 				if e != nil {
 					return e
 				}
-				raw, e = readValue(value, strings.NewReader(""))
+				raw, e = readOperationValue(value, strings.NewReader(""), o.MaxBodyBytes)
 				if e != nil {
 					write(e.Error() + "\n")
 				} else {

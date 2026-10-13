@@ -162,6 +162,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  vuefinder@4.7.6: 3a346b8471154450302c0c20a09476a4d0d73a1c4bcc15b66ab43de45aca4570
+
 importers:
 
   .:
@@ -183,7 +186,7 @@ importers:
         version: 3.5.43(typescript@5.9.3)
       vuefinder:
         specifier: 4.7.6
-        version: 4.7.6(vue@3.5.43(typescript@5.9.3))
+        version: 4.7.6(patch_hash=3a346b8471154450302c0c20a09476a4d0d73a1c4bcc15b66ab43de45aca4570)(vue@3.5.43(typescript@5.9.3))
     devDependencies:
       '@types/node':
         specifier: 22.20.5
@@ -1676,7 +1679,7 @@ snapshots:
     optionalDependencies:
       typescript: 5.9.3
 
-  vuefinder@4.7.6(vue@3.5.43(typescript@5.9.3)):
+  vuefinder@4.7.6(patch_hash=3a346b8471154450302c0c20a09476a4d0d73a1c4bcc15b66ab43de45aca4570)(vue@3.5.43(typescript@5.9.3)):
     dependencies:
       '@codemirror/lang-css': 6.3.1
       '@codemirror/lang-html': 6.4.12

@@ -215,3 +215,5 @@ Web Operations records pending observations and uncertain request keys in tab se
 Guest display is configured with the discovered `guest.settings/configure/preview` operations in CLI and TUI. Anonymous `guest.entry/display` read only the enabled flag and explicitly published projection. See [configuration, limits and behavior](guest-display.md).
 
 File management supports pagination/search, no-overwrite copy/move, ZIP archive/extraction and versioned edits through the same discovered `files.*` and `tasks.*` operations in CLI/TUI. See [full file manager](file-manager.md) for fields, bounds and outcome semantics. 文件分页／搜索、复制移动、ZIP 压缩解压与版本化编辑由 CLI／TUI／Web 共用契约；字段、限制与结果语义见文件管理文档。
+
+File editing supports up to 8 MiB UTF-8 text. Body input and text response bounds come from the connected operation contract, including JSON escaping overhead; CLI and TUI share the same bounded input reader and executor. `files.action.format` offers ZIP/TAR/TAR.GZ creation, while extraction also supports TAR.BZ2; see [file management](file-manager.md).

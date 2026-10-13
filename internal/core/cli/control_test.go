@@ -167,3 +167,20 @@ func TestCLIUsesOperationAddedOnlyByConnectedCore(t *testing.T) {
 		}
 	}
 }
+
+func TestOperationInputExceedsOldFourMiBBound(t *testing.T) {
+	payload := strings.Repeat("x", 5<<20)
+	source := filepath.Join(t.TempDir(), "body.json")
+	if err := os.WriteFile(source, []byte(payload), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []string{"-", "@" + source} {
+		result, err := readOperationValue(input, strings.NewReader(payload), 6<<20)
+		if err != nil || string(result) != payload {
+			t.Fatal("shared terminal input truncated", len(result), err)
+		}
+		if _, err := readOperationValue(input, strings.NewReader(payload), 4<<20); err == nil {
+			t.Fatal("operation bound not enforced")
+		}
+	}
+}

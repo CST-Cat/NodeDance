@@ -36,7 +36,8 @@ const (
 	DefaultFileLimit    = int64(1 << 30)
 	MaxFileSize         = int64(16 << 30)
 	MaxFileEntries      = 100
-	MaxTextFileBytes    = 128 << 10
+	MaxTextFileBytes    = 8 << 20
+	MaxTextControlBytes = 12 << 20
 )
 
 var fileRequestID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
@@ -166,6 +167,9 @@ func ValidateFileResponse(envelope Envelope, generation uint64, response FileRes
 	if envelope.Version != CurrentVersion || envelope.Generation == 0 || envelope.Generation != generation || !fileRequestID.MatchString(envelope.RequestID) || envelope.Sequence == 0 {
 		return errors.New("file response envelope is invalid")
 	}
+	if len(envelope.Payload) > FileResponseLimit(response.Operation) {
+		return errors.New("file response exceeds operation bound")
+	}
 	if envelope.Type != TypeFileResponse || len(response.Message) > 256 || len(response.Entries) > MaxFileEntries || response.Size < 0 || len(response.Text) > base64.StdEncoding.EncodedLen(MaxTextFileBytes) {
 		return errors.New("file response is outside its bound")
 	}
@@ -228,4 +232,11 @@ func validFileDigest(value string) bool {
 		}
 	}
 	return true
+}
+
+func FileResponseLimit(operation string) int {
+	if operation == FileReadText {
+		return MaxTextControlBytes
+	}
+	return MaxFileControlBytes
 }

@@ -170,13 +170,13 @@ func (connection *agentConnection) closeFileTransfersWithError(reason error) {
 }
 
 func validateAgentFileFrame(connection *agentConnection, envelope protocol.Envelope) error {
-	if connection == nil || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
+	if connection == nil || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxTextControlBytes {
 		return errors.New("Agent file message is unavailable or too large")
 	}
 	switch envelope.Type {
 	case protocol.TypeFileResponse:
 		var response protocol.FileResponse
-		if err := decodeAgentPayload(envelope.Payload, &response); err != nil {
+		if err := decodeAgentPayloadLimit(envelope.Payload, &response, protocol.MaxTextControlBytes); err != nil {
 			return err
 		}
 		return protocol.ValidateFileResponse(envelope, connection.generation, response)
@@ -262,7 +262,7 @@ func (s *Server) closeAllFileTransfers(err error) {
 }
 
 func (s *Server) handleAgentFileMessage(connection *agentConnection, envelope protocol.Envelope) error {
-	if connection == nil || !connection.capabilityEnabled(protocol.CapabilityFiles) || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
+	if connection == nil || !connection.capabilityEnabled(protocol.CapabilityFiles) || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxTextControlBytes {
 		return errors.New("Agent file message is unavailable or too large")
 	}
 	transfer, tombstone := connection.findFileTransfer(envelope.RequestID)
@@ -277,7 +277,7 @@ func (s *Server) handleAgentFileMessage(connection *agentConnection, envelope pr
 	switch envelope.Type {
 	case protocol.TypeFileResponse:
 		var response protocol.FileResponse
-		if err := decodeAgentPayload(envelope.Payload, &response); err != nil || protocol.ValidateFileResponse(envelope, connection.generation, response) != nil {
+		if err := decodeAgentPayloadLimit(envelope.Payload, &response, protocol.MaxTextControlBytes); err != nil || protocol.ValidateFileResponse(envelope, connection.generation, response) != nil {
 			return errors.New("Agent file response is invalid")
 		}
 		operation = response.Operation

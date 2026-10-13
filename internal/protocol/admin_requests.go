@@ -30,6 +30,7 @@ type ComposeCreateRequest struct {
 }
 
 type FileActionRequest struct {
+	Format           string   `json:"format,omitempty"`
 	Paths            []string `json:"paths,omitempty"`
 	Action           string   `json:"action" request:"required"`
 	Path             string   `json:"path" request:"required"`

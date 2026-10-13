@@ -298,7 +298,7 @@ func (b *agentFileBridge) respond(ctx context.Context, id string, response proto
 		response.Message = "file operation failed"
 	}
 	payload, err := json.Marshal(response)
-	if err != nil || len(payload) > protocol.MaxFileControlBytes {
+	if err != nil || len(payload) > protocol.FileResponseLimit(response.Operation) {
 		return errors.New("Agent file response exceeds its bound")
 	}
 	envelope := protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeFileResponse, Generation: b.generation,

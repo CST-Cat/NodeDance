@@ -1458,5 +1458,6 @@
   "files.failed": "File operation failed: {0}",
   "files.observationLimit": "Resolve the pending file operations before submitting more work.",
   "files.notDirectory": "Upload target is not a directory.",
-  "files.reopen": "Reopen the file before saving to restore its original version."
+  "files.reopen": "Reopen the file before saving to restore its original version.",
+  "files.archiveName": "Archive name (.zip, .tar, .tar.gz or .tgz)"
 }

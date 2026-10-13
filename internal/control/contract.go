@@ -39,6 +39,10 @@ func describeTransport(o *Operation) {
 		h["minBytes"] = 8
 		h["maxBytes"] = 128
 	}
+	if o.Name == "files.text" {
+		o.MaxResponseBytes = 6*protocol.MaxTextFileBytes + 8192
+		o.ResponseSchema = map[string]any{"type": "object", "required": []string{"text", "version"}, "properties": map[string]any{"text": map[string]any{"type": "string", "maxBytes": protocol.MaxTextFileBytes}, "version": map[string]any{"type": "string"}}, "additionalProperties": true}
+	}
 	props := func() map[string]any {
 		if b, ok := o.BodySchema.(map[string]any); ok {
 			if p, ok := b["properties"].(map[string]any); ok {
@@ -97,6 +101,7 @@ func describeTransport(o *Operation) {
 		require("kind", "scopeType", "startsAt", "endsAt")
 	case "files.action":
 		field("action", map[string]any{"enum": []string{"mkdir", "rename", "move", "copy", "archive", "extract", "delete", "save_text"}})
+		field("format", map[string]any{"enum": []string{"zip", "tar", "tar.gz"}, "description": "Archive format; inferred from .zip/.tar/.tar.gz/.tgz filename when omitted"})
 		field("paths", map[string]any{"maxItems": 100, "items": map[string]any{"type": "string", "maxBytes": 4096}})
 		o.MaxBodyBytes = 6*protocol.MaxTextFileBytes + 8*1024
 		field("content", map[string]any{"maxBytes": protocol.MaxTextFileBytes})

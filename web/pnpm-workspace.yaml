@@ -3,3 +3,6 @@ minimumReleaseAgeExclude:
 
 allowBuilds:
   vue-demi: true
+
+patchedDependencies:
+  vuefinder@4.7.6: patches/vuefinder@4.7.6.patch

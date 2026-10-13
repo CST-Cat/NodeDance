@@ -1016,7 +1016,10 @@ func (s *Service) OpenDownload(virtual string) (*os.File, protocol.FileEntry, er
 }
 
 func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.FileEntry, error) {
-	if len(text) > protocol.MaxTextFileBytes || !utf8.ValidString(text) || strings.ContainsRune(text, '\x00') {
+	if len(text) > protocol.MaxTextFileBytes {
+		return protocol.FileEntry{}, ErrTextTooLarge
+	}
+	if !utf8.ValidString(text) || strings.ContainsRune(text, '\x00') {
 		return protocol.FileEntry{}, ErrNotText
 	}
 	if expectedVersion == "" {

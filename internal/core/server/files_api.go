@@ -158,7 +158,7 @@ func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID 
 		return protocol.FileResponse{}, errors.New("Agent returned an unexpected file frame")
 	}
 	var response protocol.FileResponse
-	if decodeAgentPayload(envelope.Payload, &response) != nil || response.Operation != request.Operation {
+	if decodeAgentPayloadLimit(envelope.Payload, &response, protocol.FileResponseLimit(request.Operation)) != nil || response.Operation != request.Operation {
 		return protocol.FileResponse{}, errors.New("Agent file response does not match request")
 	}
 	if response.Code != "" {

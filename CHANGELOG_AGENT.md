@@ -4,10 +4,18 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.12]
+
+### English
+
+- Add shared ZIP/TAR/TAR.GZ archive creation and ZIP/TAR/gzip/bzip2 extraction with complete manifest validation, link/special-file rejection, expansion bounds and directory modes; expand versioned text editing to 8 MiB.
 - Size file browse pages after version metadata is attached, and preserve basic directory permissions during copy and ZIP extraction. Add escaped long-path envelope and restrictive-directory regressions.
 
 ### 简体中文
 
+- 增加 ZIP／TAR／TAR.GZ 创建及 ZIP／TAR／gzip／bzip2 解压，共用完整清单检查、链接／特殊文件拒绝、展开上限与目录权限保留；版本化文本编辑提高到 8 MiB。
 - 附加版本信息后再限制目录分页消息大小；复制与 ZIP 解压保留目录基本权限，增加长路径转义消息与严格目录权限回归。
 
 ## [0.1.11]

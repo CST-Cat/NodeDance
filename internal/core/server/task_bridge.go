@@ -267,7 +267,7 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			dispatch.ContainerCreate = s.takeContainerCreateSpec(task.TaskID, task.NodeID, connection.generation, journalID, task.Intent.CreateSHA256)
 		}
 		payload, err := json.Marshal(dispatch)
-		if err != nil || len(payload) > protocol.MaxTaskPayloadBytes {
+		if err != nil || len(payload) > protocol.TaskDispatchLimit(dispatch.Intent.Action) {
 			clear(payload)
 			if dispatch.RegistryAuth != nil {
 				dispatch.RegistryAuth.Username, dispatch.RegistryAuth.Password = "", ""

@@ -19,6 +19,9 @@ import (
 )
 
 const fileTaskPayloadLifetime = 10 * time.Minute
+const maxPendingFileContentBytes = 64 << 20
+
+var errFileContentCapacity = errors.New("too many pending file edits")
 
 type pendingFileContent struct {
 	nodeID  string
@@ -43,7 +46,7 @@ func (s *Server) handleCreateFileTask(w http.ResponseWriter, r *http.Request, cu
 		return
 	}
 	var action protocol.TaskAction
-	if len(request.Paths) > 0 && request.Action != "archive" {
+	if (len(request.Paths) > 0 || request.Format != "") && request.Action != "archive" {
 		fileTaskBadRequest(w)
 		return
 	}
@@ -99,7 +102,7 @@ func (s *Server) handleCreateFileTask(w http.ResponseWriter, r *http.Request, cu
 		return
 	}
 	intent := protocol.TaskIntent{Action: action, ContainerID: protocol.FileTargetKey(request.Path)}
-	intent.File = &protocol.FileTaskSpec{Paths: request.Paths, Path: request.Path, NewPath: request.NewPath, ExpectedVersion: request.ExpectedVersion}
+	intent.File = &protocol.FileTaskSpec{Format: request.Format, Paths: request.Paths, Path: request.Path, NewPath: request.NewPath, ExpectedVersion: request.ExpectedVersion}
 	var content []byte
 	if action == protocol.TaskFileDelete {
 		intent.DeleteConfirmed = true
@@ -116,7 +119,11 @@ func (s *Server) handleCreateFileTask(w http.ResponseWriter, r *http.Request, cu
 	}
 	result, err := s.enqueueFileTask(r.Context(), current, nodeID, key, intent, content)
 	if err != nil {
-		s.writeTaskStoreError(w, err)
+		if errors.Is(err, errFileContentCapacity) {
+			http.Error(w, "file edit capacity reached; retry after pending edits complete", http.StatusServiceUnavailable)
+		} else {
+			s.writeTaskStoreError(w, err)
+		}
 		return
 	}
 	if result.Created {
@@ -160,6 +167,14 @@ func (s *Server) enqueueFileTask(ctx context.Context, current *session, nodeID, 
 	if withContent {
 		s.fileContentMu.Lock()
 		s.expireFileContentLocked()
+		total := len(content)
+		for _, pending := range s.fileContents {
+			total += len(pending.content)
+		}
+		if total > maxPendingFileContentBytes {
+			s.fileContentMu.Unlock()
+			return coretasks.EnqueueResult{}, errFileContentCapacity
+		}
 	}
 	result, err := s.tasks.EnqueueWithGate(ctx, coretasks.EnqueueRequest{NodeID: nodeID, IdempotencyKey: key,
 		Intent: intent, ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}, gate)

@@ -21,7 +21,7 @@ export async function createFileManager(nodeId: string, changed: (items: FileObs
  const joined=(dir:string,name:string)=>virtual(dir).replace(/\/$/,'')+'/'+name
  function entry(value:NodeFileEntry):DirEntry {
   const extension=value.name.includes('.')?value.name.split('.').pop()!.toLowerCase():''
-  return {dir:'node://'+(value.path.slice(0,value.path.lastIndexOf('/'))||'/'),basename:value.name,extension,path:'node://'+value.path,storage:'node',type:value.kind==='directory'?'dir':'file',file_size:value.size,last_modified:value.modifiedAt/1e9,mime_type:mime(extension),visibility:value.name.startsWith('.')?'hidden':'public',read_only:value.kind!=='file'&&value.kind!=='directory'}
+  return {dir:'node://'+(value.path.slice(0,value.path.lastIndexOf('/'))||'/'),basename:value.name,extension,path:'node://'+value.path,storage:'node',type:value.kind==='directory'?'dir':'file',file_size:value.size,last_modified:value.modifiedAt/1e9,mime_type:mime(value.name),visibility:value.name.startsWith('.')?'hidden':'public',read_only:value.kind!=='file'&&value.kind!=='directory'}
  }
  async function pages(name:string,query:Record<string,string>,other?:AbortSignal){
   const result:DirEntry[]=[];let after=''
@@ -66,11 +66,11 @@ export async function createFileManager(nodeId: string, changed: (items: FileObs
   async rename(options){await action({action:'rename',path:virtual(options.item),newPath:joined(options.path,options.name)});return result(virtual(options.path))},
   async copy(options){for(const source of options.sources)await action({action:'copy',path:virtual(source),newPath:joined(options.destination,virtual(source).split('/').pop()!)});return result(virtual(options.path??options.destination))},
   async move(options){for(const source of options.sources)await action({action:'move',path:virtual(source),newPath:joined(options.destination,virtual(source).split('/').pop()!)});return result(virtual(options.path??options.destination))},
-  async archive(options){await action({action:'archive',path:joined(options.destination??options.path,/\.zip$/i.test(options.name)?options.name:options.name+'.zip'),paths:options.items.map(item=>virtual(item.path))});return result(virtual(options.path))},
+  async archive(options){await action({action:'archive',path:joined(options.destination??options.path,/\.(zip|tar|tar\.gz|tgz)$/i.test(options.name)?options.name:options.name+'.zip'),paths:options.items.map(item=>virtual(item.path))});return result(virtual(options.path))},
   async unarchive(options){await action({action:'extract',path:virtual(options.item),newPath:virtual(options.destination??options.path)});return result(virtual(options.path))},
   async createFile(options){await action({action:'save_text',path:joined(options.path,options.name),content:''});return result(virtual(options.path))},
   async createFolder(options){await action({action:'mkdir',path:joined(options.path,options.name)});return result(virtual(options.path))},
-  async getContent(options){const path=virtual(options.path),data=await read<{text:string;version:string}>('files.text',{path},options.signal);active();versions.set(path,data.version);return {content:data.text,mimeType:mime(path.split('.').pop()??'')}},
+  async getContent(options){const path=virtual(options.path),data=await read<{text:string;version:string}>('files.text',{path},options.signal);active();versions.set(path,data.version);return {content:data.text,mimeType:mime(path)}},
   getPreviewUrl:options=>{const path=virtual(options.path),version=listedVersions.get(path);if(version&&!versions.has(path))versions.set(path,version);return url('files.preview',path)},
   getDownloadUrl:options=>url('files.download',virtual(options.path)),
   async search(options){const sizes:Record<string,Record<string,string>>={small:{maxSize:String(1024*1024-1)},medium:{minSize:String(1024*1024),maxSize:String(10*1024*1024)},large:{minSize:String(10*1024*1024+1)}};return pages('files.search',{path:virtual(options.path??'/'),filter:options.filter,recursive:String(options.deep??false),...sizes[options.size??'all']},options.signal)},
@@ -89,4 +89,4 @@ export async function createFileManager(nodeId: string, changed: (items: FileObs
  persist()
  return {driver,maxFileSize,endPreview(){versions.clear()},dispose(){controller.abort();versions.clear();listedVersions.clear()},observations:()=>[...observations],observe:async(id:string)=>{const item=observations.find(v=>v.taskId===id);if(item)await observe(item)},forget(id:string){observations=observations.filter(v=>v.taskId!==id);persist()}}
 }
-function mime(extension:string){return ({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',bmp:'image/bmp',avif:'image/avif',pdf:'application/pdf',mp4:'video/mp4',webm:'video/webm',mp3:'audio/mpeg',ogg:'audio/ogg',wav:'audio/wav',csv:'text/csv',tsv:'text/tab-separated-values',txt:'text/plain',svg:'text/plain',html:'text/plain',htm:'text/plain',zip:'application/zip'} as Record<string,string>)[extension.toLowerCase()]??'text/plain'}
+function mime(name:string){const lower=name.toLowerCase();if(/\.(tar\.gz|tgz)$/.test(lower))return 'application/gzip';if(/\.(tar\.bz2|tbz2)$/.test(lower))return 'application/x-bzip2';const extension=lower.split('.').pop()??'';return ({png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',bmp:'image/bmp',avif:'image/avif',pdf:'application/pdf',mp4:'video/mp4',webm:'video/webm',mp3:'audio/mpeg',ogg:'audio/ogg',wav:'audio/wav',csv:'text/csv',tsv:'text/tab-separated-values',txt:'text/plain',svg:'text/plain',html:'text/plain',htm:'text/plain',zip:'application/zip',tar:'application/x-tar'} as Record<string,string>)[extension.toLowerCase()]??'text/plain'}

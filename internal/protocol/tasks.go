@@ -165,6 +165,7 @@ type RebuildSpec struct {
 // File contents are carried once in TaskDispatch or streamed through the
 // existing file channel; they are never written to either task journal.
 type FileTaskSpec struct {
+	Format          string   `json:"format,omitempty"`
 	Paths           []string `json:"paths,omitempty"`
 	Path            string   `json:"path"`
 	NewPath         string   `json:"newPath,omitempty"`
@@ -507,13 +508,16 @@ func validFileTaskSpec(intent TaskIntent) bool {
 	validVersion := func(value string) bool {
 		return len(value) <= 128 && !strings.ContainsAny(value, "\x00\r\n")
 	}
-	if len(file.Paths) > 0 && intent.Action != TaskFileArchive {
+	if (len(file.Paths) > 0 || file.Format != "") && intent.Action != TaskFileArchive {
 		return false
 	}
 	switch intent.Action {
 	case TaskFileCopy, TaskFileExtract:
 		return ValidVirtualFilePath(file.NewPath) && file.Path != "/" && file.NewPath != file.Path && file.ExpectedVersion == "" && file.Size == 0 && file.SHA256 == ""
 	case TaskFileArchive:
+		if !ValidArchiveFormat(file.Format) {
+			return false
+		}
 		if file.Path == "/" || file.NewPath != "" || file.ExpectedVersion != "" || file.Size != 0 || file.SHA256 != "" || len(file.Paths) < 1 || len(file.Paths) > 100 {
 			return false
 		}
@@ -939,7 +943,7 @@ type TaskReportAck struct {
 func ValidateTaskDispatch(envelope Envelope, dispatch TaskDispatch, nodeID, journalID string, generation uint64) error {
 	if envelope.Version != CurrentVersion || envelope.Type != TypeTaskDispatch || envelope.Generation != generation ||
 		envelope.RequestID == "" || envelope.RequestID != dispatch.TaskID || generation == 0 ||
-		len(envelope.Payload) > MaxTaskPayloadBytes || dispatch.NodeID != nodeID || dispatch.JournalID != journalID || dispatch.TargetID != dispatch.Intent.ContainerID ||
+		len(envelope.Payload) > TaskDispatchLimit(dispatch.Intent.Action) || dispatch.NodeID != nodeID || dispatch.JournalID != journalID || dispatch.TargetID != dispatch.Intent.ContainerID ||
 		!validTaskIdentityFields(dispatch.TaskID, dispatch.NodeID, dispatch.JournalID, dispatch.TargetID, dispatch.IdempotencyKey) {
 		return ErrInvalidTaskMessage
 	}
@@ -1182,4 +1186,14 @@ func safeTaskToken(value string, maximum int) bool {
 		}
 	}
 	return true
+}
+
+func TaskDispatchLimit(action TaskAction) int {
+	if action == TaskFileSaveText {
+		return MaxTextControlBytes
+	}
+	return MaxTaskPayloadBytes
+}
+func ValidArchiveFormat(format string) bool {
+	return format == "" || format == "zip" || format == "tar" || format == "tar.gz"
 }

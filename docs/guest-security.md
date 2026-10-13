@@ -55,3 +55,5 @@ Grant creation/revocation responses are held in the real browser while navigatin
 真实浏览器在创建／撤销入网授权请求未返回时切入游客模式；退出主机管理页面后释放响应，必须不再触发私有后续读取，包括入网授权列表。
 
 The contract includes paginated file search and passive preview; direct anonymous access remains denied. A real unavailable file-list response from the protocol-only simulated Agent is delayed across guest entry, and releasing it must start no private follow-up requests. 文件搜索／预览仍要求管理员权限；文件管理器退出进入游客后，迟到目录响应不得触发后续私有读取。
+
+Archive format denial cases are derived from the connected `files.action.format` enum, including TAR and TAR.GZ. No case count is frozen in the scripts.

@@ -15,6 +15,11 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const privateOperations=catalog.operations.filter(o=>!publicPaths.has(o.path)&&!o.path.startsWith('/api/v1/public/'))
  console.log('GUEST SECURITY: private operations',privateOperations.length)
  for(let i=0;i<privateOperations.length;i+=8){await Promise.all(privateOperations.slice(i,i+8).map(async o=>{const r=await browserRequest(target(o),o.method,payload,hostileHeaders);record('catalog:'+o.name,r.status===401,{status:r.status})}))}
+ const fileAction=catalog.operations.find(o=>o.name==='files.action');assert.ok(fileAction)
+ for(const format of fileAction.bodySchema.properties.format.enum){
+  const r=await browserRequest(target(fileAction),fileAction.method,{action:'archive',path:'/tmp/guest.'+format,format,paths:['/etc/shadow']},hostileHeaders)
+  record('file-archive-format:'+format,r.status===401,{status:r.status})
+ }
  console.log('GUEST SECURITY: public scope and IDOR')
  const selected=JSON.parse((await browserRequest('/api/v1/public/guest/display')).body)
  const publicID=selected.nodes[0].id

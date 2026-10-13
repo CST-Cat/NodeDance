@@ -1180,7 +1180,10 @@ func decodeSocketEnvelope(raw []byte) (protocol.Envelope, error) {
 }
 
 func decodeSocketPayload(raw json.RawMessage, target any) error {
-	if len(raw) == 0 || len(raw) > 64*1024 {
+	return decodeSocketPayloadLimit(raw, target, 64*1024)
+}
+func decodeSocketPayloadLimit(raw json.RawMessage, target any, limit int) error {
+	if len(raw) == 0 || len(raw) > limit {
 		return errors.New("Agent protocol payload size is invalid")
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
