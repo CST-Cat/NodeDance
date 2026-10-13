@@ -141,6 +141,15 @@ func TestBuiltInDockerWorkerSurvivesTargetReplacementWithoutInstalledService(t *
 			}
 			config := Config{StateDir: filepath.Join(root, "state-"+scenario), Targets: map[string]Target{"core": {Mode: "docker", Container: name, DataDir: data, HealthURL: fmt.Sprintf("http://127.0.0.1:%d/api/v1/health", port)}}}
 			cfg, _ := json.Marshal(config)
+			checkRPC, _ := json.Marshal(RPC{Action: "check", Request: Request{Component: "core"}})
+			checked, err := engine.worker(ctx, product, "core", string(cfg), string(checkRPC))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var check Check
+			if checked.Status != 200 || json.Unmarshal(checked.Data, &check) != nil || check.Current != "core-v0.1.8" || !check.Configured || !check.Compatible || !check.Available {
+				t.Fatalf("same-binary Docker preflight: %+v / %+v", checked, check)
+			}
 			rpc, _ := json.Marshal(RPC{Action: "apply", Request: Request{Component: "core", Confirm: true}, IdempotencyKey: "isolated-built-in-" + scenario})
 			response, err := engine.worker(ctx, product, "core", string(cfg), string(rpc))
 			if err != nil {

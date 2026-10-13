@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.16]
+
+### English
+
+- Initialize the built-in observation worker command executor so default update preflight can read the running version; verify native and real Docker checks without taking the transaction lock.
+
+### 简体中文
+
+- 初始化内置观察进程的命令执行器，使默认更新预检查能够读取运行版本；覆盖无需获取事务锁的原生及实际 Docker 检查。
+
 ## [0.1.15]
 
 ### English

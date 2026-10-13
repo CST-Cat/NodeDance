@@ -304,7 +304,7 @@ func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolv
 	}
 	if rpc.Action != "apply" && rpc.Action != "rollback" {
 		// Observation must remain available while the transaction holds its lock.
-		manager := &Manager{Config: config, Resolver: resolver, Docker: NewDocker(), jobs: map[string]Job{}}
+		manager := &Manager{Config: config, Resolver: resolver, command: execute, Docker: NewDocker(), jobs: map[string]Job{}}
 		entries, err := os.ReadDir(config.StateDir)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err

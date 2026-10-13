@@ -96,6 +96,29 @@ func TestBuiltInObservationDoesNotRequireControllerInstallation(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBuiltInCheckRunsCurrentBinaryWhileControllerLockIsHeld(t *testing.T) {
+	manager, _, _ := nativeFixture(t)
+	defer manager.Close()
+	reader, writer := io.Pipe()
+	defer reader.Close()
+	done := make(chan error, 1)
+	go func() {
+		defer writer.Close()
+		done <- runRPC(manager.Config, RPC{Action: "check", Request: Request{Component: "core"}}, writer, fixtureResolver{})
+	}()
+	var response Response
+	if err := json.NewDecoder(reader).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	var check Check
+	if response.Status != 200 || json.Unmarshal(response.Data, &check) != nil || check.Current != "core-v0.1.8" || !check.Available || !check.Configured || !check.Compatible {
+		t.Fatalf("built-in default preflight: %+v / %+v", response, check)
+	}
+}
 func TestInternalWorkerRejectsUnscopedRequests(t *testing.T) {
 	handled, err := Internal([]string{"__update-rpc"}, io.Discard, io.Discard)
 	if !handled || err == nil {
