@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.23]
+
+### English
+
+- Move node deletion from the detail heading to the bottom of Node settings, keeping confirmation and failure feedback together; verify light/dark mobile layouts and the existing deletion and guest-security regressions.
+
+### 简体中文
+
+- 将删除节点入口从详情页顶部移到节点设置最下方，集中显示确认操作和失败反馈；验证浅色／深色移动端布局及既有删除、游客安全回归。
+
 ## [0.1.22]
 
 ### English

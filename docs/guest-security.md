@@ -70,7 +70,7 @@ RSS 增量回归从连接的 Core 契约发现全部 feeds.* 私有操作，验�
 
 Agent enrollment responses contain token-bearing native and Docker installation commands. These responses and reusable enrollment grants remain administrator-only; guest projections exclude tokens and installation commands even when administrator cookies are present. The isolated browser attack suite verifies anonymous enrollment denial and command/token exclusion from public display.
 
-Node deletion and pending-enrollment renewal are private Core operations and are covered by the discovered anonymous/forged-identity operation matrix. Renewed tokens and commands never enter the public projection. The browser suite warms publication, deletes a selected node, verifies immediate withdrawal and verifies that its enrollment credential is rejected.
+Web places node deletion at the bottom of Node settings and invokes the confirmed Core operation. Node deletion and pending-enrollment renewal are private Core operations and are covered by the discovered anonymous/forged-identity operation matrix. Renewed tokens and commands never enter the public projection. The browser suite warms publication, deletes a selected node, verifies immediate withdrawal and verifies that its enrollment credential is rejected.
 
 内置更新使用相同的私有 `updates.*` 契约、管理员会话、CSRF 和节点权限检查。临时工作进程不新增公开更新入口，也不因游客访问而执行；游客浏览器矩阵继续逐操作验证拒绝边界。
 

@@ -47,7 +47,8 @@ module.exports=async function({page,base,artifacts,catalog}){
  const pendingNode=issued.nodeId,oldToken=issued.token
  await page.locator('.language-selector').selectOption('en')
  await page.goto(base+'/#/nodes?node='+pendingNode)
- await page.getByTestId('node-delete').waitFor()
+ await page.getByTestId('node-detail').waitFor()
+ assert.equal(await page.getByTestId('node-delete').count(),0,'Deletion is absent from the detail heading and overview')
  await page.getByTestId('node-install-command').click()
  const renewalResponse=page.waitForResponse(r=>r.url().endsWith('/nodes/'+pendingNode+'/enrollment')&&r.request().method()==='POST')
  await page.getByRole('button',{name:'Regenerate installation command',exact:true}).click()
@@ -60,6 +61,11 @@ module.exports=async function({page,base,artifacts,catalog}){
  // Switching presentation preserves the same replacement credential.
  await page.getByTestId('agent-deployment-method').getByRole('button',{name:'Docker deployment',exact:true}).click()
  assert.ok((await command.inputValue()).includes('--mode docker'))
+ await page.locator('.dashboard-tabs').getByRole('button',{name:'Node settings',exact:true}).click()
+ const deletion=page.getByTestId('node-settings').getByTestId('node-delete')
+ await deletion.waitFor()
+ assert.equal(await deletion.count(),1,'Deletion belongs to node settings')
+ assert.ok(await page.getByTestId('node-settings-delete').evaluate(el=>el===el.parentElement.lastElementChild),'Deletion is the final settings section')
  for(const theme of ['light','dark'])for(const width of [390,1440]){
   await page.setViewportSize({width,height:1000});await page.waitForTimeout(200)
   const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible()){await scrim.click({position:{x:width-10,y:20}});await page.waitForTimeout(200)}
