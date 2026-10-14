@@ -172,11 +172,13 @@ const clockOffsetText = computed(() => {
         <div v-for="iface in primaryInterfaces" :key="iface.name" class="interface-row" data-testid="network-interface" :data-interface-name="iface.name">
           <div class="interface-title">
             <strong>{{ iface.name }}</strong>
+            <span class="interface-note">{{ t('m.09f99341ca07') }}</span>
+            <span class="interface-rates">
+              <span>{{ formatRate(iface.rate.value?.receivedBytesPerSecond) }} ↓</span>
+              <span>{{ formatRate(iface.rate.value?.sentBytesPerSecond) }} ↑</span>
+            </span>
             <span class="status-pill small" :data-status="metricState(iface.rate)" :data-testid="`interface-rate-status-${iface.name}`">{{ statusLabel(metricState(iface.rate)) }}</span>
           </div>
-          <div class="interface-description"><span>{{ t('m.09f99341ca07') }}</span></div>
-          <span>{{ formatRate(iface.rate.value?.receivedBytesPerSecond) }} ↓</span>
-          <span>{{ formatRate(iface.rate.value?.sentBytesPerSecond) }} ↑</span>
           <p v-if="metricReason(iface.rate)" class="metric-reason interface-reason" :data-testid="`interface-rate-reason-${iface.name}`">{{ metricReason(iface.rate) }}</p>
         </div>
       </article>
@@ -207,16 +209,16 @@ const clockOffsetText = computed(() => {
 <style scoped>
 .host-metrics {margin-top:0;}
 .metrics-panel { --metric-bg: var(--surface-soft); --metric-card: var(--surface-soft); --metric-line: var(--line); --metric-text: var(--text); --metric-muted: var(--muted); width: 100%; color: var(--metric-text); }
-.metrics-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
+.metrics-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
 .metrics-eyebrow { margin: 0 0 5px; color: var(--accent); font: 500 10px/1.4 ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; }
-.metrics-header h2 { margin: 0; font-size: clamp(22px, 3vw, 29px); letter-spacing: -.04em; }
-.metrics-subtitle { margin: 7px 0 0; color: var(--metric-muted); font-size: 12px; }
+.metrics-header h2 { margin: 0; font-size: clamp(20px, 2.4vw, 24px); letter-spacing: -.03em; }
+.metrics-subtitle { margin: 6px 0 0; color: var(--metric-muted); font-size: 12px; }
 .node-state { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; border: 1px solid var(--metric-line); border-radius: 999px; padding: 8px 12px; font-size: 12px; }
 .node-state.is-online { color: var(--success); background: var(--success-soft); }
 .node-state.is-offline { color: var(--danger); background: var(--danger-soft); }
 .state-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.metrics-grid {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));  gap:0 28px;}
-.metric-card {min-width: 0;     border:0;border-radius:0;background:transparent;box-shadow:none;border-top:1px solid var(--line);padding:20px 0;}
+.metrics-grid {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));  gap:0 32px;}
+.metric-card {min-width: 0;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:14px 0 12px;}
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .card-heading h3 { margin: 0; color: var(--text); font-size: 12px; font-weight:500; }
 .status-pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 7px; color: var(--muted-strong); font-size: 12px; white-space: nowrap; }
@@ -225,27 +227,26 @@ const clockOffsetText = computed(() => {
 .status-pill[data-status='error'] { border-color: var(--danger-line); color: var(--danger); }
 .status-pill[data-status='stale'] { border-color: var(--danger-line); color: var(--warning); }
 .status-pill.small { padding: 2px 6px; font-size: 12px; }
-.primary-value { display: block; margin-top: 16px; font-size: clamp(27px, 4vw, 36px); font-variant-numeric: tabular-nums; letter-spacing: -.05em; }
-.metric-caption { margin: 5px 0 0; color: var(--metric-muted); font-size: 12px; }
-.metric-reason { margin: 9px 0 0; color: var(--warning); font: 11px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+.primary-value { display: block; margin-top: 6px; font-size: clamp(20px, 2.6vw, 24px); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+.metric-caption { margin: 4px 0 0; color: var(--metric-muted); font-size: 12px; }
+.metric-reason { margin: 7px 0 0; color: var(--warning); font: 11px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
 .disk-card, .network-card { grid-column: span 2; }
-.mount-row { margin-top: 13px; border-top: 1px solid var(--metric-line); padding-top: 11px; }
+.mount-row { margin-top: 10px; }
 .mount-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .mount-title strong { font-size: 12px; }
-.mount-row > p { margin: 6px 0 0; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.mount-row > p { margin: 4px 0 0; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
 .mount-row .mount-meta { color: var(--metric-muted); font-size: 12px; }
-.network-pair { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-top: 11px; font-size: 12px; }
+.network-pair { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-top: 8px; font-size: 12px; }
 .network-pair span { color: var(--metric-muted); }
 .network-pair strong { font-variant-numeric: tabular-nums; }
-.interface-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; margin-top: 12px; border-top: 1px solid var(--metric-line); padding-top: 10px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
-.interface-title { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0; }
-.interface-title strong { min-width:0; overflow-wrap:anywhere; }
-.interface-title .status-pill { flex-shrink:0; }
-.interface-description { min-width:0; overflow-wrap:anywhere; }
-.interface-reason { grid-column:1 / -1; margin:0; }
-.interface-row > span { white-space:nowrap; text-align:right; }
-.interface-description span { color: var(--metric-muted); font-size: 12px; }
-.metrics-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin-top:14px; border-top:1px solid var(--metric-line); padding:16px 0; }
+.interface-row { margin-top: 8px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.interface-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.interface-title strong { min-width: 0; overflow-wrap: anywhere; }
+.interface-note { flex-shrink: 0; color: var(--metric-muted); font-size: 11px; }
+.interface-rates { display: inline-flex; gap: 10px; margin-left: auto; white-space: nowrap; }
+.interface-title .status-pill { flex-shrink: 0; align-self: center; }
+.interface-reason { margin: 2px 0 0; }
+.metrics-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin-top:16px; border-top:1px solid var(--metric-line); padding:12px 0; }
 .metrics-footer > div { display: grid; min-width: 0; gap: 4px; }
 .metrics-footer span { color: var(--metric-muted); font-size: 12px; }
 .metrics-footer strong { min-width: 0; color: var(--text); font-size: 12px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
@@ -254,7 +255,7 @@ const clockOffsetText = computed(() => {
   .metrics-header { align-items: flex-start; }
   .metrics-grid { grid-template-columns: minmax(0, 1fr); }
   .disk-card, .network-card { grid-column: auto; }
-  .interface-row { grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; }
+  .interface-rates { flex-wrap: wrap; }
   .metrics-footer { grid-template-columns: minmax(0, 1fr); }
 }
 </style>

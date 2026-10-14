@@ -321,11 +321,12 @@ async function copySSHCommand() {
     <p v-if="nodePreference?.notes" class="vps-card-note">{{ nodePreference.notes }}</p>
 
     <div class="vps-card-metrics" :aria-label="t('m.e41b8d592e33')">
-      <div><span>CPU</span><strong>{{ metricValue(metrics?.metrics.cpu.usagePercent, metrics?.metrics.cpu.usagePercent.value ?? undefined) }}</strong></div>
-      <div><span>{{ t('m.7d8f8c37ec78') }}</span><strong>{{ metricValue(metrics?.metrics.memory, metrics?.metrics.memory.value?.usedPercent) }}</strong></div>
-      <div><span>{{ t('m.de7b72a3f852') }}</span><strong>{{ diskSummary() }}</strong></div>
-      <div><span>{{ t('m.d7140d0b3390') }}</span><strong>{{ networkSummary('receivedBytesPerSecond') }} / {{ networkSummary('sentBytesPerSecond') }}</strong></div>
-      <div><span>{{ t('m.5986e9d976e0') }}</span><strong>{{ uptimeSummary() }}</strong></div>
+      <div><span>CPU</span> <strong>{{ metricValue(metrics?.metrics.cpu.usagePercent, metrics?.metrics.cpu.usagePercent.value ?? undefined) }}</strong></div>
+      <div><span>{{ t('m.7d8f8c37ec78') }}</span> <strong>{{ metricValue(metrics?.metrics.memory, metrics?.metrics.memory.value?.usedPercent) }}</strong></div>
+      <div><span>{{ t('m.de7b72a3f852') }}</span> <strong>{{ diskSummary() }}</strong></div>
+      <div><span aria-hidden="true">↓</span> <strong>{{ networkSummary('receivedBytesPerSecond') }}</strong></div>
+      <div><span aria-hidden="true">↑</span> <strong>{{ networkSummary('sentBytesPerSecond') }}</strong></div>
+      <div><span>{{ t('m.5986e9d976e0') }}</span> <strong>{{ uptimeSummary() }}</strong></div>
     </div>
 
     <button class="docker-toggle" type="button" :aria-expanded="dockerExpanded" :aria-controls="`docker-${node.nodeId}`" @click="dockerExpanded = !dockerExpanded">{{ t(dockerExpanded ? 'dashboard.hideDocker' : 'dashboard.showDocker') }} <span aria-hidden="true">{{ dockerExpanded ? '−' : '+' }}</span></button>
@@ -340,10 +341,8 @@ async function copySSHCommand() {
           <span class="vps-card-container-icon" aria-hidden="true">{{ containerIcon(record) }}</span>
           <div class="vps-card-container-copy">
             <strong>{{ containerTitle(record) }}</strong>
-            <small>{{ record.container.name || record.container.id.slice(0, 12) }} · {{ record.container.image || t('m.45c82e228c16') }}</small>
-            <small>{{ record.container.compose ? `Compose · ${record.container.compose.project}/${record.container.compose.service}` : t('m.ba4ddea11c26') }} · {{ healthText(record) }}</small>
-            <small>{{ networkText(record) }}</small>
-            <small>{{ portText(record) }}</small>
+            <small>{{ record.container.name || record.container.id.slice(0, 12) }} · {{ record.container.image || t('m.45c82e228c16') }} · {{ record.container.compose ? `Compose · ${record.container.compose.project}/${record.container.compose.service}` : t('m.ba4ddea11c26') }} · {{ healthText(record) }}</small>
+            <small>{{ networkText(record) }} · {{ portText(record) }}</small>
             <small>{{ t('m.b890b09aa795') }}{{ containerCreated(record) }}{{ t('m.f8dd4dc7e620') }}{{ containerUptime(record) }}</small>
             <small v-if="record.container.healthReason || record.container.unavailableReason" class="vps-card-reason">{{ record.container.healthReason || record.container.unavailableReason }}</small>
             <a v-if="serviceURL(record)" class="vps-card-service-link" :href="serviceURL(record)" target="_blank" rel="noopener noreferrer">{{ t('m.e4fd01edc24f') }}</a>
@@ -387,28 +386,30 @@ async function copySSHCommand() {
 .vps-card-heading .vps-name:hover { color:var(--accent); }
 .docker-toggle { display:flex; justify-content:space-between; align-items:center; width:100%; margin-top:12px; color:var(--accent); }
 
-.vps-card { min-width: 0; border: 1px solid var(--line); border-radius:var(--radius-card); padding: clamp(14px,2vw,20px); background: var(--surface); color: var(--text); }
+.vps-card { min-width: 0; container-type: inline-size; container-name: vps-card; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 12px 14px; background: var(--surface); color: var(--text); }
+.vps-card:hover { border-color: var(--line-strong); }
+.vps-card:focus-within { border-color: var(--accent); }
 .vps-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .vps-card-heading { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .vps-card-heading > div { min-width: 0; }
-.vps-card-heading h2 { margin: 4px 0 0; font-size: 16px; overflow-wrap: anywhere; }
+.vps-card-heading h2 { margin: 2px 0 0; font-size: 16px; font-weight: 500; line-height: 1.3; overflow-wrap: anywhere; }
 .vps-node-icon {display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center;   color: var(--accent);  font-size: 17px; border:0;border-radius:var(--radius-control);background:var(--accent-soft);box-shadow:none;}
 .vps-card-status { border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; color: var(--danger); font-size: 12px; white-space: nowrap; }
 .vps-card-status[data-online='true'] { color: var(--success); }
 .vps-card-status[data-pending='true'] { color: var(--warning); }
-.vps-card-version { margin: 6px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.vps-card-version { margin: 4px 0 10px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .vps-card-note { margin: -5px 0 12px; color: var(--muted-strong); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-.vps-card-metrics { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 7px; }
-.vps-card-metrics > div {display: grid; min-width: 0;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:4px 0;gap:8px;}
+.vps-card-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px 12px; padding: 8px 0 2px; }
+.vps-card-metrics > div { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; column-gap: 4px; }
 .vps-card-metrics span { color: var(--muted); font-size: 12px; }
-.vps-card-metrics strong { color: var(--text); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
-.vps-card-docker {margin-top: 12px;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:14px 0 0;border-top:1px solid var(--line);}
+.vps-card-metrics strong { color: var(--text); font-size: 14px; font-weight: 500; line-height: 1.35; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+@container vps-card (max-width: 299px) { .vps-card-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+.vps-card-docker { margin-top: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; padding: 2px 0 0; }
 .vps-card-docker > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); font-size: 12px; }
 .vps-card-docker > header span { color: var(--muted); font: 11px ui-monospace,monospace; text-align: right; }
 .vps-card-empty { margin: 8px 0 0; color: var(--muted-strong); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.vps-card-container-list {display: grid;  margin-top: 8px; gap:0;}
-.vps-card-container {display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 7px;    border:0;border-radius:0;background:transparent;box-shadow:none;padding:12px 0;border-bottom:1px solid var(--line);}
-.vps-card-container[data-stale='true'] { border-color: var(--danger-line); }
+.vps-card-container-list { display: grid; margin-top: 8px; gap: 12px; }
+.vps-card-container { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 7px; border: 0; border-radius: 0; background: transparent; box-shadow: none; padding: 0; }
 .vps-card-container-icon { display: grid; width: 24px; height: 24px; place-items: center; border-radius:var(--radius-card); color: var(--accent); background: var(--line); font-size: 12px; }
 .vps-card-container-copy { display: grid; min-width: 0; gap: 4px; }
 .vps-card-container-copy strong, .vps-card-container-copy small { overflow-wrap: anywhere; }
@@ -424,11 +425,10 @@ async function copySSHCommand() {
 .vps-card-actions button:disabled { opacity: .45; cursor: not-allowed; }
 .vps-card-more { margin: 0; color: var(--muted); font-size: 12px; }
 .vps-card-shortcuts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-top:10px; }
-.vps-card-shortcuts button { min-width:0; min-height:40px; border:1px solid var(--line); border-radius:var(--radius-control); padding:6px 8px; color:var(--accent); background:var(--line); font:inherit; font-size: 12px; cursor:pointer; }
+.vps-card-shortcuts button { min-width:0; min-height:40px; border:1px solid var(--line); border-radius:var(--radius-control); padding:6px 8px; color:var(--muted-strong); background:var(--surface); font:inherit; font-size: 12px; cursor:pointer; }
 .vps-card-shortcuts button:disabled { opacity:.45; cursor:not-allowed; }
 .vps-card-ssh-status { margin:6px 0 0; color:var(--success); font-size: 12px; line-height:1.5; overflow-wrap:anywhere; }
 .vps-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .vps-card-footer button { flex: 0 0 auto; }
-@media (max-width: 800px) { .vps-card-metrics { grid-template-columns: repeat(3,minmax(0,1fr)); } }
-@media (max-width: 560px) { .vps-card-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } .vps-card-container { grid-template-columns: auto minmax(0,1fr); } .vps-card-state { grid-column: 2; justify-self: start; } .vps-card-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)); }.vps-card-shortcuts button { min-height:42px; }.vps-card-footer { align-items: flex-start; flex-direction: column; } .vps-card-footer button { width: 100%; min-height: 40px; } }
+@media (max-width: 560px) { .vps-card-container { grid-template-columns: auto minmax(0,1fr); } .vps-card-state { grid-column: 2; justify-self: start; } .vps-card-shortcuts { grid-template-columns:repeat(2,minmax(0,1fr)); }.vps-card-shortcuts button { min-height:42px; }.vps-card-footer { align-items: flex-start; flex-direction: column; } .vps-card-footer button { width: 100%; min-height: 40px; } }
 </style>

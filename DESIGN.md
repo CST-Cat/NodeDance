@@ -57,6 +57,52 @@ Custom selects retain contract/form values and full keyboard operation. Floating
 
 VueFinder, its dialogs and CodeMirror use the same semantic theme, including hover versus selection and disabled controls. Charts use theme text, separators, tooltip and area colors. Terminal keeps its independent dark content palette and ANSI meanings in either application theme. Browser color-scheme and theme-color must match the selected light/dark/system mode.
 
+## Compact Operational UI
+
+NodeDance is a dense operational console, not a spacious marketing dashboard or a chat application. Maximize useful information density while minimizing visual decoration.
+
+### Information hierarchy
+
+- Preserve resource boundaries (one card per VPS), not arbitrary component boundaries.
+- Do not give every metric, property, or row a separate card.
+- Do not replace removed cards with repeated divider lines.
+- Do not create spacious layouts merely to appear minimal.
+
+### Compact geometry
+
+- Use 12–16 px padding as a starting point for VPS cards. Do not apply page-level section spacing (28 px) inside cards.
+- Use 4–8 px spacing between closely related readings (label ↔ value, adjacent metrics).
+- Reserve larger spacing (12–20 px) for genuinely separate functional areas.
+- Avoid oversized numeric typography and stretched progress bars. Prefer compact aligned values over full-width progress bars.
+- Use the component's available width (CSS container queries) to determine layout, not the viewport width.
+- Never force heterogeneous metrics (CPU percentage, network throughput, uptime) into five equal-width columns.
+
+### Resource layouts
+
+- VPS overview: one compact card per server. Metrics are inline label–value pairs in a 3-column grid, not stacked blocks.
+- CPU/RAM/Disk: aligned readings without inner cards or progress bars by default.
+- Network/Uptime: compact secondary readings on the second metric row.
+- Network interfaces: single-line rows (name · note · rates · status pill), no per-row dividers.
+- Docker preview: dense rows with gap-based spacing; no per-item border-bottom dividers. Preserve all existing actions.
+- Docker/Compose management: scannable resource lists or tables with 36–40 px row height.
+- Metrics detail: grouped data by information tier, not repeated bordered blocks.
+
+### Boundaries and interaction
+
+- Use background surfaces only for meaningful regions (resource objects, editors, dialogs).
+- Keep essential input, focus, selection and dialog boundaries.
+- Ordinary rows should not automatically receive dividers; use gap and proximity.
+- Preserve keyboard navigation and safe operation controls.
+- Do not remove information or functionality to simplify UI.
+
+### Implementation requirements
+
+- Refactor markup and CSS together; do not just delete borders without reorganising content.
+- Avoid appending layers of global override rules that conflict with scoped component styles.
+- Consolidate duplicate style definitions.
+- Test populated and expanded states, not only empty or collapsed pages.
+- Validate card widths independently from viewport widths.
+
 ## Verification
 
 Build fresh assets. Review light/dark and mobile/desktop layouts with populated, empty, loading, error, disabled and selected states. Verify containment, alignment, actual text/control contrast, keyboard focus, reduced motion and system-theme transitions. Run the real Core interface audit, guest security matrix and isolated root Agent file-manager audit for applicable visual changes. Keep those scripts and security assertions intact. Test presentation without touching production remote resources.

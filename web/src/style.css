@@ -358,14 +358,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .app-shell .nodes-dashboard, .app-shell .node-detail-page { padding: 44px 0 0; max-width: 1320px; }
 .app-shell .nodes-heading h1, .app-shell .detail-heading h1 { font-family: inherit; font-size: clamp(26px, 3vw, 34px); font-weight: 500; letter-spacing: -.035em; line-height: 1.2; }
 .app-shell .nodes-heading { margin-bottom: 32px; }.app-shell .nodes-heading p { font-size: 14px; }
-.app-shell .vps-card { background: var(--surface); padding: 24px; transition: border-color .15s ease; }.app-shell .vps-card:hover { border-color: var(--line-strong); }
-.app-shell .vps-card h2 { font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size: 20px; font-weight: 500; }.app-shell .vps-card-metrics strong { font-size: 18px; font-weight: 500; }
-.app-shell .vps-card-metrics { padding: 14px 0; }.app-shell .vps-card-docker { padding: 14px 0 0; }
-.app-shell .vps-card-shortcuts { margin-top: 18px; }.app-shell .vps-card-shortcuts button { min-height: 40px; background: var(--surface); color: var(--muted-strong); }
 .app-shell .server-view-controls { padding: 16px 0; border-block: 1px solid var(--line); gap: 12px; }
 .app-shell .server-view-controls label { min-width: 110px; }.app-shell .server-view-controls label:first-child { flex: 1; }.app-shell .server-view-controls input { width: 100%; }
 .app-shell .server-view-controls input, .app-shell .server-view-controls select { font-size: 13px; min-height: 40px; background: var(--canvas); }
-.app-shell .vps-card-grid { gap: 20px; }.app-shell .vps-card-group { gap: 14px; margin-top: 12px; }.app-shell .vps-group-heading { color: var(--muted); font-size: 13px; }
+.app-shell .vps-group-heading { color: var(--muted); font-size: 13px; }
 button:disabled { cursor: not-allowed; }button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }input, select, textarea { accent-color: var(--accent-fill); }
 @media (max-width: 1100px) { .settings-layout { grid-template-columns: minmax(0, 1fr); gap: 24px; }.settings-sidebar { position: static; }.settings-sidebar > p { max-width: none; }.settings-sidebar .sidebar-profile, .settings-sidebar .side-note { display: none; } }
 @media (max-width: 900px) {
@@ -378,7 +374,7 @@ button:disabled { cursor: not-allowed; }button, a, input, select, textarea { -we
   .app-shell, .app-shell[data-authenticated='true'] { padding: 0 16px 24px; }
   .topbar-right { gap: 8px; }.topbar .system-label { display: none; }.breadcrumb-root, .breadcrumb-divider { display: none; }.workspace-breadcrumb { gap: 8px; }
   .language-selector { max-width: 116px; }.topbar .wordmark { font-size: 21px; }
-  .app-shell .nodes-heading h1 { font-size: 34px; }.app-shell .vps-card { padding: 20px; }.app-shell .server-view-controls { padding: 16px; }
+  .app-shell .nodes-heading h1 { font-size: 34px; }.app-shell .server-view-controls { padding: 16px; }
   .auth-copy h1 { font-size: 42px; }.settings-layout { padding-top: 32px; }.settings-sidebar h1 { font-size: 34px; }
 }
 
@@ -482,7 +478,7 @@ input[type=checkbox]:disabled,input[type=radio]:disabled{opacity:.5;cursor:not-a
 .app-shell button:active:not(:disabled){transform:translateY(1px)}
 .app-shell ::selection{background:var(--accent-soft);color:var(--text)}
 .app-shell{scrollbar-color:var(--line-strong) var(--canvas)}
-.app-shell :is(table,dl,.primary-value,.vps-card-metrics strong){font-variant-numeric:tabular-nums}
+.app-shell :is(table,dl,.primary-value){font-variant-numeric:tabular-nums}
 
 /* Page layout and typography are shared; resource rows own their local grouping. */
 .app-shell[data-authenticated=true] .workspace-page{width:min(1320px,100%);max-width:1320px;margin:0 auto;padding:32px 0 48px;min-width:0}
@@ -496,7 +492,6 @@ input[type=checkbox]:disabled,input[type=radio]:disabled{opacity:.5;cursor:not-a
 .workspace-page :is(thead,th){background:var(--recessed);color:var(--muted-strong)}
 .workspace-page tbody tr:hover{background:var(--surface-hover)}
 .workspace-page tbody tr[data-selected=true]{background:var(--accent-soft)}
-.vps-card:focus-within{border-color:var(--accent)}
 .workspace-sidebar{background:var(--recessed)}
 .workspace-nav button:hover{background:var(--surface-hover)}
 .workspace-nav button[aria-current=page]{background:var(--surface);border-color:transparent;color:var(--text)}

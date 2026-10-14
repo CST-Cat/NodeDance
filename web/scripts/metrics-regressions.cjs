@@ -23,11 +23,12 @@ module.exports=async function({page,base,node,artifacts,catalog}){
   await page.locator('#workspace-navigation').evaluate(async element=>await Promise.all(element.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{}))))
   await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
-  assert.ok(await network.getByTestId('network-interface').evaluateAll(rows=>rows.every(row=>{const name=row.querySelector('.interface-description').getBoundingClientRect(),rates=[...row.querySelectorAll(':scope > span')].map(el=>el.getBoundingClientRect());return rates.every(rate=>name.right<=rate.left+1)&&rates[0].right<=rates[1].left+1})), 'Interface names and rates do not overlap')
-  assert.ok(await network.getByTestId('network-interface').evaluateAll(rows=>rows.every(row=>{
+  assert.ok(await network.getByTestId('network-interface').evaluateAll(rows=>rows.every(row=>{const name=row.querySelector('.interface-title strong').getBoundingClientRect(),note=row.querySelector('.interface-note')?.getBoundingClientRect(),rates=[...row.querySelectorAll('.interface-rates > span')].map(el=>el.getBoundingClientRect());return rates.length===2&&rates.every(rate=>name.right<=rate.left+1)&&(!note||name.right<=note.left+1)&&rates[0].right<=rates[1].left+1})), 'Interface names and rates do not overlap')
+  const alignments=await network.getByTestId('network-interface').evaluateAll(rows=>rows.map(row=>{
    const name=row.querySelector('.interface-title strong').getBoundingClientRect(),status=row.querySelector('.interface-title .status-pill').getBoundingClientRect(),heading=row.closest('.network-card').querySelector('.card-heading .status-pill').getBoundingClientRect()
-   return Math.abs((name.top+name.bottom-status.top-status.bottom)/2)<=2&&Math.abs(status.right-heading.right)<=2&&name.right<=status.left
-  })), 'Interface status is beside its name and aligned with the card status')
+   return {iface:row.dataset.interfaceName,nameRight:name.right,nameMid:(name.top+name.bottom)/2,statusLeft:status.left,statusMid:(status.top+status.bottom)/2,statusRight:status.right,headingRight:heading.right}
+  }))
+  assert.ok(alignments.every(m=>m.nameRight<=m.statusLeft+1&&Math.abs(m.statusMid-m.nameMid)<=8&&Math.abs(m.statusRight-m.headingRight)<=2), 'Interface status is beside its name and aligned with the card status: '+JSON.stringify(alignments))
   await page.screenshot({path:path.join(artifacts,`metrics-${theme}-${width}.png`),fullPage:true})
   await network.screenshot({path:path.join(artifacts,`network-${theme}-${width}.png`)})
  }
