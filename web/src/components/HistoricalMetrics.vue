@@ -138,9 +138,9 @@ onBeforeUnmount(() => {
         <h2 :id="headingId">{{ t('m.bfb41404e88b') }}</h2>
         <p v-if="history">{{ new Date(history.from).toLocaleString(locale) }} — {{ new Date(history.to).toLocaleString(locale) }} · {{ history.resolution === 'minute' ? t('m.bd957bc497aa') : t('m.3b6fefc50feb') }}{{ t('m.a4768faecb38') }}</p>
       </div>
-      <label class="history-metric-select">{{ t('m.b87e67c7dae0') }}<select v-model="selectedKey" :aria-label="t('m.4a2f28a82624')">
+      <label class="history-metric-select">{{ t('m.b87e67c7dae0') }}<UiSelect v-model="selectedKey" :aria-label="t('m.4a2f28a82624')">
           <option v-for="item in availableKeys" :key="item.key" :value="item.key">{{ item.label }}</option>
-        </select>
+        </UiSelect>
       </label>
     </header>
     <p v-if="!nodeOnline" class="history-stale" role="status">{{ t('m.b116276abf68') }}</p>

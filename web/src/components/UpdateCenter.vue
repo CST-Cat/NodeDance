@@ -46,8 +46,8 @@ onBeforeUnmount(() => { stopped = true; epoch++; if (timer) clearTimeout(timer) 
  <header><p class="eyebrow">NODEDANCE</p><h1>{{ t('updates.title') }}</h1><p class="muted">{{ t('updates.description') }}</p></header>
  <div class="update-card">
   <div class="update-controls">
-   <label>{{ t('updates.component') }}<select v-model="component"><option value="core">Core</option><option value="agent">Agent</option></select></label>
-   <label v-if="component === 'agent'">{{ t('updates.node') }}<select v-model="nodeId"><option v-for="node in nodes" :key="node.nodeId" :value="node.nodeId">{{ node.displayName }} · {{ node.status }}</option></select></label>
+   <label>{{ t('updates.component') }}<UiSelect v-model="component"><option value="core">Core</option><option value="agent">Agent</option></UiSelect></label>
+   <label v-if="component === 'agent'">{{ t('updates.node') }}<UiSelect v-model="nodeId"><option v-for="node in nodes" :key="node.nodeId" :value="node.nodeId">{{ node.displayName }} · {{ node.status }}</option></UiSelect></label>
    <label>{{ t('updates.version') }}<input v-model="version" :placeholder="t('updates.latest')"></label>
    <button class="secondary-button" :disabled="busy || !selected" @click="refresh">{{ t('updates.check') }}</button>
   </div>

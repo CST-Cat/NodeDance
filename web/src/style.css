@@ -424,3 +424,27 @@ button:disabled { cursor: not-allowed; }button, a, input, select, textarea { -we
 .node-detail-page { animation:node-workspace-enter .22s ease both; }
 @keyframes node-workspace-enter { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
 @media (prefers-reduced-motion:reduce) { .node-detail-page { animation:none; } .sidebar-context-enter-active, .sidebar-context-leave-active { transition:none; } }
+
+/* Lucian UX/UI Prompt #031 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#031 */
+.ux { --ux-page:var(--canvas);--ux-surface:var(--surface-soft);--ux-surface-2:var(--surface-raised);--ux-ink:var(--text);--ux-ink-3:var(--muted-strong);--ux-line:var(--line);--ux-line-2:var(--line-strong);--ux-accent:var(--accent);--ux-accent-soft:var(--accent-soft);--ux-shadow-strong:color-mix(in srgb,var(--text) 20%,transparent);--ux-ease:cubic-bezier(.2,.8,.2,1);--ux-spring:cubic-bezier(.34,1.45,.64,1);font-family:inherit;box-sizing:border-box }
+/* Lucian UX/UI Prompt #014 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#014 */
+input[type=checkbox],input[type=radio]{appearance:none;-webkit-appearance:none;position:relative;flex-shrink:0;width:22px!important;height:22px!important;min-width:22px!important;padding:0!important;min-height:0!important;margin:0;border:2px solid var(--line-strong);border-radius:4px;background:var(--surface-soft);color:var(--accent);cursor:pointer;transition:box-shadow .3s cubic-bezier(.2,.8,.2,1),background-color .3s cubic-bezier(.2,.8,.2,1),transform .45s cubic-bezier(.34,1.45,.64,1)}
+input[type=checkbox]:checked,input[type=checkbox]:indeterminate{border-color:var(--accent);background:var(--accent)}
+input[type=checkbox]::after{content:'';position:absolute;left:50%;top:45%;width:30%;height:55%;border:solid var(--canvas);border-width:0 2px 2px 0;transform:translate(-50%,-50%) rotate(45deg) scale(0);transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+input[type=checkbox]:checked::after{transform:translate(-50%,-50%) rotate(45deg) scale(1);transition-delay:.12s}
+input[type=checkbox]:indeterminate::after{width:55%;height:0;top:50%;border-width:0 0 2px;transform:translate(-50%,-50%)}
+/* Lucian UX/UI Prompt #015 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#015 */
+input[type=radio]{border-radius:50%}
+input[type=radio]::after{content:'';position:absolute;inset:4px;border-radius:50%;background:var(--accent);transform:scale(0);transition:transform .45s cubic-bezier(.34,1.45,.64,1)}
+input[type=radio]:checked{border-color:var(--accent)}
+input[type=radio]:checked::after{transform:scale(1)}
+input[type=checkbox]:active:not(:disabled),input[type=radio]:active:not(:disabled){transform:scale(.86)}
+input[type=checkbox]:disabled,input[type=radio]:disabled{opacity:.5;cursor:not-allowed}
+/* Lucian UX/UI Prompt #040 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#040 */
+@media(min-width:901px){.workspace-sidebar{transition:width .5s cubic-bezier(.34,1.45,.64,1)}.app-shell[data-authenticated=true]{transition:padding-left .5s cubic-bezier(.34,1.45,.64,1)}}
+.sidebar-context-enter-active,.sidebar-context-leave-active{transition:opacity .25s cubic-bezier(.2,.8,.2,1),transform .35s cubic-bezier(.2,.8,.2,1),filter .25s cubic-bezier(.2,.8,.2,1)}
+@media(prefers-reduced-motion:reduce){.workspace-sidebar,.app-shell,.sidebar-context-enter-active,.sidebar-context-leave-active,input[type=checkbox],input[type=radio],input[type=checkbox]::after,input[type=radio]::after{transition:none!important}}
+
+.ui-select:has(.language-selector){width:auto;min-width:110px;flex-shrink:0}
+
+.app-shell[data-sidebar-resizing=true],.app-shell[data-sidebar-resizing=true] .workspace-sidebar{transition:none!important}

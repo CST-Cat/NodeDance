@@ -30,6 +30,7 @@ const mobileNavigation = ref(false)
 const sidebarElement = ref<HTMLElement>()
 const sidebarCollapsed = ref(false)
 const sidebarWidth = ref(240)
+const sidebarResizing = ref(false)
 try {
   const saved = JSON.parse(localStorage.getItem('nodedance.sidebar') || 'null')
   if (saved) {
@@ -47,10 +48,11 @@ function toggleNavigation() {
 function resizeSidebar(event: PointerEvent) {
   if (mobileNavigation.value || sidebarCollapsed.value || event.button !== 0) return
   const handle = event.currentTarget as HTMLElement
+  sidebarResizing.value = true
   handle.setPointerCapture(event.pointerId)
   const start = event.clientX, width = sidebarWidth.value
   const move = (next: PointerEvent) => { sidebarWidth.value = Math.max(200, Math.min(400, width + next.clientX - start)) }
-  const stop = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('lostpointercapture', stop) }
+  const stop = () => { sidebarResizing.value = false; handle.removeEventListener('pointermove', move); handle.removeEventListener('lostpointercapture', stop) }
   handle.addEventListener('pointermove', move)
   handle.addEventListener('lostpointercapture', stop)
 }
@@ -530,7 +532,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="app-shell" :data-theme="effectiveTheme" :data-screen="screen" :data-authenticated="authenticated" :style="shellStyle">
+  <main class="app-shell" :data-theme="effectiveTheme" :data-screen="screen" :data-authenticated="authenticated" :data-sidebar-resizing="sidebarResizing" :style="shellStyle">
     <div v-if="screen === 'login' && backgroundSrc" class="login-background" aria-hidden="true">
       <img :key="backgroundRevision" :src="backgroundSrc" alt="" />
       <div class="login-background-shade"></div>
@@ -571,9 +573,9 @@ onBeforeUnmount(() => {
       <a v-else class="wordmark" href="/" :aria-label="t('m.f359facd4191')"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>NodeDance</span></a>
       <div class="topbar-right">
         <span class="system-label"><span class="status-dot"></span>{{ t('m.13354cb51f27') }}</span>
-        <select class="language-selector" :aria-label="locale === 'en' ? 'Language' : '语言'" :value="locale" @change="setLocale(($event.target as HTMLSelectElement).value as Locale)">
+        <UiSelect :key="viewHash(activeRoute)" class="language-selector" :aria-label="locale === 'en' ? 'Language' : '语言'" :value="locale" @change="setLocale(($event.target as HTMLSelectElement).value as Locale)">
           <option value="zh-CN">简体中文</option><option value="en">English</option>
-        </select>
+        </UiSelect>
       </div>
     </header>
 

@@ -36,11 +36,11 @@ async function save() {
     <header><strong>{{ title }}</strong><small>{{ t('m.741981bd96aa') }}</small></header>
     <label>{{ t('m.a98585871c53') }}<input v-model="form.alias" maxlength="128" :placeholder="t('m.0496871244c3')">
     </label>
-    <label>{{ t('m.0d720eeea264') }}<select v-model="form.icon">
+    <label>{{ t('m.0d720eeea264') }}<UiSelect v-model="form.icon">
         <option value="">{{ t('m.844b8cc8dff7') }}</option><option value="server">{{ t('m.2388cbc6a486') }}</option><option value="globe">{{ t('m.fb8d739d08b9') }}</option>
         <option value="database">{{ t('m.263200d7d529') }}</option><option value="shield">{{ t('m.afb63a620bdc') }}</option><option value="terminal">{{ t('m.e2a76ef1f12e') }}</option>
         <option value="box">{{ t('m.6d23f04b2696') }}</option><option value="cloud">{{ t('m.32d42b97294a') }}</option><option value="folder">{{ t('m.39932f24fe11') }}</option><option value="activity">{{ t('m.fdc390061698') }}</option>
-      </select>
+      </UiSelect>
     </label>
     <label>{{ t('m.daede9881787') }}<textarea v-model="form.notes" maxlength="2048" rows="2" :placeholder="t('m.9ad5244a4b67')"></textarea>
     </label>

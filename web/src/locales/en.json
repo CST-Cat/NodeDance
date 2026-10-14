@@ -1651,5 +1651,6 @@
   "compose.chooseDirectory": "Choose working directory",
   "compose.useDirectory": "Use this directory",
   "compose.directoryHelp": "Open a folder or create one with New Folder, then use the current directory.",
-  "compose.directoryOnly": "This picker only browses and creates directories."
+  "compose.directoryOnly": "This picker only browses and creates directories.",
+  "select.placeholder": "Choose an option"
 }

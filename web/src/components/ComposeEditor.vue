@@ -147,9 +147,9 @@ onBeforeUnmount(() => {
       <div><span class="eyebrow">{{ t('label.d5cde76290bf') }}</span><h3>{{ t('m.a5de4df1d563') }}</h3></div>
       <button class="container-action" type="button" :disabled="loading || saving" @click="void loadConfig()">{{ t('m.df7392cc96be') }}</button>
     </header>
-    <label class="compose-file-picker">{{ t('m.1d27f02ed278') }}<select v-model.number="fileIndex" :disabled="loading || saving" @change="onFileChange">
+    <label class="compose-file-picker">{{ t('m.1d27f02ed278') }}<UiSelect v-model.number="fileIndex" :disabled="loading || saving" @change="onFileChange">
         <option v-for="(path, index) in project.ref.configFiles" :key="path" :value="index">{{ path.split('/').at(-1) || path }}</option>
-      </select>
+      </UiSelect>
       <small>{{ currentFile }}</small>
     </label>
     <p class="compose-editor-risk">{{ t('m.cd673d386eed') }}</p>

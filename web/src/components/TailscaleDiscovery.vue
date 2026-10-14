@@ -331,12 +331,12 @@ onBeforeUnmount(() => {
       <div v-if="task.status === 'unknown'" class="task-status task-review" data-testid="deployment-review">
         <strong>{{ t('m.278a2d42ba92') }}</strong>
         <p>{{ t('m.e972e33c6e32') }}</p>
-        <label class="field"><span>{{ t('m.6e3bdd16a1ec') }}</span><select :value="resolutionOutcome" @change="changeResolutionOutcome">
+        <label class="field"><span>{{ t('m.6e3bdd16a1ec') }}</span><UiSelect :value="resolutionOutcome" @change="changeResolutionOutcome">
           <option value="succeeded">{{ t('m.18786701de8f') }}</option><option value="failed">{{ t('m.981ea9952f00') }}</option>
-        </select></label>
-        <label v-if="resolutionOutcome === 'succeeded'" class="field"><span>{{ t('m.e0c379ab2eb0') }}</span><select :value="resolutionObservedState" @change="changeResolutionObservedState">
+        </UiSelect></label>
+        <label v-if="resolutionOutcome === 'succeeded'" class="field"><span>{{ t('m.e0c379ab2eb0') }}</span><UiSelect :value="resolutionObservedState" @change="changeResolutionObservedState">
           <option value="connected">{{ t('m.83af47139246') }}</option><option value="unavailable">{{ t('m.d3e431f9d10b') }}</option><option value="absent">{{ t('m.8c4ecd0b9c16') }}</option>
-        </select></label>
+        </UiSelect></label>
         <label class="check-row"><input v-model="resolutionConfirmed" type="checkbox" /><span>{{ t('m.64aa1e37e12e') }}</span></label>
         <button class="secondary-button" type="button" :disabled="!resolutionConfirmed" @click="resolveUnknownDeployment">{{ t('m.b8dead662e24') }}</button>
       </div>

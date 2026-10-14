@@ -56,7 +56,7 @@ function submit() {
         <label>{{ t('m.176c09844e0f') }}<input v-model="image" required maxlength="512" :placeholder="t('m.4204fc5cf592')"></label>
         <label>{{ t('m.62621c43654a') }}<input v-model="name" required maxlength="128" :placeholder="t('m.6ae23d2114e1')"></label>
         <label>{{ t('m.97b31b5d63f5') }}<input v-model="network" maxlength="128" :placeholder="t('m.7f630368cc55')"></label>
-        <label>{{ t('m.c6e4aade79e8') }}<select v-model="restartPolicy"><option value="no">{{ t('m.4858fc1fce95') }}</option><option value="always">{{ t('m.938f259b93a3') }}</option><option value="unless-stopped">{{ t('m.4ac3e0ecef3c') }}</option><option value="on-failure">{{ t('m.787e9ce9e178') }}</option></select></label>
+        <label>{{ t('m.c6e4aade79e8') }}<UiSelect v-model="restartPolicy"><option value="no">{{ t('m.4858fc1fce95') }}</option><option value="always">{{ t('m.938f259b93a3') }}</option><option value="unless-stopped">{{ t('m.4ac3e0ecef3c') }}</option><option value="on-failure">{{ t('m.787e9ce9e178') }}</option></UiSelect></label>
         <label v-if="restartPolicy === 'on-failure'">{{ t('m.696303d9c413') }}<input v-model.number="restartRetries" type="number" min="0" max="1000"></label>
         <label class="create-form-wide">{{ t('m.570674fea082') }}<textarea v-model="commandText" rows="3" :placeholder="t('m.42dca5a99d0f')"></textarea><small>{{ t('m.47c94fbef3fe') }}</small></label>
         <label class="create-form-wide">{{ t('m.ae27b474ea4d') }}<textarea v-model="environmentText" rows="3" :placeholder="t('m.555aa8a036b4')"></textarea></label>
@@ -64,7 +64,7 @@ function submit() {
       <fieldset class="create-form-list"><legend>{{ t('m.c263674112e4') }}</legend>
         <div v-for="(port, index) in ports" :key="index" class="create-form-row">
           <label>{{ t('m.9c9980ac48fe') }}<input v-model.number="port.containerPort" type="number" min="1" max="65535"></label>
-          <label>{{ t('m.ab2f31f30acf') }}<select v-model="port.protocol"><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
+          <label>{{ t('m.ab2f31f30acf') }}<UiSelect v-model="port.protocol"><option value="tcp">TCP</option><option value="udp">UDP</option></UiSelect></label>
           <label>{{ t('m.2ffee39fb19a') }}<input v-model="port.hostIp" :placeholder="t('m.19caa396b494')"></label>
           <label>{{ t('m.f4a4267edc03') }}<input v-model="port.hostPort" inputmode="numeric" :placeholder="t('m.fdae3b9db051')"></label>
           <button type="button" class="container-action" @click="removePort(index)">{{ t('m.6135d4159e89') }}</button>
@@ -73,7 +73,7 @@ function submit() {
       </fieldset>
       <fieldset class="create-form-list"><legend>{{ t('m.6fc9c71cb14f') }}</legend>
         <div v-for="(mount, index) in mounts" :key="index" class="create-form-row create-mount-row">
-          <label>{{ t('m.ba40014ff496') }}<select v-model="mount.type"><option value="bind">{{ t('m.8b61a84a6fc9') }}</option><option value="volume">{{ t('m.22256deee0ac') }}</option></select></label>
+          <label>{{ t('m.ba40014ff496') }}<UiSelect v-model="mount.type"><option value="bind">{{ t('m.8b61a84a6fc9') }}</option><option value="volume">{{ t('m.22256deee0ac') }}</option></UiSelect></label>
           <label>{{ mount.type === 'bind' ? t('m.bb2ab0977e56') : t('m.a8833f0d0a67') }} <input v-model="mount.source" :placeholder="mount.type === 'bind' ? '/srv/data' : 'app-data'"></label>
           <label>{{ t('m.52e49d585de1') }}<input v-model="mount.target" placeholder="/var/lib/app"></label>
           <label class="create-readonly"><input v-model="mount.readOnly" type="checkbox">{{ t('m.3b5ec3533b0e') }}</label>

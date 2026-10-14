@@ -121,8 +121,10 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const guestPrivateRequests=[]
   const trackGuest=r=>{const p=new URL(r.url()).pathname;if(p.startsWith('/api/')&&!p.startsWith('/api/v1/public/')&&p!=='/api/v1/operations')guestPrivateRequests.push(p)}
   adminPage.on('request',trackGuest)
+  await adminPage.locator('.ui-select:has(.language-selector)').getByRole('combobox').click();await adminPage.locator('body > .u031-list').waitFor()
   await adminPage.evaluate(()=>{location.hash='/guest'})
   await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  assert.equal(await adminPage.locator('body > .u031-list').count(),0,'Guest entry immediately removes private dropdown portals')
   await adminPage.reload();await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   adminPage.off('request',trackGuest);assert.deepEqual(guestPrivateRequests,[],'Administrator cookies must not expand guest history restoration')
   await adminPage.goBack();await adminPage.locator('#detail-title').waitFor();assert.equal(adminPage.url(),managementURL)

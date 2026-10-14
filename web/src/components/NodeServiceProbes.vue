@@ -204,7 +204,7 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) clearInterval(refreshTim
       <h3>{{ editingID ? t('m.5ffc6380c433') : t('m.4a7abfcfad36') }}</h3>
       <div class="probe-fields">
         <label><span>{{ t('m.d44e9b3d3b31') }}</span><input v-model="form.name" maxlength="80" required :placeholder="t('m.bd0242098b8e')" /></label>
-        <label><span>{{ t('m.ab2f31f30acf') }}</span><select v-model="form.kind"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="icmp">ICMP</option></select></label>
+        <label><span>{{ t('m.ab2f31f30acf') }}</span><UiSelect v-model="form.kind"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="tcp">TCP</option><option value="icmp">ICMP</option></UiSelect></label>
         <label class="probe-target"><span>{{ t('m.fb60c9043c7a') }}</span><input v-model="form.target" required maxlength="2048" :placeholder="form.kind === 'tcp' ? 'tcp://127.0.0.1:5432' : `${form.kind}://127.0.0.1:8080/health`" /></label>
         <label v-if="['http','https'].includes(form.kind)"><span>{{ t('m.3f63bb98cd18') }}</span><input v-model.number="form.expectedHttpStatus" type="number" min="100" max="599" required /></label>
         <label><span>{{ t('m.455adcae032d') }}</span><input v-model.number="form.intervalSeconds" type="number" min="10" max="86400" required /></label>

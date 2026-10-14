@@ -193,7 +193,7 @@ onBeforeUnmount(disconnect)
     <div class="operation-layout">
       <aside>
         <input v-model="filter" type="search" :placeholder="t('operations.search')" :aria-label="t('operations.search')" />
-        <select v-model="selected" size="18" :aria-label="t('nav.operations')"><option v-for="item in matches" :key="item.name" :value="item.name">{{ item.name }}</option></select>
+        <UiSelect v-model="selected" size="18" :aria-label="t('nav.operations')"><option v-for="item in matches" :key="item.name" :value="item.name">{{ item.name }}</option></UiSelect>
       </aside>
       <div v-if="operation" class="operation-form">
         <h3>{{ operation.name }}</h3><p class="muted">{{ operation.description }}</p>
@@ -203,7 +203,7 @@ onBeforeUnmount(disconnect)
           <label v-if="operation.bodySchema?.type==='object'" class="check-row"><input v-model="rawMode" type="checkbox" :disabled="busy" />{{ t('operations.rawJSON') }}</label>
           <label v-for="[name, schema] in properties" :key="name">{{ name }}{{ operation.bodySchema?.required?.includes(name) ? ' *' : '' }}
             <input v-if="schemaHasSecrets(schema)" v-model="values[name]" type="password" :disabled="busy || connected" autocomplete="off" />
-            <select v-else-if="schema.enum || schema.type === 'boolean'" v-model="values[name]" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected"><option value="">—</option><option v-for="value in schema.enum ?? ['true', 'false']" :key="String(value)" :value="String(value)">{{ value }}</option></select>
+            <UiSelect v-else-if="schema.enum || schema.type === 'boolean'" v-model="values[name]" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected"><option value="">—</option><option v-for="value in schema.enum ?? ['true', 'false']" :key="String(value)" :value="String(value)">{{ value }}</option></UiSelect>
             <textarea v-else-if="schema.type === 'object' || schema.type === 'array'" v-model="values[name]" rows="4" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected" />
             <input v-else v-model="values[name]" type="text" :inputmode="schema.type === 'integer' ? 'numeric' : schema.type === 'number' ? 'decimal' : undefined" :minlength="schema.minLength" :maxlength="schema.maxLength" :disabled="busy || connected" autocomplete="off" />
           </label>

@@ -199,11 +199,11 @@ onBeforeUnmount(() => {
         <button class="container-action" type="button" :disabled="submitting" @click="opened = false">{{ t('m.3fd47edce45b') }}</button>
       </header>
       <p class="rebuild-intro">{{ t('m.11edce34ba7c') }}</p>
-      <label class="rebuild-mode">{{ t('m.54644705e9c6') }}<select v-model="mode" :disabled="submitting" @change="plan = undefined">
+      <label class="rebuild-mode">{{ t('m.54644705e9c6') }}<UiSelect v-model="mode" :disabled="submitting" @change="plan = undefined">
           <option value="keep">{{ t('m.841bbfd5aeae') }}</option>
           <option value="replace">{{ t('m.1f329f154394') }}</option>
           <option value="clear">{{ t('m.7c32fb37345f') }}</option>
-        </select>
+        </UiSelect>
       </label>
       <div v-if="mode === 'replace'" class="rebuild-bindings">
         <div v-for="(binding, index) in bindings" :key="index" class="rebuild-binding" :data-testid="`rebuild-binding-${index}`">

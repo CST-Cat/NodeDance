@@ -311,6 +311,10 @@ async function port() {
     await page.waitForFunction(()=>document.querySelector('.host-tabs [aria-pressed=true]')?.textContent==='Assets and quotas')
     assert.equal(permissionReads,1,'Restoring a cached document must revalidate its administrator session')
     await require('./review-regressions.cjs')({page,context,base,node,headers,artifacts})
+    const controlsPage=await context.newPage()
+    controlsPage.setDefaultTimeout(10000)
+    try { await require('./ui-controls-regressions.cjs')({page:controlsPage,base,artifacts,catalog}) }
+    finally { await controlsPage.close() }
     const dockerPage=await context.newPage()
     dockerPage.setDefaultTimeout(10000)
     await dockerPage.setViewportSize({width:1440,height:1000})

@@ -22,7 +22,7 @@ const traffic = computed({get: () => Number(props.values.trafficLimitBytes ?? 0)
    <label><span>{{ t('asset.expiry') }}</span><input v-model="expiry" type="datetime-local" data-testid="asset-expiry" /><small>{{ t('asset.expiryHint') }}</small></label>
    <label><span>{{ t('asset.price') }}</span><input v-model.number="values.price" type="number" min="0" step="any" data-testid="asset-price" /></label>
    <label><span>{{ t('host.field.currency') }}</span><input v-model="values.currency" type="text" maxlength="8" data-testid="asset-currency" /></label>
-   <label><span>{{ t('asset.cycle') }}</span><select v-model="cycle" data-testid="asset-cycle"><option v-for="unit in units" :key="String(unit)" :value="unit">{{ t(unitLabels[String(unit)] ?? String(unit)) }}</option></select></label>
+   <label><span>{{ t('asset.cycle') }}</span><UiSelect v-model="cycle" data-testid="asset-cycle"><option v-for="unit in units" :key="String(unit)" :value="unit">{{ t(unitLabels[String(unit)] ?? String(unit)) }}</option></UiSelect></label>
    <label v-if="cycle === 'day'"><span>{{ t('host.field.billingCycleDays') }}</span><input v-model.number="values.billingCycleDays" type="number" min="1" max="3660" /></label>
   </div>
  </fieldset>

@@ -87,3 +87,5 @@ SSH discovery is administrator-only through `agents.diagnostics`. Host addresses
 Administrator VPS sections use the contextual sidebar; returning home restores global navigation. The guest browser regression retains detail history, reload, section selection and administrator session checks through this sidebar. Guest display does not expose management navigation.
 
 Compose project display names are administrator-only preferences. The isolated browser suite stores a private project-name canary and verifies that anonymous/public output does not contain it; Compose deletion remains behind the shared authenticated operation and CSRF boundary.
+
+The browser guest regression opens a shared dropdown before guest entry and verifies immediate removal of its teleported listbox. Custom controls keep the existing Core operation, opt-in policy and session boundaries.

@@ -1,0 +1,41 @@
+const assert=require('node:assert/strict'),path=require('node:path')
+module.exports=async function({page,base,artifacts,catalog}){
+ const errors=[];page.on('pageerror',error=>errors.push(error.message))
+ await page.setViewportSize({width:1440,height:1000});await page.goto(base+'/#/agent-enrollment')
+ const source=page.getByTestId('asset-cycle'),control=source.locator('..').getByRole('combobox')
+ await control.waitFor();assert.equal(await source.getAttribute('aria-hidden'),'true')
+ await control.click();const list=page.locator('body>.u031-list');await list.waitFor()
+ assert.ok(await list.getByRole('option',{name:'Year',exact:true}).isVisible())
+ await list.getByRole('option',{name:'Year',exact:true}).click();assert.equal(await source.inputValue(),'year');await list.waitFor({state:'detached'})
+ await control.focus();await page.keyboard.press('ArrowDown');await list.waitFor();await page.keyboard.press('h');await page.keyboard.press('Enter');assert.equal(await source.inputValue(),'hour')
+ await control.click();await list.waitFor();await page.keyboard.press('Escape');await list.waitFor({state:'detached'});assert.ok(await control.evaluate(el=>el===document.activeElement))
+ await control.click();await list.waitFor();await page.locator('.agent-enrollment-form input').nth(1).click();await list.waitFor({state:'detached'})
+ await control.click();await list.waitFor();await page.keyboard.press('Tab');await list.waitFor({state:'detached'})
+ await page.locator('.agent-enrollment-form input').nth(1).fill('Disabled-control fixture')
+ const operation=catalog.operations.find(item=>item.name==='agents.enrollment');assert.ok(operation)
+ let release,started;const held=new Promise(resolve=>release=resolve),pending=new Promise(resolve=>started=resolve)
+ await page.route('**'+operation.path,async route=>{if(route.request().method()!=='POST')return route.fallback();started();await held;return route.fulfill({status:503,body:'Isolated held submission'})})
+ await page.locator('.agent-enrollment-form .primary-button').click();await pending
+ assert.ok(await control.isDisabled(),'Custom field honors the disabled fieldset')
+ release();await page.locator('.agent-enrollment-form [role=alert]').waitFor();await page.waitForFunction(()=>!document.querySelector('[data-testid=asset-cycle]').closest('.ui-select').querySelector('button').disabled);assert.ok(await control.isEnabled())
+ for(const theme of ['light','dark'])for(const width of [375,1440]){
+  await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+  await control.scrollIntoViewIfNeeded();await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));await control.click();await list.waitFor()
+  const bounds=await list.boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=width+1)
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
+  await page.waitForFunction(()=>{const list=document.querySelector('body>.u031-list');return list&&getComputedStyle(list).opacity==='1'&&getComputedStyle(list).transform==='none'})
+  await page.screenshot({animations:'disabled',path:path.join(artifacts,`controls-select-${theme}-${width}.png`)});assert.ok(await list.isVisible());await page.keyboard.press('Escape')
+ }
+ await page.emulateMedia({reducedMotion:'reduce'});await control.click();await list.waitFor();assert.equal(await list.evaluate(el=>getComputedStyle(el).transitionDuration),'0s');await page.keyboard.press('Escape')
+ await page.goto(base+'/#/guest-settings');const check=page.locator('.guest-settings input[type=checkbox]').first();await check.waitFor()
+ const previous=await check.isChecked();await check.focus();await page.keyboard.press('Space');assert.equal(await check.isChecked(),!previous)
+ assert.equal(await check.evaluate(el=>getComputedStyle(el).appearance),'none')
+ await check.evaluate(el=>el.indeterminate=true);assert.ok(await check.evaluate(el=>el.matches(':indeterminate')))
+ await check.click();assert.ok(!(await check.evaluate(el=>el.indeterminate)))
+ for(const theme of ['light','dark'])for(const width of [375,1440]){
+  await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(artifacts,`controls-check-${theme}-${width}.png`),fullPage:true})
+ }
+ assert.deepEqual(errors,[])
+ console.log('Shared controls passed: pointer/keyboard/typeahead, Escape/Tab/outside focus, fieldset disable, value handoff, viewport positioning, native checkbox keyboard/indeterminate, reduced motion; 8 layouts.')
+}

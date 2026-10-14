@@ -1651,5 +1651,6 @@
   "compose.chooseDirectory": "选择工作目录",
   "compose.useDirectory": "使用此目录",
   "compose.directoryHelp": "进入目标文件夹，或使用“新建文件夹”创建目录，再选择使用当前目录。",
-  "compose.directoryOnly": "此选择器仅用于浏览和创建目录。"
+  "compose.directoryOnly": "此选择器仅用于浏览和创建目录。",
+  "select.placeholder": "请选择"
 }

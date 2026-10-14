@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### English
+
+### 简体中文
+
+## [0.1.28]
+
+### English
+
+- Replace native select presentation throughout Web with a shared themed accessible listbox; add custom checkbox/radio feedback and smoother sidebar motion while preserving form semantics, immediate resize, reduced motion and guest portal cleanup.
+
+### 简体中文
+
+- Web 下拉框统一改为主题化无障碍列表框，增加自定义复选／单选反馈与平滑侧栏动画，保留表单语义、即时拖动、减少动态效果和游客切换浮层清理。
+
 ## [0.1.27]
 
 ### English

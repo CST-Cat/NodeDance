@@ -371,7 +371,7 @@ async function copySSHCommand() {
       <button type="button" data-testid="node-ssh-shortcut" :title="sshCommand || t('ssh.automatic')" @click="void copySSHCommand()">{{ t('m.12d40d9f555d') }}</button>
       <button type="button" @click="emit('quickAction', { node, action: 'manage' })">{{ t('m.bb6d995724f4') }}</button>
     </nav>
-    <label v-if="!nodePreference?.sshUser && (sshConnection?.users?.length ?? 0)>1" class="ssh-user-choice">{{ t('ssh.chooseUser') }}<select v-model="selectedSSHUser"><option value="">{{ sshConnection?.user || t('ssh.clientDefault') }}</option><option v-for="user in sshConnection?.users" :key="user" :value="user">{{ user }}</option></select></label>
+    <label v-if="!nodePreference?.sshUser && (sshConnection?.users?.length ?? 0)>1" class="ssh-user-choice">{{ t('ssh.chooseUser') }}<UiSelect v-model="selectedSSHUser"><option value="">{{ sshConnection?.user || t('ssh.clientDefault') }}</option><option v-for="user in sshConnection?.users" :key="user" :value="user">{{ user }}</option></UiSelect></label>
     <p v-if="sshCopyMessage" class="vps-card-ssh-status" role="status">{{ display(sshCopyMessage) }}</p>
     <footer class="vps-card-footer">
       <span>{{ nodeReason || (dockerExpanded && dockerStale ? t('m.5662971e4f8b') : '') }}</span>
