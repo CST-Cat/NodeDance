@@ -138,6 +138,15 @@ func schema(value any) any {
 		enum("transport", "auto", "websocket", "http")
 		enum("preferIpVersion", "", "4", "6")
 	case protocol.NodeAsset:
+		raw, _ := json.Marshal(protocol.DefaultNodeAsset())
+		var defaults map[string]any
+		json.Unmarshal(raw, &defaults)
+		for key, value := range defaults {
+			if field, ok := props[key].(map[string]any); ok {
+				field["default"] = value
+			}
+		}
+		enum("billingCycleUnit", "", "day", "year", "month", "hour", "minute")
 		enum("trafficAccounting", "sum", "max", "min", "up", "down")
 	case protocol.BatchProbe:
 		enum("kind", "http", "https", "tcp", "icmp")
@@ -232,6 +241,7 @@ func enrollmentSchema() any {
 	properties := body["properties"].(map[string]any)
 	properties["deploymentMethod"].(map[string]any)["enum"] = []string{"", agents.DeploymentNative, agents.DeploymentDocker}
 	properties["deploymentMethod"].(map[string]any)["default"] = agents.DefaultDeploymentMethod
+	properties["asset"] = schema(protocol.NodeAsset{})
 	return body
 }
 

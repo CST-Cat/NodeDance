@@ -33,7 +33,7 @@ async function loadNode() {await perform(async()=>{
  if(results[1].status==='fulfilled')Object.assign(asset,results[1].value)
  const failed=results.find(r=>r.status==='rejected');if(failed?.status==='rejected')throw failed.reason
 })}
-async function save(name:string,body:Record<string,unknown>){await perform(async()=>{const data={...body};if(data.expiresAt==='')delete data.expiresAt;await operationRequest(name,{params:{nodeId:nodeId.value}},{body:exactJSON(data)});notice.value=t('host.saved')})}
+async function save(name:string,body:Record<string,unknown>){await perform(async()=>{const data={...body};for(const [key,field] of Object.entries(schema(name)?.properties??{}))if(field.nullable&&field.format==='date-time'&&data[key]==='')data[key]=null;await operationRequest(name,{params:{nodeId:nodeId.value}},{body:exactJSON(data)});notice.value=t('host.saved')})}
 async function submitBatch(name: 'commands.batch' | 'probes.batch', body: Record<string,unknown>) {await perform(async()=>{
  const payload=exactJSON(body), intent=await requestIntent(name,{},payload)
  if(disposed)return

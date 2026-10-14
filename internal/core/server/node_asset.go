@@ -14,7 +14,7 @@ import (
 )
 
 func defaultNodeAsset() protocol.NodeAsset {
-	return protocol.NodeAsset{Currency: "USD", BillingCycleDays: 30, ExpiryNoticeDays: 7, TrafficAccounting: "sum", TrafficWarningPercent: 90}
+	return protocol.DefaultNodeAsset()
 }
 func (s *Server) nodeAsset(ctx context.Context, node string) (protocol.NodeAsset, error) {
 	a := defaultNodeAsset()

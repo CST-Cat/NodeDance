@@ -1,3 +1,4 @@
+import { exactJSON } from './operations'
 import { resolveOperation, operationUpload, validateSchema, parseExactJSON, decodeContractJSON, type BodySchema, type OperationInput } from './operations'
 import { requestIntent, intentKey, finishIntent } from './operation-intent'
 import { t, diagnostic } from "./i18n"
@@ -594,9 +595,9 @@ export const api = {
     body: JSON.stringify({ peerIdentity }),
   }),
   deleteNode: (nodeId: string) => operationRequest<{deleted: boolean}>("nodes.delete", {params: {nodeId}}, {body: JSON.stringify({confirm: true})}),
-  renewAgentEnrollment: (nodeId: string, coreUrl: string, deploymentMethod: 'native' | 'docker') => operationRequest<{nodeId: string; displayName: string; expiresAt: string; nativeInstallCommand: string; dockerInstallCommand: string}>("nodes.renew-enrollment", {params: {nodeId}}, {body: JSON.stringify({coreUrl, deploymentMethod})}),
-  createAgentEnrollment: (displayName: string, coreUrl: string, deploymentMethod: 'native' | 'docker') => operationRequest<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number; installCommand: string; nativeInstallCommand: string; dockerInstallCommand: string; deploymentMethod: 'native' | 'docker' }>("agents.enrollment", {}, {
-    body: JSON.stringify({ displayName, coreUrl, deploymentMethod }),
+  renewAgentEnrollment: (nodeId: string, coreUrl: string, deploymentMethod: 'native' | 'docker', asset?: Record<string, unknown>) => operationRequest<{nodeId: string; displayName: string; expiresAt: string; nativeInstallCommand: string; dockerInstallCommand: string}>("nodes.renew-enrollment", {params: {nodeId}}, {body: exactJSON({coreUrl, deploymentMethod, asset})}),
+  createAgentEnrollment: (displayName: string, coreUrl: string, deploymentMethod: 'native' | 'docker', asset?: Record<string, unknown>) => operationRequest<{ nodeId: string; displayName: string; token: string; expiresAt: string; expiresInSeconds: number; installCommand: string; nativeInstallCommand: string; dockerInstallCommand: string; deploymentMethod: 'native' | 'docker' }>("agents.enrollment", {}, {
+    body: exactJSON({ displayName, coreUrl, deploymentMethod, asset }),
   }),
   startTailscaleDeployment: (payload: TailscaleDeployPayload, idempotencyKey: string) => operationRequest<TailscaleDeploymentTask>("deployments.create", {}, {
     headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(payload),

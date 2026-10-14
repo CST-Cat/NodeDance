@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"errors"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"sort"
 	"sync"
 	"time"
@@ -75,7 +76,7 @@ func newCollector(source collectorSource, now func() time.Time, diskTimeout time
 		latestDisk: DiskSnapshot{State: StateUnknown, Reason: "not_sampled"},
 		done:       make(chan struct{}),
 	}
-	c.diskPoller = newDiskPoller(source, diskTimeout, now)
+	c.diskPoller = newDiskPoller(configuredDiskSource{collectorSource: source, settings: func() protocol.AgentSettings { return protocol.AgentSettings{} }}, diskTimeout, now)
 	return c
 }
 

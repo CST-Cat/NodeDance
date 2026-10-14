@@ -71,6 +71,40 @@ func TestPublishedContractAgainstRealCore(t *testing.T) {
 		NodeID string `json:"nodeId"`
 	}
 	json.Unmarshal(enrollment.Data, &node)
+	for _, unit := range []string{"year", "month", "hour", "minute"} {
+		asset := protocol.DefaultNodeAsset()
+		asset.BillingCycleUnit = unit
+		asset.Price = 8.5
+		asset.TrafficLimitBytes = 900000000000
+		body, _ := json.Marshal(asset)
+		saved := invoke("nodes.save-asset", control.Input{Params: map[string]string{"nodeId": node.NodeID}, Body: body})
+		if saved.Err() != nil {
+			t.Fatal(saved.Error)
+		}
+		read := invoke("nodes.asset", control.Input{Params: map[string]string{"nodeId": node.NodeID}})
+		var got protocol.NodeAsset
+		if read.Err() != nil || json.Unmarshal(read.Data, &got) != nil || got.BillingCycleUnit != unit || got.Price != asset.Price || got.TrafficLimitBytes != asset.TrafficLimitBytes {
+			t.Fatalf("shared client asset round trip failed: %+v", read)
+		}
+	}
+	asset := protocol.DefaultNodeAsset()
+	asset.BillingCycleUnit = "minute"
+	body, _ := json.Marshal(map[string]any{"displayName": "Contract asset enrollment", "asset": asset})
+	created := invoke("agents.enrollment", control.Input{Body: body})
+	if created.Err() != nil {
+		t.Fatal(created.Error)
+	}
+	var createdNode struct {
+		NodeID string `json:"nodeId"`
+	}
+	if err := json.Unmarshal(created.Data, &createdNode); err != nil {
+		t.Fatal(err)
+	}
+	readAsset := invoke("nodes.asset", control.Input{Params: map[string]string{"nodeId": createdNode.NodeID}})
+	var enrolledAsset protocol.NodeAsset
+	if readAsset.Err() != nil || json.Unmarshal(readAsset.Data, &enrolledAsset) != nil || enrolledAsset.BillingCycleUnit != "minute" {
+		t.Fatal("discovered enrollment asset lost", readAsset.Error)
+	}
 	pref, _ := json.Marshal(map[string]any{"targetKind": "node", "identity": "node:" + node.NodeID, "alias": "", "icon": "", "notes": "", "serviceUrl": "", "sshHost": "", "sshUser": "", "sshPort": 22, "group": "", "sortOrder": 0, "visible": true, "pinned": false})
 	result := invoke("nodes.save-preference", control.Input{Params: map[string]string{"nodeId": node.NodeID}, Body: pref})
 	if result.Status != 204 {

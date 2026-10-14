@@ -15,7 +15,7 @@
 | root 脚本及多主机批量执行 | `commands.submit/list/get/cancel`、`commands.batch/batches/batch-status/batch-cancel`；Web → 主机管理 → 批量脚本 |
 | ICMP IPv4/IPv6、跨节点相同目标、延迟/失败/丢包/抖动统计 | `probes.create`、`probes.batch`、`probes.quality`；Web 节点探测与多节点探测 |
 | 扩展指标、P95 延迟、探测失败率、ICMP 丢包率告警 | `metric`、`probe_latency`、`probe_failure`、`probe_packet_loss` 规则；Web 告警中心 |
-| 费用、计费周期、到期与流量配额提醒 | `nodes.asset` / `nodes.save-asset`；`asset_expiry` / `traffic_quota` 告警规则；Web 主机管理与告警中心 |
+| 费用、计费周期、到期与流量配额提醒 | `nodes.asset` / `nodes.save-asset`；`asset_expiry` / `traffic_quota` 告警规则；Web 注册命令生成、节点设置（删除节点之前）、主机管理与告警中心 |
 | 共享注册密钥 | `agents.create-grant/grants/revoke-grant`；Web → 主机管理 → 批量注册；限时、限次数、可撤销，每台 Agent 独立凭据 |
 | HTTP 回退与压缩 | `auto` 优先 WebSocket，握手失败后使用 HTTP；可明确选用 `http` 或 `websocket`；HTTP 使用帧序号、重试去重和轮询确认 |
 | 自动更新与诊断 | `autoUpdate` 经现有更新控制服务执行；`agents.diagnostics` 返回有效配置并隐藏凭据 |
@@ -69,7 +69,7 @@ TUI 搜索上述操作名，填写由 Core 提供的参数与请求体，提交�
 
 ## 数据语义与运行边界
 
-- 主机采样默认 5 秒，可设 1–60 秒；磁盘默认 30 秒，可设 5–300 秒。GPU 每 30 秒、公网地址每 5 分钟在独立任务采样。GPU/查询失败分别报告 unknown，不填零，不阻塞基础采样。磁盘挂载点筛选在执行 statfs 前生效。
+- 主机采样默认 5 秒，可设 1–60 秒；磁盘默认 30 秒，可设 5–300 秒。GPU 每 30 秒、公网地址每 5 分钟在独立任务采样。GPU/查询失败分别报告 unknown，不填零，不阻塞基础采样。磁盘挂载点筛选在执行 statfs 前生效。默认仅采集根目录和持久存储挂载点，排除 EFI、内存盘、内核伪文件系统及 Docker 运行时挂载；实际磁盘读取失败仍报告 unknown。显式选择挂载点可查看 EFI、tmpfs 等容量信息，内核伪文件系统始终排除。节点网络面板仅展示参与汇总的主接口（含 VPS 主网卡及 bond），默认隐藏回环、Docker 网桥、veth 和隧道接口；显式配置的接口仍遵循 Agent 筛选设置。B/s 取整数，KiB/s 及更大单位保留一位小数。
 - `memoryMode=available` 使用 total − MemAvailable；`raw` 使用 gopsutil 原始 Used；`cached` 使用 total − Free。主内存指标的 availableBytes 是该策略下 total − used；`host.memory` 保留 Linux 实际 Available、原始 Used、Free、Cached、Buffers、Shared。
 - 账期日为每月 UTC 1–28 日。账本持久化累计与本期观测增量。重启、网卡计数器重置、网卡身份变化、采样空档及跨账期的未分配边界区间会明确标记 `partial_coverage`。没有采样前的历史流量不会被推算。本期配额提醒按已观测流量触发，因此不完整覆盖的数值是下界。
 - 流量配额支持 `sum`（上传+下载）、`max`、`min`、`up`、`down`。到期提前提醒天数和流量提醒百分比由资产设置控制；在告警中心创建相应规则、选择通知渠道。到期提醒可在节点离线时触发，离线流量保持 unknown。
@@ -94,3 +94,9 @@ Web batch command/probe forms share the generic operation intent store. An uncer
 Web 批量命令／探测表单共用通用操作的执行意图存储。结果不确定时，刷新或离开页面仍保留重试键；手动重新填写同一请求后复用原键，不保存脚本和请求正文。成功提交会清除该意图，下一次明确提交可执行新任务。
 
 Web 的节点详情提供独立“服务探测”标签，集中管理目标、启停、结果和历史。未配置的总览不占用空面板；已配置时总览显示一次读取的简短摘要，可跳转到服务探测。切换其他标签停止界面列表轮询，不会停用 Core／Agent 已配置的探测任务。
+
+## 注册与节点资产设置
+
+生成 Agent 注册命令时，可填写每月流量额度（GB，1 GB = 10^9 字节）、购买日期、VPS 到期时间、续费价格及币种。周期支持年、月、小时（h）、分钟（min），现有自定义天数仍可使用。购买日期按日历日期记录（UTC 午夜存储），留空表示不记录；到期时间按浏览器本地时区输入，Core 保存 UTC；此字段与安装命令的十分钟注册凭据有效期分开。流量额度 0 表示不设额度，到期时间留空表示不设到期。流量统计周期及统计方式仍使用现有 Agent 配置和资产统计设置，价格是记录信息，不自动扣费或续费。
+
+`agents.enrollment` 与 `nodes.renew-enrollment` 的共享请求可携带 `asset` 对象，使用 `nodes.save-asset` 的资产字段；校验、待注册节点、凭据与资产保存位于同一事务。安装和注册后仍保留这些信息。节点设置中的“流量与续费”表单位于删除节点之前，使用 `nodes.asset` / `nodes.save-asset`，离线节点也可编辑。CLI、TUI 的发现式操作界面提供相同请求和编辑能力；可用 `nodedance describe agents.enrollment` 或 `nodedance describe nodes.save-asset` 查看连接 Core 的字段和周期枚举。资产信息仅管理员可见，不进入游客投影。

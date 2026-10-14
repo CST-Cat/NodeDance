@@ -6,6 +6,20 @@
 
 ### 简体中文
 
+## [0.1.24]
+
+### English
+
+- Add monthly traffic quota, purchase date, expiry date, renewal price and currency to Agent enrollment and node settings; support year, month, hour and minute billing, persist enrollment assets atomically, and place the editor immediately before node deletion.
+- Show only summary-selected main network interfaces and round byte rates to integers or one decimal in larger units; verify mobile layouts, asset editing and clearing, shared operation discovery, and private billing exclusion from guest data.
+- Correct installer guidance to describe resolving the latest stable Agent at execution time.
+
+### 简体中文
+
+- 在生成 Agent 注册命令和节点设置时增加每月流量额度、购买日期、到期时间、续费价格及币种；支持年、月、小时、分钟计费，注册资产以同一事务保存，编辑入口位于删除节点之前。
+- 网络面板仅显示参与汇总的主接口，字节速率取整数、更大单位保留一位小数；验证移动端布局、资产修改与清空、共享操作发现及游客数据不泄露费用信息。
+- 修正安装提示，明确安装命令执行时解析最新正式 Agent 版本。
+
 ## [0.1.23]
 
 ### English

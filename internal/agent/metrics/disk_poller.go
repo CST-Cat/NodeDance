@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -55,8 +56,8 @@ func collectDisks(ctx context.Context, source collectorSource, at time.Time) Dis
 		return DiskSnapshot{State: StateUnknown, Reason: reasonFromError(err), SampledAt: at}
 	}
 
-	// Keep separately mounted filesystems, while avoiding pseudo filesystems
-	// whose capacity is not disk storage. tmpfs and overlay remain visible.
+	// Capacity-less kernel interfaces never enter disk samples, including
+	// when mountpoints are explicitly selected.
 	byMountpoint := make(map[string]disk.PartitionStat, len(partitions))
 	for _, partition := range partitions {
 		if partition.Mountpoint == "" || pseudoFilesystem(partition.Fstype) {
@@ -112,9 +113,33 @@ func collectDisks(ctx context.Context, source collectorSource, at time.Time) Dis
 
 func pseudoFilesystem(name string) bool {
 	switch name {
-	case "proc", "sysfs", "devtmpfs", "devpts", "cgroup", "cgroup2", "securityfs", "debugfs", "tracefs", "pstore", "configfs", "mqueue", "hugetlbfs", "autofs":
+	case "proc", "sysfs", "devtmpfs", "devpts", "cgroup", "cgroup2", "securityfs", "debugfs", "tracefs", "pstore", "configfs", "mqueue", "hugetlbfs", "autofs", "binfmt_misc", "nsfs", "fusectl", "rpc_pipefs":
 		return true
 	default:
 		return false
 	}
+}
+
+// Default capacity monitoring covers persistent storage, not runtime mounts.
+// An explicit IncludeMountpoints selection is applied by configuredDiskSource.
+func defaultStorageMount(p disk.PartitionStat) bool {
+	if pseudoFilesystem(p.Fstype) || p.Mountpoint == "" {
+		return false
+	}
+	if p.Mountpoint == "/" {
+		return true
+	}
+	if p.Mountpoint == "/boot/efi" {
+		return false
+	}
+	switch p.Fstype {
+	case "tmpfs", "ramfs", "overlay", "squashfs":
+		return false
+	}
+	for _, root := range []string{"/proc", "/sys", "/dev", "/run", "/var/lib/docker", "/var/lib/containers"} {
+		if p.Mountpoint == root || strings.HasPrefix(p.Mountpoint, root+"/") {
+			return false
+		}
+	}
+	return true
 }

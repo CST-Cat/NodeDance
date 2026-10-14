@@ -17,11 +17,18 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  for(let i=0;i<privateOperations.length;i+=8){await Promise.all(privateOperations.slice(i,i+8).map(async o=>{const r=await browserRequest(target(o),o.method,payload,hostileHeaders);record('catalog:'+o.name,r.status===401,{status:r.status})}))}
 
  // Enrollment token-bearing installation commands remain private.
- const enrollment=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE INSTALL NAME',coreUrl:base,deploymentMethod:'docker'}})
+ const enrollment=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE INSTALL NAME',coreUrl:base,deploymentMethod:'docker',asset:{price:98765.4321,currency:'PRIVBILL',billingCycleUnit:'minute',billingCycleDays:30,purchasedAt:'2098-04-03T00:00:00Z',expiresAt:'2099-05-06T07:08:00Z',expiryNoticeDays:7,trafficLimitBytes:1234567890123,trafficAccounting:'sum',trafficWarningPercent:90}}})
  assert.equal(enrollment.status(),201);const install=await enrollment.json()
  for(const command of [install.nativeInstallCommand,install.dockerInstallCommand])assert.ok(command.includes('--token '+install.token))
  const projection=await browserRequest('/api/v1/public/guest/display')
  record('private-install-command-projection',projection.status===200&&!projection.body.includes(install.token)&&!projection.body.includes('PRIVATE INSTALL NAME'))
+ const assetPath=catalog.operations.find(o=>o.name==='nodes.asset').path.replace('{nodeId}',install.nodeId)
+ const savedAsset=await admin.request.get(base+assetPath);assert.equal(savedAsset.status(),200);assert.equal((await savedAsset.json()).billingCycleUnit,'minute')
+ for(const cookieContext of [page.context(),admin]){
+  const response=await cookieContext.request.get(base+'/api/v1/public/guest/display');const body=await response.text()
+  record('private-billing-projection:'+ (cookieContext===admin?'administrator':'guest'),response.status()===200&&!['PRIVBILL','98765.4321','1234567890123','2099-05-06','2098-04-03','purchasedAt','billingCycleUnit','trafficLimitBytes'].some(value=>body.includes(value)))
+ }
+
  const anonymousInstall=await browserRequest('/api/v1/agents/enrollments','POST',{displayName:'forged-install',coreUrl:base},hostileHeaders)
  record('private-install-command-anonymous',anonymousInstall.status===401)
  // Private RSS subscriptions never enter guest projections, even with admin cookies.

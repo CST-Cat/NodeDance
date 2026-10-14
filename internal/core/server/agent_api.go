@@ -135,12 +135,20 @@ func (s *Server) adminCreateAgentEnrollment(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	var assets []protocol.NodeAsset
+	if request.Asset != nil {
+		if err := protocol.ValidateNodeAsset(*request.Asset); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		assets = append(assets, *request.Asset)
+	}
 	var enrollment agents.Enrollment
 	var err error
 	if renewing {
-		enrollment, err = s.agents.RenewEnrollment(r.Context(), nodeID, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
+		enrollment, err = s.agents.RenewEnrollment(r.Context(), nodeID, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true}, assets...)
 	} else {
-		enrollment, err = s.agents.CreateEnrollment(r.Context(), name, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
+		enrollment, err = s.agents.CreateEnrollment(r.Context(), name, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true}, assets...)
 	}
 	if errors.Is(err, agents.ErrConflict) {
 		http.Error(w, "node is no longer awaiting enrollment", http.StatusConflict)

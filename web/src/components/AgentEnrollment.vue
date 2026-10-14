@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { t, display } from "../i18n"
 import { computed, onMounted, ref, watch } from 'vue'
-import { api } from '../api'
+import { api, operationRequest } from '../api'
 import { beijingTime } from '../time'
-import { resolveOperation } from '../operations'
+import { resolveOperation, type BodySchema } from '../operations'
+import NodeAssetFields from './NodeAssetFields.vue'
+const asset = ref<Record<string, unknown>>({})
+const assetSchema = ref<BodySchema>()
+const assetReady = ref(false)
 
 const props = withDefaults(defineProps<{ compact?: boolean; nodeId?: string }>(), { compact: false })
 const emit = defineEmits<{ back: [] }>()
@@ -41,17 +45,29 @@ const agentOriginUsesAllowedTransport = computed(() =>
 const installCommand = ref('')
 const dockerInstallCommand = ref('')
 const deploymentMethod = ref<'native' | 'docker'>('native')
-onMounted(async()=>{try{const {operation}=await resolveOperation('agents.enrollment');const value=operation.bodySchema?.properties?.deploymentMethod?.default;if(value==='native'||value==='docker')deploymentMethod.value=value}catch(reason){error.value=reason instanceof Error?reason.message:String(reason)}})
+onMounted(async () => {
+ try {
+  const {operation} = await resolveOperation('agents.enrollment')
+  const value = operation.bodySchema?.properties?.deploymentMethod?.default
+  if(value === 'native' || value === 'docker') deploymentMethod.value = value
+  assetSchema.value = operation.bodySchema?.properties?.asset
+  asset.value = props.nodeId
+   ? await operationRequest<Record<string, unknown>>('nodes.asset', {params:{nodeId:props.nodeId}})
+   : Object.fromEntries(Object.entries(assetSchema.value?.properties ?? {}).map(([key, field]) => [key, field.default ?? (field.type === 'integer' || field.type === 'number' ? 0 : null)]))
+  if(!props.nodeId) asset.value.billingCycleUnit = 'month'
+  assetReady.value = true
+ } catch(reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
+})
 const selectedInstallCommand = computed(() => deploymentMethod.value === 'docker' ? dockerInstallCommand.value : installCommand.value)
 
 let requestEpoch = 0
-watch([displayName, agentServer], () => {
+watch([displayName, agentServer, asset], () => {
   requestEpoch++
   installCommand.value = ''
   dockerInstallCommand.value = ''
   expiresAt.value = ''
   notice.value = ''
-})
+}, {deep:true})
 
 async function generateEnrollment() {
   error.value = ''
@@ -72,8 +88,8 @@ async function generateEnrollment() {
   creating.value = true
   try {
     const result = props.nodeId
-      ? await api.renewAgentEnrollment(props.nodeId, agentOrigin.value, deploymentMethod.value)
-      : await api.createAgentEnrollment(name, agentOrigin.value, deploymentMethod.value)
+      ? await api.renewAgentEnrollment(props.nodeId, agentOrigin.value, deploymentMethod.value, asset.value)
+      : await api.createAgentEnrollment(name, agentOrigin.value, deploymentMethod.value, asset.value)
     if (current !== requestEpoch) return
     installCommand.value = result.nativeInstallCommand
     dockerInstallCommand.value = result.dockerInstallCommand
@@ -121,10 +137,11 @@ function isLiteralLoopback(hostname: string): boolean {
         <p v-if="deploymentMethod === 'docker'" class="field-hint">{{ t('agent.dockerRequirements') }}</p>
         <p v-if="nodeId" class="field-hint">{{ t('node.enrollmentRenewHint') }}</p>
         <label v-else class="field"><span>{{ t('m.a09f47188571') }}</span><input v-model="displayName" maxlength="80" autocomplete="off" :placeholder="t('m.1b086a50d7b3')" /></label>
+        <NodeAssetFields v-if="assetReady" :values="asset" :schema="assetSchema" :disabled="creating" />
         <p v-if="!agentOriginIsSupported || !agentOriginUsesAllowedTransport" class="alert alert-error" role="alert">{{ t('m.1d5964dbb8d8') }}</p>
         <p v-if="error" class="alert alert-error" role="alert">{{ display(error) }}</p>
         <p v-if="notice" class="alert alert-success" role="status">{{ display(notice) }}</p>
-        <button class="primary-button" type="button" :disabled="creating || (!nodeId && !displayName.trim()) || !agentOriginIsSupported || !agentOriginUsesAllowedTransport" @click="generateEnrollment">{{ creating ? t('m.a8b8730c9611') : nodeId ? t('node.generateInstall') : t('m.92840286f8cd') }}</button>
+        <button class="primary-button" type="button" :disabled="!assetReady || creating || (!nodeId && !displayName.trim()) || !agentOriginIsSupported || !agentOriginUsesAllowedTransport" @click="generateEnrollment">{{ creating ? t('m.a8b8730c9611') : nodeId ? t('node.generateInstall') : t('m.92840286f8cd') }}</button>
         <div v-if="selectedInstallCommand" class="agent-enrollment-result">
           <p class="field-hint">{{ t('m.80ee590ed729') }}<time :datetime="expiresAt" data-testid="agent-enrollment-expiry">{{ beijingTime(expiresAt) }}</time> · {{ t('time.beijing') }}</p>
           <label class="field"><span>{{ t('m.304f2c052c67') }}</span><textarea readonly rows="3" :value="selectedInstallCommand" data-testid="agent-install-command" /></label>

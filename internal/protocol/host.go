@@ -386,7 +386,9 @@ type BatchProbe struct {
 type NodeAsset struct {
 	Price                 float64    `json:"price"`
 	Currency              string     `json:"currency"`
+	BillingCycleUnit      string     `json:"billingCycleUnit,omitempty"`
 	BillingCycleDays      int        `json:"billingCycleDays"`
+	PurchasedAt           *time.Time `json:"purchasedAt,omitempty"`
 	ExpiresAt             *time.Time `json:"expiresAt,omitempty"`
 	ExpiryNoticeDays      int        `json:"expiryNoticeDays"`
 	TrafficLimitBytes     uint64     `json:"trafficLimitBytes"`
@@ -394,9 +396,18 @@ type NodeAsset struct {
 	TrafficWarningPercent float64    `json:"trafficWarningPercent"`
 }
 
+func DefaultNodeAsset() NodeAsset {
+	return NodeAsset{Currency: "USD", BillingCycleDays: 30, ExpiryNoticeDays: 7, TrafficAccounting: "sum", TrafficWarningPercent: 90}
+}
+
 func ValidateNodeAsset(a NodeAsset) error {
 	if !finiteNonnegative(a.Price) || len(a.Currency) < 1 || len(a.Currency) > 8 || strings.TrimSpace(a.Currency) != a.Currency || strings.ContainsAny(a.Currency, "\x00\r\n") || a.BillingCycleDays < 1 || a.BillingCycleDays > 3660 || a.ExpiryNoticeDays < 0 || a.ExpiryNoticeDays > 365 || !percent(a.TrafficWarningPercent) {
 		return errors.New("invalid node asset settings")
+	}
+	switch a.BillingCycleUnit {
+	case "", "day", "year", "month", "hour", "minute":
+	default:
+		return errors.New("invalid billing cycle unit")
 	}
 	switch a.TrafficAccounting {
 	case "sum", "max", "min", "up", "down":

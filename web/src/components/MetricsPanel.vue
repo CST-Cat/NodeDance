@@ -78,7 +78,7 @@ function statusLabel(status: MetricStatus): string {
 
 function formatBytes(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value) || value < 0) return '—'
-  if (value < 1024) return `${value} B`
+  if (value < 1024) return `${Math.round(value)} B`
   const units = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB']
   let amount = value
   let unit = 'B'
@@ -91,7 +91,7 @@ function formatBytes(value: number | null | undefined): string {
 }
 
 function formatRate(value: number | null | undefined): string {
-  return value == null || !Number.isFinite(value) ? '—' : `${formatBytes(value)}/s`
+  return value == null || !Number.isFinite(value) || value < 0 ? '—' : `${formatBytes(value)}/s`
 }
 
 function formatPercent(value: number | null | undefined): string {
@@ -112,6 +112,8 @@ function formatUptime(seconds: number | null | undefined): string {
   const minutes = Math.floor((seconds % 3_600) / 60)
   return days > 0 ? t('m.2a9d387d65dd', {"0": (days), "1": (hours)}) : t('m.7077e2ea25bd', {"0": (hours), "1": (minutes)})
 }
+
+const primaryInterfaces = computed(() => props.view.metrics.network.interfaces.filter(iface => iface.includedInSummary))
 
 const clockOffsetText = computed(() => {
   const offset = props.view.clockOffsetMs
@@ -167,10 +169,10 @@ const clockOffsetText = computed(() => {
         <div class="network-pair"><span>{{ t('m.edecf0ae6e51') }}</span><strong>{{ formatRate(view.metrics.network.summary.value?.sentBytesPerSecond) }}</strong></div>
         <p v-if="metricReason(view.metrics.network.summary)" class="metric-reason" data-testid="network-reason">{{ metricReason(view.metrics.network.summary) }}</p>
         <p v-if="view.metrics.network.detailsTruncated" class="metric-reason" data-testid="network-truncation">{{ t('m.093a185c2e51') }}{{ view.metrics.network.truncationReason }}</p>
-        <div v-for="iface in view.metrics.network.interfaces" :key="iface.name" class="interface-row" data-testid="network-interface" :data-interface-name="iface.name">
+        <div v-for="iface in primaryInterfaces" :key="iface.name" class="interface-row" data-testid="network-interface" :data-interface-name="iface.name">
           <div>
             <strong>{{ iface.name }}</strong>
-            <span>{{ iface.includedInSummary ? t('m.09f99341ca07') : iface.summaryReason || t('m.7d55f91628fb') }}</span>
+            <span>{{ t('m.09f99341ca07') }}</span>
             <span class="status-pill small" :data-status="metricState(iface.rate)" :data-testid="`interface-rate-status-${iface.name}`">{{ statusLabel(metricState(iface.rate)) }}</span>
             <span v-if="metricReason(iface.rate)" class="metric-reason" :data-testid="`interface-rate-reason-${iface.name}`">{{ metricReason(iface.rate) }}</span>
           </div>
@@ -235,8 +237,9 @@ const clockOffsetText = computed(() => {
 .network-pair { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-top: 11px; font-size: 12px; }
 .network-pair span { color: var(--metric-muted); }
 .network-pair strong { font-variant-numeric: tabular-nums; }
-.interface-row { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(100px, auto) minmax(100px, auto); align-items: center; gap: 12px; margin-top: 12px; border-top: 1px solid var(--metric-line); padding-top: 10px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
-.interface-row > div { display: grid; gap: 3px; }
+.interface-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; margin-top: 12px; border-top: 1px solid var(--metric-line); padding-top: 10px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
+.interface-row > div { display: grid; min-width:0; gap: 3px; overflow-wrap:anywhere; }
+.interface-row > span { white-space:nowrap; text-align:right; }
 .interface-row > div span { color: var(--metric-muted); font-size: 12px; }
 .metrics-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin-top: 14px; border: 1px solid var(--metric-line); border-radius:var(--radius-card); padding: 14px 16px; background: var(--surface-soft); }
 .metrics-footer > div { display: grid; min-width: 0; gap: 4px; }
@@ -247,7 +250,7 @@ const clockOffsetText = computed(() => {
   .metrics-header { align-items: flex-start; }
   .metrics-grid { grid-template-columns: minmax(0, 1fr); }
   .disk-card, .network-card { grid-column: auto; }
-  .interface-row { grid-template-columns: minmax(65px, 1fr) minmax(88px, auto) minmax(88px, auto); gap: 7px; }
+  .interface-row { grid-template-columns: minmax(0, 1fr) auto auto; gap: 7px; }
   .metrics-footer { grid-template-columns: minmax(0, 1fr); }
 }
 </style>

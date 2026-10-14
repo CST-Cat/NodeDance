@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.17]
+
+### English
+
+- Limit default disk capacity sampling to root and persistent storage mounts before statfs; exclude EFI, memory filesystems, kernel pseudo-filesystems and Docker runtime mounts while retaining real storage errors and explicit mount selections.
+- Cover default and explicit mount selection, excluded runtime mounts, actual disk failures and container root storage with regression tests.
+
+### 简体中文
+
+- 默认磁盘容量采样在 statfs 前筛选根目录与持久存储挂载点，排除 EFI、内存文件系统、内核伪文件系统及 Docker 运行时挂载，同时保留真实存储故障与显式挂载点选择。
+- 回归验证默认与自定义挂载点筛选、运行时挂载排除、实际磁盘读取失败及容器根目录存储。
+
 ## [0.1.16]
 
 ### English

@@ -229,9 +229,16 @@ async function port() {
         const quota=page.locator('.contract-fields label').filter({hasText:'Traffic quota (bytes)'}).locator('input')
         await quota.waitFor();assert.equal(await quota.inputValue(),'18446744073709551615')
         await quota.fill('9007199254740993')
+        const purchase=page.locator('.contract-fields label').filter({hasText:'Purchase date'}).locator('input')
+        await purchase.fill('2026-10-13T00:00:00Z')
         response=page.waitForResponse(r=>r.url().endsWith('/asset')&&r.request().method()==='PUT')
         await page.locator('.host-card form button.primary-button').click()
         const saved=await response;assert.equal(saved.status(),200);assert.ok(saved.request().postData().includes('"trafficLimitBytes":9007199254740993'))
+        assert.equal((await saved.json()).purchasedAt,'2026-10-13T00:00:00Z')
+        await purchase.fill('')
+        response=page.waitForResponse(r=>r.url().endsWith('/asset')&&r.request().method()==='PUT')
+        await page.locator('.host-card form button.primary-button').click()
+        const clearedPurchase=await response;assert.equal(clearedPurchase.status(),200);assert.equal((await clearedPurchase.json()).purchasedAt,undefined)
       }
       for(const theme of ['light','dark'])for(const width of [390,1440]){
         await page.setViewportSize({width,height:1000})
@@ -309,6 +316,10 @@ async function port() {
     await dockerPage.setViewportSize({width:1440,height:1000})
     try { await require('./docker-regressions.cjs')({page:dockerPage,base,node,artifacts,catalog}) }
     finally { await dockerPage.close() }
+    const metricsPage=await context.newPage()
+    metricsPage.setDefaultTimeout(10000)
+    try { await require('./metrics-regressions.cjs')({page:metricsPage,base,node,artifacts,catalog}) }
+    finally { await metricsPage.close() }
     const enrollmentPage=await context.newPage()
     enrollmentPage.setDefaultTimeout(10000)
     await enrollmentPage.setViewportSize({width:1440,height:1000})

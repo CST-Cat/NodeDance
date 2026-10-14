@@ -410,10 +410,15 @@ func (s configuredDiskSource) diskPartitions(ctx context.Context) ([]disk.Partit
 		return nil, err
 	}
 	allowed := s.settings().IncludeMountpoints
+	filtered := make([]disk.PartitionStat, 0, len(partitions))
 	if len(allowed) == 0 {
-		return partitions, nil
+		for _, partition := range partitions {
+			if defaultStorageMount(partition) {
+				filtered = append(filtered, partition)
+			}
+		}
+		return filtered, nil
 	}
-	filtered := make([]disk.PartitionStat, 0, len(allowed))
 	for _, p := range partitions {
 		for _, a := range allowed {
 			if a == p.Mountpoint {

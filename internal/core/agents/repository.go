@@ -84,7 +84,16 @@ func NewRepository(db *sql.DB, now func() time.Time) *Repository {
 // CreateEnrollment creates the pending node and its one-use credential in the
 // same transaction. Only the digest is persisted; the raw token is returned
 // once to the authenticated administrator.
-func (r *Repository) CreateEnrollment(ctx context.Context, displayName, remote string, actor sql.NullInt64) (Enrollment, error) {
+func (r *Repository) CreateEnrollment(ctx context.Context, displayName, remote string, actor sql.NullInt64, assets ...protocol.NodeAsset) (Enrollment, error) {
+	if len(assets) > 1 {
+		return Enrollment{}, errors.New("only one node asset is allowed")
+	}
+	if len(assets) == 1 {
+		if err := protocol.ValidateNodeAsset(assets[0]); err != nil {
+			return Enrollment{}, err
+		}
+	}
+
 	name := strings.TrimSpace(displayName)
 	if name == "" || len([]rune(name)) > 80 || !validText(name) {
 		return Enrollment{}, errors.New("invalid node display name")
@@ -111,6 +120,15 @@ func (r *Repository) CreateEnrollment(ctx context.Context, displayName, remote s
 	if _, err := tx.ExecContext(ctx, `INSERT INTO agent_enrollments(token_digest, node_id, expires_at, created_at)
 		VALUES(?, ?, ?, ?)`, digest, nodeID, expires.Unix(), now.Unix()); err != nil {
 		return Enrollment{}, fmt.Errorf("create enrollment credential: %w", err)
+	}
+	if len(assets) == 1 {
+		raw, err := json.Marshal(assets[0])
+		if err != nil {
+			return Enrollment{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO node_assets(node_id,settings_json,updated_at) VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at`, nodeID, string(raw), now.Unix()); err != nil {
+			return Enrollment{}, err
+		}
 	}
 	if err := audit.Record(ctx, tx, audit.Event{OccurredAt: now, Action: "agent_enrollment_create", Outcome: "succeeded", ActorID: actor, RemoteAddr: remote, Target: audit.Target{Kind: audit.TargetNode, ID: nodeID}}); err != nil {
 		return Enrollment{}, fmt.Errorf("audit enrollment creation: %w", err)
@@ -771,7 +789,16 @@ func validRuntimePermissions(value protocol.RuntimePermissions) bool {
 }
 
 // RenewEnrollment replaces an unconsumed credential without creating another node.
-func (r *Repository) RenewEnrollment(ctx context.Context, nodeID, remote string, actor sql.NullInt64) (Enrollment, error) {
+func (r *Repository) RenewEnrollment(ctx context.Context, nodeID, remote string, actor sql.NullInt64, assets ...protocol.NodeAsset) (Enrollment, error) {
+	if len(assets) > 1 {
+		return Enrollment{}, errors.New("only one node asset is allowed")
+	}
+	if len(assets) == 1 {
+		if err := protocol.ValidateNodeAsset(assets[0]); err != nil {
+			return Enrollment{}, err
+		}
+	}
+
 	token, digest, err := newSecret()
 	if err != nil {
 		return Enrollment{}, err
@@ -796,6 +823,15 @@ func (r *Repository) RenewEnrollment(ctx context.Context, nodeID, remote string,
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO agent_enrollments(token_digest,node_id,expires_at,created_at) VALUES(?,?,?,?)`, digest, nodeID, expires.Unix(), now.Unix()); err != nil {
 		return Enrollment{}, err
+	}
+	if len(assets) == 1 {
+		raw, err := json.Marshal(assets[0])
+		if err != nil {
+			return Enrollment{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO node_assets(node_id,settings_json,updated_at) VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at`, nodeID, string(raw), now.Unix()); err != nil {
+			return Enrollment{}, err
+		}
 	}
 	if err = audit.Record(ctx, tx, audit.Event{OccurredAt: now, Action: "agent_enrollment_renew", Outcome: "succeeded", ActorID: actor, RemoteAddr: remote, Target: audit.Target{Kind: audit.TargetNode, ID: nodeID}}); err != nil {
 		return Enrollment{}, err

@@ -79,3 +79,5 @@ Built-in updates retain the private `updates.*` contract, administrator session,
 终端默认连接信息仅从当前用户受保护的会话文件恢复；显式选择不同 Core 时拒绝携带旧会话，HTTP 仍仅允许已明确选择的开发模式与字面量回环地址。
 
 Terminal defaults are restored only from the current user’s protected session file. An explicit different Core rejects the saved identity; HTTP remains restricted to explicit development selection and literal loopback addresses.
+
+Node billing metadata (renewal price, currency, billing cycle, monthly quota, purchase date and VPS expiry), including values supplied during enrollment, remains administrator-only. Guest security regressions create an enrollment with distinct private billing markers, verify persistence through the administrator asset operation, and verify exclusion from public responses with guest and administrator cookies. Anonymous enrollment and asset operations remain covered through the discovered Core contract.
