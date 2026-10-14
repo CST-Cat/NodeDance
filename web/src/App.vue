@@ -15,7 +15,7 @@ import AlertCenter from './components/AlertCenter.vue'
 import UiIcon from './components/UiIcon.vue'
 import UiDialog from './components/UiDialog.vue'
 import { cancelDialogs } from './dialogs'
-import { navigationKey, readViewRoute, viewHash, writeViewRoute, type ViewRoute, type ViewScreen } from './navigation'
+import { nodeNavigationKey, navigationKey, readViewRoute, viewHash, writeViewRoute, type NodeNavigation, type ViewRoute, type ViewScreen } from './navigation'
 
 const GuestDisplay=defineAsyncComponent(()=>import('./components/GuestDisplay.vue'))
 const GuestSettings=defineAsyncComponent(()=>import('./components/GuestSettings.vue'))
@@ -100,8 +100,15 @@ const navigation = [
   { screen:'guest-settings',label:'guest.settings',icon:'guest' },
   { screen: 'settings', label: 'nav.settings', icon: 'settings' },
 ] as const
-const screenTitle = computed(() => t(navigation.find(item => item.screen === screen.value)?.label ?? 'nav.workspace'))
+
 const activeRoute = ref<ViewRoute>(readViewRoute())
+const nodeNavigation = ref<NodeNavigation | null>(null)
+provide(nodeNavigationKey, nodeNavigation)
+const detailNavigation = computed(() => screen.value === 'nodes' && activeRoute.value.nodeId === nodeNavigation.value?.nodeId ? nodeNavigation.value : null)
+const screenTitle = computed(() => detailNavigation.value?.sections.find(item => item.id === detailNavigation.value?.activeSection)?.label ?? t(navigation.find(item => item.screen === screen.value)?.label ?? 'nav.workspace'))
+function navigateNodeSection(section: string) {
+  if (detailNavigation.value) goToRoute({ screen: 'nodes', nodeId: detailNavigation.value.nodeId, section })
+}
 let routeSequence = 0
 let handledLocation = ''
 let loginDestination: ViewRoute = { screen: 'nodes' }
@@ -534,12 +541,21 @@ onBeforeUnmount(() => {
       <a class="wordmark" href="/" :aria-label="t('m.f359facd4191')">
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>NodeDance</span>
       </a>
-      <div class="workspace-label">{{ t('nav.workspace') }}</div>
-      <nav class="workspace-nav" :aria-label="t('nav.navigation')">
-        <button v-for="item in navigation" :key="item.screen" type="button" :title="t(item.label)" :aria-label="t(item.label)" :aria-current="screen === item.screen ? 'page' : undefined" @click="navigate(item.screen)">
-          <UiIcon :name="item.icon" /><span>{{ t(item.label) }}</span>
-        </button>
-      </nav>
+      <Transition name="sidebar-context" mode="out-in">
+        <div :key="detailNavigation?.nodeId || 'workspace'" class="sidebar-context" :data-context="detailNavigation ? 'node' : 'workspace'">
+          <nav v-if="detailNavigation" class="workspace-nav node-detail-navigation" :aria-label="t('nav.nodeWorkspace')" data-testid="node-detail-navigation">
+            <button type="button" class="node-navigation-back" :title="t('nav.returnHome')" :aria-label="t('nav.returnHome')" @click="navigate('nodes')"><UiIcon name="back" /><span>{{ t('nav.returnHome') }}</span></button>
+            <div class="workspace-label node-navigation-title" :title="detailNavigation.title">{{ detailNavigation.title }}</div>
+            <button v-for="item in detailNavigation.sections" :key="item.id" type="button" :title="item.label" :aria-label="item.label" :aria-current="detailNavigation.activeSection === item.id ? 'page' : undefined" @click="navigateNodeSection(item.id)"><UiIcon :name="item.icon" /><span>{{ item.label }}</span></button>
+          </nav>
+          <template v-else>
+            <div class="workspace-label">{{ t('nav.workspace') }}</div>
+            <nav class="workspace-nav" :aria-label="t('nav.navigation')">
+              <button v-for="item in navigation" :key="item.screen" type="button" :title="t(item.label)" :aria-label="t(item.label)" :aria-current="screen === item.screen ? 'page' : undefined" @click="navigate(item.screen)"><UiIcon :name="item.icon" /><span>{{ t(item.label) }}</span></button>
+            </nav>
+          </template>
+        </div>
+      </Transition>
       <div class="workspace-account">
         <div class="profile-avatar"><img v-if="avatarSrc" :src="avatarSrc" alt="" /><span v-else>{{ visibleName.slice(0, 1) }}</span></div>
         <div class="workspace-account-copy"><strong>{{ visibleName }}</strong><span>{{ t('m.e19796712f1c') }}</span></div>

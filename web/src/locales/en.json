@@ -1631,5 +1631,7 @@
   "ssh.discovering": "Detecting SSH connection…",
   "ssh.unavailable": "SSH connection could not be detected.",
   "ssh.chooseUser": "Detected SSH account candidates",
-  "ssh.clientDefault": "SSH client default"
+  "ssh.clientDefault": "SSH client default",
+  "nav.returnHome": "Back to home",
+  "nav.nodeWorkspace": "VPS navigation"
 }

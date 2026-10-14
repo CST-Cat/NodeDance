@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.1.26]
+
+### English
+
+- Replace horizontal VPS detail tabs with contextual sidebar navigation, placing Back to home first and sharing global sidebar width, collapse, mobile drawer and accessible reduced-motion transitions.
+
+### 简体中文
+
+- 将 VPS 详情横向标签移至节点专属侧边栏，顶部提供返回主页面，复用全局侧边栏宽度、收起和移动端抽屉，并支持减少动态效果的过渡动画。
+
 ## [0.1.25]
 
 ### English

@@ -1631,5 +1631,7 @@
   "ssh.discovering": "正在识别 SSH 连接…",
   "ssh.unavailable": "未能识别 SSH 连接。",
   "ssh.chooseUser": "识别到的 SSH 账号候选",
-  "ssh.clientDefault": "使用 SSH 客户端默认账号"
+  "ssh.clientDefault": "使用 SSH 客户端默认账号",
+  "nav.returnHome": "返回主页面",
+  "nav.nodeWorkspace": "VPS 导航"
 }

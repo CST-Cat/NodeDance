@@ -1,3 +1,4 @@
+const {selectNodeSection}=require('./sidebar-navigation.cjs')
 // Real isolated Core enrollments; commands are inspected/copied, never executed.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,artifacts,catalog}){
@@ -69,7 +70,7 @@ module.exports=async function({page,base,artifacts,catalog}){
  // Switching presentation preserves the same replacement credential.
  await page.getByTestId('agent-deployment-method').getByRole('button',{name:'Docker deployment',exact:true}).click()
  assert.ok((await command.inputValue()).includes('--mode docker'))
- await page.locator('.dashboard-tabs').getByRole('button',{name:'Node settings',exact:true}).click()
+ await selectNodeSection(page,'Node settings')
  const settings=page.getByTestId('node-asset-settings');await settings.getByTestId('asset-price').waitFor()
  assert.equal(await settings.getByTestId('asset-purchase').inputValue(),'2026-10-13')
  await settings.getByTestId('asset-purchase').fill('2026-10-01')
@@ -91,7 +92,7 @@ module.exports=async function({page,base,artifacts,catalog}){
  await page.getByTestId('agent-enrollment').getByTestId('asset-price').waitFor()
  assert.equal(await page.getByTestId('agent-enrollment').getByTestId('asset-price').inputValue(),'0')
  assert.equal(await page.getByTestId('agent-enrollment').getByTestId('asset-purchase').inputValue(),'')
- await page.locator('.dashboard-tabs').getByRole('button',{name:'Node settings',exact:true}).click()
+ await selectNodeSection(page,'Node settings')
  const deletion=page.getByTestId('node-settings').getByTestId('node-delete')
  await deletion.waitFor()
  assert.equal(await deletion.count(),1,'Deletion belongs to node settings')

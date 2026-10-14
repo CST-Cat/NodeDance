@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { requestPrompt, requestConfirm } from '../dialogs'
-import { useViewTab } from '../navigation'
+import { nodeNavigationKey, useViewTab } from '../navigation'
 import { t, display, locale } from "../i18n"
-import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, inject, onBeforeUnmount, ref, watch, watchEffect } from 'vue'
 import { api, type AgentNode, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainerRecord, type DockerInventory, type MetricHistory, type ServiceProbe, type TaskAuditEvent } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import ContainerRebuildWizard from './ContainerRebuildWizard.vue'
@@ -39,7 +39,6 @@ const props = defineProps<{
   currentTime: number
 }>()
 const emit = defineEmits<{
-  back: []
   deleted: []
   refreshTasks: [nodeId: string]
   preferenceSaved: [preference: DashboardPreference]
@@ -69,11 +68,16 @@ async function deleteNode() {
 watch(() => props.pending, pending => { if (!pending) enrollmentOpen.value = false })
 
 const sectionTabs = computed(() => [
-  { id: 'overview', label: t('m.a33db5730556') }, { id: 'probes', label: t('m.3fefdc07fa14') }, { id: 'docker', label: t('m.eee901e4cc16') }, { id: 'images', label: t('m.176c09844e0f') },
-  { id: 'compose', label: t('m.5f67dd75b01f') }, { id: 'rebuild', label: t('m.474490ab5dc3') }, { id: 'files', label: t('m.b3bd5ac7cc4d') },
-  { id: 'history', label: t('m.bfb41404e88b') }, { id: 'events', label: t('m.a700a47380fe') }, { id: 'settings', label: t('m.0a09fda5e2a6') },
+  { id: 'overview', icon: 'host', label: t('m.a33db5730556') }, { id: 'probes', icon: 'discovery', label: t('m.3fefdc07fa14') }, { id: 'docker', icon: 'nodes', label: t('m.eee901e4cc16') }, { id: 'images', icon: 'file', label: t('m.176c09844e0f') },
+  { id: 'compose', icon: 'operations', label: t('m.5f67dd75b01f') }, { id: 'rebuild', icon: 'refresh', label: t('m.474490ab5dc3') }, { id: 'files', icon: 'folder', label: t('m.b3bd5ac7cc4d') },
+  { id: 'history', icon: 'history', label: t('m.bfb41404e88b') }, { id: 'events', icon: 'alerts', label: t('m.a700a47380fe') }, { id: 'settings', icon: 'settings', label: t('m.0a09fda5e2a6') },
 ] as const)
 const activeSection = useViewTab('section', 'overview', () => sectionTabs.value.map(tab => tab.id))
+const sidebarNavigation = inject(nodeNavigationKey)
+const sidebarOwner = Symbol('node-detail')
+onBeforeUnmount(() => {
+  if (sidebarNavigation?.value?.owner === sidebarOwner) sidebarNavigation.value = null
+})
 const overviewProbes = ref<ServiceProbe[]>([])
 const probeSummaryError = ref('')
 const probeSummaryLoadedAt = ref<Date>()
@@ -122,6 +126,9 @@ const activeTerminal = ref<{ nodeId: string; targetKind: 'host' | 'container'; c
 const historyResolution = computed(() => historyRange.value === '1y' ? 'hour' : 'minute')
 const nodePreference = computed(() => props.preferences.find((item) => item.targetKind === 'node' && item.identity === `node:${props.node.nodeId}`))
 const nodeTitle = computed(() => nodePreference.value?.alias || props.node.displayName)
+watchEffect(() => {
+  if (sidebarNavigation) sidebarNavigation.value = { owner: sidebarOwner, nodeId: props.node.nodeId, title: nodeTitle.value, activeSection: activeSection.value, sections: sectionTabs.value }
+})
 const selectedTasks = computed(() => [...props.tasks].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)))
 const selectedRebuildContainerID = ref('')
 const rebuildCandidates = computed(() => orderedContainers.value.filter((record) => !record.container.compose && !rollbackTaskForContainer(record.container.id)))
@@ -408,14 +415,13 @@ onBeforeUnmount(() => {
 <template>
   <section class="node-detail-page" aria-labelledby="detail-title" data-testid="node-detail">
     <header class="detail-heading">
-      <div><div class="detail-heading-navigation"><button class="container-action back-button" type="button" @click="emit('back')">{{ t('m.40c2548e2416') }}</button><span class="eyebrow">{{ t('label.164ba94c1c7b') }}</span></div><h1 id="detail-title">{{ nodeTitle }}</h1><p v-if="nodeTitle !== node.displayName || node.agentVersion"><template v-if="nodeTitle !== node.displayName">{{ node.displayName }}<template v-if="node.agentVersion"> · </template></template>{{ node.agentVersion }}</p><p v-if="nodePreference?.notes" class="node-detail-note">{{ nodePreference.notes }}</p></div>
+      <div><div class="detail-heading-navigation"><span class="eyebrow">{{ t('label.164ba94c1c7b') }}</span></div><h1 id="detail-title">{{ nodeTitle }}</h1><p v-if="nodeTitle !== node.displayName || node.agentVersion"><template v-if="nodeTitle !== node.displayName">{{ node.displayName }}<template v-if="node.agentVersion"> · </template></template>{{ node.agentVersion }}</p><p v-if="nodePreference?.notes" class="node-detail-note">{{ nodePreference.notes }}</p></div>
       <div class="detail-heading-status"><span class="node-detail-status" :data-online="online">{{ pending ? t('m.a890b3be09aa') : online ? t('m.b9086662b1df') : t('m.be1b4f3c6c1c') }}</span><span class="docker-state" :data-available="inventory?.dockerAvailability || 'unknown'" :data-stale="dockerStale">{{ inventory ? dockerAvailabilityText(inventory) : online ? t('m.c12a50c262ca') : t('m.8a6501e8198f') }}</span></div>
     </header>
     <div v-if="pending" class="node-management-actions" data-testid="node-management-actions">
       <button v-if="pending" class="secondary-button" type="button" :aria-expanded="enrollmentOpen && activeSection !== 'settings'" data-testid="node-install-command" @click="toggleEnrollment">{{ t('node.installCommand') }}</button>
     </div>
     <AgentEnrollment v-if="pending && enrollmentOpen && activeSection !== 'settings'" class="node-enrollment-panel" compact :node-id="node.nodeId" />
-    <nav class="dashboard-tabs" :aria-label="t('m.c778eb5beb54')"><button v-for="tab in sectionTabs" :key="tab.id" type="button" :aria-current="activeSection === tab.id ? 'page' : undefined" @click="selectSection(tab.id)">{{ tab.label }}</button></nav>
     <div v-if="activeSection === 'overview' && probeCounts.total" class="probe-overview-summary" data-testid="probe-overview-summary">
       <div><p>{{ t('node.probes.summary', {'0': probeCounts.total, '1': probeCounts.healthy, '2': probeCounts.unhealthy, '3': probeCounts.unknown, '4': probeCounts.disabled}) }}</p><small v-if="probeSummaryLoadedAt">{{ t('node.probes.loaded', {'0': probeSummaryLoadedAt.toLocaleString(locale)}) }}</small></div>
       <button type="button" class="secondary-button" @click="selectSection('probes')">{{ t('node.probes.open') }}</button>
@@ -518,12 +524,8 @@ onBeforeUnmount(() => {
 .detail-heading p { margin:0; color:var(--muted); font: 11px/1.5 ui-monospace,monospace; overflow-wrap:anywhere; }
 .detail-heading .node-detail-note { margin-top:7px; color:var(--muted-strong); font-family:inherit; font-size: 12px; line-height:1.55; white-space:pre-wrap; }
 .detail-heading-navigation { display:flex; flex-wrap:wrap; align-items:center; gap:12px 16px; margin-bottom:12px; }
-.back-button { margin:0; flex-shrink:0; white-space:nowrap; }
 .detail-heading-status { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
 .container-create-results { display:grid; gap:6px; margin:8px 0 12px; }.container-create-results h3 { margin:0; color:var(--muted-strong); font-size: 12px; }.container-create-results article { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; border:1px solid var(--line); border-radius:var(--radius-card); padding:8px 10px; background:var(--surface-soft); }.container-create-results article>div { display:flex; flex-wrap:wrap; align-items:center; gap:9px; }.container-create-results strong,.container-create-results code,.container-create-results time { font-size: 12px; overflow-wrap:anywhere; }.container-create-results time { color:var(--muted); }
-.dashboard-tabs { display:flex; gap:6px; overflow-x:auto; margin:0 0 16px; border-bottom:1px solid var(--line); padding-bottom:8px; scrollbar-width:thin; }
-.dashboard-tabs button { flex:0 0 auto; min-height:40px; border:1px solid transparent; border-radius:var(--radius-control); padding:7px 12px; color:var(--muted-strong); background:transparent; font:inherit; font-size: 12px; cursor:pointer; }
-.dashboard-tabs button[aria-current=page] { border-color:var(--line); color:var(--text); background:var(--line); }
 .metrics-waiting { position:relative; min-height:260px; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; padding:clamp(20px,5vw,52px); border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface-soft); }
 .metrics-waiting h2 { margin:10px 0 0; font-size: 21px; }.metrics-waiting p { max-width:440px; color:var(--muted-strong); font-size: 12px; line-height:1.7; }
 .node-detail-status,.docker-state { border:1px solid var(--line); border-radius:999px; padding:6px 11px; color:var(--danger); font-size: 12px; }

@@ -324,11 +324,16 @@ async function port() {
     sshPage.setDefaultTimeout(10000)
     try { await require('./ssh-shortcut-regressions.cjs')({page:sshPage,base,headers,artifacts,catalog}) }
     finally { await sshPage.close() }
+    const navigationPage=await context.newPage()
+    navigationPage.setDefaultTimeout(10000)
+    try { await require('./node-navigation-regressions.cjs')({page:navigationPage,base,node,artifacts}) }
+    finally { await navigationPage.close() }
     const enrollmentPage=await context.newPage()
     enrollmentPage.setDefaultTimeout(10000)
     await enrollmentPage.setViewportSize({width:1440,height:1000})
     try { await require('./enrollment-regressions.cjs')({page:enrollmentPage,base,artifacts,catalog}) }
     finally { await enrollmentPage.close() }
+    if(await page.getByTestId('node-detail-navigation').count())await page.getByRole('button',{name:'Back to home',exact:true}).click()
     await page.getByRole('button',{name:'Nodes',exact:true}).click();await page.locator('.nodes-dashboard').waitFor()
     await page.getByRole('button',{name:'Alerts',exact:true}).click();await page.locator('.alerts-page').waitFor()
     await page.getByRole('button',{name:'Sign out',exact:true}).click();await page.locator('#login-title').waitFor()

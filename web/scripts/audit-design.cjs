@@ -1,3 +1,4 @@
+const {openNavigation}=require('./sidebar-navigation.cjs')
 // Isolated browser fixtures; discovers the operation catalog from a running Core.
 // No fixture request reaches the connected Core.
 const { chromium } = require("playwright");
@@ -618,7 +619,7 @@ fs.mkdirSync(out, { recursive: true });
         .click();
       await page.locator(".node-detail-page").waitFor();
       assert.equal(await page.getByTestId("service-probes").count(), 0);
-      await page.locator(".dashboard-tabs").getByRole("button", {name: /^(Service probes|服务探测)$/}).click();
+      await openNavigation(page);await page.locator(".node-detail-navigation").getByRole("button", {name: /^(Service probes|服务探测)$/}).click();
       await page.locator(".probe-heading .probe-primary").click();
       await invariants(prefix + "-probe-form");
       await page.locator(".probe-form .probe-secondary").click();
@@ -629,9 +630,9 @@ fs.mkdirSync(out, { recursive: true });
         await invariants(prefix + "-terminal");
         await page.locator(".terminal-close").click();
       }
-      const tabs = await page.locator(".dashboard-tabs button").allTextContents();
+      const tabs = await page.locator(".node-detail-navigation button:not(.node-navigation-back)").allTextContents();
       for (const label of tabs) {
-        await page.locator(".dashboard-tabs").getByRole("button", {name: label, exact: true}).click();
+        await openNavigation(page);await page.locator(".node-detail-navigation").getByRole("button", {name: label, exact: true}).click();
         const section = new URLSearchParams(new URL(page.url()).hash.split("?")[1]).get("section") || "overview";
         await invariants(prefix + "-detail-" + section);
         if (section === "docker") {

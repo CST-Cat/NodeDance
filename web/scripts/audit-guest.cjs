@@ -91,7 +91,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const detailURL=adminPage.url();assert.ok(new URL(detailURL).hash.includes('node='+identity.nodeId))
   await adminPage.goBack();await card.waitFor();assert.equal(new URL(adminPage.url()).hash,'#/nodes')
   await adminPage.goForward();await adminPage.locator('#detail-title').waitFor();assert.equal(adminPage.url(),detailURL)
-  const detailTabs=adminPage.locator('.dashboard-tabs')
+  const detailTabs=adminPage.locator('.node-detail-navigation')
   const overviewTab=detailTabs.getByRole('button',{name:'Overview',exact:true})
   const probesTab=detailTabs.getByRole('button',{name:'Service probes',exact:true})
   const historyTab=detailTabs.getByRole('button',{name:'History',exact:true})
@@ -141,6 +141,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await admin.addCookies(savedAdminCookies);await adminPage.goto(managementURL);await adminPage.locator('#detail-title').waitFor()
   // A node-list response that completes after its page unmounts must not
   // trigger follow-up private metric/container/preference reads in guest mode.
+  await adminPage.getByTestId('node-detail-navigation').getByRole('button',{name:'Back to home',exact:true}).click();await adminPage.locator('.nodes-dashboard').waitFor()
   await adminPage.getByRole('button',{name:'Guest display',exact:true}).click();await adminPage.locator('.guest-settings').waitFor()
   let releaseNodes,nodesStarted
   const heldNodes=new Promise(r=>releaseNodes=r),startedNodes=new Promise(r=>nodesStarted=r)
@@ -186,6 +187,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
     assert.equal(await adminPage.locator('#workspace-navigation').count(),0)
   }
   await adminPage.goto(managementURL);await adminPage.locator('#detail-title').waitFor()
+  await adminPage.getByTestId('node-detail-navigation').getByRole('button',{name:'Back to home',exact:true}).click();await adminPage.locator('.nodes-dashboard').waitFor()
   const guestIcon=await adminPage.getByRole('button',{name:'Guest display',exact:true}).locator('svg path').getAttribute('d')
   const nodeIcon=await adminPage.getByRole('button',{name:'Nodes',exact:true}).locator('svg path').getAttribute('d')
   assert.ok(guestIcon && guestIcon!==nodeIcon,'Guest display must have its own icon')

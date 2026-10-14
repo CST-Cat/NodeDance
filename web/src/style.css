@@ -337,8 +337,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .app-shell .vps-card h2 { font-family:Inter,ui-sans-serif,system-ui,sans-serif; font-size: 20px; font-weight: 500; }.app-shell .vps-card-metrics strong { font-size: 18px; font-weight: 500; }
 .app-shell .vps-card-metrics { padding: 14px 0; }.app-shell .vps-card-docker { background: var(--surface-soft); padding: 14px; }
 .app-shell .vps-card-shortcuts { margin-top: 18px; }.app-shell .vps-card-shortcuts button { min-height: 40px; background: var(--surface); color: var(--muted-strong); }
-.app-shell .dashboard-tabs { gap: 12px; padding-bottom: 12px; }.app-shell .dashboard-tabs button { font-size: 13px; padding: 10px 16px; }
-.app-shell .dashboard-tabs button[aria-current=page] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent-line); }
 .app-shell .server-view-controls { padding: 20px; border: 1px solid var(--line); border-radius:var(--radius-control); background: var(--surface); gap: 12px; }
 .app-shell .server-view-controls label { min-width: 110px; }.app-shell .server-view-controls label:first-child { flex: 1; }.app-shell .server-view-controls input { width: 100%; }
 .app-shell .server-view-controls input, .app-shell .server-view-controls select { font-size: 13px; min-height: 40px; background: var(--canvas); }
@@ -415,3 +413,14 @@ button:disabled { cursor: not-allowed; }button, a, input, select, textarea { -we
 @media (max-width:900px) {
   .workspace-sidebar { width:min(var(--sidebar-width,240px),calc(100vw - 48px)); }
 }
+
+/* The node workspace uses the same sidebar width, collapse and mobile drawer. */
+.sidebar-context { min-width:0; flex-shrink:0; }
+.node-navigation-back { margin-bottom:12px; }
+.node-navigation-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin:4px 12px 10px; }
+.workspace-nav button:active { background:var(--accent-soft); color:var(--accent); }
+.sidebar-context-enter-active, .sidebar-context-leave-active { transition:opacity .16s ease, transform .16s ease, filter .16s ease; }
+.sidebar-context-enter-from, .sidebar-context-leave-to { opacity:0; transform:translateX(-6px); filter:blur(3px); }
+.node-detail-page { animation:node-workspace-enter .22s ease both; }
+@keyframes node-workspace-enter { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
+@media (prefers-reduced-motion:reduce) { .node-detail-page { animation:none; } .sidebar-context-enter-active, .sidebar-context-leave-active { transition:none; } }

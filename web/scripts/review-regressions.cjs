@@ -1,3 +1,4 @@
+const {selectNodeSection}=require('./sidebar-navigation.cjs')
 // Real browser presentation regressions against the isolated interface Core.
 // Compose responses are protocol fixtures; no remote mutation is executed.
 const assert=require('node:assert/strict'),path=require('node:path')
@@ -87,14 +88,14 @@ module.exports=async function({page,context,base,node,headers,artifacts}){
 
  const overviewResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/v1/probes'&&r.request().method()==='GET')
  await page.goto(base+`/#/nodes?node=${node}`)
- await page.locator('.dashboard-tabs button[aria-current=page]').filter({hasText:/^Overview$/}).waitFor()
+ await page.locator('.node-detail-navigation button[aria-current=page]').filter({hasText:/^Overview$/}).waitFor()
  await overviewResponse
  assert.equal(await page.getByTestId('service-probes').count(),0)
  await page.waitForTimeout(500)
  assert.equal(await page.getByTestId('probe-overview-summary').count(),0,'Unconfigured overview has no empty probe panel')
  let backgroundProbeReads=0
  const observeProbe=r=>{if(new URL(r.url()).pathname==='/api/v1/probes')backgroundProbeReads++}
- await page.locator('.dashboard-tabs').getByRole('button',{name:'Event history',exact:true}).click()
+ await selectNodeSection(page,'Event history')
  page.on('request',observeProbe);await page.waitForTimeout(5500);page.off('request',observeProbe)
  assert.equal(backgroundProbeReads,0,'Leaving service checks must stop its private polling')
  assert.equal(await page.getByTestId('service-probes').count(),0)

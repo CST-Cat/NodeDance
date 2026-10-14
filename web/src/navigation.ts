@@ -7,6 +7,14 @@ export interface ViewNavigation {
   route: Readonly<Ref<ViewRoute>>
   go: (route: ViewRoute, replace?: boolean) => void
 }
+export interface NodeNavigation {
+  owner: symbol
+  nodeId: string
+  title: string
+  activeSection: string
+  sections: readonly { id: string; label: string; icon: string }[]
+}
+export const nodeNavigationKey: InjectionKey<Ref<NodeNavigation | null>> = Symbol('node-navigation')
 export const navigationKey: InjectionKey<ViewNavigation> = Symbol('view-navigation')
 const screens = new Set<ViewScreen>(viewScreens)
 
