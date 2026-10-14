@@ -68,3 +68,7 @@ Shared form controls use the project theme with Lucian UI-derived motion. `UiSel
 表单统一使用主题化自定义下拉列表，保留原有表单选值、change 和校验语义；弹出层在屏幕范围内定位，支持触摸、键盘、首字母检索、禁用字段组和减少动态效果。离开管理页立即清除浮层与监听器。复选框保留原生键盘、选中、半选和禁用行为，采用共享主题绘制。侧栏收起使用平滑弹性过渡，拖动宽度仍即时跟随。
 
 Lucian references: [#031 custom select](https://lucianlabs.dev/uxui-prompt/#031), [#014 checkbox feedback](https://lucianlabs.dev/uxui-prompt/#014), [#015 radio feedback](https://lucianlabs.dev/uxui-prompt/#015), [#040 sidebar motion](https://lucianlabs.dev/uxui-prompt/#040). Colors, form density and radii follow `DESIGN.md`; sample forms, gradients and task-list decoration are omitted. License notices remain with adapted code. `web/scripts/ui-controls-regressions.cjs` runs in the isolated interface audit.
+
+Alert forms use shrinkable date columns and field widths within the card padding. Subscription labels and controls align at the top of each row; preset/custom refresh intervals share a row, with notification fields following the same spacing. `web/scripts/form-layout-regressions.cjs` checks control containment and alignment at 390, 1100, 1440 and 1920 px in light/dark themes, including all notification modes.
+
+告警表单日期双列与控件宽度限制在卡片内边距范围内。订阅表单标签和控件按行顶部对齐，预设／自定义刷新间隔同排显示，通知设置采用相同间距。布局回归覆盖手机、中等和宽屏、深浅主题及所有通知模式。

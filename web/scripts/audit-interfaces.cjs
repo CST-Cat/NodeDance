@@ -313,7 +313,7 @@ async function port() {
     await require('./review-regressions.cjs')({page,context,base,node,headers,artifacts})
     const controlsPage=await context.newPage()
     controlsPage.setDefaultTimeout(10000)
-    try { await require('./ui-controls-regressions.cjs')({page:controlsPage,base,artifacts,catalog}) }
+    try { await require('./form-layout-regressions.cjs')({page:controlsPage,base,artifacts}); await require('./ui-controls-regressions.cjs')({page:controlsPage,base,artifacts,catalog}) }
     finally { await controlsPage.close() }
     const dockerPage=await context.newPage()
     dockerPage.setDefaultTimeout(10000)

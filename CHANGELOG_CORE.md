@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.29]
+
+### English
+
+- Keep alert form controls inside their cards and align subscription fields, interval inputs and notification settings across desktop and mobile layouts.
+
+### 简体中文
+
+- 修复告警表单控件超出卡片的问题，统一订阅表单字段、刷新间隔和通知设置的桌面／移动端对齐。
+
 ## [0.1.28]
 
 ### English
