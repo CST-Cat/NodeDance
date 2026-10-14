@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.31]
+
+### English
+
+- Compact the operational console: VPS cards use container-queried three-column label-value readings, dense Docker rows without per-item dividers, and scoped hover/focus styles; monitoring panels drop repeated card borders and oversized values; network interfaces render as single-line rows with rates and status inline; Compose project cards separate by spacing instead of lines.
+- Consolidate global card overrides into component styles and codify the compact-density rules (padding, spacing, typography, container queries) in DESIGN.md.
+
+### 简体中文
+
+- 压缩运维控制台密度：VPS 卡片改为容器查询驱动的三列标签数值读数，Docker 展开为无逐行分割线的紧凑行，悬停与焦点样式收敛到组件内；监控面板去除重复卡片边框与超大数值；网卡以单行呈现速率与状态；Compose 项目卡改用间距而非横线分隔。
+- 将全局卡片覆盖样式合并进组件样式，并在 DESIGN.md 中固化紧凑密度规范（内边距、间距、字号、容器查询）。
+
 ## [0.1.30]
 
 ### English
