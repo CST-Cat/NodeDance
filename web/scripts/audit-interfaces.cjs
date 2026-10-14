@@ -320,6 +320,10 @@ async function port() {
     metricsPage.setDefaultTimeout(10000)
     try { await require('./metrics-regressions.cjs')({page:metricsPage,base,node,artifacts,catalog}) }
     finally { await metricsPage.close() }
+    const sshPage=await context.newPage()
+    sshPage.setDefaultTimeout(10000)
+    try { await require('./ssh-shortcut-regressions.cjs')({page:sshPage,base,headers,artifacts,catalog}) }
+    finally { await sshPage.close() }
     const enrollmentPage=await context.newPage()
     enrollmentPage.setDefaultTimeout(10000)
     await enrollmentPage.setViewportSize({width:1440,height:1000})

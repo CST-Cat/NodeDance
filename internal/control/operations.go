@@ -271,7 +271,7 @@ func buildOperations() []Operation {
 		op("nodes.save-asset", "PUT", node+"/asset", "Save node asset and reminder settings", schema(protocol.NodeAsset{})),
 		op("agents.settings", "GET", node+"/agent-settings", "Agent sampling, networking and update settings", nil),
 		op("agents.configure", "PUT", node+"/agent-settings", "Persist Agent settings; connection changes apply on reconnect", schema(protocol.AgentSettings{})),
-		op("agents.diagnostics", "GET", node+"/diagnostics", "Effective Agent configuration with credentials redacted", nil),
+		op("agents.diagnostics", "GET", node+"/diagnostics", "Effective Agent configuration and discovered SSH connection; credentials redacted", nil),
 		op("commands.batches", "GET", "/api/v1/commands/batches", "Host command batch history", nil),
 		op("commands.batch", "POST", "/api/v1/commands/batches", "Execute a confirmed script on multiple nodes with per-node idempotency", schema(protocol.BatchCommand{})),
 		op("commands.batch-status", "GET", "/api/v1/commands/batches/{batchId}", "Batch results; offline nodes are explicitly stale", nil),

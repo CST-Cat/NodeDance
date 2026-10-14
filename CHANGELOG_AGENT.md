@@ -2,9 +2,15 @@
 
 ## [Unreleased]
 
+## [0.1.18]
+
 ### English
 
+- Observe OpenSSH listeners, socket activation, login accounts and active sessions without conversation memory or manually entered SSH configuration; exclude forwarded sockets and unprivileged daemon impersonation.
+
 ### 简体中文
+
+- 从机器上的 OpenSSH 监听端点、socket 激活、登录账号和活动会话识别 SSH，无需聊天记忆或手工填写连接配置；排除转发监听及非 root 进程伪装。
 
 ## [0.1.17]
 

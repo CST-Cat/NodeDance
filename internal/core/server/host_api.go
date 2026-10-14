@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/core/audit"
+	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/sshconnection"
 )
 
 func (s *Server) agentHost(ctx context.Context, nodeID string, req protocol.HostRequest) (protocol.HostResponse, error) {
@@ -160,6 +162,29 @@ func (s *Server) handleHostAPI(w http.ResponseWriter, r *http.Request, current *
 		http.Error(w, result.Error, result.Status)
 		return true
 	}
+	if req.Action == "diagnostics" && result.SSH != nil {
+		resolved, e := s.resolveNodeSSH(ctx, parts[0], *result.SSH)
+		if e != nil {
+			http.Error(w, "invalid SSH discovery response", 502)
+			return true
+		}
+		result.SSH = &resolved
+	}
 	writeJSON(w, result.Status, result)
 	return true
+}
+
+func (s *Server) resolveNodeSSH(ctx context.Context, node string, info sshconnection.Info) (sshconnection.Info, error) {
+	preferences, e := (dashboard.Repository{DB: s.store.DB, Now: s.now}).List(ctx, node)
+	if e != nil {
+		return sshconnection.Info{}, e
+	}
+	var host, user string
+	var port int
+	for _, pref := range preferences {
+		if pref.TargetKind == "node" && pref.Identity == dashboard.NodeIdentity(node) {
+			host, user, port = pref.SSHHost, pref.SSHUser, pref.SSHPort
+		}
+	}
+	return sshconnection.Resolve(info, host, user, port)
 }

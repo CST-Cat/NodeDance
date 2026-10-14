@@ -2,9 +2,15 @@
 
 ## [Unreleased]
 
+## [0.1.25]
+
 ### English
 
+- Discover SSH connection addresses, listening ports and account candidates from the root Agent through shared diagnostics; automatically prepare safe connection commands and retain browser account choice across node state changes.
+
 ### 简体中文
+
+- 通过 root Agent 的共享诊断自动发现 SSH 地址、监听端口及账号候选，自动生成安全的连接命令；节点状态变化时保留浏览器中的账号选择。
 
 ## [0.1.24]
 

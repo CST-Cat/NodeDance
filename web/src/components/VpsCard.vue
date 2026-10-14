@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { t, display, locale } from "../i18n"
-import { computed, ref } from 'vue'
-import type { AgentNode, ContainerTask, ContainerTaskAction, DashboardPreference, DockerContainerRecord, DockerInventory } from '../api'
+import { computed, ref, watch } from 'vue'
+import type { SSHConnectionInfo, AgentNode, ContainerTask, ContainerTaskAction, DashboardPreference, DockerContainerRecord, DockerInventory } from '../api'
 import type { Metric, MetricsView } from '../metrics-contract'
 
 const dockerExpanded = ref(false)
@@ -11,6 +11,10 @@ const props = defineProps<{
   metrics?: MetricsView
   inventory?: DockerInventory
   nodePreference?: DashboardPreference
+  sshConnection?:SSHConnectionInfo
+  sshLoading?:boolean
+  sshUserChoice?:string
+  sshError?:string
   containerPreferences: DashboardPreference[]
   preferenceIdentities: Record<string, string>
   online: boolean
@@ -26,20 +30,30 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   view: [node: AgentNode]
+  discoverSsh: [node: AgentNode]
+  chooseSshUser: [payload:{nodeId:string;user:string}]
   quickAction: [payload: { node: AgentNode; action: 'terminal' | 'files' | 'manage' }]
   containerAction: [payload: { node: AgentNode; record: DockerContainerRecord; action: ContainerTaskAction }]
 }>()
 
 const title = computed(() => props.nodePreference?.alias || props.node.displayName)
+const selectedSSHUser=computed({get:()=>props.sshUserChoice??'',set:user=>emit('chooseSshUser',{nodeId:props.node.nodeId,user})})
 const sshCommand = computed(() => {
   const host = props.nodePreference?.sshHost ?? ''
   const user = props.nodePreference?.sshUser ?? ''
   const port = props.nodePreference?.sshPort || 22
-  if (!host || !user || host.startsWith('-') || !/^[A-Za-z0-9._:%-]+$/.test(host) ||
+  if(!host||!user)return (selectedSSHUser.value?props.sshConnection?.commands?.[selectedSSHUser.value]:props.sshConnection?.command)??''
+  if (host.startsWith('-') || !/^[A-Za-z0-9._:%-]+$/.test(host) ||
       !/^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/.test(user) || !Number.isInteger(port) || port < 1 || port > 65535) return ''
   return `ssh -p ${port} ${user}@${host}`
 })
 const sshCopyMessage = ref('')
+const waitingForSSH=ref(false)
+watch(()=>[sshCommand.value,props.sshLoading,props.sshError],()=>{
+ if(!waitingForSSH.value)return
+ if(sshCommand.value){waitingForSSH.value=false;void copySSHCommand()}
+ else if(!props.sshLoading){waitingForSSH.value=false;sshCopyMessage.value=t('ssh.unavailable')+(props.sshError?' '+display(props.sshError):'')}
+})
 const displayContainers = computed(() => {
   const containers = (props.inventory?.containers ?? []).filter((record) => preferenceFor(record)?.visible !== false)
   containers.sort((left, right) => {
@@ -271,7 +285,7 @@ function emitAction(record: DockerContainerRecord, action: ContainerTaskAction) 
 }
 
 async function copySSHCommand() {
-  if (!sshCommand.value) return
+  if (!sshCommand.value) { waitingForSSH.value=true;sshCopyMessage.value=t('ssh.discovering');emit('discoverSsh',props.node);return }
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(sshCommand.value)
@@ -354,9 +368,10 @@ async function copySSHCommand() {
     <nav class="vps-card-shortcuts" :aria-label="t('m.c820131d2266', {'0': (title)})">
       <button type="button" :disabled="!online" @click="emit('quickAction', { node, action: 'terminal' })">{{ t('m.e2a76ef1f12e') }}</button>
       <button type="button" :disabled="!online" @click="emit('quickAction', { node, action: 'files' })">{{ t('m.39932f24fe11') }}</button>
-      <button type="button" :disabled="!sshCommand" :title="sshCommand || t('m.3c1249308515')" @click="void copySSHCommand()">{{ t('m.12d40d9f555d') }}</button>
+      <button type="button" data-testid="node-ssh-shortcut" :title="sshCommand || t('ssh.automatic')" @click="void copySSHCommand()">{{ t('m.12d40d9f555d') }}</button>
       <button type="button" @click="emit('quickAction', { node, action: 'manage' })">{{ t('m.bb6d995724f4') }}</button>
     </nav>
+    <label v-if="!nodePreference?.sshUser && (sshConnection?.users?.length ?? 0)>1" class="ssh-user-choice">{{ t('ssh.chooseUser') }}<select v-model="selectedSSHUser"><option value="">{{ sshConnection?.user || t('ssh.clientDefault') }}</option><option v-for="user in sshConnection?.users" :key="user" :value="user">{{ user }}</option></select></label>
     <p v-if="sshCopyMessage" class="vps-card-ssh-status" role="status">{{ display(sshCopyMessage) }}</p>
     <footer class="vps-card-footer">
       <span>{{ nodeReason || (dockerExpanded && dockerStale ? t('m.5662971e4f8b') : '') }}</span>
@@ -366,6 +381,8 @@ async function copySSHCommand() {
 </template>
 
 <style scoped>
+.ssh-user-choice{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:10px;font-size:12px;color:var(--muted-strong)}.ssh-user-choice select{max-width:100%;min-width:0;min-height:44px;border:1px solid var(--line);border-radius:var(--radius-control);background:var(--surface);color:var(--text);padding:8px;font:inherit}.ssh-user-choice select:active{background:var(--surface-soft)}.ssh-user-choice select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
 .vps-card-heading .vps-name { padding:0; border:0; min-height:40px; color:var(--text); background:transparent; text-align:left; font:inherit; overflow-wrap:anywhere; }
 .vps-card-heading .vps-name:hover { color:var(--accent); }
 .docker-toggle { display:flex; justify-content:space-between; align-items:center; width:100%; margin-top:12px; color:var(--accent); }

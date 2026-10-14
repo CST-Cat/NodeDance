@@ -1626,5 +1626,10 @@
   "host.field.asset": "节点流量与续费设置",
   "asset.purchase": "购买日期",
   "asset.purchaseHint": "留空表示不记录。",
-  "host.field.purchasedAt": "购买日期"
+  "host.field.purchasedAt": "购买日期",
+  "ssh.automatic": "自动识别 SSH 地址、端口和登录账号",
+  "ssh.discovering": "正在识别 SSH 连接…",
+  "ssh.unavailable": "未能识别 SSH 连接。",
+  "ssh.chooseUser": "识别到的 SSH 账号候选",
+  "ssh.clientDefault": "使用 SSH 客户端默认账号"
 }

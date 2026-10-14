@@ -256,6 +256,10 @@ export interface DockerInventoryMessage {
   preferenceIdentities?: Record<string, string>
 }
 
+export interface SSHConnectionInfo {
+ status: 'available' | 'unavailable'; reason?: string; hosts: string[]; ports: number[]; users: string[]
+ host?: string; port?: number; user?: string; command?: string; commands:Record<string,string>; source: string; sampledAt: string
+}
 export interface DashboardPreference {
   nodeId: string
   targetKind: 'node' | 'container' | 'compose_service'
@@ -616,6 +620,7 @@ export const api = {
     body: JSON.stringify(settings),
   }),
   nodePreferences: (nodeId: string) => operationRequest<{ preferences: DashboardPreference[] }>("nodes.preferences", { params: { nodeId: String(nodeId) } }),
+  sshConnection: (nodeId: string) => operationRequest<{status:number;ssh:SSHConnectionInfo}>("agents.diagnostics", {params:{nodeId}}),
   saveNodePreference: (nodeId: string, preference: DashboardPreference) => operationRequest<void>("nodes.save-preference", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(preference) }),
   nodeHistory: (nodeId: string, resolution: 'minute' | 'hour', from: Date, to: Date) => {
     const query = new URLSearchParams({ resolution, from: from.toISOString(), to: to.toISOString() })

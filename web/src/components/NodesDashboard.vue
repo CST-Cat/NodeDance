@@ -2,7 +2,7 @@
 import { operationURL } from '../operations'
 import { t, display, locale } from "../i18n"
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { api, type AgentNode, type AgentNodesResponse, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainer, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
+import { api, type SSHConnectionInfo, type AgentNode, type AgentNodesResponse, type ContainerCreateSpec, type ContainerTask, type ContainerTaskAction, type CreateContainerTaskPayload, type DashboardPreference, type DashboardSettings, type DockerContainer, type DockerInventory, type DockerInventoryMessage, type NodeStatusResponse } from '../api'
 import type { MetricsView } from '../metrics-contract'
 import NodeDetail from './NodeDetail.vue'
 import VpsCard from './VpsCard.vue'
@@ -39,6 +39,8 @@ const taskViews = ref<Record<string, ContainerTask>>({})
 const taskSubmitting = ref<Record<string, boolean>>({})
 const taskErrors = ref<Record<string, string>>({})
 const preferenceIdentities = ref<Record<string, Record<string, string>>>({})
+const sshUserChoices=ref<Record<string,string>>({})
+const sshConnections = ref<Record<string,{info?:SSHConnectionInfo;error:string;loading:boolean;at:number;generation:number}>>({})
 const nodePreferences = ref<Record<string, DashboardPreference[]>>({})
 const dashboardSettings = ref<DashboardSettings>({ viewMode: 'monitor', groupBy: 'node', sortBy: 'custom', nodeGroupBy: 'status', nodeSortBy: 'custom', featuredLimit: 4, customFields: ['state', 'ports', 'health'] })
 const serverSearch = ref('')
@@ -130,6 +132,26 @@ async function loadPreferences(node: AgentNode) {
   try { nodePreferences.value = { ...nodePreferences.value, [node.nodeId]: (await api.nodePreferences(node.nodeId)).preferences } }
   catch (reason) { error.value = reason instanceof Error ? reason.message : t('m.1e9242469345') }
 }
+async function loadSSH(node:AgentNode, force=false) {
+ const previous=sshConnections.value[node.nodeId]
+ if(previous?.loading||!force&&previous?.generation===node.generation&&Date.now()-previous.at<60000)return
+ sshConnections.value={...sshConnections.value,[node.nodeId]:{...previous,error:'',loading:true,at:Date.now(),generation:node.generation??0}}
+ try{
+  const result=await api.sshConnection(node.nodeId)
+  if(disposed||!nodes.value.some(value=>value.nodeId===node.nodeId))return
+  if(sshUserChoices.value[node.nodeId]&&!result.ssh?.commands?.[sshUserChoices.value[node.nodeId]!])delete sshUserChoices.value[node.nodeId]
+  sshConnections.value={...sshConnections.value,[node.nodeId]:{info:result.ssh,error:result.ssh?.reason??'',loading:false,at:Date.now(),generation:node.generation??0}}
+ }catch(reason){
+  if(disposed||!nodes.value.some(value=>value.nodeId===node.nodeId))return
+  sshConnections.value={...sshConnections.value,[node.nodeId]:{...previous,error:reason instanceof Error?reason.message:String(reason),loading:false,at:Date.now(),generation:node.generation??0}}
+ }
+}
+function chooseSSHUser(payload:{nodeId:string;user:string}){sshUserChoices.value={...sshUserChoices.value,[payload.nodeId]:payload.user}}
+function discoverSSHForNode(node:AgentNode){void loadSSH(node,true)}
+async function loadSSHGroup(list:AgentNode[]) {
+ const queue=list.filter(node=>node.agentId&&nodeIsOnline(node))
+ await Promise.all(Array.from({length:Math.min(4,queue.length)},async()=>{while(queue.length&&!disposed){const node=queue.shift();if(node)await loadSSH(node)}}))
+}
 async function loadDashboardSettings() {
   try { dashboardSettings.value = await api.dashboardSettings() }
   catch (reason) { dashboardSettingsError.value = reason instanceof Error ? reason.message : t('m.22d4c52f5770') }
@@ -158,7 +180,7 @@ async function refreshNodes() {
     if (selected || !(node.nodeId in dockerViews.value)) requests.push(loadContainers(node))
     requests.push(loadTasks(node))
   }
-  await Promise.all(requests)
+  await Promise.all([...requests,loadSSHGroup(merged)])
 }
 function nodePreference(node: AgentNode): DashboardPreference | undefined {
   return nodePreferences.value[node.nodeId]?.find((item) => item.targetKind === 'node' && item.identity === `node:${node.nodeId}`)
@@ -223,7 +245,7 @@ function openNodeShortcut(payload: { node: AgentNode; action: 'terminal' | 'file
 function acceptNodeDeletion() {
  const nodeID = selectedNodeID.value
  nodes.value = nodes.value.filter(node => node.nodeId !== nodeID)
- for (const cache of [views, dockerViews, clocks, nodeReasons, nodePreferences, preferenceIdentities]) delete cache.value[nodeID]
+ for (const cache of [views, dockerViews, clocks, nodeReasons, nodePreferences, preferenceIdentities,sshConnections,sshUserChoices]) delete cache.value[nodeID]
  taskViews.value = Object.fromEntries(Object.entries(taskViews.value).filter(([, task]) => task.nodeId !== nodeID))
  backToNodes()
  void refreshNodes().catch(reason => { error.value = reason instanceof Error ? reason.message : String(reason) })
@@ -240,6 +262,8 @@ watch(() => viewNavigation.route.value, route => {
 })
 
 function acceptSavedPreference(preference: DashboardPreference) {
+ delete sshConnections.value[preference.nodeId]
+ const sshNode=nodes.value.find(node=>node.nodeId===preference.nodeId);if(sshNode&&nodeIsOnline(sshNode))void loadSSH(sshNode,true)
   const existing = nodePreferences.value[preference.nodeId] ?? []
   const without = existing.filter((item) => !(item.targetKind === preference.targetKind && item.identity === preference.identity))
   nodePreferences.value = { ...nodePreferences.value, [preference.nodeId]: [...without, preference] }
@@ -384,7 +408,7 @@ onBeforeUnmount(() => {
       <div class="dashboard-toolbar"><label class="node-search"><UiIcon name="nodes" /><input v-model="serverSearch" type="search" :placeholder="t('m.800588838c17')" :aria-label="t('m.0191c754eec0')" /></label><div class="dashboard-toolbar-actions"><button type="button" class="secondary-button view-preferences-button" :aria-expanded="preferencesOpen" aria-controls="node-view-preferences" @click="preferencesOpen = !preferencesOpen"><UiIcon name="settings" />{{ t('dashboard.configure') }}</button><button type="button" class="primary-button" @click="emit('enroll')"><UiIcon name="add" />{{ t('nav.enrollment') }}</button></div></div>
       <div v-show="preferencesOpen" id="node-view-preferences" class="server-view-controls" :aria-label="t('m.3fa2b5eb40e0')"><label>{{ t('m.9a9acd39e536') }}<select v-model="statusFilter"><option value="all">{{ t('m.2b13e491c90b') }}</option><option value="online">{{ t('m.b9086662b1df') }}</option><option value="pending">{{ t('m.a890b3be09aa') }}</option><option value="offline">{{ t('m.be1b4f3c6c1c') }}</option><option value="revoked">{{ t('m.fef96e34f77b') }}</option><option value="hidden">{{ t('m.58f1163e3fc6') }}</option></select></label><label>{{ t('m.88eac6c5df32') }}<select v-model="dashboardSettings.nodeGroupBy"><option value="status">{{ t('m.b8f945ea49ff') }}</option><option value="group">{{ t('m.c08b046b5470') }}</option><option value="none">{{ t('m.fcd40ee3f05a') }}</option></select></label><label>{{ t('m.13fffdc852b8') }}<select v-model="dashboardSettings.nodeSortBy"><option value="custom">{{ t('m.0f59d3742e06') }}</option><option value="name">{{ t('m.a98585871c53') }}</option><option value="status">{{ t('m.b8f945ea49ff') }}</option></select></label><label>{{ t('m.70006f6c5230') }}<input v-model.number="dashboardSettings.featuredLimit" type="number" min="1" max="20"></label><button type="button" class="container-action" :disabled="dashboardSettingsSaving" @click="void saveDashboardSettings()">{{ dashboardSettingsSaving ? t('m.ff509c9ba052') : t('m.b290bfe6352c') }}</button><span v-if="dashboardSettingsMessage" role="status">{{ display(dashboardSettingsMessage) }}</span><span v-if="dashboardSettingsError" role="alert">{{ display(dashboardSettingsError) }}</span></div>
       <p v-if="busy && nodes.length === 0" class="dashboard-empty">{{ t('m.c4608c61f330') }}</p><div v-else-if="nodes.length === 0" class="dashboard-welcome"><span class="welcome-icon"><UiIcon name="nodes" /></span><h2>{{ t('dashboard.empty.title') }}</h2><p>{{ t('dashboard.empty.description') }}</p><button type="button" class="primary-button" @click="emit('enroll')"><UiIcon name="add" />{{ t('dashboard.add') }}</button></div><p v-else-if="serverCardGroups.every((group) => group.nodes.length === 0)" class="dashboard-empty">{{ t('m.1af4c85a8053') }}</p>
-      <section v-for="group in serverCardGroups" :key="group.key" class="vps-card-group" :data-group="group.key"><h2 v-if="group.label" class="vps-group-heading">{{ group.label }}</h2><div class="vps-card-grid"><VpsCard v-for="node in group.nodes" :key="node.nodeId" :node="node" :metrics="views[node.nodeId]" :inventory="dockerViews[node.nodeId]" :node-preference="nodePreference(node)" :container-preferences="nodePreferences[node.nodeId] ?? []" :preference-identities="preferenceIdentities[node.nodeId] ?? {}" :online="nodeIsOnline(node)" :pending="isPendingRegistration(node)" :docker-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : !nodeIsOnline(node)" :preview-limit="dashboardSettings.featuredLimit" :current-time="wallClockNow" :node-reason="nodeReasons[node.nodeId]" :tasks="tasksForNode(node.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" @view="chooseNode" @quick-action="openNodeShortcut" @container-action="submitCardContainerAction"/></div></section>
+      <section v-for="group in serverCardGroups" :key="group.key" class="vps-card-group" :data-group="group.key"><h2 v-if="group.label" class="vps-group-heading">{{ group.label }}</h2><div class="vps-card-grid"><VpsCard v-for="node in group.nodes" :key="node.nodeId" :node="node" :metrics="views[node.nodeId]" :inventory="dockerViews[node.nodeId]" :node-preference="nodePreference(node)" :ssh-user-choice="sshUserChoices[node.nodeId]" :ssh-connection="sshConnections[node.nodeId]?.info" :ssh-loading="sshConnections[node.nodeId]?.loading" :ssh-error="sshConnections[node.nodeId]?.error" :container-preferences="nodePreferences[node.nodeId] ?? []" :preference-identities="preferenceIdentities[node.nodeId] ?? {}" :online="nodeIsOnline(node)" :pending="isPendingRegistration(node)" :docker-stale="dockerViews[node.nodeId] ? dockerIsStale(dockerViews[node.nodeId]) : !nodeIsOnline(node)" :preview-limit="dashboardSettings.featuredLimit" :current-time="wallClockNow" :node-reason="nodeReasons[node.nodeId]" :tasks="tasksForNode(node.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" @choose-ssh-user="chooseSSHUser" @discover-ssh="discoverSSHForNode" @view="chooseNode" @quick-action="openNodeShortcut" @container-action="submitCardContainerAction"/></div></section>
     </section>
   </section>
   <NodeDetail v-else :key="selectedNode.nodeId" :node="selectedNode" :metrics="views[selectedNode.nodeId]" :inventory="dockerViews[selectedNode.nodeId]" :preferences="nodePreferences[selectedNode.nodeId] ?? []" :preference-identities="preferenceIdentities[selectedNode.nodeId] ?? {}" :online="nodeIsOnline(selectedNode)" :pending="isPendingRegistration(selectedNode)" :docker-stale="dockerViews[selectedNode.nodeId] ? dockerIsStale(dockerViews[selectedNode.nodeId]) : !nodeIsOnline(selectedNode)" :node-reason="nodeReasons[selectedNode.nodeId]" :tasks="tasksForNode(selectedNode.nodeId)" :task-submitting="taskSubmitting" :task-errors="taskErrors" :dashboard-settings="dashboardSettings" :dashboard-settings-saving="dashboardSettingsSaving" :dashboard-settings-message="dashboardSettingsMessage" :dashboard-settings-error="dashboardSettingsError" :current-time="wallClockNow" @back="backToNodes" @deleted="acceptNodeDeletion" @refresh-tasks="(id) => { const node = nodes.find((item) => item.nodeId === id); if (node) void loadTasks(node) }" @preference-saved="acceptSavedPreference" @container-action="submitDetailContainerAction" @container-create="submitContainerCreateTask" @settings-change="dashboardSettings = $event" @save-settings="void saveDashboardSettings()"/>

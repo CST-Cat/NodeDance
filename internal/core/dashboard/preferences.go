@@ -11,7 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
+	"github.com/CST-Cat/NodeDance/internal/sshconnection"
 	"net/url"
 	"strings"
 	"time"
@@ -206,7 +206,7 @@ func validPreference(item Preference) bool {
 	switch item.TargetKind {
 	case "node":
 		if !validNodeID(item.NodeID) || item.Identity != NodeIdentity(item.NodeID) ||
-			!validSSHHost(item.SSHHost) || !validSSHUser(item.SSHUser) || item.SSHPort < 0 || item.SSHPort > 65535 {
+			!sshconnection.ValidHost(item.SSHHost) || !sshconnection.ValidUser(item.SSHUser) || item.SSHPort < 0 || item.SSHPort > 65535 {
 			return false
 		}
 	case "container":
@@ -237,61 +237,6 @@ func validPreference(item Preference) bool {
 	}
 	parsed, err := url.Parse(item.ServiceURL)
 	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" && parsed.User == nil && parsed.Fragment == "" && len(item.ServiceURL) <= 2048
-}
-
-func validSSHHost(value string) bool {
-	if value == "" {
-		return true
-	}
-	if len(value) > 255 || strings.TrimSpace(value) != value || strings.HasPrefix(value, "-") ||
-		strings.ContainsAny(value, "\x00\r\n\t /@\\'\";|&$`(){}[]<>!") {
-		return false
-	}
-	if net.ParseIP(value) != nil {
-		return true
-	}
-	if strings.Contains(value, ":") {
-		address, zone, hasZone := strings.Cut(value, "%")
-		if !hasZone || zone == "" || strings.Contains(zone, "%") || net.ParseIP(address) == nil {
-			return false
-		}
-		for _, char := range zone {
-			if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '_' || char == '.' || char == '-') {
-				return false
-			}
-		}
-		return true
-	}
-	if len(value) > 253 || strings.HasPrefix(value, ".") || strings.HasSuffix(value, ".") {
-		return false
-	}
-	for _, label := range strings.Split(value, ".") {
-		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
-			return false
-		}
-		for _, char := range label {
-			if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '-') {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func validSSHUser(value string) bool {
-	if value == "" {
-		return true
-	}
-	if len(value) > 64 || strings.HasPrefix(value, "-") {
-		return false
-	}
-	for index, char := range value {
-		if !(char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char == '_' ||
-			index > 0 && (char >= '0' && char <= '9' || char == '.' || char == '-')) {
-			return false
-		}
-	}
-	return true
 }
 
 func validNodeID(value string) bool {

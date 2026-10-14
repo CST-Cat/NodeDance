@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"github.com/CST-Cat/NodeDance/internal/sshconnection"
 	"math"
 	"net"
 	"net/url"
@@ -284,13 +285,14 @@ type CommandCleanup struct {
 	Retained int `json:"retained"`
 }
 type HostResponse struct {
-	Cleanup     *CommandCleanup `json:"cleanup,omitempty"`
-	Status      int             `json:"status"`
-	Error       string          `json:"error,omitempty"`
-	Settings    *AgentSettings  `json:"settings,omitempty"`
-	Job         *CommandJob     `json:"job,omitempty"`
-	Jobs        []CommandJob    `json:"jobs,omitempty"`
-	Diagnostics map[string]any  `json:"diagnostics,omitempty"`
+	SSH         *sshconnection.Info `json:"ssh,omitempty"`
+	Cleanup     *CommandCleanup     `json:"cleanup,omitempty"`
+	Status      int                 `json:"status"`
+	Error       string              `json:"error,omitempty"`
+	Settings    *AgentSettings      `json:"settings,omitempty"`
+	Job         *CommandJob         `json:"job,omitempty"`
+	Jobs        []CommandJob        `json:"jobs,omitempty"`
+	Diagnostics map[string]any      `json:"diagnostics,omitempty"`
 }
 
 // HostMetricKeys is shared by history, alert validation and presentation.

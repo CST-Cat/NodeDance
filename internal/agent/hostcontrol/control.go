@@ -20,11 +20,15 @@ import (
 	"unicode/utf8"
 
 	"github.com/CST-Cat/NodeDance/internal/agent/localstate"
+	"github.com/CST-Cat/NodeDance/internal/agent/sshdiscovery"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/sshconnection"
 	"github.com/CST-Cat/NodeDance/internal/update"
 )
 
 type Manager struct {
+	sshMu    sync.Mutex
+	sshInfo  sshconnection.Info
 	mu       sync.Mutex
 	closed   bool
 	cancel   context.CancelFunc
@@ -150,8 +154,14 @@ func (m *Manager) Handle(req protocol.HostRequest) protocol.HostResponse {
 		saved := cloneSettings(m.settings)
 		return protocol.HostResponse{Status: 200, Settings: &saved}
 	case "diagnostics":
+		m.sshMu.Lock()
+		if time.Since(m.sshInfo.SampledAt) > 30*time.Second || m.sshInfo.Status == "" {
+			m.sshInfo = sshdiscovery.Discover(m.ctx)
+		}
+		ssh := m.sshInfo
+		m.sshMu.Unlock()
 		s := m.Settings()
-		return protocol.HostResponse{Status: 200, Settings: &s, Diagnostics: map[string]any{"uid": os.Geteuid(), "pid": os.Getpid(), "stateDirectory": m.dir, "credential": "[redacted]", "settingsApply": "sampling on next interval; connection settings on reconnect", "updates": "built-in"}}
+		return protocol.HostResponse{Status: 200, Settings: &s, SSH: &ssh, Diagnostics: map[string]any{"uid": os.Geteuid(), "pid": os.Getpid(), "stateDirectory": m.dir, "credential": "[redacted]", "settingsApply": "sampling on next interval; connection settings on reconnect", "updates": "built-in"}}
 	case "commands.submit":
 		j, err := m.submit(req)
 		if err != nil {
