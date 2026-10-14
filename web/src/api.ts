@@ -262,7 +262,7 @@ export interface SSHConnectionInfo {
 }
 export interface DashboardPreference {
   nodeId: string
-  targetKind: 'node' | 'container' | 'compose_service'
+  targetKind: 'node' | 'container' | 'compose_service' | 'compose_project'
   identity: string
   alias: string
   icon: string

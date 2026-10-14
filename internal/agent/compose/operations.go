@@ -613,6 +613,8 @@ func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjec
 			args = []string{"restart"}
 		}
 		expected = "running"
+	case protocol.TaskComposeDelete:
+		args, expected = []string{"down", "--remove-orphans"}, "removed"
 	case protocol.TaskComposeDeploy:
 		return "", ErrConfigInvalid
 	default:
@@ -1495,6 +1497,9 @@ func (m *Manager) waitProjectState(ctx context.Context, ref protocol.ComposeProj
 	defer ticker.Stop()
 	for {
 		containers, err := m.projectInstances(ctx, ref)
+		if err == nil && expected == "removed" && len(containers) == 0 {
+			return containers, nil
+		}
 		if err == nil && len(containers) > 0 {
 			allRunning, allStopped := true, true
 			for _, container := range containers {

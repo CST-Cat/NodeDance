@@ -316,6 +316,10 @@ async function port() {
     await dockerPage.setViewportSize({width:1440,height:1000})
     try { await require('./docker-regressions.cjs')({page:dockerPage,base,node,artifacts,catalog}) }
     finally { await dockerPage.close() }
+    const composePage=await context.newPage()
+    composePage.setDefaultTimeout(10000)
+    try { await require('./compose-regressions.cjs')({page:composePage,base,node,artifacts,catalog}) }
+    finally { await composePage.close() }
     const metricsPage=await context.newPage()
     metricsPage.setDefaultTimeout(10000)
     try { await require('./metrics-regressions.cjs')({page:metricsPage,base,node,artifacts,catalog}) }
@@ -326,7 +330,7 @@ async function port() {
     finally { await sshPage.close() }
     const navigationPage=await context.newPage()
     navigationPage.setDefaultTimeout(10000)
-    try { await require('./node-navigation-regressions.cjs')({page:navigationPage,base,node,artifacts}) }
+    try { await require('./node-navigation-regressions.cjs')({page:navigationPage,base,node,artifacts,headers,catalog}) }
     finally { await navigationPage.close() }
     const enrollmentPage=await context.newPage()
     enrollmentPage.setDefaultTimeout(10000)

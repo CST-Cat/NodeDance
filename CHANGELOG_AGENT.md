@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [0.1.19]
+
+### English
+
+- Add confirmed Compose deployment deletion through the shared task journal; preserve volumes, images and configuration, verify container removal, and never replay uncertain mutations.
+
+### 简体中文
+
+- 通过共享任务日志增加已确认的 Compose 部署删除，保留数据卷、镜像与配置，验证容器已撤下，不重放不确定操作。
+
 ## [0.1.18]
 
 ### English

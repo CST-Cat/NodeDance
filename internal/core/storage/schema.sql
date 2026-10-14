@@ -144,6 +144,22 @@ CREATE TABLE IF NOT EXISTS dashboard_preferences (
 	PRIMARY KEY(node_id, target_kind, identity_key)
 );
 
+CREATE TABLE IF NOT EXISTS compose_project_preferences (
+	node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+	target_kind TEXT NOT NULL CHECK (target_kind IN ('compose_project')),
+	identity_key TEXT NOT NULL,
+	alias TEXT NOT NULL DEFAULT '',
+	icon TEXT NOT NULL DEFAULT '',
+	notes TEXT NOT NULL DEFAULT '',
+	service_url TEXT NOT NULL DEFAULT '',
+	group_name TEXT NOT NULL DEFAULT '' CHECK (length(group_name) <= 128),
+	sort_order INTEGER NOT NULL DEFAULT 0,
+	visible INTEGER NOT NULL DEFAULT 1 CHECK (visible IN (0, 1)),
+	pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
+	updated_at INTEGER NOT NULL,
+	PRIMARY KEY(node_id, target_kind, identity_key)
+);
+
 CREATE TABLE IF NOT EXISTS node_connection_preferences (
 	node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
 	ssh_host TEXT NOT NULL DEFAULT '',

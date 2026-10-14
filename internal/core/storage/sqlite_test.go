@@ -49,7 +49,7 @@ func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
 	for _, name := range []string{
 		"admin_user", "nodes", "agent_devices", "docker_node_state", "docker_containers",
 		"metrics_minute", "metrics_hour", "dashboard_preferences", "node_connection_preferences", "dashboard_settings",
-		"compose_projects", "core_tasks", "core_task_resource_claims", "core_task_audit_events",
+		"compose_projects", "compose_project_preferences", "core_tasks", "core_task_resource_claims", "core_task_audit_events",
 	} {
 		if !seen[name] {
 			t.Errorf("current schema is missing required table %q", name)

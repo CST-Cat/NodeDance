@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { requestConfirm } from '../dialogs'
+import { requestConfirm, requestPrompt } from '../dialogs'
 import { t, display, locale } from "../i18n"
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { api, type ContainerTask } from '../api'
+import { api, type ContainerTask, type DashboardPreference } from '../api'
 import { composeApi, type ComposeOperation, type ComposeProject } from '../compose-api'
 import ComposeEditor from './ComposeEditor.vue'
 import ComposeCreateForm from './ComposeCreateForm.vue'
+import DockerActionButtons, { type DockerPrimaryAction } from './DockerActionButtons.vue'
 
 const props = defineProps<{ nodeId: string }>()
 
@@ -16,6 +17,59 @@ const stale = ref(true)
 const editorProjectKey = ref('')
 const pending = ref<Record<string, string>>({})
 const taskByProject = ref<Record<string, ContainerTask>>({})
+const selectedKeys = ref<string[]>([])
+const createOpen = ref(false)
+const selectionBusy = ref(false)
+const preferences = ref<DashboardPreference[]>([])
+const projectErrors = ref<Record<string, { message: string; action: ComposeOperation }>>({})
+const selectedProjects = computed(() => projects.value.filter(project => selectedKeys.value.includes(project.ref.key)))
+const allSelected = computed(() => projects.value.length > 0 && selectedProjects.value.length === projects.value.length)
+function toggleProject(key: string, selected: boolean) {
+ selectedKeys.value = selected ? [...new Set([...selectedKeys.value, key])] : selectedKeys.value.filter(value => value !== key)
+}
+function projectTitle(project: ComposeProject) {
+ return preferences.value.find(item => item.targetKind === 'compose_project' && item.identity === 'compose_project:' + project.ref.key)?.alias || project.ref.name
+}
+function canRun(project: ComposeProject) {
+ return !stale.value && !project.dataStale && project.configAvailable && !pending.value[project.ref.key]
+}
+function selectionCan(action: DockerPrimaryAction | 'deploy' | 'edit') {
+ if (selectionBusy.value || !selectedProjects.value.length) return false
+ if (action === 'rename') return selectedProjects.value.length === 1
+ if (action === 'edit') return selectedProjects.value.length === 1 && selectedProjects.value.every(canRun)
+ return selectedProjects.value.every(canRun)
+}
+async function runSelection(action: DockerPrimaryAction | 'deploy') {
+ if (!selectionCan(action)) return
+ const keys = selectedProjects.value.map(project => project.ref.key)
+ selectionBusy.value = true
+ try {
+  if (action === 'rename') {
+   const project = selectedProjects.value[0]
+   const alias = await requestPrompt(t('compose.aliasPrompt'), projectTitle(project))
+   if (alias === null) return
+   const existing = preferences.value.find(item => item.targetKind === 'compose_project' && item.identity === 'compose_project:' + project.ref.key)
+   const preference: DashboardPreference = { nodeId: props.nodeId, targetKind: 'compose_project', identity: 'compose_project:' + project.ref.key, alias, icon:'', notes:'', serviceUrl:'', sshHost:'', sshPort:0, sshUser:'', group:'', sortOrder:0, visible:true, pinned:false, ...existing }
+   preference.alias = alias
+   await api.saveNodePreference(props.nodeId, preference)
+   preferences.value = [...preferences.value.filter(item => item.identity !== preference.identity), preference]
+   return
+  }
+  if (action !== 'start') {
+   const names = selectedProjects.value.map(project => project.ref.name).join('、')
+   const message = action === 'delete' ? t('compose.confirmDelete', {'0': names}) : t('compose.confirmBatch', {'0':operationLabel(action), '1':names})
+   if (!await requestConfirm(message)) return
+  }
+  await refresh()
+  const current = keys.map(key => projects.value.find(project => project.ref.key === key))
+  if (!current.every((project): project is ComposeProject => !!project && canRun(project))) {
+   error.value = t('compose.selectionChanged'); return
+  }
+  for (const project of current) await runAction(project, action, true)
+ } catch (reason) { error.value = reason instanceof Error ? reason.message : String(reason) }
+ finally { selectionBusy.value = false }
+}
+
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 let disposed = false
 
@@ -25,9 +79,11 @@ async function refresh() {
   loading.value = projects.value.length === 0
   error.value = ''
   try {
-    const result = await composeApi.projects(props.nodeId)
+    const [result, saved] = await Promise.all([composeApi.projects(props.nodeId), api.nodePreferences(props.nodeId)])
     if (disposed) return
     projects.value = result.projects
+    preferences.value = saved.preferences
+    selectedKeys.value = selectedKeys.value.filter(key => result.projects.some(project => project.ref.key === key))
     stale.value = Boolean(result.dataStale)
   } catch (reason) {
     if (disposed) return
@@ -39,7 +95,7 @@ async function refresh() {
 }
 
 function operationLabel(action: ComposeOperation) {
-  return ({ start: t('m.56410fc65314'), stop: t('m.ca4d973c0b00'), restart: t('m.562822892865'), deploy: t('m.3ca7718593c0'), config_save: t('m.6e584e3d5ce6') } as const)[action]
+  return ({ start: t('m.56410fc65314'), stop: t('m.ca4d973c0b00'), restart: t('m.562822892865'), deploy: t('m.3ca7718593c0'), config_save: t('m.6e584e3d5ce6'), delete: t('m.2f9daa828907') } as const)[action]
 }
 
 function operationConfirmation(project: ComposeProject, action: ComposeOperation): string | null {
@@ -74,14 +130,18 @@ function scheduleTaskPoll(projectKey: string, taskId: string) {
 
 const timers = new Set<ReturnType<typeof setTimeout>>()
 
-async function runAction(project: ComposeProject, action: ComposeOperation) {
+async function runAction(project: ComposeProject, action: ComposeOperation, confirmed = false) {
   if (stale.value || project.dataStale || !project.configAvailable || pending.value[project.ref.key]) return
   const confirmation = operationConfirmation(project, action)
-  if (confirmation && !await requestConfirm(confirmation)) return
+  if (!confirmed && confirmation && !await requestConfirm(confirmation)) return
+  const current = projects.value.find(item => item.ref.key === project.ref.key)
+  if (!current || !canRun(current)) return
+  if (action === 'delete' && !confirmed && !await requestConfirm(t('compose.confirmDelete', {'0':project.ref.name}))) return
+  const errors = { ...projectErrors.value }; delete errors[project.ref.key]; projectErrors.value = errors
   pending.value = { ...pending.value, [project.ref.key]: action }
   error.value = ''
   try {
-    const accepted = await composeApi.createTask(props.nodeId, project.ref.key, { action })
+    const accepted = await composeApi.createTask(props.nodeId, project.ref.key, { action, ...(action === 'delete' ? {deleteConfirmationKey: project.ref.key} : {}) })
     taskByProject.value = { ...taskByProject.value, [project.ref.key]: await api.nodeTask(props.nodeId, accepted.taskId) }
     const task = taskByProject.value[project.ref.key]
     if (task.status === 'queued' || task.status === 'running') scheduleTaskPoll(project.ref.key, accepted.taskId)
@@ -91,13 +151,13 @@ async function runAction(project: ComposeProject, action: ComposeOperation) {
     }
   } catch (reason) {
     pending.value = { ...pending.value, [project.ref.key]: '' }
-    error.value = reason instanceof Error ? reason.message : t('m.96556b2e2aac', {"0": (operationLabel(action))})
+    projectErrors.value = { ...projectErrors.value, [project.ref.key]: { action, message: reason instanceof Error ? reason.message : t('m.96556b2e2aac', {'0':operationLabel(action)}) } }
   }
 }
 
 function taskMessage(task?: ContainerTask) {
   if (!task) return ''
-  if (task.status === 'succeeded') return t('m.10e0cfbae303', {"0": (operationLabel(task.action as ComposeOperation)), "1": (task.result.observedState || task.result.code)})
+  if (task.status === 'succeeded') return t('m.10e0cfbae303', {"0": (operationLabel(task.action.replace(/^compose_/, '') as ComposeOperation)), "1": (task.result.observedState || task.result.code)})
   if (task.status === 'failed') {
     if (task.action === 'compose_deploy' && ['recovered', 'recreated', 'restored_offline'].includes(task.result.observedState || '')) {
       const restored = task.result.observedState === 'restored_offline' ? t('m.74e19906ba04') : t('m.a40db8641914')
@@ -111,7 +171,7 @@ function taskMessage(task?: ContainerTask) {
     }
     return t('m.d004f1dc1829')
   }
-  return `${operationLabel(task.action as ComposeOperation)}：${task.status}`
+  return `${operationLabel(task.action.replace(/^compose_/, '') as ComposeOperation)}：${task.status}`
 }
 
 onMounted(() => {
@@ -130,25 +190,31 @@ onBeforeUnmount(() => {
 <template>
   <section class="compose-projects section-panel" aria-labelledby="compose-projects-title" data-testid="compose-projects">
     <header class="section-toolbar">
-      <div><span class="eyebrow">{{ t('label.135e86eb8ca8') }}</span><h2 id="compose-projects-title">{{ t('m.27852c17e6fc') }}{{ nodeId }}</h2></div>
+      <div><span class="eyebrow">{{ t('label.135e86eb8ca8') }}</span><h2 id="compose-projects-title">{{ t('compose.projectsTitle') }}</h2></div>
       <button class="container-action" type="button" :disabled="loading" @click="void refresh()">{{ loading ? t('m.7f3c8312816f') : t('m.aee887434131') }}</button>
     </header>
     <p v-if="stale" class="compose-stale" role="status">{{ t('m.11a3711c480d') }}</p>
     <p v-if="error" class="compose-error" role="alert">{{ display(error) }}</p>
-    <ComposeCreateForm :node-id="nodeId" :disabled="stale" @created="void refresh()" />
     <p v-if="loading && !projects.length" class="compose-empty">{{ t('m.6025e55b6f68') }}</p>
     <p v-else-if="!projects.length" class="compose-empty">{{ t('m.55f37d0877f7') }}</p>
-    <article v-for="project in projects" :key="project.ref.key" class="compose-project-card" :data-stale="project.dataStale || stale">
+    <div class="compose-selection-bar">
+      <label><input type="checkbox" :checked="allSelected" :indeterminate="selectedProjects.length > 0 && !allSelected" :disabled="selectionBusy || !projects.length" @change="selectedKeys = ($event.target as HTMLInputElement).checked ? projects.map(project => project.ref.key) : []">{{ t('compose.selectAll') }}</label>
+      <span role="status">{{ t('compose.selected', {'0':selectedProjects.length, '1':projects.length}) }}</span>
+      <button class="container-action" type="button" :disabled="selectionBusy || !selectedProjects.length" @click="selectedKeys = []">{{ t('docker.clearSelection') }}</button>
+    </div>
+    <div class="compose-toolbar" role="group" :aria-label="t('compose.toolbar')" data-testid="compose-toolbar">
+      <DockerActionButtons :can="selectionCan" :rename-label="t('compose.alias')" @action="void runSelection($event)" />
+      <button class="container-action" type="button" :disabled="!selectionCan('deploy')" data-action="deploy" @click="void runSelection('deploy')">{{ t('m.3ca7718593c0') }}</button>
+      <button class="container-action" type="button" :disabled="!selectionCan('edit')" data-action="edit" @click="editorProjectKey = selectedProjects[0].ref.key">{{ t('m.b2b5b9fafa31') }}</button>
+      <button class="container-action" type="button" :disabled="stale" :aria-expanded="createOpen" aria-controls="compose-create-project" @click="createOpen = !createOpen">{{ t(createOpen ? 'compose.closeCreate' : 'compose.newProject') }}</button>
+    </div>
+    <div v-if="createOpen" id="compose-create-project"><ComposeCreateForm :node-id="nodeId" :disabled="stale" @created="void refresh()" /></div>
+    <article v-for="project in projects" :key="project.ref.key" class="compose-project-card" :data-project-key="project.ref.key" :data-selected="selectedKeys.includes(project.ref.key)" :data-stale="project.dataStale || stale">
       <header class="compose-project-heading">
-        <div><span class="eyebrow">{{ project.configAvailable ? 'CONFIG AVAILABLE' : 'CONTAINERS DISCOVERED' }}</span><h3>{{ project.ref.name }}</h3><p>{{ project.ref.workingDirectory }}</p></div>
-        <div class="compose-project-actions">
-          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'start')">{{ t('m.56410fc65314') }}</button>
-          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'stop')">{{ t('m.ca4d973c0b00') }}</button>
-          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'restart')">{{ t('m.562822892865') }}</button>
-          <button class="container-action container-action-danger" type="button" :disabled="stale || project.dataStale || !project.configAvailable || !!pending[project.ref.key]" @click="void runAction(project, 'deploy')">{{ t('m.3ca7718593c0') }}</button>
-          <button class="container-action" type="button" :disabled="stale || project.dataStale || !project.configAvailable" @click="editorProjectKey = project.ref.key">{{ t('m.b2b5b9fafa31') }}</button>
-        </div>
+        <label class="compose-project-select"><input type="checkbox" :checked="selectedKeys.includes(project.ref.key)" :disabled="selectionBusy" :aria-label="t('compose.selectProject', {'0':projectTitle(project)})" @change="toggleProject(project.ref.key, ($event.target as HTMLInputElement).checked)"></label>
+        <div class="compose-project-copy"><span class="eyebrow">{{ project.configAvailable ? 'CONFIG AVAILABLE' : 'CONTAINERS DISCOVERED' }}</span><h3>{{ projectTitle(project) }}</h3><p v-if="projectTitle(project) !== project.ref.name">{{ project.ref.name }}</p><p>{{ project.ref.workingDirectory }}</p></div>
       </header>
+      <div v-if="projectErrors[project.ref.key]" class="compose-project-error" role="alert"><p>{{ display(projectErrors[project.ref.key].message) }}</p><button class="container-action" type="button" :disabled="selectionBusy || !canRun(project)" @click="void runAction(project, projectErrors[project.ref.key].action)">{{ t('compose.retry') }}</button></div>
       <p v-if="!project.configAvailable" class="compose-warning">{{ t('m.083c34e37d43') }}</p>
       <p v-if="pending[project.ref.key]" class="compose-task-line" role="status">{{ t('m.e6b02a08e69a') }}{{ operationLabel(pending[project.ref.key] as ComposeOperation) }}…</p>
       <p v-if="taskByProject[project.ref.key]" class="compose-task-line" :data-status="taskByProject[project.ref.key].status" role="status">{{ display(taskMessage(taskByProject[project.ref.key])) }}</p>
@@ -179,7 +245,13 @@ onBeforeUnmount(() => {
 .compose-project-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }
 .compose-project-heading h3 { margin:4px 0; font-size: 15px; }
 .compose-project-heading p { margin:0; color:var(--muted); font-size: 12px; overflow-wrap:anywhere; }
-.compose-project-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; }
+.compose-selection-bar,.compose-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+.compose-selection-bar label { display:flex; align-items:center; gap:8px; }
+.compose-selection-bar span { color:var(--muted-strong); font-size:12px; }
+.compose-project-select { display:grid; place-items:center; min-width:44px; min-height:44px; }
+.compose-project-copy { flex:1; min-width:0; }
+.compose-project-card[data-selected="true"] { border-color:var(--accent); }
+.compose-project-error { color:var(--danger); font-size:12px; }
 .compose-task-line { margin:10px 0 0; color:var(--accent); font-size: 12px; }
 .compose-task-line[data-status="failed"],.compose-task-line[data-status="unknown"] { color:var(--warning); }
 .compose-services { display:grid; gap:8px; margin-top:12px; }
@@ -187,9 +259,10 @@ onBeforeUnmount(() => {
 .compose-service h4 { margin:0 0 6px; color:var(--text); font-size: 12px; }
 .compose-service h4 small { color:var(--muted); font-weight:400; }
 .compose-service ul { display:grid; gap:5px; margin:0; padding:0; list-style:none; }
-.compose-service li { display:grid; grid-template-columns:minmax(90px,1fr) 90px minmax(70px,auto); gap:8px; color:var(--muted-strong); font-size: 12px; }
+.compose-service li { display:grid; grid-template-columns:minmax(0,1fr) max-content max-content; gap:8px; color:var(--muted-strong); font-size: 12px; }
 .compose-service li span { overflow-wrap:anywhere; }
-.compose-service li code { color:var(--muted); }
+.compose-service li code { color:var(--muted); white-space:nowrap; }
+.compose-service li [data-state] { white-space:nowrap; text-align:right; }
 .compose-service li [data-state="running"] { color:var(--success); }
-@media (max-width:700px) { .compose-project-heading { display:grid; } .compose-project-actions { justify-content:flex-start; } .compose-service li { grid-template-columns:minmax(70px,1fr) 75px minmax(55px,auto); } }
+@media (max-width:700px) {  .compose-service li { grid-template-columns:minmax(0,1fr) max-content; } .compose-service li > span:first-child { grid-column:1 / -1; } }
 </style>

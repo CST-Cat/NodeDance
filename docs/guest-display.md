@@ -62,3 +62,5 @@ Node billing metadata (renewal price, currency, billing cycle, monthly quota, pu
 SSH discovery is administrator-only through `agents.diagnostics`. Host addresses, listener ports, account candidates and generated connection commands never enter the guest projection. Anonymous diagnostic requests remain denied through the discovered private operation matrix. Discovery observes service configuration and login metadata without collecting passwords, private keys or Agent credentials.
 
 Administrator VPS sections use the contextual sidebar; returning home restores global navigation. The guest browser regression retains detail history, reload, section selection and administrator session checks through this sidebar. Guest display does not expose management navigation.
+
+Compose project display names are administrator-only preferences. The isolated browser suite stores a private project-name canary and verifies that anonymous/public output does not contain it; Compose deletion remains behind the shared authenticated operation and CSRF boundary.

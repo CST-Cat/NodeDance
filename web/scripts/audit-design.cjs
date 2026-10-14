@@ -646,9 +646,11 @@ fs.mkdirSync(out, { recursive: true });
           await invariants(prefix + "-container-create");
         }
         if (section === "compose") {
+          await page.getByTestId("compose-toolbar").getByRole("button", {name:/^(New project|新建项目)$/}).click();
           await page.locator(".compose-create-form").waitFor();
           await invariants(prefix + "-compose-create");
-          await page.locator(".compose-project-actions button").last().click();
+          await page.locator(".compose-project-card").last().locator("input[type=checkbox]").check();
+          await page.getByTestId("compose-toolbar").locator("[data-action=edit]").click();
           await page.locator(".compose-editor textarea").waitFor();
           await invariants(prefix + "-compose-editor");
         }

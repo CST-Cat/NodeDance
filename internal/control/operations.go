@@ -315,7 +315,7 @@ func buildOperations() []Operation {
 		op("compose.create", "POST", node+"/compose/projects", "Create and deploy project", schema(protocol.ComposeCreateRequest{})),
 		op("compose.config", "GET", node+"/compose/projects/{projectKey}/config/{fileIndex}", "Read Compose YAML and digest", nil),
 		op("compose.validate", "POST", node+"/compose/projects/{projectKey}/config/{fileIndex}/validate", "Validate edited Compose YAML", schema(protocol.ComposeValidateRequest{})),
-		op("compose.action", "POST", node+"/compose/projects/{projectKey}/tasks", "Task: start, stop, restart, deploy or config_save; edits use baseSha256", schema(protocol.ComposeActionRequest{})),
+		op("compose.action", "POST", node+"/compose/projects/{projectKey}/tasks", "Task: start, stop, restart, deploy, delete or config_save; delete requires exact deleteConfirmationKey and preserves volumes/config; edits use baseSha256", schema(protocol.ComposeActionRequest{})),
 		op("tasks.list", "GET", node+"/tasks", "Task history with pagination", nil, "limit", "after"),
 		op("tasks.get", "GET", node+"/tasks/{taskId}", "Task status and result; poll until terminal status", nil),
 		op("tasks.audit", "GET", node+"/tasks/{taskId}/audit", "Task audit trail", nil),

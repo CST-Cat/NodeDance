@@ -170,14 +170,14 @@ const clockOffsetText = computed(() => {
         <p v-if="metricReason(view.metrics.network.summary)" class="metric-reason" data-testid="network-reason">{{ metricReason(view.metrics.network.summary) }}</p>
         <p v-if="view.metrics.network.detailsTruncated" class="metric-reason" data-testid="network-truncation">{{ t('m.093a185c2e51') }}{{ view.metrics.network.truncationReason }}</p>
         <div v-for="iface in primaryInterfaces" :key="iface.name" class="interface-row" data-testid="network-interface" :data-interface-name="iface.name">
-          <div>
+          <div class="interface-title">
             <strong>{{ iface.name }}</strong>
-            <span>{{ t('m.09f99341ca07') }}</span>
             <span class="status-pill small" :data-status="metricState(iface.rate)" :data-testid="`interface-rate-status-${iface.name}`">{{ statusLabel(metricState(iface.rate)) }}</span>
-            <span v-if="metricReason(iface.rate)" class="metric-reason" :data-testid="`interface-rate-reason-${iface.name}`">{{ metricReason(iface.rate) }}</span>
           </div>
+          <div class="interface-description"><span>{{ t('m.09f99341ca07') }}</span></div>
           <span>{{ formatRate(iface.rate.value?.receivedBytesPerSecond) }} ↓</span>
           <span>{{ formatRate(iface.rate.value?.sentBytesPerSecond) }} ↑</span>
+          <p v-if="metricReason(iface.rate)" class="metric-reason interface-reason" :data-testid="`interface-rate-reason-${iface.name}`">{{ metricReason(iface.rate) }}</p>
         </div>
       </article>
     </div>
@@ -238,9 +238,13 @@ const clockOffsetText = computed(() => {
 .network-pair span { color: var(--metric-muted); }
 .network-pair strong { font-variant-numeric: tabular-nums; }
 .interface-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; margin-top: 12px; border-top: 1px solid var(--metric-line); padding-top: 10px; color: var(--text); font-size: 12px; font-variant-numeric: tabular-nums; }
-.interface-row > div { display: grid; min-width:0; gap: 3px; overflow-wrap:anywhere; }
+.interface-title { grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:10px; min-width:0; }
+.interface-title strong { min-width:0; overflow-wrap:anywhere; }
+.interface-title .status-pill { flex-shrink:0; }
+.interface-description { min-width:0; overflow-wrap:anywhere; }
+.interface-reason { grid-column:1 / -1; margin:0; }
 .interface-row > span { white-space:nowrap; text-align:right; }
-.interface-row > div span { color: var(--metric-muted); font-size: 12px; }
+.interface-description span { color: var(--metric-muted); font-size: 12px; }
 .metrics-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin-top: 14px; border: 1px solid var(--metric-line); border-radius:var(--radius-card); padding: 14px 16px; background: var(--surface-soft); }
 .metrics-footer > div { display: grid; min-width: 0; gap: 4px; }
 .metrics-footer span { color: var(--metric-muted); font-size: 12px; }

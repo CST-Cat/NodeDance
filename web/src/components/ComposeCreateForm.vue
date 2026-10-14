@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { requestConfirm } from '../dialogs'
 import { t, display, locale } from "../i18n"
-import { onBeforeUnmount, ref } from 'vue'
+import { defineAsyncComponent, nextTick, onBeforeUnmount, ref } from 'vue'
 import { composeApi } from '../compose-api'
 import type { ContainerTask } from '../api'
+const NodeFiles=defineAsyncComponent(()=>import('./NodeFiles.vue'))
 
 const props = defineProps<{ nodeId: string; disabled: boolean }>()
 const emit = defineEmits<{ created: [task: ContainerTask] }>()
@@ -11,6 +12,15 @@ const emit = defineEmits<{ created: [task: ContainerTask] }>()
 const name = ref('')
 const workingDirectory = ref('')
 const content = ref('')
+const directoryPickerOpen=ref(false)
+const selectedDirectory=ref('')
+const directoryButton=ref<HTMLButtonElement>()
+async function closeDirectoryPicker(useDirectory=false){
+ if(useDirectory&&selectedDirectory.value)workingDirectory.value=selectedDirectory.value
+ directoryPickerOpen.value=false;selectedDirectory.value=''
+ await nextTick();directoryButton.value?.focus()
+}
+
 const submitting = ref(false)
 const error = ref('')
 const message = ref('')
@@ -90,8 +100,14 @@ onBeforeUnmount(() => {
     <p class="compose-create-note">{{ t('m.872a816958dc') }}</p>
     <div class="compose-create-fields">
       <label>{{ t('m.867698fb7b0c') }}<input v-model.trim="name" autocomplete="off" maxlength="63" :placeholder="t('m.d1bcd8876f63')" :disabled="submitting"></label>
-      <label>{{ t('m.e9abe5532d97') }}<input v-model.trim="workingDirectory" autocomplete="off" placeholder="/srv/web-stack" :disabled="submitting"></label>
+      <div class="compose-directory-field"><label>{{ t('m.e9abe5532d97') }}<input v-model.trim="workingDirectory" data-testid="compose-workdir" autocomplete="off" placeholder="/srv/web-stack" :disabled="submitting"></label><button ref="directoryButton" class="container-action" type="button" :disabled="disabled || submitting" :aria-expanded="directoryPickerOpen" aria-controls="compose-directory-picker" data-testid="compose-directory-open" @click="selectedDirectory='';directoryPickerOpen=true">{{ t('compose.browseDirectory') }}</button></div>
     </div>
+    <section v-if="directoryPickerOpen" id="compose-directory-picker" class="compose-directory-picker" :aria-label="t('compose.chooseDirectory')" data-testid="compose-directory-picker" @keydown.esc.stop="void closeDirectoryPicker()">
+      <header><h3>{{ t('compose.chooseDirectory') }}</h3><button class="container-action" type="button" @click="void closeDirectoryPicker()">{{ t('dialog.cancel') }}</button></header>
+      <p>{{ t('compose.directoryHelp') }}</p>
+      <NodeFiles :node-id="nodeId" :node-name="t('compose.chooseDirectory')" directory-picker @directory-ready="selectedDirectory=$event" />
+      <footer><span>{{ selectedDirectory || t('guest.loading') }}</span><button class="container-action" type="button" :disabled="!selectedDirectory" data-testid="compose-directory-use" @click="void closeDirectoryPicker(true)">{{ t('compose.useDirectory') }}</button></footer>
+    </section>
     <label class="compose-create-yaml">Compose YAML<textarea v-model="content" spellcheck="false" :placeholder="'services:\n  app:\n    image: nginx:stable'" :disabled="submitting" /></label>
     <div class="compose-create-actions">
       <button class="container-action container-action-danger" type="button" :disabled="disabled || submitting || !validInput()" @click="void createProject()">{{ submitting ? t('m.92199e4ba37e') : t('m.6db055dc4ece') }}</button>
@@ -112,6 +128,11 @@ onBeforeUnmount(() => {
 .compose-create-form input,.compose-create-form textarea { box-sizing:border-box; width:100%; border:1px solid var(--line); border-radius:var(--radius-control); padding:9px; color:var(--text); background:var(--surface-soft); font:inherit; }
 .compose-create-form input { min-height:40px; }
 .compose-create-form textarea { min-height:220px; resize:vertical; background:var(--surface-soft); font: 12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace; }
+.compose-directory-field { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:8px; }
+.compose-directory-picker { min-width:0; display:grid; gap:10px; padding:12px; border:1px solid var(--line); border-radius:var(--radius-card); }
+.compose-directory-picker p { margin:0; color:var(--muted-strong); font-size:12px; }
+.compose-directory-picker footer { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; }
+.compose-directory-picker footer span { min-width:0; overflow-wrap:anywhere; font:12px ui-monospace,monospace; }
 .compose-create-actions { display:flex; flex-wrap:wrap; align-items:center; gap:10px; font-size: 12px; }
 .compose-create-actions [role="status"] { color:var(--success); }
 .compose-create-actions [data-status="failed"],.compose-create-actions [data-status="unknown"],.compose-create-actions [role="alert"] { color:var(--danger); }

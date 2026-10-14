@@ -20,10 +20,16 @@ module.exports=async function({page,base,node,artifacts,catalog}){
  for(const theme of ['light','dark'])for(const width of [390,1440]){
   await page.setViewportSize({width,height:1000})
   const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible())await scrim.click({position:{x:width-10,y:20}})
+  await page.locator('#workspace-navigation').evaluate(async element=>await Promise.all(element.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{}))))
   await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
-  assert.ok(await network.getByTestId('network-interface').evaluateAll(rows=>rows.every(row=>{const name=row.querySelector('div').getBoundingClientRect(),rates=[...row.querySelectorAll(':scope > span')].map(el=>el.getBoundingClientRect());return rates.every(rate=>name.right<=rate.left+1)&&rates[0].right<=rates[1].left+1})), 'Interface names and rates do not overlap')
+  assert.ok(await network.getByTestId('network-interface').evaluateAll(rows=>rows.every(row=>{const name=row.querySelector('.interface-description').getBoundingClientRect(),rates=[...row.querySelectorAll(':scope > span')].map(el=>el.getBoundingClientRect());return rates.every(rate=>name.right<=rate.left+1)&&rates[0].right<=rates[1].left+1})), 'Interface names and rates do not overlap')
+  assert.ok(await network.getByTestId('network-interface').evaluateAll(rows=>rows.every(row=>{
+   const name=row.querySelector('.interface-title strong').getBoundingClientRect(),status=row.querySelector('.interface-title .status-pill').getBoundingClientRect(),heading=row.closest('.network-card').querySelector('.card-heading .status-pill').getBoundingClientRect()
+   return Math.abs((name.top+name.bottom-status.top-status.bottom)/2)<=2&&Math.abs(status.right-heading.right)<=2&&name.right<=status.left
+  })), 'Interface status is beside its name and aligned with the card status')
   await page.screenshot({path:path.join(artifacts,`metrics-${theme}-${width}.png`),fullPage:true})
+  await network.screenshot({path:path.join(artifacts,`network-${theme}-${width}.png`)})
  }
  console.log('Metrics regressions passed: primary interfaces, bounded rate precision, no name/rate overlap; 4 light/dark/mobile layouts.')
 }

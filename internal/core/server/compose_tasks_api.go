@@ -289,8 +289,12 @@ func (s *Server) handleCreateComposeTask(w http.ResponseWriter, r *http.Request,
 	if !ok {
 		return
 	}
-	if request.Action != "start" && request.Action != "stop" && request.Action != "restart" && request.Action != "deploy" && request.Action != "config_save" {
+	if request.Action != "start" && request.Action != "stop" && request.Action != "restart" && request.Action != "deploy" && request.Action != "config_save" && request.Action != "delete" {
 		http.Error(w, "invalid Compose task action", http.StatusBadRequest)
+		return
+	}
+	if request.Action == "delete" && request.DeleteConfirmationKey != projectKey || request.Action != "delete" && request.DeleteConfirmationKey != "" {
+		http.Error(w, "Compose deletion requires the exact project key; confirmation is only valid for delete", http.StatusBadRequest)
 		return
 	}
 	key := r.Header.Get("Idempotency-Key")
@@ -313,10 +317,13 @@ func (s *Server) handleCreateComposeTask(w http.ResponseWriter, r *http.Request,
 		action = protocol.TaskComposeRestart
 	case "deploy":
 		action = protocol.TaskComposeDeploy
+	case "delete":
+		action = protocol.TaskComposeDelete
 	case "config_save":
 		action = protocol.TaskComposeSave
 	}
 	intent := protocol.TaskIntent{Action: action, ContainerID: project.Ref.Key}
+	intent.DeleteConfirmed = action == protocol.TaskComposeDelete
 	var content []byte
 	if action == protocol.TaskComposeSave {
 		if request.FileIndex < 0 || request.FileIndex >= len(project.Ref.ConfigFiles) || len(request.Content) > protocol.MaxComposeFileBytes ||

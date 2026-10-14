@@ -13,10 +13,11 @@ type ContainerActionRequest struct {
 }
 
 type ComposeActionRequest struct {
-	Action     string `json:"action" request:"required"`
-	FileIndex  int    `json:"fileIndex,omitempty"`
-	Content    string `json:"content,omitempty"`
-	BaseSHA256 string `json:"baseSha256,omitempty"`
+	DeleteConfirmationKey string `json:"deleteConfirmationKey,omitempty"`
+	Action                string `json:"action" request:"required"`
+	FileIndex             int    `json:"fileIndex,omitempty"`
+	Content               string `json:"content,omitempty"`
+	BaseSHA256            string `json:"baseSha256,omitempty"`
 }
 
 type ComposeValidateRequest struct {

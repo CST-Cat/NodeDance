@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [0.1.27]
+
+### English
+
+- Add project-wide Compose multi-selection and shared Docker action controls, independent task outcomes/retries, exact deletion confirmation, persisted display aliases, and compact UUID-free mobile layouts; align network interface health with its name and prioritize Overview → Docker details → Compose projects in the VPS sidebar.
+- Add an inline directory-only VueFinder picker to Compose creation, sharing Agent directory creation and retaining the deployment draft.
+
+### 简体中文
+
+- 增加 Compose 项目级多选与共享 Docker 操作按钮，支持逐项目任务结果／重试、精确删除确认、持久显示名称和不显示 UUID 的紧凑移动布局；网卡状态与名称同行右对齐，VPS 侧边栏优先排列总览 → Docker 详情 → Compose 项目。
+- Compose 新建表单内置仅目录的 VueFinder，复用 Agent 目录创建，保留部署草稿。
+
 ## [0.1.26]
 
 ### English

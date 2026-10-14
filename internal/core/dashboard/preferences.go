@@ -85,7 +85,7 @@ func (r Repository) List(ctx context.Context, nodeID string) ([]Preference, erro
 	rows, err := r.DB.QueryContext(ctx, `SELECT p.node_id, p.target_kind, p.identity_key, p.alias, p.icon, p.notes, p.service_url,
 		COALESCE(c.ssh_host, ''), COALESCE(c.ssh_port, 22), COALESCE(c.ssh_user, ''),
 		p.group_name, p.sort_order, p.visible, p.pinned
-		FROM dashboard_preferences p LEFT JOIN node_connection_preferences c ON c.node_id=p.node_id AND p.target_kind='node'
+		FROM (SELECT * FROM dashboard_preferences UNION ALL SELECT * FROM compose_project_preferences) p LEFT JOIN node_connection_preferences c ON c.node_id=p.node_id AND p.target_kind='node'
 		WHERE p.node_id=? ORDER BY p.sort_order, p.target_kind, p.identity_key`, nodeID)
 	if err != nil {
 		return nil, err
@@ -126,7 +126,11 @@ func (r Repository) Put(ctx context.Context, item Preference) error {
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO dashboard_preferences(node_id, target_kind, identity_key, alias, icon, notes, service_url, group_name, sort_order, visible, pinned, updated_at)
+	table := "dashboard_preferences"
+	if item.TargetKind == "compose_project" {
+		table = "compose_project_preferences"
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO `+table+`(node_id, target_kind, identity_key, alias, icon, notes, service_url, group_name, sort_order, visible, pinned, updated_at)
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(node_id, target_kind, identity_key) DO UPDATE SET alias=excluded.alias, icon=excluded.icon, notes=excluded.notes,
 		service_url=excluded.service_url, group_name=excluded.group_name, sort_order=excluded.sort_order, visible=excluded.visible, pinned=excluded.pinned, updated_at=excluded.updated_at`,
@@ -216,13 +220,17 @@ func validPreference(item Preference) bool {
 		if _, ok := ContainerIdentity(strings.TrimPrefix(item.Identity, "container:")); !strings.HasPrefix(item.Identity, "container:") || !ok {
 			return false
 		}
-	case "compose_service":
+	case "compose_service", "compose_project":
 		if item.Group != "" || item.SSHHost != "" || item.SSHUser != "" || item.SSHPort != 0 && item.SSHPort != 22 {
 			return false
 		}
-		identity := strings.TrimPrefix(item.Identity, "compose:")
+		prefix := "compose:"
+		if item.TargetKind == "compose_project" {
+			prefix = "compose_project:"
+		}
+		identity := strings.TrimPrefix(item.Identity, prefix)
 		decoded, err := hex.DecodeString(identity)
-		if !strings.HasPrefix(item.Identity, "compose:") || err != nil || len(decoded) != sha256.Size {
+		if !strings.HasPrefix(item.Identity, prefix) || err != nil || len(decoded) != sha256.Size {
 			return false
 		}
 	default:

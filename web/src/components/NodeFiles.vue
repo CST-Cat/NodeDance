@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, getCurrentInstance, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import VueFinderPlugin, { VueFinder } from 'vuefinder'
+import VueFinderPlugin, { VueFinder, type Driver } from 'vuefinder'
 import upstreamEn from 'vuefinder/dist/locales/en.js'
 import upstreamZhCN from 'vuefinder/dist/locales/zhCN.js'
 import 'vuefinder/dist/style.css'
@@ -15,17 +15,33 @@ const en={...upstreamEn,[archivePrompt]:enMessages['files.archiveName']}
 const zhCN={...upstreamZhCN,[archivePrompt]:zhMessages['files.archiveName']}
 const app=getCurrentInstance()!.appContext.app
 if(!app.component('vue-finder'))app.use(VueFinderPlugin,{i18n:{en,zhCN}})
-const props=defineProps<{nodeId:string;nodeName:string}>()
-const navigation=useViewNavigation(),finderId=`node-files-${props.nodeId}`
+const props=defineProps<{nodeId:string;nodeName:string;directoryPicker?:boolean}>()
+const emit=defineEmits<{directoryReady:[path:string]}>()
+const navigation=useViewNavigation(),finderId=`${props.directoryPicker?'compose-directory':'node-files'}-${props.nodeId}`
 const ready=ref(false)
-function pathChanged(value:string){const filePath=value.startsWith('node://')?value.slice(7)||'/':value;if(filePath!==(navigation.route.value.filePath??'/'))navigation.go({...navigation.route.value,filePath})}
-watch(()=>navigation.route.value.filePath,value=>{if(ready.value){const ui=useVueFinder(finderId);const target='node://'+(value??'/');if(ui.getPath()!==target)void ui.open(target)}})
+function pathChanged(value:string){if(props.directoryPicker)return;const filePath=value.startsWith('node://')?value.slice(7)||'/':value;if(filePath!==(navigation.route.value.filePath??'/'))navigation.go({...navigation.route.value,filePath})}
+watch(()=>navigation.route.value.filePath,value=>{if(ready.value&&!props.directoryPicker){const ui=useVueFinder(finderId);const target='node://'+(value??'/');if(ui.getPath()!==target)void ui.open(target)}})
 const host=ref<HTMLElement>()
 let controls:MutationObserver|undefined,dialog:HTMLElement|null=null,returnFocus:HTMLElement|null=null
 function normalizeControls(){const root=document.querySelector<HTMLElement>(`[data-nodedance-files="${finderId}"]`);const current=document.querySelector<HTMLElement>('.vuefinder__modal-layout');if(current!==dialog){if(current){returnFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;current.focus()}else {manager.value?.endPreview();if(returnFocus?.isConnected)returnFocus.focus()}dialog=current}for(const item of root?.querySelectorAll<HTMLElement>('.vuefinder__toolbar [title], .vuefinder__breadcrumb [title]')??[]){if(['BUTTON','A','INPUT','SELECT'].includes(item.tagName))continue;item.setAttribute('role','button');item.setAttribute('aria-label',item.title);const disabled=/disabled|opacity-50/.test(item.className);item.setAttribute('aria-disabled',String(disabled));item.tabIndex=disabled?-1:0;item.dataset.nodedanceControl='true'}}
-function activateControl(event:KeyboardEvent){if(event.key==='Tab'&&dialog){const items=[...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"],[contenteditable="true"]')].filter(item=>item.getClientRects().length&&item.tabIndex>=0);const first=items[0],last=items.at(-1);if(!first){event.preventDefault();dialog.focus();return}if(!dialog.contains(document.activeElement)||document.activeElement===dialog||event.shiftKey&&document.activeElement===first||!event.shiftKey&&document.activeElement===last){event.preventDefault();(event.shiftKey?last:first)?.focus()}return}const target=event.target as HTMLElement;if(['Enter',' '].includes(event.key)&&target.dataset.nodedanceControl==='true'){event.preventDefault();event.stopPropagation();if(target.getAttribute('aria-disabled')!=='true')target.click()}}
+function activateControl(event:KeyboardEvent){if(props.directoryPicker&&host.value?.contains(event.target as Node)&&(event.code==='Delete'||(event.ctrlKey||event.metaKey)&&['Enter','KeyS','Backslash'].includes(event.code))){event.preventDefault();event.stopImmediatePropagation();return}if(event.key==='Tab'&&dialog){const items=[...dialog.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"],[contenteditable="true"]')].filter(item=>item.getClientRects().length&&item.tabIndex>=0);const first=items[0],last=items.at(-1);if(!first){event.preventDefault();dialog.focus();return}if(!dialog.contains(document.activeElement)||document.activeElement===dialog||event.shiftKey&&document.activeElement===first||!event.shiftKey&&document.activeElement===last){event.preventDefault();(event.shiftKey?last:first)?.focus()}return}const target=event.target as HTMLElement;if(['Enter',' '].includes(event.key)&&target.dataset.nodedanceControl==='true'){event.preventDefault();event.stopPropagation();if(target.getAttribute('aria-disabled')!=='true')target.click()}}
 const manager=ref<Awaited<ReturnType<typeof createFileManager>>>(),error=ref(''),observations=ref<FileObservation[]>([]),theme=ref(document.documentElement.dataset.theme??'light')
-const config=computed(()=>({initialPath:'node://'+(navigation.route.value.filePath??'/'),path:'node://'+(navigation.route.value.filePath??'/'),persist:true,maxFileSize:manager.value?.maxFileSize,theme:theme.value==='dark'?'midnight':'latte',showHiddenFiles:true,showThumbnails:false}))
+const config=computed(()=>({initialPath:'node://'+(props.directoryPicker?'/':navigation.route.value.filePath??'/'),path:'node://'+(props.directoryPicker?'/':navigation.route.value.filePath??'/'),persist:!props.directoryPicker,...(props.directoryPicker?{showMenuBar:false}:{}),maxFileSize:manager.value?.maxFileSize,theme:theme.value==='dark'?'midnight':'latte',showHiddenFiles:true,showThumbnails:false}))
+
+const features=computed(()=>props.directoryPicker?{edit:false,newfile:false,newfolder:true,preview:false,archive:false,unarchive:false,search:false,rename:false,upload:false,delete:false,fullscreen:false,download:false,language:false,move:false,copy:false,history:false,theme:false,pinned:false}:{language:false,theme:false})
+const finderDriver=computed(()=>{
+ const driver=manager.value?.driver
+ if(!driver||!props.directoryPicker)return driver
+ const restricted={...driver}
+ for(const key of Object.keys(restricted))if(key!=='list'&&key!=='createFolder')Reflect.set(restricted,key,()=>{throw Error(t('compose.directoryOnly'))})
+ const completed=(result:Awaited<ReturnType<Driver['list']>>)=>{
+  emit('directoryReady',result.dirname.startsWith('node://')?result.dirname.slice(7)||'/':result.dirname)
+  return {...result,read_only:result.read_only??false,files:result.files.filter(item=>item.type==='dir')}
+ }
+ restricted.list=async options=>{emit('directoryReady','');return completed(await driver.list(options))}
+ restricted.createFolder=async options=>{emit('directoryReady','');return completed(await driver.createFolder!(options))}
+ return restricted
+})
 let disposed=false,observer:MutationObserver|undefined
 onMounted(async()=>{
  document.addEventListener('keydown',activateControl,true)
@@ -39,9 +55,9 @@ async function observe(id:string){try{await manager.value?.observe(id)}catch(rea
 <template>
  <section ref="host" class="node-files" data-testid="node-files" :aria-label="nodeName">
   <p v-if="error" role="alert">{{ error }}</p>
-  <VueFinder v-if="manager" :id="finderId" :data-nodedance-files="finderId" :driver="manager.driver" :locale="locale==='zh-CN'?'zhCN':'en'" :config="config" :features="{language:false,theme:false}" @notify="$event.type==='success' && (error='')" @error="error=String($event)" @ready="ready=true" @path-change="pathChanged" />
+  <VueFinder v-if="manager" :id="finderId" :data-nodedance-files="finderId" :driver="finderDriver!" :locale="locale==='zh-CN'?'zhCN':'en'" :config="config" :features="features" @notify="$event.type==='success' && (error='')" @error="error=String($event)" @ready="ready=true" @path-change="pathChanged" />
   <p v-else role="status">{{ t('guest.loading') }}</p>
-  <section v-if="observations.length" class="file-observations" :aria-label="t('host.history')"><article v-for="item in observations" :key="item.taskId"><span>{{ item.path }} · {{ item.status }}</span><button type="button" @click="observe(item.taskId)">{{ t('host.refresh') }}</button><button type="button" @click="manager?.forget(item.taskId)">{{ t('operations.forget') }}</button></article></section>
+  <section v-if="observations.length && !directoryPicker" class="file-observations" :aria-label="t('host.history')"><article v-for="item in observations" :key="item.taskId"><span>{{ item.path }} · {{ item.status }}</span><button type="button" @click="observe(item.taskId)">{{ t('host.refresh') }}</button><button type="button" @click="manager?.forget(item.taskId)">{{ t('operations.forget') }}</button></article></section>
  </section>
 </template>
 <style scoped>

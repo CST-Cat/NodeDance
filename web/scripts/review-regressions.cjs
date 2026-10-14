@@ -9,6 +9,10 @@ module.exports=async function({page,context,base,node,headers,artifacts}){
    const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible()){await scrim.click({position:{x:width-10,y:20}});await scrim.waitFor({state:'hidden'})}
    await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} layout fits viewport`)
+   if(name==='compose'){
+    assert.ok(!(await page.locator('#compose-projects-title').innerText()).includes(node),'Compose title omits node UUID')
+    assert.ok(await page.locator('.compose-service li').evaluateAll(rows=>rows.every(row=>{const id=row.querySelector('code').getBoundingClientRect(),state=row.querySelector('[data-state]').getBoundingClientRect();return id.right<=state.left+1})), 'Compose container ID and state do not overlap')
+   }
    await page.screenshot({animations:'disabled',path:path.join(artifacts,`review-${name}-${theme}-${width}.png`),fullPage:true})
   }
   await page.setViewportSize({width:1440,height:1000})
@@ -24,7 +28,7 @@ module.exports=async function({page,context,base,node,headers,artifacts}){
  await layouts('settings')
 
  const keys=['a'.repeat(64),'b'.repeat(64)]
- const projects=keys.map((key,i)=>({ref:{key,name:'fixture-'+i,workingDirectory:'/fixture-'+i,configFiles:['/fixture-'+i+'/compose.yaml']},configAvailable:true,services:[]}))
+ const projects=keys.map((key,i)=>({ref:{key,name:'fixture-'+i,workingDirectory:'/fixture-'+i,configFiles:['/fixture-'+i+'/compose.yaml']},configAvailable:true,services:[{name:'homepage',instances:[{containerId:'f97e27dbe0bf'+'1'.repeat(52),containerName:'1Panel-homepage-long-container-name',state:'running',health:'healthy'}]}]}))
  const listRoute='**/api/v1/nodes/*/compose/projects'
  const configRoute='**/api/v1/nodes/*/compose/projects/*/config/0'
  const validateRoute='**/api/v1/nodes/*/compose/projects/*/config/0/validate'
@@ -33,7 +37,7 @@ module.exports=async function({page,context,base,node,headers,artifacts}){
  await page.route(configRoute,route=>route.fulfill({json:{fileIndex:0,content:route.request().url().includes(keys[0])?'services: {} # first':'services: {} # second',sha256:'c'.repeat(64)}}))
  await page.goto(base+`/#/nodes?node=${node}&section=compose`)
  await page.locator('.compose-project-card').first().waitFor()
- const openEditor=i=>page.locator('.compose-project-card').nth(i).locator('.compose-project-actions button').last().click()
+ const openEditor=async i=>{const clear=page.locator('.compose-selection-bar').getByRole('button',{name:'Clear selection',exact:true});if(await clear.isEnabled())await clear.click();await page.locator('.compose-project-card').nth(i).locator('input[type=checkbox]').check();await page.getByTestId('compose-toolbar').locator('[data-action=edit]').click()}
  const editor=page.locator('.compose-editor')
  await openEditor(0);await page.waitForFunction(()=>document.querySelector('.compose-editor textarea')?.value==='services: {} # first')
  await editor.locator('textarea').fill('draft of first project')
@@ -49,10 +53,11 @@ module.exports=async function({page,context,base,node,headers,artifacts}){
  assert.ok(await editor.locator('.compose-editor-actions button').nth(1).isDisabled(),'Old validation cannot authorize changed contents')
  await page.unroute(validateRoute)
 
+ await page.getByTestId('compose-toolbar').getByRole('button',{name:'New project',exact:true}).click()
  const create=page.locator('.compose-create-form')
  await create.locator('input').first().fill('retry-fixture');await create.locator('input').nth(1).fill('/retry-fixture');await create.locator('textarea').fill('services: {}')
  for(let attempt=0;attempt<2;attempt++){
-  await create.locator('button').click()
+  await create.getByRole('button',{name:'Create and deploy',exact:true}).click()
   const reply=page.waitForResponse(r=>r.url().endsWith('/compose/projects')&&r.request().method()==='POST')
   await page.locator('.ui-dialog').getByRole('button',{name:'Confirm',exact:true}).click()
   assert.equal((await reply).status(),503)

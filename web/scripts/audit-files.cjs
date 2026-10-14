@@ -260,6 +260,51 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
    await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(300)
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'File manager layout overflow');await page.screenshot({path:path.join(artifacts,`files-${theme}-${width}.png`),fullPage:true})
   }
+
+  // Compose embeds the same VueFinder directory creation without leaving its form.
+  const composeList=operation('compose.list').path.replace('{nodeId}',node)
+  let composeSubmission
+  await page.route('**'+composeList,route=>{
+   if(route.request().method()==='POST'){composeSubmission=route.request().postDataJSON();return route.fulfill({status:503,body:'Isolated deployment interception'})}
+   return route.fulfill({json:{projects:[],dataStale:false,serverTime:new Date().toISOString()}})
+  })
+  await page.setViewportSize({width:1440,height:1000})
+  await page.goto(base+`/#/nodes?node=${node}&section=compose`)
+  await page.getByTestId('compose-toolbar').getByRole('button',{name:'New project',exact:true}).click()
+  const form=page.getByTestId('compose-create-form')
+  await form.locator('input').first().fill('directory-fixture');await form.locator('textarea').fill('services: {} # preserved draft')
+  await page.getByTestId('compose-directory-open').click()
+  const picker=page.getByTestId('compose-directory-picker'),originalURL=page.url()
+  await picker.getByRole('button',{name:'New Folder',exact:true}).waitFor()
+  await picker.getByText('many',{exact:true}).first().waitFor()
+  assert.equal(await picker.getByText('hello.txt',{exact:true}).count(),0,'Directory picker hides files')
+  assert.equal(await picker.locator('.vuefinder__menubar').count(),0,'Picker omits full file-manager menus')
+  await picker.getByText('many',{exact:true}).first().click();await page.keyboard.press('Delete');assert.equal(await page.locator('.vuefinder__modal-layout').count(),0,'Delete shortcut is unavailable in the directory picker');assert.ok(fs.existsSync(path.join(files,'many')))
+  for(const title of ['New File','Upload','Rename','Delete','Download','Toggle Full Screen'])assert.equal(await picker.getByRole('button',{name:title,exact:true}).count(),0,'Picker omits '+title)
+  await picker.getByRole('button',{name:'New Folder',exact:true}).click()
+  await page.locator('.vuefinder__new-folder-modal__input').fill('compose-workspace')
+  await page.locator('.vuefinder__modal-layout__footer').getByRole('button',{name:'Create',exact:true}).click()
+  await picker.getByText('compose-workspace',{exact:true}).first().waitFor()
+  assert.ok(fs.statSync(path.join(files,'compose-workspace')).isDirectory(),'VueFinder creates on the isolated root Agent')
+  await picker.getByText('compose-workspace',{exact:true}).first().dblclick()
+  await picker.locator('footer span').filter({hasText:/^\/compose-workspace$/}).waitFor()
+  await page.getByTestId('compose-directory-use').click();await picker.waitFor({state:'detached'})
+  assert.equal(await page.getByTestId('compose-workdir').inputValue(),'/compose-workspace')
+  assert.equal(page.url(),originalURL,'Directory browsing never navigates away from Compose')
+  assert.equal(await form.locator('input').first().inputValue(),'directory-fixture');assert.equal(await form.locator('textarea').inputValue(),'services: {} # preserved draft')
+  await page.getByTestId('compose-directory-open').click();await picker.getByText('many',{exact:true}).first().waitFor()
+  for(const theme of ['light','dark'])for(const width of [390,1440]){
+   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(250)
+   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Compose directory picker fits viewport')
+   await picker.screenshot({path:path.join(artifacts,`compose-directory-${theme}-${width}.png`)})
+  }
+  await picker.getByRole('button',{name:'Cancel',exact:true}).click();await picker.waitFor({state:'detached'})
+  assert.equal(await page.getByTestId('compose-workdir').inputValue(),'/compose-workspace','Cancel preserves the working directory')
+  assert.ok(await page.getByTestId('compose-directory-open').evaluate(el=>el===document.activeElement),'Picker returns focus')
+  await form.getByRole('button',{name:'Create and deploy',exact:true}).click();await page.locator('.ui-dialog').getByRole('button',{name:'Confirm',exact:true}).click()
+  await form.getByRole('alert').filter({hasText:'Isolated deployment interception'}).waitFor()
+  assert.equal(composeSubmission.workingDirectory,'/compose-workspace')
+  console.log('Compose directory picker passed: real VueFinder/root Agent mkdir, directory-only view, path handoff, preserved draft/URL, cancel/focus, intercepted deployment; 4 layouts.')
   assert.deepEqual(errors,[])
   console.log('File manager passed: real root Agent operations, pagination, search, copy/move, ZIP/TAR/gzip/bzip2, 8 MiB editor/CLI readback, idempotency, edit conflict, passive range preview, actual create/edit/file/folder-upload dialogs, browser navigation and four layouts.')
  }catch(error){if(browser){const p=browser.contexts()[0]?.pages()[0];if(p){console.error('File browser state:',p.url(),(await p.locator('body').innerText()).slice(-2000));await p.screenshot({path:path.join(artifacts,'failure.png'),fullPage:true})}};throw error}

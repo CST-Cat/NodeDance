@@ -72,6 +72,7 @@ const (
 	TaskComposeDeploy   TaskAction = "compose_deploy"
 	TaskComposeSave     TaskAction = "compose_config_save"
 	TaskComposeCreate   TaskAction = "compose_create"
+	TaskComposeDelete   TaskAction = "compose_delete"
 	TaskFileCopy        TaskAction = "file_copy"
 	TaskFileArchive     TaskAction = "file_archive"
 	TaskFileExtract     TaskAction = "file_extract"
@@ -328,6 +329,10 @@ func ValidateTaskIntent(intent TaskIntent) error {
 		}
 	case TaskComposeStart, TaskComposeStop, TaskComposeRestart, TaskComposeDeploy:
 		if intent.NewName != "" || intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.File != nil || !validComposeTaskSpec(intent, false) {
+			return ErrInvalidTaskMessage
+		}
+	case TaskComposeDelete:
+		if intent.NewName != "" || !intent.DeleteConfirmed || intent.ImageReference != "" || intent.ImageID != "" || intent.Rebuild != nil || intent.File != nil || !validComposeTaskSpec(intent, false) {
 			return ErrInvalidTaskMessage
 		}
 	case TaskComposeSave:
@@ -719,7 +724,7 @@ func TaskRequestDigest(taskID, nodeID, idempotencyKey string, intent TaskIntent)
 
 func IsComposeTaskAction(action TaskAction) bool {
 	switch action {
-	case TaskComposeStart, TaskComposeStop, TaskComposeRestart, TaskComposeDeploy, TaskComposeSave, TaskComposeCreate:
+	case TaskComposeStart, TaskComposeStop, TaskComposeRestart, TaskComposeDeploy, TaskComposeSave, TaskComposeCreate, TaskComposeDelete:
 		return true
 	default:
 		return false

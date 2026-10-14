@@ -46,3 +46,19 @@ Entering a VPS detail replaces global sidebar links with that VPS’s sections. 
 进入 VPS 详情后，侧边栏切换为该节点的功能导航，第一项为**返回主页面**；返回节点总览后恢复全局导航。详情侧边栏复用原有宽度、收起设置、键盘宽度调节和移动端抽屉，选择页面后关闭移动端抽屉。导航切换使用轻微模糊淡入淡出，减少动态效果设置下关闭动画。URL、刷新和浏览器历史保留所选节点与页面。
 
 `web/scripts/node-navigation-regressions.cjs` runs with the isolated real Core interface audit, covering card entry, context restoration, shared width/collapse, history/reload, mobile dismissal/focus, reduced motion, and light/dark/mobile layouts.
+
+Compose uses whole projects as the selection unit. Web shares the Docker detail action-button component, with select all/clear, multi-project start/stop/restart/deploy/delete, single-project config editing and display-name changes. Every project receives its own Core task and submission identity; a failed submission can retry just that project with the same intent key. Selection is revalidated after confirmation, and stale, unavailable or busy projects prevent bulk mutation.
+
+Compose 以整个项目为勾选单位，复用 Docker 详情操作按钮组件，支持全选／清空以及多项目启动、停止、重启、部署和删除；编辑配置和修改显示名称仅允许单选。每个项目对应独立 Core 任务与请求身份，失败提交可单独重试并保留原身份；确认后重新读取并验证项目，陈旧、不可用或忙碌的选择不能提交批量操作。
+
+Deletion removes the deployment with `docker compose down --remove-orphans`, retaining volumes, images, config files and working directories. The saved project/config entry remains available for redeployment. Core requires `deleteConfirmationKey` to match the route's exact project key. Unknown/interrupted outcomes are observed through the existing task journal and are never automatically replayed. Display names use node-scoped Core preferences and never change Compose resource names, YAML, labels or directories.
+
+删除通过 `docker compose down --remove-orphans` 撤下部署，保留数据卷、镜像、配置文件与工作目录；已保存的项目／配置入口保留，便于重新部署。Core 要求 `deleteConfirmationKey` 精确匹配路由中的项目身份。中断或不确定结果由现有任务日志观察，不自动重复执行。显示名称通过 Core 节点范围偏好保存，不改变 Compose 资源名、YAML、标签或目录。
+
+`web/scripts/compose-regressions.cjs` covers whole-project selection, per-project outcomes/retries, confirmation freshness, persisted aliases, exact deletion confirmation and mobile instance layout against intercepted operations on an isolated real Core.
+
+The VPS sidebar starts with Overview → Docker details → Compose projects, followed by service probes and the remaining sections. VPS 侧边栏优先排列总览 → Docker 详情 → Compose 项目，再接服务探测等其他功能。
+
+Compose new-project forms include an inline directory-only VueFinder picker. Browse folders, create a folder using the existing Core `files.action` mkdir task, then choose the current directory to fill the working-directory field. Files and unrelated file operations are omitted. Directory selection/cancellation preserves the project/YAML draft and Compose URL and returns focus to the browse button. The full file-manager screen retains its existing capabilities.
+
+Compose 新建项目表单内置仅目录的 VueFinder 选择器：浏览文件夹，通过现有 Core `files.action` mkdir 任务新建文件夹，再将当前目录回填工作目录。省去文件和其他文件操作；选择或取消保留项目／YAML 草稿及 Compose 页面地址，并恢复浏览按钮焦点。完整文件管理页面继续提供原有能力。

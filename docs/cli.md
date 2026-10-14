@@ -58,7 +58,7 @@ Network discovery uses `nodedance discovery peers` or the TUI's discovered `disc
 | Agents | Enrollment including pinned installer command, revoke, rotate; local enrollment, recovery, runtime, state/file-root validation and root systemd lifecycle |
 | Docker | Inventory, inspect, create, start/stop/restart/pause/resume/rename/delete, rebuild plan/rebuild/cleanup, logs, stats |
 | Images | Paginated listing, authenticated pull, deletion |
-| Compose | Projects, create/deploy, config read/validate/save, start/stop/restart |
+| Compose | Projects, create/deploy, config read/validate/save, start/stop/restart/delete |
 | Files | List, stat, text read/save, mkdir, rename, confirmed delete, upload, download |
 | Terminal | Host or container interactive shell, authorization, cancellation, JSONL connection |
 | Probes | List, get, create, update, delete, run history |
@@ -229,3 +229,5 @@ Node lifecycle is shared with Web: discover `nodes.renew-enrollment` to regenera
 Agent enrollment supports an optional `asset` object with monthly traffic quota (`trafficLimitBytes`), purchase date (`purchasedAt`, calendar date at UTC midnight), VPS expiry (`expiresAt`, ISO UTC), renewal price/currency, and `billingCycleUnit` (`year`, `month`, `hour`, `minute`, or custom `day` with `billingCycleDays`). Read the connected `agents.enrollment` / `nodes.renew-enrollment` schema; Core validates and saves the node, credential and asset atomically. Use `nodes.asset` and `nodes.save-asset` for later changes, including while the Agent is offline. A zero quota removes the limit; a null expiry clears the date. The shared discovered CLI and TUI workflows expose all these inputs.
 
 `nodedance call agents.diagnostics --params '{"nodeId":"NODE_UUID"}'` reports an `ssh` observation and ready-to-copy command, using the same root Agent discovery and optional saved overrides as Web/TUI. The machine provides listening ports, reachable interface addresses, allowed account candidates and current SSH sessions; no conversation memory or manually entered endpoint is required. With ambiguous users, `commands` contains one complete command per detected account; the default command follows native SSH client username rules.
+
+Compose deletion is available in CLI and TUI through the discovered `compose.action` operation: action `delete` requires `deleteConfirmationKey` equal to the selected `projectKey`. It removes the deployment and preserves volumes/configuration. Project display aliases use `nodes.save-preference` with `targetKind: compose_project`, `identity: compose_project:PROJECT_KEY` and `alias`; read them with `nodes.preferences`. Both terminal interfaces use the same discovered request schema and Core validation as Web.

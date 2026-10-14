@@ -39,7 +39,7 @@ export interface ComposeConfigDocument {
   sha256: string
 }
 
-export type ComposeOperation = 'start' | 'stop' | 'restart' | 'deploy' | 'config_save'
+export type ComposeOperation = 'start' | 'stop' | 'restart' | 'deploy' | 'config_save' | 'delete'
 
 export interface ComposeCreateRequest {
   name: string
@@ -57,6 +57,7 @@ export const composeApi = {
     fileIndex?: number
     content?: string
     baseSha256?: string
+    deleteConfirmationKey?: string
   }) => operationRequest<{ taskId: string; status: ContainerTask['status'] }>("compose.action", { params: { nodeId: String(nodeId), projectKey: String(projectKey) } }, { body: JSON.stringify(payload) }),
   task: (nodeId: string, taskId: string) => api.nodeTask(nodeId, taskId),
 }

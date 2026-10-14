@@ -18,6 +18,7 @@ const NodeFiles = defineAsyncComponent(() => import('./NodeFiles.vue'))
 import AgentEnrollment from './AgentEnrollment.vue'
 import NodeAssetSettings from './NodeAssetSettings.vue'
 import ContainerCreateForm from './ContainerCreateForm.vue'
+import DockerActionButtons from './DockerActionButtons.vue'
 
 const props = defineProps<{
   node: AgentNode
@@ -68,9 +69,16 @@ async function deleteNode() {
 watch(() => props.pending, pending => { if (!pending) enrollmentOpen.value = false })
 
 const sectionTabs = computed(() => [
-  { id: 'overview', icon: 'host', label: t('m.a33db5730556') }, { id: 'probes', icon: 'discovery', label: t('m.3fefdc07fa14') }, { id: 'docker', icon: 'nodes', label: t('m.eee901e4cc16') }, { id: 'images', icon: 'file', label: t('m.176c09844e0f') },
-  { id: 'compose', icon: 'operations', label: t('m.5f67dd75b01f') }, { id: 'rebuild', icon: 'refresh', label: t('m.474490ab5dc3') }, { id: 'files', icon: 'folder', label: t('m.b3bd5ac7cc4d') },
-  { id: 'history', icon: 'history', label: t('m.bfb41404e88b') }, { id: 'events', icon: 'alerts', label: t('m.a700a47380fe') }, { id: 'settings', icon: 'settings', label: t('m.0a09fda5e2a6') },
+  { id: 'overview', icon: 'host', label: t('m.a33db5730556') },
+  { id: 'docker', icon: 'nodes', label: t('m.eee901e4cc16') },
+  { id: 'compose', icon: 'operations', label: t('m.5f67dd75b01f') },
+  { id: 'probes', icon: 'discovery', label: t('m.3fefdc07fa14') },
+  { id: 'images', icon: 'file', label: t('m.176c09844e0f') },
+  { id: 'rebuild', icon: 'refresh', label: t('m.474490ab5dc3') },
+  { id: 'files', icon: 'folder', label: t('m.b3bd5ac7cc4d') },
+  { id: 'history', icon: 'history', label: t('m.bfb41404e88b') },
+  { id: 'events', icon: 'alerts', label: t('m.a700a47380fe') },
+  { id: 'settings', icon: 'settings', label: t('m.0a09fda5e2a6') },
 ] as const)
 const activeSection = useViewTab('section', 'overview', () => sectionTabs.value.map(tab => tab.id))
 const sidebarNavigation = inject(nodeNavigationKey)
@@ -110,10 +118,6 @@ const containerPage = ref(1)
 const selectedContainerIDs = ref<string[]>([])
 const selectionBusy = ref(false)
 const detailPanel = ref<'info' | 'streams' | 'preferences' | 'audit' | ''>('')
-const primaryActions = computed(() => [
-  {action: 'start' as const, label: t('m.56410fc65314')}, {action: 'stop' as const, label: t('m.ca4d973c0b00')},
-  {action: 'restart' as const, label: t('m.562822892865')}, {action: 'rename' as const, label: t('m.0d0cbac2eee5')}, {action: 'delete' as const, label: t('m.2f9daa828907')},
-])
 const historyView = ref<MetricHistory | null>(null)
 const historyLoading = ref(false)
 const historyError = ref('')
@@ -447,7 +451,7 @@ onBeforeUnmount(() => {
           <button class="container-action" type="button" :disabled="!selectedContainers.length || selectionBusy" @click="selectedContainerIDs = []">{{ t('docker.clearSelection') }}</button>
         </div>
         <div class="docker-toolbar" role="group" :aria-label="t('docker.toolbar')" data-testid="docker-toolbar">
-          <button v-for="{action, label} in primaryActions" :key="action" class="container-action" :class="{'container-action-danger': action === 'delete'}" type="button" :data-action="action" :disabled="!selectionCan(action)" :title="action === 'rename' ? t('docker.singleOnly') : t('docker.allApplicable')" @click="void submitSelection(action)">{{ label }}</button>
+          <DockerActionButtons :can="selectionCan" @action="void submitSelection($event)" />
           <details class="docker-more" @keydown.esc.prevent="closeMoreMenu">
             <summary>{{ t('docker.more') }}</summary>
             <div class="docker-more-menu" @click="closeMoreMenu">

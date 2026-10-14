@@ -1,6 +1,8 @@
 const assert=require('node:assert/strict'),path=require('node:path')
 const {openNavigation,selectNodeSection}=require('./sidebar-navigation.cjs')
-module.exports=async function({page,base,node,artifacts}){
+module.exports=async function({page,base,node,artifacts,headers,catalog}){
+ const enrollment=catalog.operations.find(item=>item.name==='agents.enrollment');assert.ok(enrollment)
+ const created=await page.request.post(base+enrollment.path,{headers,data:{displayName:'Navigation fixture',coreUrl:base}});assert.equal(created.status(),201);node=(await created.json()).nodeId
  const errors=[];page.on('pageerror',error=>errors.push(error.message))
  await page.setViewportSize({width:1440,height:1000})
  await page.goto(base+'/#/nodes')
@@ -11,6 +13,7 @@ module.exports=async function({page,base,node,artifacts}){
  await page.locator(`.vps-card[data-node-id="${node}"] .vps-name`).click()
  const detail=page.getByTestId('node-detail-navigation');await detail.waitFor()
  assert.equal(await detail.locator('button').first().innerText(),'Back to home')
+ assert.deepEqual((await detail.locator('button').allTextContents()).slice(1,4),['Overview','Docker details','Compose projects'])
  assert.equal(await page.locator('.dashboard-tabs').count(),0)
  assert.equal(await sidebar.getByRole('button',{name:'Alerts',exact:true}).count(),0,'Global navigation is replaced')
  assert.equal(await sidebar.getByRole('separator').getAttribute('aria-valuenow'),width,'Sidebar width survives entry')

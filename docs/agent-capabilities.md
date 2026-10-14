@@ -102,3 +102,5 @@ Web 的节点详情提供独立“服务探测”标签，集中管理目标、�
 `agents.enrollment` 与 `nodes.renew-enrollment` 的共享请求可携带 `asset` 对象，使用 `nodes.save-asset` 的资产字段；校验、待注册节点、凭据与资产保存位于同一事务。安装和注册后仍保留这些信息。节点设置中的“流量与续费”表单位于删除节点之前，使用 `nodes.asset` / `nodes.save-asset`，离线节点也可编辑。CLI、TUI 的发现式操作界面提供相同请求和编辑能力；可用 `nodedance describe agents.enrollment` 或 `nodedance describe nodes.save-asset` 查看连接 Core 的字段和周期枚举。资产信息仅管理员可见，不进入游客投影。
 
 SSH 复制命令通过现有 `agents.diagnostics` 共享操作自动取得连接信息，无需手填或外部聊天记忆。root Agent 读取实际 SSH 监听端点、包含 Include 文件的 sshd 配置、节点地址、本地登录账号／组和当前 SSH 会话；不读取密码、私钥或 Agent 凭据，不修改 SSH 或 Tailscale。优先使用唯一活动 SSH 账号，其次唯一普通登录账号或唯一允许账号；无法唯一选择时，命令省略用户名，使用 SSH 客户端自身的默认账号规则。手动保存的 SSH 主机、账号及端口是可选覆盖项。账号不唯一时，Web 提供机器识别出的候选，无需手工输入。CLI/TUI 可直接读取同一诊断操作的 `ssh` 结果及候选账号对应的 `commands`；Web 自动采集并复制同一命令。SSH 监听仅允许本机访问或不可用时返回明确原因，不假定默认 22 端口。
+
+Compose 项目删除接入共享 Task／TaskJournal：按精确项目上下文执行 down --remove-orphans，保留卷、镜像与配置，确认容器已撤下后报告 removed；命令失败或无法验证时报告不确定状态，不自动重放。
