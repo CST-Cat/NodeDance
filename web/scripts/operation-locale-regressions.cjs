@@ -1,0 +1,29 @@
+const assert=require('node:assert/strict'),path=require('node:path')
+module.exports=async function({page,base,catalog,artifacts}){
+ await page.goto(base+'/#/operations');const source=page.locator('.operation-layout aside select'),form=page.locator('.operation-form')
+ await source.waitFor();await page.locator('.language-selector').selectOption('zh-CN')
+ const labels=await source.locator('option').allTextContents()
+ for(const operation of catalog.operations){const label=labels.find(text=>text.endsWith(' · '+operation.name));assert.ok(label&&/\p{Script=Han}/u.test(label),`Missing translated description: ${operation.name}`)}
+ await page.locator('.operation-layout input[type=search]').fill('创建并部署')
+ assert.deepEqual(await source.locator('option').evaluateAll(options=>options.map(option=>option.value)),['compose.create'])
+ await page.locator('.operation-layout input[type=search]').fill('')
+ await source.selectOption('nodes.save-asset')
+ const accounting=form.locator('label').filter({hasText:/^trafficAccounting/}).locator('select')
+ assert.equal(await accounting.locator('option[value=up]').textContent(),'上传流量');assert.equal(await accounting.locator('option[value=down]').textContent(),'下载流量')
+ await source.selectOption('commands.submit');await form.locator('label').filter({hasText:/^script/}).waitFor()
+ assert.ok((await form.locator('label').filter({hasText:/^script/}).textContent()).includes('脚本'))
+ const confirm=form.locator('label').filter({hasText:/^confirm/}).locator('select');assert.equal(await confirm.locator('option[value=true]').textContent(),'是')
+ await confirm.selectOption('true');assert.equal(await confirm.inputValue(),'true')
+ assert.ok((await form.textContent()).includes('重试同一操作意图时复用此键'))
+ await page.locator('.language-selector').selectOption('en')
+ assert.ok((await form.locator('h3').textContent()).includes('Execute'))
+ assert.equal(await confirm.locator('option[value=true]').textContent(),'true');assert.equal(await confirm.inputValue(),'true')
+ for(const language of ['zh-CN','en'])for(const theme of ['light','dark'])for(const width of [390,1440]){
+  await page.locator('.language-selector').selectOption(language);await page.setViewportSize({width,height:1000})
+  await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))
+  await page.screenshot({path:path.join(artifacts,`operations-locale-${language}-${theme}-${width}.png`),fullPage:true})
+ }
+ await page.locator('.language-selector').selectOption('en')
+ console.log('Operation localization passed: discovered description coverage, Chinese search, parameter labels, header hints, enum values preserved across language switches; 8 layouts.')
+}

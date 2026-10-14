@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.30]
+
+### English
+
+- Rebuild light/dark surface and control roles around the supplied Claude reference, flatten node metrics and management sections, present Compose/images/discovery as continuous resources, and preserve readable focus/selection and embedded tool themes.
+- Localize discovered operation descriptions, parameter labels, header hints and enum presentation; support Chinese search while preserving API identifiers and submitted values.
+
+### 简体中文
+
+- 按提供的 Claude 参考重构深浅主题表面与控件角色，压平节点指标和管理区，Compose／镜像／发现使用连续资源行，保留可读的焦点、选中态和嵌入工具主题。
+- 汉化动态发现的操作说明、参数标签、请求头提示和枚举显示，支持中文搜索，保留 API 标识与提交值。
+
 ## [0.1.29]
 
 ### English

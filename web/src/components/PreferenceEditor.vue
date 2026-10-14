@@ -64,7 +64,7 @@ async function save() {
 </template>
 
 <style scoped>
-.preference-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 12px; background: var(--surface-soft); }
+.preference-editor {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:20px 0;border-top:1px solid var(--line);}
 .preference-editor header { grid-column: 1 / -1; display: grid; gap: 4px; }
 .ssh-preference-note { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
 .preference-editor header strong { font-size: 12px; }

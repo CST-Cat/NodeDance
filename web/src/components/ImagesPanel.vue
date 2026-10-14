@@ -288,7 +288,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.images-panel { margin-top: 18px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: clamp(14px,2vw,20px); background: var(--surface-soft); color: var(--text); }
+.images-panel {margin-top: 18px;     color: var(--text); border:0;border-radius:0;background:transparent;box-shadow:none;padding:16px 0;}
 .images-heading, .image-row-head, .image-pagination, .image-task { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .images-heading { margin-bottom: 14px; }
 .images-heading h2 { margin: 4px 0 0; font-size: 17px; }
@@ -313,8 +313,8 @@ onBeforeUnmount(() => {
 .image-audit li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 5px 12px; overflow-wrap: anywhere; }
 .image-audit time { color: var(--muted); }
 .image-audit .error { color: var(--danger); }
-.image-list { display: grid; gap: 8px; }
-.image-row { display: grid; gap: 7px; min-width: 0; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 11px; background: var(--surface-soft); }
+.image-list {display: grid;  gap:0;}
+.image-row {display: grid; gap: 7px; min-width: 0;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:16px 0;border-top:1px solid var(--line);}
 .image-row-head { align-items: start; color: var(--text); font-size: 12px; }
 .image-row-head strong { min-width: 0; overflow-wrap: anywhere; }
 .image-row-head > span { color: var(--muted-strong); white-space: nowrap; }

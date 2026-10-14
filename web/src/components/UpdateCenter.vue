@@ -42,7 +42,7 @@ onBeforeUnmount(() => { stopped = true; epoch++; if (timer) clearTimeout(timer) 
 </script>
 
 <template>
-<section class="update-center">
+<section class="update-center workspace-page">
  <header><p class="eyebrow">NODEDANCE</p><h1>{{ t('updates.title') }}</h1><p class="muted">{{ t('updates.description') }}</p></header>
  <div class="update-card">
   <div class="update-controls">
@@ -86,7 +86,7 @@ onBeforeUnmount(() => { stopped = true; epoch++; if (timer) clearTimeout(timer) 
 .update-center h1 { margin:8px 0 16px; font-family:var(--display-font); font-size:36px; font-weight:400; line-height:1.15; letter-spacing:-.5px; }
 .update-center h2 { margin:0 0 20px; font-size:28px; line-height:1.2; }
 .update-center header>p:last-child { margin:0; font-size:16px; line-height:1.55; }
-.update-card { padding:32px; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface); }
+.update-card {border:0;border-radius:0;background:transparent;box-shadow:none;padding:20px 0;border-top:1px solid var(--line);}
 .update-controls { display:flex; align-items:end; flex-wrap:wrap; gap:16px; }
 .update-controls label { display:grid; gap:8px; flex:1; min-width:160px; font-size:14px; font-weight:500; }
 .update-controls input,.update-controls select { min-height:40px; width:100%; border:1px solid var(--line); border-radius:var(--radius-control); padding:10px 14px; color:var(--text); background:var(--canvas); font:inherit; font-weight:400; }

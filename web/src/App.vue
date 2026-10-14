@@ -185,8 +185,8 @@ const effectiveTheme = computed(() => appearance.theme === 'system' ? preferredT
 watch(effectiveTheme, theme => {
   document.documentElement.dataset.theme = theme
   document.documentElement.style.colorScheme = theme
-  document.documentElement.style.backgroundColor = theme === 'dark' ? '#181715' : '#faf9f5'
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', theme === 'dark' ? '#181715' : '#faf9f5')
+  document.documentElement.style.backgroundColor = theme === 'dark' ? '#262624' : '#faf9f5'
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', theme === 'dark' ? '#262624' : '#faf9f5')
 }, { immediate:true })
 
 const imagePaths = reactive({ avatar: '', background: '' })

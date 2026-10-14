@@ -91,7 +91,7 @@ function chartOptions(): EChartsOption {
       data: normalized,
       lineStyle: { width: 2, color: accent },
       itemStyle: { color: accent },
-      areaStyle: { color: 'rgba(204,120,92,.1)' },
+      areaStyle: { color: color('--accent-soft', '#f1e1d7') },
     }],
   }
 }
@@ -154,7 +154,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.history-panel { margin-top: 18px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: clamp(14px, 2vw, 20px); background: var(--surface-soft); color: var(--text); }
+.history-panel {margin-top: 18px;     color: var(--text); border:0;border-radius:0;background:transparent;box-shadow:none;padding:16px 0;}
 .history-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; }
 .history-heading h2 { margin: 4px 0 0; font-size: 17px; }
 .history-heading p, .history-note, .history-stale, .history-empty { color: var(--muted-strong); font-size: 12px; line-height: 1.6; }

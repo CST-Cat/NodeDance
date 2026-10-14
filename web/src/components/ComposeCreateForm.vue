@@ -118,7 +118,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.compose-create-form { display:grid; gap:10px; min-width:0; padding:14px; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface-soft); }
+.compose-create-form {display:grid; gap:10px; min-width:0;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:20px 0;border-top:1px solid var(--line);}
 .compose-create-form header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .compose-create-form h3 { margin:4px 0 0; font-size: 14px; }
 .compose-create-form header>span,.compose-create-note { color:var(--muted); font-size: 12px; line-height:1.55; }

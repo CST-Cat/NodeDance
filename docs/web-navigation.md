@@ -72,3 +72,11 @@ Lucian references: [#031 custom select](https://lucianlabs.dev/uxui-prompt/#031)
 Alert forms use shrinkable date columns and field widths within the card padding. Subscription labels and controls align at the top of each row; preset/custom refresh intervals share a row, with notification fields following the same spacing. `web/scripts/form-layout-regressions.cjs` checks control containment and alignment at 390, 1100, 1440 and 1920 px in light/dark themes, including all notification modes.
 
 告警表单日期双列与控件宽度限制在卡片内边距范围内。订阅表单标签和控件按行顶部对齐，预设／自定义刷新间隔同排显示，通知设置采用相同间距。布局回归覆盖手机、中等和宽屏、深浅主题及所有通知模式。
+
+Operation Center translates discovered descriptions and form labels at presentation time and searches both localized descriptions and API identifiers. It retains raw field names beside Chinese labels, preserves enum values and JSON results, and displays new unknown descriptions directly from the Core contract. Translation dictionaries do not determine operation availability, schema or execution. The isolated interface audit verifies discovered translation coverage, Chinese search, enum preservation and language/theme/mobile layouts.
+
+操作中心在展示时翻译动态发现的操作说明与表单标签，搜索同时匹配中文说明和 API 标识。中文标签旁保留原始字段名，枚举提交值及 JSON 结果保持原样；新发现且尚未翻译的说明直接来自 Core 契约。翻译字典不决定可用操作、请求结构或执行行为。隔离界面回归检查翻译覆盖、中文搜索、枚举值和语言／主题／手机布局。
+
+The shared light/dark theme uses semantic surface, text, control and state roles documented in `DESIGN.md`. Visual flattening does not change operation discovery, public projection, authorization or task semantics. Browser audits use fresh assets and isolated Core/Agent resources; the theme regression checks real persisted/system switching and actual rendered contrast.
+
+共享深浅主题使用 `DESIGN.md` 中的表面、文字、控件和状态语义。视觉扁平化不改变操作发现、公开投影、权限或任务行为。浏览器回归使用新构建资源与隔离 Core／Agent，主题回归检查实际保存／跟随系统切换及渲染对比度。

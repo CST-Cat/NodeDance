@@ -205,7 +205,7 @@ const clockOffsetText = computed(() => {
 </template>
 
 <style scoped>
-.host-metrics { margin-top: 16px; }
+.host-metrics {margin-top:0;}
 .metrics-panel { --metric-bg: var(--surface-soft); --metric-card: var(--surface-soft); --metric-line: var(--line); --metric-text: var(--text); --metric-muted: var(--muted); width: 100%; color: var(--metric-text); }
 .metrics-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 20px; }
 .metrics-eyebrow { margin: 0 0 5px; color: var(--accent); font: 500 10px/1.4 ui-monospace, monospace; letter-spacing: .14em; text-transform: uppercase; }
@@ -215,8 +215,8 @@ const clockOffsetText = computed(() => {
 .node-state.is-online { color: var(--success); background: var(--success-soft); }
 .node-state.is-offline { color: var(--danger); background: var(--danger-soft); }
 .state-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.metrics-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.metric-card { min-width: 0; border: 1px solid var(--metric-line); border-radius:var(--radius-card); padding: 16px; background: var(--surface); }
+.metrics-grid {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));  gap:0 28px;}
+.metric-card {min-width: 0;     border:0;border-radius:0;background:transparent;box-shadow:none;border-top:1px solid var(--line);padding:20px 0;}
 .card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .card-heading h3 { margin: 0; color: var(--text); font-size: 12px; font-weight:500; }
 .status-pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 7px; color: var(--muted-strong); font-size: 12px; white-space: nowrap; }
@@ -245,7 +245,7 @@ const clockOffsetText = computed(() => {
 .interface-reason { grid-column:1 / -1; margin:0; }
 .interface-row > span { white-space:nowrap; text-align:right; }
 .interface-description span { color: var(--metric-muted); font-size: 12px; }
-.metrics-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin-top: 14px; border: 1px solid var(--metric-line); border-radius:var(--radius-card); padding: 14px 16px; background: var(--surface-soft); }
+.metrics-footer { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin-top:14px; border-top:1px solid var(--metric-line); padding:16px 0; }
 .metrics-footer > div { display: grid; min-width: 0; gap: 4px; }
 .metrics-footer span { color: var(--metric-muted); font-size: 12px; }
 .metrics-footer strong { min-width: 0; color: var(--text); font-size: 12px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }

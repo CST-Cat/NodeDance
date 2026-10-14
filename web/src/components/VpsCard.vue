@@ -392,22 +392,22 @@ async function copySSHCommand() {
 .vps-card-heading { display: flex; min-width: 0; align-items: center; gap: 9px; }
 .vps-card-heading > div { min-width: 0; }
 .vps-card-heading h2 { margin: 4px 0 0; font-size: 16px; overflow-wrap: anywhere; }
-.vps-node-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius:var(--radius-card); color: var(--accent); background: var(--line); font-size: 17px; }
+.vps-node-icon {display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center;   color: var(--accent);  font-size: 17px; border:0;border-radius:var(--radius-control);background:var(--accent-soft);box-shadow:none;}
 .vps-card-status { border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; color: var(--danger); font-size: 12px; white-space: nowrap; }
 .vps-card-status[data-online='true'] { color: var(--success); }
 .vps-card-status[data-pending='true'] { color: var(--warning); }
 .vps-card-version { margin: 6px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .vps-card-note { margin: -5px 0 12px; color: var(--muted-strong); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .vps-card-metrics { display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 7px; }
-.vps-card-metrics > div { display: grid; min-width: 0; gap: 5px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 8px; }
+.vps-card-metrics > div {display: grid; min-width: 0;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:4px 0;gap:8px;}
 .vps-card-metrics span { color: var(--muted); font-size: 12px; }
 .vps-card-metrics strong { color: var(--text); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
-.vps-card-docker { margin-top: 12px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 10px; background: var(--surface-soft); }
+.vps-card-docker {margin-top: 12px;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:14px 0 0;border-top:1px solid var(--line);}
 .vps-card-docker > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); font-size: 12px; }
 .vps-card-docker > header span { color: var(--muted); font: 11px ui-monospace,monospace; text-align: right; }
 .vps-card-empty { margin: 8px 0 0; color: var(--muted-strong); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
-.vps-card-container-list { display: grid; gap: 7px; margin-top: 8px; }
-.vps-card-container { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 7px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 8px; }
+.vps-card-container-list {display: grid;  margin-top: 8px; gap:0;}
+.vps-card-container {display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 7px;    border:0;border-radius:0;background:transparent;box-shadow:none;padding:12px 0;border-bottom:1px solid var(--line);}
 .vps-card-container[data-stale='true'] { border-color: var(--danger-line); }
 .vps-card-container-icon { display: grid; width: 24px; height: 24px; place-items: center; border-radius:var(--radius-card); color: var(--accent); background: var(--line); font-size: 12px; }
 .vps-card-container-copy { display: grid; min-width: 0; gap: 4px; }

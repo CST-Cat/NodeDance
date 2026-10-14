@@ -233,20 +233,20 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) clearInterval(refreshTim
 </template>
 
 <style scoped>
-.service-probes { min-width: 0; margin-top: 20px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: clamp(14px,2vw,20px); background: var(--surface-soft); color: var(--text); }
+.service-probes { min-width: 0; margin-top: 20px; padding:20px 0; color:var(--text); }
 .probe-heading { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 14px; }
 .probe-heading h2 { margin: 4px 0 0; font-size: 17px; }
 .probe-heading p,.probe-help,.probe-note,.probe-empty { color: var(--muted-strong); font-size: 12px; line-height: 1.6; }
 .probe-heading p { margin: 6px 0 0; }
-.probe-primary,.probe-secondary,.probe-actions button { min-height:40px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 6px 10px; color: var(--accent); background: var(--line); font: inherit; font-size: 12px; cursor: pointer; }
-.probe-primary:hover:not(:disabled),.probe-actions button:hover:not(:disabled) { background: var(--line); }
+.probe-primary,.probe-secondary,.probe-actions button { min-height:40px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 6px 10px; color: var(--accent); background: var(--control-bg); font: inherit; font-size: 12px; cursor: pointer; }
+.probe-primary:hover:not(:disabled),.probe-actions button:hover:not(:disabled) { background: var(--control-bg); }
 .probe-primary:disabled,.probe-secondary:disabled,.probe-actions button:disabled { opacity: .5; cursor: not-allowed; }
-.probe-secondary { color: var(--muted-strong); border-color: var(--line); background: var(--line); }
+.probe-secondary { color: var(--muted-strong); border-color: var(--line); background: var(--control-bg); }
 .probe-note,.probe-empty { margin: 10px 0; }
 .probe-message { margin: 10px 0; border-radius:var(--radius-card); padding: 9px 11px; font-size: 12px; overflow-wrap: anywhere; }
 .probe-error { color: var(--danger); border: 1px solid var(--danger-line); background: var(--danger-soft); }
 .probe-notice { color: var(--success); border: 1px solid var(--success-line); background: var(--success-soft); }
-.probe-form { margin: 12px 0 16px; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 13px; background: var(--surface-soft); }
+.probe-form { margin: 12px 0 16px; border:0; border-top:1px solid var(--line); padding:20px 0; background:transparent; }
 .probe-form h3 { margin: 0 0 12px; font-size: 13px; }
 .probe-fields { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 11px; }
 .probe-fields label { display: grid; min-width: 0; gap: 5px; color: var(--muted-strong); font-size: 12px; }
@@ -256,7 +256,7 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) clearInterval(refreshTim
 .probe-help { margin: 7px 0; }
 .probe-form-actions,.probe-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .probe-list { display: grid; gap: 9px; }
-.probe-card { min-width: 0; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 12px; background: var(--surface-soft); }
+.probe-card { min-width:0; border:0; border-bottom:1px solid var(--line); padding:16px 0; background:transparent; }
 .probe-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .probe-copy { display: grid; min-width: 0; gap: 5px; }
 .probe-copy strong { overflow-wrap: anywhere; font-size: 12px; }

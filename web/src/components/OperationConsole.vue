@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch, nextTick } from 'vue'
-import { t } from '../i18n'
+import { t, locale, display } from '../i18n'
 import { operationRequest } from '../api'
 import { operationCatalog, operationURL, operationBody, exactJSON, operationUpload, schemaHasSecrets, completionInput, completionStatus, type CoreOperation, type OperationInput } from '../operations'
 import { requestIntent, intentKey } from '../operation-intent'
@@ -49,8 +49,16 @@ const pendingTerminal = ref<{ nodeId: string; streamId: string }>()
 let terminalIntent = ''
 let revision = 0
 const operation = computed(() => operations.value.find(item => item.name === selected.value))
-const matches = computed(() => operations.value.filter(item => `${item.name} ${item.description}`.toLowerCase().includes(filter.value.toLowerCase())))
+const matches = computed(() => operations.value.filter(item => `${item.name} ${item.description} ${display(item.description)}`.toLowerCase().includes(filter.value.toLowerCase())))
 const properties = computed(() => rawMode.value ? [] : Object.entries(operation.value?.bodySchema?.properties ?? {}))
+function fieldLabel(name:string) {
+ const key='operations.field.'+name,translated=t(key)
+ return locale.value==='zh-CN'&&translated!==key?`${name} · ${translated}`:name
+}
+function enumLabel(value:unknown) {
+ const key='operations.value.'+String(value),translated=t(key)
+ return translated===key?String(value):translated
+}
 function disconnect() {
   requestAbort?.abort(); requestAbort = undefined; busy.value = false
   revision++; socket?.close(); socket = undefined; connected.value = false; streamId = ''
@@ -143,7 +151,7 @@ async function execute() {
 }
 async function observe(current:CoreOperation,pending:PendingObservation,generation:number,controller:AbortController){
  const follow=operations.value.find(o=>o.name===pending.name)
- if(!follow||!['GET','HEAD'].includes(follow.method))throw new Error('Completion must observe a discovered read operation')
+ if(!follow||!['GET','HEAD'].includes(follow.method))throw new Error(t('operations.completionRead'))
  while(generation===revision){
   let observed:unknown
   try{observed=await operationRequest(pending.name,pending.input,{signal:controller.signal})}
@@ -158,7 +166,7 @@ async function observe(current:CoreOperation,pending:PendingObservation,generati
 async function resumeObservation(pending:PendingObservation){
  if(busy.value)return
  const current=operations.value.find(o=>o.name===pending.operation)
- if(!current?.completion){error.value='Core no longer offers this completion contract';return}
+ if(!current?.completion){error.value=t('operations.completionMissing');return}
  const generation=++revision;const controller=new AbortController();requestAbort=controller;busy.value=true;error.value='';output.value=''
  try{await observe(current,pending,generation,controller)}catch(reason){if(generation===revision)error.value=String(reason)}finally{if(generation===revision)busy.value=false}
 }
@@ -185,7 +193,7 @@ onBeforeUnmount(disconnect)
 </script>
 
 <template>
-  <section class="panel operation-console">
+  <section class="panel operation-console workspace-page">
     <h2>{{ t('nav.operations') }}</h2>
     <p class="muted">{{ t('operations.description') }}</p>
     <div v-if="pendingSubmissions.length" class="pending-observations"><p class="muted">{{ t('operations.uncertain') }}</p><div v-for="item in pendingSubmissions" :key="item.operation+item.key"><span>{{ item.operation }} · {{ Object.values({ ...item.input.params, ...item.input.query }).join(' / ') }}</span><button type="button" :disabled="busy" @click="restoreSubmission(item)">{{ t('operations.restoreKey') }}</button><button type="button" :disabled="busy" @click="forgetSubmission(item)">{{ t('operations.forget') }}</button></div></div>
@@ -193,22 +201,23 @@ onBeforeUnmount(disconnect)
     <div class="operation-layout">
       <aside>
         <input v-model="filter" type="search" :placeholder="t('operations.search')" :aria-label="t('operations.search')" />
-        <UiSelect v-model="selected" size="18" :aria-label="t('nav.operations')"><option v-for="item in matches" :key="item.name" :value="item.name">{{ item.name }}</option></UiSelect>
+        <UiSelect v-model="selected" size="18" :aria-label="t('nav.operations')"><option v-for="item in matches" :key="item.name" :value="item.name">{{ display(item.description) }} · {{ item.name }}</option></UiSelect>
       </aside>
       <div v-if="operation" class="operation-form">
-        <h3>{{ operation.name }}</h3><p class="muted">{{ operation.description }}</p>
+        <h3>{{ display(operation.description) }}</h3><p class="muted"><code>{{ operation.name }}</code></p>
         <form @submit.prevent="execute">
-          <label v-for="name in operation.parameters" :key="name">{{ name }} <input v-model="params[name]" required :disabled="busy || connected" /></label>
-          <label v-for="name in operation.query" :key="name">{{ name }} <input v-model="query[name]" :type="/ticket|token/i.test(name) ? 'password' : 'text'" :disabled="busy || connected" /></label>
+          <label v-for="name in operation.parameters" :key="name">{{ fieldLabel(name) }} <input v-model="params[name]" required :disabled="busy || connected" /></label>
+          <label v-for="name in operation.query" :key="name">{{ fieldLabel(name) }} <input v-model="query[name]" :type="/ticket|token/i.test(name) ? 'password' : 'text'" :disabled="busy || connected" /></label>
           <label v-if="operation.bodySchema?.type==='object'" class="check-row"><input v-model="rawMode" type="checkbox" :disabled="busy" />{{ t('operations.rawJSON') }}</label>
-          <label v-for="[name, schema] in properties" :key="name">{{ name }}{{ operation.bodySchema?.required?.includes(name) ? ' *' : '' }}
+          <label v-for="[name, schema] in properties" :key="name">{{ fieldLabel(name) }}{{ operation.bodySchema?.required?.includes(name) ? ' *' : '' }}
             <input v-if="schemaHasSecrets(schema)" v-model="values[name]" type="password" :disabled="busy || connected" autocomplete="off" />
-            <UiSelect v-else-if="schema.enum || schema.type === 'boolean'" v-model="values[name]" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected"><option value="">—</option><option v-for="value in schema.enum ?? ['true', 'false']" :key="String(value)" :value="String(value)">{{ value }}</option></UiSelect>
+            <UiSelect v-else-if="schema.enum || schema.type === 'boolean'" v-model="values[name]" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected"><option value="">—</option><option v-for="value in schema.enum ?? ['true', 'false']" :key="String(value)" :value="String(value)">{{ enumLabel(value) }}</option></UiSelect>
             <textarea v-else-if="schema.type === 'object' || schema.type === 'array'" v-model="values[name]" rows="4" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected" />
             <input v-else v-model="values[name]" type="text" :inputmode="schema.type === 'integer' ? 'numeric' : schema.type === 'number' ? 'decimal' : undefined" :minlength="schema.minLength" :maxlength="schema.maxLength" :disabled="busy || connected" autocomplete="off" />
+            <small v-if="schema.description">{{ display(schema.description) }}</small>
           </label>
           <label v-if="operation.bodySchema && (rawMode || operation.bodySchema.type !== 'object')">JSON <input v-if="schemaHasSecrets(operation.bodySchema)" v-model="rawBody" type="password" :disabled="busy" autocomplete="off" /><textarea v-else v-model="rawBody" rows="5" :disabled="busy" /></label>
-          <label v-for="[name,schema] in Object.entries(operation.headers ?? {})" :key="name">{{ name }}<input v-model="requestHeaders[name]" :type="schemaHasSecrets(schema)?'password':'text'" :disabled="busy || connected" autocomplete="off" /><small>{{ schema.description }}</small></label>
+          <label v-for="[name,schema] in Object.entries(operation.headers ?? {})" :key="name">{{ fieldLabel(name) }}<input v-model="requestHeaders[name]" :type="schemaHasSecrets(schema)?'password':'text'" :disabled="busy || connected" autocomplete="off" /><small>{{ display(schema.description) }}</small></label>
           <template v-if="operation.requiresIdempotencyKey"><small>{{ t('operations.retryIntent') }}</small><button type="button" :disabled="busy || connected" @click="newExecution">{{ t('operations.newExecution') }}</button></template>
           <label v-if="operation.completion" class="check-row"><input v-model="waitForCompletion" type="checkbox" :disabled="busy" />{{ t('operations.wait') }}</label>
           <label v-if="['upload', 'multipart'].includes(operation.transport)">{{ t('operations.file') }}<input type="file" required :disabled="busy || connected" @change="file = ($event.target as HTMLInputElement).files?.[0]" /></label>
@@ -217,7 +226,7 @@ onBeforeUnmount(disconnect)
           <button v-if="busy" type="button" @click="disconnect">{{ t('operations.stopWaiting') }}</button>
         </form>
         <form v-if="connected && operation.duplex" @submit.prevent="send"><textarea v-if="operation.transport === 'websocket'" v-model="frame" rows="3" aria-label="JSON" /><input v-else v-model="input" :aria-label="t('operations.input')" /><button type="submit">{{ t('operations.send') }}</button></form>
-        <p v-if="error" role="alert" class="error">{{ error }}</p>
+        <p v-if="error" role="alert" class="error">{{ display(error) }}</p>
         <pre v-if="output" data-testid="operation-result">{{ output }}</pre>
       </div>
     </div>
@@ -225,7 +234,7 @@ onBeforeUnmount(disconnect)
 </template>
 
 <style scoped>
-.operation-console { padding: 28px; border: 1px solid var(--line); border-radius:var(--radius-card); background: var(--surface); }
+.operation-console {border:0;border-radius:0;background:transparent;box-shadow:none;padding:0;}
 h2 { margin: 0 0 10px; font-size: 24px; letter-spacing: -.03em; }
 h3 { margin: 0 0 10px; font-size: 18px; }
 .muted { color: var(--muted); font-size: 13px; line-height: 1.7; }

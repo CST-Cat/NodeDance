@@ -166,7 +166,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.compose-editor { display: grid; gap: 10px; min-width: 0; margin-top: 16px; padding: 14px; border: 1px solid var(--line); border-radius:var(--radius-card); background: var(--surface-soft); }
+.compose-editor {display: grid; gap: 10px; min-width: 0; margin-top: 16px;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:20px 0;border-top:1px solid var(--line);}
 .compose-editor-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; }
 .compose-editor-heading h3 { margin:4px 0 0; font-size: 14px; }
 .compose-file-picker { display:grid; gap:5px; color:var(--muted-strong); font-size: 12px; }

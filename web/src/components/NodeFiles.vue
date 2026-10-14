@@ -66,10 +66,10 @@ async function observe(id:string){try{await manager.value?.observe(id)}catch(rea
 
 <style>
 .vuefinder__themer{
- --vf-bg-primary:var(--surface)!important;--vf-bg-secondary:var(--surface-soft)!important;--vf-bg-tertiary:var(--surface)!important;--vf-bg-hover:var(--accent-soft)!important;--vf-bg-selected:var(--accent-soft)!important;--vf-bg-disabled:var(--surface-soft)!important;
+ --vf-bg-primary:var(--surface)!important;--vf-bg-secondary:var(--surface-soft)!important;--vf-bg-tertiary:var(--surface)!important;--vf-bg-hover:var(--surface-hover)!important;--vf-bg-selected:var(--accent-soft)!important;--vf-bg-disabled:var(--control-disabled)!important;
  --vf-text-primary:var(--text)!important;--vf-text-secondary:var(--muted)!important;--vf-text-muted:var(--muted)!important;--vf-border-primary:var(--line)!important;--vf-border-secondary:var(--line)!important;
  --vf-accent-primary:var(--accent)!important;--vf-accent-hover:var(--accent)!important;--vf-selection-bg:var(--accent-soft)!important;--vf-selection-border:var(--accent)!important;
- --color-blue-500:var(--accent);--color-blue-900:var(--accent);--color-sky-400:var(--accent);--vf-ring:var(--accent)!important;color:var(--text);accent-color:var(--accent)
+ --color-blue-500:var(--accent);--color-blue-900:var(--accent);--color-sky-400:var(--accent);--vf-ring:var(--focus)!important;color:var(--text);accent-color:var(--accent)
 }
 /* Teleported dialogs inherit the shared root theme, above the application shell. */
 .vuefinder__modal-layout{z-index:10000}
