@@ -1,0 +1,241 @@
+/* Claude UI kit v1.1: components, sizes and states read from the local .fig.
+   Existing operational layout/behavior is retained; no chat UI is introduced. */
+.app-shell[data-theme] {
+  --control-height: 32px;
+  --button-height: 36px;
+  --control-font: 14px;
+  --focus: var(--figma-border-info);
+  --button-focus: var(--figma-ring-primary);
+  --motion-control: 150ms;
+  --motion-check: 100ms;
+  --ease-control: cubic-bezier(.4, 0, .2, 1);
+  font-size: var(--figma-size-text-sm);
+  line-height: 1.4;
+}
+.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)) {
+  min-height: var(--button-height);
+  padding: 7px 12px;
+  font-size: 14px;
+  line-height: 20px;
+  border-radius: var(--figma-radius-md);
+  transition: background-color var(--motion-control) linear, border-color var(--motion-control) linear, color var(--motion-control) linear;
+}
+.app-shell[data-theme] :is(.primary-button, .secondary-button, .alert-button, .container-action, .image-button, .probe-primary) {
+  padding-inline: 16px;
+  font-weight: var(--figma-weight-semibold);
+  transform: none;
+}
+.app-shell[data-theme] :is(.primary-button, .alert-button.primary, .image-button.primary, .probe-primary) {
+  color: var(--action-text);
+  background: var(--action-bg);
+  border-color: transparent;
+}
+.app-shell[data-theme] :is(.primary-button, .alert-button.primary, .image-button.primary, .probe-primary):hover:not(:disabled) {
+  color: var(--action-text);
+  background: var(--primary-hover);
+}
+.app-shell[data-theme] :is(.primary-button, .alert-button.primary, .image-button.primary, .probe-primary):active:not(:disabled) {
+  color: var(--action-text);
+  background: var(--primary-hover);
+  transform: none;
+}
+.app-shell[data-theme] :is(.secondary-button, .container-action, .alert-button:not(.primary), .image-button:not(.primary)) {
+  color: var(--text);
+  background: transparent;
+  border-color: var(--figma-border-primary);
+  border-width: .5px;
+}
+.app-shell[data-theme] :is(.secondary-button, .container-action, .alert-button:not(.primary), .image-button:not(.primary)):hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--figma-border-primary);
+  border-width: .5px;
+}
+.app-shell[data-theme] :is(.container-action-danger, .image-button.danger, .node-delete-button, .ui-dialog .danger-button) {
+  color: #fff;
+  background: var(--figma-background-danger);
+  border-color: transparent;
+}
+.app-shell[data-theme] :is(.container-action-danger, .image-button.danger, .node-delete-button, .ui-dialog .danger-button):hover:not(:disabled) {
+  color: #fff;
+  background: var(--figma-background-danger);
+  filter: brightness(.95);
+}
+.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):disabled {
+  color: var(--text);
+  background: transparent;
+  border-color: var(--figma-border-secondary);
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
+.app-shell[data-theme] :is(.primary-button, .alert-button.primary, .image-button.primary, .probe-primary):disabled {
+  color: var(--action-text);
+  background: var(--action-bg);
+  border-color: transparent;
+}
+.app-shell[data-theme] :is(.container-action-danger, .image-button.danger, .node-delete-button):disabled {
+  color: #fff;
+  background: var(--figma-background-danger);
+  border-color: transparent;
+  opacity: .6;
+}
+.app-shell[data-theme] :is(button, summary, a):focus-visible {
+  outline: 1.5px solid var(--button-focus);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.app-shell[data-theme] :is(a, a:visited) { color: var(--text); }
+.app-shell[data-theme] a:hover { color: var(--muted-strong); }
+.app-shell[data-theme] ::selection { color: var(--text); background: var(--figma-background-info); }
+.app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(.elfinder *) {
+  min-height: var(--control-height);
+  padding: 5px 12px;
+  border-radius: var(--figma-radius-md);
+  font-size: var(--control-font);
+  line-height: 20px;
+}
+.app-shell[data-theme] textarea:not(.elfinder *) {
+  border-radius: var(--figma-radius-md);
+  padding: 12px 16px;
+  font-size: var(--control-font);
+  line-height: 1.4;
+}
+.app-shell[data-theme] :is(input, textarea)::placeholder { color: var(--figma-text-tertiary); opacity: 1; }
+.app-shell[data-theme] :is(input, textarea, select):disabled { opacity: .5; background: var(--control-bg); color: var(--text); }
+.app-shell[data-theme] :is(input, textarea, select):focus-visible,
+.app-shell[data-theme] .ui-select .u031-btn:focus-visible,
+.app-shell[data-theme] .ui-select.is-open .u031-btn {
+  outline: none;
+  border-color: var(--figma-border-info);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-info);
+}
+.app-shell[data-theme] .ui-select .u031-btn {
+  min-height: var(--control-height);
+  padding: 5px 12px;
+  font-size: var(--control-font);
+  line-height: 20px;
+  color: var(--text);
+  background: var(--control-bg);
+}
+.app-shell[data-theme] .ui-select .u031-btn:disabled { opacity: .5; color: var(--text); background: var(--control-bg); }
+.u031-list { background: var(--surface); border-color: var(--figma-border-tertiary); border-radius: var(--figma-radius-lg); }
+.u031-o { min-height: 32px; padding: 6px 10px; font-size: 14px; }
+.u031-o[aria-selected="true"] { color: var(--text); background: var(--accent-soft); }
+.u031-ck { stroke: var(--selection); }
+/* Figma's 20 px large checkbox and radio, with actual source check asset. */
+input[type="checkbox"], input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 20px !important;
+  height: 20px !important;
+  min-width: 20px !important;
+  min-height: 20px !important;
+  padding: 0 !important;
+  margin: 0;
+  border: .5px solid var(--figma-border-secondary);
+  border-radius: var(--figma-radius-sm);
+  color: var(--selection);
+  background: var(--figma-text-inverse);
+  cursor: pointer;
+  transition: border-color 100ms cubic-bezier(0,0,.58,1), background-color 100ms cubic-bezier(0,0,.58,1);
+}
+input[type="checkbox"]:checked, input[type="checkbox"]:indeterminate { background: var(--selection); border-color: var(--selection); }
+input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  width: 12.5px;
+  height: 12.5px;
+  inset: 0;
+  margin: auto;
+  background: url('/design/claude/check.svg') center / 12.5px 12.5px no-repeat;
+  opacity: 0;
+}
+input[type="checkbox"]:checked::after { opacity: 1; }
+input[type="checkbox"]:indeterminate::after { width: 10px; height: 2px; background: #fff; opacity: 1; }
+input[type="radio"] { border-radius: 999px; background: transparent; }
+input[type="radio"]::after { content: ""; position: absolute; inset: 3px; border-radius: 999px; background: var(--selection); opacity: 0; }
+input[type="radio"]:checked { border: 1px solid var(--selection); }
+input[type="radio"]:checked::after { opacity: 1; }
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-info); }
+input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cursor: not-allowed; }
+/* 256 / 52 px sidebar variants; existing user resizing and context navigation remain. */
+.app-shell[data-theme] .workspace-sidebar { padding: 0 8px 12px; background: var(--sidebar-bg); border-right-width: .5px; }
+.app-shell[data-theme] .workspace-sidebar .wordmark { min-height: 68px; margin: 0 8px 8px; font-size: 24px; }
+.app-shell[data-theme] .workspace-label { margin: 8px 8px 12px; letter-spacing: 0; font-size: 12px; }
+.app-shell[data-theme] .workspace-nav { gap: 0; }
+.app-shell[data-theme] .workspace-nav button { min-height: 36px; padding: 8px; gap: 12px; border-radius: 8px; color: var(--text); border: 0; background: transparent; font-size: 14px; font-weight: 400; }
+.app-shell[data-theme] .workspace-nav button:hover { background: var(--surface-hover); }
+.app-shell[data-theme] .workspace-nav button[aria-current="page"] { color: var(--text); background: var(--accent-soft); border-color: transparent; box-shadow: none; }
+.app-shell[data-theme] .workspace-nav button[aria-current="page"] svg { color: inherit; }
+.app-shell[data-theme] .workspace-sidebar.is-collapsed { padding: 0 8px 12px; }
+.app-shell[data-theme] .workspace-sidebar.is-collapsed .wordmark { justify-content: center; margin-inline: 0; }
+.app-shell[data-theme] .workspace-sidebar.is-collapsed .workspace-nav button { justify-content: center; padding: 8px; }
+.app-shell[data-theme] .workspace-account { padding: 12px 4px 0; border-top: 0; }
+.app-shell[data-theme] .topbar { min-height: 68px; border-bottom: 0; }
+.app-shell[data-theme] .workspace-page :is(h1, .detail-heading h1) { font-size: clamp(28px, 2.4vw, 36px); font-family: inherit; line-height: 1.15; letter-spacing: -.025em; }
+.app-shell[data-theme] .workspace-page :is(h2, .section-toolbar h2, .feed-card h2, .host-card h2) { font-family: inherit; font-size: 20px; line-height: 25px; font-weight: 500; }
+.app-shell[data-theme] .workspace-page .vps-card h2 { font-size: 16px; line-height: 22.4px; }
+.app-shell[data-theme] dialog.ui-dialog { border-radius: var(--figma-radius-xl); border-color: var(--figma-border-tertiary); background: var(--surface); padding: 24px; }
+.app-shell[data-theme] dialog.ui-dialog h2 { font-size: 24px; line-height: 30px; font-family: inherit; font-weight: 500; }
+.app-shell[data-theme] dialog.ui-dialog p { color: var(--muted-strong); font-size: 14px; line-height: 1.4; }
+.app-shell[data-theme] :is(pre, code) { font-family: var(--figma-font-mono), ui-monospace, monospace; }
+@media (pointer: coarse), (max-width: 700px) {
+  .app-shell[data-theme] { --control-height: 44px; --button-height: 44px; --control-font: 15px; }
+  .app-shell[data-theme] :is(.primary-button, .secondary-button, .alert-button, .container-action, .image-button, .probe-primary) { border-radius: var(--figma-radius-full); }
+  .app-shell[data-theme] .workspace-nav button { min-height: 44px; }
+  .app-shell[data-theme] :is(input[type="checkbox"], input[type="radio"]) { width: 24px !important; height: 24px !important; min-width: 24px !important; min-height: 24px !important; }
+  .app-shell[data-theme] input[type="checkbox"] { border-radius: 999px; }
+  .u031-o { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell[data-theme] *, .u031-list *, input[type="checkbox"], input[type="radio"] { transition-duration: 0s !important; animation-duration: 0s !important; }
+}
+/* Icon-only controls keep the kit's centered 32 px geometry. */
+.app-shell[data-theme] :is(.header-actions button, .navigation-toggle, .account-logout) {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  min-height: 32px;
+  padding: 6px;
+}
+.app-shell[data-theme] .workspace-sidebar.is-collapsed .brand-mark { width: 20px; transform: scale(.8) rotate(-12deg); }
+@media (pointer: coarse), (max-width: 700px) {
+  .app-shell[data-theme] :is(.header-actions button, .navigation-toggle, .account-logout) { width: 36px; height: 44px; min-height: 44px; padding: 8px; }
+  .app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), textarea):not(.ui-select-source):not(.elfinder *) { font-size: 16px; }
+}
+
+/* A disclosure heading shares its row with icon actions, without a button shell. */
+.app-shell[data-theme] .context-heading .section-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 0;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 20px;
+}
+.app-shell[data-theme] .context-heading h2 { font-size: 14px; line-height: 20px; }
+
+/* Keep compact deployment choices aligned with the desktop registration grid.
+   Figma's small variant is 32 px / 12 px, rather than a clipped default label. */
+@media (min-width: 1100px) and (pointer: fine) {
+  .app-shell[data-theme] .deployment-choices button {
+    min-height: 32px;
+    height: 32px;
+    padding: 5px 12px;
+    border-radius: var(--figma-radius-sm);
+    font-size: 12px;
+    line-height: 16.8px;
+  }
+}
+@media (pointer: coarse), (max-width: 700px) {
+  .app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):not(.load-trigger):not(.terminal-close) {
+    min-height: 44px;
+  }
+}
+@media (max-width: 480px) {
+  .app-shell[data-theme] .deployment-choices > div { grid-template-columns: minmax(0, 1fr); }
+}

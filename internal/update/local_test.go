@@ -22,7 +22,7 @@ func TestLocalUpdateNeedsNoArgumentsAndWaitsForLatestRelease(t *testing.T) {
 		var value any
 		switch rpc.Action {
 		case "check":
-			value = Check{Component: "agent", Configured: true, Compatible: true, Available: true, Current: "agent-v0.1.13", Latest: "agent-v0.1.14"}
+			value = Check{Component: "agent", Configured: true, Available: true, Current: "agent-v0.1.13", Latest: "agent-v0.1.14"}
 		case "apply":
 			if rpc.Request.Version != "agent-v0.1.14" || !rpc.Request.Confirm || len(rpc.IdempotencyKey) != 32 {
 				t.Fatalf("default submission: %+v", rpc)

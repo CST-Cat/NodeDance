@@ -115,7 +115,7 @@ func TestBuiltInCheckRunsCurrentBinaryWhileControllerLockIsHeld(t *testing.T) {
 		t.Fatal(err)
 	}
 	var check Check
-	if response.Status != 200 || json.Unmarshal(response.Data, &check) != nil || check.Current != "core-v0.1.8" || !check.Available || !check.Configured || !check.Compatible {
+	if response.Status != 200 || json.Unmarshal(response.Data, &check) != nil || check.Current != "core-v0.1.8" || !check.Available || !check.Configured {
 		t.Fatalf("built-in default preflight: %+v / %+v", response, check)
 	}
 }

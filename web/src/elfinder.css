@@ -1,0 +1,220 @@
+/* elFinder supplies the complete file-management UI; only project theme mapping. */
+.node-files {
+  min-width: 0;
+  color: var(--text);
+}
+.node-files > p {
+  padding: 16px;
+}
+.node-files > p[role="alert"] {
+  color: var(--danger);
+}
+.elfinder-host {
+  min-width: 0;
+  min-height: 400px;
+}
+.file-observations {
+  padding: 16px;
+  overflow-wrap: anywhere;
+}
+.file-observations article {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 8px 0;
+}
+.file-observations button {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 8px;
+  cursor: pointer;
+}
+.nodedance-elfinder,
+.nodedance-elfinder .ui-widget-content,
+.nodedance-elfinder .elfinder-cwd-wrapper,
+.nodedance-elfinder .elfinder-cwd,
+.nodedance-elfinder .elfinder-navbar,
+.nodedance-elfinder .elfinder-dialog,
+.nodedance-elfinder .elfinder-contextmenu {
+  background: var(--canvas);
+  color: var(--text);
+  border-color: var(--line);
+}
+.nodedance-elfinder .ui-widget-header,
+.nodedance-elfinder .elfinder-toolbar,
+.nodedance-elfinder .elfinder-statusbar,
+.nodedance-elfinder .elfinder-path,
+.nodedance-elfinder .elfinder-cwd table thead td {
+  background: var(--surface);
+  color: var(--muted-strong);
+  border-color: var(--line);
+}
+.nodedance-elfinder .ui-state-default,
+.nodedance-elfinder .elfinder-button,
+.nodedance-elfinder button {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--line);
+  box-shadow: none;
+}
+.nodedance-elfinder .ui-state-hover,
+.nodedance-elfinder .elfinder-button:hover,
+.nodedance-elfinder .elfinder-contextmenu-item:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.nodedance-elfinder .ui-state-active,
+.nodedance-elfinder .ui-selected,
+.nodedance-elfinder .elfinder-cwd-file.ui-selected,
+.nodedance-elfinder .elfinder-navbar-dir.ui-state-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-line);
+  box-shadow: none;
+}
+.nodedance-elfinder input,
+.nodedance-elfinder textarea,
+.nodedance-elfinder select {
+  background: var(--control-bg);
+  color: var(--text);
+  border-color: var(--control-border);
+  accent-color: var(--accent);
+}
+.nodedance-elfinder :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.nodedance-elfinder a,
+.nodedance-elfinder a:visited {
+  color: var(--accent);
+}
+.nodedance-elfinder ::selection {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.nodedance-elfinder .elfinder-dialog {
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - 24px);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--overlay-shadow);
+}
+@media (max-width: 640px) {
+  .nodedance-elfinder .elfinder-toolbar {
+    overflow-x: auto;
+  }
+  .nodedance-elfinder .elfinder-dialog {
+    left: 12px !important;
+    right: 12px !important;
+    width: calc(100% - 24px) !important;
+    min-width: 0 !important;
+    max-width: calc(100% - 24px);
+  }
+  .nodedance-elfinder .elfinder-to-editing {
+    max-height: calc(100dvh - 40px);
+  }
+  .nodedance-elfinder .elfinder-dialog textarea {
+    max-width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nodedance-elfinder * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+.nodedance-elfinder .elfinder-cwd table tbody tr:nth-child(odd),
+.nodedance-elfinder .elfinder-cwd table tbody tr:nth-child(even) {
+  background: var(--canvas);
+}
+.nodedance-elfinder .elfinder-cwd table tbody tr.ui-selected {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.nodedance-elfinder .elfinder-navbar-wrapper {
+  background: var(--recessed);
+  border-color: var(--line);
+}
+.nodedance-elfinder .elfinder-cwd-filename,
+.nodedance-elfinder .elfinder-navbar-dir,
+.nodedance-elfinder .elfinder-cwd table td {
+  color: var(--text);
+}
+[data-theme="dark"] .nodedance-elfinder .elfinder-button-icon {
+  filter: brightness(1.6) saturate(0.5);
+}
+.nodedance-elfinder.elfinder {
+  font-family: inherit;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.nodedance-elfinder.elfinder .elfinder-cwd table thead td {
+  background: var(--surface);
+  background-image: none;
+  color: var(--muted-strong);
+  font: inherit;
+}
+.nodedance-elfinder.elfinder .elfinder-cwd .ui-state-active,
+.nodedance-elfinder.elfinder .elfinder-cwd tr.ui-selected {
+  background: var(--accent-soft);
+  background-image: none;
+  color: var(--text);
+}
+.nodedance-elfinder.elfinder .elfinder-navbar .ui-state-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent-line);
+}
+.nodedance-elfinder.elfinder .elfinder-button {
+  transition:
+    background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 100ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.nodedance-elfinder.elfinder .elfinder-button:not(.ui-state-disabled):active {
+  transform: scale(0.98);
+}
+.nodedance-elfinder.elfinder .elfinder-cwd :is(.ui-selected, .ui-state-active),
+.nodedance-elfinder.elfinder
+  .elfinder-cwd
+  :is(.ui-selected, .ui-state-active)
+  > td {
+  background: var(--accent-soft) !important;
+  background-image: none !important;
+  color: var(--text);
+}
+.nodedance-elfinder.elfinder .elfinder-cwd table th,
+.nodedance-elfinder.elfinder .elfinder-cwd table th.ui-state-active {
+  background: var(--surface);
+  background-image: none;
+  color: var(--muted-strong);
+  border-color: var(--line);
+}
+.nodedance-elfinder .elfinder-edit-imageeditor {
+  border-color: var(--line-strong) !important;
+}
+.nodedance-elfinder .tui-image-editor-menu {
+  background: var(--recessed);
+}
+.nodedance-elfinder .elfinder-file-edit { background:var(--surface); color:var(--text); border-color:var(--line-strong); }
+.nodedance-elfinder .tui-image-editor-container svg use.normal { fill:var(--muted) !important; stroke:var(--muted) !important; }
+.nodedance-elfinder .tui-image-editor-container svg use.active { fill:var(--accent) !important; stroke:var(--accent) !important; }
+.nodedance-elfinder .tui-image-editor-container svg use.hover { fill:var(--text) !important; stroke:var(--text) !important; }
+.nodedance-elfinder .tui-image-editor-container svg use.disabled { fill:var(--muted-strong) !important; stroke:var(--muted-strong) !important; opacity:.5; }
+
+/* Native dialog actions share the kit's desktop/touch target sizes. Keep
+   elFinder's title-bar controls and layout owned by the component itself. */
+.nodedance-elfinder button:not(.ui-dialog-titlebar-close),
+.nodedance-elfinder input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]) {
+  min-height: 32px;
+}
+@media (pointer: coarse), (max-width: 700px) {
+  .nodedance-elfinder button:not(.ui-dialog-titlebar-close),
+  .nodedance-elfinder input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]) {
+    min-height: 44px;
+  }
+}

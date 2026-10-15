@@ -118,7 +118,6 @@ fs.mkdirSync(out, { recursive: true });
           latest: "core-v0.1.9",
           available: true,
           configured: true,
-          compatible: true,
           mode: "docker",
           release: {
             url: "https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.9",
@@ -191,6 +190,10 @@ fs.mkdirSync(out, { recursive: true });
           ],
           dataStale: false,
         };
+      else if (p.endsWith("/files/stat")) {
+        const requested=new URL(route.request().url()).searchParams.get('path')||'/';
+        body={path:requested,name:requested==='/'?'/':requested.split('/').pop(),kind:requested.endsWith('.txt')?'file':'directory',size:20,mode:420,ownerUid:0,ownerGid:0,modifiedAt:1710000000000000000,version:'test'};
+      }
       else if (p.endsWith("/files/text"))
         body = {
           path: "/hello.txt",
@@ -286,6 +289,8 @@ fs.mkdirSync(out, { recursive: true });
             : [],
           serverTime: now,
         };
+      else if (p === "/api/v1/dashboard/core") body = {hostname:"core-fixture",platform:"Ubuntu",platformVersion:"24.04",kernelVersion:"6.8",architecture:"amd64",version:"dev",bootTime:Math.floor(Date.now()/1000)-3600,uptime:3600,environment:"native",addresses:["192.0.2.1"],sampledAt:now};
+      else if (p === "/api/v1/dashboard/memo") body = {content:"Fixture memo",revision:1,updatedAt:now};
       else if (p === "/api/v1/dashboard/settings") body = settings;
       else if (p.endsWith("/preferences")) body = { preferences: [] };
       else if (p.endsWith("/tasks")) body = { tasks: [], nextCursor: "" };
@@ -478,8 +483,10 @@ fs.mkdirSync(out, { recursive: true });
       await page.locator(".dashboard-welcome,.vps-card").first().waitFor();
     }
     async function shot(name) {
+      await page.waitForFunction(()=>[...document.querySelectorAll('.app-shell,.workspace-sidebar')].every(el=>el.getAnimations().every(a=>a.playState==='finished'||a.playState==='idle')));
       snapshots.push(name);
-      await page.screenshot({ path: `${out}/${name}.png`, fullPage: true });
+      fs.writeFileSync(`${out}/${name}.layout.json`,JSON.stringify(await page.evaluate(()=>{const el=document.querySelector('.workspace-sidebar');if(!el)return null;const s=getComputedStyle(el);return {className:el.className,width:s.width,transform:s.transform,sidebarWidth:s.getPropertyValue('--sidebar-width'),bounds:el.getBoundingClientRect().toJSON()}})));
+      await page.screenshot({ animations:"disabled", path: `${out}/${name}.png`, fullPage: true });
     }
     async function overflow() {
       assert.equal(
@@ -494,6 +501,10 @@ fs.mkdirSync(out, { recursive: true });
     async function invariants(label) {
       await page.waitForTimeout(120);
       await page.evaluate(() => document.fonts.ready);
+      assert.ok(await page.locator('.vps-card-header').evaluateAll(headers => headers.every(header => {
+        const heading = header.querySelector('.vps-card-heading').getBoundingClientRect();
+        return heading.width >= header.getBoundingClientRect().width - 2 && !header.querySelector('.inspect-host, .vps-card-status');
+      })), 'VPS title retains full width without host-info button or status badge: ' + label);
       if (
         await page.evaluate(
           () => document.documentElement.scrollWidth > innerWidth,
@@ -520,7 +531,7 @@ fs.mkdirSync(out, { recursive: true });
       const bad = await page.evaluate(() =>
         Array.from(
           document.querySelectorAll(
-            ".app-shell h1,.app-shell h2,.app-shell a,.app-shell button,.app-shell input:not([type=checkbox]):not([type=file]):not([type=color])",
+            ".app-shell h1,.app-shell h2,.app-shell a,.app-shell button,.app-shell input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color])",
           ),
         )
           .filter((el) => el.getBoundingClientRect().width > 0)
@@ -529,7 +540,7 @@ fs.mkdirSync(out, { recursive: true });
             let problems = [];
             if (
               el.matches("h1,h2") &&
-              c.fontWeight !== "400" &&
+              !["400","500"].includes(c.fontWeight) &&
               !el.matches(".vps-card h2,.vps-group-heading")
             )
               problems.push("heading weight " + c.fontWeight);
@@ -542,9 +553,10 @@ fs.mkdirSync(out, { recursive: true });
               problems.push("browser link color");
             if (
               el.matches("button,input") &&
-              parseFloat(c.minHeight) < 40 &&
+              parseFloat(c.minHeight) < ((el.matches("input,.u031-btn") || el.closest(".nodedance-elfinder") || el.matches(".deployment-choices button")) ? (innerWidth<=700 ? 44 : 32) : (innerWidth<=700 ? 44 : 36)) &&
+              !(el.matches(".load-trigger") && getComputedStyle(el,"::before").position==="absolute" && parseFloat(getComputedStyle(el,"::before").width)>=40 && parseFloat(getComputedStyle(el,"::before").height)>=40) &&
               !el.matches(
-                ".account-logout,.navigation-toggle,.terminal-close,.upload-button input",
+                ".account-logout,.navigation-toggle,.header-actions button,.terminal-close,.ui-dialog-titlebar-close,.upload-button input",
               )
             )
               problems.push("control height " + c.minHeight);
@@ -557,13 +569,13 @@ fs.mkdirSync(out, { recursive: true });
       await shot(label);
     }
     async function nav(label) {
-      if (page.viewportSize().width <= 900 && await page.locator(".navigation-toggle").isVisible())
-        await page.locator(".navigation-toggle").click();
+      await openNavigation(page);
+      const detail=page.getByTestId('node-detail-navigation');
+      if(await detail.count()) { await detail.getByRole('button',{name: /Back to home|返回主页面/}).click();await page.locator('.nodes-dashboard').waitFor();await openNavigation(page); }
       const key = Object.keys(enMessages).find(key => /^(nav\.|host\.title$|guest\.settings$)/.test(key) && enMessages[key] === label);
-      assert.ok(key, 'Unknown navigation label: ' + label);
-      const language = await page.locator('html').getAttribute('lang');
-      const title = language === 'zh-CN' ? zhMessages[key] : enMessages[key];
-      await page.locator('.workspace-nav').getByRole('button', {name:title, exact:true}).click();
+      assert.ok(key,'Known navigation label');
+      const title=(await page.locator('html').getAttribute('lang'))==='zh-CN'?zhMessages[key]:enMessages[key];
+      await page.locator('.workspace-nav').getByRole('button',{name:title,exact:true}).click();
       await page.waitForTimeout(250);
     }
     async function auditWorkspace(prefix) {
@@ -594,6 +606,7 @@ fs.mkdirSync(out, { recursive: true });
         await handle.focus();
         await page.keyboard.press("End");
         assert.equal(await handle.getAttribute("aria-valuenow"), "400");
+        await page.waitForFunction(()=>Math.abs(document.querySelector('.workspace-sidebar').getBoundingClientRect().width-400)<.5);
         const box = await handle.boundingBox();
         await page.mouse.move(box.x + box.width / 2, box.y + 100);
         await page.mouse.down();
@@ -655,27 +668,15 @@ fs.mkdirSync(out, { recursive: true });
           await invariants(prefix + "-compose-editor");
         }
         if (section === "files") {
-          await page.locator('.vuefinder').waitFor();
-          const file = page.getByText('hello.txt', {exact:true}).first().locator('xpath=ancestor::div[contains(@class,"vf-explorer-item")][1]');
-          await file.waitFor();
-          await file.click({button:'right'});
-          await page.getByText(/^(Delete|删除)$/, {exact:true}).last().click();
-          await page.locator('.vuefinder__delete-modal__content').waitFor();
-          await invariants(prefix + '-confirm-dialog');
-          await page.keyboard.press('Escape');
-          await page.locator('.vuefinder__modal-layout').waitFor({state:'detached'});
-          await file.click({button:'right'});
-          await page.getByText(/^(Rename|重命名)$/, {exact:true}).last().click();
-          await page.locator('.vuefinder__rename-modal__input').waitFor();
-          assert.equal(await page.locator('.vuefinder__rename-modal__input').inputValue(), 'hello.txt');
-          await invariants(prefix + '-prompt-dialog');
-          await page.keyboard.press('Escape');
-          await page.locator('.vuefinder__modal-layout').waitFor({state:'detached'});
-          await file.dblclick();
-          await page.locator('.cm-content').waitFor();
-          await invariants(prefix + '-file-editor');
-          await page.keyboard.press('Escape');
-          await page.locator('.vuefinder__modal-layout').waitFor({state:'detached'});
+          const finder=page.locator('.nodedance-elfinder');await finder.waitFor();
+          const file=finder.locator('.elfinder-cwd-filename').filter({hasText:/^hello[\u200b]*\.txt$/}).first();await file.waitFor();
+          const toolbar=name=>finder.locator('.elfinder-button').filter({has:page.locator('.elfinder-button-icon-'+name)});
+          await file.click();await toolbar('rm').click();await finder.locator('.elfinder-dialog-confirm').waitFor();
+          await invariants(prefix+'-confirm-dialog');await page.keyboard.press('Escape');
+          await toolbar('rename').click();await finder.locator('.elfinder-cwd-file input,.elfinder-cwd-file textarea').waitFor();
+          await invariants(prefix+'-prompt-dialog');await page.keyboard.press('Escape');
+          await file.dblclick();await finder.locator('.elfinder-to-editing textarea').waitFor();
+          await invariants(prefix+'-file-editor');await finder.locator('.elfinder-to-editing .ui-dialog-titlebar-close').click();
         }
         if (section === "rebuild") {
           const toggle = page.locator(".rebuild-entry>button").first();

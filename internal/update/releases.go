@@ -108,14 +108,13 @@ func (g *GitHub) Resolve(ctx context.Context, component, tag string) (Release, e
 			}
 		}
 	}
-	if selected.Draft || selected.Prerelease || !ValidTag(component, selected.Tag) {
+	if selected.Draft || selected.Prerelease || !ValidTag(component, selected.Tag) || tag != "" && selected.Tag != tag {
 		return Release{}, errors.New("no published stable component release")
 	}
-	release := Release{URL: selected.URL, Notes: selected.Body}
+	release := Release{Component: component, Version: selected.Tag, URL: selected.URL, Notes: selected.Body}
 	if len(release.Notes) > 32768 {
 		release.Notes = release.Notes[:32768]
 	}
-	var manifestURL string
 	binary := "nodedance-linux-" + runtime.GOARCH
 	if component == "agent" {
 		binary = "nodedance-agent-linux-" + runtime.GOARCH
@@ -126,26 +125,14 @@ func (g *GitHub) Resolve(ctx context.Context, component, tag string) (Release, e
 			return Release{}, errors.New("unexpected release asset URL")
 		}
 		switch asset.Name {
-		case "nodedance-update.json":
-			manifestURL = asset.URL
 		case "SHA256SUMS":
 			release.ChecksumURL = asset.URL
 		case binary:
 			release.BinaryURL = asset.URL
 		}
 	}
-	if manifestURL == "" || release.BinaryURL == "" || release.ChecksumURL == "" {
-		return Release{}, errors.New("release does not include an update manifest and verified native artifacts")
-	}
-	raw, err := g.fetch(ctx, manifestURL, 64<<10)
-	if err != nil {
-		return Release{}, err
-	}
-	if err = Decode(raw, &release.Manifest); err != nil {
-		return Release{}, err
-	}
-	if release.Format != 1 || release.Component != component || release.Version != selected.Tag {
-		return Release{}, errors.New("release manifest identity mismatch")
+	if release.BinaryURL == "" || release.ChecksumURL == "" {
+		return Release{}, errors.New("release does not include verified native artifacts for this architecture")
 	}
 	return release, nil
 }

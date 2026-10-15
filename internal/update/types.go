@@ -3,21 +3,14 @@
 package update
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/CST-Cat/NodeDance/internal/agent/containerrebuild"
-	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
 	"io"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/CST-Cat/NodeDance/internal/core/storage"
-	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 const Repository = "CST-Cat/NodeDance"
@@ -58,28 +51,9 @@ type Config struct {
 	StateDir string            `json:"stateDir"`
 	Targets  map[string]Target `json:"targets"`
 }
-type Manifest struct {
-	Format    int    `json:"format"`
-	Component string `json:"component"`
-	Version   string `json:"version"`
-	Protocol  int    `json:"protocol"`
-	Schema    string `json:"schema,omitempty"`
-}
-
-func Schema(component string) string {
-	source := storage.Schema()
-	if component == "agent" {
-		source = taskjournal.Schema() + containerrebuild.Schema()
-	}
-	sum := sha256.Sum256([]byte(source))
-	return hex.EncodeToString(sum[:])
-}
-func Describe(component, version string) Manifest {
-	return Manifest{Format: 1, Component: component, Version: version, Protocol: protocol.CurrentVersion, Schema: Schema(component)}
-}
-
 type Release struct {
-	Manifest
+	Component   string `json:"component"`
+	Version     string `json:"version"`
 	URL         string `json:"url"`
 	Notes       string `json:"notes"`
 	BinaryURL   string `json:"-"`
@@ -91,7 +65,6 @@ type Check struct {
 	Latest     string  `json:"latest"`
 	Available  bool    `json:"available"`
 	Configured bool    `json:"configured"`
-	Compatible bool    `json:"compatible"`
 	Mode       string  `json:"mode,omitempty"`
 	Reason     string  `json:"reason,omitempty"`
 	Release    Release `json:"release"`

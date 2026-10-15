@@ -503,15 +503,15 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 		t.Fatal("resolve test source path")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(testFile), "..", "..", ".."))
-	uiPath := filepath.Join(repoRoot, "web", "src", "components", "TailscaleDiscovery.vue")
+	uiPath := filepath.Join(repoRoot, "web", "src", "components", "TailscaleDiscovery.tsx")
 	ui, err := os.ReadFile(uiPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(ui), `<AgentEnrollment compact />`) {
+	if !strings.Contains(string(ui), "<AgentEnrollment\n              compact={true}") {
 		t.Fatal("Tailscale discovery page does not expose the shared Agent enrollment flow")
 	}
-	enrollmentUI, err := os.ReadFile(filepath.Join(repoRoot, "web", "src", "components", "AgentEnrollment.vue"))
+	enrollmentUI, err := os.ReadFile(filepath.Join(repoRoot, "web", "src", "components", "AgentEnrollment.tsx"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +532,7 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 			t.Errorf("shared installer command is missing %q", required)
 		}
 	}
-	for _, required := range []string{"result.nativeInstallCommand", "result.dockerInstallCommand", "data-testid=\"agent-deployment-method\"", "data-testid=\"agent-install-command\"", "data-testid=\"agent-enrollment-expiry\"", "https://core.example:8180", "t('m."} {
+	for _, required := range []string{"result.nativeInstallCommand", "result.dockerInstallCommand", "data-testid=\"agent-deployment-method\"", "data-testid=\"agent-install-command\"", "data-testid=\"agent-enrollment-expiry\"", "https://core.example:8180", `t("m.`} {
 		if !strings.Contains(string(enrollmentUI), required) {
 			t.Errorf("shared Agent enrollment UI is missing %q", required)
 		}

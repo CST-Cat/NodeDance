@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.21]
+
+### English
+
+- Allow built-in manual and automatic Agent updates based on stable Agent tags without protocol, capability, API, manifest or storage fingerprint eligibility gates; retain authenticated request identity, generation checks, artifact checksums, architecture selection, health checks and failure recovery.
+- Remove the obsolete release manifest artifact and keep updates inside the existing product binary, with no separate updater package or persistent service.
+
+### 简体中文
+
+- 内置手动和自动 Agent 更新仅以稳定 Agent tag 判断资格，不再使用协议、能力、API、清单或存储指纹阻止更新；保留认证请求身份、代次检查、制品校验、架构选择、健康检查及失败恢复。
+- 移除废弃发布清单附件，更新仍内置于产品二进制，不增加独立 updater 包或持久服务。
+
 ## [0.1.20]
 
 ### English

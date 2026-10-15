@@ -11,7 +11,7 @@ help:
 	@printf '%s\n' \
 	  'NodeDance development commands:' \
 	  '  make deps       install Go and Web dependencies' \
-	  '  make typecheck  check Vue and TypeScript types' \
+	  '  make typecheck  check React and TypeScript types' \
 	  '  make frontend   typecheck and build the embedded Web assets' \
 	  '  make build      build Core and Agent binaries' \
 	  '  make install    install previously built binaries under PREFIX' \

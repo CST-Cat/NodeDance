@@ -2088,5 +2088,6 @@
   "overview.noFields": "请在显示设置中选择要显示的信息。",
   "overview.resetDisplay": "恢复默认",
   "overview.done": "完成",
-  "overview.loadNormal": "运行正常"
+  "overview.loadNormal": "运行正常",
+  "files.noOverwrite": "已有文件不会被覆盖。"
 }

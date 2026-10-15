@@ -51,7 +51,7 @@ func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(catalog)
 		case "/api/v1/discovered/check":
-			json.NewEncoder(w).Encode(update.Check{Component: "core", Current: "core-v0.1.8", Latest: "core-v0.1.9", Available: true, Compatible: true, Configured: true, Release: update.Release{Manifest: update.Describe("core", "core-v0.1.9"), URL: "https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.9"}})
+			json.NewEncoder(w).Encode(update.Check{Component: "core", Current: "core-v0.1.8", Latest: "core-v0.1.9", Available: true, Configured: true, Release: update.Release{Component: "core", Version: "core-v0.1.9", URL: "https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.9"}})
 		case "/api/v1/auth/csrf":
 			io.WriteString(w, `{"token":"csrf"}`)
 		case "/api/v1/discovered/apply":
@@ -115,7 +115,7 @@ func TestDefaultUpdateUsesSavedServerSessionAndPrivateCAWithoutArguments(t *test
 			case "/api/v1/operations":
 				json.NewEncoder(w).Encode(control.Describe())
 			case "/api/v1/updates/check":
-				json.NewEncoder(w).Encode(update.Check{Component: "core", Current: "core-v0.1.8", Latest: "core-v0.1.9", Available: true, Configured: true, Compatible: true})
+				json.NewEncoder(w).Encode(update.Check{Component: "core", Current: "core-v0.1.8", Latest: "core-v0.1.9", Available: true, Configured: true})
 			case "/api/v1/updates/apply":
 				submitted.Add(1)
 				w.WriteHeader(202)

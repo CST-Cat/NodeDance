@@ -23,6 +23,7 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 	binary := []byte("verified fixture binary")
 	sum := sha256.Sum256(binary)
 	bad := false
+	advertiseManifest := false
 	asset := "nodedance-linux-" + runtime.GOARCH
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -30,14 +31,18 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 			releases := []map[string]any{}
 			for _, tag := range []string{"agent-v99.0.0", "core-v0.1.8", "core-v0.1.9", "core-v0.2.0"} {
 				assets := []map[string]string{}
-				for _, name := range []string{"nodedance-update.json", "SHA256SUMS", asset} {
+				for _, name := range []string{"SHA256SUMS", asset} {
 					assets = append(assets, map[string]string{"name": name, "browser_download_url": "https://github.com/" + Repository + "/releases/download/" + tag + "/" + name})
+				}
+				if advertiseManifest {
+					assets = append(assets, map[string]string{"name": "nodedance-update.json", "browser_download_url": "https://github.com/" + Repository + "/releases/download/" + tag + "/nodedance-update.json"})
 				}
 				releases = append(releases, map[string]any{"tag_name": tag, "prerelease": tag == "core-v0.2.0", "assets": assets})
 			}
 			json.NewEncoder(w).Encode(releases)
 		case strings.HasSuffix(r.URL.Path, "/nodedance-update.json"):
-			json.NewEncoder(w).Encode(Describe("core", "core-v0.1.9"))
+			t.Error("Update selection must not request an update manifest")
+			http.NotFound(w, r)
 		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
 			fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), asset)
 		case strings.HasSuffix(r.URL.Path, "/"+asset):
@@ -65,6 +70,10 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 	release, err := github.Resolve(context.Background(), "core", "")
 	if err != nil || release.Version != "core-v0.1.9" {
 		t.Fatalf("stable component resolution: %+v %v", release, err)
+	}
+	advertiseManifest = true
+	if _, err := github.Resolve(context.Background(), "core", ""); err != nil {
+		t.Fatalf("Unrelated update metadata blocked tag selection: %v", err)
 	}
 	path := filepath.Join(t.TempDir(), "binary")
 	if err := github.Download(context.Background(), release, path); err != nil {

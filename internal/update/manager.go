@@ -277,7 +277,7 @@ func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
 	if err != nil {
 		return Check{}, err
 	}
-	result := Check{Component: r.Component, Latest: release.Version, Release: release, Compatible: release.Protocol == Describe(r.Component, release.Version).Protocol && release.Schema == Schema(r.Component)}
+	result := Check{Component: r.Component, Latest: release.Version, Release: release}
 	target, configured := m.Config.Targets[r.Component]
 	result.Configured = configured
 	result.Mode = target.Mode
@@ -288,9 +288,6 @@ func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
 		}
 	}
 	result.Available = result.Current != "" && Compare(release.Version, result.Current) > 0
-	if !result.Compatible {
-		result.Reason = "release protocol or storage contract is incompatible"
-	}
 	return result, nil
 }
 func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error) {
@@ -358,8 +355,8 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 		if err != nil {
 			return Job{}, err
 		}
-		if !check.Configured || !check.Compatible || !check.Available {
-			return Job{}, errors.New("no compatible newer release is available")
+		if !check.Configured || !check.Available {
+			return Job{}, errors.New("no newer release is available")
 		}
 	}
 	var bytes [16]byte

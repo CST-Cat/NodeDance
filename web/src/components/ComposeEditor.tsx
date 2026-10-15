@@ -1,0 +1,352 @@
+import type { ContainerTask } from "../api";
+import { composeApi, type ComposeProject } from "../compose-api";
+import { display, t } from "../i18n";
+import { afterMount, beforeDispose, cell, derived } from "../state";
+
+import { Fragment } from "react";
+import { __call, __classes, __each, __input, useController } from "../state";
+import "./ComposeEditor.css";
+import UiSelect from "./UiSelect";
+type Props = {
+  nodeId: string;
+  project: ComposeProject;
+} & { children?: import("react").ReactNode; [key: string]: any };
+export default function ComposeEditor(input: Props) {
+  return useController(
+    (__props: Props, __emit: any, __dom: any) => {
+      const props = __props;
+      const fileIndex = cell(0);
+      const content = cell("");
+      const savedContent = cell("");
+      const baseSHA256 = cell("");
+      const loading = cell(false);
+      const validating = cell(false);
+      const saving = cell(false);
+      const valid = cell(false);
+      const error = cell("");
+      const message = cell("");
+      const task = cell<ContainerTask>();
+      let pollTimer: ReturnType<typeof setTimeout> | undefined;
+      let generation = 0;
+      const dirty = derived(() => content.value !== savedContent.value);
+      const currentFile = derived(
+        () =>
+          props.project.ref.configFiles[fileIndex.value] ??
+          t("m.8b98267611a6", {
+            "0": fileIndex.value + 1,
+          }),
+      );
+      async function loadConfig() {
+        const requestGeneration = ++generation;
+        loading.value = true;
+        error.value = "";
+        valid.value = false;
+        try {
+          const result = await composeApi.config(
+            props.nodeId,
+            props.project.ref.key,
+            fileIndex.value,
+          );
+          if (generation !== requestGeneration) return;
+          content.value = result.content;
+          savedContent.value = result.content;
+          baseSHA256.value = result.sha256;
+          message.value = t("m.8d2e18f84c7e");
+        } catch (reason) {
+          if (generation === requestGeneration)
+            error.value =
+              reason instanceof Error ? reason.message : t("m.3957ffb3e358");
+        } finally {
+          if (generation === requestGeneration) loading.value = false;
+        }
+      }
+      async function validate() {
+        const requestGeneration = generation;
+        const submittedContent = content.value;
+        validating.value = true;
+        error.value = "";
+        message.value = "";
+        valid.value = false;
+        try {
+          await composeApi.validateConfig(
+            props.nodeId,
+            props.project.ref.key,
+            fileIndex.value,
+            submittedContent,
+          );
+          if (
+            generation !== requestGeneration ||
+            content.value !== submittedContent
+          )
+            return;
+          valid.value = true;
+          message.value = t("m.351d70486605");
+        } catch (reason) {
+          if (
+            generation !== requestGeneration ||
+            content.value !== submittedContent
+          )
+            return;
+          error.value =
+            reason instanceof Error ? reason.message : t("m.29e08c6652a0");
+        } finally {
+          validating.value = false;
+        }
+      }
+      function schedulePoll(taskId: string, requestGeneration: number) {
+        pollTimer = setTimeout(async () => {
+          try {
+            const current = await composeApi.task(props.nodeId, taskId);
+            if (requestGeneration !== generation) return;
+            task.value = current;
+            if (current.status === "succeeded") {
+              await loadConfig();
+              message.value = t("m.334ef965226e");
+              saving.value = false;
+              return;
+            }
+            if (
+              current.status === "failed" ||
+              current.status === "unknown" ||
+              current.status === "timed_out" ||
+              current.status === "canceled"
+            ) {
+              error.value =
+                current.status === "unknown"
+                  ? t("m.e90270efd29a")
+                  : t("m.2a044add4de5");
+              saving.value = false;
+              return;
+            }
+            schedulePoll(taskId, requestGeneration);
+          } catch (reason) {
+            if (requestGeneration !== generation) return;
+            error.value =
+              reason instanceof Error ? reason.message : t("m.f5ab77abe914");
+            saving.value = false;
+          }
+        }, 750);
+      }
+      async function save() {
+        if (!valid.value || !dirty.value || saving.value) return;
+        saving.value = true;
+        error.value = "";
+        message.value = "";
+        const requestGeneration = ++generation;
+        try {
+          const accepted = await composeApi.createTask(
+            props.nodeId,
+            props.project.ref.key,
+            {
+              action: "config_save",
+              fileIndex: fileIndex.value,
+              content: content.value,
+              baseSha256: baseSHA256.value,
+            },
+          );
+          task.value = await composeApi.task(props.nodeId, accepted.taskId);
+          if (task.value.status === "succeeded") {
+            await loadConfig();
+            message.value = t("m.334ef965226e");
+            saving.value = false;
+            return;
+          }
+          if (
+            task.value.status === "failed" ||
+            task.value.status === "unknown"
+          ) {
+            error.value =
+              task.value.status === "unknown"
+                ? t("m.e90270efd29a")
+                : t("m.2a044add4de5");
+            saving.value = false;
+            return;
+          }
+          schedulePoll(accepted.taskId, requestGeneration);
+        } catch (reason) {
+          error.value =
+            reason instanceof Error ? reason.message : t("m.3d63ac5acf31");
+          saving.value = false;
+        }
+      }
+      function restore() {
+        content.value = savedContent.value;
+        valid.value = false;
+        error.value = "";
+        message.value = t("m.5440ce29fbc9");
+      }
+      function onContentChange() {
+        valid.value = false;
+        error.value = "";
+        message.value = "";
+      }
+      function onFileChange() {
+        void loadConfig();
+      }
+      afterMount(() => void loadConfig());
+      beforeDispose(() => {
+        generation++;
+        if (pollTimer) clearTimeout(pollTimer);
+      });
+      return () => (
+        <>
+          <section
+            aria-label={t("m.68caef829d91") as any}
+            data-testid="compose-editor"
+            className={__classes("compose-editor")}
+            data-v-306714f3=""
+          >
+            <header
+              className={__classes("compose-editor-heading")}
+              data-v-306714f3=""
+            >
+              <div data-v-306714f3="">
+                <span className={__classes("eyebrow")} data-v-306714f3="">
+                  {t("label.d5cde76290bf")}
+                </span>
+                <h3 data-v-306714f3="">{t("m.a5de4df1d563")}</h3>
+              </div>
+              <button
+                type="button"
+                disabled={loading.value || (saving.value as any)}
+                className={__classes("container-action")}
+                onClick={(event: any) => {
+                  void loadConfig();
+                }}
+                data-v-306714f3=""
+              >
+                {t("m.df7392cc96be")}
+              </button>
+            </header>
+            <label
+              className={__classes("compose-file-picker")}
+              data-v-306714f3=""
+            >
+              {t("m.1d27f02ed278")}
+              <UiSelect
+                disabled={loading.value || (saving.value as any)}
+                onChange={(event: any) => {
+                  __call(onFileChange, event);
+                }}
+                modelValue={fileIndex.value}
+                onUpdateModelValue={(__nextValue: any) => {
+                  fileIndex.value = __nextValue;
+                }}
+                modelModifiers={{ number: true }}
+                data-v-306714f3=""
+              >
+                <Fragment>
+                  {__each(__props.project.ref.configFiles, (path, index) => (
+                    <option
+                      key={path as any}
+                      value={index as any}
+                      data-v-306714f3=""
+                    >
+                      {path.split("/").at(-1) || path}
+                    </option>
+                  ))}
+                </Fragment>
+              </UiSelect>
+              <small data-v-306714f3="">{currentFile.value}</small>
+            </label>
+            <p className={__classes("compose-editor-risk")} data-v-306714f3="">
+              {t("m.cd673d386eed")}
+            </p>
+            <textarea
+              aria-label={t("m.47a8168380df") as any}
+              spellCheck="false"
+              disabled={loading.value || (saving.value as any)}
+              onInput={(event: any) => {
+                __call(onContentChange, event);
+              }}
+              {...__input(
+                content.value,
+                (__nextValue: any) => {
+                  content.value = __nextValue;
+                },
+                "",
+                undefined,
+                [],
+              )}
+              data-v-306714f3=""
+            ></textarea>
+            <div
+              className={__classes("compose-editor-actions")}
+              data-v-306714f3=""
+            >
+              <button
+                type="button"
+                disabled={
+                  loading.value || validating.value || (saving.value as any)
+                }
+                className={__classes("container-action")}
+                onClick={(event: any) => {
+                  void validate();
+                }}
+                data-v-306714f3=""
+              >
+                {validating.value ? t("m.fee0b2ceff3f") : t("m.b26286234be3")}
+              </button>
+              <button
+                type="button"
+                disabled={!valid.value || !dirty.value || (saving.value as any)}
+                className={__classes(
+                  "container-action container-action-danger",
+                )}
+                onClick={(event: any) => {
+                  void save();
+                }}
+                data-v-306714f3=""
+              >
+                {saving.value ? t("m.ff509c9ba052") : t("m.6e584e3d5ce6")}
+              </button>
+              <button
+                type="button"
+                disabled={!dirty.value || (saving.value as any)}
+                className={__classes("container-action")}
+                onClick={(event: any) => {
+                  __call(restore, event);
+                }}
+                data-v-306714f3=""
+              >
+                {t("m.131be45b460c")}
+              </button>
+            </div>
+            {loading.value ? (
+              <p
+                role="status"
+                className={__classes("compose-editor-message")}
+                data-v-306714f3=""
+              >
+                {t("m.49d3303a0315")}
+              </p>
+            ) : null}
+            {message.value ? (
+              <p
+                role="status"
+                className={__classes("compose-editor-message")}
+                data-v-306714f3=""
+              >
+                {display(message.value)}
+              </p>
+            ) : null}
+            {error.value ? (
+              <p
+                role="alert"
+                className={__classes("compose-editor-error")}
+                data-v-306714f3=""
+              >
+                {display(error.value)}
+              </p>
+            ) : null}
+          </section>
+        </>
+      );
+    },
+    input,
+    ["nodeId", "project"],
+    [],
+    {},
+    true,
+  );
+}

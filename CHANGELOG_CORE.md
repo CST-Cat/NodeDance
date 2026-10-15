@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.33]
+
+### English
+
+- Migrate the management Web application to React while preserving discovered Core operations, enrollment, container/Compose controls, terminal sessions and guest isolation.
+- Replace VueFinder with the mature elFinder file manager, backed by the existing protected Agent file service; retain uploads, downloads, search, pagination, native dialogs, archives, editing and conflict recovery.
+- Rebuild shared light/dark tokens, controls, navigation and responsive sizing from the supplied Claude Figma file, with open-claude-ui as a secondary motion reference. Keep the terminal dark, simplify VPS card headers and preserve full-width readable node names.
+- Determine update eligibility from stable component tags only; remove protocol/capability/storage fingerprint gates and release manifest assets while retaining checksums, architecture selection, authentication, request identity, health checks and failure recovery. Pair with Agent agent-v0.1.21.
+
+### 简体中文
+
+- 将管理 Web 应用迁移到 React，保留动态发现的 Core 操作、注册、容器／Compose 管理、终端会话及访客隔离。
+- 使用成熟 elFinder 替换 VueFinder，复用受保护的 Agent 文件服务，保留上传下载、搜索、分页、原生对话框、归档、编辑与冲突恢复。
+- 以提供的 Claude Figma 文件重构共享浅深色 Token、控件、导航及响应式尺寸，open-claude-ui 仅补充动效参考；终端保留深色，简化 VPS 卡片顶部并保持名称完整可读。
+- 更新资格仅对比稳定组件 tag，移除协议／能力／存储指纹门槛与发布清单附件，保留校验和、架构选择、认证、请求身份、健康检查及失败恢复；配对 Agent agent-v0.1.21。
+
 ## [0.1.32]
 
 ### English

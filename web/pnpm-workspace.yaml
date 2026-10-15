@@ -1,8 +1,4 @@
 minimumReleaseAgeExclude:
   - vite@8.3.4
-
-allowBuilds:
-  vue-demi: true
-
-patchedDependencies:
-  vuefinder@4.7.6: patches/vuefinder@4.7.6.patch
+  - react-dom@19.3.1
+  - react@19.3.1

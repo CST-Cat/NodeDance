@@ -1,0 +1,256 @@
+.service-probes[data-v-5be80864] {
+  min-width: 0;
+  margin-top: 20px;
+  padding: 20px 0;
+  color: var(--text);
+}
+.probe-heading[data-v-5be80864] {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.probe-heading h2[data-v-5be80864] {
+  margin: 4px 0 0;
+  font-size: 17px;
+}
+.probe-heading p[data-v-5be80864],
+.probe-help[data-v-5be80864],
+.probe-note[data-v-5be80864],
+.probe-empty[data-v-5be80864] {
+  color: var(--muted-strong);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.probe-heading p[data-v-5be80864] {
+  margin: 6px 0 0;
+}
+.probe-primary[data-v-5be80864],
+.probe-secondary[data-v-5be80864],
+.probe-actions button[data-v-5be80864] {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 6px 10px;
+  color: var(--accent);
+  background: var(--control-bg);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.probe-primary[data-v-5be80864]:hover:not(:disabled),
+.probe-actions button[data-v-5be80864]:hover:not(:disabled) {
+  background: var(--control-bg);
+}
+.probe-primary[data-v-5be80864]:disabled,
+.probe-secondary[data-v-5be80864]:disabled,
+.probe-actions button[data-v-5be80864]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.probe-secondary[data-v-5be80864] {
+  color: var(--muted-strong);
+  border-color: var(--line);
+  background: var(--control-bg);
+}
+.probe-note[data-v-5be80864],
+.probe-empty[data-v-5be80864] {
+  margin: 10px 0;
+}
+.probe-message[data-v-5be80864] {
+  margin: 10px 0;
+  border-radius: var(--radius-card);
+  padding: 9px 11px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.probe-error[data-v-5be80864] {
+  color: var(--danger);
+  border: 1px solid var(--danger-line);
+  background: var(--danger-soft);
+}
+.probe-notice[data-v-5be80864] {
+  color: var(--success);
+  border: 1px solid var(--success-line);
+  background: var(--success-soft);
+}
+.probe-form[data-v-5be80864] {
+  margin: 12px 0 16px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: 20px 0;
+  background: transparent;
+}
+.probe-form h3[data-v-5be80864] {
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.probe-fields[data-v-5be80864] {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 240px));
+  gap: 11px;
+}
+.probe-fields label[data-v-5be80864] {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+.probe-fields .probe-target[data-v-5be80864] {
+  grid-column: span 2;
+}
+.probe-fields input[type="number"][data-v-5be80864] {
+  max-width: 160px;
+}
+.probe-fields input[data-v-5be80864],
+.probe-fields select[data-v-5be80864] {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 7px 9px;
+  color: var(--text);
+  background: var(--surface-soft);
+  font: inherit;
+  font-size: 12px;
+}
+.probe-enabled[data-v-5be80864] {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  color: var(--text);
+  font-size: 12px;
+}
+.probe-help[data-v-5be80864] {
+  margin: 7px 0;
+}
+.probe-form-actions[data-v-5be80864],
+.probe-actions[data-v-5be80864] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.probe-list[data-v-5be80864] {
+  display: grid;
+  gap: 9px;
+}
+.probe-card[data-v-5be80864] {
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 16px 0;
+  background: transparent;
+}
+.probe-card-heading[data-v-5be80864] {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.probe-copy[data-v-5be80864] {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+.probe-copy strong[data-v-5be80864] {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.probe-copy code[data-v-5be80864] {
+  overflow-wrap: anywhere;
+  color: var(--accent);
+  font-size: 12px;
+}
+.probe-status[data-v-5be80864] {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--text);
+  font-size: 12px;
+}
+.probe-status[data-status="healthy"][data-v-5be80864] {
+  color: var(--success);
+  border-color: var(--success-line);
+}
+.probe-status[data-status="unhealthy"][data-v-5be80864] {
+  color: var(--danger);
+  border-color: var(--danger-line);
+}
+.probe-status[data-status="unknown"][data-v-5be80864],
+.probe-status[data-status="disabled"][data-v-5be80864] {
+  color: var(--warning);
+  border-color: var(--warning-line);
+}
+.probe-meta[data-v-5be80864] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 13px;
+  margin: 9px 0;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+.probe-actions .probe-delete[data-v-5be80864] {
+  color: var(--danger);
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+}
+.probe-history[data-v-5be80864] {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding: 9px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+.probe-history li[data-v-5be80864] {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 10px;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+.probe-history li[data-status="healthy"] strong[data-v-5be80864] {
+  color: var(--success);
+}
+.probe-history li[data-status="unhealthy"] strong[data-v-5be80864] {
+  color: var(--danger);
+}
+.probe-no-history[data-v-5be80864] {
+  color: var(--muted-strong);
+}
+@media (max-width: 760px) {
+  .probe-fields[data-v-5be80864] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .probe-fields .probe-target[data-v-5be80864] {
+    grid-column: span 2;
+  }
+  .probe-fields input[type="number"][data-v-5be80864] {
+    max-width: 160px;
+  }
+}
+@media (max-width: 480px) {
+  .probe-heading[data-v-5be80864] {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .probe-fields[data-v-5be80864] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .probe-fields .probe-target[data-v-5be80864] {
+    grid-column: auto;
+  }
+  .probe-card-heading[data-v-5be80864] {
+    align-items: flex-start;
+  }
+  .probe-actions button[data-v-5be80864] {
+    flex: 1 1 auto;
+  }
+}

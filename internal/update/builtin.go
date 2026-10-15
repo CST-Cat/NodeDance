@@ -263,14 +263,8 @@ func Internal(args []string, stdout, stderr io.Writer) (bool, error) {
 }
 
 func internal(args []string, stdout, stderr io.Writer, resolver Resolver, factory func(Config, Resolver) (*Manager, error)) (bool, error) {
-	if len(args) == 0 || (args[0] != "__update-rpc" && args[0] != "__update-host" && args[0] != "__update-manifest") {
+	if len(args) == 0 || (args[0] != "__update-rpc" && args[0] != "__update-host") {
 		return false, nil
-	}
-	if args[0] == "__update-manifest" {
-		if len(args) != 3 || !ValidTag(args[1], args[2]) {
-			return true, errors.New("invalid release manifest arguments")
-		}
-		return true, json.NewEncoder(stdout).Encode(Describe(args[1], args[2]))
 	}
 	if os.Geteuid() != 0 || len(args) != 3 {
 		return true, errors.New("internal update worker requires root and a fixed request")

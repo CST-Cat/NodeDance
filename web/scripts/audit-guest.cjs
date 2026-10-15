@@ -16,7 +16,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const login=await admin.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':csrf.token},data:credentials});assert.equal(login.status(),200)
   const headers={Origin:base,'X-CSRF-Token':(await login.json()).csrfToken}
   const options=await(await admin.request.get(base+'/api/v1/guest/settings')).json();assert.equal(options.settings.enabled,false);assert.deepEqual(options.settings.nodes,[]);assert.deepEqual(options.settings.metrics,[])
-  const page=await visitor.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message))
+  const page=await visitor.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Guest page error:',e.stack)})
   let guestReads=0;const privateReads=[];page.on('request',r=>{if(new URL(r.url()).pathname==='/api/v1/public/guest/display')guestReads++;const p=new URL(r.url()).pathname;if(p.startsWith('/api/v1/nodes')||p.startsWith('/api/v1/guest/settings')||p.startsWith('/api/v1/guest/preview'))privateReads.push(p)})
   await page.goto(base);await page.locator('#login-title').waitFor();assert.equal(await page.getByRole('button',{name:'Enter guest mode',exact:true}).count(),0)
   assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
@@ -70,7 +70,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   assert.equal((await visitor.request.get(base+'/api/v1/guest/settings',{headers:{'X-Mode':'admin'}})).status(),401,'A browser mode marker cannot authenticate')
   await display.getByRole('button',{name:'Back to login',exact:true}).click();await page.locator('#login-title').waitFor();assert.equal(await page.locator('#workspace-navigation').count(),0,'Guest exit must revalidate the session')
   await page.getByRole('button',{name:'Enter guest mode',exact:true}).click();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
-  const adminPage=await admin.newPage();adminPage.setDefaultTimeout(10000);adminPage.on('pageerror',e=>errors.push(e.message));await adminPage.goto(base)
+  const adminPage=await admin.newPage();adminPage.setDefaultTimeout(10000);adminPage.on('pageerror',e=>{errors.push(e.message);console.error('Guest page error:',e.stack)});await adminPage.goto(base)
   const card=adminPage.locator('.vps-card').first();await card.waitFor()
   assert.ok(!(await card.innerText()).includes(identity.nodeId),'Node cards must hide internal UUIDs')
   assert.equal(await card.locator('.vps-card-version .agent-version').innerText(),'agent-v0.1.10')

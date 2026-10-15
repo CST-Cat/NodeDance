@@ -1,0 +1,159 @@
+.ui-select.u031 {
+  position: relative;
+  display: block;
+  min-width: 0;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+}
+.ui-select .ui-select-source {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  margin: 0 !important;
+}
+.ui-select .u031-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-bg);
+  color: var(--ux-ink);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  transition:
+    box-shadow 0.25s var(--ux-ease),
+    background-color 0.25s;
+}
+.ui-select .u031-btn:focus-visible,
+.ui-select.is-open .u031-btn {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  background: var(--control-bg);
+  box-shadow: none;
+}
+.ui-select .u031-btn[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.ui-select .u031-btn:disabled {
+  cursor: not-allowed;
+  background: var(--control-disabled);
+  color: var(--muted);
+  opacity: 1;
+}
+.u031-v {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.u031-car {
+  background: url("/design/claude/caret-down.svg") center / 16px 16px no-repeat;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: var(--ux-ink-3);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.45s var(--ux-spring);
+}
+.u031-btn[aria-expanded="true"] .u031-car {
+  background: url("/design/claude/caret-down.svg") center / 16px 16px no-repeat;
+  transform: rotate(180deg);
+}
+.u031-list {
+  z-index: 11000;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--ux-line-2);
+  border-radius: var(--radius-card);
+  background: var(--ux-surface);
+  color: var(--ux-ink);
+  box-shadow: var(--overlay-shadow);
+  outline: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: 14px;
+}
+.u031-list.is-inline {
+  position: relative;
+  z-index: auto;
+  max-height: 26rem;
+  min-height: 12rem;
+  box-shadow: none;
+  width: 100%;
+}
+.u031-list:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.u031-o {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: background-color 0.2s var(--ux-ease);
+}
+.u031-o > span {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.u031-o.is-active {
+  background: var(--surface-hover);
+}
+.u031-o[aria-selected="true"] {
+  color: var(--ux-accent);
+  background: var(--accent-soft);
+}
+.u031-o[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.u031-ck {
+  margin-left: auto;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: none;
+  stroke: var(--ux-accent);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity 0.2s,
+    transform 0.4s var(--ux-spring);
+}
+.u031-o[aria-selected="true"] .u031-ck {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-select *,
+  .u031-list,
+  .u031-list * {
+    transition: none !important;
+  }
+}
+
+[data-theme="dark"] .u031-car {
+  background: url("/design/claude/caret-down.svg") center / 16px 16px no-repeat; filter: invert(1); }
+@media (pointer: coarse) { .ui-select .u031-btn, .u031-o { min-height: 44px; } }

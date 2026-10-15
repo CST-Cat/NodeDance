@@ -59,9 +59,9 @@ Deletion removes the deployment with `docker compose down --remove-orphans`, ret
 
 The VPS sidebar starts with Overview → Docker details → Compose projects, followed by service probes and the remaining sections. VPS 侧边栏优先排列总览 → Docker 详情 → Compose 项目，再接服务探测等其他功能。
 
-Compose new-project forms include an inline directory-only VueFinder picker. Browse folders, create a folder using the existing Core `files.action` mkdir task, then choose the current directory to fill the working-directory field. Files and unrelated file operations are omitted. Directory selection/cancellation preserves the project/YAML draft and Compose URL and returns focus to the browse button. The full file-manager screen retains its existing capabilities.
+Compose new-project forms include an inline directory-only elFinder picker. Browse folders, create a folder using the existing Core `files.action` mkdir task, then choose the current directory to fill the working-directory field. Files and unrelated file operations are omitted. Directory selection/cancellation preserves the project/YAML draft and Compose URL and returns focus to the browse button. The full file-manager screen retains its existing capabilities.
 
-Compose 新建项目表单内置仅目录的 VueFinder 选择器：浏览文件夹，通过现有 Core `files.action` mkdir 任务新建文件夹，再将当前目录回填工作目录。省去文件和其他文件操作；选择或取消保留项目／YAML 草稿及 Compose 页面地址，并恢复浏览按钮焦点。完整文件管理页面继续提供原有能力。
+Compose 新建项目表单内置仅目录的 elFinder 选择器：浏览文件夹，通过现有 Core `files.action` mkdir 任务新建文件夹，再将当前目录回填工作目录。省去文件和其他文件操作；选择或取消保留项目／YAML 草稿及 Compose 页面地址，并恢复浏览按钮焦点。完整文件管理页面继续提供原有能力。
 
 Shared form controls use the project theme with Lucian UI-derived motion. `UiSelect` renders an accessible custom listbox, preserves the existing form value/change/validation semantics, and positions its popup within the viewport. Pointer selection, arrows, Home/End, Enter/Space, typeahead, Escape, Tab, disabled fieldsets and reduced motion are supported. Popup listeners are removed on unmount and portals are immediately removed when leaving management. Checkboxes retain native keyboard, checked, indeterminate and disabled behavior with custom theme rendering. Sidebar collapse uses a smooth spring; dragging its width remains immediate.
 

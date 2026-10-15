@@ -49,7 +49,7 @@ func TestRuntimeHelloOffersUpdateCapability(t *testing.T) {
 	select {
 	case hello := <-hellos:
 		if !containsCapability(protocol.NegotiateCapabilities(hello.Capabilities), protocol.CapabilityUpdate) {
-			t.Fatal("runtime update requests cannot be enabled without advertising the update capability")
+			t.Fatal("runtime did not advertise its built-in update support")
 		}
 	case <-ctx.Done():
 		t.Fatal("runtime did not send hello")

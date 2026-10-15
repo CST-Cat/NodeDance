@@ -1,0 +1,42 @@
+{
+  "packages": [
+    {
+      "name": "tui-image-editor",
+      "version": "3.15.3",
+      "license": "MIT",
+      "repository": "https://github.com/nhn/tui.image-editor"
+    },
+    {
+      "name": "tui-color-picker",
+      "version": "2.2.8",
+      "license": "MIT",
+      "repository": "https://github.com/nhn/tui.color-picker"
+    },
+    {
+      "name": "fabric",
+      "version": "4.6.0",
+      "license": "MIT",
+      "bundledIn": "tui-image-editor.min.js"
+    },
+    {
+      "name": "tui-code-snippet",
+      "version": "2.3.3",
+      "license": "MIT",
+      "bundledIn": "tui-image-editor.min.js"
+    }
+  ],
+  "files": {
+    "fabric-LICENSE": "d8f93c5639b2d11680911dff6e91567af4c44dd79a87f8ff2e85d1c8b91f9702",
+    "icon-a.svg": "d80728ec5433cca892db8f872495ae3d9c34a29c99fe3c175d80dadd65de362c",
+    "icon-b.svg": "fc75ad792c173da7135154a9eafd23c523cb8d9bf1e521946d095a6486e9d7c8",
+    "icon-c.svg": "0f78ccb9d9380d96e6af751e15d0a7e2d96f04df6a1e0f3f02df53f8ee70703b",
+    "icon-d.svg": "dda916454e23a9b2b76e55fa18e4922574979628e3581f898297a0a935325ee4",
+    "tui-code-snippet-LICENSE": "f62a769dc80adac959b66d9720ef2a0343526254266a8bf2be29484545b6d321",
+    "tui-color-picker-LICENSE": "8e1b979383469399c7d46dde4fb5e91df4dc9ecbf1f78482ba67aba6591620c3",
+    "tui-color-picker.min.css": "00c66f7ce39f333065af01e5206f8d5b37e08c11c7065b1cb3697b031f0a7d02",
+    "tui-color-picker.min.js": "1f5b88ac77e5736b964bb916d2ccba88cf75df5f18e9b938a18b4ae73d1692e1",
+    "tui-image-editor-LICENSE": "6a77faa16797bc76a1f0b38dbb408464a86fa33244e23b9229e9f81d80a05da4",
+    "tui-image-editor.min.css": "0e1b36ee5a82de15e83296b40fdbd39f6686d069c68f2f2075d0284eaa50c5f8",
+    "tui-image-editor.min.js": "475659f7007c85758b2a235bcb771e49e99019afc94b97e7b1d3dbec2c0764f5"
+  }
+}

@@ -2088,5 +2088,6 @@
   "overview.noFields": "Choose information fields in Display settings.",
   "overview.resetDisplay": "Restore defaults",
   "overview.done": "Done",
-  "overview.loadNormal": "Normal load"
+  "overview.loadNormal": "Normal load",
+  "files.noOverwrite": "Existing files will not be overwritten."
 }

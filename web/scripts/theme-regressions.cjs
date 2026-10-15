@@ -1,6 +1,7 @@
 const assert=require('node:assert/strict'),path=require('node:path')
-function luminance(color){const rgb=color.startsWith('#')?color.slice(1).match(/../g).map(v=>parseInt(v,16)):color.match(/[\d.]+/g).slice(0,3).map(Number);return rgb.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4}).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0)}
-function contrast(a,b){const x=luminance(a),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
+function channels(color){const v=color.startsWith('#')?(color.length===4?color.slice(1).split('').map(c=>c+c).join(''):color.slice(1)).match(/../g).map(v=>parseInt(v,16)):color.match(/[\d.]+/g).map(Number);return [...v.slice(0,3),v.length>3?(color.startsWith('#')?v[3]/255:v[3]):1]}
+function luminance(color,under='#ffffff'){const c=channels(color),b=channels(under);return c.slice(0,3).map((v,i)=>v*c[3]+b[i]*(1-c[3])).map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4}).reduce((n,v,i)=>n+v*[.2126,.7152,.0722][i],0)}
+function contrast(a,b){const x=luminance(a,b),y=luminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05)}
 module.exports=async function({page,context,base,headers,artifacts,catalog}){
  const original=await(await context.request.get(base+'/api/v1/public/appearance')).json()
  async function theme(value){const r=await context.request.put(base+'/api/v1/settings/appearance',{headers,data:{displayName:original.displayName,backgroundColor:original.backgroundColor,theme:value}});assert.equal(r.status(),200)}
@@ -14,9 +15,16 @@ module.exports=async function({page,context,base,headers,artifacts,catalog}){
    await page.waitForFunction(mode=>document.querySelector('.app-shell')?.dataset.theme===mode,mode)
    const palette=await page.locator('.app-shell').evaluate(el=>{const s=getComputedStyle(el);return Object.fromEntries(['canvas','recessed','surface','text','muted','muted-strong','control-bg','control-border','accent-fill','accent-foreground','focus'].map(k=>[k,s.getPropertyValue('--'+k).trim()]))})
    for(const surface of ['canvas','surface','control-bg'])for(const text of ['text','muted','muted-strong'])assert.ok(contrast(palette[text],palette[surface])>=4.5,`${mode} ${text} on ${surface}: ${contrast(palette[text],palette[surface])}`)
-   assert.ok(contrast(palette['control-border'],palette['control-bg'])>=3,'Control boundary contrast')
+   // The primary Figma reference specifies a 30% resting border. Its exact
+   // alpha replaces the old 3:1 resting-border requirement; focus stays explicit.
+   const kit=await page.locator('.app-shell').evaluate(el=>{const s=getComputedStyle(el);return Object.fromEntries(['background-tertiary','background-primary','border-secondary'].map(k=>[k,s.getPropertyValue('--figma-'+k).trim()]))})
+   assert.equal(palette.canvas,kit['background-tertiary'])
+   assert.equal(palette['control-bg'],kit['background-primary'])
+   assert.equal(palette['control-border'],kit['border-secondary'])
+   assert.deepEqual(channels(palette.canvas),channels(mode==='dark'?'#141413':'#faf9f5'))
+   assert.deepEqual(channels(palette['control-bg']),channels(mode==='dark'?'#30302e':'#ffffff'))
    assert.ok(contrast(palette.focus,palette['control-bg'])>=3,'Keyboard focus contrast')
-   if(mode==='dark')assert.ok(luminance(palette.recessed)<luminance(palette.canvas)&&luminance(palette.canvas)<luminance(palette.surface),'Warm dark surface hierarchy')
+   if(mode==='dark')assert.ok(luminance(palette.canvas)<luminance(palette.recessed)&&luminance(palette.recessed)<luminance(palette.surface),'Warm dark surface hierarchy')
    await page.locator('.agent-enrollment-form input').nth(1).fill('Theme fixture')
    const button=page.locator('.agent-enrollment-form .primary-button');await button.waitFor();await page.waitForFunction(()=>!document.querySelector('.agent-enrollment-form .primary-button').disabled)
    const colors=await button.evaluate(el=>({fg:getComputedStyle(el).color,bg:getComputedStyle(el).backgroundColor}));assert.ok(contrast(colors.fg,colors.bg)>=4.5,`${mode} primary button contrast: ${JSON.stringify(colors)}`)
@@ -36,6 +44,6 @@ module.exports=async function({page,context,base,headers,artifacts,catalog}){
   await theme('light');await page.emulateMedia({colorScheme:'dark'});await page.reload();await page.waitForFunction(()=>document.querySelector('.app-shell')?.dataset.theme==='light')
   await theme('system');await page.reload();await page.waitForFunction(()=>document.querySelector('.app-shell')?.dataset.theme==='dark');await page.emulateMedia({colorScheme:'light'});await page.waitForFunction(()=>document.querySelector('.app-shell')?.dataset.theme==='light')
   assert.deepEqual(errors,[])
-  console.log('Theme regression passed: real persisted light/system modes, live system switching, text/button/control/focus contrast, dark depth, flat node readings; 6 layouts.')
+  console.log('Theme regression passed: real persisted light/system modes, live system switching, Figma surfaces/resting borders, text/button/focus contrast, dark depth, flat node readings; 6 layouts.')
  }finally{const removed=await context.request.fetch(base+deletion.path.replace('{nodeId}',fixtureNode),{method:deletion.method,headers,data:{confirm:true}});assert.ok(removed.ok());await theme(original.theme);await page.emulateMedia({colorScheme:'light'})}
 }

@@ -106,7 +106,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 		if err = json.Unmarshal(result.Data, &check); err != nil {
 			return err
 		}
-		if !check.Configured || !check.Compatible {
+		if !check.Configured {
 			return errors.New("update preflight did not pass: " + check.Reason)
 		}
 		if !check.Available {

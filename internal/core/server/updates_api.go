@@ -85,8 +85,8 @@ func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) agentUpdate(ctx context.Context, nodeID string, rpc update.RPC) (update.Response, error) {
 	connection := s.agentConnectionForNode(nodeID)
-	if connection == nil || !connection.capabilityEnabled(protocol.CapabilityUpdate) {
-		return update.Response{}, errors.New("Agent is offline or does not offer the update capability")
+	if connection == nil {
+		return update.Response{}, errors.New("Agent is offline")
 	}
 	id, err := newContainerStreamRequestID()
 	if err != nil {
@@ -118,7 +118,7 @@ func (s *Server) agentUpdate(ctx context.Context, nodeID string, rpc update.RPC)
 	}
 }
 func (s *Server) handleUpdateResponse(c *agentConnection, e protocol.Envelope) error {
-	if !c.capabilityNegotiated(protocol.CapabilityUpdate) || e.Generation != c.generation || e.Sequence != 0 || e.RequestID == "" {
+	if e.Generation != c.generation || e.Sequence != 0 || e.RequestID == "" {
 		return errors.New("invalid update response envelope")
 	}
 	var response update.Response

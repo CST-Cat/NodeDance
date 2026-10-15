@@ -15,7 +15,7 @@ from fontTools.varLib.instancer import instantiateVariableFont
 
 PROFILES = {
     'eb-garamond-400.woff2': ('88603384163d301aebd5bd769832a8bfe3c9004ec24178417b9817f0ad32c63b', 400),
-    'inter-400.woff2': ('3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62', (400, 500)),
+    'inter-400.woff2': ('3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62', (400, 700)),
     'jetbrains-mono-400.woff2': ('14425ba9c695763c1547f48a206b7aa60350a33ae23de09f0407877f3fcd89eb', 400),
 }
 # Preserve all printable ASCII for dynamic names, versions, paths and shell output,
@@ -68,7 +68,7 @@ def main():
         assert expected <= set(result.getBestCmap()), f'{name}: requested glyphs lost'
         if name.startswith('inter'):
             axis = result['fvar'].axes[0]
-            assert (axis.minValue, axis.maxValue) == (400, 500)
+            assert (axis.minValue, axis.maxValue) == (400, 700)
         else:
             assert 'fvar' not in result
         report.append({'file': name, 'before': len(data), 'after': target.stat().st_size, 'glyphs': result['maxp'].numGlyphs})

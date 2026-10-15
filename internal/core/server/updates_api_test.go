@@ -3,13 +3,16 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
 	"github.com/CST-Cat/NodeDance/internal/control"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/update"
+	"time"
 )
 
 func TestUpdateAPIRequiresSessionCSRFConfirmationAndUsesBuiltInExecutor(t *testing.T) {
@@ -63,5 +66,35 @@ func TestUpdateAPIRequiresSessionCSRFConfirmationAndUsesBuiltInExecutor(t *testi
 	}
 	if len(received) != 0 {
 		t.Fatal("invalid requests reached update executor")
+	}
+}
+
+func TestAgentUpdateDoesNotRequireCapabilityNegotiation(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	connection := &agentConnection{nodeID: "fixture", generation: 3, ctx: ctx, commands: make(chan protocol.Envelope, 1)}
+	server := &Server{agentConnections: map[string]*agentConnection{"fixture": connection}}
+	done := make(chan error, 1)
+	go func() {
+		envelope := <-connection.commands
+		var request update.RPC
+		if envelope.Type != protocol.TypeUpdateRequest || json.Unmarshal(envelope.Payload, &request) != nil || request.Request.Version != "agent-v2.0.0" {
+			done <- fmt.Errorf("unexpected update request: %+v", envelope)
+			return
+		}
+		reply := protocol.Envelope{Generation: connection.generation - 1, RequestID: envelope.RequestID, Payload: json.RawMessage(`{"status":202,"data":{"id":"fixture"}}`)}
+		if err := server.handleUpdateResponse(connection, reply); err == nil {
+			done <- fmt.Errorf("stale generation accepted")
+			return
+		}
+		reply.Generation = connection.generation
+		done <- server.handleUpdateResponse(connection, reply)
+	}()
+	result, err := server.agentUpdate(ctx, "fixture", update.RPC{Action: "apply", Request: update.Request{Component: "agent", Version: "agent-v2.0.0", Confirm: true}, IdempotencyKey: "update-fixture-key"})
+	if err != nil || result.Status != 202 {
+		t.Fatalf("update blocked without optional capability: %+v %v", result, err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

@@ -191,14 +191,13 @@ jobs:
           chmod 0755 dist/nodedance-linux-amd64 dist/nodedance-linux-arm64
           (cd dist && tar -czf nodedance-linux-amd64.tar.gz nodedance-linux-amd64)
           (cd dist && tar -czf nodedance-linux-arm64.tar.gz nodedance-linux-arm64)
-          dist/nodedance-linux-amd64 __update-manifest core "${{ github.ref_name }}" > dist/nodedance-update.json
           cp scripts/install-core.sh dist/install-core.sh
           chmod 0755 dist/install-core.sh
           (cd dist && sha256sum \
             nodedance-linux-amd64 \
             nodedance-linux-arm64 \
             nodedance-linux-amd64.tar.gz \
-            nodedance-linux-arm64.tar.gz nodedance-update.json > SHA256SUMS)
+            nodedance-linux-arm64.tar.gz > SHA256SUMS)
 
       - name: Wait for the exact paired Agent and render final release notes
         timeout-minutes: 12
@@ -267,6 +266,5 @@ jobs:
             dist/nodedance-linux-amd64.tar.gz \
             dist/nodedance-linux-arm64.tar.gz \
             dist/install-core.sh \
-            dist/nodedance-update.json \
             dist/SHA256SUMS \
             --title "$RELEASE_VERSION" --verify-tag --latest=true --notes-file release-inputs/core-release-notes.md

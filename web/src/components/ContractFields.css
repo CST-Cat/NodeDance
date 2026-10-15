@@ -1,0 +1,60 @@
+.contract-fields[data-v-d4e6d614] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 320px));
+  gap: 14px;
+}
+.contract-fields label[data-v-d4e6d614] {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  min-width: 0;
+}
+.contract-fields input[data-v-d4e6d614],
+.contract-fields textarea[data-v-d4e6d614],
+.contract-fields select[data-v-d4e6d614] {
+  width: 100%;
+  min-width: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 9px;
+  font: inherit;
+}
+.contract-fields .check-row[data-v-d4e6d614] {
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.check-row input[data-v-d4e6d614] {
+  width: 18px;
+  height: 18px;
+}
+.contract-fields textarea[data-v-d4e6d614] {
+  resize: vertical;
+}
+.contract-fields label[data-field-type="number"] > input[data-v-d4e6d614],
+.contract-fields label[data-field-type="integer"] > input[data-v-d4e6d614] {
+  max-width: 160px;
+}
+.contract-fields label[data-field-type="enum"] > .ui-select[data-v-d4e6d614] {
+  max-width: 240px;
+}
+.contract-fields label[data-v-d4e6d614]:has(textarea) {
+  max-width: 760px;
+}
+@media (max-width: 560px) {
+  .contract-fields[data-v-d4e6d614] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .contract-fields label > input[data-v-d4e6d614],
+  .contract-fields label > .ui-select[data-v-d4e6d614] {
+    max-width: none;
+  }
+}
+.contract-fields label[data-v-d4e6d614]:has(textarea) {
+  grid-column: 1/-1;
+}

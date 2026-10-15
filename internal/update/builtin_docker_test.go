@@ -147,7 +147,7 @@ func TestBuiltInDockerWorkerSurvivesTargetReplacementWithoutInstalledService(t *
 				t.Fatal(err)
 			}
 			var check Check
-			if checked.Status != 200 || json.Unmarshal(checked.Data, &check) != nil || check.Current != "core-v0.1.8" || !check.Configured || !check.Compatible || !check.Available {
+			if checked.Status != 200 || json.Unmarshal(checked.Data, &check) != nil || check.Current != "core-v0.1.8" || !check.Configured || !check.Available {
 				t.Fatalf("same-binary Docker preflight: %+v / %+v", checked, check)
 			}
 			rpc, _ := json.Marshal(RPC{Action: "apply", Request: Request{Component: "core", Confirm: true}, IdempotencyKey: "isolated-built-in-" + scenario})

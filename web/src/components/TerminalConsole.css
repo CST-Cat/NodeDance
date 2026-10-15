@@ -1,0 +1,178 @@
+@import "@xterm/xterm/css/xterm.css";
+/* Independent terminal surface; ANSI and terminal colors do not follow page inversion. */
+.terminal-backdrop {
+  --product-canvas: #1f1e1d;
+  --product-surface: #262624;
+  --product-elevated: #30302e;
+  --product-text: #faf9f5;
+  --product-muted: #aaa69e;
+  --product-line: #3d3933;
+  --product-line-strong: #565046;
+}
+
+.terminal-backdrop[data-v-b8b9dc12] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(24, 23, 21, 0.78);
+  backdrop-filter: blur(8px);
+}
+.terminal-dialog[data-v-b8b9dc12] {
+  display: grid;
+  width: min(1040px, 100%);
+  height: min(820px, 94dvh);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "heading" "error" "screen" "keys" "footer";
+  overflow: hidden;
+  border: 1px solid var(--product-line-strong);
+  border-radius: var(--radius-card);
+  color: var(--product-text);
+  background: var(--product-surface);
+  box-shadow: none;
+}
+.terminal-heading[data-v-b8b9dc12] {
+  grid-area: heading;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--product-line);
+}
+.terminal-heading-copy[data-v-b8b9dc12] {
+  min-width: 0;
+}
+.terminal-eyebrow[data-v-b8b9dc12] {
+  color: var(--product-muted);
+  font:
+    9px ui-monospace,
+    monospace;
+  letter-spacing: 0.14em;
+}
+.terminal-heading h2[data-v-b8b9dc12] {
+  color: var(--product-text);
+  overflow: hidden;
+  margin: 4px 0;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminal-heading p[data-v-b8b9dc12] {
+  margin: 0;
+  color: var(--product-muted);
+  font-size: 11px;
+}
+.terminal-close[data-v-b8b9dc12] {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--product-line);
+  border-radius: var(--radius-card);
+  color: var(--product-text);
+  background: var(--product-elevated);
+  font-size: 22px;
+  cursor: pointer;
+}
+.terminal-screen[data-v-b8b9dc12] {
+  grid-area: screen;
+  min-width: 0;
+  overflow: hidden;
+  min-height: 0;
+  padding: 12px;
+  background: var(--product-canvas);
+  touch-action: pan-x pan-y;
+}
+.terminal-screen[data-v-b8b9dc12] .xterm {
+  height: 100%;
+}
+.terminal-error[data-v-b8b9dc12] {
+  grid-area: error;
+  margin: 0;
+  padding: 9px 20px;
+  color: #ffc1b8;
+  background: rgba(184, 77, 72, 0.12);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.terminal-keys[data-v-b8b9dc12] {
+  grid-area: keys;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--product-line);
+  background: var(--product-surface);
+}
+.terminal-keys button[data-v-b8b9dc12],
+.terminal-footer button[data-v-b8b9dc12] {
+  min-width: 40px;
+  min-height: 40px;
+  border: 1px solid var(--product-line);
+  border-radius: var(--radius-control);
+  padding: 6px 10px;
+  color: var(--product-text);
+  background: var(--product-elevated);
+  font:
+    11px ui-monospace,
+    monospace;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.terminal-keys button[data-v-b8b9dc12]:active,
+.terminal-footer button[data-v-b8b9dc12]:active {
+  background: #534338;
+}
+.terminal-footer[data-v-b8b9dc12] {
+  grid-area: footer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--product-line);
+}
+.terminal-footer span[data-v-b8b9dc12] {
+  color: var(--product-muted);
+  font-size: 10px;
+}
+.terminal-footer button[data-v-b8b9dc12] {
+  color: #ffc1b8;
+  border-color: rgba(255, 129, 116, 0.25);
+}
+@media (max-width: 600px) {
+  .terminal-backdrop[data-v-b8b9dc12] {
+    place-items: stretch;
+    padding: 0;
+  }
+  .terminal-dialog[data-v-b8b9dc12] {
+    width: 100%;
+    height: 100dvh;
+    min-height: 0;
+    border-radius: 0;
+  }
+  .terminal-heading[data-v-b8b9dc12] {
+    padding: 12px 14px 10px;
+  }
+  .terminal-screen[data-v-b8b9dc12] {
+    padding: 8px;
+    font-size: 11px;
+  }
+  .terminal-keys[data-v-b8b9dc12] {
+    gap: 6px;
+    padding: 8px;
+  }
+  .terminal-keys button[data-v-b8b9dc12] {
+    min-height: 44px;
+    min-width: 44px;
+    flex: 1 0 auto;
+  }
+  .terminal-footer[data-v-b8b9dc12] {
+    padding: 8px;
+  }
+  .terminal-footer button[data-v-b8b9dc12] {
+    min-height: 44px;
+  }
+}

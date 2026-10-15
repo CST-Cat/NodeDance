@@ -1,0 +1,97 @@
+.guest-settings[data-v-85553d14] {
+  width: min(1000px, calc(100% - 48px));
+  margin: 32px auto 64px;
+  color: var(--text);
+}
+h1[data-v-85553d14] {
+  font-family: var(--display-font);
+  font-size: clamp(28px, 4vw, 42px);
+}
+fieldset[data-v-85553d14] {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.guest-settings-card[data-v-85553d14] {
+  margin-bottom: 18px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 20px 0;
+}
+.guest-settings-card label[data-v-85553d14] {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 14px 0;
+}
+.guest-settings-card label.guest-check[data-v-85553d14] {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+.guest-settings-card input[data-v-85553d14]:not([type="checkbox"]),
+.guest-settings-card select[data-v-85553d14] {
+  width: 100%;
+  max-width: 480px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.guest-check input[data-v-85553d14] {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.guest-resource[data-v-85553d14] {
+  border-top: 1px solid var(--line);
+  padding: 8px 0;
+  overflow-wrap: anywhere;
+}
+.guest-settings-actions[data-v-85553d14] {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.guest-settings button[data-v-85553d14] {
+  font: inherit;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 10px 14px;
+  cursor: pointer;
+}
+.guest-settings button.primary-button[data-v-85553d14] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.guest-settings button[data-v-85553d14]:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.guest-settings button[data-v-85553d14]:active:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.guest-settings button[data-v-85553d14]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.guest-error[data-v-85553d14] {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .guest-settings[data-v-85553d14] {
+    width: calc(100% - 24px);
+    margin: 20px auto;
+  }
+  .guest-settings-card[data-v-85553d14] {
+    padding: 16px;
+  }
+}

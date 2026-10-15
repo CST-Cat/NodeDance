@@ -1,11 +1,11 @@
 import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
+import react from '@vitejs/plugin-react'
 
 const coreTarget = process.env.VITE_CORE_TARGET ?? 'http://127.0.0.1:8180'
 
 export default defineConfig({
   root: '.',
-  plugins: [vue()],
+  plugins: [react()],
   server: {
     proxy: {
       '/api': { target: coreTarget, changeOrigin: true, secure: false },

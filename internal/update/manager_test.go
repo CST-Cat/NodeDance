@@ -124,7 +124,7 @@ func (f fixtureResolver) Resolve(_ context.Context, c, v string) (Release, error
 	if v == "" {
 		v = "core-v0.1.9"
 	}
-	return Release{Manifest: Describe(c, v)}, nil
+	return Release{Component: c, Version: v}, nil
 }
 func (f fixtureResolver) Download(_ context.Context, r Release, path string) error {
 	if f.fail {
@@ -317,5 +317,23 @@ func TestBackupRejectsSymlink(t *testing.T) {
 	os.Symlink("/etc/passwd", filepath.Join(source, "unsafe"))
 	if err := copyTree(source, filepath.Join(root, "backup")); err == nil {
 		t.Fatal("symlink accepted")
+	}
+}
+
+func TestUpdateAvailabilityUsesOnlyComponentTags(t *testing.T) {
+	for _, component := range []string{"core", "agent"} {
+		for _, entry := range []struct {
+			version   string
+			available bool
+		}{{"0.1.7", false}, {"0.1.8", false}, {"0.1.9", true}, {"2.0.0", true}} {
+			t.Run(component+entry.version, func(t *testing.T) {
+				current := component + "-v0.1.8"
+				manager := &Manager{Config: Config{Targets: map[string]Target{component: {Mode: "systemd", Binary: "fixture"}}}, Resolver: fixtureResolver{}, command: func(context.Context, string, ...string) ([]byte, error) { return []byte("NodeDance " + current), nil }}
+				result, err := manager.Check(context.Background(), Request{Component: component, Version: component + "-v" + entry.version})
+				if err != nil || result.Available != entry.available || result.Current != current || result.Reason != "" {
+					t.Fatalf("tag eligibility: %+v %v", result, err)
+				}
+			})
+		}
 	}
 }

@@ -887,7 +887,7 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 					_ = writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHostResponse, Generation: generation, RequestID: e.RequestID, Payload: encodePayload(response)})
 				}(envelope, req)
 			case protocol.TypeUpdateRequest:
-				if !containsCapability(negotiatedCapabilities, protocol.CapabilityUpdate) || envelope.Sequence != 0 || envelope.Generation != generation || envelope.RequestID == "" {
+				if envelope.Sequence != 0 || envelope.Generation != generation || envelope.RequestID == "" {
 					return errors.New("invalid update request envelope")
 				}
 				var request update.RPC

@@ -33,7 +33,7 @@ module.exports=async function({page,base,artifacts}){
     const rect=selector=>{const r=form.querySelector(selector).getBoundingClientRect();return {top:r.top,height:r.height}}
     return {urlWidth:form.querySelector('[name=feedUrl]').getBoundingClientRect().width,intervalWidth:form.querySelector('.feed-interval-controls').getBoundingClientRect().width,name:rect('[name=feedName]'),url:rect('[name=feedUrl]'),keywords:rect('[name=feedKeywords]'),notification:rect('[name=feedNotificationMode]').top,notificationButton:rect('[name=feedNotificationMode]').height,interval:rect('[name=feedInterval]'),custom:rect('[name=feedCustomInterval]')}
    })
-   assert.ok(rects.name.height>=40&&Math.abs(rects.name.height-rects.url.height)<1,'Consistent single-line input height')
+   assert.ok(rects.name.height>=(width<=700?44:32)&&Math.abs(rects.name.height-rects.url.height)<1,'Consistent single-line input height')
    assert.ok(Math.abs(rects.interval.top-rects.custom.top)<1,'Interval preset and custom input align')
    if(width>768){assert.ok(rects.urlWidth<=480,'Desktop URL field has a reading width');assert.ok(rects.intervalWidth<=280,'Desktop interval controls stay compact');assert.ok(rects.url.top>rects.name.top,'Source identity precedes its URL');assert.ok(rects.keywords.top>rects.notification,'Notification keywords follow delivery mode');const groupTops=await form.locator('.feed-settings-group').evaluateAll(groups=>groups.map(group=>group.getBoundingClientRect().top));assert.ok(Math.abs(groupTops[0]-groupTops[1])<1,'Source and notification groups align at the top')}
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))

@@ -1,0 +1,201 @@
+.operation-console[data-v-62585b82] {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+h2[data-v-62585b82] {
+  margin: 0 0 10px;
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+h3[data-v-62585b82] {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+.muted[data-v-62585b82] {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.operation-layout[data-v-62585b82] {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  gap: 28px;
+  margin-top: 24px;
+}
+aside[data-v-62585b82],
+form[data-v-62585b82],
+label[data-v-62585b82] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+label[data-v-62585b82] {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+}
+form[data-v-62585b82] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 16px 20px;
+  margin-bottom: 20px;
+}
+:is(form, .operation-field-group) > label[data-v-62585b82]:has(textarea),
+:is(form, .operation-field-group) > .check-row[data-v-62585b82],
+form > small[data-v-62585b82],
+form > button[data-v-62585b82] {
+  grid-column: 1/-1;
+}
+.operation-field-group > label[data-v-62585b82]:has(textarea) {
+  max-width: 760px;
+}
+form > button[data-v-62585b82] {
+  justify-self: start;
+}
+label[data-field-type="integer"] > input[data-v-62585b82],
+label[data-field-type="number"] > input[data-v-62585b82] {
+  max-width: 160px;
+}
+label[data-field-type="enum"] > .ui-select[data-v-62585b82],
+label[data-field-type="boolean"] > .ui-select[data-v-62585b82] {
+  max-width: 240px;
+}
+.operation-field-group[data-v-62585b82] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 320px));
+  align-items: start;
+  gap: 16px 20px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.operation-field-group legend[data-v-62585b82] {
+  margin-bottom: 12px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 500;
+}
+.operation-field-group[data-v-62585b82]:has(+ .operation-field-group) {
+  padding-bottom: 8px;
+}
+input[data-v-62585b82],
+select[data-v-62585b82],
+textarea[data-v-62585b82] {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 10px 12px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+}
+textarea[data-v-62585b82] {
+  font:
+    12px/1.7 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  resize: vertical;
+}
+aside[data-v-62585b82] .u031-list.is-inline {
+  height: 420px;
+  min-height: 0;
+  max-height: 420px;
+}
+button[data-v-62585b82] {
+  align-self: flex-start;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 9px 18px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+button.primary-button[data-v-62585b82] {
+  border-color: transparent;
+}
+button[data-v-62585b82]:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.error[data-v-62585b82] {
+  color: var(--danger);
+  font-size: 13px;
+}
+.check-row[data-v-62585b82] {
+  flex-direction: row;
+  align-items: center;
+}
+.check-row input[data-v-62585b82] {
+  width: 18px;
+  min-height: 18px;
+}
+small[data-v-62585b82] {
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1.6;
+}
+pre[data-v-62585b82] {
+  max-height: 600px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--text);
+  padding: 18px;
+  border-radius: var(--radius-card);
+  font:
+    12px/1.7 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+}
+@media (max-width: 700px) {
+  .operation-console[data-v-62585b82] {
+    padding: 18px;
+  }
+  .operation-layout[data-v-62585b82] {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  form[data-v-62585b82],
+  .operation-field-group[data-v-62585b82] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  form > label > input[data-v-62585b82],
+  form > label > .ui-select[data-v-62585b82] {
+    max-width: none;
+  }
+  aside[data-v-62585b82] .u031-list.is-inline {
+    height: 170px;
+    max-height: 170px;
+  }
+}
+
+.pending-observations[data-v-62585b82] {
+  display: grid;
+  gap: 8px;
+  margin-block: 16px;
+}
+.pending-observations > div[data-v-62585b82] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.pending-observations span[data-v-62585b82] {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}

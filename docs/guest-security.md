@@ -97,3 +97,7 @@ The shared light/dark theme uses semantic surface, text, control and state roles
 ## Overview context privacy
 
 The Core runtime host information (`dashboard.core-info`) and shared overview memo (`dashboard.memo`, `dashboard.save-memo`) are administrator-only operations. They are not projected into public node cards, including requests with administrator cookies. Forged `memo`/`core` query flags are rejected with HTTP 400. The security matrix discovers these operations from Core and checks anonymous/forged-identity denial. A distinct private memo marker is also checked against guest and administrator-cookie public responses.
+
+React lifecycle verification: specialized pages use local Suspense boundaries, so entering the guest route unmounts private file views immediately. The elFinder instance and its Core transport are disposed together; pending reads are aborted and late component initialization is discarded. The browser suite retains late file responses and administrator-session exit checks against an isolated Core and protocol-only simulated Agent.
+
+Shared select decoration uses a static self-hosted SVG background, not an image element in the public display. The stored-title/node/service injection case continues to require zero image nodes and zero executed payloads; the Figma theme refactor does not relax this assertion.

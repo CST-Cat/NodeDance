@@ -392,7 +392,7 @@ func (m *Manager) RunUpdates() {
 			response, err := update.Invoke(ctx, "agent", m.dir, update.RPC{Action: "check", Request: r})
 			if err == nil && response.Status == 200 {
 				var check update.Check
-				if json.Unmarshal(response.Data, &check) == nil && check.Available && check.Compatible && check.Configured {
+				if json.Unmarshal(response.Data, &check) == nil && check.Available && check.Configured {
 					r.Confirm = true
 					r.Version = check.Release.Version
 					key := "auto-agent-" + r.Version

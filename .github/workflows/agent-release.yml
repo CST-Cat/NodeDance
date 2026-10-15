@@ -173,10 +173,9 @@ jobs:
           test -f dist/nodedance-agent-linux-amd64
           test -f dist/nodedance-agent-linux-arm64
           chmod 0755 dist/nodedance-agent-linux-*
-          dist/nodedance-agent-linux-amd64 __update-manifest agent "${{ github.ref_name }}" > dist/nodedance-update.json
           cp scripts/install-agent.sh dist/install-agent.sh
           chmod 0755 dist/install-agent.sh dist/nodedance-agent-linux-amd64 dist/nodedance-agent-linux-arm64
-          (cd dist && sha256sum nodedance-agent-linux-amd64 nodedance-agent-linux-arm64 nodedance-update.json > SHA256SUMS)
+          (cd dist && sha256sum nodedance-agent-linux-amd64 nodedance-agent-linux-arm64 > SHA256SUMS)
 
       - name: Download verified native image digests
         uses: actions/download-artifact@v4
@@ -214,7 +213,6 @@ jobs:
             dist/install-agent.sh \
             dist/nodedance-agent-linux-amd64 \
             dist/nodedance-agent-linux-arm64 \
-            dist/nodedance-update.json \
             dist/SHA256SUMS \
             --title "$RELEASE_VERSION" \
             --verify-tag \

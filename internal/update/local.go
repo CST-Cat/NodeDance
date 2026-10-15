@@ -93,7 +93,7 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 		if err = json.Unmarshal(response.Data, &result); err != nil {
 			return err
 		}
-		if !result.Configured || !result.Compatible {
+		if !result.Configured {
 			return errors.New("update preflight did not pass: " + result.Reason)
 		}
 		if !result.Available {

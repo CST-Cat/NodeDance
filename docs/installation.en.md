@@ -183,7 +183,7 @@ The database snapshot keeps administrator and Agent credentials, node identities
 
 ## Upgrade and data compatibility
 
-Before replacing a Core binary, create a backup. Replace it only with a v0 build that is compatible with the current SQLite schema. Stop the Core, replace the binary, start it, then verify login and a connected Agent before upgrading other hosts. To roll back, stop the Core and restore the database backup created for the prior build before starting that prior binary; replacing the binary alone is not a supported rollback.
+Run `nodedance update` to select the newest stable Core tag. Protocol, capability, API and SQLite fingerprints do not gate version selection. The built-in transaction verifies the release artifact, preserves data for recovery, switches the runtime and checks its health; failed startup restores the previous runtime and pre-update data. A raw binary replacement alone does not restore data changed by the newer runtime. See [updates](updates.md).
 
 NodeDance is still at product version `0.0.0`. The current SQLite schema is initialized directly; automatic upgrades from older development schema layouts are not supported. An incompatible development database may be removed and initialized with the current schema. Normal backup/restore applies to a database created by a compatible current v0 build. Product version and SQLite structure are separate concepts.
 

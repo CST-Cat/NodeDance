@@ -4,7 +4,11 @@ NodeDance is a server management console. Preserve the node overview, direct car
 
 ## Reference and scope
 
-Use the Claude visual language requested by the user: warm neutral surfaces, restrained terracotta accents, readable text and low decorative density. The [Anthropic brand guidelines](https://github.com/anthropics/skills/blob/main/skills/brand-guidelines/SKILL.md) document brand colors, not a complete application theme. The dark surface sequence below comes from the user's supplied [ClaudeOS theme record](https://github.com/heytcass/claudeos/blob/main/docs/THEME.md), a third-party record, not an official specification. Operational states and accessible control boundaries are NodeDance adaptations. Do not import another product's visual theme or claim these values are verified live Claude CSS. The overview layout additionally follows the user's explicit 1Panel reference: overview counts, resource rings, monitoring and a contextual side rail, implemented with NodeDance tokens and operations.
+Use the user-selected [MCP Apps for Claude Figma file](https://www.figma.com/community/file/1597641111449594397/mcp-apps-for-claude) as the primary visual reference. Its verified components, variables, typography, spacing, radii and component states take precedence over all other visual guidance. The [open-claude-ui](https://github.com/Caho1/open-claude-ui) reference and this document are secondary, used only where the Figma resource does not specify a design decision. Preserve NodeDance's management behavior and security requirements.
+
+The user-supplied `.fig` has been decoded locally and inspected as the active source. Tokens are preserved in `docs/figma-tokens.json`; component/state/layout specifications are recorded in `docs/figma-component-specs.json`. Source SHA256, offline validation and the applied mapping are documented in [the Figma reference notes](docs/figma-design-reference.md). Shared theme tokens and components replace the previous palette; product-specific management layout and behavior remain.
+
+Preserve NodeDance's resource management tasks and the explicitly requested 1Panel overview arrangement. Theme changes do not change operation discovery, permissions or execution semantics. Terminal retains its independent dark content palette.
 
 ## Theme roles
 
@@ -12,19 +16,22 @@ Use shared semantic variables in `web/src/style.css`. Both light and dark define
 
 | Role | Light | Dark |
 | --- | --- | --- |
-| Canvas | `#faf9f5` | `#262624` |
-| Recessed / sidebar | `#f0eee6` | `#1f1e1d` |
-| Resource card / elevated surface | `#f5f0e8` | `#30302e` |
-| Hover | `#eee9df` | `#393936` |
-| Primary text | `#3d3d3a` | `#faf9f5` |
-| Secondary text | `#4d4b45` | `#c2c0b6` |
-| Muted text | `#6c6a64` | `#9c9a92` |
-| Accent fill | `#d97757` | `#d97757` |
-| Accent foreground | `#141413` | `#141413` |
+| Canvas / tertiary | `#faf9f5` | `#141413` |
+| Sidebar (resolved BG/100) | `#f9f9f7` | `#20201f` |
+| Secondary surface | `#f5f4ed` | `#262624` |
+| Card / primary surface | `#ffffff` | `#30302e` |
+| Primary text | `#141413` | `#faf9f5` |
+| Secondary text | `#3d3d3a` | `#c2c0b6` |
+| Tertiary text | `#73726c` | `#9c9a92` |
+| Primary action fill | `#141413` | `#faf9f5` |
+| Primary action text | `#ffffff` | `#141413` |
+| Checked control | `#4682d5` | `#4682d5` |
 
-Separate `--control-bg`, `--control-border`, `--control-disabled`, `--focus`, `--accent-soft`, `--primary-hover`, `--surface-hover` and status roles. Decorative separators may be subtle; controls and keyboard focus must remain identifiable. Keep ordinary text at least 4.5:1 against its actual surface and essential non-text indicators at least 3:1. Do not lower readable content contrast just to make the page quiet.
+Use the Figma component-specific hover, selected, disabled and focus states and radii. Keep muted operational text readable rather than copying low-contrast decorative labels. Preserve independent success, warning and danger semantics. Figma default button hover uses 150 ms linear interpolation; radio selection uses 100 ms `cubic-bezier(0,0,.58,1)`; switch hover uses 150 ms `cubic-bezier(.4,0,.2,1)`. Where the file has no motion specification, use the secondary open-claude-ui popover/sidebar presets, respecting reduced motion. Input feedback should be short, and panel motion deliberate; reduced motion and immediate drag response remain required.
 
-Success, danger, warning and information have independent semantics. Pair colors with labels/icons. Never use terracotta as both the brand accent and an error signal. Orange buttons use dark text; do not place normal-sized warm-white text on the brand fill.
+Separate `--control-bg`, `--control-border`, `--control-disabled`, `--focus`, `--accent-soft`, `--primary-hover`, `--surface-hover` and status roles. Decorative separators may be subtle; controls and keyboard focus must remain identifiable. Keep ordinary text at least 4.5:1 against its actual surface and explicit focus indicators readable. Figma specifies subtle 30% resting input borders; do not claim those all meet 3:1. Focus also uses a solid information-colored control edge and separated ring. Do not lower readable content contrast just to make the page quiet.
+
+Success, danger, warning and information have independent semantics. Pair colors with labels/icons. Never use terracotta as both the brand accent and an error signal. Primary actions use the Figma inverse fill/text pair. Terracotta is reserved for the brand, not ordinary primary actions.
 
 ## Layout and visual structure
 
@@ -49,7 +56,7 @@ Desktop layouts must compose fields by their task and expected content, rather t
 
 Use the existing humanist sans font for navigation, page titles, tables, inputs and metrics. Reserve the serif display face for the brand and limited welcome/login presentation. Do not turn machine names, IPs or operational data into oversized editorial headings.
 
-Page titles: 26–34 px, weight 500. Section titles: 20 px, weight 500. Body and controls: 13–16 px. Metadata may use 12 px when readable. Numbers use tabular figures. Paths, identifiers, YAML, JSON, logs and terminal data use the existing monospace face and wrap/scroll appropriately.
+Page titles: 28–36 px, weight 500. Section titles: 20 px, weight 500. Body and controls: 13–16 px. Metadata may use 12 px when readable. Numbers use tabular figures. Paths, identifiers, YAML, JSON, logs and terminal data use the existing monospace face and wrap/scroll appropriately.
 
 ## Interaction states
 
@@ -59,7 +66,7 @@ Custom selects retain contract/form values and full keyboard operation. Floating
 
 ## Embedded surfaces
 
-VueFinder, its dialogs and CodeMirror use the same semantic theme, including hover versus selection and disabled controls. Charts use theme text, separators, tooltip and area colors. Terminal keeps its independent dark content palette and ANSI meanings in either application theme. Browser color-scheme and theme-color must match the selected light/dark/system mode.
+The selected third-party file manager and its stock dialogs/editors use the same semantic theme, including hover versus selection and disabled controls. Charts use theme text, separators, tooltip and area colors. Terminal keeps its independent dark content palette and ANSI meanings in either application theme. Browser color-scheme and theme-color must match the selected light/dark/system mode.
 
 ## Compact Operational UI
 
@@ -118,3 +125,14 @@ The requested layout reference was inspected in [1Panel home](https://github.com
 At widths of 1100 px or below, host information and the memo follow the entire VPS card list in document order; they do not precede or squeeze the cards. The right rail is sticky only on wider desktop layouts.
 
 Overview section actions belong in their top-right headers: host display settings, refresh, sensitive information visibility and copy; memo edit switches to save/cancel. Header actions must remain available on narrow layouts, with accessible labels, focus states and actual behavior.
+
+
+## Component geometry and responsive adaptation
+
+- Desktop default button: 36 px high, 8 px radius, 16 px horizontal padding, 14 px semibold label. Secondary is transparent with a subtle border; danger is the dedicated red fill.
+- Default text input / dropdown: 32 px high, 8 px radius, 12 px horizontal padding, 14 px text. Textareas use the same radius and aligned inner spacing.
+- Desktop checkbox and radio: 20 px large variant. Checkbox radius 6 px and checked fill `Border/Info`; radio has a 14 px dot inside its 20 px outline. Focus and disabled states follow the kit.
+- Sidebar: 256 px expanded / 52 px collapsed defaults, 36 px desktop rows, 8 px horizontal insets, 68 px brand row. User resizing/collapse and node-context navigation remain available.
+- Mobile actions: 44 px pill variant; fields remain 44 px and check/radio controls use the 24 px round mobile variant. Text-entry fields use 16 px to avoid iOS focus zoom; the kit’s 15 px mobile label role remains available elsewhere.
+- Anthropic Sans Text is not bundled. The existing licensed self-hosted Inter fallback now retains 400–700 so semibold/bold use actual font weights. JetBrains Mono remains the code face. Brand lettering and terminal content retain their purposeful independent styles.
+- Keep existing responsive field grouping, compact bounded selectors, sticky host/memo rail and narrow-screen stacking. Do not reproduce chat content or promotional assets in the server management product merely because they appear in the kit.

@@ -25,12 +25,14 @@ nodedance update --component agent --node-id NODE_UUID
 
 ## Execution / 执行
 
-- 从各自 `core-v*`／`agent-v*` 命名空间选择正式版本并核验发布清单、协议和存储指纹。
+- 从各自 `core-v*`／`agent-v*` 命名空间选择正式版本；仅比较 tag 判断是否有新版，不比较协议号、能力、API 或存储指纹，不要求 `nodedance-update.json`。
 - 切换前下载并校验 SHA256，或拉取固定 Docker 标签并保存精确镜像 ID；下载失败不停止旧程序。
 - 自动识别当前 NodeDance systemd 服务或容器、私有数据目录和 Core 健康检查。更新请求不能指定任意服务或执行任意命令。
 - 由同一个 Core／Agent 二进制按需启动临时工作进程：原生部署使用临时 systemd 单元，Docker 使用当前产品镜像的临时容器。没有独立更新二进制、安装脚本或常驻更新服务。
 - 临时工作进程独立于目标服务的生命周期，完成停止、备份、切换、启动、健康核验；失败自动恢复旧运行版本。Core 恢复更新前数据；Agent 保留当前凭据和任务状态。
 - 任务日志与备份位于数据目录的同级私有目录 `.<数据目录名>-updates`，root 所有、0700；日志为普通 0600 文件。观察可在更新持锁期间继续进行，后续请求恢复没有活跃工作进程的中断任务。
+
+Version eligibility is determined solely by the stable component tag. Protocol, API, capability and storage fingerprints never block installation; the authenticated Agent update channel also works without optional update-capability negotiation. Session generation and request identity checks remain required; release checksums, artifact architecture, runtime health and failure recovery remain required.
 
 The installed product binary owns the transaction through an on-demand transient systemd unit or container. It survives the target restart, verifies releases, backs up private data, preserves deployment settings, checks health/reconnection and rolls back failure. It installs no separate update daemon. Root-private journals and backups live beside the data directory, outside the data backup itself. Keep the retained backups and old containers while rollback is needed.
 
