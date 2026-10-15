@@ -26,6 +26,7 @@ import (
 )
 
 type hostCollector struct {
+	diskIO      diskIOBaseline
 	source      collectorSource
 	settings    func() protocol.AgentSettings
 	path        string
@@ -53,7 +54,8 @@ func hostUnknown[T any](reason string, at time.Time) protocol.Metric[T] {
 }
 func (h *hostCollector) collect(ctx context.Context, at time.Time, interfaces []NetworkInterface) *protocol.MetricsHost {
 	s := h.settings()
-	v := &protocol.MetricsHost{MemoryMode: s.MemoryMode, FastIntervalSeconds: s.FastIntervalSeconds, DiskIntervalSeconds: s.DiskIntervalSeconds}
+	ioRate := h.collectDiskIO(ctx, at)
+	v := &protocol.MetricsHost{DiskIO: &ioRate, MemoryMode: s.MemoryMode, FastIntervalSeconds: s.FastIntervalSeconds, DiskIntervalSeconds: s.DiskIntervalSeconds}
 	v.Swap = hostUnknown[protocol.Swap]("read_failed", at)
 	if m, e := mem.SwapMemoryWithContext(ctx); e == nil {
 		v.Swap = hostKnown(protocol.Swap{TotalBytes: m.Total, UsedBytes: m.Used, UsedPercent: m.UsedPercent}, at)

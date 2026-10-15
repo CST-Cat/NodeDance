@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { t, display, locale } from "../i18n"
 import { computed, ref, watch } from 'vue'
+import VpsTelemetry from './VpsTelemetry.vue'
 import type { SSHConnectionInfo, AgentNode, ContainerTask, ContainerTaskAction, DashboardPreference, DockerContainerRecord, DockerInventory } from '../api'
-import type { Metric, MetricsView } from '../metrics-contract'
+import type { MetricsView } from '../metrics-contract'
 
 const dockerExpanded = ref(false)
 
 const props = defineProps<{
   node: AgentNode
+  inspected?:boolean
   metrics?: MetricsView
   inventory?: DockerInventory
   nodePreference?: DashboardPreference
@@ -29,6 +31,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
+  inspect: [node: AgentNode]
   view: [node: AgentNode]
   discoverSsh: [node: AgentNode]
   chooseSshUser: [payload:{nodeId:string;user:string}]
@@ -68,10 +71,6 @@ const displayContainers = computed(() => {
   return containers.slice(0, Math.max(1, Math.min(20, props.previewLimit)))
 })
 
-const displayedMount = computed(() => {
-  const mounts = props.metrics?.metrics.disk.mounts ?? []
-  return mounts.find((mount) => mount.mountpoint === '/') ?? mounts.find((mount) => mount.usage.value) ?? mounts[0]
-})
 
 function preferenceFor(record: DockerContainerRecord): DashboardPreference | undefined {
   const identity = props.preferenceIdentities[record.container.id]
@@ -105,40 +104,6 @@ function nodeIcon(icon?: string): string {
   return icon ? icons[icon] ?? '▤' : '▤'
 }
 
-function metricValue<T>(metric: Metric<T> | undefined, value: number | undefined, suffix = '%', ttlMs = 15_000): string {
-  if (!metric) return props.online ? t('m.ade1506ac3ef') : t('m.497c85690c4c')
-  if (value === undefined || !Number.isFinite(value)) {
-    if (metric.status === 'error') return t('m.6aa27f14bff1')
-    if (metric.status === 'stale') return t('m.2fe0e3339ac4')
-    return metric.status === 'known' ? t('m.4d8c1c5b4283') : props.online ? t('m.ade1506ac3ef') : t('m.497c85690c4c')
-  }
-  const receivedAt = Date.parse(props.metrics?.receivedAt ?? '')
-  const elapsed = Number.isFinite(receivedAt) ? Math.max(0, props.currentTime - receivedAt) : 0
-  const stale = !props.online || metric.status === 'stale' || metric.sampleAgeMillis + elapsed > ttlMs
-  return t('m.f25b2ceba8a5', {"0": (value.toFixed(1)), "1": (suffix), "2": (stale ? t('m.fb05374523d1') : '')})
-}
-
-function diskSummary(): string {
-  const disk = props.metrics?.metrics.disk
-  const mount = displayedMount.value
-  if (!disk || !mount) return disk?.status === 'error' ? t('m.6aa27f14bff1') : props.online ? t('m.ade1506ac3ef') : t('m.497c85690c4c')
-  const metric = mount.usage
-  return `${mount.mountpoint} ${metricValue(metric, metric.value?.usedPercent, '%', 90_000)}`
-}
-
-function networkSummary(direction: 'receivedBytesPerSecond' | 'sentBytesPerSecond'): string {
-  const metric = props.metrics?.metrics.network.summary
-  const value = metric?.value?.[direction]
-  if (value === undefined || !Number.isFinite(value)) {
-    if (metric?.status === 'error') return t('m.6aa27f14bff1')
-    return props.online ? t('m.ade1506ac3ef') : t('m.497c85690c4c')
-  }
-  const receivedAt = Date.parse(props.metrics?.receivedAt ?? '')
-  const elapsed = Number.isFinite(receivedAt) ? Math.max(0, props.currentTime - receivedAt) : 0
-  const stale = !props.online || !metric || metric.status === 'stale' || metric.sampleAgeMillis + elapsed > 20_000
-  return t('m.022a917ae125', {"0": (formatBytes(value)), "1": (stale ? t('m.fb05374523d1') : '')})
-}
-
 function uptimeSummary(): string {
   const metric = props.metrics?.metrics.uptime
   const seconds = metric?.value?.seconds
@@ -146,20 +111,6 @@ function uptimeSummary(): string {
   const receivedAt = Date.parse(props.metrics?.receivedAt ?? '')
   const elapsed = props.online && Number.isFinite(receivedAt) ? Math.max(0, Math.floor((props.currentTime - receivedAt) / 1000)) : 0
   return t('m.8391da809dd9', {"0": (formatDuration(seconds + elapsed)), "1": (props.online ? '' : t('m.6360a8989089'))})
-}
-
-function formatBytes(value: number): string {
-  if (!Number.isFinite(value) || value < 0) return t('m.4d8c1c5b4283')
-  if (value < 1024) return `${Math.round(value)} B`
-  const units = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB']
-  let amount = value
-  let unit = 'B'
-  for (const next of units) {
-    amount /= 1024
-    unit = next
-    if (amount < 1024) break
-  }
-  return `${amount.toFixed(1)} ${unit}`
 }
 
 function formatDuration(seconds: number): string {
@@ -306,28 +257,23 @@ async function copySSHCommand() {
     sshCopyMessage.value = t('m.974cd922475e', {"0": (sshCommand.value)})
   }
 }
+function inspectCard(event:MouseEvent){if((event.target as HTMLElement).closest('button,a,input,select,textarea,label,summary,[role=button]')||(window.getSelection()&&!window.getSelection()?.isCollapsed))return;emit('inspect',props.node)}
 </script>
 
 <template>
-  <article class="vps-card" :data-node-id="node.nodeId" :data-online="online" :data-docker-stale="dockerStale">
+  <article class="vps-card" tabindex="0" :data-inspected="inspected" @click="inspectCard" @keydown.enter.self.prevent="emit('inspect',node)" @keydown.space.self.prevent="emit('inspect',node)" :data-node-id="node.nodeId" :data-online="online" :data-docker-stale="dockerStale">
     <header class="vps-card-header">
       <div class="vps-card-heading">
         <span class="vps-node-icon" aria-hidden="true">{{ nodeIcon(nodePreference?.icon) }}</span>
         <div><span class="eyebrow">VPS<template v-if="nodePreference?.group"> · {{ nodePreference.group }}</template></span><h2><button class="vps-name" type="button" @click="emit('view', node)">{{ title }}</button></h2></div>
       </div>
+      <button class="inspect-host" type="button" :aria-pressed="!!inspected" @click="emit('inspect',node)">{{t('overview.hostInfo')}}</button>
       <span class="vps-card-status" :data-online="online" :data-pending="pending" role="status">{{ nodeStatusLabel() }}</span>
     </header>
-    <p class="vps-card-version">{{ node.agentVersion || t('m.d07581c22bb2') }}</p>
+    <p class="vps-card-version"><span class="agent-version">{{ node.agentVersion || t('m.d07581c22bb2') }}</span> · {{t('overview.uptime')}} {{uptimeSummary()}}</p>
     <p v-if="nodePreference?.notes" class="vps-card-note">{{ nodePreference.notes }}</p>
 
-    <div class="vps-card-metrics" :aria-label="t('m.e41b8d592e33')">
-      <div><span>CPU</span> <strong>{{ metricValue(metrics?.metrics.cpu.usagePercent, metrics?.metrics.cpu.usagePercent.value ?? undefined) }}</strong></div>
-      <div><span>{{ t('m.7d8f8c37ec78') }}</span> <strong>{{ metricValue(metrics?.metrics.memory, metrics?.metrics.memory.value?.usedPercent) }}</strong></div>
-      <div><span>{{ t('m.de7b72a3f852') }}</span> <strong>{{ diskSummary() }}</strong></div>
-      <div><span aria-hidden="true">↓</span> <strong>{{ networkSummary('receivedBytesPerSecond') }}</strong></div>
-      <div><span aria-hidden="true">↑</span> <strong>{{ networkSummary('sentBytesPerSecond') }}</strong></div>
-      <div><span>{{ t('m.5986e9d976e0') }}</span> <strong>{{ uptimeSummary() }}</strong></div>
-    </div>
+    <VpsTelemetry :metrics="metrics" :online="online" :current-time="currentTime" />
 
     <button class="docker-toggle" type="button" :aria-expanded="dockerExpanded" :aria-controls="`docker-${node.nodeId}`" @click="dockerExpanded = !dockerExpanded">{{ t(dockerExpanded ? 'dashboard.hideDocker' : 'dashboard.showDocker') }} <span aria-hidden="true">{{ dockerExpanded ? '−' : '+' }}</span></button>
     <section v-if="dockerExpanded" :id="`docker-${node.nodeId}`" class="vps-card-docker" :data-available="inventory?.dockerAvailability || 'unknown'" :data-stale="dockerStale">
@@ -387,6 +333,7 @@ async function copySSHCommand() {
 .docker-toggle { display:flex; justify-content:space-between; align-items:center; width:100%; margin-top:12px; color:var(--accent); }
 
 .vps-card { min-width: 0; container-type: inline-size; container-name: vps-card; border: 1px solid var(--line); border-radius:var(--radius-card); padding: 12px 14px; background: var(--surface); color: var(--text); }
+.vps-card[data-inspected=true]{border-color:var(--accent)}.vps-card:focus-visible{outline:2px solid var(--focus);outline-offset:3px}.inspect-host{margin-left:auto;font:inherit;font-size:11px;color:var(--muted-strong);padding:4px 8px;border:1px solid var(--line);background:transparent;border-radius:var(--radius-control)}.inspect-host[aria-pressed=true]{background:var(--accent-soft);color:var(--accent)}
 .vps-card:hover { border-color: var(--line-strong); }
 .vps-card:focus-within { border-color: var(--accent); }
 .vps-card-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -399,11 +346,7 @@ async function copySSHCommand() {
 .vps-card-status[data-pending='true'] { color: var(--warning); }
 .vps-card-version { margin: 4px 0 10px; color: var(--muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
 .vps-card-note { margin: -5px 0 12px; color: var(--muted-strong); font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-.vps-card-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 8px 12px; padding: 8px 0 2px; }
-.vps-card-metrics > div { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; column-gap: 4px; }
-.vps-card-metrics span { color: var(--muted); font-size: 12px; }
-.vps-card-metrics strong { color: var(--text); font-size: 14px; font-weight: 500; line-height: 1.35; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-@container vps-card (max-width: 299px) { .vps-card-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+
 .vps-card-docker { margin-top: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; padding: 2px 0 0; }
 .vps-card-docker > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); font-size: 12px; }
 .vps-card-docker > header span { color: var(--muted); font: 11px ui-monospace,monospace; text-align: right; }

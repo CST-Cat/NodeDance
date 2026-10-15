@@ -73,7 +73,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const adminPage=await admin.newPage();adminPage.setDefaultTimeout(10000);adminPage.on('pageerror',e=>errors.push(e.message));await adminPage.goto(base)
   const card=adminPage.locator('.vps-card').first();await card.waitFor()
   assert.ok(!(await card.innerText()).includes(identity.nodeId),'Node cards must hide internal UUIDs')
-  assert.equal(await card.locator('.vps-card-version').innerText(),'agent-v0.1.10')
+  assert.equal(await card.locator('.vps-card-version .agent-version').innerText(),'agent-v0.1.10')
   for(const theme of ['light','dark'])for(const width of [390,1440]){
    await adminPage.setViewportSize({width,height:1000});await adminPage.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
    await adminPage.evaluate(()=>window.scrollTo(0,0));await adminPage.waitForTimeout(350)

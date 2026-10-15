@@ -20,7 +20,7 @@ The table below records a historical run; current operation and attack totals ar
 
 | Group | Cases | Expected result |
 | --- | ---: | --- |
-| Discovered private operations, including commands/files/containers/updates/configuration | 109 | 401 despite spoofed role/mode/user headers and an anonymous CSRF token |
+| Discovered private operations, including commands/files/containers/updates/configuration | Discovered at runtime | 401 despite spoofed role/mode/user headers and an anonymous CSRF token |
 | Internal and opaque public IDs substituted into private resource routes | 15 | 401 |
 | Public scope expansion, arbitrary history, malformed queries and parameter pollution | 12 | 400 |
 | Public method changes and method override | 10 | 405 |
@@ -93,3 +93,7 @@ The browser guest regression opens a shared dropdown before guest entry and veri
 The shared light/dark theme uses semantic surface, text, control and state roles documented in `DESIGN.md`. Visual flattening does not change operation discovery, public projection, authorization or task semantics. Browser audits use fresh assets and isolated Core/Agent resources; the theme regression checks real persisted/system switching and actual rendered contrast.
 
 共享深浅主题使用 `DESIGN.md` 中的表面、文字、控件和状态语义。视觉扁平化不改变操作发现、公开投影、权限或任务行为。浏览器回归使用新构建资源与隔离 Core／Agent，主题回归检查实际保存／跟随系统切换及渲染对比度。
+
+## Overview context privacy
+
+The Core runtime host information (`dashboard.core-info`) and shared overview memo (`dashboard.memo`, `dashboard.save-memo`) are administrator-only operations. They are not projected into public node cards, including requests with administrator cookies. Forged `memo`/`core` query flags are rejected with HTTP 400. The security matrix discovers these operations from Core and checks anonymous/forged-identity denial. A distinct private memo marker is also checked against guest and administrator-cookie public responses.

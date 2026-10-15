@@ -56,6 +56,10 @@ func ToProtocolMetricsAt(snapshot Snapshot, serializedAt time.Time) protocol.Met
 	if out.Host != nil {
 		host := *out.Host
 		out.Host = &host
+		if out.Host.DiskIO != nil {
+			value := *out.Host.DiskIO
+			out.Host.DiskIO = &value
+		}
 		ageHost(out.Host, serializedAt)
 	}
 	return boundProtocolDetails(out)
@@ -277,6 +281,9 @@ func sampleAgeMillis(sampledAt, serializedAt time.Time) int64 {
 }
 
 func ageHost(h *protocol.MetricsHost, at time.Time) {
+	if h.DiskIO != nil {
+		h.DiskIO.SampleAgeMillis = sampleAgeMillis(h.DiskIO.SampledAt, at)
+	}
 	h.Swap.SampleAgeMillis = sampleAgeMillis(h.Swap.SampledAt, at)
 	h.Load.SampleAgeMillis = sampleAgeMillis(h.Load.SampledAt, at)
 	h.Processes.SampleAgeMillis = sampleAgeMillis(h.Processes.SampledAt, at)

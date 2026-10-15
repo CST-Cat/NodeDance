@@ -88,7 +88,7 @@ onBeforeUnmount(() => { stopped = true; epoch++; if (timer) clearTimeout(timer) 
 .update-center header>p:last-child { margin:0; font-size:16px; line-height:1.55; }
 .update-card {border:0;border-radius:0;background:transparent;box-shadow:none;padding:20px 0;border-top:1px solid var(--line);}
 .update-controls { display:flex; align-items:end; flex-wrap:wrap; gap:16px; }
-.update-controls label { display:grid; gap:8px; flex:1; min-width:160px; font-size:14px; font-weight:500; }
+.update-controls label { display:grid; gap:8px; flex:0 1 220px; min-width:160px; font-size:14px; font-weight:500; }
 .update-controls input,.update-controls select { min-height:40px; width:100%; border:1px solid var(--line); border-radius:var(--radius-control); padding:10px 14px; color:var(--text); background:var(--canvas); font:inherit; font-weight:400; }
 .update-controls :is(input,select):focus-visible { border-color:var(--accent); outline:none; box-shadow:0 0 0 3px var(--accent-soft); }
 .update-details { display:grid; gap:16px; margin-top:32px; font-size:14px; line-height:1.55; }
@@ -106,5 +106,5 @@ onBeforeUnmount(() => { stopped = true; epoch++; if (timer) clearTimeout(timer) 
 .update-job p { overflow-wrap:anywhere; }
 .update-error { color:var(--danger); }
 .muted { color:var(--muted); }
-@media(max-width:768px) { .update-center { padding:16px; }.update-card { padding:24px; }.update-controls { display:grid; }.update-center h1 { font-size:32px; } }
+@media(max-width:768px) { .update-center { padding:16px; }.update-card { padding:24px; }.update-controls { display:grid; grid-template-columns:minmax(0,1fr); }.update-center h1 { font-size:32px; } }
 </style>

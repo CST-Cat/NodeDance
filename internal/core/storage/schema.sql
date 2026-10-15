@@ -471,3 +471,6 @@ CREATE INDEX IF NOT EXISTS feed_delivery_history ON feed_deliveries(feed_id,crea
 CREATE INDEX IF NOT EXISTS feed_delivery_retention ON feed_deliveries(created);
 
 CREATE INDEX IF NOT EXISTS feed_notification_pending ON feed_items(feed_id,first_seen,id) WHERE notify_pending=1;
+
+CREATE TABLE IF NOT EXISTS dashboard_memo (id INTEGER PRIMARY KEY CHECK(id=1), content TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), updated_at INTEGER NOT NULL);
+INSERT OR IGNORE INTO dashboard_memo(id,content,revision,updated_at) VALUES(1,'',1,0);

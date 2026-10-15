@@ -53,6 +53,7 @@ async function port() {
     const enrollment=await context.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'Interface audit',coreUrl:base}})
     assert.equal(enrollment.status(),201)
     const node=(await enrollment.json()).nodeId
+    await require('./overview-regressions.cjs')({context,base,node,headers,artifacts,catalog})
     const page=await context.newPage()
     page.setDefaultTimeout(10000)
     const pageErrors=[];page.on('pageerror',error=>pageErrors.push(error.message))
@@ -265,7 +266,7 @@ async function port() {
         await page.locator('.host-check input').first().check()
         if(name==='commands.batch'){
           await page.locator('.contract-fields textarea').fill('printf isolated-browser-fixture')
-          await page.locator('.contract-fields label').filter({hasText:'Confirm root execution'}).locator('select').selectOption('true')
+          await page.locator('.contract-fields label').filter({hasText:'Confirm root execution'}).getByRole('checkbox').check()
         }
         await page.locator('.host-page form .primary-button').waitFor({state:'visible'})
       }

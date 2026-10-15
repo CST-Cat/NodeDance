@@ -92,11 +92,11 @@ function submit() {
 .container-create-form { margin:12px 0; border:1px solid var(--line); border-radius:var(--radius-card); background:var(--surface-soft); }
 .container-create-form summary { cursor:pointer; padding:11px 13px; color:var(--text); font-size: 12px; font-weight:500; }
 .container-create-form form { display:grid; gap:11px; padding:0 12px 12px; }
-.create-form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
+.create-form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),360px)); gap:9px; }
 .container-create-form label { display:grid; min-width:0; gap:5px; color:var(--muted-strong); font-size: 12px; }
 .container-create-form input,.container-create-form select,.container-create-form textarea { min-width:0; min-height:40px; border:1px solid var(--line); border-radius:var(--radius-control); padding:7px 8px; color:var(--text); background:var(--surface-soft); font:inherit; font-size: 12px; }
 .container-create-form textarea { resize:vertical; line-height:1.5; }.container-create-form small,.create-form-note { color:var(--muted); font-size: 12px; line-height:1.5; }.create-form-wide { grid-column:1/-1; }
 .create-form-list { min-width:0; margin:0; border:1px solid var(--line); border-radius:var(--radius-card); padding:9px; }.create-form-list legend { padding:0 5px; color:var(--muted-strong); font-size: 12px; }.create-form-row { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)) auto; align-items:end; gap:7px; margin:4px 0 9px; }.create-form-row .container-action { min-height:40px; }.create-readonly { display:flex!important; align-items:center; min-height:40px; }.create-readonly input { min-height:0; }
 .create-form-note,.create-form-error { margin:0; }.create-form-error { color:var(--danger); font-size: 12px; }.create-submit { justify-self:start; }
-@media(max-width:680px) { .create-form-grid { grid-template-columns:minmax(0,1fr); }.create-form-wide { grid-column:auto; }.create-form-row { grid-template-columns:repeat(2,minmax(0,1fr)); }.create-form-row .container-action { justify-self:start; } }
+@media(max-width:680px) { .create-form-grid { grid-template-columns:minmax(0,1fr); }.create-form-wide { grid-column:auto; }.create-form-row { grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),360px)); }.create-form-row .container-action { justify-self:start; } }
 </style>

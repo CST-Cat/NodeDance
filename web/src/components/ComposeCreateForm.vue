@@ -123,7 +123,7 @@ onBeforeUnmount(() => {
 .compose-create-form h3 { margin:4px 0 0; font-size: 14px; }
 .compose-create-form header>span,.compose-create-note { color:var(--muted); font-size: 12px; line-height:1.55; }
 .compose-create-note { margin:0; }
-.compose-create-fields { display:grid; grid-template-columns:minmax(150px,.6fr) minmax(220px,1fr); gap:9px; }
+.compose-create-fields { display:grid; grid-template-columns:minmax(150px,260px) minmax(220px,540px); gap:9px; }
 .compose-create-form label { display:grid; gap:5px; min-width:0; color:var(--muted-strong); font-size: 12px; }
 .compose-create-form input,.compose-create-form textarea { box-sizing:border-box; width:100%; border:1px solid var(--line); border-radius:var(--radius-control); padding:9px; color:var(--text); background:var(--surface-soft); font:inherit; }
 .compose-create-form input { min-height:40px; }

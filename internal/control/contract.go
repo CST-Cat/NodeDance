@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/CST-Cat/NodeDance/internal/core/alerts"
+	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	"github.com/CST-Cat/NodeDance/internal/core/guest"
 	"github.com/CST-Cat/NodeDance/internal/core/probes"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -17,8 +18,16 @@ func describeTransport(o *Operation) {
 	if o.Transport == "json" || o.Transport == "terminal" {
 		o.ResponseSchema = map[string]any{"type": "object"}
 	}
+	if o.Name == "dashboard.save-memo" {
+		p := o.BodySchema.(map[string]any)["properties"].(map[string]any)
+		p["content"].(map[string]any)["maxBytes"] = dashboard.MaxMemoBytes
+		p["revision"].(map[string]any)["minimum"] = 1
+	}
 	if o.BodySchema != nil {
 		o.MaxBodyBytes = 16 * 1024
+	}
+	if o.Name == "dashboard.save-memo" {
+		o.MaxBodyBytes = 6*dashboard.MaxMemoBytes + 1024
 	}
 	if o.Idempotent {
 		o.Headers = map[string]any{"Idempotency-Key": map[string]any{"type": "string", "minLength": 1, "maxBytes": taskstate.MaxIdempotencyKeyBytes, "description": "Reuse for retries of the same intent"}}
@@ -227,6 +236,10 @@ func describeResponse(o *Operation) {
 		j := schema(update.Job{}).(map[string]any)
 		j["required"] = []string{"id", "status"}
 		o.ResponseSchema = map[string]any{"anyOf": []any{j, list("jobs", j)}}
+	case "dashboard.core-info":
+		o.ResponseSchema = schema(dashboard.CoreInfo{})
+	case "dashboard.memo", "dashboard.save-memo":
+		o.ResponseSchema = schema(dashboard.Memo{})
 	case "core.health":
 		o.ResponseSchema = responseObject([]string{"status", "version"}, map[string]any{"status": text, "version": text})
 	case "auth.csrf":

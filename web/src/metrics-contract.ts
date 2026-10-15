@@ -84,6 +84,7 @@ export interface MetricsView {
 }
 
 export interface HostMetrics {
+ diskIO?:Metric<{readBytesPerSecond:number;writeBytesPerSecond:number}>
  memoryMode?:string;fastIntervalSeconds:number; diskIntervalSeconds:number
  swap:Metric<{totalBytes:number;usedBytes:number;usedPercent:number}>
  load:Metric<{one:number;five:number;fifteen:number}>

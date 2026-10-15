@@ -573,7 +573,7 @@ onBeforeUnmount(() => {
       <a v-else class="wordmark" href="/" :aria-label="t('m.f359facd4191')"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><span>NodeDance</span></a>
       <div class="topbar-right">
         <span class="system-label"><span class="status-dot"></span>{{ t('m.13354cb51f27') }}</span>
-        <UiSelect :key="viewHash(activeRoute)" class="language-selector" :aria-label="locale === 'en' ? 'Language' : '语言'" :value="locale" @change="setLocale(($event.target as HTMLSelectElement).value as Locale)">
+        <UiSelect :key="viewHash(activeRoute)" class="language-selector" menu-class="language-options" :aria-label="locale === 'en' ? 'Language' : '语言'" :value="locale" @change="setLocale(($event.target as HTMLSelectElement).value as Locale)">
           <option value="zh-CN">简体中文</option><option value="en">English</option>
         </UiSelect>
       </div>

@@ -206,10 +206,13 @@ onBeforeUnmount(disconnect)
       <div v-if="operation" class="operation-form">
         <h3>{{ display(operation.description) }}</h3><p class="muted"><code>{{ operation.name }}</code></p>
         <form @submit.prevent="execute">
+          <fieldset v-if="operation.parameters.length || operation.query.length" class="operation-field-group"><legend>{{ t('operations.targetFields') }}</legend>
           <label v-for="name in operation.parameters" :key="name">{{ fieldLabel(name) }} <input v-model="params[name]" required :disabled="busy || connected" /></label>
           <label v-for="name in operation.query" :key="name">{{ fieldLabel(name) }} <input v-model="query[name]" :type="/ticket|token/i.test(name) ? 'password' : 'text'" :disabled="busy || connected" /></label>
+          </fieldset>
+          <fieldset v-if="operation.bodySchema" class="operation-field-group"><legend>{{ t('operations.requestFields') }}</legend>
           <label v-if="operation.bodySchema?.type==='object'" class="check-row"><input v-model="rawMode" type="checkbox" :disabled="busy" />{{ t('operations.rawJSON') }}</label>
-          <label v-for="[name, schema] in properties" :key="name">{{ fieldLabel(name) }}{{ operation.bodySchema?.required?.includes(name) ? ' *' : '' }}
+          <label v-for="[name, schema] in properties" :key="name" :data-field-type="schema.enum ? 'enum' : schema.type">{{ fieldLabel(name) }}{{ operation.bodySchema?.required?.includes(name) ? ' *' : '' }}
             <input v-if="schemaHasSecrets(schema)" v-model="values[name]" type="password" :disabled="busy || connected" autocomplete="off" />
             <UiSelect v-else-if="schema.enum || schema.type === 'boolean'" v-model="values[name]" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected"><option value="">—</option><option v-for="value in schema.enum ?? ['true', 'false']" :key="String(value)" :value="String(value)">{{ enumLabel(value) }}</option></UiSelect>
             <textarea v-else-if="schema.type === 'object' || schema.type === 'array'" v-model="values[name]" rows="4" :required="operation.bodySchema?.required?.includes(name)" :disabled="busy || connected" />
@@ -217,7 +220,10 @@ onBeforeUnmount(disconnect)
             <small v-if="schema.description">{{ display(schema.description) }}</small>
           </label>
           <label v-if="operation.bodySchema && (rawMode || operation.bodySchema.type !== 'object')">JSON <input v-if="schemaHasSecrets(operation.bodySchema)" v-model="rawBody" type="password" :disabled="busy" autocomplete="off" /><textarea v-else v-model="rawBody" rows="5" :disabled="busy" /></label>
+          </fieldset>
+          <fieldset v-if="Object.keys(operation.headers ?? {}).length" class="operation-field-group"><legend>{{ t('operations.headerFields') }}</legend>
           <label v-for="[name,schema] in Object.entries(operation.headers ?? {})" :key="name">{{ fieldLabel(name) }}<input v-model="requestHeaders[name]" :type="schemaHasSecrets(schema)?'password':'text'" :disabled="busy || connected" autocomplete="off" /><small>{{ display(schema.description) }}</small></label>
+          </fieldset>
           <template v-if="operation.requiresIdempotencyKey"><small>{{ t('operations.retryIntent') }}</small><button type="button" :disabled="busy || connected" @click="newExecution">{{ t('operations.newExecution') }}</button></template>
           <label v-if="operation.completion" class="check-row"><input v-model="waitForCompletion" type="checkbox" :disabled="busy" />{{ t('operations.wait') }}</label>
           <label v-if="['upload', 'multipart'].includes(operation.transport)">{{ t('operations.file') }}<input type="file" required :disabled="busy || connected" @change="file = ($event.target as HTMLInputElement).files?.[0]" /></label>
@@ -241,19 +247,19 @@ h3 { margin: 0 0 10px; font-size: 18px; }
 .operation-layout { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 28px; margin-top: 24px; }
 aside, form, label { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 label { color: var(--text); font-size: 12px; font-weight:500; }
-form { gap: 16px; margin-bottom: 20px; }
+form { display:grid; grid-template-columns:minmax(0,1fr); align-items:start; gap:16px 20px; margin-bottom:20px; }
+:is(form,.operation-field-group)>label:has(textarea),:is(form,.operation-field-group)>.check-row,form>small,form>button{grid-column:1/-1}.operation-field-group>label:has(textarea){max-width:760px}form>button{justify-self:start}label[data-field-type=integer]>input,label[data-field-type=number]>input{max-width:160px}label[data-field-type=enum]>.ui-select,label[data-field-type=boolean]>.ui-select{max-width:240px}
+.operation-field-group{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),320px));align-items:start;gap:16px 20px;min-width:0;margin:0;padding:0;border:0}.operation-field-group legend{margin-bottom:12px;padding:0;font-size:13px;font-weight:500}.operation-field-group:has(+.operation-field-group){padding-bottom:8px}
 input, select, textarea { box-sizing: border-box; width: 100%; min-height: 42px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 10px 12px; background: var(--surface-soft); color: var(--text); font: inherit; }
 textarea { font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
-aside select { min-height: 420px; padding: 8px; font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
-aside option { padding: 7px 8px; border-radius: 4px; }
-aside option:checked { background: var(--accent-soft); color: var(--accent); }
+aside :deep(.u031-list.is-inline) { height:420px; min-height:0; max-height:420px; }
 button { align-self: flex-start; min-height: 40px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 9px 18px; background: var(--surface-soft); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
 button.primary-button { border-color:transparent; }
 button:disabled { opacity: .55; cursor: default; }
 .error { color: var(--danger); font-size: 13px; }
 .check-row { flex-direction:row; align-items:center; }.check-row input { width:18px; min-height:18px; }small { color:var(--muted); font-weight:400; line-height:1.6; }
 pre { max-height: 600px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); background: var(--surface-soft); color: var(--text); padding: 18px; border-radius:var(--radius-card); font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; }
-@media (max-width: 700px) { .operation-console { padding: 18px; } .operation-layout { grid-template-columns: 1fr; gap: 20px; } aside select { min-height: 170px; height: 170px; } }
+@media (max-width: 700px) { .operation-console { padding: 18px; } .operation-layout { grid-template-columns: 1fr; gap: 20px; } form,.operation-field-group{grid-template-columns:minmax(0,1fr)}form>label>input,form>label>.ui-select{max-width:none} aside :deep(.u031-list.is-inline) { height:170px; max-height:170px; } }
 </style>
 
 <style scoped>

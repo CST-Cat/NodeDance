@@ -29,7 +29,7 @@ module.exports=async function({page,context,base,headers,artifacts,catalog}){
    }
    await page.goto(base+'/#/nodes');await page.locator('.nodes-dashboard').waitFor()
    assert.equal(await page.locator('.workspace-nav button[aria-current=page]').evaluate(el=>getComputedStyle(el).boxShadow),'none','Navigation selection has no left accent stripe')
-   const readings=page.locator('.vps-card[data-node-id="'+fixtureNode+'"] .vps-card-metrics>div');await readings.first().waitFor()
+   const readings=page.locator('.vps-card[data-node-id="'+fixtureNode+'"] .resource-rings>.resource-reading');await readings.first().waitFor()
    assert.ok(await readings.evaluateAll(items=>items.every(el=>getComputedStyle(el).borderTopWidth==='0px'&&getComputedStyle(el).borderLeftWidth==='0px')),'Metrics do not create nested card boundaries')
    await page.screenshot({path:path.join(artifacts,`theme-dashboard-${mode}.png`),fullPage:true})
   }

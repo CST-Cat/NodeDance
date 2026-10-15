@@ -3,7 +3,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useAttrs, useId, watch } from 'vue'
 import { t } from '../i18n'
 defineOptions({inheritAttrs:false})
-const props=defineProps<{modelValue?:unknown;value?:unknown;modelModifiers?:{number?:boolean}}>()
+const props=defineProps<{modelValue?:unknown;value?:unknown;menuClass?:string;modelModifiers?:{number?:boolean}}>()
 const emit=defineEmits<{ 'update:modelValue':[value:any];change:[event:Event] }>()
 const attrs=useAttrs(),id='select-'+useId(),source=ref<HTMLSelectElement>(),button=ref<HTMLButtonElement>(),list=ref<HTMLUListElement>()
 const options=ref<{value:string;label:string;disabled:boolean;selected:boolean}[]>([]),open=ref(false),active=ref(-1),label=ref(''),position=ref<Record<string,string>>({}),invalid=ref(false)
@@ -78,7 +78,7 @@ onBeforeUnmount(()=>{disposed=true;list.value?.remove();observer?.disconnect();c
   <select ref="source" v-bind="attrs" class="ui-select-source" :value="value" tabindex="-1" aria-hidden="true" @change="changed" @invalid.prevent="invalid=true;button?.focus()"><slot /></select>
   <Teleport to="body" :disabled="inline">
    <Transition name="select-popover">
-    <ul v-if="open||inline" :id="id" ref="list" class="ux u031-list" :class="{'is-inline':inline}" :style="inline?undefined:position" role="listbox" tabindex="0" :aria-label="label" :aria-activedescendant="active>=0?id+'-'+active:undefined" @keydown="keys" @focus="inline&&sync()" @blur="!list?.contains($event.relatedTarget as Node)&&close(false)">
+    <ul v-if="open||inline" :id="id" ref="list" class="ux u031-list" :class="[{'is-inline':inline},menuClass]" :style="inline?undefined:position" role="listbox" tabindex="0" :aria-label="label" :aria-activedescendant="active>=0?id+'-'+active:undefined" @keydown="keys" @focus="inline&&sync()" @blur="!list?.contains($event.relatedTarget as Node)&&close(false)">
      <li v-for="(option,index) in options" :id="id+'-'+index" :key="index" class="u031-o" :data-index="index" :class="{'is-active':active===index}" role="option" :aria-selected="option.selected" :aria-disabled="option.disabled||undefined" @pointermove="!option.disabled&&(active=index)" @mousedown.prevent @click.stop="choose(index)"><span>{{ option.label }}</span><svg class="u031-ck" viewBox="0 0 18 18" aria-hidden="true"><path d="M4 9.5l3.5 3.5L14 6"/></svg></li>
     </ul>
    </Transition>

@@ -64,18 +64,18 @@ async function save() {
 </template>
 
 <style scoped>
-.preference-editor {display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:20px 0;border-top:1px solid var(--line);}
+.preference-editor {display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%,240px),320px)); gap: 10px; margin-top: 12px;     border:0;border-radius:0;background:transparent;box-shadow:none;padding:20px 0;border-top:1px solid var(--line);}
 .preference-editor header { grid-column: 1 / -1; display: grid; gap: 4px; }
 .ssh-preference-note { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
 .preference-editor header strong { font-size: 12px; }
 .preference-editor header small { color: var(--muted); font-size: 12px; }
 .preference-editor label { display: grid; min-width: 0; gap: 5px; color: var(--muted-strong); font-size: 12px; }
 .preference-editor input:not([type=checkbox]), .preference-editor select, .preference-editor textarea { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 8px; color: var(--text); background: var(--surface-soft); font: inherit; font-size: 12px; }
-.preference-editor textarea { resize: vertical; }
+.preference-editor label:has(textarea),.preference-editor label:has(input[type=url]){grid-column:1/-1;max-width:660px}.preference-editor input[type=number]{max-width:140px}.preference-editor textarea { resize: vertical; }
 .preference-editor .preference-checkbox { display: flex; align-items: center; gap: 7px; }
 .preference-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 9px; color: var(--success); font-size: 12px; }
 .preference-actions button { min-height:40px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 6px 10px; color: var(--accent); background: var(--line); font: inherit; cursor: pointer; }
 .preference-actions span[role=alert] { color: var(--danger); }
 .preference-actions button:disabled { opacity: .5; }
-@media (max-width: 480px) { .preference-editor { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) { .preference-editor { grid-template-columns: minmax(0, 1fr); } }
 </style>

@@ -317,7 +317,11 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .topbar-right { display: flex; align-items: center; gap: 22px; }
 .system-label { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .status-dot, .profile-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); }
-.language-selector { max-width: 145px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 7px 10px; color: var(--muted-strong); background: var(--surface); font: inherit; font-size: 12px; }
+.ui-select:has(> .language-selector) { width: 104px; min-width: 104px; flex: 0 0 104px; }
+.ui-select:has(> .language-selector) .u031-btn { padding-inline:8px; gap:4px; }
+.u031-list.language-options { padding:4px; }
+.language-options .u031-o { padding-inline:8px; gap:4px; }
+.language-options .u031-o > span { white-space:nowrap; }
 .workspace-sidebar { position: fixed; z-index: 20; inset: 0 auto 0 0; display: flex; flex-direction: column; width: var(--sidebar-width, 240px); padding: 28px 20px 20px; border-right: 1px solid var(--line); background: var(--recessed); }
 .workspace-sidebar .wordmark { margin: 0 12px 48px; }
 .workspace-label { margin: 0 12px 14px; color: var(--muted); font-size: 11px; letter-spacing: .1em; }
@@ -373,7 +377,7 @@ button:disabled { cursor: not-allowed; }button, a, input, select, textarea { -we
 @media (max-width: 560px) {
   .app-shell, .app-shell[data-authenticated='true'] { padding: 0 16px 24px; }
   .topbar-right { gap: 8px; }.topbar .system-label { display: none; }.breadcrumb-root, .breadcrumb-divider { display: none; }.workspace-breadcrumb { gap: 8px; }
-  .language-selector { max-width: 116px; }.topbar .wordmark { font-size: 21px; }
+  .topbar .wordmark { font-size: 21px; }
   .app-shell .nodes-heading h1 { font-size: 34px; }.app-shell .server-view-controls { padding: 16px; }
   .auth-copy h1 { font-size: 42px; }.settings-layout { padding-top: 32px; }.settings-sidebar h1 { font-size: 34px; }
 }
@@ -465,14 +469,13 @@ input[type=checkbox]:disabled,input[type=radio]:disabled{opacity:.5;cursor:not-a
 .sidebar-context-enter-active,.sidebar-context-leave-active{transition:opacity .25s cubic-bezier(.2,.8,.2,1),transform .35s cubic-bezier(.2,.8,.2,1),filter .25s cubic-bezier(.2,.8,.2,1)}
 @media(prefers-reduced-motion:reduce){.workspace-sidebar,.app-shell,.sidebar-context-enter-active,.sidebar-context-leave-active,input[type=checkbox],input[type=radio],input[type=checkbox]::after,input[type=radio]::after{transition:none!important}}
 
-.ui-select:has(.language-selector){width:auto;min-width:110px;flex-shrink:0}
 
 .app-shell[data-sidebar-resizing=true],.app-shell[data-sidebar-resizing=true] .workspace-sidebar{transition:none!important}
 
 /* Shared control roles: color is independent from page or panel containment. */
 .app-shell[data-theme] :is(.primary-button,.alert-button.primary){color:var(--accent-foreground);background:var(--accent-fill);border-color:transparent}
 .app-shell[data-theme] :is(.primary-button,.alert-button.primary):hover:not(:disabled){color:var(--accent-foreground);background:var(--primary-hover)}
-.app-shell :is(input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=file]),textarea):not(.ui-select-source){background:var(--control-bg);border-color:var(--control-border);color:var(--text)}
+.app-shell :is(input:not([type=checkbox]):not([type=radio]):not([type=color]):not([type=file]),textarea):not(.ui-select-source):not(.node-search input){background:var(--control-bg);border-color:var(--control-border);color:var(--text)}
 .app-shell :is(input,textarea):disabled{background:var(--control-disabled);color:var(--muted);opacity:1}
 .app-shell :is(input,textarea)[readonly]{background:var(--recessed);color:var(--muted-strong)}
 .app-shell button:active:not(:disabled){transform:translateY(1px)}
@@ -496,7 +499,6 @@ input[type=checkbox]:disabled,input[type=radio]:disabled{opacity:.5;cursor:not-a
 .workspace-nav button:hover{background:var(--surface-hover)}
 .workspace-nav button[aria-current=page]{background:var(--surface);border-color:transparent;color:var(--text)}
 @media(max-width:700px){.app-shell[data-authenticated=true] .workspace-page{padding:24px 0 32px}.workspace-page :is(.feed-card,.alert-card,.host-card,.guest-settings-card){padding-inline:0}.workspace-page :is(.section-toolbar,.docker-heading,.images-heading){gap:12px}}
-.agent-enrollment-card{max-width:960px}
 .settings-layout .card-heading,.settings-layout .card-body{padding-inline:0}
 .settings-layout h1{font-family:inherit;font-size:32px;font-weight:500}
 .workspace-page .feed-card h2,.workspace-page .update-card h2{font-family:inherit;font-weight:500}

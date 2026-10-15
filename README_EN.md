@@ -44,6 +44,7 @@ Agent enrollment, recovery, runtime, file service, and systemd service require r
 
 - [Detailed setup and operations](docs/installation.en.md)
 - [CLI and terminal UI](docs/cli.md)
+- [Node overview, host information and memo](docs/overview.md)
 - [Agent capabilities and Komari comparison](docs/agent-capabilities.md)
 - [Architecture](docs/architecture.md)
 - [Release notes](docs/releases.md)

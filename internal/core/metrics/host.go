@@ -10,6 +10,10 @@ func cloneHost(h *protocol.MetricsHost) *protocol.MetricsHost {
 		return nil
 	}
 	out := *h
+	if h.DiskIO != nil {
+		value := cloneMetric(*h.DiskIO)
+		out.DiskIO = &value
+	}
 	out.Swap = cloneMetric(h.Swap)
 	out.Load = cloneMetric(h.Load)
 	out.Processes = cloneMetric(h.Processes)
@@ -50,6 +54,10 @@ func mergeHost(p, n *protocol.MetricsHost, e time.Duration) *protocol.MetricsHos
 	if p == nil || out == nil {
 		return out
 	}
+	if p.DiskIO != nil && out.DiskIO != nil {
+		value := mergeMetric(*p.DiskIO, *out.DiskIO, e)
+		out.DiskIO = &value
+	}
 	out.Swap = mergeMetric(p.Swap, out.Swap, e)
 	out.Load = mergeMetric(p.Load, out.Load, e)
 	out.Processes = mergeMetric(p.Processes, out.Processes, e)
@@ -68,6 +76,9 @@ func staleHost(h *protocol.MetricsHost, r string) {
 	if h == nil {
 		return
 	}
+	if h.DiskIO != nil {
+		markMetricStale(h.DiskIO, r)
+	}
 	markMetricStale(&h.Swap, r)
 	markMetricStale(&h.Load, r)
 	markMetricStale(&h.Processes, r)
@@ -84,6 +95,9 @@ func staleHost(h *protocol.MetricsHost, r string) {
 func advanceHost(h *protocol.MetricsHost, e time.Duration) {
 	if h == nil {
 		return
+	}
+	if h.DiskIO != nil {
+		advanceMetricAge(h.DiskIO, e)
 	}
 	advanceMetricAge(&h.Swap, e)
 	advanceMetricAge(&h.Load, e)
@@ -103,6 +117,9 @@ func ageHost(h *protocol.MetricsHost) {
 		return
 	}
 	ttl := time.Duration(h.FastIntervalSeconds*3) * time.Second
+	if h.DiskIO != nil {
+		markMetricAged(h.DiskIO, ttl)
+	}
 	markMetricAged(&h.Swap, ttl)
 	markMetricAged(&h.Load, ttl)
 	markMetricAged(&h.Processes, ttl)

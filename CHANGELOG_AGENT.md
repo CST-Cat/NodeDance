@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### English
+
+### 简体中文
+
+## [0.1.20]
+
+### English
+
+- Collect disk read/write throughput from elapsed-time deltas of whole hardware block devices, excluding partition and stacked-device duplicate counting. Report warm-up, counter reset and device changes as unavailable intervals instead of fabricated zero rates; retain sample age and independent snapshot ownership.
+
+### 简体中文
+
+- 根据整块硬件磁盘计数器的时间差采集读写速率，排除分区与叠加设备的重复计数。首帧预热、计数器重置和设备变化显示为不可用区间，不伪造零速率，并保留采样时效及快照独立性。
+
 ## [0.1.19]
 
 ### English

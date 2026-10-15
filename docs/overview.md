@@ -1,0 +1,15 @@
+# Node overview
+
+The overview has a main node list and a contextual side rail. The count strip reports total, online, offline and pending nodes. Clicking a card's background or its host-information button selects that Agent for inspection; the node name and detail controls still enter its workspace. Scrolling follows the visible card. Core is selected initially and can be restored with the Core button. On desktop the rail stays visible while scrolling; narrow layouts put expandable information and memo sections below the VPS card list.
+
+Each node card shows load, CPU, memory and disk percentages with compact rings alongside live network or disk IO series. Series retain at most 60 received samples per mounted card and restart for a new generation/boot; they are explicitly session data, not fabricated historical samples. Offline, expired, missing and warming-up values are gaps, not zeroes. The Agent computes disk IO from elapsed-time deltas on whole hardware block devices, excluding partition and stacked-device duplicate counting. Core retains its normal freshness handling and exposes disk read/write rate metrics through the existing catalog/history machinery.
+
+The shared memo is stored in Core SQLite. Editing and saving are explicit. A stale revision returns HTTP 409 and preserves the browser draft; reloading explicitly replaces the draft. The Core enforces the 8192-byte UTF-8 limit and rejects NUL. Core metadata describes its observable runtime; a container deployment is labelled as container-observed information. No host commands or remote installation run when inspecting cards.
+
+All interfaces discover `dashboard.core-info`, `dashboard.memo` and `dashboard.save-memo` through `/api/v1/operations`. CLI/TUI use the same generic operation workflow and request schema as Web. Example: `nodedance call dashboard.memo` reads the shared memo; use the discovered `dashboard.save-memo` request with `content` and its current `revision` to save it. Inspect the connected operation contract for CLI argument syntax and completion semantics.
+
+The administrator-only context and memo never enter the guest projection. See [guest security](guest-security.md).
+
+The leftmost ring follows the inspected 1Panel load convention: one-minute load average divided by logical cores × 1.5, multiplied by 100. It is distinct from CPU usage. Its details show the raw 1/5/15-minute averages and formula. Unknown or expired load/core measurements do not produce a percentage; the text may exceed 100% while the ring arc stops at a full circle.
+
+The host header provides display settings, refresh, sensitive information visibility and copy actions. Display settings select visible fields and memo visibility in browser-local storage; they do not change shared Core settings. Hiding sensitive information masks hostnames and addresses, including copied output. Refresh reads the selected Core runtime information or the selected Agent's latest report through discovered Core operations, without forcing a remote sample. Memo edit, save and cancel actions are in its header; editing remains explicit and retains the Core revision check.

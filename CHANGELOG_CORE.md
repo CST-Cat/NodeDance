@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.32]
+
+### English
+
+- Rebuild the node overview with a flat count strip, compact full-width VPS cards, left-aligned load/CPU/memory/disk rings and bounded live network/disk IO charts. Keep host information and the shared memo in a sticky desktop rail and below the VPS list on narrow screens; inspect cards without entering their management workspace.
+- Add administrator-only Core runtime information and revision-protected shared memo operations to the discovered Web/CLI/TUI contract. Provide header display settings, refresh, sensitive-information masking, safe copy and memo edit/save/cancel actions; preserve drafts on save conflicts.
+- Improve desktop field sizing and alignment across enrollment, billing, alerts, feeds, Compose, Docker, images, probes, updates and operation forms, while retaining mobile layouts. Keep the language selector compact and remove decorative load-label underlining.
+- Carry Agent disk read/write rates through freshness handling, numeric history and alert subjects; extend isolated browser checks for overview interaction, responsive layouts, memo conflicts, masked clipboard output and public-data isolation.
+
+### 简体中文
+
+- 重构节点总览：使用平面计数区、紧凑整行 VPS 卡片、从左到右的负载／CPU／内存／磁盘圆环和有界实时网络／磁盘 IO 曲线。桌面端主机信息与共享备忘录在右侧跟随，窄屏移至 VPS 列表下方；查看卡片信息无需进入管理工作区。
+- 将管理员专用的 Core 运行信息、带版本冲突保护的共享备忘录纳入 Web／CLI／TUI 动态操作契约。提供标题栏显示设置、刷新、敏感信息遮蔽、安全复制以及备忘录编辑／保存／取消；保存冲突保留草稿。
+- 调整注册、账单、告警、订阅、Compose、Docker、镜像、探测、更新和操作表单的桌面宽度与对齐，保留手机布局；收紧语言选择器，并去掉负载文字的装饰下划线。
+- 将 Agent 磁盘读写速率接入指标时效、数值历史和告警项；扩展隔离浏览器验证，覆盖总览交互、响应式布局、备忘录冲突、遮蔽后复制与公开数据隔离。
+
 ## [0.1.31]
 
 ### English

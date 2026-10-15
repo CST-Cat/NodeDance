@@ -248,9 +248,9 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) clearInterval(refreshTim
 .probe-notice { color: var(--success); border: 1px solid var(--success-line); background: var(--success-soft); }
 .probe-form { margin: 12px 0 16px; border:0; border-top:1px solid var(--line); padding:20px 0; background:transparent; }
 .probe-form h3 { margin: 0 0 12px; font-size: 13px; }
-.probe-fields { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 11px; }
+.probe-fields { display: grid; grid-template-columns: repeat(3,minmax(0,240px)); gap: 11px; }
 .probe-fields label { display: grid; min-width: 0; gap: 5px; color: var(--muted-strong); font-size: 12px; }
-.probe-fields .probe-target { grid-column: span 2; }
+.probe-fields .probe-target { grid-column: span 2; }.probe-fields input[type=number]{max-width:160px}
 .probe-fields input,.probe-fields select { box-sizing: border-box; width: 100%; min-width: 0; min-height:40px; border: 1px solid var(--line); border-radius:var(--radius-control); padding: 7px 9px; color: var(--text); background: var(--surface-soft); font: inherit; font-size: 12px; }
 .probe-enabled { display: inline-flex; align-items: center; gap: 7px; margin-top: 12px; color: var(--text); font-size: 12px; }
 .probe-help { margin: 7px 0; }
@@ -272,6 +272,6 @@ onBeforeUnmount(() => { if (refreshTimer !== undefined) clearInterval(refreshTim
 .probe-history li[data-status='healthy'] strong { color: var(--success); }
 .probe-history li[data-status='unhealthy'] strong { color: var(--danger); }
 .probe-no-history { color: var(--muted-strong); }
-@media (max-width: 760px) { .probe-fields { grid-template-columns: repeat(2,minmax(0,1fr)); } .probe-fields .probe-target { grid-column: span 2; } }
+@media (max-width: 760px) { .probe-fields { grid-template-columns: repeat(2,minmax(0,1fr)); } .probe-fields .probe-target { grid-column: span 2; }.probe-fields input[type=number]{max-width:160px} }
 @media (max-width: 480px) { .probe-heading { align-items: flex-start; flex-direction: column; } .probe-fields { grid-template-columns: minmax(0,1fr); } .probe-fields .probe-target { grid-column: auto; } .probe-card-heading { align-items: flex-start; } .probe-actions button { flex: 1 1 auto; } }
 </style>

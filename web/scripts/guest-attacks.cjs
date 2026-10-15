@@ -16,6 +16,11 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  console.log('GUEST SECURITY: private operations',privateOperations.length)
  for(let i=0;i<privateOperations.length;i+=8){await Promise.all(privateOperations.slice(i,i+8).map(async o=>{const r=await browserRequest(target(o),o.method,payload,hostileHeaders);record('catalog:'+o.name,r.status===401,{status:r.status})}))}
 
+ // Core runtime metadata and the shared memo are never part of public projection.
+ const savedMemo=await(await admin.request.get(base+'/api/v1/dashboard/memo')).json()
+ const memoWrite=await admin.request.put(base+'/api/v1/dashboard/memo',{headers,data:{content:'PRIVATE-OVERVIEW-MEMO <script>window.__memoLeak=1</script>',revision:savedMemo.revision}})
+ assert.equal(memoWrite.status(),200)
+ for(const actor of [page.context(),admin]){const name=actor===admin?'administrator':'guest';const response=await actor.request.get(base+'/api/v1/public/guest/display');const body=await response.text();record('overview-memo-private:'+name,response.status()===200&&!body.includes('PRIVATE-OVERVIEW-MEMO')&&!body.includes('kernelVersion')&&!body.includes('environment'),{status:response.status()});const forged=await actor.request.get(base+'/api/v1/public/guest/display?memo=true&core=true');record('overview-query-rejected:'+name,forged.status()===400,{status:forged.status()})}
  // Enrollment token-bearing installation commands remain private.
  const enrollment=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE INSTALL NAME',coreUrl:base,deploymentMethod:'docker',asset:{price:98765.4321,currency:'PRIVBILL',billingCycleUnit:'minute',billingCycleDays:30,purchasedAt:'2098-04-03T00:00:00Z',expiresAt:'2099-05-06T07:08:00Z',expiryNoticeDays:7,trafficLimitBytes:1234567890123,trafficAccounting:'sum',trafficWarningPercent:90}}})
  assert.equal(enrollment.status(),201);const install=await enrollment.json()

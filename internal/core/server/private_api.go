@@ -65,7 +65,7 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 	if s.handleHostAPI(w, r, current) {
 		return
 	}
-	if s.handleDashboardSettingsAPI(w, r) || s.handleNodeDashboardAPI(w, r) {
+	if s.handleDashboardContextAPI(w, r) || s.handleDashboardSettingsAPI(w, r) || s.handleNodeDashboardAPI(w, r) {
 		return
 	}
 	if strings.HasSuffix(r.URL.Path, "/resume") {

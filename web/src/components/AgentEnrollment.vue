@@ -130,14 +130,19 @@ function isLiteralLoopback(hostname: string): boolean {
     <section :class="['agent-enrollment-card', { 'agent-enrollment-card-compact': compact }]">
       <div class="agent-enrollment-form">
         <div class="agent-enrollment-section-heading">
-          <div><h2>{{ compact ? t('m.11e4978edcfe') : t('m.8e80901344c8') }}</h2><p>{{ t('m.ef7b7a7a77a6') }}</p></div>
+          <div><h2>{{ compact ? t('m.11e4978edcfe') : t('m.8e80901344c8') }}</h2></div>
         </div>
-        <label class="field"><span>{{ t('m.b66f55e3dc3d') }}</span><input v-model="agentServer" autocomplete="url" placeholder="https://core.example:8180" :aria-label="t('m.b66f55e3dc3d')" /></label>
-        <fieldset class="deployment-choices" data-testid="agent-deployment-method"><legend>{{ t('agent.deploymentMethod') }}</legend><div><button type="button" :aria-pressed="deploymentMethod === 'native'" @click="deploymentMethod = 'native'">{{ t('agent.nativeDeployment') }}</button><button type="button" :aria-pressed="deploymentMethod === 'docker'" @click="deploymentMethod = 'docker'">{{ t('agent.dockerDeployment') }}</button></div></fieldset>
+        <div class="enrollment-connection">
+        <div class="enrollment-identity">
+        <label class="field enrollment-server"><span>{{ t('m.b66f55e3dc3d') }}</span><input v-model="agentServer" autocomplete="url" placeholder="https://core.example:8180" :aria-label="t('m.b66f55e3dc3d')" /></label>
+        <label v-if="!nodeId" class="field enrollment-name"><span>{{ t('m.a09f47188571') }}</span><input v-model="displayName" maxlength="80" autocomplete="off" :placeholder="t('m.1b086a50d7b3')" /></label>
+        </div>
+        <fieldset class="deployment-choices" data-testid="agent-deployment-method"><legend>{{ t('agent.deploymentMethod') }}</legend><div><button type="button" :aria-pressed="deploymentMethod === 'native'" @click="deploymentMethod = 'native'">{{ t('agent.nativeDeployment') }}</button><button type="button" :aria-pressed="deploymentMethod === 'docker'" @click="deploymentMethod = 'docker'">{{ t('agent.dockerDeployment') }}</button></div>
         <p v-if="deploymentMethod === 'docker'" class="field-hint">{{ t('agent.dockerRequirements') }}</p>
+        </fieldset>
         <p v-if="nodeId" class="field-hint">{{ t('node.enrollmentRenewHint') }}</p>
-        <label v-else class="field"><span>{{ t('m.a09f47188571') }}</span><input v-model="displayName" maxlength="80" autocomplete="off" :placeholder="t('m.1b086a50d7b3')" /></label>
-        <NodeAssetFields v-if="assetReady" :values="asset" :schema="assetSchema" :disabled="creating" />
+        </div>
+        <NodeAssetFields v-if="assetReady" class="enrollment-assets" :show-title="false" :values="asset" :schema="assetSchema" :disabled="creating" />
         <p v-if="!agentOriginIsSupported || !agentOriginUsesAllowedTransport" class="alert alert-error" role="alert">{{ t('m.1d5964dbb8d8') }}</p>
         <p v-if="error" class="alert alert-error" role="alert">{{ display(error) }}</p>
         <p v-if="notice" class="alert alert-success" role="status">{{ display(notice) }}</p>
@@ -157,6 +162,32 @@ function isLiteralLoopback(hostname: string): boolean {
 <style scoped>
 .deployment-choices{margin:0;padding:0;border:0;min-width:0}.deployment-choices legend{padding:0;margin-bottom:8px;color:var(--muted-strong);font-size:13px}.deployment-choices>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.deployment-choices button{min-height:44px;border:1px solid var(--line);border-radius:var(--radius-control);padding:10px;color:var(--muted-strong);background:var(--surface);font:inherit;cursor:pointer}.deployment-choices button[aria-pressed=true]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}.deployment-choices button:hover{border-color:var(--accent-line)}.deployment-choices button:active{background:var(--line)}.deployment-choices button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 
-.agent-enrollment-page{width:min(980px,100%);margin:0 auto;padding:clamp(24px,5vw,52px);color:var(--text)}.agent-enrollment-compact-page{color:var(--text)}.agent-enrollment-heading,.agent-enrollment-section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.agent-enrollment-heading{margin-bottom:20px}.agent-enrollment-heading h1{margin:5px 0;font-size:clamp(26px,4vw,38px)}.agent-enrollment-heading p,.agent-enrollment-section-heading p{color:var(--muted-strong);line-height:1.55}.agent-enrollment-card {border-radius:0;background:transparent;box-shadow:none;padding:20px 0;border-top:1px solid var(--line);}.agent-enrollment-form{display:grid;gap:13px}.agent-enrollment-section-heading h2{margin:0}.agent-enrollment-result{display:grid;gap:12px;border-top:1px solid var(--line);padding-top:16px}.agent-enrollment-form .field{display:grid;gap:6px}.agent-enrollment-form input,.agent-enrollment-form textarea,.agent-enrollment-form select{box-sizing:border-box;width:100%;border:1px solid var(--line);border-radius:var(--radius-control);padding:10px;background:var(--surface-soft);color:inherit;font:inherit}.agent-enrollment-form textarea{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.8rem;overflow-wrap:anywhere;resize:vertical}.agent-enrollment-form .field-hint,.agent-release-note{margin:0;color:var(--muted-strong);font-size:.82rem;line-height:1.55}.agent-release-note{border-top:1px solid var(--line);padding-top:12px}.agent-enrollment-card-compact{margin-top:18px}
+.agent-enrollment-page{width:min(980px,100%);margin:0 auto;padding:clamp(24px,5vw,52px);color:var(--text)}.agent-enrollment-compact-page{color:var(--text)}.agent-enrollment-heading,.agent-enrollment-section-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}.agent-enrollment-heading{margin-bottom:20px}.agent-enrollment-heading h1{margin:5px 0;font-size:clamp(26px,4vw,38px)}.agent-enrollment-heading p,.agent-enrollment-section-heading p{color:var(--muted-strong);line-height:1.55}.agent-enrollment-card {max-width:1120px;container-type:inline-size;border-radius:0;background:transparent;box-shadow:none;padding:20px 0;border-top:1px solid var(--line);}.agent-enrollment-form{display:grid;align-items:start;gap:16px}.enrollment-identity{display:grid;grid-template-columns:minmax(0,480px) minmax(0,280px);gap:16px 24px;align-items:start}.agent-enrollment-form>.agent-enrollment-section-heading,.agent-enrollment-form>p,.agent-enrollment-form>.agent-enrollment-result{grid-column:1/-1}.agent-enrollment-form>.primary-button{justify-self:start;grid-column:1/-1}@media(max-width:760px){.enrollment-identity{grid-template-columns:minmax(0,1fr)}}.enrollment-connection{display:grid;align-content:start;gap:16px;min-width:0}.deployment-choices{max-width:400px}.agent-enrollment-section-heading h2{margin:0}.agent-enrollment-result{display:grid;gap:12px;border-top:1px solid var(--line);padding-top:16px}.agent-enrollment-form .field{display:grid;gap:6px}.agent-enrollment-form input,.agent-enrollment-form textarea,.agent-enrollment-form select{box-sizing:border-box;width:100%;border:1px solid var(--line);border-radius:var(--radius-control);padding:10px;background:var(--surface-soft);color:inherit;font:inherit}.agent-enrollment-form textarea{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.8rem;overflow-wrap:anywhere;resize:vertical}.agent-enrollment-form .field-hint,.agent-release-note{margin:0;color:var(--muted-strong);font-size:.82rem;line-height:1.55}.agent-release-note{border-top:1px solid var(--line);padding-top:12px}.agent-enrollment-card-compact{margin-top:18px}
+
+
+/* Align the existing connection column and two asset columns on shared rows. */
+@container(min-width:900px){
+ .agent-enrollment-form{grid-template-columns:minmax(0,400px) minmax(0,560px);column-gap:40px}
+ .enrollment-identity{grid-template-columns:minmax(0,1fr)}
+ .agent-enrollment-form>.asset-fields{margin:0;padding-top:0;border-top:0}
+ .agent-enrollment-form>.primary-button{grid-column:1}
+ .agent-enrollment-form>.agent-release-note{grid-column:1/-1}
+ .agent-enrollment-form:has(.enrollment-name)>.enrollment-connection { grid-row:2 / span 3; display:grid; grid-template-rows:subgrid; row-gap:16px; }
+ .agent-enrollment-form:has(.enrollment-name)>.enrollment-connection { grid-column:1; }
+ .agent-enrollment-form:has(.enrollment-name)>.enrollment-assets { display:contents; }
+ .agent-enrollment-form:has(.enrollment-name) .enrollment-identity { display:contents; }
+ .enrollment-assets :deep(.asset-grid) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+ .agent-enrollment-form:has(.enrollment-name) .enrollment-assets :deep(.asset-grid) { grid-column:2; grid-row:2 / span 3; grid-template-rows:subgrid; }
+ .enrollment-assets :deep(.asset-grid label),.enrollment-connection .field { display:grid; grid-template-rows:20px 44px auto; align-content:start; gap:7px; font-size:13px; line-height:20px; }
+ .enrollment-assets :deep(.asset-grid label:not(.asset-date)>input),.enrollment-assets :deep(.asset-grid .asset-date>input),.enrollment-assets :deep(.asset-grid .ui-select) { width:100%; max-width:none; height:44px; }
+ .enrollment-assets :deep(.u031-btn) { height:44px; min-height:44px; }
+ .enrollment-connection .field input { height:44px; min-height:44px; }
+ .deployment-choices legend { font-size:13px; line-height:20px; margin-bottom:7px; }
+ .deployment-choices button { height:44px; }
+ .deployment-choices .field-hint { margin-top:8px; }
+ .agent-enrollment-form:has(.enrollment-name):has(.asset-grid label:nth-child(7))>.enrollment-connection,
+ .agent-enrollment-form:has(.enrollment-name):has(.asset-grid label:nth-child(7)) .enrollment-assets :deep(.asset-grid) { grid-row:2 / span 4; }
+}
+
 @media(max-width:640px){.agent-enrollment-heading,.agent-enrollment-section-heading{align-items:flex-start;flex-direction:column}.agent-enrollment-heading button{align-self:flex-start}}
 </style>

@@ -161,7 +161,13 @@ type Traffic struct {
 }
 
 // Host measurements fail independently; missing devices are unknown, never zero.
+type DiskIO struct {
+	ReadBytesPerSecond  float64 `json:"readBytesPerSecond"`
+	WriteBytesPerSecond float64 `json:"writeBytesPerSecond"`
+}
+
 type MetricsHost struct {
+	DiskIO              *Metric[DiskIO]         `json:"diskIO,omitempty"`
 	MemoryMode          string                  `json:"memoryMode"`
 	FastIntervalSeconds int                     `json:"fastIntervalSeconds"`
 	DiskIntervalSeconds int                     `json:"diskIntervalSeconds"`
@@ -182,6 +188,14 @@ type MetricsHost struct {
 func validateHost(h *MetricsHost, stale bool) error {
 	if h == nil {
 		return nil
+	}
+	if h.DiskIO != nil {
+		if err := validateMetric("host.diskIO", *h.DiskIO, stale); err != nil {
+			return err
+		}
+		if v := h.DiskIO.Value; v != nil && (!finiteNonnegative(v.ReadBytesPerSecond) || !finiteNonnegative(v.WriteBytesPerSecond)) {
+			return errors.New("invalid disk IO rate")
+		}
 	}
 	if h.FastIntervalSeconds < 1 || h.FastIntervalSeconds > 60 || h.DiskIntervalSeconds < 5 || h.DiskIntervalSeconds > 300 {
 		return errors.New("invalid host intervals")
@@ -297,6 +311,7 @@ type HostResponse struct {
 
 // HostMetricKeys is shared by history, alert validation and presentation.
 var HostMetricKeys = map[string]string{
+	"disk.read_bytes_per_second": "Disk read (bytes/s)", "disk.write_bytes_per_second": "Disk write (bytes/s)",
 	"swap.used_percent": "Swap usage (%)", "swap.used_bytes": "Swap used (bytes)",
 	"load.one": "Load (1 min)", "load.five": "Load (5 min)", "load.fifteen": "Load (15 min)",
 	"processes.count": "Processes", "sockets.tcp": "TCP sockets", "sockets.udp": "UDP sockets",
@@ -313,6 +328,11 @@ func HostNumericMetrics(h *MetricsHost) map[string]Metric[float64] {
 	}
 	add := func(key string, status MetricStatus, at time.Time, age int64, n float64) {
 		out[key] = Metric[float64]{Status: status, Value: &n, SampledAt: at, SampleAgeMillis: age}
+	}
+	if h.DiskIO != nil && h.DiskIO.Value != nil {
+		v := h.DiskIO
+		add("disk.read_bytes_per_second", v.Status, v.SampledAt, v.SampleAgeMillis, v.Value.ReadBytesPerSecond)
+		add("disk.write_bytes_per_second", v.Status, v.SampledAt, v.SampleAgeMillis, v.Value.WriteBytesPerSecond)
 	}
 	if v := h.Swap.Value; v != nil {
 		add("swap.used_percent", h.Swap.Status, h.Swap.SampledAt, h.Swap.SampleAgeMillis, v.UsedPercent)
