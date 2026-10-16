@@ -62,6 +62,8 @@ func RunWithInput(ctx context.Context, args []string, lookup LookupEnv, stdin io
 		return runControl(ctx, args[1], args[2:], lookup, stdin, stdout, stderr, version)
 	case "serve":
 		return runServe(ctx, args[1:], lookup, stdin, stdout, stderr, version)
+	case "devweb":
+		return runDevWeb(ctx, args[1:], lookup, stdin, stdout, stderr, version)
 	case "backup":
 		return runBackup(ctx, args[1:], stdout, stderr)
 	case "restore":
@@ -280,6 +282,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance call NAME --server https://core --params JSON --query JSON --body @FILE"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance nodes list [connection flags]  # resource/action aliases"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance tui [--server https://core] [connection flags]"))
+	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance devweb [--no-build] [--reset]  # build the newest Web and serve it on 0.0.0.0:8181"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance agent COMMAND [flags]  # root Agent lifecycle"))
 	fmt.Fprintln(w, i18n.TextFor(w, "Global language: --lang en|zh-CN (or NODEDANCE_LANG)"))
 	fmt.Fprintln(w, i18n.TextFor(w, "Default listen address: 127.0.0.1:8180"))
