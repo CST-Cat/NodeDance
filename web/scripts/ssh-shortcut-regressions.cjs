@@ -153,5 +153,57 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  await dialog.getByRole('button',{name:'Copy SSH',exact:true}).click()
  await page.waitForFunction(()=>window.sshCopiedCommand==='ssh -p 2222 other_user@2001:db8::1')
  assert.equal(await page.evaluate(()=>window.sshCopiedCommand),'ssh -p 2222 other_user@2001:db8::1','Last observed connection remains copyable offline')
- console.log('SSH discovery regressions passed: no saved connection, automatic address/account/custom port, dialog-first copy for a single and for several accounts, explicit Copy SSH confirmation with cancel/Escape refusal, focus return, pending detection bubble auto-dismiss, delayed dialog after discovery, offline reuse; 8 card layouts and 8 dialog layouts.')
+ // A saved custom connection (host/user/custom port from the node
+ // preferences) participates in the same dialog even while discovery is
+ // unavailable: the button opens the dialog immediately, the saved entry is
+ // listed, preselected and only copied after explicit confirmation, and
+ // Cancel/Escape keep the clipboard untouched.
+ const savedPreference={targetKind:'node',identity:'node:'+node,alias:'',icon:'',notes:'',serviceUrl:'',sshHost:'203.0.113.77',sshUser:'ubuntu',sshPort:2202,group:'',sortOrder:0,visible:true,pinned:false}
+ const savedCommand='ssh -p 2202 ubuntu@203.0.113.77'
+ const saved=(await page.request.put(base+routePath('nodes.save-preference'),{headers,data:savedPreference}))
+ assert.equal(saved.status(),204,'The saved connection persists through the shared preference operation')
+ parkDiagnostics=true;parked=[]
+ await page.reload();await shortcut.waitFor()
+ await page.waitForFunction(title=>document.querySelector('[data-testid=node-ssh-shortcut]')?.getAttribute('title')===title,savedCommand,{timeout:8000},'The saved connection titles the shortcut before discovery resolves')
+ await shortcut.click();await dialog.waitFor()
+ const savedOptions=dialog.getByRole('radio')
+ assert.equal(await savedOptions.count(),1,'The saved connection stays selectable while discovery is unavailable')
+ assert.ok(await savedOptions.first().isChecked(),'The saved connection starts selected')
+ assert.deepEqual(await dialog.locator('.ui-dialog-choice-detail').allInnerTexts(),[savedCommand],'The saved connection shows its command')
+ assert.ok(await dialog.getByRole('button',{name:'Copy SSH',exact:true}).isVisible(),'The saved connection still needs the explicit confirmation')
+ await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'})
+ assert.equal(await page.evaluate(()=>window.sshCopiedCommand),undefined,'Escape must not copy the saved connection')
+ assert.ok(await shortcut.evaluate(el=>el===document.activeElement),'Closing returns the focus to the shortcut')
+ await shortcut.click();await dialog.waitFor()
+ await dialog.getByRole('button',{name:'Copy SSH',exact:true}).click()
+ await page.waitForFunction(value=>window.sshCopiedCommand===value,savedCommand)
+ await dialog.waitFor({state:'hidden'})
+ // Discovered accounts stay offered next to the saved connection, which keeps
+ // the preferred preselection; a saved entry that repeats a discovered
+ // command collapses to a single choice instead of a duplicate.
+ online=true;ambiguous=true;parkDiagnostics=false;parked=[]
+ await page.reload();await shortcut.waitFor()
+ const reopenWithChoices=async count=>{
+  for(let attempt=0;attempt<40;attempt++){
+   await shortcut.click();await dialog.waitFor()
+   const options=dialog.getByRole('radio')
+   if(await options.count()===count)return options
+   await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'})
+  }
+  throw new Error('The account dialog never offered '+count+' choices')
+ }
+ const expanded=await reopenWithChoices(4)
+ assert.equal((await dialog.locator('.ui-dialog-choice-detail').allInnerTexts())[0],savedCommand,'The saved connection stays first among the discovered accounts')
+ assert.ok(await expanded.first().isChecked(),'The saved connection is preferred while discovered alternatives exist')
+ await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'})
+ const collapsedPreference={...savedPreference,sshHost:'2001:db8::1',sshUser:'machine_user',sshPort:2222}
+ assert.equal((await page.request.put(base+routePath('nodes.save-preference'),{headers,data:collapsedPreference})).status(),204)
+ await page.reload();await shortcut.waitFor()
+ const collapsed=await reopenWithChoices(3)
+ assert.ok(await collapsed.first().isChecked(),'The saved duplicate still drives the preselection')
+ assert.equal((await dialog.locator('.ui-dialog-choice-detail').allInnerTexts())[0],'ssh -p 2222 machine_user@2001:db8::1','The collapsed choice shows the shared command once')
+ await dialog.getByRole('button',{name:'Copy SSH',exact:true}).click()
+ await page.waitForFunction(()=>window.sshCopiedCommand==='ssh -p 2222 machine_user@2001:db8::1')
+ await dialog.waitFor({state:'hidden'});assert.ok(await shortcut.evaluate(el=>el===document.activeElement),'Confirming returns the focus to the shortcut')
+ console.log('SSH discovery regressions passed: no saved connection, automatic address/account/custom port, dialog-first copy for a single and for several accounts, saved custom host/user/port selectable and preferred with discovery unavailable or discovered alternatives (duplicate commands collapsed), explicit Copy SSH confirmation with cancel/Escape refusal, focus return, pending detection bubble auto-dismiss, delayed dialog after discovery, offline reuse; 8 card layouts and 8 dialog layouts.')
 }

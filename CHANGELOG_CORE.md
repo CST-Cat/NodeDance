@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.35]
+
+### English
+
+- Include the saved custom SSH connection (node preference host/user/port) in the shared account-choice dialog: it stays selectable while discovery is pending or unavailable, discovered alternatives are preserved without duplicating an identical command, and the saved entry is the preferred preselected default while still requiring the dialog's explicit "Copy SSH" confirmation.
+
+### 简体中文
+
+- 将已保存的自定义 SSH 连接（节点偏好中的主机／用户／端口）纳入共享账号选择对话框：识别进行中或不可用时仍可选择，保留已识别账号且不重复相同命令，已保存项作为默认预选，仍需对话框内“复制 SSH”的显式确认。
+
 ## [0.1.34]
 
 ### English

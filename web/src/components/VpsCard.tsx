@@ -480,20 +480,55 @@ export default function VpsCard(input: Props) {
         label: string;
         command: string;
       };
+      // The saved custom connection joins the same account dialog as the
+      // discovered accounts. It stays selectable while discovery is pending or
+      // unavailable and is the preferred default; discovered alternatives are
+      // preserved without duplicating an identical command.
+      function savedAccountChoice(): SshAccountChoice | undefined {
+        const host = props.nodePreference?.sshHost ?? "";
+        const user = props.nodePreference?.sshUser ?? "";
+        const port = props.nodePreference?.sshPort || 22;
+        if (
+          !host ||
+          !user ||
+          host.startsWith("-") ||
+          !/^[A-Za-z0-9._:%-]+$/.test(host) ||
+          !/^[A-Za-z_][A-Za-z0-9_.-]{0,63}$/.test(user) ||
+          !Number.isInteger(port) ||
+          port < 1 ||
+          port > 65535
+        )
+          return undefined;
+        return {
+          value: `${user}@${host}:${port}`,
+          label: port === 22 ? `${user}@${host}` : `${user}@${host}:${port}`,
+          command: `ssh -p ${port} ${user}@${host}`,
+        };
+      }
       function sshAccountChoices(): SshAccountChoice[] {
+        const accounts: SshAccountChoice[] = [];
+        const saved = savedAccountChoice();
+        if (saved) accounts.push(saved);
         const connection = props.sshConnection;
-        if (!connection) return [];
-        const accounts: SshAccountChoice[] = [
-          {
-            value: "",
-            label: connection.user || t("ssh.clientDefault"),
-            command: connection.command ?? "",
-          },
-        ];
-        for (const user of connection.users ?? []) {
-          const command = connection.commands?.[user];
-          if (command && user !== connection.user)
-            accounts.push({ value: user, label: user, command });
+        if (connection) {
+          const detected: SshAccountChoice[] = [
+            {
+              value: "",
+              label: connection.user || t("ssh.clientDefault"),
+              command: connection.command ?? "",
+            },
+          ];
+          for (const user of connection.users ?? []) {
+            const command = connection.commands?.[user];
+            if (command && user !== connection.user)
+              detected.push({ value: user, label: user, command });
+          }
+          for (const account of detected)
+            if (
+              !account.command ||
+              !accounts.some((existing) => existing.command === account.command)
+            )
+              accounts.push(account);
         }
         return accounts;
       }
@@ -514,6 +549,12 @@ export default function VpsCard(input: Props) {
       }
       async function chooseAndCopySSH() {
         const accounts = copiableAccounts();
+        // The saved custom connection is preferred when present; a previously
+        // confirmed account and the first offer follow in that order.
+        const saved = savedAccountChoice();
+        const preferred = saved
+          ? accounts.find((account) => account.command === saved.command)
+          : undefined;
         const picked = await requestChoice(
           t("ssh.chooseAccount"),
           accounts.map((account) => ({
@@ -521,9 +562,11 @@ export default function VpsCard(input: Props) {
             label: account.label,
             detail: account.command,
           })),
-          accounts.some((account) => account.value === selectedSSHUser.value)
-            ? selectedSSHUser.value
-            : (accounts[0]?.value ?? ""),
+          (preferred ??
+            accounts.find(
+              (account) => account.value === selectedSSHUser.value,
+            ) ??
+            accounts[0])?.value ?? "",
           t("ssh.copyAction"),
         );
         if (picked === null) {
