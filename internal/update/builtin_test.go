@@ -3,9 +3,11 @@ package update
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -136,5 +138,55 @@ func TestBuiltInStateStaysOutsideBackupAndHasNoGlobalDeploymentRegistry(t *testi
 	}
 	if _, _, _, err := discover(context.Background(), "other", data); err == nil {
 		t.Fatal("unknown product accepted")
+	}
+}
+
+func TestCoreDockerDeploymentIsRejected(t *testing.T) {
+	data := filepath.Join(t.TempDir(), "data")
+	if err := os.Mkdir(data, 0700); err != nil {
+		t.Fatal(err)
+	}
+	_, err := New(Config{StateDir: filepath.Join(t.TempDir(), "updates"), Targets: map[string]Target{
+		"core": {Mode: "docker", Container: "nodedance-core", DataDir: data},
+	}}, fixtureResolver{})
+	if err == nil || !strings.Contains(err.Error(), "native nodedance.service") {
+		t.Fatalf("Core Docker deployment was accepted: %v", err)
+	}
+}
+
+func TestCoreUpdateDiscoveryDoesNotProbeDocker(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("Core update discovery requires root")
+	}
+	root := t.TempDir()
+	tools := filepath.Join(root, "tools")
+	if err := os.Mkdir(tools, 0700); err != nil {
+		t.Fatal(err)
+	}
+	dockerMarker := filepath.Join(root, "docker-was-called")
+	docker := filepath.Join(tools, "docker")
+	if err := os.WriteFile(docker, []byte("#!/bin/sh\ntouch \"$DOCKER_MARKER\"\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	systemctl := filepath.Join(tools, "systemctl")
+	if err := os.WriteFile(systemctl, []byte("#!/bin/sh\nprintf '%s' \"$TEST_PID\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKER_MARKER", dockerMarker)
+	t.Setenv("TEST_PID", strconv.Itoa(os.Getpid()))
+	t.Setenv("PATH", tools+":"+os.Getenv("PATH"))
+	data := filepath.Join(root, "data")
+	if err := os.Mkdir(data, 0700); err != nil {
+		t.Fatal(err)
+	}
+	config, _, _, err := discover(context.Background(), "core", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.Targets["core"].Mode != "systemd" || config.Targets["core"].Unit != "nodedance.service" {
+		t.Fatalf("Core did not resolve to its native unit: %+v", config.Targets["core"])
+	}
+	if _, err := os.Stat(dockerMarker); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("Core update discovery touched Docker")
 	}
 }

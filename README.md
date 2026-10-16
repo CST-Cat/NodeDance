@@ -18,13 +18,13 @@ Web、CLI、TUI 共用 Core 操作契约；CLI 与 TUI 完整覆盖同一终端�
 curl -fsSL https://github.com/CST-Cat/NodeDance/releases/latest/download/install-core.sh | sudo bash
 ```
 
-该命令安装 Core 程序。首次交互启动时可自定义登录账号名与密码，每项直接回车即自动生成高强度随机值；systemd 等无终端启动会自动生成两项，并保存在数据目录的 `0600` 权限文件 `initial-admin.json` 中，首次登录成功后删除。生产环境还需要配置 HTTPS 反向代理并运行 Core 服务，详见[部署指南](docs/installation.en.md#run-the-core)。
+该命令安装 Core 程序并自动创建、启用和启动 root `nodedance.service`，监听 `0.0.0.0:8180`，数据保存在 `/var/lib/nodedance`。首次无终端启动会自动生成账号和密码，写入私有数据目录内 `0600` 权限的 `initial-admin.json`，首次登录成功后删除。生产环境还需配置 HTTPS 反向代理，详见[部署指南](docs/installation.en.md#run-the-core)。
 
 ### Agent
 
-登录 Core 后进入 **添加 Agent**，填写节点名称并生成安装命令。选择左右排列的直接安装或 Docker 部署，复制完整命令到目标 Linux 主机运行即可，无需再次输入 Token。命令固定使用与 Core 配对的已发布 Agent 版本；Agent 以 root 运行，Token 过期时间显示北京时间。
+登录 Core 后进入 **添加 Agent**，填写节点名称并生成安装命令。选择左右排列的直接安装或 Docker 部署，复制完整命令到目标 Linux 主机运行即可，无需再次输入 Token。命令执行时自动解析最新稳定 Agent release；Agent 以 root 运行，Token 过期时间显示北京时间。
 
-Core 和 Agent 也支持 [Docker 部署](docs/docker.md)，提供独立镜像、Compose 示例和版本化发布。
+Core 原生安装到主控机，安装器会自动创建并启动 root `nodedance.service`，监听 `0.0.0.0:8180`，数据保存在 `/var/lib/nodedance`。仅 Agent 支持 [Docker 部署](docs/docker.md)。
 
 ## 功能
 

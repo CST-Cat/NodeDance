@@ -16,15 +16,15 @@ Run this on a Linux x86_64 or ARM64 server. The installer selects the latest sta
 curl -fsSL https://github.com/CST-Cat/NodeDance/releases/latest/download/install-core.sh | sudo bash
 ```
 
-This installs the Core program. Production deployments also need an HTTPS reverse proxy and a running Core service. See the [deployment guide](docs/installation.en.md#run-the-core).
+This installs the Core binary and automatically creates, enables, and starts the root-owned `nodedance.service`, bound to `0.0.0.0:8180` with data under `/var/lib/nodedance`. On first unattended startup, Core creates credentials in a private `0600` `initial-admin.json` file and removes it after the first successful login. Production deployments also need an HTTPS reverse proxy; see the [deployment guide](docs/installation.en.md#run-the-core).
 
 On first interactive start, enter a username and password or press Enter to generate either securely. Unattended starts generate both in the private `initial-admin.json` file, removed after the first successful login.
 
 ### Agent
 
-Sign in to Core, open **Add Agent**, enter a node name, and generate the installer command. Choose the side-by-side native/systemd or Docker option and run the complete command on the target Linux host. The enrollment token is included; no second token input is required. The command pins the published Agent release paired with Core. Agent runs as root; expiry is shown in Beijing time (UTC+8).
+Sign in to Core, open **Add Agent**, enter a node name, and generate the installer command. Choose the side-by-side native/systemd or Docker option and run the complete command on the target Linux host. The enrollment token is included; no second token input is required. The command resolves the latest stable Agent release when run. Agent runs as root; expiry is shown in Beijing time (UTC+8).
 
-Core and Agent also support [Docker deployment](docs/docker.md), with separate images, Compose examples, and versioned releases.
+Core is installed natively on the controller host. Only Agent supports [Docker deployment](docs/docker.md).
 
 ## Features
 

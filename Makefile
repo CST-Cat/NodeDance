@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-.PHONY: help deps frontend typecheck build install check run agent
+.PHONY: help deps frontend typecheck build install install-agent check run agent
 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
@@ -14,7 +14,8 @@ help:
 	  '  make typecheck  check React and TypeScript types' \
 	  '  make frontend   typecheck and build the embedded Web assets' \
 	  '  make build      build Core and Agent binaries' \
-	  '  make install    install previously built binaries under PREFIX' \
+	  '  make install    install the Core binary under PREFIX' \
+	  '  make install-agent install the Agent binary under PREFIX' \
 	  '  make check      run the frontend checks and Go tests' \
 	  '  make run        start the Core' \
 	  '  make agent      start the Agent'
@@ -35,9 +36,13 @@ build: frontend
 	go build -trimpath -o .build/nodedance-agent ./cmd/nodedance-agent
 
 install:
-	@test -x .build/nodedance -a -x .build/nodedance-agent || { printf '%s\n' 'run make build before make install' >&2; exit 1; }
+	@test -x .build/nodedance || { printf '%s\n' 'run make build before make install' >&2; exit 1; }
 	install -d -m 0755 "$(DESTDIR)$(BINDIR)"
 	install -m 0755 .build/nodedance "$(DESTDIR)$(BINDIR)/nodedance"
+
+install-agent:
+	@test -x .build/nodedance-agent || { printf '%s\n' 'run make build before make install-agent' >&2; exit 1; }
+	install -d -m 0755 "$(DESTDIR)$(BINDIR)"
 	install -m 0755 .build/nodedance-agent "$(DESTDIR)$(BINDIR)/nodedance-agent"
 
 check: frontend

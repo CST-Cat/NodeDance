@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
 	"testing"
 
 	"github.com/CST-Cat/NodeDance/internal/core/tailscale"
@@ -38,11 +37,8 @@ func TestDiscoveryReadsDeploymentHostThroughBuiltInExecutor(t *testing.T) {
 	}
 }
 
-func TestNativeDiscoveryUsesHostWithoutUpdateSetup(t *testing.T) {
-	if _, err := os.Stat("/.dockerenv"); err == nil {
-		t.Skip("requires native Core environment")
-	}
-	if (&Server{}).tailscaleDiscovery().ReadPeers != nil {
-		t.Fatal("native discovery must not require an update worker")
+func TestDefaultDiscoveryUsesBuiltInHostQuery(t *testing.T) {
+	if (&Server{}).tailscaleDiscovery().ReadPeers == nil {
+		t.Fatal("native host discovery is not configured")
 	}
 }

@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.36]
+
+### English
+
+- Run Core natively on the controller: remove Core Docker image and Compose deployment paths, and make the Core installer create, enable and start the root `nodedance.service` on `0.0.0.0:8180` while preserving existing data. Core updates now target the native service; Agent Docker deployment remains available.
+- Keep Tailscale peer discovery available to native Core through the existing read-only host query without changing the Tailscale service or its configuration.
+
+### 简体中文
+
+- Core 改为在主控机原生运行：移除 Core Docker 镜像与 Compose 部署路径；安装器自动创建、启用并启动 root `nodedance.service`，监听 `0.0.0.0:8180`，并保留现有数据。Core 内置更新改为更新原生服务；Agent 仍支持 Docker 部署。
+- 原生 Core 继续通过现有只读主机查询发现 Tailscale 节点，不修改 Tailscale 服务或配置。
+
 ## [0.1.35]
 
 ### English

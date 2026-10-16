@@ -26,22 +26,22 @@ nodedance update --component agent --node-id NODE_UUID
 ## Execution / 执行
 
 - 从各自 `core-v*`／`agent-v*` 命名空间选择正式版本；仅比较 tag 判断是否有新版，不比较协议号、能力、API 或存储指纹，不要求 `nodedance-update.json`。
-- 切换前下载并校验 SHA256，或拉取固定 Docker 标签并保存精确镜像 ID；下载失败不停止旧程序。
-- 自动识别当前 NodeDance systemd 服务或容器、私有数据目录和 Core 健康检查。更新请求不能指定任意服务或执行任意命令。
-- 由同一个 Core／Agent 二进制按需启动临时工作进程：原生部署使用临时 systemd 单元，Docker 使用当前产品镜像的临时容器。没有独立更新二进制、安装脚本或常驻更新服务。
+- 切换前下载并校验 SHA256；远端 Docker Agent 还会固定当前 Agent 镜像 ID。下载失败不停止旧程序。
+- Core 只识别原生 `nodedance.service`；Agent 识别原生 systemd 或 Docker 部署。更新请求不能指定任意服务或执行任意命令。
+- 由同一个 Core／Agent 二进制按需启动临时工作进程：Core 和原生 Agent 使用临时 systemd 单元，Docker Agent 使用当前 Agent 镜像的临时容器。没有独立更新二进制、安装脚本或常驻更新服务。
 - 临时工作进程独立于目标服务的生命周期，完成停止、备份、切换、启动、健康核验；失败自动恢复旧运行版本。Core 恢复更新前数据；Agent 保留当前凭据和任务状态。
 - 任务日志与备份位于数据目录的同级私有目录 `.<数据目录名>-updates`，root 所有、0700；日志为普通 0600 文件。观察可在更新持锁期间继续进行，后续请求恢复没有活跃工作进程的中断任务。
 
 Version eligibility is determined solely by the stable component tag. Protocol, API, capability and storage fingerprints never block installation; the authenticated Agent update channel also works without optional update-capability negotiation. Session generation and request identity checks remain required; release checksums, artifact architecture, runtime health and failure recovery remain required.
 
-The installed product binary owns the transaction through an on-demand transient systemd unit or container. It survives the target restart, verifies releases, backs up private data, preserves deployment settings, checks health/reconnection and rolls back failure. It installs no separate update daemon. Root-private journals and backups live beside the data directory, outside the data backup itself. Keep the retained backups and old containers while rollback is needed.
+The installed Core or Agent binary owns the transaction through an on-demand transient systemd unit. A Docker Agent uses a temporary container made from its current Agent image. The worker survives the target restart, verifies releases, backs up private data, preserves deployment settings, checks health/reconnection and rolls back failure. It installs no separate update daemon. Root-private journals and backups live beside the data directory, outside the data backup itself. Retain rollback state and the previous Agent image until recovery is no longer needed.
 
 ## Deployment permissions / 部署权限
 
-正常原生服务以 root 运行，才能替换受保护的程序并管理自身 systemd 单元。Core 的标准 Docker Compose 以 root 运行、保持只读根文件系统，并挂载宿主机 Docker socket；内置更新据此启动固定的临时工作容器。Docker socket 赋予 Core 宿主机容器管理权限，这扩大了 Core 的权限边界。Agent 始终 root 专用，已有的 0700 状态目录、0600 凭据和文件路径保护保持不变。NodeDance 不改变 Docker socket 的权限。
+Core 原生安装在主控机并以 root 运行，因此可以替换自身二进制和管理 systemd 单元。Docker 仅用于各主机上的 Agent；Docker Agent 仍以 root 运行，保留 0700 状态目录、0600 凭据和文件路径保护。NodeDance 不改变 Docker socket 的权限。
 
-Native managed services run as root to replace their protected executables and manage their systemd units. Standard Core Compose runs root with a read-only filesystem and a host Docker socket for built-in update workers. Docker socket access grants host container-management authority; this is an expanded Core privilege boundary. Agent remains root-only with protected state and credentials. NodeDance does not change Docker socket permissions.
+Core runs natively on the controller host as root so it can replace its binary and manage `nodedance.service`. Docker is used only for per-host Agents; Docker Agents remain root-only with protected state and credentials. NodeDance does not change Docker socket permissions.
 
-Tailscale 仍是可选能力。原生 Core 读取现有宿主机状态，Docker Core 通过固定的临时宿主机查询读取；NodeDance 不安装、配置或修改 Tailscale。
+Tailscale 仍是可选能力。Core 只读取主控机现有状态；NodeDance 不安装、配置或修改 Tailscale。
 
 Tailscale remains optional and is only queried on the deployment host. NodeDance does not install or configure it.

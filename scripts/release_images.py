@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify release images contain the tested artifacts; exercise packaging locally."""
+"""Verify Agent Docker release images contain the tested native artifact."""
 import argparse
 import hashlib
 import json
@@ -18,73 +18,62 @@ def docker(*args):
     return subprocess.check_output(['docker', *args], text=True).strip()
 
 
-def binaries(component):
-    return ['nodedance-agent'] if component == 'agent' else ['nodedance']
-
-
-def extract(image, component, architecture, destination):
+def extract(image, architecture, destination):
     container = docker('create', image)
     try:
-        for binary in binaries(component):
-            docker('cp', f'{container}:/usr/local/bin/{binary}',
-                   str(destination / f'{binary}-linux-{architecture}'))
+        docker('cp', f'{container}:/usr/local/bin/nodedance-agent',
+               str(destination / f'nodedance-agent-linux-{architecture}'))
     finally:
         docker('rm', '-v', container)
 
 
-def verify(image, component, architecture, version, artifacts):
+def verify(image, architecture, version, artifacts):
     info = json.loads(docker('image', 'inspect', image))[0]
     if info['Os'] != 'linux' or info['Architecture'] != architecture:
-        raise ValueError('release image architecture does not match its native artifacts')
-    expected_user = '0:0'
-    if info['Config']['User'] != expected_user:
-        raise ValueError('release image changed its runtime identity')
-    with tempfile.TemporaryDirectory(prefix='nodedance-image-verify-') as directory:
+        raise ValueError('Agent image architecture does not match its native artifact')
+    if info['Config']['User'] != '0:0':
+        raise ValueError('Agent image must run as root')
+    with tempfile.TemporaryDirectory(prefix='nodedance-agent-image-verify-') as directory:
         extracted = Path(directory)
-        extract(image, component, architecture, extracted)
-        for binary in binaries(component):
-            name = f'{binary}-linux-{architecture}'
-            expected = hashlib.sha256((artifacts / name).read_bytes()).digest()
-            actual = hashlib.sha256((extracted / name).read_bytes()).digest()
-            if actual != expected:
-                raise ValueError(f'image binary differs from tested artifact: {name}')
-            prefix = {'nodedance': 'NodeDance', 'nodedance-agent': 'NodeDance Agent'}[binary]
-            output = docker('run', '--rm', '--entrypoint', f'/usr/local/bin/{binary}', image, '--version')
-            if output != f'{prefix} {version}':
-                raise ValueError(f'image binary version mismatch: {binary}')
-    if component == 'agent':
-        if docker('run', '--rm', image, '--version') != f'NodeDance Agent {version}':
-            raise ValueError('Agent entrypoint did not preserve version execution')
-    print(f'Verified {component} linux/{architecture}: artifact bytes, version, runtime identity')
+        extract(image, architecture, extracted)
+        expected = hashlib.sha256((artifacts / f'nodedance-agent-linux-{architecture}').read_bytes()).digest()
+        actual = hashlib.sha256((extracted / f'nodedance-agent-linux-{architecture}').read_bytes()).digest()
+        if actual != expected:
+            raise ValueError('Agent image binary differs from the tested native artifact')
+        output = docker('run', '--rm', '--entrypoint', '/usr/local/bin/nodedance-agent', image, '--version')
+        if output != f'NodeDance Agent {version}':
+            raise ValueError('Agent image binary version mismatch')
+    if docker('run', '--rm', image, '--version') != f'NodeDance Agent {version}':
+        raise ValueError('Agent entrypoint did not preserve version execution')
+    print(f'Verified Agent linux/{architecture}: artifact bytes, version, root runtime')
 
 
 def test(architecture, version):
-    # A context with no Go or Web sources proves that release packaging cannot
-    # silently recompile either product. Both targets share their runtime stage.
-    with tempfile.TemporaryDirectory(prefix='nodedance-release-images-') as directory:
+    # A packaging context with no Go or Web sources proves the release image
+    # contains the exact Agent binary that passed the native build and tests.
+    with tempfile.TemporaryDirectory(prefix='nodedance-agent-release-images-') as directory:
         context = Path(directory)
         artifacts = context / 'dist'
         artifacts.mkdir()
         entrypoint = context / 'deploy/docker/agent-entrypoint.sh'
         entrypoint.parent.mkdir(parents=True)
         shutil.copyfile(ROOT / 'deploy/docker/agent-entrypoint.sh', entrypoint)
-        for component in ['core', 'agent']:
-            source = os.environ.get(f'TEST_{component.upper()}_IMAGE', f'nodedance-{component}:docker-test')
-            extract(source, component, architecture, artifacts)
-            image = f'nodedance-release-test:{component}-{uuid.uuid4().hex[:12]}'
-            try:
-                subprocess.run(['docker', 'build', '--target', 'release', '--platform', f'linux/{architecture}',
-                                '-f', str(ROOT / f'deploy/docker/Dockerfile.{component}'),
-                                '-t', image, str(context)], check=True)
-                verify(image, component, architecture, version, artifacts)
-            finally:
-                subprocess.run(['docker', 'image', 'rm', image], check=False, stdout=subprocess.DEVNULL)
+        source = os.environ.get('TEST_AGENT_IMAGE', 'nodedance-agent:docker-test')
+        extract(source, architecture, artifacts)
+        image = f'nodedance-agent-release-test:{uuid.uuid4().hex[:12]}'
+        try:
+            subprocess.run(['docker', 'build', '--target', 'release', '--platform', f'linux/{architecture}',
+                            '-f', str(ROOT / 'deploy/docker/Dockerfile.agent'),
+                            '-t', image, str(context)], check=True)
+            verify(image, architecture, version, artifacts)
+        finally:
+            subprocess.run(['docker', 'image', 'rm', image], check=False, stdout=subprocess.DEVNULL)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['verify', 'test'])
-    parser.add_argument('--component', choices=['core', 'agent'])
+    parser.add_argument('--component', choices=['agent'])
     parser.add_argument('--architecture', choices=['amd64', 'arm64'],
                         default={'x86_64': 'amd64', 'aarch64': 'arm64'}.get(platform.machine()))
     parser.add_argument('--version', default='dev')
@@ -96,11 +85,10 @@ def main():
     if args.command == 'test':
         test(args.architecture, args.version)
     else:
-        if not args.component or not args.image:
-            parser.error('verify requires --component and --image')
-        # Digest-pushed images are not necessarily present in the local daemon.
+        if args.component != 'agent' or not args.image:
+            parser.error('verify requires --component agent and --image')
         docker('pull', args.image)
-        verify(args.image, args.component, args.architecture, args.version, args.artifacts)
+        verify(args.image, args.architecture, args.version, args.artifacts)
 
 
 if __name__ == '__main__':

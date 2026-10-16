@@ -8,7 +8,7 @@ The Core owns administrator identity, Agent enrollment, task records, history, p
 
 NodeDance is currently pre-release software. The product version is `0.0.0`; build artifacts from this repository report `dev` unless a build supplies another version. Read the data compatibility note below before replacing a v0 binary.
 
-For container deployment of either component, see [Docker deployment](docker.md).
+For Agent container deployment, see [Agent Docker deployment](docker.md). Core runs natively on the controller host.
 
 ## Requirements
 
@@ -28,7 +28,7 @@ make frontend
 make build
 ```
 
-The binaries are written to `.build/nodedance` and `.build/nodedance-agent`. `make check` runs the frontend checks and Go tests. To install already-built binaries, run `sudo make install`; it copies both files to `$(PREFIX)/bin` (default `/usr/local/bin`) without rebuilding as root. `DESTDIR` can stage the install for packaging, for example `make install DESTDIR=/tmp/nodedance-package`.
+The binaries are written to `.build/nodedance` and `.build/nodedance-agent`. `make check` runs the frontend checks and Go tests. `sudo make install` installs only the Core binary; `sudo make install-agent` explicitly installs the Agent binary. Both targets copy an existing build to `$(PREFIX)/bin` (default `/usr/local/bin`) without rebuilding as root. `DESTDIR` can stage the install for packaging.
 
 To install the latest published Core release on Linux amd64 or arm64:
 
@@ -36,7 +36,7 @@ To install the latest published Core release on Linux amd64 or arm64:
 curl -fsSL https://github.com/CST-Cat/NodeDance/releases/latest/download/install-core.sh | sudo bash
 ```
 
-The installer resolves the latest stable `core-vMAJOR.MINOR.PATCH` tag, then verifies that release's architecture-specific `.tar.gz` against its `SHA256SUMS` before installing `/usr/local/bin/nodedance`. Pass `--release-tag core-vX.Y.Z` to pin a specific version. It replaces an existing regular Core executable, but refuses a symlink or directory at that path. The archive reduces download size; the extracted Core executable keeps its normal size. The installer does not change Core data, install the Agent, or configure systemd. Continue with the persistent service setup below after installation.
+The installer resolves the latest stable `core-vMAJOR.MINOR.PATCH` tag and verifies its architecture-specific archive against `SHA256SUMS`. It installs `/usr/local/bin/nodedance`, creates the root-owned `nodedance.service`, enables it at boot, and starts it. The service listens on `0.0.0.0:8180` and stores data under `/var/lib/nodedance`. Pass `--release-tag core-vX.Y.Z` to pin a release. Existing Core data is preserved; the installer does not install an Agent or print credentials. It refuses symlinks, directories, and units not marked as managed by NodeDance.
 
 ## Run the Core
 
@@ -50,48 +50,11 @@ On the first terminal start, Core asks for an administrator username and a hidde
 
 Core saves the initial login credentials in `initial-admin.json` inside its private `0700` data directory, with file permissions `0600`, and prints only the file path. Read this file locally, open `http://127.0.0.1:8180`, and sign in with both the username and password. The database stores an Argon2id password hash. Core deletes `initial-admin.json` after the first successful login. Restarting an initialized Core preserves its account and password.
 
-When Core starts without a terminal, including systemd, it generates both values automatically without waiting for input. To choose credentials for a service installation, run Core once interactively as the service user with the same data directory before enabling the service, then stop it and start the service.
+When Core starts without a terminal, including the managed systemd service, it generates both values automatically without waiting for input. The release installer starts the service immediately; read the private initial credential file locally for the first login.
 
-For a persistent installation, run `sudo make install` after a source build or use the published-release installer above, then create the private root-owned data directory for the managed Core service:
+The release installer above creates the persistent service automatically. It uses root-owned `/var/lib/nodedance` with mode `0700`, an optional `/etc/default/nodedance` environment file for `NODEDANCE_PUBLIC_ORIGIN` and `NODEDANCE_TRUSTED_PROXIES`, and a root-managed `nodedance.service`. On first unattended start, Core generates an administrator username and password in `/var/lib/nodedance/initial-admin.json` (mode `0600`); read it locally and sign in, then Core removes the file after the first successful login. Existing accounts remain in the database across service restarts and binary upgrades.
 
-```sh
-sudo install -d -o root -g root -m 0700 /var/lib/nodedance
-```
-
-Create the service unit only when the destination path is absent. This command uses a temporary file and a no-clobber hard link, so an existing unit or symlink is not overwritten:
-
-```sh
-sudo sh -c 'set -eu; unit=/etc/systemd/system/nodedance.service; tmp=$(mktemp /etc/systemd/system/.nodedance.service.XXXXXX); trap "rm -f \"$tmp\"" EXIT; cat >"$tmp"; chmod 0644 "$tmp"; ln "$tmp" "$unit"; rm "$tmp"; trap - EXIT' <<'EOF'
-[Unit]
-Description=NodeDance Core
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-User=root
-Group=root
-Environment=NODEDANCE_LISTEN=127.0.0.1:8180
-Environment=NODEDANCE_DATA_DIR=/var/lib/nodedance
-Environment=NODEDANCE_PUBLIC_ORIGIN=https://nodedance.example
-ExecStart=/usr/local/bin/nodedance serve
-Restart=on-failure
-RestartSec=3
-UMask=0077
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/nodedance
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now nodedance.service
-sudo systemctl status nodedance.service
-```
-
-The unit listens on loopback and stores its database and keys under `/var/lib/nodedance`. Configure the reverse proxy for HTTPS, WebSocket upgrades on `/ws/`, and forwarding to `127.0.0.1:8180`. Set `NODEDANCE_TRUSTED_PROXIES` or `trusted_proxies` only to the proxy addresses that actually connect to the Core. For direct access, bind the Core to the required interface. It serves HTTP by default; provide both `--tls-cert` and `--tls-key` to enable TLS at the Core. Plain HTTP is suitable for loopback and trusted private networks; do not expose an unencrypted Core listener directly to the public Internet. On first start, Core generates an administrator username and password automatically. Read them from the private file path printed in the service log (normally `sudo cat /var/lib/nodedance/initial-admin.json`) and use both to sign in. The service log does not contain the password. Core removes this file after the first successful login.
+Configure the HTTPS reverse proxy for WebSocket upgrades on `/ws/` and forward to `127.0.0.1:8180` or the host's private address. The Core listener itself uses HTTP; use a trusted private network or terminate HTTPS at the proxy rather than exposing plain HTTP to the public Internet.
 
 Manage the service with `sudo systemctl restart nodedance.service`, `sudo systemctl stop nodedance.service`, and `sudo journalctl -u nodedance.service`. A local Agent can run on the same Linux host. Production Agent connections require HTTPS/WSS and a certificate trusted by the Agent host; the Agent uses the system trust store, so no custom CA file is needed for ordinary public certificates. A private CA can be supplied with `--ca-file`. Plain HTTP/WS is accepted only for a literal loopback Core address in development mode. The Agent connects outbound over WSS and reconnects automatically after temporary Core or network outages.
 
@@ -99,7 +62,7 @@ The Core reads JSON configuration from `--config` or `NODEDANCE_CONFIG`; its def
 
 | Setting | Purpose |
 | --- | --- |
-| `listen` / `--listen` / `NODEDANCE_LISTEN` | Core bind address; default `127.0.0.1:8180` |
+| `listen` / `--listen` / `NODEDANCE_LISTEN` | Core bind address; app fallback is `127.0.0.1:8180`, installed service uses `0.0.0.0:8180` |
 | `data_dir` / `--data-dir` / `NODEDANCE_DATA_DIR` | Private Core state directory |
 | `public_origin` / `--public-origin` / `NODEDANCE_PUBLIC_ORIGIN` | Browser HTTPS origin used for request-origin checks |
 | `trusted_proxies` / `--trusted-proxies` / `NODEDANCE_TRUSTED_PROXIES` | Proxy IPs or CIDRs trusted for client address forwarding |

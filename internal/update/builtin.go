@@ -104,25 +104,23 @@ func discover(ctx context.Context, component, dataDir string) (Config, map[strin
 	}
 	target := Target{DataDir: dataDir}
 	config := Config{StateDir: updateState(dataDir)}
-	engine := NewDocker()
-	if err := engine.initialize(ctx); err == nil {
-		var containers []struct {
-			ID string `json:"Id"`
-		}
-		if err = engine.call(ctx, "GET", engine.version+"/containers/json", nil, &containers); err != nil {
-			return Config{}, nil, nil, err
-		}
-		hostname, _ := os.Hostname()
-		var match map[string]any
-		for _, c := range containers {
-			value, e := engine.inspect(ctx, c.ID)
-			if e != nil {
-				return Config{}, nil, nil, e
+	if component == "agent" {
+		engine := NewDocker()
+		if err := engine.initialize(ctx); err == nil {
+			var containers []struct {
+				ID string `json:"Id"`
 			}
-			state, _ := value["State"].(map[string]any)
-			cfg, _ := value["Config"].(map[string]any)
-			agentMount := false
-			if component == "agent" {
+			if err := engine.call(ctx, "GET", engine.version+"/containers/json", nil, &containers); err != nil {
+				return Config{}, nil, nil, err
+			}
+			var match map[string]any
+			for _, c := range containers {
+				value, e := engine.inspect(ctx, c.ID)
+				if e != nil {
+					return Config{}, nil, nil, e
+				}
+				state, _ := value["State"].(map[string]any)
+				cfg, _ := value["Config"].(map[string]any)
 				entries, _ := cfg["Entrypoint"].([]any)
 				agentEntrypoint := false
 				for _, entry := range entries {
@@ -132,93 +130,52 @@ func discover(ctx context.Context, component, dataDir string) (Config, map[strin
 						agentEntrypoint = true
 					}
 				}
-				if agentEntrypoint {
-					mounts, _ := value["Mounts"].([]any)
-					for _, entry := range mounts {
-						mount, _ := entry.(map[string]any)
-						if mount["Source"] == dataDir {
-							agentMount = true
-						}
+				mounted := false
+				mounts, _ := value["Mounts"].([]any)
+				for _, entry := range mounts {
+					mount, _ := entry.(map[string]any)
+					if mount["Source"] == dataDir {
+						mounted = true
 					}
 				}
-			}
-			if component == "agent" && (intNumber(state["Pid"]) == os.Getpid() || agentMount) || component == "core" && cfg["Hostname"] == hostname {
-				if match != nil {
-					return Config{}, nil, nil, errors.New("ambiguous product container")
-				}
-				match = value
-			}
-		}
-		if match != nil {
-			cfg, _ := match["Config"].(map[string]any)
-			target.Mode = "docker"
-			target.Container = strings.TrimPrefix(match["Name"].(string), "/")
-			// Resolve the application's private data mount to its actual host path.
-			mounts, _ := match["Mounts"].([]any)
-			found := false
-			for _, entry := range mounts {
-				m, _ := entry.(map[string]any)
-				dest, _ := m["Destination"].(string)
-				if dest == dataDir {
-					source, _ := m["Source"].(string)
-					target.DataDir = source
-					found = true
-					break
-				}
-			}
-			if component == "core" && !found {
-				return Config{}, nil, nil, errors.New("Core update requires persistent mounted data")
-			}
-			labels, _ := cfg["Labels"].(map[string]any)
-			if compose, _ := labels["com.docker.compose.project.config_files"].(string); compose != "" && !strings.Contains(compose, ",") {
-				target.ComposeFile = compose
-			}
-			if component == "core" {
-				network, _ := match["NetworkSettings"].(map[string]any)
-				ports, _ := network["Ports"].(map[string]any)
-				bindings, _ := ports["8180/tcp"].([]any)
-				if len(bindings) == 0 {
-					return Config{}, nil, nil, errors.New("Core update requires one published HTTP port")
-				}
-				binding, _ := bindings[0].(map[string]any)
-				for _, entry := range bindings {
-					candidate, _ := entry.(map[string]any)
-					if candidate["HostIp"] == "127.0.0.1" || candidate["HostIp"] == "0.0.0.0" {
-						binding = candidate
-						break
+				if intNumber(state["Pid"]) == os.Getpid() || mounted && agentEntrypoint {
+					if match != nil {
+						return Config{}, nil, nil, errors.New("ambiguous product container")
 					}
+					match = value
 				}
-				host, _ := binding["HostIp"].(string)
-				port, _ := binding["HostPort"].(string)
-				if host == "" || host == "0.0.0.0" {
-					host = "127.0.0.1"
-				}
-				target.HealthURL = "http://" + host + ":" + port + "/api/v1/health"
 			}
-			if err := runtimeHealth(&target, true, dataDir); err != nil {
-				return Config{}, nil, nil, err
-			}
-			if target.HealthCAFile != "" {
+			if match != nil {
+				cfg, _ := match["Config"].(map[string]any)
+				target.Mode = "docker"
+				target.Container = strings.TrimPrefix(match["Name"].(string), "/")
+				// Resolve the application's private data mount to its actual host path.
+				mounts, _ := match["Mounts"].([]any)
 				for _, entry := range mounts {
 					m, _ := entry.(map[string]any)
 					dest, _ := m["Destination"].(string)
-					source, _ := m["Source"].(string)
-					if target.HealthCAFile == dest || strings.HasPrefix(target.HealthCAFile, dest+"/") {
-						target.HealthCAFile = source + strings.TrimPrefix(target.HealthCAFile, dest)
+					if dest == dataDir {
+						source, _ := m["Source"].(string)
+						target.DataDir = source
 						break
 					}
 				}
-			}
-			if component == "agent" {
+				labels, _ := cfg["Labels"].(map[string]any)
+				if compose, _ := labels["com.docker.compose.project.config_files"].(string); compose != "" && !strings.Contains(compose, ",") {
+					target.ComposeFile = compose
+				}
+				if err := runtimeHealth(&target, dataDir); err != nil {
+					return Config{}, nil, nil, err
+				}
 				target.AgentConfig = runningAgentConfig(intNumber(match["State"].(map[string]any)["Pid"]), target.DataDir)
+				config.StateDir = updateState(target.DataDir)
+				config.Targets = map[string]Target{component: target}
+				return config, match, engine, nil
 			}
-			config.StateDir = updateState(target.DataDir)
-			config.Targets = map[string]Target{component: target}
-			return config, match, engine, nil
 		}
-	}
-	if _, err := os.Stat("/.dockerenv"); err == nil {
-		return Config{}, nil, nil, errors.New("Docker deployment requires the Docker socket mounted by the standard Compose configuration")
+		if _, err := os.Stat("/.dockerenv"); err == nil {
+			return Config{}, nil, nil, errors.New("Agent Docker deployment requires the Docker socket mounted by the standard Compose configuration")
+		}
 	}
 	if os.Geteuid() != 0 {
 		return Config{}, nil, nil, errors.New("updating the installed service requires root")
@@ -234,7 +191,7 @@ func discover(ctx context.Context, component, dataDir string) (Config, map[strin
 	}
 	pid, err := strconv.Atoi(strings.TrimSpace(string(output)))
 	if err != nil || pid <= 1 {
-		return Config{}, nil, nil, errors.New("NodeDance service is not running")
+		return Config{}, nil, nil, errors.New(target.Unit + " is not running")
 	}
 	target.Binary, err = os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
 	if err != nil {
@@ -243,7 +200,7 @@ func discover(ctx context.Context, component, dataDir string) (Config, map[strin
 	if component == "core" {
 		target.HealthURL = "http://127.0.0.1:8180/api/v1/health"
 	}
-	if err := runtimeHealth(&target, false, dataDir); err != nil {
+	if err := runtimeHealth(&target, dataDir); err != nil {
 		return Config{}, nil, nil, err
 	}
 	if component == "agent" {
@@ -383,7 +340,12 @@ func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolv
 	return err
 }
 
+// worker starts the fixed update worker container for a Docker Agent. Only the
+// Agent still deploys in a container; Core runs as the managed systemd service.
 func (d *Docker) worker(ctx context.Context, product map[string]any, component, config, rpc string) (Response, error) {
+	if component != "agent" {
+		return Response{}, errors.New("only the Docker Agent starts its update worker in a container")
+	}
 	// Remove only completed workers bearing our exact ownership label.
 	var old []struct {
 		ID    string `json:"Id"`
@@ -402,10 +364,7 @@ func (d *Docker) worker(ctx context.Context, product map[string]any, component, 
 	if !strings.HasPrefix(image, "sha256:") {
 		return Response{}, errors.New("invalid running product image")
 	}
-	executable := "/usr/local/bin/nodedance"
-	if component == "agent" {
-		executable += "-agent"
-	}
+	executable := "/usr/local/bin/nodedance-agent"
 	spec := map[string]any{"Image": image, "User": "0:0", "Entrypoint": []string{executable}, "Cmd": []string{"__update-host", config, rpc}, "Labels": map[string]string{"io.nodedance.update.worker": "true"}, "HostConfig": map[string]any{"Privileged": true, "PidMode": "host", "NetworkMode": "host", "Binds": []string{"/:/host:ro"}, "RestartPolicy": map[string]string{"Name": "no"}}}
 	var created struct {
 		ID string `json:"Id"`
@@ -473,7 +432,7 @@ func RecordRuntime(dataDir string, target Target) error {
 	}
 	return atomicFile(filepath.Join(dataDir, ".nodedance-runtime.json"), raw, 0600)
 }
-func runtimeHealth(target *Target, docker bool, metadataDir string) error {
+func runtimeHealth(target *Target, metadataDir string) error {
 	raw, err := os.ReadFile(filepath.Join(metadataDir, ".nodedance-runtime.json"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -485,21 +444,7 @@ func runtimeHealth(target *Target, docker bool, metadataDir string) error {
 	if Decode(raw, &running) != nil {
 		return errors.New("invalid Core runtime metadata")
 	}
-	if !docker {
-		target.HealthURL = running.HealthURL
-	}
-	if docker {
-		u, err := url.Parse(target.HealthURL)
-		if err != nil {
-			return err
-		}
-		source, err := url.Parse(running.HealthURL)
-		if err != nil {
-			return err
-		}
-		u.Scheme = source.Scheme
-		target.HealthURL = u.String()
-	}
+	target.HealthURL = running.HealthURL
 	target.HealthCAFile = running.HealthCAFile
 	target.HealthServerName = running.HealthServerName
 	return nil

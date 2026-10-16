@@ -1,4 +1,4 @@
-name: Docker deployment
+name: Agent Docker deployment
 
 on:
   pull_request:
@@ -8,14 +8,16 @@ on:
       - 'web/**'
       - 'go.mod'
       - 'go.sum'
-      - 'deploy/docker/**'
+      - 'deploy/docker/Dockerfile.agent'
+      - 'deploy/docker/agent-entrypoint.sh'
+      - 'deploy/docker/compose.agent.yml'
       - '.dockerignore'
       - 'scripts/test-docker.py'
       - 'scripts/release_images.py'
       - 'scripts/release-notes.py'
       - 'scripts/tests/**'
       - 'agent-release.version'
-      - '.github/workflows/*-release.yml'
+      - '.github/workflows/agent-release.yml'
       - '.github/workflows/docker.yml'
   push:
     branches: [main]
@@ -25,14 +27,16 @@ on:
       - 'web/**'
       - 'go.mod'
       - 'go.sum'
-      - 'deploy/docker/**'
+      - 'deploy/docker/Dockerfile.agent'
+      - 'deploy/docker/agent-entrypoint.sh'
+      - 'deploy/docker/compose.agent.yml'
       - '.dockerignore'
       - 'scripts/test-docker.py'
       - 'scripts/release_images.py'
       - 'scripts/release-notes.py'
       - 'scripts/tests/**'
       - 'agent-release.version'
-      - '.github/workflows/*-release.yml'
+      - '.github/workflows/agent-release.yml'
       - '.github/workflows/docker.yml'
   workflow_dispatch:
 
@@ -41,7 +45,7 @@ permissions:
 
 jobs:
   smoke:
-    name: Docker integration ${{ matrix.arch }}
+    name: Native Core with Docker Agent ${{ matrix.arch }}
     strategy:
       fail-fast: false
       matrix:
@@ -53,27 +57,43 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build Core and Agent from source
-        run: |
-          docker build -f deploy/docker/Dockerfile.core -t nodedance-core:docker-test .
-          docker build -f deploy/docker/Dockerfile.agent -t nodedance-agent:docker-test .
-      - name: Validate Compose configurations
-        run: |
-          docker compose -f deploy/docker/compose.core.yml config -q
-          docker compose -f deploy/docker/compose.agent.yml config -q
-      - name: Verify release packaging without source compilation
-        run: |
-          python3 -m unittest discover -s scripts/tests
-          python3 scripts/release_images.py test --architecture ${{ matrix.arch }}
-      - name: Test protected persistent state and host Agent deployment
-        run: python3 scripts/test-docker.py
 
-      - name: Set up Go for transactional update verification
-        uses: actions/setup-go@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.10.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.3
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-      - name: Verify Docker update and failure rollback against real containers
+
+      - name: Build native Core Web assets and binary
         run: |
-          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" NODEDANCE_TEST_DOCKER_UPDATE=1 \
-            "$(command -v go)" test -count=1 -v ./internal/update
+          pnpm --dir web install --frozen-lockfile
+          make frontend
+          mkdir -p .build
+          CGO_ENABLED=0 go build -trimpath -o .build/nodedance ./cmd/nodedance
+
+      - name: Build Agent Docker image and validate Compose
+        run: |
+          docker build -f deploy/docker/Dockerfile.agent -t nodedance-agent:docker-test .
+          docker compose -f deploy/docker/compose.agent.yml config -q
+
+      - name: Verify Agent release packaging
+        run: |
+          python3 -m unittest discover -s scripts/tests
+          python3 scripts/release_images.py test --architecture ${{ matrix.arch }}
+
+      - name: Test Agent Docker against native Core
+        run: TEST_CORE_BINARY=.build/nodedance python3 scripts/test-docker.py
+
+      - name: Verify native Core update worker and Agent Docker support
+        run: |
+          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" NODEDANCE_TEST_SYSTEMD_UPDATE=1 \
+            "$(command -v go)" test -count=1 ./internal/update

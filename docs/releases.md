@@ -4,7 +4,7 @@ Core and Agent are versioned independently:
 
 | Component / 组件 | Tag / 标签 | Changelog / 更新日志 | Assets / 产物 |
 | --- | --- | --- | --- |
-| Core | `core-vMAJOR.MINOR.PATCH` | `CHANGELOG_CORE.md` | Embedded Web + CLI/TUI Linux amd64/arm64 binaries and `.tar.gz` archives, latest-resolving installer, SHA256SUMS, version-pinned GHCR Docker image |
+| Core | `core-vMAJOR.MINOR.PATCH` | `CHANGELOG_CORE.md` | Embedded Web + CLI/TUI Linux amd64/arm64 binaries and `.tar.gz` archives, native systemd installer, SHA256SUMS |
 | Agent | `agent-vMAJOR.MINOR.PATCH` | `CHANGELOG_AGENT.md` | Root Agent Linux amd64/arm64 binaries, installer, SHA256SUMS, version-pinned GHCR Docker image |
 
 Core 的 Web、CLI、TUI 同时打包发布。Agent 独立发布，只有 Agent 相关改动才需要更新 Agent 版本。Agent 和 Core 的运行互通取决于协议版本及能力协商，无需发布版本号相同。
@@ -31,7 +31,7 @@ Agent installers resolve a published `agent-v*` tag and pin it. They do not use 
 
 Agent 安装器解析并固定已发布的 `agent-v*` 标签，不使用指向 Core 的仓库 `/releases/latest`。Agent 凭据继续要求 root 所有、0700 状态目录和 0600 普通配置文件。
 
-The Core installer verifies the archive checksum and member list, then executes the staged binary's `--version` and requires the exact pinned version before atomically replacing the installed executable. A failed execution or version mismatch leaves the previous executable intact.
+The Core installer verifies the archive checksum and member list, then executes the staged binary's `--version` and requires the exact pinned version before atomically replacing the installed executable. It also creates, enables, and starts the root-owned native `nodedance.service`, bound to `0.0.0.0:8180` with state under `/var/lib/nodedance`; existing data is preserved. It refuses to replace an unmarked systemd unit. A failed execution or version mismatch leaves the previous executable intact.
 
 Core 安装器校验归档 checksum 和文件列表后，会执行暂存程序的 `--version`，要求与固定的发布版本完全一致，再原子替换已安装程序。执行失败或版本不符时保留旧程序。
 
@@ -45,19 +45,11 @@ Core prepares and checks Web assets once, then shares the same assets with both 
 
 Core 的 Web 资源只构建和检查一次，两台原生 runner 使用相同资源。发布必须等待**两个架构**全部通过，随后汇总产物、恢复 artifact 传输丢失的执行权限、为每个架构创建一个 `.tar.gz`，并为裸二进制和压缩包生成统一校验清单。Core 安装脚本也会随 release 发布，默认解析最新正式 Core 版本，也可指定 tag 安装。任一架构构建或测试失败都会阻止发布，另一架构继续运行以保留诊断结果。
 
-## Docker images / Docker 镜像
+## Agent Docker image / Agent Docker 镜像
 
-Each native matrix job packages its tested artifacts using the Dockerfile's `release` target. The `runtime` stage is shared with the default `source` target, so user IDs, packages, entrypoints and health checks have one definition. Release packaging has no Go/Web compilation dependency. `scripts/release_images.py verify` checks the image's architecture, runtime UID, executable versions and byte-for-byte SHA256 equality with the tested native artifacts. Only the component binaries are packaged; update execution is built into those binaries.
+Core releases publish native Linux binaries and the installer only. The Agent release workflow packages the exact tested root Agent binary into `ghcr.io/cst-cat/nodedance-agent:agent-vX.Y.Z`; `scripts/release_images.py verify` checks its architecture, runtime identity, version, entrypoint, and SHA256 equality with the native artifact. The Agent Docker image remains available for managed hosts that need container deployment. Core itself has no Docker image or Compose deployment.
 
-每个原生 runner 在测试通过后，直接将同一份产物装入 `release` 目标镜像；arm64 的系统包安装也在 arm64 上执行，不启用 QEMU。镜像内二进制必须与经过测试的 artifact 字节一致，架构、版本、运行 UID 和 Agent 更新器都会验证。Core 的 Web 只在 prepare 构建一次，并已嵌入 Core 二进制。
-
-Matrix jobs push immutable image digests and upload the verified digests. Final publication combines both into the component tag using `docker buildx imagetools create`; any native test, packaging or verification failure blocks the version tag and GitHub Release. Images remain `ghcr.io/cst-cat/nodedance-core:core-vX.Y.Z` and `ghcr.io/cst-cat/nodedance-agent:agent-vX.Y.Z`.
-
-运行镜像的缓存存入各自 GHCR 仓库的 `buildcache-amd64` / `buildcache-arm64`，使用 `mode=min`。这些缓存不受 GitHub Actions tag ref 的读取隔离，也不导出 Go/Node 构建中间层。首次发布仍会冷构建；缓存是优化，不能替代 artifact 一致性验证。不同架构使用不同缓存引用，避免彼此覆盖。
-
-The release jobs use architecture-specific registry caches with `mode=min`; they no longer export large GHA `mode=max` caches. See [GitHub's cache access restrictions](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache) and [Docker registry cache](https://docs.docker.com/build/cache/backends/registry/). This removes the tag-to-tag GHA cache dependency; actual cold/warm release duration still needs measurement in Actions.
-
-Source builds remain available through the default target. The native Docker CI builds those source images, then `python3 scripts/release_images.py test` extracts their binaries and packages them in a temporary context with **no Go or Web sources**, exercising both release targets and artifact equality. [Docker deployment](docker.md) documents runtime integration checks. Do not infer an end-to-end speedup from local packaging alone: measure runner queue time, native tests, registry cache import/export and final publication on the next authorized release.
+Core release 只发布原生 Linux 二进制及安装器。Agent 发布工作流将经测试的 root Agent 二进制打包到 `ghcr.io/cst-cat/nodedance-agent:agent-vX.Y.Z`；`scripts/release_images.py verify` 校验架构、运行身份、版本、入口及与原生产物一致的 SHA256。Agent Docker 镜像继续供需要容器部署的受管主机使用；Core 不提供 Docker 镜像或 Compose 部署。
 
 The paired `agent-release.version` file is embedded into Core for release publication checks. Generated native/Docker installation commands do not hardcode it: the installer resolves the latest stable published Agent at execution time. If `scripts/install-agent.sh` changes, publish the Agent containing that script and update the pairing before publishing Core. The one-command installer accepts `--mode native|docker` and `--token`; Core must pair with an Agent release containing this installer.
 

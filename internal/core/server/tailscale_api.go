@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,11 +19,6 @@ import (
 )
 
 func (s *Server) tailscaleDiscovery() tailscale.Discovery {
-	if s.updateInvoke == nil {
-		if _, err := os.Stat("/.dockerenv"); errors.Is(err, os.ErrNotExist) {
-			return tailscale.Discovery{}
-		}
-	}
 	return tailscale.Discovery{ReadPeers: func(ctx context.Context) ([]tailscale.Peer, error) {
 		ctx, cancel := context.WithTimeout(ctx, 6*time.Second)
 		defer cancel()

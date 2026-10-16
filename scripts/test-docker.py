@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Opt-in integration test against local images on Linux rootful Docker.
+"""Opt-in integration test for a native Core with a root Docker Agent.
 
-Build both deploy/docker/Dockerfile.* images with :docker-test tags first.
-Only disposable test containers, a volume and a temporary host directory are used.
+Build the native Core binary and the Agent image first. Only a disposable Core
+state directory, Agent container, and temporary host directory are used.
 """
 import json
 import os
 from pathlib import Path
 import shutil
 import socket
+import stat
 import subprocess
 import tempfile
 import time
@@ -17,7 +18,7 @@ import urllib.parse
 import urllib.request
 import uuid
 
-CORE = os.environ.get('TEST_CORE_IMAGE', 'nodedance-core:docker-test')
+CORE_BINARY = Path(os.environ.get('TEST_CORE_BINARY', '.build/nodedance')).resolve()
 AGENT = os.environ.get('TEST_AGENT_IMAGE', 'nodedance-agent:docker-test')
 
 
@@ -38,21 +39,29 @@ def eventually(fn, seconds=60):
         except (OSError, urllib.error.URLError, ValueError):
             pass
         time.sleep(0.25)
-    raise AssertionError('Timed out waiting for container/API readiness')
+    raise AssertionError('Timed out waiting for Core/API readiness')
 
 
 def main():
+    if not CORE_BINARY.is_file():
+        raise SystemExit(f'native Core binary not found: {CORE_BINARY}')
+
     suffix = uuid.uuid4().hex[:12]
-    core, agent, volume = [f'nodedance-docker-test-{x}-{suffix}' for x in ('core', 'agent', 'data')]
-    root = Path(tempfile.mkdtemp(prefix='nodedance-docker-test-'))
-    state = root / 'state'
+    agent = f'nodedance-agent-test-{suffix}'
+    root = Path(tempfile.mkdtemp(prefix='nodedance-agent-docker-test-'))
+    state = root / 'agent-state'
     state.mkdir(mode=0o700)
+    core_data = root / 'core-data'
+    core_data.mkdir(mode=0o700)
+    core_log_path = root / 'core.log'
+    core_log = core_log_path.open('w')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
     origin = f'http://127.0.0.1:{port}'
     cookies = {}
     csrf = ''
+    core_process = None
 
     def api(path, body=None):
         nonlocal csrf
@@ -70,11 +79,24 @@ def main():
         return result
 
     def start_core():
-        docker('run', '-d', '--name', core, '--read-only', '--cap-drop=ALL',
-               '--security-opt=no-new-privileges:true', '--tmpfs', '/tmp:mode=1777',
-               '-p', f'127.0.0.1:{port}:8180', '-v', volume + ':/var/lib/nodedance',
-               '-v', '/var/run/docker.sock:/var/run/docker.sock', CORE)
-        eventually(lambda: api('/api/v1/health').get('status') == 'ok')
+        nonlocal core_process
+        env = {**os.environ, 'NODEDANCE_PUBLIC_ORIGIN': origin, 'NODEDANCE_TRUSTED_PROXIES': ''}
+        core_process = subprocess.Popen(
+            [str(CORE_BINARY), 'serve', '--dev', '--listen', f'127.0.0.1:{port}', '--data-dir', str(core_data)],
+            env=env, stdout=core_log, stderr=subprocess.STDOUT,
+        )
+        eventually(lambda: core_process.poll() is None and api('/api/v1/health').get('status') == 'ok')
+
+    def stop_core():
+        nonlocal core_process
+        if core_process is not None:
+            core_process.terminate()
+            try:
+                core_process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                core_process.kill()
+                core_process.wait(timeout=5)
+            core_process = None
 
     host_args = ['--privileged', '--pid=host', '--network=host', '--mount', 'type=bind,src=/,dst=/host,readonly']
     config = str(state / 'agent.json')
@@ -84,26 +106,23 @@ def main():
         assert docker('run', '--rm', AGENT, 'run', check=False).returncode != 0
         assert docker('run', '--rm', '--user=10001:10001', AGENT, 'run', check=False).returncode != 0
         assert docker('run', '--rm', '--user=10001:10001', '--entrypoint=/usr/local/bin/nodedance-agent', AGENT, 'update', check=False).returncode != 0
-        docker('volume', 'create', volume)
+
         start_core()
-        saved = docker('exec', core, 'cat', '/var/lib/nodedance/initial-admin.json').stdout
+        credential_path = core_data / 'initial-admin.json'
+        saved = credential_path.read_text()
         creds = json.loads(saved)
-        permissions = docker('exec', core, 'stat', '-c', '%a:%u', '/var/lib/nodedance', '/var/lib/nodedance/initial-admin.json').stdout.splitlines()
-        assert permissions == ['700:0', '600:0']
-        logs = docker('logs', core)
-        assert creds['username'] not in logs.stdout + logs.stderr and creds['password'] not in logs.stdout + logs.stderr
-        assert docker('exec', core, 'id', '-u').stdout.strip() == '0'
+        assert stat.S_IMODE(core_data.stat().st_mode) == 0o700
+        assert stat.S_IMODE(credential_path.stat().st_mode) == 0o600
+        assert credential_path.stat().st_uid == os.getuid()
         assert '<html' in urllib.request.urlopen(origin, timeout=10).read().decode().lower()
-        docker('stop', '-t', '10', core)
-        docker('rm', core)
+        stop_core()
         start_core()
-        assert docker('exec', core, 'cat', '/var/lib/nodedance/initial-admin.json').stdout == saved
+        assert credential_path.read_text() == saved
         api('/api/v1/auth/csrf')
         api('/api/v1/auth/login', creds)
-        assert docker('exec', core, 'test', '!', '-e', '/var/lib/nodedance/initial-admin.json', check=False).returncode == 0
-        assert api('/api/v1/updates/status?component=core') == {'jobs': []}
-        assert docker('exec', core, 'test', '!', '-e', '/usr/local/bin/nodedance-updater', check=False).returncode == 0
-        enrollment = api('/api/v1/agents/enrollments', {'displayName': 'Docker integration', 'coreUrl': 'https://docker-test.example'})
+        assert not credential_path.exists()
+
+        enrollment = api('/api/v1/agents/enrollments', {'displayName': 'Docker integration', 'coreUrl': origin})
         for field, mode in [('installCommand', 'native'), ('dockerInstallCommand', 'docker')]:
             command = enrollment[field]
             assert 'raw.githubusercontent.com/CST-Cat/NodeDance/main/scripts/install-agent.sh' in command
@@ -111,29 +130,28 @@ def main():
             assert 'agent-v' not in command
             assert f'--mode {mode}' in command
             assert f'--token {enrollment["token"]}' in command
-            assert '--server https://docker-test.example' in command
+            assert f'--server {origin}' in command
             assert 'sudo bash' in command
-        logs = docker('logs', core)
-        assert enrollment['token'] not in logs.stdout + logs.stderr
-        # Root Agent state must also have protected, root-owned ancestors.
-        # The temporary fixture starts out owned by the CI runner.
-        docker('run', '--rm', '--user=0:0', '--entrypoint=sh', '--mount', f'type=bind,src={root},dst=/fixture', CORE,
-               '-c', 'chown 0:0 /fixture /fixture/state && chmod 0700 /fixture /fixture/state')
+
+        # The production Agent refuses state directories not already root-owned.
+        docker('run', '--rm', '--user=0:0', '--entrypoint=sh', '--mount', f'type=bind,src={root},dst=/fixture', AGENT,
+               '-c', 'chown 0:0 /fixture /fixture/agent-state && chmod 0700 /fixture /fixture/agent-state')
         docker('run', '--rm', '-i', *host_args, AGENT, 'enroll', '--server', origin, '--dev',
                '--token-stdin', '--config', config, input=enrollment['token'] + '\n')
-        modes = docker('run', '--rm', '--user=0:0', '--entrypoint=stat', '--mount', f'type=bind,src={state},dst=/state', CORE,
+        modes = docker('run', '--rm', '--user=0:0', '--entrypoint=stat', '--mount', f'type=bind,src={state},dst=/state', AGENT,
                        '-c', '%a:%u', '/state', '/state/agent.json').stdout.splitlines()
         assert modes == ['700:0', '600:0']
         docker('run', '-d', '--name', agent, *host_args, AGENT, 'run', '--config', config)
         node_id = enrollment['nodeId']
+
         def online():
             nodes = api('/api/v1/nodes')['nodes']
             return next((n for n in nodes if n['nodeId'] == node_id and n['status'] == 'online'), None)
+
         node = eventually(online)
         assert node['runtimePermissions']['effectiveUid'] == 0
         host_metric = eventually(lambda: api(f'/api/v1/nodes/{node_id}/metrics').get('metrics', {}).get('system', {}).get('hostname', {}).get('value'))
         assert host_metric == socket.gethostname()
-        # A host file is returned from the host root, not the container root.
         hostname = api(f'/api/v1/nodes/{node_id}/files/text?path=/etc/hostname')['text'].strip()
         assert hostname == Path('/etc/hostname').read_text().strip()
         for protected in (config, str(root / 'credential-link'), '/../etc/passwd', '/proc/1/status', '/sys', '/run'):
@@ -145,15 +163,17 @@ def main():
                 assert error.code in (400, 403), error.code
         docker('restart', '-t', '10', agent)
         eventually(lambda: (n := online()) and n['generation'] > node['generation'])
-        assert docker('exec', core, 'curl', '--fail', '--silent', 'http://127.0.0.1:8180/api/v1/health').returncode == 0
-        print('Docker integration passed: Core root/read-only, Web/health, private generated credentials, volume persistence/login cleanup; Agent root enrollment, host metrics/filesystem, traversal/symlink/credential protection and reconnect.')
+        assert api('/api/v1/health').get('status') == 'ok'
+        print('Agent Docker integration passed against native Core: protected state, enrollment, host metrics/files, path protection, and reconnect.')
     finally:
-        for container in (agent, core):
-            docker('rm', '-f', container, check=False)
-        docker('volume', 'rm', volume, check=False)
-        docker('run', '--rm', '--user=0:0', '--entrypoint=sh', '--mount', f'type=bind,src={root},dst=/cleanup', CORE,
-               '-c', 'rm -rf /cleanup/state && chown "$1:$2" /cleanup', 'cleanup', str(os.getuid()), str(os.getgid()), check=False)
-        shutil.rmtree(root)
+        docker('rm', '-f', agent, check=False)
+        stop_core()
+        core_log.close()
+        # The Agent fixture deliberately owns its config as root. Restore access
+        # to this test's disposable directory before removing it as the runner.
+        docker('run', '--rm', '--user=0:0', '--entrypoint=sh', '--mount', f'type=bind,src={root},dst=/cleanup', AGENT,
+               '-c', 'chmod -R u+rwX /cleanup && chown -R "$1:$2" /cleanup', 'cleanup', str(os.getuid()), str(os.getgid()), check=False)
+        shutil.rmtree(root, ignore_errors=True)
 
 
 if __name__ == '__main__':

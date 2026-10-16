@@ -7,8 +7,11 @@ readonly RELEASES_API="https://api.github.com/repos/CST-Cat/NodeDance/releases/l
 
 release_tag=""
 install_dir="/usr/local/bin"
+data_dir="/var/lib/nodedance"
+unit_dir="/etc/systemd/system"
 tmp_dir=""
 staged_binary=""
+staged_unit=""
 
 usage() {
   cat <<'EOF'
@@ -20,11 +23,13 @@ Usage:
 Options:
   --release-tag TAG   Published Core tag (default: latest stable Core release)
   --install-dir DIR   Install the Core executable into DIR (default: /usr/local/bin)
+  --data-dir DIR      Core data directory (default: /var/lib/nodedance)
+  --unit-dir DIR      systemd unit directory (default: /etc/systemd/system)
   --help              Show this help
 
 By default, the installer resolves the latest stable Core release, then pins
-the archive and checksum downloads to that exact tag. It installs only the
-`nodedance` binary and does not change Core data or configure a service.
+the archive and checksum downloads to that exact tag. It installs the `nodedance`
+binary and starts the root-owned nodedance.service. Existing Core data is preserved.
 EOF
 }
 
@@ -33,6 +38,7 @@ fail() { printf 'NodeDance Core installer: %s\n' "$*" >&2; exit 1; }
 cleanup() {
   [[ -z "$tmp_dir" ]] || rm -rf -- "$tmp_dir" 2>/dev/null || true
   [[ -z "$staged_binary" || ! -e "$staged_binary" || -L "$staged_binary" ]] || rm -f -- "$staged_binary" 2>/dev/null || true
+  [[ -z "$staged_unit" || ! -e "$staged_unit" || -L "$staged_unit" ]] || rm -f -- "$staged_unit" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -46,6 +52,16 @@ while (($#)); do
     --install-dir)
       (($# >= 2)) || fail '--install-dir requires a value'
       install_dir=$2
+      shift 2
+      ;;
+    --data-dir)
+      (($# >= 2)) || fail '--data-dir requires a value'
+      data_dir=$2
+      shift 2
+      ;;
+    --unit-dir)
+      (($# >= 2)) || fail '--unit-dir requires a value'
+      unit_dir=$2
       shift 2
       ;;
     --help|-h)
@@ -63,11 +79,34 @@ case "$(uname -m)" in
   *) fail "unsupported Linux architecture: $(uname -m)" ;;
 esac
 
-[[ -n "$install_dir" ]] || fail '--install-dir cannot be empty'
+for value in "$install_dir" "$data_dir" "$unit_dir"; do
+  [[ "$value" =~ ^/[A-Za-z0-9_./-]+$ ]] || fail 'installation paths must be absolute and contain only letters, digits, slash, dot, underscore or hyphen'
+  [[ "$value" != *'/../'* && "$value" != */.. ]] || fail 'installation paths cannot contain parent-directory segments'
+done
 
-for tool in awk curl install mkdir mktemp mv rm sha256sum tar uname; do
+unit_path="${unit_dir%/}/nodedance.service"
+target="${install_dir%/}/nodedance"
+for tool in awk chmod curl grep install ln mkdir mktemp mv rm sha256sum systemctl tar uname; do
   command -v "$tool" >/dev/null 2>&1 || fail "required command is missing: $tool"
 done
+
+if ((EUID != 0)) && { [[ "$install_dir" == /usr/local/bin || "$data_dir" == /var/lib/nodedance || "$unit_dir" == /etc/systemd/system ]]; }; then
+  fail 'run the Core installer as root (for example, pipe it to sudo bash)'
+fi
+
+if [[ -L "$unit_dir" || ( -e "$unit_dir" && ! -d "$unit_dir" ) ]]; then
+  fail "refusing unsafe systemd unit directory: $unit_dir"
+fi
+if [[ -L "$unit_path" ]]; then
+  fail "refusing to replace a symlink: $unit_path"
+fi
+if [[ -e "$unit_path" ]]; then
+  [[ -f "$unit_path" ]] || fail "refusing to replace a non-file unit: $unit_path"
+  grep -Fxq '# NodeDanceCoreUnit=1' "$unit_path" || fail "refusing to replace a unit not owned by NodeDance: $unit_path"
+fi
+if [[ -L "$data_dir" || ( -e "$data_dir" && ! -d "$data_dir" ) ]]; then
+  fail "refusing unsafe Core data path: $data_dir"
+fi
 
 if [[ -z "$release_tag" ]]; then
   latest_release=$(curl --fail --silent --show-error --location \
@@ -98,8 +137,7 @@ tar -xzf "$tmp_dir/$archive" -C "$tmp_dir" -- "$binary" || fail "cannot extract 
 [[ -f "$tmp_dir/$binary" && ! -L "$tmp_dir/$binary" ]] || fail 'extracted Core binary is not a regular file'
 
 mkdir -p -- "$install_dir" || fail "cannot create install directory: $install_dir"
-[[ -d "$install_dir" ]] || fail "install destination is not a directory: $install_dir"
-target="${install_dir%/}/nodedance"
+[[ -d "$install_dir" && ! -L "$install_dir" ]] || fail "install destination is not a real directory: $install_dir"
 [[ ! -L "$target" ]] || fail "refusing to replace a symlink: $target"
 [[ ! -d "$target" ]] || fail "refusing to replace a directory: $target"
 
@@ -110,4 +148,58 @@ installed_version=$("$staged_binary" --version) || fail 'staged Core binary cann
 mv -fT -- "$staged_binary" "$target" || fail "cannot install Core at $target"
 staged_binary=""
 
+mkdir -p -- "$unit_dir" || fail "cannot create systemd unit directory: $unit_dir"
+if ((EUID == 0)); then
+  install -d -o root -g root -m 0700 -- "$data_dir" || fail "cannot prepare Core data directory: $data_dir"
+else
+  install -d -m 0700 -- "$data_dir" || fail "cannot prepare Core data directory: $data_dir"
+fi
+
+staged_unit=$(mktemp "${unit_dir%/}/.nodedance.service.XXXXXXXX") || fail "cannot stage systemd unit in $unit_dir"
+cat >"$staged_unit" <<EOF
+# NodeDanceCoreUnit=1
+[Unit]
+Description=NodeDance Core
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+EnvironmentFile=-/etc/default/nodedance
+Environment=HOME=$data_dir
+Environment=NODEDANCE_LISTEN=0.0.0.0:8180
+Environment=NODEDANCE_DATA_DIR=$data_dir
+ExecStart=$target serve
+Restart=on-failure
+RestartSec=3
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+EOF
+chmod 0644 "$staged_unit" || fail 'cannot set systemd unit permissions'
+if [[ -e "$unit_path" ]]; then
+  [[ -f "$unit_path" && ! -L "$unit_path" ]] || fail "refusing unsafe systemd unit path: $unit_path"
+  grep -Fxq '# NodeDanceCoreUnit=1' "$unit_path" || fail "refusing to replace a unit not owned by NodeDance: $unit_path"
+  mv -fT -- "$staged_unit" "$unit_path" || fail "cannot install systemd unit: $unit_path"
+  staged_unit=""
+else
+  if ! ln -- "$staged_unit" "$unit_path"; then
+    fail "systemd unit appeared during installation; refusing to replace it: $unit_path"
+  fi
+  rm -f -- "$staged_unit"
+  staged_unit=""
+fi
+
+systemctl daemon-reload || fail 'systemd could not reload unit files'
+systemctl enable nodedance.service || fail 'could not enable nodedance.service'
+if systemctl is-active --quiet nodedance.service; then
+  systemctl restart nodedance.service || fail 'could not restart nodedance.service'
+else
+  systemctl start nodedance.service || fail 'could not start nodedance.service'
+fi
+
 printf 'Installed NodeDance Core %s (%s) at %s\n' "$release_tag" "$arch" "$target"
+printf 'Enabled and started nodedance.service (0.0.0.0:8180, data: %s)\n' "$data_dir"

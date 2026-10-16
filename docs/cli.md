@@ -44,9 +44,9 @@ Connection flags are available after the operation:
 
 The client stores a server-bound session in an owner-owned `0700` directory and `0600` regular file, rejects symlink sessions, verifies TLS, and refuses HTTP redirects. Use different state directories for different Core servers. Session expiration, revocation, administrator lockouts and audit rules remain enforced by Core.
 
-Network discovery uses `nodedance discovery peers` or the TUI's discovered `discovery.peers` operation. A supervised Core reads existing host Tailscale peers through its protected deployment service, including Docker deployments without a Tailscale socket mount. Unsupervised Core reads its own environment. Both use the same Core discovery and enrollment rules as Web; NodeDance never installs or configures Tailscale.
+Network discovery uses `nodedance discovery peers` or the TUI's discovered `discovery.peers` operation. Core runs natively on the controller and reads that host's existing Tailscale peers through its built-in read-only operation. It never installs or configures Tailscale; discovery is optional.
 
-网络发现使用 `nodedance discovery peers` 或 TUI 自动发现的 `discovery.peers` 操作。已配置宿主机控制服务的 Core 读取宿主机已有 Tailscale 节点，Docker 部署无需额外挂载 Tailscale socket；未配置时读取 Core 自身环境。CLI、TUI、Web 共用发现与注册规则，NodeDance 不安装或配置 Tailscale。
+网络发现使用 `nodedance discovery peers` 或 TUI 自动发现的 `discovery.peers` 操作。Core 原生运行在主控机，通过内置只读操作读取该主机现有的 Tailscale 节点。发现功能可选；NodeDance 不安装或配置 Tailscale。
 
 ## Coverage
 

@@ -28,7 +28,7 @@ func (f *hostStatusFixture) Run(ctx context.Context, name string, args ...string
 }
 func TestHostDiscoveryIsScopedReadAndReturnsOnlyPeers(t *testing.T) {
 	f := &hostStatusFixture{output: `{"BackendState":"Running","User":{"secret":"must not cross socket"},"Peer":{"nodekey:x":{"PublicKey":"nodekey:x","HostName":"host","OS":"linux","Online":true,"TailscaleIPs":["100.64.0.2"]}}}`}
-	m := &Manager{Config: Config{Targets: map[string]Target{"core": {Mode: "docker"}}}, tailscaleRunner: f}
+	m := &Manager{Config: Config{Targets: map[string]Target{"core": {Mode: "systemd"}}}, tailscaleRunner: f}
 	rpc := RPC{Action: "tailscale-peers", Request: Request{Component: "core"}}
 	result := m.Handle(context.Background(), rpc)
 	var peers []tailscale.Peer

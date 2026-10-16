@@ -46,6 +46,9 @@ type Manager struct {
 }
 
 func New(config Config, resolver Resolver) (*Manager, error) {
+	if target, ok := config.Targets["core"]; ok && target.Mode != "systemd" {
+		return nil, errors.New("Core updates require the native nodedance.service")
+	}
 	if os.Geteuid() != 0 {
 		return nil, errors.New("update controller requires root")
 	}
@@ -56,8 +59,11 @@ func New(config Config, resolver Resolver) (*Manager, error) {
 		if component != "core" && component != "agent" {
 			return nil, errors.New("invalid managed component")
 		}
-		if target.Mode != "docker" && target.Mode != "systemd" {
-			return nil, errors.New("managed deployment must be docker or systemd")
+		if component == "core" && target.Mode != "systemd" {
+			return nil, errors.New("Core updates require the native nodedance.service")
+		}
+		if target.Mode != "systemd" && !(component == "agent" && target.Mode == "docker") {
+			return nil, errors.New("Agent deployment must be docker or systemd")
 		}
 		if !filepath.IsAbs(target.DataDir) || target.DataDir == "/" || target.DataDir == config.StateDir || strings.HasPrefix(config.StateDir, target.DataDir+"/") || strings.HasPrefix(target.DataDir, config.StateDir+"/") {
 			return nil, errors.New("invalid managed data directory")
@@ -238,24 +244,18 @@ func (m *Manager) current(ctx context.Context, component string) (string, error)
 	var raw []byte
 	var err error
 	if target.Mode == "docker" {
-		binary := "nodedance"
-		argument := "version"
-		if component == "agent" {
-			// The Agent enters the host mount namespace and root. Docker exec
-			// therefore cannot resolve its original image path. Read the version
-			// from the running container process's executable on the host instead.
-			pidRaw, pidErr := m.command(ctx, "docker", "inspect", "--format", "{{.State.Pid}}", target.Container)
-			if pidErr != nil {
-				return "", pidErr
-			}
-			pid, pidErr := strconv.Atoi(strings.TrimSpace(string(pidRaw)))
-			if pidErr != nil || pid <= 1 {
-				return "", errors.New("managed Agent container has no running process")
-			}
-			raw, err = m.command(ctx, fmt.Sprintf("/proc/%d/exe", pid), "--version")
-		} else {
-			raw, err = m.command(ctx, "docker", "exec", target.Container, binary, argument)
+		// Only the Agent still deploys in a container. Docker exec cannot resolve
+		// the original image path after its host-namespace entry, so the version
+		// comes from the running container process's executable on the host.
+		pidRaw, pidErr := m.command(ctx, "docker", "inspect", "--format", "{{.State.Pid}}", target.Container)
+		if pidErr != nil {
+			return "", pidErr
 		}
+		pid, pidErr := strconv.Atoi(strings.TrimSpace(string(pidRaw)))
+		if pidErr != nil || pid <= 1 {
+			return "", errors.New("managed Agent container has no running process")
+		}
+		raw, err = m.command(ctx, fmt.Sprintf("/proc/%d/exe", pid), "--version")
 	} else {
 		raw, err = m.command(ctx, target.Binary, "--version")
 	}
