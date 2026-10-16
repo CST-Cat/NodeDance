@@ -202,11 +202,7 @@ export default function AgentEnrollment(input: Props) {
                 data-v-2709b2e0=""
               >
                 <div data-v-2709b2e0="">
-                  <span className={__classes("eyebrow")} data-v-2709b2e0="">
-                    {t("label.f635eb3c2462")}
-                  </span>
                   <h1 data-v-2709b2e0="">{t("m.a29c23de8cc4")}</h1>
-                  <p data-v-2709b2e0="">{t("m.779760698929")}</p>
                 </div>
                 <button
                   type="button"
@@ -448,12 +444,6 @@ export default function AgentEnrollment(input: Props) {
                     </p>
                   </div>
                 ) : null}
-                <p
-                  className={__classes("agent-release-note")}
-                  data-v-2709b2e0=""
-                >
-                  {t("m.f48ceda113e7")}
-                </p>
               </div>
             </section>
           </main>

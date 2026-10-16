@@ -57,10 +57,10 @@
   gap: 16px;
 }
 .agent-enrollment-heading[data-v-2709b2e0] {
-  margin-bottom: 20px;
+  margin-bottom: 4px;
 }
 .agent-enrollment-heading h1[data-v-2709b2e0] {
-  margin: 5px 0;
+  margin: 0;
   font-size: clamp(26px, 4vw, 38px);
 }
 .agent-enrollment-heading p[data-v-2709b2e0],
@@ -74,8 +74,7 @@
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  padding: 20px 0;
-  border-top: 1px solid var(--line);
+  padding: 20px 0 0;
 }
 .agent-enrollment-form[data-v-2709b2e0] {
   display: grid;
@@ -142,16 +141,11 @@
   overflow-wrap: anywhere;
   resize: vertical;
 }
-.agent-enrollment-form .field-hint[data-v-2709b2e0],
-.agent-release-note[data-v-2709b2e0] {
+.agent-enrollment-form .field-hint[data-v-2709b2e0] {
   margin: 0;
   color: var(--muted-strong);
   font-size: 0.82rem;
   line-height: 1.55;
-}
-.agent-release-note[data-v-2709b2e0] {
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
 }
 .agent-enrollment-card-compact[data-v-2709b2e0] {
   margin-top: 18px;
@@ -173,9 +167,6 @@
   }
   .agent-enrollment-form > .primary-button[data-v-2709b2e0] {
     grid-column: 1;
-  }
-  .agent-enrollment-form > .agent-release-note[data-v-2709b2e0] {
-    grid-column: 1/-1;
   }
   .agent-enrollment-form:has(.enrollment-name)
     > .enrollment-connection[data-v-2709b2e0] {
