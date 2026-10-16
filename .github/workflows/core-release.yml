@@ -118,6 +118,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Require a passing release rehearsal
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          agent_tag=$(cat agent-release.version)
+          python3 scripts/release-rehearsal.py check core "$RELEASE_VERSION" --agent-tag "$agent_tag"
+
       - name: Download native Core artifacts
         uses: actions/download-artifact@v4
         with:

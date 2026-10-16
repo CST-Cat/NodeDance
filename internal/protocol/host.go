@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -418,12 +419,20 @@ type NodeAsset struct {
 	TrafficWarningPercent float64    `json:"trafficWarningPercent"`
 }
 
+// Currencies lists the supported billing currencies published in the operation
+// contract; the list is presentation-agnostic and shared by Web, CLI and TUI.
+var Currencies = []string{"USD", "EUR", "CNY", "JPY", "GBP", "HKD", "KRW", "SGD", "AUD", "CAD"}
+
 func DefaultNodeAsset() NodeAsset {
 	return NodeAsset{Currency: "USD", BillingCycleDays: 30, ExpiryNoticeDays: 7, TrafficAccounting: "sum", TrafficWarningPercent: 90}
 }
 
+func ValidCurrency(value string) bool {
+	return slices.Contains(Currencies, value)
+}
+
 func ValidateNodeAsset(a NodeAsset) error {
-	if !finiteNonnegative(a.Price) || len(a.Currency) < 1 || len(a.Currency) > 8 || strings.TrimSpace(a.Currency) != a.Currency || strings.ContainsAny(a.Currency, "\x00\r\n") || a.BillingCycleDays < 1 || a.BillingCycleDays > 3660 || a.ExpiryNoticeDays < 0 || a.ExpiryNoticeDays > 365 || !percent(a.TrafficWarningPercent) {
+	if !finiteNonnegative(a.Price) || !ValidCurrency(a.Currency) || a.BillingCycleDays < 1 || a.BillingCycleDays > 3660 || a.ExpiryNoticeDays < 0 || a.ExpiryNoticeDays > 365 || !percent(a.TrafficWarningPercent) {
 		return errors.New("invalid node asset settings")
 	}
 	switch a.BillingCycleUnit {

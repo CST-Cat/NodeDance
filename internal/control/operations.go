@@ -148,6 +148,7 @@ func schema(value any) any {
 		}
 		enum("billingCycleUnit", "", "day", "year", "month", "hour", "minute")
 		enum("trafficAccounting", "sum", "max", "min", "up", "down")
+		enum("currency", protocol.Currencies...)
 	case protocol.BatchProbe:
 		enum("kind", "http", "https", "tcp", "icmp")
 	}

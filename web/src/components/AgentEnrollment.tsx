@@ -205,15 +205,7 @@ export default function AgentEnrollment(input: Props) {
                   <span className={__classes("eyebrow")} data-v-2709b2e0="">
                     {t("label.f635eb3c2462")}
                   </span>
-                  <h1 data-v-2709b2e0="">
-                    {t("m.a29c23de8cc4")}
-                    <span
-                      className={__classes("title-period")}
-                      data-v-2709b2e0=""
-                    >
-                      {"."}
-                    </span>
-                  </h1>
+                  <h1 data-v-2709b2e0="">{t("m.a29c23de8cc4")}</h1>
                   <p data-v-2709b2e0="">{t("m.779760698929")}</p>
                 </div>
                 <button

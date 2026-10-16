@@ -22,16 +22,20 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  assert.equal(memoWrite.status(),200)
  for(const actor of [page.context(),admin]){const name=actor===admin?'administrator':'guest';const response=await actor.request.get(base+'/api/v1/public/guest/display');const body=await response.text();record('overview-memo-private:'+name,response.status()===200&&!body.includes('PRIVATE-OVERVIEW-MEMO')&&!body.includes('kernelVersion')&&!body.includes('environment'),{status:response.status()});const forged=await actor.request.get(base+'/api/v1/public/guest/display?memo=true&core=true');record('overview-query-rejected:'+name,forged.status()===400,{status:forged.status()})}
  // Enrollment token-bearing installation commands remain private.
- const enrollment=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE INSTALL NAME',coreUrl:base,deploymentMethod:'docker',asset:{price:98765.4321,currency:'PRIVBILL',billingCycleUnit:'minute',billingCycleDays:30,purchasedAt:'2098-04-03T00:00:00Z',expiresAt:'2099-05-06T07:08:00Z',expiryNoticeDays:7,trafficLimitBytes:1234567890123,trafficAccounting:'sum',trafficWarningPercent:90}}})
+ const enrollment=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE INSTALL NAME',coreUrl:base,deploymentMethod:'docker',asset:{price:98765.4321,currency:'JPY',billingCycleUnit:'minute',billingCycleDays:30,purchasedAt:'2098-04-03T00:00:00Z',expiresAt:'2099-05-06T07:08:00Z',expiryNoticeDays:7,trafficLimitBytes:1234567890123,trafficAccounting:'sum',trafficWarningPercent:90}}})
  assert.equal(enrollment.status(),201);const install=await enrollment.json()
  for(const command of [install.nativeInstallCommand,install.dockerInstallCommand])assert.ok(command.includes('--token '+install.token))
  const projection=await browserRequest('/api/v1/public/guest/display')
  record('private-install-command-projection',projection.status===200&&!projection.body.includes(install.token)&&!projection.body.includes('PRIVATE INSTALL NAME'))
  const assetPath=catalog.operations.find(o=>o.name==='nodes.asset').path.replace('{nodeId}',install.nodeId)
  const savedAsset=await admin.request.get(base+assetPath);assert.equal(savedAsset.status(),200);assert.equal((await savedAsset.json()).billingCycleUnit,'minute')
+ // Currency values outside the contract enum are rejected by Core validation.
+ const catalogEnrollment=catalog.operations.find(o=>o.name==='agents.enrollment');assert.ok(catalogEnrollment?.bodySchema?.properties?.asset?.properties?.currency?.enum)
+ const forgedCurrency=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'FORGED CURRENCY',coreUrl:base,deploymentMethod:'docker',asset:{price:1,currency:'PRIVBILL',billingCycleUnit:'month',billingCycleDays:30,trafficAccounting:'sum'}}})
+ record('forged-currency-rejected',forgedCurrency.status()===400,{status:forgedCurrency.status()})
  for(const cookieContext of [page.context(),admin]){
   const response=await cookieContext.request.get(base+'/api/v1/public/guest/display');const body=await response.text()
-  record('private-billing-projection:'+ (cookieContext===admin?'administrator':'guest'),response.status()===200&&!['PRIVBILL','98765.4321','1234567890123','2099-05-06','2098-04-03','purchasedAt','billingCycleUnit','trafficLimitBytes'].some(value=>body.includes(value)))
+  record('private-billing-projection:'+ (cookieContext===admin?'administrator':'guest'),response.status()===200&&!['98765.4321','1234567890123','2099-05-06','2098-04-03','purchasedAt','billingCycleUnit','trafficLimitBytes'].some(value=>body.includes(value)))
  }
 
  const anonymousInstall=await browserRequest('/api/v1/agents/enrollments','POST',{displayName:'forged-install',coreUrl:base},hostileHeaders)

@@ -34,6 +34,9 @@ export default function NodeAssetFields(input: Props) {
           (value) => value !== "",
         ),
       );
+      const currencies = derived(() => [
+        ...(props.schema?.properties?.currency?.enum ?? []),
+      ]);
       const purchase = derived({
         get: () =>
           props.values.purchasedAt
@@ -159,21 +162,27 @@ export default function NodeAssetFields(input: Props) {
               </label>
               <label data-v-f325f884="">
                 <span data-v-f325f884="">{t("host.field.currency")}</span>
-                <input
-                  type="text"
-                  maxLength={8}
+                <UiSelect
                   data-testid="asset-currency"
-                  {...__input(
-                    __props.values.currency,
-                    (__nextValue: any) => {
-                      __props.values.currency = __nextValue;
-                    },
-                    "text",
-                    undefined,
-                    [],
-                  )}
+                  modelValue={__props.values.currency}
+                  onUpdateModelValue={(__nextValue: any) => {
+                    __props.values.currency = __nextValue;
+                  }}
+                  modelModifiers={{}}
                   data-v-f325f884=""
-                ></input>
+                >
+                  <Fragment>
+                    {__each(currencies.value, (currency) => (
+                      <option
+                        key={String(currency) as any}
+                        value={currency as any}
+                        data-v-f325f884=""
+                      >
+                        {String(currency)}
+                      </option>
+                    ))}
+                  </Fragment>
+                </UiSelect>
               </label>
               <label data-v-f325f884="">
                 <span data-v-f325f884="">{t("asset.cycle")}</span>

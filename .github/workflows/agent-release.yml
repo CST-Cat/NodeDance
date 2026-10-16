@@ -154,6 +154,13 @@ jobs:
       - name: Check out tagged source
         uses: actions/checkout@v4
 
+      - name: Require a passing release rehearsal
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          python3 scripts/release-rehearsal.py check agent "$RELEASE_VERSION"
+
       - name: Download native Agent artifacts
         uses: actions/download-artifact@v4
         with:
