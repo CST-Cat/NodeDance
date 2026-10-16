@@ -15,9 +15,6 @@
   font-size: clamp(30px, 4vw, 43px);
   letter-spacing: -0.04em;
 }
-.alerts-heading h1 span[data-v-acd260e8] {
-  color: var(--accent);
-}
 .alerts-heading p[data-v-acd260e8],
 .section-title p[data-v-acd260e8] {
   margin: 0;

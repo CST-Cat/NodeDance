@@ -497,7 +497,6 @@ export default function AlertCenter(input: Props) {
                 </span>
                 <h1 data-v-acd260e8="">
                   {t("m.1b92ed81c005")}
-                  <span data-v-acd260e8="">{"."}</span>
                 </h1>
                 <p data-v-acd260e8="">{t("m.30dc14a37a07")}</p>
               </div>
