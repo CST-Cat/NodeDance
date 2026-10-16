@@ -452,9 +452,6 @@ summary:focus-visible {
 .login-copy h1 {
   margin-bottom: 12px;
 }
-.title-period {
-  color: var(--accent);
-}
 .login-identity {
   display: flex;
   align-items: center;
@@ -1363,9 +1360,6 @@ summary:focus-visible {
 }
 .auth-copy h1 em {
   color: var(--accent);
-}
-.title-period {
-  color: var(--accent-fill);
 }
 .form-card,
 .standalone-card {

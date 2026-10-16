@@ -1481,15 +1481,7 @@ export default function App(input: Props) {
                   <span className={__classes("eyebrow")} data-v-ac863f34="">
                     {t("label.111bdc0c1ef5")}
                   </span>
-                  <h1 data-v-ac863f34="">
-                    {t("m.cb1d97794707")}
-                    <span
-                      className={__classes("title-period")}
-                      data-v-ac863f34=""
-                    >
-                      {"."}
-                    </span>
-                  </h1>
+                  <h1 data-v-ac863f34="">{t("m.cb1d97794707")}</h1>
                   <p data-v-ac863f34="">{t("m.cd2de59b2219")}</p>
                   <div
                     className={__classes("login-identity")}
@@ -1694,15 +1686,7 @@ export default function App(input: Props) {
                   <span className={__classes("eyebrow")} data-v-ac863f34="">
                     {t("label.5493ff8e9397")}
                   </span>
-                  <h1 data-v-ac863f34="">
-                    {t("m.df3d58c7d84b")}
-                    <span
-                      className={__classes("title-period")}
-                      data-v-ac863f34=""
-                    >
-                      {"."}
-                    </span>
-                  </h1>
+                  <h1 data-v-ac863f34="">{t("m.df3d58c7d84b")}</h1>
                   <p data-v-ac863f34="">{t("m.e2d752caafea")}</p>
                   <div
                     className={__classes("sidebar-profile")}
