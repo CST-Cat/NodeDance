@@ -1531,9 +1531,6 @@ export default function NodesDashboard(input: Props) {
                                     dashboardSettings.value.featuredLimit as any
                                   }
                                   currentTime={wallClockNow.value as any}
-                                  nodeReason={
-                                    nodeReasons.value[node.nodeId] as any
-                                  }
                                   tasks={tasksForNode(node.nodeId) as any}
                                   taskSubmitting={taskSubmitting.value as any}
                                   taskErrors={taskErrors.value as any}

@@ -37,6 +37,7 @@ export default function UiIcon(input: Props) {
         logout: "M9 4H4v16h5 M9 12h12 M17 8l4 4-4 4",
         menu: "M4 6h16 M4 12h16 M4 18h16",
         close: "M6 6l12 12 M6 18L18 6",
+        arrowDown: "M12 5v13 M6 13l6 6 6-6",
       };
       return () => (
         <>

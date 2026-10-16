@@ -1,30 +1,3 @@
-.ssh-user-choice[data-v-31185faa] {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--muted-strong);
-}
-.ssh-user-choice select[data-v-31185faa] {
-  max-width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  background: var(--surface);
-  color: var(--text);
-  padding: 8px;
-  font: inherit;
-}
-.ssh-user-choice select[data-v-31185faa]:active {
-  background: var(--surface-soft);
-}
-.ssh-user-choice select[data-v-31185faa]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
 .vps-card-heading .vps-name[data-v-31185faa] {
   padding: 0;
   border: 0;
@@ -43,7 +16,7 @@
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  margin-top: 12px;
+  margin-top: 6px;
   color: var(--accent);
 }
 .vps-card[data-v-31185faa] {
@@ -52,7 +25,7 @@
   container-name: vps-card;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  padding: 10px 14px 12px;
+  padding: 7px 14px 14px;
   background: var(--surface);
   color: var(--text);
 }
@@ -106,14 +79,14 @@
   box-shadow: none;
 }
 .vps-card-version[data-v-31185faa] {
-  margin: 4px 0 10px;
+  margin: 1px 0 6px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 .vps-card-note[data-v-31185faa] {
-  margin: -5px 0 12px;
+  margin: -5px 0 6px;
   color: var(--muted-strong);
   font-size: 12px;
   line-height: 1.5;
@@ -144,7 +117,7 @@
   text-align: right;
 }
 .vps-card-empty[data-v-31185faa] {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--muted-strong);
   font-size: 12px;
   line-height: 1.5;
@@ -152,14 +125,14 @@
 }
 .vps-card-container-list[data-v-31185faa] {
   display: grid;
-  margin-top: 8px;
-  gap: 12px;
+  margin-top: 6px;
+  gap: 10px;
 }
 .vps-card-container[data-v-31185faa] {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: start;
-  gap: 7px;
+  gap: 6px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -192,7 +165,7 @@
 .vps-card-container-copy small[data-v-31185faa] {
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.4;
 }
 .vps-card-container-copy .vps-card-stale[data-v-31185faa],
 .vps-card-container-copy .vps-card-reason[data-v-31185faa],
@@ -233,8 +206,7 @@
   gap: 5px;
   margin-top: 3px;
 }
-.vps-card-actions button[data-v-31185faa],
-.vps-card-footer button[data-v-31185faa] {
+.vps-card-actions button[data-v-31185faa] {
   min-height: 40px;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
@@ -255,10 +227,11 @@
   font-size: 12px;
 }
 .vps-card-shortcuts[data-v-31185faa] {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 6px;
 }
 .vps-card-shortcuts button[data-v-31185faa] {
   min-width: 0;
@@ -276,25 +249,32 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
-.vps-card-ssh-status[data-v-31185faa] {
-  margin: 6px 0 0;
+/* Transient SSH copy feedback: a small floating overlay pinned just above the
+   clicked Copy SSH button. It is absolutely positioned, pointer-events none,
+   occupies no layout space and never shifts the card or its actions, and
+   auto-hides. */
+.vps-card-ssh-pop[data-v-31185faa] {
+  position: absolute;
+  z-index: 5;
+  visibility: hidden;
+  max-width: min(300px, 100%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  padding: 4px 9px;
+  color: var(--muted-strong);
+  background: var(--surface);
+  box-shadow: var(--overlay-shadow);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  text-align: center;
+  pointer-events: none;
+}
+.vps-card-ssh-pop[data-kind="success"][data-v-31185faa] {
   color: var(--success);
-  font-size: 12px;
-  line-height: 1.5;
-  overflow-wrap: anywhere;
 }
-.vps-card-footer[data-v-31185faa] {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 10px;
-  color: var(--muted);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.vps-card-footer button[data-v-31185faa] {
-  flex: 0 0 auto;
+.vps-card-ssh-pop[data-kind="error"][data-v-31185faa] {
+  color: var(--danger);
 }
 @media (max-width: 560px) {
   .vps-card-container[data-v-31185faa] {
@@ -309,13 +289,5 @@
   }
   .vps-card-shortcuts button[data-v-31185faa] {
     min-height: 42px;
-  }
-  .vps-card-footer[data-v-31185faa] {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .vps-card-footer button[data-v-31185faa] {
-    width: 100%;
-    min-height: 40px;
   }
 }

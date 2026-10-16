@@ -11,6 +11,7 @@ import {
 } from "../state";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { SPRING_SNAPPY } from "../motion";
 import { Children, Fragment, isValidElement, type ReactNode } from "react";
 import {
   __call,
@@ -423,12 +424,7 @@ export default function UiSelect(input: Props) {
                       initial={{ opacity: 0, y: 4, scale: 0.98 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 2, scale: 0.98 }}
-                      transition={{
-                        type: "spring",
-                        stiffness: 320,
-                        damping: 28,
-                        mass: 1,
-                      }}
+                      transition={SPRING_SNAPPY}
                     >
                       <Fragment>
                         {__each(options.value, (option, index) => (

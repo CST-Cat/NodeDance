@@ -321,6 +321,11 @@ async function port() {
     await dockerPage.setViewportSize({width:1440,height:1000})
     try { await require('./docker-regressions.cjs')({page:dockerPage,base,node,artifacts,catalog}) }
     finally { await dockerPage.close() }
+    const streamPage=await context.newPage()
+    streamPage.setDefaultTimeout(10000)
+    await streamPage.setViewportSize({width:1440,height:1000})
+    try { await require('./stream-panel-regressions.cjs')({page:streamPage,base,node,artifacts,catalog}) }
+    finally { await streamPage.close() }
     const composePage=await context.newPage()
     composePage.setDefaultTimeout(10000)
     try { await require('./compose-regressions.cjs')({page:composePage,base,node,artifacts,catalog}) }

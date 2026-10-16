@@ -1,5 +1,15 @@
 import { display, locale, t } from "../i18n";
-import { beforeDispose, cell, derived } from "../state";
+import {
+  beforeDispose,
+  cell,
+  derived,
+  watchState,
+} from "../state";
+import {
+  installScrollEdges,
+  type FollowState,
+  type ScrollEdges,
+} from "../scroll-edge";
 import {
   createContainerStreamSocket,
   decodeContainerLogData,
@@ -11,6 +21,7 @@ import {
 } from "../streamApi";
 
 import { __classes, useController } from "../state";
+import UiIcon from "./UiIcon";
 import "./ContainerStreams.css";
 type Props = {
   nodeId: string;
@@ -47,6 +58,28 @@ export default function ContainerStreams(input: Props) {
       let pendingLogLength = 0;
       let pendingLogBytes = 0;
       let logFlushTimer: ReturnType<typeof setInterval> | undefined;
+      // OpenUI useClaudeScrollPinning port: streaming logs auto-follow the
+      // bottom edge and yield as soon as the user scrolls away; the fade
+      // sensor marks edges while text is appended between scroll events.
+      const logOutput = cell<HTMLPreElement>();
+      const logFollow = cell<FollowState>({ pinned: true, canJump: false });
+      let logEdges: ScrollEdges | undefined;
+      function syncLogEdges() {
+        const element = logOutput.value;
+        if (logEdges) {
+          logEdges.dispose();
+          logEdges = undefined;
+        }
+        if (element)
+          logEdges = installScrollEdges(element, {
+            follow: {
+              onChange: (state) => {
+                logFollow.value = state;
+              },
+            },
+          });
+      }
+      watchState(logOutput, syncLogEdges, { immediate: true });
       const statsTime = derived(() =>
         statsSnapshot.value?.observed_at
           ? new Date(statsSnapshot.value.observed_at).toLocaleTimeString(
@@ -415,6 +448,7 @@ export default function ContainerStreams(input: Props) {
         });
       }
       beforeDispose(() => {
+        logEdges?.dispose();
         for (const kind of ["logs", "stats"] as const) close(kind);
         stopLogFlush();
       });
@@ -554,10 +588,26 @@ export default function ContainerStreams(input: Props) {
                   data-testid="stream-log-output"
                   data-bytes={logBytes.value as any}
                   data-channels={Array.from(logChannels.value).join(",") as any}
+                  ref={__dom(logOutput)}
+                  className={__classes("scroll-fade")}
                   data-v-e4bd43c8=""
                 >
                   {logText.value || t("m.073e53c8c4c3")}
                 </pre>
+                {logFollow.value.canJump && !logFollow.value.pinned ? (
+                  <button
+                    type="button"
+                    data-testid="stream-log-follow"
+                    className={__classes("stream-log-jump")}
+                    onClick={() => {
+                      logEdges?.followLatest();
+                    }}
+                    data-v-e4bd43c8=""
+                  >
+                    <UiIcon name="arrowDown"></UiIcon>
+                    <span>{t("stream.jumpToLatest")}</span>
+                  </button>
+                ) : null}
               </div>
             ) : null}
             {statsState.value === "connected" || statsSnapshot.value ? (

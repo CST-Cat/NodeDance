@@ -981,7 +981,6 @@
   "m.400d8fa7bdd9": "Result needs verification",
   "m.9344597efd49": "Execution failed",
   "m.ef8956febccf": "SSH command copied.",
-  "m.974cd922475e": "Unable to copy automatically. Copy manually: {0}",
   "m.d07581c22bb2": "Agent not connected",
   "m.e41b8d592e33": "Host monitoring metrics",
   "m.d7140d0b3390": "Network ↓ / ↑",
@@ -1002,8 +1001,6 @@
   "m.c820131d2266": "{0} quick actions",
   "m.3c1249308515": "Set SSH host and user in node settings first",
   "m.12d40d9f555d": "Copy SSH",
-  "m.5662971e4f8b": "Agent offline; container state stale",
-  "m.1ee33cf03dd4": "View full details",
   "m.ad5d5a8f24fc": "Request failed ({0})",
   "m.e03b23b49908": "Server returned an unrecognized response.",
   "label.638731745e22": "CORE CONNECTION",
@@ -1628,9 +1625,11 @@
   "host.field.purchasedAt": "Purchase date",
   "ssh.automatic": "Automatically detect the SSH address, port and login account",
   "ssh.discovering": "Detecting SSH connection…",
-  "ssh.unavailable": "SSH connection could not be detected.",
-  "ssh.chooseUser": "Detected SSH account candidates",
+  "ssh.unavailable": "SSH unavailable",
+  "ssh.chooseAccount": "Choose the SSH account to copy.",
   "ssh.clientDefault": "SSH client default",
+  "ssh.copyFailed": "Copy failed",
+  "ssh.copyAction": "Copy SSH",
   "nav.returnHome": "Back to home",
   "nav.nodeWorkspace": "VPS navigation",
   "compose.projectsTitle": "Compose projects",
@@ -2089,5 +2088,6 @@
   "overview.resetDisplay": "Restore defaults",
   "overview.done": "Done",
   "overview.loadNormal": "Normal load",
-  "files.noOverwrite": "Existing files will not be overwritten."
+  "files.noOverwrite": "Existing files will not be overwritten.",
+  "stream.jumpToLatest": "Jump to latest"
 }

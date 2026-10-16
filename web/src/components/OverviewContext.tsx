@@ -20,6 +20,7 @@ import {
   __style,
   useController,
 } from "../state";
+import { installScrollEdges, type ScrollEdges } from "../scroll-edge";
 import "./OverviewContext.css";
 type Props = {
   node?: AgentNode;
@@ -119,20 +120,17 @@ export default function OverviewContext(input: Props) {
         saving = cell(false),
         memoError = cell(""),
         conflict = cell(false);
-      const hostOpen = cell(false),
-        memoOpen = cell(false),
-        copyStatus = cell(""),
+      const copyStatus = cell(""),
         refreshError = cell("");
       const settingsDialog = cell<HTMLDialogElement>(),
         settingsButton = cell<HTMLButtonElement>(),
         memoInput = cell<HTMLTextAreaElement>();
-      let query: MediaQueryList | undefined,
-        timer: ReturnType<typeof setInterval> | undefined,
+      // OpenUI ScrollFadeContainer: the sticky context column overflows inside
+      // max-height on short viewports; mask its scroll edges.
+      const contextAside = cell<HTMLElement>();
+      let contextEdges: ScrollEdges | undefined;
+      let timer: ReturnType<typeof setInterval> | undefined,
         disposed = false;
-      const resize = () => {
-        hostOpen.value = query?.matches ?? false;
-        memoOpen.value = (query?.matches ?? false) || editing.value;
-      };
       async function loadCore() {
         if (coreBusy.value) return;
         coreBusy.value = true;
@@ -180,7 +178,6 @@ export default function OverviewContext(input: Props) {
         }
       }
       async function startMemoEdit() {
-        memoOpen.value = true;
         editing.value = true;
         await afterRender();
         memoInput.value?.focus();
@@ -340,9 +337,7 @@ export default function OverviewContext(input: Props) {
         },
       );
       afterMount(() => {
-        query = matchMedia("(min-width:1101px)");
-        resize();
-        query.addEventListener("change", resize);
+        contextEdges = installScrollEdges(contextAside.value);
         void loadCore();
         void loadMemo();
         timer = setInterval(() => {
@@ -351,14 +346,15 @@ export default function OverviewContext(input: Props) {
       });
       beforeDispose(() => {
         disposed = true;
-        query?.removeEventListener("change", resize);
+        contextEdges?.dispose();
         if (timer) clearInterval(timer);
       });
       return () => (
         <>
           <aside
             aria-label={t("overview.context") as any}
-            className={__classes("overview-context")}
+            ref={__dom(contextAside)}
+            className={__classes("overview-context scroll-fade")}
             data-v-2aa82488=""
           >
             <section
@@ -370,19 +366,7 @@ export default function OverviewContext(input: Props) {
                 className={__classes("context-heading")}
                 data-v-2aa82488=""
               >
-                <h2 data-v-2aa82488="">
-                  <button
-                    type="button"
-                    aria-expanded={hostOpen.value as any}
-                    className={__classes("section-toggle")}
-                    onClick={(event: any) => {
-                      hostOpen.value = !hostOpen.value;
-                    }}
-                    data-v-2aa82488=""
-                  >
-                    {t("overview.hostInfo")}
-                  </button>
-                </h2>
+                <h2 data-v-2aa82488="">{t("overview.hostInfo")}</h2>
                 <div
                   aria-label={t("overview.hostActions") as any}
                   className={__classes("header-actions")}
@@ -393,6 +377,7 @@ export default function OverviewContext(input: Props) {
                     type="button"
                     aria-label={t("overview.displaySettings") as any}
                     title={t("overview.displaySettings") as any}
+                    className={__classes("touch-target")}
                     onClick={(event: any) => {
                       __call(openSettings, event);
                     }}
@@ -405,6 +390,7 @@ export default function OverviewContext(input: Props) {
                     disabled={coreBusy.value || (refreshBusy.value as any)}
                     aria-label={t("overview.refresh") as any}
                     title={t("overview.refresh") as any}
+                    className={__classes("touch-target")}
                     onClick={(event: any) => {
                       __call(refreshInfo, event);
                     }}
@@ -429,6 +415,7 @@ export default function OverviewContext(input: Props) {
                       ) as any
                     }
                     aria-pressed={sensitiveHidden.value as any}
+                    className={__classes("touch-target")}
                     onClick={(event: any) => {
                       sensitiveHidden.value = !sensitiveHidden.value;
                       copyStatus.value = "";
@@ -449,6 +436,7 @@ export default function OverviewContext(input: Props) {
                     }
                     aria-label={t("overview.copyInfo") as any}
                     title={t("overview.copyInfo") as any}
+                    className={__classes("touch-target")}
                     onClick={(event: any) => {
                       __call(copyInfo, event);
                     }}
@@ -460,9 +448,6 @@ export default function OverviewContext(input: Props) {
               </header>
               <div
                 className={__classes("context-body")}
-                style={__style({
-                  display: hostOpen.value ? undefined : "none",
-                })}
                 data-v-2aa82488=""
               >
                 <div className={__classes("context-target")} data-v-2aa82488="">
@@ -559,19 +544,7 @@ export default function OverviewContext(input: Props) {
                 className={__classes("context-heading")}
                 data-v-2aa82488=""
               >
-                <h2 data-v-2aa82488="">
-                  <button
-                    type="button"
-                    aria-expanded={memoOpen.value as any}
-                    className={__classes("section-toggle")}
-                    onClick={(event: any) => {
-                      memoOpen.value = !memoOpen.value;
-                    }}
-                    data-v-2aa82488=""
-                  >
-                    {t("overview.memo")}
-                  </button>
-                </h2>
+                <h2 data-v-2aa82488="">{t("overview.memo")}</h2>
                 <div
                   aria-label={t("overview.memoActions") as any}
                   className={__classes("header-actions")}
@@ -583,6 +556,7 @@ export default function OverviewContext(input: Props) {
                       disabled={!memo.value as any}
                       aria-label={t("overview.edit") as any}
                       title={t("overview.edit") as any}
+                      className={__classes("touch-target")}
                       onClick={(event: any) => {
                         __call(startMemoEdit, event);
                       }}
@@ -597,6 +571,7 @@ export default function OverviewContext(input: Props) {
                         disabled={saving.value as any}
                         aria-label={t("overview.save") as any}
                         title={t("overview.save") as any}
+                        className={__classes("touch-target")}
                         onClick={(event: any) => {
                           __call(saveMemo, event);
                         }}
@@ -609,6 +584,7 @@ export default function OverviewContext(input: Props) {
                         disabled={saving.value as any}
                         aria-label={t("overview.cancel") as any}
                         title={t("overview.cancel") as any}
+                        className={__classes("touch-target")}
                         onClick={(event: any) => {
                           __call(cancelMemoEdit, event);
                         }}
@@ -622,9 +598,6 @@ export default function OverviewContext(input: Props) {
               </header>
               <div
                 className={__classes("context-body")}
-                style={__style({
-                  display: memoOpen.value ? undefined : "none",
-                })}
                 data-v-2aa82488=""
               >
                 <p className={__classes("context-note")} data-v-2aa82488="">

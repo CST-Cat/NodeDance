@@ -23,7 +23,7 @@ p[data-v-b0bbf977] {
   font-size: 14px;
   line-height: 1.55;
 }
-input[data-v-b0bbf977] {
+form > input[data-v-b0bbf977] {
   width: 100%;
   min-height: 40px;
   border: 1px solid var(--line);
@@ -31,6 +31,63 @@ input[data-v-b0bbf977] {
   padding: 10px 12px;
   color: var(--text);
   background: var(--canvas);
+}
+.ui-dialog-choices[data-v-b0bbf977] {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 24px;
+}
+.ui-dialog-choice[data-v-b0bbf977] {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 0.5px solid var(--figma-border-secondary, var(--line));
+  border-radius: var(--figma-radius-md, var(--radius-control));
+  padding: 10px 12px;
+  cursor: pointer;
+  transition:
+    background-color 100ms cubic-bezier(0, 0, 0.58, 1),
+    border-color 100ms cubic-bezier(0, 0, 0.58, 1);
+}
+.ui-dialog-choice[data-v-b0bbf977]:hover,
+.ui-dialog-choice[data-v-b0bbf977]:active {
+  background: var(--surface-hover, var(--surface-soft));
+}
+.ui-dialog-choice[data-v-b0bbf977]:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ui-dialog-choice[data-v-b0bbf977]:has(input:focus-visible) {
+  outline: 1.5px solid var(--figma-border-info, var(--accent));
+  outline-offset: 2px;
+}
+.ui-dialog-choice > span[data-v-b0bbf977] {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+  padding-top: 1px;
+}
+.ui-dialog-choice-label[data-v-b0bbf977] {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: var(--figma-weight-medium, 500);
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.ui-dialog-choice-detail[data-v-b0bbf977] {
+  color: var(--muted);
+  font:
+    12px var(--figma-font-mono, ui-monospace),
+    monospace;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+@media (pointer: coarse), (max-width: 700px) {
+  .ui-dialog-choice[data-v-b0bbf977] {
+    min-height: 44px;
+    align-items: center;
+  }
 }
 footer[data-v-b0bbf977] {
   display: flex;

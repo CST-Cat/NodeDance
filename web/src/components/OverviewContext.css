@@ -27,26 +27,6 @@
   font-size: 14px;
   font-weight: 500;
 }
-.context-heading .section-toggle[data-v-2aa82488] {
-  font: inherit;
-  padding: 4px 0;
-  border: 0;
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-}
-.section-toggle[data-v-2aa82488]::after {
-  content: "⌄";
-  display: inline-block;
-  margin-left: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  transform: rotate(-90deg);
-}
-.section-toggle[aria-expanded="true"][data-v-2aa82488]::after {
-  transform: none;
-}
 .header-actions[data-v-2aa82488] {
   display: flex;
   align-items: center;
@@ -58,6 +38,9 @@
   place-items: center;
   width: 28px;
   height: 32px;
+  /* 44px touch target (OpenUI ChatComposerChin touch growth) without
+     widening the 28px icons into each other: grow vertically only. */
+  --touch-target-inline: 30px;
   padding: 4px;
   border: 0;
   border-radius: var(--radius-control);

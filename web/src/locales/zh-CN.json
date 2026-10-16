@@ -981,7 +981,6 @@
   "m.400d8fa7bdd9": "结果待确认",
   "m.9344597efd49": "执行失败",
   "m.ef8956febccf": "SSH 命令已复制。",
-  "m.974cd922475e": "无法自动复制，请手动复制：{0}",
   "m.d07581c22bb2": "Agent 未连接",
   "m.e41b8d592e33": "主机监控指标",
   "m.d7140d0b3390": "网络 ↓ / ↑",
@@ -1002,8 +1001,6 @@
   "m.c820131d2266": "{0} 快捷入口",
   "m.3c1249308515": "请先在节点设置中填写 SSH 主机和用户",
   "m.12d40d9f555d": "复制 SSH",
-  "m.5662971e4f8b": "Agent 离线，容器状态已过期",
-  "m.1ee33cf03dd4": "查看完整详情",
   "m.ad5d5a8f24fc": "请求失败（{0}）",
   "m.e03b23b49908": "服务器返回了无法识别的响应。",
   "label.638731745e22": "Core 连接",
@@ -1628,9 +1625,11 @@
   "host.field.purchasedAt": "购买日期",
   "ssh.automatic": "自动识别 SSH 地址、端口和登录账号",
   "ssh.discovering": "正在识别 SSH 连接…",
-  "ssh.unavailable": "未能识别 SSH 连接。",
-  "ssh.chooseUser": "识别到的 SSH 账号候选",
+  "ssh.unavailable": "SSH 不可用",
+  "ssh.chooseAccount": "选择要复制的 SSH 账号。",
   "ssh.clientDefault": "使用 SSH 客户端默认账号",
+  "ssh.copyFailed": "复制失败",
+  "ssh.copyAction": "复制 SSH",
   "nav.returnHome": "返回主页面",
   "nav.nodeWorkspace": "VPS 导航",
   "compose.projectsTitle": "Compose 项目",
@@ -2089,5 +2088,6 @@
   "overview.resetDisplay": "恢复默认",
   "overview.done": "完成",
   "overview.loadNormal": "运行正常",
-  "files.noOverwrite": "已有文件不会被覆盖。"
+  "files.noOverwrite": "已有文件不会被覆盖。",
+  "stream.jumpToLatest": "跳到最新"
 }

@@ -1,0 +1,209 @@
+// Stream panel checks use a real isolated Core contract plus a routed
+// container-log WebSocket. No Docker daemon, Agent or host effect is used.
+// Covers: OpenUI-ported scroll-edge fading, streaming auto-follow that yields
+// to user scroll, the jump-to-latest pill, reduced-motion flattening, spring
+// press feedback, and 44px touch hit targets on icon controls.
+const assert = require('node:assert/strict'), path = require('node:path')
+module.exports = async function ({page, base, node, artifacts, catalog}) {
+  const errors=[];const collectError=error=>errors.push(error.message);page.on('pageerror',collectError)
+  function routePath(name, params = {}) {
+    const operation = catalog.operations.find(operation => operation.name === name)
+    assert.ok(operation, `Core advertises ${name}`)
+    return operation.path.replace(/\{([^}]+)\}/g, (_, key) => encodeURIComponent(params[key]))
+  }
+  const now = () => new Date().toISOString(), agent = 'stream-browser-fixture'
+  let sequence = 0, dashboardSocket, logSocket
+  const container = {id:'a1'.padEnd(64,'0'), name:'stream-fixture-01', image:'example/streams:fixture', imageId:'sha256:fixture', state:'running', running:true, paused:false, restarting:false, hostNetwork:false, health:'none', healthcheckConfigured:false, stale:false, restartCount:0, ports:[], networks:[], mounts:[], observedAt:now(), startedAt:now()}
+  function fixtureState(){ return {status:'online',generation:1,serverTime:now(),leaseValidUntil:new Date(Date.now()+3600000).toISOString()} }
+  function inventory(){
+    const s=fixtureState()
+    return {type:'node_containers',nodeId:node,state:s,inventory:{nodeId:node,agentId:agent,agentOnline:true,activeGeneration:1,dockerAvailability:'available',dockerEventsConnected:true,dockerSnapshotFresh:true,dataStale:false,serverTime:s.serverTime,containers:[{container,generation:1,sequence:++sequence,receivedAt:now()}]},preferenceIdentities:{[container.id]:'container:'+container.id}}
+  }
+  const nodesPath = routePath('nodes.list'), containersPath = routePath('containers.list',{nodeId:node}), metricsPath = routePath('nodes.metrics',{nodeId:node}), settingsPath = routePath('dashboard.settings'), preferencesPath = routePath('nodes.preferences',{nodeId:node}), tasksPath = routePath('tasks.list',{nodeId:node})
+  const handler = async route => {
+    const request=route.request(), pathname=new URL(request.url()).pathname
+    if(pathname===nodesPath) return route.fulfill({json:{nodes:[{nodeId:node,agentId:agent,displayName:'Stream browser fixture',status:'online',generation:1,leaseValidUntil:fixtureState().leaseValidUntil,agentVersion:'agent-v0.1.13',capabilities:[]}],serverTime:now()}})
+    if(pathname===containersPath && request.method()==='GET') return route.fulfill({json:inventory()})
+    if(pathname===metricsPath) return route.fulfill({json:{type:'node_status',nodeId:node,state:fixtureState()}})
+    if(pathname===settingsPath) return route.fulfill({json:{viewMode:'monitor',groupBy:'node',sortBy:'custom',nodeGroupBy:'status',nodeSortBy:'custom',featuredLimit:4,customFields:['state','image','ports','health','uptime']}})
+    if(pathname===preferencesPath && request.method()==='GET') return route.fulfill({json:{preferences:[]}})
+    if(pathname===tasksPath) return route.fulfill({json:{tasks:[],nextCursor:''}})
+    return route.fallback()
+  }
+  await page.route('**/api/**',handler)
+  await page.routeWebSocket('**'+routePath('dashboard.watch'),ws=>{dashboardSocket=ws})
+  // The stream socket carries nodeId/containerId in its query string; the
+  // trailing wildcard must remain part of the routing pattern.
+  const streamPattern='**'+routePath('containers.logs')+'*'
+  let streamSequence=0
+  const emitLog = text => logSocket.send(JSON.stringify({version:1,type:'container_log',generation:1,sequence:++streamSequence,requestId:'fixture',payload:{containerId:container.id,channel:'stdout',data:Buffer.from(text+'\n').toString('base64')}}))
+  const emitBurst = count => { for(let i=1;i<=count;i++) emitLog(`fixture log line ${String(i+streamSequence).padStart(4,'0')} — streaming well past the panel fold for scroll assertions`) }
+  const publish = () => { assert.ok(dashboardSocket);dashboardSocket.send(JSON.stringify(inventory())) }
+  async function waitWatch(){
+    for(let attempt=0;attempt<100&&!dashboardSocket;attempt++)await page.waitForTimeout(50)
+    assert.ok(dashboardSocket,'Dashboard socket reconnected')
+  }
+  const output = page.getByTestId('stream-log-output')
+  const jump = page.getByTestId('stream-log-follow')
+  const pinState = () => output.evaluate(element => ({
+    scrollTop: element.scrollTop,
+    distance: element.scrollHeight - element.scrollTop - element.clientHeight,
+    top: element.style.getPropertyValue('--scroll-fade-top'),
+    bottom: element.style.getPropertyValue('--scroll-fade-bottom'),
+  }))
+  const lineCount = () => output.evaluate(element=>element.textContent.split('\n').length)
+  async function openStreams(){
+    await page.goto(base+`/#/nodes?node=${node}&section=docker`)
+    // The dashboard watch socket survives same-document navigations; only the
+    // per-stream fixture state resets between sessions.
+    logSocket=undefined;streamSequence=0
+    await page.locator(`[data-testid=docker-table] tr[data-container-id="${container.id}"]`).waitFor()
+    await waitWatch()
+    publish()
+    await page.locator(`[data-testid=docker-table] tr[data-container-id="${container.id}"]`).waitFor()
+    const more=page.getByTestId('docker-toolbar').locator('details')
+    await page.locator(`[data-testid=docker-table] tr[data-container-id="${container.id}"]`).getByRole('button',{name:container.name,exact:true}).click()
+    await page.getByTestId('container-detail').waitFor()
+    await more.locator('summary').click()
+    await more.getByRole('button',{name:'Logs & monitoring',exact:true}).click()
+    await page.getByTestId('container-streams').waitFor()
+    await page.getByRole('button',{name:'View logs',exact:true}).click()
+    await page.getByTestId('stream-log-state').getByText('Receiving live data').waitFor()
+    await page.waitForFunction(()=>document.querySelector('[data-testid=stream-log-output]')?.textContent.split('\n').length>=80)
+  }
+
+  await page.goto(base+`/#/nodes?node=${node}&section=docker`)
+  await page.locator(`[data-testid=docker-table] tr[data-container-id="${container.id}"]`).waitFor()
+  // Register the fixture stream before the app opens its socket so the very
+  // first connection is intercepted.
+  await page.routeWebSocket(streamPattern,ws=>{logSocket=ws;streamSequence=0
+    logSocket.send(JSON.stringify({version:1,type:'container_stream_ready',generation:1,sequence:++streamSequence,requestId:'fixture',payload:{kind:'logs',containerId:container.id}}))
+    emitBurst(80)})
+  // Pinned streaming: frames emitted after connect must stay anchored to the
+  // bottom edge, and the bottom fade must be disabled while anchored.
+  await openStreams()
+  await page.waitForFunction(()=>{const el=document.querySelector('[data-testid=stream-log-output]');return el?.style.getPropertyValue('--scroll-fade-top')==='28px'&&el?.style.getPropertyValue('--scroll-fade-bottom')==='0px'})
+  let pins=await pinState()
+  assert.ok(pins.distance<=40,'Fresh frames must keep the panel pinned to the bottom edge: '+JSON.stringify(pins))
+  assert.equal(pins.bottom,'0px','Anchored bottom edge must not fade')
+  assert.equal(pins.top,'28px','Distant top edge fades with the OpenUI 28px feather')
+  assert.equal(await page.getByTestId('stream-log-follow').count(),0,'Pinned streams must not show the jump control')
+
+  // User intent yields immediately: one wheel-up stops all auto-following,
+  // even as more frames arrive, and the jump control appears.
+  const box=await output.evaluate(element=>{const r=element.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})
+  await page.mouse.move(box.x,box.y)
+  await page.mouse.wheel(0,-500)
+  // A pinned panel reports a large scrollTop, so detachment is measured as
+  // bottom distance, not an absolute offset.
+  await page.waitForFunction(()=>{const el=document.querySelector('[data-testid=stream-log-output]');return el.scrollHeight-el.scrollTop-el.clientHeight>40})
+  const detached=await pinState()
+  assert.ok(detached.distance>40,'Wheel-up must detach from the bottom edge')
+  await emitBurst(30)
+  await page.waitForFunction(()=>document.querySelector('[data-testid=stream-log-output]')?.textContent.split('\n').length>=110)
+  await page.waitForFunction(()=>document.querySelector('[data-testid=stream-log-output]')?.style.getPropertyValue('--scroll-fade-bottom')==='28px')
+  await page.waitForTimeout(120)
+  pins=await pinState()
+  assert.equal(pins.scrollTop,detached.scrollTop,'Appended frames must not scroll the panel while the user is reading')
+  assert.equal(pins.bottom,'28px','A detached bottom edge fades with the OpenUI 28px feather')
+  await jump.waitFor()
+  assert.ok(await jump.isVisible(),'The jump control appears once far enough from the bottom')
+
+  // Jump re-anchors instantly (OpenUI behavior "auto") and streaming resumes.
+  await jump.click()
+  await page.waitForFunction(()=>{const el=document.querySelector('[data-testid=stream-log-output]');return el.scrollHeight-el.scrollTop-el.clientHeight<=40})
+  await page.waitForFunction(()=>!document.querySelector('[data-testid=stream-log-follow]'))
+  await page.waitForFunction(()=>document.querySelector('[data-testid=stream-log-output]')?.style.getPropertyValue('--scroll-fade-bottom')==='0px')
+  await emitBurst(20)
+  await page.waitForTimeout(120)
+  pins=await pinState()
+  assert.ok(pins.distance<=40,'Auto-follow resumes after an explicit jump: '+JSON.stringify(pins))
+  assert.equal(pins.bottom,'0px')
+
+  // Spring press feedback settles with the shared open-claude spring. The
+  // jump pill is probed because page chrome buttons may carry their own
+  // component-level color transitions.
+  await page.mouse.move(box.x,box.y)
+  await page.mouse.wheel(0,-400)
+  try { await page.waitForFunction(()=>{const el=document.querySelector('[data-testid=stream-log-output]');return el.scrollHeight-el.scrollTop-el.clientHeight>40},{timeout:3000}) }
+  catch(e){ const d=await page.evaluate(()=>{const el=document.querySelector('[data-testid=stream-log-output]');const s=getComputedStyle(el);const r=document.elementFromPoint(innerWidth/2,innerHeight/2);return {st:el.scrollTop,sh:el.scrollHeight,ch:el.clientHeight,ov:s.overflowY,disp:s.display,at:r?r.tagName+'.'+r.className:'none',hidden:!!el.closest('[hidden]'),open:!!el.closest('details')?.open}});console.log('WHEEL2 DIAG',JSON.stringify(d));throw e }
+  const pill=page.getByTestId('stream-log-follow')
+  await pill.waitFor()
+  await page.waitForTimeout(320) // let the jump-pill enter animation finish (0.22s)
+  const [props,durations,timings]=await pill.evaluate(element=>{const s=getComputedStyle(element);return [s.transitionProperty,s.transitionDuration,s.transitionTimingFunction]})
+  assert.ok(props.split(', ').includes('transform')&&durations.split(', ').includes('0.18s')&&timings.includes('cubic-bezier(0.34, 1.3, 0.64, 1)'),'Press feedback must settle with the shared spring: '+props+' '+durations+' '+timings)
+  const pressBox=await pill.boundingBox()
+  await page.mouse.move(pressBox.x+pressBox.width/2,pressBox.y+pressBox.height/2)
+  await page.mouse.down()
+  await page.waitForTimeout(240) // let the spring press transition complete (0.18s)
+  const pressed=await pill.evaluate(element=>getComputedStyle(element).transform)
+  await page.mouse.up()
+  assert.ok(pressed!=='none'&&pressed.includes('0.98'),'Holding a button must press it: '+pressed)
+
+  // 44px touch hit targets keep the visible icon size (.touch-target).
+  await page.goto(base+'/#/nodes')
+  await page.locator(`.vps-card[data-node-id="${node}"]`).waitFor()
+  await page.getByTestId('overview-host-info').waitFor()
+  const toggle=page.locator('.navigation-toggle.touch-target')
+  await toggle.waitFor()
+  const navigationHit=await toggle.evaluate(element=>{const s=getComputedStyle(element,'::after');return {hit:s.height,visual:element.getBoundingClientRect().height,pointer:s.pointerEvents}})
+  assert.equal(navigationHit.hit,'44px','Navigation toggle gains a 44px hit box')
+  assert.ok(navigationHit.visual<44,'Visible toggle stays compact: '+navigationHit.visual)
+  assert.equal(navigationHit.pointer,'auto')
+  const iconTarget=page.locator('.overview-context .header-actions button.touch-target[title="Display settings"]')
+  await iconTarget.waitFor()
+  const iconHit=await iconTarget.evaluate(element=>{const s=getComputedStyle(element);const after=getComputedStyle(element,'::after');const box=element.getBoundingClientRect();return {hitW:after.width,hitH:after.height,visualW:Math.round(box.width),visualH:Math.round(box.height),inline:s.getPropertyValue('--touch-target-inline')}})
+  assert.equal(iconHit.hitH,'44px','Header icon gains a 44px touch target')
+  assert.ok(iconHit.visualH<44&&iconHit.visualW<44,'Visible icon button stays compact: '+JSON.stringify(iconHit))
+  assert.ok(parseFloat(iconHit.hitW)<=34,'Side-by-side icons only grow vertically: '+JSON.stringify(iconHit))
+  // Clicking inside the hit box but above the visible icon must trigger it.
+  const point=await iconTarget.evaluate(element=>{const r=element.getBoundingClientRect();return {x:r.x+r.width/2,y:r.top-4}})
+  await page.mouse.click(point.x,point.y)
+  await page.locator('dialog.context-settings[open]').waitFor()
+  await page.keyboard.press('Escape')
+
+  // Reduced motion flattens the spring press, the jump-pill entrance, and
+  // selects the unsmoothed jump path. The stream fixture handler stays
+  // registered; it re-fires on the second session's connection.
+  await page.emulateMedia({reducedMotion:'reduce'})
+  const reducedTransition=await iconTarget.evaluate(element=>getComputedStyle(element).transitionDuration)
+  assert.ok(['0s','0.00001s'].includes(reducedTransition),'Reduced motion must flatten the press spring: '+reducedTransition)
+  await openStreams()
+  await page.mouse.move(box.x,box.y)
+  await page.mouse.wheel(0,-500)
+  await jump.waitFor()
+  const reducedJump=await jump.evaluate(element=>{const s=getComputedStyle(element);return {duration:s.animationDuration,name:s.animationName}})
+  assert.equal(reducedJump.name,'none','The jump pill entrance must be disabled under reduced motion: '+JSON.stringify(reducedJump))
+  const jumpStarted=Date.now()
+  await jump.click()
+  await page.waitForFunction(()=>{const el=document.querySelector('[data-testid=stream-log-output]');return el.scrollHeight-el.scrollTop-el.clientHeight<=40})
+  assert.ok(Date.now()-jumpStarted<200,'Reduced-motion jump must not linger: '+(Date.now()-jumpStarted)+'ms')
+  // Frames continue to follow.
+  await emitBurst(15)
+  await page.waitForFunction(()=>document.querySelector('[data-testid=stream-log-output]')?.textContent.split('\n').length>=95)
+  await page.waitForTimeout(120)
+  pins=await pinState()
+  assert.ok(pins.distance<=40,'Reduced-motion streams still auto-follow: '+JSON.stringify(pins))
+
+  // Layout coverage for the streaming surface (light/dark × desktop/mobile).
+  await page.emulateMedia({reducedMotion:'no-preference'})
+  const layouts=[]
+  for(const theme of ['light','dark'])for(const width of [390,1440]){
+    await page.setViewportSize({width,height:1000});await page.waitForTimeout(120)
+    const scrim=page.locator('.navigation-scrim')
+    if(await scrim.isVisible()){
+      await scrim.click({position:{x:width-10,y:20}})
+      await scrim.waitFor({state:'detached'})
+    }
+    await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+    await page.waitForTimeout(250) // let the shared theme transition settle before capturing
+    assert.equal(await page.locator('.navigation-scrim').count(),0,'A captured layout must not be dimmed by the mobile navigation scrim')
+    assert.equal(await page.locator('dialog[open]').count(),0,'A captured layout must not be dimmed by an open dialog')
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Stream layout fits the viewport')
+    const name=`stream-${theme}-${width}`;await page.screenshot({path:path.join(artifacts,name+'.png'),fullPage:true});layouts.push(name)
+  }
+  await page.setViewportSize({width:1440,height:1000})
+  await page.unroute('**/api/**',handler)
+  page.off('pageerror',collectError);assert.deepEqual(errors,[],'Stream panel must not produce browser errors')
+  console.log('Stream panel regressions passed: pinned auto-follow with immediate user yield, jump-to-latest, scroll-edge fade vars, spring press, 44px hit targets with above-icon clicks, reduced-motion flattening; '+layouts.length+' layouts.')
+}

@@ -1,8 +1,16 @@
 import { activeDialog, cancelDialogs, finishDialog } from "../dialogs";
 import { t } from "../i18n";
-import { afterRender, beforeDispose, cell, watchState } from "../state";
+import {
+  afterMount,
+  afterRender,
+  beforeDispose,
+  cell,
+  watchState,
+} from "../state";
+import { installScrollEdges, type ScrollEdges } from "../scroll-edge";
 
-import { __classes, __input, useController } from "../state";
+import { Fragment } from "react";
+import { __classes, __each, __input, useController } from "../state";
 import "./UiDialog.css";
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
 export default function UiDialog(input: Props) {
@@ -23,6 +31,14 @@ export default function UiDialog(input: Props) {
           if (request.kind === "prompt") {
             input.value?.focus();
             input.value?.select();
+          } else if (request.kind === "choice") {
+            const radios = element.value?.querySelectorAll<HTMLInputElement>(
+              ".ui-dialog-choice input[type=radio]",
+            );
+            const checked = Array.from(radios ?? []).find(
+              (radio) => radio.checked,
+            );
+            (checked ?? radios?.[0])?.focus();
           }
         },
         {
@@ -33,20 +49,27 @@ export default function UiDialog(input: Props) {
         element.value?.close();
         finishDialog(
           accepted
-            ? activeDialog.value?.kind === "prompt"
-              ? value.value
-              : ""
+            ? activeDialog.value?.kind === "confirm"
+              ? ""
+              : value.value
             : null,
         );
       }
-      beforeDispose(cancelDialogs);
+      let dialogEdges: ScrollEdges | undefined;
+      afterMount(() => {
+        dialogEdges = installScrollEdges(element.value);
+      });
+      beforeDispose(() => {
+        dialogEdges?.dispose();
+        cancelDialogs();
+      });
       return () => (
         <>
           <dialog
             ref={__dom(element)}
             aria-labelledby="ui-dialog-title"
             aria-describedby="ui-dialog-message"
-            className={__classes("ui-dialog")}
+            className={__classes("ui-dialog scroll-fade")}
             onCancel={(event: any) => {
               event.preventDefault();
               finish(false);
@@ -83,6 +106,51 @@ export default function UiDialog(input: Props) {
                     )}
                     data-v-b0bbf977=""
                   ></input>
+                ) : activeDialog.value.kind === "choice" ? (
+                  <div
+                    role="radiogroup"
+                    aria-label={activeDialog.value.message as any}
+                    className={__classes("ui-dialog-choices")}
+                    data-v-b0bbf977=""
+                  >
+                    <Fragment>
+                      {__each(activeDialog.value.choices ?? [], (choice) => (
+                        <label
+                          key={choice.value as any}
+                          className={__classes("ui-dialog-choice")}
+                          data-v-b0bbf977=""
+                        >
+                          <input
+                            type="radio"
+                            name="ui-dialog-choice"
+                            checked={(value.value === choice.value) as any}
+                            onChange={(__event: any) => {
+                              value.value = choice.value;
+                            }}
+                            data-v-b0bbf977=""
+                          ></input>
+                          <span data-v-b0bbf977="">
+                            <span
+                              className={__classes("ui-dialog-choice-label")}
+                              data-v-b0bbf977=""
+                            >
+                              {choice.label}
+                            </span>
+                            {choice.detail ? (
+                              <small
+                                className={__classes(
+                                  "ui-dialog-choice-detail",
+                                )}
+                                data-v-b0bbf977=""
+                              >
+                                {choice.detail}
+                              </small>
+                            ) : null}
+                          </span>
+                        </label>
+                      ))}
+                    </Fragment>
+                  </div>
                 ) : null}
                 <footer data-v-b0bbf977="">
                   <button
@@ -101,7 +169,7 @@ export default function UiDialog(input: Props) {
                     className={__classes("primary-button")}
                     data-v-b0bbf977=""
                   >
-                    {t("dialog.confirm")}
+                    {activeDialog.value.confirmLabel ?? t("dialog.confirm")}
                   </button>
                 </footer>
               </form>

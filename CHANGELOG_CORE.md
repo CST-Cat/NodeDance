@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.34]
+
+### English
+
+- Copy SSH always opens a shared account-choice dialog first: preselect the saved or detected account, focus the checked option, copy only through the dialog's explicit "Copy SSH" action, and keep Cancel or Escape from touching the clipboard. Detection without candidates reports the unavailability instead of an empty dialog.
+- Show SSH copy feedback as a transient overlay anchored above the clicked Copy SSH button; remove the persistent in-card status line, the card account picker and the card footer with its full-details button. Card body clicks inspect without entering detail navigation, and pending nodes show their enrollment state instead of uptime.
+- Add a shared choice dialog with radio account options and per-account command details, edge-fade masks for overflowing panels (dialog, overview rail, container logs) and streaming log auto-follow with a "jump to latest" pill; centralize motion presets and keep press feedback, reduced-motion and touch growth rules on one token set.
+- Revert an in-progress sidebar drag with Escape, reset the sidebar width on double-click, always expand the overview host-info and memo sections, and register a stream-panel browser regression suite while extending SSH shortcut and node navigation coverage.
+
+### 简体中文
+
+- “复制 SSH”始终先打开共享账号选择对话框：预选已保存或已识别账号并聚焦选中项，仅通过对话框内的“复制 SSH”动作写入剪贴板，取消或 Escape 不触碰剪贴板；识别无候选时提示不可用，而不是弹出空对话框。
+- SSH 复制反馈改为锚定在所点“复制 SSH”按钮上方的短暂浮层；移除卡片内常驻状态行、账号下拉选择和带“查看完整详情”按钮的底部区域。点击卡片空白处即可查看信息且不进入详情导航，待注册节点显示注册状态而非运行时长。
+- 新增带单选账号选项与逐账号命令详情的共享选择对话框，为溢出面板（对话框、总览侧栏、容器日志）添加边缘渐隐遮罩，并支持流式日志自动跟随与“跳到最新”提示；集中维护动效预设，按压反馈、减弱动效与触控放大共用同一套规则。
+- 侧栏拖动中按 Escape 恢复原宽度，双击重置侧栏宽度，总览主机信息与备忘录始终展开；注册流面板浏览器回归用例，并扩展 SSH 快捷入口与节点导航覆盖。
+
 ## [0.1.33]
 
 ### English

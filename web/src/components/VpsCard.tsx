@@ -9,12 +9,12 @@ import type {
 } from "../api";
 import { display, locale, t } from "../i18n";
 import type { MetricsView } from "../metrics-contract";
-import { cell, derived, watchState } from "../state";
+import { afterRender, beforeDispose, cell, derived, watchState } from "../state";
 import VpsTelemetry from "./VpsTelemetry";
 
 import { Fragment } from "react";
-import { __call, __classes, __each, useController } from "../state";
-import UiSelect from "./UiSelect";
+import { requestChoice } from "../dialogs";
+import { __call, __classes, __each, __style, useController } from "../state";
 import "./VpsCard.css";
 type Props = {
   node: AgentNode;
@@ -33,7 +33,6 @@ type Props = {
   dockerStale: boolean;
   previewLimit: number;
   currentTime: number;
-  nodeReason?: string;
   tasks: ContainerTask[];
   taskSubmitting: Record<string, boolean>;
   taskErrors: Record<string, string>;
@@ -76,20 +75,87 @@ export default function VpsCard(input: Props) {
           return "";
         return `ssh -p ${port} ${user}@${host}`;
       });
-      const sshCopyMessage = cell("");
+      // SSH copy feedback is a small transient popover anchored above the
+      // Copy SSH button; it never leaves persistent text inside the card and
+      // every bubble (including detection) dismisses itself. A later result
+      // surfaces as a fresh brief bubble. It is a pure floating overlay: it
+      // occupies no layout space and never shifts the card or its controls.
+      const sshFeedback = cell("");
+      const sshFeedbackKind = cell<"info" | "success" | "error">("info");
+      const sshFeedbackStyle = cell<Record<string, string>>({});
+      const shortcutRow = cell<HTMLElement>();
+      const sshShortcutButton = cell<HTMLButtonElement>();
+      const sshFeedbackBubble = cell<HTMLElement>();
+      let sshFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
+      beforeDispose(() => {
+        if (sshFeedbackTimer) clearTimeout(sshFeedbackTimer);
+      });
+      function hideSshFeedback() {
+        if (sshFeedbackTimer) {
+          clearTimeout(sshFeedbackTimer);
+          sshFeedbackTimer = undefined;
+        }
+        sshFeedback.value = "";
+      }
+      async function showSshFeedback(
+        message: string,
+        kind: "info" | "success" | "error" = "info",
+      ) {
+        sshFeedback.value = message;
+        sshFeedbackKind.value = kind;
+        if (sshFeedbackTimer) {
+          clearTimeout(sshFeedbackTimer);
+          sshFeedbackTimer = undefined;
+        }
+        // Stay invisible during measurement so it never flashes unanchored.
+        sshFeedbackStyle.value = { visibility: "hidden" };
+        sshFeedbackTimer = setTimeout(() => {
+          sshFeedbackTimer = undefined;
+          sshFeedback.value = "";
+        }, 2600);
+        await afterRender();
+        if (sshFeedback.value !== message) return;
+        const row = shortcutRow.value,
+          button = sshShortcutButton.value,
+          bubble = sshFeedbackBubble.value;
+        if (!row || !button || !bubble) return;
+        const width = bubble.offsetWidth;
+        sshFeedbackStyle.value = {
+          left: `${Math.round(
+            Math.min(
+              Math.max(
+                button.offsetLeft +
+                  button.offsetWidth / 2 -
+                  width / 2,
+                0,
+              ),
+              Math.max(0, row.clientWidth - width),
+            ),
+          )}px`,
+          bottom: `${Math.round(
+            row.offsetHeight - button.offsetTop + 6,
+          )}px`,
+          visibility: "visible",
+        };
+      }
       const waitingForSSH = cell(false);
       watchState(
-        () => [sshCommand.value, props.sshLoading, props.sshError],
+        () => [
+          props.sshConnection,
+          sshCommand.value,
+          props.sshLoading,
+          props.sshError,
+        ],
         () => {
           if (!waitingForSSH.value) return;
-          if (sshCommand.value) {
+          if (copiableAccounts().length > 0) {
             waitingForSSH.value = false;
+            // Discovery resolved into usable accounts: open the shared
+            // account dialog instead of copying anything automatically.
             void copySSHCommand();
           } else if (!props.sshLoading) {
             waitingForSSH.value = false;
-            sshCopyMessage.value =
-              t("ssh.unavailable") +
-              (props.sshError ? " " + display(props.sshError) : "");
+            void showSshFeedback(t("ssh.unavailable"), "error");
           }
         },
       );
@@ -220,6 +286,13 @@ export default function VpsCard(input: Props) {
           : props.online
             ? t("m.c12a50c262ca")
             : t("m.de300a2b89b7");
+      }
+      // The single status line under the node name is driven only by the
+      // node record: enrollment and connection state map to localized text.
+      function nodeStateText(): string {
+        if (props.pending) return t("m.a890b3be09aa");
+        if (!props.online) return t("m.d07581c22bb2");
+        return props.node.agentVersion || t("m.d07581c22bb2");
       }
       function healthText(record: DockerContainerRecord): string {
         const container = record.container;
@@ -402,19 +475,83 @@ export default function VpsCard(input: Props) {
           action,
         });
       }
+      type SshAccountChoice = {
+        value: string;
+        label: string;
+        command: string;
+      };
+      function sshAccountChoices(): SshAccountChoice[] {
+        const connection = props.sshConnection;
+        if (!connection) return [];
+        const accounts: SshAccountChoice[] = [
+          {
+            value: "",
+            label: connection.user || t("ssh.clientDefault"),
+            command: connection.command ?? "",
+          },
+        ];
+        for (const user of connection.users ?? []) {
+          const command = connection.commands?.[user];
+          if (command && user !== connection.user)
+            accounts.push({ value: user, label: user, command });
+        }
+        return accounts;
+      }
+      function copiableAccounts(): SshAccountChoice[] {
+        return sshAccountChoices().filter((account) => account.command);
+      }
       async function copySSHCommand() {
-        if (!sshCommand.value) {
-          waitingForSSH.value = true;
-          sshCopyMessage.value = t("ssh.discovering");
-          emit("discoverSsh", props.node);
+        // Every copy is confirmed inside the shared account dialog, with one
+        // or several accounts alike: the button click itself never copies,
+        // and Cancel or Escape keep the clipboard untouched.
+        if (copiableAccounts().length > 0) return void chooseAndCopySSH();
+        // Without any known candidate, discover first; the floating bubble
+        // reports the pending detection and, if nothing usable appears, the
+        // unavailability instead of an unusable choice dialog.
+        waitingForSSH.value = true;
+        void showSshFeedback(t("ssh.discovering"));
+        emit("discoverSsh", props.node);
+      }
+      async function chooseAndCopySSH() {
+        const accounts = copiableAccounts();
+        const picked = await requestChoice(
+          t("ssh.chooseAccount"),
+          accounts.map((account) => ({
+            value: account.value,
+            label: account.label,
+            detail: account.command,
+          })),
+          accounts.some((account) => account.value === selectedSSHUser.value)
+            ? selectedSSHUser.value
+            : (accounts[0]?.value ?? ""),
+          t("ssh.copyAction"),
+        );
+        if (picked === null) {
+          // Cancelled and Escape stay without any copy.
+          hideSshFeedback();
+          return;
+        }
+        const account = accounts.find(
+          (candidate) => candidate.value === picked,
+        );
+        if (!account) {
+          void showSshFeedback(t("ssh.unavailable"), "error");
+          return;
+        }
+        selectedSSHUser.value = picked;
+        await copyText(account.command);
+      }
+      async function copyText(command: string) {
+        if (!command) {
+          await showSshFeedback(t("ssh.unavailable"), "error");
           return;
         }
         try {
           if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(sshCommand.value);
+            await navigator.clipboard.writeText(command);
           } else {
             const input = document.createElement("textarea");
-            input.value = sshCommand.value;
+            input.value = command;
             input.setAttribute("readonly", "");
             input.style.position = "fixed";
             input.style.opacity = "0";
@@ -424,11 +561,9 @@ export default function VpsCard(input: Props) {
             input.remove();
             if (!copied) throw new Error("clipboard unavailable");
           }
-          sshCopyMessage.value = t("m.ef8956febccf");
+          void showSshFeedback(t("m.ef8956febccf"), "success");
         } catch {
-          sshCopyMessage.value = t("m.974cd922475e", {
-            "0": sshCommand.value,
-          });
+          void showSshFeedback(t("ssh.copyFailed"), "error");
         }
       }
       function inspectCard(event: MouseEvent) {
@@ -493,10 +628,14 @@ export default function VpsCard(input: Props) {
             </header>
             <p className={__classes("vps-card-version")} data-v-31185faa="">
               <span className={__classes("agent-version")} data-v-31185faa="">
-                {__props.node.agentVersion || t("m.d07581c22bb2")}
+                {nodeStateText()}
               </span>
-              {" · "}
-              {t("overview.uptime")} {uptimeSummary()}
+              {props.pending ? null : (
+                <Fragment>
+                  {" · "}
+                  {t("overview.uptime")} {uptimeSummary()}
+                </Fragment>
+              )}
             </p>
             {__props.nodePreference?.notes ? (
               <p className={__classes("vps-card-note")} data-v-31185faa="">
@@ -782,6 +921,7 @@ export default function VpsCard(input: Props) {
                 }) as any
               }
               className={__classes("vps-card-shortcuts")}
+              ref={__dom(shortcutRow)}
               data-v-31185faa=""
             >
               <button
@@ -813,6 +953,7 @@ export default function VpsCard(input: Props) {
               <button
                 type="button"
                 data-testid="node-ssh-shortcut"
+                ref={__dom(sshShortcutButton)}
                 title={sshCommand.value || (t("ssh.automatic") as any)}
                 onClick={(event: any) => {
                   void copySSHCommand();
@@ -833,65 +974,19 @@ export default function VpsCard(input: Props) {
               >
                 {t("m.bb6d995724f4")}
               </button>
-            </nav>
-            {!__props.nodePreference?.sshUser &&
-            (__props.sshConnection?.users?.length ?? 0) > 1 ? (
-              <label
-                className={__classes("ssh-user-choice")}
-                data-v-31185faa=""
-              >
-                {t("ssh.chooseUser")}
-                <UiSelect
-                  modelValue={selectedSSHUser.value}
-                  onUpdateModelValue={(__nextValue: any) => {
-                    selectedSSHUser.value = __nextValue;
-                  }}
-                  modelModifiers={{}}
+              {sshFeedback.value ? (
+                <span
+                  role="status"
+                  ref={__dom(sshFeedbackBubble)}
+                  data-kind={sshFeedbackKind.value as any}
+                  className={__classes("vps-card-ssh-pop")}
+                  style={__style(sshFeedbackStyle.value) as any}
                   data-v-31185faa=""
                 >
-                  <option value="" data-v-31185faa="">
-                    {__props.sshConnection?.user || t("ssh.clientDefault")}
-                  </option>
-                  <Fragment>
-                    {__each(__props.sshConnection?.users, (user) => (
-                      <option
-                        key={user as any}
-                        value={user as any}
-                        data-v-31185faa=""
-                      >
-                        {user}
-                      </option>
-                    ))}
-                  </Fragment>
-                </UiSelect>
-              </label>
-            ) : null}
-            {sshCopyMessage.value ? (
-              <p
-                role="status"
-                className={__classes("vps-card-ssh-status")}
-                data-v-31185faa=""
-              >
-                {display(sshCopyMessage.value)}
-              </p>
-            ) : null}
-            <footer className={__classes("vps-card-footer")} data-v-31185faa="">
-              <span data-v-31185faa="">
-                {__props.nodeReason ||
-                  (dockerExpanded.value && __props.dockerStale
-                    ? t("m.5662971e4f8b")
-                    : "")}
-              </span>
-              <button
-                type="button"
-                onClick={(event: any) => {
-                  emit("view", __props.node);
-                }}
-                data-v-31185faa=""
-              >
-                {t("m.1ee33cf03dd4")}
-              </button>
-            </footer>
+                  {display(sshFeedback.value)}
+                </span>
+              ) : null}
+            </nav>
           </article>
         </>
       );
@@ -914,7 +1009,6 @@ export default function VpsCard(input: Props) {
       "dockerStale",
       "previewLimit",
       "currentTime",
-      "nodeReason",
       "tasks",
       "taskSubmitting",
       "taskErrors",

@@ -58,6 +58,11 @@
   --button-hover: #131313;
   --surface-hover: #e7e6e1;
   --overlay-shadow: 0 8px 24px #1414131a;
+  /* Motion curves shared with the Open Claude UI preset kit; defined at the
+     root so controls outside the .ux block (press feedback, stream jump)
+     resolve them. */
+  --ux-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --ux-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
   color-scheme: light;
 }
 .app-shell {
@@ -130,6 +135,9 @@ button {
 }
 :where(.app-shell) button:hover:not(:disabled) {
   background: var(--surface-hover);
+}
+:where(.app-shell) button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.98);
 }
 .container-action {
   display: inline-flex;
@@ -1681,7 +1689,11 @@ textarea {
   transition:
     background-color 0.15s linear,
     border-color 0.15s linear,
-    color 0.15s linear;
+    color 0.15s linear,
+    /* Restrained spring press feedback (OpenUI CdsMotionEngine pill
+       pattern): settle through --ux-spring. Transform only ever applies to
+       pressed buttons, so shared controls keep their color easing. */
+    transform 0.18s var(--ux-spring);
 }
 .app-shell :is(input, textarea, select):focus-visible {
   border-color: var(--accent);
@@ -1861,8 +1873,6 @@ textarea {
   --ux-accent: var(--accent);
   --ux-accent-soft: var(--accent-soft);
   --ux-shadow-strong: color-mix(in srgb, var(--text) 20%, transparent);
-  --ux-ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --ux-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
   font-family: inherit;
   box-sizing: border-box;
 }
@@ -1890,6 +1900,73 @@ textarea {
 .app-shell[data-sidebar-resizing="true"] .workspace-sidebar {
   transition: none !important;
 }
+
+/* Open Claude UI ScrollFadeContainer mask (7-stop nonlinear alpha ramp; the
+   custom properties are measured per panel by src/scroll-edge.ts). */
+.scroll-fade {
+  --scroll-fade-size: 28px;
+  --scroll-fade-top: 0px;
+  --scroll-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(0, 0, 0, 0.05) calc(var(--scroll-fade-top) * 0.15),
+    rgba(0, 0, 0, 0.15) calc(var(--scroll-fade-top) * 0.3),
+    rgba(0, 0, 0, 0.3) calc(var(--scroll-fade-top) * 0.45),
+    rgba(0, 0, 0, 0.5) calc(var(--scroll-fade-top) * 0.6),
+    rgba(0, 0, 0, 0.7) calc(var(--scroll-fade-top) * 0.75),
+    rgba(0, 0, 0, 0.85) calc(var(--scroll-fade-top) * 0.87),
+    #000 var(--scroll-fade-top),
+    #000 calc(100% - var(--scroll-fade-bottom)),
+    rgba(0, 0, 0, 0.85) calc(100% - var(--scroll-fade-bottom) * 0.87),
+    rgba(0, 0, 0, 0.7) calc(100% - var(--scroll-fade-bottom) * 0.75),
+    rgba(0, 0, 0, 0.5) calc(100% - var(--scroll-fade-bottom) * 0.6),
+    rgba(0, 0, 0, 0.3) calc(100% - var(--scroll-fade-bottom) * 0.45),
+    rgba(0, 0, 0, 0.15) calc(100% - var(--scroll-fade-bottom) * 0.3),
+    rgba(0, 0, 0, 0.05) calc(100% - var(--scroll-fade-bottom) * 0.15),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(0, 0, 0, 0.05) calc(var(--scroll-fade-top) * 0.15),
+    rgba(0, 0, 0, 0.15) calc(var(--scroll-fade-top) * 0.3),
+    rgba(0, 0, 0, 0.3) calc(var(--scroll-fade-top) * 0.45),
+    rgba(0, 0, 0, 0.5) calc(var(--scroll-fade-top) * 0.6),
+    rgba(0, 0, 0, 0.7) calc(var(--scroll-fade-top) * 0.75),
+    rgba(0, 0, 0, 0.85) calc(var(--scroll-fade-top) * 0.87),
+    #000 var(--scroll-fade-top),
+    #000 calc(100% - var(--scroll-fade-bottom)),
+    rgba(0, 0, 0, 0.85) calc(100% - var(--scroll-fade-bottom) * 0.87),
+    rgba(0, 0, 0, 0.7) calc(100% - var(--scroll-fade-bottom) * 0.75),
+    rgba(0, 0, 0, 0.5) calc(100% - var(--scroll-fade-bottom) * 0.6),
+    rgba(0, 0, 0, 0.3) calc(100% - var(--scroll-fade-bottom) * 0.45),
+    rgba(0, 0, 0, 0.15) calc(100% - var(--scroll-fade-bottom) * 0.3),
+    rgba(0, 0, 0, 0.05) calc(100% - var(--scroll-fade-bottom) * 0.15),
+    transparent
+  );
+}
+
+/* Touch hit-target compensation ported from the OpenUI ChatComposerChin
+   data-touch-size growth: the visible control keeps its size while a
+   pointer-transparent ::after extends the actionable area to 44px.
+   Width can opt out via --touch-target-inline when a wide-but-short row of
+   header icons must not grow into neighbours. */
+.touch-target {
+  position: relative;
+}
+.touch-target::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: max(100%, var(--touch-target-inline, 44px));
+  height: var(--touch-target-block, 44px);
+  pointer-events: auto;
+}
+
+/* Lucian UX/UI Prompt #031 · MIT License (c) 2026 Seokwoooo · https://lucianlabs.dev/uxui-prompt/#031 */
 .app-shell
   :is(
     input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not(
@@ -1911,7 +1988,7 @@ textarea {
   color: var(--muted-strong);
 }
 .app-shell button:active:not(:disabled) {
-  transform: translateY(1px);
+  transform: translateY(1px) scale(0.98);
 }
 .app-shell ::selection {
   background: var(--accent-soft);

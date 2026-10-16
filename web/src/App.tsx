@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { SPRING_HEAVY_SNAP } from "./motion";
 import { Fragment } from "react";
 import {
   api,
@@ -106,6 +107,15 @@ export default function App(input: Props) {
         handle.setPointerCapture(event.pointerId);
         const start = event.clientX,
           width = sidebarWidth.value;
+        // ArtifactsSplitPaneResizer behaviour: Escape mid-drag reverts the
+        // pane width to the value captured at drag start.
+        const cancel = (next: KeyboardEvent) => {
+          if (next.key !== "Escape") return;
+          next.preventDefault();
+          sidebarWidth.value = width;
+          stop();
+          handle.focus();
+        };
         const move = (next: PointerEvent) => {
           sidebarWidth.value = Math.max(
             200,
@@ -114,11 +124,20 @@ export default function App(input: Props) {
         };
         const stop = () => {
           sidebarResizing.value = false;
+          window.removeEventListener("keydown", cancel);
           handle.removeEventListener("pointermove", move);
           handle.removeEventListener("lostpointercapture", stop);
         };
+        window.addEventListener("keydown", cancel);
         handle.addEventListener("pointermove", move);
         handle.addEventListener("lostpointercapture", stop);
+      }
+      // Double-click snaps back to the untouched default pane width
+      // (ArtifactsSplitPaneResizer's 50/50 reset, adapted to the sidebar's
+      // 256px baseline).
+      function resetSidebarWidth() {
+        if (sidebarCollapsed.value || mobileNavigation.value) return;
+        sidebarWidth.value = 256;
       }
       function resizeSidebarKeys(event: KeyboardEvent) {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
@@ -907,12 +926,7 @@ export default function App(input: Props) {
                     initial={{ opacity: 0, y: 4, scale: 0.98 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 2, scale: 0.98 }}
-                    transition={{
-                      type: "spring",
-                      stiffness: 1200,
-                      damping: 80,
-                      mass: 0.1,
-                    }}
+                    transition={SPRING_HEAVY_SNAP}
                   >
                     {detailNavigation.value ? (
                       <nav
@@ -1047,7 +1061,7 @@ export default function App(input: Props) {
                     disabled={busy.value as any}
                     aria-label={t("m.3ab8cc15939f") as any}
                     title={t("m.3ab8cc15939f") as any}
-                    className={__classes("account-logout")}
+                    className={__classes("account-logout touch-target")}
                     onClick={(event: any) => {
                       __call(logout, event);
                     }}
@@ -1069,6 +1083,7 @@ export default function App(input: Props) {
                     onPointerDown={(event: any) => {
                       __call(resizeSidebar, event);
                     }}
+                    onDoubleClick={resetSidebarWidth}
                     onKeyDown={(event: any) => {
                       __call(resizeSidebarKeys, event);
                     }}
@@ -1101,7 +1116,7 @@ export default function App(input: Props) {
                         : (!sidebarCollapsed.value as any)
                     }
                     aria-controls="workspace-navigation"
-                    className={__classes("navigation-toggle")}
+                    className={__classes("navigation-toggle touch-target")}
                     onClick={(event: any) => {
                       __call(toggleNavigation, event);
                     }}

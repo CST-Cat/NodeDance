@@ -3,7 +3,7 @@
   grid-template-columns: minmax(340px, 1.2fr) minmax(220px, 1fr);
   align-items: center;
   gap: 20px;
-  margin: 12px 0;
+  margin: 6px 0;
 }
 .resource-rings[data-v-85963ddb] {
   display: grid;
