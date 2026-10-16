@@ -1210,13 +1210,18 @@ summary:focus-visible {
   background: var(--success);
 }
 .ui-select:has(> .language-selector) {
-  width: 104px;
-  min-width: 104px;
-  flex: 0 0 104px;
+  width: max-content;
+  min-width: max-content;
+  flex: 0 0 auto;
 }
 .ui-select:has(> .language-selector) .u031-btn {
-  padding-inline: 8px;
-  gap: 4px;
+  padding-inline: 12px;
+  gap: 8px;
+}
+.ui-select:has(> .language-selector) .u031-v {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
 }
 .u031-list.language-options {
   padding: 4px;
