@@ -1,4 +1,5 @@
 import { api, operationRequest } from "../api";
+import { requestConfirm } from "../dialogs";
 import { display, t } from "../i18n";
 import { resolveOperation, type BodySchema } from "../operations";
 import { afterMount, cell, derived, watchState } from "../state";
@@ -141,11 +142,22 @@ export default function AgentEnrollment(input: Props) {
           if (current !== requestEpoch) return;
           installCommand.value = result.nativeInstallCommand;
           dockerInstallCommand.value = result.dockerInstallCommand;
-          notice.value = props.nodeId
-            ? t("node.enrollmentRenewed")
-            : t("m.d04e8d433a67", {
-                "0": result.displayName,
-              });
+          let copied = false;
+          try {
+            await navigator.clipboard.writeText(selectedCommand(result));
+            copied = true;
+          } catch {
+            copied = false;
+          }
+          if (copied) {
+            await requestConfirm(t("m.9d2f65ed4a17"));
+          } else {
+            notice.value = props.nodeId
+              ? t("node.enrollmentRenewed")
+              : t("m.d04e8d433a67", {
+                  "0": result.displayName,
+                });
+          }
         } catch (reason) {
           if (current === requestEpoch)
             error.value =
@@ -155,6 +167,14 @@ export default function AgentEnrollment(input: Props) {
         } finally {
           creating.value = false;
         }
+      }
+      function selectedCommand(result: {
+        nativeInstallCommand: string;
+        dockerInstallCommand: string;
+      }) {
+        return deploymentMethod.value === "docker"
+          ? result.dockerInstallCommand
+          : result.nativeInstallCommand;
       }
       async function copyText(value: string, label: string) {
         error.value = "";
@@ -373,45 +393,11 @@ export default function AgentEnrollment(input: Props) {
                     {display(notice.value)}
                   </p>
                 ) : null}
-                <button
-                  type="button"
-                  disabled={
-                    !assetReady.value ||
-                    creating.value ||
-                    (!__props.nodeId && !displayName.value.trim()) ||
-                    !agentOriginIsSupported.value ||
-                    (!agentOriginUsesAllowedTransport.value as any)
-                  }
-                  className={__classes("primary-button")}
-                  onClick={(event: any) => {
-                    __call(generateEnrollment, event);
-                  }}
+                <div
+                  className={__classes("agent-enrollment-actions")}
                   data-v-2709b2e0=""
                 >
-                  {creating.value
-                    ? t("m.a8b8730c9611")
-                    : __props.nodeId
-                      ? t("node.generateInstall")
-                      : t("m.92840286f8cd")}
-                </button>
-                {selectedInstallCommand.value ? (
-                  <div
-                    className={__classes("agent-enrollment-result")}
-                    data-v-2709b2e0=""
-                  >
-                    <p className={__classes("field-hint")} data-v-2709b2e0="">
-                      {t("m.80ee590ed729")}
-                    </p>
-                    <label className={__classes("field")} data-v-2709b2e0="">
-                      <span data-v-2709b2e0="">{t("m.304f2c052c67")}</span>
-                      <textarea
-                        readOnly={true}
-                        rows={3}
-                        value={selectedInstallCommand.value as any}
-                        data-testid="agent-install-command"
-                        data-v-2709b2e0=""
-                      ></textarea>
-                    </label>
+                  {selectedInstallCommand.value ? (
                     <button
                       type="button"
                       className={__classes("secondary-button")}
@@ -425,8 +411,46 @@ export default function AgentEnrollment(input: Props) {
                     >
                       {t("m.fe95745d1ef4")}
                     </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={
+                      !assetReady.value ||
+                      creating.value ||
+                      (!__props.nodeId && !displayName.value.trim()) ||
+                      !agentOriginIsSupported.value ||
+                      (!agentOriginUsesAllowedTransport.value as any)
+                    }
+                    className={__classes("primary-button")}
+                    onClick={(event: any) => {
+                      __call(generateEnrollment, event);
+                    }}
+                    data-v-2709b2e0=""
+                  >
+                    {creating.value
+                      ? t("m.a8b8730c9611")
+                      : __props.nodeId
+                        ? t("node.generateInstall")
+                        : t("m.92840286f8cd")}
+                  </button>
+                </div>
+                {selectedInstallCommand.value ? (
+                  <div
+                    className={__classes("agent-enrollment-result")}
+                    data-v-2709b2e0=""
+                  >
+                    <label className={__classes("field")} data-v-2709b2e0="">
+                      <span data-v-2709b2e0="">{t("m.9d6f2b41c5a8")}</span>
+                      <textarea
+                        readOnly={true}
+                        rows={3}
+                        value={selectedInstallCommand.value as any}
+                        data-testid="agent-install-command"
+                        data-v-2709b2e0=""
+                      ></textarea>
+                    </label>
                     <p className={__classes("field-hint")} data-v-2709b2e0="">
-                      {t("m.b5debb33710e")}
+                      {t("m.80ee590ed729")}
                     </p>
                   </div>
                 ) : null}

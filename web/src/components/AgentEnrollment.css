@@ -89,12 +89,20 @@
 }
 .agent-enrollment-form > .agent-enrollment-section-heading[data-v-2709b2e0],
 .agent-enrollment-form > p[data-v-2709b2e0],
-.agent-enrollment-form > .agent-enrollment-result[data-v-2709b2e0] {
+.agent-enrollment-form > .agent-enrollment-result[data-v-2709b2e0],
+.agent-enrollment-form > .agent-enrollment-actions[data-v-2709b2e0] {
   grid-column: 1/-1;
 }
-.agent-enrollment-form > .primary-button[data-v-2709b2e0] {
-  justify-self: start;
-  grid-column: 1/-1;
+.agent-enrollment-actions[data-v-2709b2e0] {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+.agent-enrollment-actions .primary-button[data-v-2709b2e0],
+.agent-enrollment-actions .secondary-button[data-v-2709b2e0] {
+  justify-self: auto;
+  grid-column: auto;
 }
 @media (max-width: 760px) {
   .enrollment-identity[data-v-2709b2e0] {
@@ -164,9 +172,6 @@
     margin: 0;
     padding-top: 0;
     border-top: 0;
-  }
-  .agent-enrollment-form > .primary-button[data-v-2709b2e0] {
-    grid-column: 1;
   }
   .agent-enrollment-form:has(.enrollment-name)
     > .enrollment-connection[data-v-2709b2e0] {
