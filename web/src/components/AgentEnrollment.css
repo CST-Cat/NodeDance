@@ -71,7 +71,7 @@
 .agent-enrollment-card[data-v-2709b2e0] {
   max-width: 1120px;
   container-type: inline-size;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 20px 0 0;

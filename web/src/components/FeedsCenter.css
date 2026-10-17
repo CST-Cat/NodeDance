@@ -19,7 +19,7 @@
 .feed-card[data-v-9b049af3] {
   min-width: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 24px 0;
@@ -61,7 +61,7 @@
   gap: 16px;
   padding: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
 }
 .feed-settings-group > legend[data-v-9b049af3] {
   padding: 0;

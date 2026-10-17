@@ -1,6 +1,6 @@
 .operation-console[data-v-62585b82] {
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 0;

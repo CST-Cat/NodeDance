@@ -16,7 +16,7 @@ fieldset[data-v-85553d14] {
 .guest-settings-card[data-v-85553d14] {
   margin-bottom: 18px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 20px 0;

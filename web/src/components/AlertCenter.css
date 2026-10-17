@@ -50,14 +50,14 @@
 .alert-tabs button span[data-v-acd260e8] {
   margin-left: 8px;
   padding: 1px 7px;
-  border-radius: 99px;
+  border-radius: var(--radius-pill);
   background: var(--danger);
   color: white;
   font-size: 12px;
 }
 .alert-card[data-v-acd260e8] {
   min-width: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 22px 0;
@@ -86,7 +86,7 @@
   display: flex;
   gap: 13px;
   align-items: flex-start;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 16px 0;
@@ -136,7 +136,7 @@
 .pill[data-v-acd260e8] {
   display: inline-flex;
   padding: 3px 8px;
-  border-radius: 9999px;
+  border-radius: var(--radius-pill);
   background: var(--line);
   font-size: 12px;
   color: var(--muted-strong);
@@ -316,7 +316,7 @@ td[data-v-acd260e8] {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 16px 0;

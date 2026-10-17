@@ -158,7 +158,7 @@
 .node-detail-status[data-v-98aa91ae],
 .docker-state[data-v-98aa91ae] {
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 6px 11px;
   color: var(--danger);
   font-size: 12px;
@@ -210,7 +210,7 @@
   min-width: 0;
   margin-top: 16px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 16px 0;
@@ -442,7 +442,7 @@
 .container-state[data-v-98aa91ae] {
   display: inline-block;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 3px 8px;
   color: var(--muted-strong);
   font-size: 11px;
@@ -514,7 +514,7 @@
 .container-detail[data-v-98aa91ae] {
   margin-top: 16px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 20px 0;
@@ -647,7 +647,7 @@
   min-width: 0;
   gap: 5px;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 10px 0;

@@ -73,14 +73,6 @@
   --figma-radius-xl: 12px;
   --figma-radius-sm: 6px;
   --figma-weight-mobile-medium: 550;
-  --figma-radius-mobile-none: 0px;
-  --figma-radius-mobile-extra-extra-small: 2px;
-  --figma-radius-mobile-extra-small: 4px;
-  --figma-radius-mobile-small: 8px;
-  --figma-radius-mobile-medium: 10px;
-  --figma-radius-mobile-large: 14px;
-  --figma-radius-mobile-extra-large: 24px;
-  --figma-radius-mobile-full: 9999px;
 }
 :root[data-theme="dark"], .app-shell[data-theme="dark"] {
   --figma-background-primary: #30302eff;

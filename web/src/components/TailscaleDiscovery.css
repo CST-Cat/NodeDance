@@ -34,7 +34,7 @@
 }
 .discovery-card[data-v-20c80a5a] {
   margin: 1rem 0 1.3rem;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 20px 0;
@@ -48,7 +48,7 @@
   margin: 0.1rem 0 0.25rem;
 }
 .count-pill[data-v-20c80a5a] {
-  border-radius: 2rem;
+  border-radius: var(--radius-pill);
   padding: 0.35rem 0.7rem;
   background: var(--surface-soft);
   color: var(--accent);
@@ -62,7 +62,7 @@
   display: grid;
   gap: 0.75rem;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 16px 0;
@@ -203,7 +203,7 @@
 }
 .auth-mode button[data-v-20c80a5a] {
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.45rem 0.85rem;
   background: transparent;
   color: inherit;

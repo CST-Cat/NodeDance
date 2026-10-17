@@ -17,7 +17,7 @@
   padding: 7px 12px;
   font-size: 14px;
   line-height: 20px;
-  border-radius: var(--figma-radius-md);
+  border-radius: var(--radius-control);
   transition: background-color var(--motion-control) linear, border-color var(--motion-control) linear, color var(--motion-control) linear,
     /* Restrained spring press feedback (OpenUI CdsMotionEngine pill pattern);
        transform only applies to :active buttons. */
@@ -94,12 +94,12 @@
 .app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(.elfinder *) {
   min-height: var(--control-height);
   padding: 5px 12px;
-  border-radius: var(--figma-radius-md);
+  border-radius: var(--radius-control);
   font-size: var(--control-font);
   line-height: 20px;
 }
 .app-shell[data-theme] textarea:not(.elfinder *) {
-  border-radius: var(--figma-radius-md);
+  border-radius: var(--radius-control);
   padding: 12px 16px;
   font-size: var(--control-font);
   line-height: 1.4;
@@ -122,7 +122,7 @@
   background: var(--control-bg);
 }
 .app-shell[data-theme] .ui-select .u031-btn:disabled { opacity: .5; color: var(--text); background: var(--control-bg); }
-.u031-list { background: var(--surface); border-color: var(--figma-border-tertiary); border-radius: var(--figma-radius-lg); }
+.u031-list { background: var(--surface); border-color: var(--figma-border-tertiary); border-radius: var(--radius-control); }
 .u031-o { min-height: 32px; padding: 6px 10px; font-size: 14px; }
 .u031-o[aria-selected="true"] { color: var(--text); background: var(--accent-soft); }
 .u031-ck { stroke: var(--selection); }
@@ -139,7 +139,7 @@ input[type="checkbox"], input[type="radio"] {
   padding: 0 !important;
   margin: 0;
   border: .5px solid var(--figma-border-secondary);
-  border-radius: var(--figma-radius-sm);
+  border-radius: var(--radius-control);
   color: var(--selection);
   background: var(--figma-text-inverse);
   cursor: pointer;
@@ -158,8 +158,8 @@ input[type="checkbox"]::after {
 }
 input[type="checkbox"]:checked::after { opacity: 1; }
 input[type="checkbox"]:indeterminate::after { width: 10px; height: 2px; background: #fff; opacity: 1; }
-input[type="radio"] { border-radius: 999px; background: transparent; }
-input[type="radio"]::after { content: ""; position: absolute; inset: 3px; border-radius: 999px; background: var(--selection); opacity: 0; }
+input[type="radio"] { border-radius: var(--radius-pill); background: transparent; }
+input[type="radio"]::after { content: ""; position: absolute; inset: 3px; border-radius: var(--radius-pill); background: var(--selection); opacity: 0; }
 input[type="radio"]:checked { border: 1px solid var(--selection); }
 input[type="radio"]:checked::after { opacity: 1; }
 input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-info); }
@@ -169,7 +169,7 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
 .app-shell[data-theme] .workspace-sidebar .wordmark { min-height: 68px; margin: 0 8px 8px; font-size: 24px; }
 .app-shell[data-theme] .workspace-label { margin: 8px 8px 12px; letter-spacing: 0; font-size: 12px; }
 .app-shell[data-theme] .workspace-nav { gap: 0; }
-.app-shell[data-theme] .workspace-nav button { min-height: 36px; padding: 8px; gap: 12px; border-radius: 8px; color: var(--text); border: 0; background: transparent; font-size: 14px; font-weight: 400; }
+.app-shell[data-theme] .workspace-nav button { min-height: 36px; padding: 8px; gap: 12px; border-radius: var(--radius-control); color: var(--text); border: 0; background: transparent; font-size: 14px; font-weight: 400; }
 .app-shell[data-theme] .workspace-nav button:hover { background: var(--surface-hover); }
 .app-shell[data-theme] .workspace-nav button[aria-current="page"] { color: var(--text); background: var(--accent-soft); border-color: transparent; box-shadow: none; }
 .app-shell[data-theme] .workspace-nav button[aria-current="page"] svg { color: inherit; }
@@ -181,16 +181,16 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
 .app-shell[data-theme] .workspace-page :is(h1, .detail-heading h1) { font-size: clamp(28px, 2.4vw, 36px); font-family: inherit; line-height: 1.15; letter-spacing: -.025em; }
 .app-shell[data-theme] .workspace-page :is(h2, .section-toolbar h2, .feed-card h2, .host-card h2) { font-family: inherit; font-size: 20px; line-height: 25px; font-weight: 500; }
 .app-shell[data-theme] .workspace-page .vps-card h2 { font-size: 16px; line-height: 22.4px; }
-.app-shell[data-theme] dialog.ui-dialog { border-radius: var(--figma-radius-xl); border-color: var(--figma-border-tertiary); background: var(--surface); padding: 24px; }
+.app-shell[data-theme] dialog.ui-dialog { border-radius: var(--radius-card); border-color: var(--figma-border-tertiary); background: var(--surface); padding: 24px; }
 .app-shell[data-theme] dialog.ui-dialog h2 { font-size: 24px; line-height: 30px; font-family: inherit; font-weight: 500; }
 .app-shell[data-theme] dialog.ui-dialog p { color: var(--muted-strong); font-size: 14px; line-height: 1.4; }
 .app-shell[data-theme] :is(pre, code) { font-family: var(--figma-font-mono), ui-monospace, monospace; }
 @media (pointer: coarse), (max-width: 700px) {
   .app-shell[data-theme] { --control-height: 44px; --button-height: 44px; --control-font: 15px; }
-  .app-shell[data-theme] :is(.primary-button, .secondary-button, .alert-button, .container-action, .image-button, .probe-primary) { border-radius: var(--figma-radius-full); }
+  .app-shell[data-theme] :is(.primary-button, .secondary-button, .alert-button, .container-action, .image-button, .probe-primary) { border-radius: var(--radius-pill); }
   .app-shell[data-theme] .workspace-nav button { min-height: 44px; }
   .app-shell[data-theme] :is(input[type="checkbox"], input[type="radio"]) { width: 24px !important; height: 24px !important; min-width: 24px !important; min-height: 24px !important; }
-  .app-shell[data-theme] input[type="checkbox"] { border-radius: 999px; }
+  .app-shell[data-theme] input[type="checkbox"] { border-radius: var(--radius-pill); }
   .u031-o { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -220,7 +220,7 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
     min-height: 32px;
     height: 32px;
     padding: 5px 12px;
-    border-radius: var(--figma-radius-sm);
+    border-radius: var(--radius-control);
     font-size: 12px;
     line-height: 16.8px;
   }

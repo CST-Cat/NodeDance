@@ -151,7 +151,7 @@
   font-family: inherit;
   font-size: 13px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-card);
 }
 .nodedance-elfinder.elfinder .elfinder-cwd table thead td {
   background: var(--surface);

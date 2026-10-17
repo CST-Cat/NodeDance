@@ -42,7 +42,7 @@
   align-items: center;
   gap: 8px;
   border: 1px solid var(--metric-line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 8px 12px;
   font-size: 12px;
 }
@@ -68,7 +68,7 @@
 .metric-card[data-v-64f045e3] {
   min-width: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 14px 0 12px;
@@ -87,7 +87,7 @@
 }
 .status-pill[data-v-64f045e3] {
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 3px 7px;
   color: var(--muted-strong);
   font-size: 12px;

@@ -169,7 +169,7 @@
 .probe-status[data-v-5be80864] {
   flex: none;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 5px 9px;
   color: var(--text);
   font-size: 12px;

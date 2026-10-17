@@ -29,7 +29,7 @@
 .compose-project-card[data-v-429264a6] {
   min-width: 0;
   border: 0;
-  border-radius: 0;
+  border-radius: var(--radius-card);
   background: transparent;
   box-shadow: none;
   padding: 14px 12px;

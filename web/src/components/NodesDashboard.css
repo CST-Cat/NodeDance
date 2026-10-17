@@ -26,7 +26,7 @@
   align-items: center;
   gap: 8px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 8px 12px;
   color: var(--muted-strong);
   font-size: 12px;

@@ -43,7 +43,7 @@ form > input[data-v-b0bbf977] {
   align-items: flex-start;
   gap: 10px;
   border: 0.5px solid var(--figma-border-secondary, var(--line));
-  border-radius: var(--figma-radius-md, var(--radius-control));
+  border-radius: var(--radius-control);
   padding: 10px 12px;
   cursor: pointer;
   transition:
