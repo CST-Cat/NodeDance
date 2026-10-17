@@ -3,7 +3,7 @@ set -Eeuo pipefail
 umask 077
 
 readonly RELEASE_BASE="https://github.com/CST-Cat/NodeDance/releases/download"
-readonly RELEASES_API="https://api.github.com/repos/CST-Cat/NodeDance/releases/latest"
+readonly LATEST_VERSION_URL="https://raw.githubusercontent.com/CST-Cat/NodeDance/main/core-latest.txt"
 
 release_tag=""
 install_dir="/usr/local/bin"
@@ -109,11 +109,13 @@ if [[ -L "$data_dir" || ( -e "$data_dir" && ! -d "$data_dir" ) ]]; then
 fi
 
 if [[ -z "$release_tag" ]]; then
-  latest_release=$(curl --fail --silent --show-error --location \
-    --proto '=https' --proto-redir '=https' --tlsv1.2 "$RELEASES_API") || fail 'could not resolve the latest stable Core release'
-  release_tag=$(printf '%s\n' "$latest_release" | awk -F'"' '$2 == "tag_name" { print $4; exit }')
+  # Plain HTTPS version file published by the release workflow; no GitHub REST
+  # API and no per-IP rate quota in the install path.
+  release_tag=$(curl --fail --silent --show-error --location \
+    --proto '=https' --proto-redir '=https' --tlsv1.2 "$LATEST_VERSION_URL" 2>/dev/null | tr -d '[:space:]') \
+    || fail 'could not resolve the latest stable Core release; pass --release-tag core-vMAJOR.MINOR.PATCH to pin one'
 fi
-[[ "$release_tag" =~ ^core-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'latest release is not a valid stable Core tag; pass --release-tag core-vMAJOR.MINOR.PATCH to pin a release'
+[[ "$release_tag" =~ ^core-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail 'resolved release is not a valid stable Core tag; pass --release-tag core-vMAJOR.MINOR.PATCH to pin a release'
 
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/nodedance-core-install.XXXXXXXX")
 archive="nodedance-linux-${arch}.tar.gz"

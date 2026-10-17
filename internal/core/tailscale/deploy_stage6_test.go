@@ -532,7 +532,7 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 			t.Errorf("shared installer command is missing %q", required)
 		}
 	}
-	for _, required := range []string{"result.nativeInstallCommand", "result.dockerInstallCommand", "data-testid=\"agent-deployment-method\"", "data-testid=\"agent-install-command\"", "data-testid=\"agent-enrollment-expiry\"", "https://core.example:8180", `t("m.`} {
+	for _, required := range []string{"result.nativeInstallCommand", "result.dockerInstallCommand", "data-testid=\"agent-deployment-method\"", "data-testid=\"agent-install-command\"", "https://core.example:8180", `t("m.`} {
 		if !strings.Contains(string(enrollmentUI), required) {
 			t.Errorf("shared Agent enrollment UI is missing %q", required)
 		}
@@ -553,6 +553,7 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 		"releases/download\"",
 		"${RELEASE_BASE}/${release_tag}/SHA256SUMS",
 		"${RELEASE_BASE}/${release_tag}/${asset}",
+		"raw.githubusercontent.com/CST-Cat/NodeDance/main/agent-latest.txt",
 		"--token-stdin",
 		"prepare-systemd-state --require-new",
 		"install-systemd --config \"$CONFIG_PATH\" --enable",
@@ -560,6 +561,9 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 		if !strings.Contains(string(installer), required) {
 			t.Errorf("Agent installer is missing root-only behavior %q", required)
 		}
+	}
+	if strings.Contains(string(installer), "api.github.com") {
+		t.Fatal("Agent installer must resolve releases without the GitHub REST API")
 	}
 	if strings.Contains(command+string(enrollmentUI)+string(installer), "releases/latest/download") {
 		t.Fatal("Agent enrollment must not use the repository-wide latest release URL")

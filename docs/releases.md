@@ -40,9 +40,15 @@ The rehearsal runs every check the release workflows perform without creating a 
 
 彩排以只读方式执行发布工作流的全部校验（tag 格式、双语 changelog 条目、changelog 与配对文件已提交、`agent-release.version` 精确配对、Core 配对为最新稳定 Agent、tag/release 尚不存在），不创建任何 tag、release 或产物。通过的彩排记录在 `.build/release-rehearsal`；两个发布工作流在 publish 阶段核对该记录，拒绝发布未彩排的 tag。彩排失败时停止并修复后重新彩排——直接推 tag 一旦失败，tag 会残留，造成浪费。
 
+## Enrollment tokens / 注册令牌
+
+Enrollment tokens are single-use with no time limit. A token stays valid until a device enrolls with it, consumption invalidates it immediately, and renewing an enrollment replaces the outstanding token. There is no ten-minute expiry to race against.
+
+注册令牌仅可单次使用，不设时间限制。令牌在设备完成注册前一直有效，注册成功立即失效；重新生成安装命令会替换未使用的旧令牌。不存在需要抢时间的十分钟过期窗口。
+
 两个工作流分别由自己的标签触发，并拒绝无效版本或缺少双语说明的发布。创建 Core tag 前，`agent-release.version` 必须写明本次配对的 Agent tag。构建与测试不等待 Agent 发布；最终发布最多等待十分钟，确认这个确切版本已正式发布、不是草稿或预发布，再写入说明第一行。不会自动换成恰好最新的其他版本。两种 tag 可以一起推送，使构建并行；超时只阻止 Core 最终发布，不修改配对版本。Agent 不占用仓库全局 latest，Core 为全局 latest。
 
-Agent installers resolve a published `agent-v*` tag and pin it. They do not use the repository-wide `/releases/latest` URL, which belongs to Core. Credentials remain root-owned, with a 0700 state directory and 0600 regular config file.
+Installers resolve the latest stable release from the static version files (`agent-latest.txt`, `core-latest.txt`) that the release workflows publish to `main` after a release is confirmed; they download everything else from `releases/download`. The install path uses only plain HTTPS file downloads — no GitHub REST API and no per-IP rate quota. `--release-tag` pins an explicit release and bypasses resolution entirely. Installers never use the repository-wide `/releases/latest` URL. Agent credentials remain root-owned, with a 0700 state directory and 0600 regular config file.
 
 Agent 安装器解析并固定已发布的 `agent-v*` 标签，不使用指向 Core 的仓库 `/releases/latest`。Agent 凭据继续要求 root 所有、0700 状态目录和 0600 普通配置文件。
 
@@ -66,7 +72,7 @@ Core releases publish native Linux binaries and the installer only. The Agent re
 
 Core release 只发布原生 Linux 二进制及安装器。Agent 发布工作流将经测试的 root Agent 二进制打包到 `ghcr.io/cst-cat/nodedance-agent:agent-vX.Y.Z`；`scripts/release_images.py verify` 校验架构、运行身份、版本、入口及与原生产物一致的 SHA256。Agent Docker 镜像继续供需要容器部署的受管主机使用；Core 不提供 Docker 镜像或 Compose 部署。
 
-The paired `agent-release.version` file is embedded into Core for release publication checks. Generated native/Docker installation commands do not hardcode it: the installer resolves the latest stable published Agent at execution time. If `scripts/install-agent.sh` changes, publish the Agent containing that script and update the pairing before publishing Core. The one-command installer accepts `--mode native|docker` and `--token`; Core must pair with an Agent release containing this installer.
+The paired `agent-release.version` file is embedded into Core for release publication checks. Generated native/Docker installation commands do not hardcode it: the installer resolves the latest stable published Agent at execution time from `agent-latest.txt`. If `scripts/install-agent.sh` changes, publish the Agent containing that script and update the pairing before publishing Core. The one-command installer accepts `--mode native|docker` and `--token`; Core must pair with an Agent release containing this installer.
 
 `agent-release.version` 随 Core 编译嵌入，用于发布配对检查。生成的原生／Docker 安装命令不固定该标签，安装时自动解析最新正式 Agent release。修改 `scripts/install-agent.sh` 后，必须发布包含该脚本的 Agent，并在发布 Core 前更新配对版本。一条命令安装入口使用 `--mode native|docker` 和 `--token`，Core 必须配对包含此安装脚本的 Agent 发布。
 

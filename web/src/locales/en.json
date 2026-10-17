@@ -112,7 +112,7 @@
   "m.1d5964dbb8d8": "Production Agent connections require HTTPS. Development HTTP requires a literal loopback address. Core must provide a trusted TLS certificate.",
   "m.a8b8730c9611": "Generating…",
   "m.92840286f8cd": "Generate one-time enrollment command",
-  "m.80ee590ed729": "This token is single-use and expires at:",
+  "m.80ee590ed729": "This token is single-use; it is invalidated as soon as a device enrolls, and you can regenerate it at any time.",
   "m.0481941b6b37": "The token is included in this command.",
   "m.304f2c052c67": "Command to run on the target Linux host",
   "m.bdf7d59b3dc2": "Installer command",

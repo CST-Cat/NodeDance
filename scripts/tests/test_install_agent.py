@@ -1,6 +1,5 @@
 """Root installers against private fixtures; network, Docker and systemd are mocked."""
 import hashlib
-import json
 import os
 from pathlib import Path
 import platform
@@ -13,7 +12,7 @@ TOKEN = 'a' * 64
 
 @unittest.skipUnless(os.geteuid() == 0, 'root-only installer fixtures require root')
 class AgentInstallerTest(unittest.TestCase):
-    def run_installer(self, mode, *, bad_checksum=False, enrollment_failure=False, existing_state=False, releases=None, pinned=False):
+    def run_installer(self, mode, *, bad_checksum=False, enrollment_failure=False, existing_state=False, latest_tag='agent-v1.2.3', pinned=False):
         with tempfile.TemporaryDirectory(prefix='nodedance-installer-test-') as directory:
             folder = Path(directory)
             fixtures, tools = folder/'fixtures', folder/'tools'
@@ -34,13 +33,7 @@ esac
 ''')
             agent.chmod(0o700)
             (fixtures/'SHA256SUMS').write_text(('0'*64 if bad_checksum else hashlib.sha256(agent.read_bytes()).hexdigest())+'  '+agent.name+'\n')
-            if releases is None:
-                releases = [{'tag_name':tag, 'draft':draft, 'prerelease':pre} for tag,draft,pre in (
-                    ('core-v9.9.9',False,False), ('agent-v1.2.3',False,False),
-                    ('agent-v1.2.2',False,False), ('agent-v9.0.0',False,True),
-                    ('agent-v8.0.0',True,False))]
-            for page in range(len(releases)//100+1):
-                (fixtures/f'releases-page-{page+1}.json').write_text(json.dumps(releases[page*100:(page+1)*100]))
+            (fixtures/'agent-latest.txt').write_text(latest_tag + '\n')
             mocks = {
                 'curl': '''#!/bin/bash
 set -eu
@@ -53,8 +46,8 @@ while (($#)); do
  *) shift;;
  esac
 done
-if [[ "$url" == https://api.github.com/* ]]; then
- cp "$TEST_FIXTURES/releases-page-${url##*page=}.json" "$output"
+if [[ "$url" == *agent-latest.txt ]]; then
+ cat "$TEST_FIXTURES/agent-latest.txt"
 else
  cp "$TEST_FIXTURES/${url##*/}" "$output"
 fi
@@ -113,21 +106,19 @@ esac
                 self.assertNotEqual(r['code'],0); self.assertEqual(r['config'],'{}\n'); self.assertEqual(r['state_mode'],0o700); self.assertEqual(r['config_mode'],0o600)
                 self.assertNotIn('started',r['actions']); self.assertIn('preserved',r['error'])
 
-    def test_latest_agent_uses_numeric_versions_and_all_pages(self):
-        entries=[{'tag_name':'core-v9.0.0','draft':False,'prerelease':False}]*100
-        entries += [{'tag_name':tag,'draft':False,'prerelease':False} for tag in ('agent-v1.9.0','agent-v1.10.0')]
-        r=self.run_installer('docker',releases=entries)
+    def test_latest_agent_reads_the_static_version_file(self):
+        r=self.run_installer('docker',latest_tag='agent-v1.10.0')
         self.assertEqual(r['code'],0,r['error'])
         self.assertIn('pull:ghcr.io/cst-cat/nodedance-agent:agent-v1.10.0',r['actions'])
 
-    def test_no_stable_agent_stops_before_mutation(self):
-        r=self.run_installer('docker',releases=[])
+    def test_invalid_version_file_stops_before_mutation(self):
+        r=self.run_installer('docker',latest_tag='not-a-tag')
         self.assertNotEqual(r['code'],0)
-        self.assertIn('no stable published Agent',r['error'])
+        self.assertIn('did not contain a valid stable tag',r['error'])
         self.assertEqual(r['actions'],'')
         self.assertIsNone(r['config'])
 
     def test_explicit_tag_is_optional(self):
-        r=self.run_installer('docker',releases=[],pinned=True)
+        r=self.run_installer('docker',latest_tag='',pinned=True)
         self.assertEqual(r['code'],0,r['error'])
         self.assertIn('pull:ghcr.io/cst-cat/nodedance-agent:agent-v1.2.3',r['actions'])

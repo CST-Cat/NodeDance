@@ -2,7 +2,6 @@ import { api, operationRequest } from "../api";
 import { display, t } from "../i18n";
 import { resolveOperation, type BodySchema } from "../operations";
 import { afterMount, cell, derived, watchState } from "../state";
-import { beijingTime } from "../time";
 import NodeAssetFields from "./NodeAssetFields";
 
 import { __call, __classes, __input, useController } from "../state";
@@ -20,7 +19,6 @@ export default function AgentEnrollment(input: Props) {
       const props = __props;
       const emit = __emit;
       const displayName = cell("");
-      const expiresAt = cell("");
       const creating = cell(false);
       const error = cell("");
       const notice = cell("");
@@ -101,7 +99,6 @@ export default function AgentEnrollment(input: Props) {
           requestEpoch++;
           installCommand.value = "";
           dockerInstallCommand.value = "";
-          expiresAt.value = "";
           notice.value = "";
         },
         {
@@ -113,7 +110,6 @@ export default function AgentEnrollment(input: Props) {
         notice.value = "";
         installCommand.value = "";
         dockerInstallCommand.value = "";
-        expiresAt.value = "";
         const name = displayName.value.trim();
         if (
           !agentOriginIsSupported.value ||
@@ -145,7 +141,6 @@ export default function AgentEnrollment(input: Props) {
           if (current !== requestEpoch) return;
           installCommand.value = result.nativeInstallCommand;
           dockerInstallCommand.value = result.dockerInstallCommand;
-          expiresAt.value = result.expiresAt;
           notice.value = props.nodeId
             ? t("node.enrollmentRenewed")
             : t("m.d04e8d433a67", {
@@ -406,15 +401,6 @@ export default function AgentEnrollment(input: Props) {
                   >
                     <p className={__classes("field-hint")} data-v-2709b2e0="">
                       {t("m.80ee590ed729")}
-                      <time
-                        dateTime={expiresAt.value as any}
-                        data-testid="agent-enrollment-expiry"
-                        data-v-2709b2e0=""
-                      >
-                        {beijingTime(expiresAt.value)}
-                      </time>
-                      {" · "}
-                      {t("time.beijing")}
                     </p>
                     <label className={__classes("field")} data-v-2709b2e0="">
                       <span data-v-2709b2e0="">{t("m.304f2c052c67")}</span>

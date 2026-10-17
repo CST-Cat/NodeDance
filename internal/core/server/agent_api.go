@@ -175,8 +175,7 @@ func (s *Server) adminCreateAgentEnrollment(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"deploymentMethod": request.DeploymentMethod, "nativeInstallCommand": command,
 		"nodeId": enrollment.NodeID, "displayName": enrollment.DisplayName, "installCommand": selectedCommand, "dockerInstallCommand": dockerCommand,
-		"token": enrollment.Token, "expiresAt": enrollment.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z"),
-		"expiresInSeconds": int(agents.EnrollmentLifetime.Seconds()),
+		"token": enrollment.Token,
 	})
 }
 

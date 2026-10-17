@@ -191,3 +191,26 @@ jobs:
             dist/install-core.sh \
             dist/SHA256SUMS \
             --title "$RELEASE_VERSION" --verify-tag --latest=true --notes-file release-inputs/core-release-notes.md
+
+      - name: Publish the static latest-Core version file
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Installers read this file through raw.githubusercontent.com instead
+          # of the rate-limited GitHub REST API. Written only after the release
+          # and every asset above are confirmed published.
+          printf '%s\n' "$RELEASE_VERSION" > core-latest.txt
+          for attempt in {1..5}; do
+            if gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/core-latest.txt" \
+              --field message="Publish ${RELEASE_VERSION} as the latest stable Core" \
+              --field content="$(base64 -w0 core-latest.txt)" \
+              --field sha="$(gh api "repos/${GITHUB_REPOSITORY}/contents/core-latest.txt" --jq '.sha' 2>/dev/null || true)" \
+              --jq '.commit.sha' > /tmp/version-commit.sha 2>/tmp/version-error; then
+              printf 'core-latest.txt updated: %s\n' "$(cat /tmp/version-commit.sha)"
+              exit 0
+            fi
+            [[ "$attempt" < 5 ]] || { cat /tmp/version-error >&2; exit 1; }
+            sleep 5
+          done

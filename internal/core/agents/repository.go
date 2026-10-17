@@ -18,7 +18,9 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-const EnrollmentLifetime = 10 * time.Minute
+// Enrollment tokens are single-use with no time limit: a credential stays
+// valid until a device consumes it, and consumption invalidates it
+// immediately. Renewal replaces any outstanding token for the node.
 
 var (
 	ErrEnrollmentRejected = errors.New("enrollment credential rejected")
@@ -38,7 +40,6 @@ type Enrollment struct {
 	NodeID      string
 	DisplayName string
 	Token       string
-	ExpiresAt   time.Time
 }
 
 type Identity struct {
@@ -107,7 +108,6 @@ func (r *Repository) CreateEnrollment(ctx context.Context, displayName, remote s
 		return Enrollment{}, err
 	}
 	now := r.now()
-	expires := now.Add(EnrollmentLifetime)
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Enrollment{}, fmt.Errorf("begin enrollment transaction: %w", err)
@@ -117,8 +117,10 @@ func (r *Repository) CreateEnrollment(ctx context.Context, displayName, remote s
 		VALUES(?, ?, 'pending', ?, ?)`, nodeID, name, now.UnixNano(), now.UnixNano()); err != nil {
 		return Enrollment{}, fmt.Errorf("create pending node: %w", err)
 	}
+	// expires_at stays 0: enrollment credentials are single-use without a time
+	// limit and are invalidated by consumption, not by an expiry clock.
 	if _, err := tx.ExecContext(ctx, `INSERT INTO agent_enrollments(token_digest, node_id, expires_at, created_at)
-		VALUES(?, ?, ?, ?)`, digest, nodeID, expires.Unix(), now.Unix()); err != nil {
+		VALUES(?, ?, 0, ?)`, digest, nodeID, now.Unix()); err != nil {
 		return Enrollment{}, fmt.Errorf("create enrollment credential: %w", err)
 	}
 	if len(assets) == 1 {
@@ -136,7 +138,7 @@ func (r *Repository) CreateEnrollment(ctx context.Context, displayName, remote s
 	if err := tx.Commit(); err != nil {
 		return Enrollment{}, fmt.Errorf("commit enrollment: %w", err)
 	}
-	return Enrollment{NodeID: nodeID, DisplayName: name, Token: token, ExpiresAt: expires}, nil
+	return Enrollment{NodeID: nodeID, DisplayName: name, Token: token}, nil
 }
 
 // ConsumeEnrollment accepts one-use credentials or bounded shared grants.
@@ -156,7 +158,7 @@ func (r *Repository) ConsumeEnrollment(ctx context.Context, enrollmentDigest, de
 	defer tx.Rollback()
 	result, err := tx.ExecContext(ctx, `UPDATE agent_enrollments
 		SET consumed_at=?, request_id=?
-		WHERE token_digest=? AND consumed_at IS NULL AND expires_at>?`, now.Unix(), requestID, enrollmentDigest, now.Unix())
+		WHERE token_digest=? AND consumed_at IS NULL`, now.Unix(), requestID, enrollmentDigest)
 	if err != nil {
 		return Identity{}, fmt.Errorf("consume enrollment credential: %w", err)
 	}
@@ -817,11 +819,12 @@ func (r *Repository) RenewEnrollment(ctx context.Context, nodeID, remote string,
 		return Enrollment{}, err
 	}
 	now := r.now()
-	expires := now.Add(EnrollmentLifetime)
 	if _, err = tx.ExecContext(ctx, `DELETE FROM agent_enrollments WHERE node_id=?`, nodeID); err != nil {
 		return Enrollment{}, err
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO agent_enrollments(token_digest,node_id,expires_at,created_at) VALUES(?,?,?,?)`, digest, nodeID, expires.Unix(), now.Unix()); err != nil {
+	// Single-use without a time limit; the new token immediately invalidates
+	// the previous one for this node.
+	if _, err = tx.ExecContext(ctx, `INSERT INTO agent_enrollments(token_digest,node_id,expires_at,created_at) VALUES(?,?,0,?)`, digest, nodeID, now.Unix()); err != nil {
 		return Enrollment{}, err
 	}
 	if len(assets) == 1 {
@@ -839,7 +842,7 @@ func (r *Repository) RenewEnrollment(ctx context.Context, nodeID, remote string,
 	if err = tx.Commit(); err != nil {
 		return Enrollment{}, err
 	}
-	return Enrollment{NodeID: nodeID, DisplayName: name, Token: token, ExpiresAt: expires}, nil
+	return Enrollment{NodeID: nodeID, DisplayName: name, Token: token}, nil
 }
 
 // DeleteNode removes Core-owned state and credentials. It does not uninstall the

@@ -3,6 +3,7 @@ set -Eeuo pipefail
 umask 077
 
 readonly RELEASE_BASE="https://github.com/CST-Cat/NodeDance/releases/download"
+readonly LATEST_VERSION_URL="https://raw.githubusercontent.com/CST-Cat/NodeDance/main/agent-latest.txt"
 readonly STATE_DIR="/var/lib/nodedance-agent"
 readonly CONFIG_PATH="${STATE_DIR}/agent.json"
 readonly BIN_DIR="/usr/local/bin"
@@ -179,38 +180,15 @@ else
 fi
 
 tmp_dir=$(mktemp -d "${TMPDIR:-/tmp}/nodedance-agent-install.XXXXXXXX")
-# Resolve at execution time so a saved installation command always defaults to
-# the latest stable Agent, independently of the Core release namespace.
+# Resolve at execution time from the static version file published by the
+# release workflow. This keeps the installer on plain HTTPS downloads with no
+# GitHub REST API dependency or per-IP rate quota; --release-tag pins explicitly.
 if [[ -z "$release_tag" ]]; then
-  command -v python3 >/dev/null || fail 'python3 is required to resolve the latest Agent release'
-  for ((page=1; page<=20; page++)); do
-    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
-      --output "$tmp_dir/releases.json" "https://api.github.com/repos/CST-Cat/NodeDance/releases?per_page=100&page=$page" \
-      || fail 'could not resolve the latest stable Agent release'
-    selection=$(python3 - "$tmp_dir/releases.json" "$release_tag" <<'PY_RELEASE'
-import json, re, sys
-with open(sys.argv[1]) as source:
-    entries = json.load(source)
-if not isinstance(entries, list) or len(entries) > 100:
-    raise SystemExit("invalid release listing")
-pattern = re.compile(r"agent-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
-tags = [sys.argv[2]] if sys.argv[2] else []
-for entry in entries:
-    if not isinstance(entry, dict):
-        raise SystemExit("invalid release entry")
-    tag = entry.get("tag_name", "")
-    if isinstance(tag, str) and pattern.fullmatch(tag) and entry.get("draft") is False and entry.get("prerelease") is False:
-        tags.append(tag)
-latest = max(tags, key=lambda tag: tuple(map(int, pattern.fullmatch(tag).groups())), default="")
-print(str(len(entries)) + ":" + latest)
-PY_RELEASE
-    ) || fail 'invalid Agent release listing'
-    count=${selection%%:*}
-    release_tag=${selection#*:}
-    if ((count < 100)); then break; fi
-    ((page < 20)) || fail 'Agent release listing exceeds supported limit'
-  done
-  [[ -n "$release_tag" ]] || fail 'no stable published Agent release is available'
+  release_tag=$(curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    "$LATEST_VERSION_URL" 2>/dev/null | tr -d '[:space:]') \
+    || fail 'could not resolve the latest stable Agent release; pass --release-tag agent-vMAJOR.MINOR.PATCH to pin one'
+  [[ "$release_tag" =~ ^agent-v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    || fail 'the Agent version file did not contain a valid stable tag; pass --release-tag agent-vMAJOR.MINOR.PATCH to pin one'
 fi
 printf 'Installing Agent %s (%s).\n' "$release_tag" "$mode"
 asset="nodedance-agent-linux-${arch}"
