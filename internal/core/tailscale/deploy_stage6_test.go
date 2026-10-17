@@ -532,7 +532,7 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 			t.Errorf("shared installer command is missing %q", required)
 		}
 	}
-	for _, required := range []string{"result.nativeInstallCommand", "result.dockerInstallCommand", "data-testid=\"agent-deployment-method\"", "data-testid=\"agent-install-command\"", "https://core.example:8180", `t("m.`} {
+	for _, required := range []string{"result.nativeInstallCommand", "result.dockerInstallCommand", "data-testid=\"agent-deployment-method\"", "agent-enrollment-actions", "https://core.example:8180", `t("m.`} {
 		if !strings.Contains(string(enrollmentUI), required) {
 			t.Errorf("shared Agent enrollment UI is missing %q", required)
 		}
@@ -542,7 +542,7 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"Agent 连接的 Core 地址", "正式 Agent 连接必须使用 HTTPS", "系统信任的 TLS 证书", "一条命令完成安装与注册"} {
+	for _, required := range []string{"Agent 连接的 Core 地址", "正式 Agent 连接必须使用 HTTPS", "系统信任的 TLS 证书", "请在被控服务器上运行此安装命令"} {
 		if !strings.Contains(string(catalog), required) {
 			t.Errorf("localized enrollment help is missing %q", required)
 		}
