@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -19,30 +18,21 @@ import (
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// The resolver must stay on plain HTTPS downloads: the version file for
+// latest-stable discovery and release asset URLs for everything else. No
+// GitHub REST API in the update path, so per-IP API quotas cannot block it.
 func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 	binary := []byte("verified fixture binary")
 	sum := sha256.Sum256(binary)
 	bad := false
-	advertiseManifest := false
 	asset := "nodedance-linux-" + runtime.GOARCH
+	versionFile := "core-v0.1.9\n"
+	var apiRequested bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case strings.Contains(r.URL.Path, "/releases?") || strings.HasSuffix(r.URL.Path, "/releases"):
-			releases := []map[string]any{}
-			for _, tag := range []string{"agent-v99.0.0", "core-v0.1.8", "core-v0.1.9", "core-v0.2.0"} {
-				assets := []map[string]string{}
-				for _, name := range []string{"SHA256SUMS", asset} {
-					assets = append(assets, map[string]string{"name": name, "browser_download_url": "https://github.com/" + Repository + "/releases/download/" + tag + "/" + name})
-				}
-				if advertiseManifest {
-					assets = append(assets, map[string]string{"name": "nodedance-update.json", "browser_download_url": "https://github.com/" + Repository + "/releases/download/" + tag + "/nodedance-update.json"})
-				}
-				releases = append(releases, map[string]any{"tag_name": tag, "prerelease": tag == "core-v0.2.0", "assets": assets})
-			}
-			json.NewEncoder(w).Encode(releases)
-		case strings.HasSuffix(r.URL.Path, "/nodedance-update.json"):
-			t.Error("Update selection must not request an update manifest")
-			http.NotFound(w, r)
+		case strings.HasSuffix(r.URL.Path, "/core-latest.txt"):
+			w.Write([]byte(versionFile))
 		case strings.HasSuffix(r.URL.Path, "/SHA256SUMS"):
 			fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), asset)
 		case strings.HasSuffix(r.URL.Path, "/"+asset):
@@ -51,6 +41,9 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 			} else {
 				w.Write(binary)
 			}
+		case strings.Contains(r.URL.Path, "/repos/"):
+			apiRequested = true
+			http.NotFound(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -58,7 +51,6 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 	defer server.Close()
 	base, _ := url.Parse(server.URL)
 	github := NewGitHub()
-	github.API = server.URL
 	github.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		copy := r.Clone(r.Context())
 		u := *r.URL
@@ -71,9 +63,11 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 	if err != nil || release.Version != "core-v0.1.9" {
 		t.Fatalf("stable component resolution: %+v %v", release, err)
 	}
-	advertiseManifest = true
-	if _, err := github.Resolve(context.Background(), "core", ""); err != nil {
-		t.Fatalf("Unrelated update metadata blocked tag selection: %v", err)
+	if !strings.HasSuffix(release.BinaryURL, "/releases/download/core-v0.1.9/"+asset) {
+		t.Fatalf("binary URL must pin the resolved tag: %q", release.BinaryURL)
+	}
+	if apiRequested {
+		t.Fatal("update resolution must not call the GitHub REST API")
 	}
 	path := filepath.Join(t.TempDir(), "binary")
 	if err := github.Download(context.Background(), release, path); err != nil {
@@ -89,5 +83,11 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 	}
 	if _, err := github.Resolve(context.Background(), "core", "agent-v0.1.9"); err == nil {
 		t.Fatal("cross-component release accepted")
+	}
+	versionFile = "not-a-tag\n"
+	if _, err := github.Resolve(context.Background(), "core", ""); err == nil {
+		t.Fatal("invalid version file accepted")
+	} else if !strings.Contains(err.Error(), "version file") {
+		t.Fatalf("unexpected version-file error: %v", err)
 	}
 }

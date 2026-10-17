@@ -5,12 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -23,16 +21,15 @@ type Resolver interface {
 }
 type GitHub struct {
 	HTTP *http.Client
-	API  string
 }
 
 func NewGitHub() *GitHub {
-	return &GitHub{API: "https://api.github.com", HTTP: &http.Client{Timeout: 5 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	return &GitHub{HTTP: &http.Client{Timeout: 5 * time.Minute, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if len(via) > 5 || req.URL.Scheme != "https" {
 			return errors.New("unsafe release redirect")
 		}
 		switch req.URL.Hostname() {
-		case "github.com", "api.github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
+		case "github.com", "raw.githubusercontent.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
 			return nil
 		}
 		return errors.New("unexpected release download host")
@@ -72,68 +69,39 @@ type githubRelease struct {
 	} `json:"assets"`
 }
 
+const (
+	// Version file published by the release workflows on main. Resolving the
+	// latest tag through it keeps update checks on plain HTTPS downloads and
+	// away from the GitHub REST API's per-IP rate limits.
+	latestVersionURL = "https://raw.githubusercontent.com/" + Repository + "/main/%s-latest.txt"
+	releaseBaseURL   = "https://github.com/" + Repository + "/releases/download/"
+)
+
 func (g *GitHub) Resolve(ctx context.Context, component, tag string) (Release, error) {
 	if err := Validate(Request{Component: component, Version: tag}); err != nil {
 		return Release{}, err
 	}
-	var selected githubRelease
-	if tag != "" {
-		raw, err := g.fetch(ctx, g.API+"/repos/"+Repository+"/releases/tags/"+url.PathEscape(tag), 4<<20)
+	if tag == "" {
+		raw, err := g.fetch(ctx, fmt.Sprintf(latestVersionURL, component), 4096)
 		if err != nil {
 			return Release{}, err
 		}
-		if err = json.Unmarshal(raw, &selected); err != nil {
-			return Release{}, err
-		}
-	} else {
-		for page := 1; page <= 20; page++ {
-			raw, err := g.fetch(ctx, fmt.Sprintf("%s/repos/%s/releases?per_page=100&page=%d", g.API, Repository, page), 8<<20)
-			if err != nil {
-				return Release{}, err
-			}
-			var entries []githubRelease
-			if err = json.Unmarshal(raw, &entries); err != nil {
-				return Release{}, err
-			}
-			for _, entry := range entries {
-				if !entry.Draft && !entry.Prerelease && ValidTag(component, entry.Tag) && (selected.Tag == "" || Compare(entry.Tag, selected.Tag) > 0) {
-					selected = entry
-				}
-			}
-			if len(entries) < 100 {
-				break
-			}
-			if page == 20 {
-				return Release{}, errors.New("release listing exceeds supported limit")
-			}
+		tag = strings.TrimSpace(string(raw))
+		if !ValidTag(component, tag) {
+			return Release{}, errors.New("the published version file does not contain a valid stable " + component + " tag")
 		}
 	}
-	if selected.Draft || selected.Prerelease || !ValidTag(component, selected.Tag) || tag != "" && selected.Tag != tag {
-		return Release{}, errors.New("no published stable component release")
-	}
-	release := Release{Component: component, Version: selected.Tag, URL: selected.URL, Notes: selected.Body}
-	if len(release.Notes) > 32768 {
-		release.Notes = release.Notes[:32768]
-	}
+	// A pinned or resolved tag needs no release metadata: the update
+	// transaction verifies integrity through the tag's SHA256SUMS asset.
+	selected := githubRelease{Tag: tag, URL: "https://github.com/" + Repository + "/releases/tag/" + tag}
+	release := Release{Component: component, Version: selected.Tag, URL: selected.URL}
 	binary := "nodedance-linux-" + runtime.GOARCH
 	if component == "agent" {
 		binary = "nodedance-agent-linux-" + runtime.GOARCH
 	}
-	for _, asset := range selected.Assets {
-		prefix := "https://github.com/" + Repository + "/releases/download/" + selected.Tag + "/"
-		if asset.URL != prefix+asset.Name {
-			return Release{}, errors.New("unexpected release asset URL")
-		}
-		switch asset.Name {
-		case "SHA256SUMS":
-			release.ChecksumURL = asset.URL
-		case binary:
-			release.BinaryURL = asset.URL
-		}
-	}
-	if release.BinaryURL == "" || release.ChecksumURL == "" {
-		return Release{}, errors.New("release does not include verified native artifacts for this architecture")
-	}
+	prefix := releaseBaseURL + selected.Tag + "/"
+	release.ChecksumURL = prefix + "SHA256SUMS"
+	release.BinaryURL = prefix + binary
 	return release, nil
 }
 func (g *GitHub) Download(ctx context.Context, release Release, path string) error {
