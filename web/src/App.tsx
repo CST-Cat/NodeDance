@@ -1162,13 +1162,6 @@ export default function App(input: Props) {
                 </a>
               )}
               <div className={__classes("topbar-right")} data-v-ac863f34="">
-                <span className={__classes("system-label")} data-v-ac863f34="">
-                  <span
-                    className={__classes("status-dot")}
-                    data-v-ac863f34=""
-                  ></span>
-                  {t("m.13354cb51f27")}
-                </span>
                 <UiSelect
                   key={viewHash(activeRoute.value) as any}
                   menuClass="language-options"
@@ -1683,11 +1676,7 @@ export default function App(input: Props) {
                   className={__classes("settings-sidebar")}
                   data-v-ac863f34=""
                 >
-                  <span className={__classes("eyebrow")} data-v-ac863f34="">
-                    {t("label.5493ff8e9397")}
-                  </span>
                   <h1 data-v-ac863f34="">{t("m.df3d58c7d84b")}</h1>
-                  <p data-v-ac863f34="">{t("m.e2d752caafea")}</p>
                   <div
                     className={__classes("sidebar-profile")}
                     data-v-ac863f34=""
@@ -1722,19 +1711,6 @@ export default function App(input: Props) {
                       data-v-ac863f34=""
                     ></span>
                   </div>
-                  <div className={__classes("side-note")} data-v-ac863f34="">
-                    <span
-                      className={__classes("side-note-icon")}
-                      data-v-ac863f34=""
-                    >
-                      {"✳"}
-                    </span>
-                    <span data-v-ac863f34="">
-                      {t("m.0246d86fbc36")}
-                      <br data-v-ac863f34=""></br>
-                      {t("m.86d345181d6a")}
-                    </span>
-                  </div>
                 </aside>
                 <div className={__classes("settings-main")} data-v-ac863f34="">
                   <div
@@ -1747,15 +1723,6 @@ export default function App(input: Props) {
                       </span>
                       <h2 data-v-ac863f34="">{t("m.0bb1a9d13722")}</h2>
                     </div>
-                    <span
-                      className={__classes("secure-badge")}
-                      data-v-ac863f34=""
-                    >
-                      <span aria-hidden="true" data-v-ac863f34="">
-                        {"◈"}
-                      </span>
-                      {t("m.fb458e284aad")}
-                    </span>
                   </div>
                   {notice.value ? (
                     <div
@@ -2293,13 +2260,6 @@ export default function App(input: Props) {
                       </p>
                     )}
                   </section>
-                  <footer
-                    className={__classes("settings-footer")}
-                    data-v-ac863f34=""
-                  >
-                    <span data-v-ac863f34="">{"NodeDance Core"}</span>
-                    <span data-v-ac863f34="">{t("m.c8f8547b3bb6")}</span>
-                  </footer>
                 </div>
               </section>
             )}

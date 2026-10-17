@@ -667,19 +667,19 @@ export default function VpsCard(input: Props) {
                     </button>
                   </h2>
                 </div>
+                <p className={__classes("vps-card-version")} data-v-31185faa="">
+                  <span className={__classes("agent-version")} data-v-31185faa="">
+                    {nodeStateText()}
+                  </span>
+                  {props.pending ? null : (
+                    <Fragment>
+                      {" · "}
+                      {t("overview.uptime")} {uptimeSummary()}
+                    </Fragment>
+                  )}
+                </p>
               </div>
             </header>
-            <p className={__classes("vps-card-version")} data-v-31185faa="">
-              <span className={__classes("agent-version")} data-v-31185faa="">
-                {nodeStateText()}
-              </span>
-              {props.pending ? null : (
-                <Fragment>
-                  {" · "}
-                  {t("overview.uptime")} {uptimeSummary()}
-                </Fragment>
-              )}
-            </p>
             {__props.nodePreference?.notes ? (
               <p className={__classes("vps-card-note")} data-v-31185faa="">
                 {__props.nodePreference.notes}

@@ -1577,6 +1577,10 @@ export default function NodesDashboard(input: Props) {
                   onCore={(event: any) => {
                     inspectedNodeID.value = "";
                   }}
+                  onAgent={(event: any) => {
+                    if (!inspectedNode.value && nodes.value[0])
+                      inspectedNodeID.value = nodes.value[0].nodeId;
+                  }}
                   onMetrics={(event: any) => {
                     __call(acceptMetricsResponse, event);
                   }}

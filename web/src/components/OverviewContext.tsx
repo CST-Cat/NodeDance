@@ -26,8 +26,7 @@ type Props = {
   node?: AgentNode;
   metrics?: MetricsView;
   online?: boolean;
-} & { children?: import("react").ReactNode; [key: string]: any };
-export default function OverviewContext(input: Props) {
+} & { children?: import("react").ReactNode; [key: string]: any };export default function OverviewContext(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
       const props = __props;
@@ -366,7 +365,17 @@ export default function OverviewContext(input: Props) {
                 className={__classes("context-heading")}
                 data-v-2aa82488=""
               >
-                <h2 data-v-2aa82488="">{t("overview.hostInfo")}</h2>
+                <button
+                  type="button"
+                  aria-pressed={!!__props.node as any}
+                  disabled={!__props.node as any}
+                  onClick={(event: any) => {
+                    emit("core");
+                  }}
+                  data-v-2aa82488=""
+                >
+                  {__props.node ? "Agent" : "Core"}
+                </button>
                 <div
                   aria-label={t("overview.hostActions") as any}
                   className={__classes("header-actions")}
@@ -451,38 +460,21 @@ export default function OverviewContext(input: Props) {
                 data-v-2aa82488=""
               >
                 <div className={__classes("context-target")} data-v-2aa82488="">
+                  <span title={title.value as any} data-v-2aa82488="">
+                    {title.value}
+                  </span>
                   {__props.node ? (
-                    <span title={title.value as any} data-v-2aa82488="">
-                      {title.value}
-                    </span>
-                  ) : null}
-                  <div
-                    className={__classes("context-actions")}
-                    data-v-2aa82488=""
-                  >
-                    <button
-                      type="button"
-                      aria-pressed={!__props.node as any}
-                      onClick={(event: any) => {
-                        emit("core");
-                      }}
+                    <span
+                      className={__classes("context-status")}
                       data-v-2aa82488=""
                     >
-                      {"Core"}
-                    </button>
-                    {__props.node ? (
-                      <span
-                        className={__classes("context-status")}
-                        data-v-2aa82488=""
-                      >
-                        {t(
-                          __props.online
-                            ? "overview.online"
-                            : "overview.lastKnown",
-                        )}
-                      </span>
-                    ) : null}
-                  </div>
+                      {t(
+                        __props.online
+                          ? "overview.online"
+                          : "overview.lastKnown",
+                      )}
+                    </span>
+                  ) : null}
                 </div>
                 {!__props.node && core.value?.environment === "container" ? (
                   <p className={__classes("context-note")} data-v-2aa82488="">

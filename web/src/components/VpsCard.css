@@ -79,11 +79,21 @@
   box-shadow: none;
 }
 .vps-card-version[data-v-31185faa] {
-  margin: 1px 0 6px;
+  margin: 0 0 0 auto;
+  padding-left: 12px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
+  text-align: right;
   overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .vps-card-version[data-v-31185faa] {
+    margin-left: 0;
+    padding-left: 0;
+    flex-basis: 100%;
+    text-align: left;
+  }
 }
 .vps-card-note[data-v-31185faa] {
   margin: -5px 0 6px;
