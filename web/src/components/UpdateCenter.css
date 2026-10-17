@@ -101,6 +101,28 @@
   height: 16px;
   margin: 0;
 }
+.changelog-entry[data-v-fffea4e7] {
+  margin-bottom: 20px;
+}
+.changelog-entry h3[data-v-fffea4e7] {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.changelog-version[data-v-fffea4e7] {
+  margin: 0 0 8px;
+  color: var(--muted-strong);
+  font-size: 13px;
+}
+.changelog-entry pre[data-v-fffea4e7] {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted-strong);
+}
 .update-job[data-v-fffea4e7] {
   padding: 14px 0;
   border-top: 1px solid var(--line);

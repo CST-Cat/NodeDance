@@ -90,6 +90,24 @@ export default function UpdateCenter(input: Props) {
           if (!stopped && current === epoch) timer = setTimeout(history, 3000);
         }
       }
+      const changelog = cell<{
+        core?: ReleaseCheck;
+        agent?: ReleaseCheck;
+      }>({});
+      async function loadChangelog(component: "core" | "agent") {
+        const current = epoch;
+        try {
+          const result = await operationRequest<ReleaseCheck>("updates.check", {
+            query: { component },
+          });
+          if (current !== epoch) return;
+          changelog.value = { ...changelog.value, [component]: result };
+        } catch {
+          if (current === epoch)
+            changelog.value = { ...changelog.value, [component]: undefined };
+        }
+      }
+      const changelogReady = cell(false);
       async function refresh() {
         if (!selected.value) return;
         check.value = undefined;
@@ -179,6 +197,11 @@ export default function UpdateCenter(input: Props) {
         } catch (e) {
           error.value = message(e);
         }
+        await Promise.allSettled([
+          loadChangelog("core"),
+          loadChangelog("agent"),
+        ]);
+        changelogReady.value = true;
         if (timer) clearTimeout(timer);
         void history();
         void refresh();
@@ -393,6 +416,40 @@ export default function UpdateCenter(input: Props) {
               ) : null}
             </div>
             <div className={__classes("update-card")} data-v-fffea4e7="">
+              <h2 data-v-fffea4e7="">{t("updates.changelog")}</h2>
+              <Fragment>
+                {__each(["core", "agent"] as const, (name) => {
+                  const entry = changelog.value[name];
+                  return (
+                    <article
+                      key={name}
+                      className={__classes("changelog-entry")}
+                      data-v-fffea4e7=""
+                    >
+                      <h3 data-v-fffea4e7="">{name === "core" ? "Core" : "Agent"}</h3>
+                      {entry ? (
+                        <Fragment>
+                          <p
+                            className={__classes("changelog-version")}
+                            data-v-fffea4e7=""
+                          >
+                            {entry.latest}
+                          </p>
+                          <pre data-v-fffea4e7="">{entry.release.notes}</pre>
+                        </Fragment>
+                      ) : changelogReady.value ? (
+                        <p className={__classes("muted")} data-v-fffea4e7="">
+                          {t("updates.changelogUnavailable")}
+                        </p>
+                      ) : (
+                        <p className={__classes("muted")} data-v-fffea4e7="">
+                          {t("updates.changelogLoading")}
+                        </p>
+                      )}
+                    </article>
+                  );
+                })}
+              </Fragment>
               <h2 data-v-fffea4e7="">{t("updates.history")}</h2>
               {!jobs.value.length ? (
                 <p className={__classes("muted")} data-v-fffea4e7="">
