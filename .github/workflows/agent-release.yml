@@ -227,8 +227,6 @@ jobs:
             --notes-file release-inputs/agent-release-notes.md
 
       - name: Publish the static latest-Agent version file
-        permissions:
-          contents: write
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ github.ref_name }}
