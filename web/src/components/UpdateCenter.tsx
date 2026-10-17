@@ -194,16 +194,8 @@ export default function UpdateCenter(input: Props) {
             className={__classes("update-center workspace-page")}
             data-v-fffea4e7=""
           >
-            <header data-v-fffea4e7="">
-              <p className={__classes("eyebrow")} data-v-fffea4e7="">
-                {"NODEDANCE"}
-              </p>
-              <h1 data-v-fffea4e7="">{t("updates.title")}</h1>
-              <p className={__classes("muted")} data-v-fffea4e7="">
-                {t("updates.description")}
-              </p>
-            </header>
             <div className={__classes("update-card")} data-v-fffea4e7="">
+              <h2 data-v-fffea4e7="">{t("updates.title")}</h2>
               <div className={__classes("update-controls")} data-v-fffea4e7="">
                 <label data-v-fffea4e7="">
                   {t("updates.component")}
