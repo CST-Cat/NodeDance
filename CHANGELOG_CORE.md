@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.40]
+
+### English
+
+- Wrap each realtime metric (CPU, memory, disk, network, swap and load) in the shared card surface with the standard card radius and border, matching the node cards on the overview.
+
+### 简体中文
+
+- 实时指标的每个指标（CPU、内存、磁盘、网络、Swap、系统负载）统一包进共享卡片表面，使用标准卡片圆角与边框，与总览的节点卡片一致。
+
 ## [0.1.39]
 
 ### English

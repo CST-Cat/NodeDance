@@ -63,15 +63,15 @@
 .metrics-grid[data-v-64f045e3] {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 32px;
+  gap: 14px 32px;
 }
 .metric-card[data-v-64f045e3] {
   min-width: 0;
-  border: 0;
+  border: 1px solid var(--line);
   border-radius: var(--radius-card);
-  background: transparent;
+  background: var(--surface);
   box-shadow: none;
-  padding: 14px 0 12px;
+  padding: 14px 16px 12px;
 }
 .card-heading[data-v-64f045e3] {
   display: flex;
