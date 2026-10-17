@@ -488,7 +488,7 @@ fs.mkdirSync(out, { recursive: true });
       await page.waitForFunction(()=>[...document.querySelectorAll('.app-shell,.workspace-sidebar')].every(el=>el.getAnimations().every(a=>a.playState==='finished'||a.playState==='idle')));
       snapshots.push(name);
       fs.writeFileSync(`${out}/${name}.layout.json`,JSON.stringify(await page.evaluate(()=>{const el=document.querySelector('.workspace-sidebar');if(!el)return null;const s=getComputedStyle(el);return {className:el.className,width:s.width,transform:s.transform,sidebarWidth:s.getPropertyValue('--sidebar-width'),bounds:el.getBoundingClientRect().toJSON()}})));
-      await page.screenshot({ animations:"disabled", path: `${out}/${name}.png`, fullPage: true });
+      await page.screenshot({ animations:"disabled", path: `${out}/${name}.jpg`, fullPage: page.viewportSize().width > 700, quality: 85, type: "jpeg" });
     }
     async function overflow() {
       assert.equal(
@@ -501,7 +501,6 @@ fs.mkdirSync(out, { recursive: true });
       );
     }
     async function invariants(label) {
-      await page.waitForTimeout(120);
       await page.evaluate(() => document.fonts.ready);
       assert.ok(await page.locator('.vps-card-header').evaluateAll(headers => headers.every(header => {
         const heading = header.querySelector('.vps-card-heading').getBoundingClientRect();
@@ -578,7 +577,7 @@ fs.mkdirSync(out, { recursive: true });
       assert.ok(key,'Known navigation label');
       const title=(await page.locator('html').getAttribute('lang'))==='zh-CN'?zhMessages[key]:enMessages[key];
       await page.locator('.workspace-nav').getByRole('button',{name:title,exact:true}).click();
-      await page.waitForTimeout(250);
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     }
     async function auditWorkspace(prefix) {
       await load();
