@@ -239,6 +239,9 @@ type Props = {
             : props.node.displayName
           : "Core",
       );
+      const displayName = derived(() =>
+        props.node ? props.node.displayName : core.value?.hostname || "Core",
+      );
       const allRows = derived(() => {
         const m = props.metrics?.metrics,
           info = core.value;
@@ -361,8 +364,8 @@ type Props = {
               className={__classes("context-section")}
               data-v-2aa82488=""
             >
-              <header
-                className={__classes("context-heading")}
+              <div
+                className={__classes("context-target")}
                 data-v-2aa82488=""
               >
                 <button
@@ -370,12 +373,37 @@ type Props = {
                   aria-pressed={!!__props.node as any}
                   disabled={!__props.node as any}
                   onClick={(event: any) => {
-                    emit("core");
+                    if (__props.node) emit("core");
                   }}
                   data-v-2aa82488=""
                 >
                   {__props.node ? "Agent" : "Core"}
                 </button>
+                <span
+                  className={__classes("context-status")}
+                  data-v-2aa82488=""
+                >
+                  {__props.node
+                    ? t(
+                        __props.online
+                          ? "overview.online"
+                          : "overview.lastKnown",
+                      )
+                    : t(core.value ? "overview.online" : "overview.offline")}
+                </span>
+              </div>
+              <div
+                className={__classes("context-name")}
+                data-v-2aa82488=""
+              >
+                <span title={title.value as any} data-v-2aa82488="">
+                  {displayName.value}
+                </span>
+              </div>
+              <header
+                className={__classes("context-heading")}
+                data-v-2aa82488=""
+              >
                 <div
                   aria-label={t("overview.hostActions") as any}
                   className={__classes("header-actions")}
