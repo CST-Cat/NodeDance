@@ -21,7 +21,9 @@ release_notes = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(release_notes)
 
 VERSION = release_notes.VERSION
-REHEARSAL_MARKER = ".build/release-rehearsal"
+# The rehearsal record lives in version control so the release workflows can
+# verify it from the tagged commit on GitHub, not from the local working tree.
+REHEARSAL_MARKER = ".release-rehearsals"
 
 
 class RehearsalError(Exception):
@@ -98,7 +100,7 @@ def rehearse(component, tag, agent_tag=None):
     notes = check_local(component, tag, agent_tag)
     check_remote(component, tag, agent_tag)
     record(component, tag)
-    print(f"Rehearsal passed for {tag}; pushing the tag will publish.")
+    print(f"Rehearsal passed for {tag}; commit {REHEARSAL_MARKER} and push the tag to publish.")
     if notes:
         print(notes.splitlines()[0])
 
@@ -121,10 +123,10 @@ def main():
         if args.command == "check":
             if not passed(args.component, args.tag):
                 raise RehearsalError(
-                    f"no passing rehearsal for {args.tag}; run "
+                    f"no passing rehearsal for {args.tag} in {REHEARSAL_MARKER}; run "
                     f"'python3 scripts/release-rehearsal.py run {args.component} {args.tag}'"
                     + (" --agent-tag <agent-vX.Y.Z>" if args.component == "core" else "")
-                    + " and let it pass before pushing the tag"
+                    + ", commit the recorded file and push it with the tag"
                 )
             print(f"Rehearsal confirmed for {args.tag}")
         else:
