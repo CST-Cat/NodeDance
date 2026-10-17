@@ -19,7 +19,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  padding: 10px 12px;
+  padding: 8px 12px 4px;
 }
 .context-section[data-v-2aa82488]:not(.memo-section) .header-actions[data-v-2aa82488] {
   margin-left: auto;
@@ -60,19 +60,23 @@
 .context-target[data-v-2aa82488] {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-.context-name[data-v-2aa82488] {
+  justify-content: space-between;
+  gap: 8px;
   margin-bottom: 12px;
 }
-.context-name > span[data-v-2aa82488] {
-  font-size: 14px;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.app-shell .context-heading > button[data-v-2aa82488] {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  min-height: 0;
+  padding: 0 11px;
+  font-size: 12px;
+}
+@media (max-width: 600px) {
+  .app-shell .context-heading > button[data-v-2aa82488] {
+    height: 36px;
+    min-height: 0;
+  }
 }
 .context-target > span[data-v-2aa82488] {
   font-size: 12px;

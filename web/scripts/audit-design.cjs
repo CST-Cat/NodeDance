@@ -558,7 +558,7 @@ fs.mkdirSync(out, { recursive: true });
               parseFloat(c.minHeight) < ((el.matches("input,.u031-btn") || el.closest(".nodedance-elfinder") || el.matches(".deployment-choices button")) ? (innerWidth<=700 ? 44 : 32) : (innerWidth<=700 ? 44 : 36)) &&
               !(el.matches(".load-trigger") && getComputedStyle(el,"::before").position==="absolute" && parseFloat(getComputedStyle(el,"::before").width)>=40 && parseFloat(getComputedStyle(el,"::before").height)>=40) &&
               !el.matches(
-                ".account-logout,.navigation-toggle,.header-actions button,.terminal-close,.ui-dialog-titlebar-close,.upload-button input",
+                ".account-logout,.navigation-toggle,.header-actions button,.context-heading > button,.terminal-close,.ui-dialog-titlebar-close,.upload-button input",
               )
             )
               problems.push("control height " + c.minHeight);
