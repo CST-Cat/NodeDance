@@ -211,26 +211,6 @@ export default function AgentEnrollment(input: Props) {
             )}
             data-v-2709b2e0=""
           >
-            {!__props.compact ? (
-              <header
-                className={__classes("agent-enrollment-heading")}
-                data-v-2709b2e0=""
-              >
-                <div data-v-2709b2e0="">
-                  <h1 data-v-2709b2e0="">{t("m.a29c23de8cc4")}</h1>
-                </div>
-                <button
-                  type="button"
-                  className={__classes("quiet-button")}
-                  onClick={(event: any) => {
-                    emit("back");
-                  }}
-                  data-v-2709b2e0=""
-                >
-                  {t("m.e0e6dc51f626")}
-                </button>
-              </header>
-            ) : null}
             <section
               className={__classes([
                 "agent-enrollment-card",
@@ -261,6 +241,18 @@ export default function AgentEnrollment(input: Props) {
                       {t("m.9d6f2b41c5a8")}
                     </p>
                   </div>
+                  {!__props.compact ? (
+                    <button
+                      type="button"
+                      className={__classes("quiet-button")}
+                      onClick={(event: any) => {
+                        emit("back");
+                      }}
+                      data-v-2709b2e0=""
+                    >
+                      {t("m.e0e6dc51f626")}
+                    </button>
+                  ) : null}
                 </div>
                 <div
                   className={__classes("enrollment-connection")}

@@ -49,7 +49,6 @@
 .agent-enrollment-compact-page[data-v-2709b2e0] {
   color: var(--text);
 }
-.agent-enrollment-heading[data-v-2709b2e0],
 .agent-enrollment-section-heading[data-v-2709b2e0] {
   display: flex;
   align-items: center;
@@ -60,14 +59,6 @@
   flex: 1 1 auto;
   min-width: 0;
 }
-.agent-enrollment-heading[data-v-2709b2e0] {
-  margin-bottom: 4px;
-}
-.agent-enrollment-heading h1[data-v-2709b2e0] {
-  margin: 0;
-  font-size: clamp(26px, 4vw, 38px);
-}
-.agent-enrollment-heading p[data-v-2709b2e0],
 .agent-enrollment-section-heading p[data-v-2709b2e0] {
   color: var(--muted-strong);
   line-height: 1.55;
@@ -261,12 +252,11 @@
   }
 }
 @media (max-width: 640px) {
-  .agent-enrollment-heading[data-v-2709b2e0],
   .agent-enrollment-section-heading[data-v-2709b2e0] {
     align-items: flex-start;
     flex-direction: column;
   }
-  .agent-enrollment-heading button[data-v-2709b2e0] {
+  .agent-enrollment-section-heading button[data-v-2709b2e0] {
     align-self: flex-start;
   }
 }
