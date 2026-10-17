@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.22]
+
+### English
+
+- Resolve the latest stable Agent release from the static `agent-latest.txt` version file published at release time instead of the rate-limited GitHub REST API, keeping the installer on plain HTTPS downloads with an explicit `--release-tag` fallback.
+
+### 简体中文
+
+- 最新稳定 Agent 版本改为读取发布时写好的静态 `agent-latest.txt` 版本文件，不再依赖受限流配额的 GitHub REST API；安装路径只使用普通 HTTPS 下载，并保留 `--release-tag` 显式指定兜底。
+
 ## [0.1.21]
 
 ### English

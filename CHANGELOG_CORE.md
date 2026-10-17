@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.37]
+
+### English
+
+- Publish the ten supported billing currencies in the operation contract as a schema enum shared by Web, CLI and TUI, render the currency field as a select control fed from that contract, and reject asset bodies with values outside the enum.
+- Make Agent enrollment tokens single-use without a time limit: a token stays valid until a device enrolls, consumption invalidates it immediately, and renewing an enrollment replaces the outstanding token.
+- Simplify the Agent enrollment page by removing the redundant heading texts and dividers, drop the decorative title periods, size the language selector by its content so labels never truncate, and unify every radius on the shared card and control tokens.
+- Update the Core installer to resolve releases from the static `core-latest.txt` version file instead of the GitHub REST API.
+
+### 简体中文
+
+- 在操作契约中发布十种受支持币种的 schema 枚举，Web/CLI/TUI 共用；币种字段改为按契约渲染的下拉框，枚举之外的资产值会被拒绝。
+- Agent 注册令牌改为无时间限制的单次使用：令牌在设备完成注册前一直有效，注册成功立即失效；重新生成安装命令会替换未使用的旧令牌。
+- 精简 Agent 注册页：移除冗余标题文字与分割线，去掉标题装饰句点，语言选择器按内容自适应宽度不再截断，全部圆角统一到共享的卡片与控件 token。
+- Core 安装器改为读取静态 `core-latest.txt` 版本文件解析最新版本，不再调用 GitHub REST API。
+
 ## [0.1.36]
 
 ### English
