@@ -1,5 +1,5 @@
 .host-metrics[data-v-64f045e3] {
-  margin-top: 0;
+  margin-top: 14px;
 }
 .metrics-panel[data-v-64f045e3] {
   --metric-bg: var(--surface-soft);
@@ -245,6 +245,10 @@
   .disk-card[data-v-64f045e3],
   .network-card[data-v-64f045e3] {
     grid-column: auto;
+  }
+  .interface-title[data-v-64f045e3] {
+    flex-wrap: wrap;
+    row-gap: 4px;
   }
   .interface-rates[data-v-64f045e3] {
     flex-wrap: wrap;
