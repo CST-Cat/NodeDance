@@ -1718,9 +1718,6 @@ export default function App(input: Props) {
                     data-v-ac863f34=""
                   >
                     <div data-v-ac863f34="">
-                      <span className={__classes("eyebrow")} data-v-ac863f34="">
-                        {t("label.812ff062d7b7")}
-                      </span>
                       <h2 data-v-ac863f34="">{t("m.0bb1a9d13722")}</h2>
                     </div>
                   </div>
@@ -2055,7 +2052,6 @@ export default function App(input: Props) {
                         <h3 id="security-heading" data-v-ac863f34="">
                           {t("m.1b5365b35720")}
                         </h3>
-                        <p data-v-ac863f34="">{t("m.910e765e0b31")}</p>
                       </div>
                     </div>
                     <form
