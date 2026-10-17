@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.41]
+
+### English
+
+- Separate the host metric grid (swap, load, processes and billing traffic) from the realtime grid so the bordered cards no longer touch.
+
+### 简体中文
+
+- 主机指标网格（Swap、系统负载、进程与连接、账期流量）与实时指标网格之间增加间距，带边框的卡片不再紧贴。
+
 ## [0.1.40]
 
 ### English
