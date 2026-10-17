@@ -10,6 +10,7 @@ const webURL = process.env.NODEDANCE_WEB_AUDIT_URL || "http://127.0.0.1:5190";
 const coreURL =
   process.env.NODEDANCE_CORE_AUDIT_URL || "http://127.0.0.1:18192";
 const snapshots = [];
+let checkedCombinations = 0;
 const enMessages = require("../src/locales/en.json"), zhMessages = require("../src/locales/zh-CN.json");
 fs.mkdirSync(out, { recursive: true });
 (async () => {
@@ -485,10 +486,13 @@ fs.mkdirSync(out, { recursive: true });
       await page.locator(".dashboard-welcome,.vps-card").first().waitFor();
     }
     async function shot(name) {
+      // Assertions are the verification; captures exist only as failure
+      // evidence. shot() is called from invariants() catch paths and records
+      // the failing state instead of archiving every passing page.
       await page.waitForFunction(()=>[...document.querySelectorAll('.app-shell,.workspace-sidebar')].every(el=>el.getAnimations().every(a=>a.playState==='finished'||a.playState==='idle')));
-      snapshots.push(name);
       fs.writeFileSync(`${out}/${name}.layout.json`,JSON.stringify(await page.evaluate(()=>{const el=document.querySelector('.workspace-sidebar');if(!el)return null;const s=getComputedStyle(el);return {className:el.className,width:s.width,transform:s.transform,sidebarWidth:s.getPropertyValue('--sidebar-width'),bounds:el.getBoundingClientRect().toJSON()}})));
       await page.screenshot({ animations:"disabled", path: `${out}/${name}.jpg`, fullPage: page.viewportSize().width > 700, quality: 85, type: "jpeg" });
+      snapshots.push(name);
     }
     async function overflow() {
       assert.equal(
@@ -501,6 +505,15 @@ fs.mkdirSync(out, { recursive: true });
       );
     }
     async function invariants(label) {
+      try {
+        await invariantsBody(label);
+        checkedCombinations++;
+      } catch (failure) {
+        await shot("failure-" + label);
+        throw failure;
+      }
+    }
+    async function invariantsBody(label) {
       await page.evaluate(() => document.fonts.ready);
       assert.ok(await page.locator('.vps-card-header').evaluateAll(headers => headers.every(header => {
         const heading = header.querySelector('.vps-card-heading').getBoundingClientRect();
@@ -567,7 +580,6 @@ fs.mkdirSync(out, { recursive: true });
           }),
       );
       assert.deepEqual(bad, [], label);
-      await shot(label);
     }
     async function nav(label) {
       await openNavigation(page);
@@ -705,7 +717,6 @@ fs.mkdirSync(out, { recursive: true });
           for(let i=0;i<5;i++) {
             await page.locator(".host-tabs button").nth(i).click();
             await invariants(prefix+"-host-"+i);
-            await shot(prefix+"-host-"+i);
           }
         }
         if (label === "Updates") {
@@ -887,7 +898,7 @@ fs.mkdirSync(out, { recursive: true });
       JSON.stringify({ passed: true, snapshots }, null, 2) + "\n",
     );
     console.log(
-      "Entire Web design matrix passed: " + snapshots.length + " snapshots.",
+      "Entire Web design matrix passed: " + checkedCombinations + " verified page/theme/width combinations, " + snapshots.length + " failure captures.",
     );
   } finally {
     await browser.close();
