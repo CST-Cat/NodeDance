@@ -254,6 +254,12 @@ export default function AgentEnrollment(input: Props) {
                         ? t("m.11e4978edcfe")
                         : t("m.8e80901344c8")}
                     </h2>
+                    <p
+                      className={__classes("agent-enrollment-usage-hint")}
+                      data-v-2709b2e0=""
+                    >
+                      {t("m.9d6f2b41c5a8")}
+                    </p>
                   </div>
                 </div>
                 <div
@@ -435,24 +441,13 @@ export default function AgentEnrollment(input: Props) {
                   </button>
                 </div>
                 {selectedInstallCommand.value ? (
-                  <div
-                    className={__classes("agent-enrollment-result")}
+                  <p
+                    role="status"
+                    className={__classes("alert alert-success")}
                     data-v-2709b2e0=""
                   >
-                    <label className={__classes("field")} data-v-2709b2e0="">
-                      <span data-v-2709b2e0="">{t("m.9d6f2b41c5a8")}</span>
-                      <textarea
-                        readOnly={true}
-                        rows={3}
-                        value={selectedInstallCommand.value as any}
-                        data-testid="agent-install-command"
-                        data-v-2709b2e0=""
-                      ></textarea>
-                    </label>
-                    <p className={__classes("field-hint")} data-v-2709b2e0="">
-                      {t("m.80ee590ed729")}
-                    </p>
-                  </div>
+                    {t("m.9d2f65ed4a17")}
+                  </p>
                 ) : null}
               </div>
             </section>

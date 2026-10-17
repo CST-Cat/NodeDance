@@ -89,7 +89,8 @@ fs.mkdirSync(out, { recursive: true });
       else if (p.endsWith("/commands/batches")) body={batches:[]};
       else if (p.endsWith("/agents/enrollment-grants")) body={grants:[]};
       else if (p.endsWith("/metrics/catalog")) body={metrics:{"swap.used_percent":"percent","load.one":"load","gpu.temperature_celsius":"celsius"}};
-      else if (p.endsWith("/agents/enrollments"))
+      else if (p.endsWith("/agents/enrollments")) {
+        if (route.request().method() === "POST") status = 201;
         body = {
           token: "isolated-audit-token",
           displayName: "Audit node",
@@ -99,6 +100,7 @@ fs.mkdirSync(out, { recursive: true });
           dockerInstallCommand:
             "curl -fsSL https://raw.githubusercontent.com/CST-Cat/NodeDance/main/scripts/install-agent.sh | sudo bash -s -- --mode docker --server https://core.example --token isolated-audit-token",
         };
+      }
       else if (terminalOnly && p.includes("/terminal")) {
         if (route.request().method() === "DELETE") { terminalEnds++; status = 204; }
         else if (p.endsWith("/resume")) {
@@ -729,8 +731,17 @@ fs.mkdirSync(out, { recursive: true });
             .locator(".agent-enrollment-form input")
             .nth(1)
             .fill("Audit node");
-          await page.locator(".agent-enrollment-form .primary-button").click();
-          await page.locator("[data-testid=agent-install-command]").waitFor();
+          await page.locator(".agent-enrollment-actions .primary-button").click();
+          // The command is copied automatically where the clipboard is
+          // available (a modal confirms it); headless runners fall back to
+          // the inline notice. Either way the copy action appears.
+          await page
+            .locator("dialog[open], .agent-enrollment-form .alert-success")
+            .first()
+            .waitFor();
+          if (await page.locator("dialog[open]").count())
+            await page.locator("dialog[open] button").last().click();
+          await page.locator(".agent-enrollment-actions .secondary-button").waitFor();
           await page.locator("[data-testid=agent-deployment-method]").getByRole('button',{name:/^(Docker deployment|Docker 部署)$/}).click();
           await invariants(prefix + "-docker-command");
           await page.locator("[data-testid=agent-deployment-method]").getByRole('button',{name:/^(Direct installation \(systemd\)|直接安装（systemd）)$/}).click();
