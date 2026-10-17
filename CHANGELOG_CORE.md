@@ -6,6 +6,20 @@
 
 ### 简体中文
 
+## [0.1.39]
+
+### English
+
+- Streamline the Agent enrollment page: the generated command copies automatically with a confirmation dialog, the copy action sits beside the right-aligned generate button, and the usage hint moves under the section heading.
+- Remove redundant text across the settings page and simplify its layout; drop decorative title periods and align the back action with the section heading on the enrollment page.
+- Refine the overview host-info card: the Core/Agent target badge aligns with the header actions, the node name and online state move below it, and node cards place the version and uptime beside the node name with narrow-screen wrapping.
+
+### 简体中文
+
+- 精简 Agent 注册页：生成的命令自动复制并以弹窗确认，复制按钮位于右对齐的生成按钮旁，使用说明移到区块标题下方。
+- 清理设置页的冗余文字并简化布局；去掉装饰性标题句点，注册页返回按钮与区块标题水平对齐。
+- 优化总览主机信息卡：Core/Agent 目标徽标与标题操作对齐，节点名称与在线状态移到其下方，节点卡片将版本号与运行时间移到名称右侧并在窄屏自动换行。
+
 ## [0.1.38]
 
 ### English
