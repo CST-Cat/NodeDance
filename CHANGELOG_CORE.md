@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.38]
+
+### English
+
+- Resolve built-in update releases from the published static version files and construct release download URLs directly, removing the GitHub REST API from Core update checks so per-IP rate limits cannot block upgrades.
+
+### 简体中文
+
+- 内置更新的版本解析改用发布时写好的静态版本文件并直接构造发布下载地址，Core 更新检查不再调用 GitHub REST API，出口 IP 的 API 配额限制不会再阻塞升级。
+
 ## [0.1.37]
 
 ### English
