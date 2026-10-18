@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"github.com/CST-Cat/NodeDance/internal/core/audit"
@@ -52,7 +51,7 @@ func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "confirmation and Idempotency-Key are required", 400)
 			return
 		}
-		if err := audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: "update_" + action, Outcome: "accepted", ActorID: sql.NullInt64{Int64: 1, Valid: true}}); err != nil {
+		if err := audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: "update_" + action, Outcome: "accepted", ActorID: requestActor(r)}); err != nil {
 			http.Error(w, "cannot record update request", 500)
 			return
 		}

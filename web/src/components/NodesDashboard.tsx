@@ -40,7 +40,7 @@ import UiSelect from "./UiSelect";
 import VpsCard from "./VpsCard";
 
 const TerminalConsole = lazyView(() => import("./TerminalConsole"));
-type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
+type Props = { readOnly?: boolean } & { children?: import("react").ReactNode; [key: string]: any };
 export default function NodesDashboard(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
@@ -332,6 +332,7 @@ export default function NodesDashboard(input: Props) {
         }
       }
       async function loadTasks(node: AgentNode) {
+        if (__props.readOnly) return;
         try {
           const result = await api.nodeTasks(node.nodeId),
             next = {
@@ -358,6 +359,7 @@ export default function NodesDashboard(input: Props) {
         }
       }
       async function loadSSH(node: AgentNode, force = false) {
+        if (__props.readOnly) return;
         const previous = sshConnections.value[node.nodeId];
         if (
           previous?.loading ||
@@ -1569,11 +1571,6 @@ export default function NodesDashboard(input: Props) {
                       ? views.value[inspectedNode.value.nodeId]
                       : (undefined as any)
                   }
-                  online={
-                    inspectedNode.value
-                      ? nodeIsOnline(inspectedNode.value)
-                      : (false as any)
-                  }
                   onCore={(event: any) => {
                     inspectedNodeID.value = "";
                   }}
@@ -1590,6 +1587,7 @@ export default function NodesDashboard(input: Props) {
             </section>
           ) : (
             <NodeDetail
+              readOnly={__props.readOnly}
               key={selectedNode.value.nodeId as any}
               node={selectedNode.value as any}
               metrics={views.value[selectedNode.value.nodeId] as any}
@@ -1660,7 +1658,7 @@ export default function NodesDashboard(input: Props) {
       );
     },
     input,
-    [],
+    ["readOnly"],
     [],
     {},
     true,

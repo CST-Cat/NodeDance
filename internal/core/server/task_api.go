@@ -130,7 +130,7 @@ func (s *Server) handleCancelUndeliveredTask(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusAccepted, view)
 		return
 	}
-	task, err := s.tasks.CancelUndelivered(r.Context(), nodeID, taskID, sql.NullInt64{Int64: 1, Valid: true}, current.RemoteAddr)
+	task, err := s.tasks.CancelUndelivered(r.Context(), nodeID, taskID, requestActor(r), current.RemoteAddr)
 	if errors.Is(err, coretasks.ErrTaskNotFound) {
 		http.NotFound(w, r)
 		return
@@ -203,7 +203,7 @@ func (s *Server) handleContainerCreateTask(w http.ResponseWriter, r *http.Reques
 	}
 	result, err := s.tasks.EnqueueWithGate(r.Context(), coretasks.EnqueueRequest{
 		NodeID: nodeID, IdempotencyKey: key, Intent: intent,
-		ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr,
+		ActorID: requestActor(r), RemoteAddr: current.RemoteAddr,
 	}, gate)
 	if err == nil && result.Created && result.Task.Status == taskstate.Queued && result.Task.DeliveryState == "ready" && !result.Task.Evidence.DeliveryCommitted {
 		s.storeContainerCreateSpecLocked(result.Task.TaskID, nodeID, result.Task.AcceptedGeneration, boundJournalID, key, digest, spec)
@@ -438,7 +438,7 @@ func (s *Server) handleCreateContainerTask(w http.ResponseWriter, r *http.Reques
 	}
 	result, err := s.tasks.EnqueueWithGate(r.Context(), coretasks.EnqueueRequest{
 		NodeID: nodeID, IdempotencyKey: key, Intent: intent,
-		ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr,
+		ActorID: requestActor(r), RemoteAddr: current.RemoteAddr,
 	}, gate)
 	if err != nil {
 		if errors.Is(err, errTaskDockerUnavailable) {

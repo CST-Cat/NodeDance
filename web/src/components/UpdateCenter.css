@@ -8,12 +8,7 @@
   padding: 24px;
 }
 .update-card[data-v-fffea4e7] {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  box-shadow: none;
   padding: 18px 18px 20px;
-  min-width: 0;
 }
 .update-card h2[data-v-fffea4e7] {
   margin: 0 0 18px;

@@ -56,9 +56,6 @@ export default function MetricsPanel(input: Props) {
           props.view.nodeStatus === "online" &&
           elapsedSinceView.value < leaseRemainingMs.value,
       );
-      const nodeStatusText = derived(() =>
-        nodeOnline.value ? t("m.b9086662b1df") : t("m.be1b4f3c6c1c"),
-      );
       const leaseReason = derived(() =>
         props.view.nodeStatus === "online" ? "lease_expired" : "lease_inactive",
       );
@@ -214,22 +211,6 @@ export default function MetricsPanel(input: Props) {
                     t("m.c6c03f12a7c7")}
                 </p>
               </div>
-              <div
-                role="status"
-                data-testid="node-status"
-                className={__classes(
-                  "node-state",
-                  nodeOnline.value ? "is-online" : "is-offline",
-                )}
-                data-v-64f045e3=""
-              >
-                <span
-                  aria-hidden="true"
-                  className={__classes("state-dot")}
-                  data-v-64f045e3=""
-                ></span>
-                {nodeStatusText.value}
-              </div>
             </header>
             <div className={__classes("metrics-grid")} data-v-64f045e3="">
               <article
@@ -239,17 +220,6 @@ export default function MetricsPanel(input: Props) {
               >
                 <div className={__classes("card-heading")} data-v-64f045e3="">
                   <h3 data-v-64f045e3="">{"CPU"}</h3>
-                  <span
-                    data-status={
-                      metricState(__props.view.metrics.cpu.usagePercent) as any
-                    }
-                    className={__classes("status-pill")}
-                    data-v-64f045e3=""
-                  >
-                    {statusLabel(
-                      metricState(__props.view.metrics.cpu.usagePercent),
-                    )}
-                  </span>
                 </div>
                 <strong
                   data-testid="cpu-value"
@@ -279,15 +249,6 @@ export default function MetricsPanel(input: Props) {
               >
                 <div className={__classes("card-heading")} data-v-64f045e3="">
                   <h3 data-v-64f045e3="">{t("m.7d8f8c37ec78")}</h3>
-                  <span
-                    data-status={
-                      metricState(__props.view.metrics.memory) as any
-                    }
-                    className={__classes("status-pill")}
-                    data-v-64f045e3=""
-                  >
-                    {statusLabel(metricState(__props.view.metrics.memory))}
-                  </span>
                 </div>
                 <strong
                   data-testid="memory-value"
@@ -321,13 +282,6 @@ export default function MetricsPanel(input: Props) {
               >
                 <div className={__classes("card-heading")} data-v-64f045e3="">
                   <h3 data-v-64f045e3="">{t("m.de7b72a3f852")}</h3>
-                  <span
-                    data-status={diskState() as any}
-                    className={__classes("status-pill")}
-                    data-v-64f045e3=""
-                  >
-                    {statusLabel(diskState())}
-                  </span>
                 </div>
                 {diskReason() ? (
                   <p className={__classes("metric-reason")} data-v-64f045e3="">
@@ -361,17 +315,6 @@ export default function MetricsPanel(input: Props) {
                         data-v-64f045e3=""
                       >
                         <strong data-v-64f045e3="">{mount.mountpoint}</strong>
-                        <span
-                          data-status={
-                            metricState(mount.usage, DISK_TTL_MS.value) as any
-                          }
-                          className={__classes("status-pill small")}
-                          data-v-64f045e3=""
-                        >
-                          {statusLabel(
-                            metricState(mount.usage, DISK_TTL_MS.value),
-                          )}
-                        </span>
                       </div>
                       <p data-v-64f045e3="">
                         {formatPercent(mount.usage.value?.usedPercent)}
@@ -404,17 +347,6 @@ export default function MetricsPanel(input: Props) {
               >
                 <div className={__classes("card-heading")} data-v-64f045e3="">
                   <h3 data-v-64f045e3="">{t("m.97b31b5d63f5")}</h3>
-                  <span
-                    data-status={
-                      metricState(__props.view.metrics.network.summary) as any
-                    }
-                    className={__classes("status-pill")}
-                    data-v-64f045e3=""
-                  >
-                    {statusLabel(
-                      metricState(__props.view.metrics.network.summary),
-                    )}
-                  </span>
                 </div>
                 <div className={__classes("network-pair")} data-v-64f045e3="">
                   <span data-v-64f045e3="">{t("m.6e684586884e")}</span>
@@ -473,31 +405,6 @@ export default function MetricsPanel(input: Props) {
                         >
                           {t("m.09f99341ca07")}
                         </span>
-                        <span
-                          className={__classes("interface-rates")}
-                          data-v-64f045e3=""
-                        >
-                          <span data-v-64f045e3="">
-                            {formatRate(
-                              iface.rate.value?.receivedBytesPerSecond,
-                            )}
-                            {" ↓"}
-                          </span>
-                          <span data-v-64f045e3="">
-                            {formatRate(iface.rate.value?.sentBytesPerSecond)}
-                            {" ↑"}
-                          </span>
-                        </span>
-                        <span
-                          data-status={metricState(iface.rate) as any}
-                          data-testid={
-                            `interface-rate-status-${iface.name}` as any
-                          }
-                          className={__classes("status-pill small")}
-                          data-v-64f045e3=""
-                        >
-                          {statusLabel(metricState(iface.rate))}
-                        </span>
                       </div>
                       {metricReason(iface.rate) ? (
                         <p
@@ -528,15 +435,6 @@ export default function MetricsPanel(input: Props) {
                 >
                   <div className={__classes("card-heading")} data-v-64f045e3="">
                     <h3 data-v-64f045e3="">{"Swap"}</h3>
-                    <span
-                      data-status={
-                        metricState(__props.view.metrics.host.swap) as any
-                      }
-                      className={__classes("status-pill")}
-                      data-v-64f045e3=""
-                    >
-                      {statusLabel(metricState(__props.view.metrics.host.swap))}
-                    </span>
                   </div>
                   <strong
                     className={__classes("primary-value")}
@@ -565,15 +463,6 @@ export default function MetricsPanel(input: Props) {
                 >
                   <div className={__classes("card-heading")} data-v-64f045e3="">
                     <h3 data-v-64f045e3="">{t("host.load")}</h3>
-                    <span
-                      data-status={
-                        metricState(__props.view.metrics.host.load) as any
-                      }
-                      className={__classes("status-pill")}
-                      data-v-64f045e3=""
-                    >
-                      {statusLabel(metricState(__props.view.metrics.host.load))}
-                    </span>
                   </div>
                   <strong
                     className={__classes("primary-value")}
@@ -600,17 +489,6 @@ export default function MetricsPanel(input: Props) {
                 >
                   <div className={__classes("card-heading")} data-v-64f045e3="">
                     <h3 data-v-64f045e3="">{t("host.processes")}</h3>
-                    <span
-                      data-status={
-                        metricState(__props.view.metrics.host.processes) as any
-                      }
-                      className={__classes("status-pill")}
-                      data-v-64f045e3=""
-                    >
-                      {statusLabel(
-                        metricState(__props.view.metrics.host.processes),
-                      )}
-                    </span>
                   </div>
                   <strong
                     className={__classes("primary-value")}
@@ -638,17 +516,6 @@ export default function MetricsPanel(input: Props) {
                 >
                   <div className={__classes("card-heading")} data-v-64f045e3="">
                     <h3 data-v-64f045e3="">{t("host.traffic")}</h3>
-                    <span
-                      data-status={
-                        metricState(__props.view.metrics.host.traffic) as any
-                      }
-                      className={__classes("status-pill")}
-                      data-v-64f045e3=""
-                    >
-                      {statusLabel(
-                        metricState(__props.view.metrics.host.traffic),
-                      )}
-                    </span>
                   </div>
                   <p className={__classes("network-pair")} data-v-64f045e3="">
                     {"↓ "}
@@ -698,53 +565,7 @@ export default function MetricsPanel(input: Props) {
                   )}
                 </article>
                 <article
-                  className={__classes("metric-card")}
-                  data-v-64f045e3=""
-                >
-                  <div className={__classes("card-heading")} data-v-64f045e3="">
-                    <h3 data-v-64f045e3="">{"GPU"}</h3>
-                    <span
-                      data-status={
-                        metricState(
-                          __props.view.metrics.host.gpus,
-                          90000,
-                        ) as any
-                      }
-                      className={__classes("status-pill")}
-                      data-v-64f045e3=""
-                    >
-                      {statusLabel(
-                        metricState(__props.view.metrics.host.gpus, 90000),
-                      )}
-                    </span>
-                  </div>
-                  <Fragment>
-                    {__each(__props.view.metrics.host.gpus.value, (gpu) => (
-                      <div
-                        key={gpu.id as any}
-                        className={__classes("mount-row")}
-                        data-v-64f045e3=""
-                      >
-                        <strong data-v-64f045e3="">{gpu.name}</strong>
-                        <p data-v-64f045e3="">
-                          {formatPercent(gpu.utilization)}
-                          {" · "}
-                          {formatBytes(gpu.memoryUsedBytes)}
-                          {" / "}
-                          {formatBytes(gpu.memoryTotalBytes)}
-                          {" · "}
-                          {gpu.temperatureCelsius ?? "—"}
-                          {" °C"}
-                        </p>
-                      </div>
-                    ))}
-                  </Fragment>
-                  <p className={__classes("metric-reason")} data-v-64f045e3="">
-                    {metricReason(__props.view.metrics.host.gpus, 90000)}
-                  </p>
-                </article>
-                <article
-                  className={__classes("metric-card")}
+                  className={__classes("metric-card hardware-card")}
                   data-v-64f045e3=""
                 >
                   <h3 data-v-64f045e3="">{t("host.hardware")}</h3>

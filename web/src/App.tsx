@@ -12,6 +12,8 @@ import {
 } from "./api";
 import "./App.css";
 import AgentEnrollment from "./components/AgentEnrollment";
+import AccountMenu from "./components/AccountMenu";
+import AccountManagement from "./components/AccountManagement";
 import AlertCenter from "./components/AlertCenter";
 import FeedsCenter from "./components/FeedsCenter";
 import HostManagement from "./components/HostManagement";
@@ -35,6 +37,7 @@ import {
   type ViewScreen,
 } from "./navigation";
 import { operationURL } from "./operations";
+import { describeSessionDevice } from "./session-device";
 import {
   __call,
   __classes,
@@ -56,6 +59,10 @@ import {
 const GuestDisplay = lazyView(() => import("./components/GuestDisplay"));
 const GuestSettings = lazyView(() => import("./components/GuestSettings"));
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
+function sessionDeviceLabel(raw: string) {
+  const device = describeSessionDevice(raw);
+  return [t(`session.device.${device.kind}`), device.os, device.browser].filter(Boolean).join(" · ");
+}
 export default function App(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
@@ -168,14 +175,15 @@ export default function App(input: Props) {
         navigationOpen.value = false;
       }
       function handleNavigationKeys(event: KeyboardEvent) {
+        if (event.key === "Escape" && sidebarElement.value?.querySelector(":popover-open")) return;
         if (!mobileNavigation.value || !navigationOpen.value) return;
         if (event.key === "Escape") {
           navigationOpen.value = false;
           navigationToggle.value?.focus();
         } else if (event.key === "Tab") {
-          const items = sidebarElement.value?.querySelectorAll<HTMLElement>(
+          const items = Array.from(sidebarElement.value?.querySelectorAll<HTMLElement>(
             "a, button:not(:disabled)",
-          );
+          ) || []).filter(item => item.getClientRects().length > 0);
           if (!items?.length) return;
           const first = items[0]!,
             last = items[items.length - 1]!;
@@ -459,8 +467,8 @@ export default function App(input: Props) {
       );
       const visibleName = derived(
         () =>
-          appearance.displayName ||
           currentUser.value?.displayName ||
+          appearance.displayName ||
           t("m.e19796712f1c"),
       );
       function clearMessages() {
@@ -478,8 +486,8 @@ export default function App(input: Props) {
       }
       async function loadAppearance() {
         const [result, avatar, background] = await Promise.all([
-          api.appearance(),
-          operationURL("appearance.avatar"),
+          currentUser.value ? api.profile() : api.appearance(),
+          operationURL(currentUser.value ? "profile.avatar" : "appearance.avatar"),
           operationURL("appearance.background"),
         ]);
         imagePaths.avatar = avatar.pathname;
@@ -562,6 +570,7 @@ export default function App(input: Props) {
           const result = await api.me();
           if (sequence !== routeSequence) return;
           currentUser.value = result.user;
+          if (target.screen !== "settings") await loadAppearance();
           if (target.screen === "settings") {
             const results = await Promise.allSettled([
               loadAppearance(),
@@ -661,13 +670,15 @@ export default function App(input: Props) {
         busy.value = true;
         busyLabel.value = t("m.6bdb4435095e");
         try {
-          await api.saveAppearance({
+          if (currentUser.value?.role === "administrator") await api.saveAppearance({
             displayName: appearance.displayName,
             theme: appearance.theme,
             backgroundColor: appearance.backgroundColor,
           });
+          else await api.saveProfile({displayName:appearance.displayName,theme:appearance.theme});
           rememberTheme();
           currentUser.value = {
+            ...currentUser.value!,
             displayName: appearance.displayName,
           };
           notice.value = t("m.e90110b8adca");
@@ -852,6 +863,7 @@ export default function App(input: Props) {
             data-theme={effectiveTheme.value as any}
             data-screen={screen.value as any}
             data-authenticated={authenticated.value as any}
+            data-role={currentUser.value?.role}
             data-sidebar-resizing={sidebarResizing.value as any}
             className={__classes("app-shell")}
             style={__style(shellStyle.value)}
@@ -1000,7 +1012,7 @@ export default function App(input: Props) {
                           data-v-ac863f34=""
                         >
                           <Fragment>
-                            {__each(navigation, (item) => (
+                            {__each(navigation.filter(item => currentUser.value?.role === "administrator" || ["nodes", "operations", "settings"].includes(item.screen)), (item) => (
                               <button
                                 key={item.screen as any}
                                 type="button"
@@ -1029,47 +1041,13 @@ export default function App(input: Props) {
                     )}
                   </motion.div>
                 </AnimatePresence>
-                <div
-                  className={__classes("workspace-account")}
-                  data-v-ac863f34=""
-                >
-                  <div
-                    className={__classes("profile-avatar")}
-                    data-v-ac863f34=""
-                  >
-                    {avatarSrc.value ? (
-                      <img
-                        src={avatarSrc.value as any}
-                        alt=""
-                        data-v-ac863f34=""
-                      ></img>
-                    ) : (
-                      <span data-v-ac863f34="">
-                        {visibleName.value.slice(0, 1)}
-                      </span>
-                    )}
-                  </div>
-                  <div
-                    className={__classes("workspace-account-copy")}
-                    data-v-ac863f34=""
-                  >
-                    <strong data-v-ac863f34="">{visibleName.value}</strong>
-                    <span data-v-ac863f34="">{t("m.e19796712f1c")}</span>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={busy.value as any}
-                    aria-label={t("m.3ab8cc15939f") as any}
-                    title={t("m.3ab8cc15939f") as any}
-                    className={__classes("account-logout touch-target")}
-                    onClick={(event: any) => {
-                      __call(logout, event);
-                    }}
-                    data-v-ac863f34=""
-                  >
-                    <UiIcon name="logout" data-v-ac863f34=""></UiIcon>
-                  </button>
-                </div>
+                <AccountMenu
+                  user={currentUser.value!}
+                  avatar={avatarSrc.value || undefined}
+                  busy={busy.value}
+                  onSettings={() => navigate("settings")}
+                  onLogout={() => { void logout(); }}
+                />
                 {!mobileNavigation.value && !sidebarCollapsed.value ? (
                   <div
                     role="separator"
@@ -1638,6 +1616,7 @@ export default function App(input: Props) {
               <GuestSettings data-v-ac863f34=""></GuestSettings>
             ) : screen.value === "nodes" ? (
               <NodesDashboard
+                readOnly={currentUser.value?.role === "viewer"}
                 onEnroll={(event: any) => {
                   navigate("agent-enrollment");
                 }}
@@ -1672,46 +1651,6 @@ export default function App(input: Props) {
                 className={__classes("settings-layout")}
                 data-v-ac863f34=""
               >
-                <aside
-                  className={__classes("settings-sidebar")}
-                  data-v-ac863f34=""
-                >
-                  <h1 data-v-ac863f34="">{t("m.df3d58c7d84b")}</h1>
-                  <div
-                    className={__classes("sidebar-profile")}
-                    data-v-ac863f34=""
-                  >
-                    <div
-                      className={__classes("profile-avatar")}
-                      data-v-ac863f34=""
-                    >
-                      {avatarSrc.value ? (
-                        <img
-                          key={avatarRevision.value as any}
-                          src={avatarSrc.value as any}
-                          alt=""
-                          data-v-ac863f34=""
-                        ></img>
-                      ) : (
-                        <span aria-hidden="true" data-v-ac863f34="">
-                          {visibleName.value.slice(0, 1)}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      className={__classes("profile-summary")}
-                      data-v-ac863f34=""
-                    >
-                      <strong data-v-ac863f34="">{visibleName.value}</strong>
-                      <span data-v-ac863f34="">{t("m.e19796712f1c")}</span>
-                    </div>
-                    <span
-                      aria-hidden="true"
-                      className={__classes("profile-dot")}
-                      data-v-ac863f34=""
-                    ></span>
-                  </div>
-                </aside>
                 <div className={__classes("settings-main")} data-v-ac863f34="">
                   <div
                     className={__classes("settings-heading")}
@@ -1741,25 +1680,17 @@ export default function App(input: Props) {
                   ) : null}
                   <section
                     aria-labelledby="appearance-heading"
-                    className={__classes("settings-card appearance-card")}
+                    className={__classes("surface-card settings-card appearance-card")}
                     data-v-ac863f34=""
                   >
                     <div
                       className={__classes("section-heading")}
                       data-v-ac863f34=""
                     >
-                      <div
-                        aria-hidden="true"
-                        className={__classes("section-icon appearance-icon")}
-                        data-v-ac863f34=""
-                      >
-                        {"◉"}
-                      </div>
                       <div data-v-ac863f34="">
                         <h3 id="appearance-heading" data-v-ac863f34="">
                           {t("m.ad429c44450e")}
                         </h3>
-                        <p data-v-ac863f34="">{t("m.d6fb19acbade")}</p>
                       </div>
                     </div>
                     <form
@@ -1859,29 +1790,6 @@ export default function App(input: Props) {
                         >
                           <button
                             type="button"
-                            aria-pressed={appearance.theme === ("dark" as any)}
-                            className={__classes("theme-option", {
-                              selected: appearance.theme === "dark",
-                            })}
-                            onClick={(event: any) => {
-                              appearance.theme = "dark";
-                            }}
-                            data-v-ac863f34=""
-                          >
-                            <span
-                              className={__classes("theme-swatch dark-swatch")}
-                              data-v-ac863f34=""
-                            >
-                              <i data-v-ac863f34=""></i>
-                              <i data-v-ac863f34=""></i>
-                              <i data-v-ac863f34=""></i>
-                            </span>
-                            <span data-v-ac863f34="">
-                              {t("m.a6b75d068032")}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
                             aria-pressed={
                               appearance.theme === ("system" as any)
                             }
@@ -1909,6 +1817,29 @@ export default function App(input: Props) {
                           </button>
                           <button
                             type="button"
+                            aria-pressed={appearance.theme === ("dark" as any)}
+                            className={__classes("theme-option", {
+                              selected: appearance.theme === "dark",
+                            })}
+                            onClick={(event: any) => {
+                              appearance.theme = "dark";
+                            }}
+                            data-v-ac863f34=""
+                          >
+                            <span
+                              className={__classes("theme-swatch dark-swatch")}
+                              data-v-ac863f34=""
+                            >
+                              <i data-v-ac863f34=""></i>
+                              <i data-v-ac863f34=""></i>
+                              <i data-v-ac863f34=""></i>
+                            </span>
+                            <span data-v-ac863f34="">
+                              {t("m.a6b75d068032")}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
                             aria-pressed={appearance.theme === ("light" as any)}
                             className={__classes("theme-option", {
                               selected: appearance.theme === "light",
@@ -1932,6 +1863,7 @@ export default function App(input: Props) {
                           </button>
                         </div>
                       </div>
+                      {currentUser.value?.role === "administrator" ? <>
                       <div
                         className={__classes("field color-field")}
                         data-v-ac863f34=""
@@ -1965,26 +1897,6 @@ export default function App(input: Props) {
                         data-v-ac863f34=""
                       >
                         <div
-                          className={__classes("background-preview")}
-                          style={__style({
-                            backgroundColor: safeBackgroundColor.value,
-                          })}
-                          data-v-ac863f34=""
-                        >
-                          {backgroundSrc.value ? (
-                            <img
-                              key={backgroundRevision.value as any}
-                              src={backgroundSrc.value as any}
-                              alt={t("m.ac485672fc03") as any}
-                              data-v-ac863f34=""
-                            ></img>
-                          ) : (
-                            <span data-v-ac863f34="">
-                              {t("label.c44379727315")}
-                            </span>
-                          )}
-                        </div>
-                        <div
                           className={__classes("upload-copy")}
                           data-v-ac863f34=""
                         >
@@ -2014,6 +1926,7 @@ export default function App(input: Props) {
                           ></input>
                         </label>
                       </div>
+                      </> : null}
                       <div
                         className={__classes("form-actions")}
                         data-v-ac863f34=""
@@ -2034,20 +1947,13 @@ export default function App(input: Props) {
                   </section>
                   <section
                     aria-labelledby="security-heading"
-                    className={__classes("settings-card security-card")}
+                    className={__classes("surface-card settings-card security-card")}
                     data-v-ac863f34=""
                   >
                     <div
                       className={__classes("section-heading")}
                       data-v-ac863f34=""
                     >
-                      <div
-                        aria-hidden="true"
-                        className={__classes("section-icon security-icon")}
-                        data-v-ac863f34=""
-                      >
-                        {"⌑"}
-                      </div>
                       <div data-v-ac863f34="">
                         <h3 id="security-heading" data-v-ac863f34="">
                           {t("m.1b5365b35720")}
@@ -2127,16 +2033,16 @@ export default function App(input: Props) {
                           ></input>
                         </label>
                       </div>
-                      <small
-                        className={__classes("field-hint")}
-                        data-v-ac863f34=""
-                      >
-                        {t("m.2d990ebc16e1")}
-                      </small>
                       <div
-                        className={__classes("form-actions")}
+                        className={__classes("form-actions password-actions")}
                         data-v-ac863f34=""
                       >
+                        <small
+                          className={__classes("field-hint")}
+                          data-v-ac863f34=""
+                        >
+                          {t("m.2d990ebc16e1")}
+                        </small>
                         <button
                           type="submit"
                           disabled={busy.value as any}
@@ -2148,28 +2054,20 @@ export default function App(input: Props) {
                       </div>
                     </form>
                   </section>
+                  <div className="settings-record-panels">
                   <section
                     aria-labelledby="sessions-heading"
-                    className={__classes("settings-card sessions-card")}
+                    className={__classes("surface-card settings-card settings-list-card sessions-card")}
                     data-v-ac863f34=""
                   >
                     <div
-                      className={__classes("section-heading session-heading")}
+                      className={__classes("settings-list-heading session-heading")}
                       data-v-ac863f34=""
                     >
-                      <div
-                        aria-hidden="true"
-                        className={__classes("section-icon session-icon")}
-                        data-v-ac863f34=""
-                      >
-                        {"⌘"}
-                      </div>
-                      <div data-v-ac863f34="">
-                        <h3 id="sessions-heading" data-v-ac863f34="">
-                          {t("m.9fd94953b94b")}
-                        </h3>
-                        <p data-v-ac863f34="">{t("m.986f34b8224e")}</p>
-                      </div>
+
+                      <h3 id="sessions-heading" data-v-ac863f34="">
+                        {t("m.9fd94953b94b")}
+                      </h3>
                       <span
                         className={__classes("session-count")}
                         data-v-ac863f34=""
@@ -2178,39 +2076,27 @@ export default function App(input: Props) {
                         {t("m.3a116815bc9d")}
                       </span>
                     </div>
+                    <div className="settings-list-body">
                     {sessions.value.length ? (
                       <div
-                        className={__classes("session-list")}
+                        className={__classes("settings-record-list session-list")}
                         data-v-ac863f34=""
                       >
                         <Fragment>
                           {__each(sessions.value, (session) => (
                             <article
                               key={session.id as any}
-                              className={__classes("session-item")}
+                              className={__classes("settings-record-row session-item")}
                               data-v-ac863f34=""
                             >
+
                               <div
-                                aria-hidden="true"
-                                className={__classes("device-icon")}
-                                data-v-ac863f34=""
-                              >
-                                {"▣"}
-                              </div>
-                              <div
-                                className={__classes("session-info")}
+                                className={__classes("settings-record-info session-info")}
                                 data-v-ac863f34=""
                               >
                                 <strong data-v-ac863f34="">
-                                  {session.device || t("m.8ca01a9ba438")}
-                                  {session.current ? (
-                                    <span
-                                      className={__classes("current-badge")}
-                                      data-v-ac863f34=""
-                                    >
-                                      {t("m.c68978537cf3")}
-                                    </span>
-                                  ) : null}
+                                  <span className="session-device-name">{sessionDeviceLabel(session.device).split(" · ").map((part, index) => <Fragment key={index}>{index ? " · " : ""}<span className="session-device-part">{part}</span></Fragment>)}</span>
+
                                 </strong>
                                 <span data-v-ac863f34="">
                                   {session.remoteAddr || t("m.f4a131451fce")}
@@ -2219,6 +2105,7 @@ export default function App(input: Props) {
                                   {t("m.41f5cada11ed")}
                                   {formatTime(session.lastSeenAt)}
                                 </small>
+
                               </div>
                               <button
                                 type="button"
@@ -2230,7 +2117,7 @@ export default function App(input: Props) {
                                     ? t("m.62a9388a42a8")
                                     : (t("m.6cfb5f2a5be8", {
                                         "0":
-                                          session.device || t("m.8ca01a9ba438"),
+                                          sessionDeviceLabel(session.device),
                                       }) as any)
                                 }
                                 className={__classes("revoke-button")}
@@ -2255,7 +2142,10 @@ export default function App(input: Props) {
                         {t("m.214dc45ab589")}
                       </p>
                     )}
+                    </div>
                   </section>
+                  {currentUser.value?.role === "administrator" ? <AccountManagement currentId={currentUser.value.id} /> : null}
+                  </div>
                 </div>
               </section>
             )}

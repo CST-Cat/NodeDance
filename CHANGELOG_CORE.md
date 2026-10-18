@@ -6,6 +6,24 @@
 
 ### 简体中文
 
+## [0.1.42]
+
+### English
+
+- Add administrator and read-only accounts with contract-discovered account management, password-verified switching, private profiles and per-account sessions; enforce permissions and immediate session, terminal and transfer revocation in Core.
+- Recover login submissions safely after session/CSRF changes and preserve the active session on failed login or account switching.
+- Simplify personal settings with shared card spacing, responsive paired panels, compact controls, reusable account dialogs and readable device summaries.
+- Present the eight realtime metrics as equal rounded squares in four columns or two on narrow containers; remove redundant status badges, duplicate interface rates and the GPU panel, and compact overview host badges.
+- Existing single-account development databases require an explicitly authorized, backed-up one-time conversion before deployment; this release does not include an automatic storage migration.
+
+### 简体中文
+
+- 新增管理员与只读账号，共用操作契约提供账号管理、验证密码后切换、私有资料及独立会话；Core 强制权限校验，及时撤销失效会话及关联终端和文件传输。
+- 安全恢复会话／CSRF 变化后的登录提交，登录或切换账号失败时保留原会话。
+- 精简个人设置：统一卡片间距、宽屏并排窄屏堆叠、紧凑控件、复用账号弹窗，并以简洁设备名称展示会话。
+- 八项实时指标改为等大圆角正方形，宽屏四列、窄容器两列；移除重复状态胶囊、网卡重复速率和 GPU 模块，收紧首页主机徽标。
+- 旧单账号开发数据库部署前需明确授权、备份并进行一次性转换；本版本不包含自动存储迁移。
+
 ## [0.1.41]
 
 ### English

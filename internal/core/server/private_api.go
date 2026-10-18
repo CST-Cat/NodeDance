@@ -45,6 +45,9 @@ type browserSessionView struct {
 }
 
 func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, current *session) {
+	if s.handleAccountAPI(w, r, current) {
+		return
+	}
 	if s.handleGuestSettings(w, r) {
 		return
 	}
@@ -107,12 +110,32 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		var name string
-		if err := s.store.DB.QueryRow(`SELECT display_name FROM admin_user WHERE id=1`).Scan(&name); err != nil {
-			http.Error(w, "request failed", http.StatusInternalServerError)
+		writeJSON(w, http.StatusOK, map[string]any{"user": accountView{ID: current.UserID, Username: current.Username, DisplayName: current.DisplayName, Role: current.Role, Enabled: true}})
+		return
+	case "/api/v1/auth/profile":
+		s.handleProfile(w, r, current)
+		return
+	case "/api/v1/auth/profile/avatar":
+		if r.Method == http.MethodPost {
+			s.handleUploadAppearanceImage(w, r, current)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"user": map[string]string{"displayName": name}})
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", 405)
+			return
+		}
+		var image []byte
+		if err := s.store.DB.QueryRowContext(r.Context(), `SELECT avatar_png FROM users WHERE id=?`, current.UserID).Scan(&image); err != nil {
+			http.Error(w, "request failed", 500)
+			return
+		}
+		if len(image) == 0 {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write(image)
 		return
 	case "/api/v1/auth/logout":
 		if r.Method != http.MethodPost {
@@ -239,7 +262,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, current *s
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	if err := audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "logout", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
+	if err := audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "logout", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: current.UserID, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
@@ -263,7 +286,7 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request, cu
 	}
 	var hash, salt []byte
 	var version string
-	if err := s.store.DB.QueryRow(`SELECT password_hash, password_salt, password_version FROM admin_user WHERE id=1`).Scan(&hash, &salt, &version); err != nil {
+	if err := s.store.DB.QueryRow(`SELECT password_hash, password_salt, password_version FROM users WHERE id=?`, current.UserID).Scan(&hash, &salt, &version); err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
@@ -273,7 +296,7 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request, cu
 	}
 	defer s.releasePasswordSlot()
 	if !auth.VerifyPasswordVersion(version, request.CurrentPassword, hash, salt) {
-		s.auditEvent(r, "password_change", "rejected", sql.NullInt64{Int64: 1, Valid: true})
+		s.auditEvent(r, "password_change", "rejected", sql.NullInt64{Int64: current.UserID, Valid: true})
 		http.Error(w, "current password is incorrect", http.StatusUnauthorized)
 		return
 	}
@@ -303,7 +326,7 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request, cu
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	updated, err := tx.ExecContext(r.Context(), `UPDATE admin_user SET password_hash=?, password_salt=?, password_version=?, updated_at=? WHERE id=1 AND password_hash=? AND password_salt=? AND password_version=?`, newHash, newSalt, auth.CurrentPasswordVersion, s.now().UnixNano(), hash, salt, version)
+	updated, err := tx.ExecContext(r.Context(), `UPDATE users SET password_hash=?, password_salt=?, password_version=?, updated_at=? WHERE id=? AND password_hash=? AND password_salt=? AND password_version=?`, newHash, newSalt, auth.CurrentPasswordVersion, s.now().UnixNano(), current.UserID, hash, salt, version)
 	if err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
@@ -320,12 +343,36 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request, cu
 		http.Error(w, "password credentials changed; sign in again", http.StatusConflict)
 		return
 	}
-	if _, err := tx.ExecContext(r.Context(), `DELETE FROM browser_sessions`); err != nil {
+	revokedIDs := []string{}
+	rows, err := tx.QueryContext(r.Context(), `SELECT id FROM browser_sessions WHERE user_id=?`, current.UserID)
+	if err != nil {
+		_ = tx.Rollback()
+		http.Error(w, "request failed", 500)
+		return
+	}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			_ = tx.Rollback()
+			http.Error(w, "request failed", 500)
+			return
+		}
+		revokedIDs = append(revokedIDs, id)
+	}
+	rowErr := rows.Err()
+	rows.Close()
+	if rowErr != nil {
+		_ = tx.Rollback()
+		http.Error(w, "request failed", 500)
+		return
+	}
+	if _, err := tx.ExecContext(r.Context(), `DELETE FROM browser_sessions WHERE user_id=?`, current.UserID); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	if err := audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "password_change", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
+	if err := audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "password_change", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: current.UserID, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
@@ -334,16 +381,13 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request, cu
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	if s.terminals != nil {
-		s.terminals.closeAll(s, "administrator password changed")
-	}
-	s.closeAllFileTransfers(errors.New("administrator password changed"))
+	s.closeAccountSessions(revokedIDs, "account password changed")
 	s.clearCookies(w)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleListSessions(w http.ResponseWriter, current *session) {
-	rows, err := s.store.DB.Query(`SELECT id, created_at, last_seen_at, user_agent, remote_addr FROM browser_sessions ORDER BY created_at`)
+	rows, err := s.store.DB.Query(`SELECT id, created_at, last_seen_at, user_agent, remote_addr FROM browser_sessions WHERE user_id=? ORDER BY created_at`, current.UserID)
 	if err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
@@ -388,7 +432,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request, cur
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	result, err := tx.ExecContext(r.Context(), `DELETE FROM browser_sessions WHERE id=?`, id)
+	result, err := tx.ExecContext(r.Context(), `DELETE FROM browser_sessions WHERE id=? AND user_id=?`, id, current.UserID)
 	if err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
@@ -400,7 +444,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request, cur
 		http.NotFound(w, r)
 		return
 	}
-	if err := audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "session_revoke", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
+	if err := audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "session_revoke", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: current.UserID, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
@@ -440,12 +484,12 @@ func (s *Server) handleUpdateAppearance(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	if _, err := tx.ExecContext(r.Context(), `UPDATE admin_user SET display_name=?, updated_at=? WHERE id=1`, name, now); err != nil {
+	if _, err := tx.ExecContext(r.Context(), `UPDATE users SET display_name=?, theme=?, updated_at=? WHERE id=?`, name, request.Theme, now, current.UserID); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	if err := audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "appearance_update", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
+	if err := audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "appearance_update", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: current.UserID, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
@@ -515,6 +559,8 @@ func (s *Server) handleUploadAppearanceImage(w http.ResponseWriter, r *http.Requ
 	}
 	column, publicURL := "", ""
 	switch r.URL.Path {
+	case "/api/v1/auth/profile/avatar":
+		column, publicURL = "avatar_png", "/api/v1/auth/profile/avatar"
 	case "/api/v1/settings/appearance/avatar":
 		column, publicURL = "avatar_png", "/api/v1/public/appearance/avatar"
 	case "/api/v1/settings/appearance/background":
@@ -530,12 +576,17 @@ func (s *Server) handleUploadAppearanceImage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	query := `UPDATE appearance SET ` + column + `=?, updated_at=? WHERE id=1`
-	if _, err := tx.ExecContext(ctx, query, normalized, s.now().Unix()); err != nil {
+	args := []any{normalized, s.now().Unix()}
+	if r.URL.Path == "/api/v1/auth/profile/avatar" {
+		query = `UPDATE users SET avatar_png=?,updated_at=? WHERE id=?`
+		args = append(args, current.UserID)
+	}
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	if err := audit.Record(ctx, tx, audit.Event{OccurredAt: s.now(), Action: "image_upload", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
+	if err := audit.Record(ctx, tx, audit.Event{OccurredAt: s.now(), Action: "image_upload", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: current.UserID, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return

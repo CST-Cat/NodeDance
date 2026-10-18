@@ -79,7 +79,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	credentialDigest := auth.DigestToken(request.Credential)
 	var initialized int
-	if err := s.store.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM admin_user`).Scan(&initialized); err != nil {
+	if err := s.store.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM users`).Scan(&initialized); err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
@@ -127,7 +127,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var already int
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM admin_user`).Scan(&already); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&already); err != nil {
 		rollback(http.StatusInternalServerError, "request failed")
 		return
 	}
@@ -136,7 +136,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	createdAt := s.now().UnixNano()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO admin_user(id, username, password_hash, password_salt, password_version, display_name, updated_at)
+	if _, err := tx.ExecContext(ctx, `INSERT INTO users(id, username, password_hash, password_salt, password_version, display_name, updated_at)
 		VALUES(1, ?, ?, ?, ?, ?, ?)`, username, passwordHash, salt, auth.CurrentPasswordVersion, displayName, createdAt); err != nil {
 		rollback(http.StatusConflict, "already initialized")
 		return
@@ -149,7 +149,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		rollback(http.StatusInternalServerError, "request failed")
 		return
 	}
-	token, csrfToken, current, err := s.insertSession(ctx, tx, r, createdAt)
+	token, csrfToken, current, err := s.insertSession(ctx, tx, r, createdAt, 1)
 	if err != nil {
 		rollback(http.StatusInternalServerError, "request failed")
 		return
@@ -180,7 +180,9 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, response)
 }
 
-func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) { s.signIn(w, r, nil) }
+
+func (s *Server) signIn(w http.ResponseWriter, r *http.Request, previous *session) {
 	var request protocol.AuthLoginRequest
 	if !decodeJSON(w, r, &request) {
 		return
@@ -197,9 +199,12 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.releasePasswordSlot()
 	var passwordHash, salt []byte
-	var version, displayName, username string
-	err := s.store.DB.QueryRow(`SELECT username, password_hash, password_salt, password_version, display_name FROM admin_user WHERE id=1`).Scan(&username, &passwordHash, &salt, &version, &displayName)
+	var version, displayName, username, role string
+	var userID int64
+	err := s.store.DB.QueryRow(`SELECT id, username, password_hash, password_salt, password_version, display_name, role FROM users WHERE username=? AND enabled=1`, request.Username).Scan(&userID, &username, &passwordHash, &salt, &version, &displayName, &role)
 	if errors.Is(err, sql.ErrNoRows) {
+		// Keep unknown usernames on the same bounded password-work path.
+		_, _, _ = auth.HashPassword(request.Password)
 		s.rejectLogin(w, r, remote)
 		return
 	}
@@ -225,9 +230,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// verified just before a password change cannot create a fresh session
 	// after that change has revoked every existing session.
 	var currentHash, currentSalt []byte
-	var currentVersion, currentDisplayName, currentUsername string
-	err = tx.QueryRowContext(r.Context(), `SELECT username, password_hash, password_salt, password_version, display_name FROM admin_user WHERE id=1`).Scan(&currentUsername, &currentHash, &currentSalt, &currentVersion, &currentDisplayName)
-	if errors.Is(err, sql.ErrNoRows) || err == nil && (currentUsername != username || currentVersion != version || subtle.ConstantTimeCompare(currentHash, passwordHash) != 1 || subtle.ConstantTimeCompare(currentSalt, salt) != 1) {
+	var currentVersion, currentDisplayName, currentUsername, currentRole string
+	err = tx.QueryRowContext(r.Context(), `SELECT username, password_hash, password_salt, password_version, display_name, role FROM users WHERE id=? AND enabled=1`, userID).Scan(&currentUsername, &currentHash, &currentSalt, &currentVersion, &currentDisplayName, &currentRole)
+	if errors.Is(err, sql.ErrNoRows) || err == nil && (currentRole != role || currentUsername != username || currentVersion != version || subtle.ConstantTimeCompare(currentHash, passwordHash) != 1 || subtle.ConstantTimeCompare(currentSalt, salt) != 1) {
 		_ = tx.Rollback()
 		s.rejectLogin(w, r, remote)
 		return
@@ -239,13 +244,20 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	displayName = currentDisplayName
 	now := s.now().UnixNano()
-	token, csrfToken, current, err := s.insertSession(r.Context(), tx, r, now)
+	token, csrfToken, current, err := s.insertSession(r.Context(), tx, r, now, userID)
 	if err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	if err := audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "login", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: remote}); err != nil {
+	if previous != nil {
+		if _, err := tx.ExecContext(r.Context(), `DELETE FROM browser_sessions WHERE id=? AND user_id=?`, previous.ID, previous.UserID); err != nil {
+			_ = tx.Rollback()
+			http.Error(w, "request failed", 500)
+			return
+		}
+	}
+	if err := audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "login", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: userID, Valid: true}, RemoteAddr: remote}); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
@@ -259,10 +271,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.limiter.succeeded(remote)
+	if previous != nil {
+		s.closeAccountSessions([]string{previous.ID}, "account switched")
+	}
 	_ = current
 	s.setSessionCookie(w, token)
 	s.setCSRFCookie(w, csrfToken, s.idleTimeout)
-	writeJSON(w, http.StatusOK, map[string]any{"user": map[string]string{"displayName": displayName}, "csrfToken": csrfToken})
+	writeJSON(w, http.StatusOK, map[string]any{"user": accountView{ID: userID, Username: username, DisplayName: displayName, Role: role, Enabled: true}, "csrfToken": csrfToken})
 }
 
 func (s *Server) rejectLogin(w http.ResponseWriter, r *http.Request, remote string) {
@@ -270,7 +285,7 @@ func (s *Server) rejectLogin(w http.ResponseWriter, r *http.Request, remote stri
 	http.Error(w, "invalid credentials", http.StatusUnauthorized)
 }
 
-func (s *Server) insertSession(ctx context.Context, tx *sql.Tx, r *http.Request, now int64) (rawToken, csrfToken string, current *session, err error) {
+func (s *Server) insertSession(ctx context.Context, tx *sql.Tx, r *http.Request, now int64, userID int64) (rawToken, csrfToken string, current *session, err error) {
 	rawToken, digest, err := auth.NewToken()
 	if err != nil {
 		return "", "", nil, err
@@ -286,11 +301,11 @@ func (s *Server) insertSession(ctx context.Context, tx *sql.Tx, r *http.Request,
 	id := hex.EncodeToString(idBytes)
 	ua := sanitizeMetadata(r.UserAgent(), 200)
 	remote := s.effectiveRemoteAddr(r)
-	if _, err = tx.ExecContext(ctx, `INSERT INTO browser_sessions(id, token_digest, csrf_digest, created_at, last_seen_at, user_agent, remote_addr)
-		VALUES(?, ?, ?, ?, ?, ?, ?)`, id, digest, auth.DigestToken(csrfToken), now, now, ua, remote); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO browser_sessions(id, user_id, token_digest, csrf_digest, created_at, last_seen_at, user_agent, remote_addr)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?)`, id, userID, digest, auth.DigestToken(csrfToken), now, now, ua, remote); err != nil {
 		return "", "", nil, err
 	}
-	return rawToken, csrfToken, &session{ID: id, Digest: digest, CSRFDigest: auth.DigestToken(csrfToken), CreatedAt: s.now(), LastSeenAt: s.now(), UserAgent: ua, RemoteAddr: remote}, nil
+	return rawToken, csrfToken, &session{ID: id, UserID: userID, Digest: digest, CSRFDigest: auth.DigestToken(csrfToken), CreatedAt: s.now(), LastSeenAt: s.now(), UserAgent: ua, RemoteAddr: remote}, nil
 }
 
 func (s *Server) auditEvent(r *http.Request, action, outcome string, actor sql.NullInt64) {

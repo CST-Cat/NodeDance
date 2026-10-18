@@ -9,11 +9,41 @@ import {
 } from "../state";
 import { installScrollEdges, type ScrollEdges } from "../scroll-edge";
 
-import { Fragment } from "react";
+import { Fragment, useEffect, useId, useRef } from "react";
 import { __classes, __each, __input, useController } from "../state";
 import "./UiDialog.css";
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
 export default function UiDialog(input: Props) {
+  return typeof input.open === "boolean" ? <FormDialog {...input} /> : <SystemDialog {...input} />;
+}
+
+function FormDialog(input: Props) {
+  const element = useRef<HTMLDialogElement>(null);
+  const id = `form-dialog-${useId().replace(/:/g, "")}`;
+  useEffect(() => {
+    const dialog = element.current;
+    if (!dialog) return;
+    const returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    if (input.open && !dialog.open) dialog.showModal();
+    else if (!input.open && dialog.open) dialog.close();
+    return () => {
+      if (dialog.open) dialog.close();
+      if (returnFocus?.isConnected) returnFocus.focus({ preventScroll: true });
+    };
+  }, [input.open]);
+  useEffect(() => {
+    const edges = installScrollEdges(element.current ?? undefined);
+    return () => edges?.dispose();
+  }, []);
+  return <dialog ref={element} id={id} aria-labelledby={`${id}-title`} aria-busy={input.busy || undefined}
+    className={`ui-dialog scroll-fade ${input.className ?? ""}`} data-v-b0bbf977=""
+    onCancel={event => { event.preventDefault(); if (!input.busy) input.onClose?.(); }}>
+    <h2 id={`${id}-title`} data-v-b0bbf977="">{input.title}</h2>
+    {input.children}
+  </dialog>;
+}
+
+function SystemDialog(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
       const element = cell<HTMLDialogElement>();

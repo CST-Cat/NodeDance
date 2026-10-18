@@ -180,7 +180,7 @@ func (s *Server) handleAlertRuleDefaults(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "default alert rules unavailable", http.StatusInternalServerError)
 		return
 	}
-	_ = audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: "alert_defaults_create", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: s.effectiveRemoteAddr(r), Target: audit.Target{Kind: audit.TargetNode, ID: body.NodeID}})
+	_ = audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: "alert_defaults_create", Outcome: "succeeded", ActorID: requestActor(r), RemoteAddr: s.effectiveRemoteAddr(r), Target: audit.Target{Kind: audit.TargetNode, ID: body.NodeID}})
 	items, err := s.alerts.ListRules(r.Context(), body.NodeID)
 	if err != nil {
 		http.Error(w, "alert rules unavailable", http.StatusInternalServerError)
@@ -343,7 +343,7 @@ func (s *Server) handleAlertAction(w http.ResponseWriter, r *http.Request, curre
 }
 
 func (s *Server) auditAlertEvent(r *http.Request, action, outcome, targetID string) {
-	event := audit.Event{OccurredAt: s.now(), Action: action, Outcome: outcome, ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: s.effectiveRemoteAddr(r)}
+	event := audit.Event{OccurredAt: s.now(), Action: action, Outcome: outcome, ActorID: requestActor(r), RemoteAddr: s.effectiveRemoteAddr(r)}
 	if validUUID(targetID) {
 		event.Target = audit.Target{Kind: audit.TargetAlert, ID: targetID}
 	}

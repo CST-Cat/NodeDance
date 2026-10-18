@@ -194,7 +194,7 @@ func (s *Server) handleCreateComposeProjectTask(w http.ResponseWriter, r *http.R
 	}
 	result, err := s.tasks.EnqueueWithGate(r.Context(), coretasks.EnqueueRequest{
 		NodeID: nodeID, IdempotencyKey: key, Intent: intent,
-		ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr,
+		ActorID: requestActor(r), RemoteAddr: current.RemoteAddr,
 	}, gate)
 	if err == nil && result.Created && result.Task.Status == taskstate.Queued && result.Task.DeliveryState == "ready" && !result.Task.Evidence.DeliveryCommitted {
 		s.storeComposeContentLocked(result.Task.TaskID, nodeID, state.Generation, boundJournalID, digestText, []byte(request.Content))
@@ -393,7 +393,7 @@ func (s *Server) handleCreateComposeTask(w http.ResponseWriter, r *http.Request,
 		}
 	}
 	result, err := s.tasks.EnqueueWithGate(r.Context(), coretasks.EnqueueRequest{NodeID: nodeID, IdempotencyKey: key,
-		Intent: intent, ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}, gate)
+		Intent: intent, ActorID: requestActor(r), RemoteAddr: current.RemoteAddr}, gate)
 	if err != nil {
 		if contentLocked {
 			s.composeContentMu.Unlock()

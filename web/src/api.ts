@@ -10,7 +10,11 @@ export interface SetupStatus {
 }
 
 export interface User {
+  id: number
+  username: string
   displayName: string
+  role: "administrator" | "viewer"
+  enabled: boolean
 }
 
 export interface Appearance {
@@ -452,11 +456,13 @@ interface AuthResponse {
 
 export class ApiError extends Error {
   readonly status: number
+  readonly code: string
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code = '') {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
 }
 
@@ -504,11 +510,14 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
       cache: 'no-store',
     })
 
-    if (response.status === 401) clearExpiredSession(name)
+    if (response.status === 401 && name !== 'auth.switch') clearExpiredSession(name)
 
     if (!response.ok) {
       let message = t('m.ad5d5a8f24fc', {"0": (response.status)})
       const body = await response.text()
+      if (name === 'auth.login' && response.status === 403 && body.trim() === 'sign-in security token expired or changed') {
+        throw new ApiError(403, t('auth.loginSecurityChanged'), 'login_csrf')
+      }
       try {
         const payload = decodeContractJSON(body,responseSchema) as { error?: unknown; message?: unknown }
         if (typeof payload.message === 'string') message = diagnostic(payload.message)
@@ -573,11 +582,18 @@ export const api = {
       body: JSON.stringify(payload),
     })
   },
-  login: (username: string, password: string) => {
-    csrfToken = ''
-    return operationRequest<AuthResponse>("auth.login", {}, {
-      body: JSON.stringify({ username, password }),
-    })
+  login: async (username: string, password: string) => {
+    const submit = () => {
+      csrfToken = ''
+      return operationRequest<AuthResponse>("auth.login", {}, {
+        body: JSON.stringify({ username, password }),
+      })
+    }
+    try { return await submit() }
+    catch (error) {
+      if (!(error instanceof ApiError) || error.code !== 'login_csrf') throw error
+      return await submit()
+    }
   },
   me: () => operationRequest<{ user: User }>("auth.me", {}),
   logout: async () => {
@@ -692,11 +708,13 @@ export const api = {
   cancelTerminal: (nodeId: string, streamId: string) =>
     operationRequest<void>("terminal.cancel", { params: { nodeId: String(nodeId), streamId: String(streamId) } }),
   appearance: () => operationRequest<Appearance>("appearance.get", {}),
+  profile: () => operationRequest<Appearance>("profile.get", {}),
+  saveProfile: (payload: {displayName:string;theme:string}) => operationRequest<Appearance>("profile.update", {}, {body:JSON.stringify(payload)}),
   saveAppearance: (payload: Pick<Appearance, 'displayName' | 'theme' | 'backgroundColor'>) =>
     operationRequest<void>("appearance.update", {}, {
       body: JSON.stringify(payload),
     }),
   uploadImage: (kind: 'avatar' | 'background', image: File) => {
-    return resolveOperation(`appearance.upload-${kind}`).then(({operation})=>operationRequest<void>(operation.name,{}, {body:operationUpload(operation,image)}))
+    return resolveOperation(kind === "avatar" ? "profile.upload-avatar" : "appearance.upload-background").then(({operation})=>operationRequest<void>(operation.name,{}, {body:operationUpload(operation,image)}))
   },
 }

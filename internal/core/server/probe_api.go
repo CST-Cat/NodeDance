@@ -200,7 +200,7 @@ func configFromRequest(request probeConfigRequest, isCreate bool) (coreprobes.Co
 
 func probeAuditEvent(s *Server, current *session, action string) audit.Event {
 	return audit.Event{OccurredAt: s.now().UTC(), Action: action, Outcome: "succeeded",
-		ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}
+		ActorID: sql.NullInt64{Int64: current.UserID, Valid: true}, RemoteAddr: current.RemoteAddr}
 }
 
 func requireManagedNode(ctx context.Context, s *Server, nodeID string) error {

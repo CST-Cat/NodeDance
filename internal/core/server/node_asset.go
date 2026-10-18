@@ -68,7 +68,7 @@ func (s *Server) handleNodeAssetAPI(w http.ResponseWriter, r *http.Request, curr
 		raw, _ := json.Marshal(a)
 		_, err = tx.ExecContext(r.Context(), `INSERT INTO node_assets(node_id,settings_json,updated_at) VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at`, node, string(raw), s.now().Unix())
 		if err == nil {
-			err = audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "node_asset_update", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}, Target: audit.Target{Kind: audit.TargetNode, ID: node}, RemoteAddr: current.RemoteAddr})
+			err = audit.Record(r.Context(), tx, audit.Event{OccurredAt: s.now(), Action: "node_asset_update", Outcome: "succeeded", ActorID: requestActor(r), Target: audit.Target{Kind: audit.TargetNode, ID: node}, RemoteAddr: current.RemoteAddr})
 		}
 		if err != nil || tx.Commit() != nil {
 			http.Error(w, "cannot save asset", 500)

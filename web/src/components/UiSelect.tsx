@@ -120,9 +120,10 @@ export default function UiSelect(input: Props) {
       }
       function place() {
         if (!button.value) return;
+        const modal = button.value.closest("dialog")?.getBoundingClientRect();
         const rect = button.value.getBoundingClientRect(),
-          below = innerHeight - rect.bottom - 16,
-          above = rect.top - 16,
+          below = Math.min(innerHeight - 16, modal ? modal.bottom - 8 : innerHeight - 16) - rect.bottom,
+          above = rect.top - Math.max(16, modal ? modal.top + 8 : 16),
           up = below < 180 && above > below,
           height = Math.max(46, Math.min(320, up ? above : below));
         position.value = {
@@ -467,7 +468,9 @@ export default function UiSelect(input: Props) {
                   ) : null}
                 </AnimatePresence>
               </>,
-              "body",
+              button.value?.closest("dialog")?.id
+                ? `#${CSS.escape(button.value.closest("dialog")!.id)}`
+                : "body",
               inline.value,
             )}
           </span>

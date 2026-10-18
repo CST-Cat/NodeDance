@@ -22,7 +22,7 @@ func TestCreateAndRestorePreservesCoreDatabaseAndKeys(t *testing.T) {
 		t.Fatalf("open source Core data: %v", err)
 	}
 	defer source.Close()
-	if _, err := source.DB.ExecContext(ctx, `INSERT INTO admin_user(id,username,password_hash,password_salt,password_version,display_name,updated_at) VALUES(1,'backup-admin',?,?,?,?,1)`, []byte("password-hash"), []byte("password-salt"), "test", "Backup Admin"); err != nil {
+	if _, err := source.DB.ExecContext(ctx, `INSERT INTO users(id,username,password_hash,password_salt,password_version,display_name,updated_at) VALUES(1,'backup-admin',?,?,?,?,1)`, []byte("password-hash"), []byte("password-salt"), "test", "Backup Admin"); err != nil {
 		t.Fatalf("insert administrator: %v", err)
 	}
 	if _, err := source.DB.ExecContext(ctx, `INSERT INTO nodes(id,display_name,status,created_at,updated_at) VALUES('123e4567-e89b-42d3-a456-426614174000','Backup VPS','online',1,1)`); err != nil {
@@ -62,7 +62,7 @@ func TestCreateAndRestorePreservesCoreDatabaseAndKeys(t *testing.T) {
 	}
 	defer restored.Close()
 	var username, displayName, nodeName string
-	if err := restored.DB.QueryRowContext(ctx, `SELECT username, display_name FROM admin_user WHERE id=1`).Scan(&username, &displayName); err != nil {
+	if err := restored.DB.QueryRowContext(ctx, `SELECT username, display_name FROM users WHERE id=1`).Scan(&username, &displayName); err != nil {
 		t.Fatalf("read restored administrator: %v", err)
 	}
 	if err := restored.DB.QueryRowContext(ctx, `SELECT display_name FROM nodes WHERE id='123e4567-e89b-42d3-a456-426614174000'`).Scan(&nodeName); err != nil {

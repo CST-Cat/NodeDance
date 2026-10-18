@@ -217,7 +217,7 @@ export default function UpdateCenter(input: Props) {
             className={__classes("update-center workspace-page")}
             data-v-fffea4e7=""
           >
-            <div className={__classes("update-card")} data-v-fffea4e7="">
+            <div className={__classes("surface-card update-card")} data-v-fffea4e7="">
               <h2 data-v-fffea4e7="">{t("updates.title")}</h2>
               <div className={__classes("update-controls")} data-v-fffea4e7="">
                 <label data-v-fffea4e7="">
@@ -415,7 +415,7 @@ export default function UpdateCenter(input: Props) {
                 </div>
               ) : null}
             </div>
-            <div className={__classes("update-card")} data-v-fffea4e7="">
+            <div className={__classes("surface-card update-card")} data-v-fffea4e7="">
               <h2 data-v-fffea4e7="">{t("updates.changelog")}</h2>
               <Fragment>
                 {__each(["core", "agent"] as const, (name) => {

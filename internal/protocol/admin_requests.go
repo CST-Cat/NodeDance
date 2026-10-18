@@ -80,6 +80,30 @@ type AuthLoginRequest struct {
 	Username string `json:"username" request:"required"`
 	Password string `json:"password" request:"required"`
 }
+type AccountCreateRequest struct {
+	Username    string `json:"username" request:"required"`
+	DisplayName string `json:"displayName" request:"required"`
+	Password    string `json:"password" request:"required"`
+	Role        string `json:"role" request:"required"`
+}
+type AccountUpdateRequest struct {
+	Username    string `json:"username" request:"required"`
+	DisplayName string `json:"displayName" request:"required"`
+	Role        string `json:"role" request:"required"`
+	Enabled     bool   `json:"enabled" request:"required"`
+	Confirmed   bool   `json:"confirmed" request:"required"`
+}
+type AccountDeleteRequest struct {
+	Confirmed bool `json:"confirmed" request:"required"`
+}
+type AccountPasswordRequest struct {
+	Password  string `json:"password" request:"required"`
+	Confirmed bool   `json:"confirmed" request:"required"`
+}
+type ProfileRequest struct {
+	DisplayName string `json:"displayName" request:"required"`
+	Theme       string `json:"theme" request:"required"`
+}
 type PasswordChangeRequest struct {
 	CurrentPassword string `json:"currentPassword" request:"required"`
 	NewPassword     string `json:"newPassword" request:"required"`

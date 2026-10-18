@@ -1,7 +1,6 @@
 package server
 
 import (
-	"database/sql"
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/installer"
 	"net/http"
@@ -23,7 +22,7 @@ func (s *Server) handleGrantAPI(w http.ResponseWriter, r *http.Request, current 
 			http.Error(w, "method not allowed", 405)
 			return true
 		}
-		if err := s.agents.RevokeGrant(r.Context(), id, current.RemoteAddr, sql.NullInt64{Int64: 1, Valid: true}); err != nil {
+		if err := s.agents.RevokeGrant(r.Context(), id, current.RemoteAddr, requestActor(r)); err != nil {
 			http.Error(w, "cannot revoke grant", 404)
 			return true
 		}
@@ -54,7 +53,7 @@ func (s *Server) handleGrantAPI(w http.ResponseWriter, r *http.Request, current 
 			http.Error(w, err.Error(), 400)
 			return true
 		}
-		g, err := s.agents.CreateGrant(r.Context(), v, current.RemoteAddr, sql.NullInt64{Int64: 1, Valid: true})
+		g, err := s.agents.CreateGrant(r.Context(), v, current.RemoteAddr, requestActor(r))
 		if err != nil {
 			http.Error(w, "cannot create grant", 500)
 			return true

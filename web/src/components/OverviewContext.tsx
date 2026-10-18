@@ -25,7 +25,6 @@ import "./OverviewContext.css";
 type Props = {
   node?: AgentNode;
   metrics?: MetricsView;
-  online?: boolean;
 } & { children?: import("react").ReactNode; [key: string]: any };export default function OverviewContext(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
@@ -459,23 +458,6 @@ type Props = {
                 className={__classes("context-body")}
                 data-v-2aa82488=""
               >
-                <div className={__classes("context-target")} data-v-2aa82488="">
-                  <span title={title.value as any} data-v-2aa82488="">
-                    {title.value}
-                  </span>
-                  {__props.node ? (
-                    <span
-                      className={__classes("context-status")}
-                      data-v-2aa82488=""
-                    >
-                      {t(
-                        __props.online
-                          ? "overview.online"
-                          : "overview.lastKnown",
-                      )}
-                    </span>
-                  ) : null}
-                </div>
                 {!__props.node && core.value?.environment === "container" ? (
                   <p className={__classes("context-note")} data-v-2aa82488="">
                     {t("overview.containerInfo")}
@@ -744,7 +726,7 @@ type Props = {
       );
     },
     input,
-    ["node", "metrics", "online"],
+    ["node", "metrics"],
     [],
     {},
     true,

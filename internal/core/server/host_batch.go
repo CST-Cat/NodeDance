@@ -210,7 +210,7 @@ func (s *Server) handleHostBatchAPI(w http.ResponseWriter, r *http.Request, curr
 				http.Error(w, err.Error(), 400)
 				return true
 			}
-			if err := audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: "commands.batch", Outcome: "accepted", ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}); err != nil {
+			if err := audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: "commands.batch", Outcome: "accepted", ActorID: requestActor(r), RemoteAddr: current.RemoteAddr}); err != nil {
 				http.Error(w, "cannot audit batch", 500)
 				return true
 			}
@@ -277,7 +277,7 @@ func (s *Server) handleHostBatchAPI(w http.ResponseWriter, r *http.Request, curr
 		return true
 	}
 	if r.Method == "DELETE" {
-		if err := audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: "commands.batch-cancel", Outcome: "accepted", ActorID: sql.NullInt64{Int64: 1, Valid: true}, Target: audit.Target{Kind: audit.TargetCommandBatch, ID: b.ID}, RemoteAddr: current.RemoteAddr}); err != nil {
+		if err := audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: "commands.batch-cancel", Outcome: "accepted", ActorID: requestActor(r), Target: audit.Target{Kind: audit.TargetCommandBatch, ID: b.ID}, RemoteAddr: current.RemoteAddr}); err != nil {
 			http.Error(w, "cannot audit batch cancellation", 500)
 			return true
 		}

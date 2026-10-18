@@ -54,7 +54,7 @@ func (s *Server) tailscaleService(current *session) *tailscale.Service {
 			Artifacts: tailscale.DirectoryArtifacts{},
 			Transport: tailscale.RealSSHTransport{},
 			Create: func(ctx context.Context, name string) (tailscale.Enrollment, error) {
-				enrollment, err := s.agents.CreateEnrollment(ctx, name, current.RemoteAddr, sql.NullInt64{Int64: 1, Valid: true})
+				enrollment, err := s.agents.CreateEnrollment(ctx, name, current.RemoteAddr, sql.NullInt64{Int64: current.UserID, Valid: true})
 				if err != nil {
 					return tailscale.Enrollment{}, err
 				}
@@ -176,7 +176,7 @@ func (s *Server) handleTailscaleAPI(w http.ResponseWriter, r *http.Request, curr
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"message": "deployment manager could not load its private state"})
 			return true
 		}
-		task, err := coordinator.Start(r.Context(), request, idempotencyKey, sql.NullInt64{Int64: 1, Valid: true}, s.effectiveRemoteAddr(r))
+		task, err := coordinator.Start(r.Context(), request, idempotencyKey, requestActor(r), s.effectiveRemoteAddr(r))
 		clearTailscaleSecrets(&request)
 		if err != nil {
 			status := http.StatusBadRequest
@@ -289,7 +289,7 @@ func (s *Server) handleResolveTailscaleDeployment(w http.ResponseWriter, r *http
 			return
 		}
 	}
-	if err := s.tasks.ResolveUncertainTask(r.Context(), task.NodeID, task.TaskID, status, evidence, result, sql.NullInt64{Int64: 1, Valid: true}, s.effectiveRemoteAddr(r)); err != nil {
+	if err := s.tasks.ResolveUncertainTask(r.Context(), task.NodeID, task.TaskID, status, evidence, result, requestActor(r), s.effectiveRemoteAddr(r)); err != nil {
 		if errors.Is(err, coretasks.ErrTaskStateConflict) {
 			http.Error(w, "deployment task is not awaiting administrator review", http.StatusConflict)
 		} else {

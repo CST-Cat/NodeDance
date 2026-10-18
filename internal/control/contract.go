@@ -201,8 +201,10 @@ func describeResponse(o *Operation) {
 	case "core.protocol":
 		o.ResponseSchema = schema(protocol.Descriptor{})
 	case "auth.me":
-		o.ResponseSchema = wrapped("user", responseObject([]string{"displayName"}, map[string]any{"displayName": text}))
-	case "auth.login", "auth.setup":
+		o.ResponseSchema = wrapped("user", responseObject([]string{"id", "username", "displayName", "role", "enabled"}, map[string]any{"id": map[string]any{"type": "integer"}, "username": text, "displayName": text, "role": text, "enabled": map[string]any{"type": "boolean"}}))
+	case "accounts.list":
+		o.ResponseSchema = list("accounts", map[string]any{"type": "object"})
+	case "auth.login", "auth.setup", "auth.switch":
 		o.ResponseSchema = responseObject([]string{"user", "csrfToken"}, map[string]any{"user": map[string]any{"type": "object"}, "csrfToken": text})
 	case "sessions.list":
 		o.ResponseSchema = list("sessions", map[string]any{"type": "object"})

@@ -1,5 +1,5 @@
 .host-metrics[data-v-64f045e3] {
-  margin-top: 14px;
+  margin-top: 16px;
 }
 .metrics-panel[data-v-64f045e3] {
   --metric-bg: var(--surface-soft);
@@ -8,6 +8,7 @@
   --metric-text: var(--text);
   --metric-muted: var(--muted);
   width: 100%;
+  container-type: inline-size;
   color: var(--metric-text);
 }
 .metrics-header[data-v-64f045e3] {
@@ -36,42 +37,24 @@
   color: var(--metric-muted);
   font-size: 12px;
 }
-.node-state[data-v-64f045e3] {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  border: 1px solid var(--metric-line);
-  border-radius: var(--radius-pill);
-  padding: 8px 12px;
-  font-size: 12px;
-}
-.node-state.is-online[data-v-64f045e3] {
-  color: var(--success);
-  background: var(--success-soft);
-}
-.node-state.is-offline[data-v-64f045e3] {
-  color: var(--danger);
-  background: var(--danger-soft);
-}
-.state-dot[data-v-64f045e3] {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-}
 .metrics-grid[data-v-64f045e3] {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 32px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
 }
 .metric-card[data-v-64f045e3] {
+  width: 100%;
+  aspect-ratio: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: none;
-  padding: 14px 16px 12px;
+  padding: 16px;
 }
 .card-heading[data-v-64f045e3] {
   display: flex;
@@ -84,34 +67,6 @@
   color: var(--text);
   font-size: 12px;
   font-weight: 500;
-}
-.status-pill[data-v-64f045e3] {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  padding: 3px 7px;
-  color: var(--muted-strong);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.status-pill[data-status="known"][data-v-64f045e3] {
-  border-color: var(--success-line);
-  color: var(--success);
-}
-.status-pill[data-status="unknown"][data-v-64f045e3] {
-  border-color: var(--line);
-  color: var(--muted-strong);
-}
-.status-pill[data-status="error"][data-v-64f045e3] {
-  border-color: var(--danger-line);
-  color: var(--danger);
-}
-.status-pill[data-status="stale"][data-v-64f045e3] {
-  border-color: var(--danger-line);
-  color: var(--warning);
-}
-.status-pill.small[data-v-64f045e3] {
-  padding: 2px 6px;
-  font-size: 12px;
 }
 .primary-value[data-v-64f045e3] {
   display: block;
@@ -133,9 +88,9 @@
     monospace;
   overflow-wrap: anywhere;
 }
-.disk-card[data-v-64f045e3],
-.network-card[data-v-64f045e3] {
-  grid-column: span 2;
+.hardware-card[data-v-64f045e3] {
+  grid-column: 1 / -1;
+  aspect-ratio: auto;
 }
 .mount-row[data-v-64f045e3] {
   margin-top: 10px;
@@ -190,19 +145,9 @@
   overflow-wrap: anywhere;
 }
 .interface-note[data-v-64f045e3] {
-  flex-shrink: 0;
+  min-width: 0;
   color: var(--metric-muted);
   font-size: 11px;
-}
-.interface-rates[data-v-64f045e3] {
-  display: inline-flex;
-  gap: 10px;
-  margin-left: auto;
-  white-space: nowrap;
-}
-.interface-title .status-pill[data-v-64f045e3] {
-  flex-shrink: 0;
-  align-self: center;
 }
 .interface-reason[data-v-64f045e3] {
   margin: 2px 0 0;
@@ -239,21 +184,27 @@
   .metrics-header[data-v-64f045e3] {
     align-items: flex-start;
   }
-  .metrics-grid[data-v-64f045e3] {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .disk-card[data-v-64f045e3],
-  .network-card[data-v-64f045e3] {
-    grid-column: auto;
-  }
   .interface-title[data-v-64f045e3] {
     flex-wrap: wrap;
     row-gap: 4px;
   }
-  .interface-rates[data-v-64f045e3] {
-    flex-wrap: wrap;
-  }
   .metrics-footer[data-v-64f045e3] {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 760px) {
+  .metrics-grid[data-v-64f045e3] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .metric-card[data-v-64f045e3] {
+    padding: 12px;
+  }
+  .interface-title[data-v-64f045e3] {
+    flex-wrap: wrap;
+  }
+  .network-pair[data-v-64f045e3] {
+    gap: 8px;
+    flex-wrap: wrap;
   }
 }

@@ -24,6 +24,7 @@ export interface BodySchema {
   additionalProperties?: boolean | BodySchema
 }
 export interface CoreOperation {
+  requiredRole: "public" | "viewer" | "administrator"
   name: string
   description: string
   method: string

@@ -1,7 +1,6 @@
 package server
 
 import (
-	"database/sql"
 	"encoding/hex"
 	"errors"
 	"net/http"
@@ -146,9 +145,9 @@ func (s *Server) adminCreateAgentEnrollment(w http.ResponseWriter, r *http.Reque
 	var enrollment agents.Enrollment
 	var err error
 	if renewing {
-		enrollment, err = s.agents.RenewEnrollment(r.Context(), nodeID, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true}, assets...)
+		enrollment, err = s.agents.RenewEnrollment(r.Context(), nodeID, s.effectiveRemoteAddr(r), requestActor(r), assets...)
 	} else {
-		enrollment, err = s.agents.CreateEnrollment(r.Context(), name, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true}, assets...)
+		enrollment, err = s.agents.CreateEnrollment(r.Context(), name, s.effectiveRemoteAddr(r), requestActor(r), assets...)
 	}
 	if errors.Is(err, agents.ErrConflict) {
 		http.Error(w, "node is no longer awaiting enrollment", http.StatusConflict)
@@ -239,7 +238,7 @@ func (s *Server) adminAgentAction(w http.ResponseWriter, r *http.Request, curren
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		identity, err := s.agents.Revoke(r.Context(), agentID, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
+		identity, err := s.agents.Revoke(r.Context(), agentID, s.effectiveRemoteAddr(r), requestActor(r))
 		if errors.Is(err, agents.ErrNotFound) || errors.Is(err, agents.ErrRevoked) {
 			http.Error(w, "Agent not found or already revoked", http.StatusConflict)
 			return
@@ -256,7 +255,7 @@ func (s *Server) adminAgentAction(w http.ResponseWriter, r *http.Request, curren
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		identity, err := s.agents.RequestRotation(r.Context(), agentID, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
+		identity, err := s.agents.RequestRotation(r.Context(), agentID, s.effectiveRemoteAddr(r), requestActor(r))
 		if errors.Is(err, agents.ErrNotFound) || errors.Is(err, agents.ErrRevoked) {
 			http.Error(w, "Agent not found or revoked", http.StatusConflict)
 			return
@@ -300,7 +299,7 @@ func (s *Server) adminDeleteNode(w http.ResponseWriter, r *http.Request, current
 		return
 	}
 	s.dockerMu.Lock()
-	identity, err := s.agents.DeleteNode(r.Context(), nodeID, s.effectiveRemoteAddr(r), sql.NullInt64{Int64: 1, Valid: true})
+	identity, err := s.agents.DeleteNode(r.Context(), nodeID, s.effectiveRemoteAddr(r), requestActor(r))
 	if err == nil {
 		s.docker.ForgetNode(nodeID)
 		s.metrics.ForgetNode(nodeID)

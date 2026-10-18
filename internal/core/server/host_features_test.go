@@ -450,6 +450,9 @@ func TestAssetExpiryFiresWhileNodeIsOffline(t *testing.T) {
 // remote resource. An offline Agent should yield 503 after recording the action.
 func TestCommandCleanupHTTPAudit(t *testing.T) {
 	s := featureCore(t)
+	if err := s.BootstrapAdministrator(context.Background(), "test", "test-password-long"); err != nil {
+		t.Fatal(err)
+	}
 	token, csrf := "cleanup-test-session", "cleanup-test-csrf"
 	now := s.now().UnixNano()
 	_, err := s.store.DB.Exec(`INSERT INTO browser_sessions(id,token_digest,csrf_digest,created_at,last_seen_at,user_agent,remote_addr) VALUES(?,?,?,?,?,?,?)`, "cleanup-session", auth.DigestToken(token), auth.DigestToken(csrf), now, now, "test", "127.0.0.1")

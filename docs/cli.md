@@ -235,3 +235,7 @@ Compose deletion is available in CLI and TUI through the discovered `compose.act
 ### Overview context and memo
 
 Discover `dashboard.core-info`, `dashboard.memo` and `dashboard.save-memo` from the connected Core. `nodedance call dashboard.core-info` reads the Core runtime host information. `nodedance call dashboard.memo` returns the shared memo and revision; save with `nodedance call dashboard.save-memo --body '{"content":"Maintenance plan","revision":1}'`, using the current revision returned by Core. TUI exposes the identical discovered operations and shared request workflow. A stale revision conflicts instead of overwriting another device; the Core validates UTF-8 content and its 8192-byte limit. [Overview behavior](overview.md).
+
+## Accounts and roles
+
+Account creation, editing, disabling, deletion, password reset and switching are shared Core operations; see [Account management](accounts.md). CLI and TUI discover `accounts.*`, `auth.switch` and `profile.*` from the connected Core. Password inputs use private files or stdin. Switching validates target credentials and rotates the saved server-bound session. Read-only users receive Core-enforced permissions; their own profile, password and Session management remain available.

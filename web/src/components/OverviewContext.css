@@ -57,32 +57,19 @@
   padding: 0 16px 16px;
   min-width: 0;
 }
-.context-target[data-v-2aa82488] {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.app-shell .context-heading > button[data-v-2aa82488] {
+.app-shell[data-theme] .overview-context .context-heading > button[data-v-2aa82488] {
   display: inline-flex;
   align-items: center;
-  height: 32px;
+  height: 26px;
   min-height: 0;
-  padding: 0 11px;
+  padding: 0 7px;
   font-size: 12px;
 }
 @media (max-width: 600px) {
-  .app-shell .context-heading > button[data-v-2aa82488] {
-    height: 36px;
+  .app-shell[data-theme] .overview-context .context-heading > button[data-v-2aa82488] {
+    height: 28px;
     min-height: 0;
   }
-}
-.context-target > span[data-v-2aa82488] {
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .context-actions[data-v-2aa82488],
 .memo-actions[data-v-2aa82488] {
@@ -137,8 +124,7 @@ dd[data-v-2aa82488] {
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
-.context-note[data-v-2aa82488],
-.context-status[data-v-2aa82488] {
+.context-note[data-v-2aa82488] {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.6;

@@ -22,6 +22,7 @@ const (
 	TargetTerminalContainer TargetKind = "terminal_container"
 	TargetAlert             TargetKind = "alert"
 	TargetFeed              TargetKind = "feed"
+	TargetAccount           TargetKind = "account"
 )
 
 type Target struct {
@@ -43,6 +44,7 @@ type Execer interface {
 }
 
 var actions = map[string]struct{}{
+	"account_create": {}, "account_update": {}, "account_delete": {}, "account_password_reset": {},
 	"feed_save": {}, "feed_delete": {}, "feed_refresh": {}, "feed_cancel": {}, "feed_read": {}, "feed_delivery_retry": {},
 	"guest_display_update": {},
 	"update_apply":         {}, "update_rollback": {},
@@ -79,6 +81,10 @@ func Record(ctx context.Context, execer Execer, event Event) error {
 	targetKind, targetID := any(nil), any(nil)
 	if event.Target.Kind != "" || event.Target.ID != "" {
 		switch event.Target.Kind {
+		case TargetAccount:
+			if len(event.Target.ID) == 0 || strings.Trim(event.Target.ID, "0123456789") != "" {
+				return errors.New("invalid account target")
+			}
 		case TargetNode, TargetAgent, TargetAlert, TargetFeed:
 			if !targetIDPattern.MatchString(event.Target.ID) {
 				return errors.New("audit target ID must be a canonical UUID")

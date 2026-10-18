@@ -50,6 +50,7 @@ const HistoricalMetrics = lazyView(() => import("./HistoricalMetrics"));
 const TerminalConsole = lazyView(() => import("./TerminalConsole"));
 const NodeFiles = lazyView(() => import("./NodeFiles"));
 type Props = {
+  readOnly?: boolean;
   node: AgentNode;
   metrics?: MetricsView;
   inventory?: DockerInventory;
@@ -163,7 +164,7 @@ export default function NodeDetail(input: Props) {
               icon: "settings",
               label: t("m.0a09fda5e2a6"),
             },
-          ] as const,
+          ].filter(tab => !props.readOnly || ["overview", "history"].includes(tab.id)),
       );
       const activeSection = useViewTab("section", "overview", () =>
         sectionTabs.value.map((tab) => tab.id),
@@ -1044,6 +1045,7 @@ export default function NodeDetail(input: Props) {
                   </p>
                 ) : null}
               </div>
+              {activeSection.value !== "overview" ? (
               <div
                 className={__classes("detail-heading-status")}
                 data-v-98aa91ae=""
@@ -1074,6 +1076,7 @@ export default function NodeDetail(input: Props) {
                       : t("m.8a6501e8198f")}
                 </span>
               </div>
+              ) : null}
             </header>
             {__props.pending ? (
               <div
@@ -2788,6 +2791,7 @@ export default function NodeDetail(input: Props) {
     },
     input,
     [
+      "readOnly",
       "node",
       "metrics",
       "inventory",

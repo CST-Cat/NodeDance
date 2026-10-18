@@ -214,7 +214,7 @@ func syncDirectory(path string) error {
 
 func (s *Server) isInitialized() (bool, error) {
 	var count int
-	if err := s.store.DB.QueryRow(`SELECT count(*) FROM admin_user`).Scan(&count); err != nil {
+	if err := s.store.DB.QueryRow(`SELECT count(*) FROM users`).Scan(&count); err != nil {
 		return false, fmt.Errorf("check administrator initialization: %w", err)
 	}
 	return count > 0, nil
@@ -319,8 +319,8 @@ func (s *Server) authenticateRequest(w http.ResponseWriter, r *http.Request, tou
 	digest := auth.DigestToken(cookie.Value)
 	var current session
 	var created, lastSeen int64
-	err = s.store.DB.QueryRow(`SELECT id, csrf_digest, created_at, last_seen_at, user_agent, remote_addr
-		FROM browser_sessions WHERE token_digest=?`, digest).Scan(&current.ID, &current.CSRFDigest, &created, &lastSeen, &current.UserAgent, &current.RemoteAddr)
+	err = s.store.DB.QueryRow(`SELECT s.id, s.csrf_digest, s.created_at, s.last_seen_at, s.user_agent, s.remote_addr, u.id, u.role, u.username, u.display_name
+		FROM browser_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_digest=? AND u.enabled=1`, digest).Scan(&current.ID, &current.CSRFDigest, &created, &lastSeen, &current.UserAgent, &current.RemoteAddr, &current.UserID, &current.Role, &current.Username, &current.DisplayName)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, false
@@ -348,7 +348,7 @@ func (s *Server) authenticateRequest(w http.ResponseWriter, r *http.Request, tou
 
 func (s *Server) sessionStillValid(ctx context.Context, id string) bool {
 	var lastSeen int64
-	if err := s.store.DB.QueryRowContext(ctx, `SELECT last_seen_at FROM browser_sessions WHERE id=?`, id).Scan(&lastSeen); err != nil {
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT s.last_seen_at FROM browser_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=? AND u.enabled=1`, id).Scan(&lastSeen); err != nil {
 		return false
 	}
 	last := time.Unix(0, lastSeen)

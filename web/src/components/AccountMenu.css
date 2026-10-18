@@ -1,0 +1,192 @@
+.app-shell[data-theme] .account-trigger,
+.app-shell[data-theme] .account-panel button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: auto;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  padding: 8px;
+  border-radius: var(--radius-control);
+}
+.app-shell[data-theme] .account-trigger:hover,
+.app-shell[data-theme] .account-panel button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.account-panel {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  color: var(--text);
+  box-shadow: var(--overlay-shadow);
+}
+.account-panel::backdrop {
+  background: transparent;
+}
+.app-shell[data-theme] .account-panel .account-card[aria-pressed="true"] {
+  background: var(--surface-selected);
+  margin-bottom: 6px;
+}
+.account-panel-title {
+  margin: 4px 8px 12px;
+  font-weight: 500;
+}
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.app-shell[data-theme] .account-panel .account-card {
+  flex-direction: column;
+  align-items: flex-start;
+  border-color: var(--line);
+  min-width: 0;
+  position: relative;
+}
+.account-card > svg {
+  position: absolute;
+  right: 6px;
+  top: 8px;
+}
+.account-card .workspace-account-copy {
+  width: 100%;
+}
+.account-card .workspace-account-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--settings-space-2, 8px);
+}
+.app-shell[data-theme] .account-panel .account-actions button {
+  width: auto;
+  border-color: var(--line);
+}
+.account-switch-form {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.account-edit-form {
+  display: grid;
+  gap: var(--settings-field-gap);
+  margin: 0;
+}
+.account-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.account-name-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--settings-field-gap);
+  min-width: 0;
+}
+.app-shell[data-theme] .ui-dialog.account-dialog {
+  width: min(640px, calc(100% - 32px));
+}
+.app-shell[data-theme] .account-dialog .account-error { color: var(--danger); }
+.account-management > .settings-list-body {
+  container-type: inline-size;
+}
+.account-management-row { flex-wrap: wrap; justify-content: space-between; }
+.account-management-heading > .account-actions,
+.account-management-row > .account-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: min(100%, 184px);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.app-shell[data-theme] :is(.account-management-heading, .account-management-row) > .account-actions > button {
+  padding-inline: 4px;
+  min-width: 0;
+}
+
+.account-enabled {
+  display: flex;
+  align-items: center;
+  gap: var(--settings-space-2, 8px);
+}
+.account-edit-footer .account-role-field {
+  display: flex;
+  align-items: center;
+  gap: var(--settings-space-2, 8px);
+  width: min(100%, 180px);
+  flex-shrink: 0;
+}
+.account-role-field > span { white-space: nowrap; }
+.account-role-field > .ui-select { flex: 1; min-width: 0; }
+.account-edit-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--settings-space-2, 8px);
+}
+.account-edit-footer .account-enabled {
+  min-height: var(--button-height);
+  margin-right: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.account-edit-footer .account-actions {
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+@container (max-width: 520px) {
+  .account-edit-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--settings-field-gap) var(--settings-space-2);
+  }
+  .account-edit-footer .account-enabled { margin-right: 0; }
+  .account-edit-footer .account-actions { grid-column: 1 / -1; }
+}
+@media (max-width: 700px) {
+  .account-name-fields { grid-template-columns: minmax(0, 1fr); }
+  .account-edit-footer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--settings-field-gap) var(--settings-space-2);
+  }
+  .account-edit-footer .account-enabled { margin-right: 0; }
+  .account-edit-footer .account-actions { grid-column: 1 / -1; }
+}
+@media (max-width: 480px) {
+  .account-management-row > .workspace-account-copy { width: 100%; }
+  .account-edit-footer .account-role-field { width: min(100%, 128px); }
+  .account-edit-footer .account-enabled { gap: var(--settings-space-1); font-size: 12px; }
+  .app-shell[data-theme] .account-edit-footer button {
+    min-width: 0;
+    padding-inline: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+}
+.account-chevron {
+  color: var(--muted);
+}
+.workspace-sidebar.is-collapsed .account-trigger {
+  justify-content: center;
+  padding-inline: 0;
+}
+.app-shell .workspace-sidebar.is-collapsed .account-trigger .profile-avatar {
+  display: grid;
+}
+.workspace-sidebar.is-collapsed .account-trigger .account-chevron {
+  display: none;
+}
+.app-shell .workspace-sidebar.is-collapsed .account-panel .workspace-account-copy {
+  display: grid;
+}
+.app-shell .workspace-sidebar.is-collapsed .account-panel .profile-avatar {
+  display: grid;
+}

@@ -241,6 +241,10 @@ func (s *Server) handleContainerStreamWebSocket(w http.ResponseWriter, r *http.R
 		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return
 	}
+	if current.Role != "administrator" {
+		http.Error(w, "permission denied", 403)
+		return
+	}
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return

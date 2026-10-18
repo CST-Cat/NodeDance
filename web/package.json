@@ -10,8 +10,9 @@
   },
   "scripts": {
     "build": "vite build --config vite.config.ts --outDir ../internal/core/webassets/dist --emptyOutDir",
-    "typecheck": "node scripts/check-i18n.cjs && node scripts/check-operations.cjs && node scripts/file-notices.cjs --check && tsc --noEmit --project tsconfig.json",
+    "typecheck": "node scripts/check-i18n.cjs && node --experimental-strip-types scripts/check-session-device.cjs && node scripts/check-operations.cjs && node scripts/file-notices.cjs --check && tsc --noEmit --project tsconfig.json",
     "audit:design": "node scripts/audit-design.cjs",
+    "audit:accounts": "pnpm build && node scripts/audit-accounts.cjs",
     "audit:interfaces": "pnpm build && node scripts/audit-interfaces.cjs",
     "audit:guest": "pnpm build && node scripts/audit-guest.cjs",
     "audit:guest-security": "pnpm build && NODEDANCE_GUEST_ATTACKS=1 node scripts/audit-guest.cjs",

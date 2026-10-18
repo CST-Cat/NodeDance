@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -128,7 +127,7 @@ func (s *Server) handleGuestSettings(w http.ResponseWriter, r *http.Request) boo
 		if !decodeJSON(w, r, &input) {
 			return true
 		}
-		saved, err := store.Save(r.Context(), input, audit.Event{OccurredAt: s.now(), Action: "guest_display_update", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: s.effectiveRemoteAddr(r)})
+		saved, err := store.Save(r.Context(), input, audit.Event{OccurredAt: s.now(), Action: "guest_display_update", Outcome: "succeeded", ActorID: requestActor(r), RemoteAddr: s.effectiveRemoteAddr(r)})
 		if errors.Is(err, guest.ErrConflict) {
 			http.Error(w, err.Error(), 409)
 		} else if errors.Is(err, guest.ErrInvalid) {

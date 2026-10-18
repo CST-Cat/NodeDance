@@ -15,6 +15,32 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const csrf=await(await admin.request.get(base+'/api/v1/auth/csrf')).json(),credentials=JSON.parse(fs.readFileSync(path.join(directory,'initial-admin.json'),'utf8'))
   const login=await admin.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':csrf.token},data:credentials});assert.equal(login.status(),200)
   const headers={Origin:base,'X-CSRF-Token':(await login.json()).csrfToken}
+  // A stale login tab can coexist with a valid cookie from another tab.
+  // Only a pre-authentication CSRF rejection is retried, once, without losing input.
+  for(const rejectedAttempts of [1,2]){
+   const recovery=await browser.newContext({viewport:{width:390,height:1000}})
+   await recovery.addInitScript(()=>localStorage.setItem('nodedance.language','en'))
+   const recoveryPage=await recovery.newPage();recoveryPage.setDefaultTimeout(10000)
+   await recoveryPage.goto(base);await recoveryPage.locator('#login-title').waitFor()
+   const token=(await(await recovery.request.get(base+'/api/v1/auth/csrf')).json()).token
+   assert.equal((await recovery.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':token},data:credentials})).status(),200)
+   const priorCookies=await recovery.cookies();let attempts=0
+   await recoveryPage.route('**/api/v1/auth/login',async route=>{attempts++;if(attempts<=rejectedAttempts)await route.fulfill({status:403,body:'sign-in security token expired or changed\n'});else await route.continue()})
+   await recoveryPage.locator('[name=username]').fill(credentials.username)
+   await recoveryPage.locator('[name=password]').fill(credentials.password)
+   await recoveryPage.locator('form button[type=submit]').click()
+   if(rejectedAttempts===1){
+    await recoveryPage.locator('.account-trigger').waitFor();assert.equal(attempts,2)
+    const stale=await browser.newContext();await stale.addCookies(priorCookies);assert.equal((await stale.request.get(base+'/api/v1/auth/me')).status(),401);await stale.close()
+   }else{
+    await recoveryPage.getByText('Sign-in security credentials changed. Try signing in again; refresh the page if the problem persists.',{exact:true}).waitFor()
+    assert.equal(attempts,2);assert.equal(await recoveryPage.locator('[name=password]').inputValue(),credentials.password)
+    assert.equal((await recovery.request.get(base+'/api/v1/auth/me')).status(),200)
+   }
+   const fresh=(await(await recovery.request.get(base+'/api/v1/auth/csrf')).json()).token
+   assert.equal((await recovery.request.post(base+'/api/v1/auth/logout',{headers:{Origin:base,'X-CSRF-Token':fresh}})).status(),204)
+   await recovery.close()
+  }
   const options=await(await admin.request.get(base+'/api/v1/guest/settings')).json();assert.equal(options.settings.enabled,false);assert.deepEqual(options.settings.nodes,[]);assert.deepEqual(options.settings.metrics,[])
   const page=await visitor.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Guest page error:',e.stack)})
   let guestReads=0;const privateReads=[];page.on('request',r=>{if(new URL(r.url()).pathname==='/api/v1/public/guest/display')guestReads++;const p=new URL(r.url()).pathname;if(p.startsWith('/api/v1/nodes')||p.startsWith('/api/v1/guest/settings')||p.startsWith('/api/v1/guest/preview'))privateReads.push(p)})
@@ -72,6 +98,27 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await page.getByRole('button',{name:'Enter guest mode',exact:true}).click();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   const adminPage=await admin.newPage();adminPage.setDefaultTimeout(10000);adminPage.on('pageerror',e=>{errors.push(e.message);console.error('Guest page error:',e.stack)});await adminPage.goto(base)
   const card=adminPage.locator('.vps-card').first();await card.waitFor()
+  const accountTrigger=adminPage.locator('.account-trigger'),accountPanel=adminPage.locator('.account-panel')
+  assert.equal(await page.locator('.account-trigger,.account-panel').count(),0,'Anonymous guest must not expose account controls')
+  await accountTrigger.click();await accountPanel.waitFor({state:'visible'})
+  assert.ok((await accountPanel.boundingBox()).y+(await accountPanel.boundingBox()).height<=(await accountTrigger.boundingBox()).y,'Account card opens upward')
+  await adminPage.keyboard.press('Escape');await accountPanel.waitFor({state:'hidden'})
+  assert.equal(await accountTrigger.evaluate(el=>document.activeElement===el),true,'Escape restores account trigger focus')
+  await accountTrigger.click();await accountPanel.getByRole('button',{name:'Settings',exact:true}).click()
+  await adminPage.locator('.settings-main').waitFor();assert.equal(await adminPage.locator('.settings-sidebar').count(),0)
+  await adminPage.goto(base);await card.waitFor()
+
+  const viewerCreated=await admin.request.post(base+'/api/v1/accounts',{headers,data:{username:'guest-audit-reader',displayName:'Read-only audit',role:'viewer',password:'isolated-reader-password'}});assert.equal(viewerCreated.status(),201)
+  const readonly=await browser.newContext();await readonly.addInitScript(()=>localStorage.setItem('nodedance.language','en'))
+  const readonlyCSRF=(await(await readonly.request.get(base+'/api/v1/auth/csrf')).json()).token
+  assert.equal((await readonly.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':readonlyCSRF},data:{username:'guest-audit-reader',password:'isolated-reader-password'}})).status(),200)
+  const readonlyPage=await readonly.newPage();readonlyPage.on('pageerror',e=>errors.push(e.message));await readonlyPage.goto(base);await readonlyPage.locator('.vps-card').first().waitFor()
+  assert.equal(await readonlyPage.locator('.vps-card-actions:visible,.vps-card-shortcuts:visible').count(),0,'Read-only cards must not expose remote controls')
+  await readonlyPage.locator('.vps-card .vps-name').first().click();await readonlyPage.locator('#detail-title').waitFor()
+  const readonlyTabs=readonlyPage.getByTestId('node-detail-navigation');await readonlyTabs.getByRole('button',{name:'Overview',exact:true}).waitFor()
+  assert.equal(await readonlyTabs.getByRole('button',{name:'Files',exact:true}).count(),0,'Read-only node navigation must not expose files')
+  await readonlyTabs.getByRole('button',{name:'History',exact:true}).click();await readonlyPage.locator('.history-panel').waitFor()
+  await readonly.close()
   assert.ok(!(await card.innerText()).includes(identity.nodeId),'Node cards must hide internal UUIDs')
   assert.equal(await card.locator('.vps-card-version .agent-version').innerText(),'agent-v0.1.10')
   for(const theme of ['light','dark'])for(const width of [390,1440]){
@@ -209,6 +256,10 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   }
   const disabled=await admin.request.put(base+'/api/v1/guest/settings',{headers,data:{...current,enabled:false}});assert.equal(disabled.status(),200)
   await display.getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-testid=guest-display] h2'));assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
+  await adminPage.setViewportSize({width:1440,height:1000});await adminPage.goto(base+'/#/settings');await adminPage.locator('.settings-main').waitFor()
+  await adminPage.locator('.account-trigger').click();await adminPage.locator('.account-panel').getByRole('button',{name:'Sign out',exact:true}).click()
+  await adminPage.locator('#login-title').waitFor();assert.equal(await adminPage.locator('.account-trigger,.account-panel').count(),0,'Sign out removes all account controls')
+  assert.equal((await admin.request.get(base+'/api/v1/auth/me')).status(),401,'Account card sign out invalidates the real session')
   assert.deepEqual(errors,[]);console.log('Guest audit passed: real Core policy, anonymous entry, explicit projection with administrator cookies, session-checked exit, mode-spoof denial, administrator preview/save, immediate disable; 20 light/dark/mobile snapshots.')
  }finally{if(keepalive)clearInterval(keepalive);if(browser)await browser.close();core.kill('SIGTERM');if(core.exitCode===null)await new Promise(r=>{core.once('exit',r);setTimeout(()=>{core.kill('SIGKILL');r()},5000).unref()});fs.rmSync(directory,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1})

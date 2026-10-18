@@ -1,5 +1,9 @@
-CREATE TABLE IF NOT EXISTS admin_user (
-	id INTEGER PRIMARY KEY CHECK (id = 1),
+CREATE TABLE IF NOT EXISTS users (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	role TEXT NOT NULL DEFAULT 'administrator' CHECK (role IN ('administrator', 'viewer')),
+	enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+	theme TEXT NOT NULL DEFAULT 'system',
+	avatar_png BLOB,
 	username TEXT NOT NULL UNIQUE,
 	password_hash BLOB NOT NULL,
 	password_salt BLOB NOT NULL,
@@ -16,6 +20,7 @@ CREATE TABLE IF NOT EXISTS init_credential (
 
 CREATE TABLE IF NOT EXISTS browser_sessions (
 	id TEXT PRIMARY KEY,
+	user_id INTEGER NOT NULL DEFAULT 1 REFERENCES users(id) ON DELETE CASCADE,
 	token_digest BLOB NOT NULL UNIQUE,
 	csrf_digest BLOB NOT NULL,
 	created_at INTEGER NOT NULL,

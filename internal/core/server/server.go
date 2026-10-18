@@ -127,13 +127,17 @@ type Server struct {
 }
 
 type session struct {
-	ID         string
-	Digest     []byte
-	CSRFDigest []byte
-	CreatedAt  time.Time
-	LastSeenAt time.Time
-	UserAgent  string
-	RemoteAddr string
+	UserID      int64
+	Role        string
+	Username    string
+	DisplayName string
+	ID          string
+	Digest      []byte
+	CSRFDigest  []byte
+	CreatedAt   time.Time
+	LastSeenAt  time.Time
+	UserAgent   string
+	RemoteAddr  string
 }
 
 func New(version string, options Options) (*Server, error) {
@@ -531,11 +535,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if !s.validOrigin(r) || !s.validCSRFCookie(r, nil) {
-			http.Error(w, "request rejected", http.StatusForbidden)
+		if !s.validOrigin(r) {
+			http.Error(w, "sign-in origin is not allowed", http.StatusForbidden)
 			return
 		}
-		s.handleLogin(w, r)
+		current, _ := s.authenticateRequest(w, r, false)
+		if !s.validCSRFCookie(r, current) {
+			http.Error(w, "sign-in security token expired or changed", http.StatusForbidden)
+			return
+		}
+		s.signIn(w, r, current)
 		return
 	case "/api/v1/public/guest", "/api/v1/public/guest/display":
 		s.handleGuestPublic(w, r)
@@ -599,6 +608,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "request rejected", http.StatusForbidden)
 			return
 		}
+		if current.Role != "administrator" && (!known || operation.RequiredRole == "administrator") {
+			http.Error(w, "permission denied", http.StatusForbidden)
+			return
+		}
+		r = r.WithContext(context.WithValue(r.Context(), accountContextKey{}, current.UserID))
 		s.handlePrivateAPI(w, r, current)
 		return
 	}

@@ -29,6 +29,7 @@ type Catalog struct {
 func Describe() Catalog { return Catalog{Version: 1, Operations: Operations()} }
 
 type Operation struct {
+	RequiredRole     string              `json:"requiredRole"`
 	Name             string              `json:"name"`
 	Description      string              `json:"description"`
 	Method           string              `json:"method"`
@@ -94,6 +95,10 @@ func schema(value any) any {
 		}
 	}
 	switch value.(type) {
+	case protocol.AccountCreateRequest, protocol.AccountUpdateRequest:
+		enum("role", "administrator", "viewer")
+	case protocol.ProfileRequest:
+		enum("theme", "system", "light", "dark")
 	case feeds.Input:
 		for _, key := range []string{"intervalMinutes", "digestMinutes"} {
 			props[key].(map[string]any)["minimum"] = 1
@@ -262,10 +267,20 @@ func buildOperations() []Operation {
 		op("auth.status", "GET", "/api/v1/auth/setup/status", "First-run setup status", nil),
 		op("auth.setup", "POST", "/api/v1/auth/setup", "Initialize administrator; read credential and password from a private body file or stdin", schema(protocol.AuthSetupRequest{})),
 		op("auth.login", "POST", "/api/v1/auth/login", "Sign in and save a private, server-bound session", schema(protocol.AuthLoginRequest{})),
-		op("auth.me", "GET", "/api/v1/auth/me", "Current administrator", nil),
+		op("auth.me", "GET", "/api/v1/auth/me", "Current account", nil),
+		op("auth.switch", "POST", "/api/v1/auth/switch", "Switch account after verifying target credentials; revoke the replaced session", schema(protocol.AuthLoginRequest{})),
+		op("accounts.list", "GET", "/api/v1/accounts", "Account cards; administrators also see disabled accounts", nil),
+		op("accounts.create", "POST", "/api/v1/accounts", "Create administrator or read-only account", schema(protocol.AccountCreateRequest{})),
+		op("accounts.update", "PUT", "/api/v1/accounts/{id}", "Edit account or disable it; confirm required; sessions revoked", schema(protocol.AccountUpdateRequest{})),
+		op("accounts.delete", "DELETE", "/api/v1/accounts/{id}", "Delete account; confirm required; preserve an enabled administrator", schema(protocol.AccountDeleteRequest{})),
+		op("accounts.reset-password", "POST", "/api/v1/accounts/{id}/password", "Reset account password and revoke its sessions; confirm required", schema(protocol.AccountPasswordRequest{})),
+		op("profile.get", "GET", "/api/v1/auth/profile", "Current account profile and shared sign-in background", nil),
+		op("profile.update", "PUT", "/api/v1/auth/profile", "Update own display name and theme", schema(protocol.ProfileRequest{})),
+		op("profile.avatar", "GET", "/api/v1/auth/profile/avatar", "Download own account avatar", nil),
+		op("profile.upload-avatar", "POST", "/api/v1/auth/profile/avatar", "Upload own account avatar", nil),
 		op("auth.logout", "POST", "/api/v1/auth/logout", "Revoke current session", nil),
-		op("auth.password", "POST", "/api/v1/auth/password", "Change administrator password; invalidates sessions", schema(protocol.PasswordChangeRequest{})),
-		op("sessions.list", "GET", "/api/v1/auth/sessions", "Administrator sessions", nil),
+		op("auth.password", "POST", "/api/v1/auth/password", "Change own password; invalidates own sessions", schema(protocol.PasswordChangeRequest{})),
+		op("sessions.list", "GET", "/api/v1/auth/sessions", "Own account sessions", nil),
 		op("sessions.revoke", "DELETE", "/api/v1/auth/sessions/{id}", "Revoke selected session", nil),
 		op("nodes.list", "GET", "/api/v1/nodes", "Nodes, online state and Agent capabilities", nil),
 		op("nodes.asset", "GET", node+"/asset", "Node cost, expiry and traffic quota settings", nil),
@@ -384,13 +399,24 @@ func buildOperations() []Operation {
 		op("deployments.create", "POST", "/api/v1/discovery/deployments", "Deploy root Agent to verified peer", schema(coretailscale.DeployRequest{})),
 		op("deployments.resolve", "POST", "/api/v1/discovery/deployments/{taskId}/resolve", "Record manual recovery outcome", schema(protocol.ResolveDeploymentRequest{})),
 		op("appearance.get", "GET", "/api/v1/public/appearance", "Appearance settings", nil),
-		op("appearance.update", "PUT", "/api/v1/settings/appearance", "Update display name and appearance", schema(protocol.AppearanceRequest{})),
+		op("appearance.update", "PUT", "/api/v1/settings/appearance", "Update shared sign-in appearance and own account profile", schema(protocol.AppearanceRequest{})),
 	}
 	for _, kind := range []string{"avatar", "background"} {
 		list = append(list, op("appearance."+kind, "GET", "/api/v1/public/appearance/"+kind, "Download appearance image to --output", nil), op("appearance.upload-"+kind, "POST", "/api/v1/settings/appearance/"+kind, "Upload raster image from --input", nil))
 	}
 	for i := range list {
 		o := &list[i]
+		o.RequiredRole = "administrator"
+		switch o.Name {
+		case "core.operations", "core.health", "core.protocol", "auth.csrf", "auth.status", "auth.setup", "auth.login", "guest.entry", "guest.display", "appearance.get", "appearance.avatar", "appearance.background":
+			o.RequiredRole = "public"
+		case "auth.me", "auth.logout", "auth.password", "auth.switch", "sessions.list", "sessions.revoke", "accounts.list",
+			"profile.get", "profile.update", "profile.avatar", "profile.upload-avatar",
+			"nodes.list", "nodes.metrics", "nodes.history", "nodes.preferences", "nodes.asset",
+			"dashboard.core-info", "dashboard.memo", "dashboard.settings", "dashboard.watch", "metrics.catalog",
+			"containers.list", "images.list", "compose.list", "probes.list", "probes.history", "probes.quality":
+			o.RequiredRole = "viewer"
+		}
 		switch o.Name {
 		case "feeds.refresh":
 			o.Completion = &CompletionContract{Operation: "feeds.get", Params: map[string]string{"id": "params.id"}, StatusPath: "status", TerminalStatuses: []string{"succeeded", "failed", "canceled", "inactive"}, SuccessStatuses: []string{"succeeded"}}
@@ -403,13 +429,13 @@ func buildOperations() []Operation {
 		if strings.HasPrefix(o.Path, "/ws/") {
 			o.Transport = "websocket"
 		}
-		if o.Name == "files.download" || o.Name == "files.preview" || o.Name == "appearance.avatar" || o.Name == "appearance.background" {
+		if o.Name == "files.download" || o.Name == "files.preview" || o.Name == "appearance.avatar" || o.Name == "appearance.background" || o.Name == "profile.avatar" {
 			o.Transport = "download"
 		}
 		if o.Name == "files.upload" {
 			o.Transport = "upload"
 		}
-		if strings.HasPrefix(o.Name, "appearance.upload-") {
+		if strings.HasPrefix(o.Name, "appearance.upload-") || o.Name == "profile.upload-avatar" {
 			o.Transport = "multipart"
 		}
 	}

@@ -74,3 +74,11 @@ The shared light/dark theme uses semantic surface, text, control and state roles
 ## Overview context privacy
 
 The Core runtime host information (`dashboard.core-info`) and shared overview memo (`dashboard.memo`, `dashboard.save-memo`) are administrator-only operations. They are not projected into public node cards, including requests with administrator cookies. Forged `memo`/`core` query flags are rejected with HTTP 400. The security matrix discovers these operations from Core and checks anonymous/forged-identity denial. A distinct private memo marker is also checked against guest and administrator-cookie public responses.
+
+The sidebar account card is administrator-only. It opens upward and reuses the existing personal settings and sign-out actions; guest views never render account information or account controls. Browser regression checks verify Escape/focus recovery and real session invalidation after sign-out. 左下角账号卡片仅在管理界面显示，向上展开并复用个人设置与退出登录；游客页不显示账号信息或入口。浏览器回归验证 Esc 焦点恢复以及退出后的真实会话失效。
+
+Multi-account operations (`accounts.*`, `auth.switch`, `profile.*`) remain private. Anonymous callers cannot enumerate accounts or access private avatars. Read-only accounts cannot change guest policy or shared branding. The browser suite checks account-menu navigation and real logout, and account lifecycle tests verify isolated sessions, role enforcement, password reset/disable withdrawal and the final-administrator guard. 多账号信息和私有头像不进入游客投影，只读账号不能修改公开策略或共享外观。
+
+登录恢复：有效会话下再次登录使用该会话的 CSRF 校验，成功验证密码后轮换并撤销旧会话；失败保留原会话。Web 对提交前被拒绝的登录安全令牌仅刷新并重试一次，保留输入；来源拒绝、密码错误不重试。游客权限保持不变。隔离浏览器回归覆盖旧登录页、自动恢复、重试上限、旧会话撤销和伪造来源／令牌拒绝。
+
+Login recovery validates the current session CSRF token when present, verifies the password and rotates the replaced session only on success. Web retries an explicitly rejected login security token once, retaining input; origin and password failures are not retried. Anonymous boundaries remain unchanged and are checked by the isolated guest security suite.

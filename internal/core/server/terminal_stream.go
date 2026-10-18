@@ -42,6 +42,7 @@ type terminalStream struct {
 	started  bool
 
 	browserSessionID string
+	userID           int64
 	remoteAddr       string
 	nodeID           string
 	agentID          string
@@ -228,7 +229,7 @@ func (m *terminalStreamManager) create(current *session, nodeID, agentID string,
 	}
 	key := hex.EncodeToString(digest)
 	stream := &terminalStream{streamID: streamID, ticket: key, created: now, expires: now.Add(terminalTicketLifetime),
-		browserSessionID: current.ID, remoteAddr: current.RemoteAddr, nodeID: nodeID, agentID: agentID,
+		browserSessionID: current.ID, userID: current.UserID, remoteAddr: current.RemoteAddr, nodeID: nodeID, agentID: agentID,
 		generation: generation, targetKind: targetKind, containerID: containerID, agent: connection,
 		out: make(chan protocol.TerminalFrame, terminalBrowserQueue)}
 	m.mu.Lock()
@@ -379,7 +380,7 @@ func (s *Server) recordTerminalAudit(stream *terminalStream, action, outcome str
 		target = audit.Target{Kind: audit.TargetTerminalContainer, ID: stream.containerID}
 	}
 	err := audit.Record(ctx, s.store.DB, audit.Event{OccurredAt: s.now(), Action: action, Outcome: outcome,
-		ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: stream.remoteAddr,
+		ActorID: sql.NullInt64{Int64: stream.userID, Valid: true}, RemoteAddr: stream.remoteAddr,
 		Target: target})
 	return err == nil
 }

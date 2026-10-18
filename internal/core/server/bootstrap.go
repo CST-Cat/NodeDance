@@ -31,14 +31,14 @@ func (s *Server) BootstrapAdministrator(ctx context.Context, username, password 
 	}
 	defer tx.Rollback()
 	var count int
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM admin_user`).Scan(&count); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM users`).Scan(&count); err != nil {
 		return err
 	}
 	if count != 0 {
 		return errors.New("already initialized")
 	}
 	now := s.now().UnixNano()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO admin_user(id,username,password_hash,password_salt,password_version,display_name,updated_at) VALUES(1,?,?,?,?,?,?)`, username, hash, salt, auth.CurrentPasswordVersion, "NodeDance Admin", now); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO users(id,username,password_hash,password_salt,password_version,display_name,updated_at) VALUES(1,?,?,?,?,?,?)`, username, hash, salt, auth.CurrentPasswordVersion, "NodeDance Admin", now); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM init_credential`); err != nil {

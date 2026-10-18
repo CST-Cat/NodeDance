@@ -225,7 +225,7 @@ func (s *Server) createImageTask(w http.ResponseWriter, r *http.Request, current
 	}
 	result, err := s.tasks.EnqueueWithGate(r.Context(), coretasks.EnqueueRequest{
 		NodeID: nodeID, IdempotencyKey: key, Intent: intent, RegistryAuthRequired: credentials != nil,
-		ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr,
+		ActorID: requestActor(r), RemoteAddr: current.RemoteAddr,
 	}, gate)
 	if err != nil {
 		if credentialsLocked {

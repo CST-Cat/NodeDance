@@ -177,7 +177,7 @@ func (s *Server) enqueueFileTask(ctx context.Context, current *session, nodeID, 
 		}
 	}
 	result, err := s.tasks.EnqueueWithGate(ctx, coretasks.EnqueueRequest{NodeID: nodeID, IdempotencyKey: key,
-		Intent: intent, ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: current.RemoteAddr}, gate)
+		Intent: intent, ActorID: sql.NullInt64{Int64: current.UserID, Valid: true}, RemoteAddr: current.RemoteAddr}, gate)
 	if err != nil {
 		if withContent {
 			s.fileContentMu.Unlock()

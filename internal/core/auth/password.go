@@ -10,7 +10,7 @@ import (
 )
 
 // PasswordParameters is intentionally fixed for production so persisted hashes
-// have a reviewable cost. The values fit within the Core's single-admin scope.
+// have a reviewable cost. Core bounds concurrent password derivations.
 type PasswordParameters struct {
 	MemoryKiB   uint32
 	Iterations  uint32

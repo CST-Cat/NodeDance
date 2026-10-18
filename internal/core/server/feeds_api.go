@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Server) feedEvent(r *http.Request, action string) audit.Event {
-	return audit.Event{OccurredAt: s.now(), Action: action, Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}, RemoteAddr: s.effectiveRemoteAddr(r)}
+	return audit.Event{OccurredAt: s.now(), Action: action, Outcome: "succeeded", ActorID: requestActor(r), RemoteAddr: s.effectiveRemoteAddr(r)}
 }
 func feedError(w http.ResponseWriter, e error) {
 	status := 400

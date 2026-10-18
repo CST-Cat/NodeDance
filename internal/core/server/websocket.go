@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/control"
 	"github.com/coder/websocket"
 )
 
@@ -12,6 +13,11 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	current, ok := s.authenticateRequest(w, r, false)
 	if !ok {
 		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
+	operation, known := control.MatchRoute(r.Method, r.URL.Path)
+	if current.Role != "administrator" && (!known || operation.RequiredRole == "administrator") {
+		http.Error(w, "permission denied", http.StatusForbidden)
 		return
 	}
 	if r.Method != http.MethodGet {

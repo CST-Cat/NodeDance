@@ -71,7 +71,7 @@ func TestBootstrapCredentialsAndUsernameLogin(t *testing.T) {
 				t.Fatal("restart changed credentials")
 			}
 			var hash, salt []byte
-			if err = core.store.DB.QueryRow(`SELECT password_hash,password_salt FROM admin_user WHERE id=1`).Scan(&hash, &salt); err != nil {
+			if err = core.store.DB.QueryRow(`SELECT password_hash,password_salt FROM users WHERE id=1`).Scan(&hash, &salt); err != nil {
 				t.Fatal(err)
 			}
 			if strings.Contains(string(hash), credentials.Password) || !auth.VerifyPassword(credentials.Password, hash, salt) {
@@ -142,7 +142,7 @@ func TestSetupAPIGeneratesOmittedCredentials(t *testing.T) {
 		t.Fatal("login username exposed as public display name")
 	}
 	var username string
-	if err = core.store.DB.QueryRow(`SELECT username FROM admin_user WHERE id=1`).Scan(&username); err != nil || username != result.InitialCredentials.Username {
+	if err = core.store.DB.QueryRow(`SELECT username FROM users WHERE id=1`).Scan(&username); err != nil || username != result.InitialCredentials.Username {
 		t.Fatal("generated username not persisted")
 	}
 	request = httptest.NewRequest("POST", "http://localhost/api/v1/auth/setup", strings.NewReader(string(body)))

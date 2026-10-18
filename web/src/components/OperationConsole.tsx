@@ -1,4 +1,4 @@
-import { operationRequest } from "../api";
+import { api, operationRequest } from "../api";
 import { display, locale, t } from "../i18n";
 import { intentKey, requestIntent } from "../operation-intent";
 import {
@@ -514,7 +514,8 @@ export default function OperationConsole(input: Props) {
       }
       afterMount(async () => {
         try {
-          operations.value = (await operationCatalog()).operations;
+          const [catalog, identity] = await Promise.all([operationCatalog(), api.me()]);
+          operations.value = catalog.operations.filter(operation => identity.user.role === "administrator" || operation.requiredRole !== "administrator");
           try {
             const records = JSON.parse(
               sessionStorage.getItem(submissionStorage) ?? "[]",

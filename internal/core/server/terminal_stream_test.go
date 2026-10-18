@@ -21,7 +21,7 @@ func terminalFixture(t *testing.T) (*Server, *session, *agentConnection, *termin
 	s := featureCore(t)
 	current := &session{ID: "browser", RemoteAddr: "127.0.0.1"}
 	now := s.now().UnixNano()
-	if _, err := s.store.DB.Exec(`INSERT INTO admin_user(id,username,password_hash,password_salt,password_version,display_name,updated_at) VALUES(1,'test',x'00',x'00','test','test',?)`, now); err != nil {
+	if _, err := s.store.DB.Exec(`INSERT INTO users(id,username,password_hash,password_salt,password_version,display_name,updated_at) VALUES(1,'test',x'00',x'00','test','test',?)`, now); err != nil {
 		t.Fatal(err)
 	}
 	_, err := s.store.DB.Exec(`INSERT INTO browser_sessions(id,token_digest,csrf_digest,created_at,last_seen_at,user_agent,remote_addr) VALUES(?,?,?,?,?,?,?)`, current.ID, []byte("token"), []byte("csrf"), now, now, "test", "127.0.0.1")

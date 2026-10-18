@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -146,7 +145,7 @@ func (s *Server) handleHostAPI(w http.ResponseWriter, r *http.Request, current *
 		}
 	}
 	if r.Method != "GET" {
-		if err := audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: req.Action, Outcome: "accepted", ActorID: sql.NullInt64{Int64: 1, Valid: true}, Target: audit.Target{Kind: audit.TargetNode, ID: parts[0]}, RemoteAddr: current.RemoteAddr}); err != nil {
+		if err := audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: req.Action, Outcome: "accepted", ActorID: requestActor(r), Target: audit.Target{Kind: audit.TargetNode, ID: parts[0]}, RemoteAddr: current.RemoteAddr}); err != nil {
 			http.Error(w, "cannot record host request", 500)
 			return true
 		}
