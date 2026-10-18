@@ -83,3 +83,48 @@ func TestAgentFailureUpdatesCoreProbeHistoryAndState(t *testing.T) {
 func newProbeAuditEvent(at time.Time) audit.Event {
 	return audit.Event{OccurredAt: at, Action: "probe_create", Outcome: "succeeded", ActorID: sql.NullInt64{Int64: 1, Valid: true}}
 }
+
+func TestProbeFamilyAndPhaseMeasurementsRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	at := time.Now().UTC()
+	db, err := storage.Open(ctx, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	node := "123e4567-e89b-42d3-a456-426614174000"
+	if _, err = db.DB.Exec(`INSERT INTO nodes(id,display_name,status,created_at,updated_at) VALUES(?, 'probe','online',1,1)`, node); err != nil {
+		t.Fatal(err)
+	}
+	store := coreprobes.New(db.DB, func() time.Time { return at })
+	config, err := store.Create(ctx, coreprobes.Config{NodeID: node, Name: "v4", Kind: protocol.ProbeHTTP, Target: "http://127.0.0.1/", ExpectedHTTPStatus: 200, IntervalSeconds: 30, TimeoutSeconds: 2, Enabled: true, IPFamily: "4"}, newProbeAuditEvent(at))
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.Get(ctx, config.ID)
+	if err != nil || loaded.IPFamily != "4" {
+		t.Fatal(loaded, err)
+	}
+	config, run, started, err := store.Claim(ctx, config.ID, 1, at)
+	if err != nil || !started {
+		t.Fatal(started, err)
+	}
+	phase := 1.25
+	expires := at.Add(24 * time.Hour)
+	report := protocol.ProbeReport{ProbeID: config.ID, RunID: run.RunID, NodeID: node, Status: protocol.ProbeResultHealthy, HTTPStatus: 200, LatencyMS: 5, Measurements: &protocol.ProbeMeasurements{FirstByteMS: &phase, CertificateExpiresAt: &expires}}
+	if err = store.Complete(ctx, report, 1, at.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := store.History(ctx, config.ID, 10)
+	if err != nil || len(runs) != 1 || runs[0].Measurements == nil || runs[0].Measurements.FirstByteMS == nil || *runs[0].Measurements.FirstByteMS != phase {
+		t.Fatal(runs, err)
+	}
+	config.IPFamily = "6"
+	if _, err = store.Update(ctx, config, newProbeAuditEvent(at)); err != nil {
+		t.Fatal(err)
+	}
+	items, err := store.List(ctx)
+	if err != nil || len(items) != 1 || items[0].IPFamily != "6" {
+		t.Fatal(items, err)
+	}
+}

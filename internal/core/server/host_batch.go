@@ -101,7 +101,7 @@ func (s *Server) handleHostBatchAPI(w http.ResponseWriter, r *http.Request, curr
 		if !decodeJSON(w, r, &request) {
 			return true
 		}
-		template := probeConfigRequest{Name: request.Name, Kind: request.Kind, Target: request.Target, ExpectedHTTPStatus: request.ExpectedHTTPStatus, IntervalSeconds: request.IntervalSeconds, TimeoutSeconds: request.TimeoutSeconds, Enabled: request.Enabled}
+		template := probeConfigRequest{IPFamily: request.IPFamily, Name: request.Name, Kind: request.Kind, Target: request.Target, ExpectedHTTPStatus: request.ExpectedHTTPStatus, IntervalSeconds: request.IntervalSeconds, TimeoutSeconds: request.TimeoutSeconds, Enabled: request.Enabled}
 		if len(request.NodeIDs) > 0 {
 			template.NodeID = request.NodeIDs[0]
 		}

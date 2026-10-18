@@ -314,6 +314,33 @@ func TestRootAgentHTTPHostControlEndToEnd(t *testing.T) {
 			if err != nil || result.Settings == nil || result.Settings.Transport != transport {
 				t.Fatalf("settings RPC %+v %v", result, err)
 			}
+			// Real root sampler -> authenticated Agent channel -> live view and private
+			// recording. Only this temporary Core/Agent pair is involved.
+			for {
+				_, view, err := s.metricsViewForNode(ctx, id.NodeID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if view != nil && view.Metrics.Host != nil && view.Metrics.Host.Observability != nil {
+					o := view.Metrics.Host.Observability
+					if m := o.Values["cpu.steal_percent"]; m.Status == protocol.MetricKnown && m.Value != nil {
+						if err := protocol.ValidateObservability(o, false); err != nil {
+							t.Fatal(err)
+						}
+						break
+					}
+				}
+				select {
+				case <-ctx.Done():
+					t.Fatal("diagnostic report unavailable", ctx.Err())
+				case <-time.After(20 * time.Millisecond):
+				}
+			}
+			replay, err := s.history.Recording(ctx, id.NodeID, time.Now().Add(-time.Minute), time.Now().Add(time.Minute))
+			if err != nil || len(replay.Frames) == 0 {
+				t.Fatal("diagnostics not durably recorded", err)
+			}
+
 			spec := protocol.CommandSpec{Script: "printf root-http-success", TimeoutSeconds: 3, Confirm: true}
 			req := protocol.HostRequest{Action: "commands.submit", IdempotencyKey: "e2e-command-key", Command: &spec}
 			result, err = s.agentHost(ctx, id.NodeID, req)

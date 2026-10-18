@@ -27,31 +27,35 @@ const (
 // AgentSettings contains no enrollment or device secrets. It is the shared
 // configuration contract for all administrator interfaces and the Agent.
 type AgentSettings struct {
-	DisableRemoteControl        bool     `json:"disableRemoteControl"`
-	MemoryMode                  string   `json:"memoryMode" request:"required"`
-	CustomIPv4                  string   `json:"customIpv4,omitempty"`
-	CustomIPv6                  string   `json:"customIpv6,omitempty"`
-	FastIntervalSeconds         int      `json:"fastIntervalSeconds" request:"required"`
-	DiskIntervalSeconds         int      `json:"diskIntervalSeconds" request:"required"`
-	IncludeInterfaces           []string `json:"includeInterfaces"`
-	ExcludeInterfaces           []string `json:"excludeInterfaces"`
-	IncludeMountpoints          []string `json:"includeMountpoints"`
-	BillingDay                  int      `json:"billingDay" request:"required"`
-	EnableGPU                   bool     `json:"enableGpu"`
-	DNS                         string   `json:"dns,omitempty"`
-	PreferIPVersion             string   `json:"preferIpVersion,omitempty"`
-	Compression                 bool     `json:"compression"`
-	Transport                   string   `json:"transport" request:"required"`
-	PublicIPURL                 string   `json:"publicIpUrl,omitempty"`
-	AutoUpdate                  bool     `json:"autoUpdate"`
-	UpdateIntervalHours         int      `json:"updateIntervalHours" request:"required"`
-	CommandHistoryRetentionDays int      `json:"commandHistoryRetentionDays" request:"required"`
+	Observability               *ObservationSettings `json:"observability,omitempty"`
+	DisableRemoteControl        bool                 `json:"disableRemoteControl"`
+	MemoryMode                  string               `json:"memoryMode" request:"required"`
+	CustomIPv4                  string               `json:"customIpv4,omitempty"`
+	CustomIPv6                  string               `json:"customIpv6,omitempty"`
+	FastIntervalSeconds         int                  `json:"fastIntervalSeconds" request:"required"`
+	DiskIntervalSeconds         int                  `json:"diskIntervalSeconds" request:"required"`
+	IncludeInterfaces           []string             `json:"includeInterfaces"`
+	ExcludeInterfaces           []string             `json:"excludeInterfaces"`
+	IncludeMountpoints          []string             `json:"includeMountpoints"`
+	BillingDay                  int                  `json:"billingDay" request:"required"`
+	EnableGPU                   bool                 `json:"enableGpu"`
+	DNS                         string               `json:"dns,omitempty"`
+	PreferIPVersion             string               `json:"preferIpVersion,omitempty"`
+	Compression                 bool                 `json:"compression"`
+	Transport                   string               `json:"transport" request:"required"`
+	PublicIPURL                 string               `json:"publicIpUrl,omitempty"`
+	AutoUpdate                  bool                 `json:"autoUpdate"`
+	UpdateIntervalHours         int                  `json:"updateIntervalHours" request:"required"`
+	CommandHistoryRetentionDays int                  `json:"commandHistoryRetentionDays" request:"required"`
 }
 
 func DefaultAgentSettings() AgentSettings {
 	return AgentSettings{MemoryMode: "available", FastIntervalSeconds: 5, DiskIntervalSeconds: 30, BillingDay: 1, EnableGPU: true, Compression: true, Transport: "auto", UpdateIntervalHours: 6, CommandHistoryRetentionDays: 90, IncludeInterfaces: []string{}, ExcludeInterfaces: []string{}, IncludeMountpoints: []string{}}
 }
 func ValidateAgentSettings(s AgentSettings) error {
+	if err := ValidateObservationSettings(s.Observability); err != nil {
+		return err
+	}
 	if s.CommandHistoryRetentionDays < 1 || s.CommandHistoryRetentionDays > 3650 {
 		return errors.New("command history retention must be between 1 and 3650 days")
 	}
@@ -168,6 +172,7 @@ type DiskIO struct {
 }
 
 type MetricsHost struct {
+	Observability       *Observability          `json:"observability,omitempty"`
 	DiskIO              *Metric[DiskIO]         `json:"diskIO,omitempty"`
 	MemoryMode          string                  `json:"memoryMode"`
 	FastIntervalSeconds int                     `json:"fastIntervalSeconds"`
@@ -189,6 +194,9 @@ type MetricsHost struct {
 func validateHost(h *MetricsHost, stale bool) error {
 	if h == nil {
 		return nil
+	}
+	if err := ValidateObservability(h.Observability, stale); err != nil {
+		return err
 	}
 	if h.DiskIO != nil {
 		if err := validateMetric("host.diskIO", *h.DiskIO, stale); err != nil {
@@ -327,6 +335,11 @@ func HostNumericMetrics(h *MetricsHost) map[string]Metric[float64] {
 	if h == nil {
 		return out
 	}
+	if h.Observability != nil {
+		for k, v := range h.Observability.Values {
+			out[k] = v
+		}
+	}
 	add := func(key string, status MetricStatus, at time.Time, age int64, n float64) {
 		out[key] = Metric[float64]{Status: status, Value: &n, SampledAt: at, SampleAgeMillis: age}
 	}
@@ -397,6 +410,7 @@ type BatchCommand struct {
 	Confirm        bool     `json:"confirm"`
 }
 type BatchProbe struct {
+	IPFamily           string   `json:"ipFamily,omitempty"`
 	NodeIDs            []string `json:"nodeIds"`
 	Name               string   `json:"name"`
 	Kind               string   `json:"kind"`

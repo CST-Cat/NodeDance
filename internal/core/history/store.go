@@ -79,9 +79,28 @@ func (s Store) AppendSnapshot(ctx context.Context, nodeID string, snapshot proto
 	}
 	defer stmt.Close()
 	for _, item := range values {
+		if snapshot.Host != nil && snapshot.Host.Observability != nil {
+			if metric, ok := snapshot.Host.Observability.Values[item.key]; ok {
+				result, err := tx.ExecContext(ctx, `INSERT INTO metric_sample_cursor(node_id,metric_key,sampled_at) VALUES(?,?,?) ON CONFLICT(node_id,metric_key) DO UPDATE SET sampled_at=excluded.sampled_at WHERE excluded.sampled_at!=metric_sample_cursor.sampled_at`, nodeID, item.key, metric.SampledAt.UnixNano())
+				if err != nil {
+					return err
+				}
+				n, err := result.RowsAffected()
+				if err != nil {
+					return err
+				}
+				if n == 0 {
+					continue
+				}
+			}
+		}
+
 		if _, err := stmt.ExecContext(ctx, nodeID, item.key, bucket, item.value, item.value, item.value); err != nil {
 			return fmt.Errorf("append metric history %s: %w", item.key, err)
 		}
+	}
+	if err := recordSnapshot(ctx, tx, nodeID, snapshot, receivedAt); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit metric history insert: %w", err)
@@ -120,6 +139,13 @@ func (s Store) Cleanup(ctx context.Context, now time.Time) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM metrics_hour WHERE bucket_at < ?`, hourCutoff); err != nil {
 		return fmt.Errorf("delete expired hourly history: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM observation_incidents WHERE occurred_at<?`, now.Add(-7*24*time.Hour).UnixNano()); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM observation_frames WHERE received_at<? AND NOT EXISTS(SELECT 1 FROM observation_incidents i WHERE i.node_id=observation_frames.node_id AND observation_frames.received_at BETWEEN i.occurred_at-? AND i.occurred_at+?)`, now.Add(-2*time.Hour).UnixNano(), int64(5*time.Minute), int64(5*time.Minute)); err != nil {
+		return err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit metric history cleanup: %w", err)
 	}

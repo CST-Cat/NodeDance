@@ -479,3 +479,40 @@ CREATE INDEX IF NOT EXISTS feed_notification_pending ON feed_items(feed_id,first
 
 CREATE TABLE IF NOT EXISTS dashboard_memo (id INTEGER PRIMARY KEY CHECK(id=1), content TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>0), updated_at INTEGER NOT NULL);
 INSERT OR IGNORE INTO dashboard_memo(id,content,revision,updated_at) VALUES(1,'',1,0);
+
+CREATE TABLE IF NOT EXISTS probe_options (
+ probe_id TEXT PRIMARY KEY REFERENCES service_probes(id) ON DELETE CASCADE,
+ ip_family TEXT NOT NULL CHECK(ip_family IN ('','4','6'))
+);
+CREATE TABLE IF NOT EXISTS probe_measurements (
+ run_id TEXT PRIMARY KEY REFERENCES service_probe_runs(run_id) ON DELETE CASCADE,
+ measurements_json TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS observation_frames (
+ node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+ received_at INTEGER NOT NULL,
+ boot_id TEXT NOT NULL,
+ snapshot_json TEXT NOT NULL,
+ PRIMARY KEY(node_id,received_at)
+);
+CREATE INDEX IF NOT EXISTS observation_frames_retention ON observation_frames(received_at);
+CREATE TABLE IF NOT EXISTS observation_incidents (
+ node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+ occurred_at INTEGER NOT NULL,
+ metric_key TEXT NOT NULL,
+ value REAL NOT NULL,
+ PRIMARY KEY(node_id,occurred_at,metric_key)
+);
+CREATE INDEX IF NOT EXISTS observation_incidents_retention ON observation_incidents(occurred_at);
+CREATE TABLE IF NOT EXISTS metric_sample_cursor (
+ node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+ metric_key TEXT NOT NULL,
+ sampled_at INTEGER NOT NULL,
+ PRIMARY KEY(node_id,metric_key)
+);
+CREATE TABLE IF NOT EXISTS observation_epoch (
+ node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+ boot_id TEXT NOT NULL,
+ started_at INTEGER NOT NULL
+);

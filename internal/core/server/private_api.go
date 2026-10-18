@@ -45,6 +45,9 @@ type browserSessionView struct {
 }
 
 func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, current *session) {
+	if s.handleObservabilityAPI(w, r) {
+		return
+	}
 	if s.handleAccountAPI(w, r, current) {
 		return
 	}
@@ -103,7 +106,7 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		writeJSON(w, 200, map[string]any{"metrics": protocol.HostMetricKeys})
+		writeJSON(w, 200, map[string]any{"metrics": protocol.HostMetricKeys, "definitions": protocol.CatalogDefinitions(), "entityDefinitions": protocol.EntityDefinitions, "unknownReasons": []string{"unsupported", "read_failed", "warming_up", "counter_reset", "no_operations", "sampling", "unlimited"}})
 		return
 	case "/api/v1/auth/me":
 		if r.Method != http.MethodGet {

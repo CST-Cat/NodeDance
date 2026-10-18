@@ -10,6 +10,7 @@ func cloneHost(h *protocol.MetricsHost) *protocol.MetricsHost {
 		return nil
 	}
 	out := *h
+	out.Observability = protocol.CloneObservability(h.Observability)
 	if h.DiskIO != nil {
 		value := cloneMetric(*h.DiskIO)
 		out.DiskIO = &value
@@ -76,6 +77,7 @@ func staleHost(h *protocol.MetricsHost, r string) {
 	if h == nil {
 		return
 	}
+	protocol.VisitObservability(h.Observability, func(m *protocol.Metric[float64], _ time.Duration) { markMetricStale(m, r) })
 	if h.DiskIO != nil {
 		markMetricStale(h.DiskIO, r)
 	}
@@ -96,6 +98,7 @@ func advanceHost(h *protocol.MetricsHost, e time.Duration) {
 	if h == nil {
 		return
 	}
+	protocol.VisitObservability(h.Observability, func(m *protocol.Metric[float64], _ time.Duration) { advanceMetricAge(m, e) })
 	if h.DiskIO != nil {
 		advanceMetricAge(h.DiskIO, e)
 	}
@@ -117,6 +120,12 @@ func ageHost(h *protocol.MetricsHost) {
 		return
 	}
 	ttl := time.Duration(h.FastIntervalSeconds*3) * time.Second
+	protocol.VisitObservability(h.Observability, func(m *protocol.Metric[float64], ttl time.Duration) {
+		if ttl == 15*time.Second {
+			ttl = time.Duration(h.FastIntervalSeconds*3) * time.Second
+		}
+		markMetricAged(m, ttl)
+	})
 	if h.DiskIO != nil {
 		markMetricAged(h.DiskIO, ttl)
 	}

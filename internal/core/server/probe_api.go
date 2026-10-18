@@ -189,7 +189,7 @@ func configFromRequest(request probeConfigRequest, isCreate bool) (coreprobes.Co
 	if request.Enabled != nil {
 		enabled = *request.Enabled
 	}
-	config := coreprobes.Config{NodeID: request.NodeID, Name: request.Name, Kind: request.Kind,
+	config := coreprobes.Config{IPFamily: request.IPFamily, NodeID: request.NodeID, Name: request.Name, Kind: request.Kind,
 		Target: request.Target, ExpectedHTTPStatus: status, IntervalSeconds: request.IntervalSeconds,
 		TimeoutSeconds: request.TimeoutSeconds, Enabled: enabled}
 	if request.Kind == "tcp" || request.Kind == "icmp" {

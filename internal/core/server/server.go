@@ -702,7 +702,7 @@ func (s *Server) dispatchDueServiceProbes(ctx context.Context) error {
 			continue
 		}
 		dispatch := protocol.ProbeDispatch{ProbeID: config.ID, RunID: run.RunID, NodeID: config.NodeID,
-			Kind: config.Kind, Target: config.Target, ExpectedHTTPStatus: config.ExpectedHTTPStatus,
+			IPFamily: config.IPFamily, Kind: config.Kind, Target: config.Target, ExpectedHTTPStatus: config.ExpectedHTTPStatus,
 			IntervalSeconds: config.IntervalSeconds, TimeoutSeconds: config.TimeoutSeconds}
 		payload, err := json.Marshal(dispatch)
 		if err != nil {

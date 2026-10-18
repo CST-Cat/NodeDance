@@ -29,6 +29,21 @@ func (e *Executor) checkICMP(ctx context.Context, target string) error {
 	}
 	ip := addresses[0]
 	preference := e.settings().PreferIPVersion
+	forced, _ := ctx.Value(probeFamilyKey{}).(string)
+	if forced != "" {
+		preference = forced
+		filtered := addresses[:0]
+		for _, a := range addresses {
+			if (forced == "4") == (a.IP.To4() != nil) {
+				filtered = append(filtered, a)
+			}
+		}
+		if len(filtered) == 0 {
+			return &net.DNSError{Err: "address family unavailable", Name: u.Hostname(), IsNotFound: true}
+		}
+		addresses = filtered
+		ip = addresses[0]
+	}
 	for _, addr := range addresses {
 		if (preference == "4" && addr.IP.To4() != nil) || (preference == "6" && addr.IP.To4() == nil) {
 			ip = addr

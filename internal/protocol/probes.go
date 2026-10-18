@@ -2,11 +2,13 @@ package protocol
 
 import (
 	"errors"
+	"math"
 	"net"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -43,6 +45,7 @@ var probeErrorCodes = map[string]struct{}{
 // Agent validates all bounds again because Core and Agent are separate trust
 // boundaries even though the message is authenticated.
 type ProbeDispatch struct {
+	IPFamily           string `json:"ipFamily,omitempty"`
 	ProbeID            string `json:"probeId"`
 	RunID              string `json:"runId"`
 	NodeID             string `json:"nodeId"`
@@ -53,18 +56,29 @@ type ProbeDispatch struct {
 	TimeoutSeconds     int    `json:"timeoutSeconds"`
 }
 
+type ProbeMeasurements struct {
+	DNSMS                *float64   `json:"dnsMs,omitempty"`
+	ConnectMS            *float64   `json:"connectMs,omitempty"`
+	TLSMS                *float64   `json:"tlsMs,omitempty"`
+	FirstByteMS          *float64   `json:"firstByteMs,omitempty"`
+	CertificateExpiresAt *time.Time `json:"certificateExpiresAt,omitempty"`
+}
+
+func ValidProbeIPFamily(s string) bool { return s == "" || s == "4" || s == "6" }
+
 type ProbeReport struct {
-	ProbeID    string `json:"probeId"`
-	RunID      string `json:"runId"`
-	NodeID     string `json:"nodeId"`
-	Status     string `json:"status"`
-	HTTPStatus int    `json:"httpStatus,omitempty"`
-	LatencyMS  int64  `json:"latencyMs"`
-	ErrorCode  string `json:"errorCode,omitempty"`
+	Measurements *ProbeMeasurements `json:"measurements,omitempty"`
+	ProbeID      string             `json:"probeId"`
+	RunID        string             `json:"runId"`
+	NodeID       string             `json:"nodeId"`
+	Status       string             `json:"status"`
+	HTTPStatus   int                `json:"httpStatus,omitempty"`
+	LatencyMS    int64              `json:"latencyMs"`
+	ErrorCode    string             `json:"errorCode,omitempty"`
 }
 
 func ValidateProbeDispatch(envelope Envelope, dispatch ProbeDispatch, nodeID string, generation uint64) error {
-	if envelope.Version != CurrentVersion || envelope.Type != TypeProbeDispatch || generation == 0 || envelope.Generation != generation ||
+	if !ValidProbeIPFamily(dispatch.IPFamily) || envelope.Version != CurrentVersion || envelope.Type != TypeProbeDispatch || generation == 0 || envelope.Generation != generation ||
 		!probeUUIDPattern.MatchString(envelope.RequestID) || dispatch.RunID != envelope.RequestID ||
 		!probeUUIDPattern.MatchString(dispatch.ProbeID) || !probeUUIDPattern.MatchString(dispatch.RunID) || dispatch.NodeID != nodeID ||
 		dispatch.TimeoutSeconds < MinProbeTimeoutSeconds || dispatch.TimeoutSeconds > MaxProbeTimeoutSeconds ||
@@ -92,6 +106,16 @@ func ValidateProbeReport(envelope Envelope, report ProbeReport, nodeID string, g
 	if report.ErrorCode != "" {
 		if _, ok := probeErrorCodes[report.ErrorCode]; !ok {
 			return errors.New("service probe report error code is not allowlisted")
+		}
+	}
+	if m := report.Measurements; m != nil {
+		for _, v := range []*float64{m.DNSMS, m.ConnectMS, m.TLSMS, m.FirstByteMS} {
+			if v != nil && (*v < 0 || *v > float64(MaxProbeTimeoutSeconds*1000+1000) || math.IsNaN(*v) || math.IsInf(*v, 0)) {
+				return errors.New("invalid probe phase duration")
+			}
+		}
+		if m.CertificateExpiresAt != nil && (m.CertificateExpiresAt.Year() < 1970 || m.CertificateExpiresAt.Year() > 9999) {
+			return errors.New("invalid certificate timestamp")
 		}
 	}
 	if report.HTTPStatus < 0 || report.HTTPStatus > 599 {

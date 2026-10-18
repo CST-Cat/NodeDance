@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -25,6 +26,7 @@ var (
 )
 
 type Config struct {
+	IPFamily             string `json:"ipFamily,omitempty"`
 	ID                   string `json:"id"`
 	NodeID               string `json:"nodeId"`
 	Name                 string `json:"name"`
@@ -47,15 +49,16 @@ type Config struct {
 }
 
 type Run struct {
-	RunID       string `json:"runId"`
-	ProbeID     string `json:"probeId"`
-	NodeID      string `json:"nodeId"`
-	Status      string `json:"status"`
-	CheckedAt   string `json:"checkedAt"`
-	CompletedAt string `json:"completedAt,omitempty"`
-	LatencyMS   *int64 `json:"latencyMs,omitempty"`
-	HTTPStatus  *int   `json:"httpStatus,omitempty"`
-	ErrorCode   string `json:"errorCode,omitempty"`
+	Measurements *protocol.ProbeMeasurements `json:"measurements,omitempty"`
+	RunID        string                      `json:"runId"`
+	ProbeID      string                      `json:"probeId"`
+	NodeID       string                      `json:"nodeId"`
+	Status       string                      `json:"status"`
+	CheckedAt    string                      `json:"checkedAt"`
+	CompletedAt  string                      `json:"completedAt,omitempty"`
+	LatencyMS    *int64                      `json:"latencyMs,omitempty"`
+	HTTPStatus   *int                        `json:"httpStatus,omitempty"`
+	ErrorCode    string                      `json:"errorCode,omitempty"`
 }
 
 type Store struct {
@@ -82,6 +85,9 @@ func NewID() (string, error) {
 }
 
 func ValidateConfig(config Config) error {
+	if !protocol.ValidProbeIPFamily(config.IPFamily) {
+		return errors.New("invalid IP family")
+	}
 	if !validUUID(config.NodeID) || config.ID != "" && !validUUID(config.ID) {
 		return errors.New("probe and node IDs must be canonical UUIDs")
 	}
@@ -125,6 +131,10 @@ func (s *Store) Create(ctx context.Context, config Config, event audit.Event) (C
 	if err != nil {
 		return Config{}, fmt.Errorf("insert service probe: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO probe_options(probe_id,ip_family) VALUES(?,?) ON CONFLICT(probe_id) DO UPDATE SET ip_family=excluded.ip_family`, config.ID, config.IPFamily); err != nil {
+		return Config{}, err
+	}
+
 	if event.Target.ID == "" {
 		event.Target = audit.Target{Kind: audit.TargetNode, ID: config.NodeID}
 	}
@@ -172,6 +182,10 @@ func (s *Store) Update(ctx context.Context, config Config, event audit.Event) (C
 		}
 		return Config{}, ErrConflict
 	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO probe_options(probe_id,ip_family) VALUES(?,?) ON CONFLICT(probe_id) DO UPDATE SET ip_family=excluded.ip_family`, config.ID, config.IPFamily); err != nil {
+		return Config{}, err
+	}
+
 	if event.Target.ID == "" {
 		event.Target = audit.Target{Kind: audit.TargetNode, ID: config.NodeID}
 	}
@@ -268,7 +282,7 @@ func (s *Store) History(ctx context.Context, id string, limit int) ([]Run, error
 	if limit < 1 || limit > 200 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT run_id,probe_id,node_id,status,checked_at,completed_at,latency_ms,http_status,error_code FROM service_probe_runs WHERE probe_id=? ORDER BY checked_at DESC,run_id DESC LIMIT ?`, id, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT run_id,probe_id,node_id,status,checked_at,completed_at,latency_ms,http_status,error_code,COALESCE((SELECT measurements_json FROM probe_measurements WHERE run_id=service_probe_runs.run_id),'null') FROM service_probe_runs WHERE probe_id=? ORDER BY checked_at DESC,run_id DESC LIMIT ?`, id, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +293,11 @@ func (s *Store) History(ctx context.Context, id string, limit int) ([]Run, error
 		var checkedAt int64
 		var completedAt, latency, status sql.NullInt64
 		var errorCode sql.NullString
-		if err := rows.Scan(&item.RunID, &item.ProbeID, &item.NodeID, &item.Status, &checkedAt, &completedAt, &latency, &status, &errorCode); err != nil {
+		var measurements string
+		if err := rows.Scan(&item.RunID, &item.ProbeID, &item.NodeID, &item.Status, &checkedAt, &completedAt, &latency, &status, &errorCode, &measurements); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(measurements), &item.Measurements); err != nil {
 			return nil, err
 		}
 		item.CheckedAt = time.Unix(0, checkedAt).UTC().Format(time.RFC3339Nano)
@@ -416,6 +434,22 @@ func (s *Store) Complete(ctx context.Context, report protocol.ProbeReport, gener
 		report.Status, now.UnixNano(), latency, status, nullableString(report.ErrorCode), report.RunID); err != nil {
 		return err
 	}
+	if report.Measurements != nil {
+		data, err := json.Marshal(report.Measurements)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO probe_measurements(run_id,measurements_json) VALUES(?,?)`, report.RunID, string(data)); err != nil {
+			return err
+		}
+	}
+
+	if report.Status == protocol.ProbeResultUnhealthy {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO observation_incidents(node_id,occurred_at,metric_key,value) SELECT ?,?,?,1 WHERE NOT EXISTS(SELECT 1 FROM observation_incidents WHERE node_id=? AND metric_key=? AND occurred_at>?)`, nodeID, now.UnixNano(), "probe:"+probeID, nodeID, "probe:"+probeID, now.Add(-15*time.Minute).UnixNano()); err != nil {
+			return err
+		}
+	}
+
 	var currentRevision int64
 	var enabled int
 	var deleted sql.NullInt64
@@ -617,7 +651,7 @@ func applyStateResult(ctx context.Context, tx *sql.Tx, probeID string, report pr
 	return err
 }
 
-const probeSelect = `SELECT id,node_id,name,kind,target,expected_http_status,interval_seconds,timeout_seconds,enabled,revision,status,last_error_code,consecutive_failures,consecutive_successes,last_checked_at,next_due_at,created_at,updated_at,deleted_at FROM service_probes`
+const probeSelect = `SELECT id,node_id,name,kind,target,expected_http_status,interval_seconds,timeout_seconds,enabled,revision,status,last_error_code,consecutive_failures,consecutive_successes,last_checked_at,next_due_at,created_at,updated_at,deleted_at,COALESCE((SELECT ip_family FROM probe_options WHERE probe_id=service_probes.id),'') FROM service_probes`
 
 type scanner interface{ Scan(...any) error }
 
@@ -629,7 +663,7 @@ func scanConfig(row scanner) (Config, error) {
 	var nextDue, created, updated int64
 	err := row.Scan(&item.ID, &item.NodeID, &item.Name, &item.Kind, &item.Target, &expectedStatusValue,
 		&item.IntervalSeconds, &item.TimeoutSeconds, &enabled, &item.Revision, &status, &lastError,
-		&item.ConsecutiveFailures, &item.ConsecutiveSuccesses, &lastChecked, &nextDue, &created, &updated, &deletedAt)
+		&item.ConsecutiveFailures, &item.ConsecutiveSuccesses, &lastChecked, &nextDue, &created, &updated, &deletedAt, &item.IPFamily)
 	if err != nil {
 		return Config{}, err
 	}

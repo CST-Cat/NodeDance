@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.24]
+
+### English
+
+- Add bounded host diagnostics for CPU steal and per-core usage, PSI, swap paging, disk IOPS and mean latency, inode usage, TCP retransmissions, conntrack and failed services.
+- Collect bounded process rankings, cgroup v2 container throttling/OOM and configured application exporter metrics on a separate detail cadence; report observer cost and preserve unsupported, failed, warming and reset states.
+- Add explicit IPv4/IPv6 probe selection and HTTP DNS/connect/TLS/first-byte timings with verified certificate expiry; explicit address families never fall back to another family.
+- Read process short names directly without expanding command arguments, and bound diagnostic identities, payloads and scans.
+
+### 简体中文
+
+- 新增有界主机诊断：CPU steal 与每核心使用率、PSI、Swap 换页、磁盘 IOPS 与平均延迟、inode、TCP 重传、conntrack 和失败服务。
+- 进程排行、cgroup v2 容器限流／OOM、配置的应用 exporter 指标使用独立明细周期并限制数量；上报采集器自身开销，区分未支持、失败、预热和重置状态。
+- 探测可显式选择 IPv4／IPv6，并上报 HTTP DNS、连接、TLS、首字节耗时及经验证证书的到期时间；指定地址族后不跨族回退。
+- 进程名称直接读取短名称，不展开命令参数；限制诊断标识、上报载荷和扫描开销。
+
 ## [0.1.23]
 
 ### English

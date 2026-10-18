@@ -311,7 +311,7 @@ async function port() {
     await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})))
     await page.waitForFunction(()=>document.querySelector('.host-tabs [aria-pressed=true]')?.textContent==='Assets and quotas')
     assert.equal(permissionReads,1,'Restoring a cached document must revalidate its administrator session')
-    await require('./review-regressions.cjs')({page,context,base,node,headers,artifacts})
+    await require('./review-regressions.cjs')({page,context,base,node,headers,artifacts,catalog})
     const controlsPage=await context.newPage()
     controlsPage.setDefaultTimeout(10000)
     try { await require('./theme-regressions.cjs')({page:controlsPage,context,base,headers,artifacts,catalog}); await require('./operation-locale-regressions.cjs')({page:controlsPage,base,catalog,artifacts}); await require('./form-layout-regressions.cjs')({page:controlsPage,base,artifacts}); await require('./ui-controls-regressions.cjs')({page:controlsPage,base,artifacts,catalog}) }
@@ -350,7 +350,7 @@ async function port() {
     if(await page.getByTestId('node-detail-navigation').count())await page.getByRole('button',{name:'Back to home',exact:true}).click()
     await page.getByRole('button',{name:'Nodes',exact:true}).click();await page.locator('.nodes-dashboard').waitFor()
     await page.getByRole('button',{name:'Alerts',exact:true}).click();await page.locator('.alerts-page').waitFor()
-    await page.getByRole('button',{name:'Sign out',exact:true}).click();await page.locator('#login-title').waitFor()
+    await page.locator('.account-trigger').click();await page.locator('.account-panel').getByRole('button',{name:'Sign out',exact:true}).click();await page.locator('#login-title').waitFor()
     await page.goBack();await page.locator('#login-title').waitFor()
     assert.equal(await page.locator('#workspace-navigation').count(),0,'Back after logout must not restore a private page')
     assert.equal(updateSubmissions,1);assert.equal(rollbacks,1);assert.equal(submissions,2,'History restoration must not resubmit tasks')

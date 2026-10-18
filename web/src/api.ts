@@ -98,6 +98,7 @@ export interface TailscaleDeployPayload {
 }
 
 export interface ServiceProbe {
+ ipFamily?:string
   id: string
   nodeId: string
   name: string
@@ -119,6 +120,7 @@ export interface ServiceProbe {
 }
 
 export interface ServiceProbeRun {
+ measurements?:{dnsMs?:number;connectMs?:number;tlsMs?:number;firstByteMs?:number;certificateExpiresAt?:string}
   runId: string
   probeId: string
   nodeId: string
@@ -131,6 +133,7 @@ export interface ServiceProbeRun {
 }
 
 export interface ServiceProbePayload {
+ ipFamily?:string
   nodeId: string
   name: string
   kind: ServiceProbe['kind']

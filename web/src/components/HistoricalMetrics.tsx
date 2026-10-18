@@ -5,6 +5,8 @@ import * as echarts from "echarts/core";
 import { CanvasRenderer } from "echarts/renderers";
 import type { MetricHistory } from "../api";
 import { display, locale, t } from "../i18n";
+import { operationRequest } from "../api";
+import type { DiagnosticDefinition } from "./DiagnosticCards";
 import {
   afterMount,
   beforeDispose,
@@ -30,6 +32,7 @@ export default function HistoricalMetrics(input: Props) {
     (__props: Props, __emit: any, __dom: any) => {
       echarts.use([LineChart, GridComponent, TooltipComponent, CanvasRenderer]);
       const props = __props;
+ const definitions=cell<Record<string,DiagnosticDefinition>>({});let disposed=false;
       const headingId = uniqueId();
       const host = cell<HTMLElement>();
       const selectedKey = cell("cpu.usage_percent");
@@ -45,6 +48,7 @@ export default function HistoricalMetrics(input: Props) {
           ["network.received_bytes_per_second", t("m.9cf3b70addc3")],
           ["network.sent_bytes_per_second", t("m.81c8be973451")],
         ]);
+        for(const [key,d] of Object.entries(definitions.value))labels.set(key,locale.value==='zh-CN'?d.nameZh:d.name);
         for (const series of props.history?.series ?? []) {
           if (!labels.has(series.key))
             labels.set(
@@ -128,11 +132,12 @@ export default function HistoricalMetrics(input: Props) {
         const diskPercent =
           selectedKey.value.startsWith("disk:") &&
           selectedKey.value.endsWith(":used_percent");
-        const percent = selectedKey.value.endsWith("_percent") || diskPercent;
-        const byteRate = selectedKey.value.startsWith("network.");
-        const bytes = selectedKey.value.endsWith("_bytes");
+        const definition=definitions.value[selectedKey.value];
+ const percent = definition?.unit==="%" || selectedKey.value.endsWith("_percent") || diskPercent;
+        const byteRate = definition?definition.unit==="bytes/s":selectedKey.value.startsWith("network.");
+        const bytes = definition?.unit==="bytes" || selectedKey.value.endsWith("_bytes");
         let divisor = 1;
-        let unit = percent ? "%" : "";
+        let unit = percent ? "%" : definition?.unit??"";
         if (byteRate) {
           divisor = 1024 * 1024;
           unit = "MiB/s";
@@ -265,6 +270,7 @@ export default function HistoricalMetrics(input: Props) {
         },
       );
       afterMount(() => {
+ if(!props.availableOnly)void operationRequest<{definitions:Record<string,DiagnosticDefinition>}>("metrics.catalog").then(result=>{if(!disposed){definitions.value=result.definitions??{};render()}}).catch(()=>{});
         render();
         if (host.value) {
           observer = new ResizeObserver(() => chart?.resize());
@@ -277,6 +283,7 @@ export default function HistoricalMetrics(input: Props) {
         }
       });
       beforeDispose(() => {
+ disposed=true;
         observer?.disconnect();
         themeObserver?.disconnect();
         chart?.dispose();

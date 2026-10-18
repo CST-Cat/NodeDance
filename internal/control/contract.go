@@ -74,6 +74,7 @@ func describeTransport(o *Operation) {
 	case "guest.configure":
 		o.MaxBodyBytes = 64 * 1024
 	case "agents.configure":
+		o.MaxBodyBytes = 128 << 10
 		field("commandHistoryRetentionDays", map[string]any{"minimum": 1, "maximum": 3650, "default": 90})
 	case "commands.submit", "commands.batch":
 		o.MaxBodyBytes = protocol.MaxCommandRequestBytes

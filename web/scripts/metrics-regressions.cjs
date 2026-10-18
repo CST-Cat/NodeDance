@@ -36,7 +36,9 @@ module.exports=async function({page,base,node,artifacts,catalog}){
  const reboot=view();reboot.metrics.uptime.value.bootId='reboot-fixture';await publish({metrics:reboot.metrics})
  assert.equal(await network.locator('.rate-chart').getAttribute('data-points'),'1','A reboot starts a new series')
  for(let point=0;point<4;point++){const live=view();live.metrics.uptime.value.bootId='reboot-fixture';await publish({metrics:live.metrics})}
- assert.deepEqual(await network.getByTestId('network-interface').evaluateAll(rows=>rows.map(row=>row.dataset.interfaceName)),['eth0','ens3','bond0'])
+ assert.equal(await network.getByTestId('network-interface').count(),0,'Interface rows are omitted from the summary card')
+ assert.equal(await page.locator('.metrics-panel .resource-reading > span').count(),0,'Card headings replace repeated labels beneath gauges')
+ assert.ok(!(await page.getByTestId('disk-card').innerText()).includes('/dev/vda1'),'Disk device metadata is omitted')
  assert.ok((await network.innerText()).includes('505 B/s'));assert.ok((await network.innerText()).includes('332 B/s'))
  assert.ok(!/\d+\.\d{2,}/.test(await network.innerText()),'No excessive rate precision')
  for(const theme of ['light','dark'])for(const width of [320,390,768,1440]){
@@ -52,7 +54,7 @@ module.exports=async function({page,base,node,artifacts,catalog}){
   assert.equal(geometry.cards.length,8,'All eight metric cards remain visible')
   assert.ok(geometry.cards.every(card=>Math.abs(card.width-card.height)<1&&Math.abs(card.width-geometry.cards[0].width)<1&&!card.overflowX),'Cards are equal squares without horizontal overflow: '+JSON.stringify(geometry))
   assert.equal(geometry.cards.filter(card=>Math.abs(card.top-geometry.cards[0].top)<1).length,geometry.containerWidth<=760?2:4,'Four columns on wide containers, two on narrow containers')
-  assert.ok(await page.locator('.metrics-panel .resource-reading').evaluateAll(readings=>readings.every(reading=>{const gauge=reading.querySelector('.resource-gauge'),label=reading.querySelector(':scope > span'),detail=reading.querySelector(':scope > small'),r=gauge.getBoundingClientRect();return Math.abs(r.width-76)<1&&Math.abs(r.height-76)<1&&getComputedStyle(gauge.querySelector('strong')).fontSize==='16px'&&label.getBoundingClientRect().top>=r.bottom&&detail.getBoundingClientRect().top>=label.getBoundingClientRect().bottom})), 'Readings retain the original VPS gauge size, type and gauge/name/detail order')
+  assert.ok(await page.locator('.metrics-panel .resource-reading').evaluateAll(readings=>readings.every(reading=>{const gauge=reading.querySelector('.resource-gauge'),label=reading.querySelector(':scope > span'),detail=reading.querySelector(':scope > small'),r=gauge.getBoundingClientRect();return Math.abs(r.width-76)<1&&Math.abs(r.height-76)<1&&getComputedStyle(gauge.querySelector('strong')).fontSize==='16px'&&label===null&&detail.getBoundingClientRect().top>=r.bottom})), 'Readings retain the VPS gauge size and type with details directly below it')
   const trafficText=await page.locator('.host-metrics > .metric-card').nth(3).innerText()
   assert.ok(!/UTC|Partial coverage|覆盖不完整|partial_coverage/.test(trafficText),'Billing traffic omits redundant timezone and coverage labels')
   assert.equal(await network.locator('.interface-rates').count(),0,'Per-interface rates do not repeat the summary')
@@ -65,5 +67,6 @@ module.exports=async function({page,base,node,artifacts,catalog}){
  const unavailable=view();unavailable.metrics.cpu.usagePercent.status='error';unavailable.metrics.memory.status='unknown';unavailable.metrics.disk.mounts[0].usage.status='unknown';unavailable.metrics.host.swap.status='unknown';unavailable.metrics.host.load.status='unknown';await publish({metrics:unavailable.metrics})
  assert.equal(await page.locator('.metrics-panel .resource-gauge .ring-value').count(),0,'Unavailable metrics never show a healthy zero gauge')
  assert.equal(await page.getByTestId('cpu-value').innerText(),'—')
+ await require('./observability-regressions.cjs')({page,base,node,artifacts,catalog,view,publish});
  console.log('Metrics regressions passed: primary interfaces, bounded rate precision, summary rates without duplicate interface rates; 8 light/dark/mobile layouts; eight equal square cards in four/two columns.')
 }

@@ -230,3 +230,17 @@ func TestAMDDriverMetricsFromSysfs(t *testing.T) {
 		t.Fatal("AMD device metrics", devices, err)
 	}
 }
+
+func TestLiveHostDiagnosticsMeetWireContract(t *testing.T) {
+	c := NewCollector()
+	settings := protocol.DefaultAgentSettings()
+	settings.EnableGPU = false
+	c.ConfigureHost(t.TempDir(), func() protocol.AgentSettings { return settings })
+	for i := 0; i < 3; i++ {
+		wire := ToProtocolMetrics(c.Sample(context.Background()))
+		if _, err := protocol.MarshalMetricsSnapshot(wire); err != nil {
+			t.Fatalf("sample %d: %v", i, err)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}

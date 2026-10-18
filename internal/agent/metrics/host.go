@@ -17,6 +17,7 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/agent/localstate"
 	"github.com/CST-Cat/NodeDance/internal/agent/networkpolicy"
+	"github.com/CST-Cat/NodeDance/internal/agent/observe"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -26,6 +27,7 @@ import (
 )
 
 type hostCollector struct {
+	observe     observe.Collector
 	diskIO      diskIOBaseline
 	source      collectorSource
 	settings    func() protocol.AgentSettings
@@ -168,6 +170,7 @@ func (h *hostCollector) collect(ctx context.Context, at time.Time, interfaces []
 		v.PublicIPv6.Reason = "configured_override"
 	}
 	v.Traffic = h.collectTraffic(ctx, at, s, interfaces)
+	v.Observability = h.observe.Collect(ctx, at, s.FastIntervalSeconds, s.Observability)
 	return v
 }
 func (h *hostCollector) collectSlow(ctx context.Context, at time.Time, s protocol.AgentSettings, ip, gpu bool) {

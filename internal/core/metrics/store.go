@@ -5,6 +5,7 @@ package metrics
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -685,4 +686,34 @@ func (s *Store) ForgetNode(nodeID string) {
 	defer s.mu.Unlock()
 	delete(s.bindings, nodeID)
 	delete(s.latest, nodeID)
+}
+
+// EnrichReport annotates sampling freshness using Core receive intervals. It
+// never treats wall-clock offset as network latency or gaps as packet loss.
+func (s *Store) EnrichReport(identity Identity, generation uint64, report *protocol.MetricsSnapshot, at time.Time) {
+	if report.Host == nil || report.Host.Observability == nil {
+		return
+	}
+	s.mu.RLock()
+	previous, ok := s.latest[identity.NodeID]
+	s.mu.RUnlock()
+	values := report.Host.Observability.Values
+	if values == nil {
+		values = map[string]protocol.Metric[float64]{}
+		report.Host.Observability.Values = values
+	}
+	unknown := func() protocol.Metric[float64] {
+		return protocol.Metric[float64]{Status: protocol.MetricUnknown, Reason: "warming_up", SampledAt: at}
+	}
+	known := func(v float64) protocol.Metric[float64] {
+		return protocol.Metric[float64]{Status: protocol.MetricKnown, Value: &v, SampledAt: at}
+	}
+	values["agent.report_interval_seconds"] = unknown()
+	values["agent.unobserved_intervals"] = unknown()
+	if ok && previous.AgentID == identity.AgentID && previous.Generation == generation && at.After(previous.ReceivedAt) {
+		interval := at.Sub(previous.ReceivedAt).Seconds()
+		values["agent.report_interval_seconds"] = known(interval)
+		values["agent.unobserved_intervals"] = known(math.Max(0, math.Floor(interval/float64(report.Host.FastIntervalSeconds))-1))
+	}
+	values["agent.sample_age_ms"] = known(float64(report.CPU.UsagePercent.SampleAgeMillis))
 }

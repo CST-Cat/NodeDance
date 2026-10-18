@@ -4,13 +4,16 @@ package probes
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"errors"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/agent/networkpolicy"
@@ -18,6 +21,8 @@ import (
 )
 
 const maxProbeResponseBytes = 4096
+
+type probeFamilyKey struct{}
 
 type Executor struct {
 	settings    func() protocol.AgentSettings
@@ -28,6 +33,9 @@ type Executor struct {
 func NewExecutor() *Executor { return NewConfiguredExecutor(protocol.DefaultAgentSettings) }
 func NewConfiguredExecutor(settings func() protocol.AgentSettings) *Executor {
 	dial := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if family, _ := ctx.Value(probeFamilyKey{}).(string); network == "tcp" && (family == "4" || family == "6") {
+			network = "tcp" + family
+		}
 		return networkpolicy.Dial(ctx, network, address, settings())
 	}
 	transport := &http.Transport{
@@ -46,18 +54,19 @@ func NewConfiguredExecutor(settings func() protocol.AgentSettings) *Executor {
 
 func (e *Executor) Execute(parent context.Context, dispatch protocol.ProbeDispatch) protocol.ProbeReport {
 	report := protocol.ProbeReport{ProbeID: dispatch.ProbeID, RunID: dispatch.RunID, NodeID: dispatch.NodeID}
-	if err := protocol.ValidateProbeTarget(dispatch.Kind, dispatch.Target, dispatch.ExpectedHTTPStatus); err != nil || dispatch.TimeoutSeconds < protocol.MinProbeTimeoutSeconds || dispatch.TimeoutSeconds > protocol.MaxProbeTimeoutSeconds {
+	if err := protocol.ValidateProbeTarget(dispatch.Kind, dispatch.Target, dispatch.ExpectedHTTPStatus); err != nil || dispatch.TimeoutSeconds < protocol.MinProbeTimeoutSeconds || dispatch.TimeoutSeconds > protocol.MaxProbeTimeoutSeconds || !protocol.ValidProbeIPFamily(dispatch.IPFamily) {
 		report.Status, report.ErrorCode = protocol.ProbeResultUnknown, "invalid_dispatch"
 		return report
 	}
 	ctx, cancel := context.WithTimeout(parent, time.Duration(dispatch.TimeoutSeconds)*time.Second)
 	defer cancel()
+	ctx = context.WithValue(ctx, probeFamilyKey{}, dispatch.IPFamily)
 	started := time.Now()
 	var httpStatus int
 	var err error
 	switch dispatch.Kind {
 	case protocol.ProbeHTTP, protocol.ProbeHTTPS:
-		httpStatus, err = e.checkHTTP(ctx, dispatch.Target)
+		httpStatus, report.Measurements, err = e.checkHTTP(ctx, dispatch.Target)
 		if err == nil && httpStatus != dispatch.ExpectedHTTPStatus {
 			err = errHTTPStatusMismatch
 		}
@@ -81,18 +90,60 @@ func (e *Executor) Execute(parent context.Context, dispatch protocol.ProbeDispat
 
 var errHTTPStatusMismatch = errors.New("expected HTTP status did not match")
 
-func (e *Executor) checkHTTP(ctx context.Context, target string) (int, error) {
+func (e *Executor) checkHTTP(ctx context.Context, target string) (int, *protocol.ProbeMeasurements, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	response, err := e.client.Do(request)
+	m := &protocol.ProbeMeasurements{}
+	var mu sync.Mutex
+	var dns, connect, handshake time.Time
+	started := time.Now()
+	duration := func(at time.Time) *float64 { n := float64(time.Since(at).Microseconds()) / 1000; return &n }
+	trace := &httptrace.ClientTrace{
+		DNSStart: func(httptrace.DNSStartInfo) { mu.Lock(); dns = time.Now(); mu.Unlock() },
+		DNSDone: func(info httptrace.DNSDoneInfo) {
+			mu.Lock()
+			defer mu.Unlock()
+			if info.Err == nil && !dns.IsZero() {
+				m.DNSMS = duration(dns)
+			}
+		},
+		ConnectStart: func(string, string) { mu.Lock(); connect = time.Now(); mu.Unlock() },
+		ConnectDone: func(_, _ string, e error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if e == nil && !connect.IsZero() {
+				m.ConnectMS = duration(connect)
+			}
+		},
+		TLSHandshakeStart: func() { mu.Lock(); handshake = time.Now(); mu.Unlock() },
+		TLSHandshakeDone: func(state tls.ConnectionState, e error) {
+			mu.Lock()
+			defer mu.Unlock()
+			if e == nil && !handshake.IsZero() {
+				m.TLSMS = duration(handshake)
+			}
+			if e == nil && len(state.PeerCertificates) > 0 {
+				at := state.PeerCertificates[0].NotAfter.UTC()
+				m.CertificateExpiresAt = &at
+			}
+		},
+		GotFirstResponseByte: func() { mu.Lock(); m.FirstByteMS = duration(started); mu.Unlock() },
+	}
+	response, err := e.client.Do(request.WithContext(httptrace.WithClientTrace(ctx, trace)))
 	if err != nil {
-		return 0, err
+		mu.Lock()
+		copy := *m
+		mu.Unlock()
+		return 0, &copy, err
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxProbeResponseBytes))
-	return response.StatusCode, nil
+	mu.Lock()
+	copy := *m
+	mu.Unlock()
+	return response.StatusCode, &copy, nil
 }
 
 func (e *Executor) checkTCP(ctx context.Context, target string) error {

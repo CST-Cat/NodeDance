@@ -6,6 +6,24 @@
 
 ### 简体中文
 
+## [0.1.44]
+
+### English
+
+- Extend the shared operation contract with diagnostic definitions, bounded incident recordings, capacity forecasts, performance baselines, change comparisons and cross-node correlations; retain unknown results when evidence is insufficient.
+- Preserve the original eight overview cards and add sixteen diagnostic square cards using the same card class, rounded corners, sizing and spacing, with four columns on wide screens and two on narrow screens. Keep existing gauges and charts, remove redundant captions and enlarge gauge details to the title size.
+- Reuse historical monitoring for diagnostic series, Host management for collection configuration and the discovered operation interface for analyses; keep Web, CLI and TUI on the same Core operations.
+- Persist source-aware diagnostic history and HTTP probe phases, bound raw recording retention and response sizes, deduplicate cached samples and keep all diagnostic extensions private from guest projections.
+- Maintain browser regressions for shared card geometry, account-menu sign-out, direct installation-command copying, session safety and guest boundaries; prevent password-eye press animation from escaping its input.
+
+### 简体中文
+
+- 共享操作契约新增诊断定义、有界故障录像、容量预测、性能基线、变更对照与跨节点关联；证据不足时保留未知结果。
+- 保留原有八张总览卡片，新增十六张诊断方形卡片，直接共用原卡片类名、圆角、尺寸和间距；宽屏四列、窄屏两列。保留既有仪表和统计图，移除重复说明，仪表下方读数字号与标题一致。
+- 新指标曲线沿用历史监控，采集配置沿用主机管理，分析沿用操作中心；Web、CLI、TUI 使用同一套 Core 操作。
+- 持久化带来源时间的诊断历史与 HTTP 探测阶段信息；限制原始录像保留量和响应大小，去重缓存样本，所有诊断扩展继续隔离于访客公开投影。
+- 维护卡片几何、账号菜单退出、直接复制安装命令、会话安全和访客边界的浏览器回归；防止密码小眼睛的按压动画超出输入框。
+
 ## [0.1.43]
 
 ### English

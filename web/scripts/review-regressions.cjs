@@ -2,7 +2,7 @@ const {selectNodeSection}=require('./sidebar-navigation.cjs')
 // Real browser presentation regressions against the isolated interface Core.
 // Compose responses are protocol fixtures; no remote mutation is executed.
 const assert=require('node:assert/strict'),path=require('node:path')
-module.exports=async function({page,context,base,node,headers,artifacts}){
+module.exports=async function({page,context,base,node,headers,artifacts,catalog}){
  async function layouts(name){
   for(const theme of ['light','dark'])for(const width of [390,1440]){
    await page.setViewportSize({width,height:1000});await page.waitForTimeout(100)
@@ -19,10 +19,10 @@ module.exports=async function({page,context,base,node,headers,artifacts}){
  }
  await page.goto(base+'/#/settings')
  await page.locator('.theme-options').waitFor()
- await page.locator('.theme-options button').first().click()
- assert.equal(await page.locator('.theme-options button').first().getAttribute('aria-pressed'),'true')
+ await page.locator('.theme-options').getByRole('button',{name:'Dark',exact:true}).click()
+ assert.equal(await page.locator('.theme-options').getByRole('button',{name:'Dark',exact:true}).getAttribute('aria-pressed'),'true')
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark')
- const saved=page.waitForResponse(r=>r.url().endsWith('/settings/appearance')&&r.request().method()==='PUT')
+ const profileOperation=catalog.operations.find(o=>o.name==='appearance.update');assert.ok(profileOperation);const saved=page.waitForResponse(r=>new URL(r.url()).pathname===profileOperation.path&&r.request().method()===profileOperation.method)
  await page.locator('.profile-form button[type=submit]').click();assert.equal((await saved).status(),200)
  await page.reload();await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark')
  await layouts('settings')

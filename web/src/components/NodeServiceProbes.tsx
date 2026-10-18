@@ -56,6 +56,7 @@ export default function NodeServiceProbes(input: Props) {
       const form = observable({
         name: "",
         kind: "http" as ServiceProbe["kind"],
+ ipFamily:"",
         target: "",
         expectedHttpStatus: 200,
         intervalSeconds: 30,
@@ -70,6 +71,7 @@ export default function NodeServiceProbes(input: Props) {
         Object.assign(form, {
           name: "",
           kind: "http",
+ ipFamily:"",
           target: "",
           expectedHttpStatus: 200,
           intervalSeconds: 30,
@@ -102,6 +104,7 @@ export default function NodeServiceProbes(input: Props) {
         Object.assign(form, {
           name: probe.name,
           kind: probe.kind,
+ ipFamily:probe.ipFamily??"",
           target: probe.target,
           expectedHttpStatus: probe.expectedHttpStatus || 200,
           intervalSeconds: probe.intervalSeconds,
@@ -119,6 +122,7 @@ export default function NodeServiceProbes(input: Props) {
           nodeId: props.nodeId,
           name: form.name.trim(),
           kind: form.kind,
+ ipFamily:form.ipFamily,
           target: form.target.trim(),
           intervalSeconds: Number(form.intervalSeconds),
           timeoutSeconds: Number(form.timeoutSeconds),
@@ -157,6 +161,7 @@ export default function NodeServiceProbes(input: Props) {
             nodeId: probe.nodeId,
             name: probe.name,
             kind: probe.kind,
+ ipFamily:probe.ipFamily??"",
             target: probe.target,
             expectedHttpStatus:
               probe.kind === "tcp" ? undefined : probe.expectedHttpStatus,
@@ -404,6 +409,7 @@ export default function NodeServiceProbes(input: Props) {
                       </option>
                     </UiSelect>
                   </label>
+                  <label><span>{t("observe.c2b1ff12eb34")}</span><UiSelect modelValue={form.ipFamily} onUpdateModelValue={(v:string)=>{form.ipFamily=v}}><option value="">{t("observe.d461a493a375")}</option><option value="4">IPv4</option><option value="6">IPv6</option></UiSelect></label>
                   <label
                     className={__classes("probe-target")}
                     data-v-5be80864=""
@@ -569,7 +575,7 @@ export default function NodeServiceProbes(input: Props) {
                         >
                           <strong data-v-5be80864="">{probe.name}</strong>
                           <code data-v-5be80864="">
-                            {probe.kind.toUpperCase()}
+                            {probe.kind.toUpperCase()}{probe.ipFamily?` · IPv${probe.ipFamily}`:""}
                             {" · "}
                             {probe.target}
                           </code>
@@ -739,6 +745,7 @@ export default function NodeServiceProbes(input: Props) {
                                     {" ms"}
                                   </span>
                                 ) : null}
+                                {run.measurements? <span>{Object.entries(run.measurements).map(([key,value])=>key==="certificateExpiresAt"?`${t("observe.1e73119d93c5")}: ${new Date(value as string).toLocaleString(locale.value)}`:`${({dnsMs:"DNS",connectMs:"TCP",tlsMs:"TLS",firstByteMs:t("observe.97cfed2cfbc6")} as Record<string,string>)[key]??key} ${Number(value).toFixed(1)} ms`).join(" · ")}</span>:null}
                                 {run.errorCode ? (
                                   <span data-v-5be80864="">
                                     {errorLabel(run.errorCode)}

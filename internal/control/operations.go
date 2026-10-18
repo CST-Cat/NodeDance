@@ -154,8 +154,9 @@ func schema(value any) any {
 		enum("billingCycleUnit", "", "day", "year", "month", "hour", "minute")
 		enum("trafficAccounting", "sum", "max", "min", "up", "down")
 		enum("currency", protocol.Currencies...)
-	case protocol.BatchProbe:
+	case protocol.BatchProbe, protocol.ProbeConfigRequest:
 		enum("kind", "http", "https", "tcp", "icmp")
+		enum("ipFamily", "", "4", "6")
 	}
 	return body
 }
@@ -359,6 +360,10 @@ func buildOperations() []Operation {
 		op("probes.update", "PUT", "/api/v1/probes/{id}", "Update probe using current revision", nil),
 		op("probes.delete", "DELETE", "/api/v1/probes/{id}", "Delete probe using current revision", nil, "revision"),
 		op("probes.quality", "GET", "/api/v1/probes/{id}/quality", "Latency percentiles and failure rates; offline gaps are unknown", nil, "from", "to"),
+		op("nodes.recording", "GET", node+"/recording", "Bounded raw diagnostic replay and incident/change timeline; rolling two hours, incident windows seven days", nil, "from", "to"),
+		op("nodes.incidents", "GET", node+"/incidents", "Recent diagnostic incidents; seven-day retention, maximum 100", nil),
+		op("nodes.analysis", "GET", node+"/analysis", "24-hour baseline, trend, capacity forecast and optional 30-minute before/after comparison; unknown when evidence is insufficient", nil, "key", "capacity", "changeAt"),
+		op("nodes.correlations", "GET", node+"/correlations", "Aligned minute correlation against up to eight node IDs; correlation does not establish cause", nil, "key", "nodes"),
 		op("metrics.catalog", "GET", "/api/v1/metrics/catalog", "Host metrics available for history and threshold alerts", nil),
 		op("probes.history", "GET", "/api/v1/probes/{id}/history", "Probe runs", nil, "limit"),
 		op("alerts.list", "GET", "/api/v1/alerts", "Active alerts", nil, "limit"),
@@ -406,6 +411,9 @@ func buildOperations() []Operation {
 	}
 	for i := range list {
 		o := &list[i]
+		if o.Name == "nodes.recording" {
+			o.MaxResponseBytes = 32 << 20
+		}
 		o.RequiredRole = "administrator"
 		switch o.Name {
 		case "core.operations", "core.health", "core.protocol", "auth.csrf", "auth.status", "auth.setup", "auth.login", "guest.entry", "guest.display", "appearance.get", "appearance.avatar", "appearance.background":
@@ -413,7 +421,7 @@ func buildOperations() []Operation {
 		case "auth.me", "auth.logout", "auth.password", "auth.switch", "sessions.list", "sessions.revoke", "accounts.list",
 			"profile.get", "profile.update", "profile.avatar", "profile.upload-avatar",
 			"nodes.list", "nodes.metrics", "nodes.history", "nodes.preferences", "nodes.asset",
-			"dashboard.core-info", "dashboard.memo", "dashboard.settings", "dashboard.watch", "metrics.catalog",
+			"dashboard.core-info", "dashboard.memo", "dashboard.settings", "dashboard.watch", "metrics.catalog", "nodes.recording", "nodes.incidents", "nodes.analysis", "nodes.correlations",
 			"containers.list", "images.list", "compose.list", "probes.list", "probes.history", "probes.quality":
 			o.RequiredRole = "viewer"
 		}

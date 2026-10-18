@@ -782,6 +782,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					continue
 				}
 				metricsIdentity := coremetrics.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID}
+				s.metrics.EnrichReport(metricsIdentity, connection.generation, &report, receivedAt)
 				if err := s.metrics.Accept(metricsIdentity, connection.generation, envelope.Sequence, report, receivedAt); err != nil {
 					// A duplicate or delayed telemetry frame is discarded without
 					// changing heartbeat sequence or validity.

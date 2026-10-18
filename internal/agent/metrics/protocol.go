@@ -55,6 +55,7 @@ func ToProtocolMetricsAt(snapshot Snapshot, serializedAt time.Time) protocol.Met
 	}
 	if out.Host != nil {
 		host := *out.Host
+		host.Observability = protocol.CloneObservability(out.Host.Observability)
 		out.Host = &host
 		if out.Host.DiskIO != nil {
 			value := *out.Host.DiskIO
@@ -69,6 +70,18 @@ func ToProtocolMetricsAt(snapshot Snapshot, serializedAt time.Time) protocol.Met
 // host inventory would exceed the wire limit. The collector sorts details, so
 // truncation is deterministic and explicitly marked in the payload.
 func boundProtocolDetails(snapshot protocol.MetricsSnapshot) protocol.MetricsSnapshot {
+	if snapshot.Host != nil && snapshot.Host.Observability != nil {
+		o := snapshot.Host.Observability
+		for len(o.Entities) > 0 {
+			data, _ := json.Marshal(o)
+			if len(data) <= 24<<10 {
+				break
+			}
+			o.Entities = o.Entities[:len(o.Entities)-1]
+			o.Truncated = true
+		}
+	}
+
 	if len(snapshot.Network.Interfaces) > protocol.MaxMetricsInterfaces {
 		snapshot.Network.Interfaces = snapshot.Network.Interfaces[:protocol.MaxMetricsInterfaces]
 		snapshot.Network.DetailsTruncated = true
@@ -281,6 +294,9 @@ func sampleAgeMillis(sampledAt, serializedAt time.Time) int64 {
 }
 
 func ageHost(h *protocol.MetricsHost, at time.Time) {
+	protocol.VisitObservability(h.Observability, func(m *protocol.Metric[float64], _ time.Duration) {
+		m.SampleAgeMillis = sampleAgeMillis(m.SampledAt, at)
+	})
 	if h.DiskIO != nil {
 		h.DiskIO.SampleAgeMillis = sampleAgeMillis(h.DiskIO.SampledAt, at)
 	}

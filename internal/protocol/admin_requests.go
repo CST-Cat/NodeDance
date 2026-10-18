@@ -59,6 +59,7 @@ type TerminalCreateRequest struct {
 }
 
 type ProbeConfigRequest struct {
+	IPFamily           string `json:"ipFamily,omitempty"`
 	NodeID             string `json:"nodeId" request:"required"`
 	Name               string `json:"name" request:"required"`
 	Kind               string `json:"kind" request:"required"`

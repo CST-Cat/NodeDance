@@ -124,7 +124,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const accountTrigger=adminPage.locator('.account-trigger'),accountPanel=adminPage.locator('.account-panel')
   assert.equal(await page.locator('.account-trigger,.account-panel').count(),0,'Anonymous guest must not expose account controls')
   await accountTrigger.click();await accountPanel.waitFor({state:'visible'})
-  assert.ok((await accountPanel.boundingBox()).y+(await accountPanel.boundingBox()).height<=(await accountTrigger.boundingBox()).y,'Account card opens upward')
+  assert.ok(await accountPanel.evaluate(panel=>panel.getBoundingClientRect().bottom<=document.querySelector('.account-trigger').getBoundingClientRect().top),'Account card opens upward')
   await adminPage.keyboard.press('Escape');await accountPanel.waitFor({state:'hidden'})
   assert.equal(await accountTrigger.evaluate(el=>document.activeElement===el),true,'Escape restores account trigger focus')
   await accountTrigger.click();await accountPanel.getByRole('button',{name:'Settings',exact:true}).click()

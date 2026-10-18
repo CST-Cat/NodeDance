@@ -82,3 +82,5 @@ Multi-account operations (`accounts.*`, `auth.switch`, `profile.*`) remain priva
 登录恢复：有效会话下再次登录使用该会话的 CSRF 校验，成功验证密码后轮换并撤销旧会话；失败保留原会话。Web 对提交前被拒绝的登录安全令牌仅刷新并重试一次，保留输入；来源拒绝、密码错误不重试。游客权限保持不变。隔离浏览器回归覆盖旧登录页、自动恢复、重试上限、旧会话撤销和伪造来源／令牌拒绝。
 
 Login recovery validates the current session CSRF token when present, verifies the password and rotates the replaced session only on success. Web retries an explicitly rejected login security token once, retaining input; origin and password failures are not retried. Anonymous boundaries remain unchanged and are checked by the isolated guest security suite.
+
+Diagnostic readings, per-core/process/container/application entities, probe phase timings and certificate dates, incident recordings, capacity predictions and cross-node correlations are private management data. They are never added to the guest projection or guest metric registry by enabling diagnostic collection. / 诊断指标、每核心及进程/容器/应用明细、探测阶段耗时与证书日期、故障录像、容量预测和跨节点关联均为私有管理数据，启用采集不会将其加入游客投影或可公开指标。

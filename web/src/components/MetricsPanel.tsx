@@ -1,4 +1,7 @@
 import { locale, t } from "../i18n";
+import { operationRequest } from "../api";
+import DiagnosticCards, { type DiagnosticDefinition } from "./DiagnosticCards";
+import { formatBytes } from "../metric-format";
 import type { Metric, MetricStatus, MetricsView } from "../metrics-contract";
 import { afterMount, beforeDispose, cell, derived, watchState } from "../state";
 
@@ -16,6 +19,13 @@ export default function MetricsPanel(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
       const props = __props;
+      const diagnosticDefinitions=cell<Record<string,DiagnosticDefinition>>({});
+      const entityDefinitions=cell<Record<string,Record<string,DiagnosticDefinition>>>({});
+      let definitionsRequested=false,disposed=false;
+      beforeDispose(()=>{disposed=true});
+      watchState(()=>!!props.view.metrics.host?.observability,available=>{if(!available||definitionsRequested)return;definitionsRequested=true;void operationRequest<{definitions:Record<string,DiagnosticDefinition>;entityDefinitions:Record<string,Record<string,DiagnosticDefinition>>}>('metrics.catalog').then(result=>{if(!disposed){diagnosticDefinitions.value=result.definitions??{};entityDefinitions.value=result.entityDefinitions??{}}}).catch(()=>{definitionsRequested=false})},{immediate:true});
+
+
       const FAST_TTL_MS = derived(
         () => (props.view.metrics.host?.fastIntervalSeconds ?? 5) * 3_000,
       );
@@ -158,19 +168,6 @@ export default function MetricsPanel(input: Props) {
           stale: t("m.2fe0e3339ac4"),
         }[status];
       }
-      function formatBytes(value: number | null | undefined): string {
-        if (value == null || !Number.isFinite(value) || value < 0) return "—";
-        if (value < 1024) return `${Math.round(value)} B`;
-        const units = ["KiB", "MiB", "GiB", "TiB", "PiB"];
-        let amount = value;
-        let unit = "B";
-        for (const next of units) {
-          amount /= 1024;
-          unit = next;
-          if (amount < 1024) break;
-        }
-        return `${amount.toFixed(1)} ${unit}`;
-      }
       function formatRate(value: number | null | undefined): string {
         return value == null || !Number.isFinite(value) || value < 0
           ? "—"
@@ -200,11 +197,6 @@ export default function MetricsPanel(input: Props) {
               "1": minutes,
             });
       }
-      const primaryInterfaces = derived(() =>
-        props.view.metrics.network.interfaces.filter(
-          (iface) => iface.includedInSummary,
-        ),
-      );
       const clockOffsetText = derived(() => {
         const offset = props.view.clockOffsetMs;
         if (!Number.isFinite(offset)) return t("m.4d8c1c5b4283");
@@ -246,7 +238,7 @@ export default function MetricsPanel(input: Props) {
                 data-v-64f045e3=""
               >
                 <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{"CPU"}</h3></div>
-                <ResourceReading label="CPU" resource="cpu" value={percentage(__props.view.metrics.cpu.usagePercent, __props.view.metrics.cpu.usagePercent.value)} valueTestId="cpu-value" detail={`${__props.view.metrics.cpu.logicalCores.value ?? "—"} ${t("overview.cores")}`} />
+                <ResourceReading labelContent={false} label="CPU" resource="cpu" value={percentage(__props.view.metrics.cpu.usagePercent, __props.view.metrics.cpu.usagePercent.value)} valueTestId="cpu-value" detail={`${__props.view.metrics.cpu.logicalCores.value ?? "—"} ${t("overview.cores")}`} />
                 {metricReason(__props.view.metrics.cpu.usagePercent) ? (
                   <p
                     data-testid="cpu-reason"
@@ -263,7 +255,7 @@ export default function MetricsPanel(input: Props) {
                 data-v-64f045e3=""
               >
                 <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{t("m.7d8f8c37ec78")}</h3></div>
-                <ResourceReading label={t("overview.memory")} resource="memory" value={percentage(__props.view.metrics.memory, __props.view.metrics.memory.value?.usedPercent)} valueTestId="memory-value" detail={`${formatBytes(__props.view.metrics.memory.value?.usedBytes)} / ${formatBytes(__props.view.metrics.memory.value?.totalBytes)}`} />
+                <ResourceReading labelContent={false} label={t("overview.memory")} resource="memory" value={percentage(__props.view.metrics.memory, __props.view.metrics.memory.value?.usedPercent)} valueTestId="memory-value" detail={`${formatBytes(__props.view.metrics.memory.value?.usedBytes)} / ${formatBytes(__props.view.metrics.memory.value?.totalBytes)}`} />
                 {metricReason(__props.view.metrics.memory) ? (
                   <p
                     data-testid="memory-reason"
@@ -296,7 +288,7 @@ export default function MetricsPanel(input: Props) {
                   </p>
                 ) : null}
                 {__props.view.metrics.disk.mounts.length === 0 ? (
-                  <ResourceReading label={t("overview.disk")} resource="disk" value={null} detail={t("overview.noData")} />
+                  <ResourceReading labelContent={false} label={t("overview.disk")} resource="disk" value={null} detail={t("overview.noData")} />
                 ) : null}
                 <Fragment>
                   {__each(__props.view.metrics.disk.mounts, (mount) => (
@@ -305,9 +297,7 @@ export default function MetricsPanel(input: Props) {
                       className={__classes("metric-mount-reading")}
                       data-v-64f045e3=""
                     >
-                      <ResourceReading label={__props.view.metrics.disk.mounts.length === 1 ? t("overview.disk") : `${t("overview.disk")} ${mount.mountpoint}`} resource="disk" value={percentage(mount.usage, mount.usage.value?.usedPercent, DISK_TTL_MS.value)} detail={`${formatBytes(mount.usage.value?.usedBytes)} / ${formatBytes(mount.usage.value?.totalBytes)}`}>
-                        <small>{mount.mountpoint} · {mount.device} · {mount.filesystem}</small>
-                      </ResourceReading>
+                      <ResourceReading labelContent={false} label={__props.view.metrics.disk.mounts.length === 1 ? t("overview.disk") : `${t("overview.disk")} ${mount.mountpoint}`} resource="disk" value={percentage(mount.usage, mount.usage.value?.usedPercent, DISK_TTL_MS.value)} detail={`${formatBytes(mount.usage.value?.usedBytes)} / ${formatBytes(mount.usage.value?.totalBytes)}`} />
                       {metricReason(mount.usage, DISK_TTL_MS.value) ? (
                         <p
                           className={__classes("metric-reason")}
@@ -339,53 +329,6 @@ export default function MetricsPanel(input: Props) {
                     {metricReason(__props.view.metrics.network.summary)}
                   </p>
                 ) : null}
-                {__props.view.metrics.network.detailsTruncated ? (
-                  <p
-                    data-testid="network-truncation"
-                    className={__classes("metric-reason")}
-                    data-v-64f045e3=""
-                  >
-                    {t("m.093a185c2e51")}
-                    {__props.view.metrics.network.truncationReason}
-                  </p>
-                ) : null}
-                <Fragment>
-                  {__each(primaryInterfaces.value, (iface) => (
-                    <div
-                      key={iface.name as any}
-                      data-testid="network-interface"
-                      data-interface-name={iface.name as any}
-                      className={__classes("interface-row")}
-                      data-v-64f045e3=""
-                    >
-                      <div
-                        className={__classes("interface-title")}
-                        data-v-64f045e3=""
-                      >
-                        <strong data-v-64f045e3="">{iface.name}</strong>
-                        <span
-                          className={__classes("interface-note")}
-                          data-v-64f045e3=""
-                        >
-                          {t("m.09f99341ca07")}
-                        </span>
-                      </div>
-                      {metricReason(iface.rate) ? (
-                        <p
-                          data-testid={
-                            `interface-rate-reason-${iface.name}` as any
-                          }
-                          className={__classes(
-                            "metric-reason interface-reason",
-                          )}
-                          data-v-64f045e3=""
-                        >
-                          {metricReason(iface.rate)}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                </Fragment>
               </article>
             </div>
             {__props.view.metrics.host ? (
@@ -398,7 +341,7 @@ export default function MetricsPanel(input: Props) {
                   data-v-64f045e3=""
                 >
                   <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{"Swap"}</h3></div>
-                  <ResourceReading label="Swap" resource="swap" value={percentage(__props.view.metrics.host.swap, __props.view.metrics.host.swap.value?.usedPercent)} detail={`${formatBytes(__props.view.metrics.host.swap.value?.usedBytes)} / ${formatBytes(__props.view.metrics.host.swap.value?.totalBytes)}`} />
+                  <ResourceReading labelContent={false} label="Swap" resource="swap" value={percentage(__props.view.metrics.host.swap, __props.view.metrics.host.swap.value?.usedPercent)} detail={`${formatBytes(__props.view.metrics.host.swap.value?.usedBytes)} / ${formatBytes(__props.view.metrics.host.swap.value?.totalBytes)}`} />
                   <p className={__classes("metric-reason")} data-v-64f045e3="">
                     {metricReason(__props.view.metrics.host.swap)}
                   </p>
@@ -408,7 +351,7 @@ export default function MetricsPanel(input: Props) {
                   data-v-64f045e3=""
                 >
                   <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{t("host.load")}</h3></div>
-                  <ResourceReading label={t("overview.load")} resource="load" value={loadPercent.value} highAt={80} detail={loadPercent.value === null ? "—" : t(loadLevel(loadPercent.value))} />
+                  <ResourceReading labelContent={false} label={t("overview.load")} resource="load" value={loadPercent.value} highAt={80} detail={loadPercent.value === null ? "—" : t(loadLevel(loadPercent.value))} />
                   <p className={__classes("metric-reason")} data-v-64f045e3="">
                     {metricReason(__props.view.metrics.host.load)}
                   </p>
@@ -470,6 +413,7 @@ export default function MetricsPanel(input: Props) {
                     </p>
                   ) : null}
                 </article>
+                <DiagnosticCards view={props.view} definitions={diagnosticDefinitions.value} entityDefinitions={entityDefinitions.value} online={nodeOnline.value} elapsedMs={elapsedSinceView.value} />
                 <article
                   className={__classes("metric-card hardware-card")}
                   data-v-64f045e3=""
