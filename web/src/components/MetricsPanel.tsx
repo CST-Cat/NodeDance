@@ -1,3 +1,4 @@
+import { recentHistory } from "../recent-history";
 import { locale, t } from "../i18n";
 import { operationRequest } from "../api";
 import DiagnosticCards, { type DiagnosticDefinition } from "./DiagnosticCards";
@@ -8,6 +9,7 @@ import { afterMount, beforeDispose, cell, derived, watchState } from "../state";
 import { Fragment } from "react";
 import { __classes, __each, useController } from "../state";
 import "./MetricsPanel.css";
+import RateHistoryChart from "./RateHistoryChart";
 import ResourceReading from "./ResourceReading";
 import TelemetryReadings from "./TelemetryReadings";
 import { loadPercentage, loadLevel } from "../resource-readings";
@@ -19,6 +21,7 @@ export default function MetricsPanel(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
       const props = __props;
+      const rateHistory = recentHistory(() => props.view.nodeId);
       const diagnosticDefinitions=cell<Record<string,DiagnosticDefinition>>({});
       const entityDefinitions=cell<Record<string,Record<string,DiagnosticDefinition>>>({});
       let definitionsRequested=false,disposed=false;
@@ -26,6 +29,15 @@ export default function MetricsPanel(input: Props) {
       watchState(()=>!!props.view.metrics.host?.observability,available=>{if(!available||definitionsRequested)return;definitionsRequested=true;void operationRequest<{definitions:Record<string,DiagnosticDefinition>;entityDefinitions:Record<string,Record<string,DiagnosticDefinition>>}>('metrics.catalog').then(result=>{if(!disposed){diagnosticDefinitions.value=result.definitions??{};entityDefinitions.value=result.entityDefinitions??{}}}).catch(()=>{definitionsRequested=false})},{immediate:true});
 
 
+      const trafficAsset = cell<{trafficLimitBytes: number; trafficAccounting: string; trafficWarningPercent: number} | null>(null);
+      let assetEpoch = 0;
+      watchState(() => props.view.nodeId, nodeId => {
+        const epoch = ++assetEpoch;
+        trafficAsset.value = null;
+        void operationRequest<{trafficLimitBytes: number; trafficAccounting: string; trafficWarningPercent: number}>("nodes.asset", {params: {nodeId}}).then(asset => {
+          if (!disposed && epoch === assetEpoch) trafficAsset.value = asset;
+        }).catch(() => {});
+      }, {immediate: true});
       const FAST_TTL_MS = derived(
         () => (props.view.metrics.host?.fastIntervalSeconds ?? 5) * 3_000,
       );
@@ -90,7 +102,7 @@ export default function MetricsPanel(input: Props) {
         reading(props.view.metrics.host?.load, props.view.metrics.host?.load.value?.one),
         reading(props.view.metrics.cpu.logicalCores, props.view.metrics.cpu.logicalCores.value),
       ));
-      const chartSamples = cell<{at: number; network: (number | null)[]; processes: (number | null)[]}[]>([]);
+      const chartSamples = cell<{at: number; processes: (number | null)[]}[]>([]);
       let chartIdentity = "", lastSample = -Infinity;
       function reading<T>(metric: Metric<T> | undefined, value: unknown): number | null {
         return metric && metricState(metric) === "known" && typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
@@ -98,20 +110,37 @@ export default function MetricsPanel(input: Props) {
       function percentage<T>(metric: Metric<T>, value: unknown, ttl = FAST_TTL_MS.value): number | null {
         return metricState(metric, ttl) === "known" && typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
       }
+      const trafficUsed = derived(() => {
+        const traffic = props.view.metrics.host?.traffic;
+        const data = traffic?.value;
+        if (!traffic || !data || metricState(traffic) !== "known") return null;
+        const rx = data.periodReceivedBytes, tx = data.periodSentBytes;
+        switch (trafficAsset.value?.trafficAccounting) {
+          case "up": return tx;
+          case "down": return rx;
+          case "max": return Math.max(rx, tx);
+          case "min": return Math.min(rx, tx);
+          default: return rx + tx;
+        }
+      });
+      const trafficPercent = derived(() => {
+        const limit = trafficAsset.value?.trafficLimitBytes ?? 0;
+        return limit > 0 && trafficUsed.value !== null ? trafficUsed.value / limit * 100 : null;
+      });
+
       watchState(() => props.view, view => {
         const identity = [view.nodeId, view.generation, view.metrics.uptime.value?.bootId ?? view.bootId ?? ""].join(":");
         if (identity !== chartIdentity) { chartIdentity = identity; chartSamples.value = []; lastSample = -Infinity; }
         const at = Date.parse(view.collectedAt);
         if (!Number.isFinite(at) || at <= lastSample) return;
         lastSample = at;
-        const network = view.metrics.network.summary, host = view.metrics.host;
+        const host = view.metrics.host;
         chartSamples.value = [...chartSamples.value, {
           at,
-          network: [reading(network, network.value?.receivedBytesPerSecond), reading(network, network.value?.sentBytesPerSecond)],
           processes: [reading(host?.processes, host?.processes.value), reading(host?.sockets, host?.sockets.value?.tcp), reading(host?.sockets, host?.sockets.value?.udp)],
         }].slice(-60);
       }, {immediate: true});
-      function chartPoints(kind: "network" | "processes"): TelemetryPoint[] {
+      function chartPoints(kind: "processes"): TelemetryPoint[] {
         return chartSamples.value.map(sample => ({at: sample.at, values: sample[kind]}));
       }
       function metricReason<T>(
@@ -168,11 +197,33 @@ export default function MetricsPanel(input: Props) {
           stale: t("m.2fe0e3339ac4"),
         }[status];
       }
-      function formatRate(value: number | null | undefined): string {
-        return value == null || !Number.isFinite(value) || value < 0
-          ? "—"
-          : `${formatBytes(value)}/s`;
-      }
+      const hardwareRows = derived(() => {
+        const host = props.view.metrics.host;
+        if (!host) return [];
+        const rows: {id: string; label: string; text: string}[] = [
+          {id: "cpu", label: "CPU", text: `${host.cpu.value?.model ?? "—"} · ${host.cpu.value?.physicalCores ?? "—"} ${t("host.physicalCores")}`},
+          {id: "system", label: t("m.caea742a78f8"), text: `${props.view.metrics.system.os.value ?? "—"} · ${props.view.metrics.system.architecture.value ?? "—"}`},
+          {id: "kernel", label: t("m.44aadacb01fe"), text: props.view.metrics.system.kernelVersion.value ?? "—"},
+          {id: "uptime", label: t("m.5986e9d976e0"), text: formatUptime(props.view.metrics.uptime.value?.seconds)},
+        ];
+        if (host.virtualization.value) rows.push({id: "virtualization", label: t("host.virtualization"), text: host.virtualization.value});
+        const publicAddresses = new Set<string>();
+        for (const [id, label, metric] of [["ipv4", t("host.publicIpv4"), host.publicIpv4], ["ipv6", t("host.publicIpv6"), host.publicIpv6]] as const) {
+          if (!metric.value?.trim()) continue;
+          publicAddresses.add(metric.value);
+          const state = metricState(metric, 900000);
+          rows.push({id, label, text: metric.value + (state === "known" ? "" : ` · ${statusLabel(state)}`)});
+        }
+        const interfaces = new Map<string, Set<string>>();
+        for (const address of host.addresses.value ?? []) {
+          if (/^(lo$|docker\d*$|br-|veth|virbr)/i.test(address.interface) || publicAddresses.has(address.address)) continue;
+          const values = interfaces.get(address.interface) ?? new Set<string>();
+          values.add(address.address);
+          interfaces.set(address.interface, values);
+        }
+        for (const [name, addresses] of interfaces) rows.push({id: `interface:${name}`, label: name, text: [...addresses].join(" · ")});
+        return rows;
+      });
       function formatTime(value: string | undefined, showZone = true): string {
         if (!value) return "—";
         const parsed = new Date(value);
@@ -215,9 +266,6 @@ export default function MetricsPanel(input: Props) {
           >
             <header className={__classes("metrics-header")} data-v-64f045e3="">
               <div data-v-64f045e3="">
-                <p className={__classes("metrics-eyebrow")} data-v-64f045e3="">
-                  {t("m.c797a5342dcf")}
-                </p>
                 <h2 id="metrics-heading" data-v-64f045e3="">
                   {t("m.c7d6c36fa0e6")}
                 </h2>
@@ -231,10 +279,20 @@ export default function MetricsPanel(input: Props) {
                 </p>
               </div>
             </header>
-            <div className={__classes("metrics-grid")} data-v-64f045e3="">
-              <article
+            <div className="metric-card resource-summary" data-testid="resource-summary" data-v-64f045e3="">
+              {__props.view.metrics.host ? (<section data-summary-item="load"
+                  className="summary-item"
+                  data-v-64f045e3=""
+                >
+                  <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{t("host.load")}</h3></div>
+                  <ResourceReading labelContent={false} label={t("overview.load")} resource="load" value={loadPercent.value} highAt={80} detail={loadPercent.value === null ? "—" : t(loadLevel(loadPercent.value))} />
+                  <p className={__classes("metric-reason")} data-v-64f045e3="">
+                    {metricReason(__props.view.metrics.host.load)}
+                  </p>
+                </section>) : null}
+              <section data-summary-item="cpu"
                 data-testid="cpu-card"
-                className={__classes("metric-card")}
+                className="summary-item"
                 data-v-64f045e3=""
               >
                 <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{"CPU"}</h3></div>
@@ -248,10 +306,10 @@ export default function MetricsPanel(input: Props) {
                     {metricReason(__props.view.metrics.cpu.usagePercent)}
                   </p>
                 ) : null}
-              </article>
-              <article
+              </section>
+<section data-summary-item="memory"
                 data-testid="memory-card"
-                className={__classes("metric-card")}
+                className="summary-item"
                 data-v-64f045e3=""
               >
                 <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{t("m.7d8f8c37ec78")}</h3></div>
@@ -265,10 +323,10 @@ export default function MetricsPanel(input: Props) {
                     {metricReason(__props.view.metrics.memory)}
                   </p>
                 ) : null}
-              </article>
-              <article
+              </section>
+<section data-summary-item="disk"
                 data-testid="disk-card"
-                className={__classes("metric-card disk-card")}
+                className="summary-item"
                 data-v-64f045e3=""
               >
                 <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{t("m.de7b72a3f852")}</h3></div>
@@ -309,7 +367,33 @@ export default function MetricsPanel(input: Props) {
                     </div>
                   ))}
                 </Fragment>
-              </article>
+              </section>
+              {__props.view.metrics.host ? (<Fragment><section data-summary-item="swap"
+                  className="summary-item"
+                  data-v-64f045e3=""
+                >
+                  <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{"Swap"}</h3></div>
+                  <ResourceReading labelContent={false} label="Swap" resource="swap" value={percentage(__props.view.metrics.host.swap, __props.view.metrics.host.swap.value?.usedPercent)} detail={`${formatBytes(__props.view.metrics.host.swap.value?.usedBytes)} / ${formatBytes(__props.view.metrics.host.swap.value?.totalBytes)}`} />
+                  <p className={__classes("metric-reason")} data-v-64f045e3="">
+                    {metricReason(__props.view.metrics.host.swap)}
+                  </p>
+                </section>
+<section data-summary-item="traffic"
+                  className="summary-item"
+                  data-v-64f045e3=""
+                >
+                  <div className={__classes("card-heading")} data-v-64f045e3="">
+                    <h3 data-v-64f045e3="">{t("host.traffic")}</h3>
+                  </div>
+                  {(trafficAsset.value?.trafficLimitBytes ?? 0) > 0 ? <ResourceReading labelContent={false} label={t("host.traffic")} resource="traffic" value={trafficPercent.value} highAt={trafficAsset.value?.trafficWarningPercent ?? 90} detail={`${formatBytes(trafficUsed.value)} / ${formatBytes(trafficAsset.value?.trafficLimitBytes)}`} /> : null}
+                  {__props.view.metrics.host.traffic.reason !== "partial_coverage" && metricReason(__props.view.metrics.host.traffic) ? (
+                    <p className={__classes("metric-reason")} data-v-64f045e3="">
+                      {metricReason(__props.view.metrics.host.traffic)}
+                    </p>
+                  ) : null}
+                </section></Fragment>) : null}
+            </div>
+            <div className="metrics-grid host-metrics" data-v-64f045e3="">
               <article
                 data-testid="network-card"
                 className={__classes("metric-card network-card")}
@@ -318,8 +402,7 @@ export default function MetricsPanel(input: Props) {
                 <div className={__classes("card-heading")} data-v-64f045e3="">
                   <h3 data-v-64f045e3="">{t("m.97b31b5d63f5")}</h3>
                 </div>
-                <TelemetryReadings labels={[t("overview.download"), t("overview.upload")]} values={[formatRate(__props.view.metrics.network.summary.value?.receivedBytesPerSecond), formatRate(__props.view.metrics.network.summary.value?.sentBytesPerSecond)]} />
-                <TelemetryChart label={t("overview.network")} labels={[t("overview.download"), t("overview.upload")]} points={chartPoints("network")} />
+                <RateHistoryChart showTotals kind="network" history={rateHistory} values={[reading(__props.view.metrics.network.summary, __props.view.metrics.network.summary.value?.receivedBytesPerSecond), reading(__props.view.metrics.network.summary, __props.view.metrics.network.summary.value?.sentBytesPerSecond)]} />
                 {metricReason(__props.view.metrics.network.summary) ? (
                   <p
                     data-testid="network-reason"
@@ -330,32 +413,12 @@ export default function MetricsPanel(input: Props) {
                   </p>
                 ) : null}
               </article>
-            </div>
-            {__props.view.metrics.host ? (
-              <div
-                className={__classes("metrics-grid host-metrics")}
-                data-v-64f045e3=""
-              >
-                <article
-                  className={__classes("metric-card")}
-                  data-v-64f045e3=""
-                >
-                  <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{"Swap"}</h3></div>
-                  <ResourceReading labelContent={false} label="Swap" resource="swap" value={percentage(__props.view.metrics.host.swap, __props.view.metrics.host.swap.value?.usedPercent)} detail={`${formatBytes(__props.view.metrics.host.swap.value?.usedBytes)} / ${formatBytes(__props.view.metrics.host.swap.value?.totalBytes)}`} />
-                  <p className={__classes("metric-reason")} data-v-64f045e3="">
-                    {metricReason(__props.view.metrics.host.swap)}
-                  </p>
-                </article>
-                <article
-                  className={__classes("metric-card")}
-                  data-v-64f045e3=""
-                >
-                  <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{t("host.load")}</h3></div>
-                  <ResourceReading labelContent={false} label={t("overview.load")} resource="load" value={loadPercent.value} highAt={80} detail={loadPercent.value === null ? "—" : t(loadLevel(loadPercent.value))} />
-                  <p className={__classes("metric-reason")} data-v-64f045e3="">
-                    {metricReason(__props.view.metrics.host.load)}
-                  </p>
-                </article>
+              <article data-testid="io-card" className="metric-card" data-v-64f045e3="">
+                <div className="card-heading" data-v-64f045e3=""><h3 data-v-64f045e3="">{t("overview.io")}</h3></div>
+                <RateHistoryChart showTotals kind="io" history={rateHistory} values={[reading(__props.view.metrics.host?.diskIO, __props.view.metrics.host?.diskIO?.value?.readBytesPerSecond), reading(__props.view.metrics.host?.diskIO, __props.view.metrics.host?.diskIO?.value?.writeBytesPerSecond)]} />
+                {__props.view.metrics.host?.diskIO && metricReason(__props.view.metrics.host.diskIO) ? <p className="metric-reason" data-v-64f045e3="">{metricReason(__props.view.metrics.host.diskIO)}</p> : null}
+              </article>
+              {__props.view.metrics.host ? (<Fragment>
                 <article
                   className={__classes("metric-card")}
                   data-v-64f045e3=""
@@ -369,154 +432,25 @@ export default function MetricsPanel(input: Props) {
                     {metricReason(__props.view.metrics.host.processes)}
                   </p>
                 </article>
-                <article
-                  className={__classes("metric-card")}
-                  data-v-64f045e3=""
-                >
-                  <div className={__classes("card-heading")} data-v-64f045e3="">
-                    <h3 data-v-64f045e3="">{t("host.traffic")}</h3>
-                  </div>
-                  <p className={__classes("network-pair")} data-v-64f045e3="">
-                    {"↓ "}
-                    {formatBytes(
-                      __props.view.metrics.host.traffic.value
-                        ?.periodReceivedBytes,
-                    )}
-                    {" · ↑ "}
-                    {formatBytes(
-                      __props.view.metrics.host.traffic.value?.periodSentBytes,
-                    )}
-                  </p>
-                  <p className={__classes("metric-caption")} data-v-64f045e3="">
-                    {t("host.period")}
-                    {": "}
-                    {formatTime(
-                      __props.view.metrics.host.traffic.value?.periodStart ??
-                        "",
-                      false,
-                    )}
-                  </p>
-                  <p className={__classes("metric-caption")} data-v-64f045e3="">
-                    {t("host.total")}
-                    {": ↓ "}
-                    {formatBytes(
-                      __props.view.metrics.host.traffic.value?.receivedBytes,
-                    )}
-                    {" · ↑ "}
-                    {formatBytes(
-                      __props.view.metrics.host.traffic.value?.sentBytes,
-                    )}
-                  </p>
-                  {__props.view.metrics.host.traffic.reason !== "partial_coverage" && metricReason(__props.view.metrics.host.traffic) ? (
-                    <p className={__classes("metric-reason")} data-v-64f045e3="">
-                      {metricReason(__props.view.metrics.host.traffic)}
-                    </p>
-                  ) : null}
-                </article>
-                <DiagnosticCards view={props.view} definitions={diagnosticDefinitions.value} entityDefinitions={entityDefinitions.value} online={nodeOnline.value} elapsedMs={elapsedSinceView.value} />
-                <article
-                  className={__classes("metric-card hardware-card")}
-                  data-v-64f045e3=""
-                >
-                  <h3 data-v-64f045e3="">{t("host.hardware")}</h3>
-                  <p data-v-64f045e3="">
-                    {__props.view.metrics.host.cpu.value?.model ?? "—"}
-                    {" · "}
-                    {__props.view.metrics.host.cpu.value?.physicalCores ??
-                      "—"}{" "}
-                    {t("host.physicalCores")}
-                  </p>
-                  <p data-v-64f045e3="">
-                    {__props.view.metrics.host.virtualization.value ?? "—"}
-                  </p>
-                  <p className={__classes("metric-caption")} data-v-64f045e3="">
-                    {t("host.cache")}
-                    {": "}
-                    {formatBytes(
-                      __props.view.metrics.host.memory.value?.cachedBytes,
-                    )}
-                    {" · "}
-                    {t("host.buffers")}
-                    {": "}
-                    {formatBytes(
-                      __props.view.metrics.host.memory.value?.bufferedBytes,
-                    )}
-                    {" · "}
-                    {__props.view.metrics.host.memoryMode}
-                  </p>
-                  <Fragment>
-                    {__each(
-                      __props.view.metrics.host.addresses.value,
-                      (address) => (
-                        <p
-                          key={(address.interface + address.address) as any}
-                          className={__classes("metric-caption")}
-                          data-v-64f045e3=""
-                        >
-                          {address.interface}
-                          {" · "}
-                          {address.address}
-                        </p>
-                      ),
-                    )}
-                  </Fragment>
-                  <p className={__classes("metric-caption")} data-v-64f045e3="">
-                    {"IPv4: "}
-                    {__props.view.metrics.host.publicIpv4.value ?? "—"}
-                    {" · "}
-                    {statusLabel(
-                      metricState(__props.view.metrics.host.publicIpv4, 900000),
-                    )}
-                  </p>
-                  <p className={__classes("metric-caption")} data-v-64f045e3="">
-                    {"IPv6: "}
-                    {__props.view.metrics.host.publicIpv6.value ?? "—"}
-                    {" · "}
-                    {statusLabel(
-                      metricState(__props.view.metrics.host.publicIpv6, 900000),
-                    )}
-                  </p>
-                </article>
-              </div>
-            ) : null}
-            <footer className={__classes("metrics-footer")} data-v-64f045e3="">
-              <div data-v-64f045e3="">
-                <span data-v-64f045e3="">{t("m.1ed65d95a3d5")}</span>
+                <DiagnosticCards collectorDetails={<Fragment><p className="network-pair" data-v-64f045e3="">
+                <span data-v-64f045e3="">{t("host.collectedAt")}</span>
                 <strong data-v-64f045e3="">
                   {formatTime(__props.view.collectedAt)}
                 </strong>
-              </div>
-              <div data-v-64f045e3="">
+              </p>
+<p className="network-pair" data-v-64f045e3="">
                 <span data-v-64f045e3="">{t("m.91a166714259")}</span>
                 <strong data-v-64f045e3="">
                   {formatTime(__props.view.receivedAt)}
                 </strong>
-              </div>
-              <div data-v-64f045e3="">
+              </p>
+<p className="network-pair" data-v-64f045e3="">
                 <span data-v-64f045e3="">{t("m.96ded394f11b")}</span>
                 <strong data-testid="clock-offset" data-v-64f045e3="">
                   {clockOffsetText.value}
                 </strong>
-              </div>
-              <div data-v-64f045e3="">
-                <span data-v-64f045e3="">{t("m.5986e9d976e0")}</span>
-                <strong data-v-64f045e3="">
-                  {formatUptime(__props.view.metrics.uptime.value?.seconds)}
-                </strong>
-              </div>
-              <div data-v-64f045e3="">
-                <span data-v-64f045e3="">{t("m.aeae0144dae1")}</span>
-                <strong
-                  data-testid="boot-id"
-                  className={__classes("boot-id")}
-                  data-v-64f045e3=""
-                >
-                  {__props.view.metrics.uptime.value?.bootId ??
-                    __props.view.bootId ??
-                    t("m.4d8c1c5b4283")}
-                </strong>
-              </div>
-              <div data-v-64f045e3="">
+              </p>
+<p className="network-pair" data-v-64f045e3="">
                 <span data-v-64f045e3="">{t("m.f43eb988fa4a")}</span>
                 <strong
                   data-testid="sample-identity"
@@ -529,24 +463,21 @@ export default function MetricsPanel(input: Props) {
                   {" / "}
                   {__props.view.sequence}
                 </strong>
-              </div>
-              <div data-v-64f045e3="">
-                <span data-v-64f045e3="">{t("m.caea742a78f8")}</span>
-                <strong data-v-64f045e3="">
-                  {__props.view.metrics.system.os.value ?? t("m.4d8c1c5b4283")}
-                  {" · "}
-                  {__props.view.metrics.system.architecture.value ??
-                    t("m.4d8c1c5b4283")}
-                </strong>
-              </div>
-              <div data-v-64f045e3="">
-                <span data-v-64f045e3="">{t("m.44aadacb01fe")}</span>
-                <strong data-v-64f045e3="">
-                  {__props.view.metrics.system.kernelVersion.value ??
-                    t("m.4d8c1c5b4283")}
-                </strong>
-              </div>
-            </footer>
+              </p></Fragment>} view={props.view} definitions={diagnosticDefinitions.value} entityDefinitions={entityDefinitions.value} online={nodeOnline.value} elapsedMs={elapsedSinceView.value} />
+                <article
+                  className={__classes("metric-card hardware-card")}
+                  data-v-64f045e3=""
+                >
+                  <div className="card-heading" data-v-64f045e3=""><h3 data-v-64f045e3="">{t("host.hardware")}</h3></div>
+                  <dl className="hardware-details">
+                    {hardwareRows.value.map(row => <div key={row.id} data-hardware={row.id}>
+                      <dt>{row.label}</dt><dd>{row.text}</dd>
+                    </div>)}
+                  </dl>
+                </article>
+              </Fragment>) : null}
+            </div>
+
           </section>
         </>
       );

@@ -84,3 +84,5 @@ Multi-account operations (`accounts.*`, `auth.switch`, `profile.*`) remain priva
 Login recovery validates the current session CSRF token when present, verifies the password and rotates the replaced session only on success. Web retries an explicitly rejected login security token once, retaining input; origin and password failures are not retried. Anonymous boundaries remain unchanged and are checked by the isolated guest security suite.
 
 Diagnostic readings, per-core/process entities, probe phase timings and certificate dates, incident recordings, capacity predictions and cross-node correlations are private management data. They are never added to the guest projection or guest metric registry by enabling diagnostic collection. / 诊断指标、每核心及进程明细、探测阶段耗时与证书日期、故障录像、容量预测和跨节点关联均为私有管理数据，启用采集不会将其加入游客投影或可公开指标。
+
+Five-second network/disk history stays private behind nodes.history; the anonymous browser suite explicitly verifies denial for resolution=5s. Guest history continues to use only its configured public minute/hour projection. / 网络与磁盘五秒历史仅通过私有 nodes.history 提供；匿名浏览器回归显式验证 resolution=5s 仍被拒绝。游客历史保持配置允许的公开分钟／小时投影。

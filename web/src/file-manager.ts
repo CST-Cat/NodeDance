@@ -53,17 +53,33 @@ export async function createFileManager(
   const signal = (other?: AbortSignal) =>
     other ? AbortSignal.any([controller.signal, other]) : controller.signal;
   const params = { nodeId };
-  const read = <T>(
-    name: string,
-    query: Record<string, string>,
-    other?: AbortSignal,
-  ) => {
+  // Coalesce elFinder's overlapping open/tree/ls requests. Keep two read
+  // slots so browsing cannot occupy every Core file-transfer slot.
+  const pendingReads = new Map<string, Promise<unknown>>();
+  const directories = new Map<string, { file: FinderFile; at: number }>();
+  let reading = 0;
+  const waiting: (() => void)[] = [];
+  const read = <T>(name: string, query: Record<string, string>, other?: AbortSignal): Promise<T> => {
     active();
-    return operationRequest<T>(
-      name,
-      { params, query },
-      { signal: signal(other) },
-    );
+    const key = JSON.stringify([name, Object.entries(query).sort()]);
+    if (!other && pendingReads.has(key)) return pendingReads.get(key) as Promise<T>;
+    const task = (async () => {
+      if (reading >= 2) await new Promise<void>(resolve => waiting.push(resolve));
+      else reading++;
+      try {
+        signal(other).throwIfAborted();
+        return await operationRequest<T>(name, { params, query }, { signal: signal(other) });
+      } finally {
+        const next = waiting.shift();
+        if (next) next();
+        else reading--;
+      }
+    })();
+    if (!other) {
+      pendingReads.set(key, task);
+      void task.finally(() => { if (pendingReads.get(key) === task) pendingReads.delete(key); }).catch(() => {});
+    }
+    return task;
   };
   const url = (name: string, p: string) => {
     active();
@@ -104,7 +120,7 @@ export async function createFileManager(
         /\.(png|jpe?g|gif|webp|bmp|avif|pdf|mp4|webm|mp3|ogg|wav)$/i.test(
           value.name,
         );
-    return {
+    const file: FinderFile = {
       hash: hash(value.path),
       ...(value.path === "/"
         ? { volumeid: "nd_" }
@@ -122,6 +138,11 @@ export async function createFileManager(
             url: url(passive ? "files.preview" : "files.download", value.path),
           }),
     };
+    if (directory) {
+      if (directories.size >= 512) directories.delete(directories.keys().next().value!);
+      directories.set(value.path, { file, at: Date.now() });
+    }
+    return file;
   }
   async function pages(
     name: string,
@@ -145,8 +166,11 @@ export async function createFileManager(
     } while (after);
     return result;
   }
-  const stat = async (value: string) =>
-    entry(await read<NodeFileEntry>("files.stat", { path: value }));
+  const stat = async (value: string, cached = false) => {
+    const known = directories.get(value);
+    if (cached && known && Date.now() - known.at < 10_000) return known.file;
+    return entry(await read<NodeFileEntry>("files.stat", { path: value }));
+  };
   const list = (value: string) => pages("files.list", { path: value });
   async function observe(item: FileObservation, other?: AbortSignal) {
     for (;;) {
@@ -178,6 +202,7 @@ export async function createFileManager(
         continue;
       }
       if (task.status === "unknown") throw Error(t("files.unknown"));
+      directories.clear();
       finishIntent(item.intent);
       observations = observations.filter((v) => v !== item);
       persist();
@@ -188,6 +213,7 @@ export async function createFileManager(
   }
   async function action(body: Record<string, unknown>, other?: AbortSignal) {
     active();
+    directories.clear();
     const payload = exactJSON(body),
       intent = await requestIntent("files.action", { params }, payload);
     active();
@@ -248,6 +274,7 @@ export async function createFileManager(
     other?: AbortSignal,
   ) {
     active();
+    directories.clear();
     const query = { path },
       headers = {
         "Content-Type": "application/octet-stream",
@@ -280,6 +307,7 @@ export async function createFileManager(
     );
     active();
     if (task.status === "succeeded") {
+      directories.clear();
       finishIntent(intent);
       return task;
     }
@@ -333,12 +361,14 @@ export async function createFileManager(
     tmbUrl: "",
   };
   async function open(target: string, directoryOnly: boolean) {
-    const entries = await list(target),
-      ancestors: FinderFile[] = [];
+    const paths: string[] = [];
     for (let current = target; ; current = parent(current)) {
-      ancestors.push(await stat(current));
+      paths.push(current);
       if (current === "/") break;
     }
+    const [entries, ancestors] = await Promise.all([
+      list(target), Promise.all(paths.map((p, index) => stat(p, index > 0))),
+    ]);
     cwd = target;
     return {
       api: "2.1",
@@ -396,12 +426,12 @@ export async function createFileManager(
           ),
         };
       case "parents": {
-        const tree: FinderFile[] = [];
+        const paths: string[] = [];
         for (let p = parent(target); ; p = parent(p)) {
-          tree.push(await stat(p));
+          paths.push(p);
           if (p === "/") break;
         }
-        return { tree };
+        return { tree: await Promise.all(paths.map(p => stat(p, true))) };
       }
       case "ls":
         return {
@@ -681,6 +711,8 @@ export async function createFileManager(
     dispose() {
       controller.abort();
       versions.clear();
+      directories.clear();
+      pendingReads.clear();
     },
     observations: () => [...observations],
     observe: async (id: string) => {

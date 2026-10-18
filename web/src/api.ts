@@ -309,7 +309,7 @@ export interface MetricHistorySeries {
 
 export interface MetricHistory {
   nodeId: string
-  resolution: 'minute' | 'hour'
+  resolution: '5s' | 'minute' | 'hour'
   from: string
   to: string
   series: MetricHistorySeries[]
@@ -641,7 +641,7 @@ export const api = {
   nodePreferences: (nodeId: string) => operationRequest<{ preferences: DashboardPreference[] }>("nodes.preferences", { params: { nodeId: String(nodeId) } }),
   sshConnection: (nodeId: string) => operationRequest<{status:number;ssh:SSHConnectionInfo}>("agents.diagnostics", {params:{nodeId}}),
   saveNodePreference: (nodeId: string, preference: DashboardPreference) => operationRequest<void>("nodes.save-preference", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(preference) }),
-  nodeHistory: (nodeId: string, resolution: 'minute' | 'hour', from: Date, to: Date) => {
+  nodeHistory: (nodeId: string, resolution: '5s' | 'minute' | 'hour', from: Date, to: Date) => {
     const query = new URLSearchParams({ resolution, from: from.toISOString(), to: to.toISOString() })
     return operationRequest<MetricHistory>("nodes.history", { params: { nodeId: String(nodeId) }, query: Object.fromEntries(query) })
   },

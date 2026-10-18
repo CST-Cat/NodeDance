@@ -84,13 +84,6 @@
   line-height: 1.55;
   white-space: pre-wrap;
 }
-.detail-heading-navigation[data-v-98aa91ae] {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 16px;
-  margin-bottom: 12px;
-}
 .detail-heading-status[data-v-98aa91ae] {
   display: flex;
   flex-wrap: wrap;

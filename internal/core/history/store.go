@@ -99,6 +99,9 @@ func (s Store) AppendSnapshot(ctx context.Context, nodeID string, snapshot proto
 			return fmt.Errorf("append metric history %s: %w", item.key, err)
 		}
 	}
+	if err := appendFine(ctx, tx, nodeID, snapshot, receivedAt); err != nil {
+		return err
+	}
 	if err := recordSnapshot(ctx, tx, nodeID, snapshot, receivedAt); err != nil {
 		return err
 	}
@@ -135,6 +138,9 @@ func (s Store) Cleanup(ctx context.Context, now time.Time) error {
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM metrics_minute WHERE bucket_at < ?`, minuteCutoff); err != nil {
 		return fmt.Errorf("delete expired minute history: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM metrics_fine WHERE bucket_at < ?`, now.Add(-FineRetention).Truncate(FineInterval).Unix()); err != nil {
+		return err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM metrics_hour WHERE bucket_at < ?`, hourCutoff); err != nil {
 		return fmt.Errorf("delete expired hourly history: %w", err)
@@ -176,6 +182,11 @@ func (s Store) query(ctx context.Context, nodeID, resolution string, from, to ti
 	step := MinuteSeconds
 	if resolution == "hour" {
 		step = HourSeconds
+	} else if resolution == "5s" {
+		step = int64(FineInterval / time.Second)
+		if to.Sub(from) > FineMaxRange {
+			return Response{}, ErrInvalidQuery
+		}
 	} else if resolution != "minute" {
 		return Response{}, ErrInvalidQuery
 	}
@@ -192,6 +203,9 @@ func (s Store) query(ctx context.Context, nodeID, resolution string, from, to ti
 	}
 	query := `SELECT metric_key, bucket_at, sample_count, sample_sum, minimum, maximum FROM metrics_minute
 		WHERE node_id=? AND bucket_at>=? AND bucket_at<?` + filterSQL + ` ORDER BY metric_key, bucket_at`
+	if resolution == "5s" {
+		query = strings.Replace(query, "FROM metrics_minute", "FROM metrics_fine", 1)
+	}
 	args := append([]any{nodeID, fromBucket, toBucketExclusive}, filterArgs...)
 	if resolution == "hour" {
 		query = `SELECT metric_key, bucket_at, SUM(sample_count), SUM(sample_sum), MIN(minimum), MAX(maximum)

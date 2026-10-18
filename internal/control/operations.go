@@ -299,7 +299,7 @@ func buildOperations() []Operation {
 		op("commands.get", "GET", node+"/commands/{jobId}", "Host command status, exit code and bounded output", nil),
 		op("commands.cancel", "DELETE", node+"/commands/{jobId}", "Cancel a running host command process group", nil),
 		op("nodes.metrics", "GET", node+"/metrics", "Latest host metrics", nil),
-		op("nodes.history", "GET", node+"/history", "Metric history; from/to are RFC3339, resolution is minute or hour", nil, "from", "to", "resolution"),
+		op("nodes.history", "GET", node+"/history", "Metric history; from/to are RFC3339, resolution is 5s (rates, up to 4h), minute or hour", nil, "from", "to", "resolution"),
 		op("nodes.preferences", "GET", node+"/preferences", "Node and container display preferences", nil),
 		op("nodes.save-preference", "PUT", node+"/preferences", "Save display and connection preference", schema(dashboard.Preference{})),
 		op("guest.settings", "GET", "/api/v1/guest/settings", "Guest display policy and permitted metric choices", nil),

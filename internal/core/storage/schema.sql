@@ -188,6 +188,20 @@ CREATE TABLE IF NOT EXISTS dashboard_settings (
 INSERT OR IGNORE INTO dashboard_settings(id, view_mode, group_by, sort_by, node_group_by, node_sort_by, featured_limit, custom_fields_json, updated_at)
 	VALUES(1, 'monitor', 'node', 'custom', 'status', 'custom', 4, '["state","ports","health"]', 0);
 
+CREATE TABLE IF NOT EXISTS metrics_fine (
+	node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+	metric_key TEXT NOT NULL,
+	bucket_at INTEGER NOT NULL,
+	sample_count INTEGER NOT NULL CHECK (sample_count > 0),
+	sample_sum REAL NOT NULL,
+	minimum REAL NOT NULL,
+	maximum REAL NOT NULL,
+	PRIMARY KEY(node_id, metric_key, bucket_at)
+);
+
+CREATE INDEX IF NOT EXISTS metrics_fine_retention ON metrics_fine(bucket_at);
+CREATE INDEX IF NOT EXISTS metrics_fine_node_time ON metrics_fine(node_id,bucket_at,metric_key);
+
 CREATE TABLE IF NOT EXISTS metrics_minute (
 	node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
 	metric_key TEXT NOT NULL,

@@ -112,7 +112,7 @@ export default function HistoricalMetrics(input: Props) {
         );
         const from = history ? Date.parse(history.from) : Number.NaN;
         const to = history ? Date.parse(history.to) : Number.NaN;
-        const step = history?.resolution === "hour" ? 3_600_000 : 60_000;
+        const step = history?.resolution === "hour" ? 3_600_000 : history?.resolution === "5s" ? 5_000 : 60_000;
         const first = Number.isFinite(from) ? Math.ceil(from / step) * step : 0;
         const last = Number.isFinite(to) ? Math.ceil(to / step) * step : 0;
         const values = new Map(

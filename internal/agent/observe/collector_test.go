@@ -25,27 +25,6 @@ func TestCounterStatesAndRateDenominator(t *testing.T) {
 		t.Fatal("A real zero delta must stay known", m)
 	}
 }
-func TestPSIIndependentUnknownAndNoSystemCPUFull(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "pressure")
-	at := time.Now()
-	values := map[string]protocol.Metric[float64]{"pressure.cpu.some10": unknown("sampling", at), "pressure.cpu.some60": unknown("sampling", at)}
-	if err := os.WriteFile(path, []byte("some avg10=0.00 avg60=3.00 avg300=1.00 total=100\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	collectPressure(path, "cpu", at, values)
-	if *values["pressure.cpu.some10"].Value != 0 || *values["pressure.cpu.some60"].Value != 3 {
-		t.Fatal(values)
-	}
-	collectPressure(path+"-missing", "cpu", at, values)
-	for _, m := range values {
-		if m.Value != nil || m.Reason != "unsupported" {
-			t.Fatal(m)
-		}
-	}
-	if _, ok := protocol.DiagnosticDefinitions["pressure.cpu.full10"]; ok {
-		t.Fatal("system CPU full must not be published")
-	}
-}
 func TestObservationSettingsBounds(t *testing.T) {
 	defaults := protocol.ObservationDefaults()
 	if err := protocol.ValidateObservationSettings(&defaults); err != nil {

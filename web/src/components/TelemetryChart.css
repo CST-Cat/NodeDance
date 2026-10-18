@@ -35,3 +35,8 @@
 }
 
 .monitor-values span[data-series="2"]::before { background: var(--warning); }
+
+.history-range { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+.history-totals { margin-top: 16px; }
+.history-totals .network-pair { margin: 0; line-height: 1.5; }

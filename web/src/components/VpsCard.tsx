@@ -686,6 +686,7 @@ export default function VpsCard(input: Props) {
               </p>
             ) : null}
             <VpsTelemetry
+              nodeId={__props.node.nodeId}
               metrics={__props.metrics as any}
               online={__props.online as any}
               currentTime={__props.currentTime as any}

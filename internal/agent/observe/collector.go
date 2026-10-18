@@ -112,9 +112,6 @@ func (c *Collector) Collect(ctx context.Context, at time.Time, fast int, s *prot
 		}
 	}
 	c.collectCPU(ctx, at, out)
-	for _, resource := range []string{"cpu"} {
-		collectPressure(filepath.Join(root(), "pressure", resource), resource, at, out.Values)
-	}
 	stat, e := fields(filepath.Join(root(), "stat"))
 	if e == nil {
 		for k, src := range map[string]string{"cpu.running": "procs_running", "cpu.blocked": "procs_blocked"} {
@@ -141,7 +138,6 @@ func (c *Collector) Collect(ctx context.Context, at time.Time, fast int, s *prot
 		out.Values["memory.dirty_bytes"] = known(float64(m.Dirty), at)
 		out.Values["memory.slab_bytes"] = known(float64(m.Slab), at)
 	}
-	c.collectConntrack(at, out)
 	c.collectDisk(ctx, at, out)
 	if p, e := process.NewProcessWithContext(ctx, int32(os.Getpid())); e == nil {
 		if m, e := p.MemoryInfoWithContext(ctx); e == nil {
@@ -256,47 +252,6 @@ func (c *Collector) collectCPU(ctx context.Context, at time.Time, o *protocol.Ob
 		} else {
 			o.Values[k] = unknown(why, at)
 		}
-	}
-}
-func collectPressure(path, resource string, at time.Time, values map[string]protocol.Metric[float64]) {
-	s, e := read(path)
-	if e != nil {
-		for k := range values {
-			if strings.HasPrefix(k, "pressure."+resource+".") {
-				values[k] = unknown(reason(e), at)
-			}
-		}
-		return
-	}
-	for _, line := range strings.Split(s, "\n") {
-		f := strings.Fields(line)
-		if len(f) < 2 {
-			continue
-		}
-		for _, token := range f[1:] {
-			pair := strings.SplitN(token, "=", 2)
-			if len(pair) != 2 || !strings.HasPrefix(pair[0], "avg") {
-				continue
-			}
-			n, e := strconv.ParseFloat(pair[1], 64)
-			if e == nil && n >= 0 && n <= 100 {
-				key := "pressure." + resource + "." + f[0] + strings.TrimPrefix(pair[0], "avg")
-				if _, exists := values[key]; exists {
-					values[key] = known(n, at)
-				}
-			}
-		}
-	}
-}
-func (c *Collector) collectConntrack(at time.Time, o *protocol.Observability) {
-	count, e1 := read(filepath.Join(root(), "sys/net/netfilter/nf_conntrack_count"))
-	limit, e2 := read(filepath.Join(root(), "sys/net/netfilter/nf_conntrack_max"))
-	a, e3 := strconv.ParseFloat(count, 64)
-	b, e4 := strconv.ParseFloat(limit, 64)
-	if e1 == nil && e2 == nil && e3 == nil && e4 == nil && b > 0 {
-		o.Values["network.conntrack_count"] = known(a, at)
-		o.Values["network.conntrack_limit"] = known(b, at)
-		o.Values["network.conntrack_percent"] = known(a/b*100, at)
 	}
 }
 func (c *Collector) collectDisk(ctx context.Context, at time.Time, o *protocol.Observability) {

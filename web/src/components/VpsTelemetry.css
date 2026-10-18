@@ -48,14 +48,6 @@
   font-size: 11px;
   color: var(--muted);
 }
-.live-monitor footer[data-v-85963ddb] {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  color: var(--muted);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-}
 .vps-telemetry[data-state="offline"] .chart-line {
   opacity: 0.4;
 }

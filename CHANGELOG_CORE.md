@@ -6,6 +6,30 @@
 
 ### 简体中文
 
+## [0.1.46]
+
+### English
+
+- Remove the kernel-memory card and reduce CPU scheduling to steal, I/O wait, user and system. Coalesce concurrent file-browser reads, bound read concurrency and briefly reuse ancestor metadata while always refreshing directory contents.
+- Add explicitly estimated four-hour download/upload and disk read/write totals below the shared history charts; missing history stays unknown.
+- Persist network and disk throughput in sparse five-second buckets with 24-hour retention, cached-report deduplication, bounded four-hour queries and incremental five-second Web refresh. Existing minute/hour histories remain available.
+- Read the latest four hours of persisted Core five-second history for overview and detail network/disk I/O charts, with bounded refresh concurrency and explicit missing-data gaps instead of browser-session buffers.
+- Consolidate diagnostic timestamps and system metadata into their existing cards; compact Hardware and addresses while retaining both public IP families and omitting empty rows and duplicate/container addresses.
+- Combine load, CPU, memory, disk, Swap and billing traffic in one rounded resource rectangle with six columns on wide screens and three on narrow screens.
+- Adapt shared per-core rings to core count and card space, hide single-core cards, and add billing-quota rings using existing traffic accounting settings.
+- Remove CPU pressure and connection tracking cards and the dedicated conntrack incident trigger; display CPU steal without translation.
+
+### 简体中文
+
+- 移除内核内存卡片，CPU 调度精简为 steal、I/O wait、user 和 system。文件浏览合并并发重复读取、限制读取并发，短暂复用父目录元数据，目录内容始终重新获取。
+- 详情网络和磁盘 I/O 曲线下新增四小时下行／上行及读取／写入累计估算；无历史数据保持未知。
+- 网络与磁盘速率新增稀疏五秒历史，保留24小时、去重缓存上报，查询最多四小时，Web 每五秒增量刷新；原有分钟／小时历史继续提供。
+- 总览和详情网络／磁盘 I/O 曲线改读 Core 最近四小时的持久化五秒历史，限制刷新并发，缺失时段断线，不再依赖本次浏览器会话缓冲。
+- 采集时间与系统信息合并到既有卡片；硬件与地址改为紧凑布局，保留公网双栈，省略无数据空行、重复地址和容器网桥。
+- 系统负载、CPU、内存、磁盘、Swap 与账期流量合并为一个圆角矩形，宽屏六列、窄屏三列。
+- 每核心复用环形仪表，按核心数量和卡片空间自适应，单核隐藏；账期流量复用现有额度与计费口径显示百分比环。
+- 删除 CPU 压力、连接跟踪卡片及连接跟踪专用异常触发；CPU steal 保留英文名称。
+
 ## [0.1.45]
 
 ### English

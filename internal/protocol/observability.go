@@ -54,7 +54,7 @@ var EntityDefinitions = map[string]map[string]MetricDefinition{}
 func init() {
 	DiagnosticDefinitions["cpu.user_percent"] = MetricDefinition{"User CPU", "用户态 CPU", "%", "/proc/stat", "host", "fast", "total CPU ticks"}
 	DiagnosticDefinitions["cpu.system_percent"] = MetricDefinition{"System CPU", "内核态 CPU", "%", "/proc/stat", "host", "fast", "total CPU ticks"}
-	DiagnosticDefinitions["cpu.steal_percent"] = MetricDefinition{"CPU steal", "CPU 调度等待", "%", "/proc/stat", "host", "fast", "total CPU ticks"}
+	DiagnosticDefinitions["cpu.steal_percent"] = MetricDefinition{"CPU steal", "CPU steal", "%", "/proc/stat", "host", "fast", "total CPU ticks"}
 	DiagnosticDefinitions["cpu.iowait_percent"] = MetricDefinition{"I/O wait", "I/O 等待", "%", "/proc/stat", "host", "fast", "total CPU ticks; kernel accounting limitations apply"}
 	DiagnosticDefinitions["cpu.softirq_percent"] = MetricDefinition{"Soft IRQ", "软中断", "%", "/proc/stat", "host", "fast", "total CPU ticks"}
 	DiagnosticDefinitions["cpu.running"] = MetricDefinition{"Runnable threads", "可运行线程", "count", "/proc/stat", "host", "fast", "none"}
@@ -70,16 +70,10 @@ func init() {
 	DiagnosticDefinitions["disk.read_latency_ms"] = MetricDefinition{"Mean read latency", "平均读取延迟", "ms", "/proc/diskstats", "host", "fast", "completed reads in interval"}
 	DiagnosticDefinitions["disk.write_latency_ms"] = MetricDefinition{"Mean write latency", "平均写入延迟", "ms", "/proc/diskstats", "host", "fast", "completed writes in interval"}
 	DiagnosticDefinitions["disk.queue"] = MetricDefinition{"Mean outstanding I/O", "平均在途 I/O", "count", "/proc/diskstats", "host", "fast", "elapsed milliseconds"}
-	DiagnosticDefinitions["network.conntrack_count"] = MetricDefinition{"Tracked connections", "连接跟踪已用", "count", "/proc/sys/net/netfilter", "host", "fast", "none"}
-	DiagnosticDefinitions["network.conntrack_limit"] = MetricDefinition{"Conntrack limit", "连接跟踪上限", "count", "/proc/sys/net/netfilter", "host", "fast", "none"}
-	DiagnosticDefinitions["network.conntrack_percent"] = MetricDefinition{"Conntrack usage", "连接跟踪使用率", "%", "/proc/sys/net/netfilter", "host", "fast", "nf_conntrack_max"}
 	DiagnosticDefinitions["agent.rss_bytes"] = MetricDefinition{"Agent RSS", "Agent 常驻内存", "bytes", "/proc/self/statm", "host", "fast", "none"}
 	DiagnosticDefinitions["agent.cpu_percent"] = MetricDefinition{"Agent CPU", "Agent CPU", "%", "/proc/self/stat", "host", "fast", "one CPU elapsed seconds; may exceed 100"}
 	DiagnosticDefinitions["agent.collection_ms"] = MetricDefinition{"Fast collection duration", "快速采集耗时", "ms", "monotonic clock", "host", "fast", "none"}
 	DiagnosticDefinitions["agent.slow_collection_ms"] = MetricDefinition{"Detailed collection duration", "明细采集耗时", "ms", "monotonic clock", "host", "slow", "none"}
-	DiagnosticDefinitions["pressure.cpu.some10"] = MetricDefinition{"cpu pressure some 10s", "CPU 部分阻塞 10秒", "%", "/proc/pressure/cpu", "host", "fast", "10s rolling wall-time window"}
-	DiagnosticDefinitions["pressure.cpu.some60"] = MetricDefinition{"cpu pressure some 60s", "CPU 部分阻塞 60秒", "%", "/proc/pressure/cpu", "host", "fast", "60s rolling wall-time window"}
-	DiagnosticDefinitions["pressure.cpu.some300"] = MetricDefinition{"cpu pressure some 300s", "CPU 部分阻塞 300秒", "%", "/proc/pressure/cpu", "host", "fast", "300s rolling wall-time window"}
 	DiagnosticDefinitions["agent.report_interval_seconds"] = MetricDefinition{"Report interval", "上报间隔", "s", "Core receive monotonic clock", "agent", "fast", "none"}
 	DiagnosticDefinitions["agent.sample_age_ms"] = MetricDefinition{"Sample serialization age", "采样至序列化耗时", "ms", "Agent monotonic sample age", "agent", "fast", "none"}
 	DiagnosticDefinitions["agent.unobserved_intervals"] = MetricDefinition{"Unobserved sampling intervals", "未观测采样间隔", "count", "Core receive interval / configured interval", "agent", "fast", "fast interval seconds; estimate, not packet loss"}

@@ -68,6 +68,22 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   await page.evaluate(async node=>{const {createFileManager}=await import('/__file-driver-audit.js');window.fileDriverAudit=await createFileManager(node,()=>{})},node)
   const H=value=>'nd_'+Buffer.from(value).toString('base64url')
   const call=(cmd,data={})=>page.evaluate(({cmd,data})=>window.fileDriverAudit.request({cmd,...data}),{cmd,data})
+  // Under one delayed RPC, elFinder's open/tree/ls must share the list.
+  const browseRequests=[];let browseActive=0,browsePeak=0;
+  const browseRoute=async route=>{
+   const request=route.request();if(!['files.list','files.stat'].some(name=>new URL(request.url()).pathname===new URL(endpoint(name)).pathname))return route.continue();
+   browseRequests.push(request.url());browseActive++;browsePeak=Math.max(browsePeak,browseActive);
+   try{await new Promise(r=>setTimeout(r,75));await route.fulfill({response:await route.fetch()})}finally{browseActive--}
+  };
+  await page.route('**/api/v1/**',browseRoute);
+  await page.evaluate(async target=>{await Promise.all(['open','tree','ls'].map(cmd=>window.fileDriverAudit.request({cmd,target})))},H('/many'));
+  assert.equal(browseRequests.filter(url=>new URL(url).pathname===new URL(endpoint('files.list')).pathname).length,3,'205 entries require exactly three shared pages');
+  assert.ok(browsePeak<=2,'Browsing reserves transfer capacity');
+  browseRequests.length=0;await call('parents',{target:H('/many')});assert.equal(browseRequests.length,0,'Fresh parent directory metadata is reused');
+  fs.writeFileSync(path.join(files,'many','fresh.txt'),'new listing');
+  const refreshed=await call('open',{target:H('/many')});assert.ok(refreshed.files.some(file=>file.name==='fresh.txt'),'Directory contents are always fetched fresh');
+  fs.unlinkSync(path.join(files,'many','fresh.txt'));
+  await page.unroute('**/api/v1/**',browseRoute);
   const upload=files=>page.evaluate(async files=>{const items=files.map(f=>new File([(f.bytes?new Uint8Array(f.bytes):new Uint8Array(f.size??0).fill(7))],f.name,{type:'application/octet-stream'}));return await window.fileDriverAudit.transport().upload({target:window.fileDriverAudit.hash('/'),files:items})},files)
   await call('rename',{target:H('/hello.txt'),name:'driver-renamed.txt'})
   await assert.rejects(call('paste',{dst:H('/missing'),targets:[H('/driver-renamed.txt')],cut:0}));assert.ok(fs.existsSync(path.join(files,'driver-renamed.txt')))

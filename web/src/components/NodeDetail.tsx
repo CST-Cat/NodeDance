@@ -1011,30 +1011,11 @@ export default function NodeDetail(input: Props) {
           >
             <header className={__classes("detail-heading")} data-v-98aa91ae="">
               <div data-v-98aa91ae="">
-                <div
-                  className={__classes("detail-heading-navigation")}
-                  data-v-98aa91ae=""
-                >
-                  <span className={__classes("eyebrow")} data-v-98aa91ae="">
-                    {t("label.164ba94c1c7b")}
-                  </span>
-                </div>
                 <h1 id="detail-title" data-v-98aa91ae="">
                   {nodeTitle.value}
                 </h1>
-                {nodeTitle.value !== __props.node.displayName ||
-                __props.node.agentVersion ? (
-                  <p data-v-98aa91ae="">
-                    {nodeTitle.value !== __props.node.displayName ? (
-                      <Fragment>
-                        {__props.node.displayName}
-                        {__props.node.agentVersion ? (
-                          <Fragment>{" · "}</Fragment>
-                        ) : null}
-                      </Fragment>
-                    ) : null}
-                    {__props.node.agentVersion}
-                  </p>
+                {nodeTitle.value !== __props.node.displayName ? (
+                  <p data-v-98aa91ae="">{__props.node.displayName}</p>
                 ) : null}
                 {nodePreference.value?.notes ? (
                   <p

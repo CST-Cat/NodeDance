@@ -25,6 +25,34 @@ func extendedService(t *testing.T) (*Service, string) {
 	t.Cleanup(func() { s.Close() })
 	return s, root
 }
+
+// Directory browsing must never fingerprint file contents. Content-bound
+// versions remain exclusive to explicit stat/read and mutation conflict checks.
+func TestBrowseUsesMetadataVersion(t *testing.T) {
+	s, root := extendedService(t)
+	if err := os.WriteFile(filepath.Join(root, "text.txt"), []byte("content"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	entries, _, err := s.Browse(context.Background(), "/", "", "", false, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	listed, err := s.List("/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, err := s.Stat("/text.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || len(listed) != 1 || entries[0].Version == "" || entries[0].Version != listed[0].Version {
+		t.Fatalf("browse metadata versions: %#v / %#v", entries, listed)
+	}
+	if entries[0].Version == full.Version {
+		t.Fatal("browse read contents to compute a content-bound version")
+	}
+}
+
 func TestBrowsePagesAndSearch(t *testing.T) {
 	s, root := extendedService(t)
 	for i := 0; i < 245; i++ {

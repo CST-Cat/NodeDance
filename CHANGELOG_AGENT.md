@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.26]
+
+### English
+
+- Directory browsing computes metadata-only versions without reading file contents; explicit reads and mutations retain content-based conflict checks.
+- Remove CPU pressure and connection tracking collection and metric definitions.
+
+### 简体中文
+
+- 目录浏览仅计算元数据版本，不读取文件内容；显式读取与修改保留内容版本冲突检查。
+- 删除 CPU 压力和连接跟踪采集及指标定义。
+
 ## [0.1.25]
 
 ### English

@@ -1,9 +1,9 @@
 import { t } from "../i18n";
 import "./TelemetryChart.css";
 export type TelemetryPoint = { at: number; values: (number | null)[] };
-type Props = { points: TelemetryPoint[]; labels: string[]; label: string; legend?: boolean };
+type Props = { points: TelemetryPoint[]; labels: string[]; label: string; legend?: boolean; description?: string; emptyText?: string };
 
-export default function TelemetryChart({points, labels, label}: Props) {
+export default function TelemetryChart({points, labels, label, description, emptyText}: Props) {
   const maximum = Math.max(1, ...points.flatMap(point => point.values.filter((value): value is number => value !== null && Number.isFinite(value) && value >= 0)));
   const first = points[0]?.at ?? 0, last = points.at(-1)?.at ?? 0;
   const position = (at: number, value: number) => [last > first ? 8 + (at - first) / (last - first) * 484 : 8, 88 - value / maximum * 76];
@@ -24,13 +24,13 @@ export default function TelemetryChart({points, labels, label}: Props) {
   const available = series.some(item => item.d);
   return <div className="telemetry-plot" data-state={available ? "sampled" : "empty"}>
     <svg viewBox="0 0 500 100" preserveAspectRatio="none" role="img" aria-label={`${label} · ${labels.join(" / ")}`} data-points={points.length} className="rate-chart">
-      <title>{t("overview.liveOnly")}</title>
+      <title>{description ?? label}</title>
       <path d="M8 12H492 M8 50H492 M8 88H492" className="chart-grid" />
       {series.map((item, index) => <g key={item.name} data-series={index}>
         <path d={item.d} data-series={index} className="chart-line"><title>{item.name}</title></path>
         {item.dots.map((dot, i) => <circle key={i} cx={dot.x} cy={dot.y} r="2.5" data-series={index} className="chart-dot" />)}
       </g>)}
     </svg>
-    {!available ? <span className="telemetry-empty">{t("overview.waitSamples")}</span> : null}
+    {!available ? <span className="telemetry-empty">{emptyText ?? t("overview.waitSamples")}</span> : null}
   </div>;
 }

@@ -13,6 +13,9 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const values={nodeId:identity.nodeId,agentId:identity.agentId,probeId:probe.id,containerId:'a'.repeat(64),imageId:'sha256:'+'b'.repeat(64),taskId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',streamId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',sessionId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'}
  const target=o=>o.path.replace(/\{([^}]+)\}/g,(_,k)=>encodeURIComponent(values[k]??'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'))+(o.query?.length?'?'+o.query.map(k=>encodeURIComponent(k)+'='+encodeURIComponent(k==='path'?'/etc/shadow':k==='component'?'core':k==='nodeId'?identity.nodeId:k==='revision'?'1':'guest-attack')).join('&'):'')
  const payload={confirm:true,mode:'admin',role:'admin',component:'core',nodeId:identity.nodeId,script:'printf guest-attack',timeoutSeconds:1,action:'delete',path:'/etc/shadow',content:'guest-attack',enabled:true}
+ const historyOperation=catalog.operations.find(o=>o.name==='nodes.history');assert.ok(historyOperation);
+ const fineHistory=historyOperation.path.replace('{nodeId}',encodeURIComponent(identity.nodeId))+'?'+new URLSearchParams({resolution:'5s',from:new Date(Date.now()-4*3600000).toISOString(),to:new Date().toISOString()});
+ const fineDenied=await browserRequest(fineHistory,'GET',null,hostileHeaders);record('fine-history-remains-private',fineDenied.status===401,{status:fineDenied.status});
  const privateOperations=catalog.operations.filter(o=>!publicPaths.has(o.path)&&!o.path.startsWith('/api/v1/public/'))
  console.log('GUEST SECURITY: private operations',privateOperations.length)
  for(let i=0;i<privateOperations.length;i+=8){await Promise.all(privateOperations.slice(i,i+8).map(async o=>{const r=await browserRequest(target(o),o.method,payload,hostileHeaders);record('catalog:'+o.name,r.status===401,{status:r.status})}))}

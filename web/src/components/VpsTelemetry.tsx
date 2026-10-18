@@ -1,15 +1,16 @@
-import { locale, t } from "../i18n";
+import { recentHistory } from "../recent-history";
+import { t } from "../i18n";
 import type { Metric, MetricsView } from "../metrics-contract";
-import { cell, derived, watchState } from "../state";
+import { cell, derived } from "../state";
 
 import { Fragment } from "react";
 import { __classes, __each, useController } from "../state";
 import "./VpsTelemetry.css";
 import ResourceReading from "./ResourceReading";
-import TelemetryReadings from "./TelemetryReadings";
+import RateHistoryChart from "./RateHistoryChart";
 import { loadPercentage, loadLevel } from "../resource-readings";
-import TelemetryChart from "./TelemetryChart";
 type Props = {
+  nodeId: string;
   metrics?: MetricsView;
   online: boolean;
   currentTime: number;
@@ -20,14 +21,7 @@ export default function VpsTelemetry(input: Props) {
       const props = __props;
       const mode = cell<"network" | "io">("network");
       const loadOpen = cell(false);
-      type Point = {
-        at: number;
-        network: [number | null, number | null];
-        io: [number | null, number | null];
-      };
-      const samples = cell<Point[]>([]);
-      let identity = "",
-        last = 0;
+      const history = recentHistory(() => props.nodeId);
       function number(value: unknown) {
         return typeof value === "number" && Number.isFinite(value) && value >= 0
           ? value
@@ -41,41 +35,6 @@ export default function VpsTelemetry(input: Props) {
           ? [number(metric.value[keys[0]]), number(metric.value[keys[1]])]
           : [null, null];
       }
-      watchState(
-        () => props.metrics,
-        (value) => {
-          if (!value) return;
-          const next = [
-            value.generation,
-            value.metrics.uptime.value?.bootId ?? value.bootId ?? "",
-          ].join(":");
-          if (identity !== next) {
-            identity = next;
-            samples.value = [];
-            last = 0;
-          }
-          const at = Date.parse(value.collectedAt);
-          if (!Number.isFinite(at) || at <= last) return;
-          last = at;
-          samples.value = [
-            ...samples.value,
-            {
-              at,
-              network: pair(value.metrics.network.summary, [
-                "receivedBytesPerSecond",
-                "sentBytesPerSecond",
-              ]),
-              io: pair(value.metrics.host?.diskIO, [
-                "readBytesPerSecond",
-                "writeBytesPerSecond",
-              ]),
-            },
-          ].slice(-60);
-        },
-        {
-          immediate: true,
-        },
-      );
       const mount = derived(
         () =>
           props.metrics?.metrics.disk.mounts.find(
@@ -162,7 +121,6 @@ export default function VpsTelemetry(input: Props) {
           detail: `${bytes(mount.value?.usage.value?.usedBytes)} / ${bytes(mount.value?.usage.value?.totalBytes)}`,
         },
       ]);
-      const values = derived(() => samples.value.map((p) => p[mode.value]));
       const fresh = derived(() =>
         usable(
           mode.value === "network"
@@ -172,23 +130,8 @@ export default function VpsTelemetry(input: Props) {
         ),
       );
       const latest = derived(() =>
-        fresh.value ? (values.value.at(-1) ?? [null, null]) : [null, null],
+        fresh.value ? (mode.value === "network" ? pair(props.metrics?.metrics.network.summary, ["receivedBytesPerSecond", "sentBytesPerSecond"]) : pair(props.metrics?.metrics.host?.diskIO, ["readBytesPerSecond", "writeBytesPerSecond"])) : [null, null],
       );
-      const labels = derived(() =>
-        mode.value === "network"
-          ? [t("overview.download"), t("overview.upload")]
-          : [t("overview.read"), t("overview.write")],
-      );
-      function clock(at?: number) {
-        return at
-          ? new Date(at).toLocaleTimeString(locale.value, {
-              hour12: false,
-              hour: "2-digit",
-              minute: "2-digit",
-              second: "2-digit",
-            })
-          : "—";
-      }
       return () => (
         <>
           <div
@@ -304,39 +247,20 @@ export default function VpsTelemetry(input: Props) {
                   >
                     {t("overview.offline")}
                   </span>
-                ) : !fresh.value &&
-                  values.value.some((p) => p.some((v) => v !== null)) ? (
-                  <span
-                    className={__classes("monitor-state")}
-                    data-v-85963ddb=""
-                  >
-                    {t("overview.stale")}
-                  </span>
-                ) : !values.value.some((p) => p.some((v) => v !== null)) ? (
-                  <span
-                    className={__classes("monitor-state")}
-                    data-v-85963ddb=""
-                  >
-                    {t("overview.waitSamples")}
-                  </span>
+                ) : !fresh.value ? (
+                  <span className="monitor-state" data-v-85963ddb="">{t("overview.stale")}</span>
+                ) : history.failed.value || history.loading.value ? (
+                  <span className="monitor-state" data-v-85963ddb="">{t(history.failed.value ? "overview.historyError" : "overview.historyLoading")}</span>
                 ) : null}
               </header>
-              <TelemetryReadings labels={labels.value} values={labels.value.map((_, index) => latest.value[index] == null ? "—" : bytes(latest.value[index]) + "/s")} />
-              <TelemetryChart label={t("overview.monitor")} labels={labels.value} points={samples.value.map(point => ({at: point.at, values: point[mode.value]}))} />
-              <footer data-v-85963ddb="">
-                <span data-v-85963ddb="">{clock(samples.value[0]?.at)}</span>
-                <span data-v-85963ddb="">{t("overview.liveOnly")}</span>
-                <span data-v-85963ddb="">
-                  {clock(samples.value.at(-1)?.at)}
-                </span>
-              </footer>
+              <RateHistoryChart kind={mode.value} history={history} values={latest.value} />
             </div>
           </div>
         </>
       );
     },
     input,
-    ["metrics", "online", "currentTime"],
+    ["nodeId", "metrics", "online", "currentTime"],
     [],
     {},
     true,
