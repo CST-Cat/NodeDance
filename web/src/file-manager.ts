@@ -631,15 +631,17 @@ export async function createFileManager(
         value.resolve(result);
       },
       (reason) => {
-        value.reject([
-          String(reason instanceof Error ? reason.message : reason),
-        ]);
+        // elFinder expects the jQuery XHR rejection shape, not a string array.
+        value.reject({
+          status: reason instanceof ApiError ? reason.status : 0,
+          responseText: JSON.stringify({ error: [String(reason instanceof Error ? reason.message : reason)] }),
+        }, "error");
       },
     );
     return Object.assign(value.promise(), {
       abort: () => {
         abort?.();
-        value.reject(["errAbort"]);
+        value.reject({ status: 0, quiet: true }, "abort");
       },
     });
   }

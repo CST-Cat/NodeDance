@@ -40,39 +40,21 @@ export function loadFinder() {
   if (!loaded)
     loaded = (async () => {
       window.jQuery = window.$ = $;
-      await import("jquery-ui/ui/version");
-      await import("jquery-ui/ui/widget");
-      await import("jquery-ui/ui/data");
-      await import("jquery-ui/ui/disable-selection");
-      await import("jquery-ui/ui/focusable");
-      await import("jquery-ui/ui/keycode");
-      await import("jquery-ui/ui/plugin");
-      await import("jquery-ui/ui/scroll-parent");
-      await import("jquery-ui/ui/unique-id");
-      await import("jquery-ui/ui/widgets/mouse");
-      await import("jquery-ui/ui/widgets/draggable");
-      await import("jquery-ui/ui/widgets/droppable");
-      await import("jquery-ui/ui/widgets/resizable");
-      await import("jquery-ui/ui/widgets/selectable");
-      await import("jquery-ui/ui/widgets/button");
-      await import("jquery-ui/ui/widgets/slider");
-      await import("jquery-ui/ui/widgets/sortable");
-      // External self-hosted scripts preserve Core's script-src CSP; no eval/CDN.
-      for (const file of [
-        "elfinder.js",
-        "elfinder.zh_CN.js",
-        "editors.default.js",
-      ])
-        await new Promise<void>((resolve, reject) => {
-          const script = document.createElement("script");
-          script.src = "/vendor/elfinder/" + file;
-          script.onload = () => resolve();
-          script.onerror = () => {
-            script.remove();
-            reject(Error("Unable to load elFinder"));
-          };
-          document.head.append(script);
-        });
+      await import("./elfinder-widgets");
+      // Fetch together, execute in insertion order; no eval, CDN or CSP change.
+      await Promise.all([
+        "elfinder.js", "elfinder.zh_CN.js", "editors.default.js",
+      ].map(file => new Promise<void>((resolve, reject) => {
+        const script = document.createElement("script");
+        script.async = false;
+        script.src = "/vendor/elfinder/" + file;
+        script.onload = () => resolve();
+        script.onerror = () => {
+          script.remove();
+          reject(Error("Unable to load elFinder"));
+        };
+        document.head.append(script);
+      })));
       const translations = (window.elFinder as any).prototype.i18;
       translations.en.messages.confirmRepl = enMessages["files.noOverwrite"];
       translations.zh_CN.messages.confirmRepl = zhMessages["files.noOverwrite"];

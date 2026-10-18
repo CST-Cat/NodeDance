@@ -6,6 +6,24 @@
 
 ### 简体中文
 
+## [0.1.47]
+
+### English
+
+- Stack narrow VPS headers with version and uptime aligned to the name; remove duplicate online/Engine badges from the file-manager heading.
+- Preserve Core file-operation errors in elFinder’s expected transport format instead of showing an undefined HTTP status.
+- Replace the VPS header tile with an automatically detected operating-system logo from 22 bundled Linux/BSD distribution icons, using existing theme colors and a generic fallback.
+- Prepare file-manager UI assets from authenticated node details without remote file reads and show immediate loading feedback while the first directory is pending.
+- Collapse the file-manager cold-start widget waterfall into one lazy bundle and fetch the ordered self-hosted scripts concurrently.
+
+### 简体中文
+
+- 窄屏 VPS 标题分行，版本与运行时间和名称左侧对齐；移除文件管理标题旁重复的在线／Engine 状态。
+- 文件操作错误按 elFinder 要求的传输格式保留原始提示，不再显示未定义的 HTTP 状态。
+- VPS 标题灰底图块改为自动识别的操作系统 Logo，内置22个 Linux／BSD 发行版图标，沿用项目主题配色并提供通用回退。
+- 管理态节点详情提前准备文件管理界面资源，不预读远程文件；首次目录等待期间立即反馈加载状态。
+- 文件管理首次加载的组件依赖合并为一个懒加载包，本地脚本并行下载并保持执行顺序，消除逐文件串行加载。
+
 ## [0.1.46]
 
 ### English

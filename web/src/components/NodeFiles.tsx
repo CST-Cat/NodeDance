@@ -11,6 +11,8 @@ type Props = {
   nodeName: string;
   directoryPicker?: boolean;
 } & { children?: import("react").ReactNode; [key: string]: any };
+export const preloadFileManager = loadFinder;
+
 export default function NodeFiles(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
@@ -18,6 +20,7 @@ export default function NodeFiles(input: Props) {
       const emit = __emit;
       const host = cell<HTMLElement>(),
         error = cell(""),
+        loading = cell(true),
         observations = cell<FileObservation[]>([]);
       const navigation = useViewNavigation();
       let finder: Finder | undefined,
@@ -28,6 +31,7 @@ export default function NodeFiles(input: Props) {
         props.directoryPicker ? "/" : (navigation.route.value.filePath ?? "/");
       async function mount() {
         const epoch = ++mountEpoch;
+        loading.value = true;
         try {
           await loadFinder();
           if (disposed || epoch !== mountEpoch || !host.value) return;
@@ -174,6 +178,7 @@ export default function NodeFiles(input: Props) {
             handlers: {
               open: () => {
                 if (disposed || !finder) return;
+                loading.value = false;
                 const path = connection.path(finder.cwd().hash);
                 if (props.directoryPicker) emit("directoryReady", path);
                 else if (path !== (navigation.route.value.filePath ?? "/"))
@@ -252,8 +257,10 @@ export default function NodeFiles(input: Props) {
             className={__classes("node-files")}
           >
             {error.value ? <p role="alert">{error.value}</p> : null}
+            {loading.value && !error.value ? <p role="status" data-testid="file-loading">{t("files.loading")}</p> : null}
             <div
               ref={__dom(host)}
+              aria-busy={loading.value}
               data-nodedance-files={__props.nodeId as any}
               className={__classes("elfinder-host")}
             ></div>

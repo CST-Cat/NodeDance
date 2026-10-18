@@ -11,6 +11,7 @@ import { display, locale, t } from "../i18n";
 import type { MetricsView } from "../metrics-contract";
 import { afterRender, beforeDispose, cell, derived, watchState } from "../state";
 import VpsTelemetry from "./VpsTelemetry";
+import OsLogo from "./OsLogo";
 
 import { Fragment } from "react";
 import { requestChoice } from "../dialogs";
@@ -217,20 +218,6 @@ export default function VpsCard(input: Props) {
           activity: "⌁",
         };
         return icons[preferenceFor(record)?.icon ?? ""] ?? "▣";
-      }
-      function nodeIcon(icon?: string): string {
-        const icons: Record<string, string> = {
-          server: "▤",
-          globe: "◎",
-          database: "▥",
-          shield: "⬡",
-          terminal: "›_",
-          box: "▣",
-          cloud: "☁",
-          folder: "▰",
-          activity: "⌁",
-        };
-        return icon ? (icons[icon] ?? "▤") : "▤";
       }
       function uptimeSummary(): string {
         const metric = props.metrics?.metrics.uptime;
@@ -642,11 +629,10 @@ export default function VpsCard(input: Props) {
             <header className={__classes("vps-card-header")} data-v-31185faa="">
               <div className={__classes("vps-card-heading")} data-v-31185faa="">
                 <span
-                  aria-hidden="true"
                   className={__classes("vps-node-icon")}
                   data-v-31185faa=""
                 >
-                  {nodeIcon(__props.nodePreference?.icon)}
+                  <OsLogo platform={__props.metrics?.metrics.system.platform.value} os={__props.metrics?.metrics.system.os.value} />
                 </span>
                 <div data-v-31185faa="">
                   {__props.nodePreference?.group ? (

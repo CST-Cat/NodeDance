@@ -23,6 +23,7 @@ import {
   __each,
   __indeterminate,
   __input,
+  afterMount,
   beforeDispose,
   cell,
   consumeValue,
@@ -48,7 +49,8 @@ import UiSelect from "./UiSelect";
 
 const HistoricalMetrics = lazyView(() => import("./HistoricalMetrics"));
 const TerminalConsole = lazyView(() => import("./TerminalConsole"));
-const NodeFiles = lazyView(() => import("./NodeFiles"));
+const loadNodeFiles = () => import("./NodeFiles");
+const NodeFiles = lazyView(loadNodeFiles);
 type Props = {
   readOnly?: boolean;
   node: AgentNode;
@@ -74,6 +76,15 @@ export default function NodeDetail(input: Props) {
     (__props: Props, __emit: any, __dom: any) => {
       const props = __props;
       const emit = __emit;
+      // Warm only static UI assets. Opening a node never reads its files.
+      let warmup: ReturnType<typeof setTimeout> | undefined;
+      afterMount(() => {
+        if (!props.readOnly) warmup = setTimeout(() => {
+          void loadNodeFiles().then(module => module.preloadFileManager()).catch(() => {});
+        }, 0);
+      });
+      beforeDispose(() => clearTimeout(warmup));
+
       const deletingNode = cell(false);
       const nodeActionError = cell("");
       const enrollmentOpen = cell(false);
@@ -1026,7 +1037,7 @@ export default function NodeDetail(input: Props) {
                   </p>
                 ) : null}
               </div>
-              {activeSection.value !== "overview" ? (
+              {!["overview", "files"].includes(activeSection.value) ? (
               <div
                 className={__classes("detail-heading-status")}
                 data-v-98aa91ae=""

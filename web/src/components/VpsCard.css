@@ -74,9 +74,12 @@
   color: var(--accent);
   font-size: 17px;
   border: 0;
-  border-radius: var(--radius-control);
-  background: var(--accent-soft);
-  box-shadow: none;
+  background: transparent;
+}
+.vps-node-icon > svg {
+  display: block;
+  width: 28px;
+  height: 28px;
 }
 .vps-card-version[data-v-31185faa] {
   margin: 0 0 0 auto;
@@ -87,11 +90,16 @@
   text-align: right;
   overflow-wrap: anywhere;
 }
-@media (max-width: 700px) {
+@container vps-card (max-width: 620px) {
+  .vps-card-heading[data-v-31185faa] {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 0 9px;
+  }
   .vps-card-version[data-v-31185faa] {
-    margin-left: 0;
+    grid-column: 2;
+    margin: 0;
     padding-left: 0;
-    flex-basis: 100%;
     text-align: left;
   }
 }

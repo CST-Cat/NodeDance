@@ -2123,6 +2123,8 @@
   "overview.resetDisplay": "Restore defaults",
   "overview.done": "Done",
   "overview.loadNormal": "Normal load",
+  "os.unknown": "Unknown operating system",
+  "files.loading": "Loading files…",
   "files.noOverwrite": "Existing files will not be overwritten.",
   "stream.jumpToLatest": "Jump to latest",
   "observe.c2b1ff12eb34": "IP family",

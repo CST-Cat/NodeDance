@@ -59,3 +59,11 @@ The file audit builds a disposable real Core/root Agent, uses private Agent stat
 List and search versions are metadata fingerprints: browsing never reads file contents. Explicit stat and text reads retain content fingerprints for edit/upload conflict detection. Web coalesces concurrent identical browsing requests and limits them to two reads per mounted manager, reserving Core transfer capacity. Ancestor directory metadata is reused for up to ten seconds (512 entries maximum); mutations invalidate it. Directory listings themselves are always refreshed, and pagination/search bounds remain unchanged.
 
 列表与搜索使用元数据指纹，浏览目录不读取文件内容；显式 stat 与文本读取保留内容指纹，用于编辑和上传冲突检查。Web 合并同时发生的相同浏览请求，每个文件管理实例最多并发两次读取，给文件传输保留容量。父目录元数据最多复用十秒、上限512项，修改操作使缓存失效；目录内容始终重新读取，分页和搜索边界不变。
+
+Cold startup loads the dependent jQuery UI registrations as one lazy bundle. The three self-hosted elFinder scripts download concurrently and execute in insertion order, retaining the same CSP and local-only assets. The real-browser audit checks this with delayed vendor responses so localhost latency cannot hide a serial loading waterfall.
+
+首次初始化将相互依赖的 jQuery UI 注册打包为一次懒加载；三个本地 elFinder 脚本并行下载、按插入顺序执行，保留原 CSP 与本地资源。真实浏览器回归延迟脚本响应，检查并行下载，避免本机低延迟掩盖串行加载问题。
+
+Authenticated node-detail views prepare the static file-manager interface before its tab is selected, without fetching any remote directory or content. The file panel reports loading immediately while its first directory request is pending; the busy state ends only after elFinder opens the directory. Guest/read-only views do not start this warmup.
+
+管理态节点详情提前准备文件管理界面资源，不预读远程目录或文件；首次目录请求未完成时立即显示加载状态，目录打开后才结束忙碌状态。游客／只读详情不启动预加载。

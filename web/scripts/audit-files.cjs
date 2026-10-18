@@ -62,8 +62,41 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   const preview=await context.request.get(endpoint('files.preview',{path:'/image.png'}),{headers:{Range:'bytes=0-7'}});assert.equal(preview.status(),206);assert.ok(preview.headers()['content-security-policy'].includes('sandbox'))
   const visitor=await browser.newContext();assert.equal((await visitor.request.get(endpoint('files.preview',{path:'/image.png'}))).status(),401)
   const page=await context.newPage();page.setDefaultTimeout(15000);const errors=[],externalRequests=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.url().startsWith('http')&&new URL(r.url()).origin!==base)externalRequests.push(r.url())})
-  await page.goto(base+`/#/nodes?node=${node}&section=files`)
-  await page.locator('.elfinder-cwd-filename').filter({hasText:'hello.txt'}).first().waitFor()
+  // Cold startup must not wait for one network round trip per widget/script.
+  const startupScripts=[];page.on('request',r=>{if(r.resourceType()==='script')startupScripts.push(new URL(r.url()).pathname)});
+  let releaseVendors;const vendorsReady=new Promise(resolve=>releaseVendors=resolve),vendorRequests=[];let firstVendorBatch;
+  const coldVendorRoute=async route=>{
+   vendorRequests.push(new URL(route.request().url()).pathname);if(vendorRequests.length===3)releaseVendors();
+   await Promise.race([vendorsReady,new Promise(resolve=>setTimeout(resolve,750))]);
+   firstVendorBatch??=vendorRequests.length;await route.continue();
+  };
+  await page.route('**/vendor/elfinder/*.js',coldVendorRoute);
+  let releaseFiles;const filesReady=new Promise(resolve=>releaseFiles=resolve),initialFileReads=[];
+  const initialFilesRoute=async route=>{initialFileReads.push(route.request().url());await filesReady;await route.continue()};
+  await page.route('**/api/v1/nodes/*/files**',initialFilesRoute);
+  await page.goto(base+`/#/nodes?node=${node}&section=overview`);
+  await page.waitForFunction(()=>!!window.elFinder);
+  assert.equal(initialFileReads.length,0,'Preparing the interface never reads remote files');
+  const scriptsBeforeClick=startupScripts.length;
+  await page.evaluate(()=>{
+   document.addEventListener('click',()=>{
+    const clicked=performance.now(),observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="file-loading"]')){window.fileFeedbackMs=performance.now()-clicked;observer.disconnect()}});
+    observer.observe(document.body,{childList:true,subtree:true});
+   },{once:true,capture:true});
+  });
+  await page.getByRole('button',{name:'File manager',exact:true}).click();
+  await page.getByTestId('file-loading').waitFor({timeout:1000});
+  assert.ok(await page.evaluate(()=>window.fileFeedbackMs<1000),'A warmed file manager responds immediately while directory requests are blocked');
+  assert.equal(startupScripts.length,scriptsBeforeClick,'Clicking downloads no additional interface scripts');
+  releaseFiles();
+  await page.locator('.elfinder-cwd-filename').filter({hasText:'hello.txt'}).first().waitFor();
+  await page.getByTestId('file-loading').waitFor({state:'detached'});
+  await page.unroute('**/api/v1/nodes/*/files**',initialFilesRoute);
+  assert.equal(await page.locator('.detail-heading-status').count(),0,'File manager heading has no redundant online or Engine badges');
+  assert.equal(firstVendorBatch,3,'All three ordered vendor scripts download concurrently');
+  assert.equal(startupScripts.filter(url=>/\/elfinder-widgets-[^/]+\.js$/.test(url)).length,1,'All dependent widgets load in one bundle');
+  assert.ok(!startupScripts.some(url=>/\/(version|widget|draggable|resizable|sortable)-[^/]+\.js$/.test(url)),'No serial per-widget chunk requests');
+  await page.unroute('**/vendor/elfinder/*.js',coldVendorRoute);
   await page.route('**/__file-driver-audit.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(artifacts,'driver','driver-audit.js'))}))
   await page.evaluate(async node=>{const {createFileManager}=await import('/__file-driver-audit.js');window.fileDriverAudit=await createFileManager(node,()=>{})},node)
   const H=value=>'nd_'+Buffer.from(value).toString('base64url')
@@ -137,6 +170,8 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   await assert.rejects(call('put',{target:H('/image.png'),content:image.content}))
   const filtered=await context.request.get(endpoint('files.search',{path:'/',minSize:String(10*1024*1024),recursive:'true'}));assert.equal(filtered.status(),200);const largeEntries=(await filtered.json()).entries;assert.ok(largeEntries.some(e=>e.name==='large-upload.bin'));assert.ok(largeEntries.every(e=>e.kind==='directory'||e.size>=10*1024*1024))
   await page.evaluate(()=>window.fileDriverAudit.dispose())
+  page.on('requestfailed',request=>console.error('File audit request failed',new URL(request.url()).pathname,request.failure()));
+  page.on('response',async response=>{if(response.status()>=400&&new URL(response.url()).pathname.includes('/files'))console.error('File audit HTTP error',response.status(),response.url(),(await response.text()).slice(0,500))});
   await page.reload();const finder=page.locator('.nodedance-elfinder');await finder.locator('.elfinder-cwd-filename').filter({hasText:'hello.txt'}).first().waitFor()
   async function eventually(test){for(let i=0;i<200;i++){if(test())return;await page.waitForTimeout(25)}assert.ok(test())}
   const toolbar=name=>finder.locator('.elfinder-button').filter({has:page.locator('.elfinder-button-icon-'+name)})
@@ -163,10 +198,10 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   await item('browser.txt').click();await toolbar('rm').click();const confirm=finder.locator('.elfinder-dialog-confirm');await confirm.waitFor();await confirm.locator('button').filter({hasText:/^(Remove|Delete)$/}).click();await item('browser.txt').waitFor({state:'detached'});await eventually(()=>!fs.existsSync(path.join(files,'browser.txt')));assert.ok(!fs.existsSync(path.join(files,'browser.txt')))
   await item('browser-archive.zip').click();await menu('extract');await finder.getByText('Here',{exact:true}).filter({visible:true}).click();await finder.locator('.elfinder-dialog-confirm').getByRole('button',{name:'Yes',exact:true}).click();await item('browser.txt').waitFor();await eventually(()=>fs.existsSync(path.join(files,'browser.txt')));assert.equal(fs.readFileSync(path.join(files,'browser.txt'),'utf8'),'browser edited fixture')
   await toolbar('fullscreen').click();await page.waitForFunction(()=>document.querySelector('.nodedance-elfinder')?.classList.contains('elfinder-fullscreen'));assert.ok(await finder.evaluate(el=>el.classList.contains('elfinder-fullscreen')));await toolbar('fullscreen').click();await page.waitForFunction(()=>!document.querySelector('.nodedance-elfinder')?.classList.contains('elfinder-fullscreen'));assert.ok(!await finder.evaluate(el=>el.classList.contains('elfinder-fullscreen')))
-  await item('image.png').click();await toolbar('edit').click();await finder.locator('.tui-image-editor-canvas-container').waitFor();fs.writeFileSync(path.join(artifacts,'image-theme.json'),JSON.stringify(await finder.locator('.tui-image-editor-container').evaluate(el=>({html:el.outerHTML.slice(0,5000),icons:[...el.querySelectorAll('svg use')].slice(0,8).map(e=>({class:e.getAttribute('class'),fill:getComputedStyle(e).fill,href:e.getAttribute('xlink:href')}))}))));await page.screenshot({path:path.join(artifacts,'elfinder-image-editor.png'),fullPage:true});await finder.locator('.elfinder-to-editing .ui-dialog-titlebar-close').click()
+  await item('image.png').click();await toolbar('edit').click();await finder.locator('.tui-image-editor-canvas-container').waitFor();fs.writeFileSync(path.join(artifacts,'image-theme.json'),JSON.stringify(await finder.locator('.tui-image-editor-container').evaluate(el=>({html:el.outerHTML.slice(0,5000),icons:[...el.querySelectorAll('svg use')].slice(0,8).map(e=>({class:e.getAttribute('class'),fill:getComputedStyle(e).fill,href:e.getAttribute('xlink:href')}))}))));await page.screenshot({path:path.join(artifacts,'elfinder-image-editor.png'),fullPage:true});await finder.locator('.elfinder-to-editing .ui-dialog-titlebar-close').click();await finder.locator('.elfinder-to-editing').waitFor({state:'detached'})
   const download=page.waitForEvent('download');await item('hello.txt').click();await toolbar('download').click();const attachment=await download;assert.equal(attachment.suggestedFilename(),'hello.txt')
   await toolbar('upload').click();await finder.locator('input[type=file]:not([webkitdirectory])').first().setInputFiles({name:'browser-upload.txt',mimeType:'text/plain',buffer:Buffer.from('browser upload fixture')});await item('browser-upload.txt').waitFor();assert.equal(fs.readFileSync(path.join(files,'browser-upload.txt'),'utf8'),'browser upload fixture')
-  await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('.nodedance-elfinder .elfinder-dialog:not([style*="display: none"])'))
   await item('many').dblclick();await item('entry-000.txt').waitFor();await finder.locator('.elfinder-cwd-wrapper').evaluate(el=>el.scrollTop=el.scrollHeight);await item('entry-204.txt').waitFor()
   await page.goBack();await item('hello.txt').waitFor();await page.goForward();await item('entry-000.txt').waitFor();await page.reload();await item('entry-000.txt').waitFor()
   await page.locator('select.language-selector').selectOption('zh-CN');await finder.locator('.elfinder-button').filter({has:page.locator('.elfinder-button-icon-mkdir')}).waitFor();await page.locator('select.language-selector').selectOption('en')
