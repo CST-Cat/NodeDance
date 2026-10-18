@@ -10,6 +10,7 @@
 
 ### English
 
+- Abort private file requests before view teardown and fix elFinder destruction after failed initialization, preserving guest entry during unavailable directory reads.
 - Stack narrow VPS headers with version and uptime aligned to the name; remove duplicate online/Engine badges from the file-manager heading.
 - Preserve Core file-operation errors in elFinder’s expected transport format instead of showing an undefined HTTP status.
 - Replace the VPS header tile with an automatically detected operating-system logo from 22 bundled Linux/BSD distribution icons, using existing theme colors and a generic fallback.
@@ -18,6 +19,7 @@
 
 ### 简体中文
 
+- 文件管理销毁前先中止私有请求，修复初始化失败后 elFinder 卸载报错，确保目录不可用时仍可进入游客页。
 - 窄屏 VPS 标题分行，版本与运行时间和名称左侧对齐；移除文件管理标题旁重复的在线／Engine 状态。
 - 文件操作错误按 elFinder 要求的传输格式保留原始提示，不再显示未定义的 HTTP 状态。
 - VPS 标题灰底图块改为自动识别的操作系统 Logo，内置22个 Linux／BSD 发行版图标，沿用项目主题配色并提供通用回退。

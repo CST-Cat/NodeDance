@@ -19,7 +19,7 @@
     "css/theme.css": "9e0b9ee27b4a0a54980caf82a42aa3a3be8ec90893908d3b8e6d70b18bf0979c",
     "css/toast.css": "3c52705f61f9b015b0e6caa9c8e71814b8efbe6604ab809cf90852e8fd138664",
     "css/toolbar.css": "03e540a078a2b740e1b735ccf92ccd0dbdf538d5e5b50c8bd0314ca9baf5810d",
-    "elfinder.js": "9c9d05a12738ebbbb96c72e91670723e578b837a54d1b882bbdb153b017577e3",
+    "elfinder.js": "8ce984ba362d1d3ecc2159030d4a8068eb92d8a9eae32ae880f49b067e3a5597",
     "elfinder.zh_CN.js": "6bb7ed498e45a755aa3abd80eb3867fbd271bcc00049ed8a283e5014a79d58a8",
     "img/arrows-active.png": "6ca76dce5557b2b798a5ebe133faca3ca40dcfd79c1cc2b8acd6fec353c6c350",
     "img/arrows-normal.png": "e5a13d007ef8d6241afa4ed073d597d2dcff3ade6dbe0263b219140410bc2e32",
@@ -73,5 +73,8 @@
     "img/volume_icon_zip.png": "e596cb3425dd390241b9c2e0de35fa8de4a719ee080e2adae59ea904cdbb6d40",
     "img/volume_icon_zip.svg": "7f9db793ec2197cf58f8f26deb108861400f6f273000abfda4d795cd5f02f4a2",
     "editors.default.js": "75c2c2555f8162668885df0f796ba3740857b0bbed968d73d93b4d393c55cec3"
-  }
+  },
+  "localPatches": [
+    "Destroy failed-initialization instances without chaining the disabled event dispatcher."
+  ]
 }

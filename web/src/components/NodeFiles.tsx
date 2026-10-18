@@ -214,10 +214,12 @@ export default function NodeFiles(input: Props) {
       }
       function destroy() {
         mountEpoch++;
-        finder?.destroy();
+        const currentFinder = finder, currentManager = manager;
         finder = undefined;
-        manager?.dispose();
         manager = undefined;
+        // Stop private requests before tearing down the third-party view.
+        currentManager?.dispose();
+        currentFinder?.destroy();
         if (props.directoryPicker) emit("directoryReady", "");
       }
       watchState(

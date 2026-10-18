@@ -117,3 +117,7 @@ Observability operations (`nodes.recording`, `nodes.incidents`, `nodes.analysis`
 Diagnostic collection settings contain only the detail interval and process limits. The retained diagnostics remain private; simplifying the diagnostic catalog does not expand guest access. / 诊断采集设置仅包含明细周期与进程数量限制；保留的诊断指标仍为私有数据，指标目录精简不会扩大访客权限。
 
 Five-second network/disk history stays private behind nodes.history; the anonymous browser suite explicitly verifies denial for resolution=5s. Guest history continues to use only its configured public minute/hour projection. / 网络与磁盘五秒历史仅通过私有 nodes.history 提供；匿名浏览器回归显式验证 resolution=5s 仍被拒绝。游客历史保持配置允许的公开分钟／小时投影。
+
+File-manager disposal aborts its private manager before destroying elFinder. The vendored destroy path does not chain its event dispatcher, because failed initialization disables that dispatcher. The browser suite retains the unavailable-initial-directory → guest-entry regression and verifies no private follow-up reads after the transition.
+
+文件管理卸载先中止私有管理器，再销毁 elFinder；内置销毁路径不再链式调用初始化失败后被禁用的事件分发器。浏览器套件保留初始目录不可用后进入游客页的回归，并校验切换后不再发起私有读取。

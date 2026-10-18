@@ -3728,7 +3728,9 @@ var elFinder = function(elm, opts, bootCallback) {
 			node.hasClass('elfinder-fullscreen') && self.toggleFullscreen(node);
 			this.options.syncStart = false;
 			this.autoSync('forcestop');
-			this.trigger('destroy').disable();
+			// NodeDance: a failed initial open replaces trigger with a no-op.
+			this.trigger('destroy');
+			this.disable();
 			clipboard = [];
 			selected = [];
 			listeners = {};
