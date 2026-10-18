@@ -1,0 +1,37 @@
+.telemetry-plot { position: relative; min-width: 0; }
+.telemetry-plot .rate-chart { display: block; width: 100%; height: var(--chart-height, 76px); overflow: visible; }
+.telemetry-plot .chart-grid { stroke: var(--line); stroke-width: .6; fill: none; stroke-dasharray: 3 4; }
+.telemetry-plot .chart-line { fill: none; stroke: var(--accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.telemetry-plot .chart-dot { fill: var(--accent); }
+.telemetry-plot .chart-line[data-series="1"] { stroke: var(--success); }
+.telemetry-plot .chart-dot[data-series="1"] { fill: var(--success); }
+.telemetry-plot .chart-line[data-series="2"] { stroke: var(--warning); }
+.telemetry-plot .chart-dot[data-series="2"] { fill: var(--warning); }
+.telemetry-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 11px; }
+
+.monitor-values {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 11px;
+  margin-top: 5px;
+  color: var(--muted-strong);
+}
+.monitor-values strong {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.monitor-values span::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 5px;
+}
+.monitor-values span[data-series="1"]::before {
+  background: var(--success);
+}
+
+.monitor-values span[data-series="2"]::before { background: var(--warning); }

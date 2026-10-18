@@ -1,4 +1,7 @@
 {
+  "metric.processCount": "进程",
+  "auth.showPassword": "显示密码（5 秒）",
+  "auth.hidePassword": "隐藏密码",
   "session.device.computer": "电脑",
   "session.device.phone": "手机",
   "session.device.tablet": "平板",
@@ -1345,9 +1348,8 @@
   "host.load": "系统负载",
   "host.processes": "进程与连接",
   "host.traffic": "账期流量",
-  "host.period": "账期起点（UTC）",
+  "host.period": "账期起点",
   "host.total": "累计观测流量",
-  "host.partialTraffic": "覆盖不完整：未观测到的流量不计入总量。",
   "host.hardware": "硬件与地址",
   "host.physicalCores": "物理核心",
   "host.cache": "缓存",

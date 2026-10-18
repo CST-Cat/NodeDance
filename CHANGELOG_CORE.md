@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.43]
+
+### English
+
+- Reuse the VPS card's complete circular reading component for CPU, memory, disk, swap and load, including the original gauge size, typography and captions. Load uses the same percentage formula; all eight square cards retain their top titles.
+- Share live charts and inline readings between the VPS overview and metric cards. Network and process/connection charts retain at most 60 real samples, leave gaps for unavailable data and reset after node restarts or generation changes.
+- Add a reusable eye control to the sign-in password field: reveal for five seconds, hide on a second click, focus departure, submit or backgrounding, and preserve keyboard access and the typed value.
+- Remove the redundant coverage note and UTC labels from billing traffic without changing the accounting or displayed time values. Clarify component reuse and title preservation in the design rules.
+
+### 简体中文
+
+- CPU、内存、磁盘、Swap、负载直接复用 VPS 卡片的完整圆环读数组件，保持原有仪表尺寸、字体和下方说明；负载使用相同百分比公式，八张正方形卡片均保留顶部标题。
+- VPS 总览与指标卡片共用实时图表和行内读数。网络、进程与连接图表最多保留 60 个真实采样点，数据不可用时断线，节点重启或连接代次变化后重新采样。
+- 登录密码框新增可复用的小眼睛按钮：点击显示五秒，再次点击、离开输入区、提交或切到后台时隐藏；支持键盘操作并保留填写内容。
+- 去掉账期流量的重复覆盖说明和 UTC 标记，不改变流量核算与时间值；设计规范明确组件直接复用和保留卡片标题。
+
 ## [0.1.42]
 
 ### English

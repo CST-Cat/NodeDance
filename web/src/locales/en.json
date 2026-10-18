@@ -1,4 +1,7 @@
 {
+  "metric.processCount": "Processes",
+  "auth.showPassword": "Show password for 5 seconds",
+  "auth.hidePassword": "Hide password",
   "session.device.computer": "Computer",
   "session.device.phone": "Phone",
   "session.device.tablet": "Tablet",
@@ -1345,9 +1348,8 @@
   "host.load": "Load average",
   "host.processes": "Processes and sockets",
   "host.traffic": "Billing traffic",
-  "host.period": "Period start (UTC)",
+  "host.period": "Period start",
   "host.total": "Observed lifetime",
-  "host.partialTraffic": "Partial coverage: unobserved traffic is not included.",
   "host.hardware": "Hardware and addresses",
   "host.physicalCores": "physical cores",
   "host.cache": "Cache",

@@ -5,6 +5,10 @@ import { afterMount, beforeDispose, cell, derived, watchState } from "../state";
 import { Fragment } from "react";
 import { __classes, __each, useController } from "../state";
 import "./MetricsPanel.css";
+import ResourceReading from "./ResourceReading";
+import TelemetryReadings from "./TelemetryReadings";
+import { loadPercentage, loadLevel } from "../resource-readings";
+import TelemetryChart, { type TelemetryPoint } from "./TelemetryChart";
 type Props = {
   view: MetricsView;
 } & { children?: import("react").ReactNode; [key: string]: any };
@@ -71,6 +75,34 @@ export default function MetricsPanel(input: Props) {
         )
           return "stale";
         return metric.status;
+      }
+      const loadPercent = derived(() => loadPercentage(
+        reading(props.view.metrics.host?.load, props.view.metrics.host?.load.value?.one),
+        reading(props.view.metrics.cpu.logicalCores, props.view.metrics.cpu.logicalCores.value),
+      ));
+      const chartSamples = cell<{at: number; network: (number | null)[]; processes: (number | null)[]}[]>([]);
+      let chartIdentity = "", lastSample = -Infinity;
+      function reading<T>(metric: Metric<T> | undefined, value: unknown): number | null {
+        return metric && metricState(metric) === "known" && typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+      }
+      function percentage<T>(metric: Metric<T>, value: unknown, ttl = FAST_TTL_MS.value): number | null {
+        return metricState(metric, ttl) === "known" && typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+      }
+      watchState(() => props.view, view => {
+        const identity = [view.nodeId, view.generation, view.metrics.uptime.value?.bootId ?? view.bootId ?? ""].join(":");
+        if (identity !== chartIdentity) { chartIdentity = identity; chartSamples.value = []; lastSample = -Infinity; }
+        const at = Date.parse(view.collectedAt);
+        if (!Number.isFinite(at) || at <= lastSample) return;
+        lastSample = at;
+        const network = view.metrics.network.summary, host = view.metrics.host;
+        chartSamples.value = [...chartSamples.value, {
+          at,
+          network: [reading(network, network.value?.receivedBytesPerSecond), reading(network, network.value?.sentBytesPerSecond)],
+          processes: [reading(host?.processes, host?.processes.value), reading(host?.sockets, host?.sockets.value?.tcp), reading(host?.sockets, host?.sockets.value?.udp)],
+        }].slice(-60);
+      }, {immediate: true});
+      function chartPoints(kind: "network" | "processes"): TelemetryPoint[] {
+        return chartSamples.value.map(sample => ({at: sample.at, values: sample[kind]}));
       }
       function metricReason<T>(
         metric: Metric<T>,
@@ -144,19 +176,14 @@ export default function MetricsPanel(input: Props) {
           ? "—"
           : `${formatBytes(value)}/s`;
       }
-      function formatPercent(value: number | null | undefined): string {
-        return value == null || !Number.isFinite(value)
-          ? "—"
-          : `${value.toFixed(1)}%`;
-      }
-      function formatTime(value: string | undefined): string {
+      function formatTime(value: string | undefined, showZone = true): string {
         if (!value) return "—";
         const parsed = new Date(value);
         if (!Number.isFinite(parsed.getTime())) return "—";
         return `${parsed.toLocaleString(locale.value, {
           timeZone: "UTC",
           hour12: false,
-        })} UTC`;
+        })}${showZone ? " UTC" : ""}`;
       }
       function formatUptime(seconds: number | null | undefined): string {
         if (seconds == null || !Number.isFinite(seconds)) return "—";
@@ -218,20 +245,8 @@ export default function MetricsPanel(input: Props) {
                 className={__classes("metric-card")}
                 data-v-64f045e3=""
               >
-                <div className={__classes("card-heading")} data-v-64f045e3="">
-                  <h3 data-v-64f045e3="">{"CPU"}</h3>
-                </div>
-                <strong
-                  data-testid="cpu-value"
-                  className={__classes("primary-value")}
-                  data-v-64f045e3=""
-                >
-                  {formatPercent(__props.view.metrics.cpu.usagePercent.value)}
-                </strong>
-                <p className={__classes("metric-caption")} data-v-64f045e3="">
-                  {__props.view.metrics.cpu.logicalCores.value ?? "—"}
-                  {t("m.4a5d806c0374")}
-                </p>
+                <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{"CPU"}</h3></div>
+                <ResourceReading label="CPU" resource="cpu" value={percentage(__props.view.metrics.cpu.usagePercent, __props.view.metrics.cpu.usagePercent.value)} valueTestId="cpu-value" detail={`${__props.view.metrics.cpu.logicalCores.value ?? "—"} ${t("overview.cores")}`} />
                 {metricReason(__props.view.metrics.cpu.usagePercent) ? (
                   <p
                     data-testid="cpu-reason"
@@ -247,24 +262,8 @@ export default function MetricsPanel(input: Props) {
                 className={__classes("metric-card")}
                 data-v-64f045e3=""
               >
-                <div className={__classes("card-heading")} data-v-64f045e3="">
-                  <h3 data-v-64f045e3="">{t("m.7d8f8c37ec78")}</h3>
-                </div>
-                <strong
-                  data-testid="memory-value"
-                  className={__classes("primary-value")}
-                  data-v-64f045e3=""
-                >
-                  {formatPercent(
-                    __props.view.metrics.memory.value?.usedPercent,
-                  )}
-                </strong>
-                <p className={__classes("metric-caption")} data-v-64f045e3="">
-                  {formatBytes(__props.view.metrics.memory.value?.usedBytes)}
-                  {" / "}
-                  {formatBytes(__props.view.metrics.memory.value?.totalBytes)}
-                  {t("m.937683da32c1")}
-                </p>
+                <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{t("m.7d8f8c37ec78")}</h3></div>
+                <ResourceReading label={t("overview.memory")} resource="memory" value={percentage(__props.view.metrics.memory, __props.view.metrics.memory.value?.usedPercent)} valueTestId="memory-value" detail={`${formatBytes(__props.view.metrics.memory.value?.usedBytes)} / ${formatBytes(__props.view.metrics.memory.value?.totalBytes)}`} />
                 {metricReason(__props.view.metrics.memory) ? (
                   <p
                     data-testid="memory-reason"
@@ -280,9 +279,7 @@ export default function MetricsPanel(input: Props) {
                 className={__classes("metric-card disk-card")}
                 data-v-64f045e3=""
               >
-                <div className={__classes("card-heading")} data-v-64f045e3="">
-                  <h3 data-v-64f045e3="">{t("m.de7b72a3f852")}</h3>
-                </div>
+                <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{t("m.de7b72a3f852")}</h3></div>
                 {diskReason() ? (
                   <p className={__classes("metric-reason")} data-v-64f045e3="">
                     {diskReason()}
@@ -299,35 +296,18 @@ export default function MetricsPanel(input: Props) {
                   </p>
                 ) : null}
                 {__props.view.metrics.disk.mounts.length === 0 ? (
-                  <p className={__classes("metric-caption")} data-v-64f045e3="">
-                    {t("m.1d0afbd4d7a2")}
-                  </p>
+                  <ResourceReading label={t("overview.disk")} resource="disk" value={null} detail={t("overview.noData")} />
                 ) : null}
                 <Fragment>
                   {__each(__props.view.metrics.disk.mounts, (mount) => (
                     <div
                       key={`${mount.device}:${mount.mountpoint}` as any}
-                      className={__classes("mount-row")}
+                      className={__classes("metric-mount-reading")}
                       data-v-64f045e3=""
                     >
-                      <div
-                        className={__classes("mount-title")}
-                        data-v-64f045e3=""
-                      >
-                        <strong data-v-64f045e3="">{mount.mountpoint}</strong>
-                      </div>
-                      <p data-v-64f045e3="">
-                        {formatPercent(mount.usage.value?.usedPercent)}
-                        {" · "}
-                        {formatBytes(mount.usage.value?.usedBytes)}
-                        {" / "}
-                        {formatBytes(mount.usage.value?.totalBytes)}
-                      </p>
-                      <p className={__classes("mount-meta")} data-v-64f045e3="">
-                        {mount.device}
-                        {" · "}
-                        {mount.filesystem}
-                      </p>
+                      <ResourceReading label={__props.view.metrics.disk.mounts.length === 1 ? t("overview.disk") : `${t("overview.disk")} ${mount.mountpoint}`} resource="disk" value={percentage(mount.usage, mount.usage.value?.usedPercent, DISK_TTL_MS.value)} detail={`${formatBytes(mount.usage.value?.usedBytes)} / ${formatBytes(mount.usage.value?.totalBytes)}`}>
+                        <small>{mount.mountpoint} · {mount.device} · {mount.filesystem}</small>
+                      </ResourceReading>
                       {metricReason(mount.usage, DISK_TTL_MS.value) ? (
                         <p
                           className={__classes("metric-reason")}
@@ -348,24 +328,8 @@ export default function MetricsPanel(input: Props) {
                 <div className={__classes("card-heading")} data-v-64f045e3="">
                   <h3 data-v-64f045e3="">{t("m.97b31b5d63f5")}</h3>
                 </div>
-                <div className={__classes("network-pair")} data-v-64f045e3="">
-                  <span data-v-64f045e3="">{t("m.6e684586884e")}</span>
-                  <strong data-v-64f045e3="">
-                    {formatRate(
-                      __props.view.metrics.network.summary.value
-                        ?.receivedBytesPerSecond,
-                    )}
-                  </strong>
-                </div>
-                <div className={__classes("network-pair")} data-v-64f045e3="">
-                  <span data-v-64f045e3="">{t("m.edecf0ae6e51")}</span>
-                  <strong data-v-64f045e3="">
-                    {formatRate(
-                      __props.view.metrics.network.summary.value
-                        ?.sentBytesPerSecond,
-                    )}
-                  </strong>
-                </div>
+                <TelemetryReadings labels={[t("overview.download"), t("overview.upload")]} values={[formatRate(__props.view.metrics.network.summary.value?.receivedBytesPerSecond), formatRate(__props.view.metrics.network.summary.value?.sentBytesPerSecond)]} />
+                <TelemetryChart label={t("overview.network")} labels={[t("overview.download"), t("overview.upload")]} points={chartPoints("network")} />
                 {metricReason(__props.view.metrics.network.summary) ? (
                   <p
                     data-testid="network-reason"
@@ -433,26 +397,8 @@ export default function MetricsPanel(input: Props) {
                   className={__classes("metric-card")}
                   data-v-64f045e3=""
                 >
-                  <div className={__classes("card-heading")} data-v-64f045e3="">
-                    <h3 data-v-64f045e3="">{"Swap"}</h3>
-                  </div>
-                  <strong
-                    className={__classes("primary-value")}
-                    data-v-64f045e3=""
-                  >
-                    {formatPercent(
-                      __props.view.metrics.host.swap.value?.usedPercent,
-                    )}
-                  </strong>
-                  <p className={__classes("metric-caption")} data-v-64f045e3="">
-                    {formatBytes(
-                      __props.view.metrics.host.swap.value?.usedBytes,
-                    )}
-                    {" / "}
-                    {formatBytes(
-                      __props.view.metrics.host.swap.value?.totalBytes,
-                    )}
-                  </p>
+                  <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{"Swap"}</h3></div>
+                  <ResourceReading label="Swap" resource="swap" value={percentage(__props.view.metrics.host.swap, __props.view.metrics.host.swap.value?.usedPercent)} detail={`${formatBytes(__props.view.metrics.host.swap.value?.usedBytes)} / ${formatBytes(__props.view.metrics.host.swap.value?.totalBytes)}`} />
                   <p className={__classes("metric-reason")} data-v-64f045e3="">
                     {metricReason(__props.view.metrics.host.swap)}
                   </p>
@@ -461,24 +407,8 @@ export default function MetricsPanel(input: Props) {
                   className={__classes("metric-card")}
                   data-v-64f045e3=""
                 >
-                  <div className={__classes("card-heading")} data-v-64f045e3="">
-                    <h3 data-v-64f045e3="">{t("host.load")}</h3>
-                  </div>
-                  <strong
-                    className={__classes("primary-value")}
-                    data-v-64f045e3=""
-                  >
-                    {__props.view.metrics.host.load.value?.one.toFixed(2) ??
-                      "—"}
-                  </strong>
-                  <p className={__classes("metric-caption")} data-v-64f045e3="">
-                    {"5m: "}
-                    {__props.view.metrics.host.load.value?.five.toFixed(2) ??
-                      "—"}
-                    {" · 15m: "}
-                    {__props.view.metrics.host.load.value?.fifteen.toFixed(2) ??
-                      "—"}
-                  </p>
+                  <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{t("host.load")}</h3></div>
+                  <ResourceReading label={t("overview.load")} resource="load" value={loadPercent.value} highAt={80} detail={loadPercent.value === null ? "—" : t(loadLevel(loadPercent.value))} />
                   <p className={__classes("metric-reason")} data-v-64f045e3="">
                     {metricReason(__props.view.metrics.host.load)}
                   </p>
@@ -490,22 +420,8 @@ export default function MetricsPanel(input: Props) {
                   <div className={__classes("card-heading")} data-v-64f045e3="">
                     <h3 data-v-64f045e3="">{t("host.processes")}</h3>
                   </div>
-                  <strong
-                    className={__classes("primary-value")}
-                    data-v-64f045e3=""
-                  >
-                    {__props.view.metrics.host.processes.value ?? "—"}
-                  </strong>
-                  <p className={__classes("metric-caption")} data-v-64f045e3="">
-                    {"TCP: "}
-                    {__props.view.metrics.host.sockets.value?.tcp ?? "—"}
-                    {" · UDP: "}
-                    {__props.view.metrics.host.sockets.value?.udp ?? "—"}
-                    {" · "}
-                    {statusLabel(
-                      metricState(__props.view.metrics.host.sockets),
-                    )}
-                  </p>
+                  <TelemetryReadings labels={[t("metric.processCount"), "TCP", "UDP"]} values={[String(__props.view.metrics.host.processes.value ?? "—"), String(__props.view.metrics.host.sockets.value?.tcp ?? "—"), String(__props.view.metrics.host.sockets.value?.udp ?? "—")]} />
+                  <TelemetryChart label={t("host.processes")} labels={[t("metric.processCount"), "TCP", "UDP"]} points={chartPoints("processes")} />
                   <p className={__classes("metric-reason")} data-v-64f045e3="">
                     {metricReason(__props.view.metrics.host.processes)}
                   </p>
@@ -534,6 +450,7 @@ export default function MetricsPanel(input: Props) {
                     {formatTime(
                       __props.view.metrics.host.traffic.value?.periodStart ??
                         "",
+                      false,
                     )}
                   </p>
                   <p className={__classes("metric-caption")} data-v-64f045e3="">
@@ -547,22 +464,11 @@ export default function MetricsPanel(input: Props) {
                       __props.view.metrics.host.traffic.value?.sentBytes,
                     )}
                   </p>
-                  {__props.view.metrics.host.traffic.reason ===
-                  "partial_coverage" ? (
-                    <p
-                      className={__classes("metric-reason")}
-                      data-v-64f045e3=""
-                    >
-                      {t("host.partialTraffic")}
-                    </p>
-                  ) : (
-                    <p
-                      className={__classes("metric-reason")}
-                      data-v-64f045e3=""
-                    >
+                  {__props.view.metrics.host.traffic.reason !== "partial_coverage" && metricReason(__props.view.metrics.host.traffic) ? (
+                    <p className={__classes("metric-reason")} data-v-64f045e3="">
                       {metricReason(__props.view.metrics.host.traffic)}
                     </p>
-                  )}
+                  ) : null}
                 </article>
                 <article
                   className={__classes("metric-card hardware-card")}

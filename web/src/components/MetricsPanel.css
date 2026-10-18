@@ -68,13 +68,6 @@
   font-size: 12px;
   font-weight: 500;
 }
-.primary-value[data-v-64f045e3] {
-  display: block;
-  margin-top: 6px;
-  font-size: clamp(20px, 2.6vw, 24px);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.03em;
-}
 .metric-caption[data-v-64f045e3] {
   margin: 4px 0 0;
   color: var(--metric-muted);
@@ -91,28 +84,6 @@
 .hardware-card[data-v-64f045e3] {
   grid-column: 1 / -1;
   aspect-ratio: auto;
-}
-.mount-row[data-v-64f045e3] {
-  margin-top: 10px;
-}
-.mount-title[data-v-64f045e3] {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.mount-title strong[data-v-64f045e3] {
-  font-size: 12px;
-}
-.mount-row > p[data-v-64f045e3] {
-  margin: 4px 0 0;
-  color: var(--text);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-.mount-row .mount-meta[data-v-64f045e3] {
-  color: var(--metric-muted);
-  font-size: 12px;
 }
 .network-pair[data-v-64f045e3] {
   display: flex;
@@ -208,3 +179,8 @@
     flex-wrap: wrap;
   }
 }
+
+.metrics-panel .metric-card .telemetry-plot { margin-top: 5px; }
+.metric-mount-reading + .metric-mount-reading { margin-top: 16px; }
+
+.metrics-panel .metric-card .resource-reading { margin-top: 8px; }

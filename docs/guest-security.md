@@ -109,3 +109,5 @@ Multi-account operations (`accounts.*`, `auth.switch`, `profile.*`) remain priva
 登录恢复：有效会话下再次登录使用该会话的 CSRF 校验，成功验证密码后轮换并撤销旧会话；失败保留原会话。Web 对提交前被拒绝的登录安全令牌仅刷新并重试一次，保留输入；来源拒绝、密码错误不重试。游客权限保持不变。隔离浏览器回归覆盖旧登录页、自动恢复、重试上限、旧会话撤销和伪造来源／令牌拒绝。
 
 Login recovery validates the current session CSRF token when present, verifies the password and rotates the replaced session only on success. Web retries an explicitly rejected login security token once, retaining input; origin and password failures are not retried. Anonymous boundaries remain unchanged and are checked by the isolated guest security suite.
+
+登录页密码框复用 UiPassword 与 UiIcon：点击眼睛显示 5 秒，再次点击、离开输入区域、提交、切到后台或窗口失焦时隐藏。显示开关不提交表单、不改变凭据内容或认证校验；访客安全浏览器脚本验证该交互及深浅色／宽窄屏布局。

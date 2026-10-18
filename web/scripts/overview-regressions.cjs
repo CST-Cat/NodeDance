@@ -20,7 +20,7 @@ module.exports=async function({context,base,node,headers,artifacts,catalog}){
  async function theme(mode){const response=await context.request.put(base+'/api/v1/settings/appearance',{headers,data:{displayName:originalAppearance.displayName,backgroundColor:originalAppearance.backgroundColor,theme:mode}});assert.equal(response.status(),200)}
  try{
   await page.goto(base+'/#/nodes');const card=page.locator('.vps-card[data-node-id="'+node+'"]');await card.waitFor();const info=page.getByTestId('overview-host-info');await page.waitForFunction(()=>!!document.querySelector('.overview-context dd')?.textContent&&document.querySelector('.overview-context dd').textContent!=='—')
-  assert.equal(await info.locator('.context-actions button').first().getAttribute('aria-pressed'),'true','Core initially selected')
+  assert.equal(await info.locator('.context-heading > button').getAttribute('aria-pressed'),'false','Core initially selected')
   await card.locator('.vps-card-version').click();await info.getByText('OVERVIEW-AGENT-HOST',{exact:true}).waitFor();assert.ok(!page.url().includes('node='),'Inspecting does not enter node detail')
   assert.deepEqual(await card.locator('.resource-reading').evaluateAll(items=>items.map(item=>item.dataset.resource)),['load','cpu','memory','disk'],'Load is the leftmost gauge')
   assert.equal(await card.locator('[data-resource=load] .ring strong').innerText(),'19.3%','1Panel load convention: 1.16 / (4 × 1.5) × 100')

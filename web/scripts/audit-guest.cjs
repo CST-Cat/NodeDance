@@ -45,6 +45,29 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const page=await visitor.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Guest page error:',e.stack)})
   let guestReads=0;const privateReads=[];page.on('request',r=>{if(new URL(r.url()).pathname==='/api/v1/public/guest/display')guestReads++;const p=new URL(r.url()).pathname;if(p.startsWith('/api/v1/nodes')||p.startsWith('/api/v1/guest/settings')||p.startsWith('/api/v1/guest/preview'))privateReads.push(p)})
   await page.goto(base);await page.locator('#login-title').waitFor();assert.equal(await page.getByRole('button',{name:'Enter guest mode',exact:true}).count(),0)
+  // Password reveal is temporary, keyboard-accessible and never submits login.
+  const passwordInput=page.locator('#login-password');let revealLoginRequests=0
+  const countRevealLogin=request=>{if(new URL(request.url()).pathname==='/api/v1/auth/login')revealLoginRequests++}
+  page.on('request',countRevealLogin)
+  await passwordInput.fill('isolated-reveal-password')
+  for(const theme of ['light','dark'])for(const width of [1440,390]){
+   await page.setViewportSize({width,height:1000})
+   await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+   const eye=page.getByRole('button',{name:'Show password for 5 seconds',exact:true})
+   assert.equal(await passwordInput.getAttribute('type'),'password')
+   await eye.click();assert.equal(await passwordInput.getAttribute('type'),'text');assert.equal(await passwordInput.inputValue(),'isolated-reveal-password')
+   await page.getByRole('button',{name:'Hide password',exact:true}).click();assert.equal(await passwordInput.getAttribute('type'),'password')
+   await eye.focus();await page.keyboard.press('Space');assert.equal(await passwordInput.getAttribute('type'),'text')
+   await page.locator('[name=username]').focus();assert.equal(await passwordInput.getAttribute('type'),'password')
+   const geometry=await page.locator('.ui-password').evaluate(wrapper=>{const input=wrapper.querySelector('input').getBoundingClientRect(),button=wrapper.querySelector('button').getBoundingClientRect();return {input:input.toJSON(),button:button.toJSON(),padding:getComputedStyle(wrapper.querySelector('input')).paddingRight,inside:button.left>=input.left&&button.right<=input.right&&button.top>=input.top&&button.bottom<=input.bottom,space:parseFloat(getComputedStyle(wrapper.querySelector('input')).paddingRight)>=button.width}})
+   assert.ok(geometry.inside&&geometry.space,'Eye stays inside the input without covering password text: '+JSON.stringify(geometry))
+   await page.locator('.login-card').screenshot({path:path.join(artifacts,`password-eye-${theme}-${width}.png`)})
+  }
+  await page.getByRole('button',{name:'Show password for 5 seconds',exact:true}).click()
+  await page.waitForFunction(()=>document.querySelector('#login-password')?.type==='password',{},{timeout:6500})
+  assert.equal(await passwordInput.inputValue(),'isolated-reveal-password');assert.equal(revealLoginRequests,0)
+  page.off('request',countRevealLogin);await passwordInput.fill('')
+  console.log('Password reveal passed: click, keyboard, immediate hide, blur, five-second auto-hide and four theme/width layouts.')
   assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
   const enrollment=await(await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE HOST NAME',coreUrl:base}})).json()
   for(const command of [enrollment.nativeInstallCommand,enrollment.dockerInstallCommand])assert.ok(command.includes('--token '+enrollment.token),'Administrator enrollment supplies a complete installation command')

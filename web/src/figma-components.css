@@ -95,6 +95,7 @@
 .app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(.elfinder *) {
   min-height: var(--control-height);
   padding: 5px 12px;
+  padding-inline-end: var(--input-padding-end, 12px);
   border-radius: var(--radius-control);
   font-size: var(--control-font);
   line-height: 20px;

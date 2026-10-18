@@ -23,6 +23,7 @@ import TailscaleDiscovery from "./components/TailscaleDiscovery";
 import UiDialog from "./components/UiDialog";
 import UiIcon from "./components/UiIcon";
 import UiSelect from "./components/UiSelect";
+import UiPassword from "./components/UiPassword";
 import UpdateCenter from "./components/UpdateCenter";
 import { cancelDialogs } from "./dialogs";
 import { display, locale, setLocale, t, type Locale } from "./i18n";
@@ -1549,11 +1550,11 @@ export default function App(input: Props) {
                         data-v-ac863f34=""
                       ></input>
                     </label>
-                    <label className={__classes("field")} data-v-ac863f34="">
-                      <span data-v-ac863f34="">{t("m.c19091521d71")}</span>
-                      <input
+                    <div className={__classes("field")} data-v-ac863f34="">
+                      <label htmlFor="login-password" data-v-ac863f34="">{t("m.c19091521d71")}</label>
+                      <UiPassword
+                        id="login-password"
                         name="password"
-                        type="password"
                         autoComplete="current-password"
                         required={true}
                         placeholder={t("m.7673702e6ff6") as any}
@@ -1567,8 +1568,8 @@ export default function App(input: Props) {
                           [],
                         )}
                         data-v-ac863f34=""
-                      ></input>
-                    </label>
+                      />
+                    </div>
                     <button
                       type="submit"
                       disabled={busy.value as any}

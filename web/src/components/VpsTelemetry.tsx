@@ -3,8 +3,12 @@ import type { Metric, MetricsView } from "../metrics-contract";
 import { cell, derived, watchState } from "../state";
 
 import { Fragment } from "react";
-import { __classes, __each, __style, useController } from "../state";
+import { __classes, __each, useController } from "../state";
 import "./VpsTelemetry.css";
+import ResourceReading from "./ResourceReading";
+import TelemetryReadings from "./TelemetryReadings";
+import { loadPercentage, loadLevel } from "../resource-readings";
+import TelemetryChart from "./TelemetryChart";
 type Props = {
   metrics?: MetricsView;
   online: boolean;
@@ -111,7 +115,7 @@ export default function VpsTelemetry(input: Props) {
         if (!usable(load) || !usable(cores)) return null;
         const one = number(load?.value?.one),
           count = number(cores?.value);
-        return one === null || !count ? null : (one / (count * 1.5)) * 100;
+        return loadPercentage(one, count);
       });
       const loadAverages = derived(() => {
         const load = props.metrics?.metrics.host?.load;
@@ -126,16 +130,7 @@ export default function VpsTelemetry(input: Props) {
           key: "load",
           label: t("overview.load"),
           value: loadPercent.value,
-          detail:
-            loadPercent.value === null
-              ? "—"
-              : loadPercent.value < 30
-                ? t("overview.loadLow")
-                : loadPercent.value < 70
-                  ? t("overview.loadNormal")
-                  : loadPercent.value < 80
-                    ? t("overview.loadMedium")
-                    : t("overview.loadHigh"),
+          detail: loadPercent.value === null ? "—" : t(loadLevel(loadPercent.value)),
         },
         {
           key: "cpu",
@@ -168,14 +163,6 @@ export default function VpsTelemetry(input: Props) {
         },
       ]);
       const values = derived(() => samples.value.map((p) => p[mode.value]));
-      const max = derived(() =>
-        Math.max(
-          1,
-          ...values.value.flatMap((p) =>
-            p.filter((n): n is number => n !== null),
-          ),
-        ),
-      );
       const fresh = derived(() =>
         usable(
           mode.value === "network"
@@ -192,31 +179,6 @@ export default function VpsTelemetry(input: Props) {
           ? [t("overview.download"), t("overview.upload")]
           : [t("overview.read"), t("overview.write")],
       );
-      function point(index: number, value: number) {
-        const first = samples.value[0]?.at ?? 0,
-          last = samples.value.at(-1)?.at ?? 0;
-        return [
-          last > first
-            ? 8 + ((samples.value[index]!.at - first) / (last - first)) * 484
-            : 8,
-          88 - (value / max.value) * 76,
-        ];
-      }
-      function path(series: number) {
-        let output = "",
-          active = false;
-        values.value.forEach((p, index) => {
-          const value = p[series];
-          if (value == null) {
-            active = false;
-            return;
-          }
-          const [x, y] = point(index, value);
-          output += `${active ? "L" : "M"}${x!.toFixed(1)},${y!.toFixed(1)} `;
-          active = true;
-        });
-        return output;
-      }
       function clock(at?: number) {
         return at
           ? new Date(at).toLocaleTimeString(locale.value, {
@@ -241,56 +203,8 @@ export default function VpsTelemetry(input: Props) {
             >
               <Fragment>
                 {__each(rings.value, (ring) => (
-                  <div
-                    key={ring.key as any}
-                    data-resource={ring.key as any}
-                    className={__classes("resource-reading")}
-                    data-v-85963ddb=""
-                  >
-                    <div
-                      role="img"
-                      aria-label={
-                        `${ring.label} ${ring.value === null ? t("overview.noData") : ring.value.toFixed(1) + "%"}` as any
-                      }
-                      className={__classes("ring")}
-                      data-v-85963ddb=""
-                    >
-                      <svg
-                        viewBox="0 0 80 80"
-                        aria-hidden="true"
-                        data-v-85963ddb=""
-                      >
-                        <circle
-                          cx="40"
-                          cy="40"
-                          r="34"
-                          className={__classes("ring-track")}
-                          data-v-85963ddb=""
-                        ></circle>
-                        {ring.value !== null ? (
-                          <circle
-                            cx="40"
-                            cy="40"
-                            r="34"
-                            pathLength="100"
-                            stroke-dasharray={
-                              `${Math.min(100, ring.value)} 100` as any
-                            }
-                            className={__classes("ring-value", {
-                              "is-high":
-                                ring.value >= (ring.key === "load" ? 80 : 90),
-                            })}
-                            data-v-85963ddb=""
-                          ></circle>
-                        ) : null}
-                      </svg>
-                      <strong data-v-85963ddb="">
-                        {ring.value === null
-                          ? "—"
-                          : ring.value.toFixed(1) + "%"}
-                      </strong>
-                    </div>
-                    {ring.key === "load" ? (
+                  <ResourceReading key={ring.key} resource={ring.key} label={ring.label} value={ring.value} detail={ring.detail} highAt={ring.key === "load" ? 80 : 90}
+                    labelContent={ring.key === "load" ? (
                       <button
                         type="button"
                         aria-expanded={loadOpen.value as any}
@@ -310,8 +224,7 @@ export default function VpsTelemetry(input: Props) {
                       </button>
                     ) : (
                       <span data-v-85963ddb="">{ring.label}</span>
-                    )}
-                    <small data-v-85963ddb="">{ring.detail}</small>
+                    )}>
                     {ring.key === "load" && loadOpen.value ? (
                       <div
                         role="region"
@@ -352,7 +265,7 @@ export default function VpsTelemetry(input: Props) {
                         </button>
                       </div>
                     ) : null}
-                  </div>
+                  </ResourceReading>
                 ))}
               </Fragment>
             </div>
@@ -408,78 +321,8 @@ export default function VpsTelemetry(input: Props) {
                   </span>
                 ) : null}
               </header>
-              <div className={__classes("monitor-values")} data-v-85963ddb="">
-                <Fragment>
-                  {__each(labels.value, (label, index) => (
-                    <span
-                      key={label as any}
-                      data-series={index as any}
-                      data-v-85963ddb=""
-                    >
-                      {label}{" "}
-                      <strong data-v-85963ddb="">
-                        {latest.value[index] == null
-                          ? "—"
-                          : bytes(latest.value[index]) + "/s"}
-                      </strong>
-                    </span>
-                  ))}
-                </Fragment>
-              </div>
-              <svg
-                viewBox="0 0 500 100"
-                preserveAspectRatio="none"
-                role="img"
-                aria-label={
-                  `${t("overview.monitor")} · ${labels.value.join(" / ")}` as any
-                }
-                data-points={samples.value.length as any}
-                className={__classes("rate-chart")}
-                data-v-85963ddb=""
-              >
-                <title data-v-85963ddb="">{t("overview.liveOnly")}</title>
-                <path
-                  d="M8 12H492 M8 50H492 M8 88H492"
-                  className={__classes("chart-grid")}
-                  data-v-85963ddb=""
-                ></path>
-                <Fragment>
-                  {__each([0, 1], (index) => (
-                    <path
-                      key={index as any}
-                      d={path(index) as any}
-                      data-series={index as any}
-                      className={__classes("chart-line")}
-                      data-v-85963ddb=""
-                    ></path>
-                  ))}
-                </Fragment>
-                {samples.value.length === 1 ? (
-                  <Fragment>
-                    <Fragment>
-                      {__each([0, 1], (index) => (
-                        <circle
-                          key={index as any}
-                          cx={8 as any}
-                          cy={
-                            latest.value[index] == null
-                              ? 88
-                              : (point(0, latest.value[index]!)[1] as any)
-                          }
-                          r="2.5"
-                          data-series={index as any}
-                          className={__classes("chart-dot")}
-                          style={__style({
-                            display:
-                              latest.value[index] != null ? undefined : "none",
-                          })}
-                          data-v-85963ddb=""
-                        ></circle>
-                      ))}
-                    </Fragment>
-                  </Fragment>
-                ) : null}
-              </svg>
+              <TelemetryReadings labels={labels.value} values={labels.value.map((_, index) => latest.value[index] == null ? "—" : bytes(latest.value[index]) + "/s")} />
+              <TelemetryChart label={t("overview.monitor")} labels={labels.value} points={samples.value.map(point => ({at: point.at, values: point[mode.value]}))} />
               <footer data-v-85963ddb="">
                 <span data-v-85963ddb="">{clock(samples.value[0]?.at)}</span>
                 <span data-v-85963ddb="">{t("overview.liveOnly")}</span>
