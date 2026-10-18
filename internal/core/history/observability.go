@@ -65,7 +65,7 @@ func recordSnapshot(ctx context.Context, tx *sql.Tx, node string, snapshot proto
 	if _, err = tx.ExecContext(ctx, `INSERT INTO observation_frames(node_id,received_at,boot_id,snapshot_json) VALUES(?,?,?,?)`, node, at.UnixNano(), boot, string(body)); err != nil {
 		return err
 	}
-	thresholds := map[string]float64{"pressure.memory.full10": 10, "pressure.io.full10": 10, "cpu.steal_percent": 20, "network.conntrack_percent": 90, "memory.oom_kills_per_second": 0, "service.failed_count": 0}
+	thresholds := map[string]float64{"cpu.steal_percent": 20, "network.conntrack_percent": 90, "memory.oom_kills_per_second": 0}
 	for key, threshold := range thresholds {
 		m := snapshot.Host.Observability.Values[key]
 		if m.Status != protocol.MetricKnown || m.Value == nil || *m.Value <= threshold {

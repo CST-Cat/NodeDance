@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.45]
+
+### English
+
+- Remove the Application metrics, TCP quality, Filesystems, System services, Swap activity, Memory pressure, I/O pressure and Container resources cards, their metric/catalog configuration and dedicated incident triggers; retain the shared square-card layout for the eight remaining diagnostic groups.
+
+### 简体中文
+
+- 移除应用指标、TCP 质量、文件系统、系统服务、Swap 换页、内存压力、I/O 压力、容器资源八张卡片及对应指标／配置和专用异常触发；其余八组诊断继续复用同一套方形卡片布局。
+
 ## [0.1.44]
 
 ### English

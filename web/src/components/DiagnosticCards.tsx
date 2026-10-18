@@ -17,18 +17,10 @@ const groups: Group[] = [
   { id: "scheduling", accepts: prefix("cpu.") },
   { id: "cores", accepts: () => false, entity: "cpu" },
   { id: "cpuPressure", accepts: prefix("pressure.cpu.") },
-  { id: "memoryPressure", accepts: prefix("pressure.memory.") },
-  { id: "ioPressure", accepts: prefix("pressure.io.") },
   { id: "kernelMemory", accepts: prefix("memory.") },
-  { id: "swapActivity", accepts: prefix("swap.") },
   { id: "diskIO", accepts: prefix("disk.") },
-  { id: "filesystems", accepts: prefix("filesystem."), entity: "filesystem" },
-  { id: "tcp", accepts: key => key.startsWith("network.") && !key.includes("conntrack") },
   { id: "conntrack", accepts: key => key.includes("conntrack") },
-  { id: "services", accepts: prefix("service."), entity: "service" },
   { id: "processes", accepts: prefix("process."), entity: "process" },
-  { id: "containers", accepts: prefix("container."), entity: "container" },
-  { id: "applications", accepts: prefix("application."), entity: "application" },
   { id: "collector", accepts: prefix("agent.") },
 ];
 
@@ -48,9 +40,6 @@ export default function DiagnosticCards({ view, definitions, entityDefinitions, 
     if (unit === "bytes") return formatBytes(n);
     if (unit === "bytes/s") return formatBytes(n) + "/s";
     if (unit === "%") return number(n) + "%";
-    if (unit === "boolean") return t(n ? "diagnostics.yes" : "diagnostics.no");
-    if (unit === "code") return number(n);
-    if (unit === "cores") return number(n) + " " + t("overview.cores");
     if (unit === "1/s") return number(n) + "/s";
     return unit && unit !== "count" ? number(n) + " " + unit : number(n);
   };
@@ -75,7 +64,7 @@ export default function DiagnosticCards({ view, definitions, entityDefinitions, 
           <p className="network-pair" data-v-64f045e3=""><strong data-v-64f045e3="">{entity.name}</strong></p>
           {Object.entries(entity.values).map(([key, metric]) => {
             const d = entityDefinitions[entity.kind]?.[key];
-            return row(`${entity.kind}:${entity.id}:${key}`, d ? name(d) : key, value(metric, entity.units?.[key] ?? d?.unit ?? "", true), metric.reason);
+            return row(`${entity.kind}:${entity.id}:${key}`, d ? name(d) : key, value(metric, d?.unit ?? "", true), metric.reason);
           })}
         </div>;
       })}

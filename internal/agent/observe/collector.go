@@ -3,7 +3,6 @@
 package observe
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -113,7 +112,7 @@ func (c *Collector) Collect(ctx context.Context, at time.Time, fast int, s *prot
 		}
 	}
 	c.collectCPU(ctx, at, out)
-	for _, resource := range []string{"cpu", "memory", "io"} {
+	for _, resource := range []string{"cpu"} {
 		collectPressure(filepath.Join(root(), "pressure", resource), resource, at, out.Values)
 	}
 	stat, e := fields(filepath.Join(root(), "stat"))
@@ -128,15 +127,12 @@ func (c *Collector) Collect(ctx context.Context, at time.Time, fast int, s *prot
 		}
 	}
 	vm, e := fields(filepath.Join(root(), "vmstat"))
-	for k, src := range map[string]string{"swap.in_bytes_per_second": "pswpin", "swap.out_bytes_per_second": "pswpout", "memory.major_faults_per_second": "pgmajfault", "memory.oom_kills_per_second": "oom_kill"} {
+	for k, src := range map[string]string{"memory.major_faults_per_second": "pgmajfault", "memory.oom_kills_per_second": "oom_kill"} {
 		if e != nil {
 			out.Values[k] = unknown(reason(e), at)
 			continue
 		}
 		if n, ok := vm[src]; ok {
-			if strings.HasPrefix(k, "swap.") {
-				n *= float64(os.Getpagesize())
-			}
 			out.Values[k] = c.rate(src, n, at)
 		}
 	}
@@ -145,7 +141,7 @@ func (c *Collector) Collect(ctx context.Context, at time.Time, fast int, s *prot
 		out.Values["memory.dirty_bytes"] = known(float64(m.Dirty), at)
 		out.Values["memory.slab_bytes"] = known(float64(m.Slab), at)
 	}
-	c.collectNetwork(at, out)
+	c.collectConntrack(at, out)
 	c.collectDisk(ctx, at, out)
 	if p, e := process.NewProcessWithContext(ctx, int32(os.Getpid())); e == nil {
 		if m, e := p.MemoryInfoWithContext(ctx); e == nil {
@@ -292,33 +288,7 @@ func collectPressure(path, resource string, at time.Time, values map[string]prot
 		}
 	}
 }
-func (c *Collector) collectNetwork(at time.Time, o *protocol.Observability) {
-	for file, wanted := range map[string]map[string]string{"snmp": {"RetransSegs": "network.tcp_retransmits_per_second", "AttemptFails": "network.tcp_failures_per_second"}, "netstat": {"ListenOverflows": "network.listen_overflows_per_second"}} {
-		f, e := os.Open(filepath.Join(root(), "net", file))
-		if e != nil {
-			continue
-		}
-		scan := bufio.NewScanner(f)
-		for scan.Scan() {
-			header := strings.Fields(scan.Text())
-			if !scan.Scan() {
-				break
-			}
-			nums := strings.Fields(scan.Text())
-			if len(header) != len(nums) || len(header) == 0 || header[0] != nums[0] {
-				continue
-			}
-			for i, name := range header {
-				if key, ok := wanted[name]; ok {
-					n, e := strconv.ParseFloat(nums[i], 64)
-					if e == nil {
-						o.Values[key] = c.rate(key, n, at)
-					}
-				}
-			}
-		}
-		f.Close()
-	}
+func (c *Collector) collectConntrack(at time.Time, o *protocol.Observability) {
 	count, e1 := read(filepath.Join(root(), "sys/net/netfilter/nf_conntrack_count"))
 	limit, e2 := read(filepath.Join(root(), "sys/net/netfilter/nf_conntrack_max"))
 	a, e3 := strconv.ParseFloat(count, 64)

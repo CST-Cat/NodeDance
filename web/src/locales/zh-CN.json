@@ -2141,19 +2141,9 @@
   "diagnostics.card.scheduling": "CPU 调度",
   "diagnostics.card.cores": "每核心使用率",
   "diagnostics.card.cpuPressure": "CPU 压力",
-  "diagnostics.card.memoryPressure": "内存压力",
-  "diagnostics.card.ioPressure": "I/O 压力",
   "diagnostics.card.kernelMemory": "内核内存",
-  "diagnostics.card.swapActivity": "Swap 换页",
   "diagnostics.card.diskIO": "磁盘 I/O",
-  "diagnostics.card.filesystems": "文件系统",
-  "diagnostics.card.tcp": "TCP 质量",
   "diagnostics.card.conntrack": "连接跟踪",
-  "diagnostics.card.services": "系统服务",
   "diagnostics.card.processes": "进程排行",
-  "diagnostics.card.containers": "容器资源",
-  "diagnostics.card.applications": "应用指标",
-  "diagnostics.card.collector": "Agent 采集",
-  "diagnostics.yes": "是",
-  "diagnostics.no": "否"
+  "diagnostics.card.collector": "Agent 采集"
 }

@@ -3,8 +3,6 @@ package observe
 import (
 	"context"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,15 +28,15 @@ func TestCounterStatesAndRateDenominator(t *testing.T) {
 func TestPSIIndependentUnknownAndNoSystemCPUFull(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pressure")
 	at := time.Now()
-	values := map[string]protocol.Metric[float64]{"pressure.memory.some10": unknown("sampling", at), "pressure.memory.full10": unknown("sampling", at)}
-	if err := os.WriteFile(path, []byte("some avg10=12.34 avg60=3.00 avg300=1.00 total=100\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"), 0600); err != nil {
+	values := map[string]protocol.Metric[float64]{"pressure.cpu.some10": unknown("sampling", at), "pressure.cpu.some60": unknown("sampling", at)}
+	if err := os.WriteFile(path, []byte("some avg10=0.00 avg60=3.00 avg300=1.00 total=100\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	collectPressure(path, "memory", at, values)
-	if *values["pressure.memory.some10"].Value != 12.34 || *values["pressure.memory.full10"].Value != 0 {
+	collectPressure(path, "cpu", at, values)
+	if *values["pressure.cpu.some10"].Value != 0 || *values["pressure.cpu.some60"].Value != 3 {
 		t.Fatal(values)
 	}
-	collectPressure(path+"-missing", "memory", at, values)
+	collectPressure(path+"-missing", "cpu", at, values)
 	for _, m := range values {
 		if m.Value != nil || m.Reason != "unsupported" {
 			t.Fatal(m)
@@ -48,59 +46,22 @@ func TestPSIIndependentUnknownAndNoSystemCPUFull(t *testing.T) {
 		t.Fatal("system CPU full must not be published")
 	}
 }
-func TestApplicationCollectorBoundsMissingAndNoRedirect(t *testing.T) {
-	var redirected bool
-	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected = true }))
-	defer destination.Close()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/redirect" {
-			http.Redirect(w, r, destination.URL, 302)
-			return
-		}
-		if r.URL.Path == "/large" {
-			_, _ = w.Write(make([]byte, 300<<10))
-			return
-		}
-		_, _ = w.Write([]byte("# TYPE requests_total counter\nrequests_total 42\nmissing_label{db=\"secret\"} 123\nnot_requested 999\n"))
-	}))
-	defer server.Close()
-	for _, path := range []string{"/metrics", "/redirect", "/large"} {
-		o := &protocol.Observability{}
-		collectApplications(context.Background(), time.Now(), []protocol.ApplicationCollector{{Name: "app", Kind: "prometheus", URL: server.URL + path, Metrics: []string{"requests_total", "absent"}, MetricUnits: map[string]string{"requests_total": "count", "absent": "count"}}}, o)
-		if len(o.Entities) != 1 {
-			t.Fatal(o)
-		}
-		v := o.Entities[0].Values
-		if path == "/metrics" {
-			if v["requests_total"].Value == nil || *v["requests_total"].Value != 42 || v["absent"].Value != nil {
-				t.Fatal(v)
-			}
-			if _, ok := v["not_requested"]; ok {
-				t.Fatal("unselected metric leaked")
-			}
-		} else if v["collector_up"].Value != nil {
-			t.Fatal(v)
-		}
+func TestObservationSettingsBounds(t *testing.T) {
+	defaults := protocol.ObservationDefaults()
+	if err := protocol.ValidateObservationSettings(&defaults); err != nil {
+		t.Fatal(err)
 	}
-	if redirected {
-		t.Fatal("application endpoint followed a redirect")
-	}
-}
-func TestObservationSettingsRejectInvalidBoundsAndEndpoints(t *testing.T) {
-	s := protocol.ObservationDefaults()
-	s.Services = []string{"--malicious"}
-	if protocol.ValidateObservationSettings(&s) == nil {
-		t.Fatal("accepted command flag")
-	}
-	s = protocol.ObservationDefaults()
-	s.Applications = []protocol.ApplicationCollector{{Name: "db", Kind: "prometheus", URL: "http://user:password@localhost/metrics"}}
-	if protocol.ValidateObservationSettings(&s) == nil {
-		t.Fatal("accepted credentials in URL")
-	}
-	s.Applications[0].URL = "http://localhost/metrics"
-	s.Applications[0].Metrics = []string{"x"}
-	if protocol.ValidateObservationSettings(&s) == nil {
-		t.Fatal("accepted metric without unit")
+	for _, change := range []func(*protocol.ObservationSettings){
+		func(s *protocol.ObservationSettings) { s.IntervalSeconds = 14 },
+		func(s *protocol.ObservationSettings) { s.IntervalSeconds = 301 },
+		func(s *protocol.ObservationSettings) { s.ProcessLimit = -1 },
+		func(s *protocol.ObservationSettings) { s.ProcessLimit = 21 },
+	} {
+		settings := defaults
+		change(&settings)
+		if protocol.ValidateObservationSettings(&settings) == nil {
+			t.Fatal("accepted invalid limits", settings)
+		}
 	}
 }
 

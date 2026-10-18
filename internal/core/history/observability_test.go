@@ -60,14 +60,16 @@ func TestRecordingDeduplicatesSlowSamplesAndRetainsIncidentWindow(t *testing.T) 
 	s := history.Store{DB: db.DB}
 	at := time.Now().UTC().Truncate(time.Minute).Add(-3 * time.Hour)
 	value := 2.0
-	snapshot := protocol.MetricsSnapshot{Host: &protocol.MetricsHost{Observability: &protocol.Observability{Values: map[string]protocol.Metric[float64]{"service.failed_count": {Status: protocol.MetricKnown, Value: &value, SampledAt: at}}, SlowIntervalSeconds: 60}}}
+	snapshot := protocol.MetricsSnapshot{Host: &protocol.MetricsHost{Observability: &protocol.Observability{Values: map[string]protocol.Metric[float64]{"process.collected_count": {Status: protocol.MetricKnown, Value: &value, SampledAt: at}}, SlowIntervalSeconds: 60}}}
+	steal := 30.0
+	snapshot.Host.Observability.Values["cpu.steal_percent"] = protocol.Metric[float64]{Status: protocol.MetricKnown, Value: &steal, SampledAt: at}
 	for i := 0; i < 3; i++ {
 		if err = s.AppendSnapshot(ctx, "node", snapshot, at.Add(time.Duration(i)*5*time.Second)); err != nil {
 			t.Fatal(err)
 		}
 	}
 	var count int
-	if err = db.DB.QueryRow(`SELECT sample_count FROM metrics_minute WHERE metric_key='service.failed_count'`).Scan(&count); err != nil || count != 1 {
+	if err = db.DB.QueryRow(`SELECT sample_count FROM metrics_minute WHERE metric_key='process.collected_count'`).Scan(&count); err != nil || count != 1 {
 		t.Fatal("repeated cached reading was counted more than once", count, err)
 	}
 	if err = s.Cleanup(ctx, time.Now()); err != nil {

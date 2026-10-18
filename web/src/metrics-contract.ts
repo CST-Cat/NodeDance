@@ -83,7 +83,7 @@ export interface MetricsView {
   }
 }
 
-export interface Observability {values:Record<string,Metric<number>>;entities:Array<{kind:string;id:string;name:string;units?:Record<string,string>;values:Record<string,Metric<number>>}>;truncated:boolean;slowIntervalSeconds:number}
+export interface Observability {values:Record<string,Metric<number>>;entities:Array<{kind:string;id:string;name:string;values:Record<string,Metric<number>>}>;truncated:boolean;slowIntervalSeconds:number}
 export interface HostMetrics {
  observability?:Observability
 

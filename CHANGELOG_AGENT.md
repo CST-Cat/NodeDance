@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.25]
+
+### English
+
+- Remove application exporters, systemd service and filesystem detail scans, TCP quality counters, Swap paging rates, memory/I/O PSI and cgroup container collection, including dedicated settings and entity units. Retain CPU PSI, conntrack and process diagnostics.
+
+### 简体中文
+
+- 删除应用 exporter、systemd 服务和文件系统明细扫描、TCP 质量计数、Swap 换页速率、内存／I/O PSI 和 cgroup 容器采集，同时移除专用配置和实体单位字段；保留 CPU PSI、conntrack 和进程诊断。
+
 ## [0.1.24]
 
 ### English

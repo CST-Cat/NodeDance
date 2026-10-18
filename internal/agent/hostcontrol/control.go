@@ -109,16 +109,6 @@ func (m *Manager) Settings() protocol.AgentSettings {
 func cloneSettings(s protocol.AgentSettings) protocol.AgentSettings {
 	if s.Observability != nil {
 		o := *s.Observability
-		o.Services = append([]string{}, o.Services...)
-		o.Applications = append([]protocol.ApplicationCollector{}, o.Applications...)
-		for i := range o.Applications {
-			o.Applications[i].Metrics = append([]string{}, o.Applications[i].Metrics...)
-			units := map[string]string{}
-			for k, v := range o.Applications[i].MetricUnits {
-				units[k] = v
-			}
-			o.Applications[i].MetricUnits = units
-		}
 		s.Observability = &o
 	}
 
