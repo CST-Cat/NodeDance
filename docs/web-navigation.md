@@ -92,3 +92,5 @@ Run `make build` followed by `node web/scripts/audit-navigation.cjs` for the foc
 窄屏导航隐藏 Logo／NodeDance 字标及品牌下方分割线，功能项纵向留白适度收紧并保留至少 44px 点击高度；桌面品牌布局不变。
 
 个人设置的语言下拉框位于背景颜色右侧，标签顶边及控件上下边缘对齐，复用主题化下拉组件；窄屏两列按可用宽度收缩，控件不超出卡片。语言偏好仅保存在当前浏览器，自动模式继续跟随浏览器语言。
+
+窄屏功能项采用整行底部浅分割线，参考本地 `design-study/anthropic/pages/home.html` 的 `.nav_links_item.is-mobile` 结构及 `assets/main.css`：线宽沿用 `.0625rem`。原站主菜单使用 ivory-medium（`#F0EEE6`），与本项目当前菜单背景同色，因此映射为同一源码 `.nav_dropdown_link_block` 使用的 slate-faded-10（`#1414131a`），保证浅色分隔可见；不恢复已隐藏的品牌／账号分割线。样式集中在窄屏菜单规则中，不保留会被 `border: 0` 清除的旧顶部边框声明，桌面菜单不变。

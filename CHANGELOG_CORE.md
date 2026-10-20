@@ -4,10 +4,12 @@
 
 ### English
 
+- Restore subtle full-width mobile menu dividers using the locally studied Anthropic navigation structure and faded-slate separator color.
 - Scale narrow-screen navigation icons with font cap height and center them vertically with their labels, preserving desktop icon geometry and touch targets.
 
 ### 简体中文
 
+- 根据本地 Anthropic 导航源码，为窄屏菜单恢复整行浅分割线，采用淡石板色分隔。
 - 窄屏导航图标按字体大写字高缩放并与标签垂直居中，保留桌面图标尺寸和触摸区域。
 
 ## [0.1.50]

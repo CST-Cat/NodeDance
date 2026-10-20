@@ -2142,9 +2142,6 @@ textarea {
   .workspace-sidebar .workspace-nav {
     gap: 0;
   }
-  .workspace-sidebar .workspace-nav button + button {
-    border-top: var(--border-width--main, 0.0625rem) solid var(--swatch--slate-faded-10, var(--line));
-  }
   .workspace-sidebar .workspace-account {
     margin-top: auto;
     padding: 1.4rem 0 0;

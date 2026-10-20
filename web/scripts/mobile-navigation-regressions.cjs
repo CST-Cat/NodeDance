@@ -34,6 +34,8 @@ module.exports=async function({page,base,artifacts}){
   assert.equal(await sidebar.locator('.workspace-nav button').first().evaluate(el=>getComputedStyle(el).color),'rgb(20, 20, 19)','Mobile navigation remains readable in both themes')
   assert.equal(await sidebar.locator('.wordmark').isVisible(),false,'Mobile menu omits the logo and brand wordmark')
   assert.equal(await sidebar.locator('.workspace-account').isVisible(),false,'Mobile menu omits account selection and its divider')
+  const dividers=await sidebar.locator('.workspace-nav button').evaluateAll(elements=>elements.map(el=>{const s=getComputedStyle(el);return {width:s.borderBottomWidth,color:s.borderBottomColor,top:s.borderTopWidth}}))
+  assert.ok(dividers.every(line=>line.width==='1px'&&line.top==='0px'&&(()=>{const rgba=line.color.match(/[\d.]+/g).map(Number);return rgba[0]===20&&rgba[1]===20&&rgba[2]===19&&Math.abs(rgba[3]-26/255)<0.003})()),'Each mobile menu item, including the selected item, has one subtle bottom divider: '+JSON.stringify(dividers))
   assert.equal(await sidebar.locator('.sidebar-context').evaluate(el=>getComputedStyle(el).borderTopWidth),'0px','Mobile menu omits the brand divider')
   const row=await sidebar.locator('.workspace-nav button').first().evaluate(el=>({height:el.getBoundingClientRect().height,padding:parseFloat(getComputedStyle(el).paddingTop),rem:parseFloat(getComputedStyle(document.documentElement).fontSize)}))
   assert.ok(row.height>=44&&row.padding<1.4*row.rem,'Mobile spacing is tighter while preserving touch targets: '+JSON.stringify(row))

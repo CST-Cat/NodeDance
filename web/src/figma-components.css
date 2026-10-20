@@ -181,16 +181,16 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
 .app-shell[data-theme] .workspace-account { padding: 12px 4px 0; border-top: 0; }
 /* Mobile menu panel: full-screen dropdown, published paddings. */
 @media (max-width: 900px) {
-  .app-shell[data-theme] .workspace-sidebar { width: 100%; padding: var(--nav--height, 4.25rem) var(--site--gutter, 2rem) var(--_spacing---space--8, 3rem); background: #F0EEE6; border-right-width: 0; }
+  .app-shell[data-theme] .workspace-sidebar { --mobile-menu-divider: #1414131a; width: 100%; padding: var(--nav--height, 4.25rem) var(--site--gutter, 2rem) var(--_spacing---space--8, 3rem); background: #F0EEE6; border-right-width: 0; }
   .app-shell[data-theme] .workspace-sidebar,
   .app-shell[data-theme]:has(.workspace-sidebar.is-open) .topbar { --text: #141413; --muted: #73726c; --accent: var(--text); --button-focus: #141413b2; color: var(--text); }
   .app-shell[data-theme] .workspace-sidebar .wordmark { min-height: 0; margin: 0 0 24px; font-size: 24px; }
   .app-shell[data-theme] .workspace-label { margin: 0 0 12px; }
-  .app-shell[data-theme] .workspace-nav button { align-items: center; min-height: 44px; width: 100%; padding: 1.1rem 0; border-radius: 0; font-size: var(--_typography---font-size--display-s, 1.5rem); font-weight: var(--_typography---font--display-sans-semibold, 600); }
+  .app-shell[data-theme] .workspace-nav button { align-items: center; min-height: 44px; width: 100%; padding: 1.1rem 0; border-radius: 0; border-bottom: var(--border-width--main, .0625rem) solid var(--mobile-menu-divider); font-size: var(--_typography---font-size--display-s, 1.5rem); font-weight: var(--_typography---font--display-sans-semibold, 600); }
   /* Scale padded UiIcon viewports with the font; center the icon and label optically. */
   .app-shell[data-theme] .workspace-nav button > svg { block-size: 1.2cap; inline-size: auto; flex-shrink: 0; }
   .app-shell[data-theme] .workspace-nav button:hover { background: transparent; color: var(--accent); }
-  .app-shell[data-theme] .workspace-nav button[aria-current="page"] { background: transparent; }
+  .app-shell[data-theme] .workspace-nav button[aria-current="page"] { background: transparent; border-bottom-color: var(--mobile-menu-divider); }
   .app-shell[data-theme] .workspace-account { display: none; }
 }
 .app-shell[data-theme] .topbar { min-height: 68px; border-bottom: 0; }
