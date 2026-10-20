@@ -1183,13 +1183,15 @@ export default function NodesDashboard(input: Props) {
                             data-kind={item.kind as any}
                             data-v-73fde8e5=""
                           >
-                            <span data-v-73fde8e5="">{t(item.label)}</span>
+                            <span data-v-73fde8e5="">
+                              {item.kind !== "total" ? <i aria-hidden="true" data-v-73fde8e5=""></i> : null}
+                              {t(item.label)}
+                            </span>
                             <strong data-v-73fde8e5="">
                               {busy.value && !nodes.value.length
                                 ? "—"
                                 : item.value}
                             </strong>
-                            <i aria-hidden="true" data-v-73fde8e5=""></i>
                           </article>
                         ))}
                       </Fragment>
