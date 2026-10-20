@@ -4,7 +4,11 @@
 
 ### English
 
+- Scale narrow-screen navigation icons with font cap height and align them to the first text baseline, preserving desktop icon geometry and touch targets.
+
 ### 简体中文
+
+- 窄屏导航图标按字体大写字高缩放并对齐文字首行基线，保留桌面图标尺寸和触摸区域。
 
 ## [0.1.50]
 

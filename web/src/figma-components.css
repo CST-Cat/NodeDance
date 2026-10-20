@@ -186,7 +186,9 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
   .app-shell[data-theme]:has(.workspace-sidebar.is-open) .topbar { --text: #141413; --muted: #73726c; --accent: var(--text); --button-focus: #141413b2; color: var(--text); }
   .app-shell[data-theme] .workspace-sidebar .wordmark { min-height: 0; margin: 0 0 24px; font-size: 24px; }
   .app-shell[data-theme] .workspace-label { margin: 0 0 12px; }
-  .app-shell[data-theme] .workspace-nav button { min-height: 44px; width: 100%; padding: 1.1rem 0; border-radius: 0; font-size: var(--_typography---font-size--display-s, 1.5rem); font-weight: var(--_typography---font--display-sans-semibold, 600); }
+  .app-shell[data-theme] .workspace-nav button { align-items: baseline; min-height: 44px; width: 100%; padding: 1.1rem 0; border-radius: 0; font-size: var(--_typography---font-size--display-s, 1.5rem); font-weight: var(--_typography---font--display-sans-semibold, 600); }
+  /* UiIcon uses a padded 24×24 viewBox; calibrate its viewport against cap height. */
+  .app-shell[data-theme] .workspace-nav button > svg { block-size: 1.2cap; inline-size: auto; flex-shrink: 0; }
   .app-shell[data-theme] .workspace-nav button:hover { background: transparent; color: var(--accent); }
   .app-shell[data-theme] .workspace-nav button[aria-current="page"] { background: transparent; }
   .app-shell[data-theme] .workspace-account { display: none; }
