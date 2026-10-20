@@ -1164,6 +1164,7 @@ export default function NodesDashboard(input: Props) {
                 <h1 id="nodes-title" data-v-73fde8e5="">
                   {t("nav.nodes")}
                 </h1>
+                <UiLoadState loading={busy.value && nodesReady.value} ready={true} failed={!!error.value} />
               </header>
               <div className={__classes("overview-layout")} data-v-73fde8e5="">
                 <div className={__classes("overview-main ui-load-region")} data-v-73fde8e5="">
@@ -1372,7 +1373,7 @@ export default function NodesDashboard(input: Props) {
                         </span>
                       ) : null}
                     </div>
-                    <UiLoadState loading={busy.value} ready={nodesReady.value} failed={!!error.value} />
+                    <UiLoadState loading={busy.value && !nodesReady.value} ready={false} failed={!!error.value} />
                     {nodesReady.value && nodes.value.length === 0 ? (
                       <div
                         className={__classes("dashboard-welcome")}
