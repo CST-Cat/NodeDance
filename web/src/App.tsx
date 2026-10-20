@@ -1424,11 +1424,7 @@ export default function App(input: Props) {
                   className={__classes("auth-copy login-copy")}
                   data-v-ac863f34=""
                 >
-                  <span className={__classes("eyebrow")} data-v-ac863f34="">
-                    {t("label.111bdc0c1ef5")}
-                  </span>
                   <h1 data-v-ac863f34="">{t("m.cb1d97794707")}</h1>
-                  <p data-v-ac863f34="">{t("m.cd2de59b2219")}</p>
                   <div
                     className={__classes("login-identity")}
                     data-v-ac863f34=""
@@ -1572,12 +1568,6 @@ export default function App(input: Props) {
                       {t("guest.enter")}
                     </button>
                   ) : null}
-                  <p className={__classes("privacy-note")} data-v-ac863f34="">
-                    <span aria-hidden="true" data-v-ac863f34="">
-                      {"◈"}
-                    </span>
-                    {t("m.3834cf7462ca")}
-                  </p>
                 </section>
               </section>
             ) : screen.value === "guest" ? (

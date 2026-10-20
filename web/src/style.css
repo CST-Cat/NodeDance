@@ -468,14 +468,14 @@ summary:focus-visible {
   inset: 0;
   background: var(--surface);
 }
-.login-copy h1 {
-  margin-bottom: 12px;
+.auth-copy.login-copy h1 {
+  margin: 0 0 12px;
 }
 .login-identity {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 36px;
+  margin-top: 0;
 }
 .preview-avatar,
 .profile-avatar {
@@ -1044,9 +1044,6 @@ summary:focus-visible {
   }
   .form-card {
     padding: 28px 25px 24px;
-  }
-  .login-identity {
-    margin-top: 21px;
   }
   .settings-heading {
     margin-bottom: 17px;
