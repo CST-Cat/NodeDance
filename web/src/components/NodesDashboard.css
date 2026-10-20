@@ -144,13 +144,13 @@
 }
 .node-summary article > span[data-v-73fde8e5] {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 14px;
 }
 .node-summary strong[data-v-73fde8e5] {
   color: var(--text);
   font-variant-numeric: tabular-nums;
   letter-spacing: -1px;
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 500;
 }
 .dashboard-toolbar[data-v-73fde8e5] {
