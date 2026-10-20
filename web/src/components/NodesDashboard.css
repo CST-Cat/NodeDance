@@ -138,13 +138,11 @@
   background: var(--surface);
 }
 .node-summary article[data-v-73fde8e5] {
-  position: relative;
   display: grid;
   padding: 8px 12px;
   gap: 8px;
 }
 .node-summary article > span[data-v-73fde8e5] {
-  padding-right: 14px;
   color: var(--muted);
   font-size: 13px;
 }
@@ -154,24 +152,6 @@
   letter-spacing: -1px;
   font-size: 28px;
   font-weight: 500;
-}
-.node-summary i[data-v-73fde8e5] {
-  position: absolute;
-  top: 24px;
-  right: 8px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--muted);
-}
-.node-summary [data-kind="online"] i[data-v-73fde8e5] {
-  background: var(--success);
-}
-.node-summary [data-kind="pending"] i[data-v-73fde8e5] {
-  background: var(--warning);
-}
-.node-summary [data-kind="total"] i[data-v-73fde8e5] {
-  background: var(--accent-fill);
 }
 .dashboard-toolbar[data-v-73fde8e5] {
   display: flex;

@@ -1189,7 +1189,6 @@ export default function NodesDashboard(input: Props) {
                                 ? "—"
                                 : item.value}
                             </strong>
-                            <i aria-hidden="true" data-v-73fde8e5=""></i>
                           </article>
                         ))}
                       </Fragment>
