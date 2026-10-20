@@ -131,8 +131,8 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 16px;
-  gap: 12px;
-  padding: 12px;
+  gap: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   background: var(--surface);
@@ -141,8 +141,8 @@
   display: grid;
   justify-items: center;
   text-align: center;
-  padding: 8px 12px;
-  gap: 8px;
+  padding: 4px 12px;
+  gap: 4px;
 }
 .node-summary article > span[data-v-73fde8e5] {
   color: var(--muted);
@@ -244,7 +244,6 @@
 @media (max-width: 700px) {
   .node-summary[data-v-73fde8e5] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
   }
   .dashboard-toolbar[data-v-73fde8e5] {
     align-items: stretch;
