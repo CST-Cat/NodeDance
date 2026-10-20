@@ -139,6 +139,8 @@
 }
 .node-summary article[data-v-73fde8e5] {
   display: grid;
+  justify-items: center;
+  text-align: center;
   padding: 8px 12px;
   gap: 8px;
 }
