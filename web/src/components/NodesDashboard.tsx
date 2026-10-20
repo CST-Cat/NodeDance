@@ -1215,7 +1215,7 @@ export default function NodesDashboard(input: Props) {
                         className={__classes("node-search")}
                         data-v-73fde8e5=""
                       >
-                        <UiIcon name="nodes" data-v-73fde8e5=""></UiIcon>
+                        <UiIcon name="search" data-v-73fde8e5=""></UiIcon>
                         <input
                           id="overview-node-search"
                           type="search"
