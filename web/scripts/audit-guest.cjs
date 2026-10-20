@@ -10,13 +10,12 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
  core.stdout.on('data',x=>logs+=x);core.stderr.on('data',x=>logs+=x)
  try{
   let ready=false;for(let i=0;i<100;i++){try{ready=(await fetch(base+'/api/v1/health')).ok}catch{}if(ready)break;if(core.exitCode!==null)throw Error(logs);await new Promise(r=>setTimeout(r,100))}assert.ok(ready)
-  browser=await chromium.launch({headless:true});const admin=await browser.newContext(),visitor=await browser.newContext()
-  for(const c of [admin,visitor])await c.addInitScript(()=>localStorage.setItem('nodedance.language','en'))
+  browser=await chromium.launch({headless:true});const admin=await browser.newContext({locale:'en-US'}),visitor=await browser.newContext({locale:'en-US'})
   const csrf=await(await admin.request.get(base+'/api/v1/auth/csrf')).json(),credentials=JSON.parse(fs.readFileSync(path.join(directory,'initial-admin.json'),'utf8'))
   const login=await admin.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':csrf.token},data:credentials});assert.equal(login.status(),200)
   const headers={Origin:base,'X-CSRF-Token':(await login.json()).csrfToken}
   // Persistent terminal policy still requires valid credentials and remains revocable.
-  const terminal=await browser.newContext()
+  const terminal=await browser.newContext({locale:'en-US'})
   const terminalCSRF=(await(await terminal.request.get(base+'/api/v1/auth/csrf')).json()).token
   const terminalLogin=await terminal.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':terminalCSRF},data:{...credentials,persistent:true}})
   assert.equal(terminalLogin.status(),200)
@@ -25,14 +24,13 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   assert.equal((await terminal.request.get(base+'/api/v1/auth/me')).status(),200)
   const terminalToken=(await terminalLogin.json()).csrfToken
   assert.equal((await terminal.request.post(base+'/api/v1/auth/logout',{headers:{Origin:base,'X-CSRF-Token':terminalToken}})).status(),204)
-  const revokedTerminal=await browser.newContext();await revokedTerminal.addCookies(terminalCookies)
+  const revokedTerminal=await browser.newContext({locale:'en-US'});await revokedTerminal.addCookies(terminalCookies)
   assert.equal((await revokedTerminal.request.get(base+'/api/v1/auth/me')).status(),401)
   await revokedTerminal.close();await terminal.close()
   // A stale login tab can coexist with a valid cookie from another tab.
   // Only a pre-authentication CSRF rejection is retried, once, without losing input.
   for(const rejectedAttempts of [1,2]){
-   const recovery=await browser.newContext({viewport:{width:390,height:1000}})
-   await recovery.addInitScript(()=>localStorage.setItem('nodedance.language','en'))
+   const recovery=await browser.newContext({locale:'en-US',viewport:{width:390,height:1000}})
    const recoveryPage=await recovery.newPage();recoveryPage.setDefaultTimeout(10000)
    await recoveryPage.goto(base);await recoveryPage.locator('#login-title').waitFor()
    const token=(await(await recovery.request.get(base+'/api/v1/auth/csrf')).json()).token
@@ -44,7 +42,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
    await recoveryPage.locator('form button[type=submit]').click()
    if(rejectedAttempts===1){
     await recoveryPage.locator('.account-trigger').waitFor();assert.equal(attempts,2)
-    const stale=await browser.newContext();await stale.addCookies(priorCookies);assert.equal((await stale.request.get(base+'/api/v1/auth/me')).status(),401);await stale.close()
+    const stale=await browser.newContext({locale:'en-US'});await stale.addCookies(priorCookies);assert.equal((await stale.request.get(base+'/api/v1/auth/me')).status(),401);await stale.close()
    }else{
     await recoveryPage.getByText('Sign-in security credentials changed. Try signing in again; refresh the page if the problem persists.',{exact:true}).waitFor()
     assert.equal(attempts,2);assert.equal(await recoveryPage.locator('[name=password]').inputValue(),credentials.password)
@@ -145,8 +143,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await adminPage.goto(base);await card.waitFor()
 
   const viewerCreated=await admin.request.post(base+'/api/v1/accounts',{headers,data:{username:'guest-audit-reader',displayName:'Read-only audit',role:'viewer',password:'isolated-reader-password'}});assert.equal(viewerCreated.status(),201)
-  const readonly=await browser.newContext();await readonly.addInitScript(()=>localStorage.setItem('nodedance.language','en'))
-  const readonlyCSRF=(await(await readonly.request.get(base+'/api/v1/auth/csrf')).json()).token
+  const readonly=await browser.newContext({locale:'en-US'});const readonlyCSRF=(await(await readonly.request.get(base+'/api/v1/auth/csrf')).json()).token
   assert.equal((await readonly.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':readonlyCSRF},data:{username:'guest-audit-reader',password:'isolated-reader-password'}})).status(),200)
   const readonlyPage=await readonly.newPage();readonlyPage.on('pageerror',e=>errors.push(e.message));await readonlyPage.goto(base);await readonlyPage.locator('.vps-card').first().waitFor()
   assert.equal(await readonlyPage.locator('.vps-card-actions:visible,.vps-card-shortcuts:visible').count(),0,'Read-only cards must not expose remote controls')
@@ -200,11 +197,20 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   assert.ok(!new URL(adminPage.url()).hash.includes('section='))
   // A valid administrator cookie still gets only public requests on guest URL
   // restore; returning to management requires a fresh valid session.
+  // Real operation dropdown portals must still disappear immediately on guest entry.
+  const privateMenuPage=await admin.newPage();privateMenuPage.setDefaultTimeout(10000)
+  await privateMenuPage.goto(base+'/#/operations')
+  await privateMenuPage.locator('.operation-layout aside select').selectOption('nodes.save-asset')
+  await privateMenuPage.locator('.operation-form .ui-select').first().getByRole('combobox').click()
+  await privateMenuPage.locator('body > .u031-list').waitFor()
+  await privateMenuPage.evaluate(()=>{location.hash='/guest'})
+  await privateMenuPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  assert.equal(await privateMenuPage.locator('body > .u031-list').count(),0,'Guest entry immediately removes private operation dropdown portals')
+  await privateMenuPage.close()
   const savedAdminCookies=await admin.cookies(base),managementURL=adminPage.url()
   const guestPrivateRequests=[]
   const trackGuest=r=>{const p=new URL(r.url()).pathname;if(p.startsWith('/api/')&&!p.startsWith('/api/v1/public/')&&p!=='/api/v1/operations')guestPrivateRequests.push(p)}
   adminPage.on('request',trackGuest)
-  await adminPage.locator('.ui-select:has(.language-selector)').getByRole('combobox').click();await adminPage.locator('body > .u031-list').waitFor()
   await adminPage.evaluate(()=>{location.hash='/guest'})
   await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   assert.equal(await adminPage.locator('body > .u031-list').count(),0,'Guest entry immediately removes private dropdown portals')

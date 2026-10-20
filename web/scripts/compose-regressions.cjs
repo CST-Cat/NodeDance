@@ -1,3 +1,4 @@
+const {closeNavigation}=require('./sidebar-navigation.cjs')
 // Project-wide UI tasks are intercepted; never call Docker or a real Agent.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,node,catalog,artifacts}){
@@ -53,7 +54,7 @@ module.exports=async function({page,base,node,catalog,artifacts}){
  all[2].configAvailable=false;await refresh();await selection.locator('input[type=checkbox]').check();assert.ok(await button('start').isDisabled());assert.ok(await button('delete').isDisabled());all[2].configAvailable=true;await refresh()
  for(const theme of ['light','dark'])for(const width of [390,1440]){
   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
-  const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible())await scrim.click({position:{x:width-10,y:20}})
+  await closeNavigation(page)
   await page.locator('#workspace-navigation').evaluate(async el=>await Promise.all(el.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{}))))
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
   assert.ok(await page.locator('.compose-service li').evaluateAll(rows=>rows.every(row=>row.querySelector('code').getBoundingClientRect().right<=row.querySelector('[data-state]').getBoundingClientRect().left+1)))

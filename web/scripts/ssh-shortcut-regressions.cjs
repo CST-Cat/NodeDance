@@ -1,3 +1,4 @@
+const {closeNavigation}=require('./sidebar-navigation.cjs')
 // Isolated Core preferences plus synthetic machine observations; never connect over SSH.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,headers,artifacts,catalog}){
@@ -108,8 +109,7 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  await assertLayoutStable('390px after inline success resets',beforeNarrow)
  for(const theme of ['light','dark'])for(const width of [390,1440]){
   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
-  const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible())await scrim.click({position:{x:width-10,y:20}})
-  const overlay=page.locator('.navigation-scrim');if(await overlay.isVisible())await overlay.click({position:{x:width-10,y:20}})
+  await closeNavigation(page)
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
   await page.screenshot({path:path.join(artifacts,`ssh-discovery-${theme}-${width}.png`),fullPage:true})
  }

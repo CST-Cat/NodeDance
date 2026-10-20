@@ -80,3 +80,15 @@ Operation Center translates discovered descriptions and form labels at presentat
 The shared light/dark theme uses semantic surface, text, control and state roles documented in `DESIGN.md`. Visual flattening does not change operation discovery, public projection, authorization or task semantics. Browser audits use fresh assets and isolated Core/Agent resources; the theme regression checks real persisted/system switching and actual rendered contrast.
 
 共享深浅主题使用 `DESIGN.md` 中的表面、文字、控件和状态语义。视觉扁平化不改变操作发现、公开投影、权限或任务行为。浏览器回归使用新构建资源与隔离 Core／Agent，主题回归检查实际保存／跟随系统切换及渲染对比度。
+
+窄屏全屏导航使用裁切过渡，初次进入保持关闭且静止，只有开关时才过渡；菜单不添加背景压暗遮罩。菜单按钮本身不绘制边框，键盘焦点仍通过图标颜色反馈，其他按钮保持原有样式。
+
+Mobile full-screen navigation starts closed without an entry animation and transitions only when toggled. It has no dimming scrim. The navigation toggle has no border; keyboard focus retains icon-color feedback and other controls keep their existing styles.
+
+Run `make build` followed by `node web/scripts/audit-navigation.cjs` for the focused navigation browser regression with an isolated temporary Core and no Agent. It also runs within the interface audit.
+
+窄屏菜单仅在内容列表内滚动，外层固定在视口中；自动聚焦不触发滚动，快速关闭后不会执行延迟的聚焦。导航浏览器回归逐帧检查低位置选中项及连续反向开关，验证面板位置、滚动位置和展开方向不跳变。
+
+窄屏导航隐藏 Logo／NodeDance 字标及品牌下方分割线，功能项纵向留白适度收紧并保留至少 44px 点击高度；桌面品牌布局不变。
+
+个人设置的语言下拉框位于背景颜色右侧，标签顶边及控件上下边缘对齐，复用主题化下拉组件；窄屏两列按可用宽度收缩，控件不超出卡片。语言偏好仅保存在当前浏览器，自动模式继续跟随浏览器语言。

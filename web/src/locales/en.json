@@ -1,4 +1,8 @@
 {
+  "settings.language": "Language",
+  "settings.language.system": "Follow browser",
+  "settings.language.zh-CN": "Simplified Chinese",
+  "settings.language.en": "English",
   "metric.processCount": "Processes",
   "auth.showPassword": "Show password for 5 seconds",
   "auth.hidePassword": "Hide password",
@@ -847,8 +851,6 @@
   "m.61aabbe69bf5": "Unable to create container creation task.",
   "m.4de430beaf29": "Unable to refresh node list.",
   "m.d11b82b4e5e1": "View server health, containers and historical metrics in one place.",
-  "m.a1b56411cc63": "Live connection",
-  "m.7a58d3d9d3e3": "Reconnecting",
   "m.8a3dfec291d0": "Multi-VPS monitoring home",
   "m.3fa2b5eb40e0": "Search, filter, group and sort servers",
   "m.0191c754eec0": "Search servers",

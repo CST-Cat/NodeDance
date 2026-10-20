@@ -19,6 +19,7 @@
 .account-panel {
   position: fixed;
   inset: auto;
+  width: min(320px, calc(100vw - 24px));
   margin: 0;
   padding: 8px;
   overflow-y: auto;

@@ -4,7 +4,7 @@ Core 支持管理员和只读用户。首次启动只创建初始管理员，后
 
 Administrators manage accounts and remote resources. Read-only users can observe the node dashboard and metric history, use the allowed read operations, and maintain their own profile, avatar, password and sessions. They cannot configure shared appearance, publish guest data, access enrollment credentials, run commands or terminals, read remote files, change Docker resources, or manage other accounts. The contract's `requiredRole` is authoritative; Core rejects unauthorized requests regardless of presentation or forged client identity.
 
-个人设置移除重复的左侧账号区域。点击侧栏左下角账号，向上展开账号矩阵卡片；当前账号有选中标记，停用账号不能切换。选择其他账号后必须输入目标账号密码。切换成功会轮换浏览器 Session 和 CSRF，并撤销被替换的 Session；密码错误保留原账号，不保存密码。卡片也提供个人设置和退出登录入口，支持 Esc、点击外部关闭、键盘操作，以及折叠侧栏和移动端导航。
+个人设置移除重复的左侧账号区域。点击侧栏左下角账号，向上展开账号浮层；宽屏保留两列卡片；窄屏隐藏底部账号选择入口及其上方分割线，宽屏展开的账号浮层在切换至窄屏时关闭。账号浮层只显示显示名与角色，不显示登录名。当前账号有选中标记，停用账号不能切换。选择其他账号后必须输入目标账号密码。切换成功会轮换浏览器 Session 和 CSRF，并撤销被替换的 Session；密码错误保留原账号，不保存密码。卡片也提供个人设置和退出登录入口，支持 Esc、点击外部关闭、键盘操作，以及宽屏折叠侧栏。
 
 账号管理提供新增、编辑登录名／显示名／角色、启用／停用、删除和重置密码。编辑、重置、停用、删除会撤销目标账号的所有 Session，并结束这些 Session 对应的终端和文件传输。个人修改密码只撤销自己的 Session。会话列表和撤销操作严格按当前账号隔离。不能删除当前账号，也不能停用或降级最后一个启用的管理员。
 

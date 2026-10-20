@@ -1,4 +1,8 @@
 {
+  "settings.language": "语言",
+  "settings.language.system": "跟随浏览器",
+  "settings.language.zh-CN": "简体中文",
+  "settings.language.en": "English",
   "metric.processCount": "进程",
   "auth.showPassword": "显示密码（5 秒）",
   "auth.hidePassword": "隐藏密码",
@@ -847,8 +851,6 @@
   "m.61aabbe69bf5": "无法创建容器创建任务。",
   "m.4de430beaf29": "无法刷新节点列表。",
   "m.d11b82b4e5e1": "在一个首页查看服务器状态、容器和历史监控。",
-  "m.a1b56411cc63": "实时连接",
-  "m.7a58d3d9d3e3": "正在重连",
   "m.8a3dfec291d0": "多 VPS 监控首页",
   "m.3fa2b5eb40e0": "服务器搜索、筛选、分组和排序",
   "m.0191c754eec0": "搜索服务器",

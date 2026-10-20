@@ -1,4 +1,5 @@
-const {selectNodeSection}=require('./sidebar-navigation.cjs')
+const {setBrowserLanguage}=require('./browser-language.cjs')
+const {closeNavigation,selectNodeSection}=require('./sidebar-navigation.cjs')
 // Real isolated Core enrollments; commands are inspected/copied, never executed.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,artifacts,catalog}){
@@ -42,10 +43,10 @@ module.exports=async function({page,base,artifacts,catalog}){
  hold=false;await generate.click();await confirmCopied()
  const layouts=[]
  for(const language of ['en','zh-CN']){
-  await page.locator('.language-selector').selectOption(language)
+  await setBrowserLanguage(page,language)
   for(const theme of ['light','dark'])for(const width of [390,1440]){
    await page.setViewportSize({width,height:1000});await page.waitForTimeout(100)
-   const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible())await scrim.click({position:{x:width-10,y:20}})
+   await closeNavigation(page)
    await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Enrollment fits the viewport')
    const name=`enrollment-${language}-${theme}-${width}`;await page.screenshot({path:path.join(artifacts,name+'.png'),fullPage:true});layouts.push(name)
@@ -53,7 +54,7 @@ module.exports=async function({page,base,artifacts,catalog}){
  }
  // Revisit a pending node after leaving the original command page.
  const pendingNode=issued.nodeId,oldToken=issued.token
- await page.locator('.language-selector').selectOption('en')
+ await setBrowserLanguage(page,'en')
  await page.goto(base+'/#/nodes?node='+pendingNode)
  await page.getByTestId('node-detail').waitFor()
  assert.equal(await page.getByTestId('node-delete').count(),0,'Deletion is absent from the detail heading and overview')
@@ -96,7 +97,7 @@ module.exports=async function({page,base,artifacts,catalog}){
  assert.ok(await page.getByTestId('node-settings-delete').evaluate(el=>el===el.parentElement.lastElementChild),'Deletion is the final settings section')
  for(const theme of ['light','dark'])for(const width of [390,1440]){
   await page.setViewportSize({width,height:1000});await page.waitForTimeout(200)
-  const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible()){await scrim.click({position:{x:width-10,y:20}});await page.waitForTimeout(200)}
+  await closeNavigation(page)
   await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   assert.ok(await page.getByTestId('node-delete').isVisible())
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Pending management fits mobile')

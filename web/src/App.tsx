@@ -27,7 +27,7 @@ import UiSelect from "./components/UiSelect";
 import UiPassword from "./components/UiPassword";
 import UpdateCenter from "./components/UpdateCenter";
 import { cancelDialogs } from "./dialogs";
-import { display, locale, setLocale, t, type Locale } from "./i18n";
+import { display, languagePreference, locale, setLanguagePreference, t, type LanguagePreference } from "./i18n";
 import {
   navigationKey,
   nodeNavigationKey,
@@ -201,9 +201,10 @@ export default function App(input: Props) {
       watchState(navigationOpen, async (open) => {
         if (open && mobileNavigation.value) {
           await afterRender();
+          if (!navigationOpen.value || !mobileNavigation.value) return;
           sidebarElement.value
             ?.querySelector<HTMLElement>("[aria-current=page]")
-            ?.focus();
+            ?.focus({ preventScroll: true });
         }
       });
       const authenticated = derived(
@@ -889,17 +890,6 @@ export default function App(input: Props) {
                 ></div>
               </div>
             ) : null}
-            {authenticated.value && navigationOpen.value ? (
-              <button
-                type="button"
-                aria-label={t("nav.close") as any}
-                className={__classes("navigation-scrim")}
-                onClick={(event: any) => {
-                  navigationOpen.value = false;
-                }}
-                data-v-ac863f34=""
-              ></button>
-            ) : null}
             {authenticated.value ? (
               <aside
                 id="workspace-navigation"
@@ -1148,30 +1138,6 @@ export default function App(input: Props) {
                   <span data-v-ac863f34="">{"NodeDance"}</span>
                 </a>
               )}
-              <div className={__classes("topbar-right")} data-v-ac863f34="">
-                <UiSelect
-                  key={viewHash(activeRoute.value) as any}
-                  menuClass="language-options"
-                  aria-label={
-                    locale.value === "en" ? "Language" : ("语言" as any)
-                  }
-                  value={locale.value as any}
-                  className={__classes("language-selector")}
-                  onChange={(event: any) => {
-                    setLocale(
-                      (event.target as HTMLSelectElement).value as Locale,
-                    );
-                  }}
-                  data-v-ac863f34=""
-                >
-                  <option value="zh-CN" data-v-ac863f34="">
-                    {"简体中文"}
-                  </option>
-                  <option value="en" data-v-ac863f34="">
-                    {"English"}
-                  </option>
-                </UiSelect>
-              </div>
             </header>
             {authenticated.value && initialCredentials.value ? (
               <section
@@ -1799,35 +1765,52 @@ export default function App(input: Props) {
                             { value: "light", label: <><span className="theme-swatch light-swatch" aria-hidden="true"><i /><i /><i /></span>{t("m.aa0819dfc4d8")}</> },
                           ]} />
                       </div>
-                      {currentUser.value?.role === "administrator" ? <>
-                      <div
-                        className={__classes("field color-field")}
-                        data-v-ac863f34=""
-                      >
-                        <span data-v-ac863f34="">{t("m.882fe2e84241")}</span>
-                        <div
-                          className={__classes("color-control")}
-                          data-v-ac863f34=""
-                        >
-                          <input
-                            aria-label={t("m.882fe2e84241") as any}
-                            type="color"
-                            {...__input(
-                              appearance.backgroundColor,
-                              (__nextValue: any) => {
-                                appearance.backgroundColor = __nextValue;
-                              },
-                              "color",
-                              undefined,
-                              [],
-                            )}
+                      <div className="profile-preferences-row">
+                        {currentUser.value?.role === "administrator" ? <>
+                          <div
+                            className={__classes("field color-field")}
                             data-v-ac863f34=""
-                          ></input>
-                          <code data-v-ac863f34="">
-                            {safeBackgroundColor.value.toUpperCase()}
-                          </code>
+                          >
+                            <span data-v-ac863f34="">{t("m.882fe2e84241")}</span>
+                            <div
+                              className={__classes("color-control")}
+                              data-v-ac863f34=""
+                            >
+                              <input
+                                aria-label={t("m.882fe2e84241") as any}
+                                type="color"
+                                {...__input(
+                                  appearance.backgroundColor,
+                                  (__nextValue: any) => {
+                                    appearance.backgroundColor = __nextValue;
+                                  },
+                                  "color",
+                                  undefined,
+                                  [],
+                                )}
+                                data-v-ac863f34=""
+                              ></input>
+                              <code data-v-ac863f34="">
+                                {safeBackgroundColor.value.toUpperCase()}
+                              </code>
+                            </div>
+                          </div>
+                        </> : null}
+                        <div className="field profile-language-field">
+                          <span>{t("settings.language")}</span>
+                          <UiSelect
+                            aria-label={t("settings.language")}
+                            modelValue={languagePreference.value}
+                            onUpdateModelValue={(value: string) => setLanguagePreference(value as LanguagePreference)}
+                            data-testid="profile-language"
+                          >
+                            <option value="system">{t("settings.language.system")}</option>
+                            <option value="zh-CN">{t("settings.language.zh-CN")}</option>
+                            <option value="en">{t("settings.language.en")}</option>
+                          </UiSelect>
                         </div>
                       </div>
+                      {currentUser.value?.role === "administrator" ? <>
                       <div
                         className={__classes("background-upload-row")}
                         data-v-ac863f34=""

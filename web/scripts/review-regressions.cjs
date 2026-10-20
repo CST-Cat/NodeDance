@@ -1,4 +1,4 @@
-const {selectNodeSection}=require('./sidebar-navigation.cjs')
+const {closeNavigation,selectNodeSection}=require('./sidebar-navigation.cjs')
 // Real browser presentation regressions against the isolated interface Core.
 // Compose responses are protocol fixtures; no remote mutation is executed.
 const assert=require('node:assert/strict'),path=require('node:path')
@@ -6,7 +6,7 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  async function layouts(name){
   for(const theme of ['light','dark'])for(const width of [390,1440]){
    await page.setViewportSize({width,height:1000});await page.waitForTimeout(100)
-   const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible()){await scrim.click({position:{x:width-10,y:20}});await scrim.waitFor({state:'hidden'})}
+   await closeNavigation(page)
    await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} layout fits viewport`)
    if(name==='compose'){

@@ -1,3 +1,4 @@
+const {closeNavigation}=require('./sidebar-navigation.cjs')
 // Synthetic samples against the isolated Core contract; no real Agent or host.
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,node,artifacts,catalog}){
@@ -72,7 +73,7 @@ module.exports=async function({page,base,node,artifacts,catalog}){
  assert.ok(!/\d+\.\d{2,}/.test(await network.innerText()),'No excessive rate precision')
  for(const theme of ['light','dark'])for(const width of [320,390,768,1440]){
   await page.setViewportSize({width,height:1000})
-  const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible())await scrim.click({position:{x:width-10,y:20}})
+  await closeNavigation(page)
   await page.locator('#workspace-navigation').evaluate(async element=>await Promise.all(element.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{}))))
   await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))

@@ -39,8 +39,7 @@ async function port() {
     }
     assert.ok(ready,'Isolated Core failed to start')
     browser=await chromium.launch({headless:true})
-    const context=await browser.newContext()
-    await context.addInitScript(()=>localStorage.setItem('nodedance.language','en'))
+    const context=await browser.newContext({locale:'en-US'})
     const csrf=await(await context.request.get(base+'/api/v1/auth/csrf')).json()
     const credentials=JSON.parse(fs.readFileSync(path.join(dataDir,'initial-admin.json'),'utf8'))
     const login=await context.request.post(base+'/api/v1/auth/login',{data:{username:credentials.username,password:credentials.password},headers:{Origin:base,'X-CSRF-Token':csrf.token}})
@@ -352,6 +351,9 @@ async function port() {
     sshPage.setDefaultTimeout(10000)
     try { await require('./ssh-shortcut-regressions.cjs')({page:sshPage,base,headers,artifacts,catalog}) }
     finally { await sshPage.close() }
+    const mobileNavigationPage=await context.newPage();mobileNavigationPage.setDefaultTimeout(10000)
+    try { await require('./mobile-navigation-regressions.cjs')({page:mobileNavigationPage,base,artifacts}) }
+    finally { await mobileNavigationPage.close() }
     const navigationPage=await context.newPage()
     navigationPage.setDefaultTimeout(10000)
     try { await require('./node-navigation-regressions.cjs')({page:navigationPage,base,node,artifacts,headers,catalog}) }

@@ -169,9 +169,6 @@ export default function NodesDashboard(input: Props) {
       const error = cell("");
       const elapsed = cell(0);
       const wallClockNow = cell(Date.now());
-      const socketState = cell<"connecting" | "connected" | "retrying">(
-        "connecting",
-      );
       let socket: WebSocket | undefined;
       let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
       let refreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -931,8 +928,6 @@ export default function NodesDashboard(input: Props) {
       }
       async function connectDashboard() {
         if (disposed) return;
-        socketState.value =
-          socketState.value === "connected" ? "retrying" : "connecting";
         let url: URL;
         try {
           url = await operationURL("dashboard.watch");
@@ -946,7 +941,6 @@ export default function NodesDashboard(input: Props) {
         current.onopen = () => {
           if (disposed || socket !== current) return;
           reconnectDelay = 1000;
-          socketState.value = "connected";
           void refreshNodes().catch((reason: unknown) => {
             busy.value = false;
             error.value =
@@ -969,7 +963,6 @@ export default function NodesDashboard(input: Props) {
       }
       function scheduleReconnect() {
         if (disposed || reconnectTimer !== undefined) return;
-        socketState.value = "retrying";
         reconnectTimer = setTimeout(() => {
           reconnectTimer = undefined;
           connectDashboard();
@@ -1168,24 +1161,9 @@ export default function NodesDashboard(input: Props) {
               data-v-73fde8e5=""
             >
               <header className={__classes("nodes-heading")} data-v-73fde8e5="">
-                <div data-v-73fde8e5="">
-                  <h1 id="nodes-title" data-v-73fde8e5="">
-                    {t("nav.nodes")}
-                  </h1>
-                </div>
-                <span
-                  data-state={socketState.value as any}
-                  role="status"
-                  className={__classes("stream-state")}
-                  data-v-73fde8e5=""
-                >
-                  <i aria-hidden="true" data-v-73fde8e5=""></i>
-                  {socketState.value === "connected"
-                    ? t("m.a1b56411cc63")
-                    : socketState.value === "retrying"
-                      ? t("m.7a58d3d9d3e3")
-                      : t("m.694186911ae3")}
-                </span>
+                <h1 id="nodes-title" data-v-73fde8e5="">
+                  {t("nav.nodes")}
+                </h1>
               </header>
               <div className={__classes("overview-layout")} data-v-73fde8e5="">
                 <div className={__classes("overview-main ui-load-region")} data-v-73fde8e5="">

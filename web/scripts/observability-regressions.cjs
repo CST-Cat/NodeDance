@@ -1,3 +1,4 @@
+const {setBrowserLanguage}=require('./browser-language.cjs')
 // Diagnostics add square cards using the original metric-card styling. Telemetry is
 // a protocol fixture on an isolated Core; no real host is touched.
 const assert=require('node:assert/strict'),path=require('node:path')
@@ -35,7 +36,7 @@ module.exports=async function({page,base,node,artifacts,catalog,view,publish}){
  assert.equal(await page.getByTestId('boot-id').count(),0,'The raw boot identifier is omitted from the compact hardware view');
 
  for(const language of ['en','zh-CN'])for(const theme of ['light','dark'])for(const width of [1440,390]){
-  await page.locator('.language-selector').selectOption(language);await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((e,theme)=>{e.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
+  await setBrowserLanguage(page,language);await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((e,theme)=>{e.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   const geometry=await cards.evaluateAll(cards=>cards.map(c=>{const r=c.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,scroll:c.scrollWidth,client:c.clientWidth}}))
   assert.ok(geometry.every(c=>Math.abs(c.width-c.height)<=1&&c.scroll<=c.client+1),'Reused cards remain equal squares without horizontal overflow: '+JSON.stringify(geometry))
   assert.equal(new Set(geometry.map(c=>Math.round(c.x))).size,width===390?2:4,'All cards use the same responsive two/four columns')
@@ -54,6 +55,6 @@ module.exports=async function({page,base,node,artifacts,catalog,view,publish}){
   }
  }
  coreCount=4;await publish({...sample()});
- await page.locator('.language-selector').selectOption('en');const offline=sample();offline.nodeStatus='offline';offline.metrics.cpu.usagePercent.status='stale';offline.metrics.host.observability.values['cpu.steal_percent'].value=98.7;await publish({...offline});assert.equal(await page.locator('[data-diagnostic="cpu.steal_percent"] strong').innerText(),'—','Lease loss hides retained diagnostic readings')
+ await setBrowserLanguage(page,'en');const offline=sample();offline.nodeStatus='offline';offline.metrics.cpu.usagePercent.status='stale';offline.metrics.host.observability.values['cpu.steal_percent'].value=98.7;await publish({...offline});assert.equal(await page.locator('[data-diagnostic="cpu.steal_percent"] strong').innerText(),'—','Lease loss hides retained diagnostic readings')
  console.log('Diagnostic card regressions passed: combined resource rectangle, three chart cards and five diagnostic square cards, no separate UI, known zero/idle unknown/per-core/process readings, lease loss, English/Chinese/light/dark/wide/mobile.')
 }

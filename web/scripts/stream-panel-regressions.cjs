@@ -1,3 +1,4 @@
+const {closeNavigation}=require('./sidebar-navigation.cjs')
 // Stream panel checks use a real isolated Core contract plus a routed
 // container-log WebSocket. No Docker daemon, Agent or host effect is used.
 // Covers: OpenUI-ported scroll-edge fading, streaming auto-follow that yields
@@ -190,11 +191,7 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
   const layouts=[]
   for(const theme of ['light','dark'])for(const width of [390,1440]){
     await page.setViewportSize({width,height:1000});await page.waitForTimeout(120)
-    const scrim=page.locator('.navigation-scrim')
-    if(await scrim.isVisible()){
-      await scrim.click({position:{x:width-10,y:20}})
-      await scrim.waitFor({state:'detached'})
-    }
+    await closeNavigation(page)
     await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
     await page.waitForTimeout(250) // let the shared theme transition settle before capturing
     assert.equal(await page.locator('.navigation-scrim').count(),0,'A captured layout must not be dimmed by the mobile navigation scrim')

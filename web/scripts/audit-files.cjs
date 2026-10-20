@@ -1,3 +1,4 @@
+const {setBrowserLanguage}=require('./browser-language.cjs')
 // Isolated real Core + root Agent + Chromium. Only disposable file fixtures
 // are modified. No systemd installation, host commands or Docker mutations.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net'),crypto=require('node:crypto')
@@ -24,8 +25,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
  core.stdout.on('data',v=>logs+=v);core.stderr.on('data',v=>logs+=v)
  try{
   for(let i=0;i<100;i++){try{if((await fetch(base+'/api/v1/health')).ok)break}catch{};await new Promise(r=>setTimeout(r,100))}
-  browser=await chromium.launch({headless:true});const context=await browser.newContext();await context.addInitScript(()=>localStorage.setItem('nodedance.language','en'))
-  const csrf=await(await context.request.get(base+'/api/v1/auth/csrf')).json(),credentials=JSON.parse(fs.readFileSync(path.join(data,'initial-admin.json')))
+  browser=await chromium.launch({headless:true});const context=await browser.newContext({locale:'en-US'});const csrf=await(await context.request.get(base+'/api/v1/auth/csrf')).json(),credentials=JSON.parse(fs.readFileSync(path.join(data,'initial-admin.json')))
   const login=await context.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':csrf.token},data:credentials});assert.equal(login.status(),200)
   const headers={Origin:base,'X-CSRF-Token':(await login.json()).csrfToken}
   const catalog=(await(await context.request.get(base+'/api/v1/operations')).json()).operations
@@ -61,7 +61,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   let failed;for(let i=0;i<100;i++){failed=await(await context.request.get(base+operation('tasks.get').path.replace('{nodeId}',node).replace('{taskId}',badTask.taskId))).json();if(failed.status==='failed')break;await new Promise(r=>setTimeout(r,25))};assert.equal(failed.status,'failed');assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'edited fixture\n')
   for(const name of ['files.download','files.preview'])assert.equal((await context.request.get(endpoint(name,{path:'/missing.txt'}))).status(),404,'Missing downloads preserve Agent not-found semantics')
   const preview=await context.request.get(endpoint('files.preview',{path:'/image.png'}),{headers:{Range:'bytes=0-7'}});assert.equal(preview.status(),206);assert.ok(preview.headers()['content-security-policy'].includes('sandbox'))
-  const visitor=await browser.newContext();assert.equal((await visitor.request.get(endpoint('files.preview',{path:'/image.png'}))).status(),401)
+  const visitor=await browser.newContext({locale:'en-US'});assert.equal((await visitor.request.get(endpoint('files.preview',{path:'/image.png'}))).status(),401)
   const page=await context.newPage();page.setDefaultTimeout(15000);const errors=[],externalRequests=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.url().startsWith('http')&&new URL(r.url()).origin!==base)externalRequests.push(r.url())})
   // Cold startup must not wait for one network round trip per widget/script.
   const startupScripts=[];page.on('request',r=>{if(r.resourceType()==='script')startupScripts.push(new URL(r.url()).pathname)});
@@ -233,7 +233,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('.nodedance-elfinder .elfinder-dialog:not([style*="display: none"])'))
   await item('many').dblclick();await item('entry-000.txt').waitFor();await finder.locator('.elfinder-cwd-wrapper').evaluate(el=>el.scrollTop=el.scrollHeight);await item('entry-204.txt').waitFor()
   await page.goBack();await item('hello.txt').waitFor();await page.goForward();await item('entry-000.txt').waitFor();await page.reload();await item('entry-000.txt').waitFor()
-  await page.locator('select.language-selector').selectOption('zh-CN');await finder.locator('.elfinder-button').filter({has:page.locator('.elfinder-button-icon-mkdir')}).waitFor();await page.locator('select.language-selector').selectOption('en')
+  await setBrowserLanguage(page,'zh-CN');await finder.locator('.elfinder-button').filter({has:page.locator('.elfinder-button-icon-mkdir')}).waitFor();await setBrowserLanguage(page,'en')
   for(const theme of ['light','dark'])for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(200);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));await page.screenshot({path:path.join(artifacts,`elfinder-files-${theme}-${width}.png`),fullPage:true})}
   const composeList=operation('compose.list').path.replace('{nodeId}',node);let composeSubmission
   await page.route('**'+composeList,route=>{if(route.request().method()==='POST'){composeSubmission=route.request().postDataJSON();return route.fulfill({status:503,body:'Isolated deployment interception'})};return route.fulfill({json:{projects:[],dataStale:false,serverTime:new Date().toISOString()}})})

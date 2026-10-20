@@ -704,6 +704,39 @@ summary:focus-visible {
 .profile-name-field {
   max-width: 390px;
 }
+.profile-preferences-row {
+  --preference-control-height: 50px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--settings-space-3);
+  width: min(100%, 390px);
+  min-width: 0;
+}
+.profile-preferences-row > .field { min-width: 0; }
+.profile-preferences-row .color-control {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--preference-control-height);
+}
+.profile-preferences-row .color-control input[type="color"] {
+  flex: 1;
+  width: 0;
+  min-width: 24px;
+  height: 100%;
+}
+.app-shell[data-theme] .profile-language-field .ui-select .u031-btn {
+  height: var(--preference-control-height);
+  min-height: var(--preference-control-height);
+  gap: var(--settings-space-2);
+  padding-inline: var(--settings-space-2);
+}
+.profile-language-field .u031-v {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 18px;
+}
 .theme-options { width: min(100%, 340px); }
 .theme-swatch {
   display: grid;
@@ -1035,9 +1068,6 @@ summary:focus-visible {
   .system-label {
     font-size: 12px;
   }
-  .topbar-right {
-    gap: 12px;
-  }
   .quiet-button {
     font-size: 12px;
   }
@@ -1136,11 +1166,6 @@ summary:focus-visible {
 .brand-mark i:nth-child(3) {
   height: 20px;
 }
-.topbar-right {
-  display: flex;
-  align-items: center;
-  gap: 22px;
-}
 .system-label {
   display: inline-flex;
   align-items: center;
@@ -1153,30 +1178,6 @@ summary:focus-visible {
   height: 6px;
   border-radius: 50%;
   background: var(--success);
-}
-.ui-select:has(> .language-selector) {
-  width: max-content;
-  min-width: max-content;
-  flex: 0 0 auto;
-}
-.ui-select:has(> .language-selector) .u031-btn {
-  padding-inline: 12px;
-  gap: 8px;
-}
-.ui-select:has(> .language-selector) .u031-v {
-  overflow: visible;
-  text-overflow: clip;
-  white-space: nowrap;
-}
-.u031-list.language-options {
-  padding: 4px;
-}
-.language-options .u031-o {
-  padding-inline: 8px;
-  gap: 4px;
-}
-.language-options .u031-o > span {
-  white-space: nowrap;
 }
 .workspace-sidebar {
   position: fixed;
@@ -1259,7 +1260,7 @@ summary:focus-visible {
   place-items: center;
   width: 36px;
   height: 36px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--radius-control);
   color: var(--muted);
   background: transparent;
@@ -1297,10 +1298,10 @@ summary:focus-visible {
 }
 /* Tap/keyboard focus draws no box around the burger; the morphing icon is
    the state indicator, and a box would read as a misdrawn frame. */
-.app-shell .navigation-toggle:focus-visible {
+.app-shell[data-theme] .navigation-toggle:focus-visible {
   outline: none;
 }
-.app-shell .navigation-toggle:focus-visible .nav-burger i {
+.app-shell[data-theme] .navigation-toggle:focus-visible .nav-burger i {
   background: var(--accent);
 }
 .workspace-breadcrumb {
@@ -1317,8 +1318,7 @@ summary:focus-visible {
 .workspace-breadcrumb strong {
   font-weight: 500;
 }
-.navigation-toggle,
-.navigation-scrim {
+.navigation-toggle {
   display: none;
 }
 .eyebrow {
@@ -1478,23 +1478,12 @@ textarea {
   .app-shell[data-authenticated="true"] {
     padding: 0 24px 32px;
   }
-  /* The toggle must sit above the scrim so the burger's X stays clickable
-     while the menu is open. */
+  /* Keep the toggle above the full-screen menu so its X stays clickable. */
   .topbar {
     z-index: 21;
   }
   .navigation-toggle {
     display: grid;
-  }
-  .navigation-scrim {
-    display: block;
-    position: fixed;
-    z-index: 19;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    border: 0;
-    background: #0006;
   }
   .topbar {
     min-height: 68px;
@@ -1508,9 +1497,6 @@ textarea {
   .app-shell,
   .app-shell[data-authenticated="true"] {
     padding: 0 16px 24px;
-  }
-  .topbar-right {
-    gap: 8px;
   }
   .topbar .system-label {
     display: none;
@@ -2089,11 +2075,9 @@ textarea {
 .ui-responsive-header :is(h2, h3) { overflow-wrap: anywhere; }
 
 /* =============================================================================
-   Mobile navigation, ported verbatim from the fetched anthropic.com nav
-   source (design-study/anthropic/pages/home.html embedded <style>, plus the
-   .nav_menu_* / .nav_links_* rules from ant-brand.shared.min.css). Selectors
-   are mapped to NodeDance classes; values, keyframes and easing are kept
-   exactly as published.
+   Mobile navigation follows the fetched nav reference's full-screen reveal.
+   Clip-path transitions keep the initial closed render still; opening and
+   closing retain the reference timing and easing.
    ============================================================================= */
 :root {
   --nav--height: 4.25rem;
@@ -2115,8 +2099,10 @@ textarea {
     right: 0;
     bottom: auto;
     width: 100%;
-    min-height: 100dvh;
+    height: 100dvh;
+    min-height: 0;
     max-height: 100dvh;
+    overflow: hidden;
     padding: calc(var(--nav--height)) var(--site-gutter, 2rem) var(--_spacing---space--8, 3rem);
     border: 0;
     border-radius: 0;
@@ -2126,33 +2112,30 @@ textarea {
     clip-path: polygon(0 0, 100% 0, 100% 0, 0 0);
     opacity: 1;
     pointer-events: none;
+    transition: clip-path var(--nav--menu-close-duration) ease-in-out;
   }
   .workspace-sidebar.is-open {
     pointer-events: auto;
-    animation: menuOpen var(--nav--menu-open-duration) ease-in-out forwards;
-  }
-  .workspace-sidebar:not(.is-open) {
-    animation: menuClose var(--nav--menu-close-duration) ease-in-out forwards;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+    transition-duration: var(--nav--menu-open-duration);
   }
   /* Menu content scrolls below the reserved header band. */
   .workspace-sidebar .sidebar-context {
-    border-top: var(--border-width--main, 0.0625rem) solid var(--swatch--slate-faded-10, var(--line));
-    min-height: calc(100svh - 80px);
-    max-height: calc(100svh - 80px);
+    border-top: 0;
+    flex: 1 1 0;
+    min-height: 0;
     display: flex;
     flex-flow: column;
     justify-content: flex-start;
     overflow: hidden auto;
+    overscroll-behavior: contain;
   }
   .workspace-sidebar .wordmark {
-    display: inline-flex;
-    margin: 0 0 24px;
+    display: none;
   }
-  /* Menu links: large tap rows with the published spacing. */
+  /* Slightly tighter mobile rows retain comfortable touch targets. */
   .workspace-sidebar .workspace-nav button {
     width: 100%;
-    padding: 1.4rem 0;
-    min-height: 0;
     border-radius: 0;
     border: 0;
     font-family: var(--_typography---font--display-sans, inherit);
@@ -2210,13 +2193,5 @@ textarea {
   .navigation-toggle[aria-expanded="true"] .nav-burger i:nth-child(2) {
     opacity: 0;
   }
-  /* Menu reveal keyframes, verbatim. */
-  @keyframes menuOpen {
-    from { clip-path: polygon(0 0, 100% 0, 100% 0, 0 0); }
-    to { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
-  }
-  @keyframes menuClose {
-    from { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
-    to { clip-path: polygon(0 0, 100% 0, 100% 0, 0 0); }
-  }
+
 }

@@ -1,36 +1,46 @@
-import { signal, effect } from "@preact/signals-react";
+import { signal, computed, effect } from "@preact/signals-react";
 import en from "./locales/en.json";
 import zhCN from "./locales/zh-CN.json";
 
 export type Locale = "zh-CN" | "en";
-const storageKey = "nodedance.language";
 export function normalizeLocale(value: string | null | undefined): Locale {
   return value?.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
 }
-function initialLocale(): Locale {
+function browserLocale(): Locale {
+  if (typeof navigator === "undefined") return "en";
+  const languages = navigator.languages?.length
+    ? navigator.languages
+    : [navigator.language];
+  const supported = languages.find(language => /^(zh|en)(-|$)/i.test(language));
+  return normalizeLocale(supported);
+}
+export type LanguagePreference = "system" | Locale;
+const preferenceKey = "nodedance.locale";
+function savedLanguagePreference(): LanguagePreference {
   try {
-    const saved = localStorage.getItem(storageKey);
-    if (saved === "zh-CN" || saved === "en") return saved;
-  } catch {
-    /* Language selection also works when storage is disabled. */
-  }
-  return normalizeLocale(
-    typeof navigator === "undefined" ? "en" : navigator.language,
-  );
+    const saved = localStorage.getItem(preferenceKey);
+    if (saved === "en" || saved === "zh-CN") return saved;
+  } catch { /* Browser preferences still work without local storage. */ }
+  return "system";
 }
-export const locale = signal<Locale>(initialLocale());
-export function setLocale(value: Locale) {
-  locale.value = value;
+const browserLanguage = signal<Locale>(browserLocale());
+export const languagePreference = signal<LanguagePreference>(savedLanguagePreference());
+export const locale = computed<Locale>(() =>
+  languagePreference.value === "system" ? browserLanguage.value : languagePreference.value,
+);
+export function setLanguagePreference(value: LanguagePreference) {
+  languagePreference.value = value;
+  try { localStorage.setItem(preferenceKey, value); } catch { /* In-memory preference. */ }
 }
+if (typeof window !== "undefined") {
+  window.addEventListener("languagechange", () => {
+    browserLanguage.value = browserLocale();
+  });
+}
+
 effect(() => {
-  const value = locale.value;
   if (typeof document !== "undefined")
-    document.documentElement.lang = value === "en" ? "en" : "zh-CN";
-  try {
-    localStorage.setItem(storageKey, value);
-  } catch {
-    /* Private browsing. */
-  }
+    document.documentElement.lang = locale.value;
 });
 
 const catalogs: Record<Locale, Record<string, string>> = { en, "zh-CN": zhCN };

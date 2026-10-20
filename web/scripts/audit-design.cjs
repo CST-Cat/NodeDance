@@ -1,3 +1,4 @@
+const {setBrowserLanguage}=require('./browser-language.cjs')
 const {openNavigation}=require('./sidebar-navigation.cjs')
 // Isolated browser fixtures; discovers the operation catalog from a running Core.
 // No fixture request reaches the connected Core.
@@ -778,7 +779,7 @@ fs.mkdirSync(out, { recursive: true });
     if (terminalOnly) {
       populated = true;
       await load();
-      if (process.env.NODEDANCE_WEB_TERMINAL_LANG === "zh-CN") await page.locator('.language-selector').selectOption('zh-CN');
+      if (process.env.NODEDANCE_WEB_TERMINAL_LANG === "zh-CN") await setBrowserLanguage(page,'zh-CN');
       for (const state of [
         {theme:"light",width:1440,height:1050}, {theme:"dark",width:1440,height:1050},
         {theme:"light",width:390,height:844}, {theme:"dark",width:390,height:844},
@@ -836,7 +837,7 @@ fs.mkdirSync(out, { recursive: true });
       signedIn = true;
     }
     await load();
-    await page.locator(".language-selector").selectOption("zh-CN");
+    await setBrowserLanguage(page,"zh-CN");
     for (const state of [
       { theme: "light", width: 1440, height: 1050 },
       { theme: "dark", width: 1440, height: 1050 },

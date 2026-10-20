@@ -1,3 +1,4 @@
+const {setBrowserLanguage}=require('./browser-language.cjs')
 // Isolated real Core and fresh embedded Web. Fixtures only touch this script's
 // temporary SQLite database; production resources and real Agents are never used.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net')
@@ -11,8 +12,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
  core.stdout.on('data',x=>logs+=x);core.stderr.on('data',x=>logs+=x)
  try{
   let ready=false;for(let i=0;i<100;i++){try{ready=(await fetch(base+'/api/v1/health')).ok}catch{}if(ready)break;if(core.exitCode!==null)throw Error(logs);await new Promise(r=>setTimeout(r,100))}assert.ok(ready)
-  browser=await chromium.launch({headless:true});const context=await browser.newContext()
-  await context.addInitScript(()=>{if(!localStorage.getItem('nodedance.language'))localStorage.setItem('nodedance.language','en')})
+  browser=await chromium.launch({headless:true});const context=await browser.newContext({locale:'en-US'})
   const csrf=await(await context.request.get(base+'/api/v1/auth/csrf')).json(),credentials=JSON.parse(fs.readFileSync(path.join(directory,'initial-admin.json'),'utf8'))
   const login=await context.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':csrf.token},data:credentials});assert.equal(login.status(),200);const headers={Origin:base,'X-CSRF-Token':(await login.json()).csrfToken}
   const page=await context.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/#/feeds');const view=page.getByTestId('feeds-center');await view.waitFor()
@@ -44,13 +44,13 @@ c.commit();c.close()`,path.join(directory,'nodedance.sqlite'),subscription.id,ma
   await view.getByRole('button',{name:'Edit',exact:true}).click();await form.locator('[name=feedCustomInterval]').fill('7');await form.getByRole('button',{name:'Save',exact:true}).click();await assertEventually(async()=>{const r=await context.request.get(base+'/api/v1/feeds/'+subscription.id);return (await r.json()).intervalMinutes===7})
   const layouts=[]
   for(const language of ['en','zh-CN'])for(const theme of ['light','dark'])for(const mobile of [false,true]){
-   await page.evaluate(language=>localStorage.setItem('nodedance.language',language),language)
+   await setBrowserLanguage(page,language)
    const appearance=await(await context.request.get(base+'/api/v1/public/appearance')).json();const r=await context.request.put(base+'/api/v1/settings/appearance',{headers,data:{displayName:appearance.displayName,backgroundColor:appearance.backgroundColor,theme}});assert.equal(r.status(),200)
    await page.setViewportSize({width:mobile?390:1440,height:mobile?844:1000});await page.reload();await view.waitFor();await assertEventually(async()=>await page.locator('.app-shell').getAttribute('data-theme')===theme)
    const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,'Horizontal overflow')
    assert.equal(await page.locator('html').getAttribute('lang'),language);const name=language+'-'+theme+'-'+(mobile?'mobile':'desktop');await page.screenshot({path:path.join(artifacts,name+'.png'),fullPage:true});layouts.push(name)
   }
-  await page.evaluate(()=>localStorage.setItem('nodedance.language','en'));await page.reload();await view.waitFor()
+  await setBrowserLanguage(page,'en');await page.reload();await view.waitFor()
   await view.getByRole('checkbox',{name:'Confirm deletion of this subscription and its entries',exact:true}).check();await view.getByRole('button',{name:'Delete',exact:true}).click();await assertEventually(async()=>(await context.request.get(base+'/api/v1/feeds/'+subscription.id)).status()===404)
   assert.deepEqual(errors,[]);fs.writeFileSync(path.join(artifacts,'report.json'),JSON.stringify({layouts,checks:['defaults','intervals','create','stored-XSS','pagination','search','shared-read-state','SSRF','refresh-cancel','custom-interval','delete'],pageErrors:errors},null,2));console.log('FEEDS AUDIT PASSED',JSON.stringify({layouts,checks:11}))
  }finally{if(browser)await browser.close();if(core.exitCode===null){core.kill('SIGTERM');await new Promise(r=>core.once('exit',r))};fs.rmSync(directory,{recursive:true,force:true})}

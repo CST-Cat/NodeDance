@@ -16,6 +16,7 @@ export default function AccountMenu({ user, avatar, busy, onSettings, onLogout }
   useEffect(() => {
     const dismiss = () => panel.current?.hidePopover();
     const resize = () => {
+      if (!trigger.current?.getClientRects().length) { panel.current?.hidePopover(); return; }
       if (panel.current?.matches(":popover-open")) position();
     };
     const escape = (event: KeyboardEvent) => {
@@ -38,8 +39,8 @@ export default function AccountMenu({ user, avatar, busy, onSettings, onLogout }
   }
   function position() {
     if (!trigger.current || !panel.current) return;
-    const rect = trigger.current.getBoundingClientRect(), width = Math.min(320, innerWidth - 24);
-    Object.assign(panel.current.style, { width: `${width}px`, left: `${Math.max(12, Math.min(rect.left, innerWidth - width - 12))}px`, bottom: `${innerHeight - rect.top + 8}px`, maxHeight: `${Math.max(100, rect.top - 20)}px` });
+    const rect = trigger.current.getBoundingClientRect(), width = parseFloat(getComputedStyle(panel.current).width);
+    Object.assign(panel.current.style, { left: `${Math.max(12, Math.min(rect.left, innerWidth - width - 12))}px`, bottom: `${innerHeight - rect.top + 8}px`, maxHeight: `${Math.max(100, rect.top - 20)}px` });
   }
   async function switchAccount(event: React.FormEvent) {
     event.preventDefault(); if (!selected || switching) return;
@@ -62,7 +63,7 @@ export default function AccountMenu({ user, avatar, busy, onSettings, onLogout }
       <p className="account-panel-title">{t("account.switch")}</p>
       {loading ? <p role="status">{t("account.loading")}</p> : <div className="account-grid">{accounts.map(account => <button key={account.id} type="button" className="account-card" aria-pressed={account.id === user.id} disabled={!account.enabled || switching} onClick={() => { if (account.id !== user.id) { setSelected(account); setError(""); setPassword(""); } }}>
         <span className="profile-avatar" aria-hidden="true">{account.displayName.slice(0, 1)}</span>
-        <span className="workspace-account-copy"><strong>{account.displayName}</strong><span>{account.username}</span><span>{t(`account.role.${account.role}`)}{!account.enabled ? ` · ${t("account.disabled")}` : ""}</span></span>
+        <span className="workspace-account-copy"><strong>{account.displayName}</strong><span>{t(`account.role.${account.role}`)}{!account.enabled ? ` · ${t("account.disabled")}` : ""}</span></span>
         {account.id === user.id ? <UiIcon name="check" /> : null}
       </button>)}</div>}
       {error ? <p role="alert" className="account-error">{error}</p> : null}

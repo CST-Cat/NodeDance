@@ -1,3 +1,5 @@
+const {setBrowserLanguage}=require('./browser-language.cjs')
+const {closeNavigation}=require('./sidebar-navigation.cjs')
 // Presentation checks use a real isolated Core contract and synthetic Docker
 // responses. Every mutation is intercepted; no Docker daemon or Agent is used.
 const assert = require('node:assert/strict'), path = require('node:path')
@@ -110,16 +112,16 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
 
   const layouts=[]
   for(const language of ['en','zh-CN']) {
-    await page.locator('.language-selector').selectOption(language)
+    await setBrowserLanguage(page,language)
     for(const theme of ['light','dark'])for(const width of [390,1440]) {
       await page.setViewportSize({width,height:1000});await page.waitForTimeout(100)
-      const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible())await scrim.click({position:{x:width-10,y:20}})
+      await closeNavigation(page)
       await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Docker list fits the viewport')
       const name=`docker-${language}-${theme}-${width}`;await page.screenshot({path:path.join(artifacts,name+'.png'),fullPage:true});layouts.push(name)
     }
   }
-  await page.locator('.language-selector').selectOption('en');await page.setViewportSize({width:1440,height:1000})
+  await setBrowserLanguage(page,'en');await page.setViewportSize({width:1440,height:1000})
   await page.unroute('**/api/**',handler)
   page.off('pageerror',collectError);assert.deepEqual(errors,[],'Docker management must not produce browser errors')
   console.log('Docker regressions passed: selection, independent tasks/retry, per-target delete confirmation, state changes, Compose restrictions, stale/offline guards, pagination, refresh-safe details; '+layouts.length+' layouts.')
