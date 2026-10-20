@@ -190,6 +190,7 @@
   padding: 0 12px;
   color: var(--muted);
   background: var(--control-bg);
+  font-size: var(--input-font-size);
 }
 .node-search input[data-v-73fde8e5] {
   min-width: 0;
@@ -210,6 +211,8 @@
   box-shadow: none;
 }
 .node-search svg[data-v-73fde8e5] {
+  block-size: var(--text-icon-size);
+  inline-size: auto;
   flex-shrink: 0;
 }
 .view-preferences-button[data-v-73fde8e5] {
