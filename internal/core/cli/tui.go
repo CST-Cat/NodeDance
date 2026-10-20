@@ -175,8 +175,25 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 			}
 			if err == nil {
 				var tokenInput io.Reader = stdin
-				if o.Name == "client.update" {
-					localArgs = append(localArgs, "--server", *connection.server, "--origin", *connection.origin, "--state-dir", *connection.stateDir, "--ca-file", *connection.caFile, "--timeout", connection.timeout.String())
+				if o.Name == "client.update" && updateUsesRemote(localArgs, lookup) {
+					// Explicit remote workflows reuse this TUI's authenticated connection.
+					// A plain local update never inherits a remote server or session.
+					for _, item := range []struct{ name, value string }{
+						{"server", *connection.server}, {"origin", *connection.origin},
+						{"state-dir", *connection.stateDir}, {"ca-file", *connection.caFile},
+						{"timeout", connection.timeout.String()},
+					} {
+						present := false
+						for _, arg := range localArgs {
+							arg = strings.TrimLeft(arg, "-")
+							if arg == item.name || strings.HasPrefix(arg, item.name+"=") {
+								present = true
+							}
+						}
+						if !present {
+							localArgs = append(localArgs, "--"+item.name, item.value)
+						}
+					}
 					if *connection.dev {
 						localArgs = append(localArgs, "--dev")
 					}

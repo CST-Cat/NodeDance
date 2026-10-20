@@ -16,14 +16,26 @@ import (
 	"testing"
 )
 
-func TestLocalAgentUpdateEntrypointsShareRollbackCancellation(t *testing.T) {
+func TestLocalUpdateEntrypointsShareRollbackCancellation(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("Agent maintenance requires root")
 	}
-	// No Agent binary or deployment connection is needed to cancel a local
+	// No product login, saved session or deployment connection is needed to cancel a local
 	// rollback. Cancellation must happen before touching a managed service.
+	configHome := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", configHome)
+	state := filepath.Join(configHome, "nodedance-client")
+	if err := os.Mkdir(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(state, "session.json"), []byte("invalid saved login"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("PATH", t.TempDir())
 	for _, args := range [][]string{
+		{"update", "--rollback", "unsubmitted"},
+		{"update", "--component", "core", "--rollback", "unsubmitted"},
+		{"call", "client.update", "--rollback", "unsubmitted"},
 		{"agent", "update", "--rollback", "unsubmitted"},
 		{"call", "agent.update", "--rollback", "unsubmitted"},
 	} {
@@ -36,6 +48,18 @@ func TestLocalAgentUpdateEntrypointsShareRollbackCancellation(t *testing.T) {
 			t.Fatalf("%v: unexpected cancellation output: %q / %q", args, output.String(), stderr.String())
 		}
 	}
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/operations" {
+			t.Errorf("local TUI update contacted Core: %s", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(control.Describe())
+	}))
+	defer host.Close()
+	driveTerminal(t, host.URL, []tuiStep{
+		{"Select:", "/client.update"}, {"Filter: client.update", "1"},
+		{"Arguments as JSON array", `["--rollback","unsubmitted"]`},
+		{"[y/N]", "n"}, {"rollback cancelled", ""}, {"Select:", "q"},
+	})
 }
 
 func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
@@ -88,14 +112,14 @@ func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
 		t.Fatal("declined rollback was submitted")
 	}
 	driveTerminal(t, host.URL, []tuiStep{
-		{"Select:", "/client.update"}, {"Filter: client.update", "1"}, {"Arguments as JSON array", "[]"}, {"Enter to return:", ""}, {"Select:", "q"},
+		{"Select:", "/client.update"}, {"Filter: client.update", "1"}, {"Arguments as JSON array", `["--server","` + host.URL + `","--dev"]`}, {"Enter to return:", ""}, {"Select:", "q"},
 	})
 	if submissions.Load() != 2 {
 		t.Fatal("TUI did not update directly through the shared workflow")
 	}
 }
 
-func TestDefaultUpdateUsesSavedServerSessionAndPrivateCAWithoutArguments(t *testing.T) {
+func TestRemoteUpdateUsesSavedSessionAndPrivateCA(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 	var submitted atomic.Int32
@@ -147,7 +171,7 @@ func TestDefaultUpdateUsesSavedServerSessionAndPrivateCAWithoutArguments(t *test
 		t.Fatal("saved connection lost private session permissions")
 	}
 	lookup := func(string) (string, bool) { return "", false }
-	if err := RunWithInput(context.Background(), []string{"update"}, lookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err != nil {
+	if err := RunWithInput(context.Background(), []string{"update", "-server", host.URL}, lookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err != nil {
 		t.Fatal(err)
 	}
 	if submitted.Load() != 1 {

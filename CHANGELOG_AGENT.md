@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.27]
+
+### English
+
+- Keep root Agent local updates independent of Core login and connectivity, using the shared local maintenance workflow and regression coverage for release selection, observation and rollback cancellation.
+
+### 简体中文
+
+- root Agent 本机更新继续独立于 Core 登录与连接，统一使用本机维护流程，并验证版本选择、进度观察与回滚取消。
+
 ## [0.1.26]
 
 ### English

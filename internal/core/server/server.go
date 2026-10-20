@@ -127,6 +127,7 @@ type Server struct {
 }
 
 type session struct {
+	Persistent  bool
 	UserID      int64
 	Role        string
 	Username    string

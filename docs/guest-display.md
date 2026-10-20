@@ -93,3 +93,5 @@ Entering guest mode during pending or failed file-manager initialization aborts 
 Administrator Docker details use the complete private inventory in the shared dialog, without a dashboard preview-count setting. Container inventory and display preferences remain excluded from the public projection. 管理员 Docker 详情复用共享弹窗展示完整私有清单，不再提供首页预览数量设置；容器清单与展示偏好仍不属于游客公开数据。
 
 Compose configuration comparisons are administrator-only browser-local views of the already authorized file and draft; they do not add configuration content to guest data. 配置差异仅在管理态比较已授权读取的原文与草稿，不向游客数据加入配置内容。
+
+本机 Core／Agent 更新由 root 独立执行，无需登录；公网更新 API 仍必须通过管理员认证和 CSRF。CLI/TUI 的 `persistent` 登录策略只在凭据验证成功后记录，不授予额外权限；伪造 User-Agent、会话策略或身份请求头不能访问管理 API。普通 Web 登录继续闲置过期，退出、撤销、账号停用和密码变更同样撤销永久会话。游客安全回归覆盖伪造策略以及实际永久会话的撤销。

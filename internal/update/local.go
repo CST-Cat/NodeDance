@@ -16,11 +16,11 @@ import (
 	"time"
 )
 
-// Local is the Agent's local maintenance presentation over the same requests and
+// Local is the product's local maintenance presentation over the same requests and
 // transaction executor used by Core's discovered updates operations.
 func Local(ctx context.Context, component, dataDir string, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
-	if component == "agent" && os.Geteuid() != 0 {
-		return errors.New("Agent local update requires root")
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("%s local update requires root", component)
 	}
 	return local(ctx, component, dataDir, args, stdin, stdout, stderr, Invoke)
 }
@@ -28,6 +28,7 @@ func Local(ctx context.Context, component, dataDir string, args []string, stdin 
 func local(ctx context.Context, component, dataDir string, args []string, stdin io.Reader, stdout, stderr io.Writer, invoke func(context.Context, string, string, RPC) (Response, error)) error {
 	flags := flag.NewFlagSet("update", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	selectedComponent := flags.String("component", component, "local component")
 	check := flags.Bool("check", false, "check without updating")
 	status := flags.Bool("status", false, "show update history or job progress")
 	version := flags.String("version", "", "pin a published version")
@@ -39,6 +40,9 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 	key := flags.String("idempotency-key", "", "reuse an interrupted submission identity")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *selectedComponent != component {
+		return errors.New("local update component does not match the running product")
 	}
 	if flags.NArg() != 0 {
 		return errors.New("unexpected update arguments")

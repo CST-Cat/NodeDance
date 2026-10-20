@@ -319,7 +319,7 @@ func (s *Server) handlePasswordChange(w http.ResponseWriter, r *http.Request, cu
 		return
 	}
 	var lastSeen int64
-	if err := tx.QueryRowContext(r.Context(), `SELECT last_seen_at FROM browser_sessions WHERE id=? AND token_digest=?`, current.ID, current.Digest).Scan(&lastSeen); errors.Is(err, sql.ErrNoRows) || err == nil && (s.now().Before(time.Unix(0, lastSeen)) || s.now().Sub(time.Unix(0, lastSeen)) >= s.idleTimeout) {
+	if err := tx.QueryRowContext(r.Context(), `SELECT last_seen_at FROM browser_sessions WHERE id=? AND token_digest=?`, current.ID, current.Digest).Scan(&lastSeen); errors.Is(err, sql.ErrNoRows) || err == nil && !current.Persistent && (s.now().Before(time.Unix(0, lastSeen)) || s.now().Sub(time.Unix(0, lastSeen)) >= s.idleTimeout) {
 		_ = tx.Rollback()
 		s.clearCookies(w)
 		http.Error(w, "authentication required", http.StatusUnauthorized)

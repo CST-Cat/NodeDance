@@ -299,11 +299,26 @@ func (s *Server) validCSRFCookie(r *http.Request, current *session) bool {
 }
 
 func (s *Server) setCSRFCookie(w http.ResponseWriter, token string, maxAge time.Duration) {
-	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: token, Path: "/", Secure: !s.development, HttpOnly: false, SameSite: http.SameSiteStrictMode, MaxAge: int(maxAge.Seconds()), Expires: s.now().Add(maxAge)})
+	http.SetCookie(w, &http.Cookie{Name: csrfCookieName, Value: token, Path: "/", Secure: !s.development, HttpOnly: false, SameSite: http.SameSiteStrictMode, MaxAge: int(maxAge.Seconds()), Expires: cookieExpiry(s.now(), maxAge)})
 }
 
-func (s *Server) setSessionCookie(w http.ResponseWriter, token string) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: token, Path: "/", Secure: !s.development, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(s.idleTimeout.Seconds()), Expires: s.now().Add(s.idleTimeout)})
+func cookieExpiry(now time.Time, lifetime time.Duration) time.Time {
+	if lifetime == 0 {
+		return time.Time{}
+	}
+	return now.Add(lifetime)
+}
+
+func (s *Server) sessionLifetime(current *session) time.Duration {
+	if current.Persistent {
+		return 0
+	}
+	return s.idleTimeout
+}
+
+func (s *Server) setSessionCookie(w http.ResponseWriter, token string, persistent bool) {
+	lifetime := s.sessionLifetime(&session{Persistent: persistent})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: token, Path: "/", Secure: !s.development, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: int(lifetime.Seconds()), Expires: cookieExpiry(s.now(), lifetime)})
 }
 
 func (s *Server) clearCookies(w http.ResponseWriter) {
@@ -319,8 +334,8 @@ func (s *Server) authenticateRequest(w http.ResponseWriter, r *http.Request, tou
 	digest := auth.DigestToken(cookie.Value)
 	var current session
 	var created, lastSeen int64
-	err = s.store.DB.QueryRow(`SELECT s.id, s.csrf_digest, s.created_at, s.last_seen_at, s.user_agent, s.remote_addr, u.id, u.role, u.username, u.display_name
-		FROM browser_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_digest=? AND u.enabled=1`, digest).Scan(&current.ID, &current.CSRFDigest, &created, &lastSeen, &current.UserAgent, &current.RemoteAddr, &current.UserID, &current.Role, &current.Username, &current.DisplayName)
+	err = s.store.DB.QueryRow(`SELECT s.id, s.csrf_digest, s.created_at, s.last_seen_at, s.user_agent, s.remote_addr, EXISTS(SELECT 1 FROM persistent_sessions p WHERE p.session_id=s.id), u.id, u.role, u.username, u.display_name
+		FROM browser_sessions s JOIN users u ON u.id=s.user_id WHERE s.token_digest=? AND u.enabled=1`, digest).Scan(&current.ID, &current.CSRFDigest, &created, &lastSeen, &current.UserAgent, &current.RemoteAddr, &current.Persistent, &current.UserID, &current.Role, &current.Username, &current.DisplayName)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, false
@@ -331,7 +346,7 @@ func (s *Server) authenticateRequest(w http.ResponseWriter, r *http.Request, tou
 	current.CreatedAt = time.Unix(0, created)
 	current.LastSeenAt = time.Unix(0, lastSeen)
 	now := s.now()
-	if now.Sub(current.LastSeenAt) >= s.idleTimeout || now.Before(current.LastSeenAt) {
+	if !current.Persistent && (now.Sub(current.LastSeenAt) >= s.idleTimeout || now.Before(current.LastSeenAt)) {
 		_, _ = s.store.DB.Exec(`DELETE FROM browser_sessions WHERE id=?`, current.ID)
 		s.clearCookies(w)
 		return nil, false
@@ -341,19 +356,20 @@ func (s *Server) authenticateRequest(w http.ResponseWriter, r *http.Request, tou
 			return nil, false
 		}
 		current.LastSeenAt = now
-		s.setSessionCookie(w, cookie.Value)
+		s.setSessionCookie(w, cookie.Value, current.Persistent)
 	}
 	return &current, true
 }
 
 func (s *Server) sessionStillValid(ctx context.Context, id string) bool {
 	var lastSeen int64
-	if err := s.store.DB.QueryRowContext(ctx, `SELECT s.last_seen_at FROM browser_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=? AND u.enabled=1`, id).Scan(&lastSeen); err != nil {
+	var persistent bool
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT s.last_seen_at, EXISTS(SELECT 1 FROM persistent_sessions p WHERE p.session_id=s.id) FROM browser_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=? AND u.enabled=1`, id).Scan(&lastSeen, &persistent); err != nil {
 		return false
 	}
 	last := time.Unix(0, lastSeen)
 	now := s.now()
-	return now.Sub(last) < s.idleTimeout && !now.Before(last)
+	return persistent || now.Sub(last) < s.idleTimeout && !now.Before(last)
 }
 
 func (s *Server) effectiveRemoteAddr(r *http.Request) string {

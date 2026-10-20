@@ -22,7 +22,7 @@ import (
 func (s *Server) handleCSRFIssue(w http.ResponseWriter, r *http.Request) {
 	if current, ok := s.authenticateRequest(w, r, false); ok {
 		if cookie, err := r.Cookie(csrfCookieName); err == nil && subtle.ConstantTimeCompare(auth.DigestToken(cookie.Value), current.CSRFDigest) == 1 {
-			s.setCSRFCookie(w, cookie.Value, s.idleTimeout)
+			s.setCSRFCookie(w, cookie.Value, s.sessionLifetime(current))
 			writeJSON(w, http.StatusOK, map[string]string{"token": cookie.Value})
 			return
 		}
@@ -35,7 +35,7 @@ func (s *Server) handleCSRFIssue(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "request failed", http.StatusInternalServerError)
 			return
 		}
-		s.setCSRFCookie(w, raw, s.idleTimeout)
+		s.setCSRFCookie(w, raw, s.sessionLifetime(current))
 		writeJSON(w, http.StatusOK, map[string]string{"token": raw})
 		return
 	}
@@ -149,7 +149,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		rollback(http.StatusInternalServerError, "request failed")
 		return
 	}
-	token, csrfToken, current, err := s.insertSession(ctx, tx, r, createdAt, 1)
+	token, csrfToken, current, err := s.insertSession(ctx, tx, r, createdAt, 1, request.Persistent)
 	if err != nil {
 		rollback(http.StatusInternalServerError, "request failed")
 		return
@@ -167,8 +167,8 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.limiter.succeeded(current.RemoteAddr)
-	s.setSessionCookie(w, token)
-	s.setCSRFCookie(w, csrfToken, s.idleTimeout)
+	s.setSessionCookie(w, token, current.Persistent)
+	s.setCSRFCookie(w, csrfToken, s.sessionLifetime(current))
 	response := map[string]any{"user": map[string]string{"displayName": displayName}, "csrfToken": csrfToken}
 	if generatedUsername || generatedPassword {
 		credentials := map[string]string{"username": username}
@@ -244,7 +244,7 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request, previous *sessio
 	}
 	displayName = currentDisplayName
 	now := s.now().UnixNano()
-	token, csrfToken, current, err := s.insertSession(r.Context(), tx, r, now, userID)
+	token, csrfToken, current, err := s.insertSession(r.Context(), tx, r, now, userID, request.Persistent)
 	if err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
@@ -274,9 +274,8 @@ func (s *Server) signIn(w http.ResponseWriter, r *http.Request, previous *sessio
 	if previous != nil {
 		s.closeAccountSessions([]string{previous.ID}, "account switched")
 	}
-	_ = current
-	s.setSessionCookie(w, token)
-	s.setCSRFCookie(w, csrfToken, s.idleTimeout)
+	s.setSessionCookie(w, token, current.Persistent)
+	s.setCSRFCookie(w, csrfToken, s.sessionLifetime(current))
 	writeJSON(w, http.StatusOK, map[string]any{"user": accountView{ID: userID, Username: username, DisplayName: displayName, Role: role, Enabled: true}, "csrfToken": csrfToken})
 }
 
@@ -285,7 +284,7 @@ func (s *Server) rejectLogin(w http.ResponseWriter, r *http.Request, remote stri
 	http.Error(w, "invalid credentials", http.StatusUnauthorized)
 }
 
-func (s *Server) insertSession(ctx context.Context, tx *sql.Tx, r *http.Request, now int64, userID int64) (rawToken, csrfToken string, current *session, err error) {
+func (s *Server) insertSession(ctx context.Context, tx *sql.Tx, r *http.Request, now int64, userID int64, persistent bool) (rawToken, csrfToken string, current *session, err error) {
 	rawToken, digest, err := auth.NewToken()
 	if err != nil {
 		return "", "", nil, err
@@ -305,7 +304,12 @@ func (s *Server) insertSession(ctx context.Context, tx *sql.Tx, r *http.Request,
 		VALUES(?, ?, ?, ?, ?, ?, ?, ?)`, id, userID, digest, auth.DigestToken(csrfToken), now, now, ua, remote); err != nil {
 		return "", "", nil, err
 	}
-	return rawToken, csrfToken, &session{ID: id, UserID: userID, Digest: digest, CSRFDigest: auth.DigestToken(csrfToken), CreatedAt: s.now(), LastSeenAt: s.now(), UserAgent: ua, RemoteAddr: remote}, nil
+	if persistent {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO persistent_sessions(session_id) VALUES(?)`, id); err != nil {
+			return "", "", nil, err
+		}
+	}
+	return rawToken, csrfToken, &session{Persistent: persistent, ID: id, UserID: userID, Digest: digest, CSRFDigest: auth.DigestToken(csrfToken), CreatedAt: s.now(), LastSeenAt: s.now(), UserAgent: ua, RemoteAddr: remote}, nil
 }
 
 func (s *Server) auditEvent(r *http.Request, action, outcome string, actor sql.NullInt64) {

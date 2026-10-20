@@ -15,6 +15,19 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const csrf=await(await admin.request.get(base+'/api/v1/auth/csrf')).json(),credentials=JSON.parse(fs.readFileSync(path.join(directory,'initial-admin.json'),'utf8'))
   const login=await admin.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':csrf.token},data:credentials});assert.equal(login.status(),200)
   const headers={Origin:base,'X-CSRF-Token':(await login.json()).csrfToken}
+  // Persistent terminal policy still requires valid credentials and remains revocable.
+  const terminal=await browser.newContext()
+  const terminalCSRF=(await(await terminal.request.get(base+'/api/v1/auth/csrf')).json()).token
+  const terminalLogin=await terminal.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':terminalCSRF},data:{...credentials,persistent:true}})
+  assert.equal(terminalLogin.status(),200)
+  const terminalCookies=await terminal.cookies()
+  assert.equal(terminalCookies.find(c=>c.name==='nodedance_session').expires,-1)
+  assert.equal((await terminal.request.get(base+'/api/v1/auth/me')).status(),200)
+  const terminalToken=(await terminalLogin.json()).csrfToken
+  assert.equal((await terminal.request.post(base+'/api/v1/auth/logout',{headers:{Origin:base,'X-CSRF-Token':terminalToken}})).status(),204)
+  const revokedTerminal=await browser.newContext();await revokedTerminal.addCookies(terminalCookies)
+  assert.equal((await revokedTerminal.request.get(base+'/api/v1/auth/me')).status(),401)
+  await revokedTerminal.close();await terminal.close()
   // A stale login tab can coexist with a valid cookie from another tab.
   // Only a pre-authentication CSRF rejection is retried, once, without losing input.
   for(const rejectedAttempts of [1,2]){

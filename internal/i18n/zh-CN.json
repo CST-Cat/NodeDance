@@ -421,7 +421,7 @@
   "terminal connection is still attached": "正在等待原终端连接断开",
   "End terminal session or cancel pending authorization": "结束终端会话或取消待使用的授权",
   "Reattach the same tmux session after transport loss": "连接中断后重新附着同一 tmux 会话",
-  "Update workflow: preflight, confirm, submit and observe using the connected Core": "更新流程：通过已连接 Core 预检、确认、提交并观察",
+  "Update local Core without login; explicit remote targets use the connected Core; confirm rollback": "免登录更新本机 Core；显式远程目标使用已连接 Core；回滚需要确认",
   "Show bundled Agent tmux version": "显示 Agent 内置 tmux 版本",
   "Wait for completion? (y/N)": "等待任务完成？(y/N)",
   "Observe (/stop)": "观察任务（/stop 停止观察）",

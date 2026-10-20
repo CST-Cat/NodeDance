@@ -11,40 +11,44 @@ import (
 )
 
 func TestLocalUpdateNeedsNoArgumentsAndWaitsForLatestRelease(t *testing.T) {
-	var calls []RPC
-	now := time.Now().UTC()
-	id := strings.Repeat("a", 32)
-	invoke := func(ctx context.Context, component, data string, rpc RPC) (Response, error) {
-		calls = append(calls, rpc)
-		if component != "agent" || data != "/private-agent" {
-			t.Fatal("local target changed")
-		}
-		var value any
-		switch rpc.Action {
-		case "check":
-			value = Check{Component: "agent", Configured: true, Available: true, Current: "agent-v0.1.13", Latest: "agent-v0.1.14"}
-		case "apply":
-			if rpc.Request.Version != "agent-v0.1.14" || !rpc.Request.Confirm || len(rpc.IdempotencyKey) != 32 {
-				t.Fatalf("default submission: %+v", rpc)
+	for _, component := range []string{"core", "agent"} {
+		t.Run(component, func(t *testing.T) {
+			var calls []RPC
+			now := time.Now().UTC()
+			id := strings.Repeat("a", 32)
+			invoke := func(ctx context.Context, component, data string, rpc RPC) (Response, error) {
+				calls = append(calls, rpc)
+				if rpc.Request.Component != component || data != "/private-product" {
+					t.Fatal("local target changed")
+				}
+				var value any
+				switch rpc.Action {
+				case "check":
+					value = Check{Component: component, Configured: true, Available: true, Current: component + "-v0.1.13", Latest: component + "-v0.1.14"}
+				case "apply":
+					if rpc.Request.Version != component+"-v0.1.14" || !rpc.Request.Confirm || len(rpc.IdempotencyKey) != 32 {
+						t.Fatalf("default submission: %+v", rpc)
+					}
+					value = Job{ID: id, Status: "queued"}
+				case "status":
+					if rpc.Request.JobID != id {
+						t.Fatal("default command did not observe accepted job")
+					}
+					value = Job{ID: id, Status: "succeeded", Finished: &now}
+				default:
+					t.Fatalf("unexpected action %s", rpc.Action)
+				}
+				raw, _ := json.Marshal(value)
+				return Response{Status: 200, Data: raw}, nil
 			}
-			value = Job{ID: id, Status: "queued"}
-		case "status":
-			if rpc.Request.JobID != id {
-				t.Fatal("default command did not observe accepted job")
+			var stdout, stderr bytes.Buffer
+			if err := local(context.Background(), component, "/private-product", nil, strings.NewReader(""), &stdout, &stderr, invoke); err != nil {
+				t.Fatal(err)
 			}
-			value = Job{ID: id, Status: "succeeded", Finished: &now}
-		default:
-			t.Fatalf("unexpected action %s", rpc.Action)
-		}
-		raw, _ := json.Marshal(value)
-		return Response{Status: 200, Data: raw}, nil
-	}
-	var stdout, stderr bytes.Buffer
-	if err := local(context.Background(), "agent", "/private-agent", nil, strings.NewReader(""), &stdout, &stderr, invoke); err != nil {
-		t.Fatal(err)
-	}
-	if len(calls) != 3 || !strings.Contains(stdout.String(), `"succeeded"`) || !strings.Contains(stderr.String(), "Idempotency-Key:") {
-		t.Fatalf("default workflow: %v %s %s", calls, stdout.String(), stderr.String())
+			if len(calls) != 3 || !strings.Contains(stdout.String(), `"succeeded"`) || !strings.Contains(stderr.String(), "Idempotency-Key:") {
+				t.Fatalf("default workflow: %v %s %s", calls, stdout.String(), stderr.String())
+			}
+		})
 	}
 }
 func TestLocalRollbackCancellationDoesNotLookUpOrApplyRelease(t *testing.T) {

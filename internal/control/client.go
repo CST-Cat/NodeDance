@@ -376,6 +376,23 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 			contentType = writer.FormDataContentType()
 		}
 	}
+	// Both terminal presentations keep authenticated sessions until explicit
+	// revocation. Only request this policy when advertised by the connected Core.
+	if o.Name == "auth.login" || o.Name == "auth.setup" || o.Name == "auth.switch" {
+		if schema, ok := o.BodySchema.(map[string]any); ok {
+			if properties, ok := schema["properties"].(map[string]any); ok && properties["persistent"] != nil {
+				var payload map[string]any
+				if json.Unmarshal(in.Body, &payload) == nil && payload != nil {
+					payload["persistent"] = true
+					raw, err := json.Marshal(payload)
+					if err != nil {
+						return fail(err)
+					}
+					body = bytes.NewReader(raw)
+				}
+			}
+		}
+	}
 	if o.Name == "auth.login" || o.Name == "auth.setup" {
 		// CookieJar supports concurrent access; replacing the http.Client's
 		// Jar while a stream/request uses it does not. Expire the old origin

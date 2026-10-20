@@ -50,3 +50,7 @@ Account creation and editing reuse UiDialog modals, retaining Core validation, n
 ## Verification
 
 `pnpm --dir web audit:accounts` builds fresh assets and exercises a temporary real Core, account forms, confirmation cancellation, password-verified switching, failed-switch identity retention, disabled accounts, isolated profiles, real logout, and light/dark desktop/mobile/collapsed layouts. `pnpm --dir web audit:guest-security` retains the anonymous and adversarial boundary suite. Core integration tests cover cross-account Session denial, reset/disable revocation, own-password scope, and the last-enabled-administrator guard.
+
+CLI/TUI 在登录、初始化和切换账号时请求 Core 契约中的 `persistent` 会话策略，不设置闲置过期；私有会话文件可跨客户端重启复用。普通 Web 登录保持闲置过期。该策略在成功认证时记录，后续请求头不能改变既有会话；退出、撤销、密码与账号变更仍立即生效。
+
+CLI/TUI request the discovered persistent session policy during authenticated session creation. Idle time does not expire these sessions; normal browser sessions retain idle expiry. Revocation and account security changes apply to both policies.

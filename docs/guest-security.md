@@ -123,3 +123,5 @@ File-manager disposal aborts its private manager before destroying elFinder. The
 文件管理卸载先中止私有管理器，再销毁 elFinder；内置销毁路径不再链式调用初始化失败后被禁用的事件分发器。浏览器套件保留初始目录不可用后进入游客页的回归，并校验切换后不再发起私有读取。
 
 The discovered dashboard settings schema no longer includes a container preview limit. The full Docker inventory dialog remains administrator-only; anonymous boundaries are checked against the current Core operation contract. 仪表盘设置契约已移除容器预览上限；完整 Docker 清单弹窗仍仅供管理员使用，匿名边界继续根据当前 Core 操作契约验证。
+
+本机 Core／Agent 更新由 root 独立执行，无需登录；公网更新 API 仍必须通过管理员认证和 CSRF。CLI/TUI 的 `persistent` 登录策略只在凭据验证成功后记录，不授予额外权限；伪造 User-Agent、会话策略或身份请求头不能访问管理 API。普通 Web 登录继续闲置过期，退出、撤销、账号停用和密码变更同样撤销永久会话。游客安全回归覆盖伪造策略以及实际永久会话的撤销。

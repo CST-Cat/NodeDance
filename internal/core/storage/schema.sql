@@ -29,6 +29,12 @@ CREATE TABLE IF NOT EXISTS browser_sessions (
 	remote_addr TEXT NOT NULL
 );
 
+-- A session policy is recorded at authenticated creation, never inferred from
+-- later request headers. Revoking the session also removes its policy.
+CREATE TABLE IF NOT EXISTS persistent_sessions (
+	session_id TEXT PRIMARY KEY REFERENCES browser_sessions(id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS browser_sessions_last_seen ON browser_sessions(last_seen_at);
 
 CREATE TABLE IF NOT EXISTS appearance (

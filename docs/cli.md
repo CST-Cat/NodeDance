@@ -42,7 +42,7 @@ Connection flags are available after the operation:
 | `--dev` | Allow HTTP only for a literal loopback address |
 | `--timeout` | Request/stream deadline; default `60s`, `0` disables it |
 
-The client stores a server-bound session in an owner-owned `0700` directory and `0600` regular file, rejects symlink sessions, verifies TLS, and refuses HTTP redirects. Use different state directories for different Core servers. Session expiration, revocation, administrator lockouts and audit rules remain enforced by Core.
+The client stores a server-bound session in an owner-owned `0700` directory and `0600` regular file, rejects symlink sessions, verifies TLS, and refuses HTTP redirects. Use different state directories for different Core servers. CLI/TUI request the discovered `persistent` session policy at login, setup and account switch. These sessions do not expire from inactivity, including after restarting the client; logout, revocation, account changes, disable and password changes still invalidate them. Browser sign-in retains its idle timeout. / CLI/TUI 登录态不设闲置过期，重启客户端后继续有效；退出、撤销、账号变更、停用和密码变更仍会使其失效。
 
 Network discovery uses `nodedance discovery peers` or the TUI's discovered `discovery.peers` operation. Core runs natively on the controller and reads that host's existing Tailscale peers through its built-in read-only operation. It never installs or configures Tailscale; discovery is optional.
 
@@ -224,7 +224,7 @@ File editing supports up to 8 MiB UTF-8 text. Body input and text response bound
 
 Node lifecycle is shared with Web: discover `nodes.renew-enrollment` to regenerate native/Docker commands for an existing pending node (body: `coreUrl`, `deploymentMethod`), and `nodes.delete` to remove any node state (body: `confirm: true`). Both use `nodeId` as a path parameter and are available in CLI/TUI generic operation forms. Renewal invalidates previous tokens; deletion does not uninstall Agent or stop already dispatched remote work.
 
-`nodedance update` defaults to updating the connected Core; `nodedance agent update` defaults to the local managed Agent. Neither needs a separate update program, registration step or additional update parameters. / 两个默认更新命令均无需独立更新程序、登记步骤或额外更新参数。
+`nodedance update` defaults to updating the local Core as root without login; `nodedance agent update` independently updates the local managed Agent as root without login. Explicit remote update targets still require authentication. Neither needs a separate update program, registration step or additional update parameters. / 两个默认更新命令均无需独立更新程序、登记步骤或额外更新参数。
 
 Agent enrollment supports an optional `asset` object with monthly traffic quota (`trafficLimitBytes`), purchase date (`purchasedAt`, calendar date at UTC midnight), VPS expiry (`expiresAt`, ISO UTC), renewal price/currency, and `billingCycleUnit` (`year`, `month`, `hour`, `minute`, or custom `day` with `billingCycleDays`). Read the connected `agents.enrollment` / `nodes.renew-enrollment` schema; Core validates and saves the node, credential and asset atomically. Use `nodes.asset` and `nodes.save-asset` for later changes, including while the Agent is offline. A zero quota removes the limit; a null expiry clears the date. The shared discovered CLI and TUI workflows expose all these inputs.
 

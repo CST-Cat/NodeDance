@@ -1,8 +1,8 @@
 # Updates / 内置更新
 
-更新已内置于 Core 和 Agent。正常部署后直接运行 `nodedance update`，默认升级连接的 Core 到最新正式版本；不需要另外安装程序、注册更新服务或添加参数。Web 更新中心与 TUI 使用同一份 Core `/api/v1/operations` 契约、请求和执行流程。CLI 自动复用已保存的 Core 地址、Origin、CA 证书路径和管理员会话，更新不会跳过登录、权限或 CSRF 检查。
+更新已内置于 Core 和 Agent，两个本机更新入口彼此独立。root 直接运行 `nodedance update` 更新本机 Core，或 `nodedance agent update` 更新本机 Agent；均无需登录、已保存会话、Core API 连接或额外更新服务。TUI 的 `client.update` 和 `agent.update` 使用相同本机维护流程。默认 Core 更新不会读取已保存的远程连接。显式 `--server URL`（或 `NODEDANCE_SERVER`）以及远端 Agent 目标走 Core 发现契约，继续验证管理员权限和 CSRF。
 
-Updates are built into Core and Agent. After normal deployment, `nodedance update` updates the connected Core to its newest stable release with no extra parameters or update-service installation. Web, CLI and TUI use the same discovered Core operation contract. CLI restores the saved server, origin and CA path from its private session file; administrator authentication remains required.
+Core and Agent have independent local update entrypoints. As root, run `nodedance update` for the local Core or `nodedance agent update` for the local Agent, without login, saved sessions, a Core API connection or extra updater setup. TUI exposes the same local workflows. Default Core updates ignore saved remote connections. Explicit `--server URL` (or `NODEDANCE_SERVER`) and remote Agent targets use the discovered Core contract and retain administrator authentication and CSRF checks.
 
 ```sh
 nodedance update        # 更新 Core / Update Core
@@ -14,7 +14,7 @@ nodedance agent update  # 更新本机 Agent / Update the local Agent
 The `nodedance agent update` command updates the local managed Agent and requires root. It runs the shared built-in transaction directly from `nodedance`. Selecting a remote Agent through Core still requires its node ID:
 
 ```sh
-nodedance update --component agent --node-id NODE_UUID
+nodedance update --server https://core.example --component agent --node-id NODE_UUID
 ```
 
 ## Observation and recovery / 观察与恢复

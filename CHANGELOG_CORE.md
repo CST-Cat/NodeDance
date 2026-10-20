@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.49]
+
+### English
+
+- Make the default Core update a root-only local maintenance operation independent of saved login sessions or Core API connectivity; retain authenticated discovered operations for explicit remote updates and share the workflow with TUI.
+- Keep CLI/TUI login sessions valid across inactivity and client restarts, while preserving logout, revocation, password/account security changes, browser idle expiry and guest API boundaries.
+
+### 简体中文
+
+- 默认 Core 更新改用 root 本机维护通道，不依赖已保存登录态或 Core API 连接；显式远程更新继续使用经认证的发现契约，TUI 共用相同流程。
+- CLI／TUI 登录态不再因闲置或客户端重启过期，保留退出、撤销、密码及账号安全变更、普通浏览器闲置过期和游客 API 边界。
+
 ## [0.1.48]
 
 ### English

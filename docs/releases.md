@@ -20,7 +20,7 @@ python3 scripts/release-notes.py render agent agent-v0.1.0
 # Review and commit the changelog, then create/push the matching tag.
 python3 scripts/release-notes.py promote core core-v0.1.0
 # Set agent-release.version to the intended exact Agent tag before tagging Core.
-# Agent and Core tags may then be pushed together; builds run independently.
+# Publish Agent first; after it is stable, rehearse and publish the paired Core.
 ```
 
 Only `agent-v*` tags trigger `.github/workflows/agent-release.yml`; only `core-v*` tags trigger `.github/workflows/core-release.yml`. Both reject invalid semver or missing bilingual notes. `agent-release.version` pins the exact Agent paired with Core at the tagged commit. Core validates that pairing and its changelog before building, without a release API dependency. Core publication also rejects a pairing older than the newest stable published Agent. Only final publication waits for that exact stable, published Agent (up to ten minutes); a different/newer release cannot replace the pairing. Its **exact tag URL is the first line** of the Core description. Publishing Agent marks `--latest=false`; Core marks `--latest=true`.
@@ -36,9 +36,9 @@ python3 scripts/release-rehearsal.py run agent agent-v0.1.22
 python3 scripts/release-rehearsal.py run core core-v0.1.37 --agent-tag "$(cat agent-release.version)"
 ```
 
-The rehearsal runs every check the release workflows perform without creating a tag, release or artifact: tag format, reviewed bilingual changelog entry, committed (not staged) changelog and pairing file, exact Agent pairing in `agent-release.version`, Core pairing against the newest stable published Agent, and that the tag/release does not exist yet locally or on origin. A passing rehearsal is recorded in `.build/release-rehearsal`; both release workflows verify that record in their publish job and refuse to publish an unrehearsed tag. If a rehearsal fails, stop, fix the cause and rehearse again — pushing the tag anyway wastes the tag, because a failed publication leaves the tag behind.
+The rehearsal runs every check the release workflows perform without creating a tag, release or artifact: tag format, reviewed bilingual changelog entry, committed (not staged) changelog and pairing file, exact Agent pairing in `agent-release.version`, Core pairing against the newest stable published Agent, and that the tag/release does not exist yet locally or on origin. A passing rehearsal is recorded in `.release-rehearsals`; both release workflows verify that record in their publish job and refuse to publish an unrehearsed tag. If a rehearsal fails, stop, fix the cause and rehearse again — pushing the tag anyway wastes the tag, because a failed publication leaves the tag behind.
 
-彩排以只读方式执行发布工作流的全部校验（tag 格式、双语 changelog 条目、changelog 与配对文件已提交、`agent-release.version` 精确配对、Core 配对为最新稳定 Agent、tag/release 尚不存在），不创建任何 tag、release 或产物。通过的彩排记录在 `.build/release-rehearsal`；两个发布工作流在 publish 阶段核对该记录，拒绝发布未彩排的 tag。彩排失败时停止并修复后重新彩排——直接推 tag 一旦失败，tag 会残留，造成浪费。
+彩排以只读方式执行发布工作流的全部校验（tag 格式、双语 changelog 条目、changelog 与配对文件已提交、`agent-release.version` 精确配对、Core 配对为最新稳定 Agent、tag/release 尚不存在），不创建任何 tag、release 或产物。通过的彩排记录在 `.release-rehearsals`；两个发布工作流在 publish 阶段核对该记录，拒绝发布未彩排的 tag。彩排失败时停止并修复后重新彩排——直接推 tag 一旦失败，tag 会残留，造成浪费。
 
 ## Enrollment tokens / 注册令牌
 
@@ -46,7 +46,7 @@ Enrollment tokens are single-use with no time limit. A token stays valid until a
 
 注册令牌仅可单次使用，不设时间限制。令牌在设备完成注册前一直有效，注册成功立即失效；重新生成安装命令会替换未使用的旧令牌。不存在需要抢时间的十分钟过期窗口。
 
-两个工作流分别由自己的标签触发，并拒绝无效版本或缺少双语说明的发布。创建 Core tag 前，`agent-release.version` 必须写明本次配对的 Agent tag。构建与测试不等待 Agent 发布；最终发布最多等待十分钟，确认这个确切版本已正式发布、不是草稿或预发布，再写入说明第一行。不会自动换成恰好最新的其他版本。两种 tag 可以一起推送，使构建并行；超时只阻止 Core 最终发布，不修改配对版本。Agent 不占用仓库全局 latest，Core 为全局 latest。
+两个工作流分别由自己的标签触发，并拒绝无效版本或缺少双语说明的发布。创建 Core tag 前，`agent-release.version` 必须写明本次配对的 Agent tag。构建与测试不等待 Agent 发布；最终发布最多等待十分钟，确认这个确切版本已正式发布、不是草稿或预发布，再写入说明第一行。不会自动换成恰好最新的其他版本。Agent 必须先发布为稳定版，随后才可完成 Core 配对彩排并推送 Core tag；超时只阻止 Core 最终发布，不修改配对版本。Agent 不占用仓库全局 latest，Core 为全局 latest。
 
 Installers resolve the latest stable release from the static version files (`agent-latest.txt`, `core-latest.txt`) that the release workflows publish to `main` after a release is confirmed; they download everything else from `releases/download`. The install path uses only plain HTTPS file downloads — no GitHub REST API and no per-IP rate quota. `--release-tag` pins an explicit release and bypasses resolution entirely. Installers never use the repository-wide `/releases/latest` URL. Agent credentials remain root-owned, with a 0700 state directory and 0600 regular config file.
 

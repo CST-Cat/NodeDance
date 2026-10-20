@@ -31,7 +31,7 @@ func driveTerminal(t *testing.T, server string, steps []tuiStep) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- runTUI(ctx, []string{"--server", server, "--dev", "--state-dir", filepath.Join(t.TempDir(), "client")}, func(string) (string, bool) { return "", false }, slave, slave, io.Discard, "parity-test")
+		done <- runTUI(ctx, []string{"--server", server, "--dev", "--state-dir", filepath.Join(t.TempDir(), "client")}, func(string) (string, bool) { return "", false }, slave, slave, slave, "parity-test")
 	}()
 	chunks := make(chan string, 128)
 	go func() {

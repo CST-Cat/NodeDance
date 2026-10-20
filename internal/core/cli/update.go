@@ -17,8 +17,23 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/update"
 )
 
-// This command is presentation over the connected Core operation contract.
+func updateUsesRemote(args []string, lookup LookupEnv) bool {
+	remote := lookupValue(lookup, "NODEDANCE_SERVER") != ""
+	for i, arg := range args {
+		arg = strings.TrimLeft(arg, "-")
+		if arg == "server" || strings.HasPrefix(arg, "server=") || arg == "node-id" || strings.HasPrefix(arg, "node-id=") || arg == "component=agent" || arg == "component" && i+1 < len(args) && args[i+1] == "agent" {
+			remote = true
+		}
+	}
+	return remote
+}
+
+// Local updates use the built-in maintenance executor; explicit remote targets
+// use the connected Core operation contract.
 func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reader, stdout, stderr io.Writer) error {
+	if !updateUsesRemote(args, lookup) {
+		return update.Local(ctx, "core", "/var/lib/nodedance", args, stdin, stdout, stderr)
+	}
 	flags := flag.NewFlagSet("nodedance update", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	connection := addConnectionFlags(flags, lookup)

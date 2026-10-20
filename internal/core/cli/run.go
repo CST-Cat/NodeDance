@@ -275,7 +275,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, i18n.TextFor(w, "Usage: nodedance serve [--listen IP:port] [--config path] [--data-dir path] [--max-file-bytes bytes] [--history-retention-days days] [--public-origin https://host] [--trusted-proxies IP/CIDR,...] [--tls-cert PEM --tls-key PEM] [--dev]"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance backup --data-dir DIR --output FILE"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance restore --input FILE --data-dir NEW_DIR"))
-	fmt.Fprintln(w, "       nodedance update [--check | --yes | --status | --rollback JOB] [--component agent --node-id ID] [connection flags]")
+	fmt.Fprintln(w, "       nodedance update [--check | --yes | --status | --rollback JOB]  # local root Core; --server URL for remote updates")
 	fmt.Fprintln(w, "       nodedance agent update [--check | --status | --rollback JOB]  # local root Agent")
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance version"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance operations [NAME]  # JSON operation catalog / schemas"))

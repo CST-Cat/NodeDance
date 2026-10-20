@@ -72,14 +72,16 @@ type ProbeConfigRequest struct {
 }
 
 type AuthSetupRequest struct {
+	Persistent  bool   `json:"persistent,omitempty"`
 	Credential  string `json:"credential" request:"required"`
 	Password    string `json:"password,omitempty"`
 	Username    string `json:"username,omitempty"`
 	DisplayName string `json:"displayName,omitempty"`
 }
 type AuthLoginRequest struct {
-	Username string `json:"username" request:"required"`
-	Password string `json:"password" request:"required"`
+	Persistent bool   `json:"persistent,omitempty"`
+	Username   string `json:"username" request:"required"`
+	Password   string `json:"password" request:"required"`
 }
 type AccountCreateRequest struct {
 	Username    string `json:"username" request:"required"`
