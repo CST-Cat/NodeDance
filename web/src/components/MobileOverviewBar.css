@@ -88,6 +88,10 @@
 @media (min-width: 360px) and (max-width: 900px) {
   .app-shell[data-theme] .overview-toolbar-slot[data-mode="compact"] > .overview-toolbar-panel { padding-inline: 6px; }
   .overview-toolbar-slot[data-mode="compact"] .node-summary article { gap: 3px; }
+  /* Preserve the outer anchors while opening space between counts and actions. */
+  .overview-toolbar-slot[data-mode="compact"] .node-summary { padding-inline-end: 8px; column-gap: 0; }
+  .overview-toolbar-slot[data-mode="compact"] .overview-search-toggle svg { translate: 4px; }
+  .overview-toolbar-slot[data-mode="compact"] .view-preferences-button svg { translate: 2px; }
 }
 
 @media (max-width: 900px) {
