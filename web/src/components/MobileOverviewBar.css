@@ -14,7 +14,7 @@
 
 @media (max-width: 900px) {
   .app-shell[data-authenticated] .nodes-dashboard:has(.overview-toolbar-slot) { padding-bottom: calc(32px + var(--overview-scroll-reserve, 0px)); }
-  .overview-toolbar-slot :is(.node-summary strong, .node-count-label, .node-count-compact-label, .node-search, .overview-search-toggle svg, .dashboard-toolbar-actions > button svg) { transform-origin: top left; }
+  .overview-toolbar-slot :is(.node-summary strong, .node-count-label, .node-count-compact-label, .node-search input, .node-search svg, .overview-search-toggle svg, .dashboard-toolbar-actions > button svg) { transform-origin: top left; }
   body:has(.navigation-toggle[aria-expanded="true"]) .overview-toolbar-panel {
     visibility: hidden;
   }

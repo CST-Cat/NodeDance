@@ -22,8 +22,17 @@ export default function MobileOverviewBar({ children, holdExpanded }: {
   function change(next: Mode) {
     if (current.current === next || !slot.current || !panel.current) return;
     before.current = new Map(Array.from(panel.current.querySelectorAll<HTMLElement>(
-      ".node-summary strong, .node-count-label, .node-count-compact-label, .node-search, .overview-search-toggle svg, .dashboard-toolbar-actions > button svg",
+      ".node-summary strong, .node-count-label, .node-count-compact-label, .node-search input, .node-search svg, .overview-search-toggle svg, .dashboard-toolbar-actions > button svg",
     )).map(el => [el, el.getBoundingClientRect()]));
+    // The two presentations share one visual identity. Start the destination
+    // glyph at the currently visible glyph, including an interrupted transform.
+    // Animate the input separately so its parent cannot move the glyph twice.
+    const searchGlyph = (compact: boolean) => panel.current!.querySelector(
+      compact ? ".overview-search-toggle svg" : ".node-search svg",
+    );
+    const source = searchGlyph(current.current === "compact");
+    const destination = searchGlyph(next === "compact");
+    if (source && destination) before.current.set(destination, source.getBoundingClientRect());
     const dashboard = slot.current.closest<HTMLElement>(".nodes-dashboard")!;
     frameBefore.current = { height: slot.current.getBoundingClientRect().height, reserve: matchMedia("(max-width: 900px)").matches ? Math.max(0, parseFloat(getComputedStyle(dashboard).paddingBottom) - 32) : 0 };
     animations.current.forEach(animation => animation.cancel());

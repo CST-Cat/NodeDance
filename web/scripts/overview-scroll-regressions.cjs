@@ -1,4 +1,25 @@
 const assert = require('node:assert/strict'), path = require('node:path'), fs = require('node:fs')
+async function checkSearchTravel(page, source, target, action) {
+ const origin=await page.locator(source).evaluate(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y+scrollY}})
+ await action()
+ await page.waitForFunction(selector=>{
+  const el=document.querySelector(selector)
+  return el?.getBoundingClientRect().width>0 && el.getAnimations().some(a=>a.effect.getKeyframes().some(f=>f.transform))
+ },target)
+ const frames=await page.locator(target).evaluate(el=>{
+  const animation=el.getAnimations().find(a=>a.effect.getKeyframes().some(f=>f.transform))
+  animation.pause()
+  const rect=()=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y+scrollY}}
+  animation.currentTime=0;const start=rect(),opacity=getComputedStyle(el).opacity
+  animation.currentTime=animation.effect.getTiming().duration/2;const middle=rect()
+  animation.finish();const end=rect()
+  return {start,middle,end,opacity}
+ })
+ assert.ok(Math.hypot(frames.start.x-origin.x,frames.start.y-origin.y)<1,'Search starts at the previously visible glyph: '+JSON.stringify({origin,frames}))
+ assert.equal(Number(frames.opacity),1,'The same magnifier moves without a replacement fading in at the endpoint')
+ assert.ok(Math.hypot(frames.middle.x-frames.start.x,frames.middle.y-frames.start.y)>3,'Magnifier travels away from its origin')
+ assert.ok(Math.hypot(frames.middle.x-frames.end.x,frames.middle.y-frames.end.y)>3,'Magnifier is still between endpoints halfway through')
+}
 module.exports = async function ({page, base, artifacts}) {
  const mode = () => page.locator('.overview-toolbar-slot').getAttribute('data-mode')
  const settle = () => page.waitForTimeout(600)
@@ -12,6 +33,20 @@ module.exports = async function ({page, base, artifacts}) {
    document.querySelector('.nodes-dashboard').append(spacer)
   },theme)
   const initial=await page.locator('.overview-toolbar-slot').evaluate(el=>({top:el.getBoundingClientRect().top+scrollY,height:el.offsetHeight,document:document.documentElement.scrollHeight}))
+  if(width===390) {
+   await checkSearchTravel(page,'.node-search svg','.overview-search-toggle svg',()=>page.evaluate(()=>scrollTo(0,80)))
+   await settle()
+   await checkSearchTravel(page,'.overview-search-toggle svg','.node-search svg',()=>page.evaluate(()=>scrollBy(0,-30)))
+   await settle()
+   // Reverse with the expanded glyph paused mid-flight, so the next morph
+   // must inherit its actual rendered position rather than either endpoint.
+   await page.evaluate(()=>scrollBy(0,40));await settle()
+   await page.evaluate(()=>scrollBy(0,-30))
+   await page.waitForFunction(()=>document.querySelector('.overview-toolbar-slot').dataset.mode==='expanded')
+   await page.locator('.node-search svg').evaluate(el=>{const a=el.getAnimations().find(a=>a.effect.getKeyframes().some(f=>f.transform));a.pause();a.currentTime=a.effect.getTiming().duration/2})
+   await checkSearchTravel(page,'.node-search svg','.overview-search-toggle svg',()=>page.evaluate(()=>scrollBy(0,40)))
+   await settle();await page.evaluate(()=>scrollTo(0,0));await settle()
+  }
   await page.evaluate(()=>scrollTo(0,80))
   if(width===390 && theme==='light') {
    await page.waitForTimeout(80)

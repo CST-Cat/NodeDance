@@ -4,6 +4,8 @@
 
 ### English
 
+- Move the overview magnifier continuously between the expanded search field and compact action, including mid-flight reversals.
+
 - Soften mobile overview transitions with the locally sourced Anthropic deceleration curve and synchronized 480ms motion, keeping moving numbers visible throughout the transition.
 
 - Compact narrow-screen overview counts and actions into an anchored single row on downward scrolling, expanding on upward scrolling while preserving search state and page position.
@@ -12,6 +14,8 @@
 - Scale narrow-screen navigation icons with font cap height and center them vertically with their labels, preserving desktop icon geometry and touch targets.
 
 ### 简体中文
+
+- 总览放大镜在搜索框与收缩栏之间连续往返移动，半途反向时从当前画面位置继续。
 
 - 窄屏总览改用本地 Anthropic 源码中的减速曲线，统一为更舒缓的 480ms 同步过渡，避免运动中的数字被裁断。
 
