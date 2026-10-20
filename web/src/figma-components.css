@@ -4,8 +4,6 @@
   --control-height: 32px;
   --button-height: 36px;
   --control-font: 14px;
-  --input-font-size: var(--control-font);
-  --text-icon-size: 1.8cap;
   --focus: var(--figma-border-info);
   --button-focus: var(--figma-ring-primary);
   --motion-control: 150ms;
@@ -24,11 +22,6 @@
     /* Restrained spring press feedback (OpenUI CdsMotionEngine pill pattern);
        transform only applies to :active buttons. */
     transform 0.18s var(--ux-spring);
-}
-.app-shell[data-theme] :is(.primary-button, .secondary-button) > svg {
-  block-size: var(--text-icon-size);
-  inline-size: auto;
-  flex-shrink: 0;
 }
 .app-shell[data-theme] :is(.primary-button, .secondary-button, .alert-button, .container-action, .image-button, .probe-primary) {
   border-radius: var(--radius-control);
@@ -230,8 +223,7 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
 .app-shell[data-theme] .workspace-sidebar.is-collapsed .brand-mark { width: 20px; transform: scale(.8) rotate(-12deg); }
 @media (pointer: coarse), (max-width: 700px) {
   .app-shell[data-theme] :is(.header-actions button, .navigation-toggle) { width: 36px; height: 44px; min-height: 44px; padding: 8px; }
-  .app-shell[data-theme] { --input-font-size: 16px; }
-  .app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), textarea):not(.ui-select-source):not(.elfinder *) { font-size: var(--input-font-size); }
+  .app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), textarea):not(.ui-select-source):not(.elfinder *) { font-size: 16px; }
 }
 
 .app-shell[data-theme] .context-heading h2 { font-size: 14px; line-height: 20px; }

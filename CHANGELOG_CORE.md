@@ -4,12 +4,10 @@
 
 ### English
 
-- Share font-relative icon sizing across text action buttons, node search and account menu actions while preserving centered alignment and dedicated icon-only controls.
 - Scale narrow-screen navigation icons with font cap height and center them vertically with their labels, preserving desktop icon geometry and touch targets.
 
 ### 简体中文
 
-- 文字操作按钮、节点搜索和账号菜单操作共用随字体缩放的图标尺寸，保留垂直居中与独立图标控件的专用尺寸。
 - 窄屏导航图标按字体大写字高缩放并与标签垂直居中，保留桌面图标尺寸和触摸区域。
 
 ## [0.1.50]

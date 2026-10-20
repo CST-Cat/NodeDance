@@ -27,11 +27,6 @@
   background: var(--surface-raised);
   box-shadow: var(--overlay-shadow);
 }
-.account-panel > button > svg {
-  block-size: var(--text-icon-size);
-  inline-size: auto;
-  flex-shrink: 0;
-}
 .account-panel::backdrop {
   background: transparent;
 }
