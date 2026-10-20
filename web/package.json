@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "vite build --config vite.config.ts --outDir ../internal/core/webassets/dist --emptyOutDir",
-    "typecheck": "node scripts/check-i18n.cjs && node --experimental-strip-types scripts/check-session-device.cjs && node scripts/check-operations.cjs && node scripts/file-notices.cjs --check && tsc --noEmit --project tsconfig.json",
+    "typecheck": "node scripts/check-i18n.cjs && node --experimental-strip-types scripts/check-session-device.cjs && node --experimental-strip-types scripts/check-configuration-diff.mjs && node --experimental-strip-types scripts/check-path-display.mjs && node scripts/check-operations.cjs && node scripts/file-notices.cjs --check && tsc --noEmit --project tsconfig.json",
     "audit:design": "node scripts/audit-design.cjs",
     "audit:accounts": "pnpm build && node scripts/audit-accounts.cjs",
     "audit:interfaces": "pnpm build && node scripts/audit-interfaces.cjs",
@@ -24,6 +24,7 @@
     "@preact/signals-react": "3.12.0",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
+    "diff": "9.0.0",
     "echarts": "6.1.0",
     "framer-motion": "14.2.0",
     "jquery": "3.7.1",

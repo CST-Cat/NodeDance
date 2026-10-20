@@ -182,7 +182,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await adminPage.locator('[data-testid=history-chart] canvas').waitFor()
   assert.ok(await adminPage.locator('[data-testid=history-chart] canvas').isVisible(),'First asynchronous history load initializes the actual chart')
   await adminPage.reload();await adminPage.locator('#detail-title').waitFor();assert.equal(await historyTab.getAttribute('aria-current'),'page')
-  await adminPage.goBack();await overviewTab.waitFor();await adminPage.waitForFunction(()=>!location.hash.includes('section='))
+  await adminPage.goBack();await overviewTab.waitFor();await adminPage.waitForFunction(()=>!location.hash.includes('section='));await overviewTab.and(adminPage.locator('[aria-current=page]')).waitFor()
   assert.equal(await overviewTab.getAttribute('aria-current'),'page','Browser Back restores overview after history')
   assert.ok(!new URL(adminPage.url()).hash.includes('section='))
   // A valid administrator cookie still gets only public requests on guest URL

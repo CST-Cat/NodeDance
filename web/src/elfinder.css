@@ -99,9 +99,17 @@
 .nodedance-elfinder .elfinder-dialog {
   max-width: calc(100vw - 24px);
   max-height: calc(100dvh - 24px);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--overlay-edge);
   border-radius: var(--radius-card);
-  box-shadow: var(--overlay-shadow);
+  box-shadow: var(--overlay-lift);
+}
+/* Quicklook preview window is a floating surface too. */
+.nodedance-elfinder .elfinder-quicklook {
+  border: 1px solid var(--overlay-edge);
+  border-radius: var(--radius-card);
+  box-shadow: var(--overlay-lift);
+  background: var(--surface-raised);
+  overflow: hidden;
 }
 @media (max-width: 640px) {
   .nodedance-elfinder .elfinder-toolbar {
@@ -150,8 +158,11 @@
 .nodedance-elfinder.elfinder {
   font-family: inherit;
   font-size: 13px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--overlay-edge);
   border-radius: var(--radius-card);
+  /* The stock toolbar/workzone are square and would poke past the rounded
+     rim; clip children to the radius so corners stay clean. */
+  overflow: hidden;
 }
 .nodedance-elfinder.elfinder .elfinder-cwd table thead td {
   background: var(--surface);
@@ -218,3 +229,13 @@
     min-height: 44px;
   }
 }
+
+/* Native cwd templates retain the suffix while elFinder owns selection and rename. */
+.nodedance-elfinder .elfinder-cwd-filename > .ui-path-name { max-width: 100%; }
+.nodedance-elfinder .ui-path-name { display: inline-flex; min-width: 0; vertical-align: bottom; }
+.nodedance-elfinder .ui-path-stem { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nodedance-elfinder .ui-path-extension { flex: none; }
+
+.nodedance-elfinder .elfinder-info-title strong,
+.nodedance-elfinder .elfinder-info-tb td:not(.elfinder-info-label) { overflow-wrap: anywhere; word-break: normal; white-space: normal; }
+

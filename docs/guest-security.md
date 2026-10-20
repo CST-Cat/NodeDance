@@ -121,3 +121,5 @@ Five-second network/disk history stays private behind nodes.history; the anonymo
 File-manager disposal aborts its private manager before destroying elFinder. The vendored destroy path does not chain its event dispatcher, because failed initialization disables that dispatcher. The browser suite retains the unavailable-initial-directory → guest-entry regression and verifies no private follow-up reads after the transition.
 
 文件管理卸载先中止私有管理器，再销毁 elFinder；内置销毁路径不再链式调用初始化失败后被禁用的事件分发器。浏览器套件保留初始目录不可用后进入游客页的回归，并校验切换后不再发起私有读取。
+
+The discovered dashboard settings schema no longer includes a container preview limit. The full Docker inventory dialog remains administrator-only; anonymous boundaries are checked against the current Core operation contract. 仪表盘设置契约已移除容器预览上限；完整 Docker 清单弹窗仍仅供管理员使用，匿名边界继续根据当前 Core 操作契约验证。

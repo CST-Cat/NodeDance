@@ -1,19 +1,77 @@
 .ui-dialog[data-v-b0bbf977] {
   width: min(480px, calc(100% - 32px));
+  container-type: inline-size;
+  container-name: control-panel;
   max-height: calc(100dvh - 32px);
-  overflow: auto;
+  /* The shell never scrolls: the rounded rim stays clean and the slim
+     scrollbar lives on the inner body, away from the corners. */
+  overflow: hidden;
   margin: auto;
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--overlay-edge);
   border-radius: var(--radius-card);
-  padding: 32px;
+  padding: 0;
   color: var(--text);
-  background: var(--surface);
+  background: var(--surface-raised);
+  box-shadow: var(--overlay-lift);
+}
+/* Closed <dialog> elements must keep the UA's display:none; the flex column
+   layout applies only while the dialog is open. */
+.ui-dialog[data-v-b0bbf977][open] {
+  display: flex;
+  flex-direction: column;
 }
 .ui-dialog[data-v-b0bbf977]::backdrop {
   background: rgba(24, 23, 21, 0.65);
 }
+/* Shared header row: title plus the one close affordance every dialog has. */
+.ui-dialog-head[data-v-b0bbf977] {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 12px 0 20px;
+}
+.ui-dialog-close[data-v-b0bbf977] {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin: 2px 2px 0 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 100ms cubic-bezier(0, 0, 0.58, 1),
+    color 100ms cubic-bezier(0, 0, 0.58, 1);
+}
+.ui-dialog-close[data-v-b0bbf977]:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.ui-dialog-close[data-v-b0bbf977]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.ui-dialog-close[data-v-b0bbf977]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* Inner scroll region: the only scrolling surface, inset from the rim. */
+.ui-dialog-body[data-v-b0bbf977] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 20px 20px;
+}
 h2[data-v-b0bbf977] {
-  margin: 0 0 16px;
+  overflow-wrap: anywhere;
+  margin: 0;
   font-size: 28px;
 }
 p[data-v-b0bbf977] {
@@ -22,6 +80,19 @@ p[data-v-b0bbf977] {
   overflow-wrap: anywhere;
   font-size: 14px;
   line-height: 1.55;
+  padding-top: 16px;
+}
+/* SystemDialog lays its content out in a single form; the shell padding is
+   zero, so the form carries the shared horizontal gutters itself. */
+.ui-dialog > form[data-v-b0bbf977] {
+  padding: 0 20px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ui-dialog > form[data-v-b0bbf977] > footer {
+  padding: 0 0 16px;
+  margin-top: auto;
 }
 form > input[data-v-b0bbf977] {
   width: 100%;
@@ -90,15 +161,22 @@ form > input[data-v-b0bbf977] {
   }
 }
 footer[data-v-b0bbf977] {
+  flex: none;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
-  margin-top: 24px;
+  padding: 0 20px 16px;
 }
 @media (max-width: 480px) {
-  .ui-dialog[data-v-b0bbf977] {
-    padding: 24px;
+  .ui-dialog-head[data-v-b0bbf977] {
+    padding: 12px 8px 0 16px;
+  }
+  .ui-dialog-body[data-v-b0bbf977] {
+    padding: 0 16px 16px;
+  }
+  footer[data-v-b0bbf977] {
+    padding: 0 16px 12px;
   }
 }
 
@@ -132,4 +210,30 @@ footer[data-v-b0bbf977] {
   .ui-dialog[open]::backdrop {
     animation: none;
   }
+}
+
+.ui-dialog.ui-dialog-wide[data-v-b0bbf977] {
+  width: min(880px, calc(100% - 32px));
+}
+
+/* The file dialog mounts elFinder lazily; a content-driven height would make
+   the dialog grow from an empty shell to its final size. The size is derived
+   from the viewport (never a fixed pixel value), so on any screen the dialog
+   opens at that screen's final size and the manager streams in inside it. */
+.ui-dialog.vps-files-dialog[data-v-b0bbf977] {
+  height: min(72dvh, calc(100dvh - 64px));
+}
+.ui-dialog.vps-files-dialog[data-v-b0bbf977] .node-files {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.ui-dialog.vps-files-dialog[data-v-b0bbf977] .elfinder-host {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.ui-dialog.vps-files-dialog[data-v-b0bbf977] .form-actions {
+  flex: none;
+  margin-top: 12px;
 }

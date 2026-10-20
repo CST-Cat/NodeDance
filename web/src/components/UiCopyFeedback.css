@@ -1,0 +1,8 @@
+.ui-copy-feedback { position: relative; display: inline-grid; place-items: center; vertical-align: middle; }
+.ui-copy-original { display: inline-flex; align-items: center; justify-content: center; }
+.ui-copy-feedback:is([data-copy-state="success"], [data-copy-state="error"]) .ui-copy-original { visibility: hidden; }
+.ui-copy-result { position: absolute; inset: 0; display: grid; place-items: center; color: var(--success); }
+.ui-copy-feedback[data-copy-state="error"] .ui-copy-result { color: var(--danger); }
+.ui-copy-feedback[data-copy-state="pending"] { opacity: .6; }
+
+.ui-copy-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

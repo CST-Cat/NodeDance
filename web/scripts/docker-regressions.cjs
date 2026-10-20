@@ -28,7 +28,7 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
     if(pathname===nodesPath) return route.fulfill({json:{nodes:[{nodeId:node,agentId:agent,displayName:'Docker browser fixture',status:online?'online':'offline',generation:1,leaseValidUntil:state().leaseValidUntil,agentVersion:'agent-v0.1.13',capabilities:[]}],serverTime:now()}})
     if(pathname===containersPath && request.method()==='GET') return route.fulfill({json:inventory()})
     if(pathname===metricsPath) return route.fulfill({json:{type:'node_status',nodeId:node,state:state()}})
-    if(pathname===settingsPath) return route.fulfill({json:{viewMode:'monitor',groupBy:'node',sortBy:'custom',nodeGroupBy:'status',nodeSortBy:'custom',featuredLimit:4,customFields:['state','image','ports','health','uptime']}})
+    if(pathname===settingsPath) return route.fulfill({json:{viewMode:'monitor',groupBy:'node',sortBy:'custom',nodeGroupBy:'status',nodeSortBy:'custom',customFields:['state','image','ports','health','uptime']}})
     if(pathname===preferencesPath && request.method()==='GET') return route.fulfill({json:{preferences:[]}})
     if(pathname===tasksPath) return route.fulfill({json:{tasks:[...tasks.values()],nextCursor:''}})
     if(actions.has(pathname) && request.method()==='POST') {

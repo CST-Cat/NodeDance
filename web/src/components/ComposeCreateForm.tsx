@@ -1,3 +1,4 @@
+import UiTaskProgress from "./UiTaskProgress";
 import type { ContainerTask } from "../api";
 import { composeApi } from "../compose-api";
 import { requestConfirm } from "../dialogs";
@@ -304,15 +305,7 @@ export default function ComposeCreateForm(input: Props) {
               >
                 {submitting.value ? t("m.92199e4ba37e") : t("m.6db055dc4ece")}
               </button>
-              {message.value ? (
-                <span
-                  role="status"
-                  data-status={task.value?.status as any}
-                  data-v-833010c3=""
-                >
-                  {display(message.value)}
-                </span>
-              ) : null}
+              {task.value ? <UiTaskProgress status={task.value.status} phase={task.value.progress.phase} completed={task.value.progress.completed} total={task.value.progress.total} message={["queued", "running"].includes(task.value.status) ? undefined : message.value} /> : null}
               {error.value ? (
                 <span role="alert" data-v-833010c3="">
                   {display(error.value)}

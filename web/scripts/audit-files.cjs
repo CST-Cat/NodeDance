@@ -19,6 +19,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
  fs.mkdirSync(path.join(files,'private-dir'),{mode:0700});fs.writeFileSync(path.join(files,'private-dir','child.txt'),'private fixture',{mode:0644})
  fs.writeFileSync(path.join(files,'bzip.tar.bz2'),Buffer.from('QlpoOTFBWSZTWcHlGiYAAG97gMqAAQBAAW+AAEBzIF5QCAggAFQ0UGmg0ZPUMRvVBJRqaAAMmQH3Vw9CCNSEIzpCw0vatAhwOKGTJNs8Rxegu3fJmc5RItGBFfRWwJX7ay5EcIiAfi7kinChIYPKNEw=','base64'))
  fs.symlinkSync('hello.txt',path.join(files,'link'))
+ const longName='long-文件名-'+ 'abcdefghij'.repeat(12)+'.tar.gz';fs.writeFileSync(path.join(files,longName),'long name fixture')
  const core=spawn(path.join(artifacts,'core'),['serve','--dev','--listen',new URL(base).host,'--data-dir',data],{cwd:root,stdio:['ignore','pipe','pipe']});let logs='',browser,agent
  core.stdout.on('data',v=>logs+=v);core.stderr.on('data',v=>logs+=v)
  try{
@@ -178,6 +179,34 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   async function menu(name){await toolbar(name).waitFor();await page.waitForFunction(()=>!document.querySelector('.nodedance-elfinder .elfinder-cwd-file-tmp')&&!document.querySelector('.nodedance-elfinder .elfinder-notify:has(.elfinder-notify-msg)'));await toolbar(name).click();try{await finder.locator('.elfinder-button-'+name+'-menu.elfinder-frontmost').waitFor()}catch(error){console.error('Menu debug',await finder.evaluate((el,name)=>({button:el.querySelector('.elfinder-button-icon-'+name)?.parentElement.outerHTML,menus:[...el.querySelectorAll('.elfinder-button-menu')].map(e=>({class:e.className,style:e.getAttribute('style'),bounds:e.getBoundingClientRect().toJSON()}))}),name));throw error}}
   const item=name=>finder.locator('.elfinder-cwd-filename').filter({hasText:new RegExp('^'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$')}).first()
   const inline=finder.locator('.elfinder-cwd-file input:visible,.elfinder-cwd-file textarea:visible')
+  const longItem=item(longName);
+  await longItem.waitFor();
+  assert.equal(await longItem.locator('.ui-path-extension').innerText(),'.tar.gz','Native names retain compound extensions');
+  await longItem.click();await toolbar('info').click();
+  const info=finder.locator('.elfinder-dialog:visible').filter({has:page.locator('.elfinder-info-path')});
+  await info.waitFor();
+  await context.grantPermissions(['clipboard-read','clipboard-write']);
+  await info.getByRole('button',{name:'Copy full path',exact:true}).click();
+  assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'/'+longName,'Info copies exact original full path');
+  for(const theme of ['light','dark'])for(const width of [390,1440]){
+   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);
+   await page.waitForTimeout(200);
+   const infoBounds=await info.boundingBox();assert.ok(infoBounds.x>=0&&infoBounds.x+infoBounds.width<=width+1,'Native information fits the viewport');
+   assert.ok(await info.evaluate(el=>el.scrollWidth<=el.clientWidth+2),'Native information wraps the complete long path inside its dialog');
+   await page.screenshot({path:path.join(artifacts,`file-path-${theme}-${width}.png`),fullPage:true});
+  }
+  await info.locator('.ui-dialog-titlebar-close').click();
+  await page.setViewportSize({width:1440,height:1000});
+  let releaseRefresh, startedRefresh;const refreshHeld=new Promise(resolve=>releaseRefresh=resolve),refreshStarted=new Promise(resolve=>startedRefresh=resolve);
+  const holdRefresh=async route=>{startedRefresh();await refreshHeld;await route.continue()};
+  const refreshPattern=endpoint('files.list')+'?*';
+  await page.route(refreshPattern,holdRefresh);
+  await finder.evaluate(el=>{void window.jQuery(el).elfinder('instance').exec('reload')});await Promise.race([refreshStarted,new Promise((_,reject)=>setTimeout(()=>reject(Error('Refresh did not use the discovered file-list route')),10000))]);
+  await finder.locator('.elfinder-cwd-filename').filter({hasText:'hello.txt'}).first().waitFor({state:'visible'});
+  await page.locator('.ui-load-state[data-phase=refresh]').waitFor();
+  releaseRefresh();await page.unroute(refreshPattern,holdRefresh);
+  await page.getByTestId('file-loading').waitFor({state:'detached'});
+
   await toolbar('mkdir').click();await inline.fill('browser-dir');await inline.press('Enter');await item('browser-dir').waitFor();await eventually(()=>fs.existsSync(path.join(files,'browser-dir')));assert.ok(fs.statSync(path.join(files,'browser-dir')).isDirectory())
   await page.waitForTimeout(250);await menu('mkfile');await finder.getByText('TXT: Plain text',{exact:true}).click();await inline.fill('browser.txt');await inline.press('Enter');await item('browser.txt').waitFor();await eventually(()=>fs.existsSync(path.join(files,'browser.txt')))
   await item('browser.txt').dblclick();const editor=finder.locator('.elfinder-to-editing');await editor.waitFor();await editor.locator('textarea:visible').fill('browser edited fixture');await editor.locator('button').filter({hasText:/^Save$/}).click()

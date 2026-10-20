@@ -34,7 +34,7 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
   const c=card.getBoundingClientRect()
   const rects=[]
   for(const el of [card,...card.querySelectorAll('*')]){
-   if(el.classList.contains('vps-card-ssh-pop'))continue
+   if(el.classList.contains('vps-card-ssh-pop') || el.closest('.ui-copy-result'))continue
    const r=el.getBoundingClientRect()
    if(r.width===0&&r.height===0)continue // zero-area anchors (svg titles) have no geometry
    rects.push([Math.round((r.left-c.left)*2)/2,Math.round((r.top-c.top)*2)/2,Math.round(r.width*2)/2,Math.round(r.height*2)/2])
@@ -90,13 +90,10 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  await dialog.getByRole('button',{name:'Copy SSH',exact:true}).click()
  await page.waitForFunction(()=>window.sshCopiedCommand==='ssh -p 2222 machine_user@2001:db8::1')
  await dialog.waitFor({state:'hidden'});assert.ok(await shortcut.evaluate(el=>el===document.activeElement),'Copying returns the focus to the shortcut')
- await pop.waitFor()
- const copiedText=await pop.innerText()
- assert.ok(copiedText.includes('SSH command copied'),'A confirmed copy surfaces a fresh success bubble, got: '+copiedText)
- await anchor()
- await assertLayoutStable('success bubble visible',beforeLayout)
- await pop.waitFor({state:'detached',timeout:6000})
- await assertLayoutStable('after success bubble hides',beforeLayout)
+ await shortcut.locator('[data-copy-state=success]').waitFor()
+ await assertLayoutStable('inline copy success',beforeLayout)
+ await shortcut.locator('[data-copy-state=idle]').waitFor({timeout:6000})
+ await assertLayoutStable('after inline success resets',beforeLayout)
  assert.equal(await page.locator('.vps-card-ssh-status,.vps-card-status').count(),0,'No persistent SSH feedback or status lines remain under the card')
  // The same overlay behaviour must hold on the narrow 390px layout, where the
  // Copy SSH button shares the card with a second row.
@@ -105,13 +102,10 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  await shortcut.click();await dialog.waitFor()
  assert.ok(await dialog.getByRole('button',{name:'Copy SSH',exact:true}).isEnabled(),'390px keeps the explicit copy confirmation')
  await dialog.getByRole('button',{name:'Copy SSH',exact:true}).click()
- await pop.waitFor()
- const narrowCopied=await pop.innerText()
- assert.ok(narrowCopied.includes('SSH command copied'),'390px re-copy surfaces the transient success bubble, got: '+narrowCopied)
- await anchor()
- await assertLayoutStable('390px success bubble visible',beforeNarrow)
- await pop.waitFor({state:'detached',timeout:6000})
- await assertLayoutStable('390px after bubble hides',beforeNarrow)
+ await shortcut.locator('[data-copy-state=success]').waitFor()
+ await assertLayoutStable('390px inline copy success',beforeNarrow)
+ await shortcut.locator('[data-copy-state=idle]').waitFor({timeout:6000})
+ await assertLayoutStable('390px after inline success resets',beforeNarrow)
  for(const theme of ['light','dark'])for(const width of [390,1440]){
   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   const scrim=page.locator('.navigation-scrim');if(await scrim.isVisible())await scrim.click({position:{x:width-10,y:20}})

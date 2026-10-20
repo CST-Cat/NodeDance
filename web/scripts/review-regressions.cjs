@@ -19,6 +19,8 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  }
  await page.goto(base+'/#/settings')
  await page.locator('.theme-options').waitFor()
+ await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.theme-options .ui-segments-indicator').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');await page.emulateMedia({reducedMotion:'no-preference'})
+ await page.locator('.theme-options button').first().focus();await page.keyboard.press('End');assert.equal(await page.locator('.theme-options').getByRole('button',{name:'Light',exact:true}).getAttribute('aria-pressed'),'true');await page.keyboard.press('ArrowLeft')
  await page.locator('.theme-options').getByRole('button',{name:'Dark',exact:true}).click()
  assert.equal(await page.locator('.theme-options').getByRole('button',{name:'Dark',exact:true}).getAttribute('aria-pressed'),'true')
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark')
@@ -52,6 +54,27 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  releaseValidation();await page.waitForFunction(()=>!document.querySelector('.compose-editor-actions button')?.disabled)
  assert.ok(await editor.locator('.compose-editor-actions button').nth(1).isDisabled(),'Old validation cannot authorize changed contents')
  await page.unroute(validateRoute)
+ const preview=editor.getByRole('button',{name:'Review changes',exact:true})
+ const draft='services: {} # changed\n# <img src=x onerror=alert(1)>'
+ await editor.locator('textarea').fill(draft)
+ const previewWrites=[];const observe=request=>{if(!['GET','HEAD'].includes(request.method()))previewWrites.push(request.url())};page.on('request',observe)
+ await preview.click();const diff=page.locator('.config-diff-dialog[open]');await diff.waitFor()
+ assert.equal(await diff.locator('img').count(),0,'Configuration is escaped, never rendered as HTML')
+ assert.ok((await diff.innerText()).includes('<img src=x onerror=alert(1)>'))
+ assert.ok((await diff.innerText()).includes('services: {} # second'),'The diff uses the loaded version of the selected file')
+ await diff.getByRole('button',{name:'Side by side',exact:true}).click()
+ await layouts('diff')
+ await page.setViewportSize({width:390,height:1000})
+ const splitCells=diff.locator('.diff-split tbody tr').first().locator('td')
+ assert.ok((await splitCells.nth(2).boundingBox()).y>(await splitCells.first().boundingBox()).y,'Narrow comparison stacks before/after')
+ await page.keyboard.press('Escape');await diff.waitFor({state:'detached'})
+ await page.waitForFunction(()=>document.activeElement?.textContent==='Review changes')
+ assert.equal(await editor.locator('textarea').inputValue(),draft,'Review preserves the exact unsaved draft')
+ assert.ok(await editor.locator('.compose-editor-actions button').nth(1).isDisabled(),'Review cannot validate or authorize a save')
+ assert.deepEqual(previewWrites,[],'Review is a browser-local presentation and submits no mutations')
+ page.off('request',observe)
+ await page.setViewportSize({width:1440,height:1000})
+
 
  await page.getByTestId('compose-toolbar').getByRole('button',{name:'New project',exact:true}).click()
  const create=page.locator('.compose-create-form')
@@ -131,6 +154,7 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  const accepted=page.waitForResponse(r=>r.url().endsWith('/discovery/deployments')&&r.request().method()==='POST')
  await page.locator('.hostkey-panel .primary-button').click();assert.equal((await accepted).status(),200)
  await page.locator('[data-testid=deployment-task]').waitFor()
+ await page.locator('[data-testid=deployment-task] .ui-task-progress[data-status=queued]').waitFor();assert.equal(await page.locator('[data-testid=deployment-task] progress').count(),0,'Deployment stages do not invent a denominator')
  let latePolls=0
  const trackPoll=r=>{if(new URL(r.url()).pathname==='/api/v1/discovery/deployments/browser-deployment')latePolls++}
  page.on('request',trackPoll)

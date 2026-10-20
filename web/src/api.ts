@@ -290,7 +290,6 @@ export interface DashboardSettings {
   sortBy: 'custom' | 'name' | 'state'
   nodeGroupBy: 'group' | 'status' | 'none'
   nodeSortBy: 'custom' | 'name' | 'status'
-  featuredLimit: number
   customFields: string[]
 }
 

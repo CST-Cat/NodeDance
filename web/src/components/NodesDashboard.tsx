@@ -1,3 +1,4 @@
+import UiLoadState from "./UiLoadState";
 import { Fragment } from "react";
 import {
   api,
@@ -154,7 +155,6 @@ export default function NodesDashboard(input: Props) {
         sortBy: "custom",
         nodeGroupBy: "status",
         nodeSortBy: "custom",
-        featuredLimit: 4,
         customFields: ["state", "ports", "health"],
       });
       const serverSearch = cell("");
@@ -165,6 +165,7 @@ export default function NodesDashboard(input: Props) {
       const dashboardSettingsMessage = cell("");
       const dashboardSettingsError = cell("");
       const busy = cell(true);
+      const nodesReady = cell(false);
       const error = cell("");
       const elapsed = cell(0);
       const wallClockNow = cell(Date.now());
@@ -467,7 +468,9 @@ export default function NodesDashboard(input: Props) {
       }
       async function refreshNodes() {
         if (disposed) return;
-        const payload = await api.nodes();
+        busy.value = true;
+        let payload;
+        try { payload = await api.nodes(); } finally { if (!disposed) busy.value = false; }
         if (disposed) return;
         const merged = mergeNodeList(payload);
         if (!merged) {
@@ -475,6 +478,7 @@ export default function NodesDashboard(input: Props) {
           return;
         }
         nodes.value = merged;
+        nodesReady.value = true;
         if (
           selectedNodeID.value &&
           !merged.some((node) => node.nodeId === selectedNodeID.value)
@@ -651,23 +655,13 @@ export default function NodesDashboard(input: Props) {
       }
       function openNodeShortcut(payload: {
         node: AgentNode;
-        action: "terminal" | "files" | "manage";
+        action: "terminal";
       }) {
         const node = nodes.value.find(
           (item) => item.nodeId === payload.node.nodeId,
         );
         if (!node) return;
-        if (payload.action === "terminal") {
-          terminalNode.value = node;
-          return;
-        }
-        const section =
-          payload.action === "files"
-            ? "files"
-            : payload.action === "manage"
-              ? "docker"
-              : "overview";
-        openNode(node, section);
+        terminalNode.value = node;
       }
       function acceptNodeDeletion() {
         const nodeID = selectedNodeID.value;
@@ -1194,7 +1188,7 @@ export default function NodesDashboard(input: Props) {
                 </span>
               </header>
               <div className={__classes("overview-layout")} data-v-73fde8e5="">
-                <div className={__classes("overview-main")} data-v-73fde8e5="">
+                <div className={__classes("overview-main ui-load-region")} data-v-73fde8e5="">
                   <div
                     className={__classes("dashboard-overview-controls")}
                     data-v-73fde8e5=""
@@ -1376,25 +1370,7 @@ export default function NodesDashboard(input: Props) {
                           </option>
                         </UiSelect>
                       </label>
-                      <label data-v-73fde8e5="">
-                        {t("m.70006f6c5230")}
-                        <input
-                          type="number"
-                          min="1"
-                          max="20"
-                          {...__input(
-                            dashboardSettings.value.featuredLimit,
-                            (__nextValue: any) => {
-                              dashboardSettings.value.featuredLimit =
-                                __nextValue;
-                            },
-                            "number",
-                            undefined,
-                            ["number"],
-                          )}
-                          data-v-73fde8e5=""
-                        ></input>
-                      </label>
+
                       <button
                         type="button"
                         disabled={dashboardSettingsSaving.value as any}
@@ -1419,14 +1395,8 @@ export default function NodesDashboard(input: Props) {
                         </span>
                       ) : null}
                     </div>
-                    {busy.value && nodes.value.length === 0 ? (
-                      <p
-                        className={__classes("dashboard-empty")}
-                        data-v-73fde8e5=""
-                      >
-                        {t("m.c4608c61f330")}
-                      </p>
-                    ) : nodes.value.length === 0 ? (
+                    <UiLoadState loading={busy.value} ready={nodesReady.value} failed={!!error.value} />
+                    {nodesReady.value && nodes.value.length === 0 ? (
                       <div
                         className={__classes("dashboard-welcome")}
                         data-v-73fde8e5=""
@@ -1528,9 +1498,6 @@ export default function NodesDashboard(input: Props) {
                                           dockerViews.value[node.nodeId],
                                         )
                                       : (!nodeIsOnline(node) as any)
-                                  }
-                                  previewLimit={
-                                    dashboardSettings.value.featuredLimit as any
                                   }
                                   currentTime={wallClockNow.value as any}
                                   tasks={tasksForNode(node.nodeId) as any}

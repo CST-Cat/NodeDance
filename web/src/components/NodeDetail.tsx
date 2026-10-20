@@ -16,7 +16,7 @@ import {
 import { requestConfirm, requestPrompt } from "../dialogs";
 import { display, locale, t } from "../i18n";
 import type { MetricsView } from "../metrics-contract";
-import { nodeNavigationKey, useViewTab } from "../navigation";
+import { nodeNavigationKey, useViewTab, useViewNavigation } from "../navigation";
 import {
   __call,
   __classes,
@@ -76,6 +76,7 @@ export default function NodeDetail(input: Props) {
     (__props: Props, __emit: any, __dom: any) => {
       const props = __props;
       const emit = __emit;
+      const viewNavigation = useViewNavigation();
       // Warm only static UI assets. Opening a node never reads its files.
       let warmup: ReturnType<typeof setTimeout> | undefined;
       afterMount(() => {
@@ -348,7 +349,6 @@ export default function NodeDetail(input: Props) {
       const nodeSortBy = settingsField("nodeSortBy");
       const groupBy = settingsField("groupBy");
       const sortBy = settingsField("sortBy");
-      const featuredLimit = settingsField("featuredLimit");
       const customFields = derived({
         get: () => props.dashboardSettings.customFields,
         set: (value: string[]) =>
@@ -912,7 +912,9 @@ export default function NodeDetail(input: Props) {
           targetLabel: `${nodeTitle.value} · ${record.container.name || record.container.id.slice(0, 12)}`,
         };
       }
+      let historyEpoch = 0;
       async function loadHistory() {
+        const current = ++historyEpoch, nodeId = props.node.nodeId;
         historyLoading.value = true;
         historyError.value = "";
         const durations = {
@@ -923,18 +925,20 @@ export default function NodeDetail(input: Props) {
           "1y": 8760,
         };
         try {
-          historyView.value = await api.nodeHistory(
+          const result = await api.nodeHistory(
             props.node.nodeId,
             historyResolution.value,
             new Date(Date.now() - durations[historyRange.value] * 3_600_000),
             new Date(),
           );
+          if (current !== historyEpoch || nodeId !== props.node.nodeId) return;
+          historyView.value = result;
         } catch (reason) {
-          historyView.value = null;
+          if (current !== historyEpoch || nodeId !== props.node.nodeId) return;
           historyError.value =
             reason instanceof Error ? reason.message : t("m.7b26031b0a1a");
         } finally {
-          historyLoading.value = false;
+          if (current === historyEpoch && nodeId === props.node.nodeId) historyLoading.value = false;
         }
       }
       function selectSection(section: typeof activeSection.value) {
@@ -1011,6 +1015,7 @@ export default function NodeDetail(input: Props) {
       );
       beforeDispose(() => {
         probeSummaryEpoch++;
+        historyEpoch++;
       });
       return () => (
         <>
@@ -2262,6 +2267,8 @@ export default function NodeDetail(input: Props) {
                 key={__props.node.nodeId as any}
                 nodeId={__props.node.nodeId as any}
                 nodeName={__props.node.displayName as any}
+                path={viewNavigation.route.value.filePath}
+                onPathChange={(path: string) => viewNavigation.go({ ...viewNavigation.route.value, filePath: path })}
                 data-v-98aa91ae=""
               ></NodeFiles>
             ) : null}
@@ -2646,24 +2653,7 @@ export default function NodeDetail(input: Props) {
                         </option>
                       </UiSelect>
                     </label>
-                    <label data-v-98aa91ae="">
-                      {t("m.70006f6c5230")}
-                      <input
-                        type="number"
-                        min="1"
-                        max="20"
-                        {...__input(
-                          featuredLimit.value,
-                          (__nextValue: any) => {
-                            featuredLimit.value = __nextValue;
-                          },
-                          "number",
-                          undefined,
-                          ["number"],
-                        )}
-                        data-v-98aa91ae=""
-                      ></input>
-                    </label>
+
                   </div>
                   <fieldset
                     className={__classes("custom-fields")}

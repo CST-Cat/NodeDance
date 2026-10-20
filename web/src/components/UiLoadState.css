@@ -1,0 +1,11 @@
+.ui-load-region { position: relative; min-width: 0; }
+.ui-load-state { color: var(--muted-strong); font-size: 12px; }
+.ui-load-state[data-phase="initial"] { min-height: 120px; padding: 12px 0; }
+.ui-load-state[data-phase="refresh"] { position: absolute; inset: 4px 4px auto auto; z-index: 2; padding: 2px 6px; border-radius: var(--radius-control); background: var(--surface-raised); pointer-events: none; }
+.ui-load-placeholder { display: grid; gap: 12px; margin-top: 16px; }
+.ui-load-placeholder i { display: block; height: 16px; width: 100%; border-radius: 4px; background: var(--line); }
+.ui-load-placeholder i:nth-child(2) { width: 72%; }
+.ui-load-placeholder i:nth-child(3) { width: 88%; }
+
+.file-load-feedback { position: absolute; inset: 0 0 auto; z-index: 3; pointer-events: none; }
+.file-load-feedback .ui-load-state[data-phase="initial"] { padding: 16px; background: var(--surface); }

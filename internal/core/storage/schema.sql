@@ -180,13 +180,12 @@ CREATE TABLE IF NOT EXISTS dashboard_settings (
 	sort_by TEXT NOT NULL CHECK (sort_by IN ('custom', 'name', 'state')),
 	node_group_by TEXT NOT NULL DEFAULT 'status' CHECK (node_group_by IN ('group', 'status', 'none')),
 	node_sort_by TEXT NOT NULL DEFAULT 'custom' CHECK (node_sort_by IN ('custom', 'name', 'status')),
-	featured_limit INTEGER NOT NULL CHECK (featured_limit BETWEEN 1 AND 20),
 	custom_fields_json TEXT NOT NULL,
 	updated_at INTEGER NOT NULL
 );
 
-INSERT OR IGNORE INTO dashboard_settings(id, view_mode, group_by, sort_by, node_group_by, node_sort_by, featured_limit, custom_fields_json, updated_at)
-	VALUES(1, 'monitor', 'node', 'custom', 'status', 'custom', 4, '["state","ports","health"]', 0);
+INSERT OR IGNORE INTO dashboard_settings(id, view_mode, group_by, sort_by, node_group_by, node_sort_by, custom_fields_json, updated_at)
+	VALUES(1, 'monitor', 'node', 'custom', 'status', 'custom', '["state","ports","health"]', 0);
 
 CREATE TABLE IF NOT EXISTS metrics_fine (
 	node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,

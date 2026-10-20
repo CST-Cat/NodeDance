@@ -1,0 +1,10 @@
+.ui-path { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; vertical-align: middle; }
+.ui-path-name { display: inline-flex; min-width: 0; max-width: 100%; vertical-align: bottom; }
+.ui-path-stem, .ui-path-parent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ui-path-parent { flex: 0 4 auto; max-width: 45%; }
+.ui-path-extension { flex: none; white-space: nowrap; }
+.app-shell[data-theme] .ui-path-value { display: inline-flex; min-width: 0; min-height: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; }
+.app-shell[data-theme] .ui-path-copy, .ui-path-copy { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 28px; padding: 3px; border: 0; background: transparent; color: var(--muted-strong); border-radius: var(--radius-control); }
+.ui-path-copy svg { width: 16px; height: 16px; }
+.ui-path-full { white-space: pre-wrap; overflow-wrap: anywhere; font: 13px/1.5 var(--figma-font-mono), monospace; user-select: text; }
+.ui-path :is(button:focus-visible) { outline: 1.5px solid var(--focus); outline-offset: 2px; }

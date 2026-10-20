@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { pathDisplay, fileNameMarkup } from '../src/path-display.ts';
+assert.deepEqual(pathDisplay('/var/long/file.tar.gz'),{parent:'/var/long/',stem:'file',extension:'.tar.gz'});
+assert.equal(pathDisplay('.env').extension,'');
+assert.equal(pathDisplay('folder.name',true).extension,'');
+assert.equal(pathDisplay('组件.d.ts').extension,'.d.ts');
+assert.equal(pathDisplay('/a/文件.png').stem,'文件');
+assert.equal(pathDisplay('/a/').parent,'/a/');
+assert.ok(!fileNameMarkup('<img src=x onerror="bad">.txt').includes('<img'));
+assert.ok(fileNameMarkup('a&b.txt').includes('a&amp;b'));
+console.log('Path display: compound suffix, dotfiles, directories, Unicode and escaped native templates passed.');

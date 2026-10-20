@@ -1,3 +1,5 @@
+import { clipboardFeedback } from "../clipboard";
+import UiCopyFeedback from "./UiCopyFeedback";
 import type {
   AgentNode,
   ContainerTask,
@@ -9,14 +11,18 @@ import type {
 } from "../api";
 import { display, locale, t } from "../i18n";
 import type { MetricsView } from "../metrics-contract";
-import { afterRender, beforeDispose, cell, derived, watchState } from "../state";
+import { afterRender, beforeDispose, cell, derived, watchState, lazyView } from "../state";
 import VpsTelemetry from "./VpsTelemetry";
+import UiDialog from "./UiDialog";
 import OsLogo from "./OsLogo";
 
 import { Fragment } from "react";
 import { requestChoice } from "../dialogs";
 import { __call, __classes, __each, __style, useController } from "../state";
 import "./VpsCard.css";
+const loadNodeFiles = () => import("./NodeFiles");
+const NodeFiles = lazyView(loadNodeFiles);
+
 type Props = {
   node: AgentNode;
   inspected?: boolean;
@@ -32,7 +38,6 @@ type Props = {
   online: boolean;
   pending: boolean;
   dockerStale: boolean;
-  previewLimit: number;
   currentTime: number;
   tasks: ContainerTask[];
   taskSubmitting: Record<string, boolean>;
@@ -41,7 +46,29 @@ type Props = {
 export default function VpsCard(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
-      const dockerExpanded = cell(false);
+      const filesDialogOpen = cell(false);
+      const filesPath = cell("/");
+      const filesButton = cell<HTMLButtonElement>();
+      async function closeFiles() {
+        filesDialogOpen.value = false;
+        await afterRender();
+        filesButton.value?.focus({ preventScroll: true });
+      }
+      const dockerDialogOpen = cell(false);
+      const dockerDetailsButton = cell<HTMLButtonElement>();
+      async function openDockerDetails() {
+        dockerDialogOpen.value = true;
+        await afterRender();
+        // Focus the dialog's close affordance (shared header X).
+        document
+          .querySelector<HTMLButtonElement>(".vps-docker-dialog .ui-dialog-close")
+          ?.focus({ preventScroll: true });
+      }
+      async function closeDockerDetails() {
+        dockerDialogOpen.value = false;
+        await afterRender();
+        dockerDetailsButton.value?.focus({ preventScroll: true });
+      }
       const props = __props;
       const emit = __emit;
       const title = derived(
@@ -76,13 +103,11 @@ export default function VpsCard(input: Props) {
           return "";
         return `ssh -p ${port} ${user}@${host}`;
       });
-      // SSH copy feedback is a small transient popover anchored above the
-      // Copy SSH button; it never leaves persistent text inside the card and
-      // every bubble (including detection) dismisses itself. A later result
-      // surfaces as a fresh brief bubble. It is a pure floating overlay: it
-      // occupies no layout space and never shifts the card or its controls.
+      // Discovery/unavailable messages retain their existing anchored hint;
+      // completed copies use the shared inline feedback.
+      const copied = clipboardFeedback();
       const sshFeedback = cell("");
-      const sshFeedbackKind = cell<"info" | "success" | "error">("info");
+      const sshFeedbackKind = cell<"info" | "error">("info");
       const sshFeedbackStyle = cell<Record<string, string>>({});
       const shortcutRow = cell<HTMLElement>();
       const sshShortcutButton = cell<HTMLButtonElement>();
@@ -100,7 +125,7 @@ export default function VpsCard(input: Props) {
       }
       async function showSshFeedback(
         message: string,
-        kind: "info" | "success" | "error" = "info",
+        kind: "info" | "error" = "info",
       ) {
         sshFeedback.value = message;
         sshFeedbackKind.value = kind;
@@ -161,9 +186,7 @@ export default function VpsCard(input: Props) {
         },
       );
       const displayContainers = derived(() => {
-        const containers = (props.inventory?.containers ?? []).filter(
-          (record) => preferenceFor(record)?.visible !== false,
-        );
+        const containers = [...(props.inventory?.containers ?? [])];
         containers.sort((left, right) => {
           const leftPreference = preferenceFor(left);
           const rightPreference = preferenceFor(right);
@@ -183,10 +206,7 @@ export default function VpsCard(input: Props) {
             locale.value,
           );
         });
-        return containers.slice(
-          0,
-          Math.max(1, Math.min(20, props.previewLimit)),
-        );
+        return containers;
       });
       function preferenceFor(
         record: DockerContainerRecord,
@@ -523,6 +543,7 @@ export default function VpsCard(input: Props) {
         return sshAccountChoices().filter((account) => account.command);
       }
       async function copySSHCommand() {
+        copied.reset();
         // Every copy is confirmed inside the shared account dialog, with one
         // or several accounts alike: the button click itself never copies,
         // and Cancel or Escape keep the clipboard untouched.
@@ -576,26 +597,10 @@ export default function VpsCard(input: Props) {
           await showSshFeedback(t("ssh.unavailable"), "error");
           return;
         }
-        try {
-          if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(command);
-          } else {
-            const input = document.createElement("textarea");
-            input.value = command;
-            input.setAttribute("readonly", "");
-            input.style.position = "fixed";
-            input.style.opacity = "0";
-            document.body.append(input);
-            input.select();
-            const copied = document.execCommand("copy");
-            input.remove();
-            if (!copied) throw new Error("clipboard unavailable");
-          }
-          void showSshFeedback(t("m.ef8956febccf"), "success");
-        } catch {
-          void showSshFeedback(t("ssh.copyFailed"), "error");
-        }
+        hideSshFeedback();
+        await copied.copy(command);
       }
+
       function inspectCard(event: MouseEvent) {
         if (
           (event.target as HTMLElement).closest(
@@ -678,26 +683,92 @@ export default function VpsCard(input: Props) {
               currentTime={__props.currentTime as any}
               data-v-31185faa=""
             ></VpsTelemetry>
-            <button
-              type="button"
-              aria-expanded={dockerExpanded.value as any}
-              aria-controls={`docker-${__props.node.nodeId}` as any}
-              className={__classes("docker-toggle")}
-              onClick={(event: any) => {
-                dockerExpanded.value = !dockerExpanded.value;
-              }}
+            <nav
+              aria-label={
+                t("m.c820131d2266", {
+                  "0": title.value,
+                }) as any
+              }
+              className={__classes("vps-card-shortcuts")}
+              ref={__dom(shortcutRow)}
               data-v-31185faa=""
             >
-              {t(
-                dockerExpanded.value
-                  ? "dashboard.hideDocker"
-                  : "dashboard.showDocker",
-              )}{" "}
-              <span aria-hidden="true" data-v-31185faa="">
-                {dockerExpanded.value ? "−" : "+"}
-              </span>
-            </button>
-            {dockerExpanded.value ? (
+              <button
+                type="button"
+                disabled={!__props.online as any}
+                onClick={(event: any) => {
+                  emit("quickAction", {
+                    node: __props.node,
+                    action: "terminal",
+                  });
+                }}
+                data-v-31185faa=""
+              >
+                {t("m.e2a76ef1f12e")}
+              </button>
+              <button
+                type="button"
+                disabled={!__props.online as any}
+                ref={__dom(filesButton)}
+                aria-haspopup="dialog"
+                data-testid="node-files-shortcut"
+                onPointerEnter={() => { void loadNodeFiles().then(module => module.preloadFileManager()).catch(() => {}); }}
+                onFocus={() => { void loadNodeFiles().then(module => module.preloadFileManager()).catch(() => {}); }}
+                onClick={() => { filesDialogOpen.value = true; }}
+                data-v-31185faa=""
+              >
+                {t("m.39932f24fe11")}
+              </button>
+              <button
+                type="button"
+                data-testid="node-ssh-shortcut"
+                aria-label={t("m.12d40d9f555d")}
+                ref={__dom(sshShortcutButton)}
+                title={sshCommand.value || (t("ssh.automatic") as any)}
+                onClick={(event: any) => {
+                  void copySSHCommand();
+                }}
+                data-v-31185faa=""
+              >
+                <UiCopyFeedback state={copied.state.value}>{t("m.12d40d9f555d")}</UiCopyFeedback>
+              </button>
+              <button
+                type="button"
+                aria-haspopup="dialog"
+                data-testid="node-docker-details"
+                ref={__dom(dockerDetailsButton)}
+                onClick={(event: any) => {
+                  void openDockerDetails();
+                }}
+                data-v-31185faa=""
+              >
+                {t("m.eee901e4cc16")}
+              </button>
+              {sshFeedback.value ? (
+                <span
+                  role="status"
+                  ref={__dom(sshFeedbackBubble)}
+                  data-kind={sshFeedbackKind.value as any}
+                  className={__classes("vps-card-ssh-pop")}
+                  style={__style(sshFeedbackStyle.value) as any}
+                  data-v-31185faa=""
+                >
+                  {display(sshFeedback.value)}
+                </span>
+              ) : null}
+            </nav>
+          </article>
+          {filesDialogOpen.value ? <UiDialog open
+            title={`${t("m.39932f24fe11")} · ${title.value}`}
+            className="ui-dialog-wide vps-files-dialog"
+            onClose={() => { void closeFiles(); }}>
+            <NodeFiles nodeId={props.node.nodeId} nodeName={title.value} path={filesPath.value}
+              onPathChange={(path: string) => { filesPath.value = path; }} />
+          </UiDialog> : null}
+          {dockerDialogOpen.value ? <UiDialog open
+            title={`${t("m.eee901e4cc16")} · ${title.value}`}
+            className="ui-dialog-wide vps-docker-dialog"
+            onClose={() => { void closeDockerDetails(); }}>
               <section
                 id={`docker-${__props.node.nodeId}` as any}
                 data-available={
@@ -742,12 +813,6 @@ export default function VpsCard(input: Props) {
                     {__props.dockerStale
                       ? t("m.ff2c9544c1dc")
                       : t("m.20165da39974")}
-                  </p>
-                ) : __props.inventory &&
-                  __props.inventory.containers.length > 0 &&
-                  displayContainers.value.length === 0 ? (
-                  <p className={__classes("vps-card-empty")} data-v-31185faa="">
-                    {t("m.1cab1d9e5d00")}
                   </p>
                 ) : __props.inventory && displayContainers.value.length > 0 ? (
                   <div
@@ -918,20 +983,6 @@ export default function VpsCard(input: Props) {
                         </article>
                       ))}
                     </Fragment>
-                    {__props.inventory.containers.filter(
-                      (record) => preferenceFor(record)?.visible !== false,
-                    ).length > displayContainers.value.length ? (
-                      <p
-                        className={__classes("vps-card-more")}
-                        data-v-31185faa=""
-                      >
-                        {t("m.268ec6902063")}
-                        {__props.inventory.containers.filter(
-                          (record) => preferenceFor(record)?.visible !== false,
-                        ).length - displayContainers.value.length}
-                        {t("m.6a5b6795ed27")}
-                      </p>
-                    ) : null}
                     {__props.dockerStale ? (
                       <p
                         className={__classes("vps-card-stale")}
@@ -943,81 +994,7 @@ export default function VpsCard(input: Props) {
                   </div>
                 ) : null}
               </section>
-            ) : null}
-            <nav
-              aria-label={
-                t("m.c820131d2266", {
-                  "0": title.value,
-                }) as any
-              }
-              className={__classes("vps-card-shortcuts")}
-              ref={__dom(shortcutRow)}
-              data-v-31185faa=""
-            >
-              <button
-                type="button"
-                disabled={!__props.online as any}
-                onClick={(event: any) => {
-                  emit("quickAction", {
-                    node: __props.node,
-                    action: "terminal",
-                  });
-                }}
-                data-v-31185faa=""
-              >
-                {t("m.e2a76ef1f12e")}
-              </button>
-              <button
-                type="button"
-                disabled={!__props.online as any}
-                onClick={(event: any) => {
-                  emit("quickAction", {
-                    node: __props.node,
-                    action: "files",
-                  });
-                }}
-                data-v-31185faa=""
-              >
-                {t("m.39932f24fe11")}
-              </button>
-              <button
-                type="button"
-                data-testid="node-ssh-shortcut"
-                ref={__dom(sshShortcutButton)}
-                title={sshCommand.value || (t("ssh.automatic") as any)}
-                onClick={(event: any) => {
-                  void copySSHCommand();
-                }}
-                data-v-31185faa=""
-              >
-                {t("m.12d40d9f555d")}
-              </button>
-              <button
-                type="button"
-                onClick={(event: any) => {
-                  emit("quickAction", {
-                    node: __props.node,
-                    action: "manage",
-                  });
-                }}
-                data-v-31185faa=""
-              >
-                {t("m.bb6d995724f4")}
-              </button>
-              {sshFeedback.value ? (
-                <span
-                  role="status"
-                  ref={__dom(sshFeedbackBubble)}
-                  data-kind={sshFeedbackKind.value as any}
-                  className={__classes("vps-card-ssh-pop")}
-                  style={__style(sshFeedbackStyle.value) as any}
-                  data-v-31185faa=""
-                >
-                  {display(sshFeedback.value)}
-                </span>
-              ) : null}
-            </nav>
-          </article>
+          </UiDialog> : null}
         </>
       );
     },
@@ -1037,7 +1014,6 @@ export default function VpsCard(input: Props) {
       "online",
       "pending",
       "dockerStale",
-      "previewLimit",
       "currentTime",
       "tasks",
       "taskSubmitting",

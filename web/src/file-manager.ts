@@ -19,6 +19,7 @@ export interface FileObservation {
 export async function createFileManager(
   nodeId: string,
   changed: (items: FileObservation[]) => void,
+  activity?: (active: boolean) => void,
 ) {
   const catalog = await operationCatalog(),
     controller = new AbortController(),
@@ -57,12 +58,14 @@ export async function createFileManager(
   // slots so browsing cannot occupy every Core file-transfer slot.
   const pendingReads = new Map<string, Promise<unknown>>();
   const directories = new Map<string, { file: FinderFile; at: number }>();
-  let reading = 0;
+  let reading = 0, pendingCount = 0;
   const waiting: (() => void)[] = [];
   const read = <T>(name: string, query: Record<string, string>, other?: AbortSignal): Promise<T> => {
     active();
     const key = JSON.stringify([name, Object.entries(query).sort()]);
     if (!other && pendingReads.has(key)) return pendingReads.get(key) as Promise<T>;
+    pendingCount++;
+    activity?.(true);
     const task = (async () => {
       if (reading >= 2) await new Promise<void>(resolve => waiting.push(resolve));
       else reading++;
@@ -70,6 +73,7 @@ export async function createFileManager(
         signal(other).throwIfAborted();
         return await operationRequest<T>(name, { params, query }, { signal: signal(other) });
       } finally {
+        activity?.(--pendingCount > 0);
         const next = waiting.shift();
         if (next) next();
         else reading--;

@@ -1,5 +1,6 @@
 import { api, operationRequest } from "../api";
-import { requestConfirm } from "../dialogs";
+import { clipboardFeedback } from "../clipboard";
+import UiCopyFeedback from "./UiCopyFeedback";
 import { display, t } from "../i18n";
 import { resolveOperation, type BodySchema } from "../operations";
 import { afterMount, cell, derived, watchState } from "../state";
@@ -14,6 +15,7 @@ type Props = {
 export default function AgentEnrollment(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
+      const copied = clipboardFeedback();
       const asset = cell<Record<string, unknown>>({});
       const assetSchema = cell<BodySchema>();
       const assetReady = cell(false);
@@ -22,7 +24,6 @@ export default function AgentEnrollment(input: Props) {
       const displayName = cell("");
       const creating = cell(false);
       const error = cell("");
-      const notice = cell("");
       const agentServer = cell(window.location.origin);
       const development = window.location.protocol === "http:";
       const agentOrigin = derived(() => {
@@ -93,14 +94,15 @@ export default function AgentEnrollment(input: Props) {
           ? dockerInstallCommand.value
           : installCommand.value,
       );
+      watchState(deploymentMethod, () => copied.reset());
       let requestEpoch = 0;
       watchState(
         [displayName, agentServer, asset],
         () => {
           requestEpoch++;
+          copied.reset();
           installCommand.value = "";
           dockerInstallCommand.value = "";
-          notice.value = "";
         },
         {
           deep: true,
@@ -108,7 +110,6 @@ export default function AgentEnrollment(input: Props) {
       );
       async function generateEnrollment() {
         error.value = "";
-        notice.value = "";
         installCommand.value = "";
         dockerInstallCommand.value = "";
         const name = displayName.value.trim();
@@ -142,22 +143,8 @@ export default function AgentEnrollment(input: Props) {
           if (current !== requestEpoch) return;
           installCommand.value = result.nativeInstallCommand;
           dockerInstallCommand.value = result.dockerInstallCommand;
-          let copied = false;
-          try {
-            await navigator.clipboard.writeText(selectedCommand(result));
-            copied = true;
-          } catch {
-            copied = false;
-          }
-          if (copied) {
-            await requestConfirm(t("m.9d2f65ed4a17"));
-          } else {
-            notice.value = props.nodeId
-              ? t("node.enrollmentRenewed")
-              : t("m.d04e8d433a67", {
-                  "0": result.displayName,
-                });
-          }
+          await copied.copy(selectedCommand(result));
+
         } catch (reason) {
           if (current === requestEpoch)
             error.value =
@@ -175,18 +162,6 @@ export default function AgentEnrollment(input: Props) {
         return deploymentMethod.value === "docker"
           ? result.dockerInstallCommand
           : result.nativeInstallCommand;
-      }
-      async function copyText(value: string, label: string) {
-        error.value = "";
-        notice.value = "";
-        try {
-          await navigator.clipboard.writeText(value);
-          notice.value = t("m.e3852e382b5b", {
-            "0": label,
-          });
-        } catch {
-          error.value = t("m.e00feb7956c7");
-        }
       }
       function isLiteralLoopback(hostname: string): boolean {
         const host = hostname.replace(/^\[|\]$/g, "");
@@ -382,15 +357,7 @@ export default function AgentEnrollment(input: Props) {
                     {display(error.value)}
                   </p>
                 ) : null}
-                {notice.value ? (
-                  <p
-                    role="status"
-                    className={__classes("alert alert-success")}
-                    data-v-2709b2e0=""
-                  >
-                    {display(notice.value)}
-                  </p>
-                ) : null}
+
                 <div
                   className={__classes("agent-enrollment-actions")}
                   data-v-2709b2e0=""
@@ -399,15 +366,13 @@ export default function AgentEnrollment(input: Props) {
                     <button
                       type="button"
                       className={__classes("secondary-button")}
+                      aria-label={t("m.fe95745d1ef4")}
                       onClick={(event: any) => {
-                        copyText(
-                          selectedInstallCommand.value,
-                          t("m.bdf7d59b3dc2"),
-                        );
+                        void copied.copy(selectedInstallCommand.value);
                       }}
                       data-v-2709b2e0=""
                     >
-                      {t("m.fe95745d1ef4")}
+                      <UiCopyFeedback state={copied.state.value}>{t("m.fe95745d1ef4")}</UiCopyFeedback>
                     </button>
                   ) : null}
                   <button
@@ -432,15 +397,7 @@ export default function AgentEnrollment(input: Props) {
                         : t("m.92840286f8cd")}
                   </button>
                 </div>
-                {selectedInstallCommand.value ? (
-                  <p
-                    role="status"
-                    className={__classes("alert alert-success")}
-                    data-v-2709b2e0=""
-                  >
-                    {t("m.9d2f65ed4a17")}
-                  </p>
-                ) : null}
+
               </div>
             </section>
           </main>

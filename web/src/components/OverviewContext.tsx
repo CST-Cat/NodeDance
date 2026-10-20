@@ -1,3 +1,5 @@
+import { clipboardFeedback } from "../clipboard";
+import UiCopyFeedback from "./UiCopyFeedback";
 import { ApiError, api, operationRequest, type AgentNode } from "../api";
 import { display, locale, t } from "../i18n";
 import type { MetricsView } from "../metrics-contract";
@@ -118,8 +120,8 @@ type Props = {
         saving = cell(false),
         memoError = cell(""),
         conflict = cell(false);
-      const copyStatus = cell(""),
-        refreshError = cell("");
+      const copied = clipboardFeedback();
+      const refreshError = cell("");
       const settingsDialog = cell<HTMLDialogElement>(),
         settingsButton = cell<HTMLButtonElement>(),
         memoInput = cell<HTMLTextAreaElement>();
@@ -149,7 +151,7 @@ type Props = {
         if (refreshBusy.value || coreBusy.value) return;
         refreshBusy.value = true;
         refreshError.value = "";
-        copyStatus.value = "";
+        copied.reset();
         const id = props.node?.nodeId;
         try {
           if (id) emit("metrics", await api.nodeMetrics(id));
@@ -286,38 +288,9 @@ type Props = {
           title.value,
           ...rows.value.map((row) => `${row.label}: ${row.value}`),
         ].join("\n");
-        copyStatus.value = "";
-        try {
-          let copied = false;
-          if (navigator.clipboard) {
-            try {
-              await navigator.clipboard.writeText(text);
-              copied = true;
-            } catch {}
-          }
-          if (!copied) {
-            const active = document.activeElement as HTMLElement | null,
-              input = document.createElement("textarea");
-            input.value = text;
-            input.style.cssText = "position:fixed;left:-9999px;top:0";
-            document.body.append(input);
-            try {
-              input.select();
-              copied = document.execCommand("copy");
-            } finally {
-              input.remove();
-              active?.focus({
-                preventScroll: true,
-              });
-            }
-          }
-          copyStatus.value = t(
-            copied ? "overview.copied" : "overview.copyFailed",
-          );
-        } catch {
-          copyStatus.value = t("overview.copyFailed");
-        }
+        await copied.copy(text);
       }
+
       function openSettings() {
         settingsDialog.value?.showModal();
       }
@@ -330,7 +303,7 @@ type Props = {
       watchState(
         () => props.node?.nodeId,
         () => {
-          copyStatus.value = "";
+          copied.reset();
           refreshError.value = "";
         },
       );
@@ -361,7 +334,7 @@ type Props = {
               data-v-2aa82488=""
             >
               <header
-                className={__classes("context-heading")}
+                className={__classes("context-heading ui-responsive-header")}
                 data-v-2aa82488=""
               >
                 <button
@@ -426,7 +399,7 @@ type Props = {
                     className={__classes("touch-target")}
                     onClick={(event: any) => {
                       sensitiveHidden.value = !sensitiveHidden.value;
-                      copyStatus.value = "";
+                      copied.reset();
                     }}
                     data-v-2aa82488=""
                   >
@@ -450,7 +423,7 @@ type Props = {
                     }}
                     data-v-2aa82488=""
                   >
-                    <UiIcon name="copy" data-v-2aa82488=""></UiIcon>
+                    <UiCopyFeedback state={copied.state.value}><UiIcon name="copy" data-v-2aa82488="" /></UiCopyFeedback>
                   </button>
                 </div>
               </header>
@@ -494,15 +467,7 @@ type Props = {
                     {display(refreshError.value || coreError.value)}
                   </p>
                 ) : null}
-                {copyStatus.value ? (
-                  <p
-                    role="status"
-                    className={__classes("context-note copy-status")}
-                    data-v-2aa82488=""
-                  >
-                    {copyStatus.value}
-                  </p>
-                ) : null}
+
               </div>
             </section>
             <section
@@ -515,7 +480,7 @@ type Props = {
               data-v-2aa82488=""
             >
               <header
-                className={__classes("context-heading")}
+                className={__classes("context-heading ui-responsive-header")}
                 data-v-2aa82488=""
               >
                 <h2 data-v-2aa82488="">{t("overview.memo")}</h2>

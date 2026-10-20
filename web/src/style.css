@@ -15,7 +15,7 @@
   --canvas: var(--figma-background-tertiary);
   --recessed: var(--sidebar-bg);
   --surface: var(--figma-background-primary);
-  --surface-raised: var(--figma-background-primary);
+  --surface-raised: var(--surface);
   --surface-soft: var(--figma-background-tertiary);
   --text: var(--figma-text-primary);
   --ink: var(--figma-text-primary);
@@ -60,6 +60,17 @@
   --button-hover: #131313;
   --surface-hover: #e7e6e1;
   --overlay-shadow: 0 8px 24px #1414131a;
+  /* Floating-surface contract. Translucent borders fade on rounded corners
+     (the arc reads as "eaten away"), so every floating surface — dialogs,
+     native dialogs inside the file finder, the finder container itself —
+     consumes the same opaque edge, rim and layered shadow. Surfaces only
+     consume these three tokens; no per-component shadow stacks. */
+  --overlay-edge: #b9b6ae;
+  --overlay-rim: rgba(20, 20, 19, 0.08);
+  --overlay-lift: 0 0 0 1px var(--overlay-rim), 0 1px 2px rgba(20, 20, 19, 0.14),
+    var(--overlay-shadow);
+  --scrollbar-thumb: #c9c6bd;
+  --scrollbar-thumb-idle: #dedcd4;
   /* Motion curves shared with the Open Claude UI preset kit; defined at the
      root so controls outside the .ux block (press feedback, stream jump)
      resolve them. */
@@ -82,6 +93,12 @@
   --button-hover: #f9f9f7;
   --surface-hover: #0b0b0b;
   --overlay-shadow: 0 8px 24px #00000040;
+  --overlay-edge: #565046;
+  --overlay-rim: rgba(0, 0, 0, 0.5);
+  --overlay-lift: 0 0 0 1px var(--overlay-rim), 0 1px 2px rgba(0, 0, 0, 0.45),
+    var(--overlay-shadow);
+  --scrollbar-thumb: #4a453c;
+  --scrollbar-thumb-idle: #35322c;
   color-scheme: dark;
 }
 
@@ -687,33 +704,7 @@ summary:focus-visible {
 .profile-name-field {
   max-width: 390px;
 }
-.theme-options {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  width: min(100%, 340px);
-  gap: var(--settings-space-2);
-}
-.theme-option {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  gap: var(--settings-space-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  padding: 6px 9px;
-  color: var(--muted-strong);
-  background: var(--surface-soft);
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
-}
-.theme-option.selected {
-  border-color: var(--accent-line);
-  color: var(--text);
-  background: var(--line);
-  box-shadow: none;
-}
+.theme-options { width: min(100%, 340px); }
 .theme-swatch {
   display: grid;
   flex-shrink: 0;
@@ -1065,7 +1056,7 @@ summary:focus-visible {
     padding-inline: 8px;
     font-size: 12px;
   }
-  .theme-option {
+  .theme-options.ui-segments button {
     gap: 4px;
     padding-inline: 4px;
   }
@@ -1269,14 +1260,48 @@ summary:focus-visible {
   width: 36px;
   height: 36px;
   border: 1px solid transparent;
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-control);
   color: var(--muted);
   background: transparent;
   cursor: pointer;
 }
-.navigation-toggle:hover {
-  border-color: var(--line);
-  background: var(--surface);
+/* Burger → X morph. Three bars rotate/translate into a cross while the
+   middle bar fades; 0.2s on the shared overlay easing. */
+.nav-burger {
+  display: grid;
+  gap: 5px;
+  width: 18px;
+}
+.nav-burger i {
+  display: block;
+  height: 1.6px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  transition:
+    transform 0.2s var(--ux-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+    opacity 0.15s ease;
+}
+.nav-burger.is-open i:nth-child(1) {
+  transform: translateY(6.6px) rotate(45deg);
+}
+.nav-burger.is-open i:nth-child(2) {
+  opacity: 0;
+}
+.nav-burger.is-open i:nth-child(3) {
+  transform: translateY(-6.6px) rotate(-45deg);
+}
+.app-shell .navigation-toggle:hover {
+  color: var(--text);
+  background: transparent;
+  border-color: transparent;
+}
+/* Tap/keyboard focus draws no box around the burger; the morphing icon is
+   the state indicator, and a box would read as a misdrawn frame. */
+.app-shell .navigation-toggle:focus-visible {
+  outline: none;
+}
+.app-shell .navigation-toggle:focus-visible .nav-burger i {
+  background: var(--accent);
 }
 .workspace-breadcrumb {
   display: flex;
@@ -1360,11 +1385,7 @@ summary:focus-visible {
   background: var(--accent-soft);
   border-color: var(--accent-line);
 }
-.theme-option.selected {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
-}
+
 .dark-swatch {
   background: #262624;
 }
@@ -1457,12 +1478,10 @@ textarea {
   .app-shell[data-authenticated="true"] {
     padding: 0 24px 32px;
   }
-  .workspace-sidebar {
-    transform: translateX(-100%);
-    transition: transform 0.2s ease;
-  }
-  .workspace-sidebar.is-open {
-    transform: translateX(0);
+  /* The toggle must sit above the scrim so the burger's X stays clickable
+     while the menu is open. */
+  .topbar {
+    z-index: 21;
   }
   .navigation-toggle {
     display: grid;
@@ -1739,12 +1758,6 @@ textarea {
 .workspace-account {
   padding-top: 20px;
 }
-@media (max-width: 900px) {
-  .workspace-sidebar {
-    width: min(var(--sidebar-width, 240px), calc(100vw - 48px));
-  }
-}
-
 /* The node workspace uses the same sidebar width, collapse and mobile drawer. */
 .sidebar-context {
   min-width: 0;
@@ -1916,7 +1929,38 @@ textarea {
   color: var(--text);
 }
 .app-shell {
-  scrollbar-color: var(--line-strong) var(--canvas);
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+/* Global scrollbar contract: a slim rounded thumb on a transparent track,
+   faded until the surface is hovered or scrolled so it never competes with
+   content. Firefox uses the custom-property form; Chromium gets the webkit
+   pseudo-elements with the same tokens. */
+.app-shell * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb-idle) transparent;
+}
+.app-shell *:hover {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+.app-shell ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.app-shell ::-webkit-scrollbar-track {
+  background: transparent;
+}
+.app-shell ::-webkit-scrollbar-thumb {
+  border-radius: var(--radius-pill);
+  background: var(--scrollbar-thumb-idle);
+}
+.app-shell :hover::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+.app-shell ::-webkit-scrollbar-thumb:hover {
+  background: var(--text);
+}
+.app-shell ::-webkit-scrollbar-corner {
+  background: transparent;
 }
 .app-shell :is(table, dl, .primary-value) {
   font-variant-numeric: tabular-nums;
@@ -2037,4 +2081,142 @@ textarea {
   .view-preferences-button, .memo-section .header-actions
 ) {
   display: none;
+}
+
+/* Shared headers wrap within their panel, retaining every label and action. */
+.ui-responsive-header { flex-wrap: wrap; min-width: 0; }
+.ui-responsive-header > :first-child { min-width: 0; overflow-wrap: anywhere; }
+.ui-responsive-header :is(h2, h3) { overflow-wrap: anywhere; }
+
+/* =============================================================================
+   Mobile navigation, ported verbatim from the fetched anthropic.com nav
+   source (design-study/anthropic/pages/home.html embedded <style>, plus the
+   .nav_menu_* / .nav_links_* rules from ant-brand.shared.min.css). Selectors
+   are mapped to NodeDance classes; values, keyframes and easing are kept
+   exactly as published.
+   ============================================================================= */
+:root {
+  --nav--height: 4.25rem;
+  --nav--icon-thickness: var(--border-width--main, 0.0625rem);
+  --nav--hamburger-thickness: var(--nav--icon-thickness);
+  --nav--hamburger-gap: 0.4rem;
+  --nav--hamburger-rotate: 45;
+  --nav--menu-open-duration: 400ms;
+  --nav--menu-close-duration: 400ms;
+}
+@media (max-width: 900px) {
+  /* Disable scroll when mobile menu is open */
+  body:has(.navigation-toggle[aria-expanded="true"]) {
+    overflow: hidden;
+  }
+  /* The menu panel: full screen from the very top, revealed top-down. */
+  .workspace-sidebar {
+    top: 0;
+    right: 0;
+    bottom: auto;
+    width: 100%;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    padding: calc(var(--nav--height)) var(--site-gutter, 2rem) var(--_spacing---space--8, 3rem);
+    border: 0;
+    border-radius: 0;
+    background: var(--_color-theme---background, var(--canvas));
+    box-shadow: none;
+    transform: none !important;
+    clip-path: polygon(0 0, 100% 0, 100% 0, 0 0);
+    opacity: 1;
+    pointer-events: none;
+  }
+  .workspace-sidebar.is-open {
+    pointer-events: auto;
+    animation: menuOpen var(--nav--menu-open-duration) ease-in-out forwards;
+  }
+  .workspace-sidebar:not(.is-open) {
+    animation: menuClose var(--nav--menu-close-duration) ease-in-out forwards;
+  }
+  /* Menu content scrolls below the reserved header band. */
+  .workspace-sidebar .sidebar-context {
+    border-top: var(--border-width--main, 0.0625rem) solid var(--swatch--slate-faded-10, var(--line));
+    min-height: calc(100svh - 80px);
+    max-height: calc(100svh - 80px);
+    display: flex;
+    flex-flow: column;
+    justify-content: flex-start;
+    overflow: hidden auto;
+  }
+  .workspace-sidebar .wordmark {
+    display: inline-flex;
+    margin: 0 0 24px;
+  }
+  /* Menu links: large tap rows with the published spacing. */
+  .workspace-sidebar .workspace-nav button {
+    width: 100%;
+    padding: 1.4rem 0;
+    min-height: 0;
+    border-radius: 0;
+    border: 0;
+    font-family: var(--_typography---font--display-sans, inherit);
+    font-size: var(--_typography---font-size--display-s, 1.5rem);
+    font-weight: var(--_typography---font--display-sans-semibold, 600);
+  }
+  .workspace-sidebar .workspace-nav {
+    gap: 0;
+  }
+  .workspace-sidebar .workspace-nav button + button {
+    border-top: var(--border-width--main, 0.0625rem) solid var(--swatch--slate-faded-10, var(--line));
+  }
+  .workspace-sidebar .workspace-account {
+    margin-top: auto;
+    padding: 1.4rem 0 0;
+    border-top: var(--border-width--main, 0.0625rem) solid var(--swatch--slate-faded-10, var(--line));
+  }
+  /* Hamburger: three bars (two long, one short), published styles verbatim
+     from .nav_btn_layout / .nav_btn_line. */
+  .nav-burger {
+    grid-row-gap: var(--nav--hamburger-gap);
+    flex-flow: column;
+    justify-content: center;
+    align-items: flex-start;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    position: relative;
+  }
+  .nav-burger i {
+    width: 1.5rem;
+    height: var(--nav--hamburger-thickness);
+    background-color: currentColor;
+    border-radius: 100rem;
+    flex: none;
+    margin-left: auto;
+    margin-right: auto;
+    transition-property: all;
+    transition-duration: 0.2s;
+    transition-timing-function: ease;
+  }
+  .nav-burger i:last-child {
+    width: 1rem;
+    margin-left: 0;
+  }
+  /* Open state: published transforms — first line rotates down, last rotates
+     up and stretches full width, middle line fades out. */
+  .navigation-toggle[aria-expanded="true"] .nav-burger i:first-child {
+    transform: translateY(calc(var(--nav--hamburger-thickness) * 0.75 + var(--nav--hamburger-gap) * 1)) rotate(calc(var(--nav--hamburger-rotate) * -1deg));
+  }
+  .navigation-toggle[aria-expanded="true"] .nav-burger i:last-child {
+    transform: translateY(calc(var(--nav--hamburger-thickness) * -0.75 + var(--nav--hamburger-gap) * -1)) rotate(calc(var(--nav--hamburger-rotate) * 1deg));
+    width: 100%;
+  }
+  .navigation-toggle[aria-expanded="true"] .nav-burger i:nth-child(2) {
+    opacity: 0;
+  }
+  /* Menu reveal keyframes, verbatim. */
+  @keyframes menuOpen {
+    from { clip-path: polygon(0 0, 100% 0, 100% 0, 0 0); }
+    to { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+  }
+  @keyframes menuClose {
+    from { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+    to { clip-path: polygon(0 0, 100% 0, 100% 0, 0 0); }
+  }
 }

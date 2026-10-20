@@ -11,14 +11,6 @@
 .vps-card-heading .vps-name[data-v-31185faa]:hover {
   color: var(--accent);
 }
-.docker-toggle[data-v-31185faa] {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  margin-top: 6px;
-  color: var(--accent);
-}
 .vps-card[data-v-31185faa] {
   min-width: 0;
   container-type: inline-size;
@@ -239,11 +231,6 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
-.vps-card-more[data-v-31185faa] {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
 .vps-card-shortcuts[data-v-31185faa] {
   position: relative;
   display: grid;
@@ -267,7 +254,7 @@
   opacity: 0.45;
   cursor: not-allowed;
 }
-/* Transient SSH copy feedback: a small floating overlay pinned just above the
+/* Transient SSH discovery feedback: a small floating overlay pinned just above the
    clicked Copy SSH button. It is absolutely positioned, pointer-events none,
    occupies no layout space and never shifts the card or its actions, and
    auto-hides. */
@@ -280,16 +267,13 @@
   border-radius: var(--radius-control);
   padding: 4px 9px;
   color: var(--muted-strong);
-  background: var(--surface);
+  background: var(--surface-raised);
   box-shadow: var(--overlay-shadow);
   font-size: 12px;
   line-height: 1.45;
   overflow-wrap: anywhere;
   text-align: center;
   pointer-events: none;
-}
-.vps-card-ssh-pop[data-kind="success"][data-v-31185faa] {
-  color: var(--success);
 }
 .vps-card-ssh-pop[data-kind="error"][data-v-31185faa] {
   color: var(--danger);
@@ -309,3 +293,4 @@
     min-height: 42px;
   }
 }
+

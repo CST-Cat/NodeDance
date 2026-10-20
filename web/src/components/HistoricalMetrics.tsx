@@ -1,3 +1,4 @@
+import UiLoadState from "./UiLoadState";
 import type { EChartsOption } from "echarts";
 import { LineChart } from "echarts/charts";
 import { GridComponent, TooltipComponent } from "echarts/components";
@@ -294,7 +295,7 @@ export default function HistoricalMetrics(input: Props) {
           <section
             aria-labelledby={headingId as any}
             data-testid="history-panel"
-            className={__classes("history-panel")}
+            className={__classes("history-panel ui-load-region")}
             data-v-8fb9e739=""
           >
             <header className={__classes("history-heading")} data-v-8fb9e739="">
@@ -361,15 +362,8 @@ export default function HistoricalMetrics(input: Props) {
                 {t("m.7a9f26412898")}
               </p>
             )}
-            {__props.loading ? (
-              <div
-                role="status"
-                className={__classes("history-state")}
-                data-v-8fb9e739=""
-              >
-                {t("m.a980a5f91841")}
-              </div>
-            ) : __props.error ? (
+            <UiLoadState loading={__props.loading} ready={!!__props.history} failed={!!__props.error || !!chartError.value} />
+            {__props.error ? (
               <div
                 role="alert"
                 className={__classes("history-state history-error")}
@@ -398,9 +392,7 @@ export default function HistoricalMetrics(input: Props) {
               className={__classes("history-chart")}
               style={__style({
                 display:
-                  !__props.loading && !__props.error && !chartError.value
-                    ? undefined
-                    : "none",
+                  __props.history ? undefined : "none",
               })}
               data-v-8fb9e739=""
             ></div>

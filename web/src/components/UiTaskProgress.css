@@ -1,0 +1,12 @@
+.ui-task-progress { min-width: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; color: var(--muted-strong); }
+.ui-task-summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-variant-numeric: tabular-nums; }
+.ui-task-summary strong { color: var(--text); font-weight: 500; }
+.ui-task-progress[data-status="succeeded"] .ui-task-summary strong { color: var(--success); }
+.ui-task-progress:is([data-status="failed"], [data-status="timed_out"], [data-status="rollback_failed"], [data-status="journal_failed"]) .ui-task-summary strong, .ui-task-error { color: var(--danger); }
+.ui-task-progress[data-status="unknown"] .ui-task-summary strong { color: var(--warning); }
+.ui-task-phase { white-space: pre-wrap; }
+.ui-task-result, .ui-task-error { white-space: pre-wrap; }
+.ui-task-progress progress { display: block; width: min(100%, 360px); height: 4px; margin: 6px 0; accent-color: var(--accent); appearance: none; border: 0; border-radius: 2px; overflow: hidden; background: var(--line); }
+.ui-task-progress progress::-webkit-progress-bar { background: var(--line); }
+.ui-task-progress progress::-webkit-progress-value { background: var(--accent); }
+.ui-task-progress progress::-moz-progress-bar { background: var(--accent); }

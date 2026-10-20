@@ -183,7 +183,8 @@ async function port() {
 
     let updateSubmissions=0,rollbacks=0
     const updateJob={id:'audit-update',component:'core',current:'core-v0.1.12',target:'core-v0.1.13',status:'succeeded',stage:'complete',started:'2026-10-12T00:00:00Z',finished:'2026-10-12T00:00:01Z'}
-    await page.route('**/api/v1/updates/check?*',route=>route.fulfill({json:{component:'core',current:'core-v0.1.12',latest:'core-v0.1.13',available:true,configured:true,mode:'docker',release:{url:'https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.13',notes:'UI audit'}}}))
+    let holdUpdateCheck, updateCheckStarted;
+    await page.route('**/api/v1/updates/check?*',async route=>{if(holdUpdateCheck){updateCheckStarted();await holdUpdateCheck;}return route.fulfill({json:{component:'core',current:'core-v0.1.12',latest:'core-v0.1.13',available:true,configured:true,mode:'docker',release:{url:'https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.13',notes:'UI audit'}}})})
     await page.route('**/api/v1/updates/status?*',route=>route.fulfill({json:{jobs:updateSubmissions?[updateJob]:[]}}))
     await page.route('**/api/v1/updates/apply',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,version:'core-v0.1.13'});updateSubmissions++;return route.fulfill({json:updateJob})})
     await page.route('**/api/v1/updates/rollback',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,jobId:'audit-update'});rollbacks++;return route.fulfill({json:updateJob})})
@@ -191,9 +192,19 @@ async function port() {
     const center=page.locator('.update-center')
     await center.locator('.update-confirm .primary-button').waitFor()
     assert.equal(await center.locator('input[type=checkbox]').count(),0,'Ordinary update must have no extra confirmation')
+    let releaseUpdateCheck;holdUpdateCheck=new Promise(resolve=>releaseUpdateCheck=resolve);const checkStarted=new Promise(resolve=>updateCheckStarted=resolve);
+    await center.getByRole('button',{name:'Check updates',exact:true}).click();await checkStarted;
+    assert.ok(await center.locator('.update-details').isVisible(),'Refresh retains the existing release check');
+    assert.ok(await center.locator('.update-confirm .primary-button').isDisabled(),'Retained check cannot submit until refreshed');
+    await center.locator('.ui-load-state[data-phase=refresh]').waitFor();
+    releaseUpdateCheck();holdUpdateCheck=undefined;
+    await center.locator('.update-confirm .primary-button:not(:disabled)').waitFor();
+
     response=page.waitForResponse(r=>r.url().endsWith('/updates/apply'))
     await center.locator('.update-confirm .primary-button').click();assert.equal((await response).status(),200)
     assert.equal(updateSubmissions,1)
+    await center.locator('.update-job .ui-task-progress[data-status=succeeded]').waitFor();
+    assert.equal(await center.locator('.update-job progress').count(),0,'Stage-only updates do not fabricate percentages');
     await center.locator('.update-job button').click()
     assert.ok(await center.locator('.update-confirm .primary-button').isDisabled(),'Rollback still requires explicit confirmation')
     await center.locator('input[type=checkbox]').check()
@@ -330,6 +341,9 @@ async function port() {
     composePage.setDefaultTimeout(10000)
     try { await require('./compose-regressions.cjs')({page:composePage,base,node,artifacts,catalog}) }
     finally { await composePage.close() }
+    const feedbackPage=await context.newPage();feedbackPage.setDefaultTimeout(10000)
+    try { await require('./feedback-regressions.cjs')({page:feedbackPage,base,artifacts}) }
+    finally { await feedbackPage.close() }
     const metricsPage=await context.newPage()
     metricsPage.setDefaultTimeout(10000)
     try { await require('./metrics-regressions.cjs')({page:metricsPage,base,node,artifacts,catalog}) }

@@ -28,11 +28,11 @@
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
   grid-template-areas: "heading" "error" "screen" "keys" "footer";
   overflow: hidden;
-  border: 1px solid var(--product-line-strong);
+  border: 1px solid var(--overlay-edge);
   border-radius: var(--radius-card);
   color: var(--product-text);
   background: var(--product-surface);
-  box-shadow: none;
+  box-shadow: var(--overlay-lift);
 }
 .terminal-heading[data-v-b8b9dc12] {
   grid-area: heading;
@@ -70,7 +70,7 @@
   width: 36px;
   height: 36px;
   border: 1px solid var(--product-line);
-  border-radius: var(--radius-card);
+  border-radius: var(--radius-control);
   color: var(--product-text);
   background: var(--product-elevated);
   font-size: 22px;

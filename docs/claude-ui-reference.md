@@ -19,3 +19,9 @@ Figma 原始文件是当前视觉主参考，完整实现映射见 [Figma 参考
 本项目只在 Figma 未指定的浮层和侧栏动画中补充使用上述源码的参数，保留 reduced-motion、键盘焦点、弹窗焦点管理及 Core 操作语义。不得把这些补充参数说成来自 Figma，也不把社区项目称为官方规范。
 
 如复制代码，继续遵循仓库 MIT 许可并保留版权声明。
+
+## 2026-10-18 补充采用
+
+本地快照 `638800b8a4cee4513c8763c3df0ecf8a77b32379` 已检查源码与浅／深色 Storybook。新增采用矩形分段指示器、原位复制反馈和配置差异展示思路；统一进入 NodeDance 的 `UiSegments`、`clipboardFeedback`／`UiCopyFeedback`、`UiConfigDiff` 与原有 `UiDialog`。没有引入整包主题、Tailwind、Lucide 或示例中的业务数据。
+
+差异计算复用锁定版本 jsdiff 9.0.0，保留原文、换行与行号；预览计算和行数有边界，超出时明确不可预览，不截断后假装完整。它不改变配置读取、校验、保存任务或冲突处理。代码许可见 `/licenses/ui-notices.txt`。本次没有重新读取 Figma；颜色继续映射当前仓库已有的 Figma 语义变量。

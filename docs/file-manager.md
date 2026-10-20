@@ -1,8 +1,8 @@
 # File manager / 文件管理
 
-Web uses React. elFinder 2.1.70 is mounted and destroyed by the React file screen; its stock toolbar, dialogs, tree, search, selection, text editor and archive actions supply the file-manager UI. The official elFinder editor integration loads TOAST UI Image Editor 3.15.3 for passive image formats. All scripts, styles, icons and license notices ship in Core's embedded Web assets, without an external CDN, PHP connector, new listener or iframe app. Filesystem execution remains in the root Agent through the discovered Core operation contract.
+Web uses React. elFinder 2.1.70 is mounted and destroyed by the React file screen; its stock toolbar, dialogs, tree, search, selection, text editor and archive actions supply the file-manager UI. The official elFinder editor integration loads TOAST UI Image Editor 3.15.3 for passive image formats. All scripts, styles, icons and license notices ship in Core's embedded Web assets, without an external CDN, PHP connector, new listener or iframe app. Filesystem execution remains in the root Agent through the discovered Core operation contract. The overview card's File shortcut opens this same manager inside the shared wide dialog used by Docker details (Escape and the close button return focus to the shortcut); the node-detail Files tab keeps the inline presentation. Both entries mount one manager with identical commands and semantics; the card dialog keeps the last browsed directory across reopens.
 
-Web 使用 React；文件管理界面采用 elFinder 内置功能，图片编辑采用其官方集成的成熟 TOAST UI 编辑器。React 负责生命周期、主题与 Core 传输，不自行实现文件管理界面。许可证见 `/licenses/file-manager-notices.txt`。
+Web 使用 React；文件管理界面采用 elFinder 内置功能，图片编辑采用其官方集成的成熟 TOAST UI 编辑器。React 负责生命周期、主题与 Core 传输，不自行实现文件管理界面。许可证见 `/licenses/file-manager-notices.txt`。总览卡片的"文件"快捷键在 Docker 详情共用的宽弹窗中打开同一文件管理器（Escape 与关闭按钮把焦点还给快捷键）；节点详情的"文件"标签保留内嵌呈现。两个入口挂载同一管理器，命令与语义完全一致；卡片弹窗在重开时保留上次浏览的目录。
 
 ## Shared operations / 统一操作
 
@@ -67,3 +67,9 @@ Cold startup loads the dependent jQuery UI registrations as one lazy bundle. The
 Authenticated node-detail views prepare the static file-manager interface before its tab is selected, without fetching any remote directory or content. The file panel reports loading immediately while its first directory request is pending; the busy state ends only after elFinder opens the directory. Guest/read-only views do not start this warmup.
 
 管理态节点详情提前准备文件管理界面资源，不预读远程目录或文件；首次目录请求未完成时立即显示加载状态，目录打开后才结束忙碌状态。游客／只读详情不启动预加载。
+
+## Loading and long names / 加载与长文件名
+
+Initial reads show the shared loading structure immediately; subsequent reads retain the existing native list with an updating indicator. The documented elFinder cwd name template uses the shared path splitter to keep compound extensions visible. Native Selection Info remains the full-path view, with a shared inline copy control that copies the original decoded file identity, including Unicode, rather than elFinder’s visual zero-width separators. No connector or file-operation semantics change.
+
+首次读取立即显示加载结构，刷新保留已有原生列表。长文件名保留扩展名，完整路径使用 elFinder 原生信息弹窗查看，并复用共享复制反馈。复制原始路径，不包含显示时插入的零宽字符；编辑、重命名、搜索、分页及安全校验沿用原实现。

@@ -1,3 +1,6 @@
+import UiLoadState from "./UiLoadState";
+import UiTaskProgress from "./UiTaskProgress";
+import UiPath from "./UiPath";
 import { api, type ContainerTask, type DashboardPreference } from "../api";
 import {
   composeApi,
@@ -173,15 +176,19 @@ export default function ComposeProjects(input: Props) {
             (project) => project.ref.key === editorProjectKey.value,
           ) ?? null,
       );
+      const loaded = cell(false);
+      let refreshEpoch = 0;
       async function refresh() {
-        loading.value = projects.value.length === 0;
+        const current = ++refreshEpoch;
+        loading.value = true;
         error.value = "";
         try {
           const [result, saved] = await Promise.all([
             composeApi.projects(props.nodeId),
             api.nodePreferences(props.nodeId),
           ]);
-          if (disposed) return;
+          if (disposed || current !== refreshEpoch) return;
+          loaded.value = true;
           projects.value = result.projects;
           preferences.value = saved.preferences;
           selectedKeys.value = selectedKeys.value.filter((key) =>
@@ -189,12 +196,12 @@ export default function ComposeProjects(input: Props) {
           );
           stale.value = Boolean(result.dataStale);
         } catch (reason) {
-          if (disposed) return;
+          if (disposed || current !== refreshEpoch) return;
           stale.value = true;
           error.value =
             reason instanceof Error ? reason.message : t("m.777bbe3013b4");
         } finally {
-          if (!disposed) loading.value = false;
+          if (!disposed && current === refreshEpoch) loading.value = false;
         }
       }
       function operationLabel(action: ComposeOperation) {
@@ -414,7 +421,7 @@ export default function ComposeProjects(input: Props) {
           <section
             aria-labelledby="compose-projects-title"
             data-testid="compose-projects"
-            className={__classes("compose-projects section-panel")}
+            className={__classes("compose-projects section-panel ui-load-region")}
             data-v-429264a6=""
           >
             <header className={__classes("section-toolbar")} data-v-429264a6="">
@@ -456,11 +463,8 @@ export default function ComposeProjects(input: Props) {
                 {display(error.value)}
               </p>
             ) : null}
-            {loading.value && !projects.value.length ? (
-              <p className={__classes("compose-empty")} data-v-429264a6="">
-                {t("m.6025e55b6f68")}
-              </p>
-            ) : !projects.value.length ? (
+            <UiLoadState loading={loading.value || (!loaded.value && !error.value)} ready={loaded.value} failed={!!error.value} />
+            {loaded.value && !projects.value.length ? (
               <p className={__classes("compose-empty")} data-v-429264a6="">
                 {t("m.55f37d0877f7")}
               </p>
@@ -642,7 +646,7 @@ export default function ComposeProjects(input: Props) {
                         {projectTitle(project) !== project.ref.name ? (
                           <p data-v-429264a6="">{project.ref.name}</p>
                         ) : null}
-                        <p data-v-429264a6="">{project.ref.workingDirectory}</p>
+                        <p data-v-429264a6=""><UiPath value={project.ref.workingDirectory} directory /></p>
                       </div>
                     </header>
                     {projectErrors.value[project.ref.key] ? (
@@ -695,20 +699,11 @@ export default function ComposeProjects(input: Props) {
                         {"…"}
                       </p>
                     ) : null}
-                    {taskByProject.value[project.ref.key] ? (
-                      <p
-                        data-status={
-                          taskByProject.value[project.ref.key].status as any
-                        }
-                        role="status"
-                        className={__classes("compose-task-line")}
-                        data-v-429264a6=""
-                      >
-                        {display(
-                          taskMessage(taskByProject.value[project.ref.key]),
-                        )}
-                      </p>
-                    ) : null}
+                    {taskByProject.value[project.ref.key] ? <div className="compose-task-line" data-v-429264a6="" data-status={taskByProject.value[project.ref.key].status}>
+                      <UiTaskProgress status={taskByProject.value[project.ref.key].status} phase={taskByProject.value[project.ref.key].progress.phase}
+                        completed={taskByProject.value[project.ref.key].progress.completed} total={taskByProject.value[project.ref.key].progress.total}
+                        message={["queued", "running"].includes(taskByProject.value[project.ref.key].status) ? undefined : taskMessage(taskByProject.value[project.ref.key])} />
+                    </div> : null}
                     {project.services.length ? (
                       <div
                         className={__classes("compose-services")}

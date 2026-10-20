@@ -24,7 +24,7 @@ module.exports=async function({page,base,artifacts,catalog}){
  await page.getByTestId('asset-expiry').fill('2027-05-01T12:30')
  const generate=page.locator('.agent-enrollment-form .primary-button'),copy=page.locator('.agent-enrollment-actions .secondary-button')
  const copied=()=>page.evaluate(()=>window.enrollmentCopiedText)
- const confirmCopied=async()=>{await page.locator('.ui-dialog .primary-button').click();await page.waitForFunction(()=>!document.querySelector('.agent-enrollment-form .primary-button').disabled)}
+ const confirmCopied=async()=>{await page.waitForFunction(()=>!document.querySelector('.agent-enrollment-form .primary-button').disabled);assert.equal(await page.locator('dialog[open]').count(),0,'Copy feedback stays in the original control');await copy.locator('[data-copy-state=success]').waitFor()}
  await generate.click();await confirmCopied();assert.equal(requests,1)
  const assetOperation=catalog.operations.find(o=>o.name==='nodes.asset')
  const readAsset=async()=>{const response=await page.request.get(base+assetOperation.path.replace('{nodeId}',issued.nodeId));assert.equal(response.status(),200);return response.json()}
@@ -32,7 +32,7 @@ module.exports=async function({page,base,artifacts,catalog}){
  const first=await copied();assert.ok(first.includes('--token '+issued.token)&&first.includes('--mode native'));assert.ok(first.length<600,'Copied command is short and complete')
  assert.equal(await page.getByTestId('agent-enrollment-token').count(),0,'No separate token copy/input step is displayed')
  assert.equal(await page.getByTestId('agent-install-command').count(),0,'Command is copied directly rather than shown in a separate credential field')
- await docker.click();assert.equal(await docker.getAttribute('aria-pressed'),'true');assert.equal(await native.getAttribute('aria-pressed'),'false')
+ await docker.click();await copy.locator('[data-copy-state=idle]').waitFor();assert.equal(await docker.getAttribute('aria-pressed'),'true');assert.equal(await native.getAttribute('aria-pressed'),'false')
  await copy.click();const selected=await copied();assert.ok(selected.includes('--mode docker')&&selected.includes('--token '+issued.token));assert.equal(requests,1,'Changing deployment reuses the same enrollment')
  assert.equal(selected,issued.dockerInstallCommand,'Copy produces the complete selected command')
  hold=true;const pending=new Promise(resolve=>started=resolve);await generate.click();await pending

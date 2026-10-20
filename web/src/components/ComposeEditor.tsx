@@ -1,7 +1,12 @@
+import UiTaskProgress from "./UiTaskProgress";
+import UiLoadState from "./UiLoadState";
+import UiPath from "./UiPath";
+import UiDialog from "./UiDialog";
+import UiConfigDiff from "./UiConfigDiff";
 import type { ContainerTask } from "../api";
 import { composeApi, type ComposeProject } from "../compose-api";
 import { display, t } from "../i18n";
-import { afterMount, beforeDispose, cell, derived } from "../state";
+import { afterMount, afterRender, beforeDispose, cell, derived } from "../state";
 
 import { Fragment } from "react";
 import { __call, __classes, __each, __input, useController } from "../state";
@@ -15,6 +20,9 @@ export default function ComposeEditor(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
       const props = __props;
+      const reviewing = cell(false);
+      const reviewButton = cell<HTMLButtonElement>();
+      function closeReview() { reviewing.value = false; void afterRender(() => reviewButton.value?.focus({ preventScroll: true })); }
       const fileIndex = cell(0);
       const content = cell("");
       const savedContent = cell("");
@@ -37,6 +45,7 @@ export default function ComposeEditor(input: Props) {
           }),
       );
       async function loadConfig() {
+        reviewing.value = false;
         const requestGeneration = ++generation;
         loading.value = true;
         error.value = "";
@@ -181,6 +190,8 @@ export default function ComposeEditor(input: Props) {
         message.value = "";
       }
       function onFileChange() {
+        content.value = savedContent.value = baseSHA256.value = message.value = "";
+        task.value = undefined;
         void loadConfig();
       }
       afterMount(() => void loadConfig());
@@ -193,11 +204,11 @@ export default function ComposeEditor(input: Props) {
           <section
             aria-label={t("m.68caef829d91") as any}
             data-testid="compose-editor"
-            className={__classes("compose-editor")}
+            className={__classes("compose-editor ui-load-region")}
             data-v-306714f3=""
           >
             <header
-              className={__classes("compose-editor-heading")}
+              className={__classes("compose-editor-heading ui-responsive-header")}
               data-v-306714f3=""
             >
               <div data-v-306714f3="">
@@ -247,7 +258,7 @@ export default function ComposeEditor(input: Props) {
                   ))}
                 </Fragment>
               </UiSelect>
-              <small data-v-306714f3="">{currentFile.value}</small>
+              <small data-v-306714f3=""><UiPath value={currentFile.value} /></small>
             </label>
             <p className={__classes("compose-editor-risk")} data-v-306714f3="">
               {t("m.cd673d386eed")}
@@ -311,16 +322,13 @@ export default function ComposeEditor(input: Props) {
               >
                 {t("m.131be45b460c")}
               </button>
+              <button type="button" ref={__dom(reviewButton)} className="container-action" aria-haspopup="dialog"
+                disabled={loading.value || !dirty.value || saving.value} onClick={() => { reviewing.value = true; }}>
+                {t("diff.review")}
+              </button>
             </div>
-            {loading.value ? (
-              <p
-                role="status"
-                className={__classes("compose-editor-message")}
-                data-v-306714f3=""
-              >
-                {t("m.49d3303a0315")}
-              </p>
-            ) : null}
+            <UiLoadState loading={loading.value} ready={!!baseSHA256.value} failed={!!error.value} />
+            {task.value ? <UiTaskProgress status={task.value.status} phase={task.value.progress.phase} completed={task.value.progress.completed} total={task.value.progress.total} /> : null}
             {message.value ? (
               <p
                 role="status"
@@ -340,6 +348,11 @@ export default function ComposeEditor(input: Props) {
               </p>
             ) : null}
           </section>
+          {reviewing.value ? <UiDialog open title={`${t("diff.review")} · ${currentFile.value}`} className="config-diff-dialog" onClose={closeReview}>
+            <UiConfigDiff before={savedContent.value} after={content.value} />
+            <footer data-v-b0bbf977=""><button type="button" onClick={closeReview}>{t("overview.close")}</button></footer>
+          </UiDialog> : null}
+
         </>
       );
     },

@@ -75,7 +75,6 @@ fs.mkdirSync(out, { recursive: true });
       sortBy: "custom",
       nodeGroupBy: "status",
       nodeSortBy: "custom",
-      featuredLimit: 4,
       customFields: ["state", "ports", "health"],
     };
     await page.route("**/api/**", async (route) => {
@@ -605,10 +604,11 @@ fs.mkdirSync(out, { recursive: true });
       await invariants(prefix + "-nodes");
       const card = page.locator(".vps-card").first();
       assert.equal(await card.locator(".vps-card-docker").count(), 0);
-      await card.locator(".docker-toggle").click();
-      await card.locator(".vps-card-docker").waitFor();
+      await card.getByTestId("node-docker-details").click();
+      await page.locator(".vps-docker-dialog[open]").waitFor();
       await invariants(prefix + "-nodes-docker-expanded");
-      await card.locator(".docker-toggle").click();
+      await page.keyboard.press("Escape");
+      await page.locator(".vps-docker-dialog").waitFor({state:"detached"});
       await card.locator(".vps-card-shortcuts button").first().click();
       await page.locator(".terminal-dialog").waitFor();
       assert.equal(await page.locator(".node-detail-page").count(), 0);

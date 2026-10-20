@@ -1,3 +1,4 @@
+import UiSegments from "./components/UiSegments";
 import { AnimatePresence, motion } from "framer-motion";
 import { SPRING_HEAVY_SNAP } from "./motion";
 import { Fragment } from "react";
@@ -1101,10 +1102,17 @@ export default function App(input: Props) {
                     }}
                     data-v-ac863f34=""
                   >
-                    <UiIcon
-                      name={navigationOpen.value ? "close" : ("menu" as any)}
+                    <span
+                      aria-hidden="true"
+                      className={__classes("nav-burger", {
+                        "is-open": navigationOpen.value,
+                      })}
                       data-v-ac863f34=""
-                    ></UiIcon>
+                    >
+                      <i data-v-ac863f34=""></i>
+                      <i data-v-ac863f34=""></i>
+                      <i data-v-ac863f34=""></i>
+                    </span>
                   </button>
                   <span
                     className={__classes("breadcrumb-root")}
@@ -1783,86 +1791,13 @@ export default function App(input: Props) {
                       </label>
                       <div className={__classes("field")} data-v-ac863f34="">
                         <span data-v-ac863f34="">{t("m.8f29293906e7")}</span>
-                        <div
-                          role="group"
-                          aria-label={t("m.8f29293906e7") as any}
-                          className={__classes("theme-options")}
-                          data-v-ac863f34=""
-                        >
-                          <button
-                            type="button"
-                            aria-pressed={
-                              appearance.theme === ("system" as any)
-                            }
-                            className={__classes("theme-option", {
-                              selected: appearance.theme === "system",
-                            })}
-                            onClick={(event: any) => {
-                              appearance.theme = "system";
-                            }}
-                            data-v-ac863f34=""
-                          >
-                            <span
-                              className={__classes(
-                                "theme-swatch system-swatch",
-                              )}
-                              data-v-ac863f34=""
-                            >
-                              <i data-v-ac863f34=""></i>
-                              <i data-v-ac863f34=""></i>
-                              <i data-v-ac863f34=""></i>
-                            </span>
-                            <span data-v-ac863f34="">
-                              {t("m.217cfe7db1e3")}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            aria-pressed={appearance.theme === ("dark" as any)}
-                            className={__classes("theme-option", {
-                              selected: appearance.theme === "dark",
-                            })}
-                            onClick={(event: any) => {
-                              appearance.theme = "dark";
-                            }}
-                            data-v-ac863f34=""
-                          >
-                            <span
-                              className={__classes("theme-swatch dark-swatch")}
-                              data-v-ac863f34=""
-                            >
-                              <i data-v-ac863f34=""></i>
-                              <i data-v-ac863f34=""></i>
-                              <i data-v-ac863f34=""></i>
-                            </span>
-                            <span data-v-ac863f34="">
-                              {t("m.a6b75d068032")}
-                            </span>
-                          </button>
-                          <button
-                            type="button"
-                            aria-pressed={appearance.theme === ("light" as any)}
-                            className={__classes("theme-option", {
-                              selected: appearance.theme === "light",
-                            })}
-                            onClick={(event: any) => {
-                              appearance.theme = "light";
-                            }}
-                            data-v-ac863f34=""
-                          >
-                            <span
-                              className={__classes("theme-swatch light-swatch")}
-                              data-v-ac863f34=""
-                            >
-                              <i data-v-ac863f34=""></i>
-                              <i data-v-ac863f34=""></i>
-                              <i data-v-ac863f34=""></i>
-                            </span>
-                            <span data-v-ac863f34="">
-                              {t("m.aa0819dfc4d8")}
-                            </span>
-                          </button>
-                        </div>
+                        <UiSegments value={appearance.theme} onChange={value => { appearance.theme = value; }}
+                          label={t("m.8f29293906e7")} className="theme-options"
+                          options={[
+                            { value: "system", label: <><span className="theme-swatch system-swatch" aria-hidden="true"><i /><i /><i /></span>{t("m.217cfe7db1e3")}</> },
+                            { value: "dark", label: <><span className="theme-swatch dark-swatch" aria-hidden="true"><i /><i /><i /></span>{t("m.a6b75d068032")}</> },
+                            { value: "light", label: <><span className="theme-swatch light-swatch" aria-hidden="true"><i /><i /><i /></span>{t("m.aa0819dfc4d8")}</> },
+                          ]} />
                       </div>
                       {currentUser.value?.role === "administrator" ? <>
                       <div

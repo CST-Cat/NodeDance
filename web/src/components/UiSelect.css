@@ -79,7 +79,7 @@
   list-style: none;
   border: 1px solid var(--ux-line-2);
   border-radius: var(--radius-card);
-  background: var(--ux-surface);
+  background: var(--surface-raised);
   color: var(--ux-ink);
   box-shadow: var(--overlay-shadow);
   outline: none;

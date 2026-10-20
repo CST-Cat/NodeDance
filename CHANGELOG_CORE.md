@@ -6,6 +6,24 @@
 
 ### 简体中文
 
+## [0.1.48]
+
+### English
+
+- Share compact real-state progress across updates, Agent/Compose deployment and rebuilds, preserving cancellation, retries, rollback and error details. Retain content during refresh and use shared loading placeholders; preserve long filename extensions and add exact full-path copy to native file information.
+- Share inline clipboard feedback and rectangular segmented controls across SSH, enrollment, host information, telemetry and appearance; align overlay surfaces and responsive headers.
+- Add a read-only Compose configuration diff using the shared dialog, preserving exact contents, validation and conflict checks.
+- Replace the VPS Manage shortcut and inline Docker expansion with a Docker details button using the shared modal dialog, showing the complete container inventory with its existing sorting and actions; remove the obsolete preview-count setting across Core and Web.
+- Give narrow screens a full-screen navigation menu with a morphing hamburger toggle, wrapping shared headers instead of stretching them.
+
+### 简体中文
+
+- 更新、Agent／Compose 部署与重建共用真实任务进度，保留取消、重试、回滚及错误详情；统一首次加载与保留内容的刷新反馈，长文件名保留扩展名，原生文件信息弹窗支持完整路径复制。
+- SSH、安装命令、主机信息共用原位复制反馈，网络／IO 与外观共用矩形分段滑块，统一浮层表面和可换行标题。
+- Compose 配置增加共享弹窗内的只读差异对照，保留原文、校验与版本冲突检查。
+- VPS 卡片移除管理按钮及行内 Docker 展开区，原位置改为 Docker 详情按钮，复用共享弹窗展示完整容器列表及操作，不再套用卡片预览数量或可见性筛选。
+- 窄屏改用全屏导航菜单和汉堡按钮开合动画,共享标题在面板内换行而不是被拉伸。
+
 ## [0.1.47]
 
 ### English

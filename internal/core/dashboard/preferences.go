@@ -67,13 +67,12 @@ type Preference struct {
 }
 
 type Settings struct {
-	ViewMode      string   `json:"viewMode"`
-	GroupBy       string   `json:"groupBy"`
-	SortBy        string   `json:"sortBy"`
-	NodeGroupBy   string   `json:"nodeGroupBy"`
-	NodeSortBy    string   `json:"nodeSortBy"`
-	FeaturedLimit int      `json:"featuredLimit"`
-	CustomFields  []string `json:"customFields"`
+	ViewMode     string   `json:"viewMode"`
+	GroupBy      string   `json:"groupBy"`
+	SortBy       string   `json:"sortBy"`
+	NodeGroupBy  string   `json:"nodeGroupBy"`
+	NodeSortBy   string   `json:"nodeSortBy"`
+	CustomFields []string `json:"customFields"`
 }
 
 type Repository struct {
@@ -156,8 +155,8 @@ func (r Repository) Put(ctx context.Context, item Preference) error {
 func (r Repository) GetSettings(ctx context.Context) (Settings, error) {
 	var settings Settings
 	var fields string
-	err := r.DB.QueryRowContext(ctx, `SELECT view_mode, group_by, sort_by, node_group_by, node_sort_by, featured_limit, custom_fields_json FROM dashboard_settings WHERE id=1`).
-		Scan(&settings.ViewMode, &settings.GroupBy, &settings.SortBy, &settings.NodeGroupBy, &settings.NodeSortBy, &settings.FeaturedLimit, &fields)
+	err := r.DB.QueryRowContext(ctx, `SELECT view_mode, group_by, sort_by, node_group_by, node_sort_by, custom_fields_json FROM dashboard_settings WHERE id=1`).
+		Scan(&settings.ViewMode, &settings.GroupBy, &settings.SortBy, &settings.NodeGroupBy, &settings.NodeSortBy, &fields)
 	if err != nil {
 		return Settings{}, err
 	}
@@ -186,8 +185,8 @@ func (r Repository) PutSettings(ctx context.Context, settings Settings) error {
 	if r.Now != nil {
 		now = r.Now()
 	}
-	result, err := r.DB.ExecContext(ctx, `UPDATE dashboard_settings SET view_mode=?, group_by=?, sort_by=?, node_group_by=?, node_sort_by=?, featured_limit=?, custom_fields_json=?, updated_at=? WHERE id=1`,
-		settings.ViewMode, settings.GroupBy, settings.SortBy, settings.NodeGroupBy, settings.NodeSortBy, settings.FeaturedLimit, fields, now.UTC().UnixNano())
+	result, err := r.DB.ExecContext(ctx, `UPDATE dashboard_settings SET view_mode=?, group_by=?, sort_by=?, node_group_by=?, node_sort_by=?, custom_fields_json=?, updated_at=? WHERE id=1`,
+		settings.ViewMode, settings.GroupBy, settings.SortBy, settings.NodeGroupBy, settings.NodeSortBy, fields, now.UTC().UnixNano())
 	if err != nil {
 		return err
 	}
@@ -278,7 +277,7 @@ func validSettings(s Settings) bool {
 	if s.SortBy != "custom" && s.SortBy != "name" && s.SortBy != "state" {
 		return false
 	}
-	if s.FeaturedLimit < 1 || s.FeaturedLimit > 20 || len(s.CustomFields) > 12 {
+	if len(s.CustomFields) > 12 {
 		return false
 	}
 	allowed := map[string]struct{}{"state": {}, "ports": {}, "health": {}, "uptime": {}, "image": {}}

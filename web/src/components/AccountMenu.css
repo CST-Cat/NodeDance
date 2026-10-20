@@ -23,6 +23,7 @@
   padding: 8px;
   overflow-y: auto;
   color: var(--text);
+  background: var(--surface-raised);
   box-shadow: var(--overlay-shadow);
 }
 .account-panel::backdrop {

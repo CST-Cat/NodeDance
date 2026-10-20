@@ -89,3 +89,7 @@ Five-second network/disk history stays private behind nodes.history; the anonymo
 
 文件管理初始化未完成或失败时进入游客模式，也会先中止私有读取，再卸载界面；目录服务不可用不应阻止游客页出现。
 Entering guest mode during pending or failed file-manager initialization aborts private reads before view teardown; directory unavailability must not prevent the guest page from rendering.
+
+Administrator Docker details use the complete private inventory in the shared dialog, without a dashboard preview-count setting. Container inventory and display preferences remain excluded from the public projection. 管理员 Docker 详情复用共享弹窗展示完整私有清单，不再提供首页预览数量设置；容器清单与展示偏好仍不属于游客公开数据。
+
+Compose configuration comparisons are administrator-only browser-local views of the already authorized file and draft; they do not add configuration content to guest data. 配置差异仅在管理态比较已授权读取的原文与草稿，不向游客数据加入配置内容。

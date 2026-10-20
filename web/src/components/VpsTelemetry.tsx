@@ -1,3 +1,4 @@
+import UiSegments from "./UiSegments";
 import { recentHistory } from "../recent-history";
 import { t } from "../i18n";
 import type { Metric, MetricsView } from "../metrics-contract";
@@ -214,32 +215,9 @@ export default function VpsTelemetry(input: Props) {
             </div>
             <div className={__classes("live-monitor")} data-v-85963ddb="">
               <header data-v-85963ddb="">
-                <div
-                  aria-label={t("overview.monitor") as any}
-                  className={__classes("monitor-tabs")}
-                  data-v-85963ddb=""
-                >
-                  <button
-                    type="button"
-                    aria-pressed={mode.value === ("network" as any)}
-                    onClick={(event: any) => {
-                      mode.value = "network";
-                    }}
-                    data-v-85963ddb=""
-                  >
-                    {t("overview.network")}
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={mode.value === ("io" as any)}
-                    onClick={(event: any) => {
-                      mode.value = "io";
-                    }}
-                    data-v-85963ddb=""
-                  >
-                    {t("overview.io")}
-                  </button>
-                </div>
+                <UiSegments value={mode.value} onChange={value => { mode.value = value; }}
+                  label={t("overview.monitor")} className="monitor-tabs"
+                  options={[{ value: "network", label: t("overview.network") }, { value: "io", label: t("overview.io") }]} />
                 {!__props.online ? (
                   <span
                     className={__classes("monitor-state")}

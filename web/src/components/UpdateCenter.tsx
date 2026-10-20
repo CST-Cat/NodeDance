@@ -1,3 +1,5 @@
+import UiLoadState from "./UiLoadState";
+import UiTaskProgress from "./UiTaskProgress";
 import { api, operationRequest, type AgentNode } from "../api";
 import { t } from "../i18n";
 import { afterMount, beforeDispose, cell, derived, watchState } from "../state";
@@ -41,6 +43,7 @@ export default function UpdateCenter(input: Props) {
       const nodes = cell<AgentNode[]>([]),
         check = cell<ReleaseCheck>(),
         jobs = cell<Job[]>([]);
+      const checkFresh = cell(false);
       const pollError = cell("");
       const error = cell(""),
         busy = cell(false),
@@ -110,11 +113,11 @@ export default function UpdateCenter(input: Props) {
       const changelogReady = cell(false);
       async function refresh() {
         if (!selected.value) return;
-        check.value = undefined;
+        checkFresh.value = false;
         confirmed.value = false;
         error.value = "";
         busy.value = true;
-        const current = epoch;
+        const current = epoch, requestedVersion = version.value;
         try {
           const result = await operationRequest<ReleaseCheck>("updates.check", {
             query: {
@@ -126,7 +129,7 @@ export default function UpdateCenter(input: Props) {
                 : {}),
             },
           });
-          if (current === epoch) check.value = result;
+          if (current === epoch && requestedVersion === version.value) { check.value = result; checkFresh.value = true; }
         } catch (e) {
           if (current === epoch) error.value = message(e);
         } finally {
@@ -136,6 +139,7 @@ export default function UpdateCenter(input: Props) {
       async function submit() {
         if (
           busy.value ||
+          (!rollbackJob.value && !checkFresh.value) ||
           !selected.value ||
           (rollbackJob.value
             ? !confirmed.value
@@ -183,6 +187,7 @@ export default function UpdateCenter(input: Props) {
       watchState(query, () => {
         epoch++;
         check.value = undefined;
+        checkFresh.value = false;
         jobs.value = [];
         rollbackJob.value = "";
         confirmed.value = false;
@@ -214,7 +219,7 @@ export default function UpdateCenter(input: Props) {
       return () => (
         <>
           <section
-            className={__classes("update-center workspace-page")}
+            className={__classes("update-center workspace-page ui-load-region")}
             data-v-fffea4e7=""
           >
             <div className={__classes("surface-card update-card")} data-v-fffea4e7="">
@@ -273,6 +278,7 @@ export default function UpdateCenter(input: Props) {
                       version.value,
                       (__nextValue: any) => {
                         version.value = __nextValue;
+                        checkFresh.value = false;
                       },
                       "",
                       undefined,
@@ -387,7 +393,7 @@ export default function UpdateCenter(input: Props) {
                   ) : null}
                   <button
                     disabled={
-                      busy.value ||
+                      busy.value || (!rollbackJob.value && !checkFresh.value) ||
                       (!!rollbackJob.value && (!confirmed.value as any))
                     }
                     className={__classes("primary-button")}
@@ -450,6 +456,7 @@ export default function UpdateCenter(input: Props) {
                   );
                 })}
               </Fragment>
+              <UiLoadState loading={busy.value} ready={!!check.value} failed={!!error.value} />
               <h2 data-v-fffea4e7="">{t("updates.history")}</h2>
               {!jobs.value.length ? (
                 <p className={__classes("muted")} data-v-fffea4e7="">
@@ -469,25 +476,13 @@ export default function UpdateCenter(input: Props) {
                         {" → "}
                         {job.target}
                       </strong>
-                      <span data-v-fffea4e7="">
-                        {job.status}
-                        {" · "}
-                        {job.stage}
-                      </span>
                     </div>
                     <p className={__classes("muted")} data-v-fffea4e7="">
                       {new Date(job.started).toLocaleString()}
                       {" · "}
                       {job.id}
                     </p>
-                    {job.error ? (
-                      <p
-                        className={__classes("update-error")}
-                        data-v-fffea4e7=""
-                      >
-                        {job.error}
-                      </p>
-                    ) : null}
+                    <UiTaskProgress status={job.status} phase={job.stage} error={job.error} />
                     {job.status === "succeeded" && job.stage === "complete" ? (
                       <button
                         disabled={busy.value as any}

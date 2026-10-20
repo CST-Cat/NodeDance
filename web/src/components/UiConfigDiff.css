@@ -1,0 +1,28 @@
+.config-diff { min-width: 0; container-type: inline-size; }
+.config-diff-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-field); margin-bottom: var(--space-field); }
+.diff-counts { display: flex; gap: var(--space-field); font-variant-numeric: tabular-nums; }
+.diff-counts > :first-child { color: var(--danger); }
+.diff-counts > :last-child { color: var(--success); }
+.diff-unified, .diff-split { max-height: 60dvh; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-control); overscroll-behavior: contain; }
+.config-diff table { border-collapse: collapse; width: 100%; text-align: left; font: 12px/1.6 var(--figma-font-mono), monospace; }
+.config-diff th { position: sticky; top: 0; z-index: 1; background: var(--surface-raised); color: var(--muted-strong); text-align: left; font-weight: 500; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.config-diff td { padding: 0 8px; vertical-align: top; }
+.config-diff code { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.diff-number { width: 1%; white-space: nowrap; text-align: right; color: var(--muted); user-select: none; font-variant-numeric: tabular-nums; }
+.diff-sign { display: inline-block; width: 1.5em; user-select: none; }
+.config-diff [data-kind="add"] { background: color-mix(in srgb, var(--success) 10%, var(--surface)); }
+.config-diff [data-kind="remove"] { background: color-mix(in srgb, var(--danger) 10%, var(--surface)); }
+.diff-no-newline { display: block; color: var(--muted-strong); font: inherit; font-style: italic; }
+.diff-split { display: none; }
+.diff-split[data-selected="true"] { display: block; }
+.diff-unified[data-selected="false"] { display: none; }
+.diff-split table { table-layout: fixed; }
+.diff-split .diff-number { width: 42px; }
+.diff-split td:nth-child(3) { border-left: 1px solid var(--line); }
+.diff-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.ui-dialog.config-diff-dialog { width: min(1000px, calc(100% - 32px)); }
+@container (max-width: 560px) {
+  .diff-split tr { display: grid; grid-template-columns: 42px minmax(0, 1fr); }
+  .diff-split thead tr { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .diff-split td:nth-child(3) { border-left: 0; }
+}

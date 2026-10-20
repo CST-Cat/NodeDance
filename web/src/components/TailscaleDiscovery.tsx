@@ -1,3 +1,4 @@
+import UiTaskProgress from "./UiTaskProgress";
 import { api, type TailscaleDeploymentTask, type TailscalePeer } from "../api";
 import { display, t } from "../i18n";
 import { afterMount, beforeDispose, cell, derived, observable } from "../state";
@@ -405,11 +406,7 @@ export default function TailscaleDiscovery(input: Props) {
                         <strong data-v-20c80a5a="">
                           {deployment.peerName || deployment.peerIdentity}
                         </strong>
-                        <span data-v-20c80a5a="">
-                          {deployment.phase}
-                          {" · "}
-                          {deployment.status}
-                        </span>
+                        <UiTaskProgress status={deployment.status} phase={deployment.phase} message={deployment.message} />
                         <code data-v-20c80a5a="">{deployment.taskId}</code>
                         <button
                           type="button"
@@ -1032,12 +1029,7 @@ export default function TailscaleDiscovery(input: Props) {
                   className={__classes("task-status")}
                   data-v-20c80a5a=""
                 >
-                  <strong data-v-20c80a5a="">
-                    {task.value.phase}
-                    {" · "}
-                    {task.value.status}
-                  </strong>
-                  <span data-v-20c80a5a="">{display(task.value.message)}</span>
+                  <UiTaskProgress status={task.value.status} phase={task.value.phase} message={task.value.message} />
                   {task.value.nodeId ? (
                     <small data-v-20c80a5a="">
                       {"Node ID："}

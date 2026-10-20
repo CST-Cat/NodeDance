@@ -1,3 +1,4 @@
+import UiTaskProgress from "./UiTaskProgress";
 import {
   api,
   type ContainerRebuildPlan,
@@ -322,17 +323,9 @@ export default function ContainerRebuildWizard(input: Props) {
             >
               {t("m.e6953475e88d")}
             </button>
-            {task.value ? (
-              <span
-                data-testid="rebuild-task-status"
-                data-status={task.value.status as any}
-                role="status"
-                className={__classes("container-task-status")}
-                data-v-a7cd5075=""
-              >
-                {display(taskMessage.value)}
-              </span>
-            ) : null}
+            {task.value ? <div data-testid="rebuild-task-status" data-status={task.value.status} className="container-task-status">
+              <UiTaskProgress status={task.value.status} phase={task.value.progress.phase} completed={task.value.progress.completed} total={task.value.progress.total} message={["queued", "running"].includes(task.value.status) ? undefined : taskMessage.value} />
+            </div> : null}
             {cleanupTask.value && !cleanupDone.value ? (
               <button
                 type="button"

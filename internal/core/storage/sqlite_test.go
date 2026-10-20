@@ -72,7 +72,7 @@ func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
 		}
 	}
 
-	if _, err := store.DB.ExecContext(ctx, `UPDATE dashboard_settings SET featured_limit=7 WHERE id=1`); err != nil {
+	if _, err := store.DB.ExecContext(ctx, `UPDATE dashboard_settings SET node_sort_by='name' WHERE id=1`); err != nil {
 		_ = store.Close()
 		t.Fatal(err)
 	}
@@ -96,12 +96,12 @@ func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
 		t.Fatalf("reopen current-schema database: %v", err)
 	}
 	defer store.Close()
-	var featuredLimit int
-	if err := store.DB.QueryRowContext(ctx, `SELECT featured_limit FROM dashboard_settings WHERE id=1`).Scan(&featuredLimit); err != nil {
+	var nodeSortBy string
+	if err := store.DB.QueryRowContext(ctx, `SELECT node_sort_by FROM dashboard_settings WHERE id=1`).Scan(&nodeSortBy); err != nil {
 		t.Fatal(err)
 	}
-	if featuredLimit != 7 {
-		t.Fatalf("reopening current schema reset stored data: featured_limit=%d, want 7", featuredLimit)
+	if nodeSortBy != "name" {
+		t.Fatalf("reopening current schema reset stored data: node_sort_by=%s, want name", nodeSortBy)
 	}
 	items, err := (dashboard.Repository{DB: store.DB}).List(ctx, nodeID)
 	if err != nil || len(items) != 1 {

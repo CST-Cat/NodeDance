@@ -124,7 +124,7 @@
   background: var(--control-bg);
 }
 .app-shell[data-theme] .ui-select .u031-btn:disabled { opacity: .5; color: var(--text); background: var(--control-bg); }
-.u031-list { background: var(--surface); border-color: var(--figma-border-tertiary); border-radius: var(--radius-control); }
+.u031-list { background: var(--surface-raised); border-color: var(--figma-border-tertiary); border-radius: var(--radius-control); }
 .u031-o { min-height: 32px; padding: 6px 10px; font-size: 14px; }
 .u031-o[aria-selected="true"] { color: var(--text); background: var(--accent-soft); }
 .u031-ck { stroke: var(--selection); }
@@ -179,11 +179,21 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
 .app-shell[data-theme] .workspace-sidebar.is-collapsed .wordmark { justify-content: center; margin-inline: 0; }
 .app-shell[data-theme] .workspace-sidebar.is-collapsed .workspace-nav button { justify-content: center; padding: 8px; }
 .app-shell[data-theme] .workspace-account { padding: 12px 4px 0; border-top: 0; }
+/* Mobile menu panel: full-screen dropdown, published paddings. */
+@media (max-width: 900px) {
+  .app-shell[data-theme] .workspace-sidebar { width: 100%; padding: var(--nav--height, 4.25rem) var(--site--gutter, 2rem) var(--_spacing---space--8, 3rem); background: var(--canvas); border-right-width: 0; }
+  .app-shell[data-theme] .workspace-sidebar .wordmark { min-height: 0; margin: 0 0 24px; font-size: 24px; }
+  .app-shell[data-theme] .workspace-label { margin: 0 0 12px; }
+  .app-shell[data-theme] .workspace-nav button { min-height: 0; width: 100%; padding: 1.4rem 0; border-radius: 0; font-size: var(--_typography---font-size--display-s, 1.5rem); font-weight: var(--_typography---font--display-sans-semibold, 600); }
+  .app-shell[data-theme] .workspace-nav button:hover { background: transparent; color: var(--accent); }
+  .app-shell[data-theme] .workspace-nav button[aria-current="page"] { background: transparent; }
+  .app-shell[data-theme] .workspace-account { margin-top: auto; padding: 1.4rem 0 0; border-top: var(--border-width--main, 0.0625rem) solid var(--line); }
+}
 .app-shell[data-theme] .topbar { min-height: 68px; border-bottom: 0; }
 .app-shell[data-theme] .workspace-page :is(h1, .detail-heading h1) { font-size: clamp(28px, 2.4vw, 36px); font-family: inherit; line-height: 1.15; letter-spacing: -.025em; }
 .app-shell[data-theme] .workspace-page :is(h2, .section-toolbar h2, .feed-card h2, .host-card h2) { font-family: inherit; font-size: 20px; line-height: 25px; font-weight: 500; }
 .app-shell[data-theme] .workspace-page .vps-card h2 { font-size: 16px; line-height: 22.4px; }
-.app-shell[data-theme] dialog.ui-dialog { border-radius: var(--radius-card); border-color: var(--figma-border-tertiary); background: var(--surface); padding: 24px; }
+.app-shell[data-theme] dialog.ui-dialog { border-radius: var(--radius-card); border-color: var(--overlay-edge); background: var(--surface-raised); padding: 0; }
 .app-shell[data-theme] dialog.ui-dialog h2 { font-size: 24px; line-height: 30px; font-family: inherit; font-weight: 500; }
 .app-shell[data-theme] dialog.ui-dialog p { color: var(--muted-strong); font-size: 14px; line-height: 1.4; }
 .app-shell[data-theme] :is(pre, code) { font-family: var(--figma-font-mono), ui-monospace, monospace; }

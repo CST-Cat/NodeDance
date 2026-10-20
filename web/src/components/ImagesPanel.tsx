@@ -1,3 +1,4 @@
+import UiLoadState from "./UiLoadState";
 import {
   api,
   type ContainerTask,
@@ -19,6 +20,7 @@ export default function ImagesPanel(input: Props) {
     (__props: Props, __emit: any, __dom: any) => {
       const props = __props;
       const images = cell<DockerImage[]>([]);
+      const loaded = cell(false);
       const total = cell(0);
       const page = cell(0);
       const filterInput = cell("");
@@ -105,6 +107,7 @@ export default function ImagesPanel(input: Props) {
           if (result.errorCode) throw new Error(t("m.159467f4355b"));
           images.value = Array.isArray(result.images) ? result.images : [];
           total.value = result.total;
+          loaded.value = true;
         } catch (reason) {
           if (!disposed)
             error.value =
@@ -296,7 +299,7 @@ export default function ImagesPanel(input: Props) {
           <section
             aria-labelledby="images-title"
             data-testid="docker-images"
-            className={__classes("images-panel")}
+            className={__classes("images-panel ui-load-region")}
             data-v-ae74c5fc=""
           >
             <header className={__classes("images-heading")} data-v-ae74c5fc="">
@@ -644,6 +647,7 @@ export default function ImagesPanel(input: Props) {
                 {filter.value ? t("m.bf11e3fed6b2") : t("m.715c063e56ec")}
               </p>
             ) : null}
+            <UiLoadState loading={loading.value || (!loaded.value && !error.value)} ready={loaded.value} failed={!!error.value} />
             <nav
               aria-label={t("m.1fa7b5f8794e") as any}
               className={__classes("image-pagination")}

@@ -1,13 +1,12 @@
 import { activeDialog, cancelDialogs, finishDialog } from "../dialogs";
 import { t } from "../i18n";
 import {
-  afterMount,
   afterRender,
   beforeDispose,
   cell,
   watchState,
 } from "../state";
-import { installScrollEdges, type ScrollEdges } from "../scroll-edge";
+import { installScrollEdges } from "../scroll-edge";
 
 import { Fragment, useEffect, useId, useRef } from "react";
 import { __classes, __each, __input, useController } from "../state";
@@ -19,6 +18,7 @@ export default function UiDialog(input: Props) {
 
 function FormDialog(input: Props) {
   const element = useRef<HTMLDialogElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   const id = `form-dialog-${useId().replace(/:/g, "")}`;
   useEffect(() => {
     const dialog = element.current;
@@ -32,14 +32,18 @@ function FormDialog(input: Props) {
     };
   }, [input.open]);
   useEffect(() => {
-    const edges = installScrollEdges(element.current ?? undefined);
+    const edges = installScrollEdges(body.current ?? undefined);
     return () => edges?.dispose();
   }, []);
   return <dialog ref={element} id={id} aria-labelledby={`${id}-title`} aria-busy={input.busy || undefined}
-    className={`ui-dialog scroll-fade ${input.className ?? ""}`} data-v-b0bbf977=""
+    className={`ui-dialog ${input.className ?? ""}`} data-v-b0bbf977=""
     onCancel={event => { event.preventDefault(); if (!input.busy) input.onClose?.(); }}>
-    <h2 id={`${id}-title`} data-v-b0bbf977="">{input.title}</h2>
-    {input.children}
+    <div className="ui-dialog-head" data-v-b0bbf977="">
+      <h2 id={`${id}-title`} data-v-b0bbf977="">{input.title}</h2>
+      <button type="button" className="ui-dialog-close" aria-label="Close"
+        onClick={event => { if (!input.busy) input.onClose?.(); }} data-v-b0bbf977="">×</button>
+    </div>
+    <div className="ui-dialog-body scroll-fade" ref={body} data-v-b0bbf977="">{input.children}</div>
   </dialog>;
 }
 
@@ -85,12 +89,7 @@ function SystemDialog(input: Props) {
             : null,
         );
       }
-      let dialogEdges: ScrollEdges | undefined;
-      afterMount(() => {
-        dialogEdges = installScrollEdges(element.value);
-      });
       beforeDispose(() => {
-        dialogEdges?.dispose();
         cancelDialogs();
       });
       return () => (
@@ -99,7 +98,7 @@ function SystemDialog(input: Props) {
             ref={__dom(element)}
             aria-labelledby="ui-dialog-title"
             aria-describedby="ui-dialog-message"
-            className={__classes("ui-dialog scroll-fade")}
+            className={__classes("ui-dialog")}
             onCancel={(event: any) => {
               event.preventDefault();
               finish(false);
@@ -114,9 +113,22 @@ function SystemDialog(input: Props) {
                 }}
                 data-v-b0bbf977=""
               >
-                <h2 id="ui-dialog-title" data-v-b0bbf977="">
-                  {t("dialog.title")}
-                </h2>
+                <div className="ui-dialog-head" data-v-b0bbf977="">
+                  <h2 id="ui-dialog-title" data-v-b0bbf977="">
+                    {t("dialog.title")}
+                  </h2>
+                  <button
+                    type="button"
+                    className={__classes("ui-dialog-close")}
+                    aria-label={t("m.16707b59cf5e") as any}
+                    onClick={(event: any) => {
+                      finish(false);
+                    }}
+                    data-v-b0bbf977=""
+                  >
+                    {"×"}
+                  </button>
+                </div>
                 <p id="ui-dialog-message" data-v-b0bbf977="">
                   {activeDialog.value.message}
                 </p>

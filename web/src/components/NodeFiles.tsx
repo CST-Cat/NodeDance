@@ -1,7 +1,11 @@
+import { createPortal } from "react-dom";
+import { fileNameMarkup } from "../path-display";
+import type { FinderFile } from "../elfinder-runtime";
+import UiPath from "./UiPath";
+import UiLoadState from "./UiLoadState";
 import { loadFinder, type Finder } from "../elfinder-runtime";
 import { createFileManager, type FileObservation } from "../file-manager";
 import { locale, t } from "../i18n";
-import { useViewNavigation } from "../navigation";
 import { afterMount, beforeDispose, cell, watchState } from "../state";
 
 import { Fragment } from "react";
@@ -9,6 +13,7 @@ import { __classes, __each, useController } from "../state";
 type Props = {
   nodeId: string;
   nodeName: string;
+  path?: string;
   directoryPicker?: boolean;
 } & { children?: import("react").ReactNode; [key: string]: any };
 export const preloadFileManager = loadFinder;
@@ -21,14 +26,15 @@ export default function NodeFiles(input: Props) {
       const host = cell<HTMLElement>(),
         error = cell(""),
         loading = cell(true),
+        reading = cell(false),
+        pathPortals = cell<{ target: HTMLElement; value: string; dialog: HTMLElement }[]>([]),
         observations = cell<FileObservation[]>([]);
-      const navigation = useViewNavigation();
       let finder: Finder | undefined,
         manager: Awaited<ReturnType<typeof createFileManager>> | undefined,
         disposed = false,
         mountEpoch = 0;
       const initialPath = () =>
-        props.directoryPicker ? "/" : (navigation.route.value.filePath ?? "/");
+        props.path ?? "/";
       async function mount() {
         const epoch = ++mountEpoch;
         loading.value = true;
@@ -37,7 +43,7 @@ export default function NodeFiles(input: Props) {
           if (disposed || epoch !== mountEpoch || !host.value) return;
           const connection = await createFileManager(props.nodeId, (items) => {
             if (!disposed && epoch === mountEpoch) observations.value = items;
-          });
+          }, (active) => { if (!disposed && epoch === mountEpoch) reading.value = active; });
           if (disposed || epoch !== mountEpoch) {
             connection.dispose();
             return;
@@ -49,7 +55,10 @@ export default function NodeFiles(input: Props) {
             transport: connection.transport(!!props.directoryPicker),
             lang: locale.value === "zh-CN" ? "zh_CN" : "en",
             startPathHash: connection.hash(target),
-            height: 520,
+            // Fill the reserved dialog/flex box instead of a fixed pixel
+            // height: the dialog opens at its final size and the manager
+            // streams in without resizing it.
+            height: "100%",
             width: "100%",
             defaultView: "list",
             resizable: false,
@@ -112,6 +121,7 @@ export default function NodeFiles(input: Props) {
                   "help",
                 ],
             uiOptions: {
+              cwd: { replacement: { name: (file: FinderFile) => fileNameMarkup(file.name, file.mime === "directory") } },
               toolbar: props.directoryPicker
                 ? [
                     ["back", "forward", "up"],
@@ -125,7 +135,7 @@ export default function NodeFiles(input: Props) {
                     ["download"],
                     ["copy", "cut", "paste"],
                     ["rename", "rm"],
-                    ["edit", "quicklook"],
+                    ["edit", "quicklook", "info"],
                     ["archive", "extract"],
                     ["search"],
                     ["view", "sort", "fullscreen"],
@@ -176,16 +186,33 @@ export default function NodeFiles(input: Props) {
               },
             },
             handlers: {
+              dialogopen: (event: { data: { dialog: JQuery } }) => {
+                // elFinder sets the content identity after creating its outer dialog.
+                queueMicrotask(() => {
+                  if (disposed || epoch !== mountEpoch) return;
+                  const dialog = event.data.dialog?.[0];
+                  if (!(dialog instanceof HTMLElement) || !dialog.isConnected || pathPortals.value.some(item => item.dialog === dialog)) return;
+                  const content = dialog.querySelector<HTMLElement>(".ui-dialog-content[id*='-info-']");
+                  const target = content?.querySelector<HTMLElement>(".elfinder-info-path");
+                  if (!content || !target) return;
+                  try {
+                    const value = connection.path(content.id.slice(content.id.indexOf("-info-") + 6));
+                    const slot = document.createElement("span");
+                    // Native path selection may rewrite its value cell; keep the
+                    // React copy control beside the native label instead.
+                    (target.previousElementSibling ?? target).append(slot);
+                    pathPortals.value = [...pathPortals.value, { target: slot, value, dialog }];
+                  } catch { /* Multi-file information has no single path to copy. */ }
+                });
+              },
+              dialogclosed: (event: { data: { dialog: JQuery } }) => { pathPortals.value = pathPortals.value.filter(item => item.dialog !== event.data.dialog?.[0]); },
+              dialogremoved: (event: { data: { dialog: JQuery } }) => { pathPortals.value = pathPortals.value.filter(item => item.dialog !== event.data.dialog?.[0]); },
               open: () => {
                 if (disposed || !finder) return;
                 loading.value = false;
                 const path = connection.path(finder.cwd().hash);
                 if (props.directoryPicker) emit("directoryReady", path);
-                else if (path !== (navigation.route.value.filePath ?? "/"))
-                  navigation.go({
-                    ...navigation.route.value,
-                    filePath: path,
-                  });
+                else if (path !== (props.path ?? "/")) emit("pathChange", path);
               },
             },
             bootCallback: (
@@ -214,6 +241,7 @@ export default function NodeFiles(input: Props) {
       }
       function destroy() {
         mountEpoch++;
+        pathPortals.value = [];
         const currentFinder = finder, currentManager = manager;
         finder = undefined;
         manager = undefined;
@@ -223,7 +251,7 @@ export default function NodeFiles(input: Props) {
         if (props.directoryPicker) emit("directoryReady", "");
       }
       watchState(
-        () => navigation.route.value.filePath,
+        () => props.path,
         (value) => {
           if (
             finder &&
@@ -256,10 +284,11 @@ export default function NodeFiles(input: Props) {
           <section
             data-testid="node-files"
             aria-label={__props.nodeName as any}
-            className={__classes("node-files")}
+            className={__classes("node-files ui-load-region")}
           >
             {error.value ? <p role="alert">{error.value}</p> : null}
-            {loading.value && !error.value ? <p role="status" data-testid="file-loading">{t("files.loading")}</p> : null}
+            {(loading.value || reading.value) && !error.value ? <div className="file-load-feedback" data-testid="file-loading"><UiLoadState loading={loading.value || reading.value} ready={!loading.value} failed={!!error.value} /></div> : null}
+            {pathPortals.value.map(item => createPortal(<UiPath value={item.value} copyOnly />, item.target, item.value))}
             <div
               ref={__dom(host)}
               aria-busy={loading.value}
@@ -275,7 +304,7 @@ export default function NodeFiles(input: Props) {
                   {__each(observations.value, (item) => (
                     <article key={item.taskId as any}>
                       <span>
-                        {item.path}
+                        <UiPath value={item.path} />
                         {" · "}
                         {item.status}
                       </span>
@@ -305,7 +334,7 @@ export default function NodeFiles(input: Props) {
       );
     },
     input,
-    ["nodeId", "nodeName", "directoryPicker"],
+    ["nodeId", "nodeName", "path", "directoryPicker"],
     [],
     {},
     true,

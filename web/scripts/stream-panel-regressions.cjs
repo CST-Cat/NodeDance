@@ -25,7 +25,7 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
     if(pathname===nodesPath) return route.fulfill({json:{nodes:[{nodeId:node,agentId:agent,displayName:'Stream browser fixture',status:'online',generation:1,leaseValidUntil:fixtureState().leaseValidUntil,agentVersion:'agent-v0.1.13',capabilities:[]}],serverTime:now()}})
     if(pathname===containersPath && request.method()==='GET') return route.fulfill({json:inventory()})
     if(pathname===metricsPath) return route.fulfill({json:{type:'node_status',nodeId:node,state:fixtureState()}})
-    if(pathname===settingsPath) return route.fulfill({json:{viewMode:'monitor',groupBy:'node',sortBy:'custom',nodeGroupBy:'status',nodeSortBy:'custom',featuredLimit:4,customFields:['state','image','ports','health','uptime']}})
+    if(pathname===settingsPath) return route.fulfill({json:{viewMode:'monitor',groupBy:'node',sortBy:'custom',nodeGroupBy:'status',nodeSortBy:'custom',customFields:['state','image','ports','health','uptime']}})
     if(pathname===preferencesPath && request.method()==='GET') return route.fulfill({json:{preferences:[]}})
     if(pathname===tasksPath) return route.fulfill({json:{tasks:[],nextCursor:''}})
     return route.fallback()

@@ -132,9 +132,6 @@ dd[data-v-2aa82488] {
 .context-note[data-v-2aa82488] {
   margin: 0 0 10px;
 }
-.copy-status[data-v-2aa82488] {
-  margin: 10px 0 0;
-}
 .context-error[data-v-2aa82488] {
   font-size: 12px;
   color: var(--danger);
