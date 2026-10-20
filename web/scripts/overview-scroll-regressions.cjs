@@ -1,19 +1,31 @@
-const assert = require('node:assert/strict'), path = require('node:path')
+const assert = require('node:assert/strict'), path = require('node:path'), fs = require('node:fs')
 module.exports = async function ({page, base, artifacts}) {
  const mode = () => page.locator('.overview-toolbar-slot').getAttribute('data-mode')
- const settle = () => page.waitForTimeout(350)
+ const settle = () => page.waitForTimeout(600)
  for (const theme of ['light', 'dark']) for (const width of [320, 390, 700, 1440]) {
   await page.setViewportSize({width, height:800})
   await page.goto(base+'/#/nodes');await page.reload()
-  await page.locator('.node-summary').waitFor();await settle()
+  await page.locator('.node-summary').waitFor();await page.evaluate(()=>scrollTo(0,0));await settle()
   await page.evaluate(theme => {
    document.querySelector('.app-shell').dataset.theme=theme
    const spacer=document.createElement('div');spacer.style.height='2000px'
    document.querySelector('.nodes-dashboard').append(spacer)
   },theme)
   const initial=await page.locator('.overview-toolbar-slot').evaluate(el=>({top:el.getBoundingClientRect().top+scrollY,height:el.offsetHeight,document:document.documentElement.scrollHeight}))
-  await page.evaluate(()=>scrollTo(0,80));await settle()
+  await page.evaluate(()=>scrollTo(0,80))
+  if(width===390 && theme==='light') {
+   await page.waitForTimeout(80)
+   assert.ok(await page.locator('.overview-toolbar-slot').evaluate(el=>el.getAnimations().some(a=>a.playState==='running')),'Large reflow remains in motion after 80ms')
+   assert.equal(await page.locator('.node-summary').evaluate(el=>getComputedStyle(el).overflowY),'visible','Moving numbers are not clipped by the compact strip')
+   const capture=await page.context().newCDPSession(page)
+   fs.writeFileSync(path.join(artifacts,'overview-motion-early.png'),Buffer.from((await capture.send('Page.captureScreenshot')).data,'base64'))
+   await page.waitForTimeout(120)
+   fs.writeFileSync(path.join(artifacts,'overview-motion-middle.png'),Buffer.from((await capture.send('Page.captureScreenshot')).data,'base64'))
+   await capture.detach()
+  }
+  await settle()
   if(width>900){assert.equal(await mode(),'inline');continue}
+  assert.equal(await page.locator('.overview-toolbar-slot').getAttribute('data-animating'),null,'Motion cleanup restores normal overflow')
   assert.equal(await mode(),'compact')
   const compact=await page.locator('.overview-toolbar-slot').evaluate(el=>{
    const panel=el.firstElementChild, summary=el.querySelector('.node-summary')
@@ -64,7 +76,7 @@ module.exports = async function ({page, base, artifacts}) {
  await settle();assert.equal(await mode(),'compact')
  assert.equal(await page.locator('.overview-toolbar-slot').evaluate(el=>el.getAnimations({subtree:true}).length),0)
  await page.evaluate(()=>localStorage.setItem('nodedance.locale','zh-CN'))
- await page.setViewportSize({width:320,height:800});await page.reload();await page.locator('.node-summary').waitFor();await settle()
+ await page.setViewportSize({width:320,height:800});await page.reload();await page.locator('.node-summary').waitFor();await page.evaluate(()=>scrollTo(0,0));await settle()
  await page.evaluate(()=>{document.querySelector('.nodes-dashboard').style.minHeight='3000px';scrollTo(0,80)})
  await settle();assert.equal(await mode(),'compact')
  assert.deepEqual(await page.locator('.node-count-compact-label').allTextContents(),['总数','在线','离线','待接入'])

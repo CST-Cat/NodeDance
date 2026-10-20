@@ -4,12 +4,16 @@
 
 ### English
 
+- Soften mobile overview transitions with the locally sourced Anthropic deceleration curve and synchronized 480ms motion, keeping moving numbers visible throughout the transition.
+
 - Compact narrow-screen overview counts and actions into an anchored single row on downward scrolling, expanding on upward scrolling while preserving search state and page position.
 
 - Restore subtle full-width mobile menu dividers using the locally studied Anthropic navigation structure and faded-slate separator color.
 - Scale narrow-screen navigation icons with font cap height and center them vertically with their labels, preserving desktop icon geometry and touch targets.
 
 ### 简体中文
+
+- 窄屏总览改用本地 Anthropic 源码中的减速曲线，统一为更舒缓的 480ms 同步过渡，避免运动中的数字被裁断。
 
 - 窄屏总览随下滚收为原位置的一行计数与操作，上滚展开，保留搜索状态和页面滚动位置。
 

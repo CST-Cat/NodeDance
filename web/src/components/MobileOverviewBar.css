@@ -1,5 +1,13 @@
 .overview-toolbar-slot { min-width: 0; }
-.overview-toolbar-panel { position: relative; isolation: isolate; }
+/* Deceleration curve found in design-study/anthropic/assets/main.css and
+   the local Claude CDS_EASING.DECEL reference. Give this large reflow more
+   time than a button response; keep geometry and space compensation in sync. */
+.overview-toolbar-panel {
+  --overview-ease: cubic-bezier(.165, .84, .44, 1);
+  --overview-duration: 480ms;
+  position: relative;
+  isolation: isolate;
+}
 .node-count-compact-label { display: none; }
 .app-shell .nodes-dashboard:has(.overview-toolbar-slot) { overflow-anchor: none; }
 .app-shell[data-theme] .overview-search-toggle { display: none; }
@@ -80,4 +88,10 @@
 @media (min-width: 360px) and (max-width: 900px) {
   .app-shell[data-theme] .overview-toolbar-slot[data-mode="compact"] > .overview-toolbar-panel { padding-inline: 6px; }
   .overview-toolbar-slot[data-mode="compact"] .node-summary article { gap: 3px; }
+}
+
+@media (max-width: 900px) {
+  /* Moving numbers can cross the compact strip while the slot contracts. */
+  .overview-toolbar-slot[data-animating] .node-summary { overflow: visible; }
+  .overview-toolbar-slot[data-animating] .dashboard-toolbar-actions > button { transition: none; }
 }

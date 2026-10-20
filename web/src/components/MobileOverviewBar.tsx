@@ -27,6 +27,7 @@ export default function MobileOverviewBar({ children, holdExpanded }: {
     const dashboard = slot.current.closest<HTMLElement>(".nodes-dashboard")!;
     frameBefore.current = { height: slot.current.getBoundingClientRect().height, reserve: matchMedia("(max-width: 900px)").matches ? Math.max(0, parseFloat(getComputedStyle(dashboard).paddingBottom) - 32) : 0 };
     animations.current.forEach(animation => animation.cancel());
+    slot.current.dataset.animating = "true";
     current.current = next;
     setMode(next);
   }
@@ -42,17 +43,24 @@ export default function MobileOverviewBar({ children, holdExpanded }: {
     dashboard.style.setProperty("--overview-scroll-reserve", `${reserve}px`);
     if (prefersReducedMotion() || !mobile) {
       slot.current.style.removeProperty("height");
+      delete slot.current.dataset.animating;
       before.current.clear();
       return;
     }
-    const easing = getComputedStyle(panel.current).getPropertyValue("--ux-ease").trim();
-    const options = { duration: 220, easing, fill: "none" as const };
+    const motion = getComputedStyle(panel.current);
+    const easing = motion.getPropertyValue("--overview-ease").trim();
+    const time = motion.getPropertyValue("--overview-duration").trim();
+    const duration = parseFloat(time) * (time.endsWith("ms") ? 1 : 1000);
+    const options = { duration, easing, fill: "none" as const };
     slot.current.style.height = `${nextHeight}px`;
     const heightAnimation = slot.current.animate([{ height: `${previous.height}px` }, { height: `${nextHeight}px` }], options);
     animations.current = [heightAnimation, dashboard.animate([{ paddingBottom: `${32 + previous.reserve}px` }, { paddingBottom: `${32 + reserve}px` }], options)];
     const target = mode;
     void heightAnimation.finished.then(() => {
-      if (current.current === target) slot.current?.style.removeProperty("height");
+      if (current.current === target && slot.current) {
+        slot.current.style.removeProperty("height");
+        delete slot.current.dataset.animating;
+      }
     }).catch(() => {});
     for (const [el, previous] of before.current) {
       const next = el.getBoundingClientRect();
@@ -64,7 +72,7 @@ export default function MobileOverviewBar({ children, holdExpanded }: {
       animations.current.push(el.animate([
         { transform: from, opacity: visibleBefore ? 1 : 0 },
         { transform: "none", opacity: 1 },
-      ], { duration: 220, easing, fill: "none" }));
+      ], options));
     }
     before.current.clear();
   }, [mode]);
