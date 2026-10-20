@@ -205,7 +205,7 @@
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
-.node-search input[data-v-73fde8e5]:focus {
+.app-shell[data-theme] .node-search input[data-v-73fde8e5]:is(:focus, :focus-visible) {
   outline: none;
   box-shadow: none;
 }
