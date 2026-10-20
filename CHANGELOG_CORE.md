@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.50]
+
+### English
+
+- Refine mobile navigation with a stable full-screen reveal, no dimming overlay, no initial closing animation, and hidden mobile branding and account footer.
+- Follow the browser language by default and move the persisted language preference into a single aligned personal-settings dropdown.
+- Keep node counts in one centered row on all screen sizes, simplify count labels and decoration, and place refresh feedback beside the page title.
+- Remove redundant login copy and spacing, and remove the duplicate blue focus ring inside node search while retaining its outer focus indicator.
+
+### 简体中文
+
+- 优化窄屏全屏菜单开合，修复闪烁及首次进入的关闭动画，移除压暗遮罩，并隐藏窄屏品牌和账号底栏。
+- 默认跟随浏览器语言，将可保存的语言偏好移至个人设置中的单个对齐下拉框。
+- 节点统计在所有屏幕保持四项一行、各自居中，简化标签与装饰，将刷新提示移至标题右侧。
+- 移除登录页冗余文案及其间距，去掉节点搜索框内重复的蓝色焦点框，保留外层焦点提示。
+
 ## [0.1.49]
 
 ### English
