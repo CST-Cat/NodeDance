@@ -94,3 +94,9 @@ Run `make build` followed by `node web/scripts/audit-navigation.cjs` for the foc
 个人设置的语言下拉框位于背景颜色右侧，标签顶边及控件上下边缘对齐，复用主题化下拉组件；窄屏两列按可用宽度收缩，控件不超出卡片。语言偏好仅保存在当前浏览器，自动模式继续跟随浏览器语言。
 
 窄屏功能项采用整行底部浅分割线，参考本地 `design-study/anthropic/pages/home.html` 的 `.nav_links_item.is-mobile` 结构及 `assets/main.css`：线宽沿用 `.0625rem`。原站主菜单使用 ivory-medium（`#F0EEE6`），与本项目当前菜单背景同色，因此映射为同一源码 `.nav_dropdown_link_block` 使用的 slate-faded-10（`#1414131a`），保证浅色分隔可见；不恢复已隐藏的品牌／账号分割线。样式集中在窄屏菜单规则中，不保留会被 `border: 0` 清除的旧顶部边框声明，桌面菜单不变。
+
+窄屏节点总览在向下滚动超过 24px 时，将现有四项计数、搜索、偏好、添加 Agent 按顺序收为一行；反向滚动超过 16px 展开，小幅抖动不会反复切换。上沿保留在原计数卡片的位置，不吸顶、不调用页面滚动；高度变化由页面底部等量空间补偿，防止接近页底时浏览器改变滚动位置。搜索和偏好复用同一份控件及状态，输入中／偏好展开时保持完整布局。桌面保持原样。
+
+动效学习来源为本地 `design-study/anthropic` 保存的脚本与 CSS（被动滚动监听、焦点不滚动、短时长）以及 `.references/open-claude-ui/code-examples/ClaudeMotionPresets.ts` 的无过冲收敛思路；这些来源没有现成的同款节点工具栏。本项目采用共享 `--ux-ease`、220ms 高度与元素几何过渡，快速反向从当前画面继续；减少动态效果时即时切换。运行 `make build` 后执行 `node web/scripts/audit-overview-scroll.cjs`，使用隔离临时 Core 验证位置、方向阈值、搜索状态、偏好、桌面、深浅主题及减少动态效果。
+
+On narrow screens, scrolling down compacts the existing four counts and search/preferences/enrollment controls into one row; scrolling up expands them. The row remains at the original count-card upper edge without pinning or programmatic scrolling. A matching bottom-space reserve preserves document height. The original controls and handlers are reused; editing and open preferences keep the expanded layout. Desktop remains unchanged. Local Anthropic/Claude source patterns informed the short, interruptible, non-overshooting transition; reduced motion skips animation.

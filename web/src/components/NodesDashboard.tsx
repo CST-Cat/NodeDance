@@ -1,4 +1,5 @@
 import UiLoadState from "./UiLoadState";
+import MobileOverviewBar from "./MobileOverviewBar";
 import { Fragment } from "react";
 import {
   api,
@@ -1168,6 +1169,7 @@ export default function NodesDashboard(input: Props) {
               </header>
               <div className={__classes("overview-layout")} data-v-73fde8e5="">
                 <div className={__classes("overview-main ui-load-region")} data-v-73fde8e5="">
+                  <MobileOverviewBar holdExpanded={preferencesOpen.value || !!error.value}>
                   <div
                     className={__classes("dashboard-overview-controls")}
                     data-v-73fde8e5=""
@@ -1184,7 +1186,8 @@ export default function NodesDashboard(input: Props) {
                             data-kind={item.kind as any}
                             data-v-73fde8e5=""
                           >
-                            <span data-v-73fde8e5="">{t(item.label)}</span>
+                            <span className="node-count-label" data-v-73fde8e5="">{t(item.label)}</span>
+                            <span className="node-count-compact-label" data-v-73fde8e5="">{t(`dashboard.compact.${item.kind}`)}</span>
                             <strong data-v-73fde8e5="">
                               {busy.value && !nodes.value.length
                                 ? "—"
@@ -1203,6 +1206,7 @@ export default function NodesDashboard(input: Props) {
                         {display(error.value)}
                       </div>
                     ) : null}
+                    <button type="button" className="overview-search-toggle" data-expand-search="" aria-label={t("m.0191c754eec0")} aria-controls="overview-node-search"><UiIcon name="search" /></button>
                     <div
                       className={__classes("dashboard-toolbar")}
                       data-v-73fde8e5=""
@@ -1213,6 +1217,7 @@ export default function NodesDashboard(input: Props) {
                       >
                         <UiIcon name="nodes" data-v-73fde8e5=""></UiIcon>
                         <input
+                          id="overview-node-search"
                           type="search"
                           placeholder={t("m.800588838c17") as any}
                           aria-label={t("m.0191c754eec0") as any}
@@ -1234,6 +1239,8 @@ export default function NodesDashboard(input: Props) {
                       >
                         <button
                           type="button"
+                          aria-label={t("dashboard.configure")}
+                          title={t("dashboard.configure")}
                           aria-expanded={preferencesOpen.value as any}
                           aria-controls="node-view-preferences"
                           className={__classes(
@@ -1245,10 +1252,12 @@ export default function NodesDashboard(input: Props) {
                           data-v-73fde8e5=""
                         >
                           <UiIcon name="settings" data-v-73fde8e5=""></UiIcon>
-                          {t("dashboard.configure")}
+                          <span className="overview-action-label">{t("dashboard.configure")}</span>
                         </button>
                         <button
                           type="button"
+                          aria-label={t("nav.enrollment")}
+                          title={t("nav.enrollment")}
                           className={__classes("primary-button")}
                           onClick={(event: any) => {
                             emit("enroll");
@@ -1256,17 +1265,10 @@ export default function NodesDashboard(input: Props) {
                           data-v-73fde8e5=""
                         >
                           <UiIcon name="add" data-v-73fde8e5=""></UiIcon>
-                          {t("nav.enrollment")}
+                          <span className="overview-action-label">{t("nav.enrollment")}</span>
                         </button>
                       </div>
                     </div>
-                  </div>
-                  <section
-                    aria-label={t("m.8a3dfec291d0") as any}
-                    data-testid="multi-vps-dashboard"
-                    className={__classes("vps-dashboard")}
-                    data-v-73fde8e5=""
-                  >
                     <div
                       id="node-view-preferences"
                       aria-label={t("m.3fa2b5eb40e0") as any}
@@ -1373,6 +1375,14 @@ export default function NodesDashboard(input: Props) {
                         </span>
                       ) : null}
                     </div>
+                  </div>
+                  </MobileOverviewBar>
+                  <section
+                    aria-label={t("m.8a3dfec291d0") as any}
+                    data-testid="multi-vps-dashboard"
+                    className={__classes("vps-dashboard")}
+                    data-v-73fde8e5=""
+                  >
                     <UiLoadState loading={busy.value && !nodesReady.value} ready={false} failed={!!error.value} />
                     {nodesReady.value && nodes.value.length === 0 ? (
                       <div

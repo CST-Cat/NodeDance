@@ -4,10 +4,14 @@
 
 ### English
 
+- Compact narrow-screen overview counts and actions into an anchored single row on downward scrolling, expanding on upward scrolling while preserving search state and page position.
+
 - Restore subtle full-width mobile menu dividers using the locally studied Anthropic navigation structure and faded-slate separator color.
 - Scale narrow-screen navigation icons with font cap height and center them vertically with their labels, preserving desktop icon geometry and touch targets.
 
 ### 简体中文
+
+- 窄屏总览随下滚收为原位置的一行计数与操作，上滚展开，保留搜索状态和页面滚动位置。
 
 - 根据本地 Anthropic 导航源码，为窄屏菜单恢复整行浅分割线，采用淡石板色分隔。
 - 窄屏导航图标按字体大写字高缩放并与标签垂直居中，保留桌面图标尺寸和触摸区域。

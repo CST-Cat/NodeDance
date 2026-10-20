@@ -35,6 +35,7 @@ export default function UiIcon(input: Props) {
         settings:
           "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M12 2v3 M12 19v3 M2 12h3 M19 12h3 M5 5l2 2 M17 17l2 2 M5 19l2-2 M17 7l2-2",
         logout: "M9 4H4v16h5 M9 12h12 M17 8l4 4-4 4",
+        search: "M10.5 3a7.5 7.5 0 1 0 0 15 7.5 7.5 0 0 0 0-15 M16 16l5 5",
         menu: "M4 6h16 M4 12h16 M4 18h16",
         close: "M6 6l12 12 M6 18L18 6",
         arrowDown: "M12 5v13 M6 13l6 6 6-6",
