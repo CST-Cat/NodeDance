@@ -2413,5 +2413,19 @@
   "updates.backupDeleted": "Backup deleted",
   "updates.retry": "Retry",
   "operations.contract.updates-release": "Read published component changelog independently of the installed runtime",
-  "operations.contract.updates-delete-backup": "Confirm deletion of a finished update backup while retaining its history"
+  "operations.contract.updates-delete-backup": "Confirm deletion of a finished update backup while retaining its history",
+  "monitoring.heading": "Monitoring data",
+  "monitoring.retention": "Maximum retention",
+  "monitoring.days": "{0} days",
+  "monitoring.saving": "Saving",
+  "monitoring.save": "Save",
+  "monitoring.data": "Data",
+  "monitoring.metric": "Data metric",
+  "monitoring.empty": "No samples",
+  "monitoring.time": "Time",
+  "monitoring.average": "Average",
+  "monitoring.minimum": "Minimum",
+  "monitoring.maximum": "Maximum",
+  "monitoring.samples": "Samples",
+  "monitoring.pages": "Monitoring data pages"
 }

@@ -31,7 +31,20 @@ for i in range(55):
  ident=hashlib.sha256(str(i).encode()).hexdigest()
  c.execute('INSERT INTO feed_items(id,feed_id,title,summary,url,first_seen,last_seen) VALUES(?,?,?,?,?,?,?)',(ident,feed,'Entry '+str(i),sys.argv[3],'https://example.org/article/'+str(i),now-i,now))
 c.commit();c.close()`,path.join(directory,'nodedance.sqlite'),subscription.id,malicious])
-  await assertEventually(async()=>await view.locator('.feed-entry h3').count()===50)
+  const catalog=await(await context.request.get(base+'/api/v1/operations')).json(),operation=name=>{const value=catalog.operations.find(item=>item.name===name);assert.ok(value,name);return value}
+  const channelPath=operation('channels.list').path,deliveryPath=operation('feeds.deliveries').path.replace('{id}',subscription.id),itemsPath=operation('feeds.items').path.replace('{id}',subscription.id)
+  let releaseChannel,releaseHistory,itemRequests=0
+  const channelHeld=new Promise(resolve=>releaseChannel=resolve),historyHeld=new Promise(resolve=>releaseHistory=resolve)
+  await page.route('**'+channelPath,async route=>{const response=await route.fetch();await channelHeld;await route.fulfill({response})})
+  await page.route('**'+deliveryPath,async route=>{await historyHeld;await route.fulfill({status:503,body:'Isolated delivery-history failure'})})
+  const countItems=request=>{if(new URL(request.url()).pathname===itemsPath&&request.method()==='GET')itemRequests++};page.on('request',countItems)
+  try{
+   await page.reload();await view.waitFor();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===50)
+   assert.equal(itemRequests,1,'Initial feed selection reads its entries once without waiting for notification channels or delivery history')
+   const failedHistory=page.waitForResponse(response=>new URL(response.url()).pathname===deliveryPath)
+   releaseChannel();releaseHistory();assert.equal((await failedHistory).status(),503)
+   assert.equal(await view.locator('.feed-entry h3').count(),50,'A delivery-history failure does not hide successfully loaded entries')
+  }finally{releaseChannel();releaseHistory();page.off('request',countItems);await page.unroute('**'+channelPath);await page.unroute('**'+deliveryPath)}
   assert.equal(await view.locator('img,script,iframe').count(),0);assert.equal(await page.evaluate(()=>window.__rssXss||0),0)
   await view.getByRole('button',{name:'Next',exact:true}).click();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===5)
   await view.getByRole('button',{name:'Previous',exact:true}).click();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===50)

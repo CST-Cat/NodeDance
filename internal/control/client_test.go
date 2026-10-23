@@ -56,6 +56,9 @@ func TestCoreSessionLifecycle(t *testing.T) {
 	if r := call(c, "auth.setup", string(body)); r.Error != "" {
 		t.Fatalf("setup: %+v", r)
 	}
+	if result := call(c, "agents.enrollment", `{"displayName":42}`); result.Status != http.StatusBadRequest {
+		t.Fatalf("Core must return the input error: %+v", result)
+	}
 	enrollment := call(c, "agents.enrollment", `{"displayName":"node","coreUrl":"https://core.example"}`)
 	if enrollment.Error != "" || !strings.Contains(string(enrollment.Data), "installCommand") || !strings.Contains(string(enrollment.Data), "raw.githubusercontent.com/CST-Cat/NodeDance/main/scripts/install-agent.sh") || strings.Contains(string(enrollment.Data), "--release-tag") {
 		t.Fatalf("shared installer: %+v", enrollment)
@@ -66,6 +69,10 @@ func TestCoreSessionLifecycle(t *testing.T) {
 	if r := call(c, "nodes.list", ""); r.Error != "" {
 		t.Fatalf("nodes: %+v", r)
 	}
+	sessionBefore, err := os.Stat(filepath.Join(dir, "session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	c2, err := control.NewClient(options)
 	if err != nil {
 		t.Fatal(err)
@@ -73,6 +80,13 @@ func TestCoreSessionLifecycle(t *testing.T) {
 	defer c2.Close()
 	if r := call(c2, "auth.me", ""); r.Error != "" {
 		t.Fatalf("persisted session: %+v", r)
+	}
+	sessionAfter, err := os.Stat(filepath.Join(dir, "session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(sessionBefore, sessionAfter) {
+		t.Fatal("Unchanged session was rewritten by an ordinary read")
 	}
 	if r := call(c2, "auth.login", `{"username":"test-admin","password":"long-password-for-tests"}`); r.Error != "" {
 		t.Fatalf("login with prior csrf: %+v", r)

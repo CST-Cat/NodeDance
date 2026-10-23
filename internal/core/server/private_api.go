@@ -107,6 +107,9 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 		return
 	}
 	switch r.URL.Path {
+	case "/api/v1/settings/monitoring":
+		s.handleHistorySettings(w, r)
+		return
 	case "/api/v1/metrics/catalog":
 		if r.Method != "GET" {
 			http.Error(w, "method not allowed", 405)

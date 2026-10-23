@@ -37,23 +37,24 @@ export default function GuestDisplay(input: Props) {
           ) ?? [],
       );
       let timer: ReturnType<typeof setTimeout> | undefined,
-        controller: AbortController | undefined,
-        disposed = false;
+        controller: AbortController | undefined;
       async function load() {
         if (loading.value) return;
         loading.value = true;
         error.value = "";
-        controller = new AbortController();
+        const request = new AbortController();
+        controller = request;
         try {
-          snapshot.value = await operationRequest<GuestDisplay>(
+          const result = await operationRequest<GuestDisplay>(
             "guest.display",
             {},
             {
-              signal: controller.signal,
+              signal: request.signal,
             },
           );
+          if (!request.signal.aborted) snapshot.value = result;
         } catch (reason) {
-          if (!disposed) {
+          if (!request.signal.aborted) {
             snapshot.value = undefined;
             error.value =
               reason instanceof ApiError && reason.status === 404
@@ -63,8 +64,10 @@ export default function GuestDisplay(input: Props) {
                   : String(reason);
           }
         } finally {
-          loading.value = false;
-          if (!disposed && !props.preview) timer = setTimeout(load, 30000);
+          if (!request.signal.aborted) {
+            loading.value = false;
+            if (!props.preview) timer = setTimeout(load, (snapshot.value?.refreshSeconds ?? 30) * 1000);
+          }
         }
       }
       function refresh() {
@@ -81,7 +84,6 @@ export default function GuestDisplay(input: Props) {
         if (!props.preview) void load();
       });
       beforeDispose(() => {
-        disposed = true;
         controller?.abort();
         if (timer) clearTimeout(timer);
       });

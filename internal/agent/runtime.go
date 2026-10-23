@@ -506,12 +506,12 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 			}
 		}()
 	}
-	var composeMessages chan protocol.Envelope
+	var composeMessages chan protocol.ComposeRequest
 	var composeBridgeDone <-chan error
 	var cancelCompose context.CancelFunc
 	var composeFinished <-chan struct{}
 	if composeBridge != nil && composeBridgeEnabled {
-		composeMessages = make(chan protocol.Envelope, 16)
+		composeMessages = make(chan protocol.ComposeRequest, 16)
 		composeCtx, cancelComposeFunc := context.WithCancel(ctx)
 		cancelCompose = cancelComposeFunc
 		done := make(chan error, 1)
@@ -535,12 +535,12 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 			}
 		}()
 	}
-	var imageMessages chan protocol.Envelope
+	var imageMessages chan agentImageQuery
 	var imageBridgeDone <-chan error
 	var cancelImage context.CancelFunc
 	var imageFinished <-chan struct{}
 	if taskBridge != nil && taskBridge.images != nil && imagesEnabled {
-		imageMessages = make(chan protocol.Envelope, 8)
+		imageMessages = make(chan agentImageQuery, 8)
 		imageCtx, cancelImageFunc := context.WithCancel(ctx)
 		cancelImage = cancelImageFunc
 		done := make(chan error, 1)
@@ -924,7 +924,7 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 					return errors.New("Core Compose request failed validation")
 				}
 				select {
-				case composeMessages <- envelope:
+				case composeMessages <- request:
 				case <-ctx.Done():
 					return nil
 				default:
@@ -947,7 +947,7 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 					return errors.New("Core image list request is invalid or was not negotiated")
 				}
 				select {
-				case imageMessages <- envelope:
+				case imageMessages <- agentImageQuery{requestID: envelope.RequestID, request: request}:
 				default:
 					go func() {
 						_ = sendAgentImageResponse(ctx, writer, generation, envelope.RequestID,

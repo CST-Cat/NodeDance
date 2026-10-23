@@ -94,6 +94,8 @@ export default function FeedsCenter() {
       let stopped = false,
         epoch = 0,
         timer: ReturnType<typeof setTimeout> | undefined;
+      let itemRequest: AbortController | undefined;
+      let deliveryRequest: {id: string; controller: AbortController} | undefined;
       const statusKeys: Record<string, string> = {
         queued: "feeds.queued",
         running: "feeds.running",
@@ -162,13 +164,30 @@ export default function FeedsCenter() {
           if (!stopped && current === epoch) error.value = message(e);
         }
       }
-      async function page() {
-        if (!selected.value) return;
+      async function loadDeliveries(id: string) {
+        if (deliveryRequest?.id === id) return;
+        deliveryRequest?.controller.abort();
+        const controller = new AbortController();
+        deliveryRequest = {id, controller};
+        try {
+          const result = await operationRequest<{deliveries: Delivery[]}>("feeds.deliveries", {params: {id}}, {signal: controller.signal});
+          if (!stopped && !controller.signal.aborted && selected.value === id) deliveries.value = result.deliveries;
+        } catch (e) {
+          if (!stopped && !controller.signal.aborted && selected.value === id) error.value = message(e);
+        } finally {
+          if (deliveryRequest?.controller === controller) deliveryRequest = undefined;
+        }
+      }
+      async function page(withDeliveries = true) {
+        if (stopped || !selected.value) return;
+        itemRequest?.abort();
+        const controller = new AbortController();
+        itemRequest = controller;
         const current = epoch,
           id = selected.value;
+        if (withDeliveries) void loadDeliveries(id);
         try {
-          const [entries, history] = await Promise.all([
-            operationRequest<{
+          const entries = await operationRequest<{
               items: Item[];
             }>("feeds.items", {
               params: {
@@ -180,38 +199,38 @@ export default function FeedsCenter() {
                 search: search.value,
                 unread: String(unread.value),
               },
-            }),
-            operationRequest<{
-              deliveries: Delivery[];
-            }>("feeds.deliveries", {
-              params: {
-                id,
-              },
-            }),
-          ]);
-          if (stopped || current !== epoch || id !== selected.value) return;
+            }, {signal: controller.signal});
+          if (stopped || controller.signal.aborted || current !== epoch || id !== selected.value) return;
           items.value = entries.items;
-          deliveries.value = history.deliveries;
         } catch (e) {
-          if (current === epoch && !stopped) error.value = message(e);
+          if (current === epoch && !stopped && !controller.signal.aborted) error.value = message(e);
+        } finally {
+          if (itemRequest === controller) itemRequest = undefined;
         }
       }
       async function poll() {
-        await reload();
-        await page();
+        if (!busy.value) {
+          const previous = selected.value;
+          await reload();
+          if (!busy.value && selected.value === previous) await page();
+        }
         if (!stopped) timer = setTimeout(poll, 5000);
       }
       async function perform(call: () => Promise<unknown>) {
-        if (busy.value) return;
+        if (stopped || busy.value) return;
         busy.value = true;
         epoch++;
+        itemRequest?.abort();
+        deliveryRequest?.controller.abort();
+        deliveryRequest = undefined;
         error.value = "";
         try {
           await call();
+          if (stopped) return;
           await reload();
           await page();
         } catch (e) {
-          error.value = message(e);
+          if (!stopped) error.value = message(e);
         } finally {
           busy.value = false;
         }
@@ -313,30 +332,33 @@ export default function FeedsCenter() {
           ),
         );
       }
-      watchState([selected, unread], () => {
+      watchState([selected, unread], (value, previous) => {
         epoch++;
         offset.value = 0;
         removeConfirmed.value = false;
-        void page();
-      });
-      afterMount(async () => {
-        try {
-          options.value = await operationRequest<Options>("feeds.options");
-          draft.value.intervalMinutes = options.value.defaultIntervalMinutes;
-          channels.value = (
-            await operationRequest<{
-              channels: Channel[];
-            }>("channels.list")
-          ).channels;
-        } catch (e) {
-          error.value = message(e);
+        if (value[0] !== previous[0]) {
+          items.value = [];
+          deliveries.value = [];
         }
-        if (!stopped) void poll();
+        if (!busy.value) void page(value[0] !== previous[0]);
+      });
+      afterMount(() => {
+        void operationRequest<Options>("feeds.options").then(result => {
+          if (stopped) return;
+          options.value = result;
+          if (!editing.value && draft.value.intervalMinutes === 30) draft.value.intervalMinutes = result.defaultIntervalMinutes;
+        }).catch(e => {if (!stopped) error.value = message(e);});
+        void operationRequest<{channels: Channel[]}>("channels.list").then(result => {
+          if (!stopped) channels.value = result.channels;
+        }).catch(e => {if (!stopped) error.value = message(e);});
+        void poll();
       });
       beforeDispose(() => {
         stopped = true;
         epoch++;
         if (timer) clearTimeout(timer);
+        itemRequest?.abort();
+        deliveryRequest?.controller.abort();
       });
       return () => (
         <ManagementPage
@@ -637,7 +659,7 @@ export default function FeedsCenter() {
                       event.preventDefault();
                       offset.value = 0;
                       epoch++;
-                      void page();
+                      void page(false);
                     }}
                   >
                     <Input
@@ -706,7 +728,7 @@ export default function FeedsCenter() {
                       onClick={() => {
                         offset.value = Math.max(0, offset.value - 50);
                         epoch++;
-                        void page();
+                        void page(false);
                       }}
                     >
                       {t("feeds.previous")}
@@ -717,7 +739,7 @@ export default function FeedsCenter() {
                       onClick={() => {
                         offset.value += 50;
                         epoch++;
-                        void page();
+                        void page(false);
                       }}
                     >
                       {t("feeds.next")}

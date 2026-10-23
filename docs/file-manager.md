@@ -73,3 +73,5 @@ Authenticated node-detail views prepare the static file-manager interface before
 Initial reads show the shared loading structure immediately; subsequent reads retain the existing native list with an updating indicator. The documented elFinder cwd name template uses the shared path splitter to keep compound extensions visible. Native Selection Info remains the full-path view, with a shared inline copy control that copies the original decoded file identity, including Unicode, rather than elFinder’s visual zero-width separators. No connector or file-operation semantics change.
 
 首次读取立即显示加载结构，刷新保留已有原生列表。长文件名保留扩展名，完整路径使用 elFinder 原生信息弹窗查看，并复用共享复制反馈。复制原始路径，不包含显示时插入的零宽字符；编辑、重命名、搜索、分页及安全校验沿用原实现。
+
+原地解压返回的 `added` 仅包含操作前不存在的条目，`changed` 仅包含元数据确有变化的旧条目；不把整个目录报告为新增／变更，避免无关文件被全选及额外确认。文件浏览器回归使用 `make build` 生成的 Core／Agent，不再重复编译两份测试二进制。

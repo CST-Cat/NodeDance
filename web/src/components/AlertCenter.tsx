@@ -11,12 +11,13 @@ import {
 } from "../api";
 import { display, locale, t } from "../i18n";
 import { useViewTab } from "../navigation";
-import { afterMount, beforeDispose, cell, derived, observable } from "../state";
+import { afterMount, beforeDispose, cell, derived, observable, watchState } from "../state";
 
 import { Fragment } from "react";
 import { __call, __classes, __each, __input, useController } from "../state";
 import "./AlertCenter.css";
 import UiSelect from "./UiSelect";
+import { Input } from "./ManagementUI";
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
 export default function AlertCenter(input: Props) {
   return useController(
@@ -179,46 +180,44 @@ export default function AlertCenter(input: Props) {
         error.value = "";
         notice.value = "";
       }
+      let disposed = false;
+      let refreshRequest: AbortController | undefined;
       async function refresh() {
+        if (disposed) return;
+        refreshRequest?.abort();
+        const controller = new AbortController();
+        refreshRequest = controller;
         loading.value = true;
         error.value = "";
-        const results = await Promise.allSettled([
-          api.nodes(),
-          api.activeAlerts(),
-          api.alertHistory(),
-          api.alertRules(),
-          api.alertChannels(),
-          api.alertWindows(),
-          api.alertDeliveries(),
-          api.alertEvents(),
-          operationRequest<{
-            metrics: Record<string, string>;
-          }>("metrics.catalog"),
-        ]);
-        const failure = results.find((item) => item.status === "rejected");
-        if (failure?.status === "rejected")
-          error.value = message(failure.reason);
-        if (results[0].status === "fulfilled") {
-          nodes.value = results[0].value.nodes;
-          if (!ruleForm.nodeId) ruleForm.nodeId = nodes.value[0]?.nodeId ?? "";
+        async function load<T>(name: string, apply: (value: T) => void) {
+          try {
+            const result = await operationRequest<T>(name, {}, {signal: controller.signal});
+            if (!disposed && !controller.signal.aborted) apply(result);
+          } catch (reason) {
+            if (!disposed && !controller.signal.aborted) error.value = message(reason);
+          }
         }
-        if (results[1].status === "fulfilled")
-          active.value = results[1].value.alerts;
-        if (results[2].status === "fulfilled")
-          history.value = results[2].value.alerts;
-        if (results[3].status === "fulfilled")
-          rules.value = results[3].value.rules;
-        if (results[4].status === "fulfilled")
-          channels.value = results[4].value.channels;
-        if (results[5].status === "fulfilled")
-          windows.value = results[5].value.windows;
-        if (results[6].status === "fulfilled")
-          deliveries.value = results[6].value.deliveries;
-        if (results[7].status === "fulfilled")
-          events.value = results[7].value.events;
-        if (results[8].status === "fulfilled")
-          metricCatalog.value = results[8].value.metrics;
-        loading.value = false;
+        const reads = [load<{alerts: AlertItem[]}>("alerts.list", result => {active.value = result.alerts;})];
+        if (tab.value === "history") {
+          reads.push(load<{alerts: AlertItem[]}>("alerts.history", result => {history.value = result.alerts;}));
+          reads.push(load<{events: AlertEvent[]}>("alerts.events", result => {events.value = result.events;}));
+        } else if (tab.value === "rules") {
+          reads.push(load<{nodes: AgentNode[]}>("nodes.list", result => {
+            nodes.value = result.nodes;
+            if (!ruleForm.nodeId) ruleForm.nodeId = result.nodes[0]?.nodeId ?? "";
+          }));
+          reads.push(load<{rules: AlertRule[]}>("rules.list", result => {rules.value = result.rules;}));
+          reads.push(load<{channels: AlertChannel[]}>("channels.list", result => {channels.value = result.channels;}));
+          reads.push(load<{metrics: Record<string, string>}>("metrics.catalog", result => {metricCatalog.value = result.metrics;}));
+        } else if (tab.value === "channels") {
+          reads.push(load<{channels: AlertChannel[]}>("channels.list", result => {channels.value = result.channels;}));
+        } else if (tab.value === "windows") {
+          reads.push(load<{windows: AlertWindow[]}>("windows.list", result => {windows.value = result.windows;}));
+        } else if (tab.value === "deliveries") {
+          reads.push(load<{deliveries: AlertDelivery[]}>("deliveries.list", result => {deliveries.value = result.deliveries;}));
+        }
+        await Promise.all(reads);
+        if (!disposed && refreshRequest === controller) loading.value = false;
       }
       async function acknowledge(item: AlertItem) {
         clearMessages();
@@ -309,19 +308,6 @@ export default function AlertCenter(input: Props) {
         channelForm.revision = 0;
       }
       async function saveChannel() {
-        const smtpSecurityMode = channelForm.smtpSecurityMode;
-        if (
-          channelForm.kind === "smtp" &&
-          smtpSecurityMode !== "starttls" &&
-          smtpSecurityMode !== "implicit_tls"
-        ) {
-          error.value = t("m.4beb86e21302");
-          return;
-        }
-        const smtpConfigMode =
-          smtpSecurityMode === "starttls" || smtpSecurityMode === "implicit_tls"
-            ? smtpSecurityMode
-            : undefined;
         clearMessages();
         saving.value = true;
         try {
@@ -339,7 +325,7 @@ export default function AlertCenter(input: Props) {
               : {
                   smtpHost: channelForm.smtpHost,
                   smtpPort: Number(channelForm.smtpPort),
-                  smtpSecurityMode: smtpConfigMode,
+                  smtpSecurityMode: channelForm.smtpSecurityMode || undefined,
                   smtpFrom: channelForm.smtpFrom,
                   smtpTo: channelForm.smtpTo,
                   smtpUsername: channelForm.smtpUsername,
@@ -391,7 +377,6 @@ export default function AlertCenter(input: Props) {
             "0": channel.name,
           });
           tab.value = "deliveries";
-          await refresh();
         } catch (reason) {
           error.value = message(reason);
         }
@@ -475,13 +460,15 @@ export default function AlertCenter(input: Props) {
         return tab.value === "active" ? active.value : history.value;
       }
       let refreshTimer: number | undefined;
+      watchState(tab, () => {void refresh();}, {immediate: true});
       afterMount(() => {
-        void refresh();
         refreshTimer = window.setInterval(() => {
           if (!loading.value) void refresh();
         }, 30_000);
       });
       beforeDispose(() => {
+        disposed = true;
+        refreshRequest?.abort();
         if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
       });
       return () => (
@@ -830,7 +817,6 @@ export default function AlertCenter(input: Props) {
                     {t("m.18dba51b47c8")}
                     <input
                       required={true}
-                      maxLength={80}
                       placeholder={t("m.fb8ad27501de") as any}
                       {...__input(
                         ruleForm.name,
@@ -910,7 +896,7 @@ export default function AlertCenter(input: Props) {
                             ? 100
                             : (undefined as any)
                         }
-                        step="0.1"
+                        step="any"
                         required={true}
                         {...__input(
                           ruleForm.threshold,
@@ -1220,7 +1206,6 @@ export default function AlertCenter(input: Props) {
                     {t("m.d44e9b3d3b31")}
                     <input
                       required={true}
-                      maxLength={80}
                       placeholder={t("m.ab0113166ed7") as any}
                       {...__input(
                         channelForm.name,
@@ -1338,39 +1323,25 @@ export default function AlertCenter(input: Props) {
                       <small className={__classes("hint")} data-v-acd260e8="">
                         {t("m.c373a9cc1577")}
                       </small>
-                      <label data-v-acd260e8="">
+                      <label className="product-arc arc-ui registry-controls" data-native-controls="" data-v-acd260e8="">
                         {t("m.bae32961a3b5")}
-                        <input
-                          type="email"
-                          required={true}
-                          {...__input(
-                            channelForm.smtpFrom,
-                            (__nextValue: any) => {
-                              channelForm.smtpFrom = __nextValue;
-                            },
-                            "email",
-                            undefined,
-                            [],
-                          )}
-                          data-v-acd260e8=""
-                        ></input>
+                        <Input
+                          name="smtpFrom"
+                          inputMode="email"
+                          required
+                          value={channelForm.smtpFrom}
+                          onChange={event => {channelForm.smtpFrom = event.target.value;}}
+                        />
                       </label>
-                      <label data-v-acd260e8="">
+                      <label className="product-arc arc-ui registry-controls" data-native-controls="" data-v-acd260e8="">
                         {t("m.c237b665a6d8")}
-                        <input
-                          type="email"
-                          required={true}
-                          {...__input(
-                            channelForm.smtpTo,
-                            (__nextValue: any) => {
-                              channelForm.smtpTo = __nextValue;
-                            },
-                            "email",
-                            undefined,
-                            [],
-                          )}
-                          data-v-acd260e8=""
-                        ></input>
+                        <Input
+                          name="smtpTo"
+                          inputMode="email"
+                          required
+                          value={channelForm.smtpTo}
+                          onChange={event => {channelForm.smtpTo = event.target.value;}}
+                        />
                       </label>
                       <label data-v-acd260e8="">
                         {t("m.e67fea90bde6")}
@@ -1418,7 +1389,6 @@ export default function AlertCenter(input: Props) {
                   <label data-v-acd260e8="">
                     {t("m.fa3b2035a83a")}
                     <textarea
-                      maxLength={2048}
                       rows={4}
                       spellCheck="false"
                       placeholder="{{severity}} · {{ruleName}}：{{message}}"
@@ -1651,7 +1621,6 @@ export default function AlertCenter(input: Props) {
                     {t("m.f029d9cb4a76")}
                     <input
                       required={true}
-                      maxLength={500}
                       placeholder={t("m.440715526b90") as any}
                       {...__input(
                         windowForm.reason,

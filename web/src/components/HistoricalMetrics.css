@@ -77,3 +77,8 @@
     width: 100%;
   }
 }
+
+.metric-history-data { display: grid; min-width: 0; gap: var(--workspace-space-md); }
+.metric-history-toolbar { display: flex; align-items: center; justify-content: space-between; gap: var(--workspace-space-md); }
+.metric-history-actions { display: flex; align-items: center; justify-content: end; gap: var(--workspace-space-sm); }
+.metric-history-toolbar h3 { margin: 0; }

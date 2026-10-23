@@ -135,8 +135,13 @@ export function derived<T>(
 export function lazyView<T extends import("react").ComponentType<any>>(
   loader: () => Promise<{ default: T }>,
 ) {
-  const View = lazy(loader);
-  return function LazyContent(props: import("react").ComponentProps<T>) {
+  let pending: ReturnType<typeof loader> | undefined;
+  const preload = () => pending ??= loader().catch(reason => {
+    pending = undefined;
+    throw reason;
+  });
+  const View = lazy(preload);
+  function LazyContent(props: import("react").ComponentProps<T>) {
     return (
       <Suspense
         fallback={
@@ -148,7 +153,8 @@ export function lazyView<T extends import("react").ComponentType<any>>(
         <View {...(props as any)} />
       </Suspense>
     );
-  };
+  }
+  return Object.assign(LazyContent, { preload });
 }
 export function afterMount(callback: () => unknown) {
   if (!current) throw Error("Missing controller lifecycle");

@@ -132,7 +132,6 @@ export default function PreferenceEditor(input: Props) {
             </header>
             <Input
               label={t("m.a98585871c53")}
-              maxLength={128}
               placeholder={t("m.0496871244c3")}
               value={form.alias}
               onChange={(event) => {
@@ -160,7 +159,6 @@ export default function PreferenceEditor(input: Props) {
             <div className="preference-wide">
               <Textarea
                 label={t("m.daede9881787")}
-                maxLength={2048}
                 rows={2}
                 placeholder={t("m.9ad5244a4b67")}
                 value={form.notes}
@@ -184,7 +182,6 @@ export default function PreferenceEditor(input: Props) {
                 <LocationPicker resolved={props.location} countryCode={form.countryCode ?? ""} countries={countryValues.value} schema={positionSchema.value} value={form.location ?? null} onChange={(point) => { form.location = point; if (point) form.countryCode = point.countryCode; else form.countryCode = ""; }} />
                 <Input
                   label={t("m.889b28078e5d")}
-                  maxLength={128}
                   value={form.group}
                   placeholder={t("m.e86ea3f280d9")}
                   onChange={(event) => {
@@ -193,7 +190,6 @@ export default function PreferenceEditor(input: Props) {
                 />
                 <Input
                   label={t("m.2290354d1f88")}
-                  maxLength={255}
                   autoComplete="off"
                   placeholder={t("m.5f4aaae405f3")}
                   value={form.sshHost}
@@ -216,7 +212,6 @@ export default function PreferenceEditor(input: Props) {
                 />
                 <Input
                   label={t("m.4249329ab914")}
-                  maxLength={64}
                   autoComplete="off"
                   placeholder={t("m.c650b8295c49")}
                   value={form.sshUser}
@@ -245,7 +240,6 @@ export default function PreferenceEditor(input: Props) {
               <Input
                 label={t("m.5d52d4478187")}
                 type="url"
-                maxLength={2048}
                 placeholder="https://service.example.com"
                 value={form.serviceUrl}
                 onChange={(event) => {

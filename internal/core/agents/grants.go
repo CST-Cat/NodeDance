@@ -25,9 +25,11 @@ type Grant struct {
 	Token         string    `json:"token,omitempty"`
 }
 
+var ErrInvalidGrant = errors.New("grant requires a display prefix, 1..1000 uses and a 60..86400 second lifetime")
+
 func ValidateGrant(v GrantRequest) error {
 	if strings.TrimSpace(v.DisplayPrefix) == "" || len(v.DisplayPrefix) > 60 || strings.ContainsAny(v.DisplayPrefix, "\x00\r\n") || v.MaxUses < 1 || v.MaxUses > 1000 || v.LifetimeSeconds < 60 || v.LifetimeSeconds > 86400 {
-		return errors.New("grant requires a display prefix, 1..1000 uses and a 60..86400 second lifetime")
+		return ErrInvalidGrant
 	}
 	return nil
 }

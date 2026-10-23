@@ -164,10 +164,6 @@ func (s *Server) handleCreateComposeProjectTask(w http.ResponseWriter, r *http.R
 	digestText := hex.EncodeToString(digest[:])
 	intent := protocol.TaskIntent{Action: protocol.TaskComposeCreate, ContainerID: ref.Key,
 		Compose: &protocol.ComposeTaskSpec{Project: ref, FileIndex: 0, ContentSHA256: digestText}}
-	if err := protocol.ValidateTaskIntent(intent); err != nil {
-		http.Error(w, "invalid Compose create task", http.StatusBadRequest)
-		return
-	}
 	var boundJournalID string
 	gate := func(context.Context) (bool, func(), error) {
 		if s.activeComposeConnectionForNode(nodeID, state.Generation) != connection {
@@ -336,30 +332,11 @@ func (s *Server) handleCreateComposeTask(w http.ResponseWriter, r *http.Request,
 		intent.Compose = &protocol.ComposeTaskSpec{Project: project.Ref, FileIndex: request.FileIndex,
 			BaseSHA256: request.BaseSHA256, ContentSHA256: newDigestText}
 		content = []byte(request.Content)
-		validateID, err := newContainerStreamRequestID()
-		if err != nil {
-			http.Error(w, "Compose validation could not be created", http.StatusInternalServerError)
-			return
-		}
-		validation, err := s.requestCompose(r.Context(), connection, protocol.ComposeRequest{OperationID: validateID,
-			Action: "config_validate", Project: &project.Ref, FileIndex: request.FileIndex, Content: request.Content}, composeEditorTimeout)
-		if err != nil {
-			http.Error(w, "Compose validation could not reach the Agent", http.StatusServiceUnavailable)
-			return
-		}
-		if validation.Status != "succeeded" || !validation.Verified {
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"errorCode": validation.ErrorCode, "status": "rejected"})
-			return
-		}
 	} else if request.FileIndex != 0 || request.Content != "" || request.BaseSHA256 != "" {
 		http.Error(w, "config fields are only valid for config_save", http.StatusBadRequest)
 		return
 	} else {
 		intent.Compose = &protocol.ComposeTaskSpec{Project: project.Ref}
-	}
-	if err := protocol.ValidateTaskIntent(intent); err != nil {
-		http.Error(w, "invalid Compose task intent", http.StatusBadRequest)
-		return
 	}
 	var boundJournalID string
 	gate := func(ctx context.Context) (bool, func(), error) {

@@ -118,7 +118,6 @@ export default function ContainerCreateForm(input: Props) {
                   {t("m.176c09844e0f")}
                   <input
                     required={true}
-                    maxLength={512}
                     placeholder={t("m.4204fc5cf592") as any}
                     {...__input(
                       image.value,
@@ -136,7 +135,6 @@ export default function ContainerCreateForm(input: Props) {
                   {t("m.62621c43654a")}
                   <input
                     required={true}
-                    maxLength={128}
                     placeholder={t("m.6ae23d2114e1") as any}
                     {...__input(
                       name.value,
@@ -153,7 +151,6 @@ export default function ContainerCreateForm(input: Props) {
                 <label data-v-3bc66e7f="">
                   {t("m.97b31b5d63f5")}
                   <input
-                    maxLength={128}
                     placeholder={t("m.7f630368cc55") as any}
                     {...__input(
                       network.value,

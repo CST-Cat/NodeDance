@@ -5,9 +5,9 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/core/audit"
@@ -73,20 +73,18 @@ func (s *Server) cachedGuestDisplay(ctx context.Context, settings guest.Settings
 	if err != nil {
 		return nil, err
 	}
-	raw, err := json.Marshal(settings)
-	if err != nil {
-		return nil, err
-	}
-	scope := sha256.Sum256(raw)
-	if s.guestCache != nil && s.guestScope == scope && s.now().Sub(s.guestCache.GeneratedAt) >= 0 && s.now().Sub(s.guestCache.GeneratedAt) < 15*time.Second {
-		return s.guestCache, nil
+	if s.guestCache != nil && reflect.DeepEqual(s.guestPolicy, settings) {
+		age := s.now().Sub(s.guestCache.GeneratedAt)
+		if age >= 0 && age < 15*time.Second {
+			return s.guestCache, nil
+		}
 	}
 	data, err := s.assembleGuestDisplay(ctx, settings)
 	if err != nil {
 		return nil, err
 	}
 	s.guestCache = &data
-	s.guestScope = scope
+	s.guestPolicy = settings
 	return &data, nil
 }
 

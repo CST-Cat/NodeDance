@@ -51,10 +51,11 @@ func copyValue[T any](p *T) *T {
 	return &v
 }
 func mergeHost(p, n *protocol.MetricsHost, e time.Duration) *protocol.MetricsHost {
-	out := cloneHost(n)
-	if p == nil || out == nil {
-		return out
+	if p == nil || n == nil {
+		return cloneHost(n)
 	}
+	host := *n
+	out := &host
 	if p.DiskIO != nil && out.DiskIO != nil {
 		value := mergeMetric(*p.DiskIO, *out.DiskIO, e)
 		out.DiskIO = &value

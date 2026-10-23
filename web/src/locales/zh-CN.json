@@ -2413,5 +2413,19 @@
   "updates.backupDeleted": "备份已删除",
   "updates.retry": "重试",
   "operations.contract.updates-release": "独立于运行环境读取已发布组件的更新日志",
-  "operations.contract.updates-delete-backup": "确认删除已完成更新的备份并保留更新记录"
+  "operations.contract.updates-delete-backup": "确认删除已完成更新的备份并保留更新记录",
+  "monitoring.heading": "监控数据",
+  "monitoring.retention": "最长保存时间",
+  "monitoring.days": "{0} 天",
+  "monitoring.saving": "保存中",
+  "monitoring.save": "保存",
+  "monitoring.data": "数据明细",
+  "monitoring.metric": "明细指标",
+  "monitoring.empty": "暂无采样",
+  "monitoring.time": "时间",
+  "monitoring.average": "平均值",
+  "monitoring.minimum": "最小值",
+  "monitoring.maximum": "最大值",
+  "monitoring.samples": "采样数",
+  "monitoring.pages": "监控明细分页"
 }

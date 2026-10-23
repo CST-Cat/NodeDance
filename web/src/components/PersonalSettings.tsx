@@ -1,3 +1,4 @@
+import MonitoringSettings from "./MonitoringSettings";
 import { SettingsGroup, SettingsRows } from "./SettingsGroup";
 function SettingsPassword(
   props: Omit<InputHTMLAttributes<HTMLInputElement>, "type">,
@@ -262,7 +263,6 @@ export default function PersonalSettings(input: {
                           name="profileDisplayName"
                           autoComplete="nickname"
                           required
-                          maxLength={80}
                           value={model.appearance.displayName}
                           onChange={(event) => {
                             model.appearance.displayName = event.target.value;
@@ -550,6 +550,7 @@ export default function PersonalSettings(input: {
                   )}
                 </div>
               </section>
+              {admin ? <MonitoringSettings key={model.currentUser.value!.id} /> : null}
               {admin ? (
                 <AccountManagement currentId={model.currentUser.value!.id} />
               ) : null}

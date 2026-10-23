@@ -24,11 +24,8 @@ vm.runInNewContext(code,{module:moduleObject,exports:moduleObject.exports, URL, 
  assert.equal(api.operationBody(preference,{identity:'node:x',alias:'',enabled:'false'}),' {"identity":"node:x","alias":"","enabled":false}'.trim())
  assert.throws(()=>api.operationBody(preference,{identity:'node:x',enabled:'not-json'}))
  assert.ok(api.schemaHasSecrets(preference.bodySchema.properties.credentials))
- assert.throws(()=>api.validateSchema({type:'string',maxBytes:2},'你好'))
- assert.throws(()=>api.validateSchema({type:'integer',minimum:1},0))
- assert.doesNotThrow(()=>api.validateSchema({type:'object',required:['alias'],properties:{alias:{type:'string'}}},{alias:''}))
- assert.throws(()=>api.validateSchema({type:'object',required:['alias']},{}))
  assert.equal(api.operationBody({...operation,bodySchema:{type:'array',items:{type:'integer'}}},{},'[1,2]'),'[1,2]')
+ assert.equal(api.operationBody(preference,{},' {incomplete ',true),'{incomplete','Raw JSON is sent to Core without a second syntax gate')
  const large={...operation,bodySchema:{type:'object',properties:{bytes:{type:'integer'}}}}
  assert.equal(api.operationBody(large,{bytes:22}),'{"bytes":22}')
  assert.equal(api.operationBody(large,{bytes:'18446744073709551615'}),'{"bytes":18446744073709551615}')
@@ -36,7 +33,21 @@ vm.runInNewContext(code,{module:moduleObject,exports:moduleObject.exports, URL, 
  const upload={...operation,transport:'multipart',upload:{field:'attachment',contentType:'multipart/form-data',maxBytes:10}}
  const file=new File(['hello'],'file.txt')
  const form=api.operationUpload(upload,file)
- assert.ok(form.has('attachment'));assert.ok(!form.has('image'));assert.throws(()=>api.operationUpload({...upload,upload:{...upload.upload,maxBytes:2}},file))
+ assert.ok(form.has('attachment'));assert.ok(!form.has('image'))
+ const ordinary='{"samples":[{"cpu":12.5,"online":true,"value":null,"label":"node"}]}'
+ assert.equal(api.exactJSON(api.parseExactJSON(ordinary)),ordinary)
+ assert.equal(api.exactJSON(api.parseExactJSON('{"value":-18446744073709551615,"label":"18446744073709551615"}')),'{"value":-18446744073709551615,"label":"18446744073709551615"}')
+ const record={type:'object',properties:{bytes:{type:'integer'}}},union={anyOf:[record,{type:'object',properties:{jobs:{type:'array',items:record}}}]}
+ assert.equal(api.decodeContractJSON('{"bytes":18446744073709551615}',union).bytes,18446744073709551615n)
+ assert.equal(api.decodeContractJSON('{"jobs":[{"bytes":18446744073709551615}]}',union).jobs[0].bytes,18446744073709551615n)
+ const units={exports:{}};vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(source,'asset-units.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:units,exports:units.exports});
+ assert.equal(units.exports.trafficGigabytes(18446744073709551615n),'18446744073.709551615');
+ assert.equal(units.exports.trafficBytes('18446744073.709551615'),18446744073709551615n);
+ assert.equal(units.exports.trafficBytes('1.8446744073709551615e10'),18446744073709551615n);
+ assert.equal(units.exports.trafficBytes('1200.5'),1200500000000n);
+ assert.equal(units.exports.trafficBytes('.0000000006'),1n);
+ assert.equal(units.exports.trafficBytes('-5e-10'),0n);
+ assert.equal(units.exports.trafficBytes('1e999999999'),'1e999999999');
  const complete={...operation,completion:{operation:'future.read',params:{id:'data.id',node:'params.node'},query:{component:'body.component'},statusPath:'job.status',terminalStatuses:['done'],successStatuses:['done']}}
  const next=api.completionInput(complete,{params:{node:'n'}},'{"component":"core"}',{id:'task'})
  assert.equal(next.name,'future.read');assert.equal(next.input.params.id,'task');assert.equal(next.input.query.component,'core')

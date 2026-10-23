@@ -107,23 +107,12 @@ func (s Store) Save(ctx context.Context, in Settings, event audit.Event) (Settin
 	}
 	defer tx.Rollback()
 	if in.Enabled {
-		for _, r := range in.Nodes {
-			var n int
-			if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM nodes WHERE id=? AND status NOT IN ('pending','revoked')", r.ID).Scan(&n); err != nil {
-				return Settings{}, err
-			}
-			if n != 1 {
-				return Settings{}, ErrInvalid
-			}
+		available, err := availableResources(ctx, tx, in)
+		if err != nil {
+			return Settings{}, err
 		}
-		for _, r := range in.Probes {
-			var n int
-			if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM service_probes p JOIN nodes n ON n.id=p.node_id WHERE p.id=? AND p.deleted_at IS NULL AND n.status NOT IN ('pending','revoked')", r.ID).Scan(&n); err != nil {
-				return Settings{}, err
-			}
-			if n != 1 {
-				return Settings{}, ErrInvalid
-			}
+		if len(available.Nodes) != len(in.Nodes) || len(available.Probes) != len(in.Probes) {
+			return Settings{}, ErrInvalid
 		}
 	}
 	previous := in.Revision

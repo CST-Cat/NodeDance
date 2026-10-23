@@ -11,21 +11,26 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-func runAgentImageSession(ctx context.Context, writer *socketEnvelopeWriter, engine *agentimages.SDKEngine, generation uint64, incoming <-chan protocol.Envelope) error {
+type agentImageQuery struct {
+	requestID string
+	request   protocol.ImageListRequest
+}
+
+func runAgentImageSession(ctx context.Context, writer *socketEnvelopeWriter, engine *agentimages.SDKEngine, generation uint64, incoming <-chan agentImageQuery) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case envelope := <-incoming:
-			var request protocol.ImageListRequest
-			if err := decodeSocketPayload(envelope.Payload, &request); err != nil || protocol.ValidateImageListRequest(envelope, request, generation) != nil {
-				return errors.New("Core image list request is invalid")
+		case query, ok := <-incoming:
+			if !ok {
+				return errors.New("image query channel closed")
 			}
+			request := query.request
 			queryCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			images, err := engine.List(queryCtx)
 			cancel()
 			if err != nil {
-				return sendAgentImageError(ctx, writer, generation, envelope.RequestID, request.Page, "engine_unavailable")
+				return sendAgentImageError(ctx, writer, generation, query.requestID, request.Page, "engine_unavailable")
 			}
 			if request.Filter != "" {
 				needle := strings.ToLower(request.Filter)
@@ -48,7 +53,7 @@ func runAgentImageSession(ctx context.Context, writer *socketEnvelopeWriter, eng
 				response.Images = append(response.Images, protocol.ImageSummary{ID: image.ID, Tags: image.Tags, Digests: image.Digests,
 					Size: image.Size, CreatedAt: image.CreatedAt, Containers: image.Containers})
 			}
-			if err := sendAgentImageResponse(ctx, writer, generation, envelope.RequestID, response); err != nil {
+			if err := sendAgentImageResponse(ctx, writer, generation, query.requestID, response); err != nil {
 				return err
 			}
 		}

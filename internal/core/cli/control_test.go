@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/CST-Cat/NodeDance/internal/control"
+	"github.com/coder/websocket"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestControlCLI(t *testing.T) {
@@ -182,5 +184,38 @@ func TestOperationInputExceedsOldFourMiBBound(t *testing.T) {
 		if _, err := readOperationValue(input, strings.NewReader(payload), 4<<20); err == nil {
 			t.Fatal("operation bound not enforced")
 		}
+	}
+}
+
+func TestStreamJSONLPreservesNumbersAndRejectsMalformedFrames(t *testing.T) {
+	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		connection, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer connection.CloseNow()
+		for _, frame := range []string{` { "bytes": 18446744073709551615 } `, `{`} {
+			if err := connection.Write(r.Context(), websocket.MessageText, []byte(frame)); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	}))
+	defer host.Close()
+	client, err := control.NewClient(control.ClientOptions{Server: host.URL, Development: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var output strings.Builder
+	err = streamJSONL(ctx, client, control.Operation{Name: "stream", Path: "/ws/stream", Method: "GET", Transport: "websocket"}, control.Input{}, nil, &output)
+	if err == nil || err.Error() != "Core returned invalid stream JSON" {
+		t.Fatalf("Malformed frame: %v", err)
+	}
+	if output.String() != "{\"bytes\":18446744073709551615}\n" {
+		t.Fatalf("Output lost exact JSON: %q", output.String())
 	}
 }

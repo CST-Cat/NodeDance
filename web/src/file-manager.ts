@@ -540,11 +540,15 @@ export async function createFileManager(
           );
           await action({ action: "mkdir", path: destination });
         }
+        const previous = new Map(
+          data.makedir ? [] : (await list(destination)).map((file) => [file.hash, JSON.stringify(file)]),
+        );
         await action({ action: "extract", path: target, newPath: destination });
+        if (data.makedir) return { added: [await stat(destination)] };
+        const extracted = await list(destination);
         return {
-          added: data.makedir
-            ? [await stat(destination)]
-            : await list(destination),
+          added: extracted.filter((file) => !previous.has(file.hash)),
+          changed: extracted.filter((file) => previous.has(file.hash) && previous.get(file.hash) !== JSON.stringify(file)),
         };
       }
       case "get": {

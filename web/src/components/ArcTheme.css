@@ -30,7 +30,7 @@
   --control-glyph: var(--figma-text-inverse);
 }
 
-.product-arc.arc-ui:not(:where(.personal-settings, .personal-settings *, .preferences-page, .preferences-page *)) {
+.product-arc.arc-ui:not(:where(.personal-settings, .personal-settings *, .preferences-page, .preferences-page *, [data-native-controls], [data-native-controls] *)) {
   --radius-control: var(--figma-radius-md);
   --radius-panel: var(--figma-radius-xl);
   --radius-surface: var(--figma-radius-xl);

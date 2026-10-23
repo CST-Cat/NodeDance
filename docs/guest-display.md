@@ -119,3 +119,11 @@ See [node display](node-display.md).
 公开访问直接位于个人设置（`#/settings`）中，与资料、安全和会话同时显示，仅管理员可见。原来的游客设置整页及页签已移除。公开字段与节点／服务资源使用同一份策略表单；资源必须逐项选择并填写独立公开名称。策略仍通过 Core 的 `guest.configure` 保存，预览仍读取已保存的投影，不把多个 Core 操作伪装成一次原子提交。
 
 更新日志与备份管理继续位于私有更新中心。`updates.release`、`updates.delete-backup` 不加入游客投影；管理员 cookie 不会使公开展示包含更新任务或备份信息。
+
+Authenticated cold entry reads the current private profile directly, without first fetching public appearance. Anonymous sign-in/setup still use public branding. Profile responses are scoped to their requesting account and superseded reads cannot update appearance after guest navigation or sign-out; the guest browser regression holds a real profile response to verify this boundary.
+
+Guest resource availability is filtered by one shared query for nodes and probes. Policy saves reuse that query inside their transaction instead of reading every selection separately. Cached snapshots compare the effective policy directly, without JSON hashing. The public page keeps one in-flight refresh, cancels it on exit and uses Core’s refresh interval; entering guest mode reads the display once. Resource withdrawal and authenticated/anonymous projection rules remain unchanged.
+
+Monitoring retention is a separate administrator setting (`monitoring.settings` / `monitoring.configure`), not a guest permission. It changes the retained source samples; public history still projects only explicitly published keys and resources. Guests cannot read or change retention settings or use the private history/details interface.
+
+The public projection continues to use validated, independently owned Core metric snapshots. Reducing repeated report validation and route parsing does not add public operations, fields or permissions.

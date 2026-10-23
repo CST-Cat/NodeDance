@@ -153,7 +153,6 @@ export default function ComposeCreateForm(input: Props) {
                 {t("m.867698fb7b0c")}
                 <input
                   autoComplete="off"
-                  maxLength={63}
                   placeholder={t("m.d1bcd8876f63") as any}
                   disabled={submitting.value as any}
                   {...__input(

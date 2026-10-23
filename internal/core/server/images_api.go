@@ -195,10 +195,6 @@ func (s *Server) createImageTask(w http.ResponseWriter, r *http.Request, current
 		http.Error(w, "Idempotency-Key is required", http.StatusBadRequest)
 		return
 	}
-	if err := protocol.ValidateTaskIntent(intent); err != nil {
-		http.Error(w, "invalid image task", http.StatusBadRequest)
-		return
-	}
 	state, view, _, viewErr := s.dockerViewStateForNode(r.Context(), nodeID)
 	gate := func(ctx context.Context) (bool, func(), error) {
 		if viewErr != nil {

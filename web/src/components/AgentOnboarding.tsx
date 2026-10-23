@@ -192,7 +192,6 @@ export default function AgentOnboarding(props: Props) {
                           id="agentonboarding-field-1"
                           name="displayName"
                           autoComplete="off"
-                          maxLength={80}
                           required
                           value={draft.displayName}
                           onChange={(event) => {
@@ -208,13 +207,6 @@ export default function AgentOnboarding(props: Props) {
                           id="agentonboarding-field-2"
                           name="coreUrl"
                           inputMode="url"
-                          error={
-                            !peer &&
-                            (!enrollment.agentOriginIsSupported.value ||
-                              !enrollment.agentOriginUsesAllowedTransport.value)
-                              ? t("m.1d5964dbb8d8")
-                              : undefined
-                          }
                           autoComplete="url"
                           required
                           value={draft.coreUrl}
@@ -527,10 +519,7 @@ export default function AgentOnboarding(props: Props) {
                             !network.form.confirmHostKey ||
                             !network.credentials.user ||
                             !draft.displayName
-                          : !enrollment.assetReady.value ||
-                            !draft.displayName.trim() ||
-                            !enrollment.agentOriginIsSupported.value ||
-                            !enrollment.agentOriginUsesAllowedTransport.value)
+                          : !enrollment.assetReady.value)
                       }
                     >
                       {pending

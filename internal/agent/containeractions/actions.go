@@ -433,14 +433,8 @@ func requestIdentity(request Request) (taskstate.Identity, error) {
 		!validText(request.NodeID, taskstate.MaxIdentityBytes) || !validText(request.IdempotencyKey, taskstate.MaxIdempotencyKeyBytes) {
 		return taskstate.Identity{}, ErrInvalidRequest
 	}
-	if strings.TrimSpace(request.TaskID) != request.TaskID || strings.TrimSpace(request.NodeID) != request.NodeID {
-		return taskstate.Identity{}, ErrInvalidRequest
-	}
 	intent := protocol.TaskIntent{Action: request.Action, ContainerID: request.ContainerID,
 		NewName: request.NewName, DeleteConfirmed: request.DeleteConfirmed, Rebuild: request.Rebuild, CreateSHA256: request.CreateSHA256}
-	if err := protocol.ValidateTaskIntent(intent); err != nil {
-		return taskstate.Identity{}, ErrInvalidRequest
-	}
 	if creating {
 		if request.DeleteConfirmationID != "" || request.ConfirmationID != "" || request.NewName != "" || request.DeleteConfirmed || request.Rebuild != nil {
 			return taskstate.Identity{}, ErrInvalidRequest

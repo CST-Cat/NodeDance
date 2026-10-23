@@ -69,3 +69,5 @@ nodedance call feeds.delete --params '{"id":"FEED_UUID"}' --body '{"revision":1,
 - 共享界面浏览器回归通过：本次发现 133 个远程操作，24 个界面布局及 12 个既有修复回归布局。
 
 未递增产品、协议或能力版本，未执行正式发布。
+
+The subscription list and entries load independently of interval options, notification channels and delivery history. A slow or failed history/channel read does not suppress successful entries. Initial selection reads entries once; search, unread filters and pagination do not reload delivery history, and superseded entry reads are canceled. Core still enforces subscription revisions, safe fetch targets and mutation semantics.

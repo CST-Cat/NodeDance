@@ -116,12 +116,18 @@ export default function HostManagement(input: Props) {
       }
       const settingsSchema = derived(() => schema("agents.configure")),
         assetSchema = derived(() => schema("nodes.save-asset"));
+      const loadingNode = cell(false);
+      const pending = derived(() => busy.value || loadingNode.value);
+      let nodeRequest: AbortController | undefined;
+      const listRequests = new Map<string, AbortController>();
       let disposed = false;
       beforeDispose(() => {
         disposed = true;
+        nodeRequest?.abort();
+        for (const request of listRequests.values()) request.abort();
       });
       async function perform(work: () => Promise<void>) {
-        if (disposed || busy.value) return;
+        if (disposed || busy.value || loadingNode.value) return;
         busy.value = true;
         error.value = "";
         notice.value = "";
@@ -133,32 +139,45 @@ export default function HostManagement(input: Props) {
           busy.value = false;
         }
       }
+      async function readList<T>(name: string, key: string, assign: (items: T[]) => void) {
+        listRequests.get(name)?.abort();
+        const controller = new AbortController();
+        listRequests.set(name, controller);
+        try {
+          const result = await operationRequest<Record<string, T[]>>(name, {}, {signal: controller.signal});
+          if (!disposed && !controller.signal.aborted) assign(result[key]!);
+        } catch (reason) {
+          if (!disposed && !controller.signal.aborted) throw reason;
+        } finally {
+          if (listRequests.get(name) === controller) listRequests.delete(name);
+        }
+      }
       async function loadNode() {
-        await perform(async () => {
-          const id = nodeId.value;
-          for (const value of [settings, asset])
-            for (const k of Object.keys(value)) delete value[k];
+        nodeRequest?.abort();
+        const controller = new AbortController();
+        nodeRequest = controller;
+        const id = nodeId.value;
+        loadingNode.value = true;
+        error.value = "";
+        notice.value = "";
+        for (const value of [settings, asset])
+          for (const k of Object.keys(value)) delete value[k];
+        try {
           const results = await Promise.allSettled([
-            operationRequest<{
-              settings: Record<string, unknown>;
-            }>("agents.settings", {
-              params: {
-                nodeId: id,
-              },
-            }),
-            operationRequest<Record<string, unknown>>("nodes.asset", {
-              params: {
-                nodeId: id,
-              },
-            }),
+            operationRequest<{settings: Record<string, unknown>}>("agents.settings", {params:{nodeId:id}}, {signal:controller.signal}),
+            operationRequest<Record<string, unknown>>("nodes.asset", {params:{nodeId:id}}, {signal:controller.signal}),
           ]);
-          if (results[0].status === "fulfilled")
-            Object.assign(settings, results[0].value.settings);
-          if (results[1].status === "fulfilled")
-            Object.assign(asset, results[1].value);
+          if (disposed || nodeRequest !== controller) return;
+          if (results[0].status === "fulfilled") Object.assign(settings, results[0].value.settings);
+          if (results[1].status === "fulfilled") Object.assign(asset, results[1].value);
           const failed = results.find((r) => r.status === "rejected");
           if (failed?.status === "rejected") throw failed.reason;
-        });
+        } catch (reason) {
+          if (!disposed && nodeRequest === controller)
+            error.value = reason instanceof Error ? reason.message : String(reason);
+        } finally {
+          if (!disposed && nodeRequest === controller) loadingNode.value = false;
+        }
       }
       async function save(name: string, body: Record<string, unknown>) {
         await perform(async () => {
@@ -210,11 +229,7 @@ export default function HostManagement(input: Props) {
           if (disposed) return;
           currentBatch.value = result;
           if (name === "commands.batch")
-            batches.value = (
-              await operationRequest<{
-                batches: Batch[];
-              }>("commands.batches")
-            ).batches;
+            await readList<Batch>("commands.batches", "batches", (items) => { batches.value = items; });
           else notice.value = t("host.saved");
         });
       }
@@ -256,11 +271,7 @@ export default function HostManagement(input: Props) {
           );
           if (disposed) return;
           grantResult.value = result;
-          grantList.value = (
-            await operationRequest<{
-              grants: Grant[];
-            }>("agents.grants")
-          ).grants;
+          await readList<Grant>("agents.grants", "grants", (items) => { grantList.value = items; });
         });
       }
       async function revokeGrant(id: string) {
@@ -271,11 +282,7 @@ export default function HostManagement(input: Props) {
             },
           });
           if (disposed) return;
-          grantList.value = (
-            await operationRequest<{
-              grants: Grant[];
-            }>("agents.grants")
-          ).grants;
+          await readList<Grant>("agents.grants", "grants", (items) => { grantList.value = items; });
         });
       }
       function selectNode() {
@@ -283,7 +290,6 @@ export default function HostManagement(input: Props) {
           ...viewNavigation.route.value,
           nodeId: nodeId.value || undefined,
         });
-        void loadNode();
       }
       watchState(
         () => viewNavigation.route.value.nodeId,
@@ -294,37 +300,37 @@ export default function HostManagement(input: Props) {
             nodes.value[0]!.nodeId;
           if (next !== nodeId.value) {
             nodeId.value = next;
-            void loadNode();
           }
         },
       );
+      watchState([nodeId, tab], () => {
+        if (nodeId.value && (tab.value === "settings" || tab.value === "assets")) {
+          void loadNode();
+        } else {
+          nodeRequest?.abort();
+          nodeRequest = undefined;
+          loadingNode.value = false;
+        }
+      }, {immediate: true});
+      watchState(tab, (current) => {
+        error.value = "";
+        const request = current === "enrollment"
+          ? readList<Grant>("agents.grants", "grants", (items) => { grantList.value = items; })
+          : current === "commands" || current === "probes"
+            ? readList<Batch>("commands.batches", "batches", (items) => { batches.value = items; })
+            : undefined;
+        void request?.catch((reason) => {
+          if (!disposed && tab.value === current) error.value = reason instanceof Error ? reason.message : String(reason);
+        });
+      }, {immediate: true});
       afterMount(async () => {
         await perform(async () => {
-          const [list, catalog, history, grants] = await Promise.all([
-            api.nodes(),
-            operationCatalog(),
-            operationRequest<{
-              batches: Batch[];
-            }>("commands.batches"),
-            operationRequest<{
-              grants: Grant[];
-            }>("agents.grants"),
-          ]);
+          const [list, catalog] = await Promise.all([api.nodes(), operationCatalog()]);
           if (disposed) return;
-          nodes.value = list.nodes.filter(
-            (n) => !["pending", "revoked"].includes(n.status),
-          );
-          nodeId.value =
-            nodes.value.find(
-              (n) => n.nodeId === viewNavigation.route.value.nodeId,
-            )?.nodeId ??
-            nodes.value[0]?.nodeId ??
-            "";
+          nodes.value = list.nodes.filter((n) => !["pending", "revoked"].includes(n.status));
           operations.value = catalog.operations;
-          batches.value = history.batches;
-          grantList.value = grants.grants;
+          nodeId.value = nodes.value.find((n) => n.nodeId === viewNavigation.route.value.nodeId)?.nodeId ?? nodes.value[0]?.nodeId ?? "";
         });
-        if (nodeId.value) await loadNode();
       });
       return () => (
         <>
@@ -384,7 +390,7 @@ export default function HostManagement(input: Props) {
                 <label className={__classes("host-node")} data-v-bd412aaa="">
                   {t("host.node")}
                   <Select
-                    disabled={busy.value as any}
+                    disabled={pending.value as any}
                     value={String(nodeId.value ?? "")}
                     onValueChange={(next) => {
                       const __nextValue: any =
@@ -434,7 +440,7 @@ export default function HostManagement(input: Props) {
                         >
                           <Button
                             disabled={
-                              busy.value ||
+                              pending.value ||
                               (!Object.keys(settings).length as any)
                             }
                             className={__classes("primary-button")}
@@ -445,7 +451,7 @@ export default function HostManagement(input: Props) {
                           </Button>
                           <Button
                             type="button"
-                            disabled={busy.value as any}
+                            disabled={pending.value as any}
                             onClick={(event: any) => {
                               perform(async () => {
                                 diagnostics.value = JSON.stringify(
@@ -485,7 +491,7 @@ export default function HostManagement(input: Props) {
                         ></ContractFields>
                         <Button
                           disabled={
-                            busy.value || (!Object.keys(asset).length as any)
+                            pending.value || (!Object.keys(asset).length as any)
                           }
                           className={__classes("primary-button")}
                           data-v-bd412aaa=""
@@ -579,7 +585,7 @@ export default function HostManagement(input: Props) {
                         data-v-bd412aaa=""
                       ></ContractFields>
                       <Button
-                        disabled={busy.value || (!selected.value.length as any)}
+                        disabled={pending.value || (!selected.value.length as any)}
                         className={__classes("primary-button")}
                         data-v-bd412aaa=""
                         variant="primary"
@@ -604,7 +610,7 @@ export default function HostManagement(input: Props) {
                       <h2 data-v-bd412aaa="">{t("host.results")}</h2>
                       {currentBatch.value!.results.some((r) => r.jobId) ? (
                         <Button
-                          disabled={busy.value as any}
+                          disabled={pending.value as any}
                           onClick={(event: any) => {
                             inspectBatch(currentBatch.value!.id);
                           }}
@@ -616,7 +622,7 @@ export default function HostManagement(input: Props) {
                       ) : null}
                       {currentBatch.value!.results.some((r) => r.jobId) ? (
                         <Button
-                          disabled={busy.value as any}
+                          disabled={pending.value as any}
                           onClick={(event: any) => {
                             inspectBatch(currentBatch.value!.id, true);
                           }}
@@ -686,7 +692,7 @@ export default function HostManagement(input: Props) {
                       {__each(batches.value, (batch) => (
                         <Button
                           key={batch.id as any}
-                          disabled={busy.value as any}
+                          disabled={pending.value as any}
                           onClick={(event: any) => {
                             inspectBatch(batch.id);
                           }}
@@ -723,7 +729,7 @@ export default function HostManagement(input: Props) {
                       data-v-bd412aaa=""
                     ></ContractFields>
                     <Button
-                      disabled={busy.value as any}
+                      disabled={pending.value as any}
                       className={__classes("primary-button")}
                       data-v-bd412aaa=""
                       variant="primary"
@@ -767,7 +773,7 @@ export default function HostManagement(input: Props) {
                           {beijingTime(g.expiresAt) + " · " + t("time.beijing")}
                         </p>
                         <Button
-                          disabled={busy.value || (g.revoked as any)}
+                          disabled={pending.value || (g.revoked as any)}
                           onClick={(event: any) => {
                             revokeGrant(g.id);
                           }}

@@ -58,6 +58,19 @@ const OperationConsole = lazyView(() => import("./components/OperationConsole"))
 const DomainCertificates = lazyView(() => import("./components/DomainCertificates"));
 const GuestDisplay = lazyView(() => import("./components/GuestDisplay"));
 const GlobalOverview = lazyView(() => import("./components/GlobalOverview"));
+const routeViews = {
+  updates: UpdateCenter,
+  feeds: FeedsCenter,
+  "host-management": HostManagement,
+  operations: OperationConsole,
+  "domain-certificates": DomainCertificates,
+  guest: GuestDisplay,
+  "global-overview": GlobalOverview,
+};
+function preloadScreen(screen: ViewScreen) {
+  const view = routeViews[screen as keyof typeof routeViews];
+  if (view) void view.preload().catch(() => {});
+}
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
 export default function App(input: Props) {
   return useController(
@@ -309,6 +322,7 @@ export default function App(input: Props) {
           screen.value === route.screen
         )
           return;
+        preloadScreen(route.screen);
         writeViewRoute(route, replace);
         handledLocation = window.location.href;
         if (currentUser.value && screen.value === route.screen && ["settings", "agent-enrollment"].includes(route.screen)) {
@@ -485,44 +499,37 @@ export default function App(input: Props) {
           localStorage.setItem("nodedance.theme", appearance.theme);
         } catch {}
       }
+      let appearanceSequence = 0;
       async function loadAppearance() {
+        const sequence = ++appearanceSequence;
+        const userId = currentUser.value?.id;
         const [result, avatar, background] = await Promise.all([
           currentUser.value ? api.profile() : api.appearance(),
           operationURL(currentUser.value ? "profile.avatar" : "appearance.avatar"),
           operationURL("appearance.background"),
         ]);
+        if (sequence !== appearanceSequence || userId !== currentUser.value?.id) return;
         imagePaths.avatar = avatar.pathname;
         imagePaths.background = background.pathname;
         Object.assign(appearance, result);
-        if (!/^#[\da-f]{6}$/i.test(appearance.backgroundColor)) {
-          appearance.backgroundColor = "#141413";
-        }
-        if (
-          appearance.theme !== "light" &&
-          appearance.theme !== "dark" &&
-          appearance.theme !== "system"
-        )
-          appearance.theme = "system";
         rememberTheme();
       }
-      async function loadSessions() {
+      async function loadSessions(sequence = routeSequence) {
+        const userId = currentUser.value?.id;
         const result = await api.sessions();
-        sessions.value = result.sessions;
+        if (sequence === routeSequence && userId === currentUser.value?.id)
+          sessions.value = result.sessions;
       }
-      async function enterSettings(sequence = routeSequence) {
-        const result = await api.me();
+      async function enterSettings(sequence = routeSequence, user?: User) {
+        const authenticatedUser = user ?? (await api.me()).user;
         if (sequence !== routeSequence) return false;
-        currentUser.value = result.user;
-        const results = await Promise.allSettled([
-          loadAppearance(),
-          loadSessions(),
-        ]);
-        const rejected = results.find((item) => item.status === "rejected");
-        if (sequence !== routeSequence) return false;
-        if (rejected?.status === "rejected") {
-          notice.value = t("m.2ccd4dc3ec31");
+        currentUser.value = authenticatedUser;
+        try {
+          await loadAppearance();
+        } catch {
+          if (sequence === routeSequence) notice.value = t("m.2ccd4dc3ec31");
         }
-        return true;
+        return sequence === routeSequence;
       }
       async function activateRoute(target: ViewRoute) {
         const sequence = ++routeSequence;
@@ -545,13 +552,27 @@ export default function App(input: Props) {
           });
           return;
         }
+        const immediate = initialized.value && !!currentUser.value &&
+          !["login", "setup"].includes(target.screen);
+        if (immediate) {
+          displayRoute(target);
+          if (target.screen === "settings") {
+            try {
+              await loadSessions(sequence);
+            } catch {
+              if (sequence === routeSequence)
+                notice.value = t("m.2ccd4dc3ec31");
+            }
+          }
+          return;
+        }
         if (!currentUser.value) screen.value = "loading";
         try {
           if (!initialized.value) {
             const state = await api.setupStatus();
             if (sequence !== routeSequence) return;
             initialized.value = state.initialized;
-            await loadAppearance();
+            if (!initialized.value) await loadAppearance();
             if (sequence !== routeSequence) return;
           }
           if (!initialized.value) {
@@ -566,22 +587,14 @@ export default function App(input: Props) {
             displayRoute({
               screen: "login",
             });
+            void loadAppearance().catch(() => {});
             return;
           }
           const result = await api.me();
           if (sequence !== routeSequence) return;
           currentUser.value = result.user;
-          if (target.screen !== "settings") await loadAppearance();
+          await loadAppearance();
           if (sequence !== routeSequence) return;
-          if (target.screen === "settings") {
-            const results = await Promise.allSettled([
-              loadAppearance(),
-              loadSessions(),
-            ]);
-            if (sequence !== routeSequence) return;
-            if (results.some((item) => item.status === "rejected"))
-              notice.value = t("m.2ccd4dc3ec31");
-          }
           displayRoute(
             target.screen === "setup"
               ? {
@@ -589,6 +602,11 @@ export default function App(input: Props) {
                 }
               : target,
           );
+          if (target.screen === "settings") {
+            void loadSessions(sequence).catch(() => {
+              if (sequence === routeSequence) notice.value = t("m.2ccd4dc3ec31");
+            });
+          }
         } catch (reason) {
           if (sequence !== routeSequence) return;
           if (reason instanceof ApiError && reason.status === 401) {
@@ -598,6 +616,7 @@ export default function App(input: Props) {
             displayRoute({
               screen: "login",
             });
+            void loadAppearance().catch(() => {});
             return;
           }
           error.value = errorText(reason);
@@ -621,17 +640,7 @@ export default function App(input: Props) {
           if (sequence !== routeSequence) return;
           initialCredentials.value = result.initialCredentials ?? null;
           initialized.value = true;
-          try {
-            if (!(await enterSettings(sequence))) return;
-          } catch (reason) {
-            if (!(reason instanceof ApiError) || reason.status !== 401)
-              throw reason;
-            await api.login(
-              result.initialCredentials?.username ?? setupForm.username,
-              result.initialCredentials?.password ?? setupForm.password,
-            );
-            if (!(await enterSettings(sequence))) return;
-          }
+          if (!(await enterSettings(sequence))) return;
           initialCredentials.value = result.initialCredentials ?? null;
           navigate("nodes", true);
           setupForm.credential = "";
@@ -653,8 +662,8 @@ export default function App(input: Props) {
         busy.value = true;
         busyLabel.value = t("m.d8712b0d82e6");
         try {
-          await api.login(loginUsername.value, loginPassword.value);
-          if (sequence !== routeSequence || !(await enterSettings(sequence)))
+          const result = await api.login(loginUsername.value, loginPassword.value);
+          if (sequence !== routeSequence || !(await enterSettings(sequence, result.user)))
             return;
           goToRoute(loginDestination, true);
           loginPassword.value = "";
@@ -697,14 +706,6 @@ export default function App(input: Props) {
         const image = input.files?.[0];
         if (!image) return;
         input.value = "";
-        const acceptedTypes = new Set(["image/png", "image/jpeg", "image/gif"]);
-        if (
-          !acceptedTypes.has(image.type.toLowerCase()) ||
-          /\.svgz?$/i.test(image.name)
-        ) {
-          error.value = t("m.37492576162f");
-          return;
-        }
         uploading.value = kind;
         try {
           await api.uploadImage(kind, image);
@@ -1014,6 +1015,8 @@ export default function App(input: Props) {
                                     ? "page"
                                     : (undefined as any)
                                 }
+                                onPointerEnter={() => preloadScreen(item.screen)}
+                                onFocus={() => preloadScreen(item.screen)}
                                 onClick={(event: any) => {
                                   navigate(item.screen);
                                 }}
@@ -1349,7 +1352,6 @@ export default function App(input: Props) {
                       <input
                         name="username"
                         autoComplete="username"
-                        maxLength={80}
                         placeholder={t("auth.generateUsername") as any}
                         {...__input(
                           setupForm.username,
@@ -1505,7 +1507,6 @@ export default function App(input: Props) {
                         autoComplete="username"
                         required={true}
                         autoFocus={true}
-                        maxLength={80}
                         placeholder={t("auth.username") as any}
                         {...__input(
                           loginUsername.value,
@@ -1602,7 +1603,7 @@ export default function App(input: Props) {
             ) : screen.value === "feeds" ? (
               <FeedsCenter />
             ) : screen.value === "operations" ? (
-              <OperationConsole data-v-ac863f34=""></OperationConsole>
+              <OperationConsole role={currentUser.value?.role ?? "viewer"} data-v-ac863f34=""></OperationConsole>
             ) : screen.value === "alerts" ? (
               <AlertCenter data-v-ac863f34=""></AlertCenter>
             ) : (

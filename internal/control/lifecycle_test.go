@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -22,7 +23,7 @@ func TestConcurrentLoginAndReadKeepCookieJarStable(t *testing.T) {
 		io.WriteString(w, `{}`)
 	}))
 	defer host.Close()
-	client, err := NewClient(ClientOptions{Server: host.URL, Development: true})
+	client, err := NewClient(ClientOptions{Server: host.URL, Development: true, StateDir: filepath.Join(t.TempDir(), "client")})
 	if err != nil {
 		t.Fatal(err)
 	}

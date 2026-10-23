@@ -53,6 +53,9 @@ export default function NodeServiceProbes(input: Props) {
       const editingID = cell("");
       const editingRevision = cell<number>();
       let refreshTimer: ReturnType<typeof setInterval> | undefined;
+      let refreshRequest: AbortController | undefined;
+      let disposed = false;
+      const historyRequests = new Map<string, AbortController>();
       const form = observable({
         name: "",
         kind: "http" as ServiceProbe["kind"],
@@ -79,15 +82,19 @@ export default function NodeServiceProbes(input: Props) {
           enabled: true,
         });
       }
-      async function refresh(silent = false) {
+      async function refresh(silent = false, force = false) {
+        if (disposed || (silent && !force && refreshRequest && !refreshRequest.signal.aborted)) return;
+        refreshRequest?.abort();
+        const pending = new AbortController(), nodeId = props.nodeId;
+        refreshRequest = pending;
         if (!silent) loading.value = true;
         try {
-          const response = await api.serviceProbes();
-          probes.value = Array.isArray(response.probes) ? response.probes : [];
+          const response = await api.serviceProbes({ signal: pending.signal });
+          if (!pending.signal.aborted && nodeId === props.nodeId) probes.value = response.probes;
         } catch (reason) {
-          if (!silent) error.value = message(reason);
+          if (!pending.signal.aborted && !silent) error.value = message(reason);
         } finally {
-          loading.value = false;
+          if (refreshRequest === pending) { refreshRequest = undefined; loading.value = false; }
         }
       }
       function beginCreate() {
@@ -146,7 +153,7 @@ export default function NodeServiceProbes(input: Props) {
           else await api.createServiceProbe(payload());
           closeForm();
           notice.value = t("m.c538fb4a37f3");
-          await refresh(true);
+          await refresh(true, true);
         } catch (reason) {
           error.value = message(reason);
         } finally {
@@ -173,7 +180,7 @@ export default function NodeServiceProbes(input: Props) {
           notice.value = probe.enabled
             ? t("m.95f6288e13e9")
             : t("m.c5ad49ccd171");
-          await refresh(true);
+          await refresh(true, true);
         } catch (reason) {
           error.value = message(reason);
         }
@@ -193,6 +200,8 @@ export default function NodeServiceProbes(input: Props) {
         try {
           await api.deleteServiceProbe(probe.id, probe.revision);
           probes.value = probes.value.filter((item) => item.id !== probe.id);
+          historyRequests.get(probe.id)?.abort();
+          historyRequests.delete(probe.id);
           notice.value = t("m.cbeed1058101");
         } catch (reason) {
           error.value = message(reason);
@@ -202,35 +211,29 @@ export default function NodeServiceProbes(input: Props) {
       }
       async function toggleHistory(probe: ServiceProbe) {
         const visible = !visibleHistory.value[probe.id];
-        visibleHistory.value = {
-          ...visibleHistory.value,
-          [probe.id]: visible,
+        visibleHistory.value = { ...visibleHistory.value, [probe.id]: visible };
+        historyRequests.get(probe.id)?.abort();
+        historyRequests.delete(probe.id);
+        if (!visible || disposed) return;
+        const pending = new AbortController(), nodeId = props.nodeId;
+        historyRequests.set(probe.id, pending);
+        const read = async <T,>(request: Promise<T>, apply: (value: T) => void) => {
+          try {
+            const value = await request;
+            if (!pending.signal.aborted && nodeId === props.nodeId) apply(value);
+          } catch (reason) {
+            if (!pending.signal.aborted) error.value = message(reason);
+          }
         };
-        if (!visible) return;
-        try {
-          const [result, stats] = await Promise.all([
-            api.serviceProbeHistory(probe.id),
-            operationRequest<{
-              packetLossPercent?: number;
-              jitterMs?: number;
-              failurePercent?: number;
-              meanLatencyMs?: number;
-              p95LatencyMs?: number;
-              unknown: number;
-            }>("probes.quality", {
-              params: {
-                id: probe.id,
-              },
-            }),
-          ]);
-          quality.value[probe.id] = stats;
-          history.value = {
-            ...history.value,
-            [probe.id]: result.runs,
-          };
-        } catch (reason) {
-          error.value = message(reason);
-        }
+        await Promise.all([
+          read(api.serviceProbeHistory(probe.id, { signal: pending.signal }), result => {
+            history.value = { ...history.value, [probe.id]: result.runs };
+          }),
+          read(operationRequest<(typeof quality.value)[string]>("probes.quality", { params: { id: probe.id } }, { signal: pending.signal }), stats => {
+            quality.value = { ...quality.value, [probe.id]: stats };
+          }),
+        ]);
+        if (historyRequests.get(probe.id) === pending) historyRequests.delete(probe.id);
       }
       function statusLabel(probe: ServiceProbe): string {
         if (!probe.enabled) return t("m.a8c3698b5b8c");
@@ -275,18 +278,24 @@ export default function NodeServiceProbes(input: Props) {
           error.value = "";
           notice.value = "";
           formVisible.value = false;
+          probes.value = [];
+          history.value = {};
+          quality.value = {};
+          visibleHistory.value = {};
+          for (const pending of historyRequests.values()) pending.abort();
+          historyRequests.clear();
           void refresh();
         },
       );
-      watchState(
-        () => form.kind,
-        (kind) => {
-          const old = form.target.replace(/^(https?|tcp|icmp):\/\//, "");
-          if (kind === "icmp")
-            form.target = `icmp://${old.split("/")[0]?.split(":")[0] ?? ""}`;
-          else form.target = `${kind}://${old}`;
-        },
-      );
+      function changeKind(kind: ServiceProbe["kind"]) {
+        const target = form.target.replace(/^(https?|tcp|icmp):\/\//, "");
+        let host = target;
+        if (kind === "icmp") {
+          try { host = new URL(`http://${target}`).hostname || target; } catch {}
+        }
+        form.kind = kind;
+        form.target = `${kind}://${kind === "icmp" ? host : target}`;
+      }
       afterMount(() => {
         void refresh();
         refreshTimer = setInterval(() => {
@@ -294,6 +303,10 @@ export default function NodeServiceProbes(input: Props) {
         }, 5000);
       });
       beforeDispose(() => {
+        disposed = true;
+        refreshRequest?.abort();
+        for (const pending of historyRequests.values()) pending.abort();
+        historyRequests.clear();
         if (refreshTimer !== undefined) clearInterval(refreshTimer);
       });
       return () => (
@@ -370,7 +383,6 @@ export default function NodeServiceProbes(input: Props) {
                   <label data-v-5be80864="">
                     <span data-v-5be80864="">{t("m.d44e9b3d3b31")}</span>
                     <input
-                      maxLength={80}
                       required={true}
                       placeholder={t("m.bd0242098b8e") as any}
                       {...__input(
@@ -390,7 +402,7 @@ export default function NodeServiceProbes(input: Props) {
                     <UiSelect
                       modelValue={form.kind}
                       onUpdateModelValue={(__nextValue: any) => {
-                        form.kind = __nextValue;
+                        changeKind(__nextValue);
                       }}
                       modelModifiers={{}}
                       data-v-5be80864=""
@@ -417,7 +429,6 @@ export default function NodeServiceProbes(input: Props) {
                     <span data-v-5be80864="">{t("m.fb60c9043c7a")}</span>
                     <input
                       required={true}
-                      maxLength={2048}
                       placeholder={
                         form.kind === "tcp"
                           ? "tcp://127.0.0.1:5432"

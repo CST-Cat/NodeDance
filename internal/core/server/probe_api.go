@@ -41,15 +41,15 @@ func (s *Server) handleProbeAPI(w http.ResponseWriter, r *http.Request, current 
 				}
 				return true
 			}
-			config, err := configFromRequest(request, true)
-			if err != nil {
-				http.Error(w, "invalid service probe configuration", http.StatusBadRequest)
-				return true
-			}
+			config := configFromRequest(request, true)
 			event := probeAuditEvent(s, current, "probe_create")
 			created, err := s.probes.Create(r.Context(), config, event)
 			if err != nil {
-				http.Error(w, "service probe could not be saved", http.StatusInternalServerError)
+				if errors.Is(err, coreprobes.ErrInvalidConfig) {
+					http.Error(w, "invalid service probe configuration", http.StatusBadRequest)
+				} else {
+					http.Error(w, "service probe could not be saved", http.StatusInternalServerError)
+				}
 				return true
 			}
 			writeJSON(w, http.StatusCreated, created)
@@ -128,8 +128,8 @@ func (s *Server) handleProbeAPI(w http.ResponseWriter, r *http.Request, current 
 		if !decodeJSON(w, r, &request) {
 			return true
 		}
-		config, err := configFromRequest(request, false)
-		if err != nil || request.Revision < 1 || request.Enabled == nil {
+		config := configFromRequest(request, false)
+		if request.Enabled == nil {
 			http.Error(w, "invalid service probe configuration or missing revision", http.StatusBadRequest)
 			return true
 		}
@@ -180,7 +180,7 @@ func (s *Server) handleProbeAPI(w http.ResponseWriter, r *http.Request, current 
 	return true
 }
 
-func configFromRequest(request probeConfigRequest, isCreate bool) (coreprobes.Config, error) {
+func configFromRequest(request probeConfigRequest, isCreate bool) coreprobes.Config {
 	status := 200
 	if request.ExpectedHTTPStatus != nil {
 		status = *request.ExpectedHTTPStatus
@@ -195,7 +195,7 @@ func configFromRequest(request probeConfigRequest, isCreate bool) (coreprobes.Co
 	if request.Kind == "tcp" || request.Kind == "icmp" {
 		config.ExpectedHTTPStatus = 0
 	}
-	return config, coreprobes.ValidateConfig(config)
+	return config
 }
 
 func probeAuditEvent(s *Server, current *session, action string) audit.Event {

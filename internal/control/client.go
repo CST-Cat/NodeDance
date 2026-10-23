@@ -3,6 +3,7 @@ package control
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -17,18 +18,22 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/coder/websocket"
 	"golang.org/x/sys/unix"
 )
 
 type Client struct {
-	base        *url.URL
-	origin      string
-	http        *http.Client
-	sessionPath string
-	caFile      string
-	development bool
+	base          *url.URL
+	origin        string
+	http          *http.Client
+	sessionPath   string
+	caFile        string
+	development   bool
+	sessionMu     sync.Mutex
+	sessionDigest [sha256.Size]byte
+	sessionSaved  bool
 }
 type ClientOptions struct {
 	Server, Origin, StateDir, CAFile string
@@ -68,6 +73,7 @@ func (r Result) Err() error {
 
 func NewClient(options ClientOptions) (*Client, error) {
 	var saved savedSession
+	var savedRaw []byte
 	if options.StateDir != "" {
 		if err := privateDir(options.StateDir); err != nil {
 			return nil, err
@@ -76,8 +82,11 @@ func NewClient(options ClientOptions) (*Client, error) {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return nil, err
 		}
-		if err == nil && json.Unmarshal(raw, &saved) != nil {
-			return nil, errors.New("invalid saved CLI session")
+		if err == nil {
+			if json.Unmarshal(raw, &saved) != nil {
+				return nil, errors.New("invalid saved CLI session")
+			}
+			savedRaw = raw
 		}
 	}
 	if options.UseSavedConnection {
@@ -137,6 +146,10 @@ func NewClient(options ClientOptions) (*Client, error) {
 	}
 	jar, _ := cookiejar.New(nil)
 	c := &Client{base: base, origin: origin, caFile: options.CAFile, development: options.Development, http: &http.Client{Transport: transport, Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	if savedRaw != nil {
+		c.sessionDigest = sha256.Sum256(savedRaw)
+		c.sessionSaved = true
+	}
 	if options.StateDir != "" {
 		c.sessionPath = filepath.Join(options.StateDir, "session.json")
 		if saved.Server != "" {
@@ -193,11 +206,17 @@ func (c *Client) save() error {
 	if c.sessionPath == "" {
 		return nil
 	}
-	if err := privateDir(filepath.Dir(c.sessionPath)); err != nil {
-		return err
-	}
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
 	raw, err := json.Marshal(savedSession{Server: c.base.String(), Origin: c.origin, CAFile: c.caFile, Development: c.development, Cookies: c.http.Jar.Cookies(c.base)})
 	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(raw)
+	if c.sessionSaved && c.sessionDigest == digest {
+		return nil
+	}
+	if err := privateDir(filepath.Dir(c.sessionPath)); err != nil {
 		return err
 	}
 	f, err := os.CreateTemp(filepath.Dir(c.sessionPath), ".session-*")
@@ -216,7 +235,11 @@ func (c *Client) save() error {
 	if err = f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), c.sessionPath)
+	if err := os.Rename(f.Name(), c.sessionPath); err != nil {
+		return err
+	}
+	c.sessionDigest, c.sessionSaved = digest, true
+	return nil
 }
 func (c *Client) endpoint(o Operation, in Input) (string, error) {
 	path, err := o.URLPath(in.Params)
@@ -302,9 +325,6 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 	}
 	var body io.Reader = bytes.NewReader(in.Body)
 	contentType := "application/json"
-	if err := c.ValidateInput(o, in); err != nil {
-		return fail(err)
-	}
 	if o.Transport == "download" && download == nil {
 		return fail(errors.New("download requires --output"))
 	}
@@ -425,9 +445,6 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 			return fail(errors.New("Core returned invalid JSON"))
 		}
 		result.Data = raw
-		if err := ValidateJSON(o.ResponseSchema, raw); err != nil {
-			return fail(fmt.Errorf("Core response violates operation contract: %w", err))
-		}
 	}
 	return result
 }

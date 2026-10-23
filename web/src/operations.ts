@@ -52,7 +52,8 @@ export function schemaHasSecrets(schema?: BodySchema): boolean {
 // Decode numeric tokens before JS can round them. Big integers stay bigint in
 // typed contract fields and are written as JSON numbers, never quoted strings.
 export function parseExactJSON(raw: string): unknown {
-  JSON.parse(raw) // Validate the complete grammar first.
+  const decoded = JSON.parse(raw)
+  if (!/\d{16}/.test(raw)) return decoded
   // Scan strings iteratively: a repeated regex over multi-MiB escaped text
   // can overflow the JS regex engine's stack even though JSON.parse accepts it.
   const tokens:string[]=[]
@@ -85,11 +86,17 @@ export function exactJSON(value: unknown): string {
   return JSON.stringify(value)
 }
 export function decodeContractJSON(raw:string,schema?:BodySchema):unknown {
+  if (!/\d{16}/.test(raw)) return JSON.parse(raw)
+  const select = (s:BodySchema|undefined,pick:(s:BodySchema)=>BodySchema|undefined):BodySchema|undefined => {
+    if (!s?.anyOf) return s && pick(s)
+    const choices = s.anyOf.map(variant=>select(variant,pick)).filter((choice):choice is BodySchema=>!!choice)
+    return choices.length===1 ? choices[0] : {anyOf:choices}
+  }
+  const integer = (s?:BodySchema):boolean => s?.type==='integer' || !!s?.anyOf?.some(integer)
   const visit=(value:unknown,s?:BodySchema):unknown=>{
-    if(s?.anyOf)s=s.anyOf.find(variant=>{try{validateSchema(variant,value);return true}catch{return false}})
-    if(typeof value==='bigint')return s?.type==='integer'?value:Number(value)
-    if(Array.isArray(value))return value.map(v=>visit(v,s?.items))
-    if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,visit(v,s?.properties?.[k] ?? (typeof s?.additionalProperties==='object'?s.additionalProperties:undefined))]))
+    if(typeof value==='bigint')return integer(s)?value:Number(value)
+    if(Array.isArray(value)){const item=select(s,definition=>definition.items);return value.map(v=>visit(v,item))}
+    if(value && typeof value==='object')return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,visit(v,select(s,definition=>definition.properties?.[k] ?? (typeof definition.additionalProperties==='object'?definition.additionalProperties:undefined)))]))
     return value
   }
   return visit(parseExactJSON(raw),schema)
@@ -99,64 +106,21 @@ export function operationBody(operation: CoreOperation, values: Record<string,st
   const schema = operation.bodySchema
   if (!schema) return undefined
   if (rawMode || schema.type !== 'object') {
-    const value=parseExactJSON(raw); validateSchema(schema,value); const result=raw.trim()
-    if(operation.maxBodyBytes && new TextEncoder().encode(result).length>operation.maxBodyBytes)throw new Error('Body exceeds Core request limit')
-    return result
+    return raw.trim()
   }
-  const body: Record<string,unknown> = {}
   const encoded: string[] = []
   for (const [key, field] of Object.entries(schema.properties ?? {})) {
     if (!Object.hasOwn(values,key) && !schema.required?.includes(key)) continue
     const value = String(values[key] ?? '')
-    if (field.type === 'string') {body[key] = value;encoded.push(`${JSON.stringify(key)}:${JSON.stringify(value)}`)}
+    if (field.type === 'string') encoded.push(`${JSON.stringify(key)}:${JSON.stringify(value)}`)
     else if (value === '' && !schema.required?.includes(key)) continue
-    else {body[key] = parseExactJSON(value);encoded.push(`${JSON.stringify(key)}:${exactJSON(body[key])}`)}
+    else encoded.push(`${JSON.stringify(key)}:${exactJSON(parseExactJSON(value))}`)
   }
-  validateSchema(schema,body)
-  const result=`{${encoded.join(',')}}`
-  if(operation.maxBodyBytes && new TextEncoder().encode(result).length>operation.maxBodyBytes)throw new Error('Body exceeds Core request limit')
-  return result
-}
-
-export function validateSchema(schema: BodySchema | undefined,value: unknown,path='body'): void {
-  if(!schema || (value===null && schema.nullable))return
-  if(schema.anyOf){if(schema.anyOf.some(variant=>{try{validateSchema(variant,value,path);return true}catch{return false}}))return;throw new Error(path+': does not match any published response shape')}
-  const fail=(rule:string):never=>{throw new Error(`${path}: ${rule}`)}
-  if(schema.enum && !schema.enum.includes(value as string))fail('value is not in the allowed enum')
-  if(schema.type==='object'){
-    if(!value || typeof value!=='object' || Array.isArray(value))fail('expected object')
-    const object=value as Record<string,unknown>
-    for(const key of schema.required ?? [])if(!Object.hasOwn(object,key))fail(`missing property ${key}`)
-    for(const [key,v] of Object.entries(object)){
-      const child=schema.properties?.[key]
-      if(child)validateSchema(child,v,`${path}.${key}`)
-      else if(schema.additionalProperties===false)fail(`unknown property ${key}`)
-      else if(typeof schema.additionalProperties==='object')validateSchema(schema.additionalProperties,v,`${path}.${key}`)
-    }
-  }else if(schema.type==='array'){
-    if(!Array.isArray(value))fail('expected array')
-    if(schema.minItems!==undefined && (value as unknown[]).length<schema.minItems)fail('too few items')
-    if(schema.maxItems!==undefined && (value as unknown[]).length>schema.maxItems)fail('too many items')
-    ;(value as unknown[]).forEach((v,i)=>validateSchema(schema.items,v,`${path}[${i}]`))
-  }else if(schema.type==='string'){
-    if(typeof value!=='string')fail('expected string')
-    const text=value as string
-    if(schema.minLength!==undefined && [...text].length<schema.minLength)fail('string is too short')
-    if(schema.maxLength!==undefined && [...text].length>schema.maxLength)fail('string is too long')
-    if(schema.minBytes!==undefined && new TextEncoder().encode(text).length<schema.minBytes)fail('string below byte minimum')
-    if(schema.maxBytes!==undefined && new TextEncoder().encode(text).length>schema.maxBytes)fail('string exceeds byte limit')
-  }else if(schema.type==='integer'||schema.type==='number'){
-    if(!(schema.type==='integer'&&typeof value==='bigint') && (typeof value!=='number'||!Number.isFinite(value)||(schema.type==='integer'&&!Number.isInteger(value))))fail(`expected ${schema.type}`)
-    if(schema.minimumInteger!==undefined && BigInt(value as bigint|number)<BigInt(schema.minimumInteger))fail('integer below exact minimum')
-    if(schema.maximumInteger!==undefined && BigInt(value as bigint|number)>BigInt(schema.maximumInteger))fail('integer exceeds exact maximum')
-    if(schema.minimum!==undefined && (value as number)<schema.minimum)fail('value below minimum')
-    if(schema.maximum!==undefined && (value as number)>schema.maximum)fail('value above maximum')
-  }else if(schema.type==='boolean' && typeof value!=='boolean')fail('expected boolean')
+  return `{${encoded.join(',')}}`
 }
 
 export function operationUpload(operation: CoreOperation, file: File): BodyInit {
   if (!operation.upload) throw new Error('Core omitted upload contract')
-  if (operation.upload.maxBytes && file.size > operation.upload.maxBytes) throw new Error('Upload exceeds Core size limit')
   if (operation.transport === 'upload') return file
   if (!operation.upload.field) throw new Error('Core omitted multipart field')
   const form = new FormData(); form.append(operation.upload.field,file); return form
@@ -189,12 +153,6 @@ export function operationCatalog(): Promise<OperationCatalog> {
     catalogPromise = fetch('/api/v1/operations', { credentials: 'include', cache: 'no-store' }).then(async response => {
       if (!response.ok) throw new Error(`Operation catalog: HTTP ${response.status}`)
       const catalog = await response.json() as OperationCatalog
-      if (catalog.version !== 1 || !Array.isArray(catalog.operations) || !catalog.operations.length) throw new Error('Invalid Core operation catalog')
-      const names = new Set<string>()
-      for (const operation of catalog.operations) {
-        if (!operation.name || names.has(operation.name) || !/^\/(api|ws)\//.test(operation.path) || !/^(GET|HEAD|POST|PUT|PATCH|DELETE)$/.test(operation.method) || !['json', 'download', 'upload', 'multipart', 'websocket', 'terminal'].includes(operation.transport)) throw new Error('Invalid Core operation definition')
-        names.add(operation.name)
-      }
       return catalog
     }).catch(error => { catalogPromise = undefined; throw error })
   }

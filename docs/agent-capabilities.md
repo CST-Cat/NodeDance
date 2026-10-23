@@ -106,3 +106,5 @@ SSH 复制命令通过现有 `agents.diagnostics` 共享操作自动取得连接
 Compose 项目删除接入共享 Task／TaskJournal：按精确项目上下文执行 down --remove-orphans，保留卷、镜像与配置，确认容器已撤下后报告 removed；命令失败或无法验证时报告不确定状态，不自动重放。
 
 The host metric block also reports `diskIO.readBytesPerSecond` and `diskIO.writeBytesPerSecond` from whole hardware block-device counter deltas. The first sample, device-set changes and counter resets are unavailable intervals; they must not be rendered as zero throughput. Numeric history and alert keys are `disk.read_bytes_per_second` and `disk.write_bytes_per_second`. See [node overview](overview.md) for the live chart and runtime information.
+
+诊断实体超过已有载荷预算时，Agent 用二分查找保留可容纳的最大有序前缀，避免每删除一条就重新序列化整个列表。载荷上限、截断标记和缺失数据语义不变。

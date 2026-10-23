@@ -361,7 +361,7 @@ func streamJSONL(ctx context.Context, client *control.Client, o control.Operatio
 			scanner.Buffer(make([]byte, 4096), 40*1024)
 			for scanner.Scan() {
 				line := append([]byte{}, scanner.Bytes()...)
-				if !json.Valid(line) {
+				if streamID == "" && !json.Valid(line) {
 					inputErr <- errors.New("terminal input must be JSONL")
 					cancel()
 					return
@@ -409,14 +409,14 @@ func streamJSONL(ctx context.Context, client *control.Client, o control.Operatio
 			}
 			return errors.New("Core stream closed unexpectedly")
 		}
-		if kind != websocket.MessageText || !json.Valid(data) {
+		if kind != websocket.MessageText {
 			return errors.New("Core returned invalid stream JSON")
 		}
 		var compact strings.Builder
 		var value json.RawMessage = data
 		encoded, err := json.Marshal(value)
 		if err != nil {
-			return err
+			return errors.New("Core returned invalid stream JSON")
 		}
 		compact.Write(encoded)
 		compact.WriteByte('\n')

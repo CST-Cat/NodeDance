@@ -31,31 +31,38 @@ export default function DomainCertificates() {
   const [tab, setTab] = useState("domains"), [inventory, setInventory] = useState<Inventory>(initial);
   const [operations, setOperations] = useState<CoreOperation[]>([]), [search, setSearch] = useState("");
   const [error, setError] = useState(""), [busy, setBusy] = useState(true), [action, setAction] = useState<Action | null>(null);
-  const [loaded,setLoaded]=useState(false);
+  const [loaded,setLoaded]=useState<Partial<Record<keyof Inventory,boolean>>>({});
   const [container, setContainer] = useState<HTMLElement | null>(null), [result, setResult] = useState<unknown>();
   const controller = useRef<AbortController | null>(null);
+  const refreshing = useRef(false);
   const refresh = useCallback(async () => {
     controller.current?.abort(); const pending = new AbortController(); controller.current = pending;
+    refreshing.current = true;
     setBusy(true); setError("");
     try {
       const catalog = await operationCatalog(); if (pending.signal.aborted) return;
       setOperations(catalog.operations.filter(op => op.name.startsWith("domains.") || op.name.startsWith("certificates.")));
-      const [domains, certificates, accounts, providers, jobs, channels] = await Promise.all([
-        operationRequest<{ domains: Row[] }>("domains.list", {}, { signal: pending.signal }),
-        operationRequest<{ certificates: Row[] }>("certificates.list", {}, { signal: pending.signal }),
-        operationRequest<{ accounts: Row[] }>("certificates.accounts", {}, { signal: pending.signal }),
-        operationRequest<{ providers: Row[] }>("certificates.providers", {}, { signal: pending.signal }),
-        operationRequest<{ jobs: Row[] }>("certificates.jobs", {}, { signal: pending.signal }),
-        operationRequest<{ channels: Row[] }>("channels.list", {}, { signal: pending.signal }),
+      const load = async <K extends keyof Inventory,>(key: K, operation: string) => {
+        try {
+          const response = await operationRequest<Record<K, Row[]>>(operation, {}, { signal: pending.signal });
+          if (!pending.signal.aborted) {
+            setInventory(current => ({ ...current, [key]: response[key] }));
+            setLoaded(current => ({ ...current, [key]: true }));
+          }
+        } catch (reason) { if (!pending.signal.aborted) setError(message(reason)); }
+      };
+      await Promise.all([
+        load("domains", "domains.list"), load("certificates", "certificates.list"),
+        load("accounts", "certificates.accounts"), load("providers", "certificates.providers"),
+        load("jobs", "certificates.jobs"), load("channels", "channels.list"),
       ]);
-      if (!pending.signal.aborted) {setLoaded(true);setInventory({ domains: domains.domains, certificates: certificates.certificates, accounts: accounts.accounts, providers: providers.providers, jobs: jobs.jobs, channels: channels.channels });}
     } catch (e) { if (!pending.signal.aborted) setError(message(e)); }
-    finally { if (!pending.signal.aborted) setBusy(false); }
+    finally { if (!pending.signal.aborted) { refreshing.current = false; setBusy(false); } }
   }, []);
   useEffect(() => { void refresh(); return () => controller.current?.abort(); }, [refresh]);
   useEffect(() => {
     if (!inventory.jobs.some(job => job.status === "queued" || job.status === "running")) return;
-    const timer = setInterval(() => { if (!controller.current || controller.current.signal.aborted) return; void refresh(); }, 4000);
+    const timer = setInterval(() => { if (refreshing.current || !controller.current || controller.current.signal.aborted) return; void refresh(); }, 4000);
     return () => clearInterval(timer);
   }, [inventory.jobs, refresh]);
   function open(name: string, row?: Row, seed?: Record<string, string>) {
@@ -97,9 +104,9 @@ export default function DomainCertificates() {
   return <section ref={setContainer} className="domain-certificates domain-theme product-arc arc-ui workspace-page" aria-labelledby="domain-certificates-title" data-testid="domain-certificates" aria-busy={busy}>
     <header className="domain-certificates-heading"><div><h1 id="domain-certificates-title">{t("domains.title")}</h1><p>{t("domains.description")}</p></div><Button variant="secondary" onClick={() => void refresh()} disabled={busy}><RefreshCw size={16} />{t("domains.refresh")}</Button></header>
     <div className="domain-summary">
-      <Card title={t("domains.domains")}><strong className="domain-total">{loaded ? inventory.domains.length : "—"}</strong></Card>
-      <Card title={t("domains.certificates")}><strong className="domain-total">{loaded ? inventory.certificates.length : "—"}</strong></Card>
-      <Card title={t("domains.expiring")}><strong className="domain-total">{loaded ? inventory.certificates.filter(c => c.status === "expiring" || c.status === "expired").length : "—"}</strong></Card>
+      <Card title={t("domains.domains")}><strong className="domain-total">{loaded.domains ? inventory.domains.length : "—"}</strong></Card>
+      <Card title={t("domains.certificates")}><strong className="domain-total">{loaded.certificates ? inventory.certificates.length : "—"}</strong></Card>
+      <Card title={t("domains.expiring")}><strong className="domain-total">{loaded.certificates ? inventory.certificates.filter(c => c.status === "expiring" || c.status === "expired").length : "—"}</strong></Card>
     </div>
     {error ? <Card title={t("domains.loadError")}><p role="alert">{error}</p></Card> : null}
     <Tabs className="domain-tabs" value={tab} onValueChange={setTab}>
@@ -158,7 +165,7 @@ function DomainOperation({ action, container, domains, accounts, providers, chan
     }
     if (name === "certificatePem" || name === "privateKeyPem") return <div key={name} className="domain-pem"><FileDropzone label={fieldLabel(name)} description={t("domains.choosePem")} note={t("domains.privateMemory")} accept=".pem,.crt,.cer,.key,text/plain,application/x-pem-file" multiple={false} maxFiles={1} maxSize={definition.maxBytes} onFilesChange={files => { const file = files[0]; if (file) void file.text().then(text => set(name, text)).catch(e => setError(message(e))); else set(name, ""); }} /><Textarea label={label} value={value} onChange={event => set(name, event.target.value)} rows={4} autoComplete="off" spellCheck={false} /></div>;
     if (definition.type === "array" || definition.type === "object" || name === "notes") return <Textarea key={name} label={label} value={value} onChange={event => set(name, event.target.value)} rows={4} description={definition.type === "array" || definition.type === "object" ? t("domains.jsonInput") : undefined} />;
-    return <Input key={name} label={label} value={value} type={definition.writeOnly ? "password" : definition.type === "integer" ? "number" : name === "email" ? "email" : "text"} min={definition.minimum} max={definition.maximum} autoComplete="off" onChange={event => set(name, event.target.value)} description={definition.default !== undefined ? `${t("domains.default")}: ${definition.default}` : name === "challenge" ? t("domains.challengeHelp") : undefined} />;
+    return <Input key={name} label={label} value={value} type={definition.writeOnly ? "password" : definition.type === "integer" ? "number" : "text"} inputMode={name === "email" ? "email" : undefined} min={definition.minimum} max={definition.maximum} autoComplete="off" onChange={event => set(name, event.target.value)} description={definition.default !== undefined ? `${t("domains.default")}: ${definition.default}` : name === "challenge" ? t("domains.challengeHelp") : undefined} />;
   }
   return <Dialog open={true} onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent container={container} className="domain-action-dialog" title={opLabel(operation)} description={display(operation.description)} onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>
     <form onSubmit={event => void execute(event)} className="domain-operation-form">

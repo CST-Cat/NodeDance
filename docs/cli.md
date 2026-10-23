@@ -245,3 +245,19 @@ Account creation, editing, disabling, deletion, password reset and switching are
 `domains.*` and `certificates.*` are administrator operations discovered from Core, including inventory, imports/private exports, ACME accounts/DNS providers, issuance/renewal/revocation, policy and persistent job observation/cancellation/retry. CLI and TUI use the shared executor and completion contract. `nodedance batch --input FILE_OR_- --dry-run` validates all JSONL entries before execution; remove `--dry-run` to execute sequentially, optionally using `--continue-on-error`. TUI exposes the same workflow as `client.batch`. See [configuration, security boundaries and copyable JSONL examples](domain-certificates.md).
 
 城市定位使用 `locations.search/get`、`nodes.list/preferences/save-preference`，CLI 和 TUI 均从 Core 发现同一契约。支持默认自动、手动城市／坐标、清除覆盖、观察结果与 JSONL 批量操作；详见 [节点城市定位与完整示例](node-locations.md)。
+
+Ordinary CLI/TUI requests no longer run the published body schema before dispatch or validate successful JSON against the response schema again. Core returns structural and business errors through the actual HTTP response. The shared transport still checks targets, headers/request identity, JSON response syntax, response bounds and private session storage. JSONL batch preflight remains: it checks every entry before the first mutation to prevent partial execution caused by a later malformed entry.
+
+CLI/TUI only atomically persist a session when its cookies or connection settings change. Ordinary reads and status observation reuse unchanged saved state without a filesystem write or fsync. New clients still validate owner-only state before loading; changed state still requires an owner-owned 0700 directory and is written as a 0600 regular file. Concurrent saves are serialized and failed writes do not update the saved-state digest.
+
+Terminal JSONL processing parses input objects and compacts output frames without a separate full JSON-validity scan first. Malformed frames are still rejected before output, and large JSON integer literals retain their original digits.
+
+Shared enrollment grants validate their prefix/use/lifetime input once in the Agent repository. The HTTP handler maps invalid input to 400 without issuing a grant; use counts, expiry, revocation and atomic consumption remain unchanged.
+
+### Monitoring history / 监控历史
+
+`monitoring.settings` returns the shared maximum retention and supported day choices. Administrators use `monitoring.configure` with `{"retentionDays":7}` to save it; Web personal settings and both terminal interfaces use the same Core operation. The default remains 365 days; choices are 1, 7, 30, 90, 180 and 365 days. Saving immediately expires older monitoring samples in the same database transaction. Increasing the duration cannot restore expired samples. Five-second rates retain at most 24 hours, minute aggregates at most 30 days, and hourly aggregates at most the selected duration. Incident recordings also respect the maximum while retaining their existing shorter limits.
+
+`nodes.history` accepts `nodeId`, RFC3339 `from`/`to`, and `resolution` (`5s`, `minute`, `hour`). Its JSON output is the same data shown in the node history screen; terminal output can be redirected to a file. Web adds paginated sample details and CSV/JSON exports of the complete currently loaded response, including all metrics and pages. Exports preserve timestamps, sample counts, averages, minima and maxima; missing samples remain absent.
+
+个人设置的“监控数据”可选择最长保存时间，默认 365 天。缩短后立即清理超期采样，延长不会恢复已清理的数据；秒级、分钟级和事件录像继续遵循各自更短的保留上限。节点历史页可查看分页明细，并导出当前查询的全部指标为 CSV 或 JSON。CLI／TUI 通过相同的 Core 操作设置时长、读取历史；不接触 Agent 凭据或 Core 数据库。

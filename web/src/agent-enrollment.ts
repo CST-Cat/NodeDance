@@ -46,34 +46,6 @@ export function createEnrollmentController(
       draft.coreUrl = value;
     },
   });
-  const development = window.location.protocol === "http:";
-  const agentOrigin = derived(() => {
-    try {
-      const parsed = new URL(agentServer.value.trim());
-      return (parsed.protocol === "https:" || parsed.protocol === "http:") &&
-        !parsed.username &&
-        !parsed.password &&
-        !parsed.search &&
-        !parsed.hash &&
-        (parsed.pathname === "/" || parsed.pathname === "")
-        ? parsed.origin
-        : "";
-    } catch {
-      return "";
-    }
-  });
-  const agentOriginIsSupported = derived(() => agentOrigin.value !== "");
-  const agentOriginIsLoopback = derived(() => {
-    if (!agentOrigin.value) return false;
-    return isLiteralLoopback(new URL(agentOrigin.value).hostname);
-  });
-  const agentOriginUsesAllowedTransport = derived(
-    () =>
-      agentOrigin.value.startsWith("https://") ||
-      (development &&
-        agentOrigin.value.startsWith("http://") &&
-        agentOriginIsLoopback.value),
-  );
   const installCommand = cell("");
   const dockerInstallCommand = cell("");
   const deploymentMethod = derived<"native" | "docker">({
@@ -142,30 +114,19 @@ export function createEnrollmentController(
     installCommand.value = "";
     dockerInstallCommand.value = "";
     const name = displayName.value.trim();
-    if (
-      !agentOriginIsSupported.value ||
-      !agentOriginUsesAllowedTransport.value
-    ) {
-      error.value = t("m.70226817387f");
-      return;
-    }
-    if (!props.nodeId && (!name || /[\r\n\0]/.test(name))) {
-      error.value = t("m.bd8975b069f6");
-      return;
-    }
     const current = requestEpoch;
     creating.value = true;
     try {
       const result = props.nodeId
         ? await api.renewAgentEnrollment(
             props.nodeId,
-            agentOrigin.value,
+            agentServer.value.trim(),
             deploymentMethod.value,
             asset.value,
           )
         : await api.createAgentEnrollment(
             name,
-            agentOrigin.value,
+            agentServer.value.trim(),
             deploymentMethod.value,
             asset.value,
           );
@@ -191,16 +152,6 @@ export function createEnrollmentController(
       ? result.dockerInstallCommand
       : result.nativeInstallCommand;
   }
-  function isLiteralLoopback(hostname: string): boolean {
-    const host = hostname.replace(/^\[|\]$/g, "");
-    if (host === "::1") return true;
-    const octets = host.split(".");
-    return (
-      octets.length === 4 &&
-      octets.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255) &&
-      Number(octets[0]) === 127
-    );
-  }
   return {
     copied,
     asset,
@@ -210,8 +161,6 @@ export function createEnrollmentController(
     creating,
     error,
     agentServer,
-    agentOriginIsSupported,
-    agentOriginUsesAllowedTransport,
     installCommand,
     dockerInstallCommand,
     deploymentMethod,

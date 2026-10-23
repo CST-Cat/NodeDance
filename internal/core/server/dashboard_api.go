@@ -109,12 +109,8 @@ func (s *Server) handleNodeMetricHistory(w http.ResponseWriter, r *http.Request,
 	from, fromErr := time.Parse(time.RFC3339Nano, query.Get("from"))
 	to, toErr := time.Parse(time.RFC3339Nano, query.Get("to"))
 	now := s.now().UTC()
-	if fromErr != nil || toErr != nil || !from.Before(to) || (resolution != "5s" && resolution != "minute" && resolution != "hour") || to.After(now.Add(time.Minute)) {
+	if fromErr != nil || toErr != nil || to.After(now.Add(time.Minute)) {
 		http.Error(w, "history range or resolution is invalid", http.StatusBadRequest)
-		return
-	}
-	if resolution == "5s" && to.Sub(from) > corehistory.FineMaxRange {
-		http.Error(w, "fine history range exceeds four hours", http.StatusBadRequest)
 		return
 	}
 	retention := 30 * 24 * time.Hour

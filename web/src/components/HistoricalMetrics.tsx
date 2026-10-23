@@ -256,7 +256,6 @@ export default function HistoricalMetrics(input: Props) {
         () => [props.history, selectedKey.value, locale.value],
         render,
         {
-          deep: true,
           flush: "post",
         },
       );

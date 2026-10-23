@@ -27,7 +27,7 @@ export default function LocationPicker({ value, countryCode, countries, schema, 
    if(next==="coordinates"&&!value){if(resolved?.position)onChange({...resolved.position});else update({});}
   }} options={[{value:"auto",label:t("location.auto")},{value:"city",label:t("location.selectCity")},{value:"coordinates",label:t("location.coordinates")}]} />
   {mode==="city"?<>
-   <Input label={t("location.search")} value={query} maxLength={128} onChange={event=>setQuery(event.target.value)} placeholder={t("location.searchHint")} />
+   <Input label={t("location.search")} value={query} onChange={event=>setQuery(event.target.value)} placeholder={t("location.searchHint")} />
    <Select label={t("location.city")} required value={value?"selected":""} placeholder={t("location.choose")} onValueChange={id=>{
     const city=cities.find(city=>city.id===id);if(city)onChange({countryCode:city.countryCode,city:city.city,region:city.region,latitude:city.latitude,longitude:city.longitude});
    }} options={[...(!value?[{value:"",label:t("location.choose"),disabled:true}]:[]),...(value?[{value:"selected",label:caption(value)}]:[]),...cities.filter(city=>!value||city.latitude!==value.latitude||city.longitude!==value.longitude).map(city=>({value:city.id,label:caption(city)}))]} />
@@ -35,8 +35,8 @@ export default function LocationPicker({ value, countryCode, countries, schema, 
   </>:null}
   {mode==="coordinates"?<>
    <Select label={t("preferences.country")} required value={value?.countryCode??""} placeholder={t("location.chooseCountry")} onValueChange={code=>update({countryCode:code})} options={[...(!value?.countryCode?[{value:"",label:t("location.chooseCountry"),disabled:true}]:[]),...countries.filter(Boolean).map(code=>({value:code,label:countryName(code),icon:<CountryLogo country={{status:"known",code}}/>})).sort((a,b)=>a.label.localeCompare(b.label,locale.value))]}/>
-   <Input label={t("location.city")} required maxLength={schema.city?.maxBytes} value={value?.city??""} onChange={event=>update({city:event.target.value})}/>
-   <Input label={t("location.region")} maxLength={schema.region?.maxBytes} value={value?.region??""} onChange={event=>update({region:event.target.value})}/>
+   <Input label={t("location.city")} required value={value?.city??""} onChange={event=>update({city:event.target.value})}/>
+   <Input label={t("location.region")} value={value?.region??""} onChange={event=>update({region:event.target.value})}/>
    {(["latitude","longitude"] as const).map(key=><Input key={key} label={t(`location.${key}`)} type="number" inputMode="decimal" required step="any" min={schema[key]?.minimum} max={schema[key]?.maximum} value={value?.[key]??""} onChange={event=>update({[key]:event.target.value===""?null:Number(event.target.value)})}/>)}
   </>:null}
  </div>;

@@ -48,6 +48,22 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   const [epoch, setEpoch] = useState(0), [activeId, setActiveId] = useState("");
   const [samples, setSamples] = useState<Record<string, MetricsView>>({});
   const [colors, setColors] = useState({ dark: 0, base: [0.5, 0.5, 0.5], glow: [1, 1, 1], marker: [0.5, 0.5, 0.5] });
+  const metricReads = useRef(new Map<string, { controller: AbortController; promise: Promise<AgentMetricsResponse> }>());
+  const readMetrics = useCallback((node: AgentNode) => {
+    const key = `${node.nodeId}:${node.generation}`;
+    const existing = metricReads.current.get(key);
+    if (existing) return existing.promise;
+    const controller = new AbortController();
+    const promise = operationRequest<AgentMetricsResponse>("nodes.metrics", { params: { nodeId: node.nodeId } }, { signal: controller.signal }).finally(() => {
+      if (metricReads.current.get(key)?.promise === promise) metricReads.current.delete(key);
+    });
+    metricReads.current.set(key, { controller, promise });
+    return promise;
+  }, []);
+  useEffect(() => () => {
+    for (const read of metricReads.current.values()) read.controller.abort();
+    metricReads.current.clear();
+  }, [epoch]);
   const clockOffset = useRef(0);
   const now = () => Date.now() + clockOffset.current;
   const online = (node: AgentNode) => node.status === "online" && (!node.leaseValidUntil || Date.parse(node.leaseValidUntil) > now());
@@ -156,25 +172,25 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
       while (pending.length && !controller.signal.aborted) {
         const node = pending.shift()!;
         try {
-          const result = await operationRequest<AgentMetricsResponse>("nodes.metrics", { params: { nodeId: node.nodeId } }, { signal: controller.signal });
+          const result = await readMetrics(node);
           if (!controller.signal.aborted && "metrics" in result) setSamples(current => current[node.nodeId] === result ? current : { ...current, [node.nodeId]: result });
         } catch { /* A selected node retries below; keep any last known sample. */ }
       }
     }));
     return () => controller.abort();
-  }, [preloadKey, epoch]);
+  }, [preloadKey, epoch, readMetrics]);
   useEffect(() => {
     if (!selected?.nodeId) return;
     const controller = new AbortController(); let timer = 0;
     const read = async () => {
       if (!document.hidden) try {
-        const result = await operationRequest<AgentMetricsResponse>("nodes.metrics", { params: { nodeId: selected.nodeId } }, { signal: controller.signal });
-        if (!controller.signal.aborted && "metrics" in result) setSamples(current => ({ ...current, [selected.nodeId]: result }));
+        const result = await readMetrics(selected);
+        if (!controller.signal.aborted && "metrics" in result) setSamples(current => current[selected.nodeId] === result ? current : ({ ...current, [selected.nodeId]: result }));
       } catch { /* Preserve the cached card while the next refresh retries. */ }
       if (!controller.signal.aborted) timer = window.setTimeout(read, 5000);
     };
     void read(); return () => { controller.abort(); clearTimeout(timer); };
-  }, [selected?.nodeId, selected?.generation, epoch]);
+  }, [selected?.nodeId, selected?.generation, epoch, readMetrics]);
   const sample = selected ? samples[selected.nodeId] : undefined;
   const fresh = !!selected && online(selected) && sample?.nodeId === selected.nodeId && sample.generation === selected.generation && sample.activeGeneration === selected.generation && sample.nodeStatus === "online" && Date.parse(sample.leaseValidUntil) > now();
   const metrics = fresh ? sample?.metrics : undefined;

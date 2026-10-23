@@ -1,5 +1,5 @@
 import { exactJSON } from './operations'
-import { resolveOperation, operationUpload, validateSchema, parseExactJSON, decodeContractJSON, type BodySchema, type OperationInput } from './operations'
+import { resolveOperation, operationUpload, decodeContractJSON, type BodySchema, type OperationInput } from './operations'
 import { requestIntent, intentKey, finishIntent } from './operation-intent'
 import { t, diagnostic } from "./i18n"
 import type { MetricsView } from './metrics-contract'
@@ -573,19 +573,13 @@ export async function operationRequest<T>(name: string, input: OperationInput = 
   const { operation, path } = await resolveOperation(name, input)
   const mutation = operation.method !== 'GET' && operation.method !== 'HEAD'
   const headers = new Headers(init.headers)
-  if(typeof init.body==='string') {
-    validateSchema(operation.bodySchema,parseExactJSON(init.body))
-    if(operation.maxBodyBytes && new TextEncoder().encode(init.body).length>operation.maxBodyBytes)throw new Error('Body exceeds Core request limit')
-  }
   let intent: string | undefined
   if (operation.requiresIdempotencyKey && !headers.has('Idempotency-Key')) {
     intent = await requestIntent(name,input,init.body,headers)
     headers.set('Idempotency-Key',intentKey(intent))
   }
-  for(const [key,definition] of Object.entries(operation.headers ?? {})){const value=headers.get(key);if(value!==null)validateSchema(definition,value,'headers.'+key)}
   if (operation.transport === 'upload' && !headers.has('Content-Type')) headers.set('Content-Type', 'application/octet-stream')
   const result = await request<T>(path, { ...init, headers, method: operation.method }, mutation, timeoutMs, name, operation.transport === 'download', operation.responseSchema)
-  if(result !== undefined) validateSchema(operation.responseSchema,result)
   if(intent) finishIntent(intent)
   return result
 }
@@ -663,7 +657,7 @@ export const api = {
   nodeTask: (nodeId: string, taskId: string) => operationRequest<ContainerTask>("tasks.get", { params: { nodeId: String(nodeId), taskId: String(taskId) } }),
   nodeTaskAudit: (nodeId: string, taskId: string) => operationRequest<{ events: TaskAuditEvent[] }>("tasks.audit", { params: { nodeId: String(nodeId), taskId: String(taskId) } }),
   cancelNodeTask: (nodeId: string, taskId: string) => operationRequest<ContainerTask & { cancelRequested?: boolean }>("tasks.cancel", { params: { nodeId: String(nodeId), taskId: String(taskId) } }),
-  serviceProbes: () => operationRequest<{ probes: ServiceProbe[] }>("probes.list", {}),
+  serviceProbes: (init: RequestInit = {}) => operationRequest<{ probes: ServiceProbe[] }>("probes.list", {}, init),
   createServiceProbe: (payload: ServiceProbePayload) => operationRequest<ServiceProbe>("probes.create", {}, {
     body: JSON.stringify(payload),
   }),
@@ -671,7 +665,7 @@ export const api = {
     body: JSON.stringify(payload),
   }),
   deleteServiceProbe: (id: string, revision: number) => operationRequest<void>("probes.delete", { params: { id: String(id) }, query: { revision: String(revision) } }),
-  serviceProbeHistory: (id: string) => operationRequest<{ runs: ServiceProbeRun[] }>("probes.history", { params: { id: String(id) }, query: { limit: "100" } }),
+  serviceProbeHistory: (id: string, init: RequestInit = {}) => operationRequest<{ runs: ServiceProbeRun[] }>("probes.history", { params: { id: String(id) }, query: { limit: "100" } }, init),
   alertRules: (nodeId = '') => operationRequest<{ rules: AlertRule[] }>('rules.list', { query: nodeId ? { nodeId } : {} }),
   createAlertRule: (payload: Omit<AlertRule, 'id' | 'revision'>) => operationRequest<{ rule: AlertRule }>("rules.create", {}, { body: JSON.stringify(payload) }),
   updateAlertRule: (id: string, payload: AlertRule) => operationRequest<{ rule: AlertRule }>("rules.update", { params: { id: String(id) } }, { body: JSON.stringify(payload) }),

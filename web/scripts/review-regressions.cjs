@@ -31,7 +31,6 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  const projects=keys.map((key,i)=>({ref:{key,name:'fixture-'+i,workingDirectory:'/fixture-'+i,configFiles:['/fixture-'+i+'/compose.yaml']},configAvailable:true,services:[{name:'homepage',instances:[{containerId:'f97e27dbe0bf'+'1'.repeat(52),containerName:'1Panel-homepage-long-container-name',state:'running',health:'healthy'}]}]}))
  const listRoute='**/api/v1/nodes/*/compose/projects'
  const configRoute='**/api/v1/nodes/*/compose/projects/*/config/0'
- const validateRoute='**/api/v1/nodes/*/compose/projects/*/config/0/validate'
  const submissions=[]
  await page.route(listRoute,route=>route.request().method()==='POST'?(submissions.push(route.request().headers()['idempotency-key']),route.fulfill({status:503,body:'Simulated lost Compose response'})):route.fulfill({json:{projects,dataStale:false,serverTime:new Date().toISOString()}}))
  await page.route(configRoute,route=>route.fulfill({json:{fileIndex:0,content:route.request().url().includes(keys[0])?'services: {} # first':'services: {} # second',sha256:'c'.repeat(64)}}))
@@ -43,15 +42,6 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  await editor.locator('textarea').fill('draft of first project')
  await openEditor(1);await page.waitForFunction(()=>document.querySelector('.compose-editor textarea')?.value==='services: {} # second')
  assert.equal(await editor.locator('textarea').inputValue(),'services: {} # second','Switching projects must not retain another project draft/base version')
- let releaseValidation,validationStarted
- const held=new Promise(r=>releaseValidation=r),started=new Promise(r=>validationStarted=r)
- await page.route(validateRoute,async route=>{validationStarted();await held;await route.fulfill({json:{valid:true}})})
- await editor.locator('textarea').fill('services: {} # validated draft')
- await editor.locator('.compose-editor-actions button').first().click();await started
- await editor.locator('textarea').fill('services: {} # changed while validating')
- releaseValidation();await page.waitForFunction(()=>!document.querySelector('.compose-editor-actions button')?.disabled)
- assert.ok(await editor.locator('.compose-editor-actions button').nth(1).isDisabled(),'Old validation cannot authorize changed contents')
- await page.unroute(validateRoute)
  const preview=editor.getByRole('button',{name:'Review changes',exact:true})
  const draft='services: {} # changed\n# <img src=x onerror=alert(1)>'
  await editor.locator('textarea').fill(draft)
@@ -68,9 +58,17 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  await page.keyboard.press('Escape');await diff.waitFor({state:'detached'})
  await page.waitForFunction(()=>document.activeElement?.textContent==='Review changes')
  assert.equal(await editor.locator('textarea').inputValue(),draft,'Review preserves the exact unsaved draft')
- assert.ok(await editor.locator('.compose-editor-actions button').nth(1).isDisabled(),'Review cannot validate or authorize a save')
+ assert.ok(await editor.locator('.compose-editor-actions button').first().isEnabled(),'Review does not add a save prerequisite')
  assert.deepEqual(previewWrites,[],'Review is a browser-local presentation and submits no mutations')
  page.off('request',observe)
+ const saveOperation=catalog.operations.find(operation=>operation.name==='compose.action');assert.ok(saveOperation)
+ const savePath=saveOperation.path.replace('{nodeId}',node).replace('{projectKey}',keys[1]);let saves=0,preflights=0
+ const trackValidation=request=>{if(new URL(request.url()).pathname.endsWith('/validate'))preflights++};page.on('request',trackValidation)
+ await page.route('**'+savePath,route=>{assert.deepEqual(route.request().postDataJSON(),{action:'config_save',fileIndex:0,content:draft,baseSha256:'c'.repeat(64)});assert.ok(route.request().headers()['idempotency-key']);saves++;return route.fulfill({status:409,json:{error:'Configuration version changed'}})})
+ const saveResponse=page.waitForResponse(response=>new URL(response.url()).pathname===savePath)
+ await editor.getByRole('button',{name:'Save configuration',exact:true}).click();assert.equal((await saveResponse).status(),409);await editor.getByRole('alert').waitFor()
+ assert.equal(saves,1);assert.equal(preflights,0,'Save goes directly to the version-protected server operation');assert.equal(await editor.locator('textarea').inputValue(),draft,'A server conflict retains the unsaved draft')
+ page.off('request',trackValidation);await page.unroute('**'+savePath)
  await page.setViewportSize({width:1440,height:1000})
 
 

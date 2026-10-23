@@ -28,9 +28,7 @@ export default function ComposeEditor(input: Props) {
       const savedContent = cell("");
       const baseSHA256 = cell("");
       const loading = cell(false);
-      const validating = cell(false);
       const saving = cell(false);
-      const valid = cell(false);
       const error = cell("");
       const message = cell("");
       const task = cell<ContainerTask>();
@@ -49,7 +47,6 @@ export default function ComposeEditor(input: Props) {
         const requestGeneration = ++generation;
         loading.value = true;
         error.value = "";
-        valid.value = false;
         try {
           const result = await composeApi.config(
             props.nodeId,
@@ -67,39 +64,6 @@ export default function ComposeEditor(input: Props) {
               reason instanceof Error ? reason.message : t("m.3957ffb3e358");
         } finally {
           if (generation === requestGeneration) loading.value = false;
-        }
-      }
-      async function validate() {
-        const requestGeneration = generation;
-        const submittedContent = content.value;
-        validating.value = true;
-        error.value = "";
-        message.value = "";
-        valid.value = false;
-        try {
-          await composeApi.validateConfig(
-            props.nodeId,
-            props.project.ref.key,
-            fileIndex.value,
-            submittedContent,
-          );
-          if (
-            generation !== requestGeneration ||
-            content.value !== submittedContent
-          )
-            return;
-          valid.value = true;
-          message.value = t("m.351d70486605");
-        } catch (reason) {
-          if (
-            generation !== requestGeneration ||
-            content.value !== submittedContent
-          )
-            return;
-          error.value =
-            reason instanceof Error ? reason.message : t("m.29e08c6652a0");
-        } finally {
-          validating.value = false;
         }
       }
       function schedulePoll(taskId: string, requestGeneration: number) {
@@ -137,7 +101,7 @@ export default function ComposeEditor(input: Props) {
         }, 750);
       }
       async function save() {
-        if (!valid.value || !dirty.value || saving.value) return;
+        if (loading.value || !dirty.value || saving.value) return;
         saving.value = true;
         error.value = "";
         message.value = "";
@@ -180,12 +144,10 @@ export default function ComposeEditor(input: Props) {
       }
       function restore() {
         content.value = savedContent.value;
-        valid.value = false;
         error.value = "";
         message.value = t("m.5440ce29fbc9");
       }
       function onContentChange() {
-        valid.value = false;
         error.value = "";
         message.value = "";
       }
@@ -287,20 +249,7 @@ export default function ComposeEditor(input: Props) {
             >
               <button
                 type="button"
-                disabled={
-                  loading.value || validating.value || (saving.value as any)
-                }
-                className={__classes("container-action")}
-                onClick={(event: any) => {
-                  void validate();
-                }}
-                data-v-306714f3=""
-              >
-                {validating.value ? t("m.fee0b2ceff3f") : t("m.b26286234be3")}
-              </button>
-              <button
-                type="button"
-                disabled={!valid.value || !dirty.value || (saving.value as any)}
+                disabled={loading.value || !dirty.value || (saving.value as any)}
                 className={__classes(
                   "container-action container-action-danger",
                 )}

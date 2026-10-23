@@ -396,10 +396,6 @@ func (s *Server) handleCreateContainerTask(w http.ResponseWriter, r *http.Reques
 	}
 	intent := coretasks.Intent{Action: request.Action, ContainerID: containerID, NewName: request.NewName,
 		DeleteConfirmed: request.DeleteConfirmed, Rebuild: request.Rebuild}
-	if err := protocol.ValidateTaskIntent(intent); err != nil {
-		http.Error(w, "invalid container action", http.StatusBadRequest)
-		return
-	}
 	// Capture the latest trusted Docker view before opening the task store's
 	// transaction. The gated store may return an idempotent task without
 	// invoking gate, even if this view is stale or unavailable.

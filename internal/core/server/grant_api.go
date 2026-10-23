@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/installer"
 	"net/http"
@@ -42,10 +43,6 @@ func (s *Server) handleGrantAPI(w http.ResponseWriter, r *http.Request, current 
 		if !decodeJSON(w, r, &v) {
 			return true
 		}
-		if err := agents.ValidateGrant(v); err != nil {
-			http.Error(w, err.Error(), 400)
-			return true
-		}
 		if v.CoreURL == "" {
 			v.CoreURL = r.Header.Get("Origin")
 		}
@@ -55,7 +52,11 @@ func (s *Server) handleGrantAPI(w http.ResponseWriter, r *http.Request, current 
 		}
 		g, err := s.agents.CreateGrant(r.Context(), v, current.RemoteAddr, requestActor(r))
 		if err != nil {
-			http.Error(w, "cannot create grant", 500)
+			if errors.Is(err, agents.ErrInvalidGrant) {
+				http.Error(w, err.Error(), 400)
+			} else {
+				http.Error(w, "cannot create grant", 500)
+			}
 			return true
 		}
 		command, err := installer.Command(v.CoreURL, g.Token, s.development)

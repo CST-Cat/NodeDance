@@ -230,15 +230,12 @@ func (s *Store) UnbindConnection(identity Identity, generation uint64) bool {
 	return true
 }
 
-// Accept stores one metrics report if its authenticated identity, connection
-// generation, and TypeMetrics-specific sequence match the active Core binding.
-// It does not renew or extend the heartbeat lease.
 func (s *Store) Accept(identity Identity, connectionGeneration, metricsSequence uint64,
-	report protocol.MetricsSnapshot, receivedAt time.Time) error {
-	if s == nil || !validIdentity(identity) || connectionGeneration == 0 || metricsSequence == 0 || receivedAt.IsZero() {
+	report *protocol.MetricsSnapshot, receivedAt time.Time) error {
+	if s == nil || !validIdentity(identity) || connectionGeneration == 0 || metricsSequence == 0 || receivedAt.IsZero() || report == nil {
 		return ErrInvalidReport
 	}
-	if err := protocol.ValidateAgentMetricsSnapshot(report); err != nil {
+	if err := protocol.ValidateAgentMetricsSnapshot(*report); err != nil {
 		return errors.Join(ErrInvalidReport, err)
 	}
 
@@ -271,14 +268,17 @@ func (s *Store) Accept(identity Identity, connectionGeneration, metricsSequence 
 		}
 	}
 
-	merged := cloneSnapshot(report)
+	enrichReport(identity, connectionGeneration, report, receivedAt, previous, exists)
+	var merged protocol.MetricsSnapshot
 	elapsedSincePrevious := time.Duration(0)
 	if exists {
 		elapsedSincePrevious = receivedAt.Sub(previous.ReceivedAt)
 		if elapsedSincePrevious < 0 {
 			elapsedSincePrevious = 0
 		}
-		merged = mergeSnapshot(previous.Metrics, report, elapsedSincePrevious)
+		merged = mergeSnapshot(previous.Metrics, *report, elapsedSincePrevious)
+	} else {
+		merged = cloneSnapshot(*report)
 	}
 
 	bootID := previous.BootID
@@ -433,7 +433,7 @@ func cloneMetric[T any](in protocol.Metric[T]) protocol.Metric[T] {
 }
 
 func mergeSnapshot(previous, incoming protocol.MetricsSnapshot, elapsed time.Duration) protocol.MetricsSnapshot {
-	out := cloneSnapshot(incoming)
+	out := incoming
 	out.Host = mergeHost(previous.Host, incoming.Host, elapsed)
 	out.System.Hostname = mergeMetric(previous.System.Hostname, incoming.System.Hostname, elapsed)
 	out.System.OS = mergeMetric(previous.System.OS, incoming.System.OS, elapsed)
@@ -447,7 +447,10 @@ func mergeSnapshot(previous, incoming protocol.MetricsSnapshot, elapsed time.Dur
 	out.Memory = mergeMetric(previous.Memory, incoming.Memory, elapsed)
 	out.Network = mergeNetwork(previous.Network, incoming.Network, elapsed)
 	out.Disk = mergeDisk(previous.Disk, incoming.Disk, elapsed)
-	out.Uptime = mergeMetric(previous.Uptime, out.Uptime, elapsed)
+	out.Uptime = mergeMetric(previous.Uptime, incoming.Uptime, elapsed)
+	if out.Uptime.Value != nil {
+		out.Uptime.Value.BootTimeUnix = copyValue(out.Uptime.Value.BootTimeUnix)
+	}
 	return out
 }
 
@@ -474,6 +477,7 @@ func mergeNetwork(previous, incoming protocol.MetricsNetwork, elapsed time.Durat
 		out.Interfaces = make([]protocol.MetricsInterface, 0, len(previous.Interfaces))
 		for _, previousInterface := range previous.Interfaces {
 			copyInterface := previousInterface
+			copyInterface.Up = copyValue(previousInterface.Up)
 			copyInterface.Rate = mergeMetric(previousInterface.Rate, protocol.Metric[protocol.NetworkRate]{
 				Status: protocol.MetricUnknown, Reason: incoming.Summary.Reason,
 				SampledAt: incoming.Summary.SampledAt, SampleAgeMillis: incoming.Summary.SampleAgeMillis,
@@ -491,6 +495,8 @@ func mergeNetwork(previous, incoming protocol.MetricsNetwork, elapsed time.Durat
 		copyInterface := iface
 		if old, exists := previousByName[iface.Name]; exists {
 			copyInterface.Rate = mergeMetric(old.Rate, iface.Rate, elapsed)
+		} else {
+			copyInterface.Rate = cloneMetric(iface.Rate)
 		}
 		if iface.Up != nil {
 			up := *iface.Up
@@ -510,6 +516,7 @@ func mergeDisk(previous, incoming protocol.MetricsDisk, elapsed time.Duration) p
 		out.Mounts = make([]protocol.MetricsMount, 0, len(previous.Mounts))
 		for _, mount := range previous.Mounts {
 			copyMount := mount
+			copyMount.Usage = cloneMetric(mount.Usage)
 			if mount.Usage.Value != nil {
 				copyMount.Usage.Status = protocol.MetricStale
 				copyMount.Usage.Reason = incoming.Reason
@@ -529,6 +536,8 @@ func mergeDisk(previous, incoming protocol.MetricsDisk, elapsed time.Duration) p
 		copyMount := mount
 		if old, exists := previousByKey[mountKey(mount)]; exists {
 			copyMount.Usage = mergeMetric(old.Usage, mount.Usage, elapsed)
+		} else {
+			copyMount.Usage = cloneMetric(mount.Usage)
 		}
 		out.Mounts = append(out.Mounts, copyMount)
 	}
@@ -688,15 +697,10 @@ func (s *Store) ForgetNode(nodeID string) {
 	delete(s.latest, nodeID)
 }
 
-// EnrichReport annotates sampling freshness using Core receive intervals. It
-// never treats wall-clock offset as network latency or gaps as packet loss.
-func (s *Store) EnrichReport(identity Identity, generation uint64, report *protocol.MetricsSnapshot, at time.Time) {
+func enrichReport(identity Identity, generation uint64, report *protocol.MetricsSnapshot, at time.Time, previous Record, ok bool) {
 	if report.Host == nil || report.Host.Observability == nil {
 		return
 	}
-	s.mu.RLock()
-	previous, ok := s.latest[identity.NodeID]
-	s.mu.RUnlock()
 	values := report.Host.Observability.Values
 	if values == nil {
 		values = map[string]protocol.Metric[float64]{}

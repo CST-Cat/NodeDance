@@ -39,6 +39,15 @@ func featureCore(t *testing.T) *Server {
 func TestBoundedSharedEnrollmentConcurrentAndRecoverable(t *testing.T) {
 	s := featureCore(t)
 	ctx := context.Background()
+	response := httptest.NewRecorder()
+	s.handleGrantAPI(response, httptest.NewRequest(http.MethodPost, "/api/v1/agents/enrollment-grants", strings.NewReader(`{"displayPrefix":"invalid","maxUses":0,"lifetimeSeconds":60,"coreUrl":"https://core.example"}`)), &session{})
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("Invalid grant returned %d: %s", response.Code, response.Body.String())
+	}
+	grants, err := s.agents.ListGrants(ctx)
+	if err != nil || len(grants) != 0 {
+		t.Fatalf("Invalid grant persisted: %v, %v", grants, err)
+	}
 	g, err := s.agents.CreateGrant(ctx, agents.GrantRequest{DisplayPrefix: "fleet", MaxUses: 2, LifetimeSeconds: 60}, "test", sql.NullInt64{})
 	if err != nil {
 		t.Fatal(err)
@@ -499,5 +508,26 @@ func TestCommandCleanupHTTPAudit(t *testing.T) {
 	var action, outcome string
 	if err := s.store.DB.QueryRow(`SELECT action,outcome FROM audit_entries WHERE action='commands.cleanup'`).Scan(&action, &outcome); err != nil || outcome != "accepted" {
 		t.Fatalf("cleanup audit: %s %s %v", action, outcome, err)
+	}
+}
+
+func TestProbeStoreRejectsInvalidConfigurationThroughAPI(t *testing.T) {
+	s := featureCore(t)
+	enrollment, err := s.agents.CreateEnrollment(context.Background(), "Probe validation fixture", "test", sql.NullInt64{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(map[string]any{"nodeId": enrollment.NodeID, "name": "invalid timeout", "kind": "tcp", "target": "tcp://127.0.0.1:9", "intervalSeconds": 10, "timeoutSeconds": 10, "enabled": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	s.handleProbeAPI(response, httptest.NewRequest(http.MethodPost, "/api/v1/probes", bytes.NewReader(payload)), &session{})
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("Invalid configuration returned %d: %s", response.Code, response.Body.String())
+	}
+	configs, err := s.probes.List(context.Background())
+	if err != nil || len(configs) != 0 {
+		t.Fatalf("Invalid configuration was persisted: %v, %v", configs, err)
 	}
 }

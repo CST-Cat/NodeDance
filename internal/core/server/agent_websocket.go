@@ -764,7 +764,7 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 				var report protocol.MetricsSnapshot
-				if envelope.Sequence == 0 || decodeAgentPayload(envelope.Payload, &report) != nil || protocol.ValidateAgentMetricsSnapshot(report) != nil {
+				if envelope.Sequence == 0 || decodeAgentPayload(envelope.Payload, &report) != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent metrics report")
 					return
 				}
@@ -782,8 +782,11 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					continue
 				}
 				metricsIdentity := coremetrics.Identity{AgentID: identity.AgentID, NodeID: identity.NodeID}
-				s.metrics.EnrichReport(metricsIdentity, connection.generation, &report, receivedAt)
-				if err := s.metrics.Accept(metricsIdentity, connection.generation, envelope.Sequence, report, receivedAt); err != nil {
+				if err := s.metrics.Accept(metricsIdentity, connection.generation, envelope.Sequence, &report, receivedAt); err != nil {
+					if errors.Is(err, coremetrics.ErrInvalidReport) {
+						s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent metrics report")
+						return
+					}
 					// A duplicate or delayed telemetry frame is discarded without
 					// changing heartbeat sequence or validity.
 					continue

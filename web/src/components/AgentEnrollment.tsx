@@ -13,7 +13,7 @@ type Props = {
 export default function AgentEnrollment(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
-      const { copied, asset, assetSchema, assetReady, displayName, creating, error, agentServer, agentOriginIsSupported, agentOriginUsesAllowedTransport, installCommand, dockerInstallCommand, deploymentMethod, selectedInstallCommand, generateEnrollment } = createEnrollmentController(__props);
+      const { copied, asset, assetSchema, assetReady, displayName, creating, error, agentServer, installCommand, dockerInstallCommand, deploymentMethod, selectedInstallCommand, generateEnrollment } = createEnrollmentController(__props);
       const emit = __emit;
       return () => (
         <>
@@ -108,7 +108,6 @@ export default function AgentEnrollment(input: Props) {
                       >
                         <span data-v-2709b2e0="">{t("m.a09f47188571")}</span>
                         <Input
-                          maxLength={80}
                           autoComplete="off"
                           placeholder={t("m.1b086a50d7b3") as any}
                           {...__input(
@@ -186,16 +185,6 @@ export default function AgentEnrollment(input: Props) {
                   ></NodeAssetFields>
                 ) : null}
                 </section>
-                {!agentOriginIsSupported.value ||
-                !agentOriginUsesAllowedTransport.value ? (
-                  <p
-                    role="alert"
-                    className={__classes("alert alert-error")}
-                    data-v-2709b2e0=""
-                  >
-                    {t("m.1d5964dbb8d8")}
-                  </p>
-                ) : null}
                 {error.value ? (
                   <p
                     role="alert"
@@ -228,10 +217,7 @@ export default function AgentEnrollment(input: Props) {
                     type="button"
                     disabled={
                       !assetReady.value ||
-                      creating.value ||
-                      (!__props.nodeId && !displayName.value.trim()) ||
-                      !agentOriginIsSupported.value ||
-                      (!agentOriginUsesAllowedTransport.value as any)
+                      creating.value
                     }
                     className={__classes("primary-button")}
                     onClick={(event: any) => {

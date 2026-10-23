@@ -19,8 +19,10 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/control"
+	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	coreretention "github.com/CST-Cat/NodeDance/internal/core/retention"
+	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
@@ -263,4 +265,61 @@ func TestCoreCapacitySoak(t *testing.T) {
 	}
 	info, _ := os.Stat(filepath.Join(s.store.Dir, "nodedance.sqlite"))
 	t.Logf("RESULT nodes=%d seconds=%.1f reports=%d requests=%d p95_ms=%.3f heap_bytes=%d->%d goroutines=%d->%d fd=%d->%d db_bytes=%d", count, time.Since(started).Seconds(), reports, len(latencies), float64(p95)/float64(time.Millisecond), heap0, heap1, g0, g1, fd0, fd1, info.Size())
+}
+
+func TestIdleAgentTaskDispatchWaitsForNewWork(t *testing.T) {
+	s, err := New("test", Options{DataDir: t.TempDir(), Development: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	if _, err := s.store.DB.ExecContext(ctx, `INSERT INTO nodes(id,display_name,status,connection_generation,last_seen_at,created_at,updated_at) VALUES('53d48ea1-466e-4267-910c-ecb6ab8e594a','Idle','online',1,?,1,1)`, time.Now().UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	journal := coretasks.AgentConnection{NodeID: "53d48ea1-466e-4267-910c-ecb6ab8e594a", ConnectionGeneration: 1, JournalID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	if _, err := s.tasks.ObserveAgentConnection(ctx, journal); err != nil {
+		t.Fatal(err)
+	}
+	connection := &agentConnection{nodeID: journal.NodeID, generation: 1, taskSlots: 2, taskSignal: make(chan struct{}, 1), taskOutstanding: map[string]struct{}{}, activeCapabilities: map[string]struct{}{protocol.CapabilityTaskBridge: {}}}
+	connection.setTaskJournal(journal.JournalID, true)
+	identity := agents.Identity{NodeID: journal.NodeID}
+	if err := s.dispatchAgentTasks(ctx, connection, identity); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-connection.taskSignal:
+		t.Fatal("Empty task queue schedules another database poll")
+	default:
+	}
+	for i := 0; i < coreTaskDispatchBurst+1; i++ {
+		reference := fmt.Sprintf("alpine:dispatch-%d", i)
+		_, err := s.tasks.Enqueue(ctx, coretasks.EnqueueRequest{NodeID: journal.NodeID, IdempotencyKey: fmt.Sprintf("dispatch-key-%d", i), RegistryAuthRequired: true, Intent: protocol.TaskIntent{Action: protocol.TaskImagePull, ContainerID: protocol.ImageTargetKey("pull:" + reference), ImageReference: reference}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.dispatchAgentTasks(ctx, connection, identity); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-connection.taskSignal:
+	default:
+		t.Fatal("A full batch does not schedule its remaining work")
+	}
+	if err := s.dispatchAgentTasks(ctx, connection, identity); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-connection.taskSignal:
+		t.Fatal("Drained task queue keeps polling")
+	default:
+	}
+	var failed int
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT count(*) FROM core_tasks WHERE node_id=? AND status='failed'`, journal.NodeID).Scan(&failed); err != nil {
+		t.Fatal(err)
+	}
+	if failed != coreTaskDispatchBurst+1 {
+		t.Fatalf("Only %d tasks were drained", failed)
+	}
 }

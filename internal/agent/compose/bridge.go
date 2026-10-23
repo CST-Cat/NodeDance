@@ -24,22 +24,14 @@ func NewBridge(manager *Manager) (*Bridge, error) {
 	return &Bridge{manager: manager}, nil
 }
 
-func (b *Bridge) Run(ctx context.Context, writer EnvelopeWriter, commands <-chan protocol.Envelope, generation uint64) error {
+func (b *Bridge) Run(ctx context.Context, writer EnvelopeWriter, commands <-chan protocol.ComposeRequest, generation uint64) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case envelope, ok := <-commands:
+		case request, ok := <-commands:
 			if !ok {
 				return errors.New("Compose command channel closed")
-			}
-			if envelope.Type != protocol.TypeComposeRequest || envelope.Generation != generation || envelope.RequestID == "" {
-				return errors.New("Core sent an invalid Compose control envelope")
-			}
-			var request protocol.ComposeRequest
-			if json.Unmarshal(envelope.Payload, &request) != nil || request.OperationID != envelope.RequestID ||
-				protocol.ValidateComposeRequest(request) != nil {
-				return errors.New("Core sent an unsupported Compose operation")
 			}
 			action := request.Action
 			if action == "" {

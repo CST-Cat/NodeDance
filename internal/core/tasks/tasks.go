@@ -367,12 +367,12 @@ func (s *Store) CheckLocalResourceAvailable(ctx context.Context, intent Intent) 
 	if ctx == nil || intent.Action != ActionAgentDeploy {
 		return ErrInvalidRequest
 	}
-	_, _, resourceKey, err := validateIntent(intent, false)
-	if err != nil {
-		return err
+	if err := protocol.ValidateTaskIntent(intent); err != nil {
+		return ErrInvalidRequest
 	}
+	resourceKey := "agent-deployment:" + intent.AgentDeploy.PeerIdentity
 	var claimedTaskID string
-	err = s.db.QueryRowContext(ctx, `SELECT task_id FROM core_task_resource_claims WHERE resource_key=? ORDER BY task_id LIMIT 1`, resourceKey).Scan(&claimedTaskID)
+	err := s.db.QueryRowContext(ctx, `SELECT task_id FROM core_task_resource_claims WHERE resource_key=? ORDER BY task_id LIMIT 1`, resourceKey).Scan(&claimedTaskID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -390,10 +390,14 @@ func (s *Store) enqueue(ctx context.Context, request EnqueueRequest, gate Enqueu
 			return EnqueueResult{}, fmt.Errorf("generate task ID: %w", err)
 		}
 	}
-	intentJSON, payload, resourceKey, err := validateIntent(request.Intent, false)
+	identity, err := protocol.TaskIdentity(request.TaskID, request.NodeID, request.IdempotencyKey, request.Intent)
 	if err != nil {
-		return EnqueueResult{}, err
+		if errors.Is(err, protocol.ErrInvalidTaskMessage) {
+			return EnqueueResult{}, ErrInvalidRequest
+		}
+		return EnqueueResult{}, fmt.Errorf("build canonical task identity: %w", err)
 	}
+	intentJSON, resourceKey := string(identity.Payload), identity.ResourceKey
 	if local != (request.Intent.Action == ActionAgentDeploy) {
 		return EnqueueResult{}, ErrInvalidRequest
 	}
@@ -403,19 +407,9 @@ func (s *Store) enqueue(ctx context.Context, request EnqueueRequest, gate Enqueu
 	if request.RegistryAuthRequired && request.Intent.Action != ActionImagePull {
 		return EnqueueResult{}, ErrInvalidRequest
 	}
-	identity, err := protocol.TaskIdentity(request.TaskID, request.NodeID, request.IdempotencyKey, request.Intent)
-	if err != nil {
-		return EnqueueResult{}, fmt.Errorf("build canonical task identity: %w", err)
-	}
-	if identity.ResourceKey != resourceKey || string(identity.Payload) != string(payload) {
-		return EnqueueResult{}, ErrInvalidRequest
-	}
 	digest, err := taskstate.RequestDigest(identity)
 	if err != nil {
 		return EnqueueResult{}, fmt.Errorf("validate task identity: %w", err)
-	}
-	if len(request.TaskID) > taskstate.MaxIdentityBytes {
-		return EnqueueResult{}, ErrInvalidRequest
 	}
 
 	s.writeMu.Lock()
@@ -438,7 +432,7 @@ func (s *Store) enqueue(ctx context.Context, request EnqueueRequest, gate Enqueu
 		}
 		if err == nil {
 			existingIntent, existingErr := protocol.CanonicalTaskIntent(byKey.Intent)
-			if existingErr != nil || string(existingIntent) != string(payload) {
+			if existingErr != nil || string(existingIntent) != intentJSON {
 				return EnqueueResult{}, ErrIdempotencyConflict
 			}
 			if err := tx.Commit(); err != nil {
@@ -1851,32 +1845,6 @@ func remoteIP(value string) net.IP {
 		value = host
 	}
 	return net.ParseIP(value)
-}
-
-func validateIntent(intent Intent, composeManaged bool) (string, []byte, string, error) {
-	if composeManaged && intent.Action == ActionRename {
-		return "", nil, "", ErrManagedRename
-	}
-	if err := protocol.ValidateTaskIntent(intent); err != nil {
-		return "", nil, "", ErrInvalidRequest
-	}
-	resourceKey := "docker-container:" + intent.ContainerID
-	if intent.Action == ActionImagePull || intent.Action == ActionImageDelete {
-		resourceKey = "docker-image:" + intent.ContainerID
-	} else if protocol.IsComposeTaskAction(intent.Action) {
-		resourceKey = "docker-compose-project:" + intent.ContainerID
-	} else if protocol.IsFileTaskAction(intent.Action) {
-		resourceKey = "filesystem-path:" + intent.ContainerID
-	} else if intent.Action == ActionAgentDeploy {
-		resourceKey = "agent-deployment:" + intent.AgentDeploy.PeerIdentity
-	} else if intent.Action == ActionContainerCreate {
-		resourceKey = "docker-container-create:" + intent.CreateSHA256
-	}
-	canonical, err := protocol.CanonicalTaskIntent(intent)
-	if err != nil {
-		return "", nil, "", fmt.Errorf("canonicalize typed safe task intent: %w", err)
-	}
-	return string(canonical), canonical, resourceKey, nil
 }
 
 func validTaskIdentifier(value string) bool {

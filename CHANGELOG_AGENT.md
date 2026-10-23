@@ -6,6 +6,20 @@
 
 ### 简体中文
 
+## [0.1.28]
+
+### English
+
+- Process typed Compose and image requests after their authenticated admission, removing repeated decoding and validation while preserving generation, capability and request-identity checks.
+- Keep Compose save validation in the atomic Agent save transaction, including original-version conflict detection and candidate validation before replacement.
+- Bound dense diagnostic entities with a binary search for the largest fitting ordered prefix, avoiding repeated full serialization while preserving payload limits and truncation metadata.
+
+### 简体中文
+
+- Compose 与镜像请求通过认证入口后使用类型化队列，移除重复解码和校验，保留代次、能力和请求身份保护。
+- Compose 保存校验保留在 Agent 原子保存事务中，替换前检查原始版本冲突并验证候选配置。
+- 密集诊断实体改用二分查找保留可容纳的最大有序前缀，避免重复序列化全部数据，保留载荷上限和截断标记。
+
 ## [0.1.27]
 
 ### English

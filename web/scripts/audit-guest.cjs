@@ -79,7 +79,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await page.waitForFunction(()=>document.querySelector('#login-password')?.type==='password',{},{timeout:6500})
   assert.equal(await passwordInput.inputValue(),'isolated-reveal-password');assert.equal(revealLoginRequests,0)
   page.off('request',countRevealLogin);await passwordInput.fill('')
-  console.log("Guest authentication, publication and withdrawal checks passed.")
+  console.log("Password visibility checks passed.")
   assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
   const enrollment=await(await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE HOST NAME',coreUrl:base}})).json()
   for(const command of [enrollment.nativeInstallCommand,enrollment.dockerInstallCommand])assert.ok(command.includes('--token '+enrollment.token),'Administrator enrollment supplies a complete installation command')
@@ -120,6 +120,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await page.reload();await page.getByRole('button',{name:'Enter guest mode',exact:true}).waitFor();assert.equal(guestReads,0,'Display data must not be loaded before guest selection')
   for(const theme of ['light','dark'])for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(350);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
   await page.getByRole('button',{name:'Enter guest mode',exact:true}).click();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  assert.equal(guestReads,1,'Entering guest mode reads the public display once')
   const display=page.locator('[data-testid=guest-display]');try{await display.getByText('25.0 %',{exact:true}).waitFor()}catch(e){console.error('Guest response:',raw,'Guest text:',await display.textContent());throw e};await display.getByRole('button',{name:'Refresh',exact:true}).click()
   assert.deepEqual(privateReads,[],'Guest screen must not load private APIs');assert.equal(await page.locator('#workspace-navigation').count(),0)
   assert.equal(new URL(page.url()).hash,'#/guest')
@@ -240,6 +241,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await adminPage.goBack();await adminPage.locator('#detail-title').waitFor();assert.equal(adminPage.url(),managementURL)
   // Hold a real authenticated permission read, switch to guest, and release the
   // old response. It must not overwrite the newer public navigation.
+  await adminPage.evaluate(()=>{location.hash='/guest'});await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   let releaseGuard,guardStarted
   const held=new Promise(r=>releaseGuard=r),started=new Promise(r=>guardStarted=r)
   await adminPage.route('**/api/v1/auth/me',async route=>{const response=await route.fetch();assert.equal(response.status(),200);guardStarted();await held;await route.fulfill({response})})
@@ -249,6 +251,15 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   releaseGuard();await adminPage.waitForTimeout(200);await adminPage.unroute('**/api/v1/auth/me')
   adminPage.off('request',trackGuest);assert.deepEqual(guestPrivateRequests,[],'A stale permission response must not load a private page after entering guest mode')
   assert.equal(new URL(adminPage.url()).hash,'#/guest');assert.equal(await adminPage.locator('#workspace-navigation').count(),0)
+  const profileOperation=(await(await admin.request.get(base+'/api/v1/operations')).json()).operations.find(operation=>operation.name==='profile.get');assert.ok(profileOperation);const profilePath=profileOperation.path;
+  const oldTheme=await adminPage.evaluate(()=>localStorage.getItem('nodedance.theme'));let releaseProfile,profileStarted,profileFinished;
+  const profileHeld=new Promise(resolve=>releaseProfile=resolve),profilePending=new Promise(resolve=>profileStarted=resolve),profileDone=new Promise(resolve=>profileFinished=resolve);
+  const profileRoute=async route=>{const response=await route.fetch(),profile=await response.json();profileStarted();await profileHeld;try{await route.fulfill({json:{...profile,theme:oldTheme==='dark'?'light':'dark'}})}finally{profileFinished()}};
+  await adminPage.route('**'+profilePath,profileRoute);
+  try{
+   await adminPage.evaluate(()=>{location.hash='/alerts'});await profilePending;await adminPage.evaluate(()=>{location.hash='/guest'});await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor();
+   releaseProfile();await profileDone;await adminPage.waitForTimeout(100);assert.equal(await adminPage.evaluate(()=>localStorage.getItem('nodedance.theme')),oldTheme,'An old private profile cannot update the guest appearance');
+  }finally{releaseProfile();await adminPage.unroute('**'+profilePath,profileRoute)}
   await admin.clearCookies();await adminPage.goBack();await adminPage.locator('#login-title').waitFor()
   assert.equal(await adminPage.locator('#workspace-navigation').count(),0,'Back to management must reject a missing administrator session')
   await admin.addCookies(savedAdminCookies);await adminPage.goto(managementURL);await adminPage.locator('#detail-title').waitFor()

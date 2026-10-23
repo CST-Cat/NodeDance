@@ -26,6 +26,7 @@ import (
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
 	"github.com/CST-Cat/NodeDance/internal/core/domains"
 	"github.com/CST-Cat/NodeDance/internal/core/feeds"
+	"github.com/CST-Cat/NodeDance/internal/core/guest"
 	corehistory "github.com/CST-Cat/NodeDance/internal/core/history"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
@@ -66,7 +67,7 @@ type Server struct {
 	guestMu                    sync.Mutex
 	guestSlots                 chan struct{}
 	guestCache                 *guestDisplay
-	guestScope                 [32]byte
+	guestPolicy                guest.Settings
 	requestSlots               chan struct{}
 	jsonReadTimeout            time.Duration
 	transferReadTimeout        time.Duration

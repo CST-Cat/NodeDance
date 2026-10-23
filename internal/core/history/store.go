@@ -111,28 +111,37 @@ func (s Store) AppendSnapshot(ctx context.Context, nodeID string, snapshot proto
 	return nil
 }
 
-// Cleanup atomically folds minute buckets older than 30 days into hourly
-// sums/counts and removes their minute rows, then expires hourly buckets older
-// than one year. Preference tables are intentionally outside this operation.
 func (s Store) Cleanup(ctx context.Context, now time.Time) error {
 	if s.DB == nil || now.IsZero() {
 		return errors.New("metric history cleanup clock is invalid")
 	}
-	minuteCutoff := now.UTC().Add(-MinuteRetention).Truncate(time.Minute).Unix()
-	hourCutoff := now.UTC().Add(-HourRetention).Truncate(time.Hour).Unix()
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin metric history cleanup: %w", err)
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO metrics_hour(node_id, metric_key, bucket_at, sample_count, sample_sum, minimum, maximum)
+	if err := cleanupHistory(ctx, tx, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func cleanupHistory(ctx context.Context, tx *sql.Tx, now time.Time) error {
+	var days int
+	if err := tx.QueryRowContext(ctx, `SELECT retention_days FROM metric_history_settings WHERE id=1`).Scan(&days); err != nil {
+		return err
+	}
+	retention := time.Duration(days) * 24 * time.Hour
+	minuteCutoff := now.UTC().Add(-min(MinuteRetention, retention)).Truncate(time.Minute).Unix()
+	hourCutoff := now.UTC().Add(-retention).Truncate(time.Hour).Unix()
+	_, err := tx.ExecContext(ctx, `INSERT INTO metrics_hour(node_id, metric_key, bucket_at, sample_count, sample_sum, minimum, maximum)
 		SELECT node_id, metric_key, (bucket_at / ?)*?, SUM(sample_count), SUM(sample_sum), MIN(minimum), MAX(maximum)
-		FROM metrics_minute WHERE bucket_at < ? GROUP BY node_id, metric_key, (bucket_at / ?)*?
+		FROM metrics_minute WHERE bucket_at < ? AND bucket_at >= ? GROUP BY node_id, metric_key, (bucket_at / ?)*?
 		ON CONFLICT(node_id, metric_key, bucket_at) DO UPDATE SET
 		sample_count=metrics_hour.sample_count+excluded.sample_count,
 		sample_sum=metrics_hour.sample_sum+excluded.sample_sum,
 		minimum=MIN(metrics_hour.minimum, excluded.minimum), maximum=MAX(metrics_hour.maximum, excluded.maximum)`,
-		HourSeconds, HourSeconds, minuteCutoff, HourSeconds, HourSeconds)
+		HourSeconds, HourSeconds, minuteCutoff, hourCutoff, HourSeconds, HourSeconds)
 	if err != nil {
 		return fmt.Errorf("roll up expired minute history: %w", err)
 	}
@@ -145,16 +154,13 @@ func (s Store) Cleanup(ctx context.Context, now time.Time) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM metrics_hour WHERE bucket_at < ?`, hourCutoff); err != nil {
 		return fmt.Errorf("delete expired hourly history: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM observation_incidents WHERE occurred_at<?`, now.Add(-7*24*time.Hour).UnixNano()); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM observation_incidents WHERE occurred_at<?`, now.Add(-min(7*24*time.Hour, retention)).UnixNano()); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM observation_frames WHERE received_at<? AND NOT EXISTS(SELECT 1 FROM observation_incidents i WHERE i.node_id=observation_frames.node_id AND observation_frames.received_at BETWEEN i.occurred_at-? AND i.occurred_at+?)`, now.Add(-2*time.Hour).UnixNano(), int64(5*time.Minute), int64(5*time.Minute)); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM observation_frames WHERE received_at<? OR (received_at<? AND NOT EXISTS(SELECT 1 FROM observation_incidents i WHERE i.node_id=observation_frames.node_id AND observation_frames.received_at BETWEEN i.occurred_at-? AND i.occurred_at+?))`, now.Add(-retention).UnixNano(), now.Add(-2*time.Hour).UnixNano(), int64(5*time.Minute), int64(5*time.Minute)); err != nil {
 		return err
 	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit metric history cleanup: %w", err)
-	}
 	return nil
 }
 

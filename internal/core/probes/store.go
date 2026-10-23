@@ -19,10 +19,11 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("service probe not found")
-	ErrConflict = errors.New("service probe configuration changed")
-	ErrNotDue   = errors.New("service probe is not due")
-	ErrRunState = errors.New("service probe run is not pending")
+	ErrInvalidConfig = errors.New("invalid service probe configuration")
+	ErrNotFound      = errors.New("service probe not found")
+	ErrConflict      = errors.New("service probe configuration changed")
+	ErrNotDue        = errors.New("service probe is not due")
+	ErrRunState      = errors.New("service probe run is not pending")
 )
 
 type Config struct {
@@ -114,7 +115,7 @@ func (s *Store) Create(ctx context.Context, config Config, event audit.Event) (C
 		config.ID = id
 	}
 	if err := ValidateConfig(config); err != nil {
-		return Config{}, err
+		return Config{}, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
 	now := s.now().UTC()
 	config.Name = strings.TrimSpace(config.Name)
@@ -152,7 +153,7 @@ func (s *Store) Create(ctx context.Context, config Config, event audit.Event) (C
 
 func (s *Store) Update(ctx context.Context, config Config, event audit.Event) (Config, error) {
 	if err := ValidateConfig(config); err != nil {
-		return Config{}, err
+		return Config{}, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
 	if config.Revision < 1 {
 		return Config{}, errors.New("probe revision is required")

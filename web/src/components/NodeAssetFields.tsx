@@ -1,4 +1,5 @@
 import { t } from "../i18n";
+import { trafficBytes, trafficGigabytes } from "../asset-units";
 import type { BodySchema } from "../operations";
 import { derived } from "../state";
 
@@ -65,11 +66,9 @@ export default function NodeAssetFields(input: Props) {
         },
       });
       const traffic = derived({
-        get: () => Number(props.values.trafficLimitBytes ?? 0) / 1000000000,
+        get: () => trafficGigabytes(props.values.trafficLimitBytes),
         set: (value) => {
-          props.values.trafficLimitBytes = Math.round(
-            Number(value) * 1000000000,
-          );
+          props.values.trafficLimitBytes = trafficBytes(value);
         },
       });
       return () => {
@@ -99,15 +98,8 @@ export default function NodeAssetFields(input: Props) {
                       min="0"
                       step="any"
                       data-testid="asset-traffic"
-                      {...__input(
-                        traffic.value,
-                        (__nextValue: any) => {
-                          traffic.value = __nextValue;
-                        },
-                        "number",
-                        undefined,
-                        [],
-                      )}
+                      value={traffic.value}
+                      onChange={(event) => { traffic.value = event.target.value; }}
                       data-v-f325f884=""
                     />
                     {__props.showHints !== false ? (

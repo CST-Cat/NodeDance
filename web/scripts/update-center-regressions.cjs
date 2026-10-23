@@ -4,27 +4,28 @@ module.exports=async function({page,base,artifacts}){
  let response;
     let updateSubmissions=0,rollbacks=0,backupDeletes=0,deletionGate,deletionStarted,failDeletion=false
     const updateJob={id:'audit-update',component:'core',current:'core-v0.1.12',target:'core-v0.1.13',status:'succeeded',stage:'complete',started:'2026-10-12T00:00:00Z',finished:'2026-10-12T00:00:01Z'}
-    let holdUpdateCheck, updateCheckStarted;
-    await page.route('**/api/v1/updates/check?*',async route=>{if(holdUpdateCheck){updateCheckStarted();await holdUpdateCheck;}return route.fulfill({json:{component:'core',current:'core-v0.1.12',latest:'core-v0.1.13',available:true,configured:true,mode:'docker',release:{url:'https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.13',notes:'UI audit'}}})})
+    let holdUpdateCheck, updateCheckStarted,checkRequests=0;
+    await page.route('**/api/v1/updates/check?*',async route=>{checkRequests++;if(holdUpdateCheck){updateCheckStarted();await holdUpdateCheck;}return route.fulfill({json:{component:'core',current:'core-v0.1.12',latest:'core-v0.1.13',available:true,configured:true,mode:'docker',release:{url:'https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.13',notes:'UI audit'}}})})
     await page.route('**/api/v1/updates/release?*',route=>{const component=new URL(route.request().url()).searchParams.get('component');return route.fulfill({json:{component,version:component+'-v0.1.13',url:'https://github.com/CST-Cat/NodeDance/releases/tag/'+component+'-v0.1.13',notes:'Published '+component+' changelog fixture'}})});
     await page.route('**/api/v1/updates/delete-backup',async route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',jobId:'audit-update',confirm:true});assert.ok(route.request().headers()['idempotency-key']);deletionStarted?.();if(deletionGate)await deletionGate;if(failDeletion){failDeletion=false;return route.fulfill({status:503,body:'Isolated cleanup failure'})}backupDeletes++;updateJob.backupDeleted=true;return route.fulfill({json:updateJob})});
     await page.route('**/api/v1/updates/status?*',route=>route.fulfill({json:{jobs:updateSubmissions?[updateJob]:[]}}))
-    await page.route('**/api/v1/updates/apply',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,version:'core-v0.1.13'});updateSubmissions++;return route.fulfill({json:updateJob})})
+    await page.route('**/api/v1/updates/apply',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,version:'core-v0.1.14'});updateSubmissions++;return route.fulfill({json:updateJob})})
     await page.route('**/api/v1/updates/rollback',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,jobId:'audit-update'});rollbacks++;return route.fulfill({json:updateJob})})
     await page.getByRole('button',{name:'Updates',exact:true}).click()
     const center=page.locator('.preferences-page')
     await center.locator('.update-target-actions .update-submit').waitFor()
     assert.equal(await center.getByRole('checkbox').count(),0,'Ordinary update must have no extra confirmation')
+    assert.equal(checkRequests,0,'Opening updates does not run a runtime eligibility preflight');
     let releaseUpdateCheck;holdUpdateCheck=new Promise(resolve=>releaseUpdateCheck=resolve);const checkStarted=new Promise(resolve=>updateCheckStarted=resolve);
     await center.getByRole('button',{name:'Check updates',exact:true}).click();await checkStarted;
-    assert.ok(await center.locator('.update-details').isVisible(),'Refresh retains the existing release check');
-    assert.ok(await center.locator('.update-target-actions .update-submit').isDisabled(),'Retained check cannot submit until refreshed');
-    await center.locator('.update-card [aria-busy=true]').waitFor();
+    assert.ok(await center.locator('.update-target-actions .update-submit').isEnabled(),'Optional checking does not block Core apply');
+    const version=center.locator('.update-card input');await version.fill('core-v0.1.14');
+    response=page.waitForResponse(r=>r.url().endsWith('/updates/apply'));
+    await center.locator('.update-target-actions .update-submit').click();assert.equal((await response).status(),200);
     releaseUpdateCheck();holdUpdateCheck=undefined;
-    await center.locator('.update-target-actions .update-submit:not(:disabled)').waitFor();
+    await page.waitForResponse(r=>r.url().includes('/updates/check?'));
+    assert.equal(await center.locator('.update-details').count(),0,'A stale optional check cannot replace the selected version');
 
-    response=page.waitForResponse(r=>r.url().endsWith('/updates/apply'))
-    await center.locator('.update-target-actions .update-submit').click();assert.equal((await response).status(),200)
     assert.equal(updateSubmissions,1)
     assert.ok(await center.getByRole('heading',{name:'Update history',exact:true}).isVisible());assert.equal(await center.locator('[aria-expanded]').filter({hasText:'Update history'}).count(),0);
     await center.locator('.update-job .settings-record-status[data-status=succeeded]').waitFor();

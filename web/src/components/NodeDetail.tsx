@@ -1,3 +1,4 @@
+import MetricHistoryData from "./MetricHistoryData";
 import CountryLogo from "./CountryLogo";
 import NodeLogo from "./NodeLogo";
 import { Fragment } from "react";
@@ -193,6 +194,7 @@ export default function NodeDetail(input: Props) {
       const probeSummaryError = cell("");
       const probeSummaryLoadedAt = cell<Date>();
       let probeSummaryEpoch = 0;
+      let probeSummaryRequest: AbortController | undefined;
       const probeCounts = derived(() => {
         const enabled = overviewProbes.value.filter((probe) => probe.enabled);
         const healthy = props.online
@@ -213,20 +215,23 @@ export default function NodeDetail(input: Props) {
         [() => props.node.nodeId, activeSection],
         async ([nodeId, section]) => {
           const epoch = ++probeSummaryEpoch;
+          probeSummaryRequest?.abort();
           overviewProbes.value = [];
           probeSummaryError.value = "";
           probeSummaryLoadedAt.value = undefined;
           if (section !== "overview") return;
+          const pending = new AbortController();
+          probeSummaryRequest = pending;
           try {
-            const response = await api.serviceProbes();
-            if (epoch === probeSummaryEpoch) {
+            const response = await api.serviceProbes({ signal: pending.signal });
+            if (epoch === probeSummaryEpoch && !pending.signal.aborted) {
               overviewProbes.value = response.probes.filter(
                 (probe) => probe.nodeId === nodeId,
               );
               probeSummaryLoadedAt.value = new Date();
             }
           } catch (reason) {
-            if (epoch === probeSummaryEpoch)
+            if (epoch === probeSummaryEpoch && !pending.signal.aborted)
               probeSummaryError.value =
                 reason instanceof Error ? reason.message : t("m.ebf63ef228d2");
           }
@@ -1017,6 +1022,7 @@ export default function NodeDetail(input: Props) {
       );
       beforeDispose(() => {
         probeSummaryEpoch++;
+        probeSummaryRequest?.abort();
         historyEpoch++;
       });
       return () => (
@@ -2347,9 +2353,7 @@ export default function NodeDetail(input: Props) {
                   nodeOnline={__props.online as any}
                   data-v-98aa91ae=""
                 ></HistoricalMetrics>
-                <p className={__classes("retention-note")} data-v-98aa91ae="">
-                  {t("m.b3b9fb911d3a")}
-                </p>
+                {historyView.value ? <MetricHistoryData key={historyView.value.from + historyView.value.to} history={historyView.value} /> : null}
               </section>
             ) : null}
             {activeSection.value === "events" ? (

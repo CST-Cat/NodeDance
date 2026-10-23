@@ -24,9 +24,9 @@ Node UUIDs identify the selected resource in a private detail URL. Names and ver
 
 节点 UUID 在私有详情 URL 中定位资源；卡片与标题展示名称和版本。切换页面会关闭移动端导航并从页首展示；重复选择当前视图不会增加重复历史记录。尚未切换过内部页面时，后退仍按浏览器的正常历史行为执行。
 
-Entering a management view checks `auth.me` before activating it. An unavailable or expired administrator session leads to login; successful login resumes the requested view in the current sign-in flow. Logout and session expiry replace the current location with login, and older private history entries must pass the same session check. Restoring a cached document through `pageshow` revalidates the session and clears password inputs. URLs and forged `history.state` markers do not grant access.
+First entry and return from guest mode check `auth.me` before activating a private view. Authenticated in-app navigation reuses the established session, including private history navigation. Core authorizes every API request, and a 401 clears management state. Login resumes the requested view; logout/session expiry replace the location with login. Restoring a cached document through `pageshow` revalidates the session and clears password inputs. URLs and forged `history.state` markers do not grant access.
 
-进入管理视图会先检查 `auth.me`。会话无效或过期时显示登录页，本次登录流程成功后恢复所请求的视图。退出登录、会话失效会将当前位置替换为登录页；历史中的私有页面也必须重新通过会话检查。通过 `pageshow` 恢复缓存文档时也重新验证会话并清除密码输入。URL 或伪造的历史标记不能赋予权限。
+首次进入及从游客模式返回管理页时检查 `auth.me`；已登录后的页内切换与私有历史导航复用当前会话。Core 对每次 API 请求鉴权，401 会清除管理状态。登录后恢复请求的视图，退出或会话失效时替换为登录页。通过 `pageshow` 恢复缓存文档时重新验证会话并清除密码输入。URL 或伪造的历史标记不能赋予权限。
 
 An explicit guest URL only fetches the public guest contract and projection, including with an administrator cookie and after reload. Leaving guest mode requires the same session check as any management entry. Navigation sequence checks prevent an older asynchronous permission response from replacing a newer guest view.
 
@@ -38,7 +38,7 @@ History stores view identifiers only. Credentials, form contents, confirmations 
 
 `web/scripts/audit-interfaces.cjs` verifies page/tab history and reload while asserting that previously submitted tasks, updates and rollbacks are not resubmitted. `web/scripts/audit-guest.cjs` verifies node detail/section restoration and guest history/session boundaries, including a delayed permission response. The scripts run isolated Core fixtures and real Chromium.
 
-更新和订阅保持独立的管理员视图 `#/updates`、`#/feeds` 及侧栏入口，进入时使用现有管理员会话检查。订阅地址和表单不写入导航历史。详见 [RSS／Atom 订阅](rss.md)。
+更新和订阅保持独立的管理员视图 `#/updates`、`#/feeds` 及侧栏入口，复用当前已登录会话，每次管理请求仍由 Core 鉴权。订阅地址和表单不写入导航历史。详见 [RSS／Atom 订阅](rss.md)。
 
 VPS 服务探测位于详情侧边栏的独立页面 `#/nodes?node=NODE_UUID&section=probes`，可刷新和直接定位。完整配置、状态和历史仅在此页面显示；离开时停止 Web 列表轮询，Core／Agent 后台探测继续运行。总览只在已配置探测时显示简短状态摘要和入口，标明最近读取时间，进入总览读取一次，不保持探测列表轮询。没有配置时不显示空面板。
 
@@ -126,3 +126,47 @@ The sidebar account footer uses the already-installed UIArc User Menu. It lists 
 更新、订阅中心遵循个人设置的设置行、分隔线和操作布局，保留本地组件原版圆角，不应用全局圆角映射。更新仍通过 Core 契约检查、执行、观察及回滚；订阅仍使用原有 revision、刷新取消、条目阅读、分页及通知重试操作。
 
 个人设置、更新中心及订阅中心在 320px 起保持标题／控件两列布局。右列按空间限定宽度，Core／Agent 选择器维持 140px 并靠右；订阅的复合间隔输入在右列内纵向排列，公开指标选择集在右列内单列排列。标题允许自然换行，表单控件与右边缘保持对齐。
+
+Authenticated in-app navigation renders the destination immediately, reuses the current profile, and does not issue a route-level `auth.me` request. Settings sessions refresh independently; late responses cannot update a later route or another user. First entry, return from guest mode and browser back/forward-cache restoration still validate the session before displaying private pages. Core continues to authorize every API request, and a 401 clears the management view. Lazy page modules preload on navigation hover/focus and share the same import promise with rendering; preloading does not fetch private page data.
+
+The operation console receives the authenticated role from the application instead of looking it up again. Generic forms serialize values without client-side business validation. The request layer no longer validates request bodies, headers or successful responses against schemas. Core owns business validation and permissions; client transport retains exact numeric decoding, idempotency, timeouts and error handling.
+
+Compose edits save directly without a separate validation request or a successful-validation flag. The existing config-save task validates the candidate and checks its base hash on the Agent before atomic replacement. The standalone `compose.validate` operation remains available through the discovered generic operation interfaces. Web does not recursively validate successful responses or reject catalog definitions and payload sizes before sending; Core and Agent enforce those limits.
+
+Agent enrollment submits its origin and name to Core without maintaining a second browser URL/transport policy. Core remains responsible for origin, development-loopback and enrollment-name validation. SSH host-key trust and credential handling remain unchanged.
+
+JSON responses without potentially unsafe integer literals reuse native parsing directly. Responses containing long integers retain the exact-integer decoder.
+
+Update submission does not require a prior browser eligibility check. The Apply operation performs the authoritative release/runtime check in Core; Web submits the selected version or lets Core resolve the latest stable release. Explicit checks remain available without blocking Apply. Release notes and history load independently, without automatic runtime preflight on entry or target changes.
+
+After successful sign-in, Web uses the authenticated user already returned by `auth.login`, rather than immediately repeating `auth.me` and loading unrelated session history. Setup still reads its complete account through `auth.me`, without a fallback sign-in for a retired setup response. Opening Settings directly renders after authentication/profile loading while session history refreshes independently.
+
+Image uploads rely on Core decoding the actual raster bytes, rather than a browser MIME/filename gate. Valid PNG/JPEG/GIF data without a recognized filename or MIME can upload; Core still rejects SVG, malformed content and oversized images and normalizes accepted data to PNG.
+
+Business text fields no longer impose browser UTF-16 `minLength`/`maxLength` limits. Core applies its Unicode/byte limits and returns the actual error; 80-character supplementary-Unicode names are submitted intact. The generic operation form also disables browser constraint validation and forwards raw JSON unchanged, while typed JSON fields still require parsing for serialization.
+
+Alert thresholds accept any Core-supported fractional value instead of imposing a browser-only 0.1 step. Service-probe request conversion no longer repeats the store's configuration validation; invalid ordinary creates remain HTTP 400 and are not persisted. Batch probe setup retains its preflight before any node mutation.
+
+The traffic-quota field converts decimal GB to integer bytes with exact arithmetic, including fractional/scientific notation and byte rounding. It preserves the full uint64 range across enrollment and asset editing; other asset fields can be saved without changing quota digits. Blank input retains the existing zero/unlimited behavior. Browser input remains the installed local Input component.
+
+Host-management reads no longer use the mutation busy gate. Changing the selected node cancels the old read, and a late response cannot fill or save another node's settings. Settings/assets load for their selected node; command history and enrollment grants load only in their respective sections. List refreshes after mutation replace older in-flight reads instead of waiting for unrelated data.
+
+Network and disk I/O history projections and observed totals are cached by selected series and recomputed only when the history response or time range changes. Live-value, loading and error updates reuse those arrays instead of repeating date parsing and sample checks. Missing, invalid and stale-data semantics remain unchanged.
+
+Alert Center reads the current tab’s data and its dependencies rather than fetching every tab on every refresh. Each successful result renders independently; delayed events do not block alert history. Tab changes cancel obsolete reads. SMTP security settings are submitted to Core without a second browser enum gate; Core still rejects missing or unsupported TLS modes.
+
+For request lifecycle changes, run `node web/scripts/audit-navigation.cjs --reads-only` after `make build`. It checks warm navigation, direct settings entry, login response reuse, current-host reads and alert-tab dependencies without running unrelated language/mobile presentation cases. The default command retains those presentation regressions.
+
+Monitoring keeps uint64 traffic counters and quotas exact in decoded data. Utilization ratios and human-readable byte labels convert at presentation time, so values beyond JavaScript’s safe-integer range do not crash the page or appear unavailable; byte labels support EiB. Editing/submission retain exact integer bytes.
+
+Authenticated cold navigation no longer fetches public appearance before the private profile. Public branding loads for sign-in/setup, and stale profile replies cannot overwrite appearance belonging to another account or guest mode. Successful Core appearance responses are used directly without repeating server color/theme validation in the browser.
+
+SMTP sender/recipient inputs use the installed local Input component with email keyboard hints. They submit Core-supported display names and Unicode mailbox names without the browser’s narrower email-address grammar; Core remains the mail parser and TLS policy owner.
+
+Live and historical metric views follow replacement of their response objects instead of recursively observing every nested sample. Transport refreshes still replace those objects, so freshness and chart updates remain driven by new responses without an extra deep walk of unchanged history.
+
+Probe list polling reuses an in-flight read; explicit refreshes and node changes replace it. Leaving the page aborts list/history/statistics reads. Probe runs and quality statistics render independently, so unavailable statistics do not hide completed runs. Editing a probe preserves its saved target; changing its kind converts the protocol only on that explicit interaction and preserves bracketed IPv6 hosts.
+
+Domains and certificates publish each successful inventory read independently. A delayed or failed notification-channel read cannot hold back the domain list or erase successfully loaded certificates. Job polling skips an in-flight refresh instead of canceling and restarting it.
+
+Global overview shares each in-flight metric read between fleet prefetch and the selected-node card, keyed by node identity and generation. Tour handoff reuses the pending response and keeps cached readings; leaving the view or explicitly refreshing aborts its pending metric requests.

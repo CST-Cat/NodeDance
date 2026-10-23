@@ -29,12 +29,12 @@ export default function MetricsPanel(input: Props) {
       watchState(()=>!!props.view.metrics.host?.observability,available=>{if(!available||definitionsRequested)return;definitionsRequested=true;void operationRequest<{definitions:Record<string,DiagnosticDefinition>;entityDefinitions:Record<string,Record<string,DiagnosticDefinition>>}>('metrics.catalog').then(result=>{if(!disposed){diagnosticDefinitions.value=result.definitions??{};entityDefinitions.value=result.entityDefinitions??{}}}).catch(()=>{definitionsRequested=false})},{immediate:true});
 
 
-      const trafficAsset = cell<{trafficLimitBytes: number; trafficAccounting: string; trafficWarningPercent: number} | null>(null);
+      const trafficAsset = cell<{trafficLimitBytes: number | bigint; trafficAccounting: string; trafficWarningPercent: number} | null>(null);
       let assetEpoch = 0;
       watchState(() => props.view.nodeId, nodeId => {
         const epoch = ++assetEpoch;
         trafficAsset.value = null;
-        void operationRequest<{trafficLimitBytes: number; trafficAccounting: string; trafficWarningPercent: number}>("nodes.asset", {params: {nodeId}}).then(asset => {
+        void operationRequest<{trafficLimitBytes: number | bigint; trafficAccounting: string; trafficWarningPercent: number}>("nodes.asset", {params: {nodeId}}).then(asset => {
           if (!disposed && epoch === assetEpoch) trafficAsset.value = asset;
         }).catch(() => {});
       }, {immediate: true});
@@ -54,7 +54,6 @@ export default function MetricsPanel(input: Props) {
           elapsedSinceView.value = 0;
         },
         {
-          deep: true,
           immediate: true,
         },
       );
@@ -114,7 +113,7 @@ export default function MetricsPanel(input: Props) {
         const traffic = props.view.metrics.host?.traffic;
         const data = traffic?.value;
         if (!traffic || !data || metricState(traffic) !== "known") return null;
-        const rx = data.periodReceivedBytes, tx = data.periodSentBytes;
+        const rx = Number(data.periodReceivedBytes), tx = Number(data.periodSentBytes);
         switch (trafficAsset.value?.trafficAccounting) {
           case "up": return tx;
           case "down": return rx;
@@ -125,7 +124,7 @@ export default function MetricsPanel(input: Props) {
       });
       const trafficPercent = derived(() => {
         const limit = trafficAsset.value?.trafficLimitBytes ?? 0;
-        return limit > 0 && trafficUsed.value !== null ? trafficUsed.value / limit * 100 : null;
+        return limit > 0 && trafficUsed.value !== null ? trafficUsed.value / Number(limit) * 100 : null;
       });
 
       watchState(() => props.view, view => {

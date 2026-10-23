@@ -27,7 +27,15 @@ const root=path.resolve(__dirname,'../..'),artifacts=path.join(root,'.build/glob
     const p=WebGL2RenderingContext.prototype,draw=p.drawArraysInstanced;
     p.drawArraysInstanced=function(mode,first,count,instances){state.draws++;if(mode===this.TRIANGLE_STRIP)state.arcs=instances;else state.markers=instances;return draw.call(this,mode,first,count,instances)};
   });
-  await page.goto(base+'/#/global-overview');await page.locator('.global-orbit[data-marker-count="6"]').waitFor();
+  let releaseInitialMetrics,initialMetricsStarted,initialMetricReads=0;
+  const initialMetricsGate=new Promise(resolve=>releaseInitialMetrics=resolve),initialMetricsPending=new Promise(resolve=>initialMetricsStarted=resolve);
+  const initialMetricPath=`/api/v1/nodes/${nodes[0].nodeId}/metrics`,initialMetricRoute=async route=>{initialMetricReads++;initialMetricsStarted();await initialMetricsGate;try{await route.continue()}catch{}};
+  await page.route('**'+initialMetricPath,initialMetricRoute);
+  try{
+   await page.goto(base+'/#/global-overview');await initialMetricsPending;await page.locator('.global-orbit[data-metrics-count="23"]').waitFor();assert.equal(initialMetricReads,1,'Bulk prefetch and selected-node refresh share one in-flight metrics read');
+  }finally{releaseInitialMetrics()}
+  await page.unroute('**'+initialMetricPath,initialMetricRoute);
+  await page.locator('.global-orbit[data-marker-count="6"]').waitFor();
   await page.locator('.global-orbit[data-metrics-count="24"]').waitFor();
   await page.waitForFunction(()=>{const canvas=document.querySelector('.global-orbit canvas');return canvas&&canvas.width>100&&getComputedStyle(canvas).opacity==='1'});
   assert.equal(await page.locator('.global-globe-fallback').count(),0,'Use the actual WebGL globe');

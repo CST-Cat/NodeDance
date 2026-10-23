@@ -1,4 +1,4 @@
-import { api, operationRequest } from "../api";
+import { operationRequest, type User } from "../api";
 import { display, locale, t } from "../i18n";
 import { intentKey, requestIntent } from "../operation-intent";
 import {
@@ -42,7 +42,7 @@ import {
   checkboxProps,
   selectOptions,
 } from "./ManagementUI";
-type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
+type Props = { role: User["role"] } & { children?: import("react").ReactNode; [key: string]: any };
 export default function OperationConsole(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
@@ -529,13 +529,10 @@ export default function OperationConsole(input: Props) {
       }
       afterMount(async () => {
         try {
-          const [catalog, identity] = await Promise.all([
-            operationCatalog(),
-            api.me(),
-          ]);
+          const catalog = await operationCatalog();
           operations.value = catalog.operations.filter(
             (operation) =>
-              identity.user.role === "administrator" ||
+              __props.role === "administrator" ||
               operation.requiredRole !== "administrator",
           );
           try {
@@ -748,6 +745,7 @@ export default function OperationConsole(input: Props) {
                       <code data-v-62585b82="">{operation.value!.name}</code>
                     </p>
                     <form
+                      noValidate
                       onSubmit={(event: any) => {
                         event.preventDefault();
                         __call(execute, event);
@@ -949,8 +947,6 @@ export default function OperationConsole(input: Props) {
                                           ? "decimal"
                                           : (undefined as any)
                                     }
-                                    minLength={schema.minLength as any}
-                                    maxLength={schema.maxLength as any}
                                     disabled={
                                       busy.value || (connected.value as any)
                                     }
@@ -1225,7 +1221,7 @@ export default function OperationConsole(input: Props) {
       );
     },
     input,
-    [],
+    ["role"],
     [],
     {},
     true,

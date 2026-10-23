@@ -6,6 +6,26 @@
 
 ### 简体中文
 
+## [0.1.52]
+
+### English
+
+- Refactor personal settings, Agent enrollment, update and subscription screens around shared local shadcn/UIArc components, compact aligned rows, native control styles and monochrome interaction states.
+- Add configurable monitoring-history retention through shared Core operations, paginated sample details and complete CSV/JSON exports of the loaded history.
+- Remove redundant client and internal validation, repeated profile reads and coupled page loading; cancel stale requests and share in-flight global-overview metric reads.
+- Fix idle task-dispatch polling, repeated route parsing and unnecessary schema/snapshot copies; validate and annotate incoming telemetry in one admission path while preserving identity and sequence protections.
+- Fix IPv6 probe target editing, uint64 traffic presentation and ownership of newly reported interface and mount values; preserve precise inputs, missing-data semantics and atomic retention cleanup.
+- Simplify guest resource resolution without expanding public permissions, and retain browser security, file-management and focused data-integrity regressions.
+
+### 简体中文
+
+- 个人设置、Agent 接入、更新与订阅页面统一复用本地 shadcn／UIArc 组件，采用紧凑对齐排版、原版控件样式及黑白交互高亮。
+- 通过共享 Core 操作新增可配置监控历史保留时长、分页采样明细，以及当前查询全部数据的 CSV／JSON 导出。
+- 移除重复的客户端与内部校验、重复资料读取及页面加载耦合；取消过期请求，并在全球总览共用进行中的指标读取。
+- 修复空闲任务派发循环、重复路由解析及无用 schema／快照拷贝；监控采样在统一接收流程中校验并添加 Core 派生指标，保留身份与序号保护。
+- 修复 IPv6 探针目标编辑、uint64 流量展示及新增网卡和挂载点数据的引用归属，保留精确输入、缺失数据语义和原子历史清理。
+- 精简游客资源读取，不扩大公开权限，保留浏览器安全、文件管理及聚焦数据完整性的回归验证。
+
 ## [0.1.51]
 
 ### English

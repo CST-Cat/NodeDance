@@ -51,7 +51,6 @@ export const composeApi = {
   projects: (nodeId: string) => operationRequest<ComposeProjectsResponse>("compose.list", { params: { nodeId: String(nodeId) } }),
   createProject: (nodeId: string, payload: ComposeCreateRequest) => operationRequest<{ taskId: string; status: ContainerTask['status'] }>("compose.create", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(payload) }),
   config: (nodeId: string, projectKey: string, fileIndex: number) => operationRequest<ComposeConfigDocument>("compose.config", { params: { nodeId: String(nodeId), projectKey: String(projectKey), fileIndex: String(fileIndex) } }),
-  validateConfig: (nodeId: string, projectKey: string, fileIndex: number, content: string) => operationRequest<{ valid: boolean }>("compose.validate", { params: { nodeId: String(nodeId), projectKey: String(projectKey), fileIndex: String(fileIndex) } }, { body: JSON.stringify({ content }) }),
   createTask: (nodeId: string, projectKey: string, payload: {
     action: ComposeOperation
     fileIndex?: number

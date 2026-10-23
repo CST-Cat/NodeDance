@@ -97,5 +97,5 @@ export interface HostMetrics {
  addresses:Metric<Array<{interface:string;address:string;family:number}>>
  publicIpv4:Metric<string>;publicIpv6:Metric<string>
  gpus:Metric<Array<{id:string;name:string;utilization?:number;memoryTotalBytes?:number;memoryUsedBytes?:number;temperatureCelsius?:number}>>
- traffic:Metric<{receivedBytes:number;sentBytes:number;periodReceivedBytes:number;periodSentBytes:number;periodStart:string;coverageStart:string;lastSample:string;gaps:number}>
+ traffic:Metric<{receivedBytes:number|bigint;sentBytes:number|bigint;periodReceivedBytes:number|bigint;periodSentBytes:number|bigint;periodStart:string;coverageStart:string;lastSample:string;gaps:number}>
 }

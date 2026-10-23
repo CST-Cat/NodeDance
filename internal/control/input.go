@@ -1,6 +1,7 @@
 package control
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,13 +9,11 @@ import (
 	"strings"
 )
 
-// ValidateInput uses only the discovered contract. It performs no network or
-// file mutation and is shared by execution and terminal batch preflight.
 func (c *Client) ValidateInput(o Operation, in Input) error {
 	if _, e := c.endpoint(o, in); e != nil {
 		return e
 	}
-	if len(in.Body) > 0 && !json.Valid(in.Body) {
+	if len(in.Body) > 0 && len(bytes.TrimSpace(in.Body)) == 0 {
 		return errors.New("body must contain one JSON value")
 	}
 	if o.MaxBodyBytes > 0 && int64(len(in.Body)) > o.MaxBodyBytes {

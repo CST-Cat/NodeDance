@@ -121,7 +121,8 @@ export default function UpdateCenter() {
       watchState(visibleJobs, (value) => {
         if (value.length) historyMounted.value = true;
       });
-      const checkFresh = cell(false);
+      const checking = cell(false);
+      let checkSequence = 0;
       const pollError = cell("");
       const error = cell(""),
         busy = cell(false),
@@ -154,16 +155,8 @@ export default function UpdateCenter() {
             query: query.value,
           });
           if (current === epoch) {
-            const completed = result.jobs.some(
-              (job) =>
-                job.finished &&
-                jobs.value.some(
-                  (previous) => previous.id === job.id && !previous.finished,
-                ),
-            );
             jobs.value = result.jobs;
             pollError.value = "";
-            if (completed) void refresh();
           }
         } catch (e) {
           if (current === epoch) pollError.value = message(e);
@@ -238,10 +231,10 @@ export default function UpdateCenter() {
         }
       }
       async function refresh() {
-        if (!selected.value) return;
-        checkFresh.value = false;
+        if (!selected.value || checking.value || busy.value) return;
         error.value = "";
-        busy.value = true;
+        checking.value = true;
+        const sequence = ++checkSequence;
         const current = epoch,
           requestedVersion = version.value;
         try {
@@ -255,29 +248,26 @@ export default function UpdateCenter() {
                 : {}),
             },
           });
-          if (current === epoch && requestedVersion === version.value) {
+          if (current === epoch && sequence === checkSequence && requestedVersion === version.value) {
             check.value = result;
-            checkFresh.value = true;
           }
         } catch (e) {
-          if (current === epoch) error.value = message(e);
+          if (current === epoch && sequence === checkSequence) error.value = message(e);
         } finally {
-          if (current === epoch) busy.value = false;
+          if (current === epoch && sequence === checkSequence) checking.value = false;
         }
       }
       async function submit(rollback = false) {
         if (
           busy.value ||
           !selected.value ||
-          (rollback
-            ? !rollbackJob.value
-            : !checkFresh.value ||
-              !check.value?.available ||
-              !check.value.configured)
+          (rollback && !rollbackJob.value)
         )
           return;
         busy.value = true;
         error.value = "";
+        checkSequence++;
+        checking.value = false;
         const action = rollback ? "rollback" : "apply";
         rollbackError.value = "";
         const body = {
@@ -288,7 +278,7 @@ export default function UpdateCenter() {
                 jobId: rollbackJob.value,
               }
             : {
-                version: check.value?.latest,
+                ...(version.value.trim() ? { version: version.value.trim() } : {}),
               }),
         };
         const current = epoch;
@@ -306,7 +296,6 @@ export default function UpdateCenter() {
             ...jobs.value.filter((item) => item.id !== job.id),
           ];
           rollbackJob.value = "";
-          if (job.finished) void refresh();
         } catch (e) {
           if (current === epoch) {
             if (rollback) rollbackError.value = message(e);
@@ -319,7 +308,8 @@ export default function UpdateCenter() {
       watchState(query, () => {
         epoch++;
         check.value = undefined;
-        checkFresh.value = false;
+        checkSequence++;
+        checking.value = false;
         jobs.value = [];
         historyMounted.value = false;
         rollbackJob.value = "";
@@ -328,22 +318,18 @@ export default function UpdateCenter() {
         deleteError.value = "";
         if (timer) clearTimeout(timer);
         void history();
-        void refresh();
       });
-      afterMount(async () => {
-        try {
-          nodes.value = (await api.nodes()).nodes;
+      afterMount(() => {
+        void api.nodes().then((result) => {
+          if (stopped) return;
+          nodes.value = result.nodes;
           nodeId.value = nodes.value[0]?.nodeId ?? "";
-        } catch (e) {
-          error.value = message(e);
-        }
-        await Promise.allSettled([
-          loadChangelog("core"),
-          loadChangelog("agent"),
-        ]);
-        if (timer) clearTimeout(timer);
+        }).catch((e) => {
+          if (!stopped) error.value = message(e);
+        });
+        void loadChangelog("core");
+        void loadChangelog("agent");
         void history();
-        void refresh();
       });
       beforeDispose(() => {
         stopped = true;
@@ -423,7 +409,9 @@ export default function UpdateCenter() {
                     placeholder={t("updates.latest")}
                     onChange={(event) => {
                       version.value = event.target.value;
-                      checkFresh.value = false;
+                      checkSequence++;
+                      checking.value = false;
+                      check.value = undefined;
                     }}
                   />
                 </label>
@@ -451,7 +439,7 @@ export default function UpdateCenter() {
                     ) : null}
                   </div>
                 ) : null}
-                {busy.value && !error.value ? (
+                {checking.value && !error.value ? (
                   <Skeleton
                     label={t(check.value ? "load.refreshing" : "load.initial")}
                     lines={check.value ? 1 : 3}
@@ -459,17 +447,17 @@ export default function UpdateCenter() {
                 ) : null}
               </SettingsGroup>
               <div className="settings-section-actions update-target-actions">
-                {check.value?.available && check.value.configured ? (
+                {selected.value ? (
                   <Button
                     className="update-submit"
-                    disabled={busy.value || !checkFresh.value}
+                    disabled={busy.value}
                     onClick={() => void submit()}
                   >
                     {t("updates.apply")}
                   </Button>
                 ) : null}
                 <Button
-                  disabled={busy.value || !selected.value}
+                  disabled={busy.value || checking.value || !selected.value}
                   onClick={() => void refresh()}
                 >
                   {t("updates.check")}

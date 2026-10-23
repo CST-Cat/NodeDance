@@ -2,7 +2,10 @@ package compose
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -10,6 +13,57 @@ import (
 	agentdocker "github.com/CST-Cat/NodeDance/internal/agent/docker"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
+
+func TestSaveConfigValidatesAndRejectsChangesBeforeReplacement(t *testing.T) {
+	for _, scenario := range []string{"save", "invalid", "changed"} {
+		t.Run(scenario, func(t *testing.T) {
+			root := t.TempDir()
+			ref := composeTestRef("save-test", root)
+			original := []byte("services: {}\n")
+			if err := os.WriteFile(ref.ConfigFiles[0], original, 0600); err != nil {
+				t.Fatal(err)
+			}
+			command := filepath.Join(root, "docker")
+			script := "#!/bin/sh\nprintf 'validate\\n' >> \"$0.calls\"\n"
+			if scenario == "invalid" {
+				script += "exit 1\n"
+			} else if scenario == "changed" {
+				script += "printf 'external edit\\n' > \"$0.config\"\n"
+				if err := os.Symlink(ref.ConfigFiles[0], command+".config"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(command, []byte(script), 0700); err != nil {
+				t.Fatal(err)
+			}
+			manager := &Manager{engine: &composeTestEngine{}, dockerPath: command}
+			digest := sha256.Sum256(original)
+			committed, err := manager.SaveConfig(context.Background(), ref, 0, hex.EncodeToString(digest[:]), "services: {app: {image: busybox}}\n")
+			want := "services: {app: {image: busybox}}\n"
+			if scenario == "invalid" {
+				want = string(original)
+				if committed || !errors.Is(err, ErrConfigInvalid) {
+					t.Fatalf("Invalid candidate: committed=%v, error=%v", committed, err)
+				}
+			} else if scenario == "changed" {
+				want = "external edit\n"
+				if committed || !errors.Is(err, ErrConfigChanged) {
+					t.Fatalf("Concurrent edit: committed=%v, error=%v", committed, err)
+				}
+			} else if !committed || err != nil {
+				t.Fatalf("Save failed: committed=%v, error=%v", committed, err)
+			}
+			content, readErr := os.ReadFile(ref.ConfigFiles[0])
+			if readErr != nil || string(content) != want {
+				t.Fatalf("Saved %q, error=%v; want %q", content, readErr, want)
+			}
+			calls, readErr := os.ReadFile(command + ".calls")
+			if readErr != nil || string(calls) != "validate\n" {
+				t.Fatalf("Validation commands: %q, error=%v", calls, readErr)
+			}
+		})
+	}
+}
 
 func TestLockProjectSerializesWritesByReference(t *testing.T) {
 	manager := &Manager{projectLocks: make(map[string]*projectLock)}

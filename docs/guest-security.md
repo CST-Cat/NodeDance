@@ -1,42 +1,38 @@
 # Guest browser security verification
 
-Run `pnpm --dir web audit:guest-security`. The script builds an isolated real Core with a temporary database and a protocol-only simulated Agent, signs in a separate administrator browser context, publishes explicit aliases/fields, and enters guest mode through the login button in Chromium. Attack requests originate from that guest page. Production servers, real Agent installations and Docker resources are not targets.
+Run `make build`, then `pnpm --dir web audit:guest-security`. The suite starts that freshly embedded Core binary with a temporary database and a protocol-only simulated Agent, signs in a separate administrator browser context, publishes explicit aliases/fields and enters guest mode in Chromium. Production servers, real Agent installations and Docker resources are not targets.
 
-The pnpm command is the existing project convenience entry, not a requirement of the security tests. With Web dependencies and Playwright Chromium already installed, an equivalent direct run from the repository root is:
+The pnpm command is a convenience entry. An equivalent direct run from the repository root is:
 
 ```sh
-cd web
-node node_modules/vite/bin/vite.js build --config vite.config.ts --outDir ../internal/core/webassets/dist --emptyOutDir
-NODEDANCE_GUEST_ATTACKS=1 node scripts/audit-guest.cjs
+make build
+NODEDANCE_GUEST_ATTACKS=1 node web/scripts/audit-guest.cjs
 ```
 
-If current Web assets have already been built, run `NODEDANCE_GUEST_ATTACKS=1 node web/scripts/audit-guest.cjs` from the repository root. The audit itself compiles the Core using Go and runs Chromium through Playwright.
+When the working tree already has a completed fresh `make build`, run the Node command directly. Building Web assets alone does not refresh the assets embedded in the Core binary.
 
 The suite discovers private operations from the connected Core's operation contract rather than keeping another operation list. Responses, not hidden buttons, determine whether an attack succeeds. Administrator requests create the fixture and withdraw its resources; they are not counted as successful guest operations.
 
 ## Verified cases
 
-The table below records a historical run; current operation and attack totals are discovered at runtime. The browser suite also checks persisted guest history points against the exact `[from, to)` timestamps. Go regressions cover fractional-second minute/hour boundaries for both full and selected-key history queries. Node detail regressions select tabs by accessible name, verify service-probe reload and browser Back, and ensure the full probe panel does not remain on overview or history.
+The table below describes the maintained boundaries; operation and attack coverage is discovered at runtime. The browser suite also checks persisted guest history points against the exact `[from, to)` timestamps. Go regressions cover fractional-second minute/hour boundaries for both full and selected-key history queries. Node detail regressions select tabs by accessible name, verify service-probe reload and browser Back, and ensure the full probe panel does not remain on overview or history.
 
-| Group | Cases | Expected result |
-| --- | ---: | --- |
-| Discovered private operations, including commands/files/containers/updates/configuration | Discovered at runtime | 401 despite spoofed role/mode/user headers and an anonymous CSRF token |
-| Internal and opaque public IDs substituted into private resource routes | 15 | 401 |
-| Public scope expansion, arbitrary history, malformed queries and parameter pollution | 12 | 400 |
-| Public method changes and method override | 10 | 405 |
-| Private method changes, including HEAD and OPTIONS | 21 | 401 |
-| Encoded paths, traversal, NUL, repository/config and host-file paths | 12 | 401 or 404; no private data |
-| Forged session cookies | 5 | 401 |
-| Forged Bearer, Enrollment and Basic credentials | 3 | 401 |
-| Dashboard, logs, stats, terminal-ticket and Agent WebSockets | 5 | Handshake fails; connection never opens |
-| Cross-origin browser form with a real administrator session | 1 | 403 |
-| HTML injection in display title, node alias and service alias | 1 | Literal text; no injected image or script execution |
-| Management request during guest refresh storm | 1 | 200 within two seconds |
-| Ten waves of 24 concurrent public refresh requests | 240 | 200 or bounded 503; no unselected fields/private hostname |
-| Warm-cache field withdrawal, probe deletion, Agent revocation, disable with unavailable selections, global disable | 5 | Updated public scope immediately; disabled display returns 404 |
-| **Total** | **438** | **No failed cases after fixes** |
+| Boundary | Expected result |
+| --- | --- |
+| Discovered private operations, including commands/files/containers/updates/configuration | 401 despite spoofed role/mode/user headers and an anonymous CSRF token |
+| Internal and opaque public IDs substituted into private resource routes | 401 |
+| Public scope expansion, arbitrary history, malformed queries and parameter pollution | 400 |
+| Public method changes and method override | 405 |
+| Private method changes, including HEAD and OPTIONS | 401 |
+| Encoded paths, traversal, NUL, repository/config and host-file paths | 401 or 404; no private data |
+| Forged session cookies, Bearer, Enrollment and Basic credentials | 401 |
+| Dashboard, logs, stats, terminal-ticket and Agent WebSockets | Handshake fails; connection never opens |
+| Cross-origin browser form with a real administrator session | 403 |
+| HTML injection in display title, node alias and service alias | Literal text; no injected image or script execution |
+| Management request during bounded concurrent guest refresh | Remains available; public responses contain no unselected fields/private hostname |
+| Warm-cache field withdrawal, probe deletion, Agent revocation, disable with unavailable selections, global disable | Updated public scope immediately; disabled display returns 404 |
 
-The same run checks default-disabled entry, absence of display requests before guest selection, identical public projections with administrator cookies, session validation when leaving guest mode, browser-mode spoof denial, administrator save/preview, guest publication under Settings with no duplicate sidebar entry, and twenty light/dark/mobile layouts, including node cards and detail headings without visible internal UUIDs. The browser checks also cover Back/Forward and reload in guest mode, forged history markers, administrator-cookie guest URL restoration without private requests, a missing session on returning to management, and a delayed authenticated response arriving after a newer guest navigation. These existing checks are separate from the 438 attack cases. Counts grow when the Core operation contract grows.
+The same run checks default-disabled entry, absence of display requests before guest selection, identical public projections with administrator cookies, session validation when leaving guest mode, browser-mode spoof denial, administrator save/preview and guest publication under Settings. Browser cases cover Back/Forward and reload, forged history markers, administrator-cookie guest URLs without private requests, missing sessions on return to management, and stale authenticated responses after newer guest navigation. Private-operation coverage is discovered from the running Core contract; no fixed operation or case count defines completeness. Layout checks are separate from these authentication and data-boundary assertions.
 
 ## Findings and fixes
 
@@ -157,3 +153,11 @@ browser/guest requests to a third-party origin.
 公开访问直接位于个人设置（`#/settings`）中，与资料、安全和会话同时显示，仅管理员可见。原来的游客设置整页及页签已移除。公开字段与节点／服务资源使用同一份策略表单；资源必须逐项选择并填写独立公开名称。策略仍通过 Core 的 `guest.configure` 保存，预览仍读取已保存的投影，不把多个 Core 操作伪装成一次原子提交。
 
 发布日志读取与旧备份删除同样是管理员私有操作：`updates.release`、`updates.delete-backup` 从当前 Core 契约动态发现并加入匿名边界检查。方法覆盖、伪造身份与 CSRF 不能读取发布管理数据或删除备份；游客投影不含更新任务及备份状态。
+
+Authenticated cold entry reads the current private profile directly, without first fetching public appearance. Anonymous sign-in/setup still use public branding. Profile responses are scoped to their requesting account and superseded reads cannot update appearance after guest navigation or sign-out; the guest browser regression holds a real profile response to verify this boundary.
+
+Guest resource availability is filtered by one shared query for nodes and probes. Policy saves reuse that query inside their transaction instead of reading every selection separately. Cached snapshots compare the effective policy directly, without JSON hashing. The public page keeps one in-flight refresh, cancels it on exit and uses Core’s refresh interval; entering guest mode reads the display once. Resource withdrawal and authenticated/anonymous projection rules remain unchanged.
+
+The dynamically discovered private-operation denial checks also cover monitoring retention reads and writes. The new history details/export presentation uses the existing authenticated `nodes.history` response; it adds no public download route and does not expand the guest projection.
+
+Metrics admission validates the report before Core annotations and cache publication; invalid reports do not consume an accepted sequence or replace public source data. Route matching uses the same discovered contract with precompiled path patterns and unchanged precedence. Anonymous denial, forged identities and withdrawal regressions continue to exercise those boundaries against a real isolated Core.

@@ -5,6 +5,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 	"github.com/CST-Cat/NodeDance/internal/update"
 	"strings"
+	"sync"
 
 	"github.com/CST-Cat/NodeDance/internal/core/alerts"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
@@ -152,32 +153,59 @@ func describeTransport(o *Operation) {
 	describeResponse(o)
 }
 
-// MatchRoute shares published request bounds with the Core decoders. Multiple
-// presentation names (terminal.open/create) can describe the same route.
-func MatchRoute(method, path string) (Operation, bool) {
-	for _, o := range operationCatalog() {
-		if method != o.Method {
-			continue
+type compiledRoute struct {
+	operation Operation
+	parts     []string
+}
+
+var routeIndex = sync.OnceValue(func() map[string]map[int][]compiledRoute {
+	index := make(map[string]map[int][]compiledRoute)
+	for _, operation := range operationCatalog() {
+		byLength := index[operation.Method]
+		if byLength == nil {
+			byLength = make(map[int][]compiledRoute)
+			index[operation.Method] = byLength
 		}
-		pattern, parts := strings.Split(o.Path, "/"), strings.Split(path, "/")
-		if len(pattern) != len(parts) {
-			continue
-		}
+		parts := strings.Split(operation.Path, "/")
+		byLength[len(parts)] = append(byLength[len(parts)], compiledRoute{operation: operation, parts: parts})
+	}
+	return index
+})
+
+type RequestContract struct {
+	Name         string
+	RequiredRole string
+	Transport    string
+	BodySchema   any
+	Headers      map[string]any
+	MaxBodyBytes int64
+}
+
+func MatchRoute(method, path string) (RequestContract, bool) {
+	parts := strings.Split(path, "/")
+	for _, route := range routeIndex()[method][len(parts)] {
 		match := true
-		for i, p := range pattern {
-			if strings.HasPrefix(p, "{") {
+		for i, part := range route.parts {
+			if strings.HasPrefix(part, "{") {
 				if parts[i] == "" {
 					match = false
+					break
 				}
-			} else if p != parts[i] {
+			} else if part != parts[i] {
 				match = false
+				break
 			}
 		}
 		if match {
-			return cloneOperation(o), true
+			operation := route.operation
+			request := RequestContract{Name: operation.Name, RequiredRole: operation.RequiredRole, Transport: operation.Transport, BodySchema: cloneSchema(operation.BodySchema), MaxBodyBytes: operation.MaxBodyBytes}
+			if operation.Headers != nil {
+				request.Headers = cloneSchema(operation.Headers).(map[string]any)
+			}
+			return request, true
 		}
 	}
-	return Operation{}, false
+	return RequestContract{}, false
 }
 
 func responseObject(required []string, properties map[string]any) map[string]any {

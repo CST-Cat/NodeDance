@@ -72,13 +72,24 @@ func ToProtocolMetricsAt(snapshot Snapshot, serializedAt time.Time) protocol.Met
 func boundProtocolDetails(snapshot protocol.MetricsSnapshot) protocol.MetricsSnapshot {
 	if snapshot.Host != nil && snapshot.Host.Observability != nil {
 		o := snapshot.Host.Observability
-		for len(o.Entities) > 0 {
-			data, _ := json.Marshal(o)
-			if len(data) <= 24<<10 {
-				break
+		if len(o.Entities) > 0 {
+			data, err := json.Marshal(o)
+			if err != nil || len(data) > 24<<10 {
+				entities := o.Entities
+				o.Truncated = true
+				low, high := 0, len(entities)-1
+				for low < high {
+					mid := (low + high + 1) / 2
+					o.Entities = entities[:mid]
+					data, err = json.Marshal(o)
+					if err == nil && len(data) <= 24<<10 {
+						low = mid
+					} else {
+						high = mid - 1
+					}
+				}
+				o.Entities = entities[:low]
 			}
-			o.Entities = o.Entities[:len(o.Entities)-1]
-			o.Truncated = true
 		}
 	}
 

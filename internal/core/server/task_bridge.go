@@ -240,7 +240,8 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		return nil
 	}
 	journal := coretasks.AgentConnection{NodeID: identity.NodeID, ConnectionGeneration: connection.generation, JournalID: journalID}
-	for handled := 0; handled < coreTaskDispatchBurst && connection.taskSlots > 0; handled++ {
+	handled := 0
+	for ; handled < coreTaskDispatchBurst && connection.taskSlots > 0; handled++ {
 		task, ok, registryAuth, err := s.claimNextImageTask(ctx, journal)
 		if err != nil {
 			return err
@@ -349,7 +350,7 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			}
 		}
 	}
-	if connection.taskSlots > 0 {
+	if handled == coreTaskDispatchBurst && connection.taskSlots > 0 {
 		select {
 		case connection.taskSignal <- struct{}{}:
 		default:

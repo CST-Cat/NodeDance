@@ -1,5 +1,5 @@
 import { operationRequest, type MetricHistory } from "./api";
-import { beforeDispose, cell, watchState } from "./state";
+import { beforeDispose, cell, derived, watchState } from "./state";
 import type { TelemetryPoint } from "./components/TelemetryChart";
 
 const STEP = 5_000;
@@ -10,6 +10,20 @@ async function acquire() {
   if (active >= 4) await new Promise<void>(resolve => waiting.push(resolve));
   else active++;
   return () => { const next = waiting.shift(); if (next) next(); else active--; };
+}
+
+function cachedSeries<T>(build: (keys: string[]) => T) {
+  const values = new Map<string, {readonly value: T}>();
+  return (keys: string[]): T => {
+    const key = JSON.stringify(keys);
+    let result = values.get(key);
+    if (!result) {
+      const selected = [...keys];
+      result = derived(() => build(selected));
+      values.set(key, result);
+    }
+    return result.value;
+  };
 }
 
 // Core owns persistence. Keep only the currently displayed four-hour response;
@@ -59,7 +73,7 @@ export function recentHistory(nodeId: () => string) {
     void refresh();
   }, {immediate: true});
   beforeDispose(() => { disposed = true; epoch++; clearTimeout(timer); request?.abort(); });
-  function points(keys: string[]): TelemetryPoint[] {
+  const points = cachedSeries((keys): TelemetryPoint[] => {
     const {from, to} = range.value;
     const series = keys.map(key => new Map((history.value?.series.find(s => s.key === key)?.points ?? []).map(p => [Date.parse(p.bucketAt), p])));
     const result: TelemetryPoint[] = [{at: from, values: keys.map(() => null)}];
@@ -71,8 +85,8 @@ export function recentHistory(nodeId: () => string) {
     }
     if (result.at(-1)?.at !== to) result.push({at: to, values: keys.map(() => null)});
     return result;
-  }
-  function totals(keys: string[]): (number | null)[] {
+  });
+  const totals = cachedSeries((keys): (number | null)[] => {
     const {from, to} = range.value;
     return keys.map(key => {
       let total = 0, observed = false;
@@ -85,6 +99,6 @@ export function recentHistory(nodeId: () => string) {
       }
       return observed ? total : null;
     });
-  }
+  });
   return {history, range, loading, failed, points, totals};
 }

@@ -50,7 +50,7 @@ func guestFixtureNode(t *testing.T, s *Server, index int) agents.Identity {
 	snapshot.CPU.UsagePercent = protocol.Metric[float64]{Status: protocol.MetricKnown, Value: &cpu, SampledAt: snapshot.CollectedAt}
 	privateHost := "PRIVATE-HOST-NAME"
 	snapshot.System.Hostname = protocol.Metric[string]{Status: protocol.MetricKnown, Value: &privateHost, SampledAt: snapshot.CollectedAt}
-	if err = s.metrics.Accept(id, lease.ConnectionGeneration, 1, snapshot, time.Now()); err != nil {
+	if err = s.metrics.Accept(id, lease.ConnectionGeneration, 1, &snapshot, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"cpu.usage_percent", "memory.used_percent", "disk:/PRIVATE-MOUNT:used_percent"} {

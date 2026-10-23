@@ -42,3 +42,13 @@ TEST_CORE_BINARY=.build/nodedance python3 scripts/test-docker.py
 The integration uses a temporary Core data directory, one temporary Agent container, and disposable host fixtures. It checks protected state, enrollment, root execution, host metrics and files, path protections, and reconnect behavior.
 
 集成测试只使用临时 Core 数据目录、Agent 容器及临时主机 fixture，验证凭据保护、注册、root 运行、主机指标与文件、路径保护和重连。
+
+Core task admission constructs the canonical task identity once and reuses its payload/resource key for durable acceptance, retry comparison and digest input. It no longer independently reconstructs and compares the same identity. Intent validation, exact request digests, idempotency conflicts, resource claims, destructive confirmations and Agent checks remain enforced.
+
+Idle Agent task delivery waits for new work or capacity notifications. Only a full dispatch batch schedules another pass; an empty queue does not wake itself and repeatedly recheck leases, task readiness and reconciliation candidates in SQLite. Bounded batches still drain remaining work, including tasks that fail before dispatch because private registry credentials are unavailable.
+
+Core queues Compose config saves without a separate Agent validation RPC. The Agent validates the candidate once inside the serialized save operation, checks the base hash again after validation and atomically replaces only an unchanged target. Invalid candidates and concurrent edits fail through the shared task result; the explicit `compose.validate` operation remains available independently. Container, image and Compose task APIs rely on the task store’s canonical intent validation rather than repeating it before durable admission.
+
+Agent Compose inventory/config requests and image-list requests are decoded and validated once at the authenticated runtime boundary. Their bounded worker queues carry the typed request instead of decoding and revalidating the same envelope again. Capability checks, generation/request identity, response validation and queue limits remain unchanged.
+
+The Agent container executor delegates typed intent validation to the same canonical identity constructor instead of validating it twice. Exact payload digests, transient destructive confirmations, execution-journal admission and final mutation preconditions remain enforced.

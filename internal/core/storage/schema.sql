@@ -576,3 +576,9 @@ CREATE TABLE IF NOT EXISTS node_location_preferences (
  node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
  location_json TEXT NOT NULL DEFAULT 'null'
 );
+
+CREATE TABLE IF NOT EXISTS metric_history_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    retention_days INTEGER NOT NULL CHECK (retention_days BETWEEN 1 AND 365)
+);
+INSERT OR IGNORE INTO metric_history_settings(id,retention_days) VALUES(1,365);

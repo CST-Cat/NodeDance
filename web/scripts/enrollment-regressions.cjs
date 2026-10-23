@@ -7,7 +7,7 @@ module.exports=async function({page,base,artifacts,catalog}){
  let issued,requests=0,hold=false,release,started
  const handler=async route=>{
   if(route.request().method()!==operation.method)return route.fallback()
-  requests++;const response=await route.fetch();assert.equal(response.status(),201);issued=await response.json()
+  const response=await route.fetch();if(response.status()!==201)return route.fulfill({response});requests++;issued=await response.json()
   if(hold){started();await new Promise(resolve=>release=resolve)}
   await route.fulfill({response})
  }
@@ -17,8 +17,13 @@ module.exports=async function({page,base,artifacts,catalog}){
  const choices=page.getByTestId('agent-deployment-method'),native=choices.getByRole('button',{name:'Direct install',exact:true}),docker=choices.getByRole('button',{name:'Docker',exact:true})
  await native.waitFor();assert.ok(await native.isVisible()&&await docker.isVisible(),'Both deployment choices are visible before generating a command')
  assert.equal(await choices.locator('select').count(),0,'Deployment uses side-by-side options')
- await native.click();await page.locator('.agent-setup-form input[name=displayName]').fill('Enrollment fixture')
- await page.getByTestId('asset-traffic').fill('1200.5')
+ await native.click();await page.locator('.agent-setup-form input[name=displayName]').fill('😀'.repeat(80))
+ const coreUrl=page.locator('.agent-setup-form input[name=coreUrl]'),originalCore=await coreUrl.inputValue()
+ await coreUrl.fill('https://core.example/not-an-origin')
+ const rejectedOrigin=page.waitForResponse(response=>new URL(response.url()).pathname===operation.path&&response.request().method()==='POST')
+ await page.locator('.agent-setup-form .primary-button').click();assert.equal((await rejectedOrigin).status(),400,'Core rejects invalid enrollment origins instead of a divergent browser policy');await page.locator('.agent-setup-form [role=alert]').waitFor();await coreUrl.fill(originalCore)
+
+ await page.getByTestId('asset-traffic').fill('18446744073.709551615');assert.equal(await page.getByTestId('asset-traffic').inputValue(),'18446744073.709551615')
  await page.getByTestId('asset-price').fill('12.34')
  await page.getByTestId('asset-cycle').selectOption('year')
  await page.getByTestId('asset-purchase').fill('2026-10-13')
@@ -26,10 +31,10 @@ module.exports=async function({page,base,artifacts,catalog}){
  const generate=page.locator('.agent-setup-form .primary-button, .agent-enrollment-form .primary-button'),copy=page.locator('.agent-enrollment-actions .secondary-button')
  const copied=()=>page.evaluate(()=>window.enrollmentCopiedText)
  const confirmCopied=async()=>{await page.waitForFunction(()=>!document.querySelector('.agent-setup-form .primary-button, .agent-enrollment-form .primary-button').disabled);assert.equal(await page.locator('dialog[open]').count(),0,'Copy feedback stays in the original control');await copy.locator('[data-copy-state=success]').waitFor()}
- await generate.click();await confirmCopied();assert.equal(requests,1)
+ await generate.click();await confirmCopied();assert.equal(requests,1);assert.equal(issued.displayName,'😀'.repeat(80),'An 80-character Unicode name is not truncated by a UTF-16 input limit')
  const assetOperation=catalog.operations.find(o=>o.name==='nodes.asset')
- const readAsset=async()=>{const response=await page.request.get(base+assetOperation.path.replace('{nodeId}',issued.nodeId));assert.equal(response.status(),200);return response.json()}
- const initialAsset=await readAsset();assert.equal(initialAsset.price,12.34);assert.equal(initialAsset.billingCycleUnit,'year');assert.equal(initialAsset.trafficLimitBytes,1200500000000);assert.ok(initialAsset.expiresAt);assert.equal(initialAsset.purchasedAt,'2026-10-13T00:00:00Z')
+ const readAsset=async()=>{const response=await page.request.get(base+assetOperation.path.replace('{nodeId}',issued.nodeId));assert.equal(response.status(),200);const raw=await response.text(),quota=/"trafficLimitBytes"\s*:\s*(\d+)/.exec(raw);assert.ok(quota);return {...JSON.parse(raw),trafficLimitBytes:BigInt(quota[1])}}
+ const initialAsset=await readAsset();assert.equal(initialAsset.price,12.34);assert.equal(initialAsset.billingCycleUnit,'year');assert.equal(initialAsset.trafficLimitBytes,18446744073709551615n);assert.ok(initialAsset.expiresAt);assert.equal(initialAsset.purchasedAt,'2026-10-13T00:00:00Z')
  const first=await copied();assert.ok(first.includes('--token '+issued.token)&&first.includes('--mode native'));assert.ok(first.length<600,'Copied command is short and complete')
  assert.equal(await page.getByTestId('agent-enrollment-token').count(),0,'No separate token copy/input step is displayed')
  assert.equal(await page.getByTestId('agent-install-command').count(),0,'Command is copied directly rather than shown in a separate credential field')
@@ -72,7 +77,7 @@ module.exports=async function({page,base,artifacts,catalog}){
  assert.equal(await settings.getByTestId('asset-purchase').inputValue(),'2026-10-13')
  await settings.getByTestId('asset-purchase').fill('2026-10-01')
  assert.equal(await settings.getByTestId('asset-price').inputValue(),'12.34')
- assert.equal(await settings.getByTestId('asset-traffic').inputValue(),'1200.5')
+ assert.equal(await settings.getByTestId('asset-traffic').inputValue(),'18446744073.709551615')
  for(const unit of ['month','hour','minute','year']){
   await settings.getByTestId('asset-cycle').selectOption(unit)
   const response=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().endsWith('/asset'))
@@ -82,7 +87,7 @@ module.exports=async function({page,base,artifacts,catalog}){
  await settings.getByTestId('asset-purchase').fill('');await settings.getByTestId('asset-expiry').fill('');await settings.getByTestId('asset-traffic').fill('0');await settings.getByTestId('asset-price').fill('0')
  const clearResponse=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().endsWith('/asset'))
  await settings.getByTestId('asset-save').click();assert.equal((await clearResponse).status(),200);await settings.getByRole('status').waitFor()
- const cleared=await readAsset();assert.equal(cleared.purchasedAt,undefined);assert.equal(cleared.expiresAt,undefined);assert.equal(cleared.trafficLimitBytes,0);assert.equal(cleared.price,0)
+ const cleared=await readAsset();assert.equal(cleared.purchasedAt,undefined);assert.equal(cleared.expiresAt,undefined);assert.equal(cleared.trafficLimitBytes,0n);assert.equal(cleared.price,0)
  assert.ok(await settings.evaluate(el=>el.nextElementSibling?.dataset.testid==='node-settings-delete'),'Billing settings immediately precede deletion')
  // Reopening registration after editing settings loads fresh asset values.
  await page.getByTestId('node-install-command').click()

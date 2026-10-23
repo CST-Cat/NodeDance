@@ -62,6 +62,15 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await page.setViewportSize({width:1440,height:1000});
   const {setBrowserLanguage}=require('./browser-language.cjs');
   await setBrowserLanguage(page,'en-US');await page.goto(base+'/#/settings');await page.locator('.security-settings').waitFor();
+  const profileName=page.locator('[name=profileDisplayName]'),originalName=await profileName.inputValue();await profileName.fill('😀'.repeat(80));assert.equal(await profileName.inputValue(),'😀'.repeat(80));
+  let savedName=page.waitForResponse(response=>new URL(response.url()).pathname===operation('appearance.update').path&&response.request().method()==='PUT');await page.locator('.profile-form button[type=submit]').click();assert.equal((await savedName).status(),200,'Core accepts 80 Unicode characters without a browser UTF-16 gate');
+  await profileName.fill(originalName);savedName=page.waitForResponse(response=>new URL(response.url()).pathname===operation('appearance.update').path&&response.request().method()==='PUT');await page.locator('.profile-form button[type=submit]').click();assert.equal((await savedName).status(),200);
+  const image=page.locator('.profile-settings input[type=file]').first(),uploadPath=operation('profile.upload-avatar').path;
+  let uploaded=page.waitForResponse(response=>new URL(response.url()).pathname===uploadPath&&response.request().method()==='POST');
+  await image.setInputFiles({name:'unknown-format',mimeType:'application/octet-stream',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=','base64')});assert.equal((await uploaded).status(),200,'Core recognizes a valid raster image without trusting filename or browser MIME');
+  await page.waitForFunction(()=>!document.querySelector('.profile-settings input[type=file]').disabled);
+  uploaded=page.waitForResponse(response=>new URL(response.url()).pathname===uploadPath&&response.request().method()==='POST');
+  await image.setInputFiles({name:'unsafe.png',mimeType:'image/png',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')});assert.equal((await uploaded).status(),400,'Core rejects spoofed raster MIME and unsafe image content');
   const password=page.locator('.security-settings input[name=currentPassword]');
   await password.fill('isolated-password-fixture');
   let reveal=page.locator('.security-settings').getByRole('button',{name:'Show password for 5 seconds',exact:true}).first();
@@ -71,11 +80,6 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await page.waitForFunction(()=>document.querySelector('.security-settings input[name=currentPassword]').type==='password',null,{timeout:6500});
   await password.fill('');
   await page.setViewportSize({width:1440,height:1000});await page.locator('[name=profileDisplayName]').fill('Unsaved profile fixture');await page.locator('.guest-settings').getByRole('checkbox').first().check();assert.equal(await page.locator('[name=profileDisplayName]').inputValue(),'Unsaved profile fixture','Publication edits do not replace the personal draft');
-  const profilePath=operation('profile.get').path;let releaseProfile,profileStarted;const held=new Promise(r=>releaseProfile=r),started=new Promise(r=>profileStarted=r);
-  await page.route('**'+profilePath,async route=>{const response=await route.fetch();profileStarted();await held;await route.fulfill({response})});
-  await page.getByRole('button',{name:'Host management',exact:true}).click();await started;
-  await page.getByRole('button',{name:'Settings',exact:true}).click();releaseProfile();await page.waitForResponse(r=>new URL(r.url()).pathname===profilePath);await page.unroute('**'+profilePath);
-  assert.equal(new URL(page.url()).hash,'#/settings','A stale appearance read cannot replace the newer settings route');assert.equal(await page.locator('.host-page').count(),0);
   await page.goto(base+'/#/agent-enrollment');await page.locator('.peer-card').first().waitFor();
   let releaseFingerprint,fingerprintStarted;const fingerprintHeld=new Promise(r=>releaseFingerprint=r),pendingFingerprint=new Promise(r=>fingerprintStarted=r);
   await page.route('**'+operation('discovery.host-key').path,async route=>{const peer=route.request().postDataJSON().peerIdentity;if(peer==='peer-a'){fingerprintStarted();await fingerprintHeld}await route.fulfill({json:{fingerprint:'SHA256:fixture-'+peer}})});

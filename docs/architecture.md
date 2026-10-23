@@ -77,3 +77,5 @@ Core owns opt-in publication policy, dedicated public response types and bounded
 ## Core subscriptions
 
 Core owns RSS/Atom fetches, subscription revisions, bounded entries, shared read state and independent notification delivery. All interfaces discover feeds.* from the Core contract; Agents and guest projections are not involved. See [RSS subscriptions](rss.md).
+
+Core compiles request route patterns once by HTTP method and path depth, preserving published matching order and caller-owned schemas. Metrics admission owns one complete report validation, then adds Core receive-time annotations and stores independently owned values. Incoming network interfaces and disk mounts cannot retain pointers into the accepted cache; stale-sample merging still preserves gaps, prior values, identity, generation and sequence boundaries. Retention cleanup skips aggregation of minute samples that already exceed the maximum retention and would be discarded immediately.

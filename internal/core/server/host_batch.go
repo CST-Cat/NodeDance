@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/core/audit"
+	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
@@ -105,7 +106,7 @@ func (s *Server) handleHostBatchAPI(w http.ResponseWriter, r *http.Request, curr
 		if len(request.NodeIDs) > 0 {
 			template.NodeID = request.NodeIDs[0]
 		}
-		if _, err := configFromRequest(template, true); err != nil {
+		if err := coreprobes.ValidateConfig(configFromRequest(template, true)); err != nil {
 			http.Error(w, err.Error(), 400)
 			return true
 		}
@@ -123,7 +124,7 @@ func (s *Server) handleHostBatchAPI(w http.ResponseWriter, r *http.Request, curr
 				continue
 			}
 			template.NodeID = node
-			config, _ := configFromRequest(template, true)
+			config := configFromRequest(template, true)
 			config.ID = stableProbeID(batchNodeKey(b.ID, node))
 			existing, e := s.probes.Get(r.Context(), config.ID)
 			if e == nil {
