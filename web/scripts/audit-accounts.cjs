@@ -31,7 +31,7 @@ async function freePort(){const server=net.createServer();await new Promise(reso
   assert.ok(await editor.evaluate(el=>el.matches(':modal')));assert.ok(Math.abs((await manager.boundingBox()).height-beforeEdit.height)<1);
   const roleSelect=editor.locator('button[data-dropdown-field]');await roleSelect.click();const options=editor.getByRole('menu');await options.waitFor();
   const selectBounds=await roleSelect.boundingBox(),optionsBounds=await options.boundingBox();assert.ok(Math.abs(selectBounds.x-optionsBounds.x)<2,'Role menu stays anchored inside the modal');
-  await options.getByRole('menuitemradio',{name:'Administrator',exact:true}).click();await roleSelect.click();await editor.getByRole('menu').getByRole('menuitemradio',{name:'Read-only user',exact:true}).click();
+  await options.getByRole('menuitemradio',{name:'Administrator',exact:true}).click();await options.waitFor({state:'detached'});await roleSelect.click();await editor.getByRole('menu').getByRole('menuitemradio',{name:'Read-only user',exact:true}).click();
   await options.waitFor({state:'detached'});await page.keyboard.press('Escape');await editor.waitFor({state:'hidden'});assert.ok(await editTrigger.evaluate(el=>el===document.activeElement));
   for(const theme of ['light','dark'])for(const width of [1440,390,320]){
    await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme:theme});await assertSettingsSpacing(page);await editTrigger.click();await editor.waitFor();
