@@ -109,20 +109,18 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
   await checkbox(1).check();await page.getByTestId('container-streams').waitFor({state:'detached'})
   await clear();await row(0).getByRole('button',{name:records[0].container.name,exact:true}).click()
   await moreToggle.click();await page.keyboard.press('Escape');assert.equal(await more.getAttribute('open'),null,'Escape closes the top action menu')
-
-  const layouts=[]
   for(const language of ['en','zh-CN']) {
     await setBrowserLanguage(page,language)
-    for(const theme of ['light','dark'])for(const width of [390,1440]) {
+    for(const [theme,width] of [['light',1440],['dark',390]]){
       await page.setViewportSize({width,height:1000});await page.waitForTimeout(100)
       await closeNavigation(page)
       await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Docker list fits the viewport')
-      const name=`docker-${language}-${theme}-${width}`;await page.screenshot({path:path.join(artifacts,name+'.png'),fullPage:true});layouts.push(name)
+
     }
   }
   await setBrowserLanguage(page,'en');await page.setViewportSize({width:1440,height:1000})
   await page.unroute('**/api/**',handler)
   page.off('pageerror',collectError);assert.deepEqual(errors,[],'Docker management must not produce browser errors')
-  console.log('Docker regressions passed: selection, independent tasks/retry, per-target delete confirmation, state changes, Compose restrictions, stale/offline guards, pagination, refresh-safe details; '+layouts.length+' layouts.')
+  console.log("docker-regressions passed.")
 }

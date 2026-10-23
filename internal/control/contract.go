@@ -122,8 +122,11 @@ func describeTransport(o *Operation) {
 	case "compose.create", "compose.validate", "compose.action":
 		o.MaxBodyBytes = 6*protocol.MaxComposeFileBytes + 16*1024
 		field("content", map[string]any{"maxBytes": protocol.MaxComposeFileBytes})
-	case "updates.apply", "updates.rollback":
+	case "updates.apply", "updates.rollback", "updates.delete-backup":
 		o.MaxBodyBytes = 65536
+		if o.Name == "updates.delete-backup" {
+			require("component", "jobId", "confirm")
+		}
 	case "metrics.catalog":
 		o.ResponseSchema = map[string]any{"type": "object", "required": []string{"metrics"}, "properties": map[string]any{"metrics": map[string]any{"type": "object", "additionalProperties": map[string]any{"type": "string"}}}}
 	}
@@ -266,9 +269,11 @@ func describeResponse(o *Operation) {
 		o.ResponseSchema = task
 	case "tasks.list":
 		o.ResponseSchema = responseObject([]string{"tasks"}, map[string]any{"tasks": map[string]any{"type": "array", "items": task}, "nextCursor": text})
+	case "updates.release":
+		o.ResponseSchema = schema(update.Release{})
 	case "updates.check":
 		o.ResponseSchema = schema(update.Check{})
-	case "updates.apply", "updates.rollback":
+	case "updates.apply", "updates.rollback", "updates.delete-backup":
 		r := schema(update.Job{}).(map[string]any)
 		r["required"] = []string{"id", "status"}
 		o.ResponseSchema = r

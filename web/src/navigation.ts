@@ -2,14 +2,12 @@ import { derived, consumeValue, type ContextKey, type Cell } from "./state";
 
 const viewScreens = [
   "guest",
-  "guest-settings",
   "setup",
   "login",
   "settings",
   "global-overview",
   "nodes",
   "domain-certificates",
-  "discovery",
   "agent-enrollment",
   "alerts",
   "operations",
@@ -70,7 +68,7 @@ export function readViewRoute(): ViewRoute {
     )
       route.filePath = value;
   }
-  if (route.screen === "alerts" || route.screen === "host-management")
+  if (["alerts", "host-management"].includes(route.screen))
     route.tab = field("tab");
   return route;
 }
@@ -98,7 +96,7 @@ export function viewHash(route: ViewRoute): string {
   )
     query.set("section", route.section);
   if (
-    (route.screen === "alerts" || route.screen === "host-management") &&
+    (["alerts", "host-management"].includes(route.screen)) &&
     route.tab
   )
     query.set("tab", route.tab);

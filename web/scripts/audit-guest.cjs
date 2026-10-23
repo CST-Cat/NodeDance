@@ -73,13 +73,13 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
    await page.locator('[name=username]').focus();assert.equal(await passwordInput.getAttribute('type'),'password')
    const geometry=await page.locator('.ui-password').evaluate(wrapper=>{const input=wrapper.querySelector('input').getBoundingClientRect(),button=wrapper.querySelector('button').getBoundingClientRect();return {input:input.toJSON(),button:button.toJSON(),padding:getComputedStyle(wrapper.querySelector('input')).paddingRight,inside:button.left>=input.left&&button.right<=input.right&&button.top>=input.top&&button.bottom<=input.bottom,space:parseFloat(getComputedStyle(wrapper.querySelector('input')).paddingRight)>=button.width}})
    assert.ok(geometry.inside&&geometry.space,'Eye stays inside the input without covering password text: '+JSON.stringify(geometry))
-   await page.locator('.login-card').screenshot({path:path.join(artifacts,`password-eye-${theme}-${width}.png`)})
+
   }
   await page.getByRole('button',{name:'Show password for 5 seconds',exact:true}).click()
   await page.waitForFunction(()=>document.querySelector('#login-password')?.type==='password',{},{timeout:6500})
   assert.equal(await passwordInput.inputValue(),'isolated-reveal-password');assert.equal(revealLoginRequests,0)
   page.off('request',countRevealLogin);await passwordInput.fill('')
-  console.log('Password reveal passed: click, keyboard, immediate hide, blur, five-second auto-hide and four theme/width layouts.')
+  console.log("Guest authentication, publication and withdrawal checks passed.")
   assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
   const enrollment=await(await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'PRIVATE HOST NAME',coreUrl:base}})).json()
   for(const command of [enrollment.nativeInstallCommand,enrollment.dockerInstallCommand])assert.ok(command.includes('--token '+enrollment.token),'Administrator enrollment supplies a complete installation command')
@@ -118,7 +118,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   assert.ok(historyPoints>0,'History bounds must be checked against actual persisted fixture samples')
   const privilegedGuest=await admin.request.get(base+'/api/v1/public/guest/display');assert.equal(privilegedGuest.status(),200);assert.deepEqual(await privilegedGuest.json(),JSON.parse(raw),'Administrator cookie must not expand guest projection')
   await page.reload();await page.getByRole('button',{name:'Enter guest mode',exact:true}).waitFor();assert.equal(guestReads,0,'Display data must not be loaded before guest selection')
-  for(const theme of ['light','dark'])for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(350);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(artifacts,`login-${theme}-${width}.png`),fullPage:true})}
+  for(const theme of ['light','dark'])for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(350);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
   await page.getByRole('button',{name:'Enter guest mode',exact:true}).click();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   const display=page.locator('[data-testid=guest-display]');try{await display.getByText('25.0 %',{exact:true}).waitFor()}catch(e){console.error('Guest response:',raw,'Guest text:',await display.textContent());throw e};await display.getByRole('button',{name:'Refresh',exact:true}).click()
   assert.deepEqual(privateReads,[],'Guest screen must not load private APIs');assert.equal(await page.locator('#workspace-navigation').count(),0)
@@ -130,7 +130,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   assert.deepEqual(restoredReads,[],'Restoring a guest URL must not fetch administrator data')
   assert.equal(new URL(page.url()).hash,'#/guest')
 
-  await page.evaluate(()=>{history.replaceState({authenticated:true,role:'admin'},'',location.href);location.hash='/guest-settings'})
+  await page.evaluate(()=>{history.replaceState({authenticated:true,role:'admin'},'',location.href);location.hash='/settings'})
   await page.locator('#login-title').waitFor();assert.equal(await page.locator('#workspace-navigation').count(),0,'A history marker cannot grant administrator access')
   await page.goBack();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   assert.equal((await visitor.request.get(base+'/api/v1/nodes')).status(),401);assert.equal((await visitor.request.post(base+'/api/v1/updates/apply',{data:{component:'core',confirm:true}})).status(),401)
@@ -147,7 +147,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await adminPage.keyboard.press('Escape');await accountPanel.waitFor({state:'hidden'})
   assert.equal(await accountTrigger.evaluate(el=>document.activeElement===el),true,'Escape restores account trigger focus')
   await accountTrigger.click();await accountPanel.getByRole('menuitem',{name:'Settings',exact:true}).click()
-  await adminPage.locator('.settings-main').waitFor();assert.equal(await adminPage.locator('.settings-sidebar').count(),0)
+  await adminPage.locator('.settings-sections').waitFor();assert.equal(await adminPage.locator('.settings-sidebar').count(),0)
   await adminPage.goto(base);await card.waitFor()
 
   const viewerCreated=await admin.request.post(base+'/api/v1/accounts',{headers,data:{username:'guest-audit-reader',displayName:'Read-only audit',role:'viewer',password:'isolated-reader-password'}});assert.equal(viewerCreated.status(),201)
@@ -166,7 +166,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
    await adminPage.setViewportSize({width,height:1000});await adminPage.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
    await adminPage.evaluate(()=>window.scrollTo(0,0));await adminPage.waitForTimeout(350)
    assert.ok(await adminPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Node card layout overflow')
-   await adminPage.screenshot({path:path.join(artifacts,`nodes-${theme}-${width}.png`),fullPage:true})
+
   }
   await card.locator('.vps-name').click();await adminPage.locator('#detail-title').waitFor()
   assert.ok(!(await adminPage.locator('.detail-heading').innerText()).includes(identity.nodeId),'Node detail headings must hide internal UUIDs')
@@ -174,7 +174,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
    await adminPage.setViewportSize({width,height:1000});await adminPage.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
    await adminPage.evaluate(()=>window.scrollTo(0,0));await adminPage.waitForTimeout(350)
    assert.ok(await adminPage.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Node detail layout overflow')
-   await adminPage.screenshot({path:path.join(artifacts,`node-detail-${theme}-${width}.png`),fullPage:true})
+
   }
   await adminPage.setViewportSize({width:1440,height:1000});await adminPage.waitForTimeout(350)
   const detailURL=adminPage.url();assert.ok(new URL(detailURL).hash.includes('node='+identity.nodeId))
@@ -255,7 +255,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   // A node-list response that completes after its page unmounts must not
   // trigger follow-up private metric/container/preference reads in guest mode.
   await adminPage.getByTestId('node-detail-navigation').getByRole('button',{name:'Back to home',exact:true}).click();await adminPage.locator('.nodes-dashboard').waitFor()
-  await adminPage.getByRole('button',{name:'Guest display',exact:true}).click();await adminPage.locator('.guest-settings').waitFor()
+  await adminPage.getByRole('button',{name:'Settings',exact:true}).click();await adminPage.locator('.guest-settings').waitFor()
   let releaseNodes,nodesStarted
   const heldNodes=new Promise(r=>releaseNodes=r),startedNodes=new Promise(r=>nodesStarted=r)
   await adminPage.route('**/api/v1/nodes',async route=>{const response=await route.fetch();nodesStarted();await heldNodes;await route.fulfill({response})})
@@ -301,16 +301,15 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   }
   await adminPage.goto(managementURL);await adminPage.locator('#detail-title').waitFor()
   await adminPage.getByTestId('node-detail-navigation').getByRole('button',{name:'Back to home',exact:true}).click();await adminPage.locator('.nodes-dashboard').waitFor()
-  const guestIcon=await adminPage.getByRole('button',{name:'Guest display',exact:true}).locator('svg path').getAttribute('d')
-  const nodeIcon=await adminPage.getByRole('button',{name:'Nodes',exact:true}).locator('svg path').getAttribute('d')
-  assert.ok(guestIcon && guestIcon!==nodeIcon,'Guest display must have its own icon')
-  await adminPage.getByRole('button',{name:'Guest display',exact:true}).click()
+  assert.equal(await adminPage.getByRole('button',{name:'Guest display',exact:true}).count(),0,'Guest settings are consolidated under personal settings');
+  await adminPage.getByRole('button',{name:'Settings',exact:true}).click();
+
   const form=adminPage.locator('.guest-settings');await form.getByRole('checkbox').first().waitFor();assert.equal(await form.getByRole('checkbox').filter({visible:true}).count()>0,true)
   await form.getByRole('button',{name:'Preview saved guest view',exact:true}).click();await form.locator('[data-testid=guest-display]').getByRole('heading',{name:'Public node',exact:true}).waitFor()
   // Exercise settings UI with the same server-owned policy, without changing selections.
   const response=adminPage.waitForResponse(r=>r.url().endsWith('/guest/settings')&&r.request().method()==='PUT');await form.getByRole('button',{name:'Save display settings',exact:true}).click();assert.equal((await response).status(),200)
   current=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings
-  for(const [name,p] of [['guest',page],['settings',adminPage]])for(const theme of ['light','dark'])for(const width of [390,1440]){await p.setViewportSize({width,height:1000});await p.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await p.evaluate(()=>window.scrollTo(0,0));await p.waitForTimeout(350);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} overflow`);await p.screenshot({path:path.join(artifacts,`${name}-${theme}-${width}.png`),fullPage:true})}
+  for(const [name,p] of [['guest',page],['settings',adminPage]])for(const theme of ['light','dark'])for(const width of [390,1440]){await p.setViewportSize({width,height:1000});await p.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await p.evaluate(()=>window.scrollTo(0,0));await p.waitForTimeout(350);assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`${name} overflow`);}
   if(process.env.NODEDANCE_GUEST_ATTACKS==='1'){
    console.log('GUEST SECURITY: starting browser attack matrix')
    const attacks=await require('./guest-attacks.cjs')({base,page,visitor,admin,headers,current,identity,probe,stopReporting:async()=>{clearInterval(keepalive);while(sending)await new Promise(r=>setTimeout(r,10))},artifacts})
@@ -319,10 +318,10 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   }
   const disabled=await admin.request.put(base+'/api/v1/guest/settings',{headers,data:{...current,enabled:false}});assert.equal(disabled.status(),200)
   await display.getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-testid=guest-display] h2'));assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
-  await adminPage.setViewportSize({width:1440,height:1000});await adminPage.goto(base+'/#/settings');await adminPage.locator('.settings-main').waitFor()
+  await adminPage.setViewportSize({width:1440,height:1000});await adminPage.goto(base+'/#/settings');await adminPage.locator('.settings-sections').waitFor()
   await adminPage.locator('.account-trigger').click();await adminPage.locator('.account-panel').getByRole('menuitem',{name:'Sign out',exact:true}).click()
   await adminPage.locator('#login-title').waitFor();assert.equal(await adminPage.locator('.account-trigger,.account-panel').count(),0,'Sign out removes all account controls')
   assert.equal((await admin.request.get(base+'/api/v1/auth/me')).status(),401,'Account card sign out invalidates the real session')
-  assert.deepEqual(errors,[]);console.log('Guest audit passed: real Core policy, anonymous entry, explicit projection with administrator cookies, session-checked exit, mode-spoof denial, administrator preview/save, immediate disable; 20 light/dark/mobile snapshots.')
+  assert.deepEqual(errors,[]);console.log("Guest authentication, publication and withdrawal checks passed.")
  }finally{if(keepalive)clearInterval(keepalive);if(browser)await browser.close();core.kill('SIGTERM');if(core.exitCode===null)await new Promise(r=>{core.once('exit',r);setTimeout(()=>{core.kill('SIGKILL');r()},5000).unref()});fs.rmSync(directory,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1})

@@ -503,18 +503,24 @@ func TestManualAgentInstallUIUsesRootOnlyCommands(t *testing.T) {
 		t.Fatal("resolve test source path")
 	}
 	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(testFile), "..", "..", ".."))
-	uiPath := filepath.Join(repoRoot, "web", "src", "components", "TailscaleDiscovery.tsx")
+	uiPath := filepath.Join(repoRoot, "web", "src", "components", "AgentOnboarding.tsx")
 	ui, err := os.ReadFile(uiPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(ui), "<AgentEnrollment\n              compact={true}") {
-		t.Fatal("Tailscale discovery page does not expose the shared Agent enrollment flow")
+	if !strings.Contains(string(ui), "createEnrollmentController") || !strings.Contains(string(ui), "createDiscoveryController") {
+		t.Fatal("Agent onboarding does not share enrollment and discovery controllers")
 	}
 	enrollmentUI, err := os.ReadFile(filepath.Join(repoRoot, "web", "src", "components", "AgentEnrollment.tsx"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	controller, err := os.ReadFile(filepath.Join(repoRoot, "web", "src", "agent-enrollment.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	enrollmentUI = append(enrollmentUI, controller...)
+	enrollmentUI = append(enrollmentUI, ui...)
 	installer, err := os.ReadFile(filepath.Join(repoRoot, "scripts", "install-agent.sh"))
 	if err != nil {
 		t.Fatal(err)

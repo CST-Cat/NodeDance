@@ -53,6 +53,8 @@ func (m *Manager) Handle(ctx context.Context, rpc RPC) Response {
 		}
 		data, err = m.Apply(ctx, rpc.Request, rpc.IdempotencyKey)
 		status = 202
+	case "delete-backup":
+		data, err = m.DeleteBackup(ctx, rpc.Request)
 	case "status":
 		if rpc.Request.JobID == "" {
 			jobs := []Job{}

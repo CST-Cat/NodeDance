@@ -1,262 +1,28 @@
-.deployment-choices[data-v-2709b2e0] {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  min-width: 0;
-}
-.deployment-choices legend[data-v-2709b2e0] {
-  padding: 0;
-  margin-bottom: 8px;
-  color: var(--muted-strong);
-  font-size: 13px;
-}
-.deployment-choices > div[data-v-2709b2e0] {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.deployment-choices button[data-v-2709b2e0] {
-  min-height: var(--control-height, 32px);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 10px;
-  color: var(--muted-strong);
-  background: var(--surface);
-  font: inherit;
-  cursor: pointer;
-}
-.deployment-choices button[aria-pressed="true"][data-v-2709b2e0] {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-.deployment-choices button[data-v-2709b2e0]:hover {
-  border-color: var(--accent-line);
-}
-.deployment-choices button[data-v-2709b2e0]:active {
-  background: var(--line);
-}
-.deployment-choices button[data-v-2709b2e0]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-}
-.agent-enrollment-page[data-v-2709b2e0] {
-  width: min(980px, 100%);
-  margin: 0 auto;
-  padding: clamp(24px, 5vw, 52px);
-  color: var(--text);
-}
-.agent-enrollment-compact-page[data-v-2709b2e0] {
-  color: var(--text);
-}
-.agent-enrollment-section-heading[data-v-2709b2e0] {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.agent-enrollment-section-heading > div[data-v-2709b2e0] {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.agent-enrollment-section-heading p[data-v-2709b2e0] {
-  color: var(--muted-strong);
-  line-height: 1.55;
-}
-.agent-enrollment-card[data-v-2709b2e0] {
-  max-width: 1120px;
-  container-type: inline-size;
-  border-radius: var(--radius-card);
-  background: transparent;
-  box-shadow: none;
-  padding: 20px 0 0;
-}
-.agent-enrollment-form[data-v-2709b2e0] {
-  display: grid;
-  align-items: start;
-  gap: 16px;
-}
-.enrollment-identity[data-v-2709b2e0] {
-  display: grid;
-  grid-template-columns: minmax(0, 480px) minmax(0, 280px);
-  gap: 16px 24px;
-  align-items: start;
-}
-.agent-enrollment-form > .agent-enrollment-section-heading[data-v-2709b2e0],
-.agent-enrollment-form > p[data-v-2709b2e0],
-.agent-enrollment-form > .agent-enrollment-actions[data-v-2709b2e0] {
-  grid-column: 1/-1;
-}
-.agent-enrollment-actions[data-v-2709b2e0] {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 12px;
-}
-.agent-enrollment-actions .primary-button[data-v-2709b2e0],
-.agent-enrollment-actions .secondary-button[data-v-2709b2e0] {
-  justify-self: auto;
-  grid-column: auto;
-}
-@media (max-width: 760px) {
-  .enrollment-identity[data-v-2709b2e0] {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.enrollment-connection[data-v-2709b2e0] {
-  display: grid;
-  align-content: start;
-  gap: 16px;
-  min-width: 0;
-}
-.deployment-choices[data-v-2709b2e0] {
-  max-width: 400px;
-}
-.agent-enrollment-section-heading h2[data-v-2709b2e0] {
-  margin: 0;
-}
-.agent-enrollment-section-heading div[data-v-2709b2e0] {
-  min-width: 0;
-}
-.agent-enrollment-usage-hint[data-v-2709b2e0] {
-  margin: 6px 0 0;
-  color: var(--muted-strong);
-  font-size: 13px;
-  line-height: 1.55;
-}
-.agent-enrollment-form .field[data-v-2709b2e0] {
-  display: grid;
-  gap: 6px;
-}
-.agent-enrollment-form input[data-v-2709b2e0],
-.agent-enrollment-form textarea[data-v-2709b2e0],
-.agent-enrollment-form select[data-v-2709b2e0] {
-  box-sizing: border-box;
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 10px;
-  background: var(--surface-soft);
-  color: inherit;
-  font: inherit;
-}
-.agent-enrollment-form textarea[data-v-2709b2e0] {
-  font-family: ui-monospace, SFMono-Regular, monospace;
-  font-size: 0.8rem;
-  overflow-wrap: anywhere;
-  resize: vertical;
-}
-.agent-enrollment-form .field-hint[data-v-2709b2e0] {
-  margin: 0;
-  color: var(--muted-strong);
-  font-size: 0.82rem;
-  line-height: 1.55;
-}
-.agent-enrollment-card-compact[data-v-2709b2e0] {
-  margin-top: 18px;
-}
-
-/* Align the existing connection column and two asset columns on shared rows. */
-@container (min-width:900px) {
-  .agent-enrollment-form[data-v-2709b2e0] {
-    grid-template-columns: minmax(0, 400px) minmax(0, 560px);
-    column-gap: 40px;
-  }
-  .enrollment-identity[data-v-2709b2e0] {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .agent-enrollment-form > .asset-fields[data-v-2709b2e0] {
-    margin: 0;
-    padding-top: 0;
-    border-top: 0;
-  }
-  .agent-enrollment-form:has(.enrollment-name)
-    > .enrollment-connection[data-v-2709b2e0] {
-    grid-row: 2 / span 3;
-    display: grid;
-    grid-template-rows: subgrid;
-    row-gap: 16px;
-  }
-  .agent-enrollment-form:has(.enrollment-name)
-    > .enrollment-connection[data-v-2709b2e0] {
-    grid-column: 1;
-  }
-  .agent-enrollment-form:has(.enrollment-name)
-    > .enrollment-assets[data-v-2709b2e0] {
-    display: contents;
-  }
-  .agent-enrollment-form:has(.enrollment-name)
-    .enrollment-identity[data-v-2709b2e0] {
-    display: contents;
-  }
-  .enrollment-assets[data-v-2709b2e0] .asset-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
-  }
-  .agent-enrollment-form:has(.enrollment-name)
-    .enrollment-assets[data-v-2709b2e0]
-    .asset-grid {
-    grid-column: 2;
-    grid-row: 2 / span 3;
-    grid-template-rows: subgrid;
-  }
-  .enrollment-assets[data-v-2709b2e0] .asset-grid label,
-  .enrollment-connection .field[data-v-2709b2e0] {
-    display: grid;
-    grid-template-rows: 20px var(--control-height, 32px) auto;
-    align-content: start;
-    gap: 7px;
-    font-size: 13px;
-    line-height: 20px;
-  }
-  .enrollment-assets[data-v-2709b2e0]
-    .asset-grid
-    label:not(.asset-date)
-    > input,
-  .enrollment-assets[data-v-2709b2e0] .asset-grid .asset-date > input,
-  .enrollment-assets[data-v-2709b2e0] .asset-grid .ui-select {
-    width: 100%;
-    max-width: none;
-    height: var(--control-height, 32px);
-  }
-  .enrollment-assets[data-v-2709b2e0] .u031-btn {
-    height: var(--control-height, 32px);
-    min-height: var(--control-height, 32px);
-  }
-  .enrollment-connection .field input[data-v-2709b2e0] {
-    height: var(--control-height, 32px);
-    min-height: var(--control-height, 32px);
-  }
-  .deployment-choices legend[data-v-2709b2e0] {
-    font-size: 13px;
-    line-height: 20px;
-    margin-bottom: 7px;
-  }
-  .deployment-choices button[data-v-2709b2e0] {
-    height: var(--control-height, 32px);
-  }
-  .deployment-choices .field-hint[data-v-2709b2e0] {
-    margin-top: 8px;
-  }
-  .agent-enrollment-form:has(.enrollment-name):has(
-      .asset-grid label:nth-child(7)
-    )
-    > .enrollment-connection[data-v-2709b2e0],
-  .agent-enrollment-form:has(.enrollment-name):has(
-      .asset-grid label:nth-child(7)
-    )
-    .enrollment-assets[data-v-2709b2e0]
-    .asset-grid {
-    grid-row: 2 / span 4;
-  }
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: NodeDance locked DESIGN.md · signature: connection and assets · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H4 E4 S4 R5 V3 · weakest: V, shared enrollment retained for node recovery */
+.agent-enrollment-card { min-width: 0; }
+.agent-enrollment-form { display: grid; gap: var(--workspace-space-md); }
+.agent-enrollment-section-heading { display: flex; justify-content: space-between; align-items: start; gap: var(--workspace-space-md); }
+.agent-enrollment-section-heading h2 { margin: 0; font-size: 18px; overflow-wrap: break-word; min-width: 0; }
+.agent-enrollment-usage-hint { margin: var(--workspace-space-xs) 0 0; color: var(--muted-strong); font-size: 13px; }
+.enrollment-connection, .enrollment-asset-section { display: grid; align-content: start; gap: var(--workspace-space-md); min-width: 0; }
+.enrollment-connection h3, .enrollment-asset-section h3 { margin: 0; font-size: 15px; font-weight: 500; }
+.enrollment-identity { display: grid; gap: var(--workspace-space-md); }
+.agent-enrollment-form .field { display: grid; gap: var(--workspace-space-sm); min-width: 0; }
+.agent-enrollment-form .field > span, .deployment-choices legend { font-size: 13px; color: var(--muted-strong); }
+.deployment-choices { min-width: 0; border: 0; margin: 0; padding: 0; }
+.deployment-choices legend { margin-bottom: var(--workspace-space-sm); padding: 0; }
+.deployment-choices > div { display: flex; gap: var(--workspace-space-sm); }
+.deployment-choices button { flex: 1; }
+.deployment-choices button[aria-pressed="true"] { background: var(--action-bg); color: var(--action-text); border-color: var(--action-bg); }
+.agent-enrollment-form .field-hint { margin: var(--workspace-space-sm) 0 0; color: var(--muted-strong); font-size: 12px; line-height: 1.5; }
+.agent-enrollment-form .enrollment-assets { margin: 0; padding: 0; border: 0; }
+.agent-enrollment-actions { display: flex; justify-content: flex-end; gap: var(--workspace-space-sm); grid-column: 1 / -1; }
+.agent-enrollment-form > :is(.agent-enrollment-section-heading, p) { grid-column: 1 / -1; }
+@media (min-width: 1000px) {
+  .agent-onboarding .agent-enrollment-form { grid-template-columns: minmax(0, .75fr) minmax(0, 1.25fr); column-gap: var(--workspace-space-xl); }
 }
 @media (max-width: 640px) {
-  .agent-enrollment-section-heading[data-v-2709b2e0] {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .agent-enrollment-section-heading button[data-v-2709b2e0] {
-    align-self: flex-start;
-  }
+  .agent-enrollment-actions { flex-wrap: wrap; }
+  .deployment-choices > div { flex-direction: column; }
 }

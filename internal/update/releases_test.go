@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -89,5 +90,31 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 		t.Fatal("invalid version file accepted")
 	} else if !strings.Contains(err.Error(), "version file") {
 		t.Fatalf("unexpected version-file error: %v", err)
+	}
+}
+
+func TestPublishedNotesUseExactTaggedChangelogWithoutRuntime(t *testing.T) {
+	github := NewGitHub()
+	requested := []string{}
+	notes := "### English\n\n- Published fix.\n\n### 简体中文\n\n- 已发布的修复。"
+	changelog := "# Changelog\n\n## [Unreleased]\n\nNot published.\n\n## [0.1.9]\n\n" + notes + "\n\n## [0.1.8]\n\nOlder entry.\n"
+	github.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		requested = append(requested, r.URL.String())
+		body := "core-v0.1.9\n"
+		if strings.HasSuffix(r.URL.Path, "/CHANGELOG_CORE.md") {
+			body = changelog
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	release, err := github.Release(context.Background(), "core", "")
+	if err != nil || release.Notes != notes || release.Version != "core-v0.1.9" {
+		t.Fatalf("release notes: %+v %v", release, err)
+	}
+	if len(requested) != 2 || !strings.Contains(requested[1], "/core-v0.1.9/CHANGELOG_CORE.md") {
+		t.Fatalf("wrong changelog source: %v", requested)
+	}
+	changelog = "## [0.1.8]\n\nold"
+	if _, err := github.Release(context.Background(), "core", "core-v0.1.9"); err == nil {
+		t.Fatal("missing published notes silently accepted")
 	}
 }

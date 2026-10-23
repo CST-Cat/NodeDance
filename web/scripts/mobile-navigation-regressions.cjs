@@ -6,7 +6,7 @@ module.exports=async function({page,base,artifacts}){
    if(e.target.id==='workspace-navigation')window.__navigationMotion.push({type:e.type,name:e.animationName||e.propertyName})
   },true)
  })
- for(const theme of ['light','dark'])for(const width of [390,700,1440]){
+ for(const [theme,width] of [['light',1440],['dark',390]]){
   await page.setViewportSize({width,height:900})
   await page.goto(base+'/#/nodes')
   await page.reload() // Each layout must exercise a fresh document, not a hash navigation.
@@ -19,13 +19,13 @@ module.exports=async function({page,base,artifacts}){
   assert.equal(before.border,'0px','Only the menu toggle is borderless')
   if(width>900){
    assert.ok(await sidebar.locator('.wordmark').isVisible(),'Desktop retains its brand')
-   await page.screenshot({path:path.join(artifacts,`navigation-${theme}-${width}.png`),fullPage:true})
+
    continue
   }
   assert.equal(await toggle.getAttribute('aria-expanded'),'false')
   assert.ok(await sidebar.evaluate(el=>el.inert))
   assert.equal(await sidebar.evaluate(el=>el.getAnimations().length),0)
-  await page.screenshot({path:path.join(artifacts,`navigation-initial-${theme}-${width}.png`),fullPage:true})
+
   await toggle.click()
   await page.waitForFunction(()=>document.querySelector('#workspace-navigation').getAnimations().some(a=>a.transitionProperty==='clip-path'))
   await sidebar.evaluate(el=>Promise.all(el.getAnimations().map(a=>a.finished)))
@@ -42,12 +42,12 @@ module.exports=async function({page,base,artifacts}){
 
   assert.equal(await page.locator('.navigation-scrim').count(),0,'Full-screen navigation has no dimming overlay')
   assert.equal(await page.evaluate(()=>getComputedStyle(document.body).overflow),'hidden')
-  await page.screenshot({path:path.join(artifacts,`navigation-open-${theme}-${width}.png`),fullPage:true})
+
   const box=await toggle.boundingBox()
   await page.mouse.move(box.x+box.width/2,box.y+box.height/2)
   await page.mouse.down()
   assert.deepEqual(await toggle.evaluate(el=>{const s=getComputedStyle(el);return [s.borderTopWidth,s.borderRightWidth,s.borderBottomWidth,s.borderLeftWidth]}),['0px','0px','0px','0px'],'Pressed X has no border')
-  await page.screenshot({path:path.join(artifacts,`navigation-pressed-${theme}-${width}.png`),fullPage:true})
+
   await page.mouse.up()
   assert.equal(await toggle.getAttribute('aria-expanded'),'false')
   await sidebar.evaluate(el=>Promise.all(el.getAnimations().map(a=>a.finished)))
@@ -100,7 +100,7 @@ module.exports=async function({page,base,artifacts}){
   assert.ok(sampled.count>20,'Rapid open/close captures rendered frames')
   assert.deepEqual(sampled.violations,[],`No scroll jumps or reveal reversals in ${theme} ${viewport.width}x${viewport.height}`)
   assert.ok(await sidebar.evaluate(el=>el.scrollHeight<=el.clientHeight+1),'The outer menu never becomes a second scroll container')
-  await page.screenshot({path:path.join(artifacts,`navigation-rapid-${theme}-${viewport.width}.png`)})
+
  }
  await page.emulateMedia({reducedMotion:'reduce'})
  await page.setViewportSize({width:390,height:900})

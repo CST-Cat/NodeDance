@@ -13,7 +13,12 @@ Web 会将页面切换记入浏览器历史。后退、前进可恢复对应页�
 | Alert rules / 告警规则 | `#/alerts?tab=rules` |
 | Host assets / 主机资产 | `#/host-management?node=NODE_UUID&tab=assets` |
 | Guest display / 游客展示 | `#/guest` |
-| Guest publication settings / 游客公开配置 | `#/guest-settings` |
+| Add Agent, including discovered targets / 添加 Agent（含网络发现） | `#/agent-enrollment` |
+| Personal settings and guest publication / 个人设置与游客公开配置 | `#/settings` |
+
+Add Agent uses one connection form across manual and discovered targets. Settings presents profile, security, sessions, accounts and administrator publication together; neither view uses page tabs. Connection drafts and credentials stay out of the URL.
+
+添加 Agent 在手动目标与发现目标之间共用连接表单。个人设置连续呈现资料、安全、会话、账号和管理员公开配置；两者均不使用页面标签切换，连接草稿与凭据不写入 URL。
 
 Node UUIDs identify the selected resource in a private detail URL. Names and versions remain the visible identifiers in cards and headings. Switching to a different top-level page closes the mobile navigation and displays the page from the top. Repeatedly selecting the current view does not add duplicate history entries. Before an internal page change, there is no additional NodeDance history entry for Back to restore, so the browser keeps its normal behavior.
 
@@ -33,7 +38,7 @@ History stores view identifiers only. Credentials, form contents, confirmations 
 
 `web/scripts/audit-interfaces.cjs` verifies page/tab history and reload while asserting that previously submitted tasks, updates and rollbacks are not resubmitted. `web/scripts/audit-guest.cjs` verifies node detail/section restoration and guest history/session boundaries, including a delayed permission response. The scripts run isolated Core fixtures and real Chromium.
 
-订阅中心的私有视图为 `#/feeds`，进入时使用现有管理员会话检查。订阅地址和表单不写入导航历史。详见 [RSS／Atom 订阅](rss.md)。
+更新和订阅保持独立的管理员视图 `#/updates`、`#/feeds` 及侧栏入口，进入时使用现有管理员会话检查。订阅地址和表单不写入导航历史。详见 [RSS／Atom 订阅](rss.md)。
 
 VPS 服务探测位于详情侧边栏的独立页面 `#/nodes?node=NODE_UUID&section=probes`，可刷新和直接定位。完整配置、状态和历史仅在此页面显示；离开时停止 Web 列表轮询，Core／Agent 后台探测继续运行。总览只在已配置探测时显示简短状态摘要和入口，标明最近读取时间，进入总览读取一次，不保持探测列表轮询。没有配置时不显示空面板。
 
@@ -69,7 +74,7 @@ Shared form dropdowns, including country/icon choices and filters, render throug
 
 Lucian references: [#031 custom select](https://lucianlabs.dev/uxui-prompt/#031), [#014 checkbox feedback](https://lucianlabs.dev/uxui-prompt/#014), [#015 radio feedback](https://lucianlabs.dev/uxui-prompt/#015), [#040 sidebar motion](https://lucianlabs.dev/uxui-prompt/#040). Colors, form density and radii follow `DESIGN.md`; sample forms, gradients and task-list decoration are omitted. License notices remain with adapted code. `web/scripts/ui-controls-regressions.cjs` runs in the isolated interface audit.
 
-Alert forms use shrinkable date columns and field widths within the card padding. Subscription labels and controls align at the top of each row; preset/custom refresh intervals share a row, with notification fields following the same spacing. `web/scripts/form-layout-regressions.cjs` checks control containment and alignment at 390, 1100, 1440 and 1920 px in light/dark themes, including all notification modes.
+Alert forms use shrinkable date columns and field widths within the card padding. Subscription labels and controls align at the top of each row; preset/custom refresh intervals share a row, with notification fields following the same spacing.
 
 告警表单日期双列与控件宽度限制在卡片内边距范围内。订阅表单标签和控件按行顶部对齐，预设／自定义刷新间隔同排显示，通知设置采用相同间距。布局回归覆盖手机、中等和宽屏、深浅主题及所有通知模式。
 
@@ -91,7 +96,7 @@ Run `make build` followed by `node web/scripts/audit-navigation.cjs` for the foc
 
 窄屏导航隐藏 Logo／NodeDance 字标及品牌下方分割线，功能项纵向留白适度收紧并保留至少 44px 点击高度；桌面品牌布局不变。
 
-个人设置的语言下拉框位于背景颜色右侧，标签顶边及控件上下边缘对齐，复用主题化下拉组件；窄屏两列按可用宽度收缩，控件不超出卡片。语言偏好仅保存在当前浏览器，自动模式继续跟随浏览器语言。
+个人设置的主题、语言、背景颜色各占一行，标题在左、控件在右；三个控件使用主题选择器的实际宽度并共用右边缘。窄屏保留水平设置行，不改成标题上置；控件沿用原组件字号、圆角与交互。语言偏好仅保存在当前浏览器，自动模式继续跟随浏览器语言。
 
 窄屏功能项采用整行底部浅分割线，参考本地 `design-study/anthropic/pages/home.html` 的 `.nav_links_item.is-mobile` 结构及 `assets/main.css`：线宽沿用 `.0625rem`。原站主菜单使用 ivory-medium（`#F0EEE6`），与本项目当前菜单背景同色，因此映射为同一源码 `.nav_dropdown_link_block` 使用的 slate-faded-10（`#1414131a`），保证浅色分隔可见；不恢复已隐藏的品牌／账号分割线。样式集中在窄屏菜单规则中，不保留会被 `border: 0` 清除的旧顶部边框声明，桌面菜单不变。
 
@@ -101,7 +106,7 @@ Run `make build` followed by `node web/scripts/audit-navigation.cjs` for the foc
 
 The overview is always expanded on wide screens and compact at widths of 900px or less. Scrolling never changes its layout. Narrow-screen search and view preferences use the existing `UiDialog`, sharing values and Core workflows with desktop controls. Resource gauges use a dedicated class to avoid Tailwind utility collisions.
 
-运行 `make build` 后执行 `node web/scripts/audit-overview-scroll.cjs`。隔离真实 Core 与协议模拟 Agent 检查深浅主题、320/390/700/1440 宽度、稳定滚动、文字图标对齐、搜索和偏好弹窗、选择和保存、Escape／焦点恢复、宽度切换、中文、减少动态效果和所有环形指标无外框。浏览器截图保存在 `.build/overview-scroll-audit/`，真实手机触感仍需设备确认。
+运行 `make build` 后执行 `node web/scripts/audit-overview-scroll.cjs`。隔离真实 Core 与协议模拟 Agent 检查代表性桌面浅色与窄屏深色、稳定滚动、文字图标对齐、搜索和偏好弹窗、选择和保存、Escape／焦点恢复、宽度切换、中文、减少动态效果和所有环形指标无外框。默认不生成截图，真实手机触感仍需设备确认。
 
 域名证书位于节点总览下方，管理员可管理域名、证书、CA 账号、Cloudflare DNS 提供商和后台任务。页面通过 Core 契约调用全部操作，未登录深链进入登录页且不读取私有 API。仅使用经 shadcn CLI 安装的本地 UIArc 组件；浮层留在项目主题边界内，支持窄屏内部滚动。详见 [域名证书](domain-certificates.md)。
 
@@ -117,3 +122,7 @@ with local SVG artwork and decorative previews. See [node display](node-display.
 The sidebar account footer uses the already-installed UIArc User Menu. It lists enabled/disabled accounts and their roles, retains current-account indication, Settings and Sign out, and opens an installed UIArc Dialog for target-account password verification through the unchanged `auth.switch` operation. Anonymous/guest pages render no account control; mobile retains the existing hidden account-footer design.
 
 “总览全球”位于个人设置上方，宽屏 2:1 地球／信息卡片，窄屏纵向排列，按真实已定位节点联动。详见 [总览全球](global-overview.md)。
+
+更新、订阅中心遵循个人设置的设置行、分隔线和操作布局，保留本地组件原版圆角，不应用全局圆角映射。更新仍通过 Core 契约检查、执行、观察及回滚；订阅仍使用原有 revision、刷新取消、条目阅读、分页及通知重试操作。
+
+个人设置、更新中心及订阅中心在 320px 起保持标题／控件两列布局。右列按空间限定宽度，Core／Agent 选择器维持 140px 并靠右；订阅的复合间隔输入在右列内纵向排列，公开指标选择集在右列内单列排列。标题允许自然换行，表单控件与右边缘保持对齐。

@@ -198,6 +198,10 @@ func discover(ctx context.Context, component, dataDir string) (Config, map[strin
 		return Config{}, nil, nil, err
 	}
 	if component == "core" {
+		executable, executableErr := os.Executable()
+		if executableErr != nil || filepath.Clean(executable) != filepath.Clean(target.Binary) {
+			return Config{}, nil, nil, errors.New("this instance does not run the managed Core service binary")
+		}
 		target.HealthURL = "http://127.0.0.1:8180/api/v1/health"
 	}
 	if err := runtimeHealth(&target, dataDir); err != nil {
@@ -253,7 +257,7 @@ func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolv
 	if len(config.Targets) != 1 || config.Targets[rpc.Request.Component].Mode == "" {
 		return errors.New("worker must manage its own product")
 	}
-	if rpc.Action != "apply" && rpc.Action != "rollback" {
+	if rpc.Action != "apply" && rpc.Action != "rollback" && rpc.Action != "delete-backup" {
 		// Observation must remain available while the transaction holds its lock.
 		manager := &Manager{Config: config, Resolver: resolver, command: execute, Docker: NewDocker(), jobs: map[string]Job{}}
 		entries, err := os.ReadDir(config.StateDir)
@@ -316,7 +320,7 @@ func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolv
 			return errors.New("invalid update journal")
 		}
 		job := record.job()
-		if job.IdempotencyKey == rpc.IdempotencyKey {
+		if rpc.Action != "delete-backup" && job.IdempotencyKey == rpc.IdempotencyKey {
 			if job.Component != rpc.Request.Component || (rpc.Request.Version != "" && rpc.Request.Version != job.Target) || rpc.Request.JobID != job.Parent {
 				return json.NewEncoder(stdout).Encode(Response{Status: 409, Error: "idempotency key was used for another update"})
 			}

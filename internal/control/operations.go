@@ -276,6 +276,8 @@ func enrollmentSchema() any {
 func buildOperations() []Operation {
 	const node = "/api/v1/nodes/{nodeId}"
 	list := []Operation{
+		op("updates.release", "GET", "/api/v1/updates/release", "Read published component changelog independently of the installed runtime", nil, "component", "version"),
+		op("updates.delete-backup", "POST", "/api/v1/updates/delete-backup", "Confirm deletion of a finished update backup while retaining its history", updateSchema()),
 		op("updates.check", "GET", "/api/v1/updates/check", "Check stable component release and update preflight", nil, "component", "nodeId", "version"),
 		op("updates.status", "GET", "/api/v1/updates/status", "Durable update progress and history", nil, "component", "nodeId", "jobId"),
 		op("updates.apply", "POST", "/api/v1/updates/apply", "Confirm and update managed Core or Agent with failure rollback", updateSchema()),
@@ -450,7 +452,7 @@ func buildOperations() []Operation {
 		switch o.Name {
 		case "feeds.refresh":
 			o.Completion = &CompletionContract{Operation: "feeds.get", Params: map[string]string{"id": "params.id"}, StatusPath: "status", TerminalStatuses: []string{"succeeded", "failed", "canceled", "inactive"}, SuccessStatuses: []string{"succeeded"}}
-		case "probes.batch", "commands.batch", "commands.submit", "updates.apply", "updates.rollback", "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "deployments.create":
+		case "probes.batch", "commands.batch", "commands.submit", "updates.apply", "updates.rollback", "updates.delete-backup", "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "deployments.create":
 			o.Idempotent = true
 		}
 		if o.Name == "terminal.open" {

@@ -45,3 +45,17 @@ Core runs natively on the controller host as root so it can replace its binary a
 Tailscale 仍是可选能力。Core 只读取主控机现有状态；NodeDance 不安装、配置或修改 Tailscale。
 
 Tailscale remains optional and is only queried on the deployment host. NodeDance does not install or configure it.
+
+## 发布日志与备份管理
+
+`updates.release` 独立读取所选组件的稳定发布标签及该标签下的双语 `CHANGELOG_CORE.md`／`CHANGELOG_AGENT.md` 条目。它不执行运行环境预检、不要求 Agent 节点在线，也不依赖 GitHub REST API 配额；获取失败会返回真实错误，不能将失败伪装为空日志。Web 的更新日志与更新记录分别直接展示。
+
+工作区构建保留真实的 `dev` 版本，不伪造发布标签。已配置的本机运行环境可以从 `dev` 检查并选择稳定发布更新；正式版本间仍只比较组件稳定标签，下载校验、架构、权限、健康检查及失败恢复要求不变。
+
+管理员可通过发现的 `updates.delete-backup` 操作删除已完成任务的旧备份。请求包含 `component`、`jobId`、`confirm=true`，远端 Agent 另含 `nodeId`，并使用正常重试身份。Web、CLI、TUI 使用同一 Core 操作。删除保留任务日志、版本与执行状态；删除完成后不能再通过该记录回滚。活动任务、恢复失败状态、正在使用的回滚备份、符号链接工作目录及活动或名称发生变化的容器均拒绝删除。仅移除该任务的私有更新工作目录，以及名称和身份均核实的已停止 Agent 回滚容器；容器删除不得使用 force。删除意图先持久化，期间禁止回滚；失败可重试，完成状态重启后保留。
+
+Web 将“立即更新”与“检查更新”放在同一操作行，更新按钮在前，不在操作区额外显示重启说明。回滚与备份删除均使用本地 UIArc Dialog 明确确认；取消或 Escape 不提交操作，组件默认遮挡、焦点与关闭交互保持不变。弹窗仅在更新中心局部调整分隔线与留白，保留原组件圆角。
+
+删除成功后，记录使用项目既有 Motion 与 UIArc 动效 Token 向右滑出、淡出并收拢空位；退出期间不再接受交互，减少动态效果时直接隐藏。失败或响应未确认前保留原记录；陈旧的刷新响应不能让已清理记录重新出现。当前列表隐藏已删除备份的记录，最后一条退出后移除空列表区域，后端历史继续保留。已完成记录只显示状态胶囊，活动任务仍显示实际阶段。
+
+`node web/scripts/audit-updates.cjs` 使用隔离 Core、协议层更新响应与真实浏览器验证上述流程，包括中英文的代表性桌面／窄屏场景、确认取消与焦点返回、失败保留和减少动态效果；同一回归模块也由完整界面测试调用，不执行真实服务更新或生产备份删除。

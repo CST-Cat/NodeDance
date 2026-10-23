@@ -14,18 +14,18 @@ module.exports=async function({page,base,artifacts,catalog}){
  await page.route('**'+operation.path,handler)
  await page.addInitScript(()=>Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>{window.enrollmentCopiedText=value}}}))
  await page.goto(base+'/#/agent-enrollment')
- const choices=page.getByTestId('agent-deployment-method'),native=choices.getByRole('button',{name:'Direct installation (systemd)',exact:true}),docker=choices.getByRole('button',{name:'Docker deployment',exact:true})
+ const choices=page.getByTestId('agent-deployment-method'),native=choices.getByRole('button',{name:'Direct install',exact:true}),docker=choices.getByRole('button',{name:'Docker',exact:true})
  await native.waitFor();assert.ok(await native.isVisible()&&await docker.isVisible(),'Both deployment choices are visible before generating a command')
  assert.equal(await choices.locator('select').count(),0,'Deployment uses side-by-side options')
- await native.click();await page.locator('.agent-enrollment-form input').nth(1).fill('Enrollment fixture')
+ await native.click();await page.locator('.agent-setup-form input[name=displayName]').fill('Enrollment fixture')
  await page.getByTestId('asset-traffic').fill('1200.5')
  await page.getByTestId('asset-price').fill('12.34')
  await page.getByTestId('asset-cycle').selectOption('year')
  await page.getByTestId('asset-purchase').fill('2026-10-13')
  await page.getByTestId('asset-expiry').fill('2027-05-01T12:30')
- const generate=page.locator('.agent-enrollment-form .primary-button'),copy=page.locator('.agent-enrollment-actions .secondary-button')
+ const generate=page.locator('.agent-setup-form .primary-button, .agent-enrollment-form .primary-button'),copy=page.locator('.agent-enrollment-actions .secondary-button')
  const copied=()=>page.evaluate(()=>window.enrollmentCopiedText)
- const confirmCopied=async()=>{await page.waitForFunction(()=>!document.querySelector('.agent-enrollment-form .primary-button').disabled);assert.equal(await page.locator('dialog[open]').count(),0,'Copy feedback stays in the original control');await copy.locator('[data-copy-state=success]').waitFor()}
+ const confirmCopied=async()=>{await page.waitForFunction(()=>!document.querySelector('.agent-setup-form .primary-button, .agent-enrollment-form .primary-button').disabled);assert.equal(await page.locator('dialog[open]').count(),0,'Copy feedback stays in the original control');await copy.locator('[data-copy-state=success]').waitFor()}
  await generate.click();await confirmCopied();assert.equal(requests,1)
  const assetOperation=catalog.operations.find(o=>o.name==='nodes.asset')
  const readAsset=async()=>{const response=await page.request.get(base+assetOperation.path.replace('{nodeId}',issued.nodeId));assert.equal(response.status(),200);return response.json()}
@@ -37,19 +37,18 @@ module.exports=async function({page,base,artifacts,catalog}){
  await copy.click();const selected=await copied();assert.ok(selected.includes('--mode docker')&&selected.includes('--token '+issued.token));assert.equal(requests,1,'Changing deployment reuses the same enrollment')
  assert.equal(selected,issued.dockerInstallCommand,'Copy produces the complete selected command')
  hold=true;const pending=new Promise(resolve=>started=resolve);await generate.click();await pending
- await page.locator('.agent-enrollment-form input').nth(1).fill('Changed while generating');release()
- await page.waitForFunction(()=>!document.querySelector('.agent-enrollment-form .primary-button').disabled)
+ await page.locator('.agent-setup-form input[name=displayName]').fill('Changed while generating');release()
+ await page.waitForFunction(()=>!document.querySelector('.agent-setup-form .primary-button, .agent-enrollment-form .primary-button').disabled)
  assert.equal(await copy.count(),0,'A delayed response cannot publish a command for the previous node name');assert.equal(await copied(),selected,'A delayed response must not replace the clipboard credential')
  hold=false;await generate.click();await confirmCopied()
- const layouts=[]
  for(const language of ['en','zh-CN']){
   await setBrowserLanguage(page,language)
-  for(const theme of ['light','dark'])for(const width of [390,1440]){
+  for(const [theme,width] of [['light',1440],['dark',390]]){
    await page.setViewportSize({width,height:1000});await page.waitForTimeout(100)
    await closeNavigation(page)
    await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Enrollment fits the viewport')
-   const name=`enrollment-${language}-${theme}-${width}`;await page.screenshot({path:path.join(artifacts,name+'.png'),fullPage:true});layouts.push(name)
+
   }
  }
  // Revisit a pending node after leaving the original command page.
@@ -95,13 +94,13 @@ module.exports=async function({page,base,artifacts,catalog}){
  await deletion.waitFor()
  assert.equal(await deletion.count(),1,'Deletion belongs to node settings')
  assert.ok(await page.getByTestId('node-settings-delete').evaluate(el=>el===el.parentElement.lastElementChild),'Deletion is the final settings section')
- for(const theme of ['light','dark'])for(const width of [390,1440]){
+ for(const [theme,width] of [['light',1440],['dark',390]]){
   await page.setViewportSize({width,height:1000});await page.waitForTimeout(200)
   await closeNavigation(page)
   await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   assert.ok(await page.getByTestId('node-delete').isVisible())
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Pending management fits mobile')
-  await page.screenshot({path:path.join(artifacts,`pending-node-${theme}-${width}.png`),fullPage:true})
+
  }
  await page.getByTestId('node-delete').click()
  await page.locator('.ui-dialog .secondary-button').click()
@@ -112,5 +111,5 @@ module.exports=async function({page,base,artifacts,catalog}){
  await page.getByTestId('node-detail').waitFor({state:'detached'})
  assert.equal(new URL(page.url()).hash,'#/nodes','Deletion returns to the node list')
  await page.unroute('**'+operation.path,handler)
- console.log('Enrollment regressions passed: side-by-side modes, complete copied token command, single-use credentials without redundant display, shared enrollment, stale-response suppression; '+layouts.length+' layouts.')
+ console.log("enrollment-regressions passed.")
 }

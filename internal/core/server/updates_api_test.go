@@ -19,6 +19,9 @@ func TestUpdateAPIRequiresSessionCSRFConfirmationAndUsesBuiltInExecutor(t *testi
 	received := make(chan update.RPC, 4)
 	core, err := New("core-v0.1.9", Options{DataDir: t.TempDir(), Development: true, UpdateInvoke: func(ctx context.Context, rpc update.RPC) (update.Response, error) {
 		received <- rpc
+		if rpc.Action == "delete-backup" {
+			return update.Response{Status: 200, Data: json.RawMessage(`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"succeeded","backupDeleted":true}`)}, nil
+		}
 		return update.Response{Status: 202, Data: json.RawMessage(`{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"queued"}`)}, nil
 	}})
 	if err != nil {
@@ -64,6 +67,20 @@ func TestUpdateAPIRequiresSessionCSRFConfirmationAndUsesBuiltInExecutor(t *testi
 	if rpc.Action != "apply" || rpc.Request.Component != "core" || !rpc.Request.Confirm || rpc.IdempotencyKey != "update-test-key" {
 		t.Fatalf("invalid forwarded request: %+v", rpc)
 	}
+	cleanup, _ := control.FindIn(catalog, "updates.delete-backup")
+	result = client.Execute(context.Background(), cleanup, control.Input{Body: json.RawMessage(`{"component":"core","jobId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","confirm":false}`), IdempotencyKey: "delete-backup-test-key"}, nil, nil)
+	if result.Status != 400 {
+		t.Fatalf("unconfirmed backup deletion: %+v", result)
+	}
+	result = client.Execute(context.Background(), cleanup, control.Input{Body: json.RawMessage(`{"component":"core","jobId":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","confirm":true}`), IdempotencyKey: "delete-backup-test-key"}, nil, nil)
+	if err := result.Err(); err != nil || result.Status != 200 {
+		t.Fatalf("backup deletion: %+v %v", result, err)
+	}
+	deleted := <-received
+	if deleted.Action != "delete-backup" || deleted.Request.JobID != "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" || !deleted.Request.Confirm {
+		t.Fatalf("wrong cleanup request: %+v", deleted)
+	}
+
 	if len(received) != 0 {
 		t.Fatal("invalid requests reached update executor")
 	}

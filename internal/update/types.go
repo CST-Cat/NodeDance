@@ -82,6 +82,8 @@ type Job struct {
 	Finished        *time.Time `json:"finished,omitempty"`
 	Parent          string     `json:"parent,omitempty"`
 	Backup          string     `json:"backup,omitempty"`
+	BackupDeleting  bool       `json:"backupDeleting,omitempty"`
+	BackupDeleted   bool       `json:"backupDeleted,omitempty"`
 	AgentGeneration uint64     `json:"-"`
 	OldContainer    string     `json:"-"`
 	NewContainer    string     `json:"-"`

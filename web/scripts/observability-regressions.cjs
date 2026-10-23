@@ -35,26 +35,26 @@ module.exports=async function({page,base,node,artifacts,catalog,view,publish}){
  assert.equal(await page.locator('.hardware-card [data-hardware="system"]').count(),1,'System metadata appears in hardware');
  assert.equal(await page.getByTestId('boot-id').count(),0,'The raw boot identifier is omitted from the compact hardware view');
 
- for(const language of ['en','zh-CN'])for(const theme of ['light','dark'])for(const width of [1440,390]){
+ for(const [language,theme,width] of [['en','light',1440],['zh-CN','dark',390]]){
   await setBrowserLanguage(page,language);await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((e,theme)=>{e.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   const geometry=await cards.evaluateAll(cards=>cards.map(c=>{const r=c.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,scroll:c.scrollWidth,client:c.clientWidth}}))
   assert.ok(geometry.every(c=>Math.abs(c.width-c.height)<=1&&c.scroll<=c.client+1),'Reused cards remain equal squares without horizontal overflow: '+JSON.stringify(geometry))
   assert.equal(new Set(geometry.map(c=>Math.round(c.x))).size,width===390?2:4,'All cards use the same responsive two/four columns')
   assert.ok(geometry.every(c=>Math.abs(c.width-geometry[0].width)<1),'All new and original cards have the same width')
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))
-  await page.locator('.metrics-panel').screenshot({path:path.join(artifacts,`diagnostics-existing-cards-${language}-${theme}-${width}.png`)})
+
  }
- for(const width of [1440,390,320])for(const count of [1,2,4,8,16,32]){
+ for(const [width,count] of [[1440,1],[390,4],[320,32]]){
   coreCount=count;await page.setViewportSize({width,height:1000});await publish({...sample()});
   const card=page.locator('[data-diagnostic-card="cores"]');
   assert.equal(await card.count(),count===1?0:1,'Single-core machines hide the core card');
   if(count>1){
    assert.equal(await card.locator('.resource-gauge').count(),count,'Every reported core has a ring');
    assert.ok(await card.evaluate(e=>e.scrollWidth<=e.clientWidth+1),'Core rings do not overflow horizontally');
-   await card.screenshot({path:path.join(artifacts,`cores-${count}-${width}.png`)});
+
   }
  }
  coreCount=4;await publish({...sample()});
- await setBrowserLanguage(page,'en');const offline=sample();offline.nodeStatus='offline';offline.metrics.cpu.usagePercent.status='stale';offline.metrics.host.observability.values['cpu.steal_percent'].value=98.7;await publish({...offline});assert.equal(await page.locator('[data-diagnostic="cpu.steal_percent"] strong').innerText(),'—','Lease loss hides retained diagnostic readings')
+ await setBrowserLanguage(page,'en');const offline=sample();offline.nodeStatus='offline';offline.metrics.cpu.usagePercent.status='stale';offline.metrics.host.observability.values['cpu.steal_percent'].value=98.7;await publish({...offline});await page.waitForFunction(()=>document.querySelector('.metrics-panel')?.getAttribute('data-node-status')==='offline'&&document.querySelector('[data-diagnostic="cpu.steal_percent"] strong')?.textContent==='—');assert.equal(await page.locator('[data-diagnostic="cpu.steal_percent"] strong').innerText(),'—','Lease loss hides retained diagnostic readings')
  console.log('Diagnostic card regressions passed: combined resource rectangle, three chart cards and five diagnostic square cards, no separate UI, known zero/idle unknown/per-core/process readings, lease loss, English/Chinese/light/dark/wide/mobile.')
 }

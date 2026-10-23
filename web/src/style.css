@@ -59,9 +59,11 @@
   --warning-soft: var(--figma-background-warning);
   --warning-line: var(--figma-border-warning);
   --info: var(--figma-text-info);
-  --selection: var(--figma-border-info);
-  --selection-ring: var(--figma-ring-info);
-  --selection-text: #ffffff;
+  --selection: var(--figma-text-primary);
+  --selection-ring: var(--figma-ring-primary);
+  --selection-text: var(--figma-text-inverse);
+  caret-color: var(--text);
+  accent-color: var(--selection);
   --radius-control: var(--figma-radius-md);
   --radius-card: var(--figma-radius-xl);
   --radius-pill: var(--figma-radius-full);
@@ -153,7 +155,7 @@ b {
 button {
   color: inherit;
 }
-:where(.app-shell) button {
+:where(.app-shell) button:not(:where(.registry-controls *)) {
   appearance: none;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
@@ -164,10 +166,10 @@ button {
   font-weight: 500;
   cursor: pointer;
 }
-:where(.app-shell) button:hover:not(:disabled) {
+:where(.app-shell) button:hover:not(:disabled):not(:where(.registry-controls *)) {
   background: var(--surface-hover);
 }
-:where(.app-shell) button:active:not(:disabled) {
+:where(.app-shell) button:active:not(:disabled):not(:where(.registry-controls *)) {
   transform: translateY(1px) scale(0.98);
 }
 .container-action {
@@ -1479,7 +1481,7 @@ textarea {
 input,
 select,
 textarea {
-  accent-color: var(--accent-fill);
+  accent-color: var(--selection);
 }
 
 @media (max-width: 900px) {
@@ -1600,15 +1602,15 @@ textarea {
   color: var(--accent-strong);
 }
 .app-shell ::selection {
-  color: var(--text);
-  background: var(--accent-soft);
+  color: var(--selection-text);
+  background: var(--selection);
 }
 .app-shell option:checked {
   color: var(--text);
   background: var(--accent-soft);
 }
 .app-shell progress {
-  accent-color: var(--accent-fill);
+  accent-color: var(--selection);
 }
 
 /* Shared states apply to specialized screens as well as generic operations. */
@@ -1620,7 +1622,7 @@ textarea {
   letter-spacing: -0.035em;
   overflow-wrap: anywhere;
 }
-.app-shell :is(button, input, select, textarea, summary) {
+.app-shell :is(button, input, select, textarea, summary):not(:where(.registry-controls *)) {
   transition:
     background-color 0.15s linear,
     border-color 0.15s linear,
@@ -1630,21 +1632,21 @@ textarea {
        pressed buttons, so shared controls keep their color easing. */
     transform 0.18s var(--ux-spring);
 }
-.app-shell :is(input, textarea, select):focus-visible {
+.app-shell :is(input, textarea, select):focus-visible:not(:where(.registry-controls *)) {
   border-color: var(--accent);
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.app-shell :is(button, input, select, textarea):disabled {
+.app-shell :is(button, input, select, textarea):disabled:not(:where(.registry-controls *)) {
   color: var(--muted);
   cursor: not-allowed;
 }
-.app-shell[data-theme] button:disabled {
+.app-shell[data-theme] button:disabled:not(:where(.registry-controls *)) {
   background: var(--line);
   border-color: var(--line);
   opacity: 1;
 }
-.app-shell button:not(:disabled):active {
+.app-shell button:not(:disabled):active:not(:where(.registry-controls *)) {
   border-color: var(--accent);
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1902,26 +1904,26 @@ textarea {
         [type="file"]
       ),
     textarea
-  ):not(.ui-select-source):not(.node-search input) {
+  ):not(.ui-select-source):not(.node-search input):not(:where(.registry-controls *)) {
   background: var(--control-bg);
   border-color: var(--control-border);
   color: var(--text);
 }
-.app-shell :is(input, textarea):disabled {
+.app-shell :is(input, textarea):disabled:not(:where(.registry-controls *)) {
   background: var(--control-disabled);
   color: var(--muted);
   opacity: 1;
 }
-.app-shell :is(input, textarea)[readonly] {
+.app-shell :is(input, textarea)[readonly]:not(:where(.registry-controls *)) {
   background: var(--recessed);
   color: var(--muted-strong);
 }
-.app-shell button:active:not(:disabled) {
+.app-shell button:active:not(:disabled):not(:where(.registry-controls *)) {
   transform: translateY(1px) scale(0.98);
 }
 .app-shell ::selection {
-  background: var(--accent-soft);
-  color: var(--text);
+  background: var(--selection);
+  color: var(--selection-text);
 }
 .app-shell {
   scrollbar-color: var(--scrollbar-thumb) transparent;

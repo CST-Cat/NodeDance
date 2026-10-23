@@ -4,7 +4,7 @@ Guest mode is an optional read-only presentation of explicitly published Core da
 
 ## Configure / 配置
 
-The login entry and publication navigation use a dedicated display-window icon, distinct from node inventory. In Web, open **Guest display**, select the display fields and specific nodes/services, and enter separate public names. Private names, notes and URLs are never copied into the public response. Save the settings, then preview the saved guest view. Enable guest mode when the selection is ready. Both preview and anonymous output use the same Core projection, including when the preview is requested with an administrator session.
+The login entry uses a dedicated display-window icon, distinct from node inventory. In Web, open **Settings → Public access**, select the display fields and specific nodes/services, and enter separate public names. Private names, notes and URLs are never copied into the public response. Save the settings, then preview the saved guest view. Enable guest mode when the selection is ready. Both preview and anonymous output use the same Core projection, including when the preview is requested with an administrator session.
 
 CLI, TUI and Web discover the same five operations from `/api/v1/operations`:
 
@@ -113,3 +113,9 @@ See [node display](node-display.md).
 “总览全球”是私有管理视图，复用同一 Core 节点数据，不加入游客公开投影。浏览器回归验证未登录深链不读取节点，以及进入游客时清除地球、卡片和私有请求。
 
 城市定位同属私有节点管理数据：`location`、城市、州／省、经纬度与手动覆盖不进入游客投影。浏览器安全回归保存私有城市记录并检查匿名和管理员 Cookie 下公开数据均不泄露；城市目录新操作从 Core 契约发现后纳入匿名拒绝矩阵。
+
+## 设置入口
+
+公开访问直接位于个人设置（`#/settings`）中，与资料、安全和会话同时显示，仅管理员可见。原来的游客设置整页及页签已移除。公开字段与节点／服务资源使用同一份策略表单；资源必须逐项选择并填写独立公开名称。策略仍通过 Core 的 `guest.configure` 保存，预览仍读取已保存的投影，不把多个 Core 操作伪装成一次原子提交。
+
+更新日志与备份管理继续位于私有更新中心。`updates.release`、`updates.delete-backup` 不加入游客投影；管理员 cookie 不会使公开展示包含更新任务或备份信息。

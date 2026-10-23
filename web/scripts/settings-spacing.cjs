@@ -1,33 +1,27 @@
-// Verify the settings spacing contract using rendered geometry, not screenshots.
 const assert = require('node:assert/strict');
-module.exports = async function assertSettingsSpacing(page) {
+module.exports = async function assertSettingsLayout(page) {
+  const root = page.locator('.personal-settings');
+  await root.waitFor();
   await page.evaluate(() => document.fonts.ready);
-  const cards = await page.locator('.settings-card').evaluateAll(elements => elements.map(card => {
-    const heading = card.querySelector(':scope > .section-heading, :scope > .settings-list-heading');
-    const body = card.querySelector(':scope > .profile-form, :scope > .password-form, :scope > .settings-list-body');
-    const list = card.querySelector('.settings-record-list');
-    const rows = [...card.querySelectorAll('.settings-record-row')];
-    return {
-      padding: getComputedStyle(card).padding,
-      gap: heading && body ? body.getBoundingClientRect().top - heading.getBoundingClientRect().bottom : null,
-      listGap: list ? getComputedStyle(list).rowGap : null,
-      rowMinimums: rows.map(row => getComputedStyle(row).minHeight),
-      detailGaps: [...card.querySelectorAll(".settings-record-info")].map(info => getComputedStyle(info).rowGap),
-      title: heading?.querySelector('h3')?.getBoundingClientRect().toJSON(),
-      listCard: card.classList.contains('settings-list-card'),
-    };
+  const controls = await root.evaluate(root => ['.theme-options [role="group"]', '#personalsettings-field-1', '.parameter-select button', '.color-field .parameter-control > div > button'].map(selector => {
+    const element = root.querySelector(selector);
+    if (!element) throw Error('Missing appearance control: ' + selector);
+    const rect = element.getBoundingClientRect();
+    return {width: rect.width, right: rect.right};
   }));
-  assert.ok(cards.length >= 3, 'Settings cards must be rendered');
-  for (const card of cards) {
-    assert.equal(card.padding, '16px', 'Every settings card shares the same inset');
-    assert.notEqual(card.gap, null, 'Every settings card has a heading and body');
-    assert.ok(Math.abs(card.gap - 16) < 1, JSON.stringify(card));
-    for (const gap of card.detailGaps) assert.equal(gap, "0px", "Same-group lines must not inherit record spacing");
-    if (card.listGap !== null) assert.equal(card.listGap, '16px');
-    for (const minimum of card.rowMinimums) assert.ok(['0px', 'auto'].includes(minimum), 'Content rows must not be padded with minimum height');
+  for (const control of controls) {
+    assert.ok(control.width > 0);
+    assert.ok(Math.abs(control.width - controls[0].width) < 1 && Math.abs(control.right - controls[0].right) < 1, 'Appearance controls align');
   }
-  const paired = cards.filter(card => card.listCard);
-  if (paired.length === 2 && paired[1].title.x > paired[0].title.right) {
-    assert.ok(Math.abs(paired[0].title.y - paired[1].title.y) < 1, 'Paired titles share an intrinsic header row');
+  const fields = root.locator('.password-form input');
+  assert.equal(await fields.count(), 3);
+  for (const field of await fields.all()) {
+    await field.focus();
+    const style = await field.evaluate(el => {
+      const input = getComputedStyle(el), shell = getComputedStyle(el.parentElement), eye = el.nextElementSibling.getBoundingClientRect();
+      return {border: input.borderWidth, shadow: input.boxShadow, radius: shell.borderRadius, reference: getComputedStyle(document.querySelector('#personalsettings-field-1')).borderRadius, eyeWidth: eye.width, eyeHeight: eye.height};
+    });
+    assert.equal(style.border, '0px');assert.equal(style.shadow, 'none');assert.equal(style.radius, style.reference);
+    assert.equal(style.eyeWidth, 30);assert.equal(style.eyeHeight, 30);
   }
 };

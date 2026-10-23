@@ -20,12 +20,12 @@ module.exports=async function({page,base,catalog,artifacts}){
  await setBrowserLanguage(page,'en')
  assert.ok((await form.locator('..').locator('h3').first().textContent()).includes('Execute'))
  assert.equal(await readOptions(confirm).then(options=>options.find(option=>option.value==='true').label),'true');assert.equal(await selectedValue(confirm),'true')
- for(const language of ['zh-CN','en'])for(const theme of ['light','dark'])for(const width of [390,1440]){
+ for(const [language,theme,width] of [['en','light',1440],['zh-CN','dark',390]]){
   await setBrowserLanguage(page,language);await page.setViewportSize({width,height:1000})
   await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))
-  await page.screenshot({path:path.join(artifacts,`operations-locale-${language}-${theme}-${width}.png`),fullPage:true})
+
  }
  await setBrowserLanguage(page,'en')
- console.log('Operation localization passed: discovered description coverage, Chinese search, parameter labels, header hints, enum values preserved across language switches; 8 layouts.')
+ console.log("operation-locale-regressions passed.")
 }

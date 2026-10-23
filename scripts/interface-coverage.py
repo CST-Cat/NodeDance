@@ -44,7 +44,6 @@ lines += ['', '## Behavioral verification / 行为验证', '',
           'terminal client, shared file cleanup and completion observation, CLI and PTY TUI.',
           '- `pnpm --dir web typecheck`: schema-driven input, upload contract, completion references and stable request intents.',
           '- `pnpm --dir web audit:interfaces`: isolated real Core and browser regression checks; no Agent/root execution.',
-          '- `pnpm --dir web audit:design`: light/dark/mobile fixture matrix; this supplements behavior checks.',
           '- Rootful Docker/Agent/update side effects use the existing opt-in integration environments.', '']
 path = ROOT / 'docs/interface-coverage.md'
 text = '\n'.join(lines)

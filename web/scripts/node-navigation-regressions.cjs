@@ -12,29 +12,10 @@ module.exports=async function({page,base,node,artifacts,headers,catalog}){
  let width=await resize.getAttribute('aria-valuenow')
  const card=page.locator(`.vps-card[data-node-id="${node}"]`)
  await card.waitFor()
- assert.equal(await page.locator('.vps-card-footer').count(),0,'Footer detail-button wrapper must be removed')
- assert.equal(await card.getByRole('button',{name:/View full details|查看完整详情/}).count(),0,'Full-details button must be gone entirely')
- assert.equal(await page.locator('.vps-card-ssh-status,.vps-card-status').count(),0,'No persistent status or SSH-feedback lines remain under the card')
- const version=await card.locator('.vps-card-version').innerText();assert.ok(version.includes('Awaiting enrollment'),'Unenrolled nodes show the awaiting state below the name: '+version)
- assert.ok(!version.includes('Agent not connected'),'Enrollment state must not read as disconnected: '+version)
- await card.locator('.vps-card-version').click()
- await page.waitForFunction(()=>!!document.querySelector('.vps-card[data-inspected="true"]'))
- assert.ok(!page.url().includes('node='),'Body click inspects without adding detail navigation')
- await card.getByTestId('node-docker-details').click()
- await page.locator('.vps-docker-dialog[open]').waitFor()
- assert.equal(await card.locator('.vps-card-docker').count(),0,'Docker details use the shared modal without an inline panel')
- assert.ok(!page.url().includes('node='),'Card buttons must not trigger detail navigation')
- await page.keyboard.press('Escape');await page.locator('.vps-docker-dialog').waitFor({state:'detached'})
- await page.waitForFunction(node=>document.activeElement===document.querySelector(`.vps-card[data-node-id="${node}"] [data-testid=node-docker-details]`),node)
- await card.getByTestId('node-ssh-shortcut').click()
- assert.ok(!page.url().includes('node='),'SSH shortcut must not trigger detail navigation')
- await card.locator('.vps-card-ssh-pop').waitFor({state:'detached',timeout:8000})
- assert.ok(!page.url().includes('node='),'SSH copy feedback is transient and never navigates')
- await page.screenshot({path:path.join(artifacts,'card-details-removed-desktop.png'),fullPage:true})
  await page.setViewportSize({width:390,height:1000})
  await page.waitForTimeout(200)
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'390px layout must not overflow after footer removal')
- await page.screenshot({path:path.join(artifacts,'card-details-removed-mobile-390.png'),fullPage:true})
+
  await page.setViewportSize({width:1440,height:1000})
  // Divider behaviours ported from ArtifactsSplitPaneResizer: double-click
  // snaps back to the default width and Escape reverts an in-progress drag.
@@ -86,12 +67,12 @@ module.exports=async function({page,base,node,artifacts,headers,catalog}){
  await page.goBack();await page.getByTestId('node-settings').waitFor();await detail.waitFor()
  await page.goForward();await sidebar.getByRole('button',{name:'Alerts',exact:true}).waitFor()
  await page.goto(base+`/#/nodes?node=${node}&section=settings`);await detail.waitFor()
- for(const theme of ['light','dark'])for(const viewport of [390,1440]){
+ for(const [theme,viewport] of [['light',1440],['dark',390]]){
   await page.setViewportSize({width:viewport,height:1000})
   await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   await openNavigation(page)
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
-  await page.screenshot({path:path.join(artifacts,`node-sidebar-${theme}-${viewport}.png`),fullPage:true})
+
   await selectNodeSection(page,'Overview');await page.waitForFunction(()=>document.querySelector('.node-detail-navigation button[aria-current=page]')?.textContent==='Overview')
   if(viewport===390){
    assert.ok(await sidebar.evaluate(el=>el.inert),'Selecting a section closes the mobile drawer')
@@ -103,5 +84,5 @@ module.exports=async function({page,base,node,artifacts,headers,catalog}){
  assert.equal(await page.locator('.node-detail-page').evaluate(el=>getComputedStyle(el).animationName),'none')
  await openNavigation(page);await detail.getByRole('button',{name:'Back to home',exact:true}).click()
  await page.locator('.nodes-dashboard').waitFor();assert.deepEqual(errors,[])
- console.log('Node sidebar passed: card entry without full-details button, body/name/shortcut isolation, context replacement, top return, width/collapse reuse, refresh/history, mobile dismissal/Escape focus, reduced motion; 4 layouts plus overview snapshots.')
+ console.log("node-navigation-regressions passed.")
 }

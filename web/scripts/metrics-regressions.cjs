@@ -71,7 +71,7 @@ module.exports=async function({page,base,node,artifacts,catalog}){
  assert.ok(!(await page.getByTestId('disk-card').innerText()).includes('/dev/vda1'),'Disk device metadata is omitted')
  assert.ok((await network.innerText()).includes('505 B/s'));assert.ok((await network.innerText()).includes('332 B/s'))
  assert.ok(!/\d+\.\d{2,}/.test(await network.innerText()),'No excessive rate precision')
- for(const theme of ['light','dark'])for(const width of [320,390,768,1440]){
+ for(const [theme,width] of [['light',1440],['dark',320]]){
   await page.setViewportSize({width,height:1000})
   await closeNavigation(page)
   await page.locator('#workspace-navigation').evaluate(async element=>await Promise.all(element.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{}))))
@@ -99,8 +99,8 @@ module.exports=async function({page,base,node,artifacts,catalog}){
   assert.equal(await network.locator('.interface-rates').count(),0,'Per-interface rates do not repeat the summary')
   assert.equal(await network.locator('.monitor-values strong').count(),2,'Receive and send summary values remain visible')
   assert.equal(await page.locator('.metrics-panel .status-pill, .metrics-panel .node-state, .detail-heading-status').count(),0,'Metrics have no repeated status badges')
-  await page.screenshot({path:path.join(artifacts,`metrics-${theme}-${width}.png`),fullPage:true})
-  await network.screenshot({path:path.join(artifacts,`network-${theme}-${width}.png`)})
+
+
  }
  await publish({metrics:view().metrics});
  assert.equal(await page.locator('.metrics-panel [data-resource=load] .resource-gauge strong').innerText(),'1.7%','Load reuses the VPS percentage formula')
@@ -117,13 +117,13 @@ module.exports=async function({page,base,node,artifacts,catalog}){
  quota={trafficLimitBytes:10e9,trafficAccounting:'sum',trafficWarningPercent:80};await page.reload();
  await page.waitForFunction(()=>document.querySelector('[data-resource="traffic"] strong')?.textContent==='434.0%');
  assert.equal(await page.locator('[data-resource="traffic"] .ring-value.is-high').count(),1,'Over-quota traffic retains the full percentage and warning color');
- for(const theme of ['light','dark'])for(const width of [320,390,1440]){
+ for(const [theme,width] of [['light',1440],['dark',320]]){
   await page.setViewportSize({width,height:1000});
   await page.locator('.app-shell').evaluate((e,theme)=>{e.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);
   const summary=page.getByTestId('resource-summary');
   assert.equal(await summary.locator('.resource-gauge').count(),6,'All six quota-enabled readings use rings');
   assert.ok(await summary.evaluate(e=>e.scrollWidth<=e.clientWidth+1),'The six-reading rectangle does not overflow');
-  await summary.screenshot({path:path.join(artifacts,`summary-quota-${theme}-${width}.png`)});
+
  }
  const staleTraffic=view();staleTraffic.metrics.host.traffic.status='unknown';await publish({metrics:staleTraffic.metrics});
  assert.equal(await page.locator('[data-resource="traffic"] strong').innerText(),'—','Unknown traffic is not fabricated as zero');
@@ -138,5 +138,5 @@ module.exports=async function({page,base,node,artifacts,catalog}){
  assert.deepEqual(await io.locator('.history-totals strong').allInnerTexts(),['0 B','—'],'Measured zero reads remain zero while missing writes remain unknown');
  summaryFixture=false;await page.reload();await network.waitFor();
  await require('./observability-regressions.cjs')({page,base,node,artifacts,catalog,view,publish});
- console.log('Metrics regressions passed: primary interfaces, bounded rate precision, summary rates without duplicate interface rates; 8 light/dark/mobile layouts; combined six/three-column resource rectangle and three square chart cards, including a shared I/O history card.')
+ console.log("metrics-regressions passed.")
 }

@@ -36,7 +36,7 @@ The table below records a historical run; current operation and attack totals ar
 | Warm-cache field withdrawal, probe deletion, Agent revocation, disable with unavailable selections, global disable | 5 | Updated public scope immediately; disabled display returns 404 |
 | **Total** | **438** | **No failed cases after fixes** |
 
-The same run checks default-disabled entry, absence of display requests before guest selection, identical public projections with administrator cookies, session validation when leaving guest mode, browser-mode spoof denial, administrator save/preview, a dedicated guest icon distinct from node inventory, and twenty light/dark/mobile layouts, including node cards and detail headings without visible internal UUIDs. The browser checks also cover Back/Forward and reload in guest mode, forged history markers, administrator-cookie guest URL restoration without private requests, a missing session on returning to management, and a delayed authenticated response arriving after a newer guest navigation. These existing checks are separate from the 438 attack cases. Counts grow when the Core operation contract grows.
+The same run checks default-disabled entry, absence of display requests before guest selection, identical public projections with administrator cookies, session validation when leaving guest mode, browser-mode spoof denial, administrator save/preview, guest publication under Settings with no duplicate sidebar entry, and twenty light/dark/mobile layouts, including node cards and detail headings without visible internal UUIDs. The browser checks also cover Back/Forward and reload in guest mode, forged history markers, administrator-cookie guest URL restoration without private requests, a missing session on returning to management, and a delayed authenticated response arriving after a newer guest navigation. These existing checks are separate from the 438 attack cases. Counts grow when the Core operation contract grows.
 
 ## Findings and fixes
 
@@ -50,7 +50,7 @@ Backend regression tests warm the cache, delete a probe or revoke its Agent thro
 
 This is reproducible verification of the listed routes, inputs and browser flows, not proof that every possible vulnerability is absent. It does not measure distributed denial of service or test production network/TLS configuration. Previously delivered public data cannot be recalled, and requests already in flight when an administrator withdraws publication may finish with the scope they had already read.
 
-Generated JSON results and layout screenshots live under `.build/guest-audit/` for inspection and can be removed after use. No credentials are included in the report.
+Security JSON results live under `.build/guest-audit/` for inspection and can be removed after use. Browser tests do not generate screenshots. No credentials are included in the report.
 
 Grant creation/revocation responses are held in the real browser while navigating to guest mode. Releasing them after host-management unmount must issue no private follow-up reads, including enrollment-grant listing.
 
@@ -151,3 +151,9 @@ browser/guest requests to a third-party origin.
 “总览全球”是私有管理视图，复用同一 Core 节点数据，不加入游客公开投影。浏览器回归验证未登录深链不读取节点，以及进入游客时清除地球、卡片和私有请求。
 
 城市定位同属私有节点管理数据：`location`、城市、州／省、经纬度与手动覆盖不进入游客投影。浏览器安全回归保存私有城市记录并检查匿名和管理员 Cookie 下公开数据均不泄露；城市目录新操作从 Core 契约发现后纳入匿名拒绝矩阵。
+
+## 设置入口
+
+公开访问直接位于个人设置（`#/settings`）中，与资料、安全和会话同时显示，仅管理员可见。原来的游客设置整页及页签已移除。公开字段与节点／服务资源使用同一份策略表单；资源必须逐项选择并填写独立公开名称。策略仍通过 Core 的 `guest.configure` 保存，预览仍读取已保存的投影，不把多个 Core 操作伪装成一次原子提交。
+
+发布日志读取与旧备份删除同样是管理员私有操作：`updates.release`、`updates.delete-backup` 从当前 Core 契约动态发现并加入匿名边界检查。方法覆盖、伪造身份与 CSRF 不能读取发布管理数据或删除备份；游客投影不含更新任务及备份状态。

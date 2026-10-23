@@ -19,8 +19,8 @@
   --figma-radius-full: 999px;
   --figma-width-regular: 0.5px;
   --figma-background-ghost: #ffffff00;
-  --figma-background-info: #d6e4f6ff;
-  --figma-text-info: #3266adff;
+  --figma-background-info: var(--figma-background-secondary);
+  --figma-text-info: var(--figma-text-primary);
   --figma-text-danger: #7f2c28ff;
   --figma-text-success: #265b19ff;
   --figma-text-warning: #5a4815ff;
@@ -33,7 +33,7 @@
   --figma-border-tertiary: #1f1e1d26;
   --figma-border-inverse: #ffffff4d;
   --figma-border-ghost: #1f1e1d00;
-  --figma-border-info: #4682d5ff;
+  --figma-border-info: var(--figma-text-primary);
   --figma-border-danger: #a73d39ff;
   --figma-border-success: #437426ff;
   --figma-border-warning: #805c1fff;
@@ -41,7 +41,7 @@
   --figma-text-ghost: #73726c80;
   --figma-ring-inverse: #ffffffb2;
   --figma-ring-secondary: #3d3d3ab2;
-  --figma-ring-info: #3266ad80;
+  --figma-ring-info: var(--figma-ring-primary);
   --figma-ring-danger: #a73d3980;
   --figma-ring-success: #43742680;
   --figma-ring-warning: #805c1f80;
@@ -86,8 +86,8 @@
   --figma-border-primary: #dedcd166;
   --figma-border-secondary: #dedcd14d;
   --figma-background-ghost: #30302e00;
-  --figma-background-info: #253e5fff;
-  --figma-text-info: #80aaddff;
+  --figma-background-info: var(--figma-background-secondary);
+  --figma-text-info: var(--figma-text-primary);
   --figma-text-danger: #ee8884ff;
   --figma-text-success: #7ab948ff;
   --figma-text-warning: #d1a041ff;
@@ -100,7 +100,7 @@
   --figma-border-tertiary: #dedcd126;
   --figma-border-inverse: #14141326;
   --figma-border-ghost: #dedcd100;
-  --figma-border-info: #4682d5ff;
+  --figma-border-info: var(--figma-text-primary);
   --figma-border-danger: #cd5c58ff;
   --figma-border-success: #599130ff;
   --figma-border-warning: #a87829ff;
@@ -108,7 +108,7 @@
   --figma-text-ghost: #9c9a9280;
   --figma-ring-inverse: #141413b2;
   --figma-ring-secondary: #c2c0b6b2;
-  --figma-ring-info: #80aadd80;
+  --figma-ring-info: var(--figma-ring-primary);
   --figma-ring-danger: #cd5c5880;
   --figma-ring-success: #59913080;
   --figma-ring-warning: #a8782980;

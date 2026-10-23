@@ -1,4 +1,3 @@
-import UiSegments from "./components/UiSegments";
 import { AnimatePresence, motion } from "framer-motion";
 import { SPRING_HEAVY_SNAP } from "./motion";
 import { Fragment } from "react";
@@ -12,18 +11,17 @@ import {
   type User,
 } from "./api";
 import "./App.css";
-import AgentEnrollment from "./components/AgentEnrollment";
 import AccountMenu from "./components/AccountMenu";
-import AccountManagement from "./components/AccountManagement";
+import PersonalSettings from "./components/PersonalSettings";
 import AlertCenter from "./components/AlertCenter";
 import NodesDashboard from "./components/NodesDashboard";
-import TailscaleDiscovery from "./components/TailscaleDiscovery";
+import AgentOnboarding from "./components/AgentOnboarding";
+import "./components/WorkspaceSettings.css";
 import UiDialog from "./components/UiDialog";
 import UiIcon from "./components/UiIcon";
-import UiSelect from "./components/UiSelect";
 import UiPassword from "./components/UiPassword";
 import { cancelDialogs } from "./dialogs";
-import { display, languagePreference, locale, setLanguagePreference, t, type LanguagePreference } from "./i18n";
+import { display, locale, t } from "./i18n";
 import {
   navigationKey,
   nodeNavigationKey,
@@ -35,7 +33,6 @@ import {
   type ViewScreen,
 } from "./navigation";
 import { operationURL } from "./operations";
-import { describeSessionDevice } from "./session-device";
 import {
   __call,
   __classes,
@@ -54,19 +51,14 @@ import {
   watchState,
 } from "./state";
 
+const UpdateCenter = lazyView(() => import("./components/UpdateCenter"));
 const FeedsCenter = lazyView(() => import("./components/FeedsCenter"));
 const HostManagement = lazyView(() => import("./components/HostManagement"));
 const OperationConsole = lazyView(() => import("./components/OperationConsole"));
-const UpdateCenter = lazyView(() => import("./components/UpdateCenter"));
 const DomainCertificates = lazyView(() => import("./components/DomainCertificates"));
 const GuestDisplay = lazyView(() => import("./components/GuestDisplay"));
 const GlobalOverview = lazyView(() => import("./components/GlobalOverview"));
-const GuestSettings = lazyView(() => import("./components/GuestSettings"));
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
-function sessionDeviceLabel(raw: string) {
-  const device = describeSessionDevice(raw);
-  return [t(`session.device.${device.kind}`), device.os, device.browser].filter(Boolean).join(" · ");
-}
 export default function App(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
@@ -232,11 +224,6 @@ export default function App(input: Props) {
           icon: "add",
         },
         {
-          screen: "discovery",
-          label: "nav.discovery",
-          icon: "discovery",
-        },
-        {
           screen: "alerts",
           label: "nav.alerts",
           icon: "alerts",
@@ -260,11 +247,6 @@ export default function App(input: Props) {
           screen: "operations",
           label: "nav.operations",
           icon: "operations",
-        },
-        {
-          screen: "guest-settings",
-          label: "guest.settings",
-          icon: "guest",
         },
         {
           screen: "global-overview",
@@ -329,6 +311,11 @@ export default function App(input: Props) {
           return;
         writeViewRoute(route, replace);
         handledLocation = window.location.href;
+        if (currentUser.value && screen.value === route.screen && ["settings", "agent-enrollment"].includes(route.screen)) {
+          routeSequence++;
+          activeRoute.value = readViewRoute();
+          return;
+        }
         void activateRoute(readViewRoute());
       }
       function navigate(target: ViewScreen, replace = false) {
@@ -508,7 +495,7 @@ export default function App(input: Props) {
         imagePaths.background = background.pathname;
         Object.assign(appearance, result);
         if (!/^#[\da-f]{6}$/i.test(appearance.backgroundColor)) {
-          appearance.backgroundColor = "#101827";
+          appearance.backgroundColor = "#141413";
         }
         if (
           appearance.theme !== "light" &&
@@ -585,6 +572,7 @@ export default function App(input: Props) {
           if (sequence !== routeSequence) return;
           currentUser.value = result.user;
           if (target.screen !== "settings") await loadAppearance();
+          if (sequence !== routeSequence) return;
           if (target.screen === "settings") {
             const results = await Promise.allSettled([
               loadAppearance(),
@@ -1590,8 +1578,6 @@ export default function App(input: Props) {
               ></GuestDisplay>
             ) : screen.value === "global-overview" ? (
               <GlobalOverview onOpenNode={(nodeId, section) => goToRoute({ screen: "nodes", nodeId, section })} />
-            ) : screen.value === "guest-settings" ? (
-              <GuestSettings data-v-ac863f34=""></GuestSettings>
             ) : screen.value === "nodes" ? (
               <NodesDashboard
                 readOnly={currentUser.value?.role === "viewer"}
@@ -1603,475 +1589,24 @@ export default function App(input: Props) {
             ) : screen.value === "domain-certificates" ? (
               <DomainCertificates />
             ) : screen.value === "agent-enrollment" ? (
-              <AgentEnrollment
+              <AgentOnboarding
                 onBack={(event: any) => {
                   navigate("nodes");
                 }}
                 data-v-ac863f34=""
-              ></AgentEnrollment>
+              ></AgentOnboarding>
             ) : screen.value === "host-management" ? (
               <HostManagement data-v-ac863f34=""></HostManagement>
             ) : screen.value === "updates" ? (
-              <UpdateCenter data-v-ac863f34=""></UpdateCenter>
+              <UpdateCenter />
             ) : screen.value === "feeds" ? (
-              <FeedsCenter data-v-ac863f34=""></FeedsCenter>
+              <FeedsCenter />
             ) : screen.value === "operations" ? (
               <OperationConsole data-v-ac863f34=""></OperationConsole>
             ) : screen.value === "alerts" ? (
               <AlertCenter data-v-ac863f34=""></AlertCenter>
-            ) : screen.value === "discovery" ? (
-              <TailscaleDiscovery
-                onBack={(event: any) => {
-                  navigate("nodes");
-                }}
-                data-v-ac863f34=""
-              ></TailscaleDiscovery>
             ) : (
-              <section
-                className={__classes("settings-layout")}
-                data-v-ac863f34=""
-              >
-                <div className={__classes("settings-main")} data-v-ac863f34="">
-                  <div
-                    className={__classes("settings-heading")}
-                    data-v-ac863f34=""
-                  >
-                    <div data-v-ac863f34="">
-                      <h2 data-v-ac863f34="">{t("m.0bb1a9d13722")}</h2>
-                    </div>
-                  </div>
-                  {notice.value ? (
-                    <div
-                      role="status"
-                      className={__classes("alert alert-success page-alert")}
-                      data-v-ac863f34=""
-                    >
-                      {display(notice.value)}
-                    </div>
-                  ) : null}
-                  {error.value ? (
-                    <div
-                      role="alert"
-                      className={__classes("alert alert-error page-alert")}
-                      data-v-ac863f34=""
-                    >
-                      {display(error.value)}
-                    </div>
-                  ) : null}
-                  <section
-                    aria-labelledby="appearance-heading"
-                    className={__classes("surface-card settings-card appearance-card")}
-                    data-v-ac863f34=""
-                  >
-                    <div
-                      className={__classes("section-heading")}
-                      data-v-ac863f34=""
-                    >
-                      <div data-v-ac863f34="">
-                        <h3 id="appearance-heading" data-v-ac863f34="">
-                          {t("m.ad429c44450e")}
-                        </h3>
-                      </div>
-                    </div>
-                    <form
-                      className={__classes("profile-form")}
-                      onSubmit={(event: any) => {
-                        event.preventDefault();
-                        __call(saveProfile, event);
-                      }}
-                      data-v-ac863f34=""
-                    >
-                      <div
-                        className={__classes("profile-edit-row")}
-                        data-v-ac863f34=""
-                      >
-                        <div
-                          className={__classes("profile-avatar large-avatar")}
-                          data-v-ac863f34=""
-                        >
-                          {avatarSrc.value ? (
-                            <img
-                              key={avatarRevision.value as any}
-                              src={avatarSrc.value as any}
-                              alt=""
-                              data-v-ac863f34=""
-                            ></img>
-                          ) : (
-                            <span aria-hidden="true" data-v-ac863f34="">
-                              {visibleName.value.slice(0, 1)}
-                            </span>
-                          )}
-                        </div>
-                        <div
-                          className={__classes("upload-copy")}
-                          data-v-ac863f34=""
-                        >
-                          <strong data-v-ac863f34="">
-                            {t("m.3ea2d23c902c")}
-                          </strong>
-                          <span data-v-ac863f34="">{t("m.b8ed7facdbe2")}</span>
-                        </div>
-                        <label
-                          className={__classes(
-                            "secondary-button upload-button",
-                          )}
-                          data-v-ac863f34=""
-                        >
-                          {uploading.value === "avatar"
-                            ? t("m.ce1c9d61565f")
-                            : t("m.42ece898483f")}{" "}
-                          <input
-                            aria-label={t("m.d7d2344d545d") as any}
-                            type="file"
-                            accept="image/png,image/jpeg,image/gif"
-                            disabled={!!uploading.value as any}
-                            onChange={(event: any) => {
-                              handleImageChange("avatar", event);
-                            }}
-                            data-v-ac863f34=""
-                          ></input>
-                        </label>
-                      </div>
-                      <label
-                        className={__classes("field profile-name-field")}
-                        data-v-ac863f34=""
-                      >
-                        <span data-v-ac863f34="">{t("m.1264cd049636")}</span>
-                        <input
-                          name="profileDisplayName"
-                          autoComplete="nickname"
-                          required={true}
-                          maxLength={80}
-                          {...__input(
-                            appearance.displayName,
-                            (__nextValue: any) => {
-                              appearance.displayName = __nextValue;
-                            },
-                            "",
-                            undefined,
-                            [],
-                          )}
-                          data-v-ac863f34=""
-                        ></input>
-                        <small
-                          className={__classes("field-hint")}
-                          data-v-ac863f34=""
-                        >
-                          {t("m.f673747ede6e")}
-                        </small>
-                      </label>
-                      <div className={__classes("field")} data-v-ac863f34="">
-                        <span data-v-ac863f34="">{t("m.8f29293906e7")}</span>
-                        <UiSegments value={appearance.theme} onChange={value => { appearance.theme = value; }}
-                          label={t("m.8f29293906e7")} className="theme-options"
-                          options={[
-                            { value: "system", label: <><span className="theme-swatch system-swatch" aria-hidden="true"><i /><i /><i /></span>{t("m.217cfe7db1e3")}</> },
-                            { value: "dark", label: <><span className="theme-swatch dark-swatch" aria-hidden="true"><i /><i /><i /></span>{t("m.a6b75d068032")}</> },
-                            { value: "light", label: <><span className="theme-swatch light-swatch" aria-hidden="true"><i /><i /><i /></span>{t("m.aa0819dfc4d8")}</> },
-                          ]} />
-                      </div>
-                      <div className="profile-preferences-row">
-                        {currentUser.value?.role === "administrator" ? <>
-                          <div
-                            className={__classes("field color-field")}
-                            data-v-ac863f34=""
-                          >
-                            <span data-v-ac863f34="">{t("m.882fe2e84241")}</span>
-                            <div
-                              className={__classes("color-control")}
-                              data-v-ac863f34=""
-                            >
-                              <input
-                                aria-label={t("m.882fe2e84241") as any}
-                                type="color"
-                                {...__input(
-                                  appearance.backgroundColor,
-                                  (__nextValue: any) => {
-                                    appearance.backgroundColor = __nextValue;
-                                  },
-                                  "color",
-                                  undefined,
-                                  [],
-                                )}
-                                data-v-ac863f34=""
-                              ></input>
-                              <code data-v-ac863f34="">
-                                {safeBackgroundColor.value.toUpperCase()}
-                              </code>
-                            </div>
-                          </div>
-                        </> : null}
-                        <div className="field profile-language-field">
-                          <span>{t("settings.language")}</span>
-                          <UiSelect
-                            aria-label={t("settings.language")}
-                            modelValue={languagePreference.value}
-                            onUpdateModelValue={(value: string) => setLanguagePreference(value as LanguagePreference)}
-                            data-testid="profile-language"
-                          >
-                            <option value="system">{t("settings.language.system")}</option>
-                            <option value="zh-CN">{t("settings.language.zh-CN")}</option>
-                            <option value="en">{t("settings.language.en")}</option>
-                          </UiSelect>
-                        </div>
-                      </div>
-                      {currentUser.value?.role === "administrator" ? <>
-                      <div
-                        className={__classes("background-upload-row")}
-                        data-v-ac863f34=""
-                      >
-                        <div
-                          className={__classes("upload-copy")}
-                          data-v-ac863f34=""
-                        >
-                          <strong data-v-ac863f34="">
-                            {t("m.99cf84163dfc")}
-                          </strong>
-                          <span data-v-ac863f34="">{t("m.b07e86c480d1")}</span>
-                        </div>
-                        <label
-                          className={__classes(
-                            "secondary-button upload-button",
-                          )}
-                          data-v-ac863f34=""
-                        >
-                          {uploading.value === "background"
-                            ? t("m.ce1c9d61565f")
-                            : t("m.9fbb4750bb39")}{" "}
-                          <input
-                            aria-label={t("m.276341ecaf37") as any}
-                            type="file"
-                            accept="image/png,image/jpeg,image/gif"
-                            disabled={!!uploading.value as any}
-                            onChange={(event: any) => {
-                              handleImageChange("background", event);
-                            }}
-                            data-v-ac863f34=""
-                          ></input>
-                        </label>
-                      </div>
-                      </> : null}
-                      <div
-                        className={__classes("form-actions")}
-                        data-v-ac863f34=""
-                      >
-                        <button
-                          type="submit"
-                          disabled={busy.value as any}
-                          className={__classes("primary-button")}
-                          data-v-ac863f34=""
-                        >
-                          {busy.value ? busyLabel.value : t("m.200fec26bd0e")}{" "}
-                          <span aria-hidden="true" data-v-ac863f34="">
-                            {"↗"}
-                          </span>
-                        </button>
-                      </div>
-                    </form>
-                  </section>
-                  <section
-                    aria-labelledby="security-heading"
-                    className={__classes("surface-card settings-card security-card")}
-                    data-v-ac863f34=""
-                  >
-                    <div
-                      className={__classes("section-heading")}
-                      data-v-ac863f34=""
-                    >
-                      <div data-v-ac863f34="">
-                        <h3 id="security-heading" data-v-ac863f34="">
-                          {t("m.1b5365b35720")}
-                        </h3>
-                      </div>
-                    </div>
-                    <form
-                      className={__classes("password-form")}
-                      onSubmit={(event: any) => {
-                        event.preventDefault();
-                        __call(changePassword, event);
-                      }}
-                      data-v-ac863f34=""
-                    >
-                      <label className={__classes("field")} data-v-ac863f34="">
-                        <span data-v-ac863f34="">{t("m.a114cfb687e6")}</span>
-                        <input
-                          type="password"
-                          autoComplete="current-password"
-                          required={true}
-                          {...__input(
-                            passwordForm.currentPassword,
-                            (__nextValue: any) => {
-                              passwordForm.currentPassword = __nextValue;
-                            },
-                            "password",
-                            undefined,
-                            [],
-                          )}
-                          data-v-ac863f34=""
-                        ></input>
-                      </label>
-                      <div
-                        className={__classes("password-pair")}
-                        data-v-ac863f34=""
-                      >
-                        <label
-                          className={__classes("field")}
-                          data-v-ac863f34=""
-                        >
-                          <span data-v-ac863f34="">{t("m.515e9c7cf7b2")}</span>
-                          <input
-                            type="password"
-                            autoComplete="new-password"
-                            required={true}
-                            {...__input(
-                              passwordForm.newPassword,
-                              (__nextValue: any) => {
-                                passwordForm.newPassword = __nextValue;
-                              },
-                              "password",
-                              undefined,
-                              [],
-                            )}
-                            data-v-ac863f34=""
-                          ></input>
-                        </label>
-                        <label
-                          className={__classes("field")}
-                          data-v-ac863f34=""
-                        >
-                          <span data-v-ac863f34="">{t("m.6fde05a916c6")}</span>
-                          <input
-                            type="password"
-                            autoComplete="new-password"
-                            required={true}
-                            {...__input(
-                              passwordForm.confirmPassword,
-                              (__nextValue: any) => {
-                                passwordForm.confirmPassword = __nextValue;
-                              },
-                              "password",
-                              undefined,
-                              [],
-                            )}
-                            data-v-ac863f34=""
-                          ></input>
-                        </label>
-                      </div>
-                      <div
-                        className={__classes("form-actions password-actions")}
-                        data-v-ac863f34=""
-                      >
-                        <small
-                          className={__classes("field-hint")}
-                          data-v-ac863f34=""
-                        >
-                          {t("m.2d990ebc16e1")}
-                        </small>
-                        <button
-                          type="submit"
-                          disabled={busy.value as any}
-                          className={__classes("secondary-button")}
-                          data-v-ac863f34=""
-                        >
-                          {t("m.828170843089")}
-                        </button>
-                      </div>
-                    </form>
-                  </section>
-                  <div className="settings-record-panels">
-                  <section
-                    aria-labelledby="sessions-heading"
-                    className={__classes("surface-card settings-card settings-list-card sessions-card")}
-                    data-v-ac863f34=""
-                  >
-                    <div
-                      className={__classes("settings-list-heading session-heading")}
-                      data-v-ac863f34=""
-                    >
-
-                      <h3 id="sessions-heading" data-v-ac863f34="">
-                        {t("m.9fd94953b94b")}
-                      </h3>
-                      <span
-                        className={__classes("session-count")}
-                        data-v-ac863f34=""
-                      >
-                        {sessions.value.length}
-                        {t("m.3a116815bc9d")}
-                      </span>
-                    </div>
-                    <div className="settings-list-body">
-                    {sessions.value.length ? (
-                      <div
-                        className={__classes("settings-record-list session-list")}
-                        data-v-ac863f34=""
-                      >
-                        <Fragment>
-                          {__each(sessions.value, (session) => (
-                            <article
-                              key={session.id as any}
-                              className={__classes("settings-record-row session-item")}
-                              data-v-ac863f34=""
-                            >
-
-                              <div
-                                className={__classes("settings-record-info session-info")}
-                                data-v-ac863f34=""
-                              >
-                                <strong data-v-ac863f34="">
-                                  <span className="session-device-name">{sessionDeviceLabel(session.device).split(" · ").map((part, index) => <Fragment key={index}>{index ? " · " : ""}<span className="session-device-part">{part}</span></Fragment>)}</span>
-
-                                </strong>
-                                <span data-v-ac863f34="">
-                                  {session.remoteAddr || t("m.f4a131451fce")}
-                                </span>
-                                <small data-v-ac863f34="">
-                                  {t("m.41f5cada11ed")}
-                                  {formatTime(session.lastSeenAt)}
-                                </small>
-
-                              </div>
-                              <button
-                                type="button"
-                                disabled={
-                                  busy.value || (session.current as any)
-                                }
-                                aria-label={
-                                  session.current
-                                    ? t("m.62a9388a42a8")
-                                    : (t("m.6cfb5f2a5be8", {
-                                        "0":
-                                          sessionDeviceLabel(session.device),
-                                      }) as any)
-                                }
-                                className={__classes("revoke-button")}
-                                onClick={(event: any) => {
-                                  revokeSession(session);
-                                }}
-                                data-v-ac863f34=""
-                              >
-                                {session.current
-                                  ? t("m.cb62ebd689ee")
-                                  : t("m.926a50b98ece")}
-                              </button>
-                            </article>
-                          ))}
-                        </Fragment>
-                      </div>
-                    ) : (
-                      <p
-                        className={__classes("empty-sessions")}
-                        data-v-ac863f34=""
-                      >
-                        {t("m.214dc45ab589")}
-                      </p>
-                    )}
-                    </div>
-                  </section>
-                  {currentUser.value?.role === "administrator" ? <AccountManagement currentId={currentUser.value.id} /> : null}
-                  </div>
-                </div>
-              </section>
+              <PersonalSettings model={{currentUser, appearance, passwordForm, sessions, busy, busyLabel, uploading, avatarSrc, avatarRevision, visibleName, safeBackgroundColor, notice, error, saveProfile, changePassword, loadSessions, revokeSession, handleImageChange, formatTime}} />
             )}
             <UiDialog data-v-ac863f34=""></UiDialog>
           </main>

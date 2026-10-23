@@ -16,3 +16,4 @@ __pycache__/
 # Local source references for UI research
 .references/
 design-study/
+.hallmark/

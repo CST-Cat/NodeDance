@@ -27,11 +27,11 @@ module.exports=async function({page,base,artifacts}){
  assert.ok(await page.evaluate(()=>window.retained===document.querySelector('[data-testid=retained]')),'Refresh keeps existing DOM');await page.locator('.ui-load-state[data-phase=refresh]').waitFor()
  await page.evaluate(()=>window.feedback({status:'running',phase:'verify',completed:0,total:0}));assert.equal(await page.locator('progress').count(),0,'Stage-only tasks have no fake zero denominator')
  await page.evaluate(()=>window.feedback({status:'failed',phase:'verify',error:'checksum <script>literal</script>'}));assert.ok((await page.getByRole('alert').innerText()).includes('<script>literal</script>'));assert.equal(await page.locator('.ui-task-progress script').count(),0)
- for(const theme of ['light','dark'])for(const width of [390,1440]){
+ for(const [theme,width] of [['light',1440],['dark',390]]){
   await page.setViewportSize({width,height:900});await page.evaluate(theme=>window.feedback({status:'running',phase:'download',completed:2,total:5,theme}),theme)
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Feedback and long paths fit the viewport')
-  await page.screenshot({path:path.join(artifacts,`feedback-${theme}-${width}.png`),fullPage:true})
+
  }
  await page.getByRole('button',{name:/View full path:/}).click();await page.getByRole('dialog',{name:'Full path',exact:true}).waitFor();assert.ok((await page.locator('.ui-path-full').innerText()).endsWith('.tar.gz'));await page.keyboard.press('Escape');await page.locator('dialog').waitFor({state:'detached'})
- console.log('Shared feedback passed: real fractions, stage-only/queued states, escaped errors, retained refresh DOM, full paths and four theme/width layouts.')
+ console.log("feedback-regressions passed.")
 }

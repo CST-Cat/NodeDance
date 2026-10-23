@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -188,5 +189,14 @@ func TestCoreUpdateDiscoveryDoesNotProbeDocker(t *testing.T) {
 	}
 	if _, err := os.Stat(dockerMarker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("Core update discovery touched Docker")
+	}
+	foreign := exec.Command("sleep", "30")
+	if err := foreign.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { foreign.Process.Kill(); foreign.Wait() })
+	t.Setenv("TEST_PID", strconv.Itoa(foreign.Process.Pid))
+	if _, _, _, err := discover(context.Background(), "core", data); err == nil || !strings.Contains(err.Error(), "managed Core service binary") {
+		t.Fatalf("another instance was allowed to manage the Core service: %v", err)
 	}
 }

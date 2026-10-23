@@ -53,7 +53,7 @@ var actions = map[string]struct{}{
 	"account_create": {}, "account_update": {}, "account_delete": {}, "account_password_reset": {},
 	"feed_save": {}, "feed_delete": {}, "feed_refresh": {}, "feed_cancel": {}, "feed_read": {}, "feed_delivery_retry": {},
 	"guest_display_update": {},
-	"update_apply":         {}, "update_rollback": {},
+	"update_apply":         {}, "update_rollback": {}, "update_delete_backup": {},
 	"setup": {}, "login": {}, "logout": {}, "password_change": {},
 	"session_revoke": {}, "appearance_update": {}, "image_upload": {},
 	"agent_grant_create": {}, "agent_grant_revoke": {}, "node_asset_update": {}, "settings.put": {}, "commands.submit": {}, "commands.cancel": {}, "commands.cleanup": {}, "commands.batch": {}, "commands.batch-cancel": {},

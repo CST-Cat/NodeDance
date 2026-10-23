@@ -56,11 +56,11 @@ Use normal conflict review when modifying an already installed file; foundation 
 
 ## Management pages / 管理页面
 
-Host management, updates, subscriptions, operations and guest display settings use the installed UIArc primitives through `ManagementUI.tsx`. This module only supplies the shared product theme, scoped portal container and current form value bindings. Core discovery, request construction, permission checks, task observers, retry intent and confirmation remain in the existing page workflows. No new runtime UI dependency is added. `ArcTheme.css` maps the components to existing Figma theme tokens; tabs and menus use 12px outer and 8px inner corners with the installed transitions.
+Agent onboarding, personal settings, host management, updates, subscriptions, operations and guest display settings use the installed UIArc primitives through `ManagementUI.tsx`. This module only supplies the shared product theme, scoped portal container and current form value bindings. Core discovery, request construction, permission checks, task observers, retry intent and confirmation remain in the existing page workflows. No new runtime UI dependency is added. `ArcTheme.css` maps the components to existing Figma theme tokens; tabs and menus use 12px outer and 8px inner corners with the installed transitions.
 
 五个管理页面复用同一套已安装组件和主题边界。主机管理使用 Tabs；更新使用 Card、Accordion、Skeleton 和 Badge；订阅使用表单组件和列表卡片；操作中心继续从 Core 动态生成表单；游客设置保留显式资源选择和公开名称。原生语义内容标签与现有业务控制器保留。
 
-Run `make build`, then `node web/scripts/audit-management.cjs`, `node web/scripts/audit-feeds.cjs`, `node web/scripts/audit-interfaces.cjs` and `NODEDANCE_GUEST_ATTACKS=1 node web/scripts/audit-guest.cjs`. These use temporary Core data and protocol-only fixtures, never production resources. Browser helpers operate the actual Radix controls and inspect rendered option values; they do not bypass selection by manipulating hidden form inputs.
+Run `make build`, then `node web/scripts/audit-feeds.cjs`, `node web/scripts/audit-interfaces.cjs` and `NODEDANCE_GUEST_ATTACKS=1 node web/scripts/audit-guest.cjs`. These use temporary Core data and protocol-only fixtures, never production resources. Browser helpers operate the actual Radix controls and inspect rendered option values; they do not bypass selection by manipulating hidden form inputs.
 
 The existing Select accepts optional decorative icon previews while keeping plain
 text accessible labels and Radix keyboard behavior. PreferenceEditor uses an
@@ -72,3 +72,13 @@ User Menu and Dropdown Menu were already installed by the shadcn Registry; this 
 Dropdown Menu 保留原组件默认的模态遮挡、焦点约束和键盘交互；不启用非模态模式，不自定义 Tab 关闭规则。
 
 总览全球使用 shadcn CLI 安装的 `components/ui/globe`（Cobe renderer），其余界面复用现有 UIArc 组件。底层升级为 Cobe 2.0.1，保留默认旋转／拖拽，以原生 update、弧线和 CSS 锚点绑定业务数据，并映射现有项目配色；无新的 motion 或 UI 库依赖。坐标数据提取为本地文件，不保留额外的 world-countries 运行时依赖。
+
+Agent onboarding now uses one connection draft and one actual form. The discovered target list changes the selected host and adds SSH verification fields in place; it does not mount the old enrollment and discovery pages in tabs. Operation execution lives in the shared enrollment/discovery controllers, including request identity, stale-response protection and task recovery. Personal settings renders account, security, sessions and publication together. The publication resource list combines nodes and service checks while keeping explicit resource types, separate public names and the existing Core revision boundary.
+
+Add Agent and personal settings use the registry styling directly through `ManagementPage registryStyles`, without the legacy management control overrides. Their shared 880px canvas uses structural label/control rows, with stock Avatar, Input, Textarea, SegmentedControl, ColorPicker, PasswordField, Checkbox, Select, Button and Accordion. Layout CSS does not change registry internals. Password visibility retains the current five-second, blur and submission protections through a surrounding lifecycle binding. The visual reference is the official Codex desktop Appearance screenshot; project theme colors remain authoritative.
+
+The current grouped settings composition uses stock shadcn Card and Separator installed by the CLI. SettingsGroup supplies only structural row composition and project color bindings; it does not replace registry component geometry or interaction. Mobile action containers use full-width, balanced grid tracks.
+
+The personal appearance theme selector uses the installed UIArc SegmentedControl unchanged. Its controlled value updates the existing appearance draft; arrow keys, Home and End select and focus an option using the default component behavior. The existing appearance operation saves the preference. Native wrapper rules prevent legacy button fills and press transforms from masking registry feedback. Only background colors are adapted: the track uses the project surface, and the selected background derives from surface-muted with OKLCH lightness reduced by 0.05. Language and color controls follow the selector’s measured width.
+
+Updates and subscriptions remain independent administrator pages and reuse the personal settings layout and SettingsGroup composition. Personal settings and these two pages retain registry radius tokens and element radii; global product radius mappings exclude their theme boundaries and controls. Their workflows still use the discovered Core operations.

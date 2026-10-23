@@ -1,33 +1,86 @@
-import { Accordion } from "@/components/arc/accordion/accordion";
-import { Skeleton } from "@/components/arc/skeleton/skeleton";
-
+import { ManagementPage } from "./ManagementUI";
+import "./PersonalSettings.css";
 import { api, operationRequest, type AgentNode } from "../api";
-import { t } from "../i18n";
-import { afterMount, beforeDispose, cell, derived, watchState } from "../state";
-
-import { Fragment } from "react";
-import { __call, __classes, __each, __input, useController } from "../state";
+import { locale, t } from "../i18n";
 import {
-  ManagementPage,
-  Button,
-  Input,
-  Textarea,
-  Checkbox,
-  Select,
-  Card,
-  Badge,
-  Alert,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  checkboxProps,
-  selectOptions,
-} from "./ManagementUI";
-import "./UpdateCenter.css";
-type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
-export default function UpdateCenter(input: Props) {
+  afterMount,
+  beforeDispose,
+  cell,
+  derived,
+  watchState,
+  useController,
+} from "../state";
+import { Dialog, DialogContent, DialogTrigger } from "./arc/dialog/dialog";
+import { useRef, type ReactNode } from "react";
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+  useIsPresent,
+} from "motion/react";
+import { motionTokens } from "./arc/lib/motion-tokens";
+import { Skeleton } from "./arc/skeleton/skeleton";
+import { Button, Input, Select, Badge, Alert } from "./ManagementUI";
+import { SettingsGroup } from "./SettingsGroup";
+function releaseItems(notes: string) {
+  const sections = notes.split(/^### (?:English|简体中文)\s*$/m);
+  const text = sections[locale.value === "zh-CN" ? 2 : 1] ?? notes;
+  return text
+    .trim()
+    .split(/\n(?=- )/)
+    .map((item) => item.trim().replace(/^- /, ""));
+}
+function UpdateRecord({ children }: { children: ReactNode }) {
+  const present = useIsPresent();
+  const reduced = useReducedMotion();
+  return (
+    <motion.div
+      className="update-record-slot"
+      inert={!present}
+      aria-hidden={!present || undefined}
+      initial={false}
+      animate={{ height: "auto" }}
+      exit={{ height: 0 }}
+      transition={
+        reduced
+          ? { duration: 0 }
+          : {
+              height: {
+                ...motionTokens.spring.smooth,
+                delay:
+                  motionTokens.duration.fast + motionTokens.duration.instant,
+              },
+            }
+      }
+    >
+      <motion.article
+        className="update-job settings-detail-list"
+        initial={false}
+        exit={reduced ? { opacity: 0 } : { x: "100%", opacity: 0 }}
+        transition={
+          reduced
+            ? { duration: 0 }
+            : {
+                x: {
+                  ...motionTokens.spring.smooth,
+                  delay: motionTokens.duration.fast,
+                },
+                opacity: {
+                  duration: motionTokens.duration.fast,
+                  delay: motionTokens.duration.fast,
+                },
+              }
+        }
+      >
+        {children}
+      </motion.article>
+    </motion.div>
+  );
+}
+export default function UpdateCenter() {
+  const dialogContainer = useRef<HTMLElement>(null);
   return useController(
-    (__props: Props, __emit: any, __dom: any) => {
+    () => {
       interface ReleaseCheck {
         component: string;
         current: string;
@@ -52,6 +105,8 @@ export default function UpdateCenter(input: Props) {
         started: string;
         finished?: string;
         backup?: string;
+        backupDeleting?: boolean;
+        backupDeleted?: boolean;
       }
       const component = cell("core"),
         nodeId = cell(""),
@@ -59,12 +114,19 @@ export default function UpdateCenter(input: Props) {
       const nodes = cell<AgentNode[]>([]),
         check = cell<ReleaseCheck>(),
         jobs = cell<Job[]>([]);
+      const visibleJobs = derived(() =>
+        jobs.value.filter((job) => !job.backupDeleted),
+      );
+      const historyMounted = cell(false);
+      watchState(visibleJobs, (value) => {
+        if (value.length) historyMounted.value = true;
+      });
       const checkFresh = cell(false);
       const pollError = cell("");
       const error = cell(""),
         busy = cell(false),
-        confirmed = cell(false),
         rollbackJob = cell("");
+      const rollbackError = cell("");
       const selected = derived(
         () => component.value === "core" || !!nodeId.value,
       );
@@ -106,31 +168,78 @@ export default function UpdateCenter(input: Props) {
         } catch (e) {
           if (current === epoch) pollError.value = message(e);
         } finally {
-          if (!stopped && current === epoch) timer = setTimeout(history, 3000);
+          if (!stopped && current === epoch)
+            timer = setTimeout(
+              history,
+              jobs.value.some((job) => !job.finished) ? 3000 : 15000,
+            );
         }
       }
-      const changelog = cell<{
-        core?: ReleaseCheck;
-        agent?: ReleaseCheck;
-      }>({});
+      interface PublishedRelease {
+        component: string;
+        version: string;
+        url: string;
+        notes: string;
+      }
+      const changelog = cell<
+        Partial<Record<"core" | "agent", PublishedRelease>>
+      >({});
+      const changelogError = cell<Partial<Record<"core" | "agent", string>>>(
+        {},
+      );
       async function loadChangelog(component: "core" | "agent") {
-        const current = epoch;
+        changelogError.value = { ...changelogError.value, [component]: "" };
         try {
-          const result = await operationRequest<ReleaseCheck>("updates.check", {
-            query: { component },
-          });
-          if (current !== epoch) return;
-          changelog.value = { ...changelog.value, [component]: result };
-        } catch {
-          if (current === epoch)
-            changelog.value = { ...changelog.value, [component]: undefined };
+          const release = await operationRequest<PublishedRelease>(
+            "updates.release",
+            { query: { component } },
+          );
+          if (!stopped)
+            changelog.value = { ...changelog.value, [component]: release };
+        } catch (e) {
+          if (!stopped)
+            changelogError.value = {
+              ...changelogError.value,
+              [component]: message(e),
+            };
         }
       }
-      const changelogReady = cell(false);
+      const deleteJob = cell("");
+      const deleteError = cell("");
+      async function deleteBackup() {
+        if (busy.value || !deleteJob.value) return;
+        const id = deleteJob.value,
+          current = ++epoch;
+        if (timer) clearTimeout(timer);
+        busy.value = true;
+        deleteError.value = "";
+        try {
+          const deleted = await operationRequest<Job>(
+            "updates.delete-backup",
+            {},
+            {
+              body: JSON.stringify({
+                ...query.value,
+                jobId: id,
+                confirm: true,
+              }),
+            },
+          );
+          if (stopped || current !== epoch) return;
+          deleteJob.value = "";
+          jobs.value = jobs.value.map((job) => (job.id === id ? deleted : job));
+        } catch (e) {
+          if (!stopped && current === epoch) deleteError.value = message(e);
+        } finally {
+          if (!stopped && current === epoch) {
+            busy.value = false;
+            void history();
+          }
+        }
+      }
       async function refresh() {
         if (!selected.value) return;
         checkFresh.value = false;
-        confirmed.value = false;
         error.value = "";
         busy.value = true;
         const current = epoch,
@@ -156,23 +265,25 @@ export default function UpdateCenter(input: Props) {
           if (current === epoch) busy.value = false;
         }
       }
-      async function submit() {
+      async function submit(rollback = false) {
         if (
           busy.value ||
-          (!rollbackJob.value && !checkFresh.value) ||
           !selected.value ||
-          (rollbackJob.value
-            ? !confirmed.value
-            : !check.value?.available || !check.value.configured)
+          (rollback
+            ? !rollbackJob.value
+            : !checkFresh.value ||
+              !check.value?.available ||
+              !check.value.configured)
         )
           return;
         busy.value = true;
         error.value = "";
-        const action = rollbackJob.value ? "rollback" : "apply";
+        const action = rollback ? "rollback" : "apply";
+        rollbackError.value = "";
         const body = {
           ...query.value,
           confirm: true,
-          ...(rollbackJob.value
+          ...(rollback
             ? {
                 jobId: rollbackJob.value,
               }
@@ -194,11 +305,13 @@ export default function UpdateCenter(input: Props) {
             job,
             ...jobs.value.filter((item) => item.id !== job.id),
           ];
-          confirmed.value = false;
           rollbackJob.value = "";
           if (job.finished) void refresh();
         } catch (e) {
-          if (current === epoch) error.value = message(e);
+          if (current === epoch) {
+            if (rollback) rollbackError.value = message(e);
+            else error.value = message(e);
+          }
         } finally {
           if (current === epoch) busy.value = false;
         }
@@ -208,8 +321,11 @@ export default function UpdateCenter(input: Props) {
         check.value = undefined;
         checkFresh.value = false;
         jobs.value = [];
+        historyMounted.value = false;
         rollbackJob.value = "";
-        confirmed.value = false;
+        rollbackError.value = "";
+        deleteJob.value = "";
+        deleteError.value = "";
         if (timer) clearTimeout(timer);
         void history();
         void refresh();
@@ -225,7 +341,6 @@ export default function UpdateCenter(input: Props) {
           loadChangelog("core"),
           loadChangelog("agent"),
         ]);
-        changelogReady.value = true;
         if (timer) clearTimeout(timer);
         void history();
         void refresh();
@@ -236,349 +351,360 @@ export default function UpdateCenter(input: Props) {
         if (timer) clearTimeout(timer);
       });
       return () => (
-        <>
-          <ManagementPage
-            className={__classes("update-center workspace-page ui-load-region")}
-            data-v-fffea4e7=""
-          >
-            <header className="management-page-heading">
-              <h1>{t("updates.title")}</h1>
-            </header>
-            <Card
-              className={__classes("update-card management-card")}
-              data-v-fffea4e7=""
-              title={t("management.updateTarget")}
+        <ManagementPage
+          registryStyles
+          className="preferences-page workspace-settings"
+        >
+          <header className="workspace-heading">
+            <h1>{t("updates.title")}</h1>
+          </header>
+          <div className="settings-sections">
+            <section
+              ref={dialogContainer}
+              className="workspace-section settings-section settings-integrated update-center"
+              aria-labelledby="settings-updates-heading"
             >
-              <div className={__classes("update-controls")} data-v-fffea4e7="">
-                <label data-v-fffea4e7="">
-                  {t("updates.component")}
-                  <Select
-                    value={String(component.value ?? "")}
-                    onValueChange={(next) => {
-                      const __nextValue: any =
-                        typeof component.value === "number"
-                          ? Number(next)
-                          : next;
-                      component.value = __nextValue;
-                    }}
-                    data-v-fffea4e7=""
-                    options={selectOptions(
-                      <>
-                        <option value="core" data-v-fffea4e7="">
-                          {"Core"}
-                        </option>
-                        <option value="agent" data-v-fffea4e7="">
-                          {"Agent"}
-                        </option>
-                      </>,
-                    )}
-                  ></Select>
-                </label>
-                {component.value === "agent" ? (
-                  <label data-v-fffea4e7="">
-                    {t("updates.node")}
-                    <Select
-                      value={String(nodeId.value ?? "")}
-                      onValueChange={(next) => {
-                        const __nextValue: any =
-                          typeof nodeId.value === "number"
-                            ? Number(next)
-                            : next;
-                        nodeId.value = __nextValue;
-                      }}
-                      data-v-fffea4e7=""
-                      options={selectOptions(
-                        <>
-                          <Fragment>
-                            {__each(nodes.value, (node) => (
-                              <option
-                                key={node.nodeId as any}
-                                value={node.nodeId as any}
-                                data-v-fffea4e7=""
-                              >
-                                {node.displayName}
-                                {" · "}
-                                {node.status}
-                              </option>
-                            ))}
-                          </Fragment>
-                        </>,
-                      )}
-                    ></Select>
-                  </label>
-                ) : null}
-                <label data-v-fffea4e7="">
-                  {t("updates.version")}
-                  <Input
-                    placeholder={t("updates.latest") as any}
-                    {...__input(
-                      version.value,
-                      (__nextValue: any) => {
-                        version.value = __nextValue;
-                        checkFresh.value = false;
-                      },
-                      "",
-                      undefined,
-                      [],
-                    )}
-                    data-v-fffea4e7=""
-                  ></Input>
-                </label>
-                <Button
-                  disabled={busy.value || (!selected.value as any)}
-                  className={__classes("secondary-button")}
-                  onClick={(event: any) => {
-                    __call(refresh, event);
-                  }}
-                  data-v-fffea4e7=""
-                  variant="secondary"
-                >
-                  {t("updates.check")}
-                </Button>
+              <div className="workspace-section-heading">
+                <h2 id="settings-updates-heading">
+                  {t("management.updateTarget")}
+                </h2>
               </div>
               {pollError.value ? (
-                <Alert
-                  role="status"
-                  className={__classes("muted")}
-                  data-v-fffea4e7=""
-                  tone="info"
-                  title={t("management.notice")}
-                >
+                <Alert role="status" title={t("management.notice")}>
                   {pollError.value}
                 </Alert>
               ) : null}
               {error.value ? (
-                <Alert
-                  role="alert"
-                  className={__classes("update-error")}
-                  data-v-fffea4e7=""
-                  tone="danger"
-                  title={t("management.error")}
-                >
+                <Alert role="alert" tone="danger" title={t("management.error")}>
                   {error.value}
                 </Alert>
               ) : null}
-              {check.value ? (
-                <div className={__classes("update-details")} data-v-fffea4e7="">
-                  <div data-v-fffea4e7="">
-                    <span className={__classes("muted")} data-v-fffea4e7="">
-                      {t("updates.current")}
-                    </span>
-                    <strong data-v-fffea4e7="">
-                      {check.value.current || "—"}
-                    </strong>
-                  </div>
-                  <div data-v-fffea4e7="">
-                    <span className={__classes("muted")} data-v-fffea4e7="">
-                      {t("updates.latest")}
-                    </span>
-                    <strong data-v-fffea4e7="">{check.value.latest}</strong>
-                  </div>
-                  <div data-v-fffea4e7="">
-                    <span className={__classes("muted")} data-v-fffea4e7="">
-                      {t("updates.deployment")}
-                    </span>
-                    <strong data-v-fffea4e7="">
-                      {check.value.mode || "—"}
-                    </strong>
-                  </div>
-                  {check.value.reason ? (
-                    <p className={__classes("update-error")} data-v-fffea4e7="">
-                      {check.value.reason}
-                    </p>
-                  ) : null}
-                  {!check.value.configured ? (
-                    <p data-v-fffea4e7="">{t("updates.install")}</p>
-                  ) : !check.value.available ? (
-                    <p data-v-fffea4e7="">{t("updates.currentNotice")}</p>
-                  ) : null}
-                  <a
-                    href={check.value.release.url as any}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    data-v-fffea4e7=""
-                  >
-                    {t("updates.notes")}
-                  </a>
-                  <Accordion defaultOpen={-1} items={[{title:t("updates.notes"),content:<pre>{check.value.release.notes}</pre>}]} />
-                </div>
-              ) : null}
-              {rollbackJob.value ||
-              (check.value?.available && check.value.configured) ? (
-                <div className={__classes("update-confirm")} data-v-fffea4e7="">
-                  <p data-v-fffea4e7="">
-                    {rollbackJob.value
-                      ? t("updates.rollbackWarning")
-                      : t("updates.updateWarning")}
-                  </p>
-                  {rollbackJob.value ? (
-                    <label data-v-fffea4e7="">
-                      <Checkbox
-                        {...checkboxProps(
-                          confirmed.value,
-                          (__nextValue: any) => {
-                            confirmed.value = __nextValue;
-                          },
-                          undefined,
-                        )}
-                        data-v-fffea4e7=""
-                      ></Checkbox>{" "}
-                      {t("updates.confirm")}
-                    </label>
-                  ) : null}
-                  <Button
-                    disabled={
-                      busy.value ||
-                      (!rollbackJob.value && !checkFresh.value) ||
-                      (!!rollbackJob.value && (!confirmed.value as any))
-                    }
-                    className={__classes("primary-button")}
-                    onClick={(event: any) => {
-                      __call(submit, event);
-                    }}
-                    data-v-fffea4e7=""
-                    variant="primary"
-                  >
-                    {rollbackJob.value
-                      ? t("updates.rollback")
-                      : t("updates.apply")}
-                  </Button>
-                  {rollbackJob.value ? (
-                    <Button
-                      className={__classes("secondary-button")}
-                      onClick={(event: any) => {
-                        rollbackJob.value = "";
-                        confirmed.value = false;
+              <SettingsGroup className="update-controls update-card">
+                <div className="parameter-row">
+                  <label htmlFor="update-component">
+                    {t("updates.component")}
+                  </label>
+                  <div className="update-component-control">
+                    <Select
+                      id="update-component"
+                      aria-label={t("updates.component")}
+                      value={component.value}
+                      onValueChange={(value) => {
+                        component.value = value;
                       }}
-                      data-v-fffea4e7=""
-                      variant="secondary"
-                    >
-                      {t("updates.cancel")}
-                    </Button>
-                  ) : null}
+                      options={[
+                        { value: "core", label: "Core" },
+                        { value: "agent", label: "Agent" },
+                      ]}
+                    />
+                  </div>
                 </div>
-              ) : null}
-            </Card>
-            <Card
-              className={__classes("update-card management-card")}
-              data-v-fffea4e7=""
-              title={<>{t("updates.changelog")}</>}
-            >
-              <Fragment>
-                {__each(["core", "agent"] as const, (name) => {
-                  const entry = changelog.value[name];
-                  return (
-                    <article
-                      key={name}
-                      className={__classes("changelog-entry")}
-                      data-v-fffea4e7=""
-                    >
-                      <h3 data-v-fffea4e7="">
-                        {name === "core" ? "Core" : "Agent"}
-                      </h3>
-                      {entry ? (
-                        <Fragment>
-                          <p
-                            className={__classes("changelog-version")}
-                            data-v-fffea4e7=""
-                          >
-                            {entry.latest}
-                          </p>
-                          <pre data-v-fffea4e7="">{entry.release.notes}</pre>
-                        </Fragment>
-                      ) : changelogReady.value ? (
-                        <p className={__classes("muted")} data-v-fffea4e7="">
-                          {t("updates.changelogUnavailable")}
-                        </p>
-                      ) : (
-                        <p className={__classes("muted")} data-v-fffea4e7="">
-                          {t("updates.changelogLoading")}
-                        </p>
-                      )}
-                    </article>
-                  );
-                })}
-              </Fragment>
-              {busy.value && !error.value ? (
-                <Skeleton
-                  label={t(check.value ? "load.refreshing" : "load.initial")}
-                  lines={check.value ? 1 : 3}
-                />
-              ) : null}
-              <h2 data-v-fffea4e7="">{t("updates.history")}</h2>
-              {!jobs.value.length ? (
-                <p className={__classes("muted")} data-v-fffea4e7="">
-                  {t("updates.empty")}
-                </p>
-              ) : null}
-              <Fragment>
-                {__each(jobs.value, (job) => (
-                  <article
-                    key={job.id as any}
-                    className={__classes("update-job")}
-                    data-v-fffea4e7=""
+                {component.value === "agent" ? (
+                  <div className="parameter-row">
+                    <label htmlFor="update-node">{t("updates.node")}</label>
+                    <Select
+                      id="update-node"
+                      aria-label={t("updates.node")}
+                      value={nodeId.value}
+                      onValueChange={(value) => {
+                        nodeId.value = value;
+                      }}
+                      options={nodes.value.map((node) => ({
+                        value: node.nodeId,
+                        label: `${node.displayName} · ${node.status}`,
+                      }))}
+                    />
+                  </div>
+                ) : null}
+                <label className="parameter-row">
+                  <span>{t("updates.version")}</span>
+                  <Input
+                    value={version.value}
+                    placeholder={t("updates.latest")}
+                    onChange={(event) => {
+                      version.value = event.target.value;
+                      checkFresh.value = false;
+                    }}
+                  />
+                </label>
+                {check.value ? (
+                  <div className="update-details settings-detail-list">
+                    <div className="parameter-row">
+                      <span>{t("updates.current")}</span>
+                      <span>{check.value.current || "—"}</span>
+                    </div>
+                    <div className="parameter-row">
+                      <span>{t("updates.latest")}</span>
+                      <span>{check.value.latest}</span>
+                    </div>
+                    <div className="parameter-row">
+                      <span>{t("updates.deployment")}</span>
+                      <span>{check.value.mode || "—"}</span>
+                    </div>
+                    {check.value.reason ? (
+                      <p role="status">{check.value.reason}</p>
+                    ) : null}
+                    {!check.value.configured ? (
+                      <p>{t("updates.install")}</p>
+                    ) : !check.value.available ? (
+                      <p>{t("updates.currentNotice")}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {busy.value && !error.value ? (
+                  <Skeleton
+                    label={t(check.value ? "load.refreshing" : "load.initial")}
+                    lines={check.value ? 1 : 3}
+                  />
+                ) : null}
+              </SettingsGroup>
+              <div className="settings-section-actions update-target-actions">
+                {check.value?.available && check.value.configured ? (
+                  <Button
+                    className="update-submit"
+                    disabled={busy.value || !checkFresh.value}
+                    onClick={() => void submit()}
                   >
-                    <div data-v-fffea4e7="">
-                      <strong data-v-fffea4e7="">
-                        {job.current}
-                        {" → "}
-                        {job.target}
-                      </strong>
-                    </div>
-                    <p className={__classes("muted")} data-v-fffea4e7="">
-                      {new Date(job.started).toLocaleString()}
-                      {" · "}
-                      {job.id}
-                    </p>
-                    <div
-                      className="management-task"
-                      role="status"
-                      data-status={job.status}
-                    >
-                      <Badge
-                        tone={
-                          ["failed", "rollback_failed"].includes(job.status)
-                            ? "danger"
-                            : job.status === "succeeded"
-                              ? "success"
-                              : "neutral"
-                        }
+                    {t("updates.apply")}
+                  </Button>
+                ) : null}
+                <Button
+                  disabled={busy.value || !selected.value}
+                  onClick={() => void refresh()}
+                >
+                  {t("updates.check")}
+                </Button>
+              </div>
+            </section>
+            <section
+              className="workspace-section settings-section settings-integrated update-changelog"
+              aria-labelledby="update-changelog-heading"
+            >
+              <div className="workspace-section-heading">
+                <h2 id="update-changelog-heading">{t("updates.changelog")}</h2>
+              </div>
+              {(["core", "agent"] as const).map((name) => (
+                <div className="settings-detail-list" key={name}>
+                  <div className="settings-record-row">
+                    <h3>{name === "core" ? "Core" : "Agent"}</h3>
+                    {changelog.value[name] ? (
+                      <a
+                        href={changelog.value[name]!.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
                       >
-                        {t(`task.state.${job.status}`) ===
-                        `task.state.${job.status}`
-                          ? job.status
-                          : t(`task.state.${job.status}`)}
-                      </Badge>
-                      <span>{job.stage}</span>
-                    </div>
-                    {job.error ? (
-                      <Alert tone="danger" title={t("management.error")}>
-                        {job.error}
+                        {changelog.value[name]!.version}
+                      </a>
+                    ) : null}
+                  </div>
+                  {changelogError.value[name] ? (
+                    <>
+                      <Alert
+                        role="alert"
+                        tone="danger"
+                        title={t("management.error")}
+                      >
+                        {changelogError.value[name]}
                       </Alert>
-                    ) : null}
-                    {job.status === "succeeded" && job.stage === "complete" ? (
-                      <Button
-                        disabled={busy.value as any}
-                        className={__classes("secondary-button")}
-                        onClick={(event: any) => {
-                          rollbackJob.value = job.id;
-                          confirmed.value = false;
-                        }}
-                        data-v-fffea4e7=""
-                        variant="secondary"
-                      >
-                        {t("updates.rollback")}
-                      </Button>
-                    ) : null}
-                  </article>
-                ))}
-              </Fragment>
-            </Card>
-          </ManagementPage>
-        </>
+                      <div className="settings-section-actions">
+                        <Button
+                          variant="secondary"
+                          onClick={() => void loadChangelog(name)}
+                        >
+                          {t("updates.retry")}
+                        </Button>
+                      </div>
+                    </>
+                  ) : changelog.value[name] ? (
+                    <ul className="release-notes">
+                      {releaseItems(changelog.value[name]!.notes).map(
+                        (item, index) => (
+                          <li key={index}>{item}</li>
+                        ),
+                      )}
+                    </ul>
+                  ) : (
+                    <Skeleton label={t("updates.changelogLoading")} lines={3} />
+                  )}
+                </div>
+              ))}
+            </section>
+            {historyMounted.value ? (
+              <section
+                className="workspace-section settings-section settings-integrated update-history"
+                aria-labelledby="update-history-heading"
+              >
+                <div className="workspace-section-heading">
+                  <h2 id="update-history-heading">{t("updates.history")}</h2>
+                </div>
+                <SettingsGroup>
+                  <div className="update-records">
+                    <AnimatePresence
+                      initial={false}
+                      onExitComplete={() => {
+                        if (!visibleJobs.value.length)
+                          historyMounted.value = false;
+                      }}
+                    >
+                      {visibleJobs.value.map((job) => (
+                        <UpdateRecord key={job.id}>
+                          <strong>
+                            {job.current} → {job.target}
+                          </strong>
+                          <span>
+                            {new Date(job.started).toLocaleString()} · {job.id}
+                          </span>
+                          <div
+                            className="settings-record-status"
+                            role="status"
+                            data-status={job.status}
+                          >
+                            <Badge
+                              tone={
+                                ["failed", "rollback_failed"].includes(
+                                  job.status,
+                                )
+                                  ? "danger"
+                                  : job.status === "succeeded"
+                                    ? "success"
+                                    : "neutral"
+                              }
+                            >
+                              {t(`task.state.${job.status}`) ===
+                              `task.state.${job.status}`
+                                ? job.status
+                                : t(`task.state.${job.status}`)}
+                            </Badge>
+                            {!job.finished &&
+                            ["queued", "running"].includes(job.status) &&
+                            job.stage !== job.status ? (
+                              <span>{job.stage}</span>
+                            ) : null}
+                          </div>
+                          {job.error ? (
+                            <Alert tone="danger" title={t("management.error")}>
+                              {job.error}
+                            </Alert>
+                          ) : null}
+                          <div className="settings-section-actions">
+                            {job.status === "succeeded" &&
+                            job.stage === "complete" &&
+                            !job.backupDeleting ? (
+                              <Dialog
+                                open={rollbackJob.value === job.id}
+                                onOpenChange={(open) => {
+                                  rollbackJob.value = open ? job.id : "";
+                                  rollbackError.value = "";
+                                }}
+                              >
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="secondary"
+                                    disabled={busy.value}
+                                  >
+                                    {t("updates.rollback")}
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent
+                                  container={dialogContainer.current}
+                                  className="update-confirm-dialog"
+                                  title={t("updates.rollback")}
+                                  description={t("updates.rollbackWarning")}
+                                >
+                                  {rollbackError.value ? (
+                                    <Alert
+                                      role="alert"
+                                      tone="danger"
+                                      title={t("management.error")}
+                                    >
+                                      {rollbackError.value}
+                                    </Alert>
+                                  ) : null}
+                                  <div className="settings-section-actions">
+                                    <Button
+                                      variant="secondary"
+                                      onClick={() => {
+                                        rollbackJob.value = "";
+                                      }}
+                                    >
+                                      {t("updates.cancel")}
+                                    </Button>
+                                    <Button
+                                      disabled={busy.value}
+                                      onClick={() => void submit(true)}
+                                    >
+                                      {t("updates.rollback")}
+                                    </Button>
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
+                            ) : null}
+                            {job.finished &&
+                            ["succeeded", "rolled_back", "failed"].includes(
+                              job.status,
+                            ) ? (
+                              <Dialog
+                                open={deleteJob.value === job.id}
+                                onOpenChange={(open) => {
+                                  deleteJob.value = open ? job.id : "";
+                                  deleteError.value = "";
+                                }}
+                              >
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="secondary"
+                                    disabled={busy.value}
+                                  >
+                                    {t("updates.deleteBackup")}
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent
+                                  container={dialogContainer.current}
+                                  className="update-confirm-dialog"
+                                  title={t("updates.deleteBackup")}
+                                  description={t("updates.deleteBackupConfirm")}
+                                >
+                                  {deleteError.value ? (
+                                    <Alert
+                                      role="alert"
+                                      tone="danger"
+                                      title={t("management.error")}
+                                    >
+                                      {deleteError.value}
+                                    </Alert>
+                                  ) : null}
+                                  <div className="settings-section-actions">
+                                    <Button
+                                      variant="secondary"
+                                      onClick={() => {
+                                        deleteJob.value = "";
+                                      }}
+                                    >
+                                      {t("updates.cancel")}
+                                    </Button>
+                                    <Button
+                                      disabled={busy.value}
+                                      onClick={() => void deleteBackup()}
+                                    >
+                                      {t("updates.deleteBackup")}
+                                    </Button>
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
+                            ) : null}
+                          </div>
+                        </UpdateRecord>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                </SettingsGroup>
+              </section>
+            ) : null}
+          </div>
+        </ManagementPage>
       );
     },
-    input,
+    {},
     [],
     [],
     {},

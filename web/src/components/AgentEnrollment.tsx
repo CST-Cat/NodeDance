@@ -1,9 +1,7 @@
-import { api, operationRequest } from "../api";
-import { clipboardFeedback } from "../clipboard";
+import { createEnrollmentController } from "../agent-enrollment";
+import { ManagementPage, Button, Input } from "./ManagementUI";
 import UiCopyFeedback from "./UiCopyFeedback";
 import { display, t } from "../i18n";
-import { resolveOperation, type BodySchema } from "../operations";
-import { afterMount, cell, derived, watchState } from "../state";
 import NodeAssetFields from "./NodeAssetFields";
 
 import { __call, __classes, __input, useController } from "../state";
@@ -15,169 +13,12 @@ type Props = {
 export default function AgentEnrollment(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
-      const copied = clipboardFeedback();
-      const asset = cell<Record<string, unknown>>({});
-      const assetSchema = cell<BodySchema>();
-      const assetReady = cell(false);
-      const props = __props;
+      const { copied, asset, assetSchema, assetReady, displayName, creating, error, agentServer, agentOriginIsSupported, agentOriginUsesAllowedTransport, installCommand, dockerInstallCommand, deploymentMethod, selectedInstallCommand, generateEnrollment } = createEnrollmentController(__props);
       const emit = __emit;
-      const displayName = cell("");
-      const creating = cell(false);
-      const error = cell("");
-      const agentServer = cell(window.location.origin);
-      const development = window.location.protocol === "http:";
-      const agentOrigin = derived(() => {
-        try {
-          const parsed = new URL(agentServer.value.trim());
-          return (parsed.protocol === "https:" ||
-            parsed.protocol === "http:") &&
-            !parsed.username &&
-            !parsed.password &&
-            !parsed.search &&
-            !parsed.hash &&
-            (parsed.pathname === "/" || parsed.pathname === "")
-            ? parsed.origin
-            : "";
-        } catch {
-          return "";
-        }
-      });
-      const agentOriginIsSupported = derived(() => agentOrigin.value !== "");
-      const agentOriginIsLoopback = derived(() => {
-        if (!agentOrigin.value) return false;
-        return isLiteralLoopback(new URL(agentOrigin.value).hostname);
-      });
-      const agentOriginUsesAllowedTransport = derived(
-        () =>
-          agentOrigin.value.startsWith("https://") ||
-          (development &&
-            agentOrigin.value.startsWith("http://") &&
-            agentOriginIsLoopback.value),
-      );
-      const installCommand = cell("");
-      const dockerInstallCommand = cell("");
-      const deploymentMethod = cell<"native" | "docker">("native");
-      afterMount(async () => {
-        try {
-          const { operation } = await resolveOperation("agents.enrollment");
-          const value =
-            operation.bodySchema?.properties?.deploymentMethod?.default;
-          if (value === "native" || value === "docker")
-            deploymentMethod.value = value;
-          assetSchema.value = operation.bodySchema?.properties?.asset;
-          asset.value = props.nodeId
-            ? await operationRequest<Record<string, unknown>>("nodes.asset", {
-                params: {
-                  nodeId: props.nodeId,
-                },
-              })
-            : Object.fromEntries(
-                Object.entries(assetSchema.value?.properties ?? {}).map(
-                  ([key, field]) => [
-                    key,
-                    field.default ??
-                      (field.type === "integer" || field.type === "number"
-                        ? 0
-                        : null),
-                  ],
-                ),
-              );
-          if (!props.nodeId) asset.value.billingCycleUnit = "month";
-          assetReady.value = true;
-        } catch (reason) {
-          error.value =
-            reason instanceof Error ? reason.message : String(reason);
-        }
-      });
-      const selectedInstallCommand = derived(() =>
-        deploymentMethod.value === "docker"
-          ? dockerInstallCommand.value
-          : installCommand.value,
-      );
-      watchState(deploymentMethod, () => copied.reset());
-      let requestEpoch = 0;
-      watchState(
-        [displayName, agentServer, asset],
-        () => {
-          requestEpoch++;
-          copied.reset();
-          installCommand.value = "";
-          dockerInstallCommand.value = "";
-        },
-        {
-          deep: true,
-        },
-      );
-      async function generateEnrollment() {
-        error.value = "";
-        installCommand.value = "";
-        dockerInstallCommand.value = "";
-        const name = displayName.value.trim();
-        if (
-          !agentOriginIsSupported.value ||
-          !agentOriginUsesAllowedTransport.value
-        ) {
-          error.value = t("m.70226817387f");
-          return;
-        }
-        if (!props.nodeId && (!name || /[\r\n\0]/.test(name))) {
-          error.value = t("m.bd8975b069f6");
-          return;
-        }
-        const current = requestEpoch;
-        creating.value = true;
-        try {
-          const result = props.nodeId
-            ? await api.renewAgentEnrollment(
-                props.nodeId,
-                agentOrigin.value,
-                deploymentMethod.value,
-                asset.value,
-              )
-            : await api.createAgentEnrollment(
-                name,
-                agentOrigin.value,
-                deploymentMethod.value,
-                asset.value,
-              );
-          if (current !== requestEpoch) return;
-          installCommand.value = result.nativeInstallCommand;
-          dockerInstallCommand.value = result.dockerInstallCommand;
-          await copied.copy(selectedCommand(result));
-
-        } catch (reason) {
-          if (current === requestEpoch)
-            error.value =
-              reason instanceof Error && reason.message
-                ? reason.message
-                : t("m.9ecada108145");
-        } finally {
-          creating.value = false;
-        }
-      }
-      function selectedCommand(result: {
-        nativeInstallCommand: string;
-        dockerInstallCommand: string;
-      }) {
-        return deploymentMethod.value === "docker"
-          ? result.dockerInstallCommand
-          : result.nativeInstallCommand;
-      }
-      function isLiteralLoopback(hostname: string): boolean {
-        const host = hostname.replace(/^\[|\]$/g, "");
-        if (host === "::1") return true;
-        const octets = host.split(".");
-        return (
-          octets.length === 4 &&
-          octets.every(
-            (part) => /^\d{1,3}$/.test(part) && Number(part) <= 255,
-          ) &&
-          Number(octets[0]) === 127
-        );
-      }
       return () => (
         <>
-          <main
+          <ManagementPage
+            embedded
             data-testid="agent-enrollment"
             className={__classes(
               __props.compact
@@ -217,8 +58,9 @@ export default function AgentEnrollment(input: Props) {
                     </p>
                   </div>
                   {!__props.compact ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
                       className={__classes("quiet-button")}
                       onClick={(event: any) => {
                         emit("back");
@@ -226,13 +68,14 @@ export default function AgentEnrollment(input: Props) {
                       data-v-2709b2e0=""
                     >
                       {t("m.e0e6dc51f626")}
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
                 <div
                   className={__classes("enrollment-connection")}
                   data-v-2709b2e0=""
                 >
+                  <h3>{t("agent.connectionSection")}</h3>
                   <div
                     className={__classes("enrollment-identity")}
                     data-v-2709b2e0=""
@@ -242,7 +85,7 @@ export default function AgentEnrollment(input: Props) {
                       data-v-2709b2e0=""
                     >
                       <span data-v-2709b2e0="">{t("m.b66f55e3dc3d")}</span>
-                      <input
+                      <Input
                         autoComplete="url"
                         placeholder="https://core.example:8180"
                         aria-label={t("m.b66f55e3dc3d") as any}
@@ -256,7 +99,7 @@ export default function AgentEnrollment(input: Props) {
                           [],
                         )}
                         data-v-2709b2e0=""
-                      ></input>
+                      ></Input>
                     </label>
                     {!__props.nodeId ? (
                       <label
@@ -264,7 +107,7 @@ export default function AgentEnrollment(input: Props) {
                         data-v-2709b2e0=""
                       >
                         <span data-v-2709b2e0="">{t("m.a09f47188571")}</span>
-                        <input
+                        <Input
                           maxLength={80}
                           autoComplete="off"
                           placeholder={t("m.1b086a50d7b3") as any}
@@ -278,7 +121,7 @@ export default function AgentEnrollment(input: Props) {
                             [],
                           )}
                           data-v-2709b2e0=""
-                        ></input>
+                        ></Input>
                       </label>
                     ) : null}
                   </div>
@@ -291,7 +134,8 @@ export default function AgentEnrollment(input: Props) {
                       {t("agent.deploymentMethod")}
                     </legend>
                     <div data-v-2709b2e0="">
-                      <button
+                      <Button
+                        variant="secondary"
                         type="button"
                         aria-pressed={
                           deploymentMethod.value === ("native" as any)
@@ -302,8 +146,9 @@ export default function AgentEnrollment(input: Props) {
                         data-v-2709b2e0=""
                       >
                         {t("agent.nativeDeployment")}
-                      </button>
-                      <button
+                      </Button>
+                      <Button
+                        variant="secondary"
                         type="button"
                         aria-pressed={
                           deploymentMethod.value === ("docker" as any)
@@ -314,7 +159,7 @@ export default function AgentEnrollment(input: Props) {
                         data-v-2709b2e0=""
                       >
                         {t("agent.dockerDeployment")}
-                      </button>
+                      </Button>
                     </div>
                     {deploymentMethod.value === "docker" ? (
                       <p className={__classes("field-hint")} data-v-2709b2e0="">
@@ -328,6 +173,8 @@ export default function AgentEnrollment(input: Props) {
                     </p>
                   ) : null}
                 </div>
+                <section className="enrollment-asset-section">
+                  <h3>{t("agent.assetsSection")}</h3>
                 {assetReady.value ? (
                   <NodeAssetFields
                     showTitle={false as any}
@@ -338,6 +185,7 @@ export default function AgentEnrollment(input: Props) {
                     data-v-2709b2e0=""
                   ></NodeAssetFields>
                 ) : null}
+                </section>
                 {!agentOriginIsSupported.value ||
                 !agentOriginUsesAllowedTransport.value ? (
                   <p
@@ -363,8 +211,9 @@ export default function AgentEnrollment(input: Props) {
                   data-v-2709b2e0=""
                 >
                   {selectedInstallCommand.value ? (
-                    <button
+                    <Button
                       type="button"
+                      variant="secondary"
                       className={__classes("secondary-button")}
                       aria-label={t("m.fe95745d1ef4")}
                       onClick={(event: any) => {
@@ -373,9 +222,9 @@ export default function AgentEnrollment(input: Props) {
                       data-v-2709b2e0=""
                     >
                       <UiCopyFeedback state={copied.state.value}>{t("m.fe95745d1ef4")}</UiCopyFeedback>
-                    </button>
+                    </Button>
                   ) : null}
-                  <button
+                  <Button
                     type="button"
                     disabled={
                       !assetReady.value ||
@@ -395,12 +244,12 @@ export default function AgentEnrollment(input: Props) {
                       : __props.nodeId
                         ? t("node.generateInstall")
                         : t("m.92840286f8cd")}
-                  </button>
+                  </Button>
                 </div>
 
               </div>
             </section>
-          </main>
+          </ManagementPage>
         </>
       );
     },

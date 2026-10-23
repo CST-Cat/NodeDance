@@ -3,5 +3,5 @@ async function selectValue(control,value){
  const page=control.page();await control.click();const option=page.locator('[role=menuitemradio][data-option-value='+JSON.stringify(String(value))+']');await option.click();await option.waitFor({state:"detached"});
 }
 async function selectedValue(control){return control.getAttribute('data-selected-value')}
-async function readOptions(control){await control.click();const options=await control.page().locator('[role=menuitemradio][data-option-value]').evaluateAll(items=>items.map(el=>({value:el.getAttribute('data-option-value'),label:el.textContent})));await control.page().keyboard.press('Escape');return options}
+async function readOptions(control){await control.click();const options=await control.page().locator('[role=menuitemradio][data-option-value]').evaluateAll(items=>items.map(el=>({value:el.getAttribute('data-option-value'),label:el.textContent})));await control.page().keyboard.press('Escape');await control.page().getByRole('menu').waitFor({state:'detached'});return options}
 module.exports={selectValue,selectedValue,readOptions}

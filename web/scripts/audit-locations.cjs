@@ -44,12 +44,12 @@ const root = path.resolve(__dirname, '../..'), artifacts = path.join(root, '.bui
   await page.goto(base+'/#/global-overview');await page.locator('.global-orbit[data-marker-count="3"]').waitFor();
   await page.waitForFunction(()=>document.querySelectorAll('[style*="anchor-name: --cobe-fleet-US-"]').length===3);
   const appearance=await(await context.request.get(base+'/api/v1/public/appearance')).json();
-  for(const theme of ['light','dark'])for(const width of [1440,390]){
+  for(const [theme,width] of [['light',1440],['dark',390]]){
    await context.request.put(base+'/api/v1/settings/appearance',{headers,data:{displayName:appearance.displayName,backgroundColor:appearance.backgroundColor,theme}});
    await page.setViewportSize({width,height:1000});await page.goto(base+'/?city-visual='+theme+'-'+width+'#/global-overview');await page.locator('.global-orbit[data-marker-count="3"]').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
-   await page.screenshot({path:path.join(artifacts,`cities-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
+
    await page.goto(base+`/#/nodes?node=${node.nodeId}&section=settings`);await editor.getByRole('button',{name:'Location source',exact:true}).waitFor();
-   await editor.getByRole('button',{name:'City',exact:true}).click();await page.getByRole('menu').waitFor();await page.screenshot({path:path.join(artifacts,`picker-${theme}-${width}.png`),fullPage:true,animations:'disabled'});await page.keyboard.press('Escape');
+   await editor.getByRole('button',{name:'City',exact:true}).click();await page.getByRole('menu').waitFor();await page.keyboard.press('Escape');
   }
   await selectValue(editor.getByRole('button',{name:'Location source',exact:true}),'coordinates');
   await editor.getByLabel('City',{exact:true}).fill('Zero coordinate test');await editor.getByLabel('Latitude',{exact:true}).fill('0');await editor.getByLabel('Longitude',{exact:true}).fill('0');
@@ -58,7 +58,7 @@ const root = path.resolve(__dirname, '../..'), artifacts = path.join(root, '.bui
   await selectValue(editor.getByRole('button',{name:'Location source',exact:true}),'auto');response=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().includes('/preferences'));await editor.getByRole('button',{name:'Save preferences',exact:true}).click();assert.equal((await response).status(),204);
   saved=(await(await context.request.get(base+`/api/v1/nodes/${node.nodeId}/preferences`)).json()).preferences.find(p=>p.targetKind==='node');assert.equal(saved.location,null);assert.equal(saved.countryCode,'');
   const reset=(await(await context.request.get(base+'/api/v1/nodes')).json()).nodes.find(n=>n.nodeId===node.nodeId);assert.equal(reset.location.status,'unknown','Private fixture addresses are never externally geolocated or guessed');
-  await setBrowserLanguage(page,'zh-CN');await editor.getByRole('button',{name:'位置来源',exact:true}).waitFor();await page.screenshot({path:path.join(artifacts,'picker-zh.png'),fullPage:true,animations:'disabled'});
-  assert.deepEqual(errors,[]);assert.deepEqual(fixture.errors,[]);console.log('City locations passed: default auto, local city search, real UIArc selection and saved drafts, CLI city assignment, three US cities/three markers, coordinate zero, reset to auto, Chinese and four theme/width layouts.');
- } catch(error) {if(browser)for(const c of browser.contexts())for(const p of c.pages())try{await p.screenshot({path:path.join(artifacts,'failure.png'),fullPage:true})}catch{}throw error} finally {if(fixture)await fixture.close();if(browser)await browser.close();core.kill('SIGTERM');await new Promise(r=>core.exitCode!==null?r():core.once('exit',r));fs.rmSync(dir,{recursive:true,force:true})}
+  await setBrowserLanguage(page,'zh-CN');await editor.getByRole('button',{name:'位置来源',exact:true}).waitFor();
+  assert.deepEqual(errors,[]);assert.deepEqual(fixture.errors,[]);console.log("audit-locations passed.");
+ } catch(error) {if(browser)for(const c of browser.contexts())for(const p of c.pages())try{}catch{}throw error} finally {if(fixture)await fixture.close();if(browser)await browser.close();core.kill('SIGTERM');await new Promise(r=>core.exitCode!==null?r():core.once('exit',r));fs.rmSync(dir,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1});

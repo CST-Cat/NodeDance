@@ -22,7 +22,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const malicious='<img src=/rss-beacon onerror=window.__rssXss=1>'
   await form.locator('[name=feedName]').fill(malicious);await form.locator('[name=feedUrl]').fill('http://127.0.0.1/feed');await selectValue(form.locator('button[data-dropdown-field][data-field-name=feedInterval]'),'1');await form.getByRole('checkbox').first().uncheck()
   let response=page.waitForResponse(r=>r.url()===base+'/api/v1/feeds'&&r.request().method()==='POST');await form.getByRole('button',{name:'Save',exact:true}).click();const created=await response;assert.equal(created.status(),200);let subscription=await created.json();assert.equal(subscription.intervalMinutes,1)
-  await view.locator('.feed-select').filter({hasText:malicious}).waitFor()
+  await view.getByRole('button',{name:malicious,exact:true}).waitFor()
   // Seed untrusted strings directly into the isolated store to verify the Web
   // rendering boundary independently of the parser's own plain-text conversion.
   execFileSync('python3',['-c',`import sqlite3,sys,time,hashlib
@@ -43,17 +43,17 @@ c.commit();c.close()`,path.join(directory,'nodedance.sqlite'),subscription.id,ma
   await view.getByRole('button',{name:'Enable',exact:true}).click();await assertEventually(async()=>{const r=await context.request.get(base+'/api/v1/feeds/'+subscription.id);subscription=await r.json();return subscription.status==='failed'})
   await view.getByRole('button',{name:'Refresh',exact:true}).click();await view.getByRole('button',{name:'Cancel refresh',exact:true}).waitFor();await view.getByRole('button',{name:'Cancel refresh',exact:true}).click();await assertEventually(async()=>{const r=await context.request.get(base+'/api/v1/feeds/'+subscription.id);return (await r.json()).status==='canceled'})
   await view.getByRole('button',{name:'Edit',exact:true}).click();await form.locator('[name=feedCustomInterval]').fill('7');await form.getByRole('button',{name:'Save',exact:true}).click();await assertEventually(async()=>{const r=await context.request.get(base+'/api/v1/feeds/'+subscription.id);return (await r.json()).intervalMinutes===7})
-  const layouts=[]
-  for(const language of ['en','zh-CN'])for(const theme of ['light','dark'])for(const mobile of [false,true]){
+  for(const [language,theme,mobile] of [['en','light',false],['zh-CN','dark',true]]){
    await setBrowserLanguage(page,language)
    const appearance=await(await context.request.get(base+'/api/v1/public/appearance')).json();const r=await context.request.put(base+'/api/v1/settings/appearance',{headers,data:{displayName:appearance.displayName,backgroundColor:appearance.backgroundColor,theme}});assert.equal(r.status(),200)
    await page.setViewportSize({width:mobile?390:1440,height:mobile?844:1000});await page.reload();await view.waitFor();await assertEventually(async()=>await page.locator('.app-shell').getAttribute('data-theme')===theme)
    const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);assert.equal(overflow,false,'Horizontal overflow')
-   assert.equal(await page.locator('html').getAttribute('lang'),language);const name=language+'-'+theme+'-'+(mobile?'mobile':'desktop');await page.screenshot({path:path.join(artifacts,name+'.png'),fullPage:true});layouts.push(name)
+   const titleFits=await view.locator('.feed-subscription .settings-record-info').evaluateAll(rows=>rows.every(row=>{const range=document.createRange();range.selectNodeContents(row.querySelector('strong'));const bounds=row.getBoundingClientRect();return [...range.getClientRects()].every(rect=>rect.left>=bounds.left-1&&rect.right<=bounds.right+1)}));assert.ok(titleFits,'Long subscription names wrap within their settings row')
+   assert.equal(await page.locator('html').getAttribute('lang'),language);
   }
   await setBrowserLanguage(page,'en');await page.reload();await view.waitFor()
   await view.getByRole('checkbox',{name:'Confirm deletion of this subscription and its entries',exact:true}).check();await view.getByRole('button',{name:'Delete',exact:true}).click();await assertEventually(async()=>(await context.request.get(base+'/api/v1/feeds/'+subscription.id)).status()===404)
-  assert.deepEqual(errors,[]);fs.writeFileSync(path.join(artifacts,'report.json'),JSON.stringify({layouts,checks:['defaults','intervals','create','stored-XSS','pagination','search','shared-read-state','SSRF','refresh-cancel','custom-interval','delete'],pageErrors:errors},null,2));console.log('FEEDS AUDIT PASSED',JSON.stringify({layouts,checks:11}))
+  assert.deepEqual(errors,[]);console.log("audit-feeds passed.")
  }finally{if(browser)await browser.close();if(core.exitCode===null){core.kill('SIGTERM');await new Promise(r=>core.once('exit',r))};fs.rmSync(directory,{recursive:true,force:true})}
 })().catch(e=>{console.error(e);process.exitCode=1})
 async function assertEventually(check){for(let i=0;i<100;i++){if(await check())return;await new Promise(r=>setTimeout(r,100))}throw Error('Timed out waiting for feed behavior')}

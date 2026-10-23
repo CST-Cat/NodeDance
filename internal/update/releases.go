@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -155,4 +156,32 @@ func (g *GitHub) Download(ctx context.Context, release Release, path string) err
 		return errors.New("release SHA256 verification failed")
 	}
 	return file.Sync()
+}
+
+func (g *GitHub) Release(ctx context.Context, component, tag string) (Release, error) {
+	release, err := g.Resolve(ctx, component, tag)
+	if err != nil {
+		return Release{}, err
+	}
+	address := "https://raw.githubusercontent.com/" + Repository + "/" + release.Version + "/CHANGELOG_" + strings.ToUpper(component) + ".md"
+	raw, err := g.fetch(ctx, address, 4<<20)
+	if err != nil {
+		return Release{}, fmt.Errorf("read %s release notes: %w", release.Version, err)
+	}
+	headings := regexp.MustCompile(`(?m)^## \[([^\]]+)\][^\n]*$`).FindAllSubmatchIndex(raw, -1)
+	version := strings.TrimPrefix(release.Version, component+"-v")
+	for index, match := range headings {
+		if string(raw[match[2]:match[3]]) != version {
+			continue
+		}
+		end := len(raw)
+		if index+1 < len(headings) {
+			end = headings[index+1][0]
+		}
+		release.Notes = strings.TrimSpace(string(raw[match[1]:end]))
+		if release.Notes != "" {
+			return release, nil
+		}
+	}
+	return Release{}, fmt.Errorf("published changelog does not contain notes for %s", release.Version)
 }

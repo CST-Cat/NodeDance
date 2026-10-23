@@ -23,7 +23,7 @@ const root=path.resolve(__dirname,'../..'),directory=fs.mkdtempSync(path.join(os
    const gauges=await page.locator('.resource-gauge').evaluateAll(items=>items.map(el=>({shadow:getComputedStyle(el).boxShadow,border:getComputedStyle(el).borderTopWidth,outline:getComputedStyle(el).outlineStyle})))
    assert.ok(gauges.length>=4,'Real metric fixtures render multiple gauges')
    for(const gauge of gauges){assert.equal(gauge.shadow,'none','No Tailwind ring square around percentages');assert.equal(gauge.border,'0px');assert.equal(gauge.outline,'none')}
-   await page.screenshot({path:path.join(artifacts,`populated-${theme}-393.png`),fullPage:true})
+
   }
   assert.deepEqual(fixture.errors,[]);assert.deepEqual(errors,[])
  }finally{if(fixture)await fixture.close();if(browser)await browser.close();core.kill('SIGTERM');await new Promise(r=>core.exitCode!==null?r():core.once('exit',r));fs.rmSync(directory,{recursive:true,force:true})}

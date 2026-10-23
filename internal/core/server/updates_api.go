@@ -19,10 +19,10 @@ import (
 func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
 	action := strings.TrimPrefix(r.URL.Path, "/api/v1/updates/")
 	method := http.MethodGet
-	if action == "apply" || action == "rollback" {
+	if action == "apply" || action == "rollback" || action == "delete-backup" {
 		method = http.MethodPost
 	}
-	if action != "check" && action != "apply" && action != "status" && action != "rollback" {
+	if action != "check" && action != "apply" && action != "status" && action != "rollback" && action != "release" && action != "delete-backup" {
 		http.NotFound(w, r)
 		return
 	}
@@ -42,6 +42,21 @@ func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 400)
 		return
 	}
+	if action == "release" {
+		if request.NodeID != "" || request.JobID != "" {
+			http.Error(w, "release metadata does not accept a runtime target", 400)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		release, err := update.NewGitHub().Release(ctx, request.Component, request.Version)
+		if err != nil {
+			http.Error(w, err.Error(), 502)
+			return
+		}
+		writeJSON(w, 200, release)
+		return
+	}
 	if request.Component == "core" && request.NodeID != "" || request.Component == "agent" && request.NodeID == "" {
 		http.Error(w, "agent updates require nodeId; Core updates must omit it", 400)
 		return
@@ -51,7 +66,7 @@ func (s *Server) handleUpdates(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "confirmation and Idempotency-Key are required", 400)
 			return
 		}
-		if err := audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: "update_" + action, Outcome: "accepted", ActorID: requestActor(r)}); err != nil {
+		if err := audit.Record(r.Context(), s.store.DB, audit.Event{OccurredAt: s.now(), Action: "update_" + strings.ReplaceAll(action, "-", "_"), Outcome: "accepted", ActorID: requestActor(r)}); err != nil {
 			http.Error(w, "cannot record update request", 500)
 			return
 		}

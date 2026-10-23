@@ -1,0 +1,191 @@
+.agent-workbench {
+  display: grid;
+  gap: var(--workspace-space-xl);
+  min-width: 0;
+}
+.agent-onboarding
+  :is(
+    .target-picker,
+    .network-targets,
+    .agent-setup-form,
+    .setup-fields,
+    .setup-identity,
+    .setup-ssh,
+    .setup-verification,
+    .setup-advanced,
+    .setup-assets,
+    .setup-rescue,
+    .setup-review
+  ) {
+  display: grid;
+  min-width: 0;
+  gap: var(--workspace-space-md);
+}
+.agent-onboarding .setup-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--workspace-space-md);
+}
+.agent-onboarding h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.agent-onboarding .setup-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.agent-onboarding .target-picker {
+  gap: var(--workspace-space-sm);
+}
+.agent-onboarding .network-targets {
+  gap: var(--workspace-space-sm);
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  padding: var(--workspace-space-xs);
+  margin: calc(-1 * var(--workspace-space-xs));
+}
+.agent-onboarding .network-targets > h3 {
+  margin-top: var(--workspace-space-sm);
+  color: var(--muted-strong);
+  font-size: 13px;
+}
+.agent-onboarding .target-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--workspace-space-md);
+  min-width: 0;
+}
+.agent-onboarding .target-row strong {
+  font-size: 13px;
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agent-onboarding .target-copy {
+  display: grid;
+  min-width: 0;
+  gap: var(--workspace-space-xs);
+}
+.agent-onboarding .target-copy > span {
+  font-size: 12px;
+  color: var(--muted-strong);
+  overflow-wrap: anywhere;
+}
+.agent-onboarding .target-secondary {
+  display: grid;
+  gap: var(--workspace-space-xs);
+}
+.agent-onboarding .target-secondary p,
+.agent-onboarding .target-empty {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+.agent-onboarding .setup-deployment-method {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      var(--workspace-control-measure)
+    );
+  align-items: center;
+  gap: var(--workspace-space-md);
+  font-size: 13px;
+}
+.agent-onboarding .setup-assets > .asset-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.agent-onboarding .setup-assets .asset-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--workspace-space-md);
+}
+.agent-onboarding .setup-assets .asset-grid > .workspace-group-row > label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      var(--workspace-control-measure)
+    );
+  align-items: center;
+  gap: var(--workspace-space-md);
+}
+.agent-onboarding .setup-ssh .workspace-group-row > .parameter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      var(--workspace-control-measure)
+    );
+  align-items: center;
+  gap: var(--workspace-space-md);
+  font-size: 13px;
+}
+.agent-onboarding :is(.setup-ssh, .setup-verification) {
+  margin-top: var(--workspace-space-sm);
+}
+.agent-onboarding .check-row {
+  display: flex;
+  align-items: center;
+  gap: var(--workspace-space-sm);
+  font-size: 13px;
+}
+.agent-onboarding
+  :is(
+    .fingerprint,
+    .setup-rescue > code,
+    .deployment-identity code,
+    .task-status > code,
+    .target-secondary code
+  ) {
+  display: block;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agent-onboarding .setup-submit {
+  display: flex;
+  justify-content: end;
+  flex-wrap: wrap;
+  gap: var(--workspace-space-sm);
+}
+.agent-onboarding .setup-activity {
+  margin-top: var(--workspace-space-xl);
+}
+.agent-onboarding .deployment-record {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--workspace-space-md);
+  font-size: 13px;
+}
+.agent-onboarding :is(.deployment-identity, .task-status) {
+  display: grid;
+  gap: var(--workspace-space-sm);
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .agent-onboarding
+    :is(
+      .setup-deployment-method,
+      .setup-assets .asset-grid > .workspace-group-row > label,
+      .setup-ssh .workspace-group-row > .parameter-row,
+      .deployment-record
+    ) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--workspace-space-sm);
+  }
+  .agent-onboarding .setup-verification .setup-section-heading {
+    flex-wrap: wrap;
+  }
+}
+
+.agent-onboarding .setup-assets .asset-grid:has(> .workspace-group-row) {
+  display: block;
+}

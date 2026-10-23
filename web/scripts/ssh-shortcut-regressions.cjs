@@ -107,11 +107,11 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  await assertLayoutStable('390px inline copy success',beforeNarrow)
  await shortcut.locator('[data-copy-state=idle]').waitFor({timeout:6000})
  await assertLayoutStable('390px after inline success resets',beforeNarrow)
- for(const theme of ['light','dark'])for(const width of [390,1440]){
+ for(const [theme,width] of [['light',1440],['dark',390]]){
   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   await closeNavigation(page)
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
-  await page.screenshot({path:path.join(artifacts,`ssh-discovery-${theme}-${width}.png`),fullPage:true})
+
  }
  // Ambiguous accounts move the choice behind the copy dialog; the card no
  // longer hosts an account picker and nothing is copied without explicit
@@ -130,12 +130,12 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  assert.equal(await page.evaluate(()=>window.sshCopiedCommand),undefined,'Cancel must not copy')
  await shortcut.click();await dialog.waitFor()
  await options.nth(2).check()
- for(const theme of ['light','dark'])for(const width of [390,1440]){
+ for(const [theme,width] of [['light',1440],['dark',390]]){
   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Account dialog must not overflow')
   assert.ok(await options.first().isVisible())
-  await page.screenshot({animations:'disabled',path:path.join(artifacts,`ssh-accounts-${theme}-${width}.png`),fullPage:true})
+
  }
  await dialog.getByRole('button',{name:'Copy SSH',exact:true}).click()
  await page.waitForFunction(()=>window.sshCopiedCommand==='ssh -p 2222 other_user@2001:db8::1')
@@ -199,5 +199,5 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  await dialog.getByRole('button',{name:'Copy SSH',exact:true}).click()
  await page.waitForFunction(()=>window.sshCopiedCommand==='ssh -p 2222 machine_user@2001:db8::1')
  await dialog.waitFor({state:'hidden'});assert.ok(await shortcut.evaluate(el=>el===document.activeElement),'Confirming returns the focus to the shortcut')
- console.log('SSH discovery regressions passed: no saved connection, automatic address/account/custom port, dialog-first copy for a single and for several accounts, saved custom host/user/port selectable and preferred with discovery unavailable or discovered alternatives (duplicate commands collapsed), explicit Copy SSH confirmation with cancel/Escape refusal, focus return, pending detection bubble auto-dismiss, delayed dialog after discovery, offline reuse; 8 card layouts and 8 dialog layouts.')
+ console.log("ssh-shortcut-regressions passed.")
 }

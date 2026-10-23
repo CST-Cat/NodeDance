@@ -6,11 +6,15 @@ import { Fragment } from "react";
 import { __classes, __each, __input, useController } from "../state";
 import "./NodeAssetFields.css";
 import UiSelect from "./UiSelect";
+import { SettingsRows } from "./SettingsGroup";
+import { Input } from "./arc/input/input";
 type Props = {
   values: Record<string, unknown>;
   schema?: BodySchema;
   disabled?: boolean;
   showTitle?: boolean;
+  showHints?: boolean;
+  grouped?: boolean;
 } & { children?: import("react").ReactNode; [key: string]: any };
 export default function NodeAssetFields(input: Props) {
   return useController(
@@ -68,175 +72,188 @@ export default function NodeAssetFields(input: Props) {
           );
         },
       });
-      return () => (
-        <>
-          <fieldset
-            disabled={__props.disabled as any}
-            aria-label={
-              __props.showTitle === false
-                ? t("asset.title")
-                : (undefined as any)
-            }
-            data-testid="node-asset-fields"
-            className={__classes("asset-fields")}
-            data-v-f325f884=""
-          >
-            {__props.showTitle !== false ? (
-              <legend data-v-f325f884="">{t("asset.title")}</legend>
-            ) : null}
-            <div className={__classes("asset-grid")} data-v-f325f884="">
-              <label data-v-f325f884="">
-                <span data-v-f325f884="">{t("asset.monthlyTraffic")}</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  data-testid="asset-traffic"
-                  {...__input(
-                    traffic.value,
-                    (__nextValue: any) => {
-                      traffic.value = __nextValue;
-                    },
-                    "number",
-                    undefined,
-                    [],
-                  )}
-                  data-v-f325f884=""
-                ></input>
-                <small data-v-f325f884="">{t("asset.trafficHint")}</small>
-              </label>
-              <label className={__classes("asset-date")} data-v-f325f884="">
-                <span data-v-f325f884="">{t("asset.purchase")}</span>
-                <input
-                  type="date"
-                  data-testid="asset-purchase"
-                  {...__input(
-                    purchase.value,
-                    (__nextValue: any) => {
-                      purchase.value = __nextValue;
-                    },
-                    "date",
-                    undefined,
-                    [],
-                  )}
-                  data-v-f325f884=""
-                ></input>
-                <small data-v-f325f884="">{t("asset.purchaseHint")}</small>
-              </label>
-              <label className={__classes("asset-date")} data-v-f325f884="">
-                <span data-v-f325f884="">{t("asset.expiry")}</span>
-                <input
-                  type="datetime-local"
-                  data-testid="asset-expiry"
-                  {...__input(
-                    expiry.value,
-                    (__nextValue: any) => {
-                      expiry.value = __nextValue;
-                    },
-                    "datetime-local",
-                    undefined,
-                    [],
-                  )}
-                  data-v-f325f884=""
-                ></input>
-                <small data-v-f325f884="">{t("asset.expiryHint")}</small>
-              </label>
-              <label data-v-f325f884="">
-                <span data-v-f325f884="">{t("asset.price")}</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  data-testid="asset-price"
-                  {...__input(
-                    __props.values.price,
-                    (__nextValue: any) => {
-                      __props.values.price = __nextValue;
-                    },
-                    "number",
-                    undefined,
-                    ["number"],
-                  )}
-                  data-v-f325f884=""
-                ></input>
-              </label>
-              <label data-v-f325f884="">
-                <span data-v-f325f884="">{t("host.field.currency")}</span>
-                <UiSelect
-                  data-testid="asset-currency"
-                  modelValue={__props.values.currency}
-                  onUpdateModelValue={(__nextValue: any) => {
-                    __props.values.currency = __nextValue;
-                  }}
-                  modelModifiers={{}}
-                  data-v-f325f884=""
-                >
-                  <Fragment>
-                    {__each(currencies.value, (currency) => (
-                      <option
-                        key={String(currency) as any}
-                        value={currency as any}
-                        data-v-f325f884=""
-                      >
-                        {String(currency)}
-                      </option>
-                    ))}
-                  </Fragment>
-                </UiSelect>
-              </label>
-              <label data-v-f325f884="">
-                <span data-v-f325f884="">{t("asset.cycle")}</span>
-                <UiSelect
-                  data-testid="asset-cycle"
-                  modelValue={cycle.value}
-                  onUpdateModelValue={(__nextValue: any) => {
-                    cycle.value = __nextValue;
-                  }}
-                  modelModifiers={{}}
-                  data-v-f325f884=""
-                >
-                  <Fragment>
-                    {__each(units.value, (unit) => (
-                      <option
-                        key={String(unit) as any}
-                        value={unit as any}
-                        data-v-f325f884=""
-                      >
-                        {t(unitLabels[String(unit)] ?? String(unit))}
-                      </option>
-                    ))}
-                  </Fragment>
-                </UiSelect>
-              </label>
-              {cycle.value === "day" ? (
-                <label data-v-f325f884="">
-                  <span data-v-f325f884="">
-                    {t("host.field.billingCycleDays")}
-                  </span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="3660"
-                    {...__input(
-                      __props.values.billingCycleDays,
-                      (__nextValue: any) => {
-                        __props.values.billingCycleDays = __nextValue;
-                      },
-                      "number",
-                      undefined,
-                      ["number"],
-                    )}
-                    data-v-f325f884=""
-                  ></input>
-                </label>
+      return () => {
+        const Rows = __props.grouped ? SettingsRows : Fragment;
+        return (
+          <>
+            <fieldset
+              disabled={__props.disabled as any}
+              aria-label={
+                __props.showTitle === false
+                  ? t("asset.title")
+                  : (undefined as any)
+              }
+              data-testid="node-asset-fields"
+              className={__classes("asset-fields")}
+              data-v-f325f884=""
+            >
+              {__props.showTitle !== false ? (
+                <legend data-v-f325f884="">{t("asset.title")}</legend>
               ) : null}
-            </div>
-          </fieldset>
-        </>
-      );
+              <div className={__classes("asset-grid")} data-v-f325f884="">
+                <Rows>
+                  <label data-v-f325f884="">
+                    <span data-v-f325f884="">{t("asset.monthlyTraffic")}</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="any"
+                      data-testid="asset-traffic"
+                      {...__input(
+                        traffic.value,
+                        (__nextValue: any) => {
+                          traffic.value = __nextValue;
+                        },
+                        "number",
+                        undefined,
+                        [],
+                      )}
+                      data-v-f325f884=""
+                    />
+                    {__props.showHints !== false ? (
+                      <small data-v-f325f884="">{t("asset.trafficHint")}</small>
+                    ) : null}
+                  </label>
+                  <label className={__classes("asset-date")} data-v-f325f884="">
+                    <span data-v-f325f884="">{t("asset.purchase")}</span>
+                    <Input
+                      type="date"
+                      data-testid="asset-purchase"
+                      {...__input(
+                        purchase.value,
+                        (__nextValue: any) => {
+                          purchase.value = __nextValue;
+                        },
+                        "date",
+                        undefined,
+                        [],
+                      )}
+                      data-v-f325f884=""
+                    />
+                    {__props.showHints !== false ? (
+                      <small data-v-f325f884="">
+                        {t("asset.purchaseHint")}
+                      </small>
+                    ) : null}
+                  </label>
+                  <label className={__classes("asset-date")} data-v-f325f884="">
+                    <span data-v-f325f884="">{t("asset.expiry")}</span>
+                    <Input
+                      type="datetime-local"
+                      data-testid="asset-expiry"
+                      {...__input(
+                        expiry.value,
+                        (__nextValue: any) => {
+                          expiry.value = __nextValue;
+                        },
+                        "datetime-local",
+                        undefined,
+                        [],
+                      )}
+                      data-v-f325f884=""
+                    />
+                    {__props.showHints !== false ? (
+                      <small data-v-f325f884="">{t("asset.expiryHint")}</small>
+                    ) : null}
+                  </label>
+                  <label data-v-f325f884="">
+                    <span data-v-f325f884="">{t("asset.price")}</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="any"
+                      data-testid="asset-price"
+                      {...__input(
+                        __props.values.price,
+                        (__nextValue: any) => {
+                          __props.values.price = __nextValue;
+                        },
+                        "number",
+                        undefined,
+                        ["number"],
+                      )}
+                      data-v-f325f884=""
+                    />
+                  </label>
+                  <label data-v-f325f884="">
+                    <span data-v-f325f884="">{t("host.field.currency")}</span>
+                    <UiSelect
+                      data-testid="asset-currency"
+                      modelValue={__props.values.currency}
+                      onUpdateModelValue={(__nextValue: any) => {
+                        __props.values.currency = __nextValue;
+                      }}
+                      modelModifiers={{}}
+                      data-v-f325f884=""
+                    >
+                      <Fragment>
+                        {__each(currencies.value, (currency) => (
+                          <option
+                            key={String(currency) as any}
+                            value={currency as any}
+                            data-v-f325f884=""
+                          >
+                            {String(currency)}
+                          </option>
+                        ))}
+                      </Fragment>
+                    </UiSelect>
+                  </label>
+                  <label data-v-f325f884="">
+                    <span data-v-f325f884="">{t("asset.cycle")}</span>
+                    <UiSelect
+                      data-testid="asset-cycle"
+                      modelValue={cycle.value}
+                      onUpdateModelValue={(__nextValue: any) => {
+                        cycle.value = __nextValue;
+                      }}
+                      modelModifiers={{}}
+                      data-v-f325f884=""
+                    >
+                      <Fragment>
+                        {__each(units.value, (unit) => (
+                          <option
+                            key={String(unit) as any}
+                            value={unit as any}
+                            data-v-f325f884=""
+                          >
+                            {t(unitLabels[String(unit)] ?? String(unit))}
+                          </option>
+                        ))}
+                      </Fragment>
+                    </UiSelect>
+                  </label>
+                  {cycle.value === "day" ? (
+                    <label data-v-f325f884="">
+                      <span data-v-f325f884="">
+                        {t("host.field.billingCycleDays")}
+                      </span>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="3660"
+                        {...__input(
+                          __props.values.billingCycleDays,
+                          (__nextValue: any) => {
+                            __props.values.billingCycleDays = __nextValue;
+                          },
+                          "number",
+                          undefined,
+                          ["number"],
+                        )}
+                        data-v-f325f884=""
+                      />
+                    </label>
+                  ) : null}
+                </Rows>{" "}
+              </div>
+            </fieldset>
+          </>
+        );
+      };
     },
     input,
-    ["values", "schema", "disabled", "showTitle"],
+    ["values", "schema", "disabled", "showTitle", "showHints", "grouped"],
     [],
     {},
     true,

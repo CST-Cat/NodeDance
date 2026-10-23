@@ -15,10 +15,6 @@
   --accent-subtle: var(--figma-background-tertiary);
   --accent-foreground: var(--figma-text-inverse);
   --focus-outline: var(--figma-ring-primary);
-  --radius-control: var(--figma-radius-md);
-  --radius-panel: var(--figma-radius-xl);
-  --radius-surface: var(--figma-radius-xl);
-  --radius-pill: var(--figma-radius-full);
   --shadow-resting: none;
   --shadow-raised: none;
   --font-body: inherit;
@@ -26,6 +22,17 @@
   --success: var(--figma-text-success);
   --warning: var(--figma-text-warning);
   --danger: var(--figma-text-danger);
+  --series-1: var(--figma-text-primary);
+  --series-2: var(--figma-text-success);
+  --series-3: var(--figma-text-warning);
+  --series-4: var(--figma-text-danger);
   --control-on: var(--figma-text-primary);
   --control-glyph: var(--figma-text-inverse);
+}
+
+.product-arc.arc-ui:not(:where(.personal-settings, .personal-settings *, .preferences-page, .preferences-page *)) {
+  --radius-control: var(--figma-radius-md);
+  --radius-panel: var(--figma-radius-xl);
+  --radius-surface: var(--figma-radius-xl);
+  --radius-pill: var(--figma-radius-full);
 }

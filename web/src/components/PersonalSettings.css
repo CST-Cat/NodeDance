@@ -1,0 +1,529 @@
+:is(.personal-settings, .preferences-page) {
+  display: grid;
+  gap: var(--workspace-space-xl);
+}
+:is(.personal-settings, .preferences-page) > .workspace-heading {
+  margin: 0;
+}
+:is(.personal-settings, .preferences-page) .settings-sections {
+  display: grid;
+  gap: var(--workspace-space-xl);
+  min-width: 0;
+}
+:is(.personal-settings, .preferences-page)
+  :is(.profile-form, .password-form, .settings-list-body, .publication-body) {
+  display: grid;
+  min-width: 0;
+  gap: var(--workspace-space-md);
+}
+:is(.personal-settings, .preferences-page)
+  :is(.profile-form, .password-form)
+  .workspace-group-row
+  > .parameter-row,
+:is(.personal-settings, .preferences-page)
+  .profile-preferences-row
+  .workspace-group-row
+  > .parameter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      var(--workspace-control-measure)
+    );
+  align-items: center;
+  gap: var(--workspace-row-gap, var(--workspace-space-md));
+  min-width: 0;
+}
+:is(.personal-settings, .preferences-page)
+  :is(.profile-form, .password-form)
+  > .parameter-row
+  > span:first-child,
+:is(.personal-settings, .preferences-page)
+  .profile-preferences-row
+  .workspace-group-row
+  > .parameter-row
+  > span:first-child {
+  font-size: 13px;
+}
+:is(.personal-settings, .preferences-page) .profile-edit-row {
+  display: flex;
+  align-items: center;
+  gap: var(--workspace-space-md);
+  min-width: 0;
+}
+:is(.personal-settings, .preferences-page) .profile-identity {
+  display: grid;
+  min-width: 0;
+  margin-right: auto;
+  font-size: 13px;
+}
+:is(.personal-settings, .preferences-page) .profile-identity span {
+  font-size: 12px;
+  color: var(--muted-strong);
+  overflow-wrap: anywhere;
+}
+:is(.personal-settings, .preferences-page)
+  .profile-edit-row
+  > div:has(input[hidden]),
+:is(.personal-settings, .preferences-page)
+  .background-upload-row
+  > div:has(input[hidden]) {
+  display: none;
+}
+:is(.personal-settings, .preferences-page) .profile-preferences-row {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--workspace-space-md);
+}
+:is(.personal-settings, .preferences-page) .background-upload-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--workspace-space-md);
+}
+:is(.personal-settings, .preferences-page) .background-upload-row .upload-copy {
+  font-size: 13px;
+  font-weight: 400;
+}
+:is(.personal-settings, .preferences-page) .background-upload-row strong {
+  font-weight: 500;
+}
+:is(.personal-settings, .preferences-page) .form-actions {
+  display: flex;
+  justify-content: end;
+  gap: var(--workspace-space-sm);
+  padding: 0;
+}
+:is(.personal-settings, .preferences-page) .settings-record-list {
+  display: grid;
+  gap: var(--workspace-space-md);
+}
+:is(.personal-settings, .preferences-page) .settings-record-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--workspace-space-md);
+  min-height: 0;
+}
+:is(.personal-settings, .preferences-page) .settings-record-info {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+:is(.personal-settings, .preferences-page) .settings-record-info strong {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+:is(.personal-settings, .preferences-page)
+  .settings-record-info
+  :is(span, small) {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted-strong);
+  overflow-wrap: anywhere;
+}
+:is(.personal-settings, .preferences-page) .session-count {
+  min-height: 0;
+  margin-right: auto;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+:is(.personal-settings, .preferences-page)
+  .account-management
+  .account-buttons {
+  display: flex;
+  width: auto;
+  max-width: 100%;
+  flex-wrap: wrap;
+  margin: 0;
+}
+:is(.personal-settings, .preferences-page)
+  .account-management
+  .workspace-actions {
+  justify-content: end;
+}
+:is(.personal-settings, .preferences-page) .publication-form > fieldset {
+  display: grid;
+  gap: var(--workspace-space-lg);
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+:is(.personal-settings, .preferences-page)
+  :is(.publication-policy, .publication-resources, .publication-resource-list) {
+  display: grid;
+  gap: var(--workspace-row-gap, var(--workspace-space-md));
+  min-width: 0;
+}
+:is(.personal-settings, .preferences-page) .publication-policy > .parameter-row,
+:is(.personal-settings, .preferences-page)
+  .publication-policy
+  .workspace-group-row
+  > .parameter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      var(--workspace-control-measure)
+    );
+  align-items: center;
+  gap: var(--workspace-row-gap, var(--workspace-space-md));
+}
+:is(.personal-settings, .preferences-page) .guest-check {
+  display: flex;
+  align-items: center;
+  gap: var(--workspace-space-sm);
+  min-width: 0;
+  font-size: 13px;
+}
+:is(.personal-settings, .preferences-page) .publication-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--workspace-space-sm);
+}
+:is(.personal-settings, .preferences-page) .publication-resource {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      var(--workspace-control-measure)
+    );
+  align-items: center;
+  gap: var(--workspace-row-gap, var(--workspace-space-md));
+  padding: 0;
+}
+:is(.personal-settings, .preferences-page) .publication-resource-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--workspace-space-sm);
+}
+:is(.personal-settings, .preferences-page)
+  .publication-resource-heading
+  strong {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+:is(.personal-settings, .preferences-page)
+  .publication-resource-heading
+  > span {
+  color: var(--muted-strong);
+  font-size: 12px;
+  flex: none;
+}
+:is(.personal-settings, .preferences-page) .publication-resources h3 {
+  font-size: 14px;
+  font-weight: 500;
+  margin: 0;
+}
+:is(.personal-settings, .preferences-page) .publication-empty {
+  margin: 0;
+  color: var(--muted-strong);
+  font-size: 13px;
+}
+:is(.personal-settings, .preferences-page) .publication-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: var(--workspace-space-sm);
+}
+:is(.personal-settings, .preferences-page) .publication-preview {
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  :is(.personal-settings, .preferences-page) .profile-edit-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  :is(.personal-settings, .preferences-page) .profile-edit-row > button {
+    justify-self: end;
+  }
+  :is(.personal-settings, .preferences-page) .profile-identity {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  :is(.personal-settings, .preferences-page) .account-management-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+:is(.personal-settings, .preferences-page) .session-info {
+  grid-template-columns: minmax(0, 1fr);
+}
+:is(.personal-settings, .preferences-page)
+  .session-info
+  :is(strong, span, small) {
+  white-space: normal;
+  overflow: visible;
+}
+@media (max-width: 600px) {
+  :is(.personal-settings, .preferences-page) .workspace-section-heading {
+    flex-wrap: wrap;
+  }
+}
+
+:is(.personal-settings, .preferences-page) .account-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--workspace-space-sm);
+}
+
+:is(.personal-settings, .preferences-page)
+  .workspace-group
+  .profile-preferences-row {
+  gap: 0;
+}
+
+:is(.personal-settings, .preferences-page) .appearance-control,
+:is(.personal-settings, .preferences-page) .parameter-select,
+:is(.personal-settings, .preferences-page) .color-field .parameter-control {
+  width: var(--appearance-control-width, 180px);
+  max-width: 100%;
+  justify-self: end;
+}
+:is(.personal-settings, .preferences-page)
+  .color-field
+  .parameter-control
+  > div,
+:is(.personal-settings, .preferences-page)
+  .color-field
+  .parameter-control
+  > div
+  > button {
+  width: 100%;
+}
+@media (max-width: 600px) {
+  :is(.personal-settings, .preferences-page) .appearance-control,
+:is(.personal-settings, .preferences-page) .parameter-select,
+  :is(.personal-settings, .preferences-page) .color-field .parameter-control {
+    justify-self: end;
+  }
+}
+
+@media (min-width: 601px) {
+  :is(.personal-settings, .preferences-page)
+    .publication-policy
+    .workspace-group-row
+    > .publication-metric-field {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+  }
+}
+@media (max-width: 360px) {
+  :is(.personal-settings, .preferences-page) .publication-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+:is(.personal-settings, .preferences-page) .theme-options {
+  --surface-hover: transparent;
+}
+:is(.personal-settings, .preferences-page) .theme-options button:active {
+  transform: none;
+}
+
+:is(.personal-settings, .preferences-page) .theme-options > [role="group"] {
+  background: var(--surface);
+}
+
+:is(.personal-settings, .preferences-page)
+  .theme-options
+  button
+  > span[aria-hidden="true"] {
+  background: oklch(from var(--surface-muted) calc(l - 0.05) c h);
+}
+
+:is(.personal-settings, .preferences-page) .settings-integrated .parameter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      var(--workspace-control-measure)
+    );
+  align-items: center;
+  gap: var(--workspace-row-gap, var(--workspace-space-md));
+  min-width: 0;
+}
+:is(.personal-settings, .preferences-page) .settings-detail-list {
+  display: grid;
+  gap: var(--workspace-space-md);
+  min-width: 0;
+}
+:is(.personal-settings, .preferences-page)
+  .settings-integrated
+  :is(p, h3):not(:where([role="dialog"] *)) {
+  margin: 0;
+}
+:is(.personal-settings, .preferences-page)
+  .settings-integrated
+  :is(pre, a, strong, span) {
+  overflow-wrap: anywhere;
+}
+:is(.personal-settings, .preferences-page) .settings-integrated pre {
+  white-space: pre-wrap;
+  margin: 0;
+  font-size: 12px;
+}
+:is(.personal-settings, .preferences-page) .settings-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--workspace-space-sm);
+}
+:is(.personal-settings, .preferences-page) .settings-check,
+:is(.personal-settings, .preferences-page) .settings-record-status {
+  display: flex;
+  align-items: center;
+  gap: var(--workspace-space-sm);
+}
+:is(.personal-settings, .preferences-page) .feed-interval-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 90px);
+  align-items: start;
+  gap: var(--workspace-space-sm);
+  min-width: 0;
+}
+:is(.personal-settings, .preferences-page) .settings-feed-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--workspace-space-sm);
+}
+:is(.personal-settings, .preferences-page)
+  .settings-feed-search
+  .settings-check {
+  grid-column: 1 / -1;
+}
+@media (max-width: 600px) {
+  :is(.personal-settings, .preferences-page) .settings-section-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    justify-content: stretch;
+  }
+  :is(.personal-settings, .preferences-page) .settings-feed-search {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.preferences-page .update-component-control {
+  width: 140px;
+  max-width: 100%;
+  justify-self: end;
+}
+@media (max-width: 600px) {
+  .preferences-page .update-component-control {
+    justify-self: end;
+  }
+}
+
+.preferences-page .release-notes {
+  display: grid;
+  gap: var(--workspace-space-sm);
+  margin: 0;
+  padding-inline-start: 20px;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.preferences-page .update-confirm-dialog > div:first-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.preferences-page .update-confirm-dialog > div:first-child p {
+  margin-top: 20px;
+}
+.preferences-page .update-target-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: fit-content;
+  max-width: 100%;
+  justify-self: end;
+}
+.preferences-page .update-target-actions:has(> button:only-child) {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 600px) {
+  .preferences-page .update-target-actions {
+    width: 100%;
+    justify-self: stretch;
+  }
+}
+
+.preferences-page .update-confirm-dialog > div:last-child {
+  display: grid;
+  gap: var(--workspace-space-md);
+}
+@media (max-width: 600px) {
+  .preferences-page .update-confirm-dialog .settings-section-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.preferences-page .update-records,
+.preferences-page .update-record-slot {
+  overflow: hidden;
+}
+.preferences-page .update-job {
+  gap: var(--workspace-space-sm);
+  padding-block: var(--workspace-space-sm);
+}
+
+.preferences-page .update-confirm-dialog > div:first-child > button {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  margin-block: calc((var(--text-lg) * var(--leading-body) - 44px) / 2);
+  margin-inline: -6px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  transform: none;
+}
+
+.app-shell[data-theme]
+  .preferences-page
+  .update-confirm-dialog[role="dialog"]
+  h2 {
+  font-size: var(--text-lg);
+  line-height: var(--leading-body);
+}
+
+@media (max-width: 600px) {
+  :is(.personal-settings, .preferences-page) {
+    --workspace-control-measure: min(200px, calc(100% - 74px));
+    --workspace-row-gap: var(--workspace-space-sm);
+  }
+  :is(.personal-settings, .preferences-page) .parameter-row {
+    grid-template-columns: minmax(0, 1fr) minmax(
+        0,
+        var(--workspace-control-measure)
+      );
+  }
+  :is(.personal-settings, .preferences-page) .parameter-control {
+    justify-content: flex-end;
+  }
+  :is(.personal-settings, .preferences-page) .publication-metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :is(.personal-settings, .preferences-page) .publication-metric-field {
+    align-items: start;
+  }
+}
+@media (max-width: 360px) {
+  :is(.personal-settings, .preferences-page) {
+    --workspace-control-measure: min(200px, calc(100% - 70px));
+    --workspace-row-gap: var(--workspace-space-xs);
+  }
+}
+
+@media (max-width: 600px) {
+  :is(.personal-settings, .preferences-page) .feed-interval-controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

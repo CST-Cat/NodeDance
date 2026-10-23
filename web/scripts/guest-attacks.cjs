@@ -67,7 +67,7 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  for(const method of ['POST','PUT','PATCH','DELETE','OPTIONS'])for(const url of ['/api/v1/public/guest','/api/v1/public/guest/display']){
   const r=await browserRequest(url,method,payload,{...hostileHeaders,'X-HTTP-Method-Override':'PUT'});record('method:'+method+':'+url,r.status===405,{status:r.status})
  }
- for(const method of ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'])for(const url of ['/api/v1/guest/settings','/api/v1/updates/apply','/api/v1/nodes/'+identity.nodeId+'/commands']){
+ for(const method of ['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'])for(const url of ['/api/v1/guest/settings','/api/v1/updates/apply','/api/v1/updates/release?component=core','/api/v1/updates/delete-backup','/api/v1/nodes/'+identity.nodeId+'/commands']){
   const r=await browserRequest(url,method,payload,{...hostileHeaders,'X-HTTP-Method-Override':'GET'});record('private-method:'+method+':'+url.split('/').pop(),r.status===401,{status:r.status})
  }
  const paths=['/%61pi/v1/nodes','/api//v1/nodes','/api/v1/%6eodes','/api/v1/public/guest/../../../v1/nodes','/api/v1/public/guest/display/../../../../v1/nodes','/api/v1/public/guest/display%2f..%2f..%2f..%2fnodes','/api/v1/public/guest/display%252f..%252fnodes','/api/v1/public/guest/display;/../../guest/settings','/API/v1/nodes','/api/v1/nodes%00','/.git/config','/../../etc/shadow']

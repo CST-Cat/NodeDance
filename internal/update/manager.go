@@ -267,7 +267,12 @@ func (m *Manager) current(ctx context.Context, component string) (string, error)
 			return word, nil
 		}
 	}
-	return "", errors.New("managed runtime does not report a published component version")
+	for _, word := range strings.Fields(string(raw)) {
+		if word == "dev" {
+			return "dev", nil
+		}
+	}
+	return "", errors.New("managed runtime does not report a component version")
 }
 func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
 	if err := Validate(r); err != nil {
@@ -287,7 +292,7 @@ func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
 			return result, err
 		}
 	}
-	result.Available = result.Current != "" && Compare(release.Version, result.Current) > 0
+	result.Available = result.Current != "" && (result.Current == "dev" || Compare(release.Version, result.Current) > 0)
 	return result, nil
 }
 func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error) {
@@ -342,7 +347,7 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 		m.mu.Lock()
 		parent = m.jobs[r.JobID]
 		m.mu.Unlock()
-		if parent.ID == "" || parent.Component != r.Component || parent.Status != "succeeded" || !parent.Switched {
+		if parent.ID == "" || parent.Component != r.Component || parent.Status != "succeeded" || !parent.Switched || parent.BackupDeleted || parent.BackupDeleting {
 			return Job{}, errors.New("no successful update is available for rollback")
 		}
 		current, err := m.current(ctx, r.Component)

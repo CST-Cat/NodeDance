@@ -29,14 +29,18 @@ export function ManagementPage({
   className,
   children,
   embedded = false,
+  registryStyles = false,
   ...props
-}: ComponentProps<"section"> & { embedded?: boolean }) {
+}: ComponentProps<"section"> & {
+  embedded?: boolean;
+  registryStyles?: boolean;
+}) {
   const [container, setContainer] = useState<HTMLElement | null>(null);
   return (
     <section
       {...props}
       ref={setContainer}
-      className={`product-arc arc-ui management-ui ${embedded ? "" : "workspace-page"} ${className ?? ""}`}
+      className={`product-arc arc-ui ${registryStyles ? "registry-controls" : "management-ui"} ${embedded ? "" : "workspace-page"} ${className ?? ""}`}
     >
       <PortalContainer.Provider value={container}>
         {children}

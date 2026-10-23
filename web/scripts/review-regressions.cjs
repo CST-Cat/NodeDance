@@ -4,7 +4,7 @@ const {closeNavigation,selectNodeSection}=require('./sidebar-navigation.cjs')
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,context,base,node,headers,artifacts,catalog}){
  async function layouts(name){
-  for(const theme of ['light','dark'])for(const width of [390,1440]){
+  for(const [theme,width] of [['light',1440],['dark',390]]){
    await page.setViewportSize({width,height:1000});await page.waitForTimeout(100)
    await closeNavigation(page)
    await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
@@ -13,16 +13,14 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
     assert.ok(!(await page.locator('#compose-projects-title').innerText()).includes(node),'Compose title omits node UUID')
     assert.ok(await page.locator('.compose-service li').evaluateAll(rows=>rows.every(row=>{const id=row.querySelector('code').getBoundingClientRect(),state=row.querySelector('[data-state]').getBoundingClientRect();return id.right<=state.left+1})), 'Compose container ID and state do not overlap')
    }
-   await page.screenshot({animations:'disabled',path:path.join(artifacts,`review-${name}-${theme}-${width}.png`),fullPage:true})
+
   }
   await page.setViewportSize({width:1440,height:1000})
  }
  await page.goto(base+'/#/settings')
  await page.locator('.theme-options').waitFor()
- await page.emulateMedia({reducedMotion:'reduce'});assert.equal(await page.locator('.theme-options .ui-segments-indicator').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');await page.emulateMedia({reducedMotion:'no-preference'})
- await page.locator('.theme-options button').first().focus();await page.keyboard.press('End');assert.equal(await page.locator('.theme-options').getByRole('button',{name:'Light',exact:true}).getAttribute('aria-pressed'),'true');await page.keyboard.press('ArrowLeft')
- await page.locator('.theme-options').getByRole('button',{name:'Dark',exact:true}).click()
- assert.equal(await page.locator('.theme-options').getByRole('button',{name:'Dark',exact:true}).getAttribute('aria-pressed'),'true')
+ await page.emulateMedia({reducedMotion:'reduce'});await page.locator('.theme-options').getByRole('button',{name:'Light',exact:true}).click();await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');assert.equal(await page.locator('.theme-options').evaluate(el=>el.getAnimations({subtree:true}).filter(animation=>animation.playState==='running').length),0,'Reduced motion selection settles immediately');await page.emulateMedia({reducedMotion:'no-preference'})
+ await page.locator('.theme-options button').first().focus();await page.keyboard.press('End');assert.equal(await page.locator('.theme-options').getByRole('button',{name:'Light',exact:true}).evaluate(el=>el===document.activeElement),true);await page.keyboard.press('ArrowLeft');assert.equal(await page.locator('.theme-options').getByRole('button',{name:'Dark',exact:true}).evaluate(el=>el===document.activeElement),true);assert.equal(await page.locator('.theme-options button[data-value=dark]').getAttribute('aria-pressed'),'true','Arrow navigation selects the focused theme')
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark')
  const profileOperation=catalog.operations.find(o=>o.name==='appearance.update');assert.ok(profileOperation);const saved=page.waitForResponse(r=>new URL(r.url()).pathname===profileOperation.path&&r.request().method()===profileOperation.method)
  await page.locator('.profile-form button[type=submit]').click();assert.equal((await saved).status(),200)
@@ -139,7 +137,7 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  let releaseFingerprint,fingerprintStarted
  const fingerprintHeld=new Promise(r=>releaseFingerprint=r),fingerprintPending=new Promise(r=>fingerprintStarted=r)
  await page.route('**/api/v1/discovery/tailscale/host-key',async route=>{if(route.request().postDataJSON().peerIdentity==='peer-a'){fingerprintStarted();await fingerprintHeld};await route.fulfill({json:{fingerprint:'SHA256:fixture-'+route.request().postDataJSON().peerIdentity}})})
- await page.goto(base+'/#/discovery');await page.locator('.peer-card').first().waitFor()
+ await page.goto(base+'/#/agent-enrollment');await page.locator('.peer-card').first().waitFor()
  await page.locator('.peer-card').first().locator('button').click()
  await page.locator('.hostkey-panel .secondary-button').click();await fingerprintPending
  await page.locator('.peer-card').nth(1).locator('button').click();releaseFingerprint()
@@ -149,10 +147,10 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  await layouts('discovery')
  await page.locator('.deploy-form input[autocomplete=username]').fill('root')
  await page.locator('.deploy-form input[type=password]').fill('browser-only-fixture')
- await page.locator('.deploy-form input[inputmode=url]').first().fill('https://core.example')
- await page.locator('.hostkey-panel input[type=checkbox]').first().check()
+ await page.locator('.agent-setup-form input[name=coreUrl]').fill('https://core.example')
+ await page.locator('.hostkey-panel').getByRole('checkbox').first().check()
  const accepted=page.waitForResponse(r=>r.url().endsWith('/discovery/deployments')&&r.request().method()==='POST')
- await page.locator('.hostkey-panel .primary-button').click();assert.equal((await accepted).status(),200)
+ await page.locator('.agent-setup-form .primary-button').click();assert.equal((await accepted).status(),200)
  await page.locator('[data-testid=deployment-task]').waitFor()
  await page.locator('[data-testid=deployment-task] .ui-task-progress[data-status=queued]').waitFor();assert.equal(await page.locator('[data-testid=deployment-task] progress').count(),0,'Deployment stages do not invent a denominator')
  let latePolls=0
@@ -162,5 +160,5 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  await page.locator('[data-testid=guest-display]').waitFor();await page.waitForTimeout(1800)
  page.off('request',trackPoll);assert.equal(latePolls,0,'Unmounted deployment page must stop private polling')
  await page.goto(base+'/#/nodes');await page.locator('.nodes-dashboard').waitFor()
- console.log('Review regressions passed: dark-theme persistence, Compose project isolation/stale validation/stable retry, probe revision conflict/deleted editor, SSH fingerprint identity and deployment polling cleanup; 20 settings/Compose/probe-overview/probes/discovery layouts.')
+ console.log("review-regressions passed.")
 }

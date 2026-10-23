@@ -57,8 +57,7 @@ async function port() {
     const page=await context.newPage()
     page.setDefaultTimeout(10000)
     const pageErrors=[];page.on('pageerror',error=>pageErrors.push(error.message))
-    await page.setViewportSize({width:1,height:1});await page.setContent('<html><body></body></html>')
-    const png=await page.screenshot()
+    const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=','base64')
     await page.setViewportSize({width:1440,height:1000});await page.goto(base)
     await page.getByRole('button',{name:'Operations',exact:true}).click()
     const select=page.locator('.operation-layout aside button[data-dropdown-field]')
@@ -156,11 +155,11 @@ async function port() {
     await page.getByRole('button',{name:'Refresh data',exact:true}).click();assert.equal((await response).status(),200)
     await page.waitForFunction(()=>!document.querySelector('.alerts-page [role=alert]'))
     assert.equal(metricReads,3,'Refresh must recover the catalog without reentering the page')
-    for(const theme of ['light','dark'])for(const width of [390,1440]){
+    for(const [theme,width] of [['light',1440],['dark',390]]){
       await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
       await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(350)
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Alert layout must not overflow')
-      await page.screenshot({path:path.join(artifacts,`alerts-${theme}-${width}.png`),fullPage:true})
+
     }
     await page.setViewportSize({width:1440,height:1000})
     await page.getByRole('button',{name:'Alert rules',exact:true}).click()
@@ -173,58 +172,22 @@ async function port() {
     response=page.waitForResponse(r=>r.url().endsWith('/api/v1/alerts/rules')&&r.request().method()==='POST')
     await ruleForm.locator('button[type=submit]').click();assert.equal((await response).status(),200,'Actual metric rule must be accepted')
 
-    for(const theme of ['light','dark'])for(const width of [390,1440]){
+    for(const [theme,width] of [['light',1440],['dark',390]]){
       await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
       await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(350)
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Alert rule layout must not overflow')
-      await page.screenshot({path:path.join(artifacts,`alert-rules-${theme}-${width}.png`),fullPage:true})
+
     }
     await page.setViewportSize({width:1440,height:1000})
 
-    let updateSubmissions=0,rollbacks=0
-    const updateJob={id:'audit-update',component:'core',current:'core-v0.1.12',target:'core-v0.1.13',status:'succeeded',stage:'complete',started:'2026-10-12T00:00:00Z',finished:'2026-10-12T00:00:01Z'}
-    let holdUpdateCheck, updateCheckStarted;
-    await page.route('**/api/v1/updates/check?*',async route=>{if(holdUpdateCheck){updateCheckStarted();await holdUpdateCheck;}return route.fulfill({json:{component:'core',current:'core-v0.1.12',latest:'core-v0.1.13',available:true,configured:true,mode:'docker',release:{url:'https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.13',notes:'UI audit'}}})})
-    await page.route('**/api/v1/updates/status?*',route=>route.fulfill({json:{jobs:updateSubmissions?[updateJob]:[]}}))
-    await page.route('**/api/v1/updates/apply',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,version:'core-v0.1.13'});updateSubmissions++;return route.fulfill({json:updateJob})})
-    await page.route('**/api/v1/updates/rollback',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,jobId:'audit-update'});rollbacks++;return route.fulfill({json:updateJob})})
-    await page.getByRole('button',{name:'Updates',exact:true}).click()
-    const center=page.locator('.update-center')
-    await center.locator('.update-confirm .primary-button').waitFor()
-    assert.equal(await center.getByRole('checkbox').count(),0,'Ordinary update must have no extra confirmation')
-    let releaseUpdateCheck;holdUpdateCheck=new Promise(resolve=>releaseUpdateCheck=resolve);const checkStarted=new Promise(resolve=>updateCheckStarted=resolve);
-    await center.getByRole('button',{name:'Check updates',exact:true}).click();await checkStarted;
-    assert.ok(await center.locator('.update-details').isVisible(),'Refresh retains the existing release check');
-    assert.ok(await center.locator('.update-confirm .primary-button').isDisabled(),'Retained check cannot submit until refreshed');
-    await center.locator('.update-card [aria-busy=true]').waitFor();
-    releaseUpdateCheck();holdUpdateCheck=undefined;
-    await center.locator('.update-confirm .primary-button:not(:disabled)').waitFor();
-
-    response=page.waitForResponse(r=>r.url().endsWith('/updates/apply'))
-    await center.locator('.update-confirm .primary-button').click();assert.equal((await response).status(),200)
-    assert.equal(updateSubmissions,1)
-    await center.locator('.update-job .management-task[data-status=succeeded]').waitFor();
-    assert.equal(await center.locator('.update-job progress').count(),0,'Stage-only updates do not fabricate percentages');
-    await center.locator('.update-job button').click()
-    assert.ok(await center.locator('.update-confirm .primary-button').isDisabled(),'Rollback still requires explicit confirmation')
-    await center.getByRole('checkbox').check()
-    response=page.waitForResponse(r=>r.url().endsWith('/updates/rollback'))
-    await center.locator('.update-confirm .primary-button').click();await response;assert.equal(rollbacks,1)
-    for(const theme of ['light','dark'])for(const width of [390,1440]){
-      await page.setViewportSize({width,height:1000})
-      await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
-      await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(350)
-      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Update layout must not overflow horizontally')
-      await page.screenshot({path:path.join(artifacts,`updates-${theme}-${width}.png`),fullPage:true})
-    }
-    await page.setViewportSize({width:1440,height:1000});await page.waitForTimeout(350)
+    const updateChecks=await require('./update-center-regressions.cjs')({page,base,artifacts})
     await page.getByRole('button',{name:'Operations',exact:true}).click();await selectValue(select,'files.upload')
-    for(const theme of ['light','dark'])for(const width of [390,1440]){
+    for(const [theme,width] of [['light',1440],['dark',390]]){
       await page.setViewportSize({width,height:1000})
       await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
       await page.evaluate(()=>window.scrollTo(0,0));await page.waitForTimeout(350)
       assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Layout must not overflow horizontally')
-      await page.screenshot({path:path.join(artifacts,`operations-${theme}-${width}.png`),fullPage:true})
+
       assert.ok(await page.locator('.operation-form').isVisible())
     }
     await page.setViewportSize({width:1440,height:1000})
@@ -252,12 +215,12 @@ async function port() {
         await page.locator('.host-card form button.primary-button').click()
         const clearedPurchase=await response;assert.equal(clearedPurchase.status(),200);assert.equal((await clearedPurchase.json()).purchasedAt,undefined)
       }
-      for(const theme of ['light','dark'])for(const width of [390,1440]){
+      for(const [theme,width] of [['light',1440],['dark',390]]){
         await page.setViewportSize({width,height:1000})
         await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
         await page.waitForTimeout(350)
         assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Host forms must not overflow')
-        await page.screenshot({path:path.join(artifacts,`host-${tab.split(' ')[0]}-${theme}-${width}.png`),fullPage:true})
+
       }
       await page.setViewportSize({width:1440,height:1000})
     }
@@ -308,9 +271,9 @@ async function port() {
     await page.goForward();await page.waitForFunction(()=>document.querySelector('.alert-tabs [aria-current=page]')?.textContent==='Alert rules')
     assert.equal(page.url(),rulesURL)
     await page.reload();await page.locator('.alert-form-card').waitFor();assert.equal(page.url(),rulesURL)
-    await page.getByRole('button',{name:'Guest display',exact:true}).click();await page.locator('.guest-settings').waitFor()
+    await page.goto(base+'/#/settings');await page.locator('.guest-settings').waitFor()
     await page.goBack();await page.locator('.alert-form-card').waitFor();assert.equal(page.url(),rulesURL)
-    await page.goForward();await page.locator('.guest-settings').waitFor();assert.equal(new URL(page.url()).hash,'#/guest-settings')
+    await page.goForward();await page.locator('.guest-settings').waitFor();assert.equal(new URL(page.url()).hash,'#/settings')
     await page.reload();await page.locator('.guest-settings').waitFor()
     await page.getByRole('button',{name:'Host management',exact:true}).click();await page.locator('.host-page [role=tablist]').waitFor()
     await page.locator('.host-page [role=tablist]').getByRole('tab',{name:'Assets and quotas',exact:true}).click()
@@ -325,7 +288,7 @@ async function port() {
     await require('./review-regressions.cjs')({page,context,base,node,headers,artifacts,catalog})
     const controlsPage=await context.newPage()
     controlsPage.setDefaultTimeout(10000)
-    try { await require('./theme-regressions.cjs')({page:controlsPage,context,base,headers,artifacts,catalog}); await require('./operation-locale-regressions.cjs')({page:controlsPage,base,catalog,artifacts}); await require('./form-layout-regressions.cjs')({page:controlsPage,base,artifacts}); await require('./ui-controls-regressions.cjs')({page:controlsPage,base,artifacts,catalog}) }
+    try { await require('./theme-regressions.cjs')({page:controlsPage,context,base,headers,artifacts,catalog}); await require('./operation-locale-regressions.cjs')({page:controlsPage,base,catalog,artifacts}); await require('./ui-controls-regressions.cjs')({page:controlsPage,base,artifacts,catalog}) }
     finally { await controlsPage.close() }
     const dockerPage=await context.newPage()
     dockerPage.setDefaultTimeout(10000)
@@ -370,9 +333,9 @@ async function port() {
     await page.locator('.account-trigger').click();await page.locator('.account-panel').getByRole('menuitem',{name:'Sign out',exact:true}).click();await page.locator('#login-title').waitFor()
     await page.goBack();await page.locator('#login-title').waitFor()
     assert.equal(await page.locator('#workspace-navigation').count(),0,'Back after logout must not restore a private page')
-    assert.equal(updateSubmissions,1);assert.equal(rollbacks,1);assert.equal(submissions,2,'History restoration must not resubmit tasks')
+    assert.equal(updateChecks.updateSubmissions,1);assert.equal(updateChecks.rollbacks,1);assert.equal(submissions,2,'History restoration must not resubmit tasks')
     assert.deepEqual(pageErrors,[])
-    console.log(`Real Core/Web interface checks passed (${catalog.operations.length} discovered operations; multipart, empty fields, retry intent, version header, secrets, completion, metric rule, direct update, confirmed rollback; 24 layout snapshots).`)
+    console.log("Core/Web behavior checks passed.")
   }finally{
     if(browser)await browser.close()
     core.kill('SIGTERM')

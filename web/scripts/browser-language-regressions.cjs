@@ -8,11 +8,11 @@ module.exports=async function({browser,base,credentials,artifacts}){
    await page.goto(base);await page.locator('#login-title').waitFor()
    assert.equal(await page.locator('html').getAttribute('lang'),item.expected)
    assert.equal(await page.locator('.language-selector,.language-options,.topbar-right').count(),0)
-   for(const theme of ['light','dark'])for(const width of [390,1440]){
+   for(const [theme,width] of [['light',1440],['dark',390]]){
     await page.setViewportSize({width,height:900})
     await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Header without language control fits viewport')
-    await page.locator('.topbar').screenshot({path:path.join(artifacts,`browser-language-${item.locale}-${theme}-${width}.png`)})
+
    }
    const csrf=await(await context.request.get(base+'/api/v1/auth/csrf')).json()
    assert.equal((await context.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':csrf.token},data:credentials})).status(),200)
@@ -26,7 +26,7 @@ module.exports=async function({browser,base,credentials,artifacts}){
    if(item.locale==='en-US'){
     const catalog=await(await context.request.get(base+'/api/v1/operations')).json()
     await require('./operation-locale-regressions.cjs')({page,base,catalog,artifacts})
-    await require('./profile-language-regressions.cjs')({page,base,artifacts})
+    await page.goto(base+'/#/settings');const language=page.locator('.profile-language-field button[data-dropdown-field]');await language.click();await page.getByRole('menuitemradio',{name:'Simplified Chinese',exact:true}).click();await page.waitForFunction(()=>document.documentElement.lang==='zh-CN');await page.reload();await page.waitForFunction(()=>document.documentElement.lang==='zh-CN');await language.click();await page.locator('[role=menuitemradio][data-option-value=system]').click();await page.waitForFunction(()=>document.documentElement.lang==='en');
    }
   }finally{await context.close()}
  }

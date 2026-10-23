@@ -1,0 +1,208 @@
+:root {
+  --workspace-space-xs: 4px;
+  --workspace-space-sm: 8px;
+  --workspace-space-md: 16px;
+  --workspace-space-lg: 24px;
+  --workspace-space-xl: 32px;
+  --workspace-measure: 760px;
+  --workspace-control-measure: 280px;
+  --workspace-divider: color-mix(in oklab, var(--line) 55%, transparent);
+}
+html,
+body {
+  overflow-x: clip;
+}
+.app-shell[data-authenticated="true"]
+  :is(.workspace-settings, .agent-onboarding).workspace-page {
+  width: min(var(--workspace-measure), 100%);
+  max-width: var(--workspace-measure);
+  --control-border: var(--figma-text-tertiary);
+  --border-strong: var(--figma-text-tertiary);
+  padding-block: var(--workspace-space-lg) var(--workspace-space-xl);
+}
+.workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--workspace-space-md);
+  margin-bottom: var(--workspace-space-xl);
+}
+.app-shell[data-theme]
+  :is(
+    .agent-onboarding,
+    :is(.personal-settings, .preferences-page)
+  ).workspace-page
+  > .workspace-heading
+  h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.3;
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
+.workspace-section {
+  display: grid;
+  min-width: 0;
+  gap: var(--workspace-space-md);
+  border: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.workspace-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--workspace-space-md);
+  min-width: 0;
+}
+:is(.workspace-section-heading, .setup-section-heading) :is(h2, h3) {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.parameter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(
+      0,
+      var(--workspace-control-measure)
+    );
+  align-items: center;
+  gap: var(--workspace-row-gap, var(--workspace-space-md));
+  min-width: 0;
+}
+.parameter-row > label {
+  font-size: 13px;
+  min-width: 0;
+}
+.workspace-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--workspace-space-sm);
+}
+:is(.workspace-settings, .agent-onboarding) a,
+:is(.workspace-settings, .agent-onboarding) a:visited {
+  color: var(--text);
+}
+:is(.workspace-settings, .agent-onboarding) :is(a, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+@media (max-width: 600px) {
+  .parameter-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--workspace-space-sm);
+  }
+}
+
+.app-shell[data-theme]:is(
+    [data-screen="settings"],
+    [data-screen="agent-enrollment"]
+  )
+  .navigation-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.workspace-group .workspace-group-rows[class] {
+  display: block;
+  gap: 0;
+}
+.workspace-group-row {
+  padding-block: 8px;
+  min-width: 0;
+}
+.workspace-group-row:first-child {
+  padding-top: 0;
+}
+.workspace-group-row:last-child {
+  padding-bottom: 0;
+}
+.parameter-control {
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+}
+:is(
+  :is(.personal-settings, .preferences-page) .form-actions,
+  :is(.personal-settings, .preferences-page) .publication-actions,
+  .agent-onboarding .setup-submit
+) {
+  padding-inline: 24px;
+}
+@media (max-width: 600px) {
+  .app-shell[data-theme]
+    :is(.workspace-settings, .agent-onboarding)
+    .workspace-heading,
+  .app-shell[data-theme]
+    :is(.workspace-settings, .agent-onboarding)
+    .workspace-section-heading,
+  .app-shell[data-theme]
+    :is(.workspace-settings, .agent-onboarding)
+    .setup-section-heading {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .app-shell[data-theme]
+    :is(.workspace-settings, .agent-onboarding)
+    :is(.workspace-actions, .form-actions, .publication-actions, .setup-submit),
+  .app-shell[data-theme]
+    :is(.personal-settings, .preferences-page)
+    .account-management
+    .workspace-actions,
+  .app-shell[data-theme]
+    :is(.personal-settings, .preferences-page)
+    .account-management
+    .account-buttons {
+    display: grid;
+    width: 100%;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+    justify-content: stretch;
+  }
+  .app-shell[data-theme]
+    :is(.personal-settings, .preferences-page)
+    .profile-edit-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .app-shell[data-theme]
+    :is(.personal-settings, .preferences-page)
+    .profile-edit-row
+    .profile-identity {
+    grid-column: 2;
+    grid-row: 1;
+    margin: 0;
+  }
+  .app-shell[data-theme]
+    :is(.personal-settings, .preferences-page)
+    .profile-edit-row
+    > button {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+  }
+  .app-shell[data-theme] .agent-onboarding .target-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .parameter-control {
+    justify-content: center;
+  }
+}
+
+.parameter-row > :is(label, span:first-child),
+.agent-onboarding .asset-grid label > span,
+:is(.personal-settings, .preferences-page) .background-upload-row strong {
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 20px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

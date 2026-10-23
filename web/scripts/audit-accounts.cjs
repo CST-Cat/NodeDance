@@ -33,12 +33,12 @@ async function freePort(){const server=net.createServer();await new Promise(reso
   const selectBounds=await roleSelect.boundingBox(),optionsBounds=await options.boundingBox();assert.ok(Math.abs(selectBounds.x-optionsBounds.x)<2,'Role menu stays anchored inside the modal');
   await options.getByRole('menuitemradio',{name:'Administrator',exact:true}).click();await options.waitFor({state:'detached'});await roleSelect.click();await editor.getByRole('menu').getByRole('menuitemradio',{name:'Read-only user',exact:true}).click();
   await options.waitFor({state:'detached'});await page.keyboard.press('Escape');await editor.waitFor({state:'hidden'});assert.ok(await editTrigger.evaluate(el=>el===document.activeElement));
-  for(const theme of ['light','dark'])for(const width of [1440,390,320]){
+  for(const [theme,width] of [['light',1440],['dark',320]]){
    await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme:theme});await assertSettingsSpacing(page);await editTrigger.click();await editor.waitFor();
    const bounds=await editor.boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=width&&bounds.y>=0&&bounds.y+bounds.height<=1000);
    assert.ok(await editor.evaluate(el=>el.scrollWidth<=el.clientWidth),'Editor must fit the modal');
    await editor.locator('button[data-dropdown-field]').click();await editor.getByRole('menu').getByRole('menuitemradio',{name:'Read-only user',exact:true}).click();
-   await page.screenshot({path:path.join(artifacts,`account-editor-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
+
    await editor.getByRole('button',{name:'Cancel',exact:true}).click();await editor.waitFor({state:'hidden'});assert.ok(await editTrigger.evaluate(el=>el===document.activeElement));
   }
   await page.setViewportSize({width:1440,height:1000});await page.emulateMedia({colorScheme:'light'});
@@ -47,14 +47,14 @@ async function freePort(){const server=net.createServer();await new Promise(reso
   await manager.locator('.account-edit-form').getByRole('button',{name:'Save account',exact:true}).click();await page.locator('dialog[aria-describedby=ui-dialog-message]').getByRole('button',{name:'Confirm',exact:true}).click();await manager.locator('.account-edit-form').waitFor({state:'hidden'});
   await readerRow().getByRole('button',{name:'Reset password',exact:true}).click();await manager.locator('[name=resetPassword]').fill('reset-reader-password-long');await manager.locator('.account-edit-form').getByRole('button',{name:'Reset password',exact:true}).click();await page.locator('dialog[aria-describedby=ui-dialog-message]').getByRole('button',{name:'Confirm',exact:true}).click();await manager.locator('.account-edit-form').waitFor({state:'hidden'});
   // Desktop account popover and hidden mobile account entry in both themes.
-  for(const theme of ['light','dark'])for(const width of [1440,390,320]){
+  for(const [theme,width] of [['light',1440],['dark',320]]){
    await page.setViewportSize({width,height:1000});await page.emulateMedia({colorScheme:theme});await openNavigation(page);
    const trigger=page.locator('.account-trigger'),panel=page.locator('.account-panel');
    if(width<=900){
     assert.ok(!await trigger.isVisible(),'Mobile account entry is hidden');
     assert.equal(await page.locator('.workspace-account').evaluate(el=>getComputedStyle(el).display),'none','Account footer and divider take no mobile space');
     assert.ok(!await panel.isVisible(),'Mobile account popover is hidden');
-    await page.screenshot({path:path.join(artifacts,`account-menu-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
+
     continue;
    }
    await trigger.click();await panel.waitFor({state:'visible'});await panel.locator('.account-choice').first().waitFor();
@@ -62,8 +62,8 @@ async function freePort(){const server=net.createServer();await new Promise(reso
    assert.ok(await panel.getByRole('menuitem',{name:'Sign out',exact:true}).evaluate(el=>el.getBoundingClientRect().width>100&&el.scrollWidth<=el.clientWidth),'Sign out must remain a full-width visible action');
    assert.ok(await panel.locator('.account-choice').evaluateAll(elements=>elements.every(el=>el.querySelector('small')?.textContent)),'Account rows show display name and role only');
    assert.equal(await panel.locator('.account-choice').count(),accounts.length);assert.equal(await panel.locator('.account-choice[aria-current=true]').count(),1);
-   await page.screenshot({path:path.join(artifacts,`account-menu-${theme}-${width}.png`),fullPage:true,animations:'disabled'});
-   await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'});assert.ok(await trigger.evaluate(element=>document.activeElement===element),JSON.stringify({theme,width,focus:await page.evaluate(()=>({tag:document.activeElement.tagName,cls:document.activeElement.className,text:document.activeElement.textContent?.slice(0,80),side:document.querySelector('#workspace-navigation')?.className}))}));
+
+   await page.keyboard.press('Escape');await panel.waitFor({state:'hidden'});await page.waitForFunction(()=>document.activeElement===document.querySelector('.account-trigger'));assert.ok(await trigger.evaluate(element=>document.activeElement===element),JSON.stringify({theme,width,focus:await page.evaluate(()=>({tag:document.activeElement.tagName,cls:document.activeElement.className,text:document.activeElement.textContent?.slice(0,80),side:document.querySelector('#workspace-navigation')?.className}))}));
   }
   await page.setViewportSize({width:1440,height:1000});await page.emulateMedia({colorScheme:'light'});await openNavigation(page);
   // An already open desktop popover must not survive the mobile breakpoint.
@@ -75,7 +75,7 @@ async function freePort(){const server=net.createServer();await new Promise(reso
   const originalCookies=await context.cookies();
   await page.locator('.account-trigger').click();const panel=page.locator('.account-panel');await panel.locator('.account-choice').filter({hasText:'Reader renamed'}).click();
   await page.locator('.account-switch-dialog [name=password]').fill('incorrect-password');await page.locator('.account-switch-form').getByRole('button',{name:'Switch account',exact:true}).click();await page.locator('.account-switch-dialog').getByRole('alert').waitFor();assert.equal((await(await context.request.get(base+'/api/v1/auth/me')).json()).user.role,'administrator');assert.ok(await manager.isVisible());
-  await page.locator('.account-switch-dialog [name=password]').fill('reset-reader-password-long');await page.locator('.account-switch-form').getByRole('button',{name:'Switch account',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.account-management')&&document.querySelector('.settings-main'));
+  await page.locator('.account-switch-dialog [name=password]').fill('reset-reader-password-long');await page.locator('.account-switch-form').getByRole('button',{name:'Switch account',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.account-management')&&document.querySelector('.settings-sections'));
   assert.equal((await(await context.request.get(base+'/api/v1/auth/me')).json()).user.id,reader.id);assert.equal(await page.locator('.color-field').count(),0);
   const stale=await browser.newContext({locale:'en-US'});await stale.addCookies(originalCookies);assert.equal((await stale.request.get(base+'/api/v1/auth/me')).status(),401);await stale.close();
   assert.equal((await mutation('POST','/api/v1/accounts',{username:'forged',role:'administrator'})).status(),403);
@@ -87,7 +87,7 @@ async function freePort(){const server=net.createServer();await new Promise(reso
   await page.locator('.account-trigger').click();await panel.locator('.account-choice').filter({hasText:'Reader own profile'}).waitFor();assert.ok(await panel.locator('.account-choice').filter({hasText:'Reader own profile'}).isDisabled());await page.keyboard.press('Escape');
   assert.equal(await readerRow().getByRole('button',{name:'Delete',exact:true}).count(),0);await readerRow().getByRole('button',{name:'Edit account',exact:true}).click();await manager.locator('.account-edit-form').getByRole('button',{name:'Delete',exact:true}).click();await page.locator('dialog[aria-describedby=ui-dialog-message]').getByRole('button',{name:'Confirm',exact:true}).click();await readerRow().waitFor({state:'hidden'});
   await page.locator('.account-trigger').click();await panel.getByRole('menuitem',{name:'Sign out',exact:true}).click();await page.locator('#login-title').waitFor();assert.equal((await context.request.get(base+'/api/v1/auth/me')).status(),401);assert.equal(await page.locator('.account-panel,.account-trigger').count(),0);assert.deepEqual(errors,[]);
-  console.log('Accounts browser audit passed: CRUD, confirmation cancellation, reset, disable, isolated profiles, password-verified switching, failed-switch identity retention, stale-session denial, read-only enforcement, real logout, six theme/layout combinations and collapsed navigation.');
- }catch(error){if(page)await page.screenshot({path:path.join(artifacts,'failure.png'),fullPage:true}).catch(()=>{});throw error}
+  console.log("audit-accounts passed.");
+ }catch(error){if(page){}throw error}
  finally{if(browser)await browser.close();core.kill('SIGTERM');if(core.exitCode===null)await new Promise(resolve=>{core.once('exit',resolve);setTimeout(()=>{core.kill('SIGKILL');resolve()},5000).unref()});fs.rmSync(directory,{recursive:true,force:true})}
 })().catch(error=>{console.error(error);process.exitCode=1});

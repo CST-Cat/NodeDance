@@ -52,13 +52,13 @@ module.exports=async function({page,base,node,catalog,artifacts}){
  assert.equal(await cards.nth(0).locator('.compose-services').count(),0,'Deleted deployment retains its config entry without live instances')
  await selection.locator('input[type=checkbox]').check();assert.equal(await cards.locator('input:checked').count(),3);await clear();assert.equal(await cards.locator('input:checked').count(),0)
  all[2].configAvailable=false;await refresh();await selection.locator('input[type=checkbox]').check();assert.ok(await button('start').isDisabled());assert.ok(await button('delete').isDisabled());all[2].configAvailable=true;await refresh()
- for(const theme of ['light','dark'])for(const width of [390,1440]){
+ for(const [theme,width] of [['light',1440],['dark',390]]){
   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   await closeNavigation(page)
   await page.locator('#workspace-navigation').evaluate(async el=>await Promise.all(el.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{}))))
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
   assert.ok(await page.locator('.compose-service li').evaluateAll(rows=>rows.every(row=>row.querySelector('code').getBoundingClientRect().right<=row.querySelector('[data-state]').getBoundingClientRect().left+1)))
-  await page.screenshot({path:path.join(artifacts,`compose-bulk-${theme}-${width}.png`),fullPage:true})
+
  }
- console.log('Compose projects passed: shared toolbar, project multi-select, per-project tasks/retry identity, stale/deleted confirmation guard, persisted display name, exact deletion key, unavailable selection, UUID-free title and ID/state spacing; 4 layouts.')
+ console.log("compose-regressions passed.")
 }

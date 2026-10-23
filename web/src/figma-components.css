@@ -4,7 +4,7 @@
   --control-height: 32px;
   --button-height: 36px;
   --control-font: 14px;
-  --focus: var(--figma-border-info);
+  --focus: var(--figma-ring-primary);
   --button-focus: var(--figma-ring-primary);
   --motion-control: 150ms;
   --motion-check: 100ms;
@@ -12,16 +12,18 @@
   font-size: var(--figma-size-text-sm);
   line-height: 1.4;
 }
-.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)) {
+.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):not(:where(.registry-controls *)) {
   min-height: var(--button-height);
   padding: 7px 12px;
   font-size: 14px;
   line-height: 20px;
-  border-radius: var(--radius-control);
   transition: background-color var(--motion-control) linear, border-color var(--motion-control) linear, color var(--motion-control) linear,
     /* Restrained spring press feedback (OpenUI CdsMotionEngine pill pattern);
        transform only applies to :active buttons. */
     transform 0.18s var(--ux-spring);
+}
+.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):not(:where(.personal-settings *, .preferences-page *)) {
+  border-radius: var(--radius-control);
 }
 .app-shell[data-theme] :is(.primary-button, .secondary-button, .alert-button, .container-action, .image-button, .probe-primary) {
   border-radius: var(--radius-control);
@@ -65,7 +67,7 @@
   background: var(--figma-background-danger);
   filter: brightness(.95);
 }
-.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):disabled {
+.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):disabled:not(:where(.registry-controls *)) {
   color: var(--text);
   background: transparent;
   border-color: var(--figma-border-secondary);
@@ -84,34 +86,38 @@
   border-color: transparent;
   opacity: .6;
 }
-.app-shell[data-theme] :is(button, summary, a):focus-visible {
+.app-shell[data-theme] :is(button, summary, a):focus-visible:not(:where(.registry-controls *)) {
   outline: 1.5px solid var(--button-focus);
   outline-offset: 2px;
   box-shadow: none;
 }
 .app-shell[data-theme] :is(a, a:visited) { color: var(--text); }
 .app-shell[data-theme] a:hover { color: var(--muted-strong); }
-.app-shell[data-theme] ::selection { color: var(--text); background: var(--figma-background-info); }
-.app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(.elfinder *) {
+.app-shell[data-theme] ::selection { color: var(--selection-text); background: var(--selection); }
+.app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(.elfinder *):not(:where(.registry-controls *)) {
   min-height: var(--control-height);
   padding: 5px 12px;
   padding-inline-end: var(--input-padding-end, 12px);
-  border-radius: var(--radius-control);
   font-size: var(--control-font);
   line-height: 20px;
 }
-.app-shell[data-theme] textarea:not(.elfinder *) {
+.app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(.elfinder *):not(:where(.personal-settings *, .preferences-page *)) {
   border-radius: var(--radius-control);
+}
+.app-shell[data-theme] textarea:not(.elfinder *):not(:where(.registry-controls *)) {
   padding: 12px 16px;
   font-size: var(--control-font);
   line-height: 1.4;
 }
-.app-shell[data-theme] :is(input, textarea)::placeholder { color: var(--figma-text-tertiary); opacity: 1; }
-.app-shell[data-theme] :is(input, textarea, select):disabled { opacity: .5; background: var(--control-bg); color: var(--text); }
-.app-shell[data-theme] :is(input, textarea, select):focus-visible {
+.app-shell[data-theme] textarea:not(.elfinder *):not(:where(.personal-settings *, .preferences-page *)) {
+  border-radius: var(--radius-control);
+}
+.app-shell[data-theme] :is(input, textarea):not(:where(.registry-controls *))::placeholder { color: var(--figma-text-tertiary); opacity: 1; }
+.app-shell[data-theme] :is(input, textarea, select):disabled:not(:where(.registry-controls *)) { opacity: .5; background: var(--control-bg); color: var(--text); }
+.app-shell[data-theme] :is(input, textarea, select):focus-visible:not(:where(.registry-controls *)) {
   outline: none;
-  border-color: var(--figma-border-info);
-  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-info);
+  border-color: var(--figma-text-primary);
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-primary);
 }
 .app-shell[data-theme] .ui-select .u031-btn {
   min-height: var(--control-height);
@@ -158,7 +164,7 @@ input[type="radio"] { border-radius: var(--radius-pill); background: transparent
 input[type="radio"]::after { content: ""; position: absolute; inset: 3px; border-radius: var(--radius-pill); background: var(--selection); opacity: 0; }
 input[type="radio"]:checked { border: 1px solid var(--selection); }
 input[type="radio"]:checked::after { opacity: 1; }
-input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-info); }
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-primary); }
 input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cursor: not-allowed; }
 /* 256 / 52 px sidebar variants; existing user resizing and context navigation remain. */
 .app-shell[data-theme] .workspace-sidebar { padding: 0 8px 12px; background: var(--sidebar-bg); border-right-width: .5px; }
@@ -216,7 +222,7 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
 .app-shell[data-theme] .workspace-sidebar.is-collapsed .brand-mark { width: 20px; transform: scale(.8) rotate(-12deg); }
 @media (pointer: coarse), (max-width: 700px) {
   .app-shell[data-theme] :is(.header-actions button, .navigation-toggle) { width: 36px; height: 44px; min-height: 44px; padding: 8px; }
-  .app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), textarea):not(.ui-select-source):not(.elfinder *) { font-size: 16px; }
+  .app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), textarea):not(.ui-select-source):not(.elfinder *):not(:where(.registry-controls *)) { font-size: 16px; }
 }
 
 .app-shell[data-theme] .context-heading h2 { font-size: 14px; line-height: 20px; }
@@ -234,7 +240,7 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
   }
 }
 @media (pointer: coarse), (max-width: 700px) {
-  .app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):not(.load-trigger):not(.terminal-close) {
+  .app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):not(.load-trigger):not(.terminal-close):not(:where(.registry-controls *)) {
     min-height: 44px;
   }
 }
