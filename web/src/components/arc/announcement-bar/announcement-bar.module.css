@@ -1,0 +1,59 @@
+.collapse { overflow: hidden; container-type: inline-size; font-family: var(--font-body); letter-spacing: var(--tracking-body); }
+
+/* The side column mirrors the controls, so the message stays centered on the page rather than in the leftover space. */
+.bar { --icon: 32px; --control-gap: 2px; --muted: var(--text-secondary); display: grid; grid-template-columns: calc(var(--controls, 0) * var(--icon) + max(var(--controls, 0) - 1, 0) * var(--control-gap)) minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); padding: 6px 8px 6px 16px; border-bottom: 1px solid var(--border); background: var(--surface-muted); color: var(--foreground); }
+.bar[data-tone="inverted"] { --muted: color-mix(in oklab, var(--background) 66%, transparent); border-bottom-color: transparent; background: var(--foreground); color: var(--background); }
+
+.side { min-width: 0; }
+.viewport { position: relative; min-height: 32px; overflow: hidden; }
+
+/* Faces overlap in place; the entering one reports its height and the viewport springs to it. */
+.face { position: absolute; top: 0; right: 0; left: 0; display: flex; min-height: 32px; align-items: center; justify-content: center; }
+.message { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 2px 12px; margin: 0; padding: 6px 0; font-size: var(--text-sm); line-height: var(--leading-body); text-align: center; text-wrap: balance; }
+.text { min-width: 0; }
+
+/* The countdown is one run of text: every cell shares the line box, so digits, colons, and the day mark sit on the message baseline. */
+.countdown { display: inline-flex; align-items: baseline; gap: 6px; color: var(--muted); white-space: nowrap; }
+.countdownLabel { color: inherit; }
+.time { display: inline-flex; align-items: baseline; color: var(--foreground); font-variant-numeric: tabular-nums; font-weight: 500; line-height: inherit; }
+.time[data-pending] { opacity: 0; }
+.bar[data-tone="inverted"] .time { color: var(--background); }
+.digit { position: relative; display: inline-block; overflow: hidden; overflow: clip; text-align: center; }
+.digitSizer { visibility: hidden; }
+.digitFace { position: absolute; inset: 0; display: block; }
+.unit { display: inline-flex; align-items: baseline; }
+.unitMark { margin-left: 1px; color: var(--muted); font-weight: 400; }
+/* "case" lifts the colon to the middle of the figures, which it loses once the digits are split into cells. */
+.sep { display: inline-block; padding-inline: 1px; color: var(--muted); font-feature-settings: "case"; font-weight: 400; }
+.gap { display: inline-block; width: .4em; }
+
+.cta { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: inherit; cursor: pointer; font: inherit; font-weight: 500; text-decoration: none; white-space: nowrap; -webkit-tap-highlight-color: transparent; }
+.cta svg { transition: transform var(--duration-fast) var(--ease-standard); }
+
+.controls { display: flex; align-items: center; gap: var(--control-gap); }
+.icon, .ring { position: relative; display: grid; width: var(--icon); height: var(--icon); flex: none; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--muted); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
+.icon:active, .ring:active { background: color-mix(in oklab, currentColor 12%, transparent); color: inherit; }
+.ring svg { width: 20px; height: 20px; overflow: visible; transform: rotate(-90deg); }
+.ringTrack { fill: none; stroke: currentColor; stroke-opacity: .22; stroke-width: 1.75; }
+.ringFill { fill: none; stroke: currentColor; stroke-linecap: round; stroke-width: 1.75; }
+.ringIcon { position: absolute; inset: 0; display: grid; place-items: center; }
+.ringIcon svg { width: 9px; height: 9px; transform: none; fill: currentColor; }
+.bar[data-tone="inverted"] .icon, .bar[data-tone="inverted"] .ring { color: var(--muted); }
+
+@media (hover: hover) and (pointer: fine) {
+  .icon:hover, .ring:hover { background: color-mix(in oklab, currentColor 10%, transparent); }
+  .bar .icon:hover, .bar .ring:hover { color: var(--foreground); }
+  .bar[data-tone="inverted"] .icon:hover, .bar[data-tone="inverted"] .ring:hover { color: var(--background); }
+  .cta:hover svg { transform: translateX(2px); }
+}
+
+/* Narrow bars drop the mirror column and read from the start edge. */
+@container (max-width: 560px) {
+  .bar { grid-template-columns: 0 minmax(0, 1fr) auto; gap: 0 var(--space-2); padding-left: 14px; }
+  .face { justify-content: flex-start; }
+  .message { justify-content: flex-start; column-gap: 10px; text-align: left; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon, .ring, .cta svg { transition: none; }
+}

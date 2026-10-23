@@ -88,7 +88,7 @@ Administrator VPS sections use the contextual sidebar; returning home restores g
 
 Compose project display names are administrator-only preferences. The isolated browser suite stores a private project-name canary and verifies that anonymous/public output does not contain it; Compose deletion remains behind the shared authenticated operation and CSRF boundary.
 
-The browser guest regression opens a shared dropdown before guest entry and verifies immediate removal of its teleported listbox. Custom controls keep the existing Core operation, opt-in policy and session boundaries.
+The browser guest regression opens a shared dropdown before guest entry and verifies immediate removal of its portaled UIArc dropdown menu. Custom controls keep the existing Core operation, opt-in policy and session boundaries.
 
 The shared light/dark theme uses semantic surface, text, control and state roles documented in `DESIGN.md`. Visual flattening does not change operation discovery, public projection, authorization or task semantics. Browser audits use fresh assets and isolated Core/Agent resources; the theme regression checks real persisted/system switching and actual rendered contrast.
 
@@ -127,3 +127,27 @@ The discovered dashboard settings schema no longer includes a container preview 
 本机 Core／Agent 更新由 root 独立执行，无需登录；公网更新 API 仍必须通过管理员认证和 CSRF。CLI/TUI 的 `persistent` 登录策略只在凭据验证成功后记录，不授予额外权限；伪造 User-Agent、会话策略或身份请求头不能访问管理 API。普通 Web 登录继续闲置过期，退出、撤销、账号停用和密码变更同样撤销永久会话。游客安全回归覆盖伪造策略以及实际永久会话的撤销。
 
 页面语言自动跟随浏览器，不再使用顶部语言选择器。游客切换仍验证真实操作下拉浮层在进入公开页时立即移除；语言偏好不改变游客数据边界。
+
+The narrow-screen stale-login regression verifies the authenticated administrator nodes screen and a successful real `auth.me` request, rather than requiring the account menu that the mobile design hides. CSRF retry counts and stale-session revocation assertions remain unchanged.
+
+窄屏旧登录页回归检查管理员已认证的节点管理页和真实 `auth.me` 请求成功，不依赖移动设计隐藏的账号菜单。CSRF 重试次数和旧会话失效断言保持不变。
+
+Domain/certificate operations are administrator-only and discovered by the anonymous/forged-identity operation matrix. Inventory labels, DNS provider metadata and tokens never enter public projections, even with administrator cookies. The isolated browser fixture stores distinctive domain/provider/token markers and asserts their absence from guest JSON. Certificate/private-key exports require administrator authentication, CSRF, confirmation and a matching revision; lists and jobs expose metadata only. `audit-domains.cjs` verifies the anonymous deep link performs no private reads and private PEM never enters browser storage.
+
+The management component refactor retains the same guest policy operations and explicit resource opt-in. Installed Radix checkbox controls preserve boolean/array values and accessible names; changing presentation does not publish drafts. The browser regression now opens the real scoped Radix operation menu and verifies it disappears immediately on guest entry, while retaining all API, forged identity, withdrawal and administrator-cookie projection assertions.
+
+The node display regression adds a private `country` metadata object to the
+Core node-list contract and publishes the supported preference icon enum. Neither
+country metadata nor administrator-selected logos enter the guest projection.
+The guest browser audit explicitly rejects a `country` property in public nodes;
+the existing anonymous-operation matrix discovers the updated Core contract.
+Geolocation queries run only inside Core for public node IP literals, never from
+browser/guest requests to a third-party origin.
+
+手动国家 `countryCode` 与自动定位结果同属管理员节点展示偏好，不向游客投影；保存通过既有 `nodes.save-preference` 私有操作执行。
+
+账号菜单已接入安装的 UIArc User Menu；切换账号在 UIArc Dialog 中继续调用 `auth.switch` 验证目标密码。游客安全回归保留私有菜单立即清除、账号信息不可见、Esc 焦点恢复和真实退出后的会话失效断言。
+
+“总览全球”是私有管理视图，复用同一 Core 节点数据，不加入游客公开投影。浏览器回归验证未登录深链不读取节点，以及进入游客时清除地球、卡片和私有请求。
+
+城市定位同属私有节点管理数据：`location`、城市、州／省、经纬度与手动覆盖不进入游客投影。浏览器安全回归保存私有城市记录并检查匿名和管理员 Cookie 下公开数据均不泄露；城市目录新操作从 Core 契约发现后纳入匿名拒绝矩阵。

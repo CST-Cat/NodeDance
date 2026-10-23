@@ -1,125 +1,54 @@
-const assert = require('node:assert/strict'), path = require('node:path'), fs = require('node:fs')
-async function checkSearchTravel(page, source, target, action) {
- const origin=await page.locator(source).evaluate(el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y+scrollY}})
- await action()
- await page.waitForFunction(selector=>{
-  const el=document.querySelector(selector)
-  return el?.getBoundingClientRect().width>0 && el.getAnimations().some(a=>a.effect.getKeyframes().some(f=>f.transform))
- },target)
- const frames=await page.locator(target).evaluate(el=>{
-  const animation=el.getAnimations().find(a=>a.effect.getKeyframes().some(f=>f.transform))
-  animation.pause()
-  const rect=()=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y+scrollY}}
-  animation.currentTime=0;const start=rect(),opacity=getComputedStyle(el).opacity
-  animation.currentTime=animation.effect.getTiming().duration/2;const middle=rect()
-  animation.finish();const end=rect()
-  return {start,middle,end,opacity}
- })
- assert.ok(Math.hypot(frames.start.x-origin.x,frames.start.y-origin.y)<1,'Search starts at the previously visible glyph: '+JSON.stringify({origin,frames}))
- assert.equal(Number(frames.opacity),1,'The same magnifier moves without a replacement fading in at the endpoint')
- assert.ok(Math.hypot(frames.middle.x-frames.start.x,frames.middle.y-frames.start.y)>3,'Magnifier travels away from its origin')
- assert.ok(Math.hypot(frames.middle.x-frames.end.x,frames.middle.y-frames.end.y)>3,'Magnifier is still between endpoints halfway through')
+// Width chooses the presentation; scroll input must never reshape the toolbar.
+const assert=require('node:assert/strict'),path=require('node:path')
+async function settle(page){await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))))}
+async function checkStableScroll(page){
+ const measure=()=>page.locator('.overview-toolbar-slot').evaluate(el=>({height:el.offsetHeight,transform:getComputedStyle(el).transform,styles:[el,...el.querySelectorAll('*')].map(x=>x.getAttribute('style')),heightOfPage:document.documentElement.scrollHeight}))
+ await page.evaluate(()=>{document.querySelector('.nodes-dashboard').style.minHeight='3500px';scrollTo(0,0)})
+ await settle(page);const before=await measure()
+ for(const y of [100,400,180,500,450,0]){await page.evaluate(y=>scrollTo(0,y),y);await settle(page);const after=await measure();assert.equal(after.height,before.height,'Scroll preserves toolbar height');assert.equal(after.transform,'none');assert.deepEqual(after.styles,before.styles,'Scroll writes no toolbar projection styles');assert.equal(after.heightOfPage,before.heightOfPage)}
+ await page.evaluate(()=>document.querySelector('.nodes-dashboard').style.removeProperty('min-height'))
 }
-module.exports = async function ({page, base, artifacts}) {
- const mode = () => page.locator('.overview-toolbar-slot').getAttribute('data-mode')
- const settle = () => page.waitForTimeout(600)
- for (const theme of ['light', 'dark']) for (const width of [320, 390, 700, 1440]) {
-  await page.setViewportSize({width, height:800})
-  await page.goto(base+'/#/nodes');await page.reload()
-  await page.locator('.node-summary').waitFor();await page.evaluate(()=>scrollTo(0,0));await settle()
-  await page.evaluate(theme => {
-   document.querySelector('.app-shell').dataset.theme=theme
-   const spacer=document.createElement('div');spacer.style.height='2000px'
-   document.querySelector('.nodes-dashboard').append(spacer)
-  },theme)
-  const initial=await page.locator('.overview-toolbar-slot').evaluate(el=>({top:el.getBoundingClientRect().top+scrollY,height:el.offsetHeight,document:document.documentElement.scrollHeight}))
-  if(width===390) {
-   await checkSearchTravel(page,'.node-search svg','.overview-search-toggle svg',()=>page.evaluate(()=>scrollTo(0,80)))
-   await settle()
-   await checkSearchTravel(page,'.overview-search-toggle svg','.node-search svg',()=>page.evaluate(()=>scrollBy(0,-30)))
-   await settle()
-   // Reverse with the expanded glyph paused mid-flight, so the next morph
-   // must inherit its actual rendered position rather than either endpoint.
-   await page.evaluate(()=>scrollBy(0,40));await settle()
-   await page.evaluate(()=>scrollBy(0,-30))
-   await page.waitForFunction(()=>document.querySelector('.overview-toolbar-slot').dataset.mode==='expanded')
-   await page.locator('.node-search svg').evaluate(el=>{const a=el.getAnimations().find(a=>a.effect.getKeyframes().some(f=>f.transform));a.pause();a.currentTime=a.effect.getTiming().duration/2})
-   await checkSearchTravel(page,'.node-search svg','.overview-search-toggle svg',()=>page.evaluate(()=>scrollBy(0,40)))
-   await settle();await page.evaluate(()=>scrollTo(0,0));await settle()
+module.exports=async function({page,base,artifacts}){
+ for(const theme of ['light','dark'])for(const width of [320,390,700,1440]){
+  await page.setViewportSize({width,height:900});await page.goto(base+'/#/nodes');await page.locator('.node-summary').waitFor()
+  await page.locator('.app-shell').evaluate((el,t)=>{el.dataset.theme=t;document.documentElement.dataset.theme=t},theme)
+  await settle(page);const mobile=width<=900,search=page.locator('#overview-node-search'),preferences=page.locator('.view-preferences-button')
+  assert.equal(await page.locator('.overview-search-toggle').isVisible(),mobile)
+  assert.equal(await search.isVisible(),!mobile,'Only desktop has an inline search field')
+  if(mobile){
+   const strip=await page.locator('.overview-toolbar-panel').boundingBox();assert.ok(strip.height<=50,'Compact toolbar stays on one row')
+   const row=await page.locator('.node-summary,.overview-search-toggle,.dashboard-toolbar-actions > button').evaluateAll(items=>items.map(el=>{const r=el.getBoundingClientRect();return {center:(r.top+r.bottom)/2,left:r.left,right:r.right}}))
+   assert.ok(row.every(r=>Math.abs(r.center-(strip.y+strip.height/2))<1&&r.left>=0&&r.right<=width),'Counts and all three icons share one contained row')
   }
-  await page.evaluate(()=>scrollTo(0,80))
-  if(width===390 && theme==='light') {
-   await page.waitForTimeout(80)
-   assert.ok(await page.locator('.overview-toolbar-slot').evaluate(el=>el.getAnimations().some(a=>a.playState==='running')),'Large reflow remains in motion after 80ms')
-   assert.equal(await page.locator('.node-summary').evaluate(el=>getComputedStyle(el).overflowY),'visible','Moving numbers are not clipped by the compact strip')
-   const capture=await page.context().newCDPSession(page)
-   fs.writeFileSync(path.join(artifacts,'overview-motion-early.png'),Buffer.from((await capture.send('Page.captureScreenshot')).data,'base64'))
-   await page.waitForTimeout(120)
-   fs.writeFileSync(path.join(artifacts,'overview-motion-middle.png'),Buffer.from((await capture.send('Page.captureScreenshot')).data,'base64'))
-   await capture.detach()
+  assert.equal(await page.locator('.overview-toolbar-panel .node-count-label').first().isVisible(),!mobile)
+  const actions=await page.locator('.dashboard-toolbar-actions > button').evaluateAll(buttons=>buttons.map(el=>{const b=el.getBoundingClientRect(),icon=el.querySelector('svg'),i=icon.getBoundingClientRect();const label=el.querySelector('.overview-action-label').getBoundingClientRect();return {height:b.height,centerError:Math.abs((b.top+b.bottom-i.top-i.bottom)/2),labelCenterError:label.height?Math.abs((label.top+label.bottom-i.top-i.bottom)/2):0,transform:getComputedStyle(icon).transform}}))
+  for(const action of actions){assert.ok(action.height>=44);assert.ok(action.centerError<1,'Action icons stay vertically centered');assert.equal(action.transform,'none');assert.ok(action.labelCenterError<1,'Action labels align with their icons')}
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'No horizontal overflow')
+  await checkStableScroll(page)
+  if(mobile){
+   const trigger=page.locator('.overview-search-toggle');await trigger.click();const dialog=page.locator('.overview-search-dialog[open]');await dialog.waitFor();assert.equal(await page.locator('#overview-node-search').count(),1)
+   await search.fill('retained-search');await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});assert.ok(await trigger.evaluate(el=>el===document.activeElement),'Search restores trigger focus '+theme+'-'+width+': '+await page.evaluate(()=>document.activeElement?.outerHTML.slice(0,400)))
+   await trigger.click();assert.equal(await search.inputValue(),'retained-search');await search.fill('');await dialog.locator('.ui-dialog-close').click()
   }
-  await settle()
-  if(width>900){assert.equal(await mode(),'inline');continue}
-  assert.equal(await page.locator('.overview-toolbar-slot').getAttribute('data-animating'),null,'Motion cleanup restores normal overflow')
-  assert.equal(await mode(),'compact')
-  const compact=await page.locator('.overview-toolbar-slot').evaluate(el=>{
-   const panel=el.firstElementChild, summary=el.querySelector('.node-summary')
-   return {top:el.getBoundingClientRect().top+scrollY,y:scrollY,height:el.offsetHeight,document:document.documentElement.scrollHeight,position:getComputedStyle(panel).position,
-    reserve:el.closest(".nodes-dashboard").style.cssText,padding:getComputedStyle(el.closest(".nodes-dashboard")).paddingBottom,overflow:document.documentElement.scrollWidth>innerWidth,
-    rows:[...el.querySelectorAll('.node-summary article,.overview-search-toggle,.dashboard-toolbar-actions>button')].map(e=>({x:e.getBoundingClientRect().x,y:e.getBoundingClientRect().y,h:e.getBoundingClientRect().height})),summaryWidth:summary.clientWidth,summaryScroll:summary.scrollWidth}
-  })
-  assert.ok(Math.abs(compact.top-initial.top)<1,'Original card upper edge stays anchored')
-  assert.equal(compact.y,80,'Collapsing never scrolls the page')
-  assert.ok(Math.abs(compact.document-initial.document)<2,'Document height remains stable '+JSON.stringify({width,initial,compact}))
-  assert.ok(compact.height<initial.height)
-  assert.ok(!['fixed','sticky'].includes(compact.position))
-  assert.equal(compact.overflow,false)
-  assert.equal(compact.rows.length,7)
-  assert.ok(compact.summaryScroll<=compact.summaryWidth+1,'All four normal counts fit without clipping')
-  assert.ok(compact.rows.every(r=>Math.abs((r.y+r.h/2)-(compact.rows[0].y+compact.rows[0].h/2))<5),'Counts and actions occupy one row')
-  assert.ok(compact.rows.slice(4).every(r=>r.h>=44),'Actions retain touch targets')
-  await page.screenshot({path:path.join(artifacts,`compact-${theme}-${width}.png`)})
-  await page.evaluate(()=>scrollBy(0,-5));await settle();assert.equal(await mode(),'compact','Small scroll jitter is ignored')
-  await page.evaluate(()=>scrollBy(0,-25));await settle();assert.equal(await mode(),'expanded')
-  await page.evaluate(()=>scrollBy(0,40));await settle();assert.equal(await mode(),'compact')
-  await page.locator('[data-expand-search]').click();await settle()
-  assert.equal(await mode(),'expanded');await page.locator('#overview-node-search').fill('retained')
-  await page.keyboard.press('Escape');await settle();assert.equal(await mode(),'compact')
-  await page.locator('[data-expand-search]').click();await settle()
-  assert.equal(await page.locator('#overview-node-search').inputValue(),'retained')
-  await page.locator('#overview-node-search').fill('');await page.keyboard.press('Escape');await settle()
-  await page.locator('.view-preferences-button').click();await settle()
-  assert.equal(await mode(),'expanded');assert.ok(await page.locator('#node-view-preferences').isVisible())
-  await page.screenshot({path:path.join(artifacts,`expanded-${theme}-${width}.png`)})
-  await page.locator('.view-preferences-button').click();await settle()
-  const beforeReversal=await page.evaluate(()=>document.documentElement.scrollHeight)
-  await page.evaluate(()=>scrollBy(0,50));await page.waitForTimeout(40)
-  await page.evaluate(()=>scrollBy(0,-35));await page.waitForTimeout(40)
-  await page.evaluate(()=>scrollBy(0,35));await settle()
-  assert.equal(await mode(),'compact','Interrupted motion reaches the latest state')
-  assert.ok(Math.abs(await page.evaluate(()=>document.documentElement.scrollHeight)-beforeReversal)<3,'Reversal preserves document height '+JSON.stringify({initial,now:await page.evaluate(()=>({height:document.documentElement.scrollHeight,reserve:document.querySelector('.nodes-dashboard').style.cssText}))}))
-  await page.evaluate(()=>scrollTo(0,0));await settle()
-  const bottom=await page.evaluate(()=>{const bottom=document.documentElement.scrollHeight-innerHeight;scrollTo(0,bottom);return bottom})
-  await settle();assert.ok(Math.abs(await page.evaluate(()=>scrollY)-bottom)<1,'Collapse near the bottom does not clamp or jump scrolling')
-  await page.setViewportSize({width:1200,height:800});await settle();assert.equal(await mode(),'inline')
-  assert.equal(await page.locator('.overview-search-toggle').isVisible(),false)
-
+  await preferences.click();const controls=page.locator('#node-view-preferences');await controls.waitFor({state:'visible'})
+  assert.equal(await controls.evaluate(el=>!!el.closest('dialog[open]')),mobile,'Preferences reuse the shared dialog on narrow screens only')
+  const selector=controls.locator('.ui-select').first(),combo=selector.locator('button[data-dropdown-field]');await combo.click()
+  const list=page.locator('.product-dropdown-menu').last();await list.waitFor();await list.getByRole('menuitemradio',{name:'Online',exact:true}).click();assert.equal(await selector.locator('select').inputValue(),'online')
+  await combo.click();await page.locator('.product-dropdown-menu').last().getByRole('menuitemradio',{name:'All states',exact:true}).click()
+  const save=controls.getByRole('button',{name:'Save view',exact:true}),response=page.waitForResponse(r=>r.url().endsWith('/dashboard/settings')&&r.request().method()==='PUT');await save.click();assert.equal((await response).status(),204,'Both presentations save through the existing Core operation')
+  await page.screenshot({path:path.join(artifacts,`preferences-${theme}-${width}.png`)})
+  if(mobile){await page.keyboard.press('Escape');assert.ok(await preferences.evaluate(el=>el===document.activeElement),'Preferences restore trigger focus')}
+  else await preferences.click()
+  await page.screenshot({path:path.join(artifacts,`overview-${theme}-${width}.png`)})
  }
- await page.emulateMedia({reducedMotion:'reduce'})
- await page.setViewportSize({width:390,height:800});await page.reload();await page.locator('.node-summary').waitFor()
- await page.evaluate(()=>{document.querySelector('.nodes-dashboard').style.minHeight='3000px';scrollTo(0,80)})
- await settle();assert.equal(await mode(),'compact')
- assert.equal(await page.locator('.overview-toolbar-slot').evaluate(el=>el.getAnimations({subtree:true}).length),0)
- await page.evaluate(()=>localStorage.setItem('nodedance.locale','zh-CN'))
- await page.setViewportSize({width:320,height:800});await page.reload();await page.locator('.node-summary').waitFor();await page.evaluate(()=>scrollTo(0,0));await settle()
- await page.evaluate(()=>{document.querySelector('.nodes-dashboard').style.minHeight='3000px';scrollTo(0,80)})
- await settle();assert.equal(await mode(),'compact')
- assert.deepEqual(await page.locator('.node-count-compact-label').allTextContents(),['总数','在线','离线','待接入'])
- await page.locator('.navigation-toggle').click();await settle()
- assert.equal(await page.locator('.overview-toolbar-panel').isVisible(),false)
- await page.locator('.navigation-toggle').click();await settle()
- assert.equal(await page.locator('.overview-toolbar-panel').isVisible(),true)
- await page.locator('.dashboard-toolbar-actions > .primary-button').click()
- await page.waitForURL('**/#/agent-enrollment')
- console.log('Overview scroll: anchored collapse, direction thresholds, search, preferences, desktop, themes and reduced motion passed')
+ await page.setViewportSize({width:390,height:900});await page.goto(base+'/#/nodes');await page.locator('.node-summary').waitFor()
+ await page.locator('.overview-search-toggle').click();await page.locator('#overview-node-search').fill('resize-value');await page.setViewportSize({width:1440,height:900});await page.locator('.overview-search-dialog').waitFor({state:'detached'});assert.equal(await page.locator('#overview-node-search').inputValue(),'resize-value');await page.locator('#overview-node-search').fill('')
+ await page.setViewportSize({width:390,height:900});await page.locator('.view-preferences-button').click();await page.locator('.overview-preferences-dialog[open]').waitFor();await page.setViewportSize({width:1440,height:900});await page.locator('.overview-preferences-dialog').waitFor({state:'detached'});assert.ok(await page.locator('#node-view-preferences').isVisible());await page.locator('.view-preferences-button').click()
+ await page.emulateMedia({reducedMotion:'reduce'});await page.setViewportSize({width:320,height:900});await page.reload();await page.locator('.node-summary').waitFor();await checkStableScroll(page)
+ await page.evaluate(()=>localStorage.setItem('nodedance.locale','zh-CN'));await page.reload();await page.locator('.node-summary').waitFor();assert.deepEqual(await page.locator('.node-count-compact-label').allTextContents(),['总数','在线','离线','待接入']);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
+ await page.locator('.navigation-toggle').click();assert.equal(await page.locator('.overview-toolbar-panel').isVisible(),false);await page.locator('.navigation-toggle').click();assert.equal(await page.locator('.overview-toolbar-panel').isVisible(),true)
+ await page.locator('.overview-enrollment-button').click();await page.waitForURL('**/#/agent-enrollment')
+ await page.evaluate(()=>localStorage.setItem('nodedance.locale','en'));await page.emulateMedia({reducedMotion:'no-preference'})
+ console.log('Overview presentation passed: fixed width layouts, scroll stability, centered icons, shared modal search/preferences, focus, selection/save, resize, Chinese and light/dark/mobile layouts.')
 }
+module.exports.checkStableScroll=checkStableScroll

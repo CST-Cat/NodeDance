@@ -1,10 +1,11 @@
+const {selectValue,selectedValue,readOptions}=require('./arc-controls.cjs')
 const {setBrowserLanguage}=require('./browser-language.cjs')
 // Isolated real Core and fresh embedded Web. Fixtures only touch this script's
 // temporary SQLite database; production resources and real Agents are never used.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net')
 const {spawn,execFileSync}=require('node:child_process'),{chromium}=require('playwright')
-const root=path.resolve(__dirname,'../..'),binary=path.join(root,'.build/feed-audit-core'),artifacts=path.join(root,'.build/feed-audit')
-fs.mkdirSync(artifacts,{recursive:true});execFileSync('go',['build','-o',binary,'./cmd/nodedance'],{cwd:root,stdio:'inherit'})
+const root=path.resolve(__dirname,'../..'),binary=path.join(root,'.build/nodedance'),artifacts=path.join(root,'.build/feed-audit')
+fs.mkdirSync(artifacts,{recursive:true})
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p}
 ;(async()=>{
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-feed-audit-')),base='http://127.0.0.1:'+await freePort()
@@ -16,10 +17,10 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const csrf=await(await context.request.get(base+'/api/v1/auth/csrf')).json(),credentials=JSON.parse(fs.readFileSync(path.join(directory,'initial-admin.json'),'utf8'))
   const login=await context.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':csrf.token},data:credentials});assert.equal(login.status(),200);const headers={Origin:base,'X-CSRF-Token':(await login.json()).csrfToken}
   const page=await context.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(base+'/#/feeds');const view=page.getByTestId('feeds-center');await view.waitFor()
-  const form=view.locator('.feed-form');assert.equal(await form.locator('[name=feedInterval]').inputValue(),'30')
-  const choices=await form.locator('[name=feedInterval] option').evaluateAll(v=>v.map(x=>Number(x.value)));assert.ok(choices.includes(1)&&choices.includes(30)&&choices.includes(1440))
+  const form=view.locator('.feed-form');assert.equal(await selectedValue(form.locator('button[data-dropdown-field][data-field-name=feedInterval]')),'30')
+  const choices=await readOptions(form.locator('button[data-dropdown-field][data-field-name=feedInterval]')).then(options=>options.map(option=>Number(option.value)));assert.ok(choices.includes(1)&&choices.includes(30)&&choices.includes(1440))
   const malicious='<img src=/rss-beacon onerror=window.__rssXss=1>'
-  await form.locator('[name=feedName]').fill(malicious);await form.locator('[name=feedUrl]').fill('http://127.0.0.1/feed');await form.locator('[name=feedInterval]').selectOption('1');await form.locator('input[type=checkbox]').first().uncheck()
+  await form.locator('[name=feedName]').fill(malicious);await form.locator('[name=feedUrl]').fill('http://127.0.0.1/feed');await selectValue(form.locator('button[data-dropdown-field][data-field-name=feedInterval]'),'1');await form.getByRole('checkbox').first().uncheck()
   let response=page.waitForResponse(r=>r.url()===base+'/api/v1/feeds'&&r.request().method()==='POST');await form.getByRole('button',{name:'Save',exact:true}).click();const created=await response;assert.equal(created.status(),200);let subscription=await created.json();assert.equal(subscription.intervalMinutes,1)
   await view.locator('.feed-select').filter({hasText:malicious}).waitFor()
   // Seed untrusted strings directly into the isolated store to verify the Web

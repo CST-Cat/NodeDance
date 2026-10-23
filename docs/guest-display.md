@@ -65,7 +65,7 @@ Administrator VPS sections use the contextual sidebar; returning home restores g
 
 Compose project display names are administrator-only preferences. The isolated browser suite stores a private project-name canary and verifies that anonymous/public output does not contain it; Compose deletion remains behind the shared authenticated operation and CSRF boundary.
 
-The browser guest regression opens a shared dropdown before guest entry and verifies immediate removal of its teleported listbox. Custom controls keep the existing Core operation, opt-in policy and session boundaries.
+The browser guest regression opens a shared dropdown before guest entry and verifies immediate removal of its portaled UIArc dropdown menu. Custom controls keep the existing Core operation, opt-in policy and session boundaries.
 
 The shared light/dark theme uses semantic surface, text, control and state roles documented in `DESIGN.md`. Visual flattening does not change operation discovery, public projection, authorization or task semantics. Browser audits use fresh assets and isolated Core/Agent resources; the theme regression checks real persisted/system switching and actual rendered contrast.
 
@@ -97,3 +97,19 @@ Compose configuration comparisons are administrator-only browser-local views of 
 本机 Core／Agent 更新由 root 独立执行，无需登录；公网更新 API 仍必须通过管理员认证和 CSRF。CLI/TUI 的 `persistent` 登录策略只在凭据验证成功后记录，不授予额外权限；伪造 User-Agent、会话策略或身份请求头不能访问管理 API。普通 Web 登录继续闲置过期，退出、撤销、账号停用和密码变更同样撤销永久会话。游客安全回归覆盖伪造策略以及实际永久会话的撤销。
 
 页面语言自动跟随浏览器，不再使用顶部语言选择器。游客切换仍验证真实操作下拉浮层在进入公开页时立即移除；语言偏好不改变游客数据边界。
+
+域名库存、证书、签发账号、DNS 提供商、密钥和任务均不属于游客投影。域名证书页面仅在管理界面出现；匿名深链转到登录，不读取这些私有资源。
+
+游客展示设置采用 shadcn CLI 安装的本地卡片和表单组件。资源勾选与公开名称仍由同一 Core 策略保存；预览读取已保存策略，未保存草稿不会自动公开。控件重构没有改变匿名公开页面的数据范围或自动选择新资源的行为。
+
+Node management country metadata and selected brand/OS icons remain private;
+this presentation change does not add them to guest display policy or projection.
+See [node display](node-display.md).
+
+手动国家 `countryCode` 与自动定位结果同属管理员节点展示偏好，不向游客投影；保存通过既有 `nodes.save-preference` 私有操作执行。
+
+账号菜单已接入安装的 UIArc User Menu；切换账号在 UIArc Dialog 中继续调用 `auth.switch` 验证目标密码。游客安全回归保留私有菜单立即清除、账号信息不可见、Esc 焦点恢复和真实退出后的会话失效断言。
+
+“总览全球”是私有管理视图，复用同一 Core 节点数据，不加入游客公开投影。浏览器回归验证未登录深链不读取节点，以及进入游客时清除地球、卡片和私有请求。
+
+城市定位同属私有节点管理数据：`location`、城市、州／省、经纬度与手动覆盖不进入游客投影。浏览器安全回归保存私有城市记录并检查匿名和管理员 Cookie 下公开数据均不泄露；城市目录新操作从 Core 契约发现后纳入匿名拒绝矩阵。

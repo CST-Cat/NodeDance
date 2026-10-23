@@ -4,25 +4,29 @@
 
 ### English
 
-- Move the overview magnifier continuously between the expanded search field and compact action, including mid-flight reversals.
+### 简体中文
 
-- Soften mobile overview transitions with the locally sourced Anthropic deceleration curve and synchronized 480ms motion, keeping moving numbers visible throughout the transition.
+## [0.1.51]
 
-- Compact narrow-screen overview counts and actions into an anchored single row on downward scrolling, expanding on upward scrolling while preserving search state and page position.
+### English
 
-- Restore subtle full-width mobile menu dividers using the locally studied Anthropic navigation structure and faded-slate separator color.
-- Scale narrow-screen navigation icons with font cap height and center them vertically with their labels, preserving desktop icon geometry and touch targets.
+- Add domain and certificate management with ACME issuance, renewal, revocation, private export, DNS providers, durable jobs and notifications through the shared Web/CLI/TUI operation contract.
+- Add schema-driven JSONL batch operations with shared CLI/TUI validation, execution, observation and private downloads.
+- Add global fleet overview with COBE 2.0.1, city markers, visible VPS names, rotating node cards and prefetched per-node metrics that stay populated during handoff.
+- Add automatic public-IP city positioning and manual city/coordinate preferences, a bundled searchable city directory, custom country flags and service logos; keep private location data outside guest projections.
+- Integrate local shadcn/UIArc components, shared dropdown and account menus, and Tailwind CSS v4 concentric radii while preserving existing theme tokens; refresh host, update, subscription, operation and guest settings screens.
+- Replace scroll-triggered mobile overview expansion with responsive defaults and reusable search/view dialogs; align icons and labels and remove square borders from circular gauges.
+- Extend isolated browser security and interface regressions for the new operations, private data, theme and mobile layouts.
 
 ### 简体中文
 
-- 总览放大镜在搜索框与收缩栏之间连续往返移动，半途反向时从当前画面位置继续。
-
-- 窄屏总览改用本地 Anthropic 源码中的减速曲线，统一为更舒缓的 480ms 同步过渡，避免运动中的数字被裁断。
-
-- 窄屏总览随下滚收为原位置的一行计数与操作，上滚展开，保留搜索状态和页面滚动位置。
-
-- 根据本地 Anthropic 导航源码，为窄屏菜单恢复整行浅分割线，采用淡石板色分隔。
-- 窄屏导航图标按字体大写字高缩放并与标签垂直居中，保留桌面图标尺寸和触摸区域。
+- 新增域名与证书管理，通过 Web、CLI、TUI 共享操作契约提供 ACME 签发、续期、撤销、私钥导出、DNS 提供商、持久任务与通知。
+- 新增基于发现 schema 的 JSONL 批量操作，CLI／TUI 共用校验、执行、观察与私有下载流程。
+- 新增 COBE 2.0.1 全球节点总览、城市标记、可见 VPS 名称与轮播卡片；按节点预加载并缓存指标，切换时保留内容。
+- 新增公网 IP 自动城市定位、手动城市／坐标偏好、本地可搜索城市目录、自定义国家旗帜和服务图标；游客投影不包含私有位置数据。
+- 接入本地 shadcn／UIArc 组件、统一下拉与账号菜单及 Tailwind CSS v4 同心圆角，沿用现有主题 Token；更新主机、更新、订阅、操作与游客设置页面。
+- 节点总览改用响应式默认状态与可复用搜索／视图弹窗，移除滚动触发收缩展开；对齐图标文字并移除环形仪表的方形边框。
+- 扩展隔离浏览器安全与界面回归，验证新增操作、私有数据及深浅色和手机布局。
 
 ## [0.1.50]
 

@@ -1,32 +1,94 @@
-import { api, type DashboardPreference } from "../api";
-import { display, t } from "../i18n";
-import { cell, observable, watchState } from "../state";
-
-import { __call, __classes, __input, useController } from "../state";
+import { api, type DashboardPreference, type NodeLocation } from "../api";
+import { display, locale, t } from "../i18n";
+import {
+  afterMount,
+  cell,
+  observable,
+  watchState,
+  useController,
+} from "../state";
+import {
+  ManagementPage,
+  Input,
+  Textarea,
+  Checkbox,
+  Select,
+  Button,
+} from "./ManagementUI";
+import { resolveOperation } from "../operations";
+import { serviceLogos } from "../service-logos";
+import { systemLogos } from "../system-logo";
+import CountryLogo from "./CountryLogo";
+import NodeLogo from "./NodeLogo";
+import LocationPicker from "./LocationPicker";
 import "./PreferenceEditor.css";
-import UiSelect from "./UiSelect";
 type Props = {
   preference: DashboardPreference;
+  location?: NodeLocation;
   title: string;
-} & { children?: import("react").ReactNode; [key: string]: any };
+  platform?: string | null;
+  os?: string | null;
+  [key: string]: any;
+};
 export default function PreferenceEditor(input: Props) {
   return useController(
-    (__props: Props, __emit: any, __dom: any) => {
-      const props = __props;
-      const emit = __emit;
-      const form = observable<DashboardPreference>({
-        ...props.preference,
-      });
-      const saving = cell(false);
-      const error = cell("");
-      const notice = cell("");
+    (props: Props, emit: any) => {
+      const form = observable<DashboardPreference>({ ...props.preference });
+      const saving = cell(false),
+        error = cell(""),
+        notice = cell("");
+      // Telemetry recreates parent props. Only changed persisted preference content
+      // may replace the draft, never a new object holding the same saved values.
       watchState(
-        () => props.preference,
-        (value) => Object.assign(form, value),
-        {
-          deep: true,
+        () => JSON.stringify(props.preference),
+        (value) => {
+          Object.assign(form, JSON.parse(value));
         },
+        { immediate: true },
       );
+      const iconValues = cell<string[]>([]);
+ const countryValues = cell<string[]>([]);
+ const positionSchema = cell<any>({});
+      afterMount(async () => {
+        try {
+          const { operation } = await resolveOperation(
+            "nodes.save-preference",
+            { params: { nodeId: props.preference.nodeId } },
+          );
+          positionSchema.value = operation.bodySchema?.properties?.location?.properties ?? {};
+ countryValues.value = (operation.bodySchema?.properties?.countryCode?.enum ?? []).map(String);
+ iconValues.value = (
+            operation.bodySchema?.properties?.icon?.enum ?? []
+          ).map(String);
+        } catch (reason) {
+          error.value =
+            reason instanceof Error ? reason.message : String(reason);
+        }
+      });
+      function iconLabel(value: string) {
+        if (!value)
+          return t(
+            form.targetKind === "node"
+              ? "preferences.osDefault"
+              : "m.844b8cc8dff7",
+          );
+        const labels: Record<string, string> = {
+          server: "m.2388cbc6a486",
+          globe: "m.fb8d739d08b9",
+          database: "m.263200d7d529",
+          shield: "m.afb63a620bdc",
+          terminal: "m.e2a76ef1f12e",
+          box: "m.6d23f04b2696",
+          cloud: "m.32d42b97294a",
+          folder: "m.39932f24fe11",
+          activity: "m.fdc390061698",
+        };
+        return labels[value]
+          ? t(labels[value])
+          : (serviceLogos[value]?.name ??
+              systemLogos[value as keyof typeof systemLogos]?.name ??
+              value);
+      }
       async function save() {
         error.value = "";
         notice.value = "";
@@ -34,7 +96,9 @@ export default function PreferenceEditor(input: Props) {
         try {
           const next = {
             ...form,
-            alias: form.alias.trim(),
+            countryCode: form.countryCode ?? "",
+ location: form.location ?? null,
+ alias: form.alias.trim(),
             notes: form.notes.trim(),
             serviceUrl: form.serviceUrl.trim(),
             sshHost: form.sshHost.trim(),
@@ -54,289 +118,172 @@ export default function PreferenceEditor(input: Props) {
         }
       }
       return () => (
-        <>
+        <ManagementPage embedded className="preference-theme">
           <form
-            className={__classes("preference-editor")}
-            onSubmit={(event: any) => {
+            className="preference-editor"
+            onSubmit={(event) => {
               event.preventDefault();
-              __call(save, event);
+              void save();
             }}
-            data-v-9a768bdb=""
           >
-            <header data-v-9a768bdb="">
-              <strong data-v-9a768bdb="">{__props.title}</strong>
-              <small data-v-9a768bdb="">{t("m.741981bd96aa")}</small>
+            <header>
+              <strong>{props.title}</strong>
+              <small>{t("m.741981bd96aa")}</small>
             </header>
-            <label data-v-9a768bdb="">
-              {t("m.a98585871c53")}
-              <input
-                maxLength={128}
-                placeholder={t("m.0496871244c3") as any}
-                {...__input(
-                  form.alias,
-                  (__nextValue: any) => {
-                    form.alias = __nextValue;
-                  },
-                  "",
-                  undefined,
-                  [],
-                )}
-                data-v-9a768bdb=""
-              ></input>
-            </label>
-            <label data-v-9a768bdb="">
-              {t("m.0d720eeea264")}
-              <UiSelect
-                modelValue={form.icon}
-                onUpdateModelValue={(__nextValue: any) => {
-                  form.icon = __nextValue;
-                }}
-                modelModifiers={{}}
-                data-v-9a768bdb=""
-              >
-                <option value="" data-v-9a768bdb="">
-                  {t("m.844b8cc8dff7")}
-                </option>
-                <option value="server" data-v-9a768bdb="">
-                  {t("m.2388cbc6a486")}
-                </option>
-                <option value="globe" data-v-9a768bdb="">
-                  {t("m.fb8d739d08b9")}
-                </option>
-                <option value="database" data-v-9a768bdb="">
-                  {t("m.263200d7d529")}
-                </option>
-                <option value="shield" data-v-9a768bdb="">
-                  {t("m.afb63a620bdc")}
-                </option>
-                <option value="terminal" data-v-9a768bdb="">
-                  {t("m.e2a76ef1f12e")}
-                </option>
-                <option value="box" data-v-9a768bdb="">
-                  {t("m.6d23f04b2696")}
-                </option>
-                <option value="cloud" data-v-9a768bdb="">
-                  {t("m.32d42b97294a")}
-                </option>
-                <option value="folder" data-v-9a768bdb="">
-                  {t("m.39932f24fe11")}
-                </option>
-                <option value="activity" data-v-9a768bdb="">
-                  {t("m.fdc390061698")}
-                </option>
-              </UiSelect>
-            </label>
-            <label data-v-9a768bdb="">
-              {t("m.daede9881787")}
-              <textarea
+            <Input
+              label={t("m.a98585871c53")}
+              maxLength={128}
+              placeholder={t("m.0496871244c3")}
+              value={form.alias}
+              onChange={(event) => {
+                form.alias = event.target.value;
+              }}
+            />
+            <Select
+              label={t("m.0d720eeea264")}
+              value={form.icon}
+              onValueChange={(value) => {
+                form.icon = value;
+              }}
+              options={iconValues.value.map((value) => ({
+                value,
+                label: iconLabel(value),
+                icon: (
+                  <NodeLogo
+                    icon={value || (form.targetKind === "node" ? "" : "box")}
+                    platform={props.platform}
+                    os={props.os}
+                  />
+                ),
+              }))}
+            />
+            <div className="preference-wide">
+              <Textarea
+                label={t("m.daede9881787")}
                 maxLength={2048}
                 rows={2}
-                placeholder={t("m.9ad5244a4b67") as any}
-                {...__input(
-                  form.notes,
-                  (__nextValue: any) => {
-                    form.notes = __nextValue;
-                  },
-                  "",
-                  undefined,
-                  [],
-                )}
-                data-v-9a768bdb=""
-              ></textarea>
-            </label>
+                placeholder={t("m.9ad5244a4b67")}
+                value={form.notes}
+                onChange={(event) => {
+                  form.notes = event.target.value;
+                }}
+              />
+            </div>
             {form.targetKind === "node" ? (
-              <label data-v-9a768bdb="">
-                {t("m.889b28078e5d")}
-                <input
+              <>
+                <Select
+                  label={t("preferences.country")}
+                  value={form.countryCode ?? ""}
+                  onValueChange={(value) => { form.countryCode = value; form.location = null; }}
+                  options={countryValues.value.map((value) => ({
+                    value,
+                    label: value ? (new Intl.DisplayNames([locale.value], {type: "region"}).of(value) ?? value) : t("preferences.countryAuto"),
+                    icon: <CountryLogo country={value ? {status: "known", code: value} : undefined} />,
+                  })).sort((a,b) => !a.value ? -1 : !b.value ? 1 : a.label.localeCompare(b.label, locale.value))}
+                />
+                <LocationPicker resolved={props.location} countryCode={form.countryCode ?? ""} countries={countryValues.value} schema={positionSchema.value} value={form.location ?? null} onChange={(point) => { form.location = point; if (point) form.countryCode = point.countryCode; else form.countryCode = ""; }} />
+                <Input
+                  label={t("m.889b28078e5d")}
                   maxLength={128}
-                  placeholder={t("m.e86ea3f280d9") as any}
-                  {...__input(
-                    form.group,
-                    (__nextValue: any) => {
-                      form.group = __nextValue;
-                    },
-                    "",
-                    undefined,
-                    [],
-                  )}
-                  data-v-9a768bdb=""
-                ></input>
-              </label>
-            ) : null}
-            {form.targetKind === "node" ? (
-              <label data-v-9a768bdb="">
-                {t("m.2290354d1f88")}
-                <input
+                  value={form.group}
+                  placeholder={t("m.e86ea3f280d9")}
+                  onChange={(event) => {
+                    form.group = event.target.value;
+                  }}
+                />
+                <Input
+                  label={t("m.2290354d1f88")}
                   maxLength={255}
                   autoComplete="off"
-                  placeholder={t("m.5f4aaae405f3") as any}
-                  {...__input(
-                    form.sshHost,
-                    (__nextValue: any) => {
-                      form.sshHost = __nextValue;
-                    },
-                    "",
-                    undefined,
-                    [],
-                  )}
-                  data-v-9a768bdb=""
-                ></input>
-              </label>
-            ) : null}
-            {form.targetKind === "node" ? (
-              <label data-v-9a768bdb="">
-                {t("m.1c22cc57aee8")}
-                <input
+                  placeholder={t("m.5f4aaae405f3")}
+                  value={form.sshHost}
+                  onChange={(event) => {
+                    form.sshHost = event.target.value;
+                  }}
+                />
+                <Input
+                  label={t("m.1c22cc57aee8")}
                   type="number"
-                  min="1"
-                  max="65535"
-                  step="1"
+                  min={1}
+                  max={65535}
+                  step={1}
                   inputMode="numeric"
-                  required={true}
-                  {...__input(
-                    form.sshPort,
-                    (__nextValue: any) => {
-                      form.sshPort = __nextValue;
-                    },
-                    "number",
-                    undefined,
-                    ["number"],
-                  )}
-                  data-v-9a768bdb=""
-                ></input>
-              </label>
-            ) : null}
-            {form.targetKind === "node" ? (
-              <label data-v-9a768bdb="">
-                {t("m.4249329ab914")}
-                <input
+                  required
+                  value={form.sshPort}
+                  onChange={(event) => {
+                    form.sshPort = Number(event.target.value);
+                  }}
+                />
+                <Input
+                  label={t("m.4249329ab914")}
                   maxLength={64}
                   autoComplete="off"
-                  placeholder={t("m.c650b8295c49") as any}
-                  {...__input(
-                    form.sshUser,
-                    (__nextValue: any) => {
-                      form.sshUser = __nextValue;
-                    },
-                    "",
-                    undefined,
-                    [],
-                  )}
-                  data-v-9a768bdb=""
-                ></input>
-              </label>
-            ) : null}
-            {form.targetKind === "node" ? (
-              <small
-                className={__classes("ssh-preference-note")}
-                data-v-9a768bdb=""
-              >
-                {t("m.a5d21b75a337")}
-              </small>
-            ) : null}
-            {form.targetKind === "node" ? (
-              <label data-v-9a768bdb="">
-                {t("m.0f59d3742e06")}
-                <input
+                  placeholder={t("m.c650b8295c49")}
+                  value={form.sshUser}
+                  onChange={(event) => {
+                    form.sshUser = event.target.value;
+                  }}
+                />
+                <small className="ssh-preference-note">
+                  {t("m.a5d21b75a337")}
+                </small>
+                <Input
+                  label={t("m.0f59d3742e06")}
                   type="number"
-                  min="-1000000"
-                  max="1000000"
-                  step="1"
-                  required={true}
-                  {...__input(
-                    form.sortOrder,
-                    (__nextValue: any) => {
-                      form.sortOrder = __nextValue;
-                    },
-                    "number",
-                    undefined,
-                    ["number"],
-                  )}
-                  data-v-9a768bdb=""
-                ></input>
-              </label>
+                  min={-1000000}
+                  max={1000000}
+                  step={1}
+                  required
+                  value={form.sortOrder}
+                  onChange={(event) => {
+                    form.sortOrder = Number(event.target.value);
+                  }}
+                />
+              </>
             ) : null}
-            <label data-v-9a768bdb="">
-              {t("m.5d52d4478187")}
-              <input
+            <div className="preference-wide">
+              <Input
+                label={t("m.5d52d4478187")}
                 type="url"
                 maxLength={2048}
                 placeholder="https://service.example.com"
-                {...__input(
-                  form.serviceUrl,
-                  (__nextValue: any) => {
-                    form.serviceUrl = __nextValue;
-                  },
-                  "url",
-                  undefined,
-                  [],
-                )}
-                data-v-9a768bdb=""
-              ></input>
-            </label>
-            <label
-              className={__classes("preference-checkbox")}
-              data-v-9a768bdb=""
-            >
-              <input
-                type="checkbox"
-                {...__input(
-                  form.visible,
-                  (__nextValue: any) => {
-                    form.visible = __nextValue;
-                  },
-                  "checkbox",
-                  undefined,
-                  [],
-                )}
-                data-v-9a768bdb=""
-              ></input>
-              {t("m.0264c56e530a")}
-            </label>
-            <label
-              className={__classes("preference-checkbox")}
-              data-v-9a768bdb=""
-            >
-              <input
-                type="checkbox"
-                {...__input(
-                  form.pinned,
-                  (__nextValue: any) => {
-                    form.pinned = __nextValue;
-                  },
-                  "checkbox",
-                  undefined,
-                  [],
-                )}
-                data-v-9a768bdb=""
-              ></input>
-              {t("m.173f88d28ebf")}
-            </label>
-            <div className={__classes("preference-actions")} data-v-9a768bdb="">
-              <button
-                type="submit"
-                disabled={saving.value as any}
-                data-v-9a768bdb=""
-              >
+                value={form.serviceUrl}
+                onChange={(event) => {
+                  form.serviceUrl = event.target.value;
+                }}
+              />
+            </div>
+            <Checkbox
+              label={t("m.0264c56e530a")}
+              checked={form.visible}
+              onCheckedChange={(value) => {
+                form.visible = value === true;
+              }}
+            />
+            <Checkbox
+              label={t("m.173f88d28ebf")}
+              checked={form.pinned}
+              onCheckedChange={(value) => {
+                form.pinned = value === true;
+              }}
+            />
+            <div className="preference-actions">
+              <Button type="submit" disabled={saving.value}>
                 {saving.value ? t("m.ff509c9ba052") : t("m.f96c9903175e")}
-              </button>
+              </Button>
               {notice.value ? (
-                <span role="status" data-v-9a768bdb="">
-                  {display(notice.value)}
-                </span>
+                <span role="status">{display(notice.value)}</span>
               ) : null}
               {error.value ? (
-                <span role="alert" data-v-9a768bdb="">
-                  {display(error.value)}
-                </span>
+                <span role="alert">{display(error.value)}</span>
               ) : null}
             </div>
           </form>
-        </>
+        </ManagementPage>
       );
     },
     input,
-    ["preference", "title"],
+    ["preference", "title", "platform", "os", "location"],
     [],
     {},
     true,

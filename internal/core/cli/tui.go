@@ -175,7 +175,7 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 			}
 			if err == nil {
 				var tokenInput io.Reader = stdin
-				if o.Name == "client.update" && updateUsesRemote(localArgs, lookup) {
+				if (o.Name == "client.update" && updateUsesRemote(localArgs, lookup)) || o.Name == "client.batch" {
 					// Explicit remote workflows reuse this TUI's authenticated connection.
 					// A plain local update never inherits a remote server or session.
 					for _, item := range []struct{ name, value string }{

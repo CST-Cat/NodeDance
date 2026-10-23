@@ -49,7 +49,7 @@ module.exports=async function({page,base,node,artifacts,catalog,view,publish}){
   const card=page.locator('[data-diagnostic-card="cores"]');
   assert.equal(await card.count(),count===1?0:1,'Single-core machines hide the core card');
   if(count>1){
-   assert.equal(await card.locator('.ring').count(),count,'Every reported core has a ring');
+   assert.equal(await card.locator('.resource-gauge').count(),count,'Every reported core has a ring');
    assert.ok(await card.evaluate(e=>e.scrollWidth<=e.clientWidth+1),'Core rings do not overflow horizontally');
    await card.screenshot({path:path.join(artifacts,`cores-${count}-${width}.png`)});
   }

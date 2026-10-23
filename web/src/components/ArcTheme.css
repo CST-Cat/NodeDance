@@ -1,0 +1,31 @@
+.product-arc.arc-ui {
+  color-scheme: inherit;
+  --background: var(--figma-background-tertiary);
+  --surface: var(--figma-background-primary);
+  --surface-raised: var(--figma-background-primary);
+  --surface-muted: var(--figma-background-tertiary);
+  --foreground: var(--figma-text-primary);
+  --text-secondary: var(--figma-text-secondary);
+  --text-muted: var(--figma-text-tertiary);
+  --border: var(--figma-border-tertiary);
+  --border-subtle: var(--figma-border-tertiary);
+  --border-strong: var(--figma-border-primary);
+  --accent: var(--figma-text-primary);
+  --accent-strong: var(--figma-text-secondary);
+  --accent-subtle: var(--figma-background-tertiary);
+  --accent-foreground: var(--figma-text-inverse);
+  --focus-outline: var(--figma-ring-primary);
+  --radius-control: var(--figma-radius-md);
+  --radius-panel: var(--figma-radius-xl);
+  --radius-surface: var(--figma-radius-xl);
+  --radius-pill: var(--figma-radius-full);
+  --shadow-resting: none;
+  --shadow-raised: none;
+  --font-body: inherit;
+  --font-display: inherit;
+  --success: var(--figma-text-success);
+  --warning: var(--figma-text-warning);
+  --danger: var(--figma-text-danger);
+  --control-on: var(--figma-text-primary);
+  --control-glyph: var(--figma-text-inverse);
+}

@@ -5,7 +5,22 @@ import { afterMount, beforeDispose, cell, watchState } from "../state";
 import { Fragment } from "react";
 import { __call, __classes, __each, __input, useController } from "../state";
 import "./FeedsCenter.css";
-import UiSelect from "./UiSelect";
+import {
+  ManagementPage,
+  Button,
+  Input,
+  Textarea,
+  Checkbox,
+  Select,
+  Card,
+  Badge,
+  Alert,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  checkboxProps,
+  selectOptions,
+} from "./ManagementUI";
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
 export default function FeedsCenter(input: Props) {
   return useController(
@@ -328,7 +343,7 @@ export default function FeedsCenter(input: Props) {
       });
       return () => (
         <>
-          <section
+          <ManagementPage
             data-testid="feeds-center"
             className={__classes("feeds-center workspace-page")}
             data-v-9b049af3=""
@@ -343,283 +358,304 @@ export default function FeedsCenter(input: Props) {
               </p>
             </header>
             {error.value ? (
-              <p
+              <Alert
                 role="alert"
                 className={__classes("feed-error")}
                 data-v-9b049af3=""
+                tone="danger"
+                title={t("management.error")}
               >
                 {display(error.value)}
-              </p>
+              </Alert>
             ) : null}
-            <form
-              className={__classes("feed-card feed-form")}
-              onSubmit={(event: any) => {
-                event.preventDefault();
-                __call(save, event);
-              }}
-              data-v-9b049af3=""
+            <Card
+              title={<>{t(editing.value ? "feeds.edit" : "feeds.add")}</>}
+              className="feed-card management-card"
             >
-              <h2 data-v-9b049af3="">
-                {t(editing.value ? "feeds.edit" : "feeds.add")}
-              </h2>
-              <fieldset
-                className={__classes(
-                  "feed-settings-group feed-source-settings",
-                )}
+              <form
+                className={__classes(" feed-form")}
+                onSubmit={(event: any) => {
+                  event.preventDefault();
+                  __call(save, event);
+                }}
                 data-v-9b049af3=""
               >
-                <legend data-v-9b049af3="">{t("feeds.sourceSettings")}</legend>
-                <label data-v-9b049af3="">
-                  {t("feeds.name")}
-                  <input
-                    name="feedName"
-                    required={true}
-                    {...__input(
-                      draft.value.name,
-                      (__nextValue: any) => {
-                        draft.value.name = __nextValue;
-                      },
-                      "",
-                      undefined,
-                      [],
-                    )}
-                    data-v-9b049af3=""
-                  ></input>
-                </label>
-                <label className={__classes("feed-url")} data-v-9b049af3="">
-                  {t("feeds.url")}
-                  <input
-                    name="feedUrl"
-                    type="url"
-                    required={true}
-                    {...__input(
-                      draft.value.url,
-                      (__nextValue: any) => {
-                        draft.value.url = __nextValue;
-                      },
-                      "url",
-                      undefined,
-                      [],
-                    )}
-                    data-v-9b049af3=""
-                  ></input>
-                  <small className={__classes("muted")} data-v-9b049af3="">
-                    {t("feeds.publicOnly")}
-                  </small>
-                </label>
-                <label data-v-9b049af3="">
-                  {t("feeds.interval")}
-                  <span
-                    className={__classes("feed-interval-controls")}
-                    data-v-9b049af3=""
-                  >
-                    <UiSelect
-                      name="feedInterval"
-                      modelValue={draft.value.intervalMinutes}
-                      onUpdateModelValue={(__nextValue: any) => {
-                        draft.value.intervalMinutes = __nextValue;
-                      }}
-                      modelModifiers={{}}
+                <fieldset
+                  className={__classes(
+                    "feed-settings-group feed-source-settings",
+                  )}
+                  data-v-9b049af3=""
+                >
+                  <legend data-v-9b049af3="">
+                    {t("feeds.sourceSettings")}
+                  </legend>
+                  <label data-v-9b049af3="">
+                    {t("feeds.name")}
+                    <Input
+                      name="feedName"
+                      required={true}
+                      {...__input(
+                        draft.value.name,
+                        (__nextValue: any) => {
+                          draft.value.name = __nextValue;
+                        },
+                        "",
+                        undefined,
+                        [],
+                      )}
+                      data-v-9b049af3=""
+                    ></Input>
+                  </label>
+                  <label className={__classes("feed-url")} data-v-9b049af3="">
+                    {t("feeds.url")}
+                    <Input
+                      name="feedUrl"
+                      type="url"
+                      required={true}
+                      {...__input(
+                        draft.value.url,
+                        (__nextValue: any) => {
+                          draft.value.url = __nextValue;
+                        },
+                        "url",
+                        undefined,
+                        [],
+                      )}
+                      data-v-9b049af3=""
+                    ></Input>
+                    <small className={__classes("muted")} data-v-9b049af3="">
+                      {t("feeds.publicOnly")}
+                    </small>
+                  </label>
+                  <label data-v-9b049af3="">
+                    {t("feeds.interval")}
+                    <span
+                      className={__classes("feed-interval-controls")}
                       data-v-9b049af3=""
                     >
-                      <Fragment>
-                        {__each(options.value?.intervalMinutes, (minutes) => (
-                          <option
-                            key={minutes as any}
-                            value={minutes as any}
-                            data-v-9b049af3=""
-                          >
-                            {minutes} {t("feeds.minutes")}
-                          </option>
-                        ))}
-                      </Fragment>
-                      {options.value &&
-                      !options.value.intervalMinutes.includes(
-                        draft.value.intervalMinutes,
-                      ) ? (
-                        <option
-                          value={draft.value.intervalMinutes as any}
-                          data-v-9b049af3=""
-                        >
-                          {draft.value.intervalMinutes} {t("feeds.minutes")}
-                        </option>
-                      ) : null}
-                    </UiSelect>
-                    <input
-                      name="feedCustomInterval"
-                      type="number"
-                      min={options.value?.minimumIntervalMinutes as any}
-                      max={options.value?.maximumIntervalMinutes as any}
-                      aria-label={t("feeds.customInterval") as any}
-                      {...__input(
-                        draft.value.intervalMinutes,
-                        (__nextValue: any) => {
+                      <Select
+                        name="feedInterval"
+                        value={String(draft.value.intervalMinutes ?? "")}
+                        onValueChange={(next) => {
+                          const __nextValue: any =
+                            typeof draft.value.intervalMinutes === "number"
+                              ? Number(next)
+                              : next;
                           draft.value.intervalMinutes = __nextValue;
-                        },
-                        "number",
-                        undefined,
-                        ["number"],
-                      )}
-                      data-v-9b049af3=""
-                    ></input>
-                  </span>
-                </label>
-                <label
-                  className={__classes("check feed-enabled")}
-                  data-v-9b049af3=""
-                >
-                  <input
-                    type="checkbox"
-                    {...__input(
-                      draft.value.enabled,
-                      (__nextValue: any) => {
-                        draft.value.enabled = __nextValue;
-                      },
-                      "checkbox",
-                      undefined,
-                      [],
-                    )}
-                    data-v-9b049af3=""
-                  ></input>
-                  {t("feeds.enabled")}
-                </label>
-              </fieldset>
-              <fieldset
-                className={__classes(
-                  "feed-settings-group feed-notification-settings",
-                )}
-                data-v-9b049af3=""
-              >
-                <legend data-v-9b049af3="">{t("feeds.notifications")}</legend>
-                <label data-v-9b049af3="">
-                  {t("feeds.notifications")}
-                  <UiSelect
-                    name="feedNotificationMode"
-                    modelValue={draft.value.notificationMode}
-                    onUpdateModelValue={(__nextValue: any) => {
-                      draft.value.notificationMode = __nextValue;
-                    }}
-                    modelModifiers={{}}
-                    data-v-9b049af3=""
-                  >
-                    <option value="off" data-v-9b049af3="">
-                      {t("feeds.off")}
-                    </option>
-                    <option value="immediate" data-v-9b049af3="">
-                      {t("feeds.immediate")}
-                    </option>
-                    <option value="digest" data-v-9b049af3="">
-                      {t("feeds.digest")}
-                    </option>
-                  </UiSelect>
-                </label>
-                <label
-                  className={__classes("feed-keywords")}
-                  data-v-9b049af3=""
-                >
-                  {t("feeds.keywords")}
-                  <textarea
-                    name="feedKeywords"
-                    rows={3}
-                    {...__input(
-                      keywordText.value,
-                      (__nextValue: any) => {
-                        keywordText.value = __nextValue;
-                      },
-                      "",
-                      undefined,
-                      [],
-                    )}
-                    data-v-9b049af3=""
-                  ></textarea>
-                  <small className={__classes("muted")} data-v-9b049af3="">
-                    {t("feeds.keywordHint")}
-                  </small>
-                </label>
-                {draft.value.notificationMode === "digest" ? (
-                  <label data-v-9b049af3="">
-                    {t("feeds.digestInterval")}
-                    <input
-                      type="number"
-                      min={options.value?.minimumIntervalMinutes as any}
-                      max={options.value?.maximumIntervalMinutes as any}
-                      {...__input(
-                        draft.value.digestMinutes,
-                        (__nextValue: any) => {
-                          draft.value.digestMinutes = __nextValue;
-                        },
-                        "number",
-                        undefined,
-                        ["number"],
-                      )}
-                      data-v-9b049af3=""
-                    ></input>
-                  </label>
-                ) : null}
-                {draft.value.notificationMode !== "off" ? (
-                  <fieldset data-v-9b049af3="">
-                    <legend data-v-9b049af3="">{t("feeds.channels")}</legend>
-                    <Fragment>
-                      {__each(
-                        channels.value.filter((c) => c.enabled),
-                        (channel) => (
-                          <label
-                            key={channel.id as any}
-                            className={__classes("check")}
-                            data-v-9b049af3=""
-                          >
-                            <input
-                              type="checkbox"
-                              value={channel.id as any}
-                              {...__input(
-                                draft.value.channelIds,
-                                (__nextValue: any) => {
-                                  draft.value.channelIds = __nextValue;
-                                },
-                                "checkbox",
-                                channel.id,
-                                [],
+                        }}
+                        data-v-9b049af3=""
+                        options={selectOptions(
+                          <>
+                            <Fragment>
+                              {__each(
+                                options.value?.intervalMinutes,
+                                (minutes) => (
+                                  <option
+                                    key={minutes as any}
+                                    value={minutes as any}
+                                    data-v-9b049af3=""
+                                  >
+                                    {minutes} {t("feeds.minutes")}
+                                  </option>
+                                ),
                               )}
-                              data-v-9b049af3=""
-                            ></input>
-                            {channel.name}
-                          </label>
-                        ),
-                      )}
-                    </Fragment>
-                    {!channels.value.some((c) => c.enabled) ? (
-                      <p className={__classes("muted")} data-v-9b049af3="">
-                        {t("feeds.noChannels")}
-                      </p>
-                    ) : null}
-                  </fieldset>
-                ) : null}
-              </fieldset>
-              <div className={__classes("feed-actions")} data-v-9b049af3="">
-                <button
-                  disabled={busy.value || (!options.value as any)}
-                  className={__classes("primary-button")}
-                  data-v-9b049af3=""
-                >
-                  {t("feeds.save")}
-                </button>
-                {editing.value ? (
-                  <button
-                    type="button"
-                    className={__classes("secondary-button")}
-                    onClick={(event: any) => {
-                      __call(reset, event);
-                    }}
+                            </Fragment>
+                            {options.value &&
+                            !options.value.intervalMinutes.includes(
+                              draft.value.intervalMinutes,
+                            ) ? (
+                              <option
+                                value={draft.value.intervalMinutes as any}
+                                data-v-9b049af3=""
+                              >
+                                {draft.value.intervalMinutes}{" "}
+                                {t("feeds.minutes")}
+                              </option>
+                            ) : null}
+                          </>,
+                        )}
+                      ></Select>
+                      <Input
+                        name="feedCustomInterval"
+                        type="number"
+                        min={options.value?.minimumIntervalMinutes as any}
+                        max={options.value?.maximumIntervalMinutes as any}
+                        aria-label={t("feeds.customInterval") as any}
+                        {...__input(
+                          draft.value.intervalMinutes,
+                          (__nextValue: any) => {
+                            draft.value.intervalMinutes = __nextValue;
+                          },
+                          "number",
+                          undefined,
+                          ["number"],
+                        )}
+                        data-v-9b049af3=""
+                      ></Input>
+                    </span>
+                  </label>
+                  <label
+                    className={__classes("check feed-enabled")}
                     data-v-9b049af3=""
                   >
-                    {t("feeds.cancelEdit")}
-                  </button>
-                ) : null}
-              </div>
-            </form>
+                    <Checkbox
+                      {...checkboxProps(
+                        draft.value.enabled,
+                        (__nextValue: any) => {
+                          draft.value.enabled = __nextValue;
+                        },
+                        undefined,
+                      )}
+                      data-v-9b049af3=""
+                    ></Checkbox>
+                    {t("feeds.enabled")}
+                  </label>
+                </fieldset>
+                <fieldset
+                  className={__classes(
+                    "feed-settings-group feed-notification-settings",
+                  )}
+                  data-v-9b049af3=""
+                >
+                  <legend data-v-9b049af3="">{t("feeds.notifications")}</legend>
+                  <label data-v-9b049af3="">
+                    {t("feeds.notifications")}
+                    <Select
+                      name="feedNotificationMode"
+                      value={String(draft.value.notificationMode ?? "")}
+                      onValueChange={(next) => {
+                        const __nextValue: any =
+                          typeof draft.value.notificationMode === "number"
+                            ? Number(next)
+                            : next;
+                        draft.value.notificationMode = __nextValue;
+                      }}
+                      data-v-9b049af3=""
+                      options={selectOptions(
+                        <>
+                          <option value="off" data-v-9b049af3="">
+                            {t("feeds.off")}
+                          </option>
+                          <option value="immediate" data-v-9b049af3="">
+                            {t("feeds.immediate")}
+                          </option>
+                          <option value="digest" data-v-9b049af3="">
+                            {t("feeds.digest")}
+                          </option>
+                        </>,
+                      )}
+                    ></Select>
+                  </label>
+                  <label
+                    className={__classes("feed-keywords")}
+                    data-v-9b049af3=""
+                  >
+                    {t("feeds.keywords")}
+                    <Textarea
+                      name="feedKeywords"
+                      rows={3}
+                      {...__input(
+                        keywordText.value,
+                        (__nextValue: any) => {
+                          keywordText.value = __nextValue;
+                        },
+                        "",
+                        undefined,
+                        [],
+                      )}
+                      data-v-9b049af3=""
+                    ></Textarea>
+                    <small className={__classes("muted")} data-v-9b049af3="">
+                      {t("feeds.keywordHint")}
+                    </small>
+                  </label>
+                  {draft.value.notificationMode === "digest" ? (
+                    <label data-v-9b049af3="">
+                      {t("feeds.digestInterval")}
+                      <Input
+                        type="number"
+                        min={options.value?.minimumIntervalMinutes as any}
+                        max={options.value?.maximumIntervalMinutes as any}
+                        {...__input(
+                          draft.value.digestMinutes,
+                          (__nextValue: any) => {
+                            draft.value.digestMinutes = __nextValue;
+                          },
+                          "number",
+                          undefined,
+                          ["number"],
+                        )}
+                        data-v-9b049af3=""
+                      ></Input>
+                    </label>
+                  ) : null}
+                  {draft.value.notificationMode !== "off" ? (
+                    <fieldset data-v-9b049af3="">
+                      <legend data-v-9b049af3="">{t("feeds.channels")}</legend>
+                      <Fragment>
+                        {__each(
+                          channels.value.filter((c) => c.enabled),
+                          (channel) => (
+                            <label
+                              key={channel.id as any}
+                              className={__classes("check")}
+                              data-v-9b049af3=""
+                            >
+                              <Checkbox
+                                value={channel.id as any}
+                                {...checkboxProps(
+                                  draft.value.channelIds,
+                                  (__nextValue: any) => {
+                                    draft.value.channelIds = __nextValue;
+                                  },
+                                  channel.id,
+                                )}
+                                data-v-9b049af3=""
+                              ></Checkbox>
+                              {channel.name}
+                            </label>
+                          ),
+                        )}
+                      </Fragment>
+                      {!channels.value.some((c) => c.enabled) ? (
+                        <p className={__classes("muted")} data-v-9b049af3="">
+                          {t("feeds.noChannels")}
+                        </p>
+                      ) : null}
+                    </fieldset>
+                  ) : null}
+                </fieldset>
+                <div className={__classes("feed-actions")} data-v-9b049af3="">
+                  <Button
+                    disabled={busy.value || (!options.value as any)}
+                    className={__classes("primary-button")}
+                    data-v-9b049af3=""
+                    variant="primary"
+                  >
+                    {t("feeds.save")}
+                  </Button>
+                  {editing.value ? (
+                    <Button
+                      type="button"
+                      className={__classes("secondary-button")}
+                      onClick={(event: any) => {
+                        __call(reset, event);
+                      }}
+                      data-v-9b049af3=""
+                      variant="secondary"
+                    >
+                      {t("feeds.cancelEdit")}
+                    </Button>
+                  ) : null}
+                </div>
+              </form>
+            </Card>
             <div className={__classes("feed-columns")} data-v-9b049af3="">
-              <aside className={__classes("feed-card")} data-v-9b049af3="">
-                <h2 data-v-9b049af3="">{t("feeds.subscriptions")}</h2>
+              <Card
+                className="feed-card management-card"
+                data-v-9b049af3=""
+                title={<>{t("feeds.subscriptions")}</>}
+              >
                 {!feeds.value.length ? (
                   <p className={__classes("muted")} data-v-9b049af3="">
                     {t("feeds.empty")}
@@ -632,16 +668,17 @@ export default function FeedsCenter(input: Props) {
                       className={__classes("feed-subscription")}
                       data-v-9b049af3=""
                     >
-                      <button
+                      <Button
                         aria-pressed={selected.value === (feed.id as any)}
                         className={__classes("feed-select")}
                         onClick={(event: any) => {
                           selected.value = feed.id;
                         }}
                         data-v-9b049af3=""
+                        variant="secondary"
                       >
                         {feed.name}
-                      </button>
+                      </Button>
                       <p className={__classes("muted")} data-v-9b049af3="">
                         {feed.intervalMinutes} {t("feeds.minutes")}
                         {" · "}
@@ -671,48 +708,52 @@ export default function FeedsCenter(input: Props) {
                         className={__classes("feed-actions")}
                         data-v-9b049af3=""
                       >
-                        <button
+                        <Button
                           disabled={busy.value as any}
                           className={__classes("secondary-button")}
                           onClick={(event: any) => {
                             edit(feed);
                           }}
                           data-v-9b049af3=""
+                          variant="secondary"
                         >
                           {t("feeds.edit")}
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                           disabled={busy.value || (!feed.enabled as any)}
                           className={__classes("secondary-button")}
                           onClick={(event: any) => {
                             action(feed, "refresh");
                           }}
                           data-v-9b049af3=""
+                          variant="secondary"
                         >
                           {t("feeds.refresh")}
-                        </button>
+                        </Button>
                         {["queued", "running"].includes(feed.status) ? (
-                          <button
+                          <Button
                             disabled={busy.value as any}
                             className={__classes("secondary-button")}
                             onClick={(event: any) => {
                               action(feed, "cancel");
                             }}
                             data-v-9b049af3=""
+                            variant="secondary"
                           >
                             {t("feeds.cancelRefresh")}
-                          </button>
+                          </Button>
                         ) : null}
-                        <button
+                        <Button
                           disabled={busy.value as any}
                           className={__classes("secondary-button")}
                           onClick={(event: any) => {
                             toggle(feed);
                           }}
                           data-v-9b049af3=""
+                          variant="secondary"
                         >
                           {t(feed.enabled ? "feeds.disable" : "feeds.enable")}
-                        </button>
+                        </Button>
                       </div>
                       {selected.value === feed.id ? (
                         <Fragment>
@@ -720,22 +761,19 @@ export default function FeedsCenter(input: Props) {
                             className={__classes("check")}
                             data-v-9b049af3=""
                           >
-                            <input
-                              type="checkbox"
-                              {...__input(
+                            <Checkbox
+                              {...checkboxProps(
                                 removeConfirmed.value,
                                 (__nextValue: any) => {
                                   removeConfirmed.value = __nextValue;
                                 },
-                                "checkbox",
                                 undefined,
-                                [],
                               )}
                               data-v-9b049af3=""
-                            ></input>
+                            ></Checkbox>
                             {t("feeds.deleteConfirm")}
                           </label>
-                          <button
+                          <Button
                             disabled={
                               busy.value || (!removeConfirmed.value as any)
                             }
@@ -746,17 +784,21 @@ export default function FeedsCenter(input: Props) {
                               remove(feed);
                             }}
                             data-v-9b049af3=""
+                            variant="secondary"
                           >
                             {t("feeds.delete")}
-                          </button>
+                          </Button>
                         </Fragment>
                       ) : null}
                     </article>
                   ))}
                 </Fragment>
-              </aside>
-              <div className={__classes("feed-card")} data-v-9b049af3="">
-                <h2 data-v-9b049af3="">{t("feeds.entries")}</h2>
+              </Card>
+              <Card
+                className={__classes("feed-card management-card")}
+                data-v-9b049af3=""
+                title={<>{t("feeds.entries")}</>}
+              >
                 <form
                   className={__classes("feed-actions")}
                   onSubmit={(event: any) => {
@@ -767,7 +809,7 @@ export default function FeedsCenter(input: Props) {
                   }}
                   data-v-9b049af3=""
                 >
-                  <input
+                  <Input
                     type="search"
                     aria-label={t("feeds.search") as any}
                     {...__input(
@@ -780,27 +822,25 @@ export default function FeedsCenter(input: Props) {
                       [],
                     )}
                     data-v-9b049af3=""
-                  ></input>
-                  <button
+                  ></Input>
+                  <Button
                     className={__classes("secondary-button")}
                     data-v-9b049af3=""
+                    variant="secondary"
                   >
                     {t("feeds.search")}
-                  </button>
+                  </Button>
                   <label className={__classes("check")} data-v-9b049af3="">
-                    <input
-                      type="checkbox"
-                      {...__input(
+                    <Checkbox
+                      {...checkboxProps(
                         unread.value,
                         (__nextValue: any) => {
                           unread.value = __nextValue;
                         },
-                        "checkbox",
                         undefined,
-                        [],
                       )}
                       data-v-9b049af3=""
-                    ></input>
+                    ></Checkbox>
                     {t("feeds.unread")}
                   </label>
                 </form>
@@ -842,22 +882,23 @@ export default function FeedsCenter(input: Props) {
                             {t("feeds.original")}
                           </a>
                         ) : null}
-                        <button
+                        <Button
                           disabled={busy.value as any}
                           className={__classes("secondary-button")}
                           onClick={(event: any) => {
                             read(item);
                           }}
                           data-v-9b049af3=""
+                          variant="secondary"
                         >
                           {t(item.read ? "feeds.markUnread" : "feeds.markRead")}
-                        </button>
+                        </Button>
                       </div>
                     </article>
                   ))}
                 </Fragment>
                 <div className={__classes("feed-actions")} data-v-9b049af3="">
-                  <button
+                  <Button
                     disabled={offset.value === (0 as any)}
                     className={__classes("secondary-button")}
                     onClick={(event: any) => {
@@ -866,10 +907,11 @@ export default function FeedsCenter(input: Props) {
                       page();
                     }}
                     data-v-9b049af3=""
+                    variant="secondary"
                   >
                     {t("feeds.previous")}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     disabled={(items.value.length < 50) as any}
                     className={__classes("secondary-button")}
                     onClick={(event: any) => {
@@ -878,9 +920,10 @@ export default function FeedsCenter(input: Props) {
                       page();
                     }}
                     data-v-9b049af3=""
+                    variant="secondary"
                   >
                     {t("feeds.next")}
-                  </button>
+                  </Button>
                 </div>
                 <h2 className={__classes("delivery-title")} data-v-9b049af3="">
                   {t("feeds.deliveries")}
@@ -908,7 +951,7 @@ export default function FeedsCenter(input: Props) {
                         </p>
                       ) : null}
                       {delivery.status === "failed" ? (
-                        <button
+                        <Button
                           disabled={busy.value as any}
                           className={__classes("secondary-button")}
                           onClick={(event: any) => {
@@ -922,16 +965,17 @@ export default function FeedsCenter(input: Props) {
                             );
                           }}
                           data-v-9b049af3=""
+                          variant="secondary"
                         >
                           {t("feeds.retry")}
-                        </button>
+                        </Button>
                       ) : null}
                     </article>
                   ))}
                 </Fragment>
-              </div>
+              </Card>
             </div>
-          </section>
+          </ManagementPage>
         </>
       );
     },

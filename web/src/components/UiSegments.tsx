@@ -9,8 +9,8 @@ export default function UiSegments<T extends string>({ value, options, onChange,
 }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const index = Math.max(0, options.findIndex(option => option.value === value));
-  return <div role="group" aria-label={label} className={`ui-segments ${className}`} style={{ "--segment-count": options.length, "--segment-index": index } as CSSProperties}>
-    <span className="ui-segments-indicator" aria-hidden="true" />
+  return <div role="group" aria-label={label} className={`ui-segments rounded-(--radius-control) ${className}`} style={{ "--segment-count": options.length, "--segment-index": index } as CSSProperties}>
+    <span className="ui-segments-indicator rounded-concentric-[0px]" aria-hidden="true" />
     {options.map((option, i) => <button key={option.value} type="button" ref={element => { buttons.current[i] = element; }}
       aria-pressed={option.value === value} tabIndex={i === index ? 0 : -1}
       onClick={() => onChange(option.value)} onKeyDown={event => {

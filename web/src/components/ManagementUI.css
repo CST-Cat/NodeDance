@@ -1,0 +1,142 @@
+.management-ui {
+  color: var(--figma-text-primary);
+  min-width: 0;
+}
+.management-ui > *,
+.management-ui form,
+.management-ui fieldset {
+  min-width: 0;
+}
+.management-ui header p,
+.management-ui .muted {
+  color: var(--figma-text-secondary);
+  line-height: 1.6;
+}
+.management-ui .management-card {
+  min-width: 0;
+  margin: 0;
+}
+.management-ui :is(input, textarea) {
+  max-width: 100%;
+}
+.management-ui :is(input, textarea):focus-visible {
+  box-shadow: none;
+}
+.app-shell[data-theme] .management-ui button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.app-shell[data-theme] .management-ui button[role="checkbox"] {
+  flex: none;
+  width: 32px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.management-ui div:has(> button[role="checkbox"]) {
+  flex: none;
+  align-self: start;
+}
+.management-ui :is(.check, .check-row, .host-check, .guest-check) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+.management-ui
+  label:not(:has([role="checkbox"])):is(
+    :has(> div > input),
+    :has(> div > textarea),
+    :has(> div > button[role="combobox"])
+  ) {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: 8px;
+  font-size: 14px;
+}
+.management-ui table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.management-ui :is(th, td) {
+  padding: 12px;
+  border-bottom: 1px solid var(--figma-border-tertiary);
+  text-align: start;
+  overflow-wrap: anywhere;
+}
+.management-ui th {
+  color: var(--figma-text-secondary);
+  font-weight: 500;
+}
+.management-ui pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  max-height: 400px;
+  overflow: auto;
+  padding: 16px;
+  background: var(--figma-background-tertiary);
+  border: 1px solid var(--figma-border-tertiary);
+  border-radius: var(--figma-radius-md);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.management-ui .management-tabs {
+  --tabs-radius: var(--figma-radius-xl);
+  --tabs-list-padding: 3px;
+  margin: 8px 0 24px;
+}
+.app-shell[data-theme] .management-ui button[role="tab"] {
+  background: transparent;
+  border: 0;
+  color: var(--figma-text-secondary);
+  box-shadow: none;
+  transform: none;
+  transition: color 120ms ease;
+}
+.app-shell[data-theme] .management-ui button[role="tab"][data-state="active"] {
+  color: var(--figma-text-primary);
+}
+.app-shell[data-theme] .management-ui button[role="tab"]:focus-visible {
+  outline: none !important;
+}
+@media (hover: hover) and (pointer: fine) {
+  .app-shell[data-theme] .management-ui button[role="tab"]:hover {
+    color: var(--figma-text-primary);
+  }
+}
+@media (max-width: 700px) {
+  .app-shell[data-theme] .management-ui :is(input, textarea) {
+    font-size: 16px;
+  }
+  .management-ui button[role="tab"] {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell[data-theme] .management-ui button[role="tab"] {
+    transition: none;
+  }
+}
+.management-task {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.management-ui :is(.primary-button, .secondary-button) {
+  margin: 0;
+}
+.management-ui .management-card > div > h3 {
+  overflow-wrap: anywhere;
+}
+.management-ui .management-card > div > form {
+  min-width: 0;
+}

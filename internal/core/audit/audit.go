@@ -14,15 +14,20 @@ import (
 type TargetKind string
 
 const (
-	TargetCommandBatch      TargetKind = "command_batch"
-	TargetNode              TargetKind = "node"
-	TargetAgent             TargetKind = "agent"
-	TargetFile              TargetKind = "file"
-	TargetTerminalHost      TargetKind = "terminal_host"
-	TargetTerminalContainer TargetKind = "terminal_container"
-	TargetAlert             TargetKind = "alert"
-	TargetFeed              TargetKind = "feed"
-	TargetAccount           TargetKind = "account"
+	TargetCommandBatch       TargetKind = "command_batch"
+	TargetNode               TargetKind = "node"
+	TargetAgent              TargetKind = "agent"
+	TargetFile               TargetKind = "file"
+	TargetTerminalHost       TargetKind = "terminal_host"
+	TargetTerminalContainer  TargetKind = "terminal_container"
+	TargetAlert              TargetKind = "alert"
+	TargetFeed               TargetKind = "feed"
+	TargetAccount            TargetKind = "account"
+	TargetDomain             TargetKind = "domain"
+	TargetCertificate        TargetKind = "certificate"
+	TargetCertificateAccount TargetKind = "certificate_account"
+	TargetDNSProvider        TargetKind = "dns_provider"
+	TargetCertificateJob     TargetKind = "certificate_job"
 )
 
 type Target struct {
@@ -44,6 +49,7 @@ type Execer interface {
 }
 
 var actions = map[string]struct{}{
+	"domain_save": {}, "domain_delete": {}, "certificate_import": {}, "certificate_delete": {}, "certificate_policy": {}, "certificate_account_create": {}, "certificate_account_delete": {}, "certificate_provider_save": {}, "certificate_provider_delete": {}, "certificate_export": {}, "certificate_job_submit": {}, "certificate_job_cancel": {},
 	"account_create": {}, "account_update": {}, "account_delete": {}, "account_password_reset": {},
 	"feed_save": {}, "feed_delete": {}, "feed_refresh": {}, "feed_cancel": {}, "feed_read": {}, "feed_delivery_retry": {},
 	"guest_display_update": {},
@@ -85,7 +91,7 @@ func Record(ctx context.Context, execer Execer, event Event) error {
 			if len(event.Target.ID) == 0 || strings.Trim(event.Target.ID, "0123456789") != "" {
 				return errors.New("invalid account target")
 			}
-		case TargetNode, TargetAgent, TargetAlert, TargetFeed:
+		case TargetDomain, TargetCertificate, TargetCertificateAccount, TargetDNSProvider, TargetCertificateJob, TargetNode, TargetAgent, TargetAlert, TargetFeed:
 			if !targetIDPattern.MatchString(event.Target.ID) {
 				return errors.New("audit target ID must be a canonical UUID")
 			}

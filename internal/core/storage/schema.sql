@@ -535,3 +535,44 @@ CREATE TABLE IF NOT EXISTS observation_epoch (
  boot_id TEXT NOT NULL,
  started_at INTEGER NOT NULL
 );
+
+-- Private keys and DNS tokens never appear in inventory JSON. The enclosing
+-- SQLite database and backups are owner-protected (0600, state directory 0700).
+CREATE TABLE IF NOT EXISTS managed_domains (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, label TEXT NOT NULL, notes TEXT NOT NULL,
+ revision INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS certificate_accounts (
+ id TEXT PRIMARY KEY, config_json TEXT NOT NULL, key_pem BLOB NOT NULL,
+ account_url TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS certificate_dns_providers (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL, zone_id TEXT NOT NULL,
+ token BLOB NOT NULL, revision INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS managed_certificates (
+ id TEXT PRIMARY KEY, metadata_json TEXT NOT NULL, certificate_pem BLOB NOT NULL,
+ key_pem BLOB NOT NULL, revision INTEGER NOT NULL, revoked INTEGER NOT NULL DEFAULT 0,
+ created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+ notification_bucket TEXT NOT NULL DEFAULT '', notification_error TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS certificate_jobs (
+ id TEXT PRIMARY KEY, kind TEXT NOT NULL, certificate_id TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL, input_json TEXT NOT NULL, identity TEXT NOT NULL UNIQUE,
+ error TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS certificate_jobs_queue ON certificate_jobs(status,created_at);
+CREATE TABLE IF NOT EXISTS certificate_dns_challenges (
+ id TEXT PRIMARY KEY, job_id TEXT NOT NULL, provider_id TEXT NOT NULL,
+ name TEXT NOT NULL, value TEXT NOT NULL, record_id TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS node_country_preferences (
+ node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+ country_code TEXT NOT NULL DEFAULT '' CHECK (length(country_code) IN (0, 2))
+);
+
+CREATE TABLE IF NOT EXISTS node_location_preferences (
+ node_id TEXT PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+ location_json TEXT NOT NULL DEFAULT 'null'
+);

@@ -1,0 +1,81 @@
+/* Map shadcn-installed UIArc primitives to the existing product palette.
+   Keep the upstream foundation private to this page's .arc-ui boundary. */
+
+.domain-certificates { display: grid; align-content: start; gap: 24px; }
+.domain-certificates-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.domain-certificates-heading h1 { margin: 0; }
+.domain-certificates-heading p { margin: 10px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.domain-certificates [role="tabpanel"] { margin-top: 20px; min-width: 0; }
+.domain-certificates [role="tab"] { display: inline-flex; align-items: center; gap: 8px; }
+.domain-certificates svg { flex: none; }
+@media (max-width: 700px) {
+  .domain-certificates.arc-ui { gap: 20px; }
+  .domain-certificates-heading { align-items: flex-start; }
+  .domain-certificates [role="tab"] { min-height: 44px; }
+}
+
+.domain-summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 16px; }
+.domain-total { display: block; margin-top: 16px; font-size: 32px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.domain-toolbar { display: grid; grid-template-columns: minmax(0,1fr) minmax(200px,1fr); gap: 16px; align-items: end; margin-top: 24px; }
+.domain-table-wrap { min-width: 0; max-width: 100%; overflow-x: auto; margin-top: 16px; }
+.domain-row-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.domain-record-name { display: grid; gap: 4px; min-width: 0; }
+.domain-record-name small { color: var(--text-muted); overflow-wrap: anywhere; }
+.domain-settings { display: grid; gap: 20px; }
+.domain-action-dialog { width: min(680px,calc(100vw - 32px)); max-height: calc(100dvh - 32px); }
+.domain-operation-form { display: grid; gap: 18px; min-width: 0; }
+.domain-operation-form code { overflow-wrap: anywhere; }
+.domain-operation-form p { margin: 0; font-size: 13px; line-height: 1.6; }
+.domain-operation-form [role=alert] { color: var(--danger); }
+.domain-choices, .domain-pem { display: grid; gap: 10px; min-width: 0; }
+.domain-form-actions { display: flex; justify-content: end; gap: 10px; }
+/* Keep the checkbox hit area and its first label line on the same center. */
+.app-shell[data-theme] .domain-theme button[role=checkbox] { flex: none; width: 32px; height: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; }
+.domain-theme div:has(> button[role=checkbox]) { gap: 4px; align-items: flex-start; }
+.domain-theme button[role=checkbox] + div { margin-left: 0; padding-top: 10px; }
+.domain-theme button[role=checkbox] + div label { display: block; margin: 0; line-height: 24px; }
+.app-shell[data-theme] .domain-theme button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.domain-theme table code { font-size: 11px; word-break: break-all; }
+@media(max-width:700px) {
+ .domain-summary { gap: 8px; }
+ .domain-summary h3 { font-size: 14px; }
+ .domain-total { font-size: 26px; }
+ .domain-toolbar { grid-template-columns: minmax(0,1fr); }
+ .app-shell[data-theme] .domain-operation-form :is(input,textarea) { font-size: 16px; }
+ .domain-form-actions { flex-wrap: wrap; }
+}
+.domain-certificates, .domain-certificates > *, .domain-certificates [role=tabpanel] > * { min-width: 0; max-width: 100%; }
+.domain-certificates [role=tablist] { justify-content: flex-start; }
+.domain-certificates [role=tab] { flex-shrink: 0; }
+.domain-card-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.domain-row-actions { min-width: 0; max-width: 100%; }
+.domain-row-actions button, .domain-card-actions button { max-width: 100%; height: auto; white-space: normal; text-align: start; }
+.domain-row-actions button span, .domain-card-actions button span { white-space: normal; }
+@media(max-width:620px) {
+ .domain-summary { --space-5: 12px; }
+ .domain-summary h3 { overflow-wrap: anywhere; font-size: 12px; }
+ .domain-certificates .domain-table-wrap table td:has(.domain-row-actions) { flex: 1 0 100%; width: 100%; }
+ .domain-card-actions { flex-direction: column; align-items: stretch; }
+ .domain-row-actions { align-items: stretch; }
+ .domain-row-actions button { flex: 1 1 auto; justify-content: flex-start; }
+}
+
+/* The installed Tabs owns its moving selection. Hover/press add no competing fill. */
+.app-shell[data-theme] .domain-certificates button[role=tab] {
+ background: transparent; border: 0; color: var(--figma-text-secondary);
+ box-shadow: none; transform: none; transition: color 120ms ease;
+}
+.app-shell[data-theme] .domain-certificates button[role=tab][data-state=active] {
+ color: var(--figma-text-primary);
+}
+@media(hover:hover) and (pointer:fine) {
+ .app-shell[data-theme] .domain-certificates button[role=tab]:hover { color: var(--figma-text-primary); }
+}
+.app-shell[data-theme] .domain-certificates button[role=tab]:focus-visible { outline: none !important; }
+.app-shell[data-theme] .domain-certificates button[role=tab]:focus-visible { color: var(--figma-text-primary); }
+@media(prefers-reduced-motion:reduce) {
+ .app-shell[data-theme] .domain-certificates button[role=tab] { transition: none; }
+}
+
+/* Use existing 12px/8px radii, with 3px padding and a 1px outer border. */
+.domain-certificates .domain-tabs { --tabs-radius: var(--figma-radius-xl); --tabs-list-padding: 3px; }

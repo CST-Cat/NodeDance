@@ -1,0 +1,124 @@
+.hero { isolation: isolate; display: flex; height: 100vh; height: 100svh; min-height: 600px; flex-direction: column; padding-top: clamp(88px, 14svh, 144px); text-align: center; }
+
+/* The mesh fills the screen. It is authored per theme: tints a few steps off the page, so it reads as light rather than color. */
+.mesh {
+  --mesh-base: var(--background);
+  --mesh-1: #ffe6d8; --mesh-2: #e3dcff; --mesh-3: #dbe4ff; --mesh-4: #f0e0ff; --mesh-5: #e0eefc;
+  z-index: -1;
+}
+:global(:root[data-theme="dark"]) .mesh { --mesh-1: #2a1822; --mesh-2: #1c1a44; --mesh-3: #141c40; --mesh-4: #231842; --mesh-5: #0e2133; }
+
+.copy { position: relative; display: grid; justify-items: center; gap: var(--space-5); max-width: 900px; margin: 0 auto; padding-inline: var(--space-10); }
+.title { max-width: 14ch; font-size: clamp(2.5rem, 1.2rem + 5cqi, var(--text-5xl)); }
+.description { max-width: 590px; }
+.actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--space-3); margin-top: var(--space-3); }
+.fine { margin: 0; color: var(--text-muted); font-size: var(--text-sm); }
+
+/* Stage: fills the rest of the screen and is the visible crop. The window runs past its bottom edge; the mask fades it into the
+   mesh, so there is no hard edge. The halo above leaves room for the light behind the window. */
+.stage { --halo: 96px; position: relative; flex: 1 1 0; box-sizing: border-box; width: 100%; min-height: 0; max-width: calc(1200px + 2 * var(--space-10)); margin: calc(var(--space-12) - var(--halo)) auto 0; overflow: hidden; padding: var(--halo) var(--space-10) 0; -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent 100%); mask-image: linear-gradient(to bottom, #000 62%, transparent 100%); }
+.glow {
+  position: absolute; z-index: -1; top: calc(var(--halo) - 110px); left: 10%; right: 10%; height: 240px;
+  background: radial-gradient(50% 50% at 50% 50%, var(--hero-glow), transparent 72%);
+  filter: blur(36px);
+  --hero-glow: color-mix(in oklab, color-mix(in oklab, var(--accent) 35%, #7d8cff) 36%, transparent);
+}
+:global(:root[data-theme="dark"]) .glow { --hero-glow: color-mix(in oklab, color-mix(in oklab, var(--accent) 30%, #6e7cff) 58%, transparent); }
+.window { position: relative; }
+/* A thin light catches the top edge, the way a real display does in a dark room. */
+:global(:root[data-theme="dark"]) .window::after { content: ""; position: absolute; top: 0; left: 12%; right: 12%; height: 1px; background: linear-gradient(to right, transparent, color-mix(in oklab, #b9c2ff 70%, transparent), transparent); pointer-events: none; }
+.perspective { display: flex; justify-content: center; perspective: 2200px; perspective-origin: 50% 0%; }
+.tilt { position: relative; flex: none; transform-origin: 50% 0%; will-change: transform; }
+.scaler { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+/* Reduced motion: the window is already in place; drop the GPU layer kept for the entrance. */
+@media (prefers-reduced-motion: reduce) { .tilt { will-change: auto; } }
+
+/* The window. */
+.window {
+  display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100%; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--foreground);
+  text-align: left; font-size: var(--text-sm);
+  box-shadow: 0 1px 1px rgb(20 24 40 / .04), 0 24px 48px -16px rgb(20 24 40 / .16), 0 60px 120px -40px rgb(40 48 110 / .22);
+}
+:global(:root[data-theme="dark"]) .window {
+  border-color: color-mix(in oklab, var(--foreground) 14%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--foreground) 9%, transparent), 0 24px 48px -16px rgb(0 0 0 / .6), 0 60px 140px -40px rgb(40 50 140 / .35);
+}
+.chrome { position: relative; display: flex; height: 40px; align-items: center; justify-content: center; border-bottom: 1px solid var(--border-subtle); background: color-mix(in oklab, var(--surface-muted) 55%, var(--surface)); }
+.lights { position: absolute; left: 16px; display: flex; gap: 7px; }
+.lights i { width: 11px; height: 11px; border-radius: 50%; background: color-mix(in oklab, var(--foreground) 14%, transparent); }
+.url { border-radius: 8px; padding: 3px 14px; background: var(--surface); color: var(--text-muted); font-size: var(--text-xs); box-shadow: inset 0 0 0 1px var(--border-subtle); }
+
+.app { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 0; }
+.window[data-narrow] .app { grid-template-columns: minmax(0, 1fr); }
+
+.sidebar { display: flex; flex-direction: column; gap: 2px; border-right: 1px solid var(--border-subtle); padding: 14px 12px; background: color-mix(in oklab, var(--surface-muted) 40%, var(--surface)); }
+.workspace { display: flex; align-items: center; gap: 10px; padding: 6px 8px 10px; }
+.wsMark { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 6px; background: var(--foreground); color: var(--background); font-size: var(--text-xs); font-weight: 500; }
+.wsName { flex: 1; font-weight: 500; }
+.dim { color: var(--text-muted); }
+.search { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; border: 1px solid var(--border-subtle); border-radius: 9px; padding: 6px 8px; background: var(--surface); color: var(--text-muted); }
+.search kbd { margin-left: auto; font: inherit; font-size: var(--text-xs); }
+.nav { display: grid; gap: 1px; }
+.navItem { display: flex; align-items: center; gap: 10px; border-radius: 8px; padding: 6px 8px; color: var(--text-secondary); }
+.navItem svg { color: var(--text-muted); }
+.navItem[data-active] { background: var(--accent-subtle); color: var(--foreground); font-weight: 500; }
+.navItem[data-active] svg { color: var(--accent); }
+.groupLabel { margin: 18px 8px 6px; color: var(--text-muted); font-size: var(--text-xs); }
+.dot { width: 8px; height: 8px; margin: 0 3px; border-radius: 50%; background: var(--text-muted); }
+.dot[data-tone="accent"] { background: var(--accent); }
+.dot[data-tone="danger"] { background: var(--danger); }
+.me { display: flex; align-items: center; gap: 10px; margin-top: auto; border-top: 1px solid var(--border-subtle); padding: 12px 6px 2px; }
+.me span:not([role]) { display: grid; flex: 1; line-height: 1.3; }
+.me strong { font-weight: 500; }
+.me small { color: var(--text-muted); font-size: var(--text-xs); }
+
+.main { display: grid; align-content: start; gap: 16px; min-width: 0; padding: 22px 24px; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.h2 { margin: 0; font-size: var(--text-lg); font-weight: 500; letter-spacing: var(--tracking-body); }
+.sub { margin: 2px 0 0; color: var(--text-muted); font-size: var(--text-xs); }
+.range { flex: none; }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.window[data-narrow] .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.kpi { min-width: 0; border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px 16px 12px; background: var(--surface); }
+
+.grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 12px; }
+.window[data-narrow] .grid { grid-template-columns: minmax(0, 1fr); }
+.card { display: grid; align-content: start; gap: 14px; min-width: 0; border: 1px solid var(--border-subtle); border-radius: 12px; padding: 16px 18px; background: var(--surface); }
+.cardHead { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.insight { display: flex; gap: 8px; max-width: 46ch; margin: 0; color: var(--text-secondary); line-height: 1.45; }
+.insight strong { color: var(--foreground); font-weight: 500; }
+.insightIcon { flex: none; margin-top: 2px; color: var(--accent); }
+.legend { display: flex; flex: none; gap: 14px; color: var(--text-muted); font-size: var(--text-xs); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 14px; height: 2px; border-radius: 2px; background: var(--accent); }
+.swatch[data-last] { background: repeating-linear-gradient(to right, color-mix(in oklab, var(--foreground) 46%, var(--surface)) 0 4px, transparent 4px 7px); }
+.window[data-narrow] .legend { display: none; }
+
+.cardTitle { display: flex; justify-content: space-between; font-weight: 500; }
+.cardTitle span { color: var(--text-muted); font-size: var(--text-xs); font-weight: 400; }
+.movers { display: grid; margin: 0; padding: 0; list-style: none; }
+.movers li { display: flex; align-items: center; gap: 12px; border-top: 1px solid var(--border-subtle); padding: 10px 0; }
+.movers li:first-child { border-top: 0; padding-top: 2px; }
+.logo { flex: none; width: 20px; height: 20px; background: center / contain no-repeat; }
+.logo[data-mono] { background: var(--foreground); -webkit-mask: center / contain no-repeat; mask: center / contain no-repeat; }
+.who { display: grid; flex: 1; min-width: 0; line-height: 1.3; }
+.who strong { font-weight: 500; }
+.who small { overflow: hidden; color: var(--text-muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.amount { color: var(--success); font-variant-numeric: tabular-nums; font-weight: 500; }
+.amount[data-down] { color: var(--danger); }
+
+@container hero (max-width: 560px) {
+  .hero { padding-top: 84px; }
+  .copy { gap: var(--space-4); padding-inline: var(--space-4); }
+  .actions { width: 100%; margin-top: var(--space-2); }
+  .actions > * { flex: 1 1 auto; }
+  .stage { --halo: 56px; margin-top: calc(var(--space-10) - var(--halo)); padding-inline: 0; }
+}
+
+/* KPI tiles reuse Arc Sparkline; its caption wraps so the label sits above a larger value. */
+.kpi :global(figcaption) { flex-wrap: wrap; row-gap: 4px; }
+.kpi :global(figcaption) > :first-child { flex-basis: 100%; font-size: var(--text-xs); color: var(--text-muted); }
+.kpi :global(figcaption) strong { margin-left: 0; font-size: var(--text-2xl); letter-spacing: var(--tracking-body); }
+.kpi :global(figcaption) small { align-self: center; }

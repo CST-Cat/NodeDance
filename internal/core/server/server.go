@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/CST-Cat/NodeDance/internal/core/geolocation"
 	"io/fs"
 	"log"
 	"net"
@@ -23,6 +24,7 @@ import (
 	coreprefs "github.com/CST-Cat/NodeDance/internal/core/containerprefs"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	coredocker "github.com/CST-Cat/NodeDance/internal/core/docker"
+	"github.com/CST-Cat/NodeDance/internal/core/domains"
 	"github.com/CST-Cat/NodeDance/internal/core/feeds"
 	corehistory "github.com/CST-Cat/NodeDance/internal/core/history"
 	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
@@ -36,6 +38,7 @@ import (
 )
 
 type Options struct {
+	CertificateIssuer         domains.Issuer
 	JSONReadTimeout           time.Duration
 	TransferReadTimeout       time.Duration
 	MaxConcurrentRequests     int
@@ -57,6 +60,8 @@ type Options struct {
 }
 
 type Server struct {
+	countries                  *geolocation.Resolver
+	domains                    *domains.Store
 	feeds                      *feeds.Store
 	guestMu                    sync.Mutex
 	guestSlots                 chan struct{}
@@ -256,6 +261,7 @@ func New(version string, options Options) (*Server, error) {
 		hashSetupPassword:         auth.HashPassword,
 		agents:                    agents.NewRepository(store.DB, options.Now),
 		metrics:                   coremetrics.NewStore(),
+		countries:                 geolocation.New(),
 		history:                   &corehistory.Store{DB: store.DB},
 		dashboardPreferences:      &dashboard.Repository{DB: store.DB, Now: options.Now},
 		docker:                    coredocker.NewStore(),
@@ -345,12 +351,33 @@ func New(version string, options Options) (*Server, error) {
 			}
 		}
 	}
+	s.domains = domains.New(store.DB, s.now, options.CertificateIssuer)
+	if err := s.domains.Recover(context.Background()); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	s.feeds = feeds.New(store.DB, s.now)
 	if err := s.feeds.Recover(context.Background()); err != nil {
 		log.Printf("NodeDance subscription recovery failed: %v", err)
 		s.feeds = nil
 	}
 	s.agentContext, s.agentCancel = context.WithCancel(context.Background())
+	s.agentWait.Add(1)
+	go func() {
+		defer s.agentWait.Done()
+		s.domains.Run(s.agentContext, func(ctx context.Context, id, payload string) error {
+			if s.alerts == nil || s.alertSender == nil {
+				return errors.New("notifications are unavailable")
+			}
+			c, secret, e := s.alerts.NotificationChannel(ctx, id)
+			if e != nil {
+				return e
+			}
+			_, e = s.alertSender.Send(ctx, c, secret, payload)
+			return e
+		})
+	}()
+
 	if s.feeds != nil {
 		s.agentWait.Add(1)
 		go func() {
@@ -443,6 +470,9 @@ func (s *Server) SetupCredentialPath() (string, bool) {
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.setSecurityHeaders(w)
+	if s.domains != nil && s.domains.HTTPChallenge(w, r) {
+		return
+	}
 	operation, known := control.MatchRoute(r.Method, r.URL.Path)
 	// Bound rejected bodies too: net/http may drain unread request content.
 	if r.Body != nil && r.ContentLength != 0 {

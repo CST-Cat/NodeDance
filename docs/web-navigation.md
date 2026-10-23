@@ -63,7 +63,7 @@ Compose new-project forms include an inline directory-only elFinder picker. Brow
 
 Compose 新建项目表单内置仅目录的 elFinder 选择器：浏览文件夹，通过现有 Core `files.action` mkdir 任务新建文件夹，再将当前目录回填工作目录。省去文件和其他文件操作；选择或取消保留项目／YAML 草稿及 Compose 页面地址，并恢复浏览按钮焦点。完整文件管理页面继续提供原有能力。
 
-Shared form controls use the project theme with Lucian UI-derived motion. `UiSelect` renders an accessible custom listbox, preserves the existing form value/change/validation semantics, and positions its popup within the viewport. Pointer selection, arrows, Home/End, Enter/Space, typeahead, Escape, Tab, disabled fieldsets and reduced motion are supported. Popup listeners are removed on unmount and portals are immediately removed when leaving management. Checkboxes retain native keyboard, checked, indeterminate and disabled behavior with custom theme rendering. Sidebar collapse uses a smooth spring; dragging its width remains immediate.
+Shared form dropdowns, including country/icon choices and filters, render through the installed UIArc Dropdown Menu. Selection fields use radio menu items and keep native form value/change/required validation, numeric values, disabled fieldsets and local browser settings. UIArc supplies keyboard navigation, typeahead, pointer highlighting and transitions. Portals inherit product tokens and remain inside native dialogs when necessary; unmount removes private menus immediately.
 
 表单统一使用主题化自定义下拉列表，保留原有表单选值、change 和校验语义；弹出层在屏幕范围内定位，支持触摸、键盘、首字母检索、禁用字段组和减少动态效果。离开管理页立即清除浮层与监听器。复选框保留原生键盘、选中、半选和禁用行为，采用共享主题绘制。侧栏收起使用平滑弹性过渡，拖动宽度仍即时跟随。
 
@@ -95,12 +95,25 @@ Run `make build` followed by `node web/scripts/audit-navigation.cjs` for the foc
 
 窄屏功能项采用整行底部浅分割线，参考本地 `design-study/anthropic/pages/home.html` 的 `.nav_links_item.is-mobile` 结构及 `assets/main.css`：线宽沿用 `.0625rem`。原站主菜单使用 ivory-medium（`#F0EEE6`），与本项目当前菜单背景同色，因此映射为同一源码 `.nav_dropdown_link_block` 使用的 slate-faded-10（`#1414131a`），保证浅色分隔可见；不恢复已隐藏的品牌／账号分割线。样式集中在窄屏菜单规则中，不保留会被 `border: 0` 清除的旧顶部边框声明，桌面菜单不变。
 
-窄屏节点总览在向下滚动超过 24px 时，将现有四项计数、搜索、偏好、添加 Agent 按顺序收为一行；反向滚动超过 16px 展开，小幅抖动不会反复切换。上沿保留在原计数卡片的位置，不吸顶、不调用页面滚动；高度变化由页面底部等量空间补偿，防止接近页底时浏览器改变滚动位置。搜索和偏好复用同一份控件及状态，输入中／偏好展开时保持完整布局。桌面保持原样。
+节点总览按宽度固定呈现：宽屏保留完整计数卡、搜索框和内联视图偏好；900px 及以下使用紧凑计数与搜索／偏好／添加 Agent 图标。滚动方向不触发收缩、展开或逐帧变换，不保留旧弹簧与文档高度补偿逻辑。文字和图标使用自然 flex 对齐。
 
-动效学习来源为本地 `design-study/anthropic` 保存的脚本与 CSS（被动滚动监听、焦点不滚动、短时长）以及 `.references/open-claude-ui/code-examples/ClaudeMotionPresets.ts` 的无过冲收敛思路；这些来源没有现成的同款节点工具栏。本项目采用局部 `--overview-ease`（Anthropic 源码实际出现的 `cubic-bezier(.165,.84,.44,1)`，亦见 Claude 参考 `CDS_EASING.DECEL`）、480ms 高度与元素几何同步过渡，避免原先 220ms expo-out 前段过快，快速反向从当前画面继续；几何过渡期间允许数字越过计数条边界，避免被横向滚动容器裁断，并关闭按钮形状变化产生的短暂底色过渡；减少动态效果时即时切换。运行 `make build` 后执行 `node web/scripts/audit-overview-scroll.cjs`，使用隔离临时 Core 验证位置、方向阈值、搜索状态、偏好、桌面、深浅主题及减少动态效果。
+窄屏搜索和视图偏好复用 `UiDialog`：支持 Escape、关闭按钮、焦点恢复和对话框内下拉选择。共享弹窗仅在真正打开后记录并恢复触发焦点，关闭状态的 effect 清理不再抢夺其他按钮的焦点。宽窄屏共享搜索值、筛选、排序和保存处理；改变宽度不丢失输入或创建独立业务操作。环形百分比统一使用 `.resource-gauge`，避免语义类 `.ring` 与 Tailwind 的外圈工具冲突。
 
-On narrow screens, scrolling down compacts the existing four counts and search/preferences/enrollment controls into one row; scrolling up expands them. The row remains at the original count-card upper edge without pinning or programmatic scrolling. A matching bottom-space reserve preserves document height. The original controls and handlers are reused; editing and open preferences keep the expanded layout. Desktop remains unchanged. Local Anthropic/Claude source patterns informed the short, interruptible, non-overshooting transition; reduced motion skips animation.
+The overview is always expanded on wide screens and compact at widths of 900px or less. Scrolling never changes its layout. Narrow-screen search and view preferences use the existing `UiDialog`, sharing values and Core workflows with desktop controls. Resource gauges use a dedicated class to avoid Tailwind utility collisions.
 
-搜索框和收缩搜索按钮的 SVG 作为同一个视觉元素处理：切换前记录当前可见放大镜的实际位置，切换后从该位置移动至另一端。输入框单独过渡，避免父级与 SVG 叠加位移；连续反向使用运动中的实际几何位置，不在终点重新淡入图标。总览浏览器回归逐段检查起点、中点、终点、不透明度及半途反向的连续性，保留用户选择的 480ms 曲线和收缩排版。
+运行 `make build` 后执行 `node web/scripts/audit-overview-scroll.cjs`。隔离真实 Core 与协议模拟 Agent 检查深浅主题、320/390/700/1440 宽度、稳定滚动、文字图标对齐、搜索和偏好弹窗、选择和保存、Escape／焦点恢复、宽度切换、中文、减少动态效果和所有环形指标无外框。浏览器截图保存在 `.build/overview-scroll-audit/`，真实手机触感仍需设备确认。
 
-The overview search glyph shares its visible geometry between the expanded input and compact action. It travels from the current rendered position in either direction, including interruptions; the input animates separately to avoid nested transforms. Browser regression checks the actual start/midpoint/end geometry and opacity rather than only comparing final icon paths.
+域名证书位于节点总览下方，管理员可管理域名、证书、CA 账号、Cloudflare DNS 提供商和后台任务。页面通过 Core 契约调用全部操作，未登录深链进入登录页且不读取私有 API。仅使用经 shadcn CLI 安装的本地 UIArc 组件；浮层留在项目主题边界内，支持窄屏内部滚动。详见 [域名证书](domain-certificates.md)。
+
+主机管理、更新、订阅中心、操作中心、游客展示设置已统一使用通过 shadcn CLI 安装的 UIArc 本地组件。管理界面的卡片、按钮、字段、下拉、复选框、状态提示与标签切换沿用现有项目 Token，菜单浮层限制在主题边界中。页内标签保留原组件过渡，宽窄屏共享相同表单值、Core 操作、确认和任务流程。操作中心仍按连接 Core 的契约动态发现能力；游客展示的公开 DTO、默认不公开与显式发布要求不变。
+
+Node display preferences use the installed shadcn Registry Input, Select, Textarea,
+Checkbox and Button components. Telemetry updates must not replace an unsaved
+name or icon draft when the persisted preference content is unchanged. Empty node
+icon follows the Linux distribution; an explicit icon takes precedence. The icon
+menu reads `nodes.save-preference.bodySchema.properties.icon.enum` from Core,
+with local SVG artwork and decorative previews. See [node display](node-display.md).
+
+The sidebar account footer uses the already-installed UIArc User Menu. It lists enabled/disabled accounts and their roles, retains current-account indication, Settings and Sign out, and opens an installed UIArc Dialog for target-account password verification through the unchanged `auth.switch` operation. Anonymous/guest pages render no account control; mobile retains the existing hidden account-footer design.
+
+“总览全球”位于个人设置上方，宽屏 2:1 地球／信息卡片，窄屏纵向排列，按真实已定位节点联动。详见 [总览全球](global-overview.md)。

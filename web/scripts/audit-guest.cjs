@@ -1,8 +1,9 @@
+const {selectValue}=require('./arc-controls.cjs')
 // Isolated real Core, simulated protocol-only Agent, and anonymous browser.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net'),crypto=require('node:crypto')
 const {spawn,execFileSync}=require('node:child_process'),{chromium}=require('playwright')
-const root=path.resolve(__dirname,'../..'),binary=path.join(root,'.build/guest-audit-core'),artifacts=path.join(root,'.build/guest-audit')
-fs.mkdirSync(artifacts,{recursive:true});execFileSync('go',['build','-o',binary,'./cmd/nodedance'],{cwd:root,stdio:'inherit'})
+const root=path.resolve(__dirname,'../..'),binary=path.join(root,'.build/nodedance'),artifacts=path.join(root,'.build/guest-audit')
+fs.mkdirSync(artifacts,{recursive:true})
 async function freePort(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p}
 ;(async()=>{
  const directory=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-guest-audit-')),base=`http://127.0.0.1:${await freePort()}`
@@ -41,7 +42,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
    await recoveryPage.locator('[name=password]').fill(credentials.password)
    await recoveryPage.locator('form button[type=submit]').click()
    if(rejectedAttempts===1){
-    await recoveryPage.locator('.account-trigger').waitFor();assert.equal(attempts,2)
+    await recoveryPage.locator('.app-shell[data-authenticated=true][data-role=administrator][data-screen=nodes]').waitFor();assert.equal((await recovery.request.get(base+'/api/v1/auth/me')).status(),200);assert.equal(attempts,2)
     const stale=await browser.newContext({locale:'en-US'});await stale.addCookies(priorCookies);assert.equal((await stale.request.get(base+'/api/v1/auth/me')).status(),401);await stale.close()
    }else{
     await recoveryPage.getByText('Sign-in security credentials changed. Try signing in again; refresh the page if the problem persists.',{exact:true}).waitFor()
@@ -92,13 +93,20 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   let sending=false;async function report(){if(sending)return;sending=true;try{sequence++;const post=async(type,payload)=>{write++;const response=await visitor.request.post(channel,{headers:{...agentHeaders,'X-Channel-Sequence':String(write),'X-Channel-Ack':ack},data:{version:1,type,generation,sequence,payload}});assert.ok(response.ok(),await response.text())};await post('heartbeat',{capabilities});const received=await visitor.request.get(channel,{headers:{...agentHeaders,'X-Channel-Ack':ack}});assert.ok(received.ok());ack=received.headers()['x-channel-sequence'];await post('metrics',snapshot())}finally{sending=false}}
   await report();keepalive=setInterval(()=>report().catch(e=>errors.push(String(e))),10000)
   let metricsReady=false;for(let i=0;i<100;i++){const sample=await(await admin.request.get(base+`/api/v1/nodes/${identity.nodeId}/metrics`)).json();if(sample.metrics?.cpu?.usagePercent?.value===25){metricsReady=true;break}await new Promise(r=>setTimeout(r,25))}assert.ok(metricsReady,'Core did not apply simulated metrics')
+  const privateDomain=await admin.request.post(base+'/api/v1/domains',{headers,data:{name:'private-inventory.example',label:'PRIVATE DOMAIN INVENTORY'}});assert.equal(privateDomain.status(),201)
+  const privateProvider=await admin.request.post(base+'/api/v1/certificates/providers',{headers,data:{name:'PRIVATE CERTIFICATE PROVIDER',kind:'cloudflare',zoneId:'a'.repeat(32),apiToken:'PRIVATE-DNS-TOKEN-NEVER-PUBLIC'}});assert.equal(privateProvider.status(),201)
   const privateComposeAlias=await admin.request.put(base+`/api/v1/nodes/${identity.nodeId}/preferences`,{headers,data:{targetKind:'compose_project',identity:'compose_project:'+'a'.repeat(64),alias:'PRIVATE COMPOSE DISPLAY NAME',visible:true}});assert.equal(privateComposeAlias.status(),204)
+  const privateCountry=await admin.request.put(base+`/api/v1/nodes/${identity.nodeId}/preferences`,{headers,data:{targetKind:'node',identity:'node:'+identity.nodeId,countryCode:'CN',location:{countryCode:'CN',city:'PRIVATE CITY LOCATION',region:'PRIVATE LOCATION REGION',latitude:22.5431,longitude:114.0579},visible:true}});assert.equal(privateCountry.status(),204)
+  const adminNodes=await(await admin.request.get(base+'/api/v1/nodes')).json();assert.equal(adminNodes.nodes.find(n=>n.nodeId===identity.nodeId).country.source,'manual')
   const probeResponse=await admin.request.post(base+'/api/v1/probes',{headers,data:{nodeId:identity.nodeId,name:'PRIVATE PROBE NAME',kind:'tcp',target:'tcp://127.0.0.1:9',intervalSeconds:60,timeoutSeconds:3,enabled:false}});assert.equal(probeResponse.status(),201);const probe=await probeResponse.json()
   const policy={...options.settings,enabled:true,showStatus:true,metrics:['cpu.usage_percent','network.received_bytes_per_second'],historyHours:1,nodes:[{id:identity.nodeId,name:'Public node'}],probes:[{id:probe.id,name:'Public service'}]}
   const saved=await admin.request.put(base+'/api/v1/guest/settings',{headers,data:policy});assert.equal(saved.status(),200);let current=await saved.json()
-  const raw=await(await visitor.request.get(base+'/api/v1/public/guest/display')).text();for(const secret of [identity.nodeId,identity.agentId,'PRIVATE HOST NAME','PRIVATE PROBE NAME','PRIVATE COMPOSE DISPLAY NAME','tcp://','hostname','memory.used_percent','credential'])assert.ok(!raw.includes(secret),secret)
+  const raw=await(await visitor.request.get(base+'/api/v1/public/guest/display')).text();for(const secret of [identity.nodeId,identity.agentId,'PRIVATE HOST NAME','PRIVATE CITY LOCATION','PRIVATE LOCATION REGION','PRIVATE PROBE NAME','PRIVATE COMPOSE DISPLAY NAME','private-inventory.example','PRIVATE DOMAIN INVENTORY','PRIVATE CERTIFICATE PROVIDER','PRIVATE-DNS-TOKEN-NEVER-PUBLIC','tcp://','hostname','memory.used_percent','credential'])assert.ok(!raw.includes(secret),secret)
   const publicDisplay=JSON.parse(raw);let historyPoints=0
   for(const node of publicDisplay.nodes){
+   assert.ok(!Object.hasOwn(node,"countryCode"));
+   assert.ok(!Object.hasOwn(node,"country"),"Private node country metadata must not enter guest projection");
+   for(const field of ["location","latitude","longitude","city","region"])assert.ok(!Object.hasOwn(node,field),"Private precise location must not enter guest projection");
    assert.ok(node.history,'Selected history must be included')
    const from=Date.parse(node.history.from),to=Date.parse(node.history.to)
    assert.ok(Number.isFinite(from)&&Number.isFinite(to)&&from<to)
@@ -138,7 +146,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   assert.ok(await accountPanel.evaluate(panel=>panel.getBoundingClientRect().bottom<=document.querySelector('.account-trigger').getBoundingClientRect().top),'Account card opens upward')
   await adminPage.keyboard.press('Escape');await accountPanel.waitFor({state:'hidden'})
   assert.equal(await accountTrigger.evaluate(el=>document.activeElement===el),true,'Escape restores account trigger focus')
-  await accountTrigger.click();await accountPanel.getByRole('button',{name:'Settings',exact:true}).click()
+  await accountTrigger.click();await accountPanel.getByRole('menuitem',{name:'Settings',exact:true}).click()
   await adminPage.locator('.settings-main').waitFor();assert.equal(await adminPage.locator('.settings-sidebar').count(),0)
   await adminPage.goto(base);await card.waitFor()
 
@@ -200,20 +208,33 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   // Real operation dropdown portals must still disappear immediately on guest entry.
   const privateMenuPage=await admin.newPage();privateMenuPage.setDefaultTimeout(10000)
   await privateMenuPage.goto(base+'/#/operations')
-  await privateMenuPage.locator('.operation-layout aside select').selectOption('nodes.save-asset')
-  await privateMenuPage.locator('.operation-form .ui-select').first().getByRole('combobox').click()
-  await privateMenuPage.locator('body > .u031-list').waitFor()
+  await selectValue(privateMenuPage.locator('.operation-layout aside button[data-dropdown-field]'),'nodes.save-asset')
+  await privateMenuPage.locator('.operation-form').locator('button[data-dropdown-field]').first().click()
+  await privateMenuPage.getByRole('menu').waitFor()
   await privateMenuPage.evaluate(()=>{location.hash='/guest'})
   await privateMenuPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
-  assert.equal(await privateMenuPage.locator('body > .u031-list').count(),0,'Guest entry immediately removes private operation dropdown portals')
+  assert.equal(await privateMenuPage.getByRole('menu').count(),0,'Guest entry immediately removes private operation dropdown portals')
   await privateMenuPage.close()
+  // Global fleet visualization is private, including its WebGL renderer and polling.
+  const globalPage=await admin.newPage();globalPage.setDefaultTimeout(10000)
+  await globalPage.goto(base+'/#/global-overview');await globalPage.locator('.global-overview').waitFor();await globalPage.locator('.global-orbit').waitFor()
+  await globalPage.evaluate(()=>{location.hash='/guest'})
+  await globalPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  assert.equal(await globalPage.locator('.global-overview,.global-orbit canvas').count(),0,'Guest entry removes the private global view and its renderer')
+  assert.equal(await globalPage.locator('[style*="anchor-name: --cobe-"]').count(),0,'Guest entry clears COBE marker and arc anchors')
+  assert.equal(await globalPage.evaluate(()=>[...document.head.querySelectorAll('style')].filter(el=>el.textContent.includes('--cobe-visible-fleet-')).length),0,'Guest entry clears private COBE visibility styles')
+  const anonymousGlobal=await visitor.newPage(),globalPrivateReads=[]
+  anonymousGlobal.on('request',request=>{if(new URL(request.url()).pathname.startsWith('/api/v1/nodes'))globalPrivateReads.push(request.url())})
+  await anonymousGlobal.goto(base+'/#/global-overview');await anonymousGlobal.locator('#login-title').waitFor()
+  assert.equal(await anonymousGlobal.locator('.global-overview').count(),0);assert.deepEqual(globalPrivateReads,[],'Anonymous global-view deep links must not read private fleet data')
+  await anonymousGlobal.close();await globalPage.close()
   const savedAdminCookies=await admin.cookies(base),managementURL=adminPage.url()
   const guestPrivateRequests=[]
   const trackGuest=r=>{const p=new URL(r.url()).pathname;if(p.startsWith('/api/')&&!p.startsWith('/api/v1/public/')&&p!=='/api/v1/operations')guestPrivateRequests.push(p)}
   adminPage.on('request',trackGuest)
   await adminPage.evaluate(()=>{location.hash='/guest'})
   await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
-  assert.equal(await adminPage.locator('body > .u031-list').count(),0,'Guest entry immediately removes private dropdown portals')
+  assert.equal(await adminPage.locator('.product-dropdown-menu').count(),0,'Guest entry immediately removes private dropdown portals')
   await adminPage.reload();await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   adminPage.off('request',trackGuest);assert.deepEqual(guestPrivateRequests,[],'Administrator cookies must not expand guest history restoration')
   await adminPage.goBack();await adminPage.locator('#detail-title').waitFor();assert.equal(adminPage.url(),managementURL)
@@ -284,7 +305,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const nodeIcon=await adminPage.getByRole('button',{name:'Nodes',exact:true}).locator('svg path').getAttribute('d')
   assert.ok(guestIcon && guestIcon!==nodeIcon,'Guest display must have its own icon')
   await adminPage.getByRole('button',{name:'Guest display',exact:true}).click()
-  const form=adminPage.locator('.guest-settings');await form.locator('input[type=checkbox]').first().waitFor();assert.equal(await form.locator('input[type=checkbox]').filter({visible:true}).count()>0,true)
+  const form=adminPage.locator('.guest-settings');await form.getByRole('checkbox').first().waitFor();assert.equal(await form.getByRole('checkbox').filter({visible:true}).count()>0,true)
   await form.getByRole('button',{name:'Preview saved guest view',exact:true}).click();await form.locator('[data-testid=guest-display]').getByRole('heading',{name:'Public node',exact:true}).waitFor()
   // Exercise settings UI with the same server-owned policy, without changing selections.
   const response=adminPage.waitForResponse(r=>r.url().endsWith('/guest/settings')&&r.request().method()==='PUT');await form.getByRole('button',{name:'Save display settings',exact:true}).click();assert.equal((await response).status(),200)
@@ -299,7 +320,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const disabled=await admin.request.put(base+'/api/v1/guest/settings',{headers,data:{...current,enabled:false}});assert.equal(disabled.status(),200)
   await display.getByRole('button',{name:'Refresh',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('[data-testid=guest-display] h2'));assert.equal((await visitor.request.get(base+'/api/v1/public/guest/display')).status(),404)
   await adminPage.setViewportSize({width:1440,height:1000});await adminPage.goto(base+'/#/settings');await adminPage.locator('.settings-main').waitFor()
-  await adminPage.locator('.account-trigger').click();await adminPage.locator('.account-panel').getByRole('button',{name:'Sign out',exact:true}).click()
+  await adminPage.locator('.account-trigger').click();await adminPage.locator('.account-panel').getByRole('menuitem',{name:'Sign out',exact:true}).click()
   await adminPage.locator('#login-title').waitFor();assert.equal(await adminPage.locator('.account-trigger,.account-panel').count(),0,'Sign out removes all account controls')
   assert.equal((await admin.request.get(base+'/api/v1/auth/me')).status(),401,'Account card sign out invalidates the real session')
   assert.deepEqual(errors,[]);console.log('Guest audit passed: real Core policy, anonymous entry, explicit projection with administrator cookies, session-checked exit, mode-spoof denial, administrator preview/save, immediate disable; 20 light/dark/mobile snapshots.')

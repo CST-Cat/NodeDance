@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/hex"
 	"errors"
+	"github.com/CST-Cat/NodeDance/internal/core/geolocation"
 	"net/http"
 	"strings"
 	"time"
@@ -186,6 +187,8 @@ func (s *Server) adminListAgents(w http.ResponseWriter, r *http.Request) {
 	}
 	serverTime := s.now().UTC()
 	type nodeView struct {
+		Location        geolocation.Location         `json:"location"`
+		Country         geolocation.Country          `json:"country"`
 		NodeID          string                       `json:"nodeId"`
 		AgentID         string                       `json:"agentId,omitempty"`
 		DisplayName     string                       `json:"displayName"`
@@ -220,6 +223,7 @@ func (s *Server) adminListAgents(w http.ResponseWriter, r *http.Request) {
 				view.Status = "offline"
 			}
 		}
+		view.Country, view.Location = s.nodeGeography(r.Context(), node.NodeID, node.AgentID)
 		result = append(result, view)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": result, "serverTime": serverTime.Format(time.RFC3339Nano)})

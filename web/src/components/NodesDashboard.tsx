@@ -1,4 +1,5 @@
 import UiLoadState from "./UiLoadState";
+import UiDialog from "./UiDialog";
 import MobileOverviewBar from "./MobileOverviewBar";
 import { Fragment } from "react";
 import {
@@ -49,6 +50,13 @@ export default function NodesDashboard(input: Props) {
       const terminalNode = cell<AgentNode | null>(null);
       const emit = __emit;
       const preferencesOpen = cell(false);
+      const searchOpen = cell(false);
+      const narrowScreen = matchMedia("(max-width: 900px)");
+      const narrow = cell(narrowScreen.matches);
+      const updateScreen = () => {
+        narrow.value = narrowScreen.matches;
+        searchOpen.value = false;
+      };
       const inspectedNodeID = cell("");
       const inspectedNode = derived(() =>
         nodes.value.find((node) => node.nodeId === inspectedNodeID.value),
@@ -150,6 +158,7 @@ export default function NodesDashboard(input: Props) {
         >
       >({});
       const nodePreferences = cell<Record<string, DashboardPreference[]>>({});
+      const preferenceRequests = new Map<string, symbol>();
       const dashboardSettings = cell<DashboardSettings>({
         viewMode: "monitor",
         groupBy: "node",
@@ -347,10 +356,15 @@ export default function NodesDashboard(input: Props) {
         }
       }
       async function loadPreferences(node: AgentNode) {
+        const request = Symbol();
+        preferenceRequests.set(node.nodeId, request);
         try {
+          const result = await api.nodePreferences(node.nodeId);
+          if (disposed || preferenceRequests.get(node.nodeId) !== request || !nodes.value.some(item => item.nodeId === node.nodeId)) return;
+          // Merge after the await: parallel node reads must retain each other.
           nodePreferences.value = {
             ...nodePreferences.value,
-            [node.nodeId]: (await api.nodePreferences(node.nodeId)).preferences,
+            [node.nodeId]: result.preferences,
           };
         } catch (reason) {
           error.value =
@@ -714,6 +728,7 @@ export default function NodesDashboard(input: Props) {
           (node) => node.nodeId === preference.nodeId,
         );
         if (sshNode && nodeIsOnline(sshNode)) void loadSSH(sshNode, true);
+        preferenceRequests.delete(preference.nodeId);
         const existing = nodePreferences.value[preference.nodeId] ?? [];
         const without = existing.filter(
           (item) =>
@@ -1111,6 +1126,7 @@ export default function NodesDashboard(input: Props) {
         }
       }
       afterMount(() => {
+        narrowScreen.addEventListener("change", updateScreen);
         window.addEventListener("scroll", followVisibleNode, {
           passive: true,
         });
@@ -1145,6 +1161,7 @@ export default function NodesDashboard(input: Props) {
       });
       beforeDispose(() => {
         disposed = true;
+        narrowScreen.removeEventListener("change", updateScreen);
         window.removeEventListener("scroll", followVisibleNode);
         if (inspectFrame) cancelAnimationFrame(inspectFrame);
         if (reconnectTimer !== undefined) clearTimeout(reconnectTimer);
@@ -1153,6 +1170,146 @@ export default function NodesDashboard(input: Props) {
         if (taskRefreshTimer !== undefined) clearInterval(taskRefreshTimer);
         socket?.close();
       });
+      const renderSearch = () => (
+        <label
+          className={__classes("node-search")}
+          data-v-73fde8e5=""
+        >
+          <UiIcon name="search" data-v-73fde8e5=""></UiIcon>
+          <input
+            id="overview-node-search"
+            autoFocus={narrow.value}
+            enterKeyHint="search"
+            onKeyDown={event => {
+              if (narrow.value && event.key === "Escape") {
+                event.preventDefault();
+                searchOpen.value = false;
+              }
+            }}
+            type="search"
+            placeholder={t("m.800588838c17") as any}
+            aria-label={t("m.0191c754eec0") as any}
+            {...__input(
+              serverSearch.value,
+              (__nextValue: any) => {
+                serverSearch.value = __nextValue;
+              },
+              "search",
+              undefined,
+              [],
+            )}
+            data-v-73fde8e5=""
+          ></input>
+        </label>
+      );
+      const renderPreferences = () => (
+        <div
+          id="node-view-preferences"
+          aria-label={t("m.3fa2b5eb40e0") as any}
+          className={__classes("server-view-controls")}
+          style={__style({
+            display: preferencesOpen.value ? undefined : "none",
+          })}
+          data-v-73fde8e5=""
+        >
+          <label data-v-73fde8e5="">
+            {t("m.9a9acd39e536")}
+            <UiSelect
+              modelValue={statusFilter.value}
+              onUpdateModelValue={(__nextValue: any) => {
+                statusFilter.value = __nextValue;
+              }}
+              modelModifiers={{}}
+              data-v-73fde8e5=""
+            >
+              <option value="all" data-v-73fde8e5="">
+                {t("m.2b13e491c90b")}
+              </option>
+              <option value="online" data-v-73fde8e5="">
+                {t("m.b9086662b1df")}
+              </option>
+              <option value="pending" data-v-73fde8e5="">
+                {t("m.a890b3be09aa")}
+              </option>
+              <option value="offline" data-v-73fde8e5="">
+                {t("m.be1b4f3c6c1c")}
+              </option>
+              <option value="revoked" data-v-73fde8e5="">
+                {t("m.fef96e34f77b")}
+              </option>
+              <option value="hidden" data-v-73fde8e5="">
+                {t("m.58f1163e3fc6")}
+              </option>
+            </UiSelect>
+          </label>
+          <label data-v-73fde8e5="">
+            {t("m.88eac6c5df32")}
+            <UiSelect
+              modelValue={dashboardSettings.value.nodeGroupBy}
+              onUpdateModelValue={(__nextValue: any) => {
+                dashboardSettings.value.nodeGroupBy = __nextValue;
+              }}
+              modelModifiers={{}}
+              data-v-73fde8e5=""
+            >
+              <option value="status" data-v-73fde8e5="">
+                {t("m.b8f945ea49ff")}
+              </option>
+              <option value="group" data-v-73fde8e5="">
+                {t("m.c08b046b5470")}
+              </option>
+              <option value="none" data-v-73fde8e5="">
+                {t("m.fcd40ee3f05a")}
+              </option>
+            </UiSelect>
+          </label>
+          <label data-v-73fde8e5="">
+            {t("m.13fffdc852b8")}
+            <UiSelect
+              modelValue={dashboardSettings.value.nodeSortBy}
+              onUpdateModelValue={(__nextValue: any) => {
+                dashboardSettings.value.nodeSortBy = __nextValue;
+              }}
+              modelModifiers={{}}
+              data-v-73fde8e5=""
+            >
+              <option value="custom" data-v-73fde8e5="">
+                {t("m.0f59d3742e06")}
+              </option>
+              <option value="name" data-v-73fde8e5="">
+                {t("m.a98585871c53")}
+              </option>
+              <option value="status" data-v-73fde8e5="">
+                {t("m.b8f945ea49ff")}
+              </option>
+            </UiSelect>
+          </label>
+
+          <button
+            type="button"
+            disabled={dashboardSettingsSaving.value as any}
+            className={__classes("container-action")}
+            onClick={(event: any) => {
+              void saveDashboardSettings();
+            }}
+            data-v-73fde8e5=""
+          >
+            {dashboardSettingsSaving.value
+              ? t("m.ff509c9ba052")
+              : t("m.b290bfe6352c")}
+          </button>
+          {dashboardSettingsMessage.value ? (
+            <span role="status" data-v-73fde8e5="">
+              {display(dashboardSettingsMessage.value)}
+            </span>
+          ) : null}
+          {dashboardSettingsError.value ? (
+            <span role="alert" data-v-73fde8e5="">
+              {display(dashboardSettingsError.value)}
+            </span>
+          ) : null}
+        </div>
+      );
       return () => (
         <>
           {!selectedNode.value ? (
@@ -1169,7 +1326,7 @@ export default function NodesDashboard(input: Props) {
               </header>
               <div className={__classes("overview-layout")} data-v-73fde8e5="">
                 <div className={__classes("overview-main ui-load-region")} data-v-73fde8e5="">
-                  <MobileOverviewBar holdExpanded={preferencesOpen.value || !!error.value}>
+                  <MobileOverviewBar>
                   <div
                     className={__classes("dashboard-overview-controls")}
                     data-v-73fde8e5=""
@@ -1206,33 +1363,12 @@ export default function NodesDashboard(input: Props) {
                         {display(error.value)}
                       </div>
                     ) : null}
-                    <button type="button" className="overview-search-toggle" data-expand-search="" aria-label={t("m.0191c754eec0")} aria-controls="overview-node-search"><UiIcon name="search" /></button>
+                    <button type="button" className="overview-search-toggle" onClick={() => { searchOpen.value = true; }} aria-haspopup="dialog" aria-label={t("m.0191c754eec0")} aria-controls="overview-node-search"><UiIcon name="search" /></button>
                     <div
                       className={__classes("dashboard-toolbar")}
                       data-v-73fde8e5=""
                     >
-                      <label
-                        className={__classes("node-search")}
-                        data-v-73fde8e5=""
-                      >
-                        <UiIcon name="search" data-v-73fde8e5=""></UiIcon>
-                        <input
-                          id="overview-node-search"
-                          type="search"
-                          placeholder={t("m.800588838c17") as any}
-                          aria-label={t("m.0191c754eec0") as any}
-                          {...__input(
-                            serverSearch.value,
-                            (__nextValue: any) => {
-                              serverSearch.value = __nextValue;
-                            },
-                            "search",
-                            undefined,
-                            [],
-                          )}
-                          data-v-73fde8e5=""
-                        ></input>
-                      </label>
+                      {!narrow.value ? renderSearch() : null}
                       <div
                         className={__classes("dashboard-toolbar-actions")}
                         data-v-73fde8e5=""
@@ -1243,6 +1379,7 @@ export default function NodesDashboard(input: Props) {
                           title={t("dashboard.configure")}
                           aria-expanded={preferencesOpen.value as any}
                           aria-controls="node-view-preferences"
+                          aria-haspopup={narrow.value ? "dialog" : undefined}
                           className={__classes(
                             "secondary-button view-preferences-button",
                           )}
@@ -1258,7 +1395,7 @@ export default function NodesDashboard(input: Props) {
                           type="button"
                           aria-label={t("nav.enrollment")}
                           title={t("nav.enrollment")}
-                          className={__classes("primary-button")}
+                          className={__classes("secondary-button overview-enrollment-button")}
                           onClick={(event: any) => {
                             emit("enroll");
                           }}
@@ -1269,114 +1406,17 @@ export default function NodesDashboard(input: Props) {
                         </button>
                       </div>
                     </div>
-                    <div
-                      id="node-view-preferences"
-                      aria-label={t("m.3fa2b5eb40e0") as any}
-                      className={__classes("server-view-controls")}
-                      style={__style({
-                        display: preferencesOpen.value ? undefined : "none",
-                      })}
-                      data-v-73fde8e5=""
-                    >
-                      <label data-v-73fde8e5="">
-                        {t("m.9a9acd39e536")}
-                        <UiSelect
-                          modelValue={statusFilter.value}
-                          onUpdateModelValue={(__nextValue: any) => {
-                            statusFilter.value = __nextValue;
-                          }}
-                          modelModifiers={{}}
-                          data-v-73fde8e5=""
-                        >
-                          <option value="all" data-v-73fde8e5="">
-                            {t("m.2b13e491c90b")}
-                          </option>
-                          <option value="online" data-v-73fde8e5="">
-                            {t("m.b9086662b1df")}
-                          </option>
-                          <option value="pending" data-v-73fde8e5="">
-                            {t("m.a890b3be09aa")}
-                          </option>
-                          <option value="offline" data-v-73fde8e5="">
-                            {t("m.be1b4f3c6c1c")}
-                          </option>
-                          <option value="revoked" data-v-73fde8e5="">
-                            {t("m.fef96e34f77b")}
-                          </option>
-                          <option value="hidden" data-v-73fde8e5="">
-                            {t("m.58f1163e3fc6")}
-                          </option>
-                        </UiSelect>
-                      </label>
-                      <label data-v-73fde8e5="">
-                        {t("m.88eac6c5df32")}
-                        <UiSelect
-                          modelValue={dashboardSettings.value.nodeGroupBy}
-                          onUpdateModelValue={(__nextValue: any) => {
-                            dashboardSettings.value.nodeGroupBy = __nextValue;
-                          }}
-                          modelModifiers={{}}
-                          data-v-73fde8e5=""
-                        >
-                          <option value="status" data-v-73fde8e5="">
-                            {t("m.b8f945ea49ff")}
-                          </option>
-                          <option value="group" data-v-73fde8e5="">
-                            {t("m.c08b046b5470")}
-                          </option>
-                          <option value="none" data-v-73fde8e5="">
-                            {t("m.fcd40ee3f05a")}
-                          </option>
-                        </UiSelect>
-                      </label>
-                      <label data-v-73fde8e5="">
-                        {t("m.13fffdc852b8")}
-                        <UiSelect
-                          modelValue={dashboardSettings.value.nodeSortBy}
-                          onUpdateModelValue={(__nextValue: any) => {
-                            dashboardSettings.value.nodeSortBy = __nextValue;
-                          }}
-                          modelModifiers={{}}
-                          data-v-73fde8e5=""
-                        >
-                          <option value="custom" data-v-73fde8e5="">
-                            {t("m.0f59d3742e06")}
-                          </option>
-                          <option value="name" data-v-73fde8e5="">
-                            {t("m.a98585871c53")}
-                          </option>
-                          <option value="status" data-v-73fde8e5="">
-                            {t("m.b8f945ea49ff")}
-                          </option>
-                        </UiSelect>
-                      </label>
-
-                      <button
-                        type="button"
-                        disabled={dashboardSettingsSaving.value as any}
-                        className={__classes("container-action")}
-                        onClick={(event: any) => {
-                          void saveDashboardSettings();
-                        }}
-                        data-v-73fde8e5=""
-                      >
-                        {dashboardSettingsSaving.value
-                          ? t("m.ff509c9ba052")
-                          : t("m.b290bfe6352c")}
-                      </button>
-                      {dashboardSettingsMessage.value ? (
-                        <span role="status" data-v-73fde8e5="">
-                          {display(dashboardSettingsMessage.value)}
-                        </span>
-                      ) : null}
-                      {dashboardSettingsError.value ? (
-                        <span role="alert" data-v-73fde8e5="">
-                          {display(dashboardSettingsError.value)}
-                        </span>
-                      ) : null}
-                    </div>
+                    {!narrow.value ? renderPreferences() : null}
                   </div>
                   </MobileOverviewBar>
+                  {narrow.value ? <>
+                    <UiDialog open={searchOpen.value} title={t("m.0191c754eec0")} className="overview-search-dialog" onClose={() => { searchOpen.value = false; }}>
+                      {renderSearch()}
+                    </UiDialog>
+                    <UiDialog open={preferencesOpen.value} title={t("dashboard.configure")} className="overview-preferences-dialog" onClose={() => { preferencesOpen.value = false; }}>
+                      {renderPreferences()}
+                    </UiDialog>
+                  </> : null}
                   <section
                     aria-label={t("m.8a3dfec291d0") as any}
                     data-testid="multi-vps-dashboard"

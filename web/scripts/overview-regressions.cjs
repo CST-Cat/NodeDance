@@ -28,12 +28,12 @@ module.exports=async function({context,base,node,headers,artifacts,catalog}){
   assert.equal(await info.locator('.context-heading > button').getAttribute('aria-pressed'),'false','Core initially selected')
   await card.locator('.vps-card-version').click();await info.getByText('OVERVIEW-AGENT-HOST',{exact:true}).waitFor();assert.ok(!page.url().includes('node='),'Inspecting does not enter node detail')
   assert.deepEqual(await card.locator('.resource-reading').evaluateAll(items=>items.map(item=>item.dataset.resource)),['load','cpu','memory','disk'],'Load is the leftmost gauge')
-  assert.equal(await card.locator('[data-resource=load] .ring strong').innerText(),'19.3%','1Panel load convention: 1.16 / (4 × 1.5) × 100')
+  assert.equal(await card.locator('[data-resource=load] .resource-gauge strong').innerText(),'19.3%','1Panel load convention: 1.16 / (4 × 1.5) × 100')
   await card.getByRole('button',{name:'Load details',exact:true}).click();await card.locator('.load-details').getByText('1.96',{exact:true}).waitFor();await card.locator('.load-details button').click()
   const publish=value=>source.send(JSON.stringify({type:'node_metrics',nodeId:node,metrics:value}))
-  const noCores=snapshot();noCores.metrics.cpu.logicalCores=metric(0);publish(noCores);await page.waitForFunction(()=>document.querySelector('[data-resource=load] .ring strong')?.textContent==='—')
-  const overloaded=snapshot();overloaded.metrics.host.load.value.one=12;publish(overloaded);await page.waitForFunction(()=>document.querySelector('[data-resource=load] .ring strong')?.textContent==='200.0%');assert.equal(await card.locator('[data-resource=load] .ring-value').getAttribute('stroke-dasharray'),'100 100')
-  const expiredLoad=snapshot();expiredLoad.metrics.host.load.sampleAgeMillis=60000;publish(expiredLoad);await page.waitForFunction(()=>document.querySelector('[data-resource=load] .ring strong')?.textContent==='—');emitSamples()
+  const noCores=snapshot();noCores.metrics.cpu.logicalCores=metric(0);publish(noCores);await page.waitForFunction(()=>document.querySelector('[data-resource=load] .resource-gauge strong')?.textContent==='—')
+  const overloaded=snapshot();overloaded.metrics.host.load.value.one=12;publish(overloaded);await page.waitForFunction(()=>document.querySelector('[data-resource=load] .resource-gauge strong')?.textContent==='200.0%');assert.equal(await card.locator('[data-resource=load] .ring-value').getAttribute('stroke-dasharray'),'100 100')
+  const expiredLoad=snapshot();expiredLoad.metrics.host.load.sampleAgeMillis=60000;publish(expiredLoad);await page.waitForFunction(()=>document.querySelector('[data-resource=load] .resource-gauge strong')?.textContent==='—');emitSamples()
   const tools=info.locator('.header-actions');assert.equal(await tools.getByRole('button').count(),4,'All four host header actions exist')
   await info.getByRole('button',{name:'Hide sensitive information',exact:true}).click();assert.equal(await info.locator('[data-field=hostname]').innerText(),'••••••');assert.equal(await info.locator('[data-field=address]').innerText(),'••••••')
   await info.getByRole('button',{name:'Copy host information',exact:true}).click();const maskedCopy=await page.evaluate(()=>window.__overviewCopied);assert.ok(!maskedCopy.includes('OVERVIEW-AGENT-HOST')&&!maskedCopy.includes('192.0.2.24'),'Masked copy does not export hidden information')
@@ -66,7 +66,7 @@ module.exports=async function({context,base,node,headers,artifacts,catalog}){
    await page.waitForFunction(expected=>document.querySelector('.vps-card [data-os-logo]')?.getAttribute('data-os-logo')===expected,expected);
   }
   platform='debian';emitSamples();await page.waitForFunction(()=>document.querySelector('.vps-card [data-os-logo]')?.getAttribute('data-os-logo')==='debian');
-  assert.equal(await card.locator('.vps-node-icon').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','OS logos have no decorative background box');
+  assert.equal(await card.locator('.vps-service-icon').evaluate(e=>getComputedStyle(e).backgroundColor),'rgba(0, 0, 0, 0)','OS logos have no decorative background box');
   for(const theme of ['light','dark'])for(const width of [1440,390]){
    await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);
    const headerLayout=await card.evaluate(el=>{const name=el.querySelector('.vps-name').getBoundingClientRect(),version=el.querySelector('.vps-card-version').getBoundingClientRect();return {width:el.clientWidth-parseFloat(getComputedStyle(el).paddingLeft)-parseFloat(getComputedStyle(el).paddingRight),nameBottom:name.bottom,nameLeft:name.left,versionLeft:version.left,versionTop:version.top,versionRight:version.right,cardRight:el.getBoundingClientRect().right}});

@@ -11,8 +11,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/CST-Cat/NodeDance/internal/core/geolocation"
 	"github.com/CST-Cat/NodeDance/internal/sshconnection"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -50,20 +52,22 @@ func ComposeServiceIdentity(nodeID, project, workingDir, configFiles, service st
 }
 
 type Preference struct {
-	NodeID     string `json:"nodeId"`
-	TargetKind string `json:"targetKind"`
-	Identity   string `json:"identity"`
-	Alias      string `json:"alias"`
-	Icon       string `json:"icon"`
-	Notes      string `json:"notes"`
-	ServiceURL string `json:"serviceUrl"`
-	SSHHost    string `json:"sshHost"`
-	SSHPort    int    `json:"sshPort"`
-	SSHUser    string `json:"sshUser"`
-	Group      string `json:"group"`
-	SortOrder  int    `json:"sortOrder"`
-	Visible    bool   `json:"visible"`
-	Pinned     bool   `json:"pinned"`
+	Location    *geolocation.Position `json:"location"`
+	NodeID      string                `json:"nodeId"`
+	TargetKind  string                `json:"targetKind"`
+	Identity    string                `json:"identity"`
+	Alias       string                `json:"alias"`
+	Icon        string                `json:"icon"`
+	CountryCode string                `json:"countryCode"`
+	Notes       string                `json:"notes"`
+	ServiceURL  string                `json:"serviceUrl"`
+	SSHHost     string                `json:"sshHost"`
+	SSHPort     int                   `json:"sshPort"`
+	SSHUser     string                `json:"sshUser"`
+	Group       string                `json:"group"`
+	SortOrder   int                   `json:"sortOrder"`
+	Visible     bool                  `json:"visible"`
+	Pinned      bool                  `json:"pinned"`
 }
 
 type Settings struct {
@@ -83,9 +87,11 @@ type Repository struct {
 func (r Repository) List(ctx context.Context, nodeID string) ([]Preference, error) {
 	rows, err := r.DB.QueryContext(ctx, `SELECT p.node_id, p.target_kind, p.identity_key, p.alias, p.icon, p.notes, p.service_url,
 		COALESCE(c.ssh_host, ''), COALESCE(c.ssh_port, 22), COALESCE(c.ssh_user, ''),
-		p.group_name, p.sort_order, p.visible, p.pinned
+		p.group_name, p.sort_order, p.visible, p.pinned, COALESCE(nc.country_code, ''), COALESCE(nl.location_json, 'null')
 		FROM (SELECT * FROM dashboard_preferences UNION ALL SELECT * FROM compose_project_preferences) p LEFT JOIN node_connection_preferences c ON c.node_id=p.node_id AND p.target_kind='node'
-		WHERE p.node_id=? ORDER BY p.sort_order, p.target_kind, p.identity_key`, nodeID)
+		LEFT JOIN node_country_preferences nc ON nc.node_id=p.node_id AND p.target_kind='node'
+		LEFT JOIN node_location_preferences nl ON nl.node_id=p.node_id AND p.target_kind='node'
+ WHERE p.node_id=? ORDER BY p.sort_order, p.target_kind, p.identity_key`, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,9 +100,13 @@ func (r Repository) List(ctx context.Context, nodeID string) ([]Preference, erro
 	for rows.Next() {
 		var item Preference
 		var visible, pinned int
+		var locationJSON string
 		if err := rows.Scan(&item.NodeID, &item.TargetKind, &item.Identity, &item.Alias, &item.Icon,
 			&item.Notes, &item.ServiceURL, &item.SSHHost, &item.SSHPort, &item.SSHUser,
-			&item.Group, &item.SortOrder, &visible, &pinned); err != nil {
+			&item.Group, &item.SortOrder, &visible, &pinned, &item.CountryCode, &locationJSON); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(locationJSON), &item.Location); err != nil {
 			return nil, err
 		}
 		item.Visible, item.Pinned = visible == 1, pinned == 1
@@ -139,6 +149,17 @@ func (r Repository) Put(ctx context.Context, item Preference) error {
 		return err
 	}
 	if item.TargetKind == "node" {
+		locationJSON, err := json.Marshal(item.Location)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO node_location_preferences(node_id,location_json) VALUES(?,?) ON CONFLICT(node_id) DO UPDATE SET location_json=excluded.location_json`, item.NodeID, string(locationJSON)); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO node_country_preferences(node_id, country_code) VALUES(?, ?)
+            ON CONFLICT(node_id) DO UPDATE SET country_code=excluded.country_code`, item.NodeID, item.CountryCode); err != nil {
+			return err
+		}
 		port := item.SSHPort
 		if port == 0 {
 			port = 22
@@ -206,6 +227,12 @@ func validPreference(item Preference) bool {
 		item.SortOrder < -1_000_000 || item.SortOrder > 1_000_000 {
 		return false
 	}
+	if !slices.Contains(CountryCodes(), item.CountryCode) || item.TargetKind != "node" && item.CountryCode != "" {
+		return false
+	}
+	if item.Location != nil && (item.TargetKind != "node" || !geolocation.ValidPosition(item.Location) || !slices.Contains(CountryCodes(), item.Location.CountryCode) || item.CountryCode != "" && item.CountryCode != item.Location.CountryCode) {
+		return false
+	}
 	switch item.TargetKind {
 	case "node":
 		if !validNodeID(item.NodeID) || item.Identity != NodeIdentity(item.NodeID) ||
@@ -235,8 +262,7 @@ func validPreference(item Preference) bool {
 	default:
 		return false
 	}
-	allowedIcons := map[string]struct{}{"": {}, "server": {}, "globe": {}, "database": {}, "shield": {}, "terminal": {}, "box": {}, "cloud": {}, "folder": {}, "activity": {}}
-	if _, ok := allowedIcons[item.Icon]; !ok {
+	if !slices.Contains(PreferenceIcons(), item.Icon) {
 		return false
 	}
 	if item.ServiceURL == "" {

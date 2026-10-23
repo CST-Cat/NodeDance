@@ -1,3 +1,4 @@
+const {selectValue}=require('./arc-controls.cjs')
 const assert=require('node:assert/strict'),path=require('node:path')
 module.exports=async function({page,base,artifacts}){
  const errors=[];page.on('pageerror',error=>errors.push(error.message))
@@ -23,15 +24,15 @@ module.exports=async function({page,base,artifacts}){
   await page.goto(base+'/#/feeds');await page.reload();const form=page.locator('.feed-form');await form.waitFor()
   await page.waitForFunction(theme=>document.querySelector('.app-shell')?.dataset.theme===theme,theme)
   for(const mode of ['off','immediate','digest']){
-   await form.locator('[name=feedNotificationMode]').selectOption(mode)
+   await selectValue(form.locator('button[data-dropdown-field][data-field-name=feedNotificationMode]'),mode)
    const outside=await form.evaluate(form=>{
     const card=form.getBoundingClientRect(),style=getComputedStyle(form),left=card.left+parseFloat(style.paddingLeft),right=card.right-parseFloat(style.paddingRight)
-    return [...form.querySelectorAll('input:not([type=checkbox]),textarea,.u031-btn,fieldset')].filter(el=>{const r=el.getBoundingClientRect();return r.width&&r.height&&(r.left<left-1||r.right>right+1)}).map(el=>el.outerHTML.slice(0,160))
+    return [...form.querySelectorAll('input:not([type=checkbox]):not([aria-hidden=true]),textarea,button[data-dropdown-field],fieldset')].filter(el=>{const r=el.getBoundingClientRect();return r.width&&r.height&&(r.left<left-1||r.right>right+1)}).map(el=>el.outerHTML.slice(0,160))
    })
    assert.deepEqual(outside,[],`Feed ${mode} controls outside card (${theme}, ${width})`)
    const rects=await form.evaluate(form=>{
     const rect=selector=>{const r=form.querySelector(selector).getBoundingClientRect();return {top:r.top,height:r.height}}
-    return {urlWidth:form.querySelector('[name=feedUrl]').getBoundingClientRect().width,intervalWidth:form.querySelector('.feed-interval-controls').getBoundingClientRect().width,name:rect('[name=feedName]'),url:rect('[name=feedUrl]'),keywords:rect('[name=feedKeywords]'),notification:rect('[name=feedNotificationMode]').top,notificationButton:rect('[name=feedNotificationMode]').height,interval:rect('[name=feedInterval]'),custom:rect('[name=feedCustomInterval]')}
+    return {urlWidth:form.querySelector('[name=feedUrl]').getBoundingClientRect().width,intervalWidth:form.querySelector('.feed-interval-controls').getBoundingClientRect().width,name:rect('[name=feedName]'),url:rect('[name=feedUrl]'),keywords:rect('[name=feedKeywords]'),notification:rect('button[data-dropdown-field][data-field-name=feedNotificationMode]').top,notificationButton:rect('button[data-dropdown-field][data-field-name=feedNotificationMode]').height,interval:rect('button[data-dropdown-field][data-field-name=feedInterval]'),custom:rect('[name=feedCustomInterval]')}
    })
    assert.ok(rects.name.height>=(width<=700?44:32)&&Math.abs(rects.name.height-rects.url.height)<1,'Consistent single-line input height')
    assert.ok(Math.abs(rects.interval.top-rects.custom.top)<1,'Interval preset and custom input align')
@@ -49,7 +50,7 @@ module.exports=async function({page,base,artifacts}){
    await page.waitForFunction(theme=>document.querySelector('.app-shell')?.dataset.theme===theme,theme)
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`${route} has no page overflow at ${width}`)
    if(width>900){
-    const widths=await form.locator('input:not([type=checkbox]),.u031-btn').evaluateAll(elements=>elements.map(el=>el.getBoundingClientRect().width))
+    const widths=await form.locator('input:not([type=checkbox]):not([aria-hidden=true]),.u031-btn,button[data-dropdown-field]').evaluateAll(elements=>elements.map(el=>el.getBoundingClientRect().width))
     assert.ok(widths.length>0&&widths.every(value=>value<=560),`${route}: desktop fields have content-appropriate widths`)
    }
    await page.screenshot({path:path.join(artifacts,`responsive-${route}-${theme}-${width}.png`)});layouts++
@@ -57,10 +58,10 @@ module.exports=async function({page,base,artifacts}){
  }
  for(const theme of ['light','dark'])for(const width of [390,1440]){
   await setTheme(theme);await page.setViewportSize({width,height:1100});await page.goto(base+'/#/operations');await page.reload()
-  const selector=page.locator('.operation-layout aside select');await selector.waitFor({state:'attached'});await selector.selectOption('files.upload')
+  const selector=page.locator('.operation-layout aside button[data-dropdown-field]');await selector.waitFor({state:'attached'});await selectValue(selector,'files.upload')
   await page.locator('.operation-field-group').first().waitFor()
   assert.ok(await page.locator('.operation-field-group').count()>=2,'Target and request headers have separate groups')
-  if(width<700)assert.ok((await page.locator('.operation-layout aside .u031-list').boundingBox()).height<=180,'Mobile operation picker leaves room for its form')
+  if(width<700){assert.ok((await selector.boundingBox()).height<=48,'Closed mobile operation picker leaves room for its form');await selector.click();assert.ok((await page.getByRole('menu').boundingBox()).height<=320,'Open operation picker stays bounded');await page.keyboard.press('Escape')}
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))
   await page.screenshot({path:path.join(artifacts,`responsive-operation-groups-${theme}-${width}.png`)});layouts++
  }

@@ -1,0 +1,1402 @@
+{
+  "registry": "https://raw.githubusercontent.com/kuratlielia/arc-library/main/registry.json",
+  "cli": "shadcn@4.22.1",
+  "items": [
+    {
+      "name": "button",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx"
+      ]
+    },
+    {
+      "name": "action-button",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/action-button/action-button.module.css",
+        "src/components/arc/action-button/action-button.tsx"
+      ]
+    },
+    {
+      "name": "split-button",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/split-button/split-button.module.css",
+        "src/components/arc/split-button/split-button.tsx"
+      ]
+    },
+    {
+      "name": "button-group",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/button-group/button-group.module.css",
+        "src/components/arc/button-group/button-group.tsx"
+      ]
+    },
+    {
+      "name": "floating-button-group",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/floating-button-group/floating-button-group.module.css",
+        "src/components/arc/floating-button-group/floating-button-group.tsx",
+        "src/components/arc/tooltip/tooltip.module.css",
+        "src/components/arc/tooltip/tooltip.tsx"
+      ]
+    },
+    {
+      "name": "expanding-button-group",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/expanding-button-group/expanding-button-group.module.css",
+        "src/components/arc/expanding-button-group/expanding-button-group.tsx"
+      ]
+    },
+    {
+      "name": "dropdown-menu",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/dropdown-menu/dropdown-menu.module.css",
+        "src/components/arc/dropdown-menu/dropdown-menu.tsx"
+      ]
+    },
+    {
+      "name": "context-menu",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/context-menu/context-menu.module.css",
+        "src/components/arc/context-menu/context-menu.tsx"
+      ]
+    },
+    {
+      "name": "copy-button",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/copy-button/copy-button.module.css",
+        "src/components/arc/copy-button/copy-button.tsx",
+        "src/components/arc/lib/use-copy-feedback.ts"
+      ]
+    },
+    {
+      "name": "drawer",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/drawer/drawer.module.css",
+        "src/components/arc/drawer/drawer.tsx"
+      ]
+    },
+    {
+      "name": "theme-switch",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/theme-switch/theme-switch.module.css",
+        "src/components/arc/theme-switch/theme-switch.tsx"
+      ]
+    },
+    {
+      "name": "theme-switch-eclipse",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/theme-switch/theme-switch.module.css",
+        "src/components/arc/theme-switch/theme-switch.tsx"
+      ]
+    },
+    {
+      "name": "theme-switch-split",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/theme-switch/theme-switch.module.css",
+        "src/components/arc/theme-switch/theme-switch.tsx"
+      ]
+    },
+    {
+      "name": "theme-switch-rise",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/theme-switch/theme-switch.module.css",
+        "src/components/arc/theme-switch/theme-switch.tsx"
+      ]
+    },
+    {
+      "name": "avatar",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/avatar/avatar.module.css",
+        "src/components/arc/avatar/avatar.tsx",
+        "src/components/arc/lib/arc-provider.tsx"
+      ]
+    },
+    {
+      "name": "avatar-group",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/avatar-group/avatar-group.module.css",
+        "src/components/arc/avatar-group/avatar-group.tsx",
+        "src/components/arc/avatar/avatar.module.css",
+        "src/components/arc/avatar/avatar.tsx",
+        "src/components/arc/lib/arc-provider.tsx"
+      ]
+    },
+    {
+      "name": "input",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/input/input.module.css",
+        "src/components/arc/input/input.tsx"
+      ]
+    },
+    {
+      "name": "textarea",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/textarea/textarea.module.css",
+        "src/components/arc/textarea/textarea.tsx"
+      ]
+    },
+    {
+      "name": "select",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/select/select.module.css",
+        "src/components/arc/select/select.tsx"
+      ]
+    },
+    {
+      "name": "combobox",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/combobox/combobox.module.css",
+        "src/components/arc/combobox/combobox.tsx"
+      ]
+    },
+    {
+      "name": "checkbox",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/checkbox/checkbox.module.css",
+        "src/components/arc/checkbox/checkbox.tsx"
+      ]
+    },
+    {
+      "name": "switch",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/switch/switch.module.css",
+        "src/components/arc/switch/switch.tsx"
+      ]
+    },
+    {
+      "name": "multi-select",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/multi-select/multi-select.module.css",
+        "src/components/arc/multi-select/multi-select.tsx"
+      ]
+    },
+    {
+      "name": "number-field",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/number-field/number-field.module.css",
+        "src/components/arc/number-field/number-field.tsx"
+      ]
+    },
+    {
+      "name": "password-field",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/password-field/password-field.module.css",
+        "src/components/arc/password-field/password-field.tsx"
+      ]
+    },
+    {
+      "name": "search-field",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/search-field/search-field.module.css",
+        "src/components/arc/search-field/search-field.tsx"
+      ]
+    },
+    {
+      "name": "tag-input",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/tag-input/tag-input.module.css",
+        "src/components/arc/tag-input/tag-input.tsx"
+      ]
+    },
+    {
+      "name": "file-dropzone",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/file-dropzone/file-dropzone.module.css",
+        "src/components/arc/file-dropzone/file-dropzone.tsx"
+      ]
+    },
+    {
+      "name": "radio-group",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/radio-group/radio-group.module.css",
+        "src/components/arc/radio-group/radio-group.tsx"
+      ]
+    },
+    {
+      "name": "segmented-control",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/segmented-control/segmented-control.module.css",
+        "src/components/arc/segmented-control/segmented-control.tsx"
+      ]
+    },
+    {
+      "name": "calendar",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/calendar/calendar.module.css",
+        "src/components/arc/calendar/calendar.tsx",
+        "src/components/arc/lib/use-today.ts"
+      ]
+    },
+    {
+      "name": "date-picker",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/calendar/calendar.module.css",
+        "src/components/arc/calendar/calendar.tsx",
+        "src/components/arc/date-picker/date-picker.module.css",
+        "src/components/arc/date-picker/date-picker.tsx",
+        "src/components/arc/lib/use-today.ts"
+      ]
+    },
+    {
+      "name": "time-picker",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/time-picker/time-picker.module.css",
+        "src/components/arc/time-picker/time-picker.tsx"
+      ]
+    },
+    {
+      "name": "accordion",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/accordion/accordion.module.css",
+        "src/components/arc/accordion/accordion.tsx"
+      ]
+    },
+    {
+      "name": "dialog",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/dialog/dialog.module.css",
+        "src/components/arc/dialog/dialog.tsx"
+      ]
+    },
+    {
+      "name": "popover",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/popover/popover.module.css",
+        "src/components/arc/popover/popover.tsx"
+      ]
+    },
+    {
+      "name": "tooltip",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/tooltip/tooltip.module.css",
+        "src/components/arc/tooltip/tooltip.tsx"
+      ]
+    },
+    {
+      "name": "tabs",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/tabs/tabs.module.css",
+        "src/components/arc/tabs/tabs.tsx"
+      ]
+    },
+    {
+      "name": "expandable-card",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/expandable-card/expandable-card.module.css",
+        "src/components/arc/expandable-card/expandable-card.tsx"
+      ]
+    },
+    {
+      "name": "breadcrumb",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/breadcrumb/breadcrumb.module.css",
+        "src/components/arc/breadcrumb/breadcrumb.tsx",
+        "src/components/arc/lib/arc-provider.tsx"
+      ]
+    },
+    {
+      "name": "alert",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/alert/alert.module.css",
+        "src/components/arc/alert/alert.tsx"
+      ]
+    },
+    {
+      "name": "toast",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/toast/toast.module.css",
+        "src/components/arc/toast/toast.tsx"
+      ]
+    },
+    {
+      "name": "progress",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/progress/progress.module.css",
+        "src/components/arc/progress/progress.tsx"
+      ]
+    },
+    {
+      "name": "skeleton",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/skeleton/skeleton.module.css",
+        "src/components/arc/skeleton/skeleton.tsx"
+      ]
+    },
+    {
+      "name": "badge",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/badge/badge.module.css",
+        "src/components/arc/badge/badge.tsx"
+      ]
+    },
+    {
+      "name": "card",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/card/card.module.css",
+        "src/components/arc/card/card.tsx"
+      ]
+    },
+    {
+      "name": "metric-card",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/animated-counter/animated-counter.module.css",
+        "src/components/arc/animated-counter/animated-counter.tsx",
+        "src/components/arc/metric-card/metric-card.module.css",
+        "src/components/arc/metric-card/metric-card.tsx"
+      ]
+    },
+    {
+      "name": "empty-state",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/empty-state/empty-state.module.css",
+        "src/components/arc/empty-state/empty-state.tsx"
+      ]
+    },
+    {
+      "name": "tree-view",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/tree-view/tree-view.module.css",
+        "src/components/arc/tree-view/tree-view.tsx"
+      ]
+    },
+    {
+      "name": "pagination",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/pagination/pagination.module.css",
+        "src/components/arc/pagination/pagination.tsx"
+      ]
+    },
+    {
+      "name": "filter-toolbar",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/filter-toolbar/filter-toolbar.module.css",
+        "src/components/arc/filter-toolbar/filter-toolbar.tsx"
+      ]
+    },
+    {
+      "name": "sortable-data-table",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/sortable-data-table/sortable-data-table.module.css",
+        "src/components/arc/sortable-data-table/sortable-data-table.tsx"
+      ]
+    },
+    {
+      "name": "sparkline",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/sparkline/sparkline.module.css",
+        "src/components/arc/sparkline/sparkline.tsx"
+      ]
+    },
+    {
+      "name": "gauge",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/gauge/gauge.module.css",
+        "src/components/arc/gauge/gauge.tsx"
+      ]
+    },
+    {
+      "name": "animated-counter",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/animated-counter/animated-counter.module.css",
+        "src/components/arc/animated-counter/animated-counter.tsx"
+      ]
+    },
+    {
+      "name": "code-block",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/code-block/code-block.module.css",
+        "src/components/arc/code-block/code-block.tsx",
+        "src/components/arc/copy-button/copy-button.module.css",
+        "src/components/arc/copy-button/copy-button.tsx",
+        "src/components/arc/lib/use-copy-feedback.ts"
+      ]
+    },
+    {
+      "name": "reorderable-list",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/reorderable-list/reorderable-list.module.css",
+        "src/components/arc/reorderable-list/reorderable-list.tsx"
+      ]
+    },
+    {
+      "name": "text-reveal",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/text-reveal/text-reveal.module.css",
+        "src/components/arc/text-reveal/text-reveal.tsx"
+      ]
+    },
+    {
+      "name": "in-view-title",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/in-view-title/in-view-title.module.css",
+        "src/components/arc/in-view-title/in-view-title.tsx"
+      ]
+    },
+    {
+      "name": "text-morph",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/text-morph/text-morph.module.css",
+        "src/components/arc/text-morph/text-morph.tsx"
+      ]
+    },
+    {
+      "name": "text-shimmer",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/text-shimmer/text-shimmer.module.css",
+        "src/components/arc/text-shimmer/text-shimmer.tsx"
+      ]
+    },
+    {
+      "name": "hold-to-confirm",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/hold-to-confirm/hold-to-confirm.module.css",
+        "src/components/arc/hold-to-confirm/hold-to-confirm.tsx"
+      ]
+    },
+    {
+      "name": "swipe-actions",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/swipe-actions/swipe-actions.module.css",
+        "src/components/arc/swipe-actions/swipe-actions.tsx"
+      ]
+    },
+    {
+      "name": "reactions",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/reactions/reactions.module.css",
+        "src/components/arc/reactions/reactions.tsx"
+      ]
+    },
+    {
+      "name": "slider",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/slider/slider.module.css",
+        "src/components/arc/slider/slider.tsx"
+      ]
+    },
+    {
+      "name": "elastic-slider",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/elastic-slider/elastic-slider.module.css",
+        "src/components/arc/elastic-slider/elastic-slider.tsx"
+      ]
+    },
+    {
+      "name": "inline-edit",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/inline-edit/inline-edit.module.css",
+        "src/components/arc/inline-edit/inline-edit.tsx"
+      ]
+    },
+    {
+      "name": "expanding-search",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/expanding-search/expanding-search.module.css",
+        "src/components/arc/expanding-search/expanding-search.tsx"
+      ]
+    },
+    {
+      "name": "chip-group",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/chip-group/chip-group.module.css",
+        "src/components/arc/chip-group/chip-group.tsx"
+      ]
+    },
+    {
+      "name": "password-strength",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/password-strength/password-strength.module.css",
+        "src/components/arc/password-strength/password-strength.tsx"
+      ]
+    },
+    {
+      "name": "bottom-sheet",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/bottom-sheet/bottom-sheet.module.css",
+        "src/components/arc/bottom-sheet/bottom-sheet.tsx"
+      ]
+    },
+    {
+      "name": "hover-card",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/hover-card/hover-card.module.css",
+        "src/components/arc/hover-card/hover-card.tsx"
+      ]
+    },
+    {
+      "name": "resizable-panels",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/resizable-panels/resizable-panels.module.css",
+        "src/components/arc/resizable-panels/resizable-panels.tsx"
+      ]
+    },
+    {
+      "name": "toast-stack",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/toast-stack/toast-stack.module.css",
+        "src/components/arc/toast-stack/toast-stack.tsx"
+      ]
+    },
+    {
+      "name": "usage-meter",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/usage-meter/usage-meter.module.css",
+        "src/components/arc/usage-meter/usage-meter.tsx"
+      ]
+    },
+    {
+      "name": "onboarding-checklist",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/onboarding-checklist/onboarding-checklist.module.css",
+        "src/components/arc/onboarding-checklist/onboarding-checklist.tsx"
+      ]
+    },
+    {
+      "name": "image-compare",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/image-compare/image-compare.module.css",
+        "src/components/arc/image-compare/image-compare.tsx"
+      ]
+    },
+    {
+      "name": "carousel",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/carousel/carousel.module.css",
+        "src/components/arc/carousel/carousel.tsx"
+      ]
+    },
+    {
+      "name": "card-stack",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/card-stack/card-stack.module.css",
+        "src/components/arc/card-stack/card-stack.tsx"
+      ]
+    },
+    {
+      "name": "bar-chart",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/bar-chart/bar-chart.module.css",
+        "src/components/arc/bar-chart/bar-chart.tsx"
+      ]
+    },
+    {
+      "name": "activity-heatmap",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/activity-heatmap/activity-heatmap.module.css",
+        "src/components/arc/activity-heatmap/activity-heatmap.tsx"
+      ]
+    },
+    {
+      "name": "timeline",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/timeline/timeline.module.css",
+        "src/components/arc/timeline/timeline.tsx"
+      ]
+    },
+    {
+      "name": "user-menu",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/user-menu/user-menu.module.css",
+        "src/components/arc/user-menu/user-menu.tsx"
+      ]
+    },
+    {
+      "name": "stepper",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/stepper/stepper.module.css",
+        "src/components/arc/stepper/stepper.tsx"
+      ]
+    },
+    {
+      "name": "signature-pad",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/signature-pad/signature-pad.module.css",
+        "src/components/arc/signature-pad/signature-pad.tsx"
+      ]
+    },
+    {
+      "name": "icon-morph",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/icon-morph/icon-morph.module.css",
+        "src/components/arc/icon-morph/icon-morph.tsx"
+      ]
+    },
+    {
+      "name": "date-range-picker",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/date-range-picker/date-range-picker.module.css",
+        "src/components/arc/date-range-picker/date-range-picker.tsx",
+        "src/components/arc/lib/use-today.ts"
+      ]
+    },
+    {
+      "name": "color-picker",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/color-picker/color-picker.module.css",
+        "src/components/arc/color-picker/color-picker.tsx",
+        "src/components/arc/text-morph/text-morph.module.css",
+        "src/components/arc/text-morph/text-morph.tsx"
+      ]
+    },
+    {
+      "name": "morph-select",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/morph-select/morph-select.module.css",
+        "src/components/arc/morph-select/morph-select.tsx"
+      ]
+    },
+    {
+      "name": "line-chart",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/line-chart/line-chart.module.css",
+        "src/components/arc/line-chart/line-chart.tsx"
+      ]
+    },
+    {
+      "name": "donut-chart",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/donut-chart/donut-chart.module.css",
+        "src/components/arc/donut-chart/donut-chart.tsx"
+      ]
+    },
+    {
+      "name": "streamgraph",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/streamgraph/streamgraph.module.css",
+        "src/components/arc/streamgraph/streamgraph.tsx"
+      ]
+    },
+    {
+      "name": "brush-chart",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/brush-chart/brush-chart.module.css",
+        "src/components/arc/brush-chart/brush-chart.tsx"
+      ]
+    },
+    {
+      "name": "ridgeline",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/ridgeline/ridgeline.module.css",
+        "src/components/arc/ridgeline/ridgeline.tsx"
+      ]
+    },
+    {
+      "name": "treemap",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/treemap/treemap.module.css",
+        "src/components/arc/treemap/treemap.tsx"
+      ]
+    },
+    {
+      "name": "waffle-chart",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/waffle-chart/waffle-chart.module.css",
+        "src/components/arc/waffle-chart/waffle-chart.tsx"
+      ]
+    },
+    {
+      "name": "slope-chart",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/slope-chart/slope-chart.module.css",
+        "src/components/arc/slope-chart/slope-chart.tsx"
+      ]
+    },
+    {
+      "name": "countdown",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/countdown/countdown.module.css",
+        "src/components/arc/countdown/countdown.tsx"
+      ]
+    },
+    {
+      "name": "cookie-consent",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/cookie-consent/cookie-consent.module.css",
+        "src/components/arc/cookie-consent/cookie-consent.tsx",
+        "src/components/arc/switch/switch.module.css",
+        "src/components/arc/switch/switch.tsx"
+      ]
+    },
+    {
+      "name": "announcement-bar",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/announcement-bar/announcement-bar.module.css",
+        "src/components/arc/announcement-bar/announcement-bar.tsx"
+      ]
+    },
+    {
+      "name": "json-viewer",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/json-viewer/json-viewer.module.css",
+        "src/components/arc/json-viewer/json-viewer.tsx"
+      ]
+    },
+    {
+      "name": "scrub-input",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/scrub-input/scrub-input.module.css",
+        "src/components/arc/scrub-input/scrub-input.tsx"
+      ]
+    },
+    {
+      "name": "phone-input",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/phone-input/phone-input.module.css",
+        "src/components/arc/phone-input/phone-input.tsx"
+      ]
+    },
+    {
+      "name": "money-input",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/money-input/money-input.module.css",
+        "src/components/arc/money-input/money-input.tsx"
+      ]
+    },
+    {
+      "name": "shortcut-recorder",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/shortcut-recorder/shortcut-recorder.module.css",
+        "src/components/arc/shortcut-recorder/shortcut-recorder.tsx"
+      ]
+    },
+    {
+      "name": "confirm-morph",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/confirm-morph/confirm-morph.module.css",
+        "src/components/arc/confirm-morph/confirm-morph.tsx"
+      ]
+    },
+    {
+      "name": "mention-input",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/mention-input/mention-input.module.css",
+        "src/components/arc/mention-input/mention-input.tsx"
+      ]
+    },
+    {
+      "name": "chat-thread",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/chat-thread/chat-thread.module.css",
+        "src/components/arc/chat-thread/chat-thread.tsx"
+      ]
+    },
+    {
+      "name": "rich-text-editor",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/rich-text-editor/rich-text-editor.module.css",
+        "src/components/arc/rich-text-editor/rich-text-editor.tsx"
+      ]
+    },
+    {
+      "name": "billing-toggle",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/animated-counter/animated-counter.module.css",
+        "src/components/arc/animated-counter/animated-counter.tsx",
+        "src/components/arc/billing-toggle/billing-toggle.module.css",
+        "src/components/arc/billing-toggle/billing-toggle.tsx"
+      ]
+    },
+    {
+      "name": "scroll-area",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/scroll-area/scroll-area.module.css",
+        "src/components/arc/scroll-area/scroll-area.tsx"
+      ]
+    },
+    {
+      "name": "radio-cards",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/radio-cards/radio-cards.module.css",
+        "src/components/arc/radio-cards/radio-cards.tsx"
+      ]
+    },
+    {
+      "name": "comment-thread",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/comment-thread/comment-thread.module.css",
+        "src/components/arc/comment-thread/comment-thread.tsx"
+      ]
+    },
+    {
+      "name": "slot-text",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/slot-text/slot-text.module.css",
+        "src/components/arc/slot-text/slot-text.tsx"
+      ]
+    },
+    {
+      "name": "expandable-text",
+      "type": "registry:ui",
+      "tier": "free",
+      "files": [
+        "src/components/arc/expandable-text/expandable-text.module.css",
+        "src/components/arc/expandable-text/expandable-text.tsx"
+      ]
+    },
+    {
+      "name": "signup-form",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/signup-form/signup-form.module.css",
+        "src/components/arc/blocks/signup-form/signup-form.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/checkbox/checkbox.module.css",
+        "src/components/arc/checkbox/checkbox.tsx",
+        "src/components/arc/input/input.module.css",
+        "src/components/arc/input/input.tsx",
+        "src/components/arc/password-field/password-field.module.css",
+        "src/components/arc/password-field/password-field.tsx"
+      ]
+    },
+    {
+      "name": "logo-marquee",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/logo-marquee/logo-marquee.module.css",
+        "src/components/arc/blocks/logo-marquee/logo-marquee.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx"
+      ]
+    },
+    {
+      "name": "plan-comparison",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/plan-comparison/plan-comparison.module.css",
+        "src/components/arc/blocks/plan-comparison/plan-comparison.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/segmented-control/segmented-control.module.css",
+        "src/components/arc/segmented-control/segmented-control.tsx",
+        "src/components/arc/switch/switch.module.css",
+        "src/components/arc/switch/switch.tsx"
+      ]
+    },
+    {
+      "name": "command-palette",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/command-palette/command-palette.module.css",
+        "src/components/arc/command-palette/command-palette.tsx"
+      ]
+    },
+    {
+      "name": "notification-center",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/avatar/avatar.module.css",
+        "src/components/arc/avatar/avatar.tsx",
+        "src/components/arc/lib/arc-provider.tsx",
+        "src/components/arc/notification-center/notification-center.module.css",
+        "src/components/arc/notification-center/notification-center.tsx"
+      ]
+    },
+    {
+      "name": "file-upload",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/file-upload/file-upload.module.css",
+        "src/components/arc/file-upload/file-upload.tsx"
+      ]
+    },
+    {
+      "name": "otp-input",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/otp-input/otp-input.module.css",
+        "src/components/arc/otp-input/otp-input.tsx"
+      ]
+    },
+    {
+      "name": "changelog-feed",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/changelog-feed/changelog-feed.module.css",
+        "src/components/arc/blocks/changelog-feed/changelog-feed.tsx",
+        "src/components/arc/copy-button/copy-button.module.css",
+        "src/components/arc/copy-button/copy-button.tsx",
+        "src/components/arc/lib/media.ts",
+        "src/components/arc/lib/use-copy-feedback.ts"
+      ]
+    },
+    {
+      "name": "sign-in",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/avatar/avatar.module.css",
+        "src/components/arc/avatar/avatar.tsx",
+        "src/components/arc/blocks/sign-in/sign-in.module.css",
+        "src/components/arc/blocks/sign-in/sign-in.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/input/input.module.css",
+        "src/components/arc/input/input.tsx",
+        "src/components/arc/lib/arc-provider.tsx",
+        "src/components/arc/lib/media.ts",
+        "src/components/arc/otp-input/otp-input.module.css",
+        "src/components/arc/otp-input/otp-input.tsx"
+      ]
+    },
+    {
+      "name": "page-header",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/animated-counter/animated-counter.module.css",
+        "src/components/arc/animated-counter/animated-counter.tsx",
+        "src/components/arc/avatar-group/avatar-group.module.css",
+        "src/components/arc/avatar-group/avatar-group.tsx",
+        "src/components/arc/avatar/avatar.module.css",
+        "src/components/arc/avatar/avatar.tsx",
+        "src/components/arc/badge/badge.module.css",
+        "src/components/arc/badge/badge.tsx",
+        "src/components/arc/blocks/page-header/page-header.module.css",
+        "src/components/arc/blocks/page-header/page-header.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/lib/arc-provider.tsx",
+        "src/components/arc/progress/progress.module.css",
+        "src/components/arc/progress/progress.tsx"
+      ]
+    },
+    {
+      "name": "empty-states",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/empty-states/empty-states-art.ts",
+        "src/components/arc/blocks/empty-states/empty-states.module.css",
+        "src/components/arc/blocks/empty-states/empty-states.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx"
+      ]
+    },
+    {
+      "name": "login-centered",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/login-centered/login-centered.module.css",
+        "src/components/arc/blocks/login-centered/login-centered.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/input/input.module.css",
+        "src/components/arc/input/input.tsx",
+        "src/components/arc/otp-input/otp-input.module.css",
+        "src/components/arc/otp-input/otp-input.tsx"
+      ]
+    },
+    {
+      "name": "site-header",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/site-header/site-header.module.css",
+        "src/components/arc/blocks/site-header/site-header.tsx",
+        "src/components/arc/lib/media.ts",
+        "src/components/arc/segmented-control/segmented-control.module.css",
+        "src/components/arc/segmented-control/segmented-control.tsx"
+      ]
+    },
+    {
+      "name": "site-footer",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/site-footer/site-footer.module.css",
+        "src/components/arc/blocks/site-footer/site-footer.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/segmented-control/segmented-control.module.css",
+        "src/components/arc/segmented-control/segmented-control.tsx"
+      ]
+    },
+    {
+      "name": "hero-section",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/avatar/avatar.module.css",
+        "src/components/arc/avatar/avatar.tsx",
+        "src/components/arc/blocks/hero-section/hero-cadence.module.css",
+        "src/components/arc/blocks/hero-section/hero-cadence.tsx",
+        "src/components/arc/blocks/hero-section/hero-content.module.css",
+        "src/components/arc/blocks/hero-section/hero-content.tsx",
+        "src/components/arc/blocks/hero-section/hero-lumen-data.ts",
+        "src/components/arc/blocks/hero-section/hero-lumen.module.css",
+        "src/components/arc/blocks/hero-section/hero-lumen.tsx",
+        "src/components/arc/blocks/hero-section/hero-mesh.module.css",
+        "src/components/arc/blocks/hero-section/hero-mesh.tsx",
+        "src/components/arc/blocks/hero-section/hero-motion.ts",
+        "src/components/arc/blocks/hero-section/hero-relay.module.css",
+        "src/components/arc/blocks/hero-section/hero-relay.tsx",
+        "src/components/arc/blocks/hero-section/hero-section.module.css",
+        "src/components/arc/blocks/hero-section/hero-section.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/copy-button/copy-button.module.css",
+        "src/components/arc/copy-button/copy-button.tsx",
+        "src/components/arc/lib/arc-provider.tsx",
+        "src/components/arc/lib/media.ts",
+        "src/components/arc/lib/use-copy-feedback.ts",
+        "src/components/arc/line-chart/line-chart.module.css",
+        "src/components/arc/line-chart/line-chart.tsx",
+        "src/components/arc/segmented-control/segmented-control.module.css",
+        "src/components/arc/segmented-control/segmented-control.tsx",
+        "src/components/arc/sparkline/sparkline.module.css",
+        "src/components/arc/sparkline/sparkline.tsx"
+      ]
+    },
+    {
+      "name": "faq-section",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/faq-section/faq-section.module.css",
+        "src/components/arc/blocks/faq-section/faq-section.tsx",
+        "src/components/arc/search-field/search-field.module.css",
+        "src/components/arc/search-field/search-field.tsx",
+        "src/components/arc/segmented-control/segmented-control.module.css",
+        "src/components/arc/segmented-control/segmented-control.tsx"
+      ]
+    },
+    {
+      "name": "contact-section",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/avatar/avatar.module.css",
+        "src/components/arc/avatar/avatar.tsx",
+        "src/components/arc/blocks/contact-section/contact-section.module.css",
+        "src/components/arc/blocks/contact-section/contact-section.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/copy-button/copy-button.module.css",
+        "src/components/arc/copy-button/copy-button.tsx",
+        "src/components/arc/input/input.module.css",
+        "src/components/arc/input/input.tsx",
+        "src/components/arc/lib/arc-provider.tsx",
+        "src/components/arc/lib/media.ts",
+        "src/components/arc/lib/use-copy-feedback.ts",
+        "src/components/arc/segmented-control/segmented-control.module.css",
+        "src/components/arc/segmented-control/segmented-control.tsx",
+        "src/components/arc/textarea/textarea.module.css",
+        "src/components/arc/textarea/textarea.tsx"
+      ]
+    },
+    {
+      "name": "blog-grid",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/blog-grid/blog-grid-data.ts",
+        "src/components/arc/blocks/blog-grid/blog-grid.module.css",
+        "src/components/arc/blocks/blog-grid/blog-grid.tsx"
+      ]
+    },
+    {
+      "name": "comparison-table",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/comparison-table/comparison-table-data.ts",
+        "src/components/arc/blocks/comparison-table/comparison-table.module.css",
+        "src/components/arc/blocks/comparison-table/comparison-table.tsx"
+      ]
+    },
+    {
+      "name": "stats-band",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/stats-band/stats-band-data.ts",
+        "src/components/arc/blocks/stats-band/stats-band-world.ts",
+        "src/components/arc/blocks/stats-band/stats-band.module.css",
+        "src/components/arc/blocks/stats-band/stats-band.tsx",
+        "src/components/arc/segmented-control/segmented-control.module.css",
+        "src/components/arc/segmented-control/segmented-control.tsx"
+      ]
+    },
+    {
+      "name": "cta-section",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/blocks/cta-section/cta-section-data.ts",
+        "src/components/arc/blocks/cta-section/cta-section.module.css",
+        "src/components/arc/blocks/cta-section/cta-section.tsx",
+        "src/components/arc/button/button.module.css",
+        "src/components/arc/button/button.tsx",
+        "src/components/arc/lib/media.ts",
+        "src/components/arc/segmented-control/segmented-control.module.css",
+        "src/components/arc/segmented-control/segmented-control.tsx"
+      ]
+    },
+    {
+      "name": "newsletter-signup",
+      "type": "registry:block",
+      "tier": "free",
+      "files": [
+        "src/components/arc/animated-counter/animated-counter.module.css",
+        "src/components/arc/animated-counter/animated-counter.tsx",
+        "src/components/arc/blocks/newsletter-signup/newsletter-signup-data.ts",
+        "src/components/arc/blocks/newsletter-signup/newsletter-signup.module.css",
+        "src/components/arc/blocks/newsletter-signup/newsletter-signup.tsx",
+        "src/components/arc/lib/media.ts",
+        "src/components/arc/segmented-control/segmented-control.module.css",
+        "src/components/arc/segmented-control/segmented-control.tsx",
+        "src/components/arc/switch/switch.module.css",
+        "src/components/arc/switch/switch.tsx"
+      ]
+    }
+  ],
+  "upstreamTreeSHA": "b2e290f7818ea7276fea0a78d83548b9f233bfa5"
+}

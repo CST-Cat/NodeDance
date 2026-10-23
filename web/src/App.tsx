@@ -16,16 +16,12 @@ import AgentEnrollment from "./components/AgentEnrollment";
 import AccountMenu from "./components/AccountMenu";
 import AccountManagement from "./components/AccountManagement";
 import AlertCenter from "./components/AlertCenter";
-import FeedsCenter from "./components/FeedsCenter";
-import HostManagement from "./components/HostManagement";
 import NodesDashboard from "./components/NodesDashboard";
-import OperationConsole from "./components/OperationConsole";
 import TailscaleDiscovery from "./components/TailscaleDiscovery";
 import UiDialog from "./components/UiDialog";
 import UiIcon from "./components/UiIcon";
 import UiSelect from "./components/UiSelect";
 import UiPassword from "./components/UiPassword";
-import UpdateCenter from "./components/UpdateCenter";
 import { cancelDialogs } from "./dialogs";
 import { display, languagePreference, locale, setLanguagePreference, t, type LanguagePreference } from "./i18n";
 import {
@@ -58,7 +54,13 @@ import {
   watchState,
 } from "./state";
 
+const FeedsCenter = lazyView(() => import("./components/FeedsCenter"));
+const HostManagement = lazyView(() => import("./components/HostManagement"));
+const OperationConsole = lazyView(() => import("./components/OperationConsole"));
+const UpdateCenter = lazyView(() => import("./components/UpdateCenter"));
+const DomainCertificates = lazyView(() => import("./components/DomainCertificates"));
 const GuestDisplay = lazyView(() => import("./components/GuestDisplay"));
+const GlobalOverview = lazyView(() => import("./components/GlobalOverview"));
 const GuestSettings = lazyView(() => import("./components/GuestSettings"));
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
 function sessionDeviceLabel(raw: string) {
@@ -177,7 +179,6 @@ export default function App(input: Props) {
         navigationOpen.value = false;
       }
       function handleNavigationKeys(event: KeyboardEvent) {
-        if (event.key === "Escape" && sidebarElement.value?.querySelector(":popover-open")) return;
         if (!mobileNavigation.value || !navigationOpen.value) return;
         if (event.key === "Escape") {
           navigationOpen.value = false;
@@ -221,6 +222,11 @@ export default function App(input: Props) {
           icon: "nodes",
         },
         {
+          screen: "domain-certificates",
+          label: "domains.title",
+          icon: "certificates",
+        },
+        {
           screen: "agent-enrollment",
           label: "nav.enrollment",
           icon: "add",
@@ -259,6 +265,11 @@ export default function App(input: Props) {
           screen: "guest-settings",
           label: "guest.settings",
           icon: "guest",
+        },
+        {
+          screen: "global-overview",
+          label: "global.title",
+          icon: "globe",
         },
         {
           screen: "settings",
@@ -1004,7 +1015,7 @@ export default function App(input: Props) {
                           data-v-ac863f34=""
                         >
                           <Fragment>
-                            {__each(navigation.filter(item => currentUser.value?.role === "administrator" || ["nodes", "operations", "settings"].includes(item.screen)), (item) => (
+                            {__each(navigation.filter(item => currentUser.value?.role === "administrator" || ["nodes", "operations", "global-overview", "settings"].includes(item.screen)), (item) => (
                               <button
                                 key={item.screen as any}
                                 type="button"
@@ -1577,6 +1588,8 @@ export default function App(input: Props) {
                 }}
                 data-v-ac863f34=""
               ></GuestDisplay>
+            ) : screen.value === "global-overview" ? (
+              <GlobalOverview onOpenNode={(nodeId, section) => goToRoute({ screen: "nodes", nodeId, section })} />
             ) : screen.value === "guest-settings" ? (
               <GuestSettings data-v-ac863f34=""></GuestSettings>
             ) : screen.value === "nodes" ? (
@@ -1587,6 +1600,8 @@ export default function App(input: Props) {
                 }}
                 data-v-ac863f34=""
               ></NodesDashboard>
+            ) : screen.value === "domain-certificates" ? (
+              <DomainCertificates />
             ) : screen.value === "agent-enrollment" ? (
               <AgentEnrollment
                 onBack={(event: any) => {

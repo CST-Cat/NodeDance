@@ -34,7 +34,19 @@ export interface Session {
   current: boolean
 }
 
+export interface NodePosition {
+ countryCode: string
+ city: string
+ region?: string
+ latitude: number | null
+ longitude: number | null
+}
+export interface NodeLocation { status: string; source?: string; reason?: string; sampledAt?: string; position?: NodePosition }
+export interface CityLocation extends NodePosition { id: string }
+
 export interface AgentNode {
+  location?: NodeLocation
+  country?: { status: string; code?: string; name?: string; source?: string; reason?: string; sampledAt?: string }
   nodeId: string
   agentId?: string
   displayName: string
@@ -268,6 +280,8 @@ export interface SSHConnectionInfo {
  host?: string; port?: number; user?: string; command?: string; commands:Record<string,string>; source: string; sampledAt: string
 }
 export interface DashboardPreference {
+  location?: NodePosition | null
+  countryCode?: string
   nodeId: string
   targetKind: 'node' | 'container' | 'compose_service' | 'compose_project'
   identity: string

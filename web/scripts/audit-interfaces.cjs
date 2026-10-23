@@ -1,3 +1,4 @@
+const {selectValue,selectedValue}=require('./arc-controls.cjs')
 // Real Core + browser behavior checks. The isolated Core has no Agent and no
 // privileged update/deployment service. Synthetic routes test transport loss
 // and future operation discovery without performing host-side effects.
@@ -9,10 +10,10 @@ const net = require('node:net')
 const { spawn, execFileSync } = require('node:child_process')
 const { chromium } = require('playwright')
 const root = path.resolve(__dirname, '../..')
-const binary = path.join(root, '.build/interface-audit-core')
+const binary = path.join(root, '.build/nodedance')
 const artifacts = path.join(root, '.build/interface-audit')
 fs.mkdirSync(artifacts, {recursive:true})
-execFileSync('go', ['build', '-o', binary, './cmd/nodedance'], {cwd:root,stdio:'inherit'})
+
 
 async function port() {
   const listener = net.createServer()
@@ -60,17 +61,17 @@ async function port() {
     const png=await page.screenshot()
     await page.setViewportSize({width:1440,height:1000});await page.goto(base)
     await page.getByRole('button',{name:'Operations',exact:true}).click()
-    const select=page.locator('.operation-layout aside select')
+    const select=page.locator('.operation-layout aside button[data-dropdown-field]')
     const form=page.locator('.operation-form form').first()
     const execute=()=>form.locator('button[type=submit]').click()
-    const field=name=>form.locator('label').filter({hasText:new RegExp('^'+name)}).locator('input,textarea,select').first()
+    const field=name=>form.locator('label').filter({hasText:new RegExp('^'+name)}).locator('input:not([aria-hidden=true]),textarea,button[data-dropdown-field]').first()
 
-    await select.selectOption('appearance.upload-avatar')
+    await selectValue(select,'appearance.upload-avatar')
     await form.locator('input[type=file]').setInputFiles({name:'pixel.png',mimeType:'image/png',buffer:png})
     let response=page.waitForResponse(r=>r.url().endsWith('/api/v1/settings/appearance/avatar')&&r.request().method()==='POST')
     await execute();assert.equal((await response).status(),200,'Generic multipart must match real Core')
 
-    await select.selectOption('nodes.save-preference')
+    await selectValue(select,'nodes.save-preference')
     await field('nodeId').fill(node);await field('targetKind').fill('node');await field('identity').fill('node:'+node)
     await field('alias').fill('');await field('notes').fill('');await field('sshPort').fill('22')
     response=page.waitForResponse(r=>r.url().endsWith('/preferences')&&r.request().method()==='PUT')
@@ -82,8 +83,8 @@ async function port() {
       commands.push(route.request().headers()['idempotency-key'])
       return route.fulfill({status:503,body:'Agent unavailable'})
     })
-    await select.selectOption('commands.submit')
-    await field('nodeId').fill(node);await field('script').fill('true');await field('timeoutSeconds').fill('60');await field('confirm').selectOption('true')
+    await selectValue(select,'commands.submit')
+    await field('nodeId').fill(node);await field('script').fill('true');await field('timeoutSeconds').fill('60');await selectValue(field('confirm'),'true')
     for(let i=0;i<2;i++){
       response=page.waitForResponse(r=>r.url().endsWith('/commands'))
       await execute();await response
@@ -95,30 +96,30 @@ async function port() {
 
     await page.reload();await page.getByRole('button',{name:'Operations',exact:true}).click()
     await page.locator('.pending-observations button').filter({hasText:'Restore request key'}).last().click()
-    assert.equal(await select.inputValue(),'commands.submit')
+    assert.equal(await selectedValue(select),'commands.submit')
     assert.equal(await field('nodeId').inputValue(),node)
-    await field('script').fill('true');await field('timeoutSeconds').fill('60');await field('confirm').selectOption('true')
+    await field('script').fill('true');await field('timeoutSeconds').fill('60');await selectValue(field('confirm'),'true')
     response=page.waitForResponse(r=>r.url().endsWith('/commands'));await execute();await response
     assert.equal(commands[3],commands[2],'Reload must restore the uncertain execution key')
 
-    await select.selectOption('files.upload');await field('nodeId').fill(node);await field('path').fill('/audit.txt');await field('X-File-Version').fill('observed-version')
+    await selectValue(select,'files.upload');await field('nodeId').fill(node);await field('path').fill('/audit.txt');await field('X-File-Version').fill('observed-version')
     await form.locator('input[type=file]').setInputFiles({name:'audit.txt',mimeType:'text/plain',buffer:Buffer.from('audit')})
     let version
     await page.route('**/api/v1/nodes/*/files/upload?*',route=>{version=route.request().headers()['x-file-version'];return route.fulfill({json:{taskId:'file-audit',status:'succeeded'}})})
     response=page.waitForResponse(r=>r.url().includes('/files/upload?'));await execute();await response
     assert.equal(version,'observed-version')
 
-    await select.selectOption('channels.create');assert.equal(await field('secret').getAttribute('type'),'password')
-    await select.selectOption('deployments.create');assert.equal(await field('credentials').getAttribute('type'),'password','Nested credentials must not use a visible JSON textarea')
+    await selectValue(select,'channels.create');assert.equal(await field('secret').getAttribute('type'),'password')
+    await selectValue(select,'deployments.create');assert.equal(await field('credentials').getAttribute('type'),'password','Nested credentials must not use a visible JSON textarea')
 
     let submissions=0,polls=0
     await page.route('**/api/v1/audit/start',route=>{assert.equal(route.request().postData(),'{"revision":18446744073709551615}');submissions++;return route.fulfill({status:202,json:{id:'work',status:'queued'}})})
     await page.route('**/api/v1/audit/work',route=>{polls++;return route.fulfill({json:{id:'work',status:polls===1?'running':'succeeded'}})})
-    await select.selectOption('future.submit');await field('revision').fill('18446744073709551615');await form.locator('input[type=checkbox]').last().check();await execute()
+    await selectValue(select,'future.submit');await field('revision').fill('18446744073709551615');await form.getByRole('checkbox').last().check();await execute()
     await page.waitForFunction(()=>document.querySelector('[data-testid=operation-result]')?.textContent.includes('succeeded'))
     assert.equal(submissions,1);assert.equal(polls,2,'Observation must not repeat submission')
 
-    await form.locator('input[type=checkbox]').last().uncheck();await execute()
+    await form.getByRole('checkbox').last().uncheck();await execute()
     await page.waitForFunction(()=>JSON.parse(sessionStorage.getItem('nodedance.pending-observations')||'[]').length===1)
     await page.reload();await page.getByRole('button',{name:'Operations',exact:true}).click()
     await page.getByRole('button',{name:'Resume observation',exact:true}).click()
@@ -130,7 +131,7 @@ async function port() {
     const exactAsset=JSON.stringify(asset).replace('"trafficLimitBytes":0','"trafficLimitBytes":18446744073709551615')
     const savedAsset=await context.request.put(base+`/api/v1/nodes/${node}/asset`,{headers:{...headers,'Content-Type':'application/json'},data:exactAsset})
     assert.equal(savedAsset.status(),200)
-    await select.selectOption('nodes.asset');await field('nodeId').fill(node);await execute()
+    await selectValue(select,'nodes.asset');await field('nodeId').fill(node);await execute()
     await page.waitForFunction(()=>document.querySelector('[data-testid=operation-result]')?.textContent.includes('18446744073709551615'))
 
     // A successful HTTP status without the required JSON payload must become a
@@ -190,23 +191,23 @@ async function port() {
     await page.getByRole('button',{name:'Updates',exact:true}).click()
     const center=page.locator('.update-center')
     await center.locator('.update-confirm .primary-button').waitFor()
-    assert.equal(await center.locator('input[type=checkbox]').count(),0,'Ordinary update must have no extra confirmation')
+    assert.equal(await center.getByRole('checkbox').count(),0,'Ordinary update must have no extra confirmation')
     let releaseUpdateCheck;holdUpdateCheck=new Promise(resolve=>releaseUpdateCheck=resolve);const checkStarted=new Promise(resolve=>updateCheckStarted=resolve);
     await center.getByRole('button',{name:'Check updates',exact:true}).click();await checkStarted;
     assert.ok(await center.locator('.update-details').isVisible(),'Refresh retains the existing release check');
     assert.ok(await center.locator('.update-confirm .primary-button').isDisabled(),'Retained check cannot submit until refreshed');
-    await center.locator('.ui-load-state[data-phase=refresh]').waitFor();
+    await center.locator('.update-card [aria-busy=true]').waitFor();
     releaseUpdateCheck();holdUpdateCheck=undefined;
     await center.locator('.update-confirm .primary-button:not(:disabled)').waitFor();
 
     response=page.waitForResponse(r=>r.url().endsWith('/updates/apply'))
     await center.locator('.update-confirm .primary-button').click();assert.equal((await response).status(),200)
     assert.equal(updateSubmissions,1)
-    await center.locator('.update-job .ui-task-progress[data-status=succeeded]').waitFor();
+    await center.locator('.update-job .management-task[data-status=succeeded]').waitFor();
     assert.equal(await center.locator('.update-job progress').count(),0,'Stage-only updates do not fabricate percentages');
     await center.locator('.update-job button').click()
     assert.ok(await center.locator('.update-confirm .primary-button').isDisabled(),'Rollback still requires explicit confirmation')
-    await center.locator('input[type=checkbox]').check()
+    await center.getByRole('checkbox').check()
     response=page.waitForResponse(r=>r.url().endsWith('/updates/rollback'))
     await center.locator('.update-confirm .primary-button').click();await response;assert.equal(rollbacks,1)
     for(const theme of ['light','dark'])for(const width of [390,1440]){
@@ -217,7 +218,7 @@ async function port() {
       await page.screenshot({path:path.join(artifacts,`updates-${theme}-${width}.png`),fullPage:true})
     }
     await page.setViewportSize({width:1440,height:1000});await page.waitForTimeout(350)
-    await page.getByRole('button',{name:'Operations',exact:true}).click();await select.selectOption('files.upload')
+    await page.getByRole('button',{name:'Operations',exact:true}).click();await selectValue(select,'files.upload')
     for(const theme of ['light','dark'])for(const width of [390,1440]){
       await page.setViewportSize({width,height:1000})
       await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
@@ -234,13 +235,13 @@ async function port() {
     await page.route('**/api/v1/nodes/*/agent-settings',route=>route.fulfill({json:{status:200,settings}}))
     await page.getByRole('button',{name:'Host management',exact:true}).click()
     for(const tab of ['Agent settings','Assets and quotas']){
-      await page.locator('.host-tabs').getByRole('button',{name:tab,exact:true}).click()
-      if(tab==='Agent settings')await page.waitForFunction(()=>[...document.querySelectorAll('.contract-fields label')].find(x=>x.textContent.includes('Command history retention'))?.querySelector('input')?.value==='90')
+      await page.locator('.host-page [role=tablist]').getByRole('tab',{name:tab,exact:true}).click()
+      if(tab==='Agent settings')await page.waitForFunction(()=>[...document.querySelectorAll('.contract-fields label')].find(x=>x.textContent.includes('Command history retention'))?.parentElement.querySelector('input')?.value==='90')
       if(tab==='Assets and quotas'){
-        const quota=page.locator('.contract-fields label').filter({hasText:'Traffic quota (bytes)'}).locator('input')
+        const quota=page.getByLabel('Traffic quota (bytes)',{exact:true})
         await quota.waitFor();assert.equal(await quota.inputValue(),'18446744073709551615')
         await quota.fill('9007199254740993')
-        const purchase=page.locator('.contract-fields label').filter({hasText:'Purchase date'}).locator('input')
+        const purchase=page.getByLabel('Purchase date',{exact:true})
         await purchase.fill('2026-10-13T00:00:00Z')
         response=page.waitForResponse(r=>r.url().endsWith('/asset')&&r.request().method()==='PUT')
         await page.locator('.host-card form button.primary-button').click()
@@ -272,11 +273,11 @@ async function port() {
       })
       const fillBatch=async()=>{
         await page.getByRole('button',{name:'Host management',exact:true}).click()
-        await page.locator('.host-tabs').getByRole('button',{name:tab,exact:true}).click()
-        await page.locator('.host-check input').first().check()
+        await page.locator('.host-page [role=tablist]').getByRole('tab',{name:tab,exact:true}).click()
+        await page.locator('.host-check').getByRole('checkbox').first().check()
         if(name==='commands.batch'){
           await page.locator('.contract-fields textarea').fill('printf isolated-browser-fixture')
-          await page.locator('.contract-fields label').filter({hasText:'Confirm root execution'}).getByRole('checkbox').check()
+          await page.getByRole('checkbox',{name:'Confirm root execution',exact:true}).check()
         }
         await page.locator('.host-page form .primary-button').waitFor({state:'visible'})
       }
@@ -311,15 +312,15 @@ async function port() {
     await page.goBack();await page.locator('.alert-form-card').waitFor();assert.equal(page.url(),rulesURL)
     await page.goForward();await page.locator('.guest-settings').waitFor();assert.equal(new URL(page.url()).hash,'#/guest-settings')
     await page.reload();await page.locator('.guest-settings').waitFor()
-    await page.getByRole('button',{name:'Host management',exact:true}).click();await page.locator('.host-tabs').waitFor()
-    await page.locator('.host-tabs').getByRole('button',{name:'Assets and quotas',exact:true}).click()
+    await page.getByRole('button',{name:'Host management',exact:true}).click();await page.locator('.host-page [role=tablist]').waitFor()
+    await page.locator('.host-page [role=tablist]').getByRole('tab',{name:'Assets and quotas',exact:true}).click()
     await page.waitForFunction(()=>location.hash.includes('tab=assets'))
     await page.goBack();await page.waitForFunction(()=>!location.hash.includes('tab='))
-    await page.goForward();await page.waitForFunction(()=>document.querySelector('.host-tabs [aria-pressed=true]')?.textContent==='Assets and quotas')
-    await page.reload();await page.waitForFunction(()=>document.querySelector('.host-tabs [aria-pressed=true]')?.textContent==='Assets and quotas')
+    await page.goForward();await page.waitForFunction(()=>document.querySelector('.host-page [role=tab][aria-selected=true]')?.textContent==='Assets and quotas')
+    await page.reload();await page.waitForFunction(()=>document.querySelector('.host-page [role=tab][aria-selected=true]')?.textContent==='Assets and quotas')
     let permissionReads=0;page.on('request',r=>{if(r.url().endsWith('/api/v1/auth/me'))permissionReads++})
     await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})))
-    await page.waitForFunction(()=>document.querySelector('.host-tabs [aria-pressed=true]')?.textContent==='Assets and quotas')
+    await page.waitForFunction(()=>document.querySelector('.host-page [role=tab][aria-selected=true]')?.textContent==='Assets and quotas')
     assert.equal(permissionReads,1,'Restoring a cached document must revalidate its administrator session')
     await require('./review-regressions.cjs')({page,context,base,node,headers,artifacts,catalog})
     const controlsPage=await context.newPage()
@@ -366,7 +367,7 @@ async function port() {
     if(await page.getByTestId('node-detail-navigation').count())await page.getByRole('button',{name:'Back to home',exact:true}).click()
     await page.getByRole('button',{name:'Nodes',exact:true}).click();await page.locator('.nodes-dashboard').waitFor()
     await page.getByRole('button',{name:'Alerts',exact:true}).click();await page.locator('.alerts-page').waitFor()
-    await page.locator('.account-trigger').click();await page.locator('.account-panel').getByRole('button',{name:'Sign out',exact:true}).click();await page.locator('#login-title').waitFor()
+    await page.locator('.account-trigger').click();await page.locator('.account-panel').getByRole('menuitem',{name:'Sign out',exact:true}).click();await page.locator('#login-title').waitFor()
     await page.goBack();await page.locator('#login-title').waitFor()
     assert.equal(await page.locator('#workspace-navigation').count(),0,'Back after logout must not restore a private page')
     assert.equal(updateSubmissions,1);assert.equal(rollbacks,1);assert.equal(submissions,2,'History restoration must not resubmit tasks')

@@ -1,0 +1,134 @@
+.root {
+  position: relative;
+  width: 100%;
+  color: var(--foreground);
+  font-family: var(--font-body);
+  letter-spacing: var(--tracking-body);
+}
+.root[data-disabled] { opacity: .55; }
+
+/* The field's height springs to its text. The mirror and the textarea share every metric so tokens sit exactly under their characters. */
+.field {
+  position: relative;
+  box-sizing: content-box;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
+}
+.field[data-focused] { border-color: var(--border-strong); }
+
+.backdrop,
+.textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 11px 14px;
+  border: 0;
+  font: inherit;
+  font-size: var(--text-base);
+  letter-spacing: var(--tracking-body);
+  line-height: 24px;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 4;
+}
+
+.backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: var(--foreground);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.textarea {
+  position: absolute;
+  inset: 0;
+  height: 100%;
+  display: block;
+  resize: none;
+  overflow-y: auto;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--foreground);
+  outline: none;
+  scrollbar-width: none;
+  -webkit-text-fill-color: transparent;
+}
+.textarea::-webkit-scrollbar { display: none; }
+.textarea::placeholder { color: var(--text-muted); -webkit-text-fill-color: var(--text-muted); opacity: 1; }
+.textarea::selection { background: color-mix(in oklab, var(--accent) 24%, transparent); }
+.textarea:disabled { cursor: not-allowed; }
+
+/* A token is tinted around its own glyphs; the negative margin keeps every character where the textarea put it. */
+.token {
+  margin: 0 -3px;
+  padding: 1px 3px;
+  border-radius: 6px;
+  background: var(--accent-subtle);
+  color: var(--accent-strong);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+.token[data-kind="channel"] { background: color-mix(in oklab, var(--foreground) 7%, transparent); color: var(--foreground); }
+
+.popover {
+  position: absolute;
+  z-index: 30;
+  width: 272px;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-floating);
+}
+.popover[data-above] { translate: 0 -100%; }
+.popoverBody { padding: 6px; }
+
+.list { position: relative; display: grid; margin: 0; padding: 0; list-style: none; }
+.highlight { position: absolute; top: 0; right: 0; left: 0; border-radius: 12px; background: color-mix(in oklab, var(--foreground) 6.5%, transparent); pointer-events: none; }
+
+.option {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.avatar {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.glyph { display: grid; width: 28px; height: 28px; flex: none; place-items: center; color: var(--text-secondary); }
+
+.optionText { display: grid; min-width: 0; flex: 1; }
+.optionLabel { overflow: hidden; color: var(--text-secondary); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.option[aria-selected="true"] .optionLabel { color: var(--foreground); }
+.match { background: none; color: var(--foreground); }
+.optionMeta { overflow: hidden; color: var(--text-muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.count { flex: none; color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+
+.empty { margin: 0; padding: 10px 10px; color: var(--text-secondary); font-size: var(--text-sm); }
+
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

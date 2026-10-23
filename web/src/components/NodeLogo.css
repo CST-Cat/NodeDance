@@ -1,0 +1,10 @@
+:root {
+  --product-logo-size: 28px;
+}
+.product-logo {
+  display: block;
+  width: var(--product-logo-size);
+  height: var(--product-logo-size);
+  flex: none;
+  object-fit: contain;
+}

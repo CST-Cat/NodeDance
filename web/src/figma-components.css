@@ -108,9 +108,7 @@
 }
 .app-shell[data-theme] :is(input, textarea)::placeholder { color: var(--figma-text-tertiary); opacity: 1; }
 .app-shell[data-theme] :is(input, textarea, select):disabled { opacity: .5; background: var(--control-bg); color: var(--text); }
-.app-shell[data-theme] :is(input, textarea, select):focus-visible,
-.app-shell[data-theme] .ui-select .u031-btn:focus-visible,
-.app-shell[data-theme] .ui-select.is-open .u031-btn {
+.app-shell[data-theme] :is(input, textarea, select):focus-visible {
   outline: none;
   border-color: var(--figma-border-info);
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-info);
@@ -124,10 +122,6 @@
   background: var(--control-bg);
 }
 .app-shell[data-theme] .ui-select .u031-btn:disabled { opacity: .5; color: var(--text); background: var(--control-bg); }
-.u031-list { background: var(--surface-raised); border-color: var(--figma-border-tertiary); border-radius: var(--radius-control); }
-.u031-o { min-height: 32px; padding: 6px 10px; font-size: 14px; }
-.u031-o[aria-selected="true"] { color: var(--text); background: var(--accent-soft); }
-.u031-ck { stroke: var(--selection); }
 /* Figma's 20 px large checkbox and radio, with actual source check asset. */
 input[type="checkbox"], input[type="radio"] {
   appearance: none;
@@ -206,10 +200,9 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
   .app-shell[data-theme] .workspace-nav button { min-height: 44px; }
   .app-shell[data-theme] :is(input[type="checkbox"], input[type="radio"]) { width: 24px !important; height: 24px !important; min-width: 24px !important; min-height: 24px !important; }
   .app-shell[data-theme] input[type="checkbox"] { border-radius: var(--radius-pill); }
-  .u031-o { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .app-shell[data-theme] *, .u031-list *, input[type="checkbox"], input[type="radio"] { transition-duration: 0s !important; animation-duration: 0s !important; }
+  .app-shell[data-theme] *, input[type="checkbox"], input[type="radio"] { transition-duration: 0s !important; animation-duration: 0s !important; }
 }
 /* Icon-only controls keep the kit's centered 32 px geometry. */
 .app-shell[data-theme] :is(.header-actions button, .navigation-toggle) {
@@ -248,3 +241,6 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
 @media (max-width: 480px) {
   .app-shell[data-theme] .deployment-choices > div { grid-template-columns: minmax(0, 1fr); }
 }
+
+.app-shell[data-theme] button[data-dropdown-field]:focus-visible { outline: 2px solid var(--figma-ring-primary); outline-offset: 2px; box-shadow: none; }
+.app-shell[data-theme] button[data-dropdown-field][data-state="open"] { border-color: var(--figma-border-primary); box-shadow: none; }

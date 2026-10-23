@@ -280,40 +280,14 @@ func (c *Client) request(ctx context.Context, o Operation, in Input, body io.Rea
 		}
 		req.Header.Set("X-CSRF-Token", token)
 	}
-	if o.Idempotent {
-		key := in.IdempotencyKey
-		for name, value := range in.Headers {
-			if strings.EqualFold(name, "Idempotency-Key") {
-				if key != "" && key != value {
-					return nil, errors.New("conflicting idempotency keys")
-				}
-				key = value
-			}
-		}
-		if key == "" {
-			return nil, errors.New("--idempotency-key is required; reuse the same key when retrying the same intent")
-		}
-		raw, _ := json.Marshal(key)
-		if err := ValidateJSON(o.Headers["Idempotency-Key"], raw); err != nil {
-			return nil, err
-		}
-		req.Header.Set("Idempotency-Key", key)
+	headers, err := operationHeaders(o, in)
+	if err != nil {
+		return nil, err
 	}
-	for name, value := range in.Headers {
-		if _, ok := o.Headers[http.CanonicalHeaderKey(name)]; !ok {
-			return nil, fmt.Errorf("unknown operation header %s", name)
+	for name, values := range headers {
+		for _, value := range values {
+			req.Header.Add(name, value)
 		}
-		raw, _ := json.Marshal(value)
-		if err := ValidateJSON(o.Headers[http.CanonicalHeaderKey(name)], raw); err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		req.Header.Set(name, value)
-	}
-	if in.FileVersion != "" {
-		if _, ok := o.Headers["X-File-Version"]; !ok {
-			return nil, errors.New("operation does not accept a file version")
-		}
-		req.Header.Set("X-File-Version", in.FileVersion)
 	}
 	return req, nil
 }
@@ -328,13 +302,7 @@ func (c *Client) Execute(ctx context.Context, o Operation, in Input, upload io.R
 	}
 	var body io.Reader = bytes.NewReader(in.Body)
 	contentType := "application/json"
-	if len(in.Body) > 0 && !json.Valid(in.Body) {
-		return fail(errors.New("body must contain one JSON value"))
-	}
-	if o.MaxBodyBytes > 0 && int64(len(in.Body)) > o.MaxBodyBytes {
-		return fail(errors.New("body exceeds Core request limit"))
-	}
-	if err := ValidateJSON(o.BodySchema, in.Body); err != nil {
+	if err := c.ValidateInput(o, in); err != nil {
 		return fail(err)
 	}
 	if o.Transport == "download" && download == nil {

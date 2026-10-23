@@ -1,3 +1,5 @@
+import CountryLogo from "./CountryLogo";
+import NodeLogo from "./NodeLogo";
 import { Fragment } from "react";
 import {
   api,
@@ -710,7 +712,7 @@ export default function NodeDetail(input: Props) {
             targetKind: "node",
             identity: `node:${props.node.nodeId}`,
             alias: "",
-            icon: "server",
+            icon: "",
             notes: "",
             serviceUrl: "",
             sshHost: "",
@@ -1027,9 +1029,12 @@ export default function NodeDetail(input: Props) {
           >
             <header className={__classes("detail-heading")} data-v-98aa91ae="">
               <div data-v-98aa91ae="">
-                <h1 id="detail-title" data-v-98aa91ae="">
+                <div className="detail-node-heading">
+                 <CountryLogo country={__props.node.country} />
+                 <NodeLogo icon={nodePreference.value?.icon} platform={__props.metrics?.metrics.system.platform.value} os={__props.metrics?.metrics.system.os.value} />
+                 <h1 id="detail-title" data-v-98aa91ae="">
                   {nodeTitle.value}
-                </h1>
+                </h1></div>
                 {nodeTitle.value !== __props.node.displayName ? (
                   <p data-v-98aa91ae="">{__props.node.displayName}</p>
                 ) : null}
@@ -2529,6 +2534,9 @@ export default function NodeDetail(input: Props) {
                 </div>
                 <PreferenceEditor
                   preference={nodePreferenceForEditor() as any}
+                  location={__props.node.location}
+                  platform={__props.metrics?.metrics.system.platform.value}
+                  os={__props.metrics?.metrics.system.os.value}
                   title={
                     t("m.b8d1ded2a785", {
                       "0": __props.node.displayName,

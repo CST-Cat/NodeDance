@@ -268,7 +268,7 @@ fs.mkdirSync(out, { recursive: true });
           backgroundUrl: "",
         };
       else if (p.endsWith("/auth/me")) {
-        body = { user: { displayName: "Alex" } };
+        body = { user: { id: 1, username: "alex", displayName: "Alex", role: "administrator", enabled: true } };
         if (!signedIn) {
           status = 401;
           body = { error: "invalid credentials" };
@@ -580,6 +580,12 @@ fs.mkdirSync(out, { recursive: true });
           }),
       );
       assert.deepEqual(bad, [], label);
+      const corners = await page.locator('.ui-segments').evaluateAll(groups => groups.map(group => {
+        const indicator = group.querySelector('.ui-segments-indicator');
+        return { outer: getComputedStyle(group).borderTopLeftRadius, inner: getComputedStyle(indicator).borderTopLeftRadius };
+      }));
+      for (const corner of corners) assert.equal(corner.inner, corner.outer, `${label}: zero-inset segment indicator follows its outer radius`);
+
     }
     async function nav(label) {
       await openNavigation(page);
@@ -597,7 +603,7 @@ fs.mkdirSync(out, { recursive: true });
         await nav("Host management");
         await page.locator(".host-page").waitFor();
         for(let i=0;i<5;i++) {
-          await page.locator(".host-tabs button").nth(i).click();
+          await page.locator(".host-page [role=tab]").nth(i).click();
           await invariants(prefix+"-host-"+i);
         }
         return;
@@ -716,7 +722,7 @@ fs.mkdirSync(out, { recursive: true });
         if(label === "Host management") {
           await page.locator(".host-page").waitFor();
           for(let i=0;i<5;i++) {
-            await page.locator(".host-tabs button").nth(i).click();
+            await page.locator(".host-page [role=tab]").nth(i).click();
             await invariants(prefix+"-host-"+i);
           }
         }

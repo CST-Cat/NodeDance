@@ -1,0 +1,201 @@
+.root {
+  position: relative;
+  width: 100%;
+  container-type: inline-size;
+  color: var(--foreground);
+  font-family: var(--font-body);
+  letter-spacing: var(--tracking-body);
+}
+
+/* The writing surface. Everything inside is plain semantic HTML, styled here so pasted and typed content look the same. */
+.editor {
+  min-height: 8rem;
+  padding: 2px 0;
+  outline: none;
+  color: var(--foreground);
+  font-size: var(--text-base);
+  line-height: 1.65;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  word-break: break-word;
+  caret-color: var(--accent);
+}
+.editor[contenteditable="false"] { caret-color: transparent; }
+.editor::selection,
+.editor *::selection { background: color-mix(in oklab, var(--accent) 22%, transparent); }
+
+.editor > * { margin: 0; }
+.editor > * + * { margin-top: .6em; }
+.editor p { margin: 0; }
+.editor h1,
+.editor h2,
+.editor h3 { font-weight: 500; letter-spacing: -.02em; line-height: 1.25; }
+.editor h1 { font-size: var(--text-2xl); }
+.editor h2 { font-size: var(--text-xl); }
+.editor h3 { font-size: var(--text-lg); }
+.editor > :is(h1, h2, h3) { margin-top: 1.1em; }
+.editor > :is(h1, h2, h3):first-child { margin-top: 0; }
+.editor > :is(h1, h2, h3) + * { margin-top: .45em; }
+
+.editor strong { font-weight: 600; }
+.editor s { color: var(--text-secondary); text-decoration-thickness: 1px; }
+.editor a { color: var(--accent-strong); text-decoration: underline; text-decoration-color: color-mix(in oklab, var(--accent) 45%, transparent); text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: text; }
+.editor code {
+  padding: .12em .38em;
+  border-radius: 6px;
+  background: var(--surface-muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: .86em;
+}
+
+.editor blockquote { padding-left: 14px; border-left: 2px solid var(--border-strong); color: var(--text-secondary); }
+
+.editor ul,
+.editor ol { margin-block: 0; padding-left: 1.45em; }
+/* Set the markers explicitly: app resets that strip list styles would otherwise leave lists unmarked. */
+.editor ul { list-style: disc; }
+.editor ul ul { list-style: circle; }
+.editor ol { list-style: decimal; }
+.editor li { padding-left: .2em; }
+.editor li + li { margin-top: .2em; }
+.editor li > :is(ul, ol) { margin-top: .2em; }
+.editor li::marker { color: var(--text-muted); }
+.editor ol > li::marker { font-variant-numeric: tabular-nums; }
+
+.editor pre {
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--surface-muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.editor hr { height: 1px; margin-block: 1.1em; border: 0; background: var(--border); }
+
+/* Placeholders: the whole document when empty, and a quiet hint on the empty line holding the caret. */
+.editor[data-empty] > :first-child::before,
+.editor:focus [data-hint]::before {
+  float: left;
+  height: 0;
+  color: var(--text-muted);
+  pointer-events: none;
+  content: var(--placeholder);
+}
+.editor:focus:not([data-empty]) [data-hint]::before { content: var(--hint); }
+
+/* Floating toolbar. One surface whose size springs between its two faces. */
+.toolbar {
+  position: absolute;
+  z-index: 40;
+  translate: -50% -100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-floating);
+}
+.toolbar[data-below] { translate: -50% 0; }
+.face { position: absolute; top: 0; left: 0; width: max-content; }
+.face[inert] { pointer-events: none; }
+
+.row,
+.linkRow { display: flex; align-items: center; gap: 2px; padding: 4px; }
+.blockTools { display: flex; align-items: center; gap: 2px; }
+/* Narrow editors keep the inline marks; block types stay one slash away. */
+@container (max-width: 330px) { .blockTools { display: none; } }
+.divider { width: 1px; height: 18px; margin: 0 4px; background: var(--border); }
+
+.tool {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), transform var(--duration-instant) var(--ease-standard);
+}
+.tool:active { transform: scale(.92); }
+.tool[aria-pressed="true"] { background: var(--accent-subtle); color: var(--accent-strong); }
+.tool:focus-visible { background: var(--surface-muted); color: var(--foreground); }
+@media (hover: hover) and (pointer: fine) { .tool:hover { background: var(--surface-muted); color: var(--foreground); } .tool[aria-pressed="true"]:hover { background: var(--accent-subtle); color: var(--accent-strong); } }
+
+.linkInput {
+  width: min(15rem, 60vw);
+  height: 32px;
+  min-width: 0;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-size: var(--text-sm);
+  outline: none;
+}
+.linkInput::placeholder { color: var(--text-muted); }
+.apply {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background-color var(--duration-standard) var(--ease-standard), color var(--duration-standard) var(--ease-standard), transform var(--duration-instant) var(--ease-standard);
+}
+.apply[data-ready] { background: var(--accent); color: var(--accent-foreground); }
+.apply:active { transform: scale(.92); }
+
+/* Slash menu. */
+.slash {
+  position: absolute;
+  z-index: 40;
+  width: 240px;
+  max-width: calc(100% - 8px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-floating);
+}
+.slash[data-above] { translate: 0 -100%; }
+.slashBody { padding: 6px; }
+.slashList { position: relative; display: grid; margin: 0; padding: 0; list-style: none; }
+.slashHighlight { position: absolute; top: 0; right: 0; left: 0; border-radius: 12px; background: color-mix(in oklab, var(--foreground) 6.5%, transparent); pointer-events: none; }
+.slashOption {
+  position: relative;
+  display: flex;
+  height: 34px;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  -webkit-tap-highlight-color: transparent;
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+.slashOption[aria-selected="true"] { color: var(--foreground); }
+.slashIcon { display: grid; width: 20px; flex: none; place-items: center; }
+.slashLabel { min-width: 0; flex: 1; overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.slashHint { flex: none; color: var(--text-muted); font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; font-size: var(--text-xs); }
+
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

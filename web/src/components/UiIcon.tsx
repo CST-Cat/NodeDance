@@ -7,6 +7,7 @@ export default function UiIcon(input: Props) {
     (__props: Props, __emit: any, __dom: any) => {
       __props;
       const paths: Record<string, string> = {
+        globe: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18 M3 12h18 M12 3c5 5 5 13 0 18 M12 3c-5 5-5 13 0 18",
         cog: "M9 3h6l.6 2.6 2 1.2 2.5-.8 1.8 3.1-1.9 1.8v2.2l1.9 1.8-1.8 3.1-2.5-.8-2 1.2L15 21H9l-.6-2.6-2-1.2-2.5.8-1.8-3.1L4 13.1v-2.2L2.1 9.1 3.9 6l2.5.8 2-1.2z M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8",
         edit: "M4 16v4h4L20 8l-4-4z M14 6l4 4 M12 20h8",
         check: "M5 12l4 4L19 6",
@@ -26,6 +27,7 @@ export default function UiIcon(input: Props) {
           "M5 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4 M4 10a10 10 0 0 1 10 10 M4 3a17 17 0 0 1 17 17",
         operations:
           "M3 3h6v6H3z M15 9h6v6h-6z M3 15h6v6H3z M9 6h3v12H9 M12 12h3",
+        certificates: "M12 3l8 3v6c0 4-4 7-8 9-4-2-8-5-8-9V6z M8 12l3 3 5-6",
         nodes: "M4 4h16v6H4z M4 14h16v6H4z M7 7h.01 M7 17h.01 M11 7h6 M11 17h6",
         guest:
           "M3 5h18v14H3z M3 8h18 M6 6.5h.01 M8 6.5h.01 M6 13.5s2-3.5 6-3.5 6 3.5 6 3.5-2 3.5-6 3.5-6-3.5-6-3.5z M12 12a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3",

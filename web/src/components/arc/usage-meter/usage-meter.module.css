@@ -1,0 +1,60 @@
+.meter { --segment-0: var(--accent); --segment-1: color-mix(in oklab, var(--accent) 62%, var(--surface)); --segment-2: color-mix(in oklab, var(--accent) 36%, var(--surface)); --segment-3: color-mix(in oklab, var(--accent) 22%, var(--surface)); display: grid; min-width: 0; gap: var(--space-4); color: var(--foreground); }
+.top { display: flex; min-width: 0; min-height: 28px; align-items: center; justify-content: space-between; gap: var(--space-3); }
+/* A long label wraps beside the status mark instead of hiding its end. */
+.title { min-width: 0; color: var(--foreground); font-size: var(--text-base); font-weight: 500; letter-spacing: var(--tracking-body); line-height: var(--leading-body); text-wrap: balance; }
+
+/* The status mark hugs its words: its width springs to each message and grows from the right edge, so the text never slides. */
+.badge { display: inline-flex; flex: none; height: 28px; justify-content: flex-end; overflow: hidden; border-radius: var(--radius-pill); background: var(--surface-muted); color: var(--text-secondary); font-size: var(--text-xs); font-weight: 500; line-height: 1; transition: background-color var(--duration-standard) var(--ease-standard), color var(--duration-standard) var(--ease-standard); }
+.badgeInner { display: inline-flex; flex: none; align-items: center; gap: 6px; padding: 0 var(--space-3); white-space: nowrap; }
+.badgeIcon { display: grid; place-items: center; }
+.badge[data-status="near"] { background: color-mix(in oklab, var(--warning) 14%, var(--surface)); color: var(--foreground); }
+.badge[data-status="near"] .badgeIcon { color: var(--warning); }
+.badge[data-status="over"] { background: color-mix(in oklab, var(--danger) 12%, var(--surface)); color: var(--foreground); }
+.badge[data-status="over"] .badgeIcon { color: var(--danger); }
+
+.total { display: flex; min-width: 0; align-items: baseline; gap: var(--space-2); margin: 0; }
+.amount { flex: none; font-family: var(--font-display); font-size: var(--text-3xl); font-weight: 500; letter-spacing: var(--tracking-display); line-height: var(--leading-display); }
+.caption { min-width: 0; flex: 1; color: var(--text-secondary); font-size: var(--text-sm); }
+.swap { position: relative; display: block; min-width: 0; }
+.swapText { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The bar leaves room above and below the track for the limit marker. */
+.bar { position: relative; padding-block: 5px; }
+.track { position: relative; height: 14px; overflow: hidden; border-radius: var(--radius-pill); background: color-mix(in oklab, var(--foreground) 7%, var(--surface)); isolation: isolate; -webkit-tap-highlight-color: transparent; }
+.segment { position: absolute; inset: 0; transition: opacity var(--duration-fast) var(--ease-standard); }
+.segment[data-index="0"], .swatch[data-index="0"] { background: var(--segment-0); }
+.segment[data-index="1"], .swatch[data-index="1"] { background: var(--segment-1); }
+.segment[data-index="2"], .swatch[data-index="2"] { background: var(--segment-2); }
+.segment[data-index="3"], .swatch[data-index="3"] { background: var(--segment-3); }
+.segment[data-highlight="off"] { opacity: .28; }
+/* Past the limit the used colours stay, struck through by a hatch; highlighting the overage floods it with the danger colour. */
+.overflow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.hatch { fill: var(--surface); }
+.overTint { fill: var(--danger); opacity: 0; transition: opacity var(--duration-fast) var(--ease-standard); }
+.overflow[data-highlight="on"] .overTint { opacity: 1; }
+.limit { position: absolute; top: 0; bottom: 0; left: -1px; width: 2px; border-radius: 1px; background: var(--foreground); pointer-events: none; }
+
+/* The legend doubles as the keyboard path: arrow keys move between categories, focus previews one, a press pins it. */
+.legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr)); gap: 2px; margin: 0 calc(var(--space-2) * -1); }
+.item { display: grid; min-width: 0; justify-items: start; gap: 2px; padding: var(--space-2); border: 0; border-radius: calc(var(--radius-control) - 6px); background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard); }
+@media (hover: hover) and (pointer: fine) { .item:hover { background: var(--surface-muted); } }
+.item[aria-pressed="true"] { background: var(--surface-muted); }
+.item[data-highlight="off"] { opacity: .45; }
+.itemHead { display: flex; min-width: 0; max-width: 100%; align-items: center; gap: var(--space-2); color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-body); }
+.itemLabel { min-width: 0; flex: 1; }
+.key { display: grid; width: 12px; height: 12px; flex: none; place-items: center; }
+.swatch { grid-area: 1 / 1; width: 10px; height: 10px; border-radius: 3px; }
+.swatch[data-index="free"] { background: color-mix(in oklab, var(--foreground) 7%, var(--surface)); box-shadow: inset 0 0 0 1px var(--border-strong); }
+.keyIcon { grid-area: 1 / 1; display: grid; place-items: center; color: var(--danger); }
+.itemValue { display: flex; align-items: baseline; gap: 4px; padding-left: 20px; color: var(--foreground); font-size: var(--text-base); font-weight: 500; line-height: var(--leading-body); }
+.itemUnit { color: var(--text-secondary); font-size: var(--text-sm); font-weight: 400; }
+
+/* A rolling number: each digit is a clipped wheel that feathers at its edges, and new columns open from zero width. */
+.ticker { position: relative; display: inline-flex; align-items: flex-start; white-space: nowrap; font-variant-numeric: tabular-nums; user-select: none; }
+.column { --feather: .16em; position: relative; display: inline-block; overflow: hidden; margin-block: calc(var(--feather) * -1); padding-block: var(--feather); mask-image: linear-gradient(to bottom, transparent, #000 calc(var(--feather) * 1.5), #000 calc(100% - var(--feather) * 1.5), transparent); }
+.sizer { visibility: hidden; }
+.glyph { position: absolute; inset: var(--feather) 0; text-align: center; }
+.symbol { display: inline-block; overflow-x: clip; }
+
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .badge, .segment, .item, .overTint { transition: none; } }

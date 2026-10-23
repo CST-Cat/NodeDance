@@ -14,7 +14,8 @@ import type { MetricsView } from "../metrics-contract";
 import { afterRender, beforeDispose, cell, derived, watchState, lazyView } from "../state";
 import VpsTelemetry from "./VpsTelemetry";
 import UiDialog from "./UiDialog";
-import OsLogo from "./OsLogo";
+import NodeLogo from "./NodeLogo";
+import CountryLogo from "./CountryLogo";
 
 import { Fragment } from "react";
 import { requestChoice } from "../dialogs";
@@ -224,20 +225,6 @@ export default function VpsCard(input: Props) {
           record.container.name ||
           record.container.id.slice(0, 12)
         );
-      }
-      function containerIcon(record: DockerContainerRecord): string {
-        const icons: Record<string, string> = {
-          server: "▤",
-          globe: "◎",
-          database: "▥",
-          shield: "⬡",
-          terminal: "›_",
-          box: "▣",
-          cloud: "☁",
-          folder: "▰",
-          activity: "⌁",
-        };
-        return icons[preferenceFor(record)?.icon ?? ""] ?? "▣";
       }
       function uptimeSummary(): string {
         const metric = props.metrics?.metrics.uptime;
@@ -633,12 +620,7 @@ export default function VpsCard(input: Props) {
           >
             <header className={__classes("vps-card-header")} data-v-31185faa="">
               <div className={__classes("vps-card-heading")} data-v-31185faa="">
-                <span
-                  className={__classes("vps-node-icon")}
-                  data-v-31185faa=""
-                >
-                  <OsLogo platform={__props.metrics?.metrics.system.platform.value} os={__props.metrics?.metrics.system.os.value} />
-                </span>
+                <span className="vps-node-icon"><CountryLogo country={__props.node.country} /></span>
                 <div data-v-31185faa="">
                   {__props.nodePreference?.group ? (
                     <span className={__classes("eyebrow")} data-v-31185faa="">
@@ -658,6 +640,12 @@ export default function VpsCard(input: Props) {
                     </button>
                   </h2>
                 </div>
+                <span
+                  className={__classes("vps-node-icon vps-service-icon")}
+                  data-v-31185faa=""
+                >
+                  <NodeLogo icon={__props.nodePreference?.icon} platform={__props.metrics?.metrics.system.platform.value} os={__props.metrics?.metrics.system.os.value} />
+                </span>
                 <p className={__classes("vps-card-version")} data-v-31185faa="">
                   <span className={__classes("agent-version")} data-v-31185faa="">
                     {nodeStateText()}
@@ -835,7 +823,7 @@ export default function VpsCard(input: Props) {
                             className={__classes("vps-card-container-icon")}
                             data-v-31185faa=""
                           >
-                            {containerIcon(record)}
+                            <NodeLogo icon={preferenceFor(record)?.icon || "box"} />
                           </span>
                           <div
                             className={__classes("vps-card-container-copy")}

@@ -1,36 +1,29 @@
-.overview-toolbar-slot { min-width: 0; }
-/* Deceleration curve found in design-study/anthropic/assets/main.css and
-   the local Claude CDS_EASING.DECEL reference. Give this large reflow more
-   time than a button response; keep geometry and space compensation in sync. */
-.overview-toolbar-panel {
-  --overview-ease: cubic-bezier(.165, .84, .44, 1);
-  --overview-duration: 480ms;
-  position: relative;
-  isolation: isolate;
-}
+.overview-toolbar-slot { min-width: 0; position: relative; isolation: isolate; }
+.overview-toolbar-panel { position: relative; isolation: isolate; z-index: 1; }
 .node-count-compact-label { display: none; }
-.app-shell .nodes-dashboard:has(.overview-toolbar-slot) { overflow-anchor: none; }
 .app-shell[data-theme] .overview-search-toggle { display: none; }
 
 @media (max-width: 900px) {
-  .app-shell[data-authenticated] .nodes-dashboard:has(.overview-toolbar-slot) { padding-bottom: calc(32px + var(--overview-scroll-reserve, 0px)); }
-  .overview-toolbar-slot :is(.node-summary strong, .node-count-label, .node-count-compact-label, .node-search input, .node-search svg, .overview-search-toggle svg, .dashboard-toolbar-actions > button svg) { transform-origin: top left; }
+  .overview-toolbar-slot { margin-bottom: 12px; }
+  /* Compact counts and natural icon buttons at every narrow-screen scroll position. */
+  .app-shell[data-theme] .overview-toolbar-slot .node-count-label { display: none; }
+  .app-shell[data-theme] .overview-toolbar-slot .node-count-compact-label { display: inline; }
   body:has(.navigation-toggle[aria-expanded="true"]) .overview-toolbar-panel {
     visibility: hidden;
   }
-  .app-shell[data-theme] .overview-toolbar-slot[data-mode="compact"] > .overview-toolbar-panel {
+  .app-shell[data-theme] .overview-toolbar-slot > .overview-toolbar-panel {
     padding: 0 2px;
     border: 1px solid var(--line);
     border-radius: var(--radius-card);
     background: var(--surface);
   }
-  .overview-toolbar-slot[data-mode="compact"] .dashboard-overview-controls {
+  .app-shell[data-theme] .overview-toolbar-slot .dashboard-overview-controls {
     display: flex;
     align-items: center;
     min-width: 0;
     gap: 0;
   }
-  .overview-toolbar-slot[data-mode="compact"] .node-summary {
+  .app-shell[data-theme] .overview-toolbar-slot .node-summary {
     display: flex;
     flex: 1;
     justify-content: space-between;
@@ -43,7 +36,7 @@
     overflow-x: auto;
     scrollbar-width: none;
   }
-  .overview-toolbar-slot[data-mode="compact"] .node-summary article {
+  .app-shell[data-theme] .overview-toolbar-slot .node-summary article {
     display: inline-flex;
     flex: none;
     align-items: baseline;
@@ -51,23 +44,23 @@
     padding: 0;
     white-space: nowrap;
   }
-  .app-shell[data-theme] .overview-toolbar-slot[data-mode="compact"] .node-summary .node-count-label { display: none; }
-  .app-shell[data-theme] .overview-toolbar-slot[data-mode="compact"] .node-count-compact-label {
+  .app-shell[data-theme] .overview-toolbar-slot .node-summary .node-count-label { display: none; }
+  .app-shell[data-theme] .overview-toolbar-slot .node-count-compact-label {
     display: inline;
     font-size: clamp(9px, 2.82vw, 12px);
     line-height: 16px;
     color: var(--muted-strong);
   }
-  .app-shell[data-theme] .overview-toolbar-slot[data-mode="compact"] .node-summary strong {
+  .app-shell[data-theme] .overview-toolbar-slot .node-summary strong {
     font-size: clamp(11px, 3.08vw, 13px);
     line-height: 16px;
     letter-spacing: 0;
   }
-  .overview-toolbar-slot[data-mode="compact"] :is(.dashboard-toolbar, .dashboard-toolbar-actions) {
+  .app-shell[data-theme] .overview-toolbar-slot :is(.dashboard-toolbar, .dashboard-toolbar-actions) {
     display: contents;
   }
-  .overview-toolbar-slot[data-mode="compact"] :is(.node-search, .overview-action-label) { display: none; }
-  .app-shell[data-theme] .overview-toolbar-slot[data-mode="compact"] :is(.overview-search-toggle, .dashboard-toolbar-actions > button) {
+  .app-shell[data-theme] .overview-toolbar-slot .overview-action-label { display: none; }
+  .app-shell[data-theme] .overview-toolbar-slot :is(.overview-search-toggle, .dashboard-toolbar-actions > button) {
     display: inline-flex;
     flex: 0 0 44px;
     align-items: center;
@@ -81,21 +74,12 @@
     background: transparent;
     color: var(--text);
   }
-  .overview-toolbar-slot[data-mode="compact"] .server-view-controls { display: none !important; }
-  .app-shell[data-role="viewer"] .overview-toolbar-slot[data-mode="compact"] :is(.view-preferences-button, .primary-button) { display: none; }
+  .app-shell[data-role="viewer"] .overview-toolbar-slot :is(.view-preferences-button, .overview-enrollment-button) { display: none; }
 }
 
 @media (min-width: 360px) and (max-width: 900px) {
-  .app-shell[data-theme] .overview-toolbar-slot[data-mode="compact"] > .overview-toolbar-panel { padding-inline: 6px; }
-  .overview-toolbar-slot[data-mode="compact"] .node-summary article { gap: 3px; }
+  .app-shell[data-theme] .overview-toolbar-slot > .overview-toolbar-panel { padding-inline: 6px; }
+  .app-shell[data-theme] .overview-toolbar-slot .node-summary article { gap: 3px; }
   /* Preserve the outer anchors while opening space between counts and actions. */
-  .overview-toolbar-slot[data-mode="compact"] .node-summary { padding-inline-end: 8px; column-gap: 0; }
-  .overview-toolbar-slot[data-mode="compact"] .overview-search-toggle svg { translate: 4px; }
-  .overview-toolbar-slot[data-mode="compact"] .view-preferences-button svg { translate: 2px; }
-}
-
-@media (max-width: 900px) {
-  /* Moving numbers can cross the compact strip while the slot contracts. */
-  .overview-toolbar-slot[data-animating] .node-summary { overflow: visible; }
-  .overview-toolbar-slot[data-animating] .dashboard-toolbar-actions > button { transition: none; }
+  .app-shell[data-theme] .overview-toolbar-slot .node-summary { padding-inline-end: 8px; column-gap: 0; }
 }

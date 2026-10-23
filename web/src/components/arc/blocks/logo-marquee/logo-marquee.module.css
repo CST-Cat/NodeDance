@@ -1,0 +1,162 @@
+.section {
+  container: logos / inline-size;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface);
+  color: var(--foreground);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-body);
+  line-height: var(--leading-body);
+}
+
+.intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
+  align-items: end;
+  gap: 48px;
+  padding: 40px 40px 36px;
+}
+
+.intro h2 {
+  max-width: 540px;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 400;
+  line-height: var(--leading-display);
+  text-wrap: balance;
+  letter-spacing: var(--tracking-display);
+}
+
+.intro p {
+  max-width: 36ch;
+  margin: 0 0 3px;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  text-wrap: pretty;
+}
+
+.marquee {
+  position: relative;
+  overflow: hidden;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  padding-block: 32px;
+  mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 7%, #000 93%, transparent);
+}
+
+.track {
+  display: flex;
+  width: max-content;
+  animation: travel 39s linear infinite;
+  will-change: transform;
+}
+
+.track.paused {
+  animation-play-state: paused;
+}
+
+/* Hovering the row holds it still, so a logo can be read. */
+@media (hover: hover) and (pointer: fine) {
+  .marquee:hover .track { animation-play-state: paused; }
+}
+
+.brandList {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 56px;
+  margin: 0;
+  padding: 0 56px 0 0;
+  list-style: none;
+}
+
+.brand {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.brandMark {
+  display: block;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  background: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
+  -webkit-mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+}
+
+img.brandMark { background: none; object-fit: contain; }
+
+/* In color tone the marks carry the brand color and the names read at full contrast; black and white marks follow the text. */
+.section[data-tone="color"] .brand { color: var(--foreground); }
+
+.brandName {
+  font-size: var(--text-lg);
+  font-weight: 500;
+  letter-spacing: var(--tracking-body);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  padding: 10px 16px;
+}
+
+.motionButton { color: var(--text-secondary); }
+.motionStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@keyframes travel {
+  to { transform: translateX(-50%); }
+}
+
+@container logos (max-width: 639px) {
+  .intro {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    padding: 28px 20px 24px;
+  }
+
+  .intro h2 { font-size: var(--text-2xl); }
+  .intro p { font-size: var(--text-sm); }
+  .marquee { padding-block: 24px; }
+  .brandList { gap: 40px; padding-right: 40px; }
+  .brandName { font-size: var(--text-base); }
+  .brandMark { width: 20px; height: 20px; }
+  .footer { padding-inline: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track {
+    animation: none;
+    will-change: auto;
+  }
+
+  .track { width: auto; justify-content: center; }
+  .brandList { flex-wrap: wrap; justify-content: center; row-gap: 20px; padding: 0 24px; }
+  .brandList[aria-hidden="true"] { display: none; }
+  .footer { display: none; }
+}

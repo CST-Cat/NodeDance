@@ -1,5 +1,5 @@
 .ui-segments { position: relative; isolation: isolate; display: grid; grid-template-columns: repeat(var(--segment-count), minmax(0, 1fr)); gap: 0; min-width: 0; border-radius: var(--radius-control); background: var(--surface-soft); }
-.ui-segments-indicator { position: absolute; z-index: -1; inset: 0 auto 0 0; width: calc(100% / var(--segment-count)); border-radius: inherit; background: var(--surface-selected); transform: translateX(calc(var(--segment-index) * 100%)); transition: transform 140ms var(--ux-ease); pointer-events: none; }
+.ui-segments-indicator { position: absolute; z-index: -1; inset: 0 auto 0 0; width: calc(100% / var(--segment-count)); background: var(--surface-selected); transform: translateX(calc(var(--segment-index) * 100%)); transition: transform 140ms var(--ux-ease); pointer-events: none; }
 .ui-segments button { min-width: 0; position: relative; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; background: transparent; color: var(--muted-strong); white-space: nowrap; }
 .ui-segments button[aria-pressed="true"] { color: var(--text); background: transparent; }
 .ui-segments button:hover:not(:disabled) { background: transparent; color: var(--text); }

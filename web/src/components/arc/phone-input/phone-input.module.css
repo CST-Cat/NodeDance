@@ -1,0 +1,97 @@
+.field { --pi-h: var(--control-height-md); --pi-panel-w: 320px; position: relative; display: grid; min-width: 0; font-family: var(--font-body); letter-spacing: var(--tracking-body); }
+.field[data-open] { z-index: 30; }
+.label { justify-self: start; margin-bottom: var(--space-2); color: var(--foreground); font-size: var(--text-sm); font-weight: 500; line-height: var(--leading-body); }
+
+/* The shell matches the labeled input: one border, one radius, and a quiet border change on hover and focus. */
+.control { position: relative; display: flex; min-width: 0; height: var(--pi-h); box-sizing: border-box; border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: var(--surface); transition: border-color var(--duration-fast) var(--ease-standard); }
+@media (hover: hover) and (pointer: fine) { .control:hover:not([data-invalid]) { border-color: var(--foreground); } }
+.control:has(.number:focus) { border-color: var(--foreground); }
+.control[data-invalid] { border-color: var(--danger); }
+.field[data-disabled] .control { opacity: .5; background: var(--surface-muted); }
+
+/* The anchor holds the closed button's place and springs to a new width when the calling code changes length. */
+.anchor { position: relative; flex: none; height: 100%; }
+.anchor::after { content: ""; position: absolute; top: 10px; right: 0; bottom: 10px; width: 1px; background: var(--border); transition: opacity var(--duration-fast) var(--ease-standard); }
+.field[data-open] .anchor::after { opacity: 0; }
+
+/* One material for both states. Open, it steps out over the shell's own border so the two edges never double up. */
+.shape { position: absolute; z-index: 2; top: 0; left: 0; overflow: clip; background: var(--surface); transition: box-shadow var(--duration-considered) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
+.shape::after { content: ""; position: absolute; inset: 0; z-index: 3; border: 1px solid var(--border); border-radius: inherit; opacity: 0; pointer-events: none; transition: opacity var(--duration-fast) var(--ease-standard); }
+.field[data-open] .shape { translate: -1px -1px; background: var(--surface-raised); box-shadow: var(--shadow-floating); }
+.field[data-open] .shape::after { opacity: 1; }
+.field[data-disabled] .shape { background: transparent; }
+
+.lid { position: absolute; z-index: 1; top: 0; right: 0; left: 0; height: calc(var(--pi-h) - 2px); }
+
+.trigger { box-sizing: border-box; display: flex; height: calc(var(--pi-h) - 2px); align-items: center; padding: 0 36px 0 12px; font-size: var(--text-sm); font-weight: 500; white-space: nowrap; }
+.lid .trigger { position: absolute; inset: 3px auto 3px 3px; width: calc(100% - 6px); height: auto; margin: 0; padding: 0 33px 0 9px; border: 0; border-radius: calc(var(--radius-control) - 4px); background: transparent; color: var(--foreground); cursor: pointer; font-family: inherit; letter-spacing: inherit; text-align: left; -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: background-color var(--duration-fast) var(--ease-standard); }
+@media (hover: hover) and (pointer: fine) { .field:not([data-open], [data-disabled]) .lid .trigger:hover { background: var(--surface-muted); } }
+.lid .trigger:active:not(:disabled) { background: var(--surface-muted); }
+.lid .trigger:disabled { cursor: not-allowed; }
+/* No focus rings (product decision): keyboard focus reads as the same quiet fill as hover. */
+.lid .trigger:focus-visible { background: var(--surface-muted); }
+.clear:focus-visible, .closeHit:focus-visible { background: color-mix(in oklab, var(--foreground) 8%, transparent); }
+/* An invisible copy that says how wide the closed button wants to be. */
+.measure { visibility: hidden; pointer-events: none; width: max-content; }
+
+.slot { position: relative; display: block; min-width: 0; height: 100%; flex: 1; }
+.slot[data-hidden] { opacity: 0; transition: opacity var(--duration-instant) var(--ease-standard); }
+.layer { position: absolute; inset: 0; display: flex; align-items: center; gap: 6px; }
+.flag { display: inline-grid; width: 20px; flex: none; place-items: center; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", var(--font-body); font-size: 17px; font-weight: 400; line-height: 1; }
+.dial { font-variant-numeric: tabular-nums; }
+
+.chevron { position: absolute; top: 50%; right: 12px; display: grid; width: 16px; height: 16px; margin-top: -8px; place-items: center; color: var(--text-muted); pointer-events: none; }
+
+/* Search takes the lid's place while the list is open. */
+.searchRow { position: absolute; inset: 0; display: flex; align-items: center; gap: var(--space-2); padding: 0 2px 0 13px; }
+.searchRow[inert] { pointer-events: none; }
+.searchIcon { flex: none; color: var(--text-muted); }
+.search { min-width: 0; height: 100%; flex: 1; padding: 0; border: 0; background: transparent; color: var(--foreground); font: inherit; font-size: var(--text-sm); letter-spacing: var(--tracking-body); outline: none; }
+.search::placeholder { color: var(--text-muted); }
+.clear { display: grid; width: 24px; height: 24px; flex: none; place-items: center; padding: 0; border: 0; border-radius: var(--radius-pill); background: color-mix(in oklab, var(--foreground) 8%, transparent); color: var(--text-secondary); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* Sits over the shared chevron, so the chevron closes the list. */
+.closeHit { width: 36px; height: 36px; flex: none; padding: 0; border: 0; border-radius: var(--radius-pill); background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color var(--duration-fast) var(--ease-standard); }
+@media (hover: hover) and (pointer: fine) {
+  .closeHit:hover, .clear:hover { background: color-mix(in oklab, var(--foreground) 8%, transparent); }
+  .clear:hover { color: var(--foreground); }
+}
+
+/* The list hangs under the lid at its final width, so rows never reflow while the surface springs open. */
+.listFace { position: absolute; top: calc(var(--pi-h) - 2px); left: 0; box-sizing: border-box; width: var(--pi-panel-w); padding: 0 6px 6px; }
+.listFace::before { content: ""; position: absolute; top: 0; right: 14px; left: 14px; height: 1px; background: var(--border-subtle); }
+.listFace[inert] { pointer-events: none; }
+.scroll { max-height: 280px; overflow-y: auto; overscroll-behavior: contain; padding-top: 6px; scrollbar-width: thin; }
+.options { position: relative; display: grid; gap: 2px; }
+.highlight { position: absolute; top: 0; right: 0; left: 0; border-radius: 16px; background: color-mix(in oklab, var(--foreground) 6.5%, transparent); pointer-events: none; }
+.group { display: grid; gap: 2px; }
+.group + .group { margin-top: 4px; }
+.groupLabel { padding: 8px 10px 4px; color: var(--text-muted); font-size: var(--text-xs); }
+.option { position: relative; display: flex; min-height: 36px; box-sizing: border-box; align-items: center; gap: 10px; padding: 0 10px; border-radius: 16px; color: var(--text-secondary); cursor: pointer; font-size: var(--text-sm); user-select: none; -webkit-user-select: none; transition: color var(--duration-fast) var(--ease-standard); }
+.option[data-active], .option[aria-selected="true"] { color: var(--foreground); }
+.name { min-width: 0; flex: 1; overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.meta { flex: none; color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.check { display: grid; width: 16px; height: 16px; flex: none; place-items: center; color: var(--foreground); opacity: 0; transform: scale(.6); transition: opacity var(--duration-fast) var(--ease-standard), transform var(--duration-spring) var(--ease-spring); }
+.check[data-on] { opacity: 1; transform: none; }
+.empty { margin: 0; padding: 12px 10px 14px; color: var(--text-muted); font-size: var(--text-sm); }
+
+/* The number and its guide share one box. The guide paints the typed part invisibly, then the rest of the example faintly after it. */
+.numberWrap { position: relative; display: flex; min-width: 0; flex: 1; align-items: center; }
+.number, .guide { box-sizing: border-box; padding: 0 36px 0 12px; font-family: inherit; font-size: var(--text-sm); font-variant-numeric: tabular-nums; letter-spacing: var(--tracking-body); line-height: var(--leading-body); }
+.number { position: relative; z-index: 1; width: 100%; height: 100%; min-width: 0; margin: 0; border: 0; border-radius: 0 var(--radius-control) var(--radius-control) 0; background: transparent; color: var(--foreground); outline: none; }
+.number:disabled { cursor: not-allowed; }
+.guide { position: absolute; inset: 0; display: flex; align-items: center; overflow: hidden; color: color-mix(in oklab, var(--text-muted) 72%, transparent); pointer-events: none; white-space: pre; }
+.guideTyped { visibility: hidden; }
+.valid { position: absolute; z-index: 1; top: 50%; right: 12px; display: grid; width: 18px; height: 18px; margin-top: -9px; place-items: center; color: var(--success); pointer-events: none; }
+
+/* The row's space is padding inside the clipped slot, so the height animates from a true zero. */
+.messageSlot { position: relative; display: block; overflow: hidden; }
+.hint, .error { display: block; padding-top: var(--space-2); font-size: var(--text-xs); line-height: var(--leading-body); }
+.hint { color: var(--text-muted); }
+.error { color: var(--danger); }
+
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .shape, .shape::after, .check, .slot, .control { transition-duration: 0ms; }
+}
+@media (prefers-contrast: more) { .shape::after { border-color: var(--border-strong); } }

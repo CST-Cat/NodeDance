@@ -25,7 +25,7 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  parkDiagnostics=true
  await page.goto(base+'/#/nodes')
  const shortcut=page.getByTestId('node-ssh-shortcut')
- const dialog=page.locator('dialog.ui-dialog')
+ const dialog=page.locator('dialog.ui-dialog[open]')
  await shortcut.waitFor();assert.ok(await shortcut.isEnabled())
  // Copy feedback: every bubble is a pure floating overlay. The card, telemetry,
  // Docker toggle and every action row must keep exactly the same boxes before,
@@ -55,7 +55,7 @@ module.exports=async function({page,base,headers,artifacts,catalog}){
  }
  // Let the dashboard finish its initial telemetry render so the baseline
  // reflects steady layout, not a transient settling state.
- await page.waitForFunction(()=>document.querySelectorAll('.vps-telemetry .ring').length>=4,'telemetry rendered',{timeout:8000}).catch(()=>{})
+ await page.waitForFunction(()=>document.querySelectorAll('.vps-telemetry .resource-gauge').length>=4,'telemetry rendered',{timeout:8000}).catch(()=>{})
  await page.waitForTimeout(1000)
  const beforeLayout=await layoutProbe()
  await shortcut.click()

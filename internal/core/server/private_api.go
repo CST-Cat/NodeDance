@@ -45,6 +45,12 @@ type browserSessionView struct {
 }
 
 func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, current *session) {
+	if s.handleLocationAPI(w, r) {
+		return
+	}
+	if s.handleDomainAPI(w, r) {
+		return
+	}
 	if s.handleObservabilityAPI(w, r) {
 		return
 	}

@@ -59,7 +59,7 @@ func (f connectionFlags) client() (*control.Client, error) {
 func localOperations() []control.Operation {
 	result := []control.Operation{}
 	for _, item := range []struct{ name, desc string }{
-		{"client.update", "Update local Core without login; explicit remote targets use the connected Core; confirm rollback"}, {"core.serve", "Run Core; arguments are the same as nodedance serve"}, {"core.backup", "Back up Core to a new private archive"}, {"core.restore", "Restore Core to a new/empty directory"}, {"core.version", "Show Core version"},
+		{"client.batch", "Execute finite Core operations from JSONL; shared CLI/TUI preflight, JSONL results, stable identities and private downloads"}, {"client.update", "Update local Core without login; explicit remote targets use the connected Core; confirm rollback"}, {"core.serve", "Run Core; arguments are the same as nodedance serve"}, {"core.backup", "Back up Core to a new private archive"}, {"core.restore", "Restore Core to a new/empty directory"}, {"core.version", "Show Core version"},
 		{"agent.enroll", "Enroll root Agent; --token-stdin; stdin is never placed in process arguments"}, {"agent.recover", "Recover root Agent enrollment"}, {"agent.update", "Update the local root Agent to the latest stable release"}, {"agent.run", "Run root Agent"}, {"agent.install-systemd", "Install root Agent systemd service"}, {"agent.uninstall-systemd", "Remove managed Agent unit; preserve credentials"}, {"agent.validate-systemd-state", "Validate protected Agent credentials"}, {"agent.prepare-systemd-state", "Prepare root-owned Agent state"}, {"agent.validate-file-root", "Validate Agent file root"}, {"agent.version", "Show Agent version"}, {"agent.tmux-version", "Show bundled Agent tmux version"},
 	} {
 		result = append(result, control.Operation{Name: item.name, Description: item.desc, Method: "LOCAL", Transport: "local", Parameters: []string{}, Query: []string{}, BodySchema: map[string]any{"type": "array", "items": map[string]string{"type": "string"}}})
@@ -188,6 +188,9 @@ func decodeMap(value string, stdin io.Reader) (map[string]string, error) {
 }
 
 func runControl(ctx context.Context, name string, args []string, lookup LookupEnv, stdin io.Reader, stdout, stderr io.Writer, version string) error {
+	if name == "client.batch" {
+		return runBatch(ctx, args, lookup, stdin, stdout, stderr)
+	}
 	for _, o := range localOperations() {
 		if o.Name == name {
 			if name == "client.update" {

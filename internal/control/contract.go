@@ -1,6 +1,7 @@
 package control
 
 import (
+	"github.com/CST-Cat/NodeDance/internal/core/geolocation"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 	"github.com/CST-Cat/NodeDance/internal/update"
 	"strings"
@@ -209,6 +210,10 @@ func describeResponse(o *Operation) {
 		o.ResponseSchema = responseObject([]string{"user", "csrfToken"}, map[string]any{"user": map[string]any{"type": "object"}, "csrfToken": text})
 	case "sessions.list":
 		o.ResponseSchema = list("sessions", map[string]any{"type": "object"})
+	case "locations.search":
+		o.ResponseSchema = list("cities", schema(geolocation.City{}))
+	case "locations.get":
+		o.ResponseSchema = schema(geolocation.City{})
 	case "nodes.preferences":
 		o.ResponseSchema = list("preferences", map[string]any{"type": "object"})
 	case "alerts.list", "alerts.history":
@@ -268,7 +273,7 @@ func describeResponse(o *Operation) {
 		r["required"] = []string{"id", "status"}
 		o.ResponseSchema = r
 	case "nodes.list":
-		o.ResponseSchema = responseObject([]string{"nodes"}, map[string]any{"nodes": map[string]any{"type": "array", "items": map[string]any{"type": "object"}}})
+		o.ResponseSchema = responseObject([]string{"nodes"}, map[string]any{"nodes": map[string]any{"type": "array", "items": map[string]any{"type": "object", "properties": map[string]any{"country": schema(geolocation.Country{}), "location": schema(geolocation.Location{})}}}})
 	case "terminal.create", "terminal.open", "terminal.resume":
 		o.ResponseSchema = responseObject([]string{"streamId", "ticket"}, map[string]any{"streamId": text, "ticket": text, "expiresAt": text})
 	}

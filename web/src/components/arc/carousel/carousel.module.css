@@ -1,0 +1,41 @@
+.root { --carousel-gap: var(--space-4); display: grid; width: 100%; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: var(--space-4); container-type: inline-size; }
+/* Only the horizontal axis clips, so focus rings inside the active slide are never cut off at the top or bottom. */
+.viewport { position: relative; min-width: 0; overflow-x: clip; overflow-y: visible; border-radius: var(--radius-panel); cursor: grab; touch-action: pan-y; -webkit-tap-highlight-color: transparent; }
+.viewport[data-dragging] { cursor: grabbing; }
+.viewport:focus-visible { --focus-outline-offset: 4px; }
+/* Side padding centers the first and last slides; before hydration the start slide is placed with CSS so nothing moves on first paint. */
+.track { display: flex; gap: var(--carousel-gap); padding-inline: calc((100cqw - var(--carousel-slide)) / 2); user-select: none; -webkit-user-select: none; }
+.track:not([data-measured]) { translate: calc(var(--carousel-start) * -1 * (var(--carousel-slide) + var(--carousel-gap))) 0; }
+.slide { flex: 0 0 var(--carousel-slide); min-width: 0; transform-origin: 50% 50%; will-change: transform, opacity; }
+.slide img { -webkit-user-drag: none; }
+
+/* Controls line up with the edges of the centered slide. */
+.controls { display: flex; min-width: 0; align-items: center; gap: var(--space-2); padding-inline: calc((100cqw - var(--carousel-slide)) / 2); }
+.tabs { display: flex; min-width: 0; align-items: center; }
+.tab { display: grid; height: var(--control-height-sm); flex: none; place-items: center; border: 0; border-radius: var(--radius-pill); padding: 0 5px; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* Resting dots use the strong border color; the fill fades in as the pill forms, and the drain covers it from the right while rotation runs. */
+.dot { position: relative; display: block; width: 6px; height: 6px; overflow: hidden; border-radius: var(--radius-pill); background: var(--border-strong); transition: background-color var(--duration-fast) var(--ease-standard); }
+.dotFill, .dotDrain { position: absolute; inset: 0; }
+.dotFill { background: var(--foreground); }
+.dotDrain { background: var(--border-strong); transform-origin: 100% 50%; }
+@media (hover: hover) and (pointer: fine) { .tab:hover .dot { background: var(--text-muted); } }
+.tab:focus-visible { --focus-outline-offset: -4px; }
+
+.arrows { display: flex; flex: none; gap: var(--space-2); margin-left: auto; }
+.control { display: grid; width: var(--control-height-sm); height: var(--control-height-sm); flex: none; place-items: center; border: 1px solid var(--border); border-radius: var(--radius-pill); padding: 0; background: var(--surface); color: var(--foreground); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), opacity var(--duration-fast) var(--ease-standard), transform var(--duration-spring) var(--ease-spring); }
+@media (hover: hover) and (pointer: fine) { .control:hover:not([aria-disabled="true"]) { background: var(--surface-muted); } }
+.control:active:not([aria-disabled="true"]) { transform: scale(.97); transition: transform 100ms var(--ease-standard); }
+.control[aria-disabled="true"] { color: var(--text-muted); cursor: default; opacity: .5; }
+.iconSlot { display: grid; width: 16px; height: 16px; place-items: center; }
+.icon { grid-area: 1 / 1; display: grid; place-items: center; }
+/* On phone widths the row tightens so play, indicators, and arrows still fit beside a narrow slide. */
+@container (max-width: 340px) {
+  .controls { gap: var(--space-1); padding-inline: max(0px, calc((100cqw - var(--carousel-slide)) / 2 - var(--space-2))); }
+  .arrows { gap: var(--space-1); }
+  .tab { padding: 0 4px; }
+}
+.visuallyHidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dot, .control, .control:active:not([aria-disabled="true"]) { transition: none; transform: none; }
+}

@@ -55,6 +55,8 @@ func RunWithInput(ctx context.Context, args []string, lookup LookupEnv, stdin io
 		return runTUI(ctx, args[1:], lookup, stdin, stdout, stderr, version)
 	case "agent":
 		return runAgentCommand(ctx, args[1:], stdin, stdout, stderr)
+	case "batch":
+		return runControl(ctx, "client.batch", args[1:], lookup, stdin, stdout, stderr, version)
 	case "call":
 		if len(args) < 2 {
 			return errors.New("usage: nodedance call OPERATION [flags]")
@@ -278,6 +280,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "       nodedance update [--check | --yes | --status | --rollback JOB]  # local root Core; --server URL for remote updates")
 	fmt.Fprintln(w, "       nodedance agent update [--check | --status | --rollback JOB]  # local root Agent")
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance version"))
+	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance batch --input @FILE.jsonl [--dry-run] [--continue-on-error]"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance operations [NAME]  # JSON operation catalog / schemas"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance call NAME --server https://core --params JSON --query JSON --body @FILE"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance nodes list [connection flags]  # resource/action aliases"))

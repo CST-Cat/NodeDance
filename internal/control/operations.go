@@ -95,6 +95,25 @@ func schema(value any) any {
 		}
 	}
 	switch value.(type) {
+	case dashboard.Preference:
+		enum("icon", dashboard.PreferenceIcons()...)
+		enum("countryCode", dashboard.CountryCodes()...)
+		location := props["location"].(map[string]any)
+		point := location["properties"].(map[string]any)
+		point["countryCode"].(map[string]any)["enum"] = dashboard.CountryCodes()[1:]
+		for key, limit := range map[string]int{"latitude": 90, "longitude": 180} {
+			p := point[key].(map[string]any)
+			p["minimum"] = -limit
+			p["maximum"] = limit
+			p["nullable"] = false
+		}
+		location["required"] = []string{"countryCode", "city", "latitude", "longitude"}
+		for _, key := range []string{"city", "region"} {
+			p := point[key].(map[string]any)
+			p["maxBytes"] = 200
+		}
+		point["city"].(map[string]any)["minLength"] = 1
+
 	case protocol.AccountCreateRequest, protocol.AccountUpdateRequest:
 		enum("role", "administrator", "viewer")
 	case protocol.ProfileRequest:
@@ -283,6 +302,8 @@ func buildOperations() []Operation {
 		op("auth.password", "POST", "/api/v1/auth/password", "Change own password; invalidates own sessions", schema(protocol.PasswordChangeRequest{})),
 		op("sessions.list", "GET", "/api/v1/auth/sessions", "Own account sessions", nil),
 		op("sessions.revoke", "DELETE", "/api/v1/auth/sessions/{id}", "Revoke selected session", nil),
+		op("locations.search", "GET", "/api/v1/locations", "Search the local city directory (GeoNames, CC BY 4.0); at most 50 results", nil, "q", "countryCode"),
+		op("locations.get", "GET", "/api/v1/locations/{id}", "Get a city and its coordinates from the local directory", nil),
 		op("nodes.list", "GET", "/api/v1/nodes", "Nodes, online state and Agent capabilities", nil),
 		op("nodes.asset", "GET", node+"/asset", "Node cost, expiry and traffic quota settings", nil),
 		op("nodes.save-asset", "PUT", node+"/asset", "Save node asset and reminder settings", schema(protocol.NodeAsset{})),
@@ -409,6 +430,7 @@ func buildOperations() []Operation {
 	for _, kind := range []string{"avatar", "background"} {
 		list = append(list, op("appearance."+kind, "GET", "/api/v1/public/appearance/"+kind, "Download appearance image to --output", nil), op("appearance.upload-"+kind, "POST", "/api/v1/settings/appearance/"+kind, "Upload raster image from --input", nil))
 	}
+	list = append(list, domainOperations()...)
 	for i := range list {
 		o := &list[i]
 		if o.Name == "nodes.recording" {
@@ -420,7 +442,7 @@ func buildOperations() []Operation {
 			o.RequiredRole = "public"
 		case "auth.me", "auth.logout", "auth.password", "auth.switch", "sessions.list", "sessions.revoke", "accounts.list",
 			"profile.get", "profile.update", "profile.avatar", "profile.upload-avatar",
-			"nodes.list", "nodes.metrics", "nodes.history", "nodes.preferences", "nodes.asset",
+			"locations.search", "locations.get", "nodes.list", "nodes.metrics", "nodes.history", "nodes.preferences", "nodes.asset",
 			"dashboard.core-info", "dashboard.memo", "dashboard.settings", "dashboard.watch", "metrics.catalog", "nodes.recording", "nodes.incidents", "nodes.analysis", "nodes.correlations",
 			"containers.list", "images.list", "compose.list", "probes.list", "probes.history", "probes.quality":
 			o.RequiredRole = "viewer"

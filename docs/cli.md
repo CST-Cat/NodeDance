@@ -239,3 +239,9 @@ Discover `dashboard.core-info`, `dashboard.memo` and `dashboard.save-memo` from 
 ## Accounts and roles
 
 Account creation, editing, disabling, deletion, password reset and switching are shared Core operations; see [Account management](accounts.md). CLI and TUI discover `accounts.*`, `auth.switch` and `profile.*` from the connected Core. Password inputs use private files or stdin. Switching validates target credentials and rotates the saved server-bound session. Read-only users receive Core-enforced permissions; their own profile, password and Session management remain available.
+
+## Domains, certificates and JSONL batch / 域名证书与批量操作
+
+`domains.*` and `certificates.*` are administrator operations discovered from Core, including inventory, imports/private exports, ACME accounts/DNS providers, issuance/renewal/revocation, policy and persistent job observation/cancellation/retry. CLI and TUI use the shared executor and completion contract. `nodedance batch --input FILE_OR_- --dry-run` validates all JSONL entries before execution; remove `--dry-run` to execute sequentially, optionally using `--continue-on-error`. TUI exposes the same workflow as `client.batch`. See [configuration, security boundaries and copyable JSONL examples](domain-certificates.md).
+
+城市定位使用 `locations.search/get`、`nodes.list/preferences/save-preference`，CLI 和 TUI 均从 Core 发现同一契约。支持默认自动、手动城市／坐标、清除覆盖、观察结果与 JSONL 批量操作；详见 [节点城市定位与完整示例](node-locations.md)。

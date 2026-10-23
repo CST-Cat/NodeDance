@@ -16,10 +16,10 @@ module.exports=async function({browser,base,credentials,artifacts}){
    }
    const csrf=await(await context.request.get(base+'/api/v1/auth/csrf')).json()
    assert.equal((await context.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':csrf.token},data:credentials})).status(),200)
-   await page.goto(base+'/#/operations');await page.locator('.operation-layout aside select').waitFor()
+   await page.goto(base+'/#/operations');await page.locator('.operation-layout aside button[data-dropdown-field]').waitFor()
    assert.equal(await page.locator('html').getAttribute('lang'),item.expected)
    assert.equal(await page.locator('.language-selector,.language-options,.topbar-right').count(),0)
-   await page.reload();await page.locator('.operation-layout aside select').waitFor()
+   await page.reload();await page.locator('.operation-layout aside button[data-dropdown-field]').waitFor()
    assert.equal(await page.locator('html').getAttribute('lang'),item.expected)
    await setBrowserLanguage(page,item.expected==='en'?'zh-CN':'en')
    assert.ok(page.url().endsWith('#/operations'),'Browser language change preserves the view')

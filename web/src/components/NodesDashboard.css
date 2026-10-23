@@ -275,3 +275,23 @@
     font-size: 26px;
   }
 }
+
+/* Shared action alignment; glyphs keep their natural aspect ratio. */
+.app-shell[data-theme] .dashboard-toolbar-actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  line-height: 1.25;
+}
+.dashboard-toolbar-actions > button svg { display: block; flex: none; }
+.overview-action-label { display: block; }
+.overview-search-dialog .node-search { width: 100%; }
+.overview-preferences-dialog .server-view-controls { display: grid; grid-template-columns: minmax(0, 1fr); }
+.overview-preferences-dialog .server-view-controls > label { min-width: 0; }
+@media (max-width: 900px) {
+  .overview-search-dialog .node-search input { font-size: 16px; }
+  .overview-toolbar-panel .nodes-error { order: 1; flex-basis: 100%; width: 100%; }
+  .overview-toolbar-panel .dashboard-overview-controls { flex-wrap: wrap; }
+}

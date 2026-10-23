@@ -1,3 +1,15 @@
+/* Tailwind v4 utilities only: preserve the product's existing reset and tokens.
+   Disable automatic source detection so vendor assets and audit fixtures cannot
+   introduce utilities; scan only application source. */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+@import "tailwindcss-concentric";
+@source "./";
+/* UIArc is CSS Modules based; do not generate utilities from vendor source. */
+@source not "./components/arc";
+/* Opt in only the installed Tabs selection utility; preserve vendor exclusion. */
+@source inline("rounded-(--tabs-radius) rounded-concentric-[var(--tabs-selection-inset)] rounded-(--radius-panel) rounded-concentric-[4px]");
 @import "./fonts.css";
 @import "./figma-tokens.css";
 /* Product roles are mapped to the user-selected Claude Figma kit. */
@@ -732,7 +744,7 @@ summary:focus-visible {
   gap: var(--settings-space-2);
   padding-inline: var(--settings-space-2);
 }
-.profile-language-field .u031-v {
+.profile-language-field [data-dropdown-label] {
   white-space: normal;
   overflow-wrap: anywhere;
   line-height: 18px;

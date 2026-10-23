@@ -1,0 +1,67 @@
+.layer { position: fixed; z-index: 60; right: 16px; bottom: 16px; left: 16px; height: 0; pointer-events: none; font-family: var(--font-body); letter-spacing: var(--tracking-body); }
+.absolute { position: absolute; z-index: 5; }
+
+/* One surface whose position, size, and corner spring between the bar, the panel, and the reopen button. */
+.surface { position: absolute; bottom: 0; left: 0; overflow: hidden; background: var(--surface-raised); box-shadow: 0 0 0 1px var(--border), var(--shadow-floating); color: var(--foreground); pointer-events: auto; transform-origin: bottom center; will-change: transform, width, height; }
+
+/* Faces sit on the bottom edge at their final width, so the surface grows upward into them. */
+.face { position: absolute; bottom: 0; left: 0; box-sizing: border-box; }
+.face[data-side="center"] { left: 50%; translate: -50% 0; }
+.face[data-side="right"] { right: 0; left: auto; }
+.face[inert] { pointer-events: none; }
+
+.bar { container-type: inline-size; padding: 10px 10px 10px 18px; }
+.barInner { display: flex; align-items: center; gap: var(--space-4); }
+.barInner[data-stack] { flex-direction: column; align-items: stretch; gap: var(--space-3); padding: 6px 0 0; }
+.message { flex: 1 1 auto; min-width: 0; margin: 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-body); text-wrap: pretty; }
+.barActions { display: flex; flex: none; align-items: center; gap: 6px; }
+.barInner[data-stack] .barActions { display: grid; grid-template-columns: auto 1fr 1fr; }
+.barInner[data-stack] { padding-right: 8px; }
+
+.policy { padding: 0; border: 0; background: none; color: var(--foreground); cursor: pointer; font: inherit; text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; transition: text-decoration-color var(--duration-fast) var(--ease-standard); }
+
+.panel { container-type: inline-size; display: grid; gap: var(--space-3); padding: 18px; }
+.panelHead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); margin-block: -4px -6px; }
+.title { margin: 0; font-size: var(--text-base); font-weight: 500; line-height: var(--leading-body); }
+.description { margin: 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-body); text-wrap: pretty; }
+.iconButton { display: inline-grid; width: 32px; height: 32px; flex: none; place-items: center; margin-right: -8px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-secondary); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
+.iconButton:active { background: var(--surface-muted); color: var(--foreground); }
+
+.list { display: grid; max-height: var(--cookie-consent-list-max, min(46vh, 300px)); margin: 0 -6px; padding: 0; overflow-y: auto; list-style: none; overscroll-behavior: contain; scrollbar-width: thin; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); padding: 10px 6px; border-top: 1px solid var(--border-subtle); }
+.row:first-child { border-top: 0; }
+.rowText { display: grid; min-width: 0; gap: 2px; }
+.rowLabel { color: var(--foreground); font-size: var(--text-sm); font-weight: 500; line-height: var(--leading-body); }
+.rowLabel[for] { cursor: pointer; }
+.rowHint { margin: 0; color: var(--text-muted); font-size: var(--text-xs); line-height: var(--leading-body); }
+.always { flex: none; color: var(--text-muted); font-size: var(--text-xs); white-space: nowrap; }
+
+.panelActions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding-top: var(--space-2); border-top: 1px solid var(--border-subtle); }
+.save { grid-column: 1 / -1; }
+
+.chipFace { height: 44px; }
+.chip { display: grid; width: 44px; height: 44px; place-items: center; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--foreground); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color var(--duration-fast) var(--ease-standard); }
+.chip:active { background: var(--surface-muted); }
+
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+@media (hover: hover) and (pointer: fine) {
+  .policy:hover { text-decoration-color: currentColor; }
+  .iconButton:hover { background: var(--surface-muted); color: var(--foreground); }
+  .chip:hover { background: var(--surface-muted); }
+}
+
+/* Below about 340px the three bar buttons no longer fit one row: refusing and accepting share it, and Customize takes the row under them. */
+@container (max-width: 300px) {
+  .barInner[data-stack] .barActions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .barInner[data-stack] .barActions > :first-child { grid-column: 1 / -1; order: 1; }
+}
+
+@container (min-width: 340px) {
+  .panelActions { grid-template-columns: auto auto 1fr; }
+  .save { grid-column: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .policy, .iconButton, .chip { transition: none; }
+}

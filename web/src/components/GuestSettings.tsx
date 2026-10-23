@@ -8,7 +8,22 @@ import GuestDisplayView from "./GuestDisplay";
 import { Fragment } from "react";
 import { __call, __classes, __each, __input, useController } from "../state";
 import "./GuestSettings.css";
-import UiSelect from "./UiSelect";
+import {
+  ManagementPage,
+  Button,
+  Input,
+  Textarea,
+  Checkbox,
+  Select,
+  Card,
+  Badge,
+  Alert,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  checkboxProps,
+  selectOptions,
+} from "./ManagementUI";
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
 export default function GuestSettings(input: Props) {
   return useController(
@@ -127,7 +142,7 @@ export default function GuestSettings(input: Props) {
       afterMount(load);
       return () => (
         <>
-          <section
+          <ManagementPage
             className={__classes("guest-settings workspace-page")}
             data-v-85553d14=""
           >
@@ -138,18 +153,25 @@ export default function GuestSettings(input: Props) {
               </p>
             </header>
             {error.value ? (
-              <p
+              <Alert
                 role="alert"
                 className={__classes("guest-error")}
                 data-v-85553d14=""
+                tone="danger"
+                title={t("management.error")}
               >
                 {error.value}
-              </p>
+              </Alert>
             ) : null}
             {notice.value ? (
-              <p role="status" data-v-85553d14="">
+              <Alert
+                role="status"
+                data-v-85553d14=""
+                tone="info"
+                title={t("management.notice")}
+              >
                 {notice.value}
-              </p>
+              </Alert>
             ) : null}
             {settings.value && options.value ? (
               <form
@@ -160,32 +182,30 @@ export default function GuestSettings(input: Props) {
                 data-v-85553d14=""
               >
                 <fieldset disabled={busy.value as any} data-v-85553d14="">
-                  <section
-                    className={__classes("guest-settings-card")}
+                  <Card
+                    className={__classes("guest-settings-card management-card")}
                     data-v-85553d14=""
+                    title={t("management.publication")}
                   >
                     <label
                       className={__classes("guest-check")}
                       data-v-85553d14=""
                     >
-                      <input
-                        type="checkbox"
-                        {...__input(
+                      <Checkbox
+                        {...checkboxProps(
                           settings.value!.enabled,
                           (__nextValue: any) => {
                             settings.value!.enabled = __nextValue;
                           },
-                          "checkbox",
                           undefined,
-                          [],
                         )}
                         data-v-85553d14=""
-                      ></input>
+                      ></Checkbox>
                       {t("guest.enabled")}
                     </label>
                     <label data-v-85553d14="">
                       {t("guest.title")}
-                      <input
+                      <Input
                         required={true}
                         {...__input(
                           settings.value!.title,
@@ -197,28 +217,26 @@ export default function GuestSettings(input: Props) {
                           [],
                         )}
                         data-v-85553d14=""
-                      ></input>
+                      ></Input>
                     </label>
                     <label
                       className={__classes("guest-check")}
                       data-v-85553d14=""
                     >
-                      <input
-                        type="checkbox"
-                        {...__input(
+                      <Checkbox
+                        {...checkboxProps(
                           settings.value!.showStatus,
                           (__nextValue: any) => {
                             settings.value!.showStatus = __nextValue;
                           },
-                          "checkbox",
                           undefined,
-                          [],
                         )}
                         data-v-85553d14=""
-                      ></input>
+                      ></Checkbox>
                       {t("guest.showStatus")}
                     </label>
-                    <h2 data-v-85553d14="">{t("guest.metrics")}</h2>
+
+                    <h3>{t("guest.metrics")}</h3>
                     <Fragment>
                       {__each(options.value.metrics, (metric) => (
                         <label
@@ -226,55 +244,58 @@ export default function GuestSettings(input: Props) {
                           className={__classes("guest-check")}
                           data-v-85553d14=""
                         >
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             value={metric.key as any}
-                            {...__input(
+                            {...checkboxProps(
                               settings.value!.metrics,
                               (__nextValue: any) => {
                                 settings.value!.metrics = __nextValue;
                               },
-                              "checkbox",
                               metric.key,
-                              [],
                             )}
                             data-v-85553d14=""
-                          ></input>
+                          ></Checkbox>
                           {t(`guest.metric.${metric.key}`)}
                         </label>
                       ))}
                     </Fragment>
                     <label data-v-85553d14="">
                       {t("guest.history")}
-                      <UiSelect
-                        modelValue={settings.value!.historyHours}
-                        onUpdateModelValue={(__nextValue: any) => {
+                      <Select
+                        value={String(settings.value!.historyHours ?? "")}
+                        onValueChange={(next) => {
+                          const __nextValue: any =
+                            typeof settings.value!.historyHours === "number"
+                              ? Number(next)
+                              : next;
                           settings.value!.historyHours = __nextValue;
                         }}
-                        modelModifiers={{}}
                         data-v-85553d14=""
-                      >
-                        <Fragment>
-                          {__each(options.value.historyHours, (hours) => (
-                            <option
-                              key={hours as any}
-                              value={hours as any}
-                              data-v-85553d14=""
-                            >
-                              {hours === 0
-                                ? t("guest.historyOff")
-                                : hours + " " + t("guest.hours")}
-                            </option>
-                          ))}
-                        </Fragment>
-                      </UiSelect>
+                        options={selectOptions(
+                          <>
+                            <Fragment>
+                              {__each(options.value.historyHours, (hours) => (
+                                <option
+                                  key={hours as any}
+                                  value={hours as any}
+                                  data-v-85553d14=""
+                                >
+                                  {hours === 0
+                                    ? t("guest.historyOff")
+                                    : hours + " " + t("guest.hours")}
+                                </option>
+                              ))}
+                            </Fragment>
+                          </>,
+                        )}
+                      ></Select>
                     </label>
-                  </section>
-                  <section
-                    className={__classes("guest-settings-card")}
+                  </Card>
+                  <Card
+                    className={__classes("guest-settings-card management-card")}
                     data-v-85553d14=""
+                    title={<>{t("guest.nodes")}</>}
                   >
-                    <h2 data-v-85553d14="">{t("guest.nodes")}</h2>
                     <p className={__classes("muted")} data-v-85553d14="">
                       {t("guest.namesHint")}
                     </p>
@@ -289,24 +310,19 @@ export default function GuestSettings(input: Props) {
                             className={__classes("guest-check")}
                             data-v-85553d14=""
                           >
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={!!selected("nodes", node.nodeId) as any}
-                              onChange={(event: any) => {
-                                toggle(
-                                  "nodes",
-                                  node.nodeId,
-                                  (event.target as HTMLInputElement).checked,
-                                );
+                              onCheckedChange={(checked) => {
+                                toggle("nodes", node.nodeId, checked === true);
                               }}
                               data-v-85553d14=""
-                            ></input>
+                            ></Checkbox>
                             {node.displayName}
                           </label>
                           {selected("nodes", node.nodeId) ? (
                             <label data-v-85553d14="">
                               {t("guest.publicName")}
-                              <input
+                              <Input
                                 value={
                                   selected("nodes", node.nodeId)?.name as any
                                 }
@@ -319,7 +335,7 @@ export default function GuestSettings(input: Props) {
                                   );
                                 }}
                                 data-v-85553d14=""
-                              ></input>
+                              ></Input>
                             </label>
                           ) : null}
                         </div>
@@ -330,12 +346,12 @@ export default function GuestSettings(input: Props) {
                         {t("guest.noNodes")}
                       </p>
                     ) : null}
-                  </section>
-                  <section
-                    className={__classes("guest-settings-card")}
+                  </Card>
+                  <Card
+                    className={__classes("guest-settings-card management-card")}
                     data-v-85553d14=""
+                    title={<>{t("guest.services")}</>}
                   >
-                    <h2 data-v-85553d14="">{t("guest.services")}</h2>
                     <Fragment>
                       {__each(probeChoices.value, (probe) => (
                         <div
@@ -347,24 +363,19 @@ export default function GuestSettings(input: Props) {
                             className={__classes("guest-check")}
                             data-v-85553d14=""
                           >
-                            <input
-                              type="checkbox"
+                            <Checkbox
                               checked={!!selected("probes", probe.id) as any}
-                              onChange={(event: any) => {
-                                toggle(
-                                  "probes",
-                                  probe.id,
-                                  (event.target as HTMLInputElement).checked,
-                                );
+                              onCheckedChange={(checked) => {
+                                toggle("probes", probe.id, checked === true);
                               }}
                               data-v-85553d14=""
-                            ></input>
+                            ></Checkbox>
                             {probe.name}
                           </label>
                           {selected("probes", probe.id) ? (
                             <label data-v-85553d14="">
                               {t("guest.publicName")}
-                              <input
+                              <Input
                                 value={
                                   selected("probes", probe.id)?.name as any
                                 }
@@ -377,7 +388,7 @@ export default function GuestSettings(input: Props) {
                                   );
                                 }}
                                 data-v-85553d14=""
-                              ></input>
+                              ></Input>
                             </label>
                           ) : null}
                         </div>
@@ -388,36 +399,39 @@ export default function GuestSettings(input: Props) {
                         {t("guest.noProbes")}
                       </p>
                     ) : null}
-                  </section>
+                  </Card>
                   <div
                     className={__classes("guest-settings-actions")}
                     data-v-85553d14=""
                   >
-                    <button
+                    <Button
                       type="submit"
                       className={__classes("primary-button")}
                       data-v-85553d14=""
+                      variant="primary"
                     >
                       {t("guest.save")}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
                       onClick={(event: any) => {
                         __call(inspect, event);
                       }}
                       data-v-85553d14=""
+                      variant="secondary"
                     >
                       {t("guest.preview")}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
                       onClick={(event: any) => {
                         __call(load, event);
                       }}
                       data-v-85553d14=""
+                      variant="secondary"
                     >
                       {t("guest.reload")}
-                    </button>
+                    </Button>
                   </div>
                 </fieldset>
               </form>
@@ -428,7 +442,7 @@ export default function GuestSettings(input: Props) {
                 data-v-85553d14=""
               ></GuestDisplayView>
             ) : null}
-          </section>
+          </ManagementPage>
         </>
       );
     },

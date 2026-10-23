@@ -84,7 +84,7 @@ module.exports=async function({page,base,node,artifacts,catalog}){
   assert.equal(geometry.cards.length,3,'The three chart cards remain visible')
   assert.ok(geometry.cards.every(card=>Math.abs(card.width-card.height)<1&&Math.abs(card.width-geometry.cards[0].width)<1&&!card.overflowX),'Cards are equal squares without horizontal overflow: '+JSON.stringify(geometry))
   assert.equal(geometry.cards.filter(card=>Math.abs(card.top-geometry.cards[0].top)<1).length,geometry.containerWidth<=760?2:3,'Network and disk I/O lead the responsive chart grid')
-  assert.ok(await page.locator('.metrics-panel .resource-reading').evaluateAll(readings=>readings.every(reading=>{const gauge=reading.querySelector('.resource-gauge'),label=reading.querySelector(':scope > span'),detail=reading.querySelector(':scope > small'),r=gauge.getBoundingClientRect();return gauge.classList.contains('ring')&&Math.abs(r.width-Math.min(96,reading.clientWidth))<1&&Math.abs(r.height-r.width)<1&&getComputedStyle(gauge.querySelector('strong')).fontSize==='20px'&&label===null&&detail.getBoundingClientRect().top>=r.bottom})), 'Readings use enlarged equal-size rings with details directly below')
+  assert.ok(await page.locator('.metrics-panel .resource-reading').evaluateAll(readings=>readings.every(reading=>{const gauge=reading.querySelector('.resource-gauge'),label=reading.querySelector(':scope > span'),detail=reading.querySelector(':scope > small'),r=gauge.getBoundingClientRect();return gauge.querySelector('svg .ring-track')&&!gauge.classList.contains('ring')&&getComputedStyle(gauge).boxShadow==='none'&&Math.abs(r.width-Math.min(96,reading.clientWidth))<1&&Math.abs(r.height-r.width)<1&&getComputedStyle(gauge.querySelector('strong')).fontSize==='20px'&&label===null&&detail.getBoundingClientRect().top>=r.bottom})), 'Readings use enlarged equal-size rings with details directly below')
   const columns=await page.locator('.hardware-details').evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length);
   assert.equal(columns,geometry.containerWidth<=760?1:2,'Hardware uses compact two/one columns');
   const netRect=await network.boundingBox(),ioRect=await io.boundingBox();
@@ -103,14 +103,14 @@ module.exports=async function({page,base,node,artifacts,catalog}){
   await network.screenshot({path:path.join(artifacts,`network-${theme}-${width}.png`)})
  }
  await publish({metrics:view().metrics});
- assert.equal(await page.locator('.metrics-panel [data-resource=load] .ring strong').innerText(),'1.7%','Load reuses the VPS percentage formula')
+ assert.equal(await page.locator('.metrics-panel [data-resource=load] .resource-gauge strong').innerText(),'1.7%','Load reuses the VPS percentage formula')
  const unavailable=view();unavailable.metrics.cpu.usagePercent.status='error';unavailable.metrics.memory.status='unknown';unavailable.metrics.disk.mounts[0].usage.status='unknown';unavailable.metrics.host.swap.status='unknown';unavailable.metrics.host.load.status='unknown';unavailable.metrics.host.publicIpv4=metric(null);unavailable.metrics.host.publicIpv6=metric(null);await publish({metrics:unavailable.metrics})
  assert.equal(await page.locator('.metrics-panel .ring-value').count(),0,'Unavailable metrics have no filled ring')
  assert.equal(await page.getByTestId('cpu-value').innerText(),'—')
  assert.equal(await page.locator('[data-hardware=ipv4],[data-hardware=ipv6]').count(),0,'Only empty public address rows are omitted');
  for(const mode of ['sum','up','down','max','min']){
   quota={trafficLimitBytes:100e9,trafficAccounting:mode,trafficWarningPercent:80};
-  await page.reload();const ring=page.locator('[data-resource="traffic"] .ring strong');await ring.waitFor();
+  await page.reload();const ring=page.locator('[data-resource="traffic"] .resource-gauge strong');await ring.waitFor();
   const used={sum:43.4,up:20.6,down:22.8,max:22.8,min:20.6}[mode];
   assert.equal(await ring.innerText(),used.toFixed(1)+'%','Traffic ring uses the configured accounting mode');
  }
@@ -121,7 +121,7 @@ module.exports=async function({page,base,node,artifacts,catalog}){
   await page.setViewportSize({width,height:1000});
   await page.locator('.app-shell').evaluate((e,theme)=>{e.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);
   const summary=page.getByTestId('resource-summary');
-  assert.equal(await summary.locator('.ring').count(),6,'All six quota-enabled readings use rings');
+  assert.equal(await summary.locator('.resource-gauge').count(),6,'All six quota-enabled readings use rings');
   assert.ok(await summary.evaluate(e=>e.scrollWidth<=e.clientWidth+1),'The six-reading rectangle does not overflow');
   await summary.screenshot({path:path.join(artifacts,`summary-quota-${theme}-${width}.png`)});
  }

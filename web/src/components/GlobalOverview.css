@@ -1,0 +1,32 @@
+.global-page-content { display: grid; gap: 24px; min-width: 0; }
+.global-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.global-heading h1 { margin: 0 0 8px; }
+.global-stats { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; margin: 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); }
+.global-stat { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; white-space: nowrap; }
+.global-stat dt { color: var(--text-secondary); font-size: 12px; }
+.global-stat dd { --text-3xl: 18px; margin: 0; }
+.global-layout { display: grid; grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: 24px; align-items: start; }
+.global-side { display: grid; gap: 16px; min-width: 0; }
+.global-orbit { position: relative; width: min(100%, 680px); aspect-ratio: 1; margin: auto; }
+.global-overview .global-globe-canvas { position: relative; inset: auto; width: 100%; max-width: none; }
+.global-globe-fallback { position: absolute; inset: 0; display: grid; align-items: center; padding: 24px; }
+.global-map-caption { display: inline-flex; align-items: center; gap: 8px; }
+.global-node-card h3 { width: 100%; }
+.global-node-title { display: grid; grid-template-columns: 28px minmax(0, 1fr) 28px; align-items: center; gap: 10px; width: 100%; }
+.global-node-title > span { overflow-wrap: anywhere; }
+.global-node-state { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-block: 20px; color: var(--text-muted); font-size: 12px; }
+.global-readings { display: grid; gap: 20px; }
+.global-missing { display: flex; justify-content: space-between; margin: 0; color: var(--text-muted); font-size: 13px; }
+.global-node-facts { display: grid; gap: 12px; margin: 24px 0 0; font-size: 13px; }
+.global-node-facts > div { display: flex; justify-content: space-between; gap: 12px; }
+.global-node-facts dt { color: var(--text-secondary); }
+.global-node-facts dd { margin: 0; text-align: end; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.global-unlocated { display: grid; gap: 8px; margin-top: 16px; }
+.global-unlocated button { overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 1000px) { .global-layout { grid-template-columns: minmax(0, 1fr); } .global-orbit { max-width: 600px; } }
+@media (max-width: 600px) { .global-heading { align-items: start; } .global-heading h1 { font-size: 26px; } .global-page-content { gap: 16px; } .global-layout { gap: 16px; } }
+/* Native COBE v2 anchors supply position; the existing camera score controls
+   front/back visibility (v2.0.1 emits a nonnumeric visibility token). */
+.global-marker-label { position: absolute; position-visibility: anchors-visible; bottom: anchor(top); left: anchor(center); z-index: 1; pointer-events: none; visibility: hidden; white-space: nowrap; }
+.global-marker-label[data-active] { z-index: 2; }
+@supports not (position-anchor: --cobe-marker) { .global-marker-label { display: none; } }

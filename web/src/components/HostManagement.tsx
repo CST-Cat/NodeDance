@@ -17,7 +17,22 @@ import ContractFields from "./ContractFields";
 import { Fragment } from "react";
 import { __call, __classes, __each, __input, useController } from "../state";
 import "./HostManagement.css";
-import UiSelect from "./UiSelect";
+import {
+  ManagementPage,
+  Button,
+  Input,
+  Textarea,
+  Checkbox,
+  Select,
+  Card,
+  Badge,
+  Alert,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  checkboxProps,
+  selectOptions,
+} from "./ManagementUI";
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
 export default function HostManagement(input: Props) {
   return useController(
@@ -313,7 +328,7 @@ export default function HostManagement(input: Props) {
       });
       return () => (
         <>
-          <section
+          <ManagementPage
             className={__classes("host-page workspace-page")}
             data-v-bd412aaa=""
           >
@@ -323,70 +338,79 @@ export default function HostManagement(input: Props) {
                 <p data-v-bd412aaa="">{t("host.subtitle")}</p>
               </div>
             </header>
-            <nav
-              aria-label={t("host.title") as any}
-              className={__classes("host-tabs")}
-              data-v-bd412aaa=""
+            <Tabs
+              className="management-tabs"
+              value={tab.value}
+              onValueChange={(value) => {
+                tab.value = value as typeof tab.value;
+              }}
             >
-              <Fragment>
-                {__each(hostTabs, (item) => (
-                  <button
-                    key={item as any}
-                    aria-pressed={tab.value === (item as any)}
-                    onClick={(event: any) => {
-                      tab.value = item;
-                    }}
-                    data-v-bd412aaa=""
-                  >
+              <TabsList aria-label={t("host.title")}>
+                {hostTabs.map((item) => (
+                  <TabsTrigger key={item} value={item}>
                     {t(`host.tab.${item}`)}
-                  </button>
+                  </TabsTrigger>
                 ))}
-              </Fragment>
-            </nav>
+              </TabsList>
+            </Tabs>
+
             {error.value ? (
-              <p
+              <Alert
                 role="alert"
                 className={__classes("host-error")}
                 data-v-bd412aaa=""
+                tone="danger"
+                title={t("management.error")}
               >
                 {error.value}
-              </p>
+              </Alert>
             ) : null}
             {notice.value ? (
-              <p role="status" data-v-bd412aaa="">
+              <Alert
+                role="status"
+                data-v-bd412aaa=""
+                tone="info"
+                title={t("management.notice")}
+              >
                 {notice.value}
-              </p>
+              </Alert>
             ) : null}
             {tab.value === "settings" || tab.value === "assets" ? (
-              <section className={__classes("host-card")} data-v-bd412aaa="">
+              <Card
+                className={__classes("host-card management-card")}
+                data-v-bd412aaa=""
+                title={t(`host.tab.${tab.value}`)}
+              >
                 <label className={__classes("host-node")} data-v-bd412aaa="">
                   {t("host.node")}
-                  <UiSelect
+                  <Select
                     disabled={busy.value as any}
-                    onChange={(event: any) => {
-                      __call(selectNode, event);
-                    }}
-                    modelValue={nodeId.value}
-                    onUpdateModelValue={(__nextValue: any) => {
+                    value={String(nodeId.value ?? "")}
+                    onValueChange={(next) => {
+                      const __nextValue: any =
+                        typeof nodeId.value === "number" ? Number(next) : next;
                       nodeId.value = __nextValue;
+                      __call(selectNode, undefined);
                     }}
-                    modelModifiers={{}}
                     data-v-bd412aaa=""
-                  >
-                    <Fragment>
-                      {__each(nodes.value, (node) => (
-                        <option
-                          key={node.nodeId as any}
-                          value={node.nodeId as any}
-                          data-v-bd412aaa=""
-                        >
-                          {node.displayName}
-                          {" · "}
-                          {node.status}
-                        </option>
-                      ))}
-                    </Fragment>
-                  </UiSelect>
+                    options={selectOptions(
+                      <>
+                        <Fragment>
+                          {__each(nodes.value, (node) => (
+                            <option
+                              key={node.nodeId as any}
+                              value={node.nodeId as any}
+                              data-v-bd412aaa=""
+                            >
+                              {node.displayName}
+                              {" · "}
+                              {node.status}
+                            </option>
+                          ))}
+                        </Fragment>
+                      </>,
+                    )}
+                  ></Select>
                 </label>
                 {nodeId.value ? (
                   <Fragment>
@@ -408,17 +432,18 @@ export default function HostManagement(input: Props) {
                           className={__classes("host-actions")}
                           data-v-bd412aaa=""
                         >
-                          <button
+                          <Button
                             disabled={
                               busy.value ||
                               (!Object.keys(settings).length as any)
                             }
                             className={__classes("primary-button")}
                             data-v-bd412aaa=""
+                            variant="primary"
                           >
                             {t("host.save")}
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             type="button"
                             disabled={busy.value as any}
                             onClick={(event: any) => {
@@ -435,9 +460,10 @@ export default function HostManagement(input: Props) {
                               });
                             }}
                             data-v-bd412aaa=""
+                            variant="secondary"
                           >
                             {t("host.diagnostics")}
-                          </button>
+                          </Button>
                         </div>
                         {diagnostics.value ? (
                           <pre data-v-bd412aaa="">{diagnostics.value}</pre>
@@ -457,30 +483,31 @@ export default function HostManagement(input: Props) {
                           values={asset as any}
                           data-v-bd412aaa=""
                         ></ContractFields>
-                        <button
+                        <Button
                           disabled={
                             busy.value || (!Object.keys(asset).length as any)
                           }
                           className={__classes("primary-button")}
                           data-v-bd412aaa=""
+                          variant="primary"
                         >
                           {t("host.save")}
-                        </button>
+                        </Button>
                       </form>
                     )}
                   </Fragment>
                 ) : (
                   <p data-v-bd412aaa="">{t("host.noNodes")}</p>
                 )}
-              </section>
+              </Card>
             ) : tab.value === "commands" || tab.value === "probes" ? (
               <Fragment>
                 <div className={__classes("host-grid")} data-v-bd412aaa="">
-                  <section
-                    className={__classes("host-card")}
+                  <Card
+                    className={__classes("host-card management-card")}
                     data-v-bd412aaa=""
+                    title={<>{t("host.nodes")}</>}
                   >
-                    <h2 data-v-bd412aaa="">{t("host.nodes")}</h2>
                     <p data-v-bd412aaa="">{t("host.selectionHint")}</p>
                     <Fragment>
                       {__each(nodes.value, (node) => (
@@ -489,81 +516,86 @@ export default function HostManagement(input: Props) {
                           className={__classes("host-check")}
                           data-v-bd412aaa=""
                         >
-                          <input
-                            type="checkbox"
+                          <Checkbox
                             value={node.nodeId as any}
-                            {...__input(
+                            {...checkboxProps(
                               selected.value,
                               (__nextValue: any) => {
                                 selected.value = __nextValue;
                               },
-                              "checkbox",
                               node.nodeId,
-                              [],
                             )}
                             data-v-bd412aaa=""
-                          ></input>
+                          ></Checkbox>
                           {node.displayName}
                           {" · "}
                           {node.status}
                         </label>
                       ))}
                     </Fragment>
-                  </section>
-                  <form
-                    className={__classes("host-card")}
-                    onSubmit={(event: any) => {
-                      event.preventDefault();
-                      tab.value === "commands"
-                        ? submitCommand()
-                        : submitProbe();
-                    }}
-                    data-v-bd412aaa=""
+                  </Card>
+                  <Card
+                    title={<>{t(`host.tab.${tab.value}`)}</>}
+                    className="host-card management-card"
                   >
-                    <h2 data-v-bd412aaa="">{t(`host.tab.${tab.value}`)}</h2>
-                    <p data-v-bd412aaa="">
-                      {tab.value === "commands"
-                        ? t("host.commandHint")
-                        : t("host.probeHint")}
-                    </p>
-                    <ContractFields
-                      schema={
-                        schema(
-                          tab.value === "commands"
-                            ? "commands.batch"
-                            : "probes.batch",
-                        ) as any
-                      }
-                      values={
-                        tab.value === "commands" ? command : (probe as any)
-                      }
-                      omit={
+                    <form
+                      className={__classes("")}
+                      onSubmit={(event: any) => {
+                        event.preventDefault();
                         tab.value === "commands"
-                          ? ["nodeIds"]
-                          : ([
-                              "nodeIds",
-                              ...(["http", "https"].includes(String(probe.kind))
-                                ? []
-                                : ["expectedHttpStatus"]),
-                            ] as any)
-                      }
-                      data-v-bd412aaa=""
-                    ></ContractFields>
-                    <button
-                      disabled={busy.value || (!selected.value.length as any)}
-                      className={__classes("primary-button")}
+                          ? submitCommand()
+                          : submitProbe();
+                      }}
                       data-v-bd412aaa=""
                     >
-                      {t("host.submit")}
-                      {" · "}
-                      {selected.value.length}
-                    </button>
-                  </form>
+                      <p data-v-bd412aaa="">
+                        {tab.value === "commands"
+                          ? t("host.commandHint")
+                          : t("host.probeHint")}
+                      </p>
+                      <ContractFields
+                        schema={
+                          schema(
+                            tab.value === "commands"
+                              ? "commands.batch"
+                              : "probes.batch",
+                          ) as any
+                        }
+                        values={
+                          tab.value === "commands" ? command : (probe as any)
+                        }
+                        omit={
+                          tab.value === "commands"
+                            ? ["nodeIds"]
+                            : ([
+                                "nodeIds",
+                                ...(["http", "https"].includes(
+                                  String(probe.kind),
+                                )
+                                  ? []
+                                  : ["expectedHttpStatus"]),
+                              ] as any)
+                        }
+                        data-v-bd412aaa=""
+                      ></ContractFields>
+                      <Button
+                        disabled={busy.value || (!selected.value.length as any)}
+                        className={__classes("primary-button")}
+                        data-v-bd412aaa=""
+                        variant="primary"
+                      >
+                        {t("host.submit")}
+                        {" · "}
+                        {selected.value.length}
+                      </Button>
+                    </form>
+                  </Card>
                 </div>
                 {currentBatch.value ? (
-                  <section
-                    className={__classes("host-card")}
+                  <Card
+                    className={__classes("host-card management-card")}
                     data-v-bd412aaa=""
+                    title={t(`host.tab.${tab.value}`)}
                   >
                     <div
                       className={__classes("host-actions")}
@@ -571,26 +603,28 @@ export default function HostManagement(input: Props) {
                     >
                       <h2 data-v-bd412aaa="">{t("host.results")}</h2>
                       {currentBatch.value!.results.some((r) => r.jobId) ? (
-                        <button
+                        <Button
                           disabled={busy.value as any}
                           onClick={(event: any) => {
                             inspectBatch(currentBatch.value!.id);
                           }}
                           data-v-bd412aaa=""
+                          variant="secondary"
                         >
                           {t("host.refresh")}
-                        </button>
+                        </Button>
                       ) : null}
                       {currentBatch.value!.results.some((r) => r.jobId) ? (
-                        <button
+                        <Button
                           disabled={busy.value as any}
                           onClick={(event: any) => {
                             inspectBatch(currentBatch.value!.id, true);
                           }}
                           data-v-bd412aaa=""
+                          variant="secondary"
                         >
                           {t("host.cancel")}
-                        </button>
+                        </Button>
                       ) : null}
                     </div>
                     <Fragment>
@@ -640,73 +674,83 @@ export default function HostManagement(input: Props) {
                         </article>
                       ))}
                     </Fragment>
-                  </section>
+                  </Card>
                 ) : null}
                 {tab.value === "commands" ? (
-                  <section
-                    className={__classes("host-card")}
+                  <Card
+                    className={__classes("host-card management-card")}
                     data-v-bd412aaa=""
+                    title={<>{t("host.history")}</>}
                   >
-                    <h2 data-v-bd412aaa="">{t("host.history")}</h2>
                     <Fragment>
                       {__each(batches.value, (batch) => (
-                        <button
+                        <Button
                           key={batch.id as any}
                           disabled={busy.value as any}
                           onClick={(event: any) => {
                             inspectBatch(batch.id);
                           }}
                           data-v-bd412aaa=""
+                          variant="secondary"
                         >
                           {batch.id.slice(0, 12)}
                           {" · "}
                           {batch.results.length}
-                        </button>
+                        </Button>
                       ))}
                     </Fragment>
-                  </section>
+                  </Card>
                 ) : null}
               </Fragment>
             ) : (
               <Fragment>
-                <form
-                  className={__classes("host-card")}
-                  onSubmit={(event: any) => {
-                    event.preventDefault();
-                    __call(createGrant, event);
-                  }}
-                  data-v-bd412aaa=""
+                <Card
+                  title={<>{t("host.tab.enrollment")}</>}
+                  className="host-card management-card"
                 >
-                  <h2 data-v-bd412aaa="">{t("host.tab.enrollment")}</h2>
-                  <p data-v-bd412aaa="">{t("host.enrollmentHint")}</p>
-                  <ContractFields
-                    schema={schema("agents.create-grant") as any}
-                    values={grant as any}
-                    data-v-bd412aaa=""
-                  ></ContractFields>
-                  <button
-                    disabled={busy.value as any}
-                    className={__classes("primary-button")}
+                  <form
+                    className={__classes("")}
+                    onSubmit={(event: any) => {
+                      event.preventDefault();
+                      __call(createGrant, event);
+                    }}
                     data-v-bd412aaa=""
                   >
-                    {t("host.submit")}
-                  </button>
-                  {grantResult.value ? (
-                    <section data-v-bd412aaa="">
-                      <p data-v-bd412aaa="">{t("host.secretHint")}</p>
-                      <pre data-v-bd412aaa="">
-                        {grantResult.value.grant.token}
-                      </pre>
-                      <pre data-v-bd412aaa="">
-                        {grantResult.value.installCommand}
-                      </pre>
-                      <pre data-v-bd412aaa="">
-                        {grantResult.value.dockerInstallCommand}
-                      </pre>
-                    </section>
-                  ) : null}
-                </form>
-                <section className={__classes("host-card")} data-v-bd412aaa="">
+                    <p data-v-bd412aaa="">{t("host.enrollmentHint")}</p>
+                    <ContractFields
+                      schema={schema("agents.create-grant") as any}
+                      values={grant as any}
+                      data-v-bd412aaa=""
+                    ></ContractFields>
+                    <Button
+                      disabled={busy.value as any}
+                      className={__classes("primary-button")}
+                      data-v-bd412aaa=""
+                      variant="primary"
+                    >
+                      {t("host.submit")}
+                    </Button>
+                    {grantResult.value ? (
+                      <section data-v-bd412aaa="">
+                        <p data-v-bd412aaa="">{t("host.secretHint")}</p>
+                        <pre data-v-bd412aaa="">
+                          {grantResult.value.grant.token}
+                        </pre>
+                        <pre data-v-bd412aaa="">
+                          {grantResult.value.installCommand}
+                        </pre>
+                        <pre data-v-bd412aaa="">
+                          {grantResult.value.dockerInstallCommand}
+                        </pre>
+                      </section>
+                    ) : null}
+                  </form>
+                </Card>
+                <Card
+                  className={__classes("host-card management-card")}
+                  data-v-bd412aaa=""
+                  title={t(`host.tab.${tab.value}`)}
+                >
                   <Fragment>
                     {__each(grantList.value, (g) => (
                       <article
@@ -722,22 +766,23 @@ export default function HostManagement(input: Props) {
                           {" · "}
                           {beijingTime(g.expiresAt) + " · " + t("time.beijing")}
                         </p>
-                        <button
+                        <Button
                           disabled={busy.value || (g.revoked as any)}
                           onClick={(event: any) => {
                             revokeGrant(g.id);
                           }}
                           data-v-bd412aaa=""
+                          variant="secondary"
                         >
                           {t("host.revoke")}
-                        </button>
+                        </Button>
                       </article>
                     ))}
                   </Fragment>
-                </section>
+                </Card>
               </Fragment>
             )}
-          </section>
+          </ManagementPage>
         </>
       );
     },

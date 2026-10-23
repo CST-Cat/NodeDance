@@ -16,8 +16,8 @@ module.exports=async function({page,base,artifacts}){
  h(Loading,{loading:props.loading,ready:props.ready}),h('div',{'data-testid':'retained'},'existing content'),
  h(Progress,props),h(Path,{value:'/very/long/目录/'+ 'long-name-'.repeat(12)+'.tar.gz'}))));
  window.feedback({status:'queued',loading:true,ready:false});`)
- const {build}=await import('vite'),react=(await import('@vitejs/plugin-react')).default
- await build({configFile:false,root:path.join(root,'web'),plugins:[react()],logLevel:'error',define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{lib:{entry,formats:['es'],fileName:()=> 'fixture.js'},outDir:path.join(out,'dist'),emptyOutDir:true}})
+ const {build}=await import('vite'),react=(await import('@vitejs/plugin-react')).default,tailwindcss=(await import('@tailwindcss/vite')).default
+ await build({configFile:false,root:path.join(root,'web'),plugins:[react(),tailwindcss()],resolve:{alias:{'@':path.join(root,'web/src')}},logLevel:'error',define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{lib:{entry,formats:['es'],fileName:()=> 'fixture.js'},outDir:path.join(out,'dist'),emptyOutDir:true}})
  const dist=path.join(out,'dist'),css=fs.readdirSync(dist).filter(n=>n.endsWith('.css')).map(n=>`<link rel="stylesheet" href="/feedback-fixture/${n}">`).join('')
  await page.route('**/feedback-fixture/**',route=>{const name=new URL(route.request().url()).pathname.split('/').pop();return name==='index.html'?route.fulfill({contentType:'text/html',body:`${css}<div id="fixture"></div><script type="module" src="/feedback-fixture/fixture.js"></script>`}):route.fulfill({path:path.join(dist,name)})})
  await page.goto(base+'/feedback-fixture/index.html');await page.locator('.ui-task-progress').waitFor()

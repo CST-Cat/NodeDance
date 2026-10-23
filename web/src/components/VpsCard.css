@@ -42,10 +42,15 @@
 }
 .vps-card-heading[data-v-31185faa] {
   grid-column: 1 / -1;
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--product-logo-size) minmax(0, 1fr) var(--product-logo-size);
   min-width: 0;
   align-items: center;
-  gap: 9px;
+  gap: 0 9px;
+}
+.vps-service-icon[data-v-31185faa] {
+  grid-column: 3;
+  grid-row: 1;
 }
 .vps-card-heading > div[data-v-31185faa] {
   min-width: 0;
@@ -59,8 +64,8 @@
 }
 .vps-node-icon[data-v-31185faa] {
   display: grid;
-  width: 34px;
-  height: 34px;
+  width: var(--product-logo-size);
+  height: var(--product-logo-size);
   flex: 0 0 auto;
   place-items: center;
   color: var(--accent);
@@ -68,32 +73,19 @@
   border: 0;
   background: transparent;
 }
-.vps-node-icon > svg {
+.vps-node-icon > :is(svg,img) {
   display: block;
-  width: 28px;
-  height: 28px;
+  width: var(--product-logo-size);
+  height: var(--product-logo-size);
 }
 .vps-card-version[data-v-31185faa] {
-  margin: 0 0 0 auto;
-  padding-left: 12px;
+  grid-column: 2;
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.5;
-  text-align: right;
+  text-align: left;
   overflow-wrap: anywhere;
-}
-@container vps-card (max-width: 620px) {
-  .vps-card-heading[data-v-31185faa] {
-    display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
-    gap: 0 9px;
-  }
-  .vps-card-version[data-v-31185faa] {
-    grid-column: 2;
-    margin: 0;
-    padding-left: 0;
-    text-align: left;
-  }
 }
 .vps-card-note[data-v-31185faa] {
   margin: -5px 0 6px;
@@ -151,12 +143,11 @@
 }
 .vps-card-container-icon[data-v-31185faa] {
   display: grid;
-  width: 24px;
-  height: 24px;
+  width: var(--product-logo-size);
+  height: var(--product-logo-size);
   place-items: center;
-  border-radius: var(--radius-card);
   color: var(--accent);
-  background: var(--line);
+  background: transparent;
   font-size: 12px;
 }
 .vps-card-container-copy[data-v-31185faa] {
@@ -294,3 +285,6 @@
   }
 }
 
+
+.vps-node-icon { display: grid; width: var(--product-logo-size); height: var(--product-logo-size); flex: none; place-items: center; }
+.vps-card-container-icon > svg { width: var(--product-logo-size); height: var(--product-logo-size); }

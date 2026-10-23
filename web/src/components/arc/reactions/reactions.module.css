@@ -1,0 +1,48 @@
+.root { position: relative; min-width: 0; }
+.bar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) 6px; }
+
+/* Compact pills: an icon and a tabular count. The viewer's own reactions take the accent and a filled glyph, so the state never rests on colour alone. */
+.pill, .add { position: relative; display: inline-flex; height: 32px; flex: none; align-items: center; margin: 0; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface); color: var(--text-secondary); font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: background-color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard); }
+.pill { gap: 6px; padding: 0 11px 0 9px; font-size: var(--text-sm); font-weight: 500; line-height: 1; letter-spacing: var(--tracking-body); font-variant-numeric: tabular-nums; }
+.pill[aria-pressed="true"] { border-color: color-mix(in oklab, var(--accent) 45%, var(--border)); background: var(--accent-subtle); color: var(--accent-strong); }
+.pill[aria-pressed="true"] .icon svg { fill: color-mix(in oklab, currentColor 22%, transparent); }
+.add { justify-content: center; width: 38px; padding: 0; color: var(--text-muted); }
+.add[data-state="open"] { border-color: var(--border-strong); background: var(--surface-muted); color: var(--foreground); }
+.pill:active { background: var(--surface-muted); }
+.pill[aria-pressed="true"]:active { background: color-mix(in oklab, var(--accent) 18%, var(--surface)); }
+.add:active { background: var(--surface-muted); color: var(--foreground); }
+@media (hover: hover) and (pointer: fine) {
+  .pill:hover, .add:hover { border-color: var(--border-strong); background: var(--surface-muted); color: var(--foreground); }
+  .pill[aria-pressed="true"]:hover { border-color: color-mix(in oklab, var(--accent) 65%, var(--border)); background: color-mix(in oklab, var(--accent) 17%, var(--surface)); color: var(--accent-strong); }
+  .pill:hover .tip, .add:hover .tip { opacity: 1; transform: translate(-50%, 0); transition-delay: .45s; }
+  .pill:hover, .add:hover { z-index: 2; }
+}
+.pill:focus-visible, .add:focus-visible { z-index: 2; }
+.pill:focus-visible .tip { opacity: 1; transform: translate(-50%, 0); transition-delay: .2s; }
+
+.icon, .addIcon { display: grid; width: 16px; height: 16px; flex: none; place-items: center; }
+.addGlyph { display: grid; grid-area: 1 / 1; place-items: center; }
+/* The count window hugs its digits and springs when a digit is added; digits leaving pop out of flow so the width follows at once. */
+.count { display: inline-flex; min-width: 0; }
+.digits { position: relative; display: inline-flex; width: max-content; }
+.digit { display: inline-block; }
+
+/* The label appears after a short hover or on keyboard focus. It floats, so it earns a quiet shadow. */
+.tip { position: absolute; bottom: calc(100% + 8px); left: 50%; z-index: 1; padding: 5px 9px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--surface-raised); box-shadow: var(--shadow-raised); color: var(--foreground); font-size: var(--text-xs); font-weight: 400; line-height: 1.2; letter-spacing: var(--tracking-body); white-space: nowrap; pointer-events: none; opacity: 0; transform: translate(-50%, 3px); transition: opacity var(--duration-instant) var(--ease-standard), transform var(--duration-fast) var(--ease-standard); }
+
+/* The picker grows out of the add button: Radix places the transform origin on the button's centre. */
+.picker { z-index: 60; display: grid; gap: 2px; padding: 5px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface-raised); box-shadow: var(--shadow-floating); color: var(--foreground); font-family: var(--font-body); letter-spacing: var(--tracking-body); transform-origin: var(--radix-popover-content-transform-origin); outline: none; }
+.picker[data-state="closed"] { pointer-events: none; }
+.arrow { visibility: hidden; }
+.options { position: relative; isolation: isolate; display: flex; gap: 2px; }
+.highlight { position: absolute; top: 0; left: 0; z-index: -1; width: 40px; height: 40px; border-radius: var(--radius-pill); background: var(--surface-muted); }
+.option { position: relative; display: grid; width: 40px; height: 40px; flex: none; place-items: center; padding: 0; border: 0; border-radius: var(--radius-pill); background: transparent; color: var(--text-secondary); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
+/* Chosen options carry a ring as well as the tint, so they never read as the hover highlight. */
+.option[aria-pressed="true"] { background: var(--accent-subtle); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent); color: var(--accent-strong); }
+.option[aria-pressed="true"] svg { fill: color-mix(in oklab, currentColor 22%, transparent); }
+@media (hover: hover) and (pointer: fine) { .option:hover { color: var(--foreground); } .option[aria-pressed="true"]:hover { color: var(--accent-strong); } }
+.optionIcon { display: grid; place-items: center; }
+.caption { position: relative; display: flex; height: 22px; align-items: center; justify-content: center; color: var(--text-secondary); font-size: var(--text-xs); line-height: 1; }
+.captionText { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .pill, .add, .option, .tip { transition: none; } }

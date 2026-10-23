@@ -1,0 +1,19 @@
+.list { display: grid; gap: 8px; width: 100%; margin: 0; padding: 0; list-style: none; }
+.row { position: relative; display: flex; min-width: 0; align-items: center; gap: 12px; min-height: 56px; border: 1px solid var(--border); border-radius: var(--radius-control); padding: 7px 16px 7px 7px; background: var(--surface); box-shadow: var(--shadow-resting); color: var(--foreground); user-select: none; }
+/* The lifted shadow lives on its own layer and fades in, so the row never repaints a growing shadow while it moves. */
+.row::after { position: absolute; inset: -1px; border-radius: inherit; box-shadow: var(--shadow-floating); content: ""; opacity: 0; pointer-events: none; transition: opacity var(--duration-standard) var(--ease-standard); }
+/* Reorder.Item writes z-index inline while dragging; a keyboard lift needs the same stacking. */
+.row[data-lifted] { z-index: 1 !important; }
+.row[data-lifted]::after { opacity: 1; transition-duration: var(--duration-fast); }
+/* A 40px handle in a 56px row sits 7px from the top, bottom and left edges, so its corner follows the row's. */
+.handle { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 0; border-radius: calc(var(--radius-control) - 7px); background: var(--surface-muted); color: var(--text-muted); cursor: grab; touch-action: none; transition: color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
+.row[data-lifted] .handle { background: var(--border); color: var(--foreground); cursor: grabbing; }
+.handle:active { cursor: grabbing; }
+.copy { display: grid; min-width: 0; gap: 2px; }
+.copy strong { overflow: hidden; font-size: var(--text-sm); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.copy small { overflow: hidden; color: var(--text-muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
+.position { position: relative; display: grid; margin-left: auto; color: var(--text-muted); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.digits { display: block; grid-area: 1 / 1; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media (hover: hover) and (pointer: fine) { .handle:hover { color: var(--foreground); } }
+@media (prefers-reduced-motion: reduce) { .row::after, .handle { transition: none; } }
