@@ -582,22 +582,10 @@ func (m *Manager) run(job Job, release Release) {
 	m.finish(&job)
 }
 func copyBinary(source, destination string) error {
-	raw, err := os.ReadFile(source)
-	if err != nil {
-		return err
-	}
-	return atomicFile(destination, raw, 0700)
+	return atomicCopy(source, destination, 0700)
 }
 func installBinary(source, destination string) error {
-	info, err := os.Lstat(destination)
-	if err != nil || !info.Mode().IsRegular() {
-		return errors.New("managed binary is not a regular file")
-	}
-	raw, err := os.ReadFile(source)
-	if err != nil {
-		return err
-	}
-	return atomicFile(destination, raw, 0755)
+	return atomicCopy(source, destination, 0755)
 }
 func (m *Manager) stop(ctx context.Context, job Job) error {
 	target := m.Config.Targets[job.Component]

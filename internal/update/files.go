@@ -30,6 +30,23 @@ func privateDirectory(path string) error {
 	return nil
 }
 func atomicFile(path string, raw []byte, mode fs.FileMode) error {
+	return atomicWrite(path, mode, func(writer io.Writer) error {
+		_, err := writer.Write(raw)
+		return err
+	})
+}
+func atomicCopy(source, path string, mode fs.FileMode) error {
+	return atomicWrite(path, mode, func(writer io.Writer) error {
+		input, err := os.Open(source)
+		if err != nil {
+			return err
+		}
+		defer input.Close()
+		_, err = io.Copy(writer, input)
+		return err
+	})
+}
+func atomicWrite(path string, mode fs.FileMode, write func(io.Writer) error) error {
 	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
 		return errors.New("refusing non-regular update file")
 	}
@@ -42,7 +59,7 @@ func atomicFile(path string, raw []byte, mode fs.FileMode) error {
 		file.Close()
 		return err
 	}
-	if _, err = file.Write(raw); err == nil {
+	if err = write(file); err == nil {
 		err = file.Sync()
 	}
 	if closeErr := file.Close(); err == nil {

@@ -6,6 +6,14 @@
 
 ### 简体中文
 
+## [0.1.29]
+
+### English
+
+- Copy and install release binaries through bounded streams so updates fit on low-memory (64 MB) Agents without whole-file heap copies.
+### 简体中文
+
+- 发布备份与安装改为限量流复制，避免把完整二进制读入堆内存，使更新可用于 64 MB 等低内存 Agent。
 ## [0.1.28]
 
 ### English

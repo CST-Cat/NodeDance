@@ -6,6 +6,14 @@
 
 ### 简体中文
 
+## [0.1.53]
+
+### English
+
+- Pair the Core release with Agent 0.1.29, which streams binary backups and installation for low-memory update targets.
+### 简体中文
+
+- Core 发布配套 Agent 0.1.29；Agent 以流式备份和安装二进制，支持低内存机器更新。
 ## [0.1.52]
 
 ### English
