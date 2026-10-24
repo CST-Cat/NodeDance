@@ -11,9 +11,10 @@ module.exports=async function({page,base,artifacts}){
     await page.route('**/api/v1/updates/status?*',route=>route.fulfill({json:{jobs:updateSubmissions?[updateJob]:[]}}))
     await page.route('**/api/v1/updates/apply',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,version:'core-v0.1.14'});updateSubmissions++;return route.fulfill({json:updateJob})})
     await page.route('**/api/v1/updates/rollback',route=>{assert.deepEqual(route.request().postDataJSON(),{component:'core',confirm:true,jobId:'audit-update'});rollbacks++;return route.fulfill({json:updateJob})})
-    await page.getByRole('button',{name:'Updates',exact:true}).click()
+    await page.getByRole('button',{name:'Update center',exact:true}).click()
     const center=page.locator('.preferences-page')
     await center.locator('.update-target-actions .update-submit').waitFor()
+    const watchExits=()=>{window.__obscuredUpdateExits=[];window.__watchUpdateExits=true;const sample=()=>{if(!window.__watchUpdateExits)return;const exiting=document.querySelector('.update-record-slot[inert]');if(exiting&&document.querySelector('[class*="_overlay_"]'))window.__obscuredUpdateExits.push(performance.now());requestAnimationFrame(sample)};requestAnimationFrame(sample)};await page.addInitScript(watchExits);await page.evaluate(watchExits);
     assert.equal(await center.getByRole('checkbox').count(),0,'Ordinary update must have no extra confirmation')
     assert.equal(checkRequests,0,'Opening updates does not run a runtime eligibility preflight');
     let releaseUpdateCheck;holdUpdateCheck=new Promise(resolve=>releaseUpdateCheck=resolve);const checkStarted=new Promise(resolve=>updateCheckStarted=resolve);
@@ -28,8 +29,8 @@ module.exports=async function({page,base,artifacts}){
 
     assert.equal(updateSubmissions,1)
     assert.ok(await center.getByRole('heading',{name:'Update history',exact:true}).isVisible());assert.equal(await center.locator('[aria-expanded]').filter({hasText:'Update history'}).count(),0);
-    await center.locator('.update-job .settings-record-status[data-status=succeeded]').waitFor();
-    assert.equal(await center.locator('.update-job progress').count(),0,'Stage-only updates do not fabricate percentages');assert.equal(await center.locator('.update-job').getByText('complete',{exact:true}).count(),0,'Completion does not repeat the finished badge');
+    await center.locator('.update-job').waitFor();assert.equal(await center.locator('.update-job .settings-record-status').count(),0,'Completed backups have no status pill');
+    assert.equal(await center.locator('.update-job progress').count(),0,'Stage-only updates do not fabricate percentages');assert.equal(await center.locator('.update-job').getByText('complete',{exact:true}).count(),0,'Completed backups do not repeat the internal stage');
     await center.locator('.update-job').getByRole('button',{name:'Rollback',exact:true}).click()
     const rollbackTrigger=center.locator('.update-job').getByRole('button',{name:'Rollback',exact:true});
     const rollbackDialog=page.getByRole('dialog',{name:'Rollback',exact:true});await rollbackDialog.waitFor();assert.equal(rollbacks,0,'Opening rollback must not submit');
@@ -55,6 +56,7 @@ module.exports=async function({page,base,artifacts}){
     await backupButton.click();await backupDialog.waitFor();response=page.waitForResponse(r=>r.url().endsWith('/updates/delete-backup'));await backupDialog.getByRole('button',{name:'Delete backup',exact:true}).click();assert.equal((await response).status(),200);await backupDialog.waitFor({state:'hidden'});await center.locator('.update-job').waitFor({state:'detached'});await center.locator('.update-history').waitFor({state:'detached'});assert.equal(await center.locator('.update-history').count(),0,'No empty history section remains after cleanup');assert.equal(backupDeletes,1);assert.equal(await center.locator('.update-job button').count(),0,'A deleted backup cannot be offered for rollback');
     await center.locator('.update-changelog').getByText('Published agent changelog fixture',{exact:true}).waitFor();assert.equal(await center.locator('.update-changelog [aria-expanded],.update-history [aria-expanded]').count(),0,'Release notes and history are expanded independent sections');assert.ok((await center.locator('.update-component-control').boundingBox()).width<=160,'Component picker stays compact');
 
+    assert.deepEqual(await page.evaluate(()=>window.__obscuredUpdateExits),[],'Fast deletion response must wait for the confirmation overlay to close');
     for(const [theme,width] of [['light',1440],['dark',390]]){
       await page.setViewportSize({width,height:1000})
       await page.locator('.app-shell').evaluate((element,theme)=>{element.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
@@ -67,19 +69,21 @@ module.exports=async function({page,base,artifacts}){
  for(const mode of ['no-preference','reduce']){
    await page.emulateMedia({reducedMotion:mode,colorScheme:'light'});updateJob.backupDeleted=false;
    const historyLoaded=page.waitForResponse(r=>r.url().includes('/updates/status?'));await page.reload();await historyLoaded;const record=center.locator('.update-job');await record.waitFor();
-   await record.getByRole('button',{name:'Delete backup',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Delete backup',exact:true});await dialog.waitFor();
+   await record.getByRole('button',{name:'Delete backup',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Delete backup',exact:true});await dialog.waitFor();assert.equal(await page.locator('[class*="_overlay_"]').count(),1,'Confirmation overlay is present before confirmation');
    if(mode==='no-preference'){
      failDeletion=true;const failed=page.waitForResponse(r=>r.url().endsWith('/updates/delete-backup'));await dialog.getByRole('button',{name:'Delete backup',exact:true}).click();assert.equal((await failed).status(),503);await dialog.getByRole('alert').waitFor();assert.ok(await record.isVisible(),'A failed deletion retains its record');assert.equal(await record.locator('..').getAttribute('aria-hidden'),null);
    }
-   let releaseDeletion;deletionGate=new Promise(resolve=>releaseDeletion=resolve);const started=new Promise(resolve=>deletionStarted=resolve);await dialog.getByRole('button',{name:'Delete backup',exact:true}).click();await started;await page.waitForTimeout(200);
+   let releaseDeletion;deletionGate=new Promise(resolve=>releaseDeletion=resolve);const started=new Promise(resolve=>deletionStarted=resolve);await dialog.getByRole('button',{name:'Delete backup',exact:true}).click();await started;await dialog.waitFor({state:'detached'});assert.equal(await page.locator('[class*="_overlay_"]').count(),0,'Confirmation overlay closes while deletion is pending');assert.ok(await record.isVisible(),'Pending deletion retains the record');
    const before=await record.evaluate(el=>({x:new DOMMatrixReadOnly(getComputedStyle(el).transform).m41,opacity:getComputedStyle(el).opacity,height:el.parentElement.getBoundingClientRect().height}));assert.equal(before.x,0);assert.equal(before.opacity,'1');
    await page.evaluate(()=>{window.__updateExitFrames=[];window.__updateExitSampling=true;const sample=()=>{if(!window.__updateExitSampling)return;const row=document.querySelector('.update-job');if(row){const css=getComputedStyle(row);window.__updateExitFrames.push({x:new DOMMatrixReadOnly(css.transform).m41,opacity:Number(css.opacity),height:row.parentElement.getBoundingClientRect().height,inert:row.parentElement.inert})}requestAnimationFrame(sample)};requestAnimationFrame(sample)});
    releaseDeletion();deletionGate=undefined;deletionStarted=undefined;
    await record.waitFor({state:'detached'});await center.locator('.update-history').waitFor({state:'detached'});
    const frames=await page.evaluate(()=>{window.__updateExitSampling=false;return window.__updateExitFrames});
    if(mode==='no-preference'){assert.ok(frames.some(frame=>frame.x>1&&frame.opacity>0&&frame.opacity<1),JSON.stringify(frames));assert.ok(frames.some(frame=>frame.height>0&&frame.height<before.height-1),'The removed row closes its gap');assert.ok(frames.filter(frame=>frame.x>1).every(frame=>frame.inert),'An exiting record cannot be activated again')}else{assert.ok(frames.every(frame=>Math.abs(frame.x)<1),'Reduced motion avoids horizontal movement')}
+   assert.deepEqual(await page.evaluate(()=>window.__obscuredUpdateExits),[],'No confirmation overlay covers the deletion animation');
    const reloaded=page.waitForResponse(r=>r.url().includes('/updates/status?'));await page.reload();await reloaded;await center.locator('.update-target-actions').waitFor();assert.equal(await center.locator('.update-job,.update-history').count(),0,'Cleaned records stay absent after reload');
  }
+ await page.evaluate(()=>{window.__watchUpdateExits=false});
  console.log("update-center-regressions passed.");
  return {get updateSubmissions(){return updateSubmissions},get rollbacks(){return rollbacks}};
 };

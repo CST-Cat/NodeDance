@@ -30,11 +30,8 @@ module.exports=async function({page,base,artifacts,catalog}){
  await page.goto(base+'/#/settings');const check=page.locator('.guest-settings').getByRole('checkbox').first();await check.waitFor()
  const previous=await check.isChecked();await check.focus();await page.keyboard.press('Space');assert.equal(await check.isChecked(),!previous)
  assert.equal(await check.getAttribute('data-state'),previous?'unchecked':'checked');await check.click();assert.equal(await check.isChecked(),previous)
- // Keep coverage for native controls still used outside these five screens.
- await page.goto(base+'/#/alerts');await page.locator('.alert-tabs').getByRole('button',{name:'Alert rules',exact:true}).click();const native=page.locator('.alerts-page input[type=checkbox]').first();await native.waitFor()
- assert.equal(await native.evaluate(el=>getComputedStyle(el).appearance),'none')
- await native.evaluate(el=>el.indeterminate=true);assert.ok(await native.evaluate(el=>el.matches(':indeterminate')))
- await native.click();assert.ok(!(await native.evaluate(el=>el.indeterminate)))
+ await page.goto(base+'/#/alerts');await page.locator('.alert-tabs').getByRole('tab',{name:'Alert rules',exact:true}).click();const alertCheck=page.locator('.alerts-page button[role=checkbox]').first();await alertCheck.waitFor();
+ const alertWasChecked=await alertCheck.isChecked();await alertCheck.focus();await page.keyboard.press('Space');assert.equal(await alertCheck.isChecked(),!alertWasChecked);await alertCheck.click();assert.equal(await alertCheck.isChecked(),alertWasChecked);
  await page.goto(base+'/#/settings');await check.waitFor()
  for(const [theme,width] of [['light',1440],['dark',375]]){
   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)

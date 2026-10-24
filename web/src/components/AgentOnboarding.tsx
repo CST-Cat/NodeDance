@@ -1,3 +1,4 @@
+import { ExpandedTextarea } from "./ExpandedTextarea";
 import { SettingsGroup } from "./SettingsGroup";
 import { t, display } from "../i18n";
 import { useController } from "../state";
@@ -10,7 +11,6 @@ import {
   ManagementPage,
   Button,
   Input,
-  Textarea,
   Checkbox,
   Alert,
   Select,
@@ -227,7 +227,8 @@ export default function AgentOnboarding(props: Props) {
                               value={draft.deploymentMethod}
                               onValueChange={(value) => {
                                 draft.deploymentMethod = value as
-                                  "native" | "docker";
+                                  | "native"
+                                  | "docker";
                               }}
                               options={[
                                 {
@@ -313,7 +314,7 @@ export default function AgentOnboarding(props: Props) {
                                 <label htmlFor="agentonboarding-field-4">
                                   {t("m.2637e8166d92")}
                                 </label>
-                                <Textarea
+                                <ExpandedTextarea
                                   id="agentonboarding-field-4"
                                   rows={5}
                                   autoComplete="off"
@@ -611,7 +612,8 @@ export default function AgentOnboarding(props: Props) {
                         onValueChange={(value) => {
                           network.resolutionConfirmed.value = false;
                           network.resolutionOutcome.value = value as
-                            "succeeded" | "failed";
+                            | "succeeded"
+                            | "failed";
                           network.resolutionObservedState.value =
                             value === "succeeded"
                               ? "connected"

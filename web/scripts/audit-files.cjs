@@ -1,3 +1,4 @@
+const {fillExpanded}=require('./expanded-textarea.cjs')
 const {setBrowserLanguage}=require('./browser-language.cjs')
 // Isolated real Core + root Agent + Chromium. Only disposable file fixtures
 // are modified. No systemd installation, host commands or Docker mutations.
@@ -236,7 +237,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   for(const theme of ['light','dark'])for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(200);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));}
   const composeList=operation('compose.list').path.replace('{nodeId}',node);let composeSubmission
   await page.route('**'+composeList,route=>{if(route.request().method()==='POST'){composeSubmission=route.request().postDataJSON();return route.fulfill({status:503,body:'Isolated deployment interception'})};return route.fulfill({json:{projects:[],dataStale:false,serverTime:new Date().toISOString()}})})
-  await page.setViewportSize({width:1440,height:1000});await page.goto(base+`/#/nodes?node=${node}&section=compose`);await page.getByTestId('compose-toolbar').getByRole('button',{name:'New project',exact:true}).click();const form=page.getByTestId('compose-create-form');await form.locator('input').first().fill('directory-fixture');await form.locator('textarea').fill('services: {} # preserved draft');await page.getByTestId('compose-directory-open').click()
+  await page.setViewportSize({width:1440,height:1000});await page.goto(base+`/#/nodes?node=${node}&section=compose`);await page.getByTestId('compose-toolbar').getByRole('button',{name:'New project',exact:true}).click();const form=page.getByTestId('compose-create-form');await form.locator('input').first().fill('directory-fixture');await fillExpanded(form.locator('[data-expanded-textarea-trigger]'),'services: {} # preserved draft');await page.getByTestId('compose-directory-open').click()
   const picker=page.getByTestId('compose-directory-picker'),originalURL=page.url();await picker.locator('.elfinder-cwd-filename').filter({hasText:'many'}).first().waitFor();assert.equal(await picker.locator('.elfinder-cwd-filename').filter({hasText:'hello.txt'}).count(),0)
   const pickerToolbar=name=>picker.locator('.elfinder-button').filter({has:page.locator('.elfinder-button-icon-'+name)})
   for(const name of ['mkfile','upload','rm','rename','edit','archive','extract'])assert.equal(await pickerToolbar(name).count(),0)

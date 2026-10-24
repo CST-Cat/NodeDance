@@ -1,3 +1,4 @@
+const {fillExpanded}=require('./expanded-textarea.cjs')
 const {closeNavigation,selectNodeSection}=require('./sidebar-navigation.cjs')
 // Real browser presentation regressions against the isolated interface Core.
 // Compose responses are protocol fixtures; no remote mutation is executed.
@@ -23,7 +24,7 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  await page.locator('.theme-options button').first().focus();await page.keyboard.press('End');assert.equal(await page.locator('.theme-options').getByRole('button',{name:'Light',exact:true}).evaluate(el=>el===document.activeElement),true);await page.keyboard.press('ArrowLeft');assert.equal(await page.locator('.theme-options').getByRole('button',{name:'Dark',exact:true}).evaluate(el=>el===document.activeElement),true);assert.equal(await page.locator('.theme-options button[data-value=dark]').getAttribute('aria-pressed'),'true','Arrow navigation selects the focused theme')
  await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark')
  const profileOperation=catalog.operations.find(o=>o.name==='appearance.update');assert.ok(profileOperation);const saved=page.waitForResponse(r=>new URL(r.url()).pathname===profileOperation.path&&r.request().method()===profileOperation.method)
- await page.locator('.profile-form button[type=submit]').click();assert.equal((await saved).status(),200)
+ await page.locator('.profile-settings .profile-form button[type=submit]').click();assert.equal((await saved).status(),200)
  await page.reload();await page.waitForFunction(()=>document.documentElement.dataset.theme==='dark')
  await layouts('settings')
 
@@ -39,12 +40,12 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  const openEditor=async i=>{const clear=page.locator('.compose-selection-bar').getByRole('button',{name:'Clear selection',exact:true});if(await clear.isEnabled())await clear.click();await page.locator('.compose-project-card').nth(i).locator('input[type=checkbox]').check();await page.getByTestId('compose-toolbar').locator('[data-action=edit]').click()}
  const editor=page.locator('.compose-editor')
  await openEditor(0);await page.waitForFunction(()=>document.querySelector('.compose-editor textarea')?.value==='services: {} # first')
- await editor.locator('textarea').fill('draft of first project')
+ await fillExpanded(editor.locator('[data-expanded-textarea-trigger]'),'draft of first project')
  await openEditor(1);await page.waitForFunction(()=>document.querySelector('.compose-editor textarea')?.value==='services: {} # second')
  assert.equal(await editor.locator('textarea').inputValue(),'services: {} # second','Switching projects must not retain another project draft/base version')
  const preview=editor.getByRole('button',{name:'Review changes',exact:true})
  const draft='services: {} # changed\n# <img src=x onerror=alert(1)>'
- await editor.locator('textarea').fill(draft)
+ await fillExpanded(editor.locator('[data-expanded-textarea-trigger]'),draft)
  const previewWrites=[];const observe=request=>{if(!['GET','HEAD'].includes(request.method()))previewWrites.push(request.url())};page.on('request',observe)
  await preview.click();const diff=page.locator('.config-diff-dialog[open]');await diff.waitFor()
  assert.equal(await diff.locator('img').count(),0,'Configuration is escaped, never rendered as HTML')
@@ -74,7 +75,7 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
 
  await page.getByTestId('compose-toolbar').getByRole('button',{name:'New project',exact:true}).click()
  const create=page.locator('.compose-create-form')
- await create.locator('input').first().fill('retry-fixture');await create.locator('input').nth(1).fill('/retry-fixture');await create.locator('textarea').fill('services: {}')
+ await create.locator('input').first().fill('retry-fixture');await create.locator('input').nth(1).fill('/retry-fixture');await fillExpanded(create.locator('[data-expanded-textarea-trigger]'),'services: {}')
  for(let attempt=0;attempt<2;attempt++){
   await create.getByRole('button',{name:'Create and deploy',exact:true}).click()
   const reply=page.waitForResponse(r=>r.url().endsWith('/compose/projects')&&r.request().method()==='POST')

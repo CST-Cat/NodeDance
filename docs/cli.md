@@ -66,6 +66,16 @@ Network discovery uses `nodedance discovery peers` or the TUI's discovered `disc
 | Discovery | Existing Tailscale peers, SSH host key, deployment submit/list/status/manual resolution |
 | Appearance | Display settings, avatar/background upload/download |
 
+## Node alert thresholds
+
+Built-in CPU, memory and disk rules use 90% sustained for 300 seconds. Each rule belongs to one node. In Web, filter the Alert center rules by node and open the existing rule’s edit dialog to change its threshold, duration, cooldown, channels or enabled state. NAT nodes can use their own values without changing other nodes. Creating a second rule does not replace the original one.
+
+CLI and TUI discover the same `rules.list` and `rules.update` operations. Supply the rule ID as the path parameter and its current `revision` in the update body. A successful edit resolves the old active alert and restarts evaluation with the new duration; stale revisions are rejected. After a conflict, refresh, reopen the current rule and retry. Cancelling Web editing submits nothing.
+
+内置 CPU、内存和磁盘规则默认连续超过 90% 达到 300 秒才触发。Web 告警中心可按节点筛选并在弹窗中编辑现有规则，单独调整阈值、持续时间、冷却时间、通知渠道或启用状态；NAT 节点的设置不会影响其他节点。新增另一条规则不会覆盖旧规则。
+
+CLI、TUI 通过相同的 `rules.list`、`rules.update` 操作管理规则。更新请求的路径携带规则 ID，请求体携带当前 `revision`。保存成功会关闭原活动告警并重新计时；修订冲突时保留草稿，刷新并重新打开规则后再提交。取消编辑不发出修改请求。
+
 ## Tasks and files
 
 Supply a stable `--idempotency-key` for task operations. Reuse it for a retry of the exact same intent; a new key means a new intent. The client never silently generates a new key or retries mutations.
@@ -261,3 +271,11 @@ Shared enrollment grants validate their prefix/use/lifetime input once in the Ag
 `nodes.history` accepts `nodeId`, RFC3339 `from`/`to`, and `resolution` (`5s`, `minute`, `hour`). Its JSON output is the same data shown in the node history screen; terminal output can be redirected to a file. Web adds paginated sample details and CSV/JSON exports of the complete currently loaded response, including all metrics and pages. Exports preserve timestamps, sample counts, averages, minima and maxima; missing samples remain absent.
 
 个人设置的“监控数据”可选择最长保存时间，默认 365 天。缩短后立即清理超期采样，延长不会恢复已清理的数据；秒级、分钟级和事件录像继续遵循各自更短的保留上限。节点历史页可查看分页明细，并导出当前查询的全部指标为 CSV 或 JSON。CLI／TUI 通过相同的 Core 操作设置时长、读取历史；不接触 Agent 凭据或 Core 数据库。
+
+Notification channels / 通知渠道
+
+`channels.options` publishes the available Webhook providers. `channels.create` and `channels.update` share the same request schema across Web, CLI and TUI. Transport `kind` remains `webhook` or `smtp`; Webhook `config.provider` selects generic (empty), `telegram`, `bark`, `dingtalk`, `feishu` or `wecom`. Telegram uses `config.chatId` and an encrypted bot token in `secret`; Bark uses an encrypted device key with optional HTTPS server origin in `config.webhookUrl`. DingTalk, Feishu/Lark and WeCom store their complete robot Webhook URL in encrypted `secret`; optional `signingSecret` enables DingTalk/Feishu signing. SMTP requires STARTTLS or implicit TLS and paired username/password when authentication is configured.
+
+通用 Webhook 可配置 `config.method`（POST／PUT／PATCH）、加密的 `headers` 和 `config.bodyTemplate`（JSON）。正文模板仅替换 JSON 字符串中的通知变量，自动转义；留空发送原始通知。`secret` 是可选 Bearer token，不能和自定义 Authorization 同时使用。编辑时省略密码、签名和请求头保留原值；`headers: {}` 清空请求头，`signingSecret: ""` 清空签名；切换传输或平台不沿用旧凭据。渠道列表仅返回凭据是否存在，不返回值。
+
+Saving validates and stores configuration without contacting the provider. `channels.test` queues an actual send; delivery history records transport and provider acknowledgement failures with bounded retries. All HTTP sends reject redirects. Alerts, subscriptions and certificate reminders use the same provider sender. No real provider account is contacted by the regression fixtures.

@@ -1,3 +1,4 @@
+import { ExpandedTextarea } from "./ExpandedTextarea";
 import { api, type DashboardPreference, type NodeLocation } from "../api";
 import { display, locale, t } from "../i18n";
 import {
@@ -10,7 +11,6 @@ import {
 import {
   ManagementPage,
   Input,
-  Textarea,
   Checkbox,
   Select,
   Button,
@@ -47,17 +47,20 @@ export default function PreferenceEditor(input: Props) {
         { immediate: true },
       );
       const iconValues = cell<string[]>([]);
- const countryValues = cell<string[]>([]);
- const positionSchema = cell<any>({});
+      const countryValues = cell<string[]>([]);
+      const positionSchema = cell<any>({});
       afterMount(async () => {
         try {
           const { operation } = await resolveOperation(
             "nodes.save-preference",
             { params: { nodeId: props.preference.nodeId } },
           );
-          positionSchema.value = operation.bodySchema?.properties?.location?.properties ?? {};
- countryValues.value = (operation.bodySchema?.properties?.countryCode?.enum ?? []).map(String);
- iconValues.value = (
+          positionSchema.value =
+            operation.bodySchema?.properties?.location?.properties ?? {};
+          countryValues.value = (
+            operation.bodySchema?.properties?.countryCode?.enum ?? []
+          ).map(String);
+          iconValues.value = (
             operation.bodySchema?.properties?.icon?.enum ?? []
           ).map(String);
         } catch (reason) {
@@ -97,8 +100,8 @@ export default function PreferenceEditor(input: Props) {
           const next = {
             ...form,
             countryCode: form.countryCode ?? "",
- location: form.location ?? null,
- alias: form.alias.trim(),
+            location: form.location ?? null,
+            alias: form.alias.trim(),
             notes: form.notes.trim(),
             serviceUrl: form.serviceUrl.trim(),
             sshHost: form.sshHost.trim(),
@@ -157,7 +160,7 @@ export default function PreferenceEditor(input: Props) {
               }))}
             />
             <div className="preference-wide">
-              <Textarea
+              <ExpandedTextarea
                 label={t("m.daede9881787")}
                 rows={2}
                 placeholder={t("m.9ad5244a4b67")}
@@ -172,14 +175,46 @@ export default function PreferenceEditor(input: Props) {
                 <Select
                   label={t("preferences.country")}
                   value={form.countryCode ?? ""}
-                  onValueChange={(value) => { form.countryCode = value; form.location = null; }}
-                  options={countryValues.value.map((value) => ({
-                    value,
-                    label: value ? (new Intl.DisplayNames([locale.value], {type: "region"}).of(value) ?? value) : t("preferences.countryAuto"),
-                    icon: <CountryLogo country={value ? {status: "known", code: value} : undefined} />,
-                  })).sort((a,b) => !a.value ? -1 : !b.value ? 1 : a.label.localeCompare(b.label, locale.value))}
+                  onValueChange={(value) => {
+                    form.countryCode = value;
+                    form.location = null;
+                  }}
+                  options={countryValues.value
+                    .map((value) => ({
+                      value,
+                      label: value
+                        ? (new Intl.DisplayNames([locale.value], {
+                            type: "region",
+                          }).of(value) ?? value)
+                        : t("preferences.countryAuto"),
+                      icon: (
+                        <CountryLogo
+                          country={
+                            value ? { status: "known", code: value } : undefined
+                          }
+                        />
+                      ),
+                    }))
+                    .sort((a, b) =>
+                      !a.value
+                        ? -1
+                        : !b.value
+                          ? 1
+                          : a.label.localeCompare(b.label, locale.value),
+                    )}
                 />
-                <LocationPicker resolved={props.location} countryCode={form.countryCode ?? ""} countries={countryValues.value} schema={positionSchema.value} value={form.location ?? null} onChange={(point) => { form.location = point; if (point) form.countryCode = point.countryCode; else form.countryCode = ""; }} />
+                <LocationPicker
+                  resolved={props.location}
+                  countryCode={form.countryCode ?? ""}
+                  countries={countryValues.value}
+                  schema={positionSchema.value}
+                  value={form.location ?? null}
+                  onChange={(point) => {
+                    form.location = point;
+                    if (point) form.countryCode = point.countryCode;
+                    else form.countryCode = "";
+                  }}
+                />
                 <Input
                   label={t("m.889b28078e5d")}
                   value={form.group}

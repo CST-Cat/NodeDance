@@ -402,6 +402,7 @@ func buildOperations() []Operation {
 		op("rules.update", "PUT", "/api/v1/alerts/rules/{id}", "Update rule with current revision", schema(alerts.RuleInput{})),
 		op("rules.delete", "DELETE", "/api/v1/alerts/rules/{id}", "Delete rule with current revision", fields("revision:integer")),
 		op("rules.defaults", "POST", "/api/v1/alerts/rules/defaults", "Create default rules for node", fields("nodeId:string")),
+		op("channels.options", "GET", "/api/v1/alerts/channels/options", "Notification providers and configuration fields", nil),
 		op("channels.list", "GET", "/api/v1/alerts/channels", "Notification channels; secrets are masked", nil),
 		op("channels.create", "POST", "/api/v1/alerts/channels", "Create webhook or TLS SMTP channel", schema(alerts.ChannelInput{})),
 		op("channels.update", "PUT", "/api/v1/alerts/channels/{id}", "Update notification channel with revision", schema(alerts.ChannelInput{})),

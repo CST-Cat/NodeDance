@@ -149,6 +149,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   assert.equal(await accountTrigger.evaluate(el=>document.activeElement===el),true,'Escape restores account trigger focus')
   await accountTrigger.click();await accountPanel.getByRole('menuitem',{name:'Settings',exact:true}).click()
   await adminPage.locator('.settings-sections').waitFor();assert.equal(await adminPage.locator('.settings-sidebar').count(),0)
+  current=await require('./guest-metric-selector.cjs')({page:adminPage,admin,base})
   await adminPage.goto(base);await card.waitFor()
 
   const viewerCreated=await admin.request.post(base+'/api/v1/accounts',{headers,data:{username:'guest-audit-reader',displayName:'Read-only audit',role:'viewer',password:'isolated-reader-password'}});assert.equal(viewerCreated.status(),201)

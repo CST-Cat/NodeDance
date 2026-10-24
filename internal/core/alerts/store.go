@@ -272,6 +272,7 @@ func closeActiveRule(ctx context.Context, tx *sql.Tx, ruleID string, now time.Ti
 }
 
 func (s *Store) SaveChannel(ctx context.Context, channelID string, in ChannelInput) (Channel, error) {
+	in.Config.WebhookURL = strings.TrimSpace(in.Config.WebhookURL)
 	if err := ValidateChannel(in); err != nil {
 		return Channel{}, err
 	}
@@ -289,20 +290,32 @@ func (s *Store) SaveChannel(ctx context.Context, channelID string, in ChannelInp
 		return Channel{}, err
 	}
 	defer tx.Rollback()
+	credentials := channelCredentials{}
 	if channelID == "" {
 		channelID = id()
 		_, err = tx.ExecContext(ctx, `INSERT INTO alert_channels(id,name,kind,config_json,secret_ciphertext,enabled,revision,created_at,updated_at) VALUES(?,?,?,?,?,?,1,?,?)`, channelID, strings.TrimSpace(in.Name), in.Kind, string(configJSON), nilIfEmpty(sealed), boolInt(in.Enabled), now, now)
 	} else {
 		var existing []byte
 		var rev int64
-		var oldKind string
-		if err := tx.QueryRowContext(ctx, `SELECT secret_ciphertext,revision,kind FROM alert_channels WHERE id=? AND deleted_at IS NULL`, channelID).Scan(&existing, &rev, &oldKind); err != nil {
+		var oldKind, oldJSON string
+		if err := tx.QueryRowContext(ctx, `SELECT secret_ciphertext,revision,kind,config_json FROM alert_channels WHERE id=? AND deleted_at IS NULL`, channelID).Scan(&existing, &rev, &oldKind, &oldJSON); err != nil {
 			return Channel{}, err
 		}
 		if in.Revision != rev {
 			return Channel{}, errors.New("notification channel changed; reload before saving")
 		}
-		if in.Secret == "" && oldKind == in.Kind {
+		var oldConfig ChannelConfig
+		if err := json.Unmarshal([]byte(oldJSON), &oldConfig); err != nil {
+			return Channel{}, err
+		}
+		if oldKind == in.Kind && oldConfig.Provider == in.Config.Provider {
+			var err error
+			credentials, err = s.channelCredentials(ctx, tx, channelID)
+			if err != nil {
+				return Channel{}, err
+			}
+		}
+		if in.Secret == "" && oldKind == in.Kind && oldConfig.Provider == in.Config.Provider {
 			sealed = existing
 		} else if in.Secret == "" {
 			sealed = nil
@@ -310,6 +323,34 @@ func (s *Store) SaveChannel(ctx context.Context, channelID string, in ChannelInp
 		_, err = tx.ExecContext(ctx, `UPDATE alert_channels SET name=?,kind=?,config_json=?,secret_ciphertext=?,enabled=?,revision=revision+1,updated_at=? WHERE id=? AND revision=?`, strings.TrimSpace(in.Name), in.Kind, string(configJSON), nilIfEmpty(sealed), boolInt(in.Enabled), now, channelID, in.Revision)
 	}
 	if err != nil {
+		return Channel{}, err
+	}
+	if in.Headers != nil {
+		credentials.Headers = in.Headers
+	}
+	if in.SigningSecret != nil {
+		credentials.SigningSecret = *in.SigningSecret
+	}
+	effectiveSecret, err := s.open(sealed)
+	if err != nil {
+		return Channel{}, err
+	}
+	if in.Kind == ChannelWebhook {
+		if err := validateProviderSecret(in.Config, effectiveSecret, credentials); err != nil {
+			return Channel{}, err
+		}
+	} else {
+		credentials = channelCredentials{}
+	}
+	rawCredentials, err := json.Marshal(credentials)
+	if err != nil {
+		return Channel{}, err
+	}
+	encryptedCredentials, err := s.seal(string(rawCredentials))
+	if err != nil {
+		return Channel{}, err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO alert_channel_credentials(channel_id,ciphertext) VALUES(?,?) ON CONFLICT(channel_id) DO UPDATE SET ciphertext=excluded.ciphertext`, channelID, encryptedCredentials); err != nil {
 		return Channel{}, err
 	}
 	if in.Kind == ChannelSMTP {
@@ -339,10 +380,10 @@ func (s *Store) GetChannel(ctx context.Context, channelID string) (Channel, erro
 	return rows[0], nil
 }
 func (s *Store) ListChannels(ctx context.Context, onlyID string) ([]Channel, error) {
-	query := `SELECT id,name,kind,config_json,secret_ciphertext,enabled,revision,created_at,updated_at FROM alert_channels WHERE deleted_at IS NULL ORDER BY name,id`
+	query := `SELECT id,name,kind,config_json,secret_ciphertext,enabled,revision,created_at,updated_at, (SELECT ciphertext FROM alert_channel_credentials WHERE channel_id=alert_channels.id) FROM alert_channels WHERE deleted_at IS NULL ORDER BY name,id`
 	args := []any{}
 	if onlyID != "" {
-		query = `SELECT id,name,kind,config_json,secret_ciphertext,enabled,revision,created_at,updated_at FROM alert_channels WHERE id=? AND deleted_at IS NULL`
+		query = `SELECT id,name,kind,config_json,secret_ciphertext,enabled,revision,created_at,updated_at, (SELECT ciphertext FROM alert_channel_credentials WHERE channel_id=alert_channels.id) FROM alert_channels WHERE id=? AND deleted_at IS NULL`
 		args = append(args, onlyID)
 	}
 	rows, err := s.db.QueryContext(ctx, query, args...)
@@ -354,10 +395,10 @@ func (s *Store) ListChannels(ctx context.Context, onlyID string) ([]Channel, err
 	for rows.Next() {
 		var c Channel
 		var raw string
-		var secret []byte
+		var secret, extra []byte
 		var enabled int
 		var created, updated int64
-		if err := rows.Scan(&c.ID, &c.Name, &c.Kind, &raw, &secret, &enabled, &c.Revision, &created, &updated); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Kind, &raw, &secret, &enabled, &c.Revision, &created, &updated, &extra); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(raw), &c.Config); err != nil {
@@ -365,6 +406,18 @@ func (s *Store) ListChannels(ctx context.Context, onlyID string) ([]Channel, err
 		}
 		c.Enabled = enabled == 1
 		c.HasSecret = len(secret) > 0
+		if len(extra) > 0 {
+			raw, e := s.open(extra)
+			if e != nil {
+				return nil, e
+			}
+			var credentials channelCredentials
+			if e = json.Unmarshal([]byte(raw), &credentials); e != nil {
+				return nil, e
+			}
+			c.HasHeaders = len(credentials.Headers) > 0
+			c.HasSigningSecret = credentials.SigningSecret != ""
+		}
 		c.CreatedAt = time.Unix(0, created).UTC().Format(time.RFC3339)
 		c.UpdatedAt = time.Unix(0, updated).UTC().Format(time.RFC3339)
 		out = append(out, c)
@@ -1140,6 +1193,10 @@ func (s *Store) ClaimDelivery(ctx context.Context, now time.Time) (Delivery, Cha
 		}
 		return d, c, "", false, nil
 	}
+	c.credentials, e = s.channelCredentials(ctx, tx, c.ID)
+	if e != nil {
+		return failClaim("notification channel credentials cannot be decrypted")
+	}
 	secret, e := s.open(sealed)
 	if e != nil {
 		// A changed/lost key must not leave this delivery in a permanent queued
@@ -1235,10 +1292,45 @@ func (s *Store) NotificationChannel(ctx context.Context, id string) (Channel, st
 	if !c.Enabled {
 		return c, "", errors.New("notification channel is disabled")
 	}
+	tx, e := s.db.BeginTx(ctx, nil)
+	if e != nil {
+		return c, "", e
+	}
+	defer tx.Rollback()
 	var sealed []byte
-	if e = s.db.QueryRowContext(ctx, `SELECT secret_ciphertext FROM alert_channels WHERE id=? AND revision=? AND enabled=1 AND deleted_at IS NULL`, id, c.Revision).Scan(&sealed); e != nil {
+	if e = tx.QueryRowContext(ctx, `SELECT secret_ciphertext FROM alert_channels WHERE id=? AND revision=? AND enabled=1 AND deleted_at IS NULL`, id, c.Revision).Scan(&sealed); e != nil {
 		return c, "", e
 	}
 	secret, e := s.open(sealed)
+	if e != nil {
+		return c, "", e
+	}
+	c.credentials, e = s.channelCredentials(ctx, tx, id)
+	if e != nil {
+		return c, "", e
+	}
+	e = tx.Commit()
 	return c, secret, e
+}
+
+type channelQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func (s *Store) channelCredentials(ctx context.Context, q channelQuerier, id string) (channelCredentials, error) {
+	var sealed []byte
+	err := q.QueryRowContext(ctx, `SELECT ciphertext FROM alert_channel_credentials WHERE channel_id=?`, id).Scan(&sealed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return channelCredentials{}, nil
+	}
+	if err != nil {
+		return channelCredentials{}, err
+	}
+	raw, err := s.open(sealed)
+	if err != nil {
+		return channelCredentials{}, err
+	}
+	var credentials channelCredentials
+	err = json.Unmarshal([]byte(raw), &credentials)
+	return credentials, err
 }

@@ -1,3 +1,4 @@
+import { ExpandedTextarea } from "./ExpandedTextarea";
 import { ManagementPage } from "./ManagementUI";
 import "./PersonalSettings.css";
 import { operationRequest } from "../api";
@@ -9,14 +10,7 @@ import {
   watchState,
   useController,
 } from "../state";
-import {
-  Button,
-  Input,
-  Textarea,
-  Checkbox,
-  Select,
-  Alert,
-} from "./ManagementUI";
+import { Button, Input, Checkbox, Select, Alert } from "./ManagementUI";
 import { Accordion } from "./arc/accordion/accordion";
 import { SettingsGroup, SettingsRows } from "./SettingsGroup";
 export default function FeedsCenter() {
@@ -95,7 +89,9 @@ export default function FeedsCenter() {
         epoch = 0,
         timer: ReturnType<typeof setTimeout> | undefined;
       let itemRequest: AbortController | undefined;
-      let deliveryRequest: {id: string; controller: AbortController} | undefined;
+      let deliveryRequest:
+        | { id: string; controller: AbortController }
+        | undefined;
       const statusKeys: Record<string, string> = {
         queued: "feeds.queued",
         running: "feeds.running",
@@ -168,14 +164,21 @@ export default function FeedsCenter() {
         if (deliveryRequest?.id === id) return;
         deliveryRequest?.controller.abort();
         const controller = new AbortController();
-        deliveryRequest = {id, controller};
+        deliveryRequest = { id, controller };
         try {
-          const result = await operationRequest<{deliveries: Delivery[]}>("feeds.deliveries", {params: {id}}, {signal: controller.signal});
-          if (!stopped && !controller.signal.aborted && selected.value === id) deliveries.value = result.deliveries;
+          const result = await operationRequest<{ deliveries: Delivery[] }>(
+            "feeds.deliveries",
+            { params: { id } },
+            { signal: controller.signal },
+          );
+          if (!stopped && !controller.signal.aborted && selected.value === id)
+            deliveries.value = result.deliveries;
         } catch (e) {
-          if (!stopped && !controller.signal.aborted && selected.value === id) error.value = message(e);
+          if (!stopped && !controller.signal.aborted && selected.value === id)
+            error.value = message(e);
         } finally {
-          if (deliveryRequest?.controller === controller) deliveryRequest = undefined;
+          if (deliveryRequest?.controller === controller)
+            deliveryRequest = undefined;
         }
       }
       async function page(withDeliveries = true) {
@@ -188,8 +191,10 @@ export default function FeedsCenter() {
         if (withDeliveries) void loadDeliveries(id);
         try {
           const entries = await operationRequest<{
-              items: Item[];
-            }>("feeds.items", {
+            items: Item[];
+          }>(
+            "feeds.items",
+            {
               params: {
                 id,
               },
@@ -199,11 +204,20 @@ export default function FeedsCenter() {
                 search: search.value,
                 unread: String(unread.value),
               },
-            }, {signal: controller.signal});
-          if (stopped || controller.signal.aborted || current !== epoch || id !== selected.value) return;
+            },
+            { signal: controller.signal },
+          );
+          if (
+            stopped ||
+            controller.signal.aborted ||
+            current !== epoch ||
+            id !== selected.value
+          )
+            return;
           items.value = entries.items;
         } catch (e) {
-          if (current === epoch && !stopped && !controller.signal.aborted) error.value = message(e);
+          if (current === epoch && !stopped && !controller.signal.aborted)
+            error.value = message(e);
         } finally {
           if (itemRequest === controller) itemRequest = undefined;
         }
@@ -343,14 +357,23 @@ export default function FeedsCenter() {
         if (!busy.value) void page(value[0] !== previous[0]);
       });
       afterMount(() => {
-        void operationRequest<Options>("feeds.options").then(result => {
-          if (stopped) return;
-          options.value = result;
-          if (!editing.value && draft.value.intervalMinutes === 30) draft.value.intervalMinutes = result.defaultIntervalMinutes;
-        }).catch(e => {if (!stopped) error.value = message(e);});
-        void operationRequest<{channels: Channel[]}>("channels.list").then(result => {
-          if (!stopped) channels.value = result.channels;
-        }).catch(e => {if (!stopped) error.value = message(e);});
+        void operationRequest<Options>("feeds.options")
+          .then((result) => {
+            if (stopped) return;
+            options.value = result;
+            if (!editing.value && draft.value.intervalMinutes === 30)
+              draft.value.intervalMinutes = result.defaultIntervalMinutes;
+          })
+          .catch((e) => {
+            if (!stopped) error.value = message(e);
+          });
+        void operationRequest<{ channels: Channel[] }>("channels.list")
+          .then((result) => {
+            if (!stopped) channels.value = result.channels;
+          })
+          .catch((e) => {
+            if (!stopped) error.value = message(e);
+          });
         void poll();
       });
       beforeDispose(() => {
@@ -480,7 +503,7 @@ export default function FeedsCenter() {
                   </label>
                   <label className="parameter-row">
                     <span>{t("feeds.keywords")}</span>
-                    <Textarea
+                    <ExpandedTextarea
                       name="feedKeywords"
                       rows={3}
                       value={keywordText.value}

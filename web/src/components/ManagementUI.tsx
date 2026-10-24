@@ -15,7 +15,7 @@ import {
 } from "@/components/arc/select/select";
 export { Button } from "@/components/arc/button/button";
 export { Input } from "@/components/arc/input/input";
-export { Textarea } from "@/components/arc/textarea/textarea";
+export { ExpandedTextarea as Textarea } from "./ExpandedTextarea";
 export { Checkbox } from "@/components/arc/checkbox/checkbox";
 export { Card } from "@/components/arc/card/card";
 export { Badge } from "@/components/arc/badge/badge";

@@ -22,6 +22,7 @@ import { motionTokens } from "./arc/lib/motion-tokens";
 import { Skeleton } from "./arc/skeleton/skeleton";
 import { Button, Input, Select, Badge, Alert } from "./ManagementUI";
 import { SettingsGroup } from "./SettingsGroup";
+import { Separator } from "./ui/separator";
 function releaseItems(notes: string) {
   const sections = notes.split(/^### (?:English|简体中文)\s*$/m);
   const text = sections[locale.value === "zh-CN" ? 2 : 1] ?? notes;
@@ -30,7 +31,13 @@ function releaseItems(notes: string) {
     .split(/\n(?=- )/)
     .map((item) => item.trim().replace(/^- /, ""));
 }
-function UpdateRecord({ children }: { children: ReactNode }) {
+function UpdateRecord({
+  children,
+  separated,
+}: {
+  children: ReactNode;
+  separated: boolean;
+}) {
   const present = useIsPresent();
   const reduced = useReducedMotion();
   return (
@@ -53,6 +60,7 @@ function UpdateRecord({ children }: { children: ReactNode }) {
             }
       }
     >
+      {separated ? <Separator className="bg-(--workspace-divider)" /> : null}
       <motion.article
         className="update-job settings-detail-list"
         initial={false}
@@ -199,6 +207,7 @@ export default function UpdateCenter() {
       }
       const deleteJob = cell("");
       const deleteError = cell("");
+      let deleteDialogClosed: (() => void) | undefined;
       async function deleteBackup() {
         if (busy.value || !deleteJob.value) return;
         const id = deleteJob.value,
@@ -206,6 +215,10 @@ export default function UpdateCenter() {
         if (timer) clearTimeout(timer);
         busy.value = true;
         deleteError.value = "";
+        const dialogClosed = new Promise<void>((resolve) => {
+          deleteDialogClosed = resolve;
+        });
+        deleteJob.value = "";
         try {
           const deleted = await operationRequest<Job>(
             "updates.delete-backup",
@@ -218,11 +231,15 @@ export default function UpdateCenter() {
               }),
             },
           );
+          await dialogClosed;
           if (stopped || current !== epoch) return;
-          deleteJob.value = "";
           jobs.value = jobs.value.map((job) => (job.id === id ? deleted : job));
         } catch (e) {
-          if (!stopped && current === epoch) deleteError.value = message(e);
+          await dialogClosed;
+          if (!stopped && current === epoch) {
+            deleteError.value = message(e);
+            deleteJob.value = id;
+          }
         } finally {
           if (!stopped && current === epoch) {
             busy.value = false;
@@ -534,41 +551,41 @@ export default function UpdateCenter() {
                           historyMounted.value = false;
                       }}
                     >
-                      {visibleJobs.value.map((job) => (
-                        <UpdateRecord key={job.id}>
+                      {visibleJobs.value.map((job, index) => (
+                        <UpdateRecord key={job.id} separated={index > 0}>
                           <strong>
                             {job.current} → {job.target}
                           </strong>
                           <span>
                             {new Date(job.started).toLocaleString()} · {job.id}
                           </span>
-                          <div
-                            className="settings-record-status"
-                            role="status"
-                            data-status={job.status}
-                          >
-                            <Badge
-                              tone={
-                                ["failed", "rollback_failed"].includes(
-                                  job.status,
-                                )
-                                  ? "danger"
-                                  : job.status === "succeeded"
-                                    ? "success"
-                                    : "neutral"
-                              }
+                          {job.status !== "succeeded" || !job.finished ? (
+                            <div
+                              className="settings-record-status"
+                              role="status"
+                              data-status={job.status}
                             >
-                              {t(`task.state.${job.status}`) ===
-                              `task.state.${job.status}`
-                                ? job.status
-                                : t(`task.state.${job.status}`)}
-                            </Badge>
-                            {!job.finished &&
-                            ["queued", "running"].includes(job.status) &&
-                            job.stage !== job.status ? (
-                              <span>{job.stage}</span>
-                            ) : null}
-                          </div>
+                              <Badge
+                                tone={
+                                  ["failed", "rollback_failed"].includes(
+                                    job.status,
+                                  )
+                                    ? "danger"
+                                    : "neutral"
+                                }
+                              >
+                                {t(`task.state.${job.status}`) ===
+                                `task.state.${job.status}`
+                                  ? job.status
+                                  : t(`task.state.${job.status}`)}
+                              </Badge>
+                              {!job.finished &&
+                              ["queued", "running"].includes(job.status) &&
+                              job.stage !== job.status ? (
+                                <span>{job.stage}</span>
+                              ) : null}
+                            </div>
+                          ) : null}
                           {job.error ? (
                             <Alert tone="danger" title={t("management.error")}>
                               {job.error}
@@ -651,6 +668,10 @@ export default function UpdateCenter() {
                                   className="update-confirm-dialog"
                                   title={t("updates.deleteBackup")}
                                   description={t("updates.deleteBackupConfirm")}
+                                  onCloseAutoFocus={() => {
+                                    deleteDialogClosed?.();
+                                    deleteDialogClosed = undefined;
+                                  }}
                                 >
                                   {deleteError.value ? (
                                     <Alert

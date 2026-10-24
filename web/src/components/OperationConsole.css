@@ -1,103 +1,33 @@
-.operation-console {
+.operation-console .operation-form,
+.operation-console .operation-form form,
+.operation-console .operation-control,
+.operation-console .operation-pending-row {
   display: grid;
-  gap: 24px;
-}
-.operation-console h1 {
-  margin: 0;
-}
-.operation-console > p {
-  margin: 0;
-}
-.operation-layout {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.75fr) minmax(0, 2fr);
-  gap: 24px;
-  align-items: start;
-}
-.operation-picker > div {
-  display: grid;
-  gap: 16px;
-}
-.operation-form {
-  display: grid;
-  gap: 20px;
-  margin-top: 16px;
   min-width: 0;
+  gap: var(--workspace-space-md);
 }
-.operation-form > p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
+.operation-console .operation-control {
+  gap: var(--workspace-space-xs);
+}
+.operation-console .operation-field > span {
+  padding-block: var(--workspace-space-sm);
   overflow-wrap: anywhere;
 }
-.operation-field-group {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  padding: 16px;
-  margin: 0;
+.operation-console .operation-field-group {
   min-width: 0;
 }
-.operation-field-group > legend {
-  padding: 0 6px;
-  color: var(--foreground);
-  font-size: 14px;
-}
-.operation-field-group > label {
-  min-width: 0;
-}
-.operation-field-group > label:has(textarea),
-.operation-field-group > .check-row {
-  grid-column: 1/-1;
-}
-.operation-form .check-row {
-  align-items: center;
-}
-.operation-form form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 12px;
-}
-.operation-form small {
-  font-size: 12px;
-  line-height: 1.6;
+.operation-console small,
+.operation-console .operation-form > code {
   color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
-.pending-observations {
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-panel);
+.operation-console .operation-output pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
 }
-.pending-observations > div {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 12px;
-}
-.error {
-  color: var(--danger);
-}
-@media (max-width: 900px) {
-  .operation-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-@media (max-width: 560px) {
-  .operation-field-group {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.operation-form > form:first-of-type {
-  display: grid;
-  gap: 20px;
-}
-.operation-form > form:first-of-type > button {
-  justify-self: start;
-}
-.operation-field-group label {
+.operation-console .operation-pending-row > span {
   overflow-wrap: anywhere;
 }

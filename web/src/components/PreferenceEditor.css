@@ -29,7 +29,6 @@
 .preference-wide {
   min-width: 0;
 }
-.preference-wide,
 .ssh-preference-note,
 .preference-actions {
   grid-column: 1/-1;

@@ -8,7 +8,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"math"
 	"net/mail"
-	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -121,6 +120,10 @@ type Event struct {
 }
 
 type ChannelConfig struct {
+	Provider         string `json:"provider,omitempty"`
+	ChatID           string `json:"chatId,omitempty"`
+	Method           string `json:"method,omitempty"`
+	BodyTemplate     string `json:"bodyTemplate,omitempty"`
 	WebhookURL       string `json:"webhookUrl,omitempty"`
 	MessageTemplate  string `json:"messageTemplate,omitempty"`
 	SMTPHost         string `json:"smtpHost,omitempty"`
@@ -132,24 +135,29 @@ type ChannelConfig struct {
 }
 
 type Channel struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	Kind      string        `json:"kind"`
-	Config    ChannelConfig `json:"config"`
-	Enabled   bool          `json:"enabled"`
-	HasSecret bool          `json:"hasSecret"`
-	Revision  int64         `json:"revision"`
-	CreatedAt string        `json:"createdAt"`
-	UpdatedAt string        `json:"updatedAt"`
+	ID               string        `json:"id"`
+	Name             string        `json:"name"`
+	Kind             string        `json:"kind"`
+	Config           ChannelConfig `json:"config"`
+	Enabled          bool          `json:"enabled"`
+	HasSecret        bool          `json:"hasSecret"`
+	HasHeaders       bool          `json:"hasHeaders"`
+	HasSigningSecret bool          `json:"hasSigningSecret"`
+	credentials      channelCredentials
+	Revision         int64  `json:"revision"`
+	CreatedAt        string `json:"createdAt"`
+	UpdatedAt        string `json:"updatedAt"`
 }
 
 type ChannelInput struct {
-	Name     string        `json:"name"`
-	Kind     string        `json:"kind"`
-	Config   ChannelConfig `json:"config"`
-	Secret   string        `json:"secret,omitempty"`
-	Enabled  bool          `json:"enabled"`
-	Revision int64         `json:"revision,omitempty"`
+	Name          string            `json:"name"`
+	Kind          string            `json:"kind"`
+	Config        ChannelConfig     `json:"config"`
+	Secret        string            `json:"secret,omitempty"`
+	Headers       map[string]string `json:"headers,omitempty"`
+	SigningSecret *string           `json:"signingSecret,omitempty"`
+	Enabled       bool              `json:"enabled"`
+	Revision      int64             `json:"revision,omitempty"`
 }
 
 type Window struct {
@@ -275,9 +283,8 @@ func ValidateChannel(input ChannelInput) error {
 	}
 	switch input.Kind {
 	case ChannelWebhook:
-		parsed, err := url.ParseRequestURI(strings.TrimSpace(input.Config.WebhookURL))
-		if err != nil || parsed.Host == "" || parsed.User != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") {
-			return errors.New("webhook URL must be an HTTP(S) URL without embedded credentials")
+		if err := validateWebhookConfig(input); err != nil {
+			return err
 		}
 		if input.Config.SMTPHost != "" || input.Config.SMTPPort != 0 || input.Config.SMTPFrom != "" || input.Config.SMTPTo != "" || input.Config.SMTPUsername != "" || input.Config.SMTPSecurityMode != "" {
 			return errors.New("webhook channel cannot contain SMTP settings")
@@ -298,7 +305,7 @@ func ValidateChannel(input ChannelInput) error {
 		if strings.ContainsAny(input.Config.SMTPUsername, "\r\n\x00") || len(input.Config.SMTPUsername) > 256 {
 			return errors.New("SMTP username is invalid")
 		}
-		if input.Config.WebhookURL != "" {
+		if input.Config.WebhookURL != "" || input.Config.Provider != "" || input.Config.ChatID != "" || input.Config.Method != "" || input.Config.BodyTemplate != "" || len(input.Headers) != 0 || input.SigningSecret != nil {
 			return errors.New("SMTP channel cannot contain webhook settings")
 		}
 	default:

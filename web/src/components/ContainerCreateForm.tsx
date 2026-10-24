@@ -1,3 +1,4 @@
+import { ExpandedTextarea } from "./ExpandedTextarea";
 import type {
   ContainerCreateMount,
   ContainerCreatePort,
@@ -213,7 +214,7 @@ export default function ContainerCreateForm(input: Props) {
                   data-v-3bc66e7f=""
                 >
                   {t("m.570674fea082")}
-                  <textarea
+                  <ExpandedTextarea
                     rows={3}
                     placeholder={t("m.42dca5a99d0f") as any}
                     {...__input(
@@ -226,7 +227,7 @@ export default function ContainerCreateForm(input: Props) {
                       [],
                     )}
                     data-v-3bc66e7f=""
-                  ></textarea>
+                  ></ExpandedTextarea>
                   <small data-v-3bc66e7f="">{t("m.47c94fbef3fe")}</small>
                 </label>
                 <label
@@ -234,7 +235,7 @@ export default function ContainerCreateForm(input: Props) {
                   data-v-3bc66e7f=""
                 >
                   {t("m.ae27b474ea4d")}
-                  <textarea
+                  <ExpandedTextarea
                     rows={3}
                     placeholder={t("m.555aa8a036b4") as any}
                     {...__input(
@@ -247,7 +248,7 @@ export default function ContainerCreateForm(input: Props) {
                       [],
                     )}
                     data-v-3bc66e7f=""
-                  ></textarea>
+                  ></ExpandedTextarea>
                 </label>
               </div>
               <fieldset

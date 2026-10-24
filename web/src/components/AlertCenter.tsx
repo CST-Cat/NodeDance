@@ -1,8 +1,10 @@
+import { ExpandedTextarea } from "./ExpandedTextarea";
 import {
   api,
   operationRequest,
   type AgentNode,
   type AlertChannel,
+  type ChannelProvider,
   type AlertDelivery,
   type AlertEvent,
   type AlertItem,
@@ -11,15 +13,41 @@ import {
 } from "../api";
 import { display, locale, t } from "../i18n";
 import { useViewTab } from "../navigation";
-import { afterMount, beforeDispose, cell, derived, observable, watchState } from "../state";
+import {
+  afterMount,
+  beforeDispose,
+  cell,
+  derived,
+  observable,
+  watchState,
+} from "../state";
 
-import { Fragment } from "react";
-import { __call, __classes, __each, __input, useController } from "../state";
+import { useController } from "../state";
+import { cloneElement, useRef, type ReactElement } from "react";
+import {
+  ManagementPage,
+  Input,
+  Select,
+  Checkbox,
+  Button,
+  Badge,
+  Alert,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+} from "./ManagementUI";
+import { Dialog, DialogContent } from "./arc/dialog/dialog";
+import { TabsContent } from "./arc/tabs/tabs";
+import { SettingsGroup } from "./SettingsGroup";
+import { EmptyState } from "./arc/empty-state/empty-state";
+import { Skeleton } from "./arc/skeleton/skeleton";
+import { SortableDataTable } from "./arc/sortable-data-table/sortable-data-table";
+import "./PersonalSettings.css";
 import "./AlertCenter.css";
-import UiSelect from "./UiSelect";
-import { Input } from "./ManagementUI";
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
 export default function AlertCenter(input: Props) {
+  const ruleDialogContainer = useRef<HTMLElement>(null);
+  const ruleEditTrigger = useRef<HTMLButtonElement>(null);
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
       type Tab =
@@ -46,20 +74,32 @@ export default function AlertCenter(input: Props) {
       const history = cell<AlertItem[]>([]);
       const rules = cell<AlertRule[]>([]);
       const channels = cell<AlertChannel[]>([]);
+      const channelProviders = cell<ChannelProvider[]>([]);
+      const selectedProvider = derived(() =>
+        channelProviders.value.find((p) => p.id === channelForm.provider),
+      );
       const windows = cell<AlertWindow[]>([]);
       const deliveries = cell<AlertDelivery[]>([]);
       const events = cell<AlertEvent[]>([]);
-      const selectedAlert = cell("");
+      const loadedTabs = cell<Partial<Record<Tab, boolean>>>({});
       const editingChannel = cell("");
+      const editingRule = cell<AlertRule>();
+      const ruleNodeFilter = cell("");
+      const visibleRules = derived(() =>
+        rules.value.filter(
+          (rule) =>
+            !ruleNodeFilter.value || rule.nodeId === ruleNodeFilter.value,
+        ),
+      );
       const ruleForm = observable({
         name: "",
         kind: "cpu" as AlertRule["kind"],
         nodeId: "",
         subjectId: "",
         severity: "warning" as AlertRule["severity"],
-        threshold: 90,
-        durationSeconds: 300,
-        cooldownSeconds: 300,
+        threshold: 90 as number | string,
+        durationSeconds: 300 as number | string,
+        cooldownSeconds: 300 as number | string,
         expectedState: "running",
         enabled: true,
         channelIds: [] as string[],
@@ -67,10 +107,18 @@ export default function AlertCenter(input: Props) {
       const channelForm = observable({
         name: "",
         kind: "webhook" as AlertChannel["kind"],
+        provider: "",
+        chatId: "",
+        method: "POST",
+        bodyTemplate: "",
+        headers: "",
+        signingSecret: "",
+        clearHeaders: false,
+        clearSigning: false,
         webhookUrl: "",
         messageTemplate: "",
         smtpHost: "",
-        smtpPort: 587,
+        smtpPort: 587 as number | string,
         smtpSecurityMode: "starttls" as
           | NonNullable<AlertChannel["config"]["smtpSecurityMode"]>
           | "",
@@ -185,39 +233,101 @@ export default function AlertCenter(input: Props) {
       async function refresh() {
         if (disposed) return;
         refreshRequest?.abort();
+        const currentTab = tab.value;
         const controller = new AbortController();
         refreshRequest = controller;
         loading.value = true;
         error.value = "";
         async function load<T>(name: string, apply: (value: T) => void) {
           try {
-            const result = await operationRequest<T>(name, {}, {signal: controller.signal});
+            const result = await operationRequest<T>(
+              name,
+              {},
+              { signal: controller.signal },
+            );
             if (!disposed && !controller.signal.aborted) apply(result);
           } catch (reason) {
-            if (!disposed && !controller.signal.aborted) error.value = message(reason);
+            if (!disposed && !controller.signal.aborted)
+              error.value = message(reason);
           }
         }
-        const reads = [load<{alerts: AlertItem[]}>("alerts.list", result => {active.value = result.alerts;})];
+        const reads = [
+          load<{ alerts: AlertItem[] }>("alerts.list", (result) => {
+            active.value = result.alerts;
+          }),
+        ];
         if (tab.value === "history") {
-          reads.push(load<{alerts: AlertItem[]}>("alerts.history", result => {history.value = result.alerts;}));
-          reads.push(load<{events: AlertEvent[]}>("alerts.events", result => {events.value = result.events;}));
+          reads.push(
+            load<{ alerts: AlertItem[] }>("alerts.history", (result) => {
+              history.value = result.alerts;
+            }),
+          );
+          reads.push(
+            load<{ events: AlertEvent[] }>("alerts.events", (result) => {
+              events.value = result.events;
+            }),
+          );
         } else if (tab.value === "rules") {
-          reads.push(load<{nodes: AgentNode[]}>("nodes.list", result => {
-            nodes.value = result.nodes;
-            if (!ruleForm.nodeId) ruleForm.nodeId = result.nodes[0]?.nodeId ?? "";
-          }));
-          reads.push(load<{rules: AlertRule[]}>("rules.list", result => {rules.value = result.rules;}));
-          reads.push(load<{channels: AlertChannel[]}>("channels.list", result => {channels.value = result.channels;}));
-          reads.push(load<{metrics: Record<string, string>}>("metrics.catalog", result => {metricCatalog.value = result.metrics;}));
+          reads.push(
+            load<{ nodes: AgentNode[] }>("nodes.list", (result) => {
+              nodes.value = result.nodes;
+              if (!ruleForm.nodeId)
+                ruleForm.nodeId = result.nodes[0]?.nodeId ?? "";
+            }),
+          );
+          reads.push(
+            load<{ rules: AlertRule[] }>("rules.list", (result) => {
+              rules.value = result.rules;
+            }),
+          );
+          reads.push(
+            load<{ channels: AlertChannel[] }>("channels.list", (result) => {
+              channels.value = result.channels;
+            }),
+          );
+          reads.push(
+            load<{ metrics: Record<string, string> }>(
+              "metrics.catalog",
+              (result) => {
+                metricCatalog.value = result.metrics;
+              },
+            ),
+          );
         } else if (tab.value === "channels") {
-          reads.push(load<{channels: AlertChannel[]}>("channels.list", result => {channels.value = result.channels;}));
+          reads.push(
+            load<{ providers: ChannelProvider[] }>(
+              "channels.options",
+              (result) => {
+                channelProviders.value = result.providers;
+              },
+            ),
+          );
+          reads.push(
+            load<{ channels: AlertChannel[] }>("channels.list", (result) => {
+              channels.value = result.channels;
+            }),
+          );
         } else if (tab.value === "windows") {
-          reads.push(load<{windows: AlertWindow[]}>("windows.list", result => {windows.value = result.windows;}));
+          reads.push(
+            load<{ windows: AlertWindow[] }>("windows.list", (result) => {
+              windows.value = result.windows;
+            }),
+          );
         } else if (tab.value === "deliveries") {
-          reads.push(load<{deliveries: AlertDelivery[]}>("deliveries.list", result => {deliveries.value = result.deliveries;}));
+          reads.push(
+            load<{ deliveries: AlertDelivery[] }>(
+              "deliveries.list",
+              (result) => {
+                deliveries.value = result.deliveries;
+              },
+            ),
+          );
         }
         await Promise.all(reads);
-        if (!disposed && refreshRequest === controller) loading.value = false;
+        if (!disposed && refreshRequest === controller) {
+          loadedTabs.value = { ...loadedTabs.value, [currentTab]: true };
+          loading.value = false;
+        }
       }
       async function acknowledge(item: AlertItem) {
         clearMessages();
@@ -243,6 +353,44 @@ export default function AlertCenter(input: Props) {
           error.value = message(reason);
         }
       }
+      function editRule(rule: AlertRule) {
+        editingRule.value = { ...rule, channelIds: [...rule.channelIds] };
+        Object.assign(ruleForm, {
+          name: rule.name,
+          kind: rule.kind,
+          nodeId: rule.nodeId,
+          subjectId: rule.subjectId ?? "",
+          severity: rule.severity,
+          threshold: rule.threshold ?? 90,
+          durationSeconds: rule.durationSeconds,
+          cooldownSeconds: rule.cooldownSeconds,
+          expectedState: rule.expectedState ?? "running",
+          channelIds: [...rule.channelIds],
+          enabled: rule.enabled,
+        });
+        clearMessages();
+      }
+      function clearRuleForm() {
+        if (editingRule.value) error.value = "";
+        editingRule.value = undefined;
+        Object.assign(ruleForm, {
+          name: "",
+          kind: "cpu",
+          nodeId:
+            ruleNodeFilter.value ||
+            ruleForm.nodeId ||
+            nodes.value[0]?.nodeId ||
+            "",
+          subjectId: "",
+          severity: "warning",
+          threshold: 90,
+          durationSeconds: 300,
+          cooldownSeconds: 300,
+          expectedState: "running",
+          channelIds: [],
+          enabled: true,
+        });
+      }
       async function saveRule() {
         clearMessages();
         saving.value = true;
@@ -264,9 +412,18 @@ export default function AlertCenter(input: Props) {
             channelIds: ruleForm.channelIds,
             enabled: ruleForm.enabled,
           };
-          await api.createAlertRule(body);
-          ruleForm.name = "";
-          ruleForm.subjectId = "";
+          const editing = editingRule.value;
+          if (editing) {
+            await api.updateAlertRule(editing.id, {
+              ...body,
+              revision: editing.revision,
+            });
+            clearRuleForm();
+          } else {
+            await api.createAlertRule(body);
+            ruleForm.name = "";
+            ruleForm.subjectId = "";
+          }
           notice.value = t("m.43fed933b297");
           await refresh();
         } catch (reason) {
@@ -282,6 +439,14 @@ export default function AlertCenter(input: Props) {
         channelForm.enabled = channel.enabled;
         channelForm.revision = channel.revision;
         channelForm.secret = "";
+        channelForm.provider = channel.config.provider ?? "";
+        channelForm.chatId = channel.config.chatId ?? "";
+        channelForm.method = channel.config.method ?? "POST";
+        channelForm.bodyTemplate = channel.config.bodyTemplate ?? "";
+        channelForm.headers = "";
+        channelForm.signingSecret = "";
+        channelForm.clearHeaders = false;
+        channelForm.clearSigning = false;
         channelForm.webhookUrl = channel.config.webhookUrl ?? "";
         channelForm.messageTemplate = channel.config.messageTemplate ?? "";
         channelForm.smtpHost = channel.config.smtpHost ?? "";
@@ -295,6 +460,14 @@ export default function AlertCenter(input: Props) {
         editingChannel.value = "";
         channelForm.name = "";
         channelForm.kind = "webhook";
+        channelForm.provider = "";
+        channelForm.chatId = "";
+        channelForm.method = "POST";
+        channelForm.bodyTemplate = "";
+        channelForm.headers = "";
+        channelForm.signingSecret = "";
+        channelForm.clearHeaders = false;
+        channelForm.clearSigning = false;
         channelForm.webhookUrl = "";
         channelForm.messageTemplate = "";
         channelForm.smtpHost = "";
@@ -315,7 +488,19 @@ export default function AlertCenter(input: Props) {
           const config =
             channelForm.kind === "webhook"
               ? {
-                  webhookUrl: channelForm.webhookUrl,
+                  webhookUrl: selectedProvider.value?.url
+                    ? channelForm.webhookUrl
+                    : undefined,
+                  provider: channelForm.provider || undefined,
+                  chatId: selectedProvider.value?.chatId
+                    ? channelForm.chatId
+                    : undefined,
+                  method: selectedProvider.value?.customRequest
+                    ? channelForm.method
+                    : undefined,
+                  bodyTemplate: selectedProvider.value?.customRequest
+                    ? channelForm.bodyTemplate
+                    : undefined,
                   ...(messageTemplate
                     ? {
                         messageTemplate,
@@ -341,6 +526,22 @@ export default function AlertCenter(input: Props) {
               kind: channelForm.kind,
               config,
               secret: channelForm.secret || undefined,
+              headers:
+                channelForm.kind === "webhook" &&
+                selectedProvider.value?.customRequest
+                  ? channelForm.clearHeaders
+                    ? {}
+                    : channelForm.headers.trim()
+                      ? JSON.parse(channelForm.headers)
+                      : undefined
+                  : undefined,
+              signingSecret:
+                channelForm.kind === "webhook" &&
+                selectedProvider.value?.signing
+                  ? channelForm.clearSigning
+                    ? ""
+                    : channelForm.signingSecret || undefined
+                  : undefined,
               enabled: channelForm.enabled,
               ...(editingChannel.value
                 ? {
@@ -424,6 +625,7 @@ export default function AlertCenter(input: Props) {
       async function deleteRule(rule: AlertRule) {
         try {
           await api.deleteAlertRule(rule.id, rule.revision);
+          if (editingRule.value?.id === rule.id) clearRuleForm();
           notice.value = t("m.daa8c0f91450");
           await refresh();
         } catch (reason) {
@@ -460,7 +662,13 @@ export default function AlertCenter(input: Props) {
         return tab.value === "active" ? active.value : history.value;
       }
       let refreshTimer: number | undefined;
-      watchState(tab, () => {void refresh();}, {immediate: true});
+      watchState(
+        tab,
+        () => {
+          void refresh();
+        },
+        { immediate: true },
+      );
       afterMount(() => {
         refreshTimer = window.setInterval(() => {
           if (!loading.value) void refresh();
@@ -471,1247 +679,1261 @@ export default function AlertCenter(input: Props) {
         refreshRequest?.abort();
         if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
       });
-      return () => (
-        <>
-          <section
-            className={__classes("alerts-page workspace-page")}
-            data-v-acd260e8=""
-          >
-            <header className={__classes("alerts-heading")} data-v-acd260e8="">
-              <div data-v-acd260e8="">
-                <span className={__classes("eyebrow")} data-v-acd260e8="">
-                  {t("label.74b98e3066ff")}
-                </span>
-                <h1 data-v-acd260e8="">
-                  {t("m.1b92ed81c005")}
-                </h1>
-                <p data-v-acd260e8="">{t("m.30dc14a37a07")}</p>
-              </div>
-              <button
-                type="button"
-                disabled={loading.value as any}
-                className={__classes("alert-button subtle")}
-                onClick={(event: any) => {
-                  __call(refresh, event);
+      const row = (
+        name: string,
+        label: string,
+        control: ReactElement<{ "aria-label"?: string }>,
+        description?: string,
+      ) => (
+        <div key={name} className="parameter-row alert-field">
+          <label htmlFor={`alert-${name}`}>{label}</label>
+          <div className="alert-control">
+            {cloneElement(control, { "aria-label": label })}
+            {description ? <small>{description}</small> : null}
+          </div>
+        </div>
+      );
+      const heading = (label: string) => (
+        <div className="workspace-section-heading">
+          <h2>{label}</h2>
+        </div>
+      );
+      const empty = (label: string) => (
+        <SettingsGroup>
+          {loading.value && !loadedTabs.value[tab.value] ? (
+            <Skeleton label={t("load.initial")} lines={2} />
+          ) : (
+            <EmptyState title={label} description="" />
+          )}
+        </SettingsGroup>
+      );
+      const renderRuleForm = () => (
+        <form
+          className="workspace-section alert-form-card alert-rule-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveRule();
+          }}
+        >
+          {!editingRule.value ? heading(t("m.83009fcfe6c1")) : null}
+          {editingRule.value && error.value ? (
+            <Alert role="alert" tone="danger" title={t("management.error")}>
+              {display(error.value)}
+            </Alert>
+          ) : null}
+          <SettingsGroup>
+            {row(
+              "rule-name",
+              t("m.18dba51b47c8"),
+              <Input
+                id="alert-rule-name"
+                required
+                placeholder={t("m.fb8ad27501de")}
+                value={ruleForm.name}
+                onChange={(event) => {
+                  ruleForm.name = event.target.value;
                 }}
-                data-v-acd260e8=""
-              >
-                {loading.value ? t("m.7f3c8312816f") : t("m.0468ee76ee3d")}
-              </button>
-            </header>
-            {error.value ? (
-              <div
-                role="alert"
-                className={__classes("alert-message danger")}
-                data-v-acd260e8=""
-              >
-                {display(error.value)}
-              </div>
-            ) : null}
-            {notice.value ? (
-              <div
-                role="status"
-                className={__classes("alert-message success")}
-                data-v-acd260e8=""
-              >
-                {display(notice.value)}
-              </div>
-            ) : null}
-            <nav
-              aria-label={t("m.6c08cfefefbc") as any}
-              className={__classes("alert-tabs")}
-              data-v-acd260e8=""
-            >
-              <Fragment>
-                {__each(
-                  [
-                    ["active", t("m.ee404f35c3ce")],
-                    ["history", t("m.7fe7f1f0fb28")],
-                    ["rules", t("m.7488ac33d3de")],
-                    ["channels", t("m.b2354cebb5bc")],
-                    ["windows", t("m.cb20b84d602a")],
-                    ["deliveries", t("m.f0c5fa02c974")],
-                  ] as Array<[Tab, string]>,
-                  (item) => (
-                    <button
-                      key={item[0] as any}
-                      type="button"
-                      aria-current={
-                        tab.value === item[0] ? "page" : (undefined as any)
-                      }
-                      onClick={(event: any) => {
-                        tab.value = item[0];
+              />,
+            )}
+            {row(
+              "rule-node",
+              t("m.2410d860f093"),
+              <Select
+                id="alert-rule-node"
+                required
+                value={ruleForm.nodeId}
+                onValueChange={(value) => {
+                  ruleForm.nodeId = value;
+                }}
+                options={nodes.value.map((node) => ({
+                  value: node.nodeId,
+                  label: `${node.displayName} · ${node.status}`,
+                }))}
+              />,
+            )}
+            {row(
+              "rule-kind",
+              t("m.16bb1d2b098c"),
+              <Select
+                id="alert-rule-kind"
+                value={ruleForm.kind}
+                onValueChange={(value) => {
+                  ruleForm.kind = value as AlertRule["kind"];
+                }}
+                options={kindOptions.value}
+              />,
+            )}
+            {needsThreshold.value
+              ? row(
+                  "rule-threshold",
+                  t("m.26a4ac708409"),
+                  <Input
+                    id="alert-rule-threshold"
+                    type="number"
+                    min={0}
+                    max={
+                      [
+                        "cpu",
+                        "memory",
+                        "disk",
+                        "probe_failure",
+                        "probe_packet_loss",
+                      ].includes(ruleForm.kind)
+                        ? 100
+                        : undefined
+                    }
+                    step="any"
+                    required
+                    value={ruleForm.threshold}
+                    onChange={(event) => {
+                      ruleForm.threshold =
+                        event.target.value === ""
+                          ? ""
+                          : Number(event.target.value);
+                    }}
+                  />,
+                )
+              : null}
+            {needsSubject.value
+              ? row(
+                  "rule-subject",
+                  t("m.ad293c799482"),
+                  ruleForm.kind === "metric" ? (
+                    <Select
+                      id="alert-rule-subject"
+                      required
+                      value={ruleForm.subjectId}
+                      onValueChange={(value) => {
+                        ruleForm.subjectId = value;
                       }}
-                      data-v-acd260e8=""
-                    >
-                      {item[1]}
-                      {item[0] === "active" && active.value.length ? (
-                        <span data-v-acd260e8="">{active.value.length}</span>
-                      ) : null}
-                    </button>
+                      options={Object.entries(metricCatalog.value).map(
+                        ([value, unit]) => ({
+                          value,
+                          label: `${value} · ${unit}`,
+                        }),
+                      )}
+                    />
+                  ) : (
+                    <Input
+                      id="alert-rule-subject"
+                      required
+                      placeholder={t("m.8a90cd8dc652")}
+                      value={ruleForm.subjectId}
+                      onChange={(event) => {
+                        ruleForm.subjectId = event.target.value;
+                      }}
+                    />
                   ),
+                )
+              : null}
+            {needsState.value
+              ? row(
+                  "rule-state",
+                  t("m.b3d94c7eff6f"),
+                  <Select
+                    id="alert-rule-state"
+                    value={ruleForm.expectedState}
+                    onValueChange={(value) => {
+                      ruleForm.expectedState = value;
+                    }}
+                    options={[
+                      {
+                        value: "running",
+                        label: t("m.1f0eb99b7ed0"),
+                      },
+                      {
+                        value: "stopped",
+                        label: t("m.f006455e3baf"),
+                      },
+                      {
+                        value: "healthy",
+                        label: t("m.aa18b6dcd893"),
+                      },
+                      {
+                        value: "unhealthy",
+                        label: t("m.395a7bf80b24"),
+                      },
+                    ]}
+                  />,
+                )
+              : null}
+            {row(
+              "rule-duration",
+              t("m.f67bd602eaa1"),
+              <Input
+                id="alert-rule-duration"
+                type="number"
+                min={0}
+                max={86400}
+                value={ruleForm.durationSeconds}
+                onChange={(event) => {
+                  ruleForm.durationSeconds = Number(event.target.value);
+                }}
+              />,
+            )}
+            {row(
+              "rule-cooldown",
+              t("m.c90ed7f53ce4"),
+              <Input
+                id="alert-rule-cooldown"
+                type="number"
+                min={0}
+                max={86400}
+                value={ruleForm.cooldownSeconds}
+                onChange={(event) => {
+                  ruleForm.cooldownSeconds = Number(event.target.value);
+                }}
+              />,
+            )}
+            {row(
+              "rule-severity",
+              t("m.3d9d02e83d39"),
+              <Select
+                id="alert-rule-severity"
+                value={ruleForm.severity}
+                onValueChange={(value) => {
+                  ruleForm.severity = value as AlertRule["severity"];
+                }}
+                options={[
+                  { value: "info", label: t("m.f56c6c82203b") },
+                  { value: "warning", label: t("m.a8b7a4480407") },
+                  { value: "critical", label: t("m.73eb0e14e307") },
+                ]}
+              />,
+            )}
+            <div className="parameter-row">
+              <span>{t("m.1bcd7265cd39")}</span>
+              <div className="alert-choices">
+                {channels.value.length ? (
+                  channels.value.map((channel) => (
+                    <Checkbox
+                      key={channel.id}
+                      label={channel.name}
+                      checked={ruleForm.channelIds.includes(channel.id)}
+                      onCheckedChange={(checked) => {
+                        ruleForm.channelIds =
+                          checked === true
+                            ? [...ruleForm.channelIds, channel.id]
+                            : ruleForm.channelIds.filter(
+                                (id) => id !== channel.id,
+                              );
+                      }}
+                    />
+                  ))
+                ) : (
+                  <small>{t("m.1c5c0b7d73e4")}</small>
                 )}
-              </Fragment>
-            </nav>
-            {tab.value === "active" || tab.value === "history" ? (
-              <section className={__classes("alert-card")} data-v-acd260e8="">
-                <div className={__classes("section-title")} data-v-acd260e8="">
-                  <div data-v-acd260e8="">
-                    <h2 data-v-acd260e8="">
-                      {tab.value === "active"
-                        ? t("m.e713ce880f38")
-                        : t("m.f49736f12f80")}
-                    </h2>
-                    <p data-v-acd260e8="">
-                      {tab.value === "active"
-                        ? t("m.0fa70890a3d2")
-                        : t("m.9bb92d183ceb")}
-                    </p>
-                  </div>
-                </div>
-                {activeList().length ? (
-                  <div className={__classes("alert-list")} data-v-acd260e8="">
-                    <Fragment>
-                      {__each(activeList(), (item) => (
-                        <article
-                          key={item.id as any}
-                          data-severity={item.severity as any}
-                          className={__classes("alert-row")}
-                          data-v-acd260e8=""
-                        >
-                          <div
-                            aria-hidden="true"
-                            className={__classes("severity-mark")}
-                            data-v-acd260e8=""
-                          ></div>
-                          <div
-                            className={__classes("alert-content")}
-                            data-v-acd260e8=""
+              </div>
+            </div>
+            {row(
+              "rule-enabled",
+              t("m.e45a3f15b735"),
+              <Checkbox
+                id="alert-rule-enabled"
+                checked={ruleForm.enabled}
+                onCheckedChange={(value) => {
+                  ruleForm.enabled = value === true;
+                }}
+              />,
+            )}
+          </SettingsGroup>
+          <div className="settings-section-actions">
+            {editingRule.value ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={saving.value}
+                onClick={clearRuleForm}
+              >
+                {t("m.4b29ce8e4093")}
+              </Button>
+            ) : null}
+            <Button
+              type="submit"
+              disabled={saving.value || !nodes.value.length}
+            >
+              {saving.value
+                ? t("m.ff509c9ba052")
+                : editingRule.value
+                  ? t("alerts.saveRule")
+                  : t("m.63faeddb2a46")}
+            </Button>
+          </div>
+        </form>
+      );
+      return () => (
+        <ManagementPage
+          registryStyles
+          className="alerts-page preferences-page workspace-settings"
+          aria-busy={loading.value}
+        >
+          <header className="workspace-heading">
+            <h1>{t("m.1b92ed81c005")}</h1>
+            <Button
+              variant="secondary"
+              disabled={loading.value}
+              onClick={() => void refresh()}
+            >
+              {loading.value ? t("m.7f3c8312816f") : t("m.0468ee76ee3d")}
+            </Button>
+          </header>
+          {error.value && !editingRule.value ? (
+            <Alert role="alert" tone="danger" title={t("management.error")}>
+              {display(error.value)}
+            </Alert>
+          ) : null}
+          {notice.value ? (
+            <Alert role="status" tone="success" title={t("management.notice")}>
+              {display(notice.value)}
+            </Alert>
+          ) : null}
+          <Tabs
+            className="alert-view-tabs"
+            value={tab.value}
+            onValueChange={(value) => {
+              tab.value = value as Tab;
+            }}
+          >
+            <TabsList
+              className="alert-tabs"
+              aria-label={t("m.6c08cfefefbc")}
+              onPointerDownCapture={(event) => {
+                event.currentTarget.dataset.focusSource = "pointer";
+              }}
+              onKeyDownCapture={(event) => {
+                delete event.currentTarget.dataset.focusSource;
+              }}
+              onBlurCapture={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget))
+                  delete event.currentTarget.dataset.focusSource;
+              }}
+            >
+              {(
+                [
+                  ["active", t("m.ee404f35c3ce")],
+                  ["history", t("m.7fe7f1f0fb28")],
+                  ["rules", t("m.7488ac33d3de")],
+                  ["channels", t("m.b2354cebb5bc")],
+                  ["windows", t("m.cb20b84d602a")],
+                  ["deliveries", t("m.f0c5fa02c974")],
+                ] as const
+              ).map(([value, label]) => (
+                <TabsTrigger key={value} value={value}>
+                  {label}
+                  {value === "active" && active.value.length
+                    ? ` (${active.value.length})`
+                    : ""}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <TabsContent
+              value={tab.value}
+              className="settings-sections alert-sections"
+            >
+              {tab.value === "active" || tab.value === "history" ? (
+                <>
+                  <section className="workspace-section alert-list">
+                    {heading(
+                      tab.value === "active"
+                        ? t("m.ee404f35c3ce")
+                        : t("m.7fe7f1f0fb28"),
+                    )}
+                    {activeList().length ? (
+                      <SettingsGroup>
+                        {activeList().map((item) => (
+                          <article
+                            key={item.id}
+                            className="alert-record"
+                            data-severity={item.severity}
                           >
-                            <div
-                              className={__classes("alert-title")}
-                              data-v-acd260e8=""
-                            >
-                              <strong data-v-acd260e8="">
-                                {item.ruleName}
-                              </strong>
-                              <span
-                                className={__classes("pill", item.status)}
-                                data-v-acd260e8=""
+                            <div className="alert-record-title">
+                              <strong>{item.ruleName}</strong>
+                              <Badge
+                                tone={
+                                  item.status === "active"
+                                    ? item.severity === "critical"
+                                      ? "danger"
+                                      : "warning"
+                                    : "neutral"
+                                }
                               >
                                 {item.status === "active"
                                   ? t("m.3c01089ea0e4")
                                   : t("m.3617f737f437")}
-                              </span>
+                              </Badge>
                               {item.acknowledgedAt ? (
-                                <span
-                                  className={__classes("pill acknowledged")}
-                                  data-v-acd260e8=""
-                                >
-                                  {t("m.d56a511f498f")}
-                                </span>
+                                <Badge>{t("m.d56a511f498f")}</Badge>
                               ) : null}
                               {item.suppressionReason ? (
-                                <span
-                                  className={__classes("pill suppressed")}
-                                  data-v-acd260e8=""
-                                >
+                                <Badge>
                                   {item.suppressionReason === "node_offline"
                                     ? t("m.c46a19c8d6ca")
                                     : t("m.5329772f4d2b")}
-                                </span>
+                                </Badge>
                               ) : null}
                             </div>
-                            <p data-v-acd260e8="">{display(item.message)}</p>
-                            <small data-v-acd260e8="">
-                              {item.nodeName}
-                              {" · "}
-                              {item.nodeId}
+                            <p>{display(item.message)}</p>
+                            <small>
+                              {item.nodeName} · {item.nodeId}
                               {t("m.a2f8212e41a4")}
                               {when(item.firstSeenAt)}
-                              {item.resolvedAt ? (
-                                <Fragment>
-                                  {t("m.daf142e39346")}
-                                  {when(item.resolvedAt)}
-                                </Fragment>
-                              ) : null}
+                              {item.resolvedAt
+                                ? `${t("m.daf142e39346")}${when(item.resolvedAt)}`
+                                : ""}
                             </small>
-                          </div>
-                          {item.status === "active" ? (
-                            <div
-                              className={__classes("row-actions")}
-                              data-v-acd260e8=""
-                            >
-                              <button
-                                type="button"
-                                disabled={!!item.acknowledgedAt as any}
-                                className={__classes("alert-button")}
-                                onClick={(event: any) => {
-                                  acknowledge(item);
-                                }}
-                                data-v-acd260e8=""
-                              >
-                                {t("m.36f33adaf094")}
-                              </button>
-                              <button
-                                type="button"
-                                className={__classes("alert-button subtle")}
-                                onClick={(event: any) => {
-                                  silence(item);
-                                }}
-                                data-v-acd260e8=""
-                              >
-                                {t("m.d69600baef4b")}
-                              </button>
-                            </div>
-                          ) : null}
-                        </article>
-                      ))}
-                    </Fragment>
-                  </div>
-                ) : (
-                  <div className={__classes("empty-state")} data-v-acd260e8="">
-                    {tab.value === "active"
-                      ? t("m.b2f037729dad")
-                      : t("m.8eac1ef8ee32")}
-                  </div>
-                )}
-                {tab.value === "history" ? (
-                  <div className={__classes("event-list")} data-v-acd260e8="">
-                    <h3 data-v-acd260e8="">{t("m.512c5669c853")}</h3>
-                    <Fragment>
-                      {__each(events.value, (event) => (
-                        <article key={event.id as any} data-v-acd260e8="">
-                          <span data-v-acd260e8="">{event.kind}</span>
-                          <span data-v-acd260e8="">
-                            {display(event.message)}
-                          </span>
-                          <time data-v-acd260e8="">
-                            {when(event.occurredAt)}
-                          </time>
-                        </article>
-                      ))}
-                    </Fragment>
-                    {!events.value.length ? (
-                      <p
-                        className={__classes("empty-state")}
-                        data-v-acd260e8=""
-                      >
-                        {t("m.d3ae2b8f4adf")}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </section>
-            ) : tab.value === "rules" ? (
-              <section className={__classes("alert-grid")} data-v-acd260e8="">
-                <div className={__classes("alert-card")} data-v-acd260e8="">
-                  <div
-                    className={__classes("section-title")}
-                    data-v-acd260e8=""
+                            {item.status === "active" ? (
+                              <div className="settings-section-actions">
+                                <Button
+                                  variant="secondary"
+                                  disabled={!!item.acknowledgedAt}
+                                  onClick={() => void acknowledge(item)}
+                                >
+                                  {t("m.36f33adaf094")}
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => void silence(item)}
+                                >
+                                  {t("m.d69600baef4b")}
+                                </Button>
+                              </div>
+                            ) : null}
+                          </article>
+                        ))}
+                      </SettingsGroup>
+                    ) : (
+                      empty(
+                        tab.value === "active"
+                          ? t("m.b2f037729dad")
+                          : t("m.8eac1ef8ee32"),
+                      )
+                    )}
+                  </section>
+                  {tab.value === "history" ? (
+                    <section className="workspace-section event-list">
+                      {heading(t("m.512c5669c853"))}
+                      {events.value.length ? (
+                        <SettingsGroup>
+                          {events.value.map((event) => (
+                            <article key={event.id} className="alert-record">
+                              <strong>{event.kind}</strong>
+                              <p>{display(event.message)}</p>
+                              <time>{when(event.occurredAt)}</time>
+                            </article>
+                          ))}
+                        </SettingsGroup>
+                      ) : (
+                        empty(t("m.d3ae2b8f4adf"))
+                      )}
+                    </section>
+                  ) : null}
+                </>
+              ) : tab.value === "rules" ? (
+                <>
+                  <section
+                    ref={ruleDialogContainer}
+                    className="workspace-section alert-rule-list"
                   >
-                    <div data-v-acd260e8="">
-                      <h2 data-v-acd260e8="">{t("m.52ad1003d627")}</h2>
-                      <p data-v-acd260e8="">{t("m.b609ad7cd505")}</p>
-                    </div>
-                  </div>
-                  <div className={__classes("table-wrap")} data-v-acd260e8="">
-                    <table data-v-acd260e8="">
-                      <thead data-v-acd260e8="">
-                        <tr data-v-acd260e8="">
-                          <th data-v-acd260e8="">{t("m.1123245d1bed")}</th>
-                          <th data-v-acd260e8="">{t("m.2410d860f093")}</th>
-                          <th data-v-acd260e8="">{t("m.16bb1d2b098c")}</th>
-                          <th data-v-acd260e8="">{t("m.1882ae19b6a2")}</th>
-                          <th data-v-acd260e8="">{t("m.6320b4a8722a")}</th>
-                          <th data-v-acd260e8=""></th>
-                        </tr>
-                      </thead>
-                      <tbody data-v-acd260e8="">
-                        <Fragment>
-                          {__each(rules.value, (rule) => (
-                            <tr key={rule.id as any} data-v-acd260e8="">
-                              <td data-v-acd260e8="">{rule.name}</td>
-                              <td data-v-acd260e8="">
-                                {nodes.value.find(
-                                  (n) => n.nodeId === rule.nodeId,
-                                )?.displayName ?? rule.nodeId}
-                              </td>
-                              <td data-v-acd260e8="">
-                                {ruleLabel(rule.kind)}
-                                {rule.threshold !== undefined ? (
-                                  <Fragment>
-                                    {" > "}
-                                    {rule.threshold}
-                                    {[
-                                      "cpu",
-                                      "memory",
-                                      "disk",
-                                      "probe_failure",
-                                      "probe_packet_loss",
-                                    ].includes(rule.kind)
-                                      ? "%"
-                                      : ""}
-                                  </Fragment>
-                                ) : null}
-                                {rule.expectedState ? (
-                                  <Fragment>
-                                    {" ≠ "}
-                                    {rule.expectedState}
-                                  </Fragment>
-                                ) : null}
-                              </td>
-                              <td data-v-acd260e8="">
-                                {rule.durationSeconds}
-                                {t("m.9dcdc2b289b9")}
-                              </td>
-                              <td data-v-acd260e8="">
-                                {rule.enabled
-                                  ? t("m.dfb802238b38")
-                                  : t("m.a8c3698b5b8c")}
-                              </td>
-                              <td data-v-acd260e8="">
-                                <button
-                                  type="button"
-                                  className={__classes(
-                                    "text-button danger-text",
-                                  )}
-                                  onClick={(event: any) => {
-                                    deleteRule(rule);
+                    {heading(t("m.52ad1003d627"))}
+                    <p className="alert-defaults-hint">
+                      {t("alerts.defaultThresholds")}
+                    </p>
+                    <SettingsGroup>
+                      {row(
+                        "rule-filter",
+                        t("m.2410d860f093"),
+                        <Select
+                          id="alert-rule-filter"
+                          value={ruleNodeFilter.value}
+                          onValueChange={(value) => {
+                            ruleNodeFilter.value = value;
+                          }}
+                          options={[
+                            { value: "", label: t("alerts.allNodes") },
+                            ...nodes.value.map((node) => ({
+                              value: node.nodeId,
+                              label: node.displayName,
+                            })),
+                          ]}
+                        />,
+                      )}
+                    </SettingsGroup>
+                    {visibleRules.value.length ? (
+                      <SortableDataTable
+                        rows={visibleRules.value.map((rule) => ({ ...rule }))}
+                        rowKey="id"
+                        caption={t("m.52ad1003d627")}
+                        columns={[
+                          {
+                            key: "name",
+                            label: t("m.1123245d1bed"),
+                            sortable: true,
+                          },
+                          {
+                            key: "nodeId",
+                            label: t("m.2410d860f093"),
+                            render: (_, rule) =>
+                              nodes.value.find(
+                                (node) => node.nodeId === rule.nodeId,
+                              )?.displayName ?? rule.nodeId,
+                          },
+                          {
+                            key: "kind",
+                            label: t("m.16bb1d2b098c"),
+                            render: (_, rule) =>
+                              `${ruleLabel(rule.kind)}${rule.threshold !== undefined ? ` > ${rule.threshold}${["cpu", "memory", "disk", "probe_failure", "probe_packet_loss"].includes(rule.kind) ? "%" : ""}` : ""}${rule.expectedState ? ` ≠ ${rule.expectedState}` : ""}`,
+                          },
+                          {
+                            key: "durationSeconds",
+                            label: t("m.1882ae19b6a2"),
+                            render: (_, rule) =>
+                              `${rule.durationSeconds} ${t("m.9dcdc2b289b9")}`,
+                          },
+                          {
+                            key: "enabled",
+                            label: t("m.6320b4a8722a"),
+                            render: (_, rule) =>
+                              rule.enabled
+                                ? t("m.dfb802238b38")
+                                : t("m.a8c3698b5b8c"),
+                          },
+                          {
+                            key: "actions",
+                            label: t("domains.actions"),
+                            width: 176,
+                            render: (_, rule) => (
+                              <div className="alert-rule-actions">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  disabled={saving.value}
+                                  onClick={(event) => {
+                                    ruleEditTrigger.current =
+                                      event.currentTarget;
+                                    editRule(rule);
                                   }}
-                                  data-v-acd260e8=""
+                                >
+                                  {t("m.051836569928")}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="danger"
+                                  disabled={saving.value}
+                                  onClick={() => void deleteRule(rule)}
                                 >
                                   {t("m.2f9daa828907")}
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </Fragment>
-                      </tbody>
-                    </table>
-                  </div>
-                  {!rules.value.length ? (
-                    <p className={__classes("empty-state")} data-v-acd260e8="">
-                      {t("m.915b0451461e")}
-                    </p>
-                  ) : null}
-                </div>
-                <form
-                  className={__classes("alert-card alert-form-card")}
-                  onSubmit={(event: any) => {
-                    event.preventDefault();
-                    __call(saveRule, event);
-                  }}
-                  data-v-acd260e8=""
-                >
-                  <div
-                    className={__classes("section-title")}
-                    data-v-acd260e8=""
-                  >
-                    <div data-v-acd260e8="">
-                      <h2 data-v-acd260e8="">{t("m.83009fcfe6c1")}</h2>
-                      <p data-v-acd260e8="">{t("m.b8fa37ab5ac0")}</p>
-                    </div>
-                  </div>
-                  <label data-v-acd260e8="">
-                    {t("m.18dba51b47c8")}
-                    <input
-                      required={true}
-                      placeholder={t("m.fb8ad27501de") as any}
-                      {...__input(
-                        ruleForm.name,
-                        (__nextValue: any) => {
-                          ruleForm.name = __nextValue;
-                        },
-                        "",
-                        undefined,
-                        [],
-                      )}
-                      data-v-acd260e8=""
-                    ></input>
-                  </label>
-                  <label data-v-acd260e8="">
-                    {t("m.2410d860f093")}
-                    <UiSelect
-                      required={true}
-                      modelValue={ruleForm.nodeId}
-                      onUpdateModelValue={(__nextValue: any) => {
-                        ruleForm.nodeId = __nextValue;
-                      }}
-                      modelModifiers={{}}
-                      data-v-acd260e8=""
-                    >
-                      <Fragment>
-                        {__each(nodes.value, (node) => (
-                          <option
-                            key={node.nodeId as any}
-                            value={node.nodeId as any}
-                            data-v-acd260e8=""
-                          >
-                            {node.displayName}
-                            {" · "}
-                            {node.status}
-                          </option>
-                        ))}
-                      </Fragment>
-                    </UiSelect>
-                  </label>
-                  <label data-v-acd260e8="">
-                    {t("m.16bb1d2b098c")}
-                    <UiSelect
-                      modelValue={ruleForm.kind}
-                      onUpdateModelValue={(__nextValue: any) => {
-                        ruleForm.kind = __nextValue;
-                      }}
-                      modelModifiers={{}}
-                      data-v-acd260e8=""
-                    >
-                      <Fragment>
-                        {__each(kindOptions.value, (item) => (
-                          <option
-                            key={item.value as any}
-                            value={item.value as any}
-                            data-v-acd260e8=""
-                          >
-                            {item.label}
-                          </option>
-                        ))}
-                      </Fragment>
-                    </UiSelect>
-                  </label>
-                  {needsThreshold.value ? (
-                    <label data-v-acd260e8="">
-                      {t("m.26a4ac708409")}
-                      <input
-                        type="number"
-                        min="0"
-                        max={
-                          [
-                            "cpu",
-                            "memory",
-                            "disk",
-                            "probe_failure",
-                            "probe_packet_loss",
-                          ].includes(ruleForm.kind)
-                            ? 100
-                            : (undefined as any)
-                        }
-                        step="any"
-                        required={true}
-                        {...__input(
-                          ruleForm.threshold,
-                          (__nextValue: any) => {
-                            ruleForm.threshold = __nextValue;
+                                </Button>
+                              </div>
+                            ),
                           },
-                          "number",
-                          undefined,
-                          ["number"],
-                        )}
-                        data-v-acd260e8=""
-                      ></input>
-                    </label>
-                  ) : null}
-                  {needsSubject.value ? (
-                    <label data-v-acd260e8="">
-                      {t("m.ad293c799482")}
-                      {ruleForm.kind === "metric" ? (
-                        <UiSelect
-                          required={true}
-                          modelValue={ruleForm.subjectId}
-                          onUpdateModelValue={(__nextValue: any) => {
-                            ruleForm.subjectId = __nextValue;
-                          }}
-                          modelModifiers={{}}
-                          data-v-acd260e8=""
-                        >
-                          <Fragment>
-                            {__each(metricCatalog.value, (unit, key) => (
-                              <option
-                                key={key as any}
-                                value={key as any}
-                                data-v-acd260e8=""
-                              >
-                                {key}
-                                {" · "}
-                                {unit}
-                              </option>
-                            ))}
-                          </Fragment>
-                        </UiSelect>
-                      ) : (
-                        <input
-                          required={true}
-                          placeholder={t("m.8a90cd8dc652") as any}
-                          {...__input(
-                            ruleForm.subjectId,
-                            (__nextValue: any) => {
-                              ruleForm.subjectId = __nextValue;
-                            },
-                            "",
-                            undefined,
-                            [],
-                          )}
-                          data-v-acd260e8=""
-                        ></input>
-                      )}
-                    </label>
-                  ) : null}
-                  {needsState.value ? (
-                    <label data-v-acd260e8="">
-                      {t("m.b3d94c7eff6f")}
-                      <UiSelect
-                        modelValue={ruleForm.expectedState}
-                        onUpdateModelValue={(__nextValue: any) => {
-                          ruleForm.expectedState = __nextValue;
-                        }}
-                        modelModifiers={{}}
-                        data-v-acd260e8=""
-                      >
-                        <option value="running" data-v-acd260e8="">
-                          {t("m.1f0eb99b7ed0")}
-                        </option>
-                        <option value="stopped" data-v-acd260e8="">
-                          {t("m.f006455e3baf")}
-                        </option>
-                        <option value="healthy" data-v-acd260e8="">
-                          {t("m.aa18b6dcd893")}
-                        </option>
-                        <option value="unhealthy" data-v-acd260e8="">
-                          {t("m.395a7bf80b24")}
-                        </option>
-                      </UiSelect>
-                    </label>
-                  ) : null}
-                  <div
-                    className={__classes("inline-fields")}
-                    data-v-acd260e8=""
+                        ]}
+                      />
+                    ) : (
+                      empty(t("m.915b0451461e"))
+                    )}
+                  </section>
+                  {!editingRule.value ? renderRuleForm() : null}
+                  <Dialog
+                    open={!!editingRule.value}
+                    onOpenChange={(open) => {
+                      if (!open && !saving.value) clearRuleForm();
+                    }}
                   >
-                    <label data-v-acd260e8="">
-                      {t("m.f67bd602eaa1")}
-                      <input
-                        type="number"
-                        min="0"
-                        max="86400"
-                        {...__input(
-                          ruleForm.durationSeconds,
-                          (__nextValue: any) => {
-                            ruleForm.durationSeconds = __nextValue;
-                          },
-                          "number",
-                          undefined,
-                          ["number"],
-                        )}
-                        data-v-acd260e8=""
-                      ></input>
-                    </label>
-                    <label data-v-acd260e8="">
-                      {t("m.c90ed7f53ce4")}
-                      <input
-                        type="number"
-                        min="0"
-                        max="86400"
-                        {...__input(
-                          ruleForm.cooldownSeconds,
-                          (__nextValue: any) => {
-                            ruleForm.cooldownSeconds = __nextValue;
-                          },
-                          "number",
-                          undefined,
-                          ["number"],
-                        )}
-                        data-v-acd260e8=""
-                      ></input>
-                    </label>
-                  </div>
-                  <label data-v-acd260e8="">
-                    {t("m.3d9d02e83d39")}
-                    <UiSelect
-                      modelValue={ruleForm.severity}
-                      onUpdateModelValue={(__nextValue: any) => {
-                        ruleForm.severity = __nextValue;
+                    <DialogContent
+                      container={ruleDialogContainer.current?.closest<HTMLElement>(
+                        ".alerts-page",
+                      )}
+                      className="alert-rule-dialog"
+                      title={t("alerts.editRule")}
+                      onEscapeKeyDown={(event) => {
+                        if (saving.value) event.preventDefault();
                       }}
-                      modelModifiers={{}}
-                      data-v-acd260e8=""
+                      onPointerDownOutside={(event) => {
+                        if (saving.value) event.preventDefault();
+                      }}
+                      onCloseAutoFocus={(event) => {
+                        event.preventDefault();
+                        if (ruleEditTrigger.current?.isConnected)
+                          ruleEditTrigger.current.focus({
+                            preventScroll: true,
+                          });
+                      }}
                     >
-                      <option value="info" data-v-acd260e8="">
-                        {t("m.f56c6c82203b")}
-                      </option>
-                      <option value="warning" data-v-acd260e8="">
-                        {t("m.a8b7a4480407")}
-                      </option>
-                      <option value="critical" data-v-acd260e8="">
-                        {t("m.73eb0e14e307")}
-                      </option>
-                    </UiSelect>
-                  </label>
-                  <fieldset data-v-acd260e8="">
-                    <legend data-v-acd260e8="">{t("m.1bcd7265cd39")}</legend>
-                    <Fragment>
-                      {__each(channels.value, (channel) => (
-                        <label
-                          key={channel.id as any}
-                          className={__classes("check-row")}
-                          data-v-acd260e8=""
-                        >
-                          <input
-                            type="checkbox"
-                            value={channel.id as any}
-                            {...__input(
-                              ruleForm.channelIds,
-                              (__nextValue: any) => {
-                                ruleForm.channelIds = __nextValue;
-                              },
-                              "checkbox",
-                              channel.id,
-                              [],
-                            )}
-                            data-v-acd260e8=""
-                          ></input>
-                          {channel.name}
-                        </label>
-                      ))}
-                    </Fragment>
-                    {!channels.value.length ? (
-                      <span className={__classes("hint")} data-v-acd260e8="">
-                        {t("m.1c5c0b7d73e4")}
-                      </span>
-                    ) : null}
-                  </fieldset>
-                  <label className={__classes("check-row")} data-v-acd260e8="">
-                    <input
-                      type="checkbox"
-                      {...__input(
-                        ruleForm.enabled,
-                        (__nextValue: any) => {
-                          ruleForm.enabled = __nextValue;
-                        },
-                        "checkbox",
-                        undefined,
-                        [],
-                      )}
-                      data-v-acd260e8=""
-                    ></input>
-                    {t("m.e45a3f15b735")}
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={saving.value || (!nodes.value.length as any)}
-                    className={__classes("alert-button primary")}
-                    data-v-acd260e8=""
-                  >
-                    {saving.value ? t("m.ff509c9ba052") : t("m.63faeddb2a46")}
-                  </button>
-                </form>
-              </section>
-            ) : tab.value === "channels" ? (
-              <section className={__classes("alert-grid")} data-v-acd260e8="">
-                <div className={__classes("alert-card")} data-v-acd260e8="">
-                  <div
-                    className={__classes("section-title")}
-                    data-v-acd260e8=""
-                  >
-                    <div data-v-acd260e8="">
-                      <h2 data-v-acd260e8="">{t("m.b2354cebb5bc")}</h2>
-                      <p data-v-acd260e8="">{t("m.3cb6afac5598")}</p>
-                    </div>
-                  </div>
-                  <div className={__classes("channel-list")} data-v-acd260e8="">
-                    <Fragment>
-                      {__each(channels.value, (channel) => (
-                        <article key={channel.id as any} data-v-acd260e8="">
-                          <div data-v-acd260e8="">
-                            <strong data-v-acd260e8="">{channel.name}</strong>
-                            <span
-                              className={__classes("pill")}
-                              data-v-acd260e8=""
-                            >
-                              {channel.kind === "webhook" ? "Webhook" : "SMTP"}
-                            </span>
-                            <small data-v-acd260e8="">
+                      {editingRule.value ? renderRuleForm() : null}
+                    </DialogContent>
+                  </Dialog>
+                </>
+              ) : tab.value === "channels" ? (
+                <>
+                  <section className="workspace-section channel-list">
+                    {heading(t("m.b2354cebb5bc"))}
+                    {channels.value.length ? (
+                      <SettingsGroup>
+                        {channels.value.map((channel) => (
+                          <article key={channel.id} className="alert-record">
+                            <div className="alert-record-title">
+                              <strong>{channel.name}</strong>
+                              <Badge>
+                                {channel.config.provider
+                                  ? (channelProviders.value.find(
+                                      (p) => p.id === channel.config.provider,
+                                    )?.name ?? channel.config.provider)
+                                  : channel.kind.toUpperCase()}
+                              </Badge>
+                              <span>
+                                {channel.enabled
+                                  ? t("m.dfb802238b38")
+                                  : t("m.a8c3698b5b8c")}
+                              </span>
+                            </div>
+                            <small>
                               {channel.kind === "webhook"
-                                ? channel.config.webhookUrl
+                                ? channel.config.chatId ||
+                                  channel.config.webhookUrl
                                 : `${channel.config.smtpHost}:${channel.config.smtpPort} → ${channel.config.smtpTo}`}
                             </small>
-                          </div>
-                          <div
-                            className={__classes("row-actions")}
-                            data-v-acd260e8=""
-                          >
-                            <button
-                              type="button"
-                              className={__classes("alert-button")}
-                              onClick={(event: any) => {
-                                testChannel(channel);
-                              }}
-                              data-v-acd260e8=""
-                            >
-                              {t("m.e4263450f9ec")}
-                            </button>
-                            <button
-                              type="button"
-                              className={__classes("alert-button subtle")}
-                              onClick={(event: any) => {
-                                editChannel(channel);
-                              }}
-                              data-v-acd260e8=""
-                            >
-                              {t("m.051836569928")}
-                            </button>
-                            <button
-                              type="button"
-                              className={__classes("text-button danger-text")}
-                              onClick={(event: any) => {
-                                deleteChannel(channel);
-                              }}
-                              data-v-acd260e8=""
-                            >
-                              {t("m.2f9daa828907")}
-                            </button>
-                          </div>
-                        </article>
-                      ))}
-                    </Fragment>
-                    {!channels.value.length ? (
-                      <p
-                        className={__classes("empty-state")}
-                        data-v-acd260e8=""
-                      >
-                        {t("m.6b2cde6d4a15")}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-                <form
-                  className={__classes("alert-card alert-form-card")}
-                  onSubmit={(event: any) => {
-                    event.preventDefault();
-                    __call(saveChannel, event);
-                  }}
-                  data-v-acd260e8=""
-                >
-                  <div
-                    className={__classes("section-title")}
-                    data-v-acd260e8=""
+                            <div className="settings-section-actions">
+                              <Button
+                                variant="secondary"
+                                onClick={() => editChannel(channel)}
+                              >
+                                {t("m.051836569928")}
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                onClick={() => void testChannel(channel)}
+                              >
+                                {t("m.e4263450f9ec")}
+                              </Button>
+                              <Button
+                                variant="danger"
+                                onClick={() => void deleteChannel(channel)}
+                              >
+                                {t("m.2f9daa828907")}
+                              </Button>
+                            </div>
+                          </article>
+                        ))}
+                      </SettingsGroup>
+                    ) : (
+                      empty(t("m.1c5c0b7d73e4"))
+                    )}
+                  </section>
+                  <form
+                    className="workspace-section alert-form-card alert-channel-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveChannel();
+                    }}
                   >
-                    <div data-v-acd260e8="">
-                      <h2 data-v-acd260e8="">
-                        {editingChannel.value
-                          ? t("m.9536f6b3a7da")
-                          : t("m.edb55e6632ce")}
-                      </h2>
-                      <p data-v-acd260e8="">{t("m.7582c5883aa1")}</p>
-                    </div>
-                  </div>
-                  <label data-v-acd260e8="">
-                    {t("m.d44e9b3d3b31")}
-                    <input
-                      required={true}
-                      placeholder={t("m.ab0113166ed7") as any}
-                      {...__input(
-                        channelForm.name,
-                        (__nextValue: any) => {
-                          channelForm.name = __nextValue;
-                        },
-                        "",
-                        undefined,
-                        [],
-                      )}
-                      data-v-acd260e8=""
-                    ></input>
-                  </label>
-                  <label data-v-acd260e8="">
-                    {t("m.ba40014ff496")}
-                    <UiSelect
-                      modelValue={channelForm.kind}
-                      onUpdateModelValue={(__nextValue: any) => {
-                        channelForm.kind = __nextValue;
-                      }}
-                      modelModifiers={{}}
-                      data-v-acd260e8=""
-                    >
-                      <option value="webhook" data-v-acd260e8="">
-                        {"Webhook"}
-                      </option>
-                      <option value="smtp" data-v-acd260e8="">
-                        {t("m.06344b933760")}
-                      </option>
-                    </UiSelect>
-                  </label>
-                  {channelForm.kind === "webhook" ? (
-                    <Fragment>
-                      <label data-v-acd260e8="">
-                        {t("label.84805a7574a8")}
-                        <input
-                          type="url"
-                          required={true}
-                          placeholder="https://hooks.example/…"
-                          {...__input(
-                            channelForm.webhookUrl,
-                            (__nextValue: any) => {
-                              channelForm.webhookUrl = __nextValue;
-                            },
-                            "url",
-                            undefined,
-                            [],
-                          )}
-                          data-v-acd260e8=""
-                        ></input>
-                      </label>
-                      <small className={__classes("hint")} data-v-acd260e8="">
-                        {t("m.ce3a64e47c4d")}
-                      </small>
-                    </Fragment>
-                  ) : (
-                    <Fragment>
-                      <label data-v-acd260e8="">
-                        {t("m.5344a59d11c5")}
-                        <input
-                          required={true}
-                          placeholder="smtp.example.com"
-                          {...__input(
-                            channelForm.smtpHost,
-                            (__nextValue: any) => {
-                              channelForm.smtpHost = __nextValue;
-                            },
-                            "",
-                            undefined,
-                            [],
-                          )}
-                          data-v-acd260e8=""
-                        ></input>
-                      </label>
-                      <label data-v-acd260e8="">
-                        {t("m.e71ac32b544b")}
-                        <input
-                          type="number"
-                          min="1"
-                          max="65535"
-                          required={true}
-                          {...__input(
-                            channelForm.smtpPort,
-                            (__nextValue: any) => {
-                              channelForm.smtpPort = __nextValue;
-                            },
-                            "number",
-                            undefined,
-                            ["number"],
-                          )}
-                          data-v-acd260e8=""
-                        ></input>
-                      </label>
-                      <label data-v-acd260e8="">
-                        {t("m.475ebf9f8ba3")}
-                        <UiSelect
-                          modelValue={channelForm.smtpSecurityMode}
-                          onUpdateModelValue={(__nextValue: any) => {
-                            channelForm.smtpSecurityMode = __nextValue;
+                    {heading(
+                      editingChannel.value
+                        ? t("m.9536f6b3a7da")
+                        : t("m.edb55e6632ce"),
+                    )}
+                    <SettingsGroup>
+                      {row(
+                        "channel-name",
+                        t("m.d44e9b3d3b31"),
+                        <Input
+                          id="alert-channel-name"
+                          required
+                          placeholder={t("m.ab0113166ed7")}
+                          value={channelForm.name}
+                          onChange={(event) => {
+                            channelForm.name = event.target.value;
                           }}
-                          modelModifiers={{}}
-                          data-v-acd260e8=""
+                        />,
+                      )}
+                      {row(
+                        "channel-kind",
+                        t("m.ba40014ff496"),
+                        <Select
+                          id="alert-channel-kind"
+                          value={channelForm.kind}
+                          onValueChange={(value) => {
+                            channelForm.kind = value as AlertChannel["kind"];
+                            channelForm.secret = "";
+                          }}
+                          options={[
+                            { value: "webhook", label: "Webhook" },
+                            { value: "smtp", label: t("m.06344b933760") },
+                          ]}
+                        />,
+                      )}
+                      {channelForm.kind === "webhook" ? (
+                        <>
+                          {row(
+                            "channel-provider",
+                            t("channels.provider"),
+                            <Select
+                              id="alert-channel-provider"
+                              value={channelForm.provider}
+                              onValueChange={(value) => {
+                                channelForm.provider = value;
+                                channelForm.secret = "";
+                                channelForm.webhookUrl = "";
+                                channelForm.chatId = "";
+                                channelForm.headers = "";
+                                channelForm.signingSecret = "";
+                                channelForm.clearHeaders = false;
+                                channelForm.clearSigning = false;
+                              }}
+                              options={channelProviders.value.map((p) => ({
+                                value: p.id,
+                                label:
+                                  t(`channels.provider.${p.id}`) ===
+                                  `channels.provider.${p.id}`
+                                    ? p.name
+                                    : t(`channels.provider.${p.id}`),
+                              }))}
+                            />,
+                          )}
+                          {selectedProvider.value?.url &&
+                            row(
+                              "channel-url",
+                              t("label.84805a7574a8"),
+                              <Input
+                                id="alert-channel-url"
+                                type="url"
+                                required={selectedProvider.value.customRequest}
+                                placeholder={
+                                  selectedProvider.value.customRequest
+                                    ? "https://hooks.example/…"
+                                    : "https://api.day.app"
+                                }
+                                value={channelForm.webhookUrl}
+                                onChange={(event) => {
+                                  channelForm.webhookUrl = event.target.value;
+                                }}
+                              />,
+                            )}
+                          {selectedProvider.value?.chatId &&
+                            row(
+                              "channel-chat",
+                              "Chat ID",
+                              <Input
+                                id="alert-channel-chat"
+                                required
+                                value={channelForm.chatId}
+                                onChange={(event) => {
+                                  channelForm.chatId = event.target.value;
+                                }}
+                              />,
+                            )}
+                          {row(
+                            "channel-secret",
+                            selectedProvider.value
+                              ? t(
+                                  `channels.secret.${selectedProvider.value.secretLabel}`,
+                                )
+                              : t("m.82170ccaa6b5"),
+                            <Input
+                              id="alert-channel-secret"
+                              type="password"
+                              autoComplete="new-password"
+                              placeholder={
+                                editingChannel.value ? t("m.0c5bcbe51a9f") : ""
+                              }
+                              value={channelForm.secret}
+                              onChange={(event) => {
+                                channelForm.secret = event.target.value;
+                              }}
+                            />,
+                          )}
+                          {selectedProvider.value?.signing && (
+                            <>
+                              {row(
+                                "channel-signing",
+                                t("channels.signingSecret"),
+                                <Input
+                                  id="alert-channel-signing"
+                                  type="password"
+                                  autoComplete="new-password"
+                                  placeholder={
+                                    editingChannel.value
+                                      ? t("m.0c5bcbe51a9f")
+                                      : ""
+                                  }
+                                  value={channelForm.signingSecret}
+                                  onChange={(event) => {
+                                    channelForm.signingSecret =
+                                      event.target.value;
+                                    channelForm.clearSigning = false;
+                                  }}
+                                />,
+                              )}
+                              {editingChannel.value &&
+                                channels.value.find(
+                                  (c) => c.id === editingChannel.value,
+                                )?.hasSigningSecret &&
+                                row(
+                                  "channel-clear-signing",
+                                  t("channels.clearSigning"),
+                                  <Checkbox
+                                    id="alert-channel-clear-signing"
+                                    checked={channelForm.clearSigning}
+                                    onCheckedChange={(value) => {
+                                      channelForm.clearSigning = value === true;
+                                      channelForm.signingSecret = "";
+                                    }}
+                                  />,
+                                )}
+                            </>
+                          )}
+                          {selectedProvider.value?.customRequest && (
+                            <>
+                              {row(
+                                "channel-method",
+                                t("channels.method"),
+                                <Select
+                                  id="alert-channel-method"
+                                  value={channelForm.method}
+                                  onValueChange={(value) => {
+                                    channelForm.method = value;
+                                  }}
+                                  options={(
+                                    selectedProvider.value.methods ?? []
+                                  ).map((value) => ({ value, label: value }))}
+                                />,
+                              )}
+                              {row(
+                                "channel-headers",
+                                t("channels.headers"),
+                                <ExpandedTextarea
+                                  id="alert-channel-headers"
+                                  rows={3}
+                                  spellCheck={false}
+                                  autoComplete="off"
+                                  placeholder={
+                                    editingChannel.value
+                                      ? t("channels.headersKeep")
+                                      : '{"Authorization":"…"}'
+                                  }
+                                  value={channelForm.headers}
+                                  onChange={(event) => {
+                                    channelForm.headers = event.target.value;
+                                    channelForm.clearHeaders = false;
+                                  }}
+                                />,
+                              )}
+                              {editingChannel.value &&
+                                channels.value.find(
+                                  (c) => c.id === editingChannel.value,
+                                )?.hasHeaders &&
+                                row(
+                                  "channel-clear-headers",
+                                  t("channels.clearHeaders"),
+                                  <Checkbox
+                                    id="alert-channel-clear-headers"
+                                    checked={channelForm.clearHeaders}
+                                    onCheckedChange={(value) => {
+                                      channelForm.clearHeaders = value === true;
+                                      channelForm.headers = "";
+                                    }}
+                                  />,
+                                )}
+                              {row(
+                                "channel-body",
+                                t("channels.body"),
+                                <ExpandedTextarea
+                                  id="alert-channel-body"
+                                  rows={4}
+                                  spellCheck={false}
+                                  placeholder={'{"text":"{{message}}"}'}
+                                  value={channelForm.bodyTemplate}
+                                  onChange={(event) => {
+                                    channelForm.bodyTemplate =
+                                      event.target.value;
+                                  }}
+                                />,
+                                t("channels.bodyHelp"),
+                              )}
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {row(
+                            "smtp-host",
+                            t("m.5344a59d11c5"),
+                            <Input
+                              id="alert-smtp-host"
+                              required
+                              placeholder="smtp.example.com"
+                              value={channelForm.smtpHost}
+                              onChange={(event) => {
+                                channelForm.smtpHost = event.target.value;
+                              }}
+                            />,
+                          )}
+                          {row(
+                            "smtp-port",
+                            t("m.e71ac32b544b"),
+                            <Input
+                              id="alert-smtp-port"
+                              type="number"
+                              required
+                              min={1}
+                              max={65535}
+                              value={channelForm.smtpPort}
+                              onChange={(event) => {
+                                channelForm.smtpPort = Number(
+                                  event.target.value,
+                                );
+                              }}
+                            />,
+                          )}
+                          {row(
+                            "smtp-security",
+                            t("m.475ebf9f8ba3"),
+                            <Select
+                              id="alert-smtp-security"
+                              value={channelForm.smtpSecurityMode}
+                              onValueChange={(value) => {
+                                channelForm.smtpSecurityMode =
+                                  value as typeof channelForm.smtpSecurityMode;
+                              }}
+                              options={[
+                                {
+                                  value: "",
+                                  label: t("m.45fa6e264d64"),
+                                  disabled: true,
+                                },
+                                {
+                                  value: "starttls",
+                                  label: t("m.5b097c6cccbc"),
+                                },
+                                {
+                                  value: "implicit_tls",
+                                  label: t("m.906148fea2fc"),
+                                },
+                              ]}
+                            />,
+                            t("m.c373a9cc1577"),
+                          )}
+                          {row(
+                            "smtp-from",
+                            t("m.bae32961a3b5"),
+                            <Input
+                              id="alert-smtp-from"
+                              name="smtpFrom"
+                              inputMode="email"
+                              required
+                              value={channelForm.smtpFrom}
+                              onChange={(event) => {
+                                channelForm.smtpFrom = event.target.value;
+                              }}
+                            />,
+                          )}
+                          {row(
+                            "smtp-to",
+                            t("m.c237b665a6d8"),
+                            <Input
+                              id="alert-smtp-to"
+                              name="smtpTo"
+                              inputMode="email"
+                              required
+                              value={channelForm.smtpTo}
+                              onChange={(event) => {
+                                channelForm.smtpTo = event.target.value;
+                              }}
+                            />,
+                          )}
+                          {row(
+                            "smtp-user",
+                            t("m.e67fea90bde6"),
+                            <Input
+                              id="alert-smtp-user"
+                              autoComplete="off"
+                              value={channelForm.smtpUsername}
+                              onChange={(event) => {
+                                channelForm.smtpUsername = event.target.value;
+                              }}
+                            />,
+                          )}
+                          {row(
+                            "smtp-secret",
+                            t("m.82170ccaa6b5"),
+                            <Input
+                              id="alert-smtp-secret"
+                              type="password"
+                              autoComplete="new-password"
+                              placeholder={
+                                editingChannel.value &&
+                                channels.value.find(
+                                  (channel) =>
+                                    channel.id === editingChannel.value,
+                                )?.hasSecret
+                                  ? t("m.0c5bcbe51a9f")
+                                  : t("m.61a7dfb3a2c4")
+                              }
+                              value={channelForm.secret}
+                              onChange={(event) => {
+                                channelForm.secret = event.target.value;
+                              }}
+                            />,
+                          )}
+                        </>
+                      )}
+                      {row(
+                        "channel-template",
+                        t("m.fa3b2035a83a"),
+                        <ExpandedTextarea
+                          id="alert-channel-template"
+                          rows={4}
+                          spellCheck={false}
+                          placeholder="{{severity}} · {{ruleName}}：{{message}}"
+                          value={channelForm.messageTemplate}
+                          onChange={(event) => {
+                            channelForm.messageTemplate = event.target.value;
+                          }}
+                        />,
+                        t("m.aaedf01e6fae"),
+                      )}
+                      {row(
+                        "channel-enabled",
+                        t("m.848250ce08f9"),
+                        <Checkbox
+                          id="alert-channel-enabled"
+                          checked={channelForm.enabled}
+                          onCheckedChange={(value) => {
+                            channelForm.enabled = value === true;
+                          }}
+                        />,
+                      )}
+                    </SettingsGroup>
+                    <div className="settings-section-actions">
+                      {editingChannel.value ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={clearChannelForm}
                         >
-                          <option value="" disabled={true} data-v-acd260e8="">
-                            {t("m.45fa6e264d64")}
-                          </option>
-                          <option value="starttls" data-v-acd260e8="">
-                            {t("m.5b097c6cccbc")}
-                          </option>
-                          <option value="implicit_tls" data-v-acd260e8="">
-                            {t("m.906148fea2fc")}
-                          </option>
-                        </UiSelect>
-                      </label>
-                      <small className={__classes("hint")} data-v-acd260e8="">
-                        {t("m.c373a9cc1577")}
-                      </small>
-                      <label className="product-arc arc-ui registry-controls" data-native-controls="" data-v-acd260e8="">
-                        {t("m.bae32961a3b5")}
-                        <Input
-                          name="smtpFrom"
-                          inputMode="email"
-                          required
-                          value={channelForm.smtpFrom}
-                          onChange={event => {channelForm.smtpFrom = event.target.value;}}
-                        />
-                      </label>
-                      <label className="product-arc arc-ui registry-controls" data-native-controls="" data-v-acd260e8="">
-                        {t("m.c237b665a6d8")}
-                        <Input
-                          name="smtpTo"
-                          inputMode="email"
-                          required
-                          value={channelForm.smtpTo}
-                          onChange={event => {channelForm.smtpTo = event.target.value;}}
-                        />
-                      </label>
-                      <label data-v-acd260e8="">
-                        {t("m.e67fea90bde6")}
-                        <input
-                          autoComplete="off"
-                          {...__input(
-                            channelForm.smtpUsername,
-                            (__nextValue: any) => {
-                              channelForm.smtpUsername = __nextValue;
-                            },
-                            "",
-                            undefined,
-                            [],
-                          )}
-                          data-v-acd260e8=""
-                        ></input>
-                      </label>
-                      <label data-v-acd260e8="">
-                        {t("m.82170ccaa6b5")}
-                        <input
-                          type="password"
-                          autoComplete="new-password"
-                          placeholder={
-                            editingChannel.value &&
-                            channels.value.find(
-                              (x) => x.id === editingChannel.value,
-                            )?.hasSecret
-                              ? t("m.0c5bcbe51a9f")
-                              : (t("m.61a7dfb3a2c4") as any)
-                          }
-                          {...__input(
-                            channelForm.secret,
-                            (__nextValue: any) => {
-                              channelForm.secret = __nextValue;
-                            },
-                            "password",
-                            undefined,
-                            [],
-                          )}
-                          data-v-acd260e8=""
-                        ></input>
-                      </label>
-                    </Fragment>
-                  )}
-                  <label data-v-acd260e8="">
-                    {t("m.fa3b2035a83a")}
-                    <textarea
-                      rows={4}
-                      spellCheck="false"
-                      placeholder="{{severity}} · {{ruleName}}：{{message}}"
-                      {...__input(
-                        channelForm.messageTemplate,
-                        (__nextValue: any) => {
-                          channelForm.messageTemplate = __nextValue;
-                        },
-                        "",
-                        undefined,
-                        [],
-                      )}
-                      data-v-acd260e8=""
-                    ></textarea>
-                  </label>
-                  <small className={__classes("hint")} data-v-acd260e8="">
-                    {t("m.aaedf01e6fae")}
-                  </small>
-                  <label className={__classes("check-row")} data-v-acd260e8="">
-                    <input
-                      type="checkbox"
-                      {...__input(
-                        channelForm.enabled,
-                        (__nextValue: any) => {
-                          channelForm.enabled = __nextValue;
-                        },
-                        "checkbox",
-                        undefined,
-                        [],
-                      )}
-                      data-v-acd260e8=""
-                    ></input>
-                    {t("m.848250ce08f9")}
-                  </label>
-                  <div className={__classes("row-actions")} data-v-acd260e8="">
-                    <button
-                      type="submit"
-                      disabled={saving.value as any}
-                      className={__classes("alert-button primary")}
-                      data-v-acd260e8=""
-                    >
-                      {saving.value ? t("m.ff509c9ba052") : t("m.5fb0d9558110")}
-                    </button>
-                    {editingChannel.value ? (
-                      <button
-                        type="button"
-                        className={__classes("alert-button subtle")}
-                        onClick={(event: any) => {
-                          __call(clearChannelForm, event);
-                        }}
-                        data-v-acd260e8=""
-                      >
-                        {t("m.4b29ce8e4093")}
-                      </button>
-                    ) : null}
-                  </div>
-                </form>
-              </section>
-            ) : tab.value === "windows" ? (
-              <section className={__classes("alert-grid")} data-v-acd260e8="">
-                <div className={__classes("alert-card")} data-v-acd260e8="">
-                  <div
-                    className={__classes("section-title")}
-                    data-v-acd260e8=""
-                  >
-                    <div data-v-acd260e8="">
-                      <h2 data-v-acd260e8="">{t("m.5b44b4cbe8e7")}</h2>
-                      <p data-v-acd260e8="">{t("m.9ba72a13180d")}</p>
+                          {t("m.4b29ce8e4093")}
+                        </Button>
+                      ) : null}
+                      <Button type="submit" disabled={saving.value}>
+                        {saving.value
+                          ? t("m.ff509c9ba052")
+                          : t("m.5fb0d9558110")}
+                      </Button>
                     </div>
-                  </div>
-                  <div className={__classes("window-list")} data-v-acd260e8="">
-                    <Fragment>
-                      {__each(windows.value, (window) => (
-                        <article key={window.id as any} data-v-acd260e8="">
-                          <div data-v-acd260e8="">
-                            <strong data-v-acd260e8="">
+                  </form>
+                </>
+              ) : tab.value === "windows" ? (
+                <>
+                  <section className="workspace-section window-list">
+                    {heading(t("m.cb20b84d602a"))}
+                    {windows.value.length ? (
+                      <SettingsGroup>
+                        {windows.value.map((window) => (
+                          <article key={window.id} className="alert-record">
+                            <strong>
                               {window.kind === "maintenance"
-                                ? t("m.1e9fa64d9d1e")
-                                : t("m.2edd4433070c")}
-                              {" · "}
+                                ? t("m.21138f1b0642")
+                                : t("m.bf436f2fa459")}{" "}
+                              ·{" "}
                               {window.scopeType === "global"
                                 ? t("m.63d6b47116de")
                                 : window.scopeType === "node"
                                   ? t("m.2410d860f093")
                                   : t("m.1123245d1bed")}
                             </strong>
-                            <small data-v-acd260e8="">
-                              {when(window.startsAt)}
-                              {" — "}
-                              {when(window.endsAt)}
+                            <small>
+                              {when(window.startsAt)} — {when(window.endsAt)}
                             </small>
-                            <p data-v-acd260e8="">{window.reason}</p>
-                          </div>
-                          <button
-                            type="button"
-                            className={__classes("text-button danger-text")}
-                            onClick={(event: any) => {
-                              deleteWindow(window);
-                            }}
-                            data-v-acd260e8=""
-                          >
-                            {t("m.4e6fd0e28c55")}
-                          </button>
-                        </article>
-                      ))}
-                    </Fragment>
-                    {!windows.value.length ? (
-                      <p
-                        className={__classes("empty-state")}
-                        data-v-acd260e8=""
-                      >
-                        {t("m.20975dbddcfd")}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-                <form
-                  className={__classes("alert-card alert-form-card")}
-                  onSubmit={(event: any) => {
-                    event.preventDefault();
-                    __call(saveWindow, event);
-                  }}
-                  data-v-acd260e8=""
-                >
-                  <div
-                    className={__classes("section-title")}
-                    data-v-acd260e8=""
-                  >
-                    <div data-v-acd260e8="">
-                      <h2 data-v-acd260e8="">{t("m.ad7d42133c82")}</h2>
-                      <p data-v-acd260e8="">{t("m.e4926094a3a4")}</p>
-                    </div>
-                  </div>
-                  <label data-v-acd260e8="">
-                    {t("m.ba40014ff496")}
-                    <UiSelect
-                      modelValue={windowForm.kind}
-                      onUpdateModelValue={(__nextValue: any) => {
-                        windowForm.kind = __nextValue;
-                      }}
-                      modelModifiers={{}}
-                      data-v-acd260e8=""
-                    >
-                      <option value="maintenance" data-v-acd260e8="">
-                        {t("m.21138f1b0642")}
-                      </option>
-                      <option value="silence" data-v-acd260e8="">
-                        {t("m.bf436f2fa459")}
-                      </option>
-                    </UiSelect>
-                  </label>
-                  <label data-v-acd260e8="">
-                    {t("m.ae72b532f4b8")}
-                    <UiSelect
-                      modelValue={windowForm.scopeType}
-                      onUpdateModelValue={(__nextValue: any) => {
-                        windowForm.scopeType = __nextValue;
-                      }}
-                      modelModifiers={{}}
-                      data-v-acd260e8=""
-                    >
-                      <option value="global" data-v-acd260e8="">
-                        {t("m.63d6b47116de")}
-                      </option>
-                      <option value="node" data-v-acd260e8="">
-                        {t("m.f8c3f7bee9ee")}
-                      </option>
-                      <option value="rule" data-v-acd260e8="">
-                        {t("m.dff9fdf5372b")}
-                      </option>
-                    </UiSelect>
-                  </label>
-                  {windowForm.scopeType !== "global" ? (
-                    <label data-v-acd260e8="">
-                      {t("m.67cdf2db35e4")}
-                      <input
-                        required={true}
-                        placeholder="UUID"
-                        {...__input(
-                          windowForm.scopeId,
-                          (__nextValue: any) => {
-                            windowForm.scopeId = __nextValue;
-                          },
-                          "",
-                          undefined,
-                          [],
-                        )}
-                        data-v-acd260e8=""
-                      ></input>
-                    </label>
-                  ) : null}
-                  <div
-                    className={__classes("inline-fields")}
-                    data-v-acd260e8=""
-                  >
-                    <label data-v-acd260e8="">
-                      {t("m.d2bb025a2e51")}
-                      <input
-                        type="datetime-local"
-                        {...__input(
-                          windowForm.startsAt,
-                          (__nextValue: any) => {
-                            windowForm.startsAt = __nextValue;
-                          },
-                          "datetime-local",
-                          undefined,
-                          [],
-                        )}
-                        data-v-acd260e8=""
-                      ></input>
-                    </label>
-                    <label data-v-acd260e8="">
-                      {t("m.c7b24e7997e9")}
-                      <input
-                        type="datetime-local"
-                        {...__input(
-                          windowForm.endsAt,
-                          (__nextValue: any) => {
-                            windowForm.endsAt = __nextValue;
-                          },
-                          "datetime-local",
-                          undefined,
-                          [],
-                        )}
-                        data-v-acd260e8=""
-                      ></input>
-                    </label>
-                  </div>
-                  <label data-v-acd260e8="">
-                    {t("m.f029d9cb4a76")}
-                    <input
-                      required={true}
-                      placeholder={t("m.440715526b90") as any}
-                      {...__input(
-                        windowForm.reason,
-                        (__nextValue: any) => {
-                          windowForm.reason = __nextValue;
-                        },
-                        "",
-                        undefined,
-                        [],
-                      )}
-                      data-v-acd260e8=""
-                    ></input>
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={saving.value as any}
-                    className={__classes("alert-button primary")}
-                    data-v-acd260e8=""
-                  >
-                    {t("m.2cb77284fedd")}
-                  </button>
-                </form>
-              </section>
-            ) : (
-              <section className={__classes("alert-card")} data-v-acd260e8="">
-                <div className={__classes("section-title")} data-v-acd260e8="">
-                  <div data-v-acd260e8="">
-                    <h2 data-v-acd260e8="">{t("m.0d09685cc503")}</h2>
-                    <p data-v-acd260e8="">{t("m.da3e796d7d49")}</p>
-                  </div>
-                </div>
-                <div className={__classes("table-wrap")} data-v-acd260e8="">
-                  <table data-v-acd260e8="">
-                    <thead data-v-acd260e8="">
-                      <tr data-v-acd260e8="">
-                        <th data-v-acd260e8="">{t("m.c35ffb529d5d")}</th>
-                        <th data-v-acd260e8="">{t("m.0d12cbd6562b")}</th>
-                        <th data-v-acd260e8="">{t("m.6320b4a8722a")}</th>
-                        <th data-v-acd260e8="">{t("m.58a823852f8a")}</th>
-                        <th data-v-acd260e8="">{"HTTP"}</th>
-                        <th data-v-acd260e8="">{t("m.8b6ff498515b")}</th>
-                        <th data-v-acd260e8="">{t("m.0bc1fb72ae1b")}</th>
-                      </tr>
-                    </thead>
-                    <tbody data-v-acd260e8="">
-                      <Fragment>
-                        {__each(deliveries.value, (delivery) => (
-                          <tr key={delivery.id as any} data-v-acd260e8="">
-                            <td data-v-acd260e8="">{delivery.channelName}</td>
-                            <td data-v-acd260e8="">
-                              {delivery.testSend
-                                ? t("m.6aa8f49cc992")
-                                : delivery.kind.toUpperCase()}
-                            </td>
-                            <td data-v-acd260e8="">
-                              <span
-                                className={__classes("pill", delivery.status)}
-                                data-v-acd260e8=""
+                            <p>{window.reason}</p>
+                            <div className="settings-section-actions">
+                              <Button
+                                variant="danger"
+                                onClick={() => void deleteWindow(window)}
                               >
-                                {deliveryLabel(delivery.status)}
-                              </span>
-                            </td>
-                            <td data-v-acd260e8="">
-                              {delivery.attempts}
-                              {" / "}
-                              {delivery.maxAttempts}
-                            </td>
-                            <td data-v-acd260e8="">
-                              {delivery.httpStatus ?? "—"}
-                            </td>
-                            <td data-v-acd260e8="">
-                              {when(delivery.deliveredAt ?? delivery.createdAt)}
-                            </td>
-                            <td data-v-acd260e8="">
-                              {display(delivery.lastError || "—")}
-                            </td>
-                          </tr>
+                                {t("m.4e6fd0e28c55")}
+                              </Button>
+                            </div>
+                          </article>
                         ))}
-                      </Fragment>
-                    </tbody>
-                  </table>
-                </div>
-                {!deliveries.value.length ? (
-                  <p className={__classes("empty-state")} data-v-acd260e8="">
-                    {t("m.7bf308b00b96")}
-                  </p>
-                ) : null}
-              </section>
-            )}
-          </section>
-        </>
+                      </SettingsGroup>
+                    ) : (
+                      empty(t("m.20975dbddcfd"))
+                    )}
+                  </section>
+                  <form
+                    className="workspace-section alert-form-card alert-window-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveWindow();
+                    }}
+                  >
+                    {heading(t("m.ad7d42133c82"))}
+                    <SettingsGroup>
+                      {row(
+                        "window-kind",
+                        t("m.ba40014ff496"),
+                        <Select
+                          id="alert-window-kind"
+                          value={windowForm.kind}
+                          onValueChange={(value) => {
+                            windowForm.kind = value as AlertWindow["kind"];
+                          }}
+                          options={[
+                            {
+                              value: "maintenance",
+                              label: t("m.21138f1b0642"),
+                            },
+                            { value: "silence", label: t("m.bf436f2fa459") },
+                          ]}
+                        />,
+                      )}
+                      {row(
+                        "window-scope",
+                        t("m.ae72b532f4b8"),
+                        <Select
+                          id="alert-window-scope"
+                          value={windowForm.scopeType}
+                          onValueChange={(value) => {
+                            windowForm.scopeType =
+                              value as AlertWindow["scopeType"];
+                          }}
+                          options={[
+                            { value: "global", label: t("m.63d6b47116de") },
+                            { value: "node", label: t("m.f8c3f7bee9ee") },
+                            { value: "rule", label: t("m.dff9fdf5372b") },
+                          ]}
+                        />,
+                      )}
+                      {windowForm.scopeType !== "global"
+                        ? row(
+                            "window-id",
+                            t("m.67cdf2db35e4"),
+                            <Input
+                              id="alert-window-id"
+                              required
+                              placeholder="UUID"
+                              value={windowForm.scopeId}
+                              onChange={(event) => {
+                                windowForm.scopeId = event.target.value;
+                              }}
+                            />,
+                          )
+                        : null}
+                      {row(
+                        "window-start",
+                        t("m.d2bb025a2e51"),
+                        <Input
+                          id="alert-window-start"
+                          type="datetime-local"
+                          className="min-w-0"
+                          value={windowForm.startsAt}
+                          onChange={(event) => {
+                            windowForm.startsAt = event.target.value;
+                          }}
+                        />,
+                        t("m.e4926094a3a4"),
+                      )}
+                      {row(
+                        "window-end",
+                        t("m.c7b24e7997e9"),
+                        <Input
+                          id="alert-window-end"
+                          type="datetime-local"
+                          className="min-w-0"
+                          value={windowForm.endsAt}
+                          onChange={(event) => {
+                            windowForm.endsAt = event.target.value;
+                          }}
+                        />,
+                      )}
+                      {row(
+                        "window-reason",
+                        t("m.f029d9cb4a76"),
+                        <Input
+                          id="alert-window-reason"
+                          required
+                          placeholder={t("m.440715526b90")}
+                          value={windowForm.reason}
+                          onChange={(event) => {
+                            windowForm.reason = event.target.value;
+                          }}
+                        />,
+                      )}
+                    </SettingsGroup>
+                    <div className="settings-section-actions">
+                      <Button type="submit" disabled={saving.value}>
+                        {t("m.2cb77284fedd")}
+                      </Button>
+                    </div>
+                  </form>
+                </>
+              ) : (
+                <section className="workspace-section alert-deliveries">
+                  {heading(t("m.0d09685cc503"))}
+                  {deliveries.value.length ? (
+                    <SortableDataTable
+                      rows={deliveries.value.map((delivery) => ({
+                        ...delivery,
+                      }))}
+                      rowKey="id"
+                      caption={t("m.0d09685cc503")}
+                      columns={[
+                        { key: "channelName", label: t("m.c35ffb529d5d") },
+                        {
+                          key: "kind",
+                          label: t("m.0d12cbd6562b"),
+                          render: (_, delivery) =>
+                            delivery.testSend
+                              ? t("m.6aa8f49cc992")
+                              : delivery.kind.toUpperCase(),
+                        },
+                        {
+                          key: "status",
+                          label: t("m.6320b4a8722a"),
+                          render: (_, delivery) => (
+                            <Badge
+                              tone={
+                                delivery.status === "failed"
+                                  ? "danger"
+                                  : "neutral"
+                              }
+                            >
+                              {deliveryLabel(delivery.status)}
+                            </Badge>
+                          ),
+                        },
+                        {
+                          key: "attempts",
+                          label: t("m.58a823852f8a"),
+                          render: (_, delivery) =>
+                            `${delivery.attempts} / ${delivery.maxAttempts}`,
+                        },
+                        {
+                          key: "httpStatus",
+                          label: "HTTP",
+                          render: (_, delivery) => delivery.httpStatus ?? "—",
+                        },
+                        {
+                          key: "createdAt",
+                          label: t("m.8b6ff498515b"),
+                          render: (_, delivery) =>
+                            when(delivery.deliveredAt ?? delivery.createdAt),
+                        },
+                        {
+                          key: "lastError",
+                          label: t("m.0bc1fb72ae1b"),
+                          render: (_, delivery) =>
+                            display(delivery.lastError || "—"),
+                        },
+                      ]}
+                    />
+                  ) : (
+                    empty(t("m.7bf308b00b96"))
+                  )}
+                </section>
+              )}
+            </TabsContent>
+          </Tabs>
+        </ManagementPage>
       );
     },
     input,

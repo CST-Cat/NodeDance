@@ -163,9 +163,10 @@ export interface AlertRule {
   severity: 'info' | 'warning' | 'critical'; threshold?: number; durationSeconds: number
   cooldownSeconds: number; expectedState?: string; channelIds: string[]; enabled: boolean; revision: number
 }
+export interface ChannelProvider { id: string; name: string; secretLabel: string; url: boolean; chatId: boolean; signing: boolean; customRequest: boolean; methods?: string[] }
 export interface AlertChannel {
-  id: string; name: string; kind: 'webhook' | 'smtp'; enabled: boolean; hasSecret: boolean; revision: number
-  config: { webhookUrl?: string; messageTemplate?: string; smtpHost?: string; smtpPort?: number; smtpFrom?: string; smtpTo?: string; smtpUsername?: string; smtpSecurityMode?: 'starttls' | 'implicit_tls' }
+  id: string; name: string; kind: 'webhook' | 'smtp'; enabled: boolean; hasSecret: boolean; hasHeaders: boolean; hasSigningSecret: boolean; revision: number
+  config: { provider?: string; chatId?: string; method?: string; bodyTemplate?: string; webhookUrl?: string; messageTemplate?: string; smtpHost?: string; smtpPort?: number; smtpFrom?: string; smtpTo?: string; smtpUsername?: string; smtpSecurityMode?: 'starttls' | 'implicit_tls' }
 }
 export interface AlertItem {
   id: string; ruleId: string; ruleName: string; nodeId: string; nodeName: string; subjectId?: string
@@ -668,11 +669,11 @@ export const api = {
   serviceProbeHistory: (id: string, init: RequestInit = {}) => operationRequest<{ runs: ServiceProbeRun[] }>("probes.history", { params: { id: String(id) }, query: { limit: "100" } }, init),
   alertRules: (nodeId = '') => operationRequest<{ rules: AlertRule[] }>('rules.list', { query: nodeId ? { nodeId } : {} }),
   createAlertRule: (payload: Omit<AlertRule, 'id' | 'revision'>) => operationRequest<{ rule: AlertRule }>("rules.create", {}, { body: JSON.stringify(payload) }),
-  updateAlertRule: (id: string, payload: AlertRule) => operationRequest<{ rule: AlertRule }>("rules.update", { params: { id: String(id) } }, { body: JSON.stringify(payload) }),
+  updateAlertRule: (id: string, payload: Omit<AlertRule, 'id'>) => operationRequest<{ rule: AlertRule }>("rules.update", { params: { id: String(id) } }, { body: JSON.stringify(payload) }),
   deleteAlertRule: (id: string, revision: number) => operationRequest<void>("rules.delete", { params: { id: String(id) } }, { body: JSON.stringify({ revision }) }),
   ensureDefaultAlertRules: (nodeId: string) => operationRequest<{ rules: AlertRule[] }>("rules.defaults", {}, { body: JSON.stringify({ nodeId }) }),
   alertChannels: () => operationRequest<{ channels: AlertChannel[] }>("channels.list", {}),
-  saveAlertChannel: (payload: { name: string; kind: 'webhook' | 'smtp'; config: AlertChannel['config']; secret?: string; enabled: boolean; revision?: number }, id?: string) =>
+  saveAlertChannel: (payload: { name: string; kind: 'webhook' | 'smtp'; config: AlertChannel['config']; secret?: string; headers?: Record<string, string>; signingSecret?: string; enabled: boolean; revision?: number }, id?: string) =>
     operationRequest<{ channel: AlertChannel }>(id ? 'channels.update' : 'channels.create', { params: id ? { id } : {} }, { body: JSON.stringify(payload) }),
   deleteAlertChannel: (id: string, revision: number) => operationRequest<void>("channels.delete", { params: { id: String(id) } }, { body: JSON.stringify({ revision }) }),
   testAlertChannel: (id: string) => operationRequest<{ status: string }>("channels.test", { params: { id: String(id) } }),

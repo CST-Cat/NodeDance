@@ -374,7 +374,11 @@ func New(version string, options Options) (*Server, error) {
 			if e != nil {
 				return e
 			}
-			_, e = s.alertSender.Send(ctx, c, secret, payload)
+			raw, e := json.Marshal(corealerts.Notification{Event: "certificate_expiry", Message: payload, OccurredAt: time.Now().UTC()})
+			if e != nil {
+				return e
+			}
+			_, e = s.alertSender.Send(ctx, c, secret, string(raw))
 			return e
 		})
 	}()

@@ -14,24 +14,21 @@ import {
 import { beijingTime } from "../time";
 import ContractFields from "./ContractFields";
 
-import { Fragment } from "react";
-import { __call, __classes, __each, __input, useController } from "../state";
+import { useController } from "../state";
+import { SettingsGroup } from "./SettingsGroup";
+import { TabsContent } from "./arc/tabs/tabs";
+import { Skeleton } from "./arc/skeleton/skeleton";
+import "./PersonalSettings.css";
 import "./HostManagement.css";
 import {
   ManagementPage,
   Button,
-  Input,
-  Textarea,
   Checkbox,
   Select,
-  Card,
-  Badge,
   Alert,
   Tabs,
   TabsList,
   TabsTrigger,
-  checkboxProps,
-  selectOptions,
 } from "./ManagementUI";
 type Props = {} & { children?: import("react").ReactNode; [key: string]: any };
 export default function HostManagement(input: Props) {
@@ -139,12 +136,20 @@ export default function HostManagement(input: Props) {
           busy.value = false;
         }
       }
-      async function readList<T>(name: string, key: string, assign: (items: T[]) => void) {
+      async function readList<T>(
+        name: string,
+        key: string,
+        assign: (items: T[]) => void,
+      ) {
         listRequests.get(name)?.abort();
         const controller = new AbortController();
         listRequests.set(name, controller);
         try {
-          const result = await operationRequest<Record<string, T[]>>(name, {}, {signal: controller.signal});
+          const result = await operationRequest<Record<string, T[]>>(
+            name,
+            {},
+            { signal: controller.signal },
+          );
           if (!disposed && !controller.signal.aborted) assign(result[key]!);
         } catch (reason) {
           if (!disposed && !controller.signal.aborted) throw reason;
@@ -157,6 +162,7 @@ export default function HostManagement(input: Props) {
         const controller = new AbortController();
         nodeRequest = controller;
         const id = nodeId.value;
+        diagnostics.value = "";
         loadingNode.value = true;
         error.value = "";
         notice.value = "";
@@ -164,19 +170,31 @@ export default function HostManagement(input: Props) {
           for (const k of Object.keys(value)) delete value[k];
         try {
           const results = await Promise.allSettled([
-            operationRequest<{settings: Record<string, unknown>}>("agents.settings", {params:{nodeId:id}}, {signal:controller.signal}),
-            operationRequest<Record<string, unknown>>("nodes.asset", {params:{nodeId:id}}, {signal:controller.signal}),
+            operationRequest<{ settings: Record<string, unknown> }>(
+              "agents.settings",
+              { params: { nodeId: id } },
+              { signal: controller.signal },
+            ),
+            operationRequest<Record<string, unknown>>(
+              "nodes.asset",
+              { params: { nodeId: id } },
+              { signal: controller.signal },
+            ),
           ]);
           if (disposed || nodeRequest !== controller) return;
-          if (results[0].status === "fulfilled") Object.assign(settings, results[0].value.settings);
-          if (results[1].status === "fulfilled") Object.assign(asset, results[1].value);
+          if (results[0].status === "fulfilled")
+            Object.assign(settings, results[0].value.settings);
+          if (results[1].status === "fulfilled")
+            Object.assign(asset, results[1].value);
           const failed = results.find((r) => r.status === "rejected");
           if (failed?.status === "rejected") throw failed.reason;
         } catch (reason) {
           if (!disposed && nodeRequest === controller)
-            error.value = reason instanceof Error ? reason.message : String(reason);
+            error.value =
+              reason instanceof Error ? reason.message : String(reason);
         } finally {
-          if (!disposed && nodeRequest === controller) loadingNode.value = false;
+          if (!disposed && nodeRequest === controller)
+            loadingNode.value = false;
         }
       }
       async function save(name: string, body: Record<string, unknown>) {
@@ -229,7 +247,9 @@ export default function HostManagement(input: Props) {
           if (disposed) return;
           currentBatch.value = result;
           if (name === "commands.batch")
-            await readList<Batch>("commands.batches", "batches", (items) => { batches.value = items; });
+            await readList<Batch>("commands.batches", "batches", (items) => {
+              batches.value = items;
+            });
           else notice.value = t("host.saved");
         });
       }
@@ -271,7 +291,9 @@ export default function HostManagement(input: Props) {
           );
           if (disposed) return;
           grantResult.value = result;
-          await readList<Grant>("agents.grants", "grants", (items) => { grantList.value = items; });
+          await readList<Grant>("agents.grants", "grants", (items) => {
+            grantList.value = items;
+          });
         });
       }
       async function revokeGrant(id: string) {
@@ -282,7 +304,9 @@ export default function HostManagement(input: Props) {
             },
           });
           if (disposed) return;
-          await readList<Grant>("agents.grants", "grants", (items) => { grantList.value = items; });
+          await readList<Grant>("agents.grants", "grants", (items) => {
+            grantList.value = items;
+          });
         });
       }
       function selectNode() {
@@ -303,493 +327,484 @@ export default function HostManagement(input: Props) {
           }
         },
       );
-      watchState([nodeId, tab], () => {
-        if (nodeId.value && (tab.value === "settings" || tab.value === "assets")) {
-          void loadNode();
-        } else {
-          nodeRequest?.abort();
-          nodeRequest = undefined;
-          loadingNode.value = false;
-        }
-      }, {immediate: true});
-      watchState(tab, (current) => {
-        error.value = "";
-        const request = current === "enrollment"
-          ? readList<Grant>("agents.grants", "grants", (items) => { grantList.value = items; })
-          : current === "commands" || current === "probes"
-            ? readList<Batch>("commands.batches", "batches", (items) => { batches.value = items; })
-            : undefined;
-        void request?.catch((reason) => {
-          if (!disposed && tab.value === current) error.value = reason instanceof Error ? reason.message : String(reason);
-        });
-      }, {immediate: true});
+      watchState(
+        [nodeId, tab],
+        () => {
+          if (
+            nodeId.value &&
+            (tab.value === "settings" || tab.value === "assets")
+          ) {
+            void loadNode();
+          } else {
+            nodeRequest?.abort();
+            nodeRequest = undefined;
+            loadingNode.value = false;
+          }
+        },
+        { immediate: true },
+      );
+      watchState(
+        tab,
+        (current) => {
+          error.value = "";
+          const request =
+            current === "enrollment"
+              ? readList<Grant>("agents.grants", "grants", (items) => {
+                  grantList.value = items;
+                })
+              : current === "commands" || current === "probes"
+                ? readList<Batch>("commands.batches", "batches", (items) => {
+                    batches.value = items;
+                  })
+                : undefined;
+          void request?.catch((reason) => {
+            if (!disposed && tab.value === current)
+              error.value =
+                reason instanceof Error ? reason.message : String(reason);
+          });
+        },
+        { immediate: true },
+      );
       afterMount(async () => {
         await perform(async () => {
-          const [list, catalog] = await Promise.all([api.nodes(), operationCatalog()]);
+          const [list, catalog] = await Promise.all([
+            api.nodes(),
+            operationCatalog(),
+          ]);
           if (disposed) return;
-          nodes.value = list.nodes.filter((n) => !["pending", "revoked"].includes(n.status));
+          nodes.value = list.nodes.filter(
+            (n) => !["pending", "revoked"].includes(n.status),
+          );
           operations.value = catalog.operations;
-          nodeId.value = nodes.value.find((n) => n.nodeId === viewNavigation.route.value.nodeId)?.nodeId ?? nodes.value[0]?.nodeId ?? "";
+          nodeId.value =
+            nodes.value.find(
+              (n) => n.nodeId === viewNavigation.route.value.nodeId,
+            )?.nodeId ??
+            nodes.value[0]?.nodeId ??
+            "";
         });
       });
+      const heading = (text: string) => (
+        <div className="workspace-section-heading">
+          <h2>{text}</h2>
+        </div>
+      );
       return () => (
-        <>
-          <ManagementPage
-            className={__classes("host-page workspace-page")}
-            data-v-bd412aaa=""
+        <ManagementPage
+          registryStyles
+          className="host-page preferences-page workspace-settings"
+        >
+          <header className="workspace-heading">
+            <h1>{t("host.title")}</h1>
+          </header>
+          {error.value ? (
+            <Alert
+              role="alert"
+              className="host-error"
+              tone="danger"
+              title={t("management.error")}
+            >
+              {error.value}
+            </Alert>
+          ) : null}
+          {notice.value ? (
+            <Alert role="status" tone="info" title={t("management.notice")}>
+              {notice.value}
+            </Alert>
+          ) : null}
+          <Tabs
+            className="host-tabs"
+            value={tab.value}
+            onValueChange={(value) => {
+              tab.value = value as typeof tab.value;
+            }}
           >
-            <header data-v-bd412aaa="">
-              <div data-v-bd412aaa="">
-                <h1 data-v-bd412aaa="">{t("host.title")}</h1>
-                <p data-v-bd412aaa="">{t("host.subtitle")}</p>
-              </div>
-            </header>
-            <Tabs
-              className="management-tabs"
-              value={tab.value}
-              onValueChange={(value) => {
-                tab.value = value as typeof tab.value;
+            <TabsList
+              aria-label={t("host.title")}
+              onPointerDownCapture={(event) => {
+                event.currentTarget.dataset.focusSource = "pointer";
+              }}
+              onKeyDownCapture={(event) => {
+                delete event.currentTarget.dataset.focusSource;
+              }}
+              onBlurCapture={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget))
+                  delete event.currentTarget.dataset.focusSource;
               }}
             >
-              <TabsList aria-label={t("host.title")}>
-                {hostTabs.map((item) => (
-                  <TabsTrigger key={item} value={item}>
-                    {t(`host.tab.${item}`)}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-
-            {error.value ? (
-              <Alert
-                role="alert"
-                className={__classes("host-error")}
-                data-v-bd412aaa=""
-                tone="danger"
-                title={t("management.error")}
-              >
-                {error.value}
-              </Alert>
-            ) : null}
-            {notice.value ? (
-              <Alert
-                role="status"
-                data-v-bd412aaa=""
-                tone="info"
-                title={t("management.notice")}
-              >
-                {notice.value}
-              </Alert>
-            ) : null}
-            {tab.value === "settings" || tab.value === "assets" ? (
-              <Card
-                className={__classes("host-card management-card")}
-                data-v-bd412aaa=""
-                title={t(`host.tab.${tab.value}`)}
-              >
-                <label className={__classes("host-node")} data-v-bd412aaa="">
-                  {t("host.node")}
-                  <Select
-                    disabled={pending.value as any}
-                    value={String(nodeId.value ?? "")}
-                    onValueChange={(next) => {
-                      const __nextValue: any =
-                        typeof nodeId.value === "number" ? Number(next) : next;
-                      nodeId.value = __nextValue;
-                      __call(selectNode, undefined);
-                    }}
-                    data-v-bd412aaa=""
-                    options={selectOptions(
-                      <>
-                        <Fragment>
-                          {__each(nodes.value, (node) => (
-                            <option
-                              key={node.nodeId as any}
-                              value={node.nodeId as any}
-                              data-v-bd412aaa=""
-                            >
-                              {node.displayName}
-                              {" · "}
-                              {node.status}
-                            </option>
-                          ))}
-                        </Fragment>
-                      </>,
-                    )}
-                  ></Select>
-                </label>
-                {nodeId.value ? (
-                  <Fragment>
-                    {tab.value === "settings" ? (
-                      <form
-                        onSubmit={(event: any) => {
-                          event.preventDefault();
-                          save("agents.configure", settings);
-                        }}
-                        data-v-bd412aaa=""
-                      >
-                        <p data-v-bd412aaa="">{t("host.settingsHint")}</p>
-                        <ContractFields
-                          schema={settingsSchema.value as any}
-                          values={settings as any}
-                          data-v-bd412aaa=""
-                        ></ContractFields>
-                        <div
-                          className={__classes("host-actions")}
-                          data-v-bd412aaa=""
-                        >
-                          <Button
-                            disabled={
-                              pending.value ||
-                              (!Object.keys(settings).length as any)
-                            }
-                            className={__classes("primary-button")}
-                            data-v-bd412aaa=""
-                            variant="primary"
-                          >
-                            {t("host.save")}
-                          </Button>
+              {hostTabs.map((item) => (
+                <TabsTrigger key={item} value={item}>
+                  {t(`host.tab.${item}`)}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <TabsContent
+              value={tab.value}
+              className="settings-sections host-sections"
+            >
+              {tab.value === "settings" || tab.value === "assets" ? (
+                <>
+                  <section className="workspace-section">
+                    <SettingsGroup>
+                      <div className="parameter-row host-node">
+                        <label htmlFor="host-node-picker">
+                          {t("host.node")}
+                        </label>
+                        <Select
+                          id="host-node-picker"
+                          aria-label={t("host.node")}
+                          disabled={pending.value}
+                          value={nodeId.value}
+                          onValueChange={(value) => {
+                            nodeId.value = value;
+                            selectNode();
+                          }}
+                          options={nodes.value.map((node) => ({
+                            value: node.nodeId,
+                            label: `${node.displayName} · ${node.status}`,
+                          }))}
+                        />
+                      </div>
+                    </SettingsGroup>
+                  </section>
+                  {nodeId.value ? (
+                    <form
+                      className="workspace-section host-card host-settings-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void save(
+                          tab.value === "settings"
+                            ? "agents.configure"
+                            : "nodes.save-asset",
+                          tab.value === "settings" ? settings : asset,
+                        );
+                      }}
+                    >
+                      {heading(t(`host.tab.${tab.value}`))}
+                      <p className="host-hint">
+                        {t(
+                          tab.value === "settings"
+                            ? "host.settingsHint"
+                            : "host.assetsHint",
+                        )}
+                      </p>
+                      {loadingNode.value ? (
+                        <Skeleton label={t("load.initial")} lines={3} />
+                      ) : null}
+                      <ContractFields
+                        schema={
+                          tab.value === "settings"
+                            ? settingsSchema.value
+                            : assetSchema.value
+                        }
+                        values={tab.value === "settings" ? settings : asset}
+                        disabled={pending.value}
+                      />
+                      <div className="settings-section-actions host-actions">
+                        {tab.value === "settings" ? (
                           <Button
                             type="button"
-                            disabled={pending.value as any}
-                            onClick={(event: any) => {
-                              perform(async () => {
+                            variant="secondary"
+                            disabled={pending.value}
+                            onClick={() =>
+                              void perform(async () => {
                                 diagnostics.value = JSON.stringify(
                                   await operationRequest("agents.diagnostics", {
-                                    params: {
-                                      nodeId: nodeId.value,
-                                    },
+                                    params: { nodeId: nodeId.value },
                                   }),
                                   null,
                                   2,
                                 );
-                              });
-                            }}
-                            data-v-bd412aaa=""
-                            variant="secondary"
+                              })
+                            }
                           >
                             {t("host.diagnostics")}
                           </Button>
-                        </div>
-                        {diagnostics.value ? (
-                          <pre data-v-bd412aaa="">{diagnostics.value}</pre>
                         ) : null}
-                      </form>
-                    ) : (
-                      <form
-                        onSubmit={(event: any) => {
-                          event.preventDefault();
-                          save("nodes.save-asset", asset);
-                        }}
-                        data-v-bd412aaa=""
-                      >
-                        <p data-v-bd412aaa="">{t("host.assetsHint")}</p>
-                        <ContractFields
-                          schema={assetSchema.value as any}
-                          values={asset as any}
-                          data-v-bd412aaa=""
-                        ></ContractFields>
                         <Button
+                          type="submit"
+                          className="primary-button"
                           disabled={
-                            pending.value || (!Object.keys(asset).length as any)
+                            pending.value ||
+                            !Object.keys(
+                              tab.value === "settings" ? settings : asset,
+                            ).length
                           }
-                          className={__classes("primary-button")}
-                          data-v-bd412aaa=""
-                          variant="primary"
                         >
                           {t("host.save")}
                         </Button>
-                      </form>
-                    )}
-                  </Fragment>
-                ) : (
-                  <p data-v-bd412aaa="">{t("host.noNodes")}</p>
-                )}
-              </Card>
-            ) : tab.value === "commands" || tab.value === "probes" ? (
-              <Fragment>
-                <div className={__classes("host-grid")} data-v-bd412aaa="">
-                  <Card
-                    className={__classes("host-card management-card")}
-                    data-v-bd412aaa=""
-                    title={<>{t("host.nodes")}</>}
+                      </div>
+                    </form>
+                  ) : (
+                    <SettingsGroup>
+                      <p>{t("host.noNodes")}</p>
+                    </SettingsGroup>
+                  )}
+                  {tab.value === "settings" && diagnostics.value ? (
+                    <section className="workspace-section">
+                      {heading(t("host.diagnostics"))}
+                      <SettingsGroup>
+                        <pre>{diagnostics.value}</pre>
+                      </SettingsGroup>
+                    </section>
+                  ) : null}
+                </>
+              ) : tab.value === "commands" || tab.value === "probes" ? (
+                <>
+                  <section className="workspace-section">
+                    {heading(t("host.nodes"))}
+                    <p className="host-hint">{t("host.selectionHint")}</p>
+                    <SettingsGroup>
+                      {nodes.value.length ? (
+                        nodes.value.map((node) => (
+                          <div
+                            key={node.nodeId}
+                            className="parameter-row host-check"
+                          >
+                            <label htmlFor={`host-select-${node.nodeId}`}>
+                              {node.displayName} · {node.status}
+                            </label>
+                            <div className="host-toggle">
+                              <Checkbox
+                                id={`host-select-${node.nodeId}`}
+                                aria-label={node.displayName}
+                                disabled={pending.value}
+                                checked={selected.value.includes(node.nodeId)}
+                                onCheckedChange={(checked) => {
+                                  selected.value =
+                                    checked === true
+                                      ? [...selected.value, node.nodeId]
+                                      : selected.value.filter(
+                                          (id) => id !== node.nodeId,
+                                        );
+                                }}
+                              />
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p>{t("host.noNodes")}</p>
+                      )}
+                    </SettingsGroup>
+                  </section>
+                  <form
+                    className="workspace-section host-card host-batch-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void (tab.value === "commands"
+                        ? submitCommand()
+                        : submitProbe());
+                    }}
                   >
-                    <p data-v-bd412aaa="">{t("host.selectionHint")}</p>
-                    <Fragment>
-                      {__each(nodes.value, (node) => (
-                        <label
-                          key={node.nodeId as any}
-                          className={__classes("host-check")}
-                          data-v-bd412aaa=""
-                        >
-                          <Checkbox
-                            value={node.nodeId as any}
-                            {...checkboxProps(
-                              selected.value,
-                              (__nextValue: any) => {
-                                selected.value = __nextValue;
-                              },
-                              node.nodeId,
-                            )}
-                            data-v-bd412aaa=""
-                          ></Checkbox>
-                          {node.displayName}
-                          {" · "}
-                          {node.status}
-                        </label>
-                      ))}
-                    </Fragment>
-                  </Card>
-                  <Card
-                    title={<>{t(`host.tab.${tab.value}`)}</>}
-                    className="host-card management-card"
-                  >
-                    <form
-                      className={__classes("")}
-                      onSubmit={(event: any) => {
-                        event.preventDefault();
+                    {heading(t(`host.tab.${tab.value}`))}
+                    <p className="host-hint">
+                      {t(
                         tab.value === "commands"
-                          ? submitCommand()
-                          : submitProbe();
-                      }}
-                      data-v-bd412aaa=""
-                    >
-                      <p data-v-bd412aaa="">
-                        {tab.value === "commands"
-                          ? t("host.commandHint")
-                          : t("host.probeHint")}
-                      </p>
-                      <ContractFields
-                        schema={
-                          schema(
-                            tab.value === "commands"
-                              ? "commands.batch"
-                              : "probes.batch",
-                          ) as any
-                        }
-                        values={
-                          tab.value === "commands" ? command : (probe as any)
-                        }
-                        omit={
-                          tab.value === "commands"
-                            ? ["nodeIds"]
-                            : ([
-                                "nodeIds",
-                                ...(["http", "https"].includes(
-                                  String(probe.kind),
-                                )
-                                  ? []
-                                  : ["expectedHttpStatus"]),
-                              ] as any)
-                        }
-                        data-v-bd412aaa=""
-                      ></ContractFields>
+                          ? "host.commandHint"
+                          : "host.probeHint",
+                      )}
+                    </p>
+                    <ContractFields
+                      schema={schema(
+                        tab.value === "commands"
+                          ? "commands.batch"
+                          : "probes.batch",
+                      )}
+                      values={tab.value === "commands" ? command : probe}
+                      omit={
+                        tab.value === "commands"
+                          ? ["nodeIds"]
+                          : [
+                              "nodeIds",
+                              ...(["http", "https"].includes(String(probe.kind))
+                                ? []
+                                : ["expectedHttpStatus"]),
+                            ]
+                      }
+                      disabled={pending.value}
+                    />
+                    <div className="settings-section-actions host-actions">
                       <Button
-                        disabled={pending.value || (!selected.value.length as any)}
-                        className={__classes("primary-button")}
-                        data-v-bd412aaa=""
-                        variant="primary"
+                        type="submit"
+                        className="primary-button"
+                        disabled={pending.value || !selected.value.length}
+                      >
+                        {t("host.submit")} · {selected.value.length}
+                      </Button>
+                    </div>
+                  </form>
+                  {currentBatch.value ? (
+                    <section className="workspace-section host-batch-result">
+                      <div className="workspace-section-heading">
+                        <h2>{t("host.results")}</h2>
+                      </div>
+                      <code>{currentBatch.value.id}</code>
+                      {currentBatch.value.results.some(
+                        (result) => result.jobId,
+                      ) ? (
+                        <div className="settings-section-actions">
+                          <Button
+                            variant="secondary"
+                            disabled={pending.value}
+                            onClick={() =>
+                              void inspectBatch(currentBatch.value!.id)
+                            }
+                          >
+                            {t("host.refresh")}
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            disabled={pending.value}
+                            onClick={() =>
+                              void inspectBatch(currentBatch.value!.id, true)
+                            }
+                          >
+                            {t("host.cancel")}
+                          </Button>
+                        </div>
+                      ) : null}
+                      {currentBatch.value.results.length ? (
+                        <SettingsGroup>
+                          {currentBatch.value.results.map((result) => (
+                            <article
+                              key={result.nodeId}
+                              className="host-result"
+                            >
+                              <strong>
+                                {nodes.value.find(
+                                  (node) => node.nodeId === result.nodeId,
+                                )?.displayName ?? result.nodeId}
+                              </strong>
+                              <div className="host-result-status">
+                                <span>
+                                  {result.job?.status
+                                    ? t(`task.state.${result.job.status}`) ===
+                                      `task.state.${result.job.status}`
+                                      ? result.job.status
+                                      : t(`task.state.${result.job.status}`)
+                                    : result.probeId || result.jobId || "—"}
+                                </span>
+                                {result.stale ? (
+                                  <span>{t("host.stale")}</span>
+                                ) : null}
+                              </div>
+                              {result.error || result.job?.error ? (
+                                <Alert
+                                  tone="danger"
+                                  title={t("management.error")}
+                                >
+                                  {result.error || result.job?.error}
+                                </Alert>
+                              ) : null}
+                              {result.job?.exitCode !== undefined ? (
+                                <p>
+                                  {t("host.exit")}: {result.job.exitCode}
+                                </p>
+                              ) : null}
+                              {result.job?.output ? (
+                                <pre>{result.job.output}</pre>
+                              ) : null}
+                              {result.job?.truncated ? (
+                                <p>{t("host.truncated")}</p>
+                              ) : null}
+                            </article>
+                          ))}
+                        </SettingsGroup>
+                      ) : null}
+                    </section>
+                  ) : null}
+                  {tab.value === "commands" && batches.value.length ? (
+                    <section className="workspace-section">
+                      {heading(t("host.history"))}
+                      <SettingsGroup>
+                        {batches.value.map((batch) => (
+                          <div key={batch.id} className="parameter-row">
+                            <span className="host-history-id">{batch.id}</span>
+                            <div className="settings-section-actions">
+                              <Button
+                                variant="secondary"
+                                disabled={pending.value}
+                                onClick={() => void inspectBatch(batch.id)}
+                              >
+                                {t("host.results")} · {batch.results.length}
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </SettingsGroup>
+                    </section>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <form
+                    className="workspace-section host-card host-grant-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void createGrant();
+                    }}
+                  >
+                    {heading(t("host.tab.enrollment"))}
+                    <p className="host-hint">{t("host.enrollmentHint")}</p>
+                    <ContractFields
+                      schema={schema("agents.create-grant")}
+                      values={grant}
+                      disabled={pending.value}
+                    />
+                    <div className="settings-section-actions host-actions">
+                      <Button
+                        type="submit"
+                        className="primary-button"
+                        disabled={pending.value}
                       >
                         {t("host.submit")}
-                        {" · "}
-                        {selected.value.length}
                       </Button>
-                    </form>
-                  </Card>
-                </div>
-                {currentBatch.value ? (
-                  <Card
-                    className={__classes("host-card management-card")}
-                    data-v-bd412aaa=""
-                    title={t(`host.tab.${tab.value}`)}
-                  >
-                    <div
-                      className={__classes("host-actions")}
-                      data-v-bd412aaa=""
-                    >
-                      <h2 data-v-bd412aaa="">{t("host.results")}</h2>
-                      {currentBatch.value!.results.some((r) => r.jobId) ? (
-                        <Button
-                          disabled={pending.value as any}
-                          onClick={(event: any) => {
-                            inspectBatch(currentBatch.value!.id);
-                          }}
-                          data-v-bd412aaa=""
-                          variant="secondary"
-                        >
-                          {t("host.refresh")}
-                        </Button>
-                      ) : null}
-                      {currentBatch.value!.results.some((r) => r.jobId) ? (
-                        <Button
-                          disabled={pending.value as any}
-                          onClick={(event: any) => {
-                            inspectBatch(currentBatch.value!.id, true);
-                          }}
-                          data-v-bd412aaa=""
-                          variant="secondary"
-                        >
-                          {t("host.cancel")}
-                        </Button>
-                      ) : null}
                     </div>
-                    <Fragment>
-                      {__each(currentBatch.value!.results, (result) => (
-                        <article
-                          key={result.nodeId as any}
-                          className={__classes("host-result")}
-                          data-v-bd412aaa=""
-                        >
-                          <strong data-v-bd412aaa="">
-                            {nodes.value.find((n) => n.nodeId === result.nodeId)
-                              ?.displayName ?? result.nodeId}
-                          </strong>
-                          <p data-v-bd412aaa="">
-                            {result.job?.status ||
-                              result.probeId ||
-                              result.jobId ||
-                              "—"}{" "}
-                            {result.stale ? (
-                              <span data-v-bd412aaa="">
-                                {"· "}
-                                {t("host.stale")}
-                              </span>
-                            ) : null}
-                          </p>
-                          {result.error ? (
-                            <p
-                              className={__classes("host-error")}
-                              data-v-bd412aaa=""
-                            >
-                              {result.error}
-                            </p>
-                          ) : null}
-                          {result.job?.exitCode !== undefined ? (
-                            <p data-v-bd412aaa="">
-                              {t("host.exit")}
-                              {": "}
-                              {result.job.exitCode}
-                            </p>
-                          ) : null}
-                          {result.job?.output ? (
-                            <pre data-v-bd412aaa="">{result.job.output}</pre>
-                          ) : null}
-                          {result.job?.truncated ? (
-                            <p data-v-bd412aaa="">{t("host.truncated")}</p>
-                          ) : null}
-                        </article>
-                      ))}
-                    </Fragment>
-                  </Card>
-                ) : null}
-                {tab.value === "commands" ? (
-                  <Card
-                    className={__classes("host-card management-card")}
-                    data-v-bd412aaa=""
-                    title={<>{t("host.history")}</>}
-                  >
-                    <Fragment>
-                      {__each(batches.value, (batch) => (
-                        <Button
-                          key={batch.id as any}
-                          disabled={pending.value as any}
-                          onClick={(event: any) => {
-                            inspectBatch(batch.id);
-                          }}
-                          data-v-bd412aaa=""
-                          variant="secondary"
-                        >
-                          {batch.id.slice(0, 12)}
-                          {" · "}
-                          {batch.results.length}
-                        </Button>
-                      ))}
-                    </Fragment>
-                  </Card>
-                ) : null}
-              </Fragment>
-            ) : (
-              <Fragment>
-                <Card
-                  title={<>{t("host.tab.enrollment")}</>}
-                  className="host-card management-card"
-                >
-                  <form
-                    className={__classes("")}
-                    onSubmit={(event: any) => {
-                      event.preventDefault();
-                      __call(createGrant, event);
-                    }}
-                    data-v-bd412aaa=""
-                  >
-                    <p data-v-bd412aaa="">{t("host.enrollmentHint")}</p>
-                    <ContractFields
-                      schema={schema("agents.create-grant") as any}
-                      values={grant as any}
-                      data-v-bd412aaa=""
-                    ></ContractFields>
-                    <Button
-                      disabled={pending.value as any}
-                      className={__classes("primary-button")}
-                      data-v-bd412aaa=""
-                      variant="primary"
-                    >
-                      {t("host.submit")}
-                    </Button>
-                    {grantResult.value ? (
-                      <section data-v-bd412aaa="">
-                        <p data-v-bd412aaa="">{t("host.secretHint")}</p>
-                        <pre data-v-bd412aaa="">
-                          {grantResult.value.grant.token}
-                        </pre>
-                        <pre data-v-bd412aaa="">
-                          {grantResult.value.installCommand}
-                        </pre>
-                        <pre data-v-bd412aaa="">
-                          {grantResult.value.dockerInstallCommand}
-                        </pre>
-                      </section>
-                    ) : null}
                   </form>
-                </Card>
-                <Card
-                  className={__classes("host-card management-card")}
-                  data-v-bd412aaa=""
-                  title={t(`host.tab.${tab.value}`)}
-                >
-                  <Fragment>
-                    {__each(grantList.value, (g) => (
-                      <article
-                        key={g.id as any}
-                        className={__classes("host-result")}
-                        data-v-bd412aaa=""
-                      >
-                        <strong data-v-bd412aaa="">{g.displayPrefix}</strong>
-                        <p data-v-bd412aaa="">
-                          {g.uses}
-                          {" / "}
-                          {g.maxUses}
-                          {" · "}
-                          {beijingTime(g.expiresAt) + " · " + t("time.beijing")}
-                        </p>
-                        <Button
-                          disabled={pending.value || (g.revoked as any)}
-                          onClick={(event: any) => {
-                            revokeGrant(g.id);
-                          }}
-                          data-v-bd412aaa=""
-                          variant="secondary"
-                        >
-                          {t("host.revoke")}
-                        </Button>
-                      </article>
-                    ))}
-                  </Fragment>
-                </Card>
-              </Fragment>
-            )}
-          </ManagementPage>
-        </>
+                  {grantResult.value ? (
+                    <section className="workspace-section host-grant-result">
+                      {heading(t("host.enrollmentResult"))}
+                      <p className="host-hint">{t("host.secretHint")}</p>
+                      <SettingsGroup>
+                        <pre>{grantResult.value.grant.token}</pre>
+                        <pre>{grantResult.value.installCommand}</pre>
+                        <pre>{grantResult.value.dockerInstallCommand}</pre>
+                      </SettingsGroup>
+                    </section>
+                  ) : null}
+                  {grantList.value.length ? (
+                    <section className="workspace-section host-grant-list">
+                      {heading(t("host.grants"))}
+                      <SettingsGroup>
+                        {grantList.value.map((grant) => (
+                          <article key={grant.id} className="host-result">
+                            <strong>{grant.displayPrefix}</strong>
+                            <p>
+                              {grant.uses} / {grant.maxUses}
+                            </p>
+                            <time>
+                              {beijingTime(grant.expiresAt)} ·{" "}
+                              {t("time.beijing")}
+                            </time>
+                            <div className="settings-section-actions">
+                              <Button
+                                variant="secondary"
+                                disabled={pending.value || grant.revoked}
+                                onClick={() => void revokeGrant(grant.id)}
+                              >
+                                {t("host.revoke")}
+                              </Button>
+                            </div>
+                          </article>
+                        ))}
+                      </SettingsGroup>
+                    </section>
+                  ) : null}
+                </>
+              )}
+            </TabsContent>
+          </Tabs>
+        </ManagementPage>
       );
     },
     input,

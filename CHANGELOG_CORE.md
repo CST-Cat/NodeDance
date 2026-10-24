@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.56]
+
+### English
+
+- Refactor alerts, host management, operations and domain certificates around compact settings rows and installed shadcn/UIArc controls; align update fields, backup separators and edit dialogs.
+- Support editing existing per-node alert thresholds while retaining built-in defaults, and add shared notification channel configuration for SMTP, Webhook, Telegram, Bark, DingTalk, Feishu and WeCom with protected credentials and provider acknowledgement checks.
+- Replace multiline form fields with compact expandable editors, preserve the overview memo, and consolidate guest resource metrics into a 44px multi-select with keyboard support.
+- Maintain focused browser regressions, guest security boundaries and file-management verification. Pair this Core release with Agent 0.1.32.
+
+### 简体中文
+
+- 告警中心、主机管理、操作中心及域名证书采用紧凑设置行和已安装的 shadcn／UIArc 控件，统一更新输入宽度、备份分割线及编辑弹窗。
+- 保留内置告警默认值，支持直接编辑各节点现有阈值；统一支持 SMTP、Webhook、Telegram、Bark、钉钉、飞书及企业微信通知渠道，保护凭据并检查服务商响应。
+- 多行填写框改为紧凑展开编辑器，保留节点总览备忘录；游客资源指标合并为支持键盘操作的 44px 多选控件。
+- 维护聚焦浏览器回归、游客安全边界及文件管理验证；本 Core 版本配套 Agent 0.1.32。
+
 ## [0.1.55]
 
 ### English

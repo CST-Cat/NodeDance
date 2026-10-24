@@ -1,3 +1,4 @@
+import { ExpandedTextarea } from "./ExpandedTextarea";
 import { operationRequest, type User } from "../api";
 import { display, locale, t } from "../i18n";
 import { intentKey, requestIntent } from "../operation-intent";
@@ -23,26 +24,22 @@ import {
   watchState,
 } from "../state";
 
-import { Fragment } from "react";
-import { __call, __classes, __each, __input, useController } from "../state";
+import { useController } from "../state";
 import "./OperationConsole.css";
+import "./PersonalSettings.css";
+import { SettingsGroup } from "./SettingsGroup";
 import {
   ManagementPage,
   Button,
   Input,
-  Textarea,
   Checkbox,
   Select,
-  Card,
-  Badge,
   Alert,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  checkboxProps,
-  selectOptions,
 } from "./ManagementUI";
-type Props = { role: User["role"] } & { children?: import("react").ReactNode; [key: string]: any };
+type Props = { role: User["role"] } & {
+  children?: import("react").ReactNode;
+  [key: string]: any;
+};
 export default function OperationConsole(input: Props) {
   return useController(
     (__props: Props, __emit: any, __dom: any) => {
@@ -573,565 +570,396 @@ export default function OperationConsole(input: Props) {
         }
       });
       beforeDispose(disconnect);
-      return () => (
-        <>
+      const fieldRow = (
+        label: string,
+        control: import("react").ReactNode,
+        key?: string,
+        description?: string,
+      ) => (
+        <label key={key} className="parameter-row operation-field">
+          <span>{label}</span>
+          <div className="operation-control">
+            {control}
+            {description ? <small>{description}</small> : null}
+          </div>
+        </label>
+      );
+      return () => {
+        const op = operation.value;
+        const disabled = busy.value || connected.value;
+        return (
           <ManagementPage
-            className={__classes("operation-console workspace-page")}
-            data-v-62585b82=""
+            registryStyles
+            className="operation-console preferences-page workspace-settings"
           >
-            <header>
+            <header className="workspace-heading">
               <h1>{t("nav.operations")}</h1>
             </header>
-            <p className={__classes("muted")} data-v-62585b82="">
-              {t("operations.description")}
-            </p>
             {pendingSubmissions.value.length ? (
-              <div
-                className={__classes("pending-observations")}
-                data-v-62585b82=""
-              >
-                <p className={__classes("muted")} data-v-62585b82="">
-                  {t("operations.uncertain")}
-                </p>
-                <Fragment>
-                  {__each(pendingSubmissions.value, (item) => (
+              <section className="workspace-section pending-observations">
+                <div className="workspace-section-heading">
+                  <h2>{t("operations.uncertain")}</h2>
+                </div>
+                <SettingsGroup>
+                  {pendingSubmissions.value.map((item) => (
                     <div
-                      key={(item.operation + item.key) as any}
-                      data-v-62585b82=""
+                      key={item.operation + item.key}
+                      className="operation-pending-row"
                     >
-                      <span data-v-62585b82="">
-                        {item.operation}
-                        {" · "}
+                      <span>
+                        {item.operation}{" "}
                         {Object.values({
                           ...item.input.params,
                           ...item.input.query,
                         }).join(" / ")}
                       </span>
-                      <Button
-                        type="button"
-                        disabled={busy.value as any}
-                        onClick={(event: any) => {
-                          restoreSubmission(item);
-                        }}
-                        data-v-62585b82=""
-                        variant="secondary"
-                      >
-                        {t("operations.restoreKey")}
-                      </Button>
-                      <Button
-                        type="button"
-                        disabled={busy.value as any}
-                        onClick={(event: any) => {
-                          forgetSubmission(item);
-                        }}
-                        data-v-62585b82=""
-                        variant="secondary"
-                      >
-                        {t("operations.forget")}
-                      </Button>
+                      <div className="settings-section-actions">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy.value}
+                          onClick={() => void restoreSubmission(item)}
+                        >
+                          {t("operations.restoreKey")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy.value}
+                          onClick={() => forgetSubmission(item)}
+                        >
+                          {t("operations.forget")}
+                        </Button>
+                      </div>
                     </div>
                   ))}
-                </Fragment>
-              </div>
+                </SettingsGroup>
+              </section>
             ) : null}
             {pendingObservations.value.length ? (
-              <div
-                className={__classes("pending-observations")}
-                data-v-62585b82=""
-              >
-                <p className={__classes("muted")} data-v-62585b82="">
-                  {t("operations.pending")}
-                </p>
-                <Fragment>
-                  {__each(pendingObservations.value, (item) => (
-                    <div key={observationKey(item) as any} data-v-62585b82="">
-                      <span data-v-62585b82="">
-                        {item.operation}
-                        {" · "}
+              <section className="workspace-section pending-observations">
+                <div className="workspace-section-heading">
+                  <h2>{t("operations.pending")}</h2>
+                </div>
+                <SettingsGroup>
+                  {pendingObservations.value.map((item) => (
+                    <div
+                      key={observationKey(item)}
+                      className="operation-pending-row"
+                    >
+                      <span>
+                        {item.operation}{" "}
                         {Object.values({
                           ...item.input.params,
                           ...item.input.query,
                         }).join(" / ")}
-                      </span>{" "}
-                      <Button
-                        type="button"
-                        disabled={busy.value as any}
-                        onClick={(event: any) => {
-                          resumeObservation(item);
-                        }}
-                        data-v-62585b82=""
-                        variant="secondary"
-                      >
-                        {t("operations.resume")}
-                      </Button>{" "}
-                      <Button
-                        type="button"
-                        disabled={busy.value as any}
-                        onClick={(event: any) => {
-                          forgetObservation(item);
-                        }}
-                        data-v-62585b82=""
-                        variant="secondary"
-                      >
-                        {t("operations.forget")}
-                      </Button>
+                      </span>
+                      <div className="settings-section-actions">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy.value}
+                          onClick={() => void resumeObservation(item)}
+                        >
+                          {t("operations.resume")}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={busy.value}
+                          onClick={() => forgetObservation(item)}
+                        >
+                          {t("operations.forget")}
+                        </Button>
+                      </div>
                     </div>
                   ))}
-                </Fragment>
-              </div>
+                </SettingsGroup>
+              </section>
             ) : null}
-            <div className={__classes("operation-layout")} data-v-62585b82="">
-              <aside data-v-62585b82="">
-                <Card
-                  title={t("management.operationPicker")}
-                  className="management-card operation-picker"
-                >
-                  <Input
-                    type="search"
-                    placeholder={t("operations.search") as any}
-                    aria-label={t("operations.search") as any}
-                    {...__input(
-                      filter.value,
-                      (__nextValue: any) => {
-                        filter.value = __nextValue;
-                      },
-                      "search",
-                      undefined,
-                      [],
-                    )}
-                    data-v-62585b82=""
-                  ></Input>
-                  <Select
-                    aria-label={t("nav.operations") as any}
-                    value={String(selected.value ?? "")}
-                    onValueChange={(next) => {
-                      const __nextValue: any =
-                        typeof selected.value === "number"
-                          ? Number(next)
-                          : next;
-                      selected.value = __nextValue;
-                    }}
-                    data-v-62585b82=""
-                    options={selectOptions(
-                      <>
-                        <Fragment>
-                          {__each(matches.value, (item) => (
-                            <option
-                              key={item.name as any}
-                              value={item.name as any}
-                              data-v-62585b82=""
-                            >
-                              {display(item.description)}
-                              {" · "}
-                              {item.name}
-                            </option>
-                          ))}
-                        </Fragment>
-                      </>,
-                    )}
-                  ></Select>
-                </Card>
-              </aside>
-              {operation.value ? (
-                <Card
-                  title={display(operation.value!.description)}
-                  className="management-card"
-                >
-                  <div
-                    className={__classes("operation-form")}
-                    data-v-62585b82=""
-                  >
-                    <p className={__classes("muted")} data-v-62585b82="">
-                      <code data-v-62585b82="">{operation.value!.name}</code>
-                    </p>
-                    <form
-                      noValidate
-                      onSubmit={(event: any) => {
-                        event.preventDefault();
-                        __call(execute, event);
+            <div className="operation-layout settings-sections">
+              <aside className="workspace-section operation-picker">
+                <div className="workspace-section-heading">
+                  <h2>{t("management.operationPicker")}</h2>
+                </div>
+                <SettingsGroup>
+                  {fieldRow(
+                    t("operations.search"),
+                    <Input
+                      type="search"
+                      aria-label={t("operations.search")}
+                      value={filter.value}
+                      onChange={(event) => {
+                        filter.value = event.target.value;
                       }}
-                      data-v-62585b82=""
-                    >
-                      {operation.value!.parameters.length ||
-                      operation.value!.query.length ? (
-                        <fieldset
-                          className={__classes("operation-field-group")}
-                          data-v-62585b82=""
-                        >
-                          <legend data-v-62585b82="">
-                            {t("operations.targetFields")}
-                          </legend>
-                          <Fragment>
-                            {__each(operation.value!.parameters, (name) => (
-                              <label key={name as any} data-v-62585b82="">
-                                {fieldLabel(name)}{" "}
-                                <Input
-                                  required={true}
-                                  disabled={
-                                    busy.value || (connected.value as any)
-                                  }
-                                  {...__input(
-                                    params[name],
-                                    (__nextValue: any) => {
-                                      params[name] = __nextValue;
-                                    },
-                                    "",
-                                    undefined,
-                                    [],
-                                  )}
-                                  data-v-62585b82=""
-                                ></Input>
-                              </label>
-                            ))}
-                          </Fragment>
-                          <Fragment>
-                            {__each(operation.value!.query, (name) => (
-                              <label key={name as any} data-v-62585b82="">
-                                {fieldLabel(name)}{" "}
-                                <Input
-                                  type={
-                                    /ticket|token/i.test(name)
-                                      ? "password"
-                                      : ("text" as any)
-                                  }
-                                  disabled={
-                                    busy.value || (connected.value as any)
-                                  }
-                                  {...__input(
-                                    query[name],
-                                    (__nextValue: any) => {
-                                      query[name] = __nextValue;
-                                    },
-                                    "",
-                                    undefined,
-                                    [],
-                                  )}
-                                  data-v-62585b82=""
-                                ></Input>
-                              </label>
-                            ))}
-                          </Fragment>
-                        </fieldset>
-                      ) : null}
-                      {operation.value!.bodySchema ? (
-                        <fieldset
-                          className={__classes("operation-field-group")}
-                          data-v-62585b82=""
-                        >
-                          <legend data-v-62585b82="">
-                            {t("operations.requestFields")}
-                          </legend>
-                          {operation.value!.bodySchema?.type === "object" ? (
-                            <label
-                              className={__classes("check-row")}
-                              data-v-62585b82=""
-                            >
-                              <Checkbox
-                                disabled={busy.value as any}
-                                {...checkboxProps(
-                                  rawMode.value,
-                                  (__nextValue: any) => {
-                                    rawMode.value = __nextValue;
-                                  },
-                                  undefined,
-                                )}
-                                data-v-62585b82=""
-                              ></Checkbox>
-                              {t("operations.rawJSON")}
-                            </label>
-                          ) : null}
-                          <Fragment>
-                            {__each(properties.value, ([name, schema]) => (
-                              <label
-                                key={name as any}
-                                data-field-type={
-                                  schema.enum ? "enum" : (schema.type as any)
+                    />,
+                  )}
+                  {fieldRow(
+                    t("nav.operations"),
+                    <Select
+                      aria-label={t("nav.operations")}
+                      value={selected.value}
+                      onValueChange={(value) => {
+                        selected.value = value;
+                      }}
+                      options={matches.value.map((item) => ({
+                        value: item.name,
+                        label: `${display(item.description)} · ${item.name}`,
+                      }))}
+                    />,
+                  )}
+                </SettingsGroup>
+              </aside>
+              {op ? (
+                <section className="operation-form workspace-section settings-integrated">
+                  <div className="workspace-section-heading">
+                    <h2>{display(op.description)}</h2>
+                  </div>
+                  <code>{op.name}</code>
+                  <form
+                    noValidate
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void execute();
+                    }}
+                  >
+                    {op.parameters.length || op.query.length ? (
+                      <section className="workspace-section operation-field-group">
+                        <div className="workspace-section-heading">
+                          <h3>{t("operations.targetFields")}</h3>
+                        </div>
+                        <SettingsGroup>
+                          {op.parameters.map((name) =>
+                            fieldRow(
+                              fieldLabel(name),
+                              <Input
+                                required
+                                disabled={disabled}
+                                value={params[name] ?? ""}
+                                onChange={(event) => {
+                                  params[name] = event.target.value;
+                                }}
+                              />,
+                              name,
+                            ),
+                          )}
+                          {op.query.map((name) =>
+                            fieldRow(
+                              fieldLabel(name),
+                              <Input
+                                type={
+                                  /ticket|token/i.test(name)
+                                    ? "password"
+                                    : "text"
                                 }
-                                data-v-62585b82=""
-                              >
-                                {fieldLabel(name)}
-                                {operation.value!.bodySchema?.required?.includes(
-                                  name,
-                                )
-                                  ? " *"
-                                  : ""}{" "}
-                                {schemaHasSecrets(schema) ? (
-                                  <Input
-                                    type="password"
-                                    disabled={
-                                      busy.value || (connected.value as any)
-                                    }
-                                    autoComplete="off"
-                                    {...__input(
-                                      values[name],
-                                      (__nextValue: any) => {
-                                        values[name] = __nextValue;
-                                      },
-                                      "password",
-                                      undefined,
-                                      [],
-                                    )}
-                                    data-v-62585b82=""
-                                  ></Input>
-                                ) : schema.enum || schema.type === "boolean" ? (
-                                  <Select
-                                    required={
-                                      operation.value!.bodySchema?.required?.includes(
-                                        name,
-                                      ) as any
-                                    }
-                                    disabled={
-                                      busy.value || (connected.value as any)
-                                    }
-                                    value={String(values[name] ?? "")}
-                                    onValueChange={(next) => {
-                                      const __nextValue: any =
-                                        typeof values[name] === "number"
-                                          ? Number(next)
-                                          : next;
-                                      values[name] = __nextValue;
-                                    }}
-                                    data-v-62585b82=""
-                                    options={selectOptions(
-                                      <>
-                                        <option value="" data-v-62585b82="">
-                                          {"—"}
-                                        </option>
-                                        <Fragment>
-                                          {__each(
-                                            schema.enum ?? ["true", "false"],
-                                            (value) => (
-                                              <option
-                                                key={String(value) as any}
-                                                value={String(value) as any}
-                                                data-v-62585b82=""
-                                              >
-                                                {enumLabel(value)}
-                                              </option>
-                                            ),
-                                          )}
-                                        </Fragment>
-                                      </>,
-                                    )}
-                                  ></Select>
-                                ) : schema.type === "object" ||
-                                  schema.type === "array" ? (
-                                  <Textarea
-                                    rows={4}
-                                    required={
-                                      operation.value!.bodySchema?.required?.includes(
-                                        name,
-                                      ) as any
-                                    }
-                                    disabled={
-                                      busy.value || (connected.value as any)
-                                    }
-                                    {...__input(
-                                      values[name],
-                                      (__nextValue: any) => {
-                                        values[name] = __nextValue;
-                                      },
-                                      "",
-                                      undefined,
-                                      [],
-                                    )}
-                                    data-v-62585b82=""
-                                  ></Textarea>
-                                ) : (
-                                  <Input
-                                    type="text"
-                                    inputMode={
-                                      schema.type === "integer"
-                                        ? "numeric"
-                                        : schema.type === "number"
-                                          ? "decimal"
-                                          : (undefined as any)
-                                    }
-                                    disabled={
-                                      busy.value || (connected.value as any)
-                                    }
-                                    autoComplete="off"
-                                    {...__input(
-                                      values[name],
-                                      (__nextValue: any) => {
-                                        values[name] = __nextValue;
-                                      },
-                                      "text",
-                                      undefined,
-                                      [],
-                                    )}
-                                    data-v-62585b82=""
-                                  ></Input>
-                                )}
-                                {schema.description ? (
-                                  <small data-v-62585b82="">
-                                    {display(schema.description)}
-                                  </small>
-                                ) : null}
-                              </label>
-                            ))}
-                          </Fragment>
-                          {operation.value!.bodySchema &&
-                          (rawMode.value ||
-                            operation.value!.bodySchema.type !== "object") ? (
-                            <label data-v-62585b82="">
-                              {"JSON "}
-                              {schemaHasSecrets(operation.value!.bodySchema) ? (
+                                disabled={disabled}
+                                value={query[name] ?? ""}
+                                onChange={(event) => {
+                                  query[name] = event.target.value;
+                                }}
+                              />,
+                              name,
+                            ),
+                          )}
+                        </SettingsGroup>
+                      </section>
+                    ) : null}
+                    {op.bodySchema ? (
+                      <section className="workspace-section operation-field-group">
+                        <div className="workspace-section-heading">
+                          <h3>{t("operations.requestFields")}</h3>
+                        </div>
+                        <SettingsGroup>
+                          {op.bodySchema.type === "object" ? (
+                            <Checkbox
+                              label={t("operations.rawJSON")}
+                              disabled={busy.value}
+                              checked={rawMode.value}
+                              onCheckedChange={(value) => {
+                                rawMode.value = value === true;
+                              }}
+                            />
+                          ) : null}
+                          {properties.value.map(([name, schema]) => {
+                            const required =
+                              op.bodySchema?.required?.includes(name);
+                            const label = `${fieldLabel(name)}${required ? " *" : ""}`;
+                            const value = values[name] ?? "";
+                            const change = (value: string) => {
+                              values[name] = value;
+                            };
+                            return fieldRow(
+                              label,
+                              schemaHasSecrets(schema) ? (
                                 <Input
                                   type="password"
-                                  disabled={busy.value as any}
+                                  disabled={disabled}
                                   autoComplete="off"
-                                  {...__input(
-                                    rawBody.value,
-                                    (__nextValue: any) => {
-                                      rawBody.value = __nextValue;
-                                    },
-                                    "password",
-                                    undefined,
-                                    [],
-                                  )}
-                                  data-v-62585b82=""
-                                ></Input>
+                                  value={value}
+                                  onChange={(event) =>
+                                    change(event.target.value)
+                                  }
+                                />
+                              ) : schema.enum || schema.type === "boolean" ? (
+                                <Select
+                                  required={required}
+                                  disabled={disabled}
+                                  value={value}
+                                  onValueChange={change}
+                                  options={[
+                                    { value: "", label: "—" },
+                                    ...(schema.enum ?? ["true", "false"]).map(
+                                      (value) => ({
+                                        value: String(value),
+                                        label: enumLabel(value),
+                                      }),
+                                    ),
+                                  ]}
+                                />
+                              ) : schema.type === "object" ||
+                                schema.type === "array" ? (
+                                <ExpandedTextarea
+                                  rows={4}
+                                  required={required}
+                                  disabled={disabled}
+                                  value={value}
+                                  onChange={(event) =>
+                                    change(event.target.value)
+                                  }
+                                />
                               ) : (
-                                <Textarea
-                                  rows={5}
-                                  disabled={busy.value as any}
-                                  {...__input(
-                                    rawBody.value,
-                                    (__nextValue: any) => {
-                                      rawBody.value = __nextValue;
-                                    },
-                                    "",
-                                    undefined,
-                                    [],
-                                  )}
-                                  data-v-62585b82=""
-                                ></Textarea>
-                              )}
-                            </label>
-                          ) : null}
-                        </fieldset>
-                      ) : null}
-                      {Object.keys(operation.value!.headers ?? {}).length ? (
-                        <fieldset
-                          className={__classes("operation-field-group")}
-                          data-v-62585b82=""
-                        >
-                          <legend data-v-62585b82="">
-                            {t("operations.headerFields")}
-                          </legend>
-                          <Fragment>
-                            {__each(
-                              Object.entries(operation.value!.headers ?? {}),
-                              ([name, schema]) => (
-                                <label key={name as any} data-v-62585b82="">
-                                  {fieldLabel(name)}
-                                  <Input
-                                    type={
-                                      schemaHasSecrets(schema)
-                                        ? "password"
-                                        : ("text" as any)
-                                    }
-                                    disabled={
-                                      busy.value || (connected.value as any)
-                                    }
-                                    autoComplete="off"
-                                    {...__input(
-                                      requestHeaders[name],
-                                      (__nextValue: any) => {
-                                        requestHeaders[name] = __nextValue;
-                                      },
-                                      "",
-                                      undefined,
-                                      [],
-                                    )}
-                                    data-v-62585b82=""
-                                  ></Input>
-                                  <small data-v-62585b82="">
-                                    {display(schema.description)}
-                                  </small>
-                                </label>
+                                <Input
+                                  type="text"
+                                  inputMode={
+                                    schema.type === "integer"
+                                      ? "numeric"
+                                      : schema.type === "number"
+                                        ? "decimal"
+                                        : undefined
+                                  }
+                                  disabled={disabled}
+                                  autoComplete="off"
+                                  value={value}
+                                  onChange={(event) =>
+                                    change(event.target.value)
+                                  }
+                                />
                               ),
-                            )}
-                          </Fragment>
-                        </fieldset>
-                      ) : null}
-                      {operation.value!.requiresIdempotencyKey ? (
-                        <Fragment>
-                          <small data-v-62585b82="">
-                            {t("operations.retryIntent")}
-                          </small>
-                          <Button
-                            type="button"
-                            disabled={busy.value || (connected.value as any)}
-                            onClick={(event: any) => {
-                              __call(newExecution, event);
-                            }}
-                            data-v-62585b82=""
-                            variant="secondary"
-                          >
-                            {t("operations.newExecution")}
-                          </Button>
-                        </Fragment>
-                      ) : null}
-                      {operation.value!.completion ? (
-                        <label
-                          className={__classes("check-row")}
-                          data-v-62585b82=""
-                        >
+                              name,
+                              schema.description
+                                ? display(schema.description)
+                                : undefined,
+                            );
+                          })}
+                          {rawMode.value || op.bodySchema.type !== "object"
+                            ? fieldRow(
+                                "JSON",
+                                schemaHasSecrets(op.bodySchema) ? (
+                                  <Input
+                                    type="password"
+                                    disabled={busy.value}
+                                    autoComplete="off"
+                                    value={rawBody.value}
+                                    onChange={(event) => {
+                                      rawBody.value = event.target.value;
+                                    }}
+                                  />
+                                ) : (
+                                  <ExpandedTextarea
+                                    rows={5}
+                                    disabled={busy.value}
+                                    value={rawBody.value}
+                                    onChange={(event) => {
+                                      rawBody.value = event.target.value;
+                                    }}
+                                  />
+                                ),
+                              )
+                            : null}
+                        </SettingsGroup>
+                      </section>
+                    ) : null}
+                    {Object.keys(op.headers ?? {}).length ? (
+                      <section className="workspace-section operation-field-group">
+                        <div className="workspace-section-heading">
+                          <h3>{t("operations.headerFields")}</h3>
+                        </div>
+                        <SettingsGroup>
+                          {Object.entries(op.headers ?? {}).map(
+                            ([name, schema]) =>
+                              fieldRow(
+                                fieldLabel(name),
+                                <Input
+                                  type={
+                                    schemaHasSecrets(schema)
+                                      ? "password"
+                                      : "text"
+                                  }
+                                  disabled={disabled}
+                                  autoComplete="off"
+                                  value={requestHeaders[name] ?? ""}
+                                  onChange={(event) => {
+                                    requestHeaders[name] = event.target.value;
+                                  }}
+                                />,
+                                name,
+                                schema.description
+                                  ? display(schema.description)
+                                  : undefined,
+                              ),
+                          )}
+                        </SettingsGroup>
+                      </section>
+                    ) : null}
+                    {op.completion ||
+                    ["upload", "multipart"].includes(op.transport) ? (
+                      <SettingsGroup>
+                        {op.completion ? (
                           <Checkbox
-                            disabled={busy.value as any}
-                            {...checkboxProps(
-                              waitForCompletion.value,
-                              (__nextValue: any) => {
-                                waitForCompletion.value = __nextValue;
-                              },
-                              undefined,
-                            )}
-                            data-v-62585b82=""
-                          ></Checkbox>
-                          {t("operations.wait")}
-                        </label>
-                      ) : null}
-                      {["upload", "multipart"].includes(
-                        operation.value!.transport,
-                      ) ? (
-                        <label data-v-62585b82="">
-                          {t("operations.file")}
-                          <Input
-                            type="file"
-                            required={true}
-                            disabled={busy.value || (connected.value as any)}
-                            onChange={(event: any) => {
-                              file.value = (
-                                event.target as HTMLInputElement
-                              ).files?.[0];
+                            label={t("operations.wait")}
+                            disabled={busy.value}
+                            checked={waitForCompletion.value}
+                            onCheckedChange={(value) => {
+                              waitForCompletion.value = value === true;
                             }}
-                            data-v-62585b82=""
-                          ></Input>
-                        </label>
+                          />
+                        ) : null}
+                        {["upload", "multipart"].includes(op.transport)
+                          ? fieldRow(
+                              t("operations.file"),
+                              <Input
+                                type="file"
+                                required
+                                disabled={disabled}
+                                onChange={(event) => {
+                                  file.value = event.target.files?.[0];
+                                }}
+                              />,
+                            )
+                          : null}
+                      </SettingsGroup>
+                    ) : null}
+                    {op.requiresIdempotencyKey ? (
+                      <small>{t("operations.retryIntent")}</small>
+                    ) : null}
+                    <div className="settings-section-actions operation-actions">
+                      {op.requiresIdempotencyKey ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={disabled}
+                          onClick={newExecution}
+                        >
+                          {t("operations.newExecution")}
+                        </Button>
                       ) : null}
-                      <Button
-                        type="submit"
-                        disabled={busy.value || (connected.value as any)}
-                        className={__classes("primary-button")}
-                        data-v-62585b82=""
-                        variant="primary"
-                      >
-                        {busy.value
-                          ? t("operations.running")
-                          : t("operations.execute")}
-                      </Button>
                       {connected.value || pendingTerminal.value ? (
                         <Button
                           type="button"
-                          onClick={(event: any) => {
-                            __call(disconnect, event);
-                          }}
-                          data-v-62585b82=""
                           variant="secondary"
+                          onClick={disconnect}
                         >
-                          {operation.value!.transport === "terminal"
+                          {op.transport === "terminal"
                             ? t("operations.endTerminal")
                             : t("operations.disconnect")}
                         </Button>
@@ -1139,86 +967,78 @@ export default function OperationConsole(input: Props) {
                       {busy.value ? (
                         <Button
                           type="button"
-                          onClick={(event: any) => {
-                            __call(disconnect, event);
-                          }}
-                          data-v-62585b82=""
                           variant="secondary"
+                          onClick={disconnect}
                         >
                           {t("operations.stopWaiting")}
                         </Button>
                       ) : null}
-                    </form>
-                    {connected.value && operation.value!.duplex ? (
-                      <form
-                        onSubmit={(event: any) => {
-                          event.preventDefault();
-                          __call(send, event);
-                        }}
-                        data-v-62585b82=""
-                      >
-                        {operation.value!.transport === "websocket" ? (
-                          <Textarea
+                      <Button type="submit" disabled={disabled}>
+                        {busy.value
+                          ? t("operations.running")
+                          : t("operations.execute")}
+                      </Button>
+                    </div>
+                  </form>
+                  {connected.value && op.duplex ? (
+                    <form
+                      className="operation-stream-form"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        send();
+                      }}
+                    >
+                      {fieldRow(
+                        op.transport === "websocket"
+                          ? "JSON"
+                          : t("operations.input"),
+                        op.transport === "websocket" ? (
+                          <ExpandedTextarea
                             rows={3}
                             aria-label="JSON"
-                            {...__input(
-                              frame.value,
-                              (__nextValue: any) => {
-                                frame.value = __nextValue;
-                              },
-                              "",
-                              undefined,
-                              [],
-                            )}
-                            data-v-62585b82=""
-                          ></Textarea>
+                            value={frame.value}
+                            onChange={(event) => {
+                              frame.value = event.target.value;
+                            }}
+                          />
                         ) : (
                           <Input
-                            aria-label={t("operations.input") as any}
-                            {...__input(
-                              input.value,
-                              (__nextValue: any) => {
-                                input.value = __nextValue;
-                              },
-                              "",
-                              undefined,
-                              [],
-                            )}
-                            data-v-62585b82=""
-                          ></Input>
-                        )}
-                        <Button
-                          type="submit"
-                          data-v-62585b82=""
-                          variant="secondary"
-                        >
+                            aria-label={t("operations.input")}
+                            value={input.value}
+                            onChange={(event) => {
+                              input.value = event.target.value;
+                            }}
+                          />
+                        ),
+                      )}
+                      <div className="settings-section-actions">
+                        <Button type="submit" variant="secondary">
                           {t("operations.send")}
                         </Button>
-                      </form>
-                    ) : null}
-                    {error.value ? (
-                      <Alert
-                        role="alert"
-                        className={__classes("error")}
-                        data-v-62585b82=""
-                        tone="danger"
-                        title={t("management.error")}
-                      >
-                        {display(error.value)}
-                      </Alert>
-                    ) : null}
-                    {output.value ? (
-                      <pre data-testid="operation-result" data-v-62585b82="">
-                        {output.value}
-                      </pre>
-                    ) : null}
+                      </div>
+                    </form>
+                  ) : null}
+                </section>
+              ) : null}
+              {error.value ? (
+                <Alert role="alert" tone="danger" title={t("management.error")}>
+                  {display(error.value)}
+                </Alert>
+              ) : null}
+              {output.value ? (
+                <section className="workspace-section operation-output">
+                  <div className="workspace-section-heading">
+                    <h2>{t("domains.result")}</h2>
                   </div>
-                </Card>
+                  <SettingsGroup>
+                    <pre data-testid="operation-result">{output.value}</pre>
+                  </SettingsGroup>
+                </section>
               ) : null}
             </div>
           </ManagementPage>
-        </>
-      );
+        );
+      };
     },
     input,
     ["role"],

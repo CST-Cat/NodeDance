@@ -1,51 +1,37 @@
-.host-page {
+.host-page .host-tabs {
+  min-width: 0;
+  max-width: 100%;
+}
+.host-page [role="tablist"][data-focus-source="pointer"] {
+  --focus-outline: transparent;
+}
+.host-page .host-result {
   display: grid;
-  gap: 20px;
+  min-width: 0;
+  gap: var(--workspace-space-sm);
 }
-.host-page header h1 {
-  margin: 0 0 10px;
+.host-page .host-result-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--workspace-space-sm);
 }
-.host-page header p {
+.host-page :is(.host-result p, .host-hint, pre) {
   margin: 0;
 }
-.host-page .management-tabs {
-  margin-bottom: 0;
+.host-page :is(.host-hint, time) {
+  color: var(--text-muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
-.host-grid {
-  display: grid;
-  grid-template-columns: minmax(220px, 0.6fr) minmax(0, 1.4fr);
-  gap: 20px;
-  align-items: start;
+.host-page :is(pre, code, .host-history-id, .host-check > label) {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
-.host-node {
-  display: grid;
-  gap: 8px;
-  max-width: 440px;
+.host-page pre {
+  white-space: pre-wrap;
+  font-size: 12px;
 }
-.host-actions {
+.host-page .host-toggle {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-top: 20px;
-}
-.host-check {
-  margin: 8px 0;
-  overflow-wrap: anywhere;
-}
-.host-result {
-  border-top: 1px solid var(--border);
-  padding: 16px 0;
-}
-.host-error {
-  color: var(--danger);
-  overflow-wrap: anywhere;
-}
-.host-card h2 {
-  font-size: 20px;
-}
-@media (max-width: 800px) {
-  .host-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  justify-content: end;
 }

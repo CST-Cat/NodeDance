@@ -182,11 +182,6 @@
   min-width: 0;
   font-size: 13px;
 }
-:is(.personal-settings, .preferences-page) .publication-metrics {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--workspace-space-sm);
-}
 :is(.personal-settings, .preferences-page) .publication-resource {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(
@@ -306,19 +301,6 @@
   }
 }
 
-@media (min-width: 601px) {
-  :is(.personal-settings, .preferences-page)
-    .publication-policy
-    .workspace-group-row
-    > .publication-metric-field {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
-  }
-}
-@media (max-width: 360px) {
-  :is(.personal-settings, .preferences-page) .publication-metrics {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 
 :is(.personal-settings, .preferences-page) .theme-options {
   --surface-hover: transparent;
@@ -410,15 +392,14 @@
   }
 }
 
+.preferences-page .update-controls {
+  --workspace-control-measure: 100px;
+}
+
 .preferences-page .update-component-control {
-  width: 140px;
+  width: 100%;
   max-width: 100%;
   justify-self: end;
-}
-@media (max-width: 600px) {
-  .preferences-page .update-component-control {
-    justify-self: end;
-  }
 }
 
 .preferences-page .release-notes {
@@ -468,9 +449,21 @@
 .preferences-page .update-record-slot {
   overflow: hidden;
 }
+.preferences-page .update-history .workspace-group-row {
+  display: flow-root;
+}
+.preferences-page .update-records {
+  margin-block: calc(-1 * var(--workspace-space-sm));
+}
 .preferences-page .update-job {
-  gap: var(--workspace-space-sm);
-  padding-block: var(--workspace-space-sm);
+  gap: var(--workspace-space-xs);
+  padding-block: var(--workspace-space-md);
+}
+.preferences-page .update-record-slot:first-child .update-job {
+  padding-top: 0;
+}
+.preferences-page .update-record-slot:last-child .update-job {
+  padding-bottom: 0;
 }
 
 .preferences-page .update-confirm-dialog > div:first-child > button {
@@ -507,12 +500,6 @@
   }
   :is(.personal-settings, .preferences-page) .parameter-control {
     justify-content: flex-end;
-  }
-  :is(.personal-settings, .preferences-page) .publication-metrics {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  :is(.personal-settings, .preferences-page) .publication-metric-field {
-    align-items: start;
   }
 }
 @media (max-width: 360px) {

@@ -170,3 +170,5 @@ Probe list polling reuses an in-flight read; explicit refreshes and node changes
 Domains and certificates publish each successful inventory read independently. A delayed or failed notification-channel read cannot hold back the domain list or erase successfully loaded certificates. Job polling skips an in-flight refresh instead of canceling and restarting it.
 
 Global overview shares each in-flight metric read between fleet prefetch and the selected-node card, keyed by node identity and generation. Tour handoff reuses the pending response and keeps cached readings; leaving the view or explicitly refreshing aborts its pending metric requests.
+
+Multiline management fields use the shared installed Popover + Button + Textarea composition. The collapsed trigger follows the ordinary control column; expanded text stays in the page draft and submits through the original Core operation. Keyboard activation, Escape/focus return, disabled fields and simple native required checks remain available. No new frontend format, length or business validators are added. The Nodes overview memo keeps its inline editor. 多行填写框统一点击展开，备忘录保持原样；必填仅做简单非空检查并明确提示。

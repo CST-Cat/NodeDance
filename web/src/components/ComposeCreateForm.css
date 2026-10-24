@@ -40,8 +40,7 @@
   color: var(--muted-strong);
   font-size: 12px;
 }
-.compose-create-form input[data-v-833010c3],
-.compose-create-form textarea[data-v-833010c3] {
+.compose-create-form input[data-v-833010c3] {
   box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--line);
@@ -53,16 +52,6 @@
 }
 .compose-create-form input[data-v-833010c3] {
   min-height: 40px;
-}
-.compose-create-form textarea[data-v-833010c3] {
-  min-height: 220px;
-  resize: vertical;
-  background: var(--surface-soft);
-  font:
-    12px/1.6 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
 }
 .compose-directory-field[data-v-833010c3] {
   display: grid;
@@ -120,7 +109,10 @@
   .compose-create-fields[data-v-833010c3] {
     grid-template-columns: 1fr;
   }
-  .compose-create-form textarea[data-v-833010c3] {
-    min-height: 180px;
-  }
 }
+
+.compose-create-form .compose-create-yaml {
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--workspace-control-measure, 280px));
+  align-items: center;
+}
+.compose-create-form .compose-create-yaml > small { grid-column: 1 / -1; }

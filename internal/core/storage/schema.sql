@@ -582,3 +582,8 @@ CREATE TABLE IF NOT EXISTS metric_history_settings (
     retention_days INTEGER NOT NULL CHECK (retention_days BETWEEN 1 AND 365)
 );
 INSERT OR IGNORE INTO metric_history_settings(id,retention_days) VALUES(1,365);
+
+CREATE TABLE IF NOT EXISTS alert_channel_credentials (
+ channel_id TEXT PRIMARY KEY REFERENCES alert_channels(id),
+ ciphertext BLOB NOT NULL
+);

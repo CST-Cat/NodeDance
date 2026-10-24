@@ -42,6 +42,16 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
   record('private-billing-projection:'+ (cookieContext===admin?'administrator':'guest'),response.status()===200&&!['98765.4321','1234567890123','2099-05-06','2098-04-03','purchasedAt','billingCycleUnit','trafficLimitBytes'].some(value=>body.includes(value)))
  }
 
+ const channelOptions=catalog.operations.find(o=>o.name==='channels.options');assert.ok(channelOptions)
+ const privateChannel=await admin.request.post(base+'/api/v1/alerts/channels',{headers,data:{name:'PRIVATE CHANNEL FIXTURE',kind:'webhook',config:{webhookUrl:'https://example.invalid/private-notifications'},secret:'PRIVATE_BEARER_FIXTURE',headers:{'X-Private':'PRIVATE_HEADER_FIXTURE'},enabled:false}})
+ assert.equal(privateChannel.status(),200);const savedChannel=(await privateChannel.json()).channel
+ const adminChannels=await admin.request.get(base+'/api/v1/alerts/channels'),adminChannelBody=await adminChannels.text()
+ record('channel-admin-secret-redaction',adminChannels.status()===200&&!adminChannelBody.includes('PRIVATE_BEARER_FIXTURE')&&!adminChannelBody.includes('PRIVATE_HEADER_FIXTURE'))
+ for(const cookieContext of [page.context(),admin]){
+  const response=await cookieContext.request.get(base+'/api/v1/public/guest/display'),body=await response.text()
+  record('channel-public-projection:'+(cookieContext===admin?'administrator':'guest'),response.status()===200&&!['PRIVATE CHANNEL FIXTURE','PRIVATE_BEARER_FIXTURE','PRIVATE_HEADER_FIXTURE','private-notifications'].some(v=>body.includes(v)))
+ }
+ const deleteChannel=await admin.request.delete(base+'/api/v1/alerts/channels/'+savedChannel.id,{headers,data:{revision:savedChannel.revision}});assert.equal(deleteChannel.status(),204)
  const anonymousInstall=await browserRequest('/api/v1/agents/enrollments','POST',{displayName:'forged-install',coreUrl:base},hostileHeaders)
  record('private-install-command-anonymous',anonymousInstall.status===401)
  // Private RSS subscriptions never enter guest projections, even with admin cookies.

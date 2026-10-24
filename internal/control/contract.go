@@ -112,6 +112,21 @@ func describeTransport(o *Operation) {
 		require("name", "kind", "nodeId", "severity")
 	case "channels.create", "channels.update":
 		require("name", "kind", "config")
+		field("secret", map[string]any{"writeOnly": true, "maxLength": 4096})
+		field("signingSecret", map[string]any{"writeOnly": true, "maxLength": 4096})
+		field("headers", map[string]any{"writeOnly": true, "maxProperties": 20})
+		field("kind", map[string]any{"enum": []string{alerts.ChannelWebhook, alerts.ChannelSMTP}})
+		if config, ok := props()["config"].(map[string]any); ok {
+			if fields, ok := config["properties"].(map[string]any); ok {
+				providers := []string{}
+				for _, p := range alerts.ChannelProviders() {
+					providers = append(providers, p.ID)
+				}
+				fields["provider"].(map[string]any)["enum"] = providers
+				fields["method"].(map[string]any)["enum"] = []string{"POST", "PUT", "PATCH"}
+				fields["bodyTemplate"].(map[string]any)["maxBytes"] = 16384
+			}
+		}
 	case "windows.create":
 		require("kind", "scopeType", "startsAt", "endsAt")
 	case "files.action":
@@ -255,6 +270,8 @@ func describeResponse(o *Operation) {
 		o.ResponseSchema = list("rules", schema(alerts.Rule{}))
 	case "rules.create", "rules.update":
 		o.ResponseSchema = wrapped("rule", schema(alerts.Rule{}))
+	case "channels.options":
+		o.ResponseSchema = list("providers", schema(alerts.ChannelProvider{}))
 	case "channels.list":
 		o.ResponseSchema = list("channels", schema(alerts.Channel{}))
 	case "channels.create", "channels.update":

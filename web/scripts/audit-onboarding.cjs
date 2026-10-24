@@ -1,3 +1,5 @@
+const {fillExpanded}=require('./expanded-textarea.cjs')
+const {selectValue}=require('./arc-controls.cjs')
 // Real isolated Core; network peers, SSH and remote deployment are protocol-only fixtures.
 const assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net');
 const {spawn}=require('node:child_process'),{chromium}=require('playwright');
@@ -28,6 +30,16 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await page.locator('.peer-card').first().getByRole('button').click();
   assert.equal(await name.inputValue(),'Shared connection draft');assert.equal(await url.inputValue(),'https://core.example');
   assert.ok(await page.locator('.agent-setup-form').evaluate((el,before)=>el===before,formBefore),'Selecting a target retains the actual shared form DOM');
+  const authentication=page.locator('.setup-ssh .parameter-row').filter({hasText:'SSH authentication'}).locator('button[data-dropdown-field]')
+  await selectValue(authentication,'key')
+  const privateKey=page.locator('#agentonboarding-field-4'),source=page.locator('#agentonboarding-field-4-source')
+  assert.ok((await privateKey.textContent()).includes('Required'))
+  assert.equal(await source.evaluate(el=>el.checkValidity()),false)
+  await page.locator('.expanded-textarea-panel:visible textarea').waitFor()
+  await page.keyboard.press('Escape')
+  await fillExpanded(privateKey,'plain draft; no browser format validation')
+  assert.equal(await source.evaluate(el=>el.checkValidity()),true,'Only non-empty is checked in the browser')
+  await selectValue(authentication,'password')
   assert.equal(await page.locator('input[name=coreUrl]').count(),1);assert.equal(await page.locator('input[name=displayName]').count(),1);
   assert.equal(await page.locator('.setup-assets').count(),0,'Only parameters supported by the selected Core operation are presented');
   await page.getByRole('button',{name:/Install on another host/}).click();
@@ -63,8 +75,8 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const {setBrowserLanguage}=require('./browser-language.cjs');
   await setBrowserLanguage(page,'en-US');await page.goto(base+'/#/settings');await page.locator('.security-settings').waitFor();
   const profileName=page.locator('[name=profileDisplayName]'),originalName=await profileName.inputValue();await profileName.fill('😀'.repeat(80));assert.equal(await profileName.inputValue(),'😀'.repeat(80));
-  let savedName=page.waitForResponse(response=>new URL(response.url()).pathname===operation('appearance.update').path&&response.request().method()==='PUT');await page.locator('.profile-form button[type=submit]').click();assert.equal((await savedName).status(),200,'Core accepts 80 Unicode characters without a browser UTF-16 gate');
-  await profileName.fill(originalName);savedName=page.waitForResponse(response=>new URL(response.url()).pathname===operation('appearance.update').path&&response.request().method()==='PUT');await page.locator('.profile-form button[type=submit]').click();assert.equal((await savedName).status(),200);
+  let savedName=page.waitForResponse(response=>new URL(response.url()).pathname===operation('appearance.update').path&&response.request().method()==='PUT');await page.locator('.profile-settings .profile-form button[type=submit]').click();assert.equal((await savedName).status(),200,'Core accepts 80 Unicode characters without a browser UTF-16 gate');
+  await profileName.fill(originalName);savedName=page.waitForResponse(response=>new URL(response.url()).pathname===operation('appearance.update').path&&response.request().method()==='PUT');await page.locator('.profile-settings .profile-form button[type=submit]').click();assert.equal((await savedName).status(),200);
   const image=page.locator('.profile-settings input[type=file]').first(),uploadPath=operation('profile.upload-avatar').path;
   let uploaded=page.waitForResponse(response=>new URL(response.url()).pathname===uploadPath&&response.request().method()==='POST');
   await image.setInputFiles({name:'unknown-format',mimeType:'application/octet-stream',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=','base64')});assert.equal((await uploaded).status(),200,'Core recognizes a valid raster image without trusting filename or browser MIME');

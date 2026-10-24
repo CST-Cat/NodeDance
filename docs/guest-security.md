@@ -161,3 +161,7 @@ Guest resource availability is filtered by one shared query for nodes and probes
 The dynamically discovered private-operation denial checks also cover monitoring retention reads and writes. The new history details/export presentation uses the existing authenticated `nodes.history` response; it adds no public download route and does not expand the guest projection.
 
 Metrics admission validates the report before Core annotations and cache publication; invalid reports do not consume an accepted sequence or replace public source data. Route matching uses the same discovered contract with precompiled path patterns and unchanged precedence. Anonymous denial, forged identities and withdrawal regressions continue to exercise those boundaries against a real isolated Core.
+
+Notification provider options (`channels.options`) remain administrator-only and are included in the discovered private-operation matrix. Isolated browser fixtures create a disabled channel, verify encrypted Bearer/custom-header values never return in channel responses, and verify channel names, endpoints and credentials never enter public projections, including requests with administrator cookies. 通知渠道与平台配置不会进入游客展示。
+
+The browser regression opens the compact resource-metric selector, compares its options with Core, verifies selection drafts do not change the saved policy, saves and reloads the selection, and restores the fixture policy. It separately checks the actual 44px trigger/row and native clear-control size at desktop and narrow widths. 权限与公开投影断言继续由原有游客安全回归覆盖。

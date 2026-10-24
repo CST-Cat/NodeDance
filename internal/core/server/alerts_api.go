@@ -68,6 +68,13 @@ func (s *Server) handleAlertAPI(w http.ResponseWriter, r *http.Request, current 
 	case "/rules/defaults":
 		s.handleAlertRuleDefaults(w, r)
 		return true
+	case "/channels/options":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return true
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"providers": corealerts.ChannelProviders()})
+		return true
 	case "/channels":
 		s.handleAlertChannels(w, r, current, "")
 		return true

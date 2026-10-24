@@ -127,3 +127,7 @@ Guest resource availability is filtered by one shared query for nodes and probes
 Monitoring retention is a separate administrator setting (`monitoring.settings` / `monitoring.configure`), not a guest permission. It changes the retained source samples; public history still projects only explicitly published keys and resources. Guests cannot read or change retention settings or use the private history/details interface.
 
 The public projection continues to use validated, independently owned Core metric snapshots. Reducing repeated report validation and route parsing does not add public operations, fields or permissions.
+
+Notification provider options (`channels.options`) remain administrator-only and are included in the discovered private-operation matrix. Isolated browser fixtures create a disabled channel, verify encrypted Bearer/custom-header values never return in channel responses, and verify channel names, endpoints and credentials never enter public projections, including requests with administrator cookies. 通知渠道与平台配置不会进入游客展示。
+
+Resource metrics use the installed shadcn registry MultiSelect in the standard 44px control row. Options still come from Core; the trigger shows one selected metric and the remaining count. Selecting or clearing updates only the administrator draft until Save display settings; the server publication contract is unchanged. 资源指标使用原版多选组件收起展示，展开支持独立多选，不改变游客配置的保存与发布语义。

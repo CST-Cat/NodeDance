@@ -45,23 +45,6 @@
   font-size: 12px;
   line-height: 1.6;
 }
-.compose-editor textarea[data-v-306714f3] {
-  width: 100%;
-  min-height: 360px;
-  resize: vertical;
-  box-sizing: border-box;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 12px;
-  color: var(--text);
-  background: var(--surface-soft);
-  font:
-    12px/1.6 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
-  tab-size: 2;
-}
 .compose-editor-actions[data-v-306714f3] {
   display: flex;
   flex-wrap: wrap;
@@ -77,8 +60,7 @@
   color: var(--danger);
   font-size: 12px;
 }
-@media (max-width: 600px) {
-  .compose-editor textarea[data-v-306714f3] {
-    min-height: 260px;
-  }
+.compose-editor > .expanded-textarea {
+  width: min(100%, var(--workspace-control-measure, 280px));
+  justify-self: end;
 }

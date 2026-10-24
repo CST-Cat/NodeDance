@@ -1,3 +1,4 @@
+import { ExpandedTextarea } from "./ExpandedTextarea";
 import UiTaskProgress from "./UiTaskProgress";
 import type { ContainerTask } from "../api";
 import { composeApi } from "../compose-api";
@@ -267,8 +268,8 @@ export default function ComposeCreateForm(input: Props) {
               data-v-833010c3=""
             >
               {"Compose YAML"}
-              <textarea
-                spellCheck="false"
+              <ExpandedTextarea
+                spellCheck={false}
                 placeholder={
                   "services:\n  app:\n    image: nginx:stable" as any
                 }
@@ -283,7 +284,7 @@ export default function ComposeCreateForm(input: Props) {
                   [],
                 )}
                 data-v-833010c3=""
-              ></textarea>
+              ></ExpandedTextarea>
             </label>
             <div
               className={__classes("compose-create-actions")}
@@ -304,7 +305,19 @@ export default function ComposeCreateForm(input: Props) {
               >
                 {submitting.value ? t("m.92199e4ba37e") : t("m.6db055dc4ece")}
               </button>
-              {task.value ? <UiTaskProgress status={task.value.status} phase={task.value.progress.phase} completed={task.value.progress.completed} total={task.value.progress.total} message={["queued", "running"].includes(task.value.status) ? undefined : message.value} /> : null}
+              {task.value ? (
+                <UiTaskProgress
+                  status={task.value.status}
+                  phase={task.value.progress.phase}
+                  completed={task.value.progress.completed}
+                  total={task.value.progress.total}
+                  message={
+                    ["queued", "running"].includes(task.value.status)
+                      ? undefined
+                      : message.value
+                  }
+                />
+              ) : null}
               {error.value ? (
                 <span role="alert" data-v-833010c3="">
                   {display(error.value)}

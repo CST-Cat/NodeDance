@@ -43,38 +43,12 @@ func (s *Sender) Send(ctx context.Context, channel Channel, secret, payload stri
 	defer cancel()
 	switch channel.Kind {
 	case ChannelWebhook:
-		return s.sendWebhook(ctx, channel.Config.WebhookURL, secret, payload)
+		return s.sendProvider(ctx, channel, secret, payload)
 	case ChannelSMTP:
 		return 0, s.sendSMTP(ctx, channel.Config, secret, payload)
 	default:
 		return 0, errors.New("unsupported notification channel")
 	}
-}
-
-func (s *Sender) sendWebhook(ctx context.Context, target, secret, payload string) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(payload))
-	if err != nil {
-		return 0, errors.New("invalid webhook request")
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "NodeDance/1.0 alerts")
-	if secret != "" {
-		req.Header.Set("Authorization", "Bearer "+secret)
-	}
-	client := s.HTTPClient
-	if client == nil {
-		client = NewSender().HTTPClient
-	}
-	response, err := client.Do(req)
-	if err != nil {
-		return 0, errors.New("webhook request failed")
-	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
-	if response.StatusCode < 200 || response.StatusCode > 299 {
-		return response.StatusCode, fmt.Errorf("webhook returned HTTP %d", response.StatusCode)
-	}
-	return response.StatusCode, nil
 }
 
 func (s *Sender) sendSMTP(ctx context.Context, config ChannelConfig, secret, payload string) error {

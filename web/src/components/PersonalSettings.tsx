@@ -82,6 +82,7 @@ import {
 import { Avatar } from "./arc/avatar/avatar";
 import ColorPicker from "./arc/color-picker/color-picker";
 import SegmentedControl from "./arc/segmented-control/segmented-control";
+import { MultiSelect } from "./arc/multi-select/multi-select";
 import { useEffect, useRef, type InputHTMLAttributes } from "react";
 import { PasswordField } from "./arc/password-field/password-field";
 import AccountManagement from "./AccountManagement";
@@ -123,10 +124,15 @@ export default function PersonalSettings(input: {
   const profileForm = useRef<HTMLFormElement>(null);
   useEffect(() => {
     const form = profileForm.current;
-    const group = form?.querySelector<HTMLElement>('.theme-options > [role="group"]');
+    const group = form?.querySelector<HTMLElement>(
+      '.theme-options > [role="group"]',
+    );
     if (!form || !group) return;
     const synchronize = () => {
-      form.style.setProperty("--appearance-control-width", `${group.getBoundingClientRect().width}px`);
+      form.style.setProperty(
+        "--appearance-control-width",
+        `${group.getBoundingClientRect().width}px`,
+      );
     };
     synchronize();
     const observer = new ResizeObserver(synchronize);
@@ -277,7 +283,8 @@ export default function PersonalSettings(input: {
                           label={t("m.8f29293906e7")}
                           value={model.appearance.theme}
                           onValueChange={(value) => {
-                            model.appearance.theme = value as Appearance["theme"];
+                            model.appearance.theme =
+                              value as Appearance["theme"];
                           }}
                           options={[
                             { value: "system", label: t("m.217cfe7db1e3") },
@@ -550,7 +557,9 @@ export default function PersonalSettings(input: {
                   )}
                 </div>
               </section>
-              {admin ? <MonitoringSettings key={model.currentUser.value!.id} /> : null}
+              {admin ? (
+                <MonitoringSettings key={model.currentUser.value!.id} />
+              ) : null}
               {admin ? (
                 <AccountManagement currentId={model.currentUser.value!.id} />
               ) : null}
@@ -633,34 +642,23 @@ export default function PersonalSettings(input: {
                             />
                             {t("guest.showStatus")}
                           </label>
-                          <div className="parameter-row publication-metric-field">
-                            <span>{t("guest.metrics")}</span>
-                            <div className="publication-metrics">
-                              {publication.options.value.metrics.map(
-                                (metric) => (
-                                  <label
-                                    className="guest-check"
-                                    key={metric.key}
-                                  >
-                                    <Checkbox
-                                      checked={policy.metrics.includes(
-                                        metric.key,
-                                      )}
-                                      onCheckedChange={(value) => {
-                                        policy.metrics =
-                                          value === true
-                                            ? [...policy.metrics, metric.key]
-                                            : policy.metrics.filter(
-                                                (key) => key !== metric.key,
-                                              );
-                                      }}
-                                    />
-                                    {t(`guest.metric.${metric.key}`)}
-                                  </label>
-                                ),
-                              )}
-                            </div>
-                          </div>
+                          <MultiSelect
+                            className="parameter-row publication-metric-field"
+                            label={t("guest.metrics")}
+                            placeholder={t("guest.selectMetrics")}
+                            options={publication.options.value.metrics.map(
+                              (metric) => ({
+                                value: metric.key,
+                                label: t(`guest.metric.${metric.key}`),
+                              }),
+                            )}
+                            value={policy.metrics}
+                            maxVisible={1}
+                            disabled={publication.busy.value}
+                            onValueChange={(value) => {
+                              policy.metrics = value;
+                            }}
+                          />
                           <div className="parameter-row">
                             <span>{t("guest.history")}</span>
                             <Select
