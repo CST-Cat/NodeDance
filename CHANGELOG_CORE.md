@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.54]
+
+### English
+
+- Pair the Core release with Agent 0.1.31, including the bounded low-memory native Agent update flow.
+
+### 简体中文
+
+- Core 发布配套 Agent 0.1.31，包含面向低内存原生 Agent 的有界更新流程。
+
 ## [0.1.53]
 
 ### English
