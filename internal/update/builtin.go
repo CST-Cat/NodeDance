@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -249,18 +250,22 @@ func internal(args []string, stdout, stderr io.Writer, resolver Resolver, factor
 		return true, errors.New("invalid internal update request")
 	}
 	if rpc.Request.Component == "agent" {
-		restoreMemoryLimit := agentWorkerMemoryLimit()
-		defer restoreMemoryLimit()
+		restoreResources := agentWorkerResources()
+		defer restoreResources()
 	}
 	return true, runRPCWithFactory(config, rpc, stdout, resolver, factory)
 }
 
-func agentWorkerMemoryLimit() func() {
+func agentWorkerResources() func() {
 	previous := debug.SetMemoryLimit(-1)
-	if previous < 0 || previous > 8<<20 {
-		debug.SetMemoryLimit(8 << 20)
+	processors := runtime.GOMAXPROCS(1)
+	if previous < 0 || previous > 2<<20 {
+		debug.SetMemoryLimit(2 << 20)
 	}
-	return func() { debug.SetMemoryLimit(previous) }
+	return func() {
+		debug.SetMemoryLimit(previous)
+		runtime.GOMAXPROCS(processors)
+	}
 }
 
 func runRPC(config Config, rpc RPC, stdout io.Writer, resolver Resolver) error {

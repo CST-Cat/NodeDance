@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.32]
+
+### English
+
+- Reduce Agent update worker memory use with a 2 MiB Go soft target and one execution thread; stream downloads and backups through bounded buffers for constrained VPSs.
+
+### 简体中文
+
+- Agent 更新进程采用 2 MiB Go 软内存目标和单执行线程；下载与备份使用有界缓冲，降低小内存 VPS 的更新占用。
+
 ## [0.1.31]
 
 ### English

@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -105,8 +104,8 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 }
 
 func TestLargeAgentDownloadAndInstall(t *testing.T) {
-	previous := debug.SetMemoryLimit(8 << 20)
-	defer debug.SetMemoryLimit(previous)
+	restore := agentWorkerResources()
+	defer restore()
 	const size = 48 << 20
 	hash := sha256.New()
 	if _, err := io.CopyN(hash, repeatedBytes('A'), size); err != nil {
@@ -137,7 +136,18 @@ func TestLargeAgentDownloadAndInstall(t *testing.T) {
 	if err := installBinary(download, installed); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{download, backup, installed} {
+	data := filepath.Join(root, "data")
+	if err := os.Mkdir(data, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(backup, filepath.Join(data, "state")); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := filepath.Join(root, "snapshot")
+	if err := copyTree(data, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{download, filepath.Join(data, "state"), installed, filepath.Join(snapshot, "state")} {
 		if hashFile(t, path) != digest {
 			t.Fatalf("artifact changed: %s", path)
 		}

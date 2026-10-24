@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.55]
+
+### English
+
+- Pair this Core release with Agent 0.1.32, which lowers update worker memory use and streams release downloads and backups for constrained VPSs.
+
+### 简体中文
+
+- 本 Core 版本配套 Agent 0.1.32；Agent 降低更新进程内存占用，并以流式方式下载和备份，改善小内存 VPS 更新。
+
 ## [0.1.54]
 
 ### English

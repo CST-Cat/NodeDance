@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -15,17 +16,25 @@ import (
 	"time"
 )
 
-func TestAgentWorkerMemoryLimitIsAppliedAndRespectsLowerLimit(t *testing.T) {
+func TestAgentWorkerResourcesAreBoundedAndRestored(t *testing.T) {
+	processors := runtime.GOMAXPROCS(2)
+	defer runtime.GOMAXPROCS(processors)
 	previous := debug.SetMemoryLimit(-1)
 	defer debug.SetMemoryLimit(previous)
-	restore := agentWorkerMemoryLimit()
-	if got := debug.SetMemoryLimit(-1); got != 8<<20 {
-		t.Fatalf("default Agent worker memory limit = %d, want %d", got, 8<<20)
+	restore := agentWorkerResources()
+	if got := debug.SetMemoryLimit(-1); got != 2<<20 {
+		t.Fatalf("default Agent worker memory limit = %d, want %d", got, 2<<20)
+	}
+	if got := runtime.GOMAXPROCS(0); got != 1 {
+		t.Fatalf("worker processor count = %d", got)
 	}
 	restore()
-	debug.SetMemoryLimit(4 << 20)
-	restore = agentWorkerMemoryLimit()
-	if got := debug.SetMemoryLimit(-1); got != 4<<20 {
+	if got := runtime.GOMAXPROCS(0); got != 2 {
+		t.Fatalf("processor count was not restored: %d", got)
+	}
+	debug.SetMemoryLimit(1 << 20)
+	restore = agentWorkerResources()
+	if got := debug.SetMemoryLimit(-1); got != 1<<20 {
 		t.Fatalf("lower existing memory limit was not preserved: %d", got)
 	}
 	restore()

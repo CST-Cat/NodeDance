@@ -11,6 +11,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const releaseWriteWindow = 64 << 10
+
 type releaseWriter struct {
 	file    *os.File
 	pending int64
@@ -20,7 +22,7 @@ type releaseWriter struct {
 func (w *releaseWriter) Write(data []byte) (int, error) {
 	written := 0
 	for len(data) > 0 {
-		size := min(len(data), (1<<20)-int(w.pending))
+		size := min(len(data), releaseWriteWindow-int(w.pending))
 		n, err := w.file.Write(data[:size])
 		written += n
 		w.pending += int64(n)
@@ -31,7 +33,7 @@ func (w *releaseWriter) Write(data []byte) (int, error) {
 		if n != size {
 			return written, io.ErrShortWrite
 		}
-		if w.pending == 1<<20 {
+		if w.pending == releaseWriteWindow {
 			if err := w.flush(); err != nil {
 				return written, err
 			}
@@ -85,9 +87,33 @@ func atomicCopy(source, path string, mode fs.FileMode) error {
 			return err
 		}
 		defer input.Close()
-		_, err = io.Copy(writer, struct{ io.Reader }{input})
-		return err
+		return copyReleaseFile(writer, input)
 	})
+}
+func copyReleaseFile(writer io.Writer, input *os.File) error {
+	_ = unix.Fadvise(int(input.Fd()), 0, 0, unix.FADV_RANDOM)
+	buffer := make([]byte, 32<<10)
+	var offset int64
+	for {
+		n, readErr := input.Read(buffer)
+		if n > 0 {
+			written, err := writer.Write(buffer[:n])
+			_ = unix.Fadvise(int(input.Fd()), offset, int64(n), unix.FADV_DONTNEED)
+			offset += int64(n)
+			if err != nil {
+				return err
+			}
+			if written != n {
+				return io.ErrShortWrite
+			}
+		}
+		if readErr == io.EOF {
+			return nil
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
 }
 func atomicWrite(path string, mode fs.FileMode, write func(io.Writer) error) error {
 	if info, err := os.Lstat(path); err == nil && !info.Mode().IsRegular() {
@@ -153,12 +179,15 @@ func copyTree(source, destination string) error {
 				in.Close()
 				return err
 			}
-			_, err = io.Copy(out, in)
+			writer := &releaseWriter{file: out}
+			err = copyReleaseFile(writer, in)
 			in.Close()
 			if err == nil {
-				err = out.Sync()
+				err = writer.flush()
 			}
-			out.Close()
+			if closeErr := out.Close(); err == nil {
+				err = closeErr
+			}
 			if err != nil {
 				return err
 			}

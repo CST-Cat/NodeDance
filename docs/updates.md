@@ -27,7 +27,7 @@ nodedance update --server https://core.example --component agent --node-id NODE_
 
 - 从各自 `core-v*`／`agent-v*` 命名空间选择正式版本；仅比较 tag 判断是否有新版，不比较协议号、能力、API 或存储指纹，不要求 `nodedance-update.json`。
 - 切换前下载并校验 SHA256；远端 Docker Agent 还会固定当前 Agent 镜像 ID。下载失败不停止旧程序。
-- 原生更新按 1 MiB 分段落盘并建议内核释放已写入的文件缓存，下载和二进制备份／替换不整文件载入内存；校验失败删除残留下载。Agent 临时更新进程使用 8 MiB Go 软内存目标（不是总内存硬上限）。下载后不再额外运行新二进制做版本预检，启动后统一核验运行版本、健康状态及重连。
+- 原生更新按 64 KiB 分段落盘并建议内核释放已写入的文件缓存，二进制备份／替换及数据备份使用 32 KiB 读取缓冲、关闭预读并及时释放已读取的源文件缓存，不整文件载入内存；校验失败删除残留下载。Agent 临时更新进程限制为一个 Go 执行线程，使用 2 MiB Go 软内存目标（不是总内存硬上限）。下载后不再额外运行新二进制做版本预检，启动后统一核验运行版本、健康状态及重连。
 - Core 只识别原生 `nodedance.service`；Agent 识别原生 systemd 或 Docker 部署。更新请求不能指定任意服务或执行任意命令。
 - 由同一个 Core／Agent 二进制按需启动临时工作进程：Core 和原生 Agent 使用临时 systemd 单元，Docker Agent 使用当前 Agent 镜像的临时容器。没有独立更新二进制、安装脚本或常驻更新服务。
 - 临时工作进程独立于目标服务的生命周期，完成停止、备份、切换、启动、健康核验；失败自动恢复旧运行版本。Core 恢复更新前数据；Agent 保留当前凭据和任务状态。
@@ -37,7 +37,20 @@ Version eligibility is determined solely by the stable component tag. Protocol, 
 
 The installed Core or Agent binary owns the transaction through an on-demand transient systemd unit. A Docker Agent uses a temporary container made from its current Agent image. The worker survives the target restart, verifies releases, backs up private data, preserves deployment settings, checks health/reconnection and rolls back failure. It installs no separate update daemon. Root-private journals and backups live beside the data directory, outside the data backup itself. Retain rollback state and the previous Agent image until recovery is no longer needed.
 
-Native downloads and binary copies sync in 1 MiB increments and ask the kernel to discard written file cache, without loading whole artifacts into memory. Failed downloads are removed. Agent workers use an 8 MiB Go soft memory target, which is not a total process memory limit. The downloaded binary is no longer launched for a separate version preflight; runtime version, health and reconnection are verified after startup. The focused large-artifact regression covers HTTPS download, SHA256 verification, backup and installation of a 48 MiB fixture under a 32 MiB cgroup limit with swap disabled. This is a transfer regression, not a complete 32 MiB VPS boot and update test.
+Native downloads and binary copies sync in 64 KiB increments and ask the kernel to discard written file cache, without loading whole artifacts into memory. Binary backup/install and data snapshot copies use a 32 KiB read buffer, disable read-ahead and discard consumed source cache. Failed downloads are removed. Agent workers use one Go execution thread and a 2 MiB Go soft memory target, which is not a total process memory limit. The downloaded binary is no longer launched for a separate version preflight; runtime version, health and reconnection are verified after startup. The focused large-artifact regression covers HTTPS download, SHA256 verification, backup and installation of a 48 MiB fixture and data snapshot copying under an 8 MiB cgroup limit with swap disabled. This is a transfer regression, not a complete 8 MiB VPS boot and update test; the OS, running Agent and other services also need memory. Core authentication alone uses more than 8 MiB, so this does not establish 8 MiB Core support.
+
+上述 48 MiB 文件回归已在 8 MiB cgroup 硬上限、禁用 swap 下验证 HTTPS 下载、SHA256、二进制备份／替换及数据备份。它不等于整台 8 MiB VPS 的启动和完整更新验证；系统、现有 Agent 和其他服务仍需内存，Core 的认证本身已超过此预算。临时目录和更新目录需使用磁盘文件系统；tmpfs 中的文件仍占用内存，释放文件缓存无法消除此占用。
+
+Use disk-backed storage for temporary/update directories: tmpfs file contents still consume memory and cannot be discarded as clean disk cache.
+
+Reproduce the focused transfer check on an isolated Linux/systemd development host (the test uses temporary files and an HTTPS fixture, never a real service update):
+
+```sh
+go test -c -o /tmp/nodedance-update-test ./internal/update
+sudo systemd-run --quiet --wait --pipe --collect \
+  -p MemoryMax=8M -p MemorySwapMax=0 \
+  /tmp/nodedance-update-test -test.run '^TestLargeAgentDownloadAndInstall$' -test.v
+```
 
 ## Deployment permissions / 部署权限
 
