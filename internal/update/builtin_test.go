@@ -8,11 +8,28 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestAgentWorkerMemoryLimitIsAppliedAndRespectsLowerLimit(t *testing.T) {
+	previous := debug.SetMemoryLimit(-1)
+	defer debug.SetMemoryLimit(previous)
+	restore := agentWorkerMemoryLimit()
+	if got := debug.SetMemoryLimit(-1); got != 8<<20 {
+		t.Fatalf("default Agent worker memory limit = %d, want %d", got, 8<<20)
+	}
+	restore()
+	debug.SetMemoryLimit(4 << 20)
+	restore = agentWorkerMemoryLimit()
+	if got := debug.SetMemoryLimit(-1); got != 4<<20 {
+		t.Fatalf("lower existing memory limit was not preserved: %d", got)
+	}
+	restore()
+}
 
 func TestBuiltInWorkerCompletesAfterAcceptanceReaderCloses(t *testing.T) {
 	if os.Geteuid() != 0 {

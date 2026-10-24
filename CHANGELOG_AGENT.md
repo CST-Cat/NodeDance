@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.31]
+
+### English
+
+- Apply the 8 MiB Go soft memory target to Agent update workers when the runtime has no configured limit, while respecting any lower existing limit.
+
+### 简体中文
+
+- Agent 更新工作进程未配置内存上限时启用 8 MiB Go 软内存目标，并保留已有的更低限制。
+
 ## [0.1.30]
 
 ### English
