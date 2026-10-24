@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.30]
+
+### English
+
+- Bound native Agent download and binary replacement memory use for small VPSs, and remove the extra pre-install version process while retaining post-start runtime checks.
+
+### 简体中文
+
+- 限制原生 Agent 下载与二进制替换的内存占用，适配小内存 VPS；移除安装前额外启动的版本检查进程，保留启动后的运行状态核验。
+
 ## [0.1.29]
 
 ### English

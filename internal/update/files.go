@@ -7,7 +7,50 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+
+	"golang.org/x/sys/unix"
 )
+
+type releaseWriter struct {
+	file    *os.File
+	pending int64
+	offset  int64
+}
+
+func (w *releaseWriter) Write(data []byte) (int, error) {
+	written := 0
+	for len(data) > 0 {
+		size := min(len(data), (1<<20)-int(w.pending))
+		n, err := w.file.Write(data[:size])
+		written += n
+		w.pending += int64(n)
+		data = data[n:]
+		if err != nil {
+			return written, err
+		}
+		if n != size {
+			return written, io.ErrShortWrite
+		}
+		if w.pending == 1<<20 {
+			if err := w.flush(); err != nil {
+				return written, err
+			}
+		}
+	}
+	return written, nil
+}
+
+func (w *releaseWriter) flush() error {
+	if err := w.file.Sync(); err != nil {
+		return err
+	}
+	if w.pending > 0 {
+		_ = unix.Fadvise(int(w.file.Fd()), w.offset, w.pending, unix.FADV_DONTNEED)
+	}
+	w.offset += w.pending
+	w.pending = 0
+	return nil
+}
 
 func privateDirectory(path string) error {
 	if !filepath.IsAbs(path) {
@@ -42,7 +85,7 @@ func atomicCopy(source, path string, mode fs.FileMode) error {
 			return err
 		}
 		defer input.Close()
-		_, err = io.Copy(writer, input)
+		_, err = io.Copy(writer, struct{ io.Reader }{input})
 		return err
 	})
 }
@@ -59,8 +102,9 @@ func atomicWrite(path string, mode fs.FileMode, write func(io.Writer) error) err
 		file.Close()
 		return err
 	}
-	if err = write(file); err == nil {
-		err = file.Sync()
+	writer := &releaseWriter{file: file}
+	if err = write(writer); err == nil {
+		err = writer.flush()
 	}
 	if closeErr := file.Close(); err == nil {
 		err = closeErr

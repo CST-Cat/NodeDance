@@ -144,8 +144,15 @@ func (g *GitHub) Download(ctx context.Context, release Release, path string) err
 		return err
 	}
 	defer file.Close()
+	complete := false
+	defer func() {
+		if !complete {
+			os.Remove(path)
+		}
+	}()
 	hasher := sha256.New()
-	count, err := io.Copy(io.MultiWriter(file, hasher), io.LimitReader(response.Body, (256<<20)+1))
+	writer := &releaseWriter{file: file}
+	count, err := io.Copy(io.MultiWriter(writer, hasher), io.LimitReader(response.Body, (256<<20)+1))
 	if err != nil {
 		return err
 	}
@@ -155,7 +162,14 @@ func (g *GitHub) Download(ctx context.Context, release Release, path string) err
 	if hex.EncodeToString(hasher.Sum(nil)) != digest {
 		return errors.New("release SHA256 verification failed")
 	}
-	return file.Sync()
+	if err := writer.flush(); err != nil {
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	complete = true
+	return nil
 }
 
 func (g *GitHub) Release(ctx context.Context, component, tag string) (Release, error) {

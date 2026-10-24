@@ -200,6 +200,13 @@ func waitJob(t *testing.T, m *Manager, id string) Job {
 }
 func TestNativeUpdatePreservesStateAndRollbackRestoresBackup(t *testing.T) {
 	m, data, _ := nativeFixture(t)
+	command := m.command
+	m.command = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if filepath.Base(name) == "release-binary" {
+			return nil, errors.New("update must not launch a second Agent for preflight")
+		}
+		return command(ctx, name, args...)
+	}
 	request := Request{Component: "core", Confirm: true}
 	job, err := m.Apply(context.Background(), request, "update-key-001")
 	if err != nil {

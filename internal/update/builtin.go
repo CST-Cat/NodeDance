@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -246,6 +247,12 @@ func internal(args []string, stdout, stderr io.Writer, resolver Resolver, factor
 	var rpc RPC
 	if Decode([]byte(args[1]), &config) != nil || Decode([]byte(args[2]), &rpc) != nil {
 		return true, errors.New("invalid internal update request")
+	}
+	if rpc.Request.Component == "agent" {
+		if previous := debug.SetMemoryLimit(-1); previous > 8<<20 {
+			debug.SetMemoryLimit(8 << 20)
+			defer debug.SetMemoryLimit(previous)
+		}
 	}
 	return true, runRPCWithFactory(config, rpc, stdout, resolver, factory)
 }

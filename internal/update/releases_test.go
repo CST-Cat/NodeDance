@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -79,8 +80,18 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 		t.Fatal("artifact changed")
 	}
 	bad = true
-	if err := github.Download(context.Background(), release, filepath.Join(t.TempDir(), "bad")); err == nil {
+	badPath := filepath.Join(t.TempDir(), "bad")
+	if err := github.Download(context.Background(), release, badPath); err == nil {
 		t.Fatal("corrupted artifact accepted")
+	}
+	if _, err := os.Stat(badPath); !os.IsNotExist(err) {
+		t.Fatal("failed download was not removed")
+	}
+	if err := github.Download(context.Background(), release, path); err == nil {
+		t.Fatal("existing artifact overwritten")
+	}
+	if raw, err := os.ReadFile(path); err != nil || string(raw) != string(binary) {
+		t.Fatal("existing artifact changed after rejected download")
 	}
 	if _, err := github.Resolve(context.Background(), "core", "agent-v0.1.9"); err == nil {
 		t.Fatal("cross-component release accepted")
@@ -90,6 +101,46 @@ func TestStableComponentResolutionAndArtifactChecksums(t *testing.T) {
 		t.Fatal("invalid version file accepted")
 	} else if !strings.Contains(err.Error(), "version file") {
 		t.Fatalf("unexpected version-file error: %v", err)
+	}
+}
+
+func TestLargeAgentDownloadAndInstall(t *testing.T) {
+	previous := debug.SetMemoryLimit(8 << 20)
+	defer debug.SetMemoryLimit(previous)
+	const size = 48 << 20
+	hash := sha256.New()
+	if _, err := io.CopyN(hash, repeatedBytes('A'), size); err != nil {
+		t.Fatal(err)
+	}
+	digest := hex.EncodeToString(hash.Sum(nil))
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/SHA256SUMS" {
+			fmt.Fprintf(w, "%s  nodedance-agent-linux-%s\n", digest, runtime.GOARCH)
+			return
+		}
+		w.Header().Set("Content-Length", fmt.Sprint(size))
+		_, _ = io.CopyN(w, repeatedBytes('A'), size)
+	}))
+	defer server.Close()
+	resolver := &GitHub{HTTP: server.Client()}
+	release := Release{Component: "agent", ChecksumURL: server.URL + "/SHA256SUMS", BinaryURL: server.URL + "/nodedance-agent-linux-" + runtime.GOARCH}
+	root := t.TempDir()
+	download := filepath.Join(root, "download")
+	if err := resolver.Download(context.Background(), release, download); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(root, "previous-binary")
+	if err := copyBinary(download, backup); err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(root, "installed")
+	if err := installBinary(download, installed); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{download, backup, installed} {
+		if hashFile(t, path) != digest {
+			t.Fatalf("artifact changed: %s", path)
+		}
 	}
 }
 

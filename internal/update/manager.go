@@ -476,12 +476,8 @@ func (m *Manager) run(job Job, release Release) {
 			if err := m.Resolver.Download(ctx, release, binary); err != nil {
 				return err
 			}
-			raw, err := m.command(ctx, binary, "--version")
-			if err != nil || !strings.Contains(string(raw), job.Target) {
-				return errors.New("downloaded binary version verification failed")
-			}
 			job.OldBinary = filepath.Join(workspace, "previous-binary")
-			if err = copyBinary(target.Binary, job.OldBinary); err != nil {
+			if err := copyBinary(target.Binary, job.OldBinary); err != nil {
 				return err
 			}
 		}
