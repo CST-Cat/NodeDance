@@ -209,60 +209,10 @@ export default function ComposeCreateForm(input: Props) {
                 </button>
               </div>
             </div>
-            {directoryPickerOpen.value ? (
-              <section
-                id="compose-directory-picker"
-                aria-label={t("compose.chooseDirectory") as any}
-                data-testid="compose-directory-picker"
-                className={__classes("compose-directory-picker")}
-                onKeyDown={(event: any) => {
-                  event.stopPropagation();
-                  void closeDirectoryPicker();
-                }}
-                data-v-833010c3=""
-              >
-                <header data-v-833010c3="">
-                  <h3 data-v-833010c3="">{t("compose.chooseDirectory")}</h3>
-                  <button
-                    type="button"
-                    className={__classes("container-action")}
-                    onClick={(event: any) => {
-                      void closeDirectoryPicker();
-                    }}
-                    data-v-833010c3=""
-                  >
-                    {t("dialog.cancel")}
-                  </button>
-                </header>
-                <p data-v-833010c3="">{t("compose.directoryHelp")}</p>
-                <NodeFiles
-                  nodeId={__props.nodeId as any}
-                  nodeName={t("compose.chooseDirectory") as any}
-                  directoryPicker={true}
-                  onDirectoryReady={(event: any) => {
-                    selectedDirectory.value = event;
-                  }}
-                  data-v-833010c3=""
-                ></NodeFiles>
-                <footer data-v-833010c3="">
-                  <span data-v-833010c3="">
-                    {selectedDirectory.value || t("guest.loading")}
-                  </span>
-                  <button
-                    type="button"
-                    disabled={!selectedDirectory.value as any}
-                    data-testid="compose-directory-use"
-                    className={__classes("container-action")}
-                    onClick={(event: any) => {
-                      void closeDirectoryPicker(true);
-                    }}
-                    data-v-833010c3=""
-                  >
-                    {t("compose.useDirectory")}
-                  </button>
-                </footer>
-              </section>
-            ) : null}
+            {directoryPickerOpen.value ? <NodeFiles dialog directoryPicker nodeId={props.nodeId} nodeName={t("compose.chooseDirectory")}
+              onClose={() => { void closeDirectoryPicker(); }}
+              onDirectoryReady={(path: string) => { selectedDirectory.value = path; }}
+              onChoose={(path: string) => { selectedDirectory.value = path; void closeDirectoryPicker(true); }} /> : null}
             <label
               className={__classes("compose-create-yaml")}
               data-v-833010c3=""

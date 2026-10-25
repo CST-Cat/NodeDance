@@ -2,21 +2,24 @@
 
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { createContext, useCallback, useContext, useLayoutEffect, useRef, useState } from "react";
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ReactNode, CSSProperties } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { Transition } from "motion/react";
 import { X } from "lucide-react";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./dialog.module.css";
+import { ScrollArea } from "../scroll-area/scroll-area";
 
 /** Mirrors the open state so the content can stay mounted while it animates out, and retarget mid-flight if it is reopened or closed early. */
 const OpenContext = createContext<boolean | null>(null);
+const DepthContext = createContext(-1);
 
 export function Dialog({ open: openProp, defaultOpen = false, onOpenChange, ...props }: ComponentPropsWithoutRef<typeof DialogPrimitive.Root>) {
+  const depth = useContext(DepthContext) + 1;
   const [uncontrolled, setUncontrolled] = useState(defaultOpen);
   const open = openProp ?? uncontrolled;
   const setOpen = useCallback((next: boolean) => { if (openProp === undefined) setUncontrolled(next); onOpenChange?.(next); }, [openProp, onOpenChange]);
-  return <OpenContext.Provider value={open}><DialogPrimitive.Root {...props} open={open} onOpenChange={setOpen}/></OpenContext.Provider>;
+  return <DepthContext.Provider value={depth}><OpenContext.Provider value={open}><DialogPrimitive.Root {...props} open={open} onOpenChange={setOpen}/></OpenContext.Provider></DepthContext.Provider>;
 }
 
 export const DialogTrigger = DialogPrimitive.Trigger;
@@ -42,6 +45,8 @@ function SwapText({ text }: { text: string }) {
 
 export function DialogContent({ title, description, children, className, onPointerDownOutside, container, ...props }: DialogContentProps) {
   const open = useContext(OpenContext);
+  const depth = Math.max(0, useContext(DepthContext));
+  const layer = { "--dialog-depth": depth } as CSSProperties;
   const reduced = useReducedMotion();
   // When the open state last changed. Radix waits for the click before treating a press as outside, and a press on the trigger
   // while the dialog leaves reopens it first, so that press must not close it again.
@@ -54,19 +59,19 @@ export function DialogContent({ title, description, children, className, onPoint
   const classes = [styles.content, className].filter(Boolean).join(" ");
   const inner = <>
     <div className={styles.header}><div><DialogPrimitive.Title className={styles.title}><SwapText text={title}/></DialogPrimitive.Title>{description ? <DialogPrimitive.Description className={styles.description}><SwapText text={description}/></DialogPrimitive.Description> : null}</div><DialogPrimitive.Close className={styles.close} aria-label="Close dialog"><X size={16} strokeWidth={1.75} aria-hidden="true"/></DialogPrimitive.Close></div>
-    <div className={styles.body}>{children}</div>
+    <ScrollArea className={styles.bodyScroll} fade={0} label={title}><div className={styles.body}>{children}</div></ScrollArea>
   </>;
   // Under a bare Radix root the open state is unknown here, so CSS keyframes keyed off data-state animate the layers instead.
   if (open === null) return <DialogPrimitive.Portal container={container}>
-    <DialogPrimitive.Overlay className={`${styles.overlay} ${styles.keyframes}`}/>
-    <DialogPrimitive.Content {...props} onPointerDownOutside={pressOutside} className={`${classes} ${styles.keyframes}`}>{inner}</DialogPrimitive.Content>
+    <DialogPrimitive.Overlay style={layer} className={`${styles.overlay} ${styles.keyframes}`}/>
+    <DialogPrimitive.Content {...props} onPointerDownOutside={pressOutside} style={{ ...props.style, ...layer }} className={`${classes} ${styles.keyframes}`}>{inner}</DialogPrimitive.Content>
   </DialogPrimitive.Portal>;
   // The overlay fades while the dialog rises 8px and scales up on a spring. Closing is shorter and quieter, and starts from wherever the entrance is.
   return <AnimatePresence>
     {open && <DialogPrimitive.Portal key="dialog" forceMount container={container}>
-      <DialogPrimitive.Overlay asChild forceMount><motion.div className={styles.overlay} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: reduced ? fade : leave }} transition={reduced ? fade : { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }}/></DialogPrimitive.Overlay>
+      <DialogPrimitive.Overlay asChild forceMount><motion.div style={layer} className={styles.overlay} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: reduced ? fade : leave }} transition={reduced ? fade : { duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] }}/></DialogPrimitive.Overlay>
       <DialogPrimitive.Content {...props} onPointerDownOutside={pressOutside} asChild forceMount>
-        <motion.div className={classes} initial={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: .96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0, transition: fade } : { opacity: 0, y: 4, scale: .98, transition: leave }} transition={reduced ? fade : { default: motionTokens.spring.smooth, opacity: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] } }}>{inner}</motion.div>
+        <motion.div style={{ ...props.style, ...layer }} className={classes} initial={reduced ? { opacity: 0 } : { opacity: 0, y: 8, scale: .96 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={reduced ? { opacity: 0, transition: fade } : { opacity: 0, y: 4, scale: .98, transition: leave }} transition={reduced ? fade : { default: motionTokens.spring.smooth, opacity: { duration: motionTokens.duration.fast, ease: [...motionTokens.ease.enter] } }}>{inner}</motion.div>
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>}
   </AnimatePresence>;

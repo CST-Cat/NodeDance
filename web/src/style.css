@@ -142,20 +142,20 @@ body {
   min-height: 100vh;
   margin: 0;
 }
-button,
-input,
-select,
-textarea {
+button:not(:where(.registry-controls, .registry-controls *)),
+input:not(:where(.registry-controls, .registry-controls *)),
+select:not(:where(.registry-controls, .registry-controls *)),
+textarea:not(:where(.registry-controls, .registry-controls *)) {
   font: inherit;
 }
-strong,
-b {
+strong:not(:where(.registry-controls, .registry-controls *)),
+b:not(:where(.registry-controls, .registry-controls *)) {
   font-weight: 500;
 }
-button {
+button:not(:where(.registry-controls, .registry-controls *)) {
   color: inherit;
 }
-:where(.app-shell) button:not(:where(.registry-controls *)) {
+:where(.app-shell) button:not(:where(.registry-controls, .registry-controls *)) {
   appearance: none;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
@@ -166,10 +166,10 @@ button {
   font-weight: 500;
   cursor: pointer;
 }
-:where(.app-shell) button:hover:not(:disabled):not(:where(.registry-controls *)) {
+:where(.app-shell) button:hover:not(:disabled):not(:where(.registry-controls, .registry-controls *)) {
   background: var(--surface-hover);
 }
-:where(.app-shell) button:active:not(:disabled):not(:where(.registry-controls *)) {
+:where(.app-shell) button:active:not(:disabled):not(:where(.registry-controls, .registry-controls *)) {
   transform: translateY(1px) scale(0.98);
 }
 .container-action {
@@ -196,12 +196,12 @@ button {
   background: var(--danger-soft);
 }
 
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-summary:focus-visible {
+button:focus-visible:not(:where(.registry-controls, .registry-controls *)),
+a:focus-visible:not(:where(.registry-controls, .registry-controls *)),
+input:focus-visible:not(:where(.registry-controls, .registry-controls *)),
+select:focus-visible:not(:where(.registry-controls, .registry-controls *)),
+textarea:focus-visible:not(:where(.registry-controls, .registry-controls *)),
+summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
 }
@@ -1117,9 +1117,9 @@ summary:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *:not(:where(.registry-controls, .registry-controls *)),
+  *:not(:where(.registry-controls, .registry-controls *))::before,
+  *:not(:where(.registry-controls, .registry-controls *))::after {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
@@ -1468,19 +1468,19 @@ summary:focus-visible {
   color: var(--muted);
   font-size: 13px;
 }
-button:disabled {
+button:disabled:not(:where(.registry-controls, .registry-controls *)) {
   cursor: not-allowed;
 }
-button,
-a,
-input,
-select,
-textarea {
+button:not(:where(.registry-controls, .registry-controls *)),
+a:not(:where(.registry-controls, .registry-controls *)),
+input:not(:where(.registry-controls, .registry-controls *)),
+select:not(:where(.registry-controls, .registry-controls *)),
+textarea:not(:where(.registry-controls, .registry-controls *)) {
   -webkit-tap-highlight-color: transparent;
 }
-input,
-select,
-textarea {
+input:not(:where(.registry-controls, .registry-controls *)),
+select:not(:where(.registry-controls, .registry-controls *)),
+textarea:not(:where(.registry-controls, .registry-controls *)) {
   accent-color: var(--selection);
 }
 
@@ -1601,7 +1601,7 @@ textarea {
 .app-shell a:active {
   color: var(--accent-strong);
 }
-.app-shell ::selection {
+.app-shell :not(:where(.registry-controls, .registry-controls *))::selection {
   color: var(--selection-text);
   background: var(--selection);
 }
@@ -1622,7 +1622,7 @@ textarea {
   letter-spacing: -0.035em;
   overflow-wrap: anywhere;
 }
-.app-shell :is(button, input, select, textarea, summary):not(:where(.registry-controls *)) {
+.app-shell :is(button, input, select, textarea, summary):not(:where(.registry-controls, .registry-controls *)) {
   transition:
     background-color 0.15s linear,
     border-color 0.15s linear,
@@ -1632,27 +1632,27 @@ textarea {
        pressed buttons, so shared controls keep their color easing. */
     transform 0.18s var(--ux-spring);
 }
-.app-shell :is(input, textarea, select):focus-visible:not(:where(.registry-controls *)) {
+.app-shell :is(input, textarea, select):focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   border-color: var(--accent);
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.app-shell :is(button, input, select, textarea):disabled:not(:where(.registry-controls *)) {
+.app-shell :is(button, input, select, textarea):disabled:not(:where(.registry-controls, .registry-controls *)) {
   color: var(--muted);
   cursor: not-allowed;
 }
-.app-shell[data-theme] button:disabled:not(:where(.registry-controls *)) {
+.app-shell[data-theme] button:disabled:not(:where(.registry-controls, .registry-controls *)) {
   background: var(--line);
   border-color: var(--line);
   opacity: 1;
 }
-.app-shell button:not(:disabled):active:not(:where(.registry-controls *)) {
+.app-shell button:not(:disabled):active:not(:where(.registry-controls, .registry-controls *)) {
   border-color: var(--accent);
 }
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *:not(:where(.registry-controls, .registry-controls *)),
+  *:not(:where(.registry-controls, .registry-controls *))::before,
+  *:not(:where(.registry-controls, .registry-controls *))::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
@@ -1904,62 +1904,59 @@ textarea {
         [type="file"]
       ),
     textarea
-  ):not(.ui-select-source):not(.node-search input):not(:where(.registry-controls *)) {
+  ):not(.ui-select-source):not(.node-search input):not(:where(.registry-controls, .registry-controls *)) {
   background: var(--control-bg);
   border-color: var(--control-border);
   color: var(--text);
 }
-.app-shell :is(input, textarea):disabled:not(:where(.registry-controls *)) {
+.app-shell :is(input, textarea):disabled:not(:where(.registry-controls, .registry-controls *)) {
   background: var(--control-disabled);
   color: var(--muted);
   opacity: 1;
 }
-.app-shell :is(input, textarea)[readonly]:not(:where(.registry-controls *)) {
+.app-shell :is(input, textarea)[readonly]:not(:where(.registry-controls, .registry-controls *)) {
   background: var(--recessed);
   color: var(--muted-strong);
 }
-.app-shell button:active:not(:disabled):not(:where(.registry-controls *)) {
+.app-shell button:active:not(:disabled):not(:where(.registry-controls, .registry-controls *)) {
   transform: translateY(1px) scale(0.98);
 }
-.app-shell ::selection {
+.app-shell :not(:where(.registry-controls, .registry-controls *))::selection {
   background: var(--selection);
   color: var(--selection-text);
 }
-.app-shell {
-  scrollbar-color: var(--scrollbar-thumb) transparent;
-}
-/* Global scrollbar contract: a slim rounded thumb on a transparent track,
-   faded until the surface is hovered or scrolled so it never competes with
-   content. Firefox uses the custom-property form; Chromium gets the webkit
-   pseudo-elements with the same tokens. */
-.app-shell * {
+:where(html, body, body *) {
   scrollbar-width: thin;
   scrollbar-color: var(--scrollbar-thumb-idle) transparent;
 }
-.app-shell *:hover {
+:where(html, body, body *):hover {
   scrollbar-color: var(--scrollbar-thumb) transparent;
 }
-.app-shell ::-webkit-scrollbar {
+:where(html, body, body *)::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-.app-shell ::-webkit-scrollbar-track {
+:where(html, body, body *)::-webkit-scrollbar-track {
   background: transparent;
+  margin: 8px;
 }
-.app-shell ::-webkit-scrollbar-thumb {
+:where(html, body, body *)::-webkit-scrollbar-thumb {
   border-radius: var(--radius-pill);
   background: var(--scrollbar-thumb-idle);
 }
-.app-shell :hover::-webkit-scrollbar-thumb {
+:where(html, body, body *):hover::-webkit-scrollbar-thumb {
   background: var(--scrollbar-thumb);
 }
-.app-shell ::-webkit-scrollbar-thumb:hover {
+:where(html, body, body *)::-webkit-scrollbar-thumb:hover {
   background: var(--text);
 }
-.app-shell ::-webkit-scrollbar-corner {
+:where(html, body, body *)::-webkit-scrollbar-corner {
   background: transparent;
 }
-.app-shell :is(table, dl, .primary-value) {
+@supports selector(::-webkit-scrollbar) {
+  :where(html, body, body *) { scrollbar-width: auto; }
+}
+.app-shell :is(table, dl, .primary-value):not(:where(.registry-controls, .registry-controls *)) {
   font-variant-numeric: tabular-nums;
 }
 
@@ -2202,4 +2199,27 @@ textarea {
     opacity: 0;
   }
 
+}
+
+@theme inline {
+  --color-background: var(--canvas);
+  --color-foreground: var(--text);
+  --color-popover: var(--surface-raised);
+  --color-popover-foreground: var(--text);
+  --color-accent: var(--surface-hover);
+  --color-accent-foreground: var(--text);
+  --color-muted-foreground: var(--muted);
+  --color-secondary: var(--surface-hover);
+  --color-secondary-foreground: var(--text);
+  --color-ring: var(--line-strong);
+  --color-border: var(--line);
+  --color-destructive: var(--danger);
+}
+
+:is(dialog, [role="dialog"]) :is(hr, [role="separator"], [data-slot="separator"]) { display: none; }
+:is(dialog, [role="dialog"]) :is(header, footer, fieldset, .section-toolbar, .docker-heading, .images-heading, .rebuild-plan, .preference-editor, .compose-editor, .node-settings-delete) { border-block-width: 0; }
+
+@layer base {
+  :where([data-slot="breadcrumb-list"]) { list-style: none; margin: 0; padding: 0; }
+  :where(button[data-slot="button"], button[data-variant][data-size]) { font: inherit; letter-spacing: inherit; color: inherit; padding: 0; border: 0 solid; background-color: transparent; }
 }

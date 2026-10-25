@@ -1,5 +1,5 @@
-.wrapper { --column-tint: var(--surface-muted); position: relative; width: 100%; min-width: 0; max-width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--foreground); font-family: var(--font-body); }
-.scroller { position: relative; overflow-x: auto; overscroll-behavior-x: contain; }
+.wrapper { display: flex; flex-direction: column; --column-tint: var(--surface-muted); position: relative; width: 100%; min-width: 0; max-width: 100%; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--foreground); font-family: var(--font-body); }
+.scroller { flex: 0 0 auto; position: relative; overflow-x: auto; overscroll-behavior-x: contain; }
 .band { position: absolute; top: 0; bottom: 0; background: var(--column-tint); pointer-events: none; }
 .table { position: relative; z-index: 1; width: 100%; min-width: 560px; border-collapse: separate; border-spacing: 0; font-size: var(--text-sm); line-height: var(--leading-body); letter-spacing: var(--tracking-body); text-align: left; }
 .table[data-fixed] { table-layout: fixed; }
@@ -42,7 +42,7 @@
 .selectInput:focus-visible + .selectBox { outline: var(--focus-outline-width, 2px) solid var(--focus-outline, color-mix(in oklab, var(--accent-strong) 72%, transparent)); outline-offset: 2px; }
 .selectInput:active + .selectBox { transform: scale(.95); transition: border-color var(--duration-fast) var(--ease-standard), transform 110ms var(--ease-standard); }
 
-.footer { display: flex; height: 44px; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0 var(--space-2) 0 var(--space-4); border-top: 1px solid var(--border); color: var(--text-muted); font-size: var(--text-sm); line-height: var(--leading-body); letter-spacing: var(--tracking-body); }
+.footer { margin-top: auto; display: flex; flex: 0 0 44px; height: 44px; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0 var(--space-2) 0 var(--space-4); border-top: 1px solid var(--border); color: var(--text-muted); font-size: var(--text-sm); line-height: var(--leading-body); letter-spacing: var(--tracking-body); }
 .count { display: inline-flex; min-width: 0; align-items: baseline; gap: .28em; white-space: nowrap; transition: color var(--duration-standard) var(--ease-standard); }
 .count[data-active] { color: var(--foreground); }
 .swap { display: inline-block; }
@@ -115,3 +115,6 @@
 }
 
 @keyframes stripFade { to { opacity: 1; } }
+
+.fill { height: 100%; min-height: 0; }
+.scrollArea { flex: 0 1 auto; min-height: 0; }

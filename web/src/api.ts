@@ -454,17 +454,6 @@ export interface NodeFileEntry {
   version?: string
 }
 
-export type FileTaskAction = 'mkdir' | 'rename' | 'delete' | 'save_text'
-export interface CreateFileTaskPayload {
-  action: FileTaskAction
-  path: string
-  newPath?: string
-  expectedVersion?: string
-  deleteConfirmed?: boolean
-  confirmationPath?: string
-  content?: string
-}
-
 interface AuthResponse {
   initialCredentials?: { username: string; password?: string }
   user: User
@@ -690,16 +679,6 @@ export const api = {
     operationRequest<{ taskId: string; status: ContainerTask['status'] }>("containers.action", { params: { nodeId: String(nodeId), containerId: String(containerId) } }, { body: JSON.stringify(payload) }),
   createContainerCreateTask: (nodeId: string, payload: ContainerCreateSpec) =>
     operationRequest<{ taskId: string; status: ContainerTask['status'] }>("containers.create", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(payload) }),
-  nodeFiles: (nodeId: string, path = '/') => operationRequest<{ entries: NodeFileEntry[]; path: string }>("files.list", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }),
-  nodeFileText: (nodeId: string, path: string) => operationRequest<{ path: string; text: string; version: string; size: number }>("files.text", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }),
-  nodeFileStat: (nodeId: string, path: string) => operationRequest<NodeFileEntry>("files.stat", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }),
-  createFileTask: (nodeId: string, payload: CreateFileTaskPayload) =>
-    operationRequest<{ taskId: string; status: ContainerTask['status']; action: string }>("files.action", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(payload) }),
-  uploadNodeFile: (nodeId: string, path: string, file: File, expectedVersion = '') =>
-    operationRequest<ContainerTask>("files.upload", { params: { nodeId: String(nodeId) }, query: { path: String(path) } }, {
-      headers: { 'Content-Type': 'application/octet-stream', 'X-File-Version': expectedVersion },
-      body: file,
-    }, 30 * 60_000),
   createImagePullTask: (nodeId: string, payload: { imageReference: string; username?: string; password?: string }) =>
     operationRequest<{ taskId: string; status: ContainerTask['status'] }>("images.pull", { params: { nodeId: String(nodeId) } }, { body: JSON.stringify(payload) }),
   createImageDeleteTask: (nodeId: string, imageID: string) =>

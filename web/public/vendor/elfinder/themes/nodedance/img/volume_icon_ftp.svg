@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="FTP 存储卷">
+<title>FTP 存储卷</title>
+<rect x="7.1" y="13" width="33.8" height="27.5" rx="4" fill="#F5F4ED" stroke="#3D3D3A" stroke-width="1.8"/>
+ <path d="M7.6 31.6H40.4" stroke="#3D3D3A" stroke-width="1.7"/>
+ <path d="M12.6 35.9H21.1" stroke="#73726C" stroke-width="1.7" stroke-linecap="round"/>
+ <circle cx="35.2" cy="36" r="1.9" fill="#D97757"/>
+ <path d="M16.2 26.5V18.4M16.2 18.4L12.8 21.8M16.2 18.4L19.6 21.8" stroke="#3D3D3A" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+ <path d="M29.6 18.4V26.5M29.6 26.5L26.2 23.1M29.6 26.5L33 23.1" stroke="#D97757" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -309,12 +309,16 @@ export default function App(input: Props) {
         go: goToRoute,
       });
       function displayRoute(route: ViewRoute) {
+        const previous = activeRoute.value;
+        const sameFileBrowser = previous.screen === "nodes" && route.screen === "nodes" &&
+          !!route.nodeId && previous.nodeId === route.nodeId &&
+          previous.section === "files" && route.section === "files";
         activeRoute.value = route;
         screen.value = route.screen;
         navigationOpen.value = false;
         writeViewRoute(route, true);
         handledLocation = window.location.href;
-        void afterRender(() => window.scrollTo(0, 0));
+        if (!sameFileBrowser) void afterRender(() => window.scrollTo(0, 0));
       }
       function goToRoute(route: ViewRoute, replace = false) {
         if (

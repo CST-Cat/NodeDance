@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="ZIP 压缩包存储卷">
+<title>ZIP 压缩包存储卷</title>
+<path d="M11.4 6.2H29L37.5 14.8V38.8C37.5 40.5 36.1 41.9 34.4 41.9H11.4C9.7 41.9 8.3 40.5 8.3 38.8V9.3C8.3 7.6 9.7 6.2 11.4 6.2Z" fill="#FFFFFF" stroke="#3D3D3A" stroke-width="1.8" stroke-linejoin="round"/>
+ <path d="M29 6.4V12.8C29 13.9 29.9 14.8 31 14.8H37.3" fill="#F5F4ED" stroke="#3D3D3A" stroke-width="1.8" stroke-linejoin="round"/>
+ <path d="M22.6 7V28.1" stroke="#73726C" stroke-width="2" stroke-linecap="round"/>
+ <path d="M22.4 11.7H25.6M19.7 16.3H22.5M22.4 20.9H25.5M19.7 25.2H22.5" stroke="#3D3D3A" stroke-width="1.55" stroke-linecap="round"/>
+ <rect x="18.8" y="28.4" width="7.5" height="8" rx="1.3" fill="#F5E7E0" stroke="#3D3D3A" stroke-width="1.5"/>
+ <path d="M21.1 32.3H24.1" stroke="#D97757" stroke-width="1.6" stroke-linecap="round"/>
+</svg>

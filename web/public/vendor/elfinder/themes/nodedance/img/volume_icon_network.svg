@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="网络存储卷">
+<title>网络存储卷</title>
+<rect x="10.3" y="6.6" width="27.4" height="10.5" rx="2.5" fill="#F5F4ED" stroke="#3D3D3A" stroke-width="1.75"/>
+ <rect x="10.3" y="19.1" width="27.4" height="10.5" rx="2.5" fill="#F5F4ED" stroke="#3D3D3A" stroke-width="1.75"/>
+ <path d="M15.1 11.9H22.7M15.1 24.3H22.7" stroke="#73726C" stroke-width="1.7" stroke-linecap="round"/>
+ <circle cx="33" cy="11.9" r="1.6" fill="#D97757"/>
+ <circle cx="33" cy="24.3" r="1.6" fill="#D97757"/>
+ <path d="M24 29.6V35M14.3 41.5V37.6L24 34.9L33.7 37.6V41.5" stroke="#3D3D3A" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+ <circle cx="14.3" cy="42" r="2.1" fill="#FFFFFF" stroke="#3D3D3A" stroke-width="1.6"/>
+ <circle cx="24" cy="35.4" r="2.1" fill="#FFFFFF" stroke="#3D3D3A" stroke-width="1.6"/>
+ <circle cx="33.7" cy="42" r="2.1" fill="#F5E7E0" stroke="#D97757" stroke-width="1.6"/>
+</svg>

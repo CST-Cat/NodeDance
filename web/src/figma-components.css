@@ -12,7 +12,7 @@
   font-size: var(--figma-size-text-sm);
   line-height: 1.4;
 }
-.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):not(:where(.registry-controls *)) {
+.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):not(:where(.registry-controls, .registry-controls *)) {
   min-height: var(--button-height);
   padding: 7px 12px;
   font-size: 14px;
@@ -22,7 +22,7 @@
        transform only applies to :active buttons. */
     transform 0.18s var(--ux-spring);
 }
-.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):not(:where(.personal-settings *, .preferences-page *)) {
+.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):not(:where(.personal-settings *, .preferences-page *, .registry-controls, .registry-controls *)) {
   border-radius: var(--radius-control);
 }
 .app-shell[data-theme] :is(.primary-button, .secondary-button, .alert-button, .container-action, .image-button, .probe-primary) {
@@ -67,7 +67,7 @@
   background: var(--figma-background-danger);
   filter: brightness(.95);
 }
-.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):disabled:not(:where(.registry-controls *)) {
+.app-shell[data-theme] button:where(:not(.terminal-backdrop button)):disabled:not(:where(.registry-controls, .registry-controls *)) {
   color: var(--text);
   background: transparent;
   border-color: var(--figma-border-secondary);
@@ -86,35 +86,35 @@
   border-color: transparent;
   opacity: .6;
 }
-.app-shell[data-theme] :is(button, summary, a):focus-visible:not(:where(.registry-controls *)) {
+.app-shell[data-theme] :is(button, summary, a):focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   outline: 1.5px solid var(--button-focus);
   outline-offset: 2px;
   box-shadow: none;
 }
-.app-shell[data-theme] :is(a, a:visited) { color: var(--text); }
-.app-shell[data-theme] a:hover { color: var(--muted-strong); }
-.app-shell[data-theme] ::selection { color: var(--selection-text); background: var(--selection); }
-.app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(.elfinder *):not(:where(.registry-controls *)) {
+.app-shell[data-theme] :is(a, a:visited):not(:where(.registry-controls, .registry-controls *)) { color: var(--text); }
+.app-shell[data-theme] a:hover:not(:where(.registry-controls, .registry-controls *)) { color: var(--muted-strong); }
+.app-shell[data-theme] :not(:where(.registry-controls, .registry-controls *))::selection { color: var(--selection-text); background: var(--selection); }
+.app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(:where(.registry-controls, .registry-controls *)) {
   min-height: var(--control-height);
   padding: 5px 12px;
   padding-inline-end: var(--input-padding-end, 12px);
   font-size: var(--control-font);
   line-height: 20px;
 }
-.app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(.elfinder *):not(:where(.personal-settings *, .preferences-page *)) {
+.app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(:where(.personal-settings *, .preferences-page *, .registry-controls, .registry-controls *)) {
   border-radius: var(--radius-control);
 }
-.app-shell[data-theme] textarea:not(.elfinder *):not(:where(.registry-controls *)) {
+.app-shell[data-theme] textarea:not(:where(.registry-controls, .registry-controls *)) {
   padding: 12px 16px;
   font-size: var(--control-font);
   line-height: 1.4;
 }
-.app-shell[data-theme] textarea:not(.elfinder *):not(:where(.personal-settings *, .preferences-page *)) {
+.app-shell[data-theme] textarea:not(:where(.personal-settings *, .preferences-page *, .registry-controls, .registry-controls *)) {
   border-radius: var(--radius-control);
 }
-.app-shell[data-theme] :is(input, textarea):not(:where(.registry-controls *))::placeholder { color: var(--figma-text-tertiary); opacity: 1; }
-.app-shell[data-theme] :is(input, textarea, select):disabled:not(:where(.registry-controls *)) { opacity: .5; background: var(--control-bg); color: var(--text); }
-.app-shell[data-theme] :is(input, textarea, select):focus-visible:not(:where(.registry-controls *)) {
+.app-shell[data-theme] :is(input, textarea):not(:where(.registry-controls, .registry-controls *))::placeholder { color: var(--figma-text-tertiary); opacity: 1; }
+.app-shell[data-theme] :is(input, textarea, select):disabled:not(:where(.registry-controls, .registry-controls *)) { opacity: .5; background: var(--control-bg); color: var(--text); }
+.app-shell[data-theme] :is(input, textarea, select):focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   outline: none;
   border-color: var(--figma-text-primary);
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-primary);
@@ -129,7 +129,7 @@
 }
 .app-shell[data-theme] .ui-select .u031-btn:disabled { opacity: .5; color: var(--text); background: var(--control-bg); }
 /* Figma's 20 px large checkbox and radio, with actual source check asset. */
-input[type="checkbox"], input[type="radio"] {
+input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)), input[type="radio"]:not(:where(.registry-controls, .registry-controls *)) {
   appearance: none;
   -webkit-appearance: none;
   position: relative;
@@ -147,8 +147,8 @@ input[type="checkbox"], input[type="radio"] {
   cursor: pointer;
   transition: border-color 100ms cubic-bezier(0,0,.58,1), background-color 100ms cubic-bezier(0,0,.58,1);
 }
-input[type="checkbox"]:checked, input[type="checkbox"]:indeterminate { background: var(--selection); border-color: var(--selection); }
-input[type="checkbox"]::after {
+input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):checked, input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):indeterminate { background: var(--selection); border-color: var(--selection); }
+input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *))::after {
   content: "";
   position: absolute;
   width: 12.5px;
@@ -158,14 +158,14 @@ input[type="checkbox"]::after {
   background: url('/design/claude/check.svg') center / 12.5px 12.5px no-repeat;
   opacity: 0;
 }
-input[type="checkbox"]:checked::after { opacity: 1; }
-input[type="checkbox"]:indeterminate::after { width: 10px; height: 2px; background: #fff; opacity: 1; }
-input[type="radio"] { border-radius: var(--radius-pill); background: transparent; }
-input[type="radio"]::after { content: ""; position: absolute; inset: 3px; border-radius: var(--radius-pill); background: var(--selection); opacity: 0; }
-input[type="radio"]:checked { border: 1px solid var(--selection); }
-input[type="radio"]:checked::after { opacity: 1; }
-input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-primary); }
-input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cursor: not-allowed; }
+input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):checked::after { opacity: 1; }
+input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):indeterminate::after { width: 10px; height: 2px; background: #fff; opacity: 1; }
+input[type="radio"]:not(:where(.registry-controls, .registry-controls *)) { border-radius: var(--radius-pill); background: transparent; }
+input[type="radio"]:not(:where(.registry-controls, .registry-controls *))::after { content: ""; position: absolute; inset: 3px; border-radius: var(--radius-pill); background: var(--selection); opacity: 0; }
+input[type="radio"]:not(:where(.registry-controls, .registry-controls *)):checked { border: 1px solid var(--selection); }
+input[type="radio"]:not(:where(.registry-controls, .registry-controls *)):checked::after { opacity: 1; }
+input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):focus-visible, input[type="radio"]:not(:where(.registry-controls, .registry-controls *)):focus-visible { outline: none; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-primary); }
+input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):disabled, input[type="radio"]:not(:where(.registry-controls, .registry-controls *)):disabled { opacity: .5; cursor: not-allowed; }
 /* 256 / 52 px sidebar variants; existing user resizing and context navigation remain. */
 .app-shell[data-theme] .workspace-sidebar { padding: 0 8px 12px; background: var(--sidebar-bg); border-right-width: .5px; }
 .app-shell[data-theme] .workspace-sidebar .wordmark { min-height: 68px; margin: 0 8px 8px; font-size: 24px; }
@@ -198,17 +198,17 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
 .app-shell[data-theme] .workspace-page :is(h2, .section-toolbar h2, .feed-card h2, .host-card h2) { font-family: inherit; font-size: 20px; line-height: 25px; font-weight: 500; }
 .app-shell[data-theme] .workspace-page .vps-card h2 { font-size: 16px; line-height: 22.4px; }
 .app-shell[data-theme] dialog.ui-dialog { border-radius: var(--radius-card); border-color: var(--overlay-edge); background: var(--surface-raised); padding: 0; }
-.app-shell[data-theme] dialog.ui-dialog h2 { font-size: 24px; line-height: 30px; font-family: inherit; font-weight: 500; }
-.app-shell[data-theme] dialog.ui-dialog p { color: var(--muted-strong); font-size: 14px; line-height: 1.4; }
-.app-shell[data-theme] :is(pre, code) { font-family: var(--figma-font-mono), ui-monospace, monospace; }
+.app-shell[data-theme] dialog.ui-dialog h2:not(:where(.registry-controls, .registry-controls *)) { font-size: 24px; line-height: 30px; font-family: inherit; font-weight: 500; }
+.app-shell[data-theme] dialog.ui-dialog p:not(:where(.registry-controls, .registry-controls *)) { color: var(--muted-strong); font-size: 14px; line-height: 1.4; }
+.app-shell[data-theme] :is(pre, code):not(:where(.registry-controls, .registry-controls *)) { font-family: var(--figma-font-mono), ui-monospace, monospace; }
 @media (pointer: coarse), (max-width: 700px) {
   .app-shell[data-theme] { --control-height: 44px; --button-height: 44px; --control-font: 15px; }
   .app-shell[data-theme] .workspace-nav button { min-height: 44px; }
-  .app-shell[data-theme] :is(input[type="checkbox"], input[type="radio"]) { width: 24px !important; height: 24px !important; min-width: 24px !important; min-height: 24px !important; }
-  .app-shell[data-theme] input[type="checkbox"] { border-radius: var(--radius-pill); }
+  .app-shell[data-theme] :is(input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)), input[type="radio"]:not(:where(.registry-controls, .registry-controls *))) { width: 24px !important; height: 24px !important; min-width: 24px !important; min-height: 24px !important; }
+  .app-shell[data-theme] input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)) { border-radius: var(--radius-pill); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .app-shell[data-theme] *, input[type="checkbox"], input[type="radio"] { transition-duration: 0s !important; animation-duration: 0s !important; }
+  .app-shell[data-theme] *:not(:where(.registry-controls, .registry-controls *)), input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)), input[type="radio"]:not(:where(.registry-controls, .registry-controls *)) { transition-duration: 0s !important; animation-duration: 0s !important; }
 }
 /* Icon-only controls keep the kit's centered 32 px geometry. */
 .app-shell[data-theme] :is(.header-actions button, .navigation-toggle) {
@@ -222,7 +222,7 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
 .app-shell[data-theme] .workspace-sidebar.is-collapsed .brand-mark { width: 20px; transform: scale(.8) rotate(-12deg); }
 @media (pointer: coarse), (max-width: 700px) {
   .app-shell[data-theme] :is(.header-actions button, .navigation-toggle) { width: 36px; height: 44px; min-height: 44px; padding: 8px; }
-  .app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), textarea):not(.ui-select-source):not(.elfinder *):not(:where(.registry-controls *)) { font-size: 16px; }
+  .app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), textarea):not(.ui-select-source):not(:where(.registry-controls, .registry-controls *)) { font-size: 16px; }
 }
 
 .app-shell[data-theme] .context-heading h2 { font-size: 14px; line-height: 20px; }
@@ -240,7 +240,7 @@ input[type="checkbox"]:disabled, input[type="radio"]:disabled { opacity: .5; cur
   }
 }
 @media (pointer: coarse), (max-width: 700px) {
-  .app-shell[data-theme] button:where(:not(.terminal-backdrop button)):where(:not(.elfinder button)):not(.load-trigger):not(.terminal-close):not(:where(.registry-controls *)) {
+  .app-shell[data-theme] button:where(:not(.terminal-backdrop button)):not(.load-trigger):not(.terminal-close):not(:where(.registry-controls, .registry-controls *)) {
     min-height: 44px;
   }
 }

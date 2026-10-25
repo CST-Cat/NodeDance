@@ -1,0 +1,3 @@
+# Supplemental dependency notices
+
+The locked `react-remove-scroll-bar@2.3.8` npm package declares MIT but omits its license file. Its publisher's upstream MIT notice is preserved from [commit 8ca9ba5ea52de03308fe8ced94f7b159a44d28ff](https://github.com/theKashey/react-remove-scroll-bar/blob/8ca9ba5ea52de03308fe8ced94f7b159a44d28ff/LICENSE). The upstream checkout identifies itself as 2.3.7; this records notice provenance, not a claim that the npm package was rebuilt from that commit. The supplemental filename matches the installed package version so dependency upgrades require another notice review.

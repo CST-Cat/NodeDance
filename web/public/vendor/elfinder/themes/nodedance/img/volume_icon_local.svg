@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="本地存储卷">
+<title>本地存储卷</title>
+<path d="M10.2 15.5H36.2C38.2 15.5 39.4 16.9 40 19L43 31.4V38.1C43 40.2 41.4 41.8 39.3 41.8H8.7C6.6 41.8 5 40.2 5 38.1V31.4L8.1 18.6C8.6 16.6 9.3 15.5 10.2 15.5Z" fill="#F5F4ED" stroke="#3D3D3A" stroke-width="1.8" stroke-linejoin="round"/>
+ <path d="M5.3 31.8H42.7V38.2C42.7 40.2 41.2 41.5 39.2 41.5H8.8C6.8 41.5 5.3 40.2 5.3 38.2Z" fill="#E8E5DA" stroke="#3D3D3A" stroke-width="1.8" stroke-linejoin="round"/>
+ <path d="M15 21.3H33M10.6 36.5H21" stroke="#73726C" stroke-width="1.75" stroke-linecap="round"/>
+ <circle cx="36.1" cy="36.6" r="2" fill="#D97757"/>
+</svg>

@@ -59,33 +59,6 @@
   align-items: end;
   gap: 8px;
 }
-.compose-directory-picker[data-v-833010c3] {
-  min-width: 0;
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-}
-.compose-directory-picker p[data-v-833010c3] {
-  margin: 0;
-  color: var(--muted-strong);
-  font-size: 12px;
-}
-.compose-directory-picker footer[data-v-833010c3] {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.compose-directory-picker footer span[data-v-833010c3] {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font:
-    12px ui-monospace,
-    monospace;
-}
 .compose-create-actions[data-v-833010c3] {
   display: flex;
   flex-wrap: wrap;

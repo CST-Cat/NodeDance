@@ -40,8 +40,8 @@
   touch-action: none;
   transition: opacity var(--duration-considered) var(--ease-standard);
 }
-.track[data-axis="y"] { top: 3px; right: 1px; bottom: 3px; width: 11px; }
-.track[data-axis="x"] { right: 3px; bottom: 1px; left: 3px; height: 11px; }
+.track[data-axis="y"] { top: 8px; right: 1px; bottom: 8px; width: 11px; }
+.track[data-axis="x"] { right: 8px; bottom: 1px; left: 8px; height: 11px; }
 .root[data-orientation="both"] > .track[data-axis="y"] { bottom: 13px; }
 .root[data-orientation="both"] > .track[data-axis="x"] { right: 13px; }
 .track[data-hidden] { display: none; }

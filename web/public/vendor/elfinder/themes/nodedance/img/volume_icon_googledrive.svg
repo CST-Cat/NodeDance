@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="Google Drive 网盘">
+<title>Google Drive 网盘</title>
+<path d="M19.7 7.8H27.6L41.4 31.6H33.5Z" fill="#E8E5DA" stroke="#3D3D3A" stroke-width="1.65" stroke-linejoin="round"/>
+ <path d="M19.7 7.8H27.6L14.3 31.6L10 39.4H2.2Z" fill="#F5F4ED" stroke="#3D3D3A" stroke-width="1.65" stroke-linejoin="round"/>
+ <path d="M14.3 31.6H41.4L36.7 39.4H10Z" fill="#F5E7E0" stroke="#3D3D3A" stroke-width="1.65" stroke-linejoin="round"/>
+ <path d="M12 36.1H34.7" stroke="#D97757" stroke-width="1.7" stroke-linecap="round"/>
+</svg>

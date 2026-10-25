@@ -81,8 +81,8 @@ module.exports=async function({context,base,node,headers,artifacts,catalog}){
 
    await page.keyboard.press('Escape');await dockerDialog.waitFor({state:'detached'});await page.waitForFunction(node=>document.activeElement===document.querySelector(`.vps-card[data-node-id="${node}"] [data-testid=node-docker-details]`),node);assert.ok(await dockerButton.evaluate(e=>document.activeElement===e),'Closing returns focus to Docker details');
    const filesButton=card.getByTestId('node-files-shortcut');const cardHeightBeforeFiles=(await card.boundingBox()).height
-   await filesButton.click();const filesDialog=page.locator('.vps-files-dialog[open]');await filesDialog.waitFor();assert.ok(!page.url().includes('node='),'The file shortcut opens a dialog, never detail navigation')
-   await filesDialog.locator('.nodedance-elfinder .elfinder-cwd-filename').filter({hasText:/^hello[\u200b]*\.txt$/}).first().waitFor({timeout:15000});assert.equal(await filesDialog.locator('[data-testid=node-files]').count(),1,'The file dialog reuses the full file manager')
+   await filesButton.click();const filesDialog=page.locator('.file-browser-dialog[role=dialog]');await filesDialog.waitFor();assert.ok(!page.url().includes('node='),'The file shortcut opens a dialog, never detail navigation')
+   await filesDialog.locator('[data-file-name="hello.txt"]').waitFor({timeout:15000});assert.equal(await filesDialog.locator('[data-testid=node-files]').count(),1,'The file dialog reuses the full file manager')
    const filesBounds=await filesDialog.boundingBox();assert.ok(filesBounds.x>=0&&filesBounds.x+filesBounds.width<=width+1,'File dialog fits the viewport');assert.equal((await card.boundingBox()).height,cardHeightBeforeFiles,'Opening files does not expand the card')
 
    await page.keyboard.press('Escape');await filesDialog.waitFor({state:'detached'});await page.waitForFunction(node=>document.activeElement===document.querySelector(`.vps-card[data-node-id="${node}"] [data-testid=node-files-shortcut]`),node)

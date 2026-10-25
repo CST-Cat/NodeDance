@@ -281,7 +281,8 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   // unavailable response, then release it after the public page is visible.
   let releaseFiles,filesStarted
   const heldFiles=new Promise(r=>releaseFiles=r),startedFiles=new Promise(r=>filesStarted=r)
-  const filesRoute='**/api/v1/nodes/*/files?*'
+  const fileStatOperation=(await(await admin.request.get(base+'/api/v1/operations')).json()).operations.find(operation=>operation.name==='files.stat');assert.ok(fileStatOperation);
+  const filesRoute=base+fileStatOperation.path.replace('{nodeId}',identity.nodeId)+'?*'
   await adminPage.route(filesRoute,async route=>{const response=await route.fetch();filesStarted();await heldFiles;await route.fulfill({response})})
   await adminPage.goto(base+`/#/nodes?node=${identity.nodeId}&section=files`);await startedFiles
   await adminPage.evaluate(()=>{location.hash='/guest'});await adminPage.getByRole('heading',{name:'Public node',exact:true}).waitFor()

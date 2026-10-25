@@ -94,7 +94,7 @@ The shared light/dark theme uses semantic surface, text, control and state roles
 
 The Core runtime host information (`dashboard.core-info`) and shared overview memo (`dashboard.memo`, `dashboard.save-memo`) are administrator-only operations. They are not projected into public node cards, including requests with administrator cookies. Forged `memo`/`core` query flags are rejected with HTTP 400. The security matrix discovers these operations from Core and checks anonymous/forged-identity denial. A distinct private memo marker is also checked against guest and administrator-cookie public responses.
 
-React lifecycle verification: specialized pages use local Suspense boundaries, so entering the guest route unmounts private file views immediately. The elFinder instance and its Core transport are disposed together; pending reads are aborted and late component initialization is discarded. The browser suite retains late file responses and administrator-session exit checks against an isolated Core and protocol-only simulated Agent.
+React lifecycle verification: specialized pages use local Suspense boundaries, so entering the guest route unmounts private file views immediately. The shadcn file view and its Core client are disposed together; pending reads are aborted and late client initialization is discarded. The browser suite retains late file responses and administrator-session exit checks against an isolated Core and protocol-only simulated Agent.
 
 Shared select decoration uses a static self-hosted SVG background, not an image element in the public display. The stored-title/node/service injection case continues to require zero image nodes and zero executed payloads; the Figma theme refactor does not relax this assertion.
 
@@ -114,9 +114,9 @@ Diagnostic collection settings contain only the detail interval and process limi
 
 Five-second network/disk history stays private behind nodes.history; the anonymous browser suite explicitly verifies denial for resolution=5s. Guest history continues to use only its configured public minute/hour projection. / 网络与磁盘五秒历史仅通过私有 nodes.history 提供；匿名浏览器回归显式验证 resolution=5s 仍被拒绝。游客历史保持配置允许的公开分钟／小时投影。
 
-File-manager disposal aborts its private manager before destroying elFinder. The vendored destroy path does not chain its event dispatcher, because failed initialization disables that dispatcher. The browser suite retains the unavailable-initial-directory → guest-entry regression and verifies no private follow-up reads after the transition.
+File-manager disposal aborts its private Core client and invalidates pending view reads, including failed directory initialization. The browser suite retains the unavailable-initial-directory → guest-entry regression and verifies no private follow-up reads after the transition.
 
-文件管理卸载先中止私有管理器，再销毁 elFinder；内置销毁路径不再链式调用初始化失败后被禁用的事件分发器。浏览器套件保留初始目录不可用后进入游客页的回归，并校验切换后不再发起私有读取。
+文件管理卸载中止私有 Core 客户端，并使包含初始化失败在内的待处理读取失效。浏览器套件保留初始目录不可用后进入游客页的回归，并校验切换后不再发起私有读取。
 
 The discovered dashboard settings schema no longer includes a container preview limit. The full Docker inventory dialog remains administrator-only; anonymous boundaries are checked against the current Core operation contract. 仪表盘设置契约已移除容器预览上限；完整 Docker 清单弹窗仍仅供管理员使用，匿名边界继续根据当前 Core 操作契约验证。
 
@@ -165,3 +165,5 @@ Metrics admission validates the report before Core annotations and cache publica
 Notification provider options (`channels.options`) remain administrator-only and are included in the discovered private-operation matrix. Isolated browser fixtures create a disabled channel, verify encrypted Bearer/custom-header values never return in channel responses, and verify channel names, endpoints and credentials never enter public projections, including requests with administrator cookies. 通知渠道与平台配置不会进入游客展示。
 
 The browser regression opens the compact resource-metric selector, compares its options with Core, verifies selection drafts do not change the saved policy, saves and reloads the selection, and restores the fixture policy. It separately checks the actual 44px trigger/row and native clear-control size at desktop and narrow widths. 权限与公开投影断言继续由原有游客安全回归覆盖。
+
+The static `/vendor/elfinder-grid/` document alone permits same-origin framing for the explicitly selected native file grid. It contains no file metadata or credentials; only the authenticated management component supplies its current listing and receives presentation events. Management HTML and API responses retain their default frame denial, and passive file previews retain their own sandbox policy.

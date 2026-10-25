@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="SQL 数据库存储卷">
+<title>SQL 数据库存储卷</title>
+<ellipse cx="24" cy="12.3" rx="14.2" ry="5.5" fill="#FFFFFF" stroke="#3D3D3A" stroke-width="1.8"/>
+ <path d="M9.8 12.3V35.5C9.8 38.8 16.1 41.4 24 41.4S38.2 38.8 38.2 35.5V12.3" fill="#F5F4ED" stroke="#3D3D3A" stroke-width="1.8"/>
+ <path d="M9.8 20.6C9.8 23.9 16.1 26.4 24 26.4S38.2 23.9 38.2 20.6M9.8 29.3C9.8 32.6 16.1 35.1 24 35.1S38.2 32.6 38.2 29.3" fill="none" stroke="#73726C" stroke-width="1.6"/>
+ <ellipse cx="24" cy="12.3" rx="14.2" ry="5.5" fill="#E8E5DA" stroke="#3D3D3A" stroke-width="1.8"/>
+ <circle cx="32.4" cy="37.3" r="1.7" fill="#D97757"/>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="Dropbox 网盘">
+<title>Dropbox 网盘</title>
+<path d="M15.7 9.1L23 13.9L15.7 18.7L8.4 13.9Z" fill="#F5F4ED" stroke="#3D3D3A" stroke-width="1.65" stroke-linejoin="round"/>
+ <path d="M32.3 9.1L39.6 13.9L32.3 18.7L25 13.9Z" fill="#F5F4ED" stroke="#3D3D3A" stroke-width="1.65" stroke-linejoin="round"/>
+ <path d="M15.7 20.1L23 24.9L15.7 29.7L8.4 24.9Z" fill="#E8E5DA" stroke="#3D3D3A" stroke-width="1.65" stroke-linejoin="round"/>
+ <path d="M32.3 20.1L39.6 24.9L32.3 29.7L25 24.9Z" fill="#E8E5DA" stroke="#3D3D3A" stroke-width="1.65" stroke-linejoin="round"/>
+ <path d="M24 30.9L31.5 35.6L24 40.2L16.5 35.6Z" fill="#F5E7E0" stroke="#3D3D3A" stroke-width="1.65" stroke-linejoin="round"/>
+ <path d="M19.2 35.6H28.8" stroke="#D97757" stroke-width="1.65" stroke-linecap="round"/>
+</svg>

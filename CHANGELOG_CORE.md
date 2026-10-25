@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.57]
+
+### English
+
+- Rebuild file management around installed shadcn/UIArc controls, including file operations, directory picking, text and image editing, conflict recovery and passive previews through the shared Core operation contract.
+- Restore the original elFinder grid in an isolated frame and register the NodeDance icon theme through its official theme interface, using 36 file sprite icons and 10 volume icons supplied for the project.
+- Keep directory panels equally tall and independent of item count, preserve page scroll during folder navigation, and show a single editable breadcrumb address with middle folding only when space runs out.
+- Refine dialog scrolling, overlays and separators, use inset custom scrollbars, and maintain focused file-manager and guest security regressions. Pair with Agent 0.1.32.
+
+### 简体中文
+
+- 文件管理重构为已安装的 shadcn／UIArc 控件，文件操作、目录选择、文本与图片编辑、冲突恢复和被动预览统一使用现有 Core 操作契约。
+- 在隔离框架中恢复 elFinder 原版网格，通过官方主题接口注册 NodeDance 图标主题，采用项目提供的 36 个基础文件图标和 10 个卷图标。
+- 左右目录面板始终等高且不随项数收缩，切换目录保留页面滚动位置；地址合并为可编辑的单行面包屑，仅空间不足时折叠中间路径。
+- 优化弹窗滚动、遮罩和分割线，采用两端内缩的自定义滚动条，维护文件管理及游客安全回归；配套 Agent 0.1.32。
+
 ## [0.1.56]
 
 ### English

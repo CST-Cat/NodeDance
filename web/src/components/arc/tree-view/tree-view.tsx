@@ -6,6 +6,7 @@ import { ChevronRight, File, Folder, FolderOpen } from "lucide-react";
 import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./tree-view.module.css";
+import { ScrollArea } from "../scroll-area/scroll-area";
 
 export interface TreeNode {
   id: string;
@@ -16,6 +17,9 @@ export interface TreeNode {
 
 export interface TreeViewProps {
   nodes: TreeNode[];
+  maxIndentDepth?: number;
+  fillHeight?: boolean;
+  renderLabel?: (node: TreeNode) => ReactNode;
   defaultExpandedIds?: string[];
   expandedIds?: string[];
   onExpandedChange?: (expandedIds: string[]) => void;
@@ -79,7 +83,7 @@ function Selection({ layoutId, reduced }: { layoutId: string; reduced: boolean }
   return <motion.span aria-hidden="true" layoutId={layoutId} className={styles.selection} transition={reduced ? still : motionTokens.spring.morph} />;
 }
 
-export function TreeView({ nodes, defaultExpandedIds = [], expandedIds, onExpandedChange, onSelect, "aria-label": ariaLabel = "File tree" }: TreeViewProps) {
+export function TreeView({ nodes, maxIndentDepth = Infinity, fillHeight = false, renderLabel, defaultExpandedIds = [], expandedIds, onExpandedChange, onSelect, "aria-label": ariaLabel = "File tree" }: TreeViewProps) {
   const reduced = useReducedMotion() ?? false;
   const selectionLayoutId = `tree-selection-${useId()}`;
   const [internalExpanded, setInternalExpanded] = useState(() => new Set(defaultExpandedIds));
@@ -142,8 +146,7 @@ export function TreeView({ nodes, defaultExpandedIds = [], expandedIds, onExpand
     }
   }
 
-  return <div className={styles.tree} role="tree" aria-label={ariaLabel} aria-multiselectable="false">
-    <AnimatePresence initial={false} mode="sync">
+  const content = <AnimatePresence initial={false} mode="sync">
       {visible.map((item, index) => {
         const hasChildren = Boolean(item.node.children?.length);
         const isExpanded = hasChildren && expanded.has(item.node.id);
@@ -170,7 +173,7 @@ export function TreeView({ nodes, defaultExpandedIds = [], expandedIds, onExpand
             aria-expanded={hasChildren ? isExpanded : undefined}
             aria-selected={isSelected}
             tabIndex={focusableId === item.node.id ? 0 : -1}
-            style={{ "--tree-depth": item.depth } as CSSProperties}
+            style={{ "--tree-depth": Math.min(item.depth, maxIndentDepth) } as CSSProperties}
             onFocus={() => setFocusedId(item.node.id)}
             onKeyDown={event => onKeyDown(event, item, index)}
             onClick={() => { setFocusedId(item.node.id); select(item.node); if (hasChildren) toggle(item.node); }}
@@ -193,12 +196,12 @@ export function TreeView({ nodes, defaultExpandedIds = [], expandedIds, onExpand
             <span className={[styles.icon, hasChildren ? styles.folder : fileTone(item.node.label, styles)].join(" ")} aria-hidden="true">
               {item.node.icon ?? (hasChildren ? <FolderIcon open={isExpanded} reduced={reduced} /> : <File size={16} strokeWidth={1.7} />)}
             </span>
-            <span className={styles.label}>{item.node.label}</span>
+            <span className={styles.label}>{renderLabel ? renderLabel(item.node) : item.node.label}</span>
           </button>
         </motion.div>;
       })}
-    </AnimatePresence>
-  </div>;
+    </AnimatePresence>;
+  return <div className={[styles.tree, fillHeight ? styles.fill : ""].filter(Boolean).join(" ")} role="tree" aria-label={ariaLabel} aria-multiselectable="false">{fillHeight ? <ScrollArea className={styles.scrollArea} fade={0}>{content}</ScrollArea> : content}</div>;
 }
 
 export default TreeView;

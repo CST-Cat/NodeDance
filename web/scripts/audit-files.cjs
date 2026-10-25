@@ -15,6 +15,8 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
  await build({configFile:false,logLevel:'error',define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{lib:{entry:path.join(root,'web/src/file-manager.ts'),formats:['es'],fileName:()=> 'driver-audit.js'},outDir:path.join(artifacts,'driver'),emptyOutDir:true}})
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-file-audit-')),data=path.join(dir,'core'),files=path.join(dir,'files'),state=execFileSync('sudo',['mktemp','-d','/run/nodedance-file-audit-XXXXXX'],{encoding:'utf8'}).trim(),base=`http://127.0.0.1:${await port()}`
  fs.mkdirSync(files);fs.mkdirSync(path.join(files,'many'));fs.mkdirSync(path.join(files,'out'))
+ const longGridName='a-very-long-file-name-that-keeps-the-important-ending-report.txt';fs.writeFileSync(path.join(files,longGridName),'grid fixture');fs.mkdirSync(path.join(files,'a-long-parent-directory','another-long-directory','third-level','fourth-level'),{recursive:true});
+ fs.mkdirSync(path.join(files,'single'));fs.writeFileSync(path.join(files,'single','only.txt'),'single fixture');const hostileGridName='<img src=x onerror=window.gridScriptExecuted=true>.txt';fs.writeFileSync(path.join(files,hostileGridName),'inert filename');
  fs.writeFileSync(path.join(files,'hello.txt'),'hello fixture\n');fs.writeFileSync(path.join(files,'image.png'),Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZMsAAAAASUVORK5CYII=','base64'))
  for(let i=0;i<205;i++)fs.writeFileSync(path.join(files,'many',`entry-${String(i).padStart(3,'0')}.txt`),'fixture')
  fs.mkdirSync(path.join(files,'private-dir'),{mode:0700});fs.writeFileSync(path.join(files,'private-dir','child.txt'),'private fixture',{mode:0644})
@@ -30,6 +32,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   const headers={Origin:base,'X-CSRF-Token':(await login.json()).csrfToken}
   const catalog=(await(await context.request.get(base+'/api/v1/operations')).json()).operations
   const operation=name=>{const o=catalog.find(o=>o.name===name);assert.ok(o,`Missing ${name}`);return o}
+  const gridDocument=await context.request.get(base+'/vendor/elfinder-grid/');assert.equal(gridDocument.status(),200);assert.equal(gridDocument.headers()['x-frame-options'],'SAMEORIGIN');assert.ok(gridDocument.headers()['content-security-policy'].includes("frame-ancestors 'self'"));assert.equal((await context.request.get(base+'/')).headers()['x-frame-options'],'DENY','Management page remains unframeable');
   const enrollmentResponse=await context.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'Disposable file fixture',coreUrl:base}});assert.equal(enrollmentResponse.status(),201)
   const enrollment=await enrollmentResponse.json(),node=enrollment.nodeId
   execFileSync('sudo',['install','-d','-m','0700',state])
@@ -62,191 +65,158 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   for(const name of ['files.download','files.preview'])assert.equal((await context.request.get(endpoint(name,{path:'/missing.txt'}))).status(),404,'Missing downloads preserve Agent not-found semantics')
   const preview=await context.request.get(endpoint('files.preview',{path:'/image.png'}),{headers:{Range:'bytes=0-7'}});assert.equal(preview.status(),206);assert.ok(preview.headers()['content-security-policy'].includes('sandbox'))
   const visitor=await browser.newContext({locale:'en-US'});assert.equal((await visitor.request.get(endpoint('files.preview',{path:'/image.png'}))).status(),401)
-  const page=await context.newPage();page.setDefaultTimeout(15000);const errors=[],externalRequests=[];page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(r.url().startsWith('http')&&new URL(r.url()).origin!==base)externalRequests.push(r.url())})
-  // Cold startup must not wait for one network round trip per widget/script.
-  const startupScripts=[];page.on('request',r=>{if(r.resourceType()==='script')startupScripts.push(new URL(r.url()).pathname)});
-  let releaseVendors;const vendorsReady=new Promise(resolve=>releaseVendors=resolve),vendorRequests=[];let firstVendorBatch;
-  const coldVendorRoute=async route=>{
-   vendorRequests.push(new URL(route.request().url()).pathname);if(vendorRequests.length===3)releaseVendors();
-   await Promise.race([vendorsReady,new Promise(resolve=>setTimeout(resolve,750))]);
-   firstVendorBatch??=vendorRequests.length;await route.continue();
-  };
-  await page.route('**/vendor/elfinder/*.js',coldVendorRoute);
-  let releaseFiles;const filesReady=new Promise(resolve=>releaseFiles=resolve),initialFileReads=[];
-  const initialFilesRoute=async route=>{initialFileReads.push(route.request().url());await filesReady;await route.continue()};
-  await page.route('**/api/v1/nodes/*/files**',initialFilesRoute);
-  await page.goto(base+`/#/nodes?node=${node}&section=overview`);
-  await page.waitForFunction(()=>!!window.elFinder);
-  assert.equal(initialFileReads.length,0,'Preparing the interface never reads remote files');
-  const scriptsBeforeClick=startupScripts.length;
-  await page.evaluate(()=>{
-   document.addEventListener('click',()=>{
-    const clicked=performance.now(),observer=new MutationObserver(()=>{if(document.querySelector('[data-testid="file-loading"]')){window.fileFeedbackMs=performance.now()-clicked;observer.disconnect()}});
-    observer.observe(document.body,{childList:true,subtree:true});
-   },{once:true,capture:true});
-  });
-  await page.getByRole('button',{name:'File manager',exact:true}).click();
-  await page.getByTestId('file-loading').waitFor({timeout:1000});
-  assert.ok(await page.evaluate(()=>window.fileFeedbackMs<1000),'A warmed file manager responds immediately while directory requests are blocked');
-  assert.equal(startupScripts.length,scriptsBeforeClick,'Clicking downloads no additional interface scripts');
-  releaseFiles();
-  await page.locator('.elfinder-cwd-filename').filter({hasText:'hello.txt'}).first().waitFor();
-  await page.getByTestId('file-loading').waitFor({state:'detached'});
-  await page.unroute('**/api/v1/nodes/*/files**',initialFilesRoute);
-  assert.equal(await page.locator('.detail-heading-status').count(),0,'File manager heading has no redundant online or Engine badges');
-  assert.equal(firstVendorBatch,3,'All three ordered vendor scripts download concurrently');
-  assert.equal(startupScripts.filter(url=>/\/elfinder-widgets-[^/]+\.js$/.test(url)).length,1,'All dependent widgets load in one bundle');
-  assert.ok(!startupScripts.some(url=>/\/(version|widget|draggable|resizable|sortable)-[^/]+\.js$/.test(url)),'No serial per-widget chunk requests');
-  await page.unroute('**/vendor/elfinder/*.js',coldVendorRoute);
-  await page.route('**/__file-driver-audit.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(artifacts,'driver','driver-audit.js'))}))
-  await page.evaluate(async node=>{const {createFileManager}=await import('/__file-driver-audit.js');window.fileDriverAudit=await createFileManager(node,()=>{})},node)
-  const H=value=>'nd_'+Buffer.from(value).toString('base64url')
-  const call=(cmd,data={})=>page.evaluate(({cmd,data})=>window.fileDriverAudit.request({cmd,...data}),{cmd,data})
-  // Under one delayed RPC, elFinder's open/tree/ls must share the list.
+  const page=await context.newPage();page.setDefaultTimeout(15000);const errors=[],externalRequests=[],scripts=[];
+  page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{if(request.resourceType()==='script')scripts.push(new URL(request.url()).pathname);if(request.url().startsWith('http')&&new URL(request.url()).origin!==base)externalRequests.push(request.url())});
+  await page.goto(base+`/#/nodes?node=${node}&section=files`);
+  const browserUI=page.getByTestId('node-files');await browserUI.locator('[data-file-name="hello.txt"]').waitFor();
+  assert.equal(await page.locator('.elfinder,.tui-image-editor-container').count(),0,'List mode has no embedded native-grid UI');
+  assert.ok(!scripts.some(url=>/elfinder|jquery/.test(url)),'Native grid assets remain lazy in list mode');
+  await page.route('**/__file-driver-audit.js',route=>route.fulfill({contentType:'text/javascript',body:fs.readFileSync(path.join(artifacts,'driver','driver-audit.js'))}));
+  await page.evaluate(async node=>{const {createFileManager}=await import('/__file-driver-audit.js');window.fileClient=await createFileManager(node,()=>{})},node);
+  const call=(method,args=[])=>page.evaluate(({method,args})=>window.fileClient[method](...args),{method,args});
+  const mutate=body=>call('action',[body]);
+  const erase=path=>mutate({action:'delete',path,deleteConfirmed:true,confirmationPath:path});
   const browseRequests=[];let browseActive=0,browsePeak=0;
-  const browseRoute=async route=>{
-   const request=route.request();if(!['files.list','files.stat'].some(name=>new URL(request.url()).pathname===new URL(endpoint(name)).pathname))return route.continue();
-   browseRequests.push(request.url());browseActive++;browsePeak=Math.max(browsePeak,browseActive);
-   try{await new Promise(r=>setTimeout(r,75));await route.fulfill({response:await route.fetch()})}finally{browseActive--}
-  };
-  await page.route('**/api/v1/**',browseRoute);
-  await page.evaluate(async target=>{await Promise.all(['open','tree','ls'].map(cmd=>window.fileDriverAudit.request({cmd,target})))},H('/many'));
-  assert.equal(browseRequests.filter(url=>new URL(url).pathname===new URL(endpoint('files.list')).pathname).length,3,'205 entries require exactly three shared pages');
-  assert.ok(browsePeak<=2,'Browsing reserves transfer capacity');
-  browseRequests.length=0;await call('parents',{target:H('/many')});assert.equal(browseRequests.length,0,'Fresh parent directory metadata is reused');
-  fs.writeFileSync(path.join(files,'many','fresh.txt'),'new listing');
-  const refreshed=await call('open',{target:H('/many')});assert.ok(refreshed.files.some(file=>file.name==='fresh.txt'),'Directory contents are always fetched fresh');
-  fs.unlinkSync(path.join(files,'many','fresh.txt'));
-  await page.unroute('**/api/v1/**',browseRoute);
-  const upload=files=>page.evaluate(async files=>{const items=files.map(f=>new File([(f.bytes?new Uint8Array(f.bytes):new Uint8Array(f.size??0).fill(7))],f.name,{type:'application/octet-stream'}));return await window.fileDriverAudit.transport().upload({target:window.fileDriverAudit.hash('/'),files:items})},files)
-  await call('rename',{target:H('/hello.txt'),name:'driver-renamed.txt'})
-  await assert.rejects(call('paste',{dst:H('/missing'),targets:[H('/driver-renamed.txt')],cut:0}));assert.ok(fs.existsSync(path.join(files,'driver-renamed.txt')))
-  await call('mkdir',{target:H('/'),name:'driver-target'})
-  await call('paste',{dst:H('/driver-target'),targets:[H('/driver-renamed.txt'),H('/private-dir')],cut:0})
-  assert.equal(fs.statSync(path.join(files,'driver-target/private-dir')).mode&0777,0700)
-  await call('paste',{dst:H('/out'),targets:[H('/driver-renamed.txt')],cut:1})
-  assert.equal(fs.readFileSync(path.join(files,'driver-target/driver-renamed.txt'),'utf8'),'edited fixture\n')
+  const delayed=async route=>{if(!['files.list','files.stat'].some(name=>new URL(route.request().url()).pathname===new URL(endpoint(name)).pathname))return route.continue();browseRequests.push(route.request().url());browseActive++;browsePeak=Math.max(browsePeak,browseActive);try{await new Promise(r=>setTimeout(r,50));await route.fulfill({response:await route.fetch()})}finally{browseActive--}};
+  await page.route('**/api/v1/**',delayed);
+  await page.evaluate(()=>Promise.all([window.fileClient.list('/many'),window.fileClient.list('/many'),window.fileClient.list('/many')]));
+  assert.equal(browseRequests.length,3,'205 entries share exactly three Core pages');assert.ok(browsePeak<=2,'Browser reserves transfer capacity');await page.unroute('**/api/v1/**',delayed);
+  fs.writeFileSync(path.join(files,'many','fresh.txt'),'fresh');assert.ok((await call('list',['/many'])).some(row=>row.name==='fresh.txt'));fs.unlinkSync(path.join(files,'many','fresh.txt'));
+  await mutate({action:'rename',path:'/hello.txt',newPath:'/driver-renamed.txt'});
+  await assert.rejects(mutate({action:'copy',path:'/driver-renamed.txt',newPath:'/missing/copy.txt'}));assert.ok(fs.existsSync(path.join(files,'driver-renamed.txt')));
+  await mutate({action:'mkdir',path:'/driver-target'});await mutate({action:'copy',path:'/private-dir',newPath:'/driver-target/private-dir'});assert.equal(fs.statSync(path.join(files,'driver-target/private-dir')).mode&0777,0700);
+  await mutate({action:'copy',path:'/driver-renamed.txt',newPath:'/driver-target/driver-renamed.txt'});await mutate({action:'move',path:'/driver-renamed.txt',newPath:'/out/driver-renamed.txt'});
   for(const extension of ['zip','tar','tar.gz','tgz']){
-   await call('archive',{target:H('/'),name:'format.'+extension,targets:[H('/driver-target')],type:extension==='zip'?'application/zip':extension==='tar'?'application/x-tar':'application/x-gzip'})
-   const archiveDownload=await context.request.get(endpoint('files.download',{path:'/format.'+extension}));assert.equal(archiveDownload.status(),200);const archiveBytes=await archiveDownload.body();assert.equal(extension==='zip'?archiveBytes.subarray(0,2).toString():extension==='tar'?archiveBytes.subarray(257,262).toString():archiveBytes.subarray(0,2).toString('hex'),extension==='zip'?'PK':extension==='tar'?'ustar':'1f8b')
-   await call('extract',{target:H('/format.'+extension),makedir:1})
-   assert.equal(fs.statSync(path.join(files,'format/driver-target/private-dir')).mode&0777,0700)
-   await call('rm',{targets:[H('/format')]})
+   await mutate({action:'archive',path:'/format.'+extension,paths:['/driver-target']});
+   const response=await context.request.get(endpoint('files.download',{path:'/format.'+extension}));assert.equal(response.status(),200);const bytes=await response.body();assert.equal(extension==='zip'?bytes.subarray(0,2).toString():extension==='tar'?bytes.subarray(257,262).toString():bytes.subarray(0,2).toString('hex'),extension==='zip'?'PK':extension==='tar'?'ustar':'1f8b');
+   await mutate({action:'mkdir',path:'/format'});await mutate({action:'extract',path:'/format.'+extension,newPath:'/format'});assert.equal(fs.statSync(path.join(files,'format/driver-target/private-dir')).mode&0777,0700);await erase('/format');
   }
-  await call('extract',{target:H('/bzip.tar.bz2'),makedir:1})
-  assert.equal((await call('get',{target:H('/bzip/bzip.txt')})).content,'bzip fixture')
-  await call('rm',{targets:[H('/driver-target/driver-renamed.txt')]});assert.ok(!fs.existsSync(path.join(files,'driver-target/driver-renamed.txt')))
-  await assert.rejects(call('rename',{target:H('/out/driver-renamed.txt'),name:'hello.txt'}))
-  await call('paste',{dst:H('/'),targets:[H('/out/driver-renamed.txt')],cut:1});await call('rename',{target:H('/driver-renamed.txt'),name:'hello.txt'})
-  assert.equal((await call('open',{target:H('/many')})).files.filter(f=>f.mime!=='directory').length,205)
-  assert.equal((await call('search',{target:H('/'),q:'entry-204'})).files.length,1)
-  await assert.rejects(call('put',{target:H('/out/hello.txt'),content:'unopened editor'}))
-  const original=await call('get',{target:H('/hello.txt')})
-  const external=await(await context.request.get(endpoint('files.text',{path:'/hello.txt'}))).json()
-  await action({action:'save_text',path:'/hello.txt',content:'changed outside editor',expectedVersion:external.version})
-  await call('open',{target:H('/')});await assert.rejects(call('put',{target:H('/hello.txt'),content:'must not overwrite'}))
-  assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'changed outside editor')
-  await call('get',{target:H('/hello.txt')});await call('put',{target:H('/hello.txt'),content:original.content})
-  let replaceAfterSave=true
-  await page.route('**/api/v1/nodes/*/files/text?*',async route=>{if(replaceAfterSave&&new URL(route.request().url()).searchParams.get('path')==='/hello.txt'){replaceAfterSave=false;fs.writeFileSync(path.join(files,'hello.txt'),'replacement after save')};await route.continue()})
-  await assert.rejects(call('put',{target:H('/hello.txt'),content:'first saved text'}));await assert.rejects(call('put',{target:H('/hello.txt'),content:'must not overwrite unseen replacement'}));assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'replacement after save')
-  await page.unroute('**/api/v1/nodes/*/files/text?*');await call('get',{target:H('/hello.txt')});await call('put',{target:H('/hello.txt'),content:original.content})
-  const editLimit=operation('files.action').bodySchema.properties.content.maxBytes,largeText=('editable fixture line\n'.repeat(Math.ceil(editLimit/22))).slice(0,editLimit)
-  await call('mkfile',{target:H('/'),name:'large-editor.txt'});await call('put',{target:H('/large-editor.txt'),content:largeText});assert.equal((await call('get',{target:H('/large-editor.txt')})).content.length,editLimit);await assert.rejects(call('put',{target:H('/large-editor.txt'),content:largeText+'!'}))
-  fs.writeFileSync(path.join(files,'escaped-editor.txt'),'<'.repeat(editLimit))
-  const cli=path.join(dir,'cli-session'),flags=['--server',base,'--dev','--state-dir',cli]
-  execFileSync(path.join(root,'.build/nodedance'),['auth','login','--body','-',...flags],{input:JSON.stringify(credentials),stdio:['pipe','pipe','pipe']})
-  const cliRead=JSON.parse(execFileSync(path.join(root,'.build/nodedance'),['call','files.text','--params',JSON.stringify({nodeId:node}),'--query',JSON.stringify({path:'/escaped-editor.txt'}),...flags],{encoding:'utf8',maxBuffer:64*1024*1024}));assert.equal(cliRead.data.text.length,editLimit)
-  const uploaded=await upload([{name:'hello.txt',bytes:[1]},{name:'after-conflict.txt',bytes:[65,66,67]},{name:'large-upload.bin',size:11*1024*1024}]);assert.equal(uploaded.added.length,2);assert.ok(uploaded.warning.length);assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),original.content);assert.equal(fs.statSync(path.join(files,'large-upload.bin')).size,11*1024*1024)
-  await page.evaluate(async()=>{const f=new File(['directory upload fixture'],'child.txt');Object.defineProperty(f,'webkitRelativePath',{value:'upload-folder/child.txt'});await window.fileDriverAudit.transport().upload({target:window.fileDriverAudit.hash('/'),files:[f]})});assert.equal(fs.readFileSync(path.join(files,'upload-folder/child.txt'),'utf8'),'directory upload fixture')
-  await page.evaluate(async()=>{await window.fileDriverAudit.request({cmd:'open',target:window.fileDriverAudit.hash('/')},true);await window.fileDriverAudit.request({cmd:'mkdir',target:window.fileDriverAudit.hash('/'),name:'directory-only'},true)})
-  await assert.rejects(page.evaluate(()=>window.fileDriverAudit.request({cmd:'rm',targets:[window.fileDriverAudit.hash('/many')]},true)));assert.ok(fs.existsSync(path.join(files,'many')))
-  // Image editing must retain the version read before the editor opened.
-  const image = await call('get',{target:H('/image.png')});assert.match(image.content,/^data:image\/png;base64,/)
-  const imageBefore=await(await context.request.get(endpoint('files.stat',{path:'/image.png'}))).json()
-  fs.appendFileSync(path.join(files,'image.png'),Buffer.from([0]))
-  await assert.rejects(call('put',{target:H('/image.png'),content:image.content}))
-  await call('get',{target:H('/image.png')});await call('put',{target:H('/image.png'),content:image.content})
-  assert.ok((await(await context.request.get(endpoint('files.stat',{path:'/image.png'}))).json()).version!==imageBefore.version)
-  await assert.rejects(call('put',{target:H('/image.png'),content:image.content}))
-  const filtered=await context.request.get(endpoint('files.search',{path:'/',minSize:String(10*1024*1024),recursive:'true'}));assert.equal(filtered.status(),200);const largeEntries=(await filtered.json()).entries;assert.ok(largeEntries.some(e=>e.name==='large-upload.bin'));assert.ok(largeEntries.every(e=>e.kind==='directory'||e.size>=10*1024*1024))
-  await page.evaluate(()=>window.fileDriverAudit.dispose())
-  page.on('requestfailed',request=>console.error('File audit request failed',new URL(request.url()).pathname,request.failure()));
-  page.on('response',async response=>{if(response.status()>=400&&new URL(response.url()).pathname.includes('/files'))console.error('File audit HTTP error',response.status(),response.url(),(await response.text()).slice(0,500))});
-  await page.reload();const finder=page.locator('.nodedance-elfinder');await finder.locator('.elfinder-cwd-filename').filter({hasText:'hello.txt'}).first().waitFor()
-  async function eventually(test){for(let i=0;i<200;i++){if(test())return;await page.waitForTimeout(25)}assert.ok(test())}
-  const toolbar=name=>finder.locator('.elfinder-button').filter({has:page.locator('.elfinder-button-icon-'+name)})
-  async function menu(name){await toolbar(name).waitFor();await page.waitForFunction(()=>!document.querySelector('.nodedance-elfinder .elfinder-cwd-file-tmp')&&!document.querySelector('.nodedance-elfinder .elfinder-notify:has(.elfinder-notify-msg)'));await toolbar(name).click();try{await finder.locator('.elfinder-button-'+name+'-menu.elfinder-frontmost').waitFor()}catch(error){console.error('Menu debug',await finder.evaluate((el,name)=>({button:el.querySelector('.elfinder-button-icon-'+name)?.parentElement.outerHTML,menus:[...el.querySelectorAll('.elfinder-button-menu')].map(e=>({class:e.className,style:e.getAttribute('style'),bounds:e.getBoundingClientRect().toJSON()}))}),name));throw error}}
-  const item=name=>finder.locator('.elfinder-cwd-filename').filter({hasText:new RegExp('^'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$')}).first()
-  const inline=finder.locator('.elfinder-cwd-file input:visible,.elfinder-cwd-file textarea:visible')
-  const longItem=item(longName);
-  await longItem.waitFor();
-  assert.equal(await longItem.locator('.ui-path-extension').innerText(),'.tar.gz','Native names retain compound extensions');
-  await longItem.click();await toolbar('info').click();
-  const info=finder.locator('.elfinder-dialog:visible').filter({has:page.locator('.elfinder-info-path')});
-  await info.waitFor();
-  await context.grantPermissions(['clipboard-read','clipboard-write']);
-  await info.getByRole('button',{name:'Copy full path',exact:true}).click();
-  assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'/'+longName,'Info copies exact original full path');
+  await mutate({action:'mkdir',path:'/bzip'});await mutate({action:'extract',path:'/bzip.tar.bz2',newPath:'/bzip'});assert.equal(await call('text',['/bzip/bzip.txt']),'bzip fixture');
+  await assert.rejects(mutate({action:'rename',path:'/out/driver-renamed.txt',newPath:'/out/hello.txt'}));await mutate({action:'move',path:'/out/driver-renamed.txt',newPath:'/hello.txt'});
+  assert.equal((await call('list',['/many'])).length,205);assert.equal((await call('search',['/','entry-204'])).length,1);
+  await assert.rejects(call('saveText',['/out/hello.txt','unopened editor']));const original=await call('text',['/hello.txt']);
+  let current=await(await context.request.get(endpoint('files.text',{path:'/hello.txt'}))).json();await action({action:'save_text',path:'/hello.txt',content:'external change',expectedVersion:current.version});
+  await assert.rejects(call('saveText',['/hello.txt','must not overwrite']));assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'external change');await call('text',['/hello.txt']);await call('saveText',['/hello.txt',original]);
+  let replaceAfterSave=true;await page.route('**/api/v1/nodes/*/files/text?*',async route=>{if(replaceAfterSave&&new URL(route.request().url()).searchParams.get('path')==='/hello.txt'){replaceAfterSave=false;fs.writeFileSync(path.join(files,'hello.txt'),'replacement after save')};await route.continue()});
+  await assert.rejects(call('saveText',['/hello.txt','first saved text']));await assert.rejects(call('saveText',['/hello.txt','unseen overwrite']));assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'replacement after save');await call('saveText',['/recovered-draft.txt','preserved draft','/hello.txt']);assert.equal(fs.readFileSync(path.join(files,'recovered-draft.txt'),'utf8'),'preserved draft');await page.unroute('**/api/v1/nodes/*/files/text?*');await call('text',['/hello.txt']);await call('saveText',['/hello.txt',original]);
+  const editLimit=operation('files.action').bodySchema.properties.content.maxBytes,largeText='x'.repeat(editLimit);await mutate({action:'save_text',path:'/large-editor.txt',content:''});await call('text',['/large-editor.txt']);await call('saveText',['/large-editor.txt',largeText]);assert.equal((await call('text',['/large-editor.txt'])).length,editLimit);await assert.rejects(call('saveText',['/large-editor.txt',largeText+'!']));
+  fs.writeFileSync(path.join(files,'escaped-editor.txt'),'<'.repeat(editLimit));const cli=path.join(dir,'cli-session'),flags=['--server',base,'--dev','--state-dir',cli];execFileSync(path.join(root,'.build/nodedance'),['auth','login','--body','-',...flags],{input:JSON.stringify(credentials),stdio:['pipe','pipe','pipe']});const cliText=JSON.parse(execFileSync(path.join(root,'.build/nodedance'),['call','files.text','--params',JSON.stringify({nodeId:node}),'--query',JSON.stringify({path:'/escaped-editor.txt'}),...flags],{encoding:'utf8',maxBuffer:64*1024*1024}));assert.equal(cliText.data.text.length,editLimit);
+  const upload=async(name,bytes,relative)=>page.evaluate(async({name,bytes,relative})=>{const file=new File([new Uint8Array(bytes)],name);if(relative)Object.defineProperty(file,'webkitRelativePath',{value:relative});await window.fileClient.upload('/',file)},{name,bytes,relative});
+  await assert.rejects(upload('hello.txt',[1]));assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),original);await upload('child.txt',[65,66,67],'upload-folder/child.txt');assert.equal(fs.readFileSync(path.join(files,'upload-folder/child.txt'),'utf8'),'ABC');
+  await page.evaluate(async()=>{const file=new File([new Uint8Array(11*1024*1024)],'large-upload.bin');await window.fileClient.upload('/',file)});assert.equal(fs.statSync(path.join(files,'large-upload.bin')).size,11*1024*1024);
+  await page.evaluate(()=>window.fileClient.image('/image.png'));const oldImage=await(await context.request.get(endpoint('files.stat',{path:'/image.png'}))).json();fs.appendFileSync(path.join(files,'image.png'),Buffer.from([0]));
+  await assert.rejects(page.evaluate(async()=>{const response=await fetch(window.fileClient.downloadURL('/image.png'));await window.fileClient.saveImage('/image.png',new File([await response.blob()],'image.png'))}));await page.evaluate(()=>window.fileClient.image('/image.png'));
+  await page.evaluate(async()=>{const response=await fetch(window.fileClient.downloadURL('/image.png'));await window.fileClient.saveImage('/image.png',new File([await response.blob()],'image.png'))});assert.notEqual((await(await context.request.get(endpoint('files.stat',{path:'/image.png'}))).json()).version,oldImage.version);fs.appendFileSync(path.join(files,'image.png'),Buffer.from([0]));
+  await assert.rejects(page.evaluate(async()=>window.fileClient.saveImage('/image.png',new File([new Uint8Array([0])],'image.png'))));
+  const filtered=await call('search',['/','',{minSize:String(10*1024*1024)}]);assert.ok(filtered.some(row=>row.name==='large-upload.bin'));assert.ok(filtered.every(row=>row.kind==='directory'||row.size>=10*1024*1024));await call('dispose');
+  await page.reload();await browserUI.locator('[data-file-name="hello.txt"]').waitFor();
+  const toolbar=browserUI.getByRole('toolbar'),file=name=>browserUI.locator('[data-file-name]').filter({hasText:new RegExp('^'+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$')});
+  const dialog=()=>page.getByRole('dialog').last();
+  async function menu(label){await toolbar.getByRole('button',{name:'Actions',exact:true}).click();await page.getByRole('menuitem',{name:label,exact:true}).click()}
+  async function select(name){await browserUI.getByRole('checkbox',{name:`Select ${name}`,exact:true}).check()}
+  async function create(kind,name){await toolbar.getByRole('button',{name:kind,exact:true}).click();await dialog().getByRole('textbox',{name:'Name',exact:true}).fill(name);await dialog().getByRole('button',{name:'Confirm',exact:true}).click();await file(name).waitFor()}
+  await create('New folder','browser-dir');await create('New file','browser.txt');
+  const address=browserUI.locator('.file-browser-location');
+  assert.equal(await address.getByRole('textbox',{name:'Path',exact:true}).count(),0,'Default address bar only shows breadcrumbs');
+  await address.getByRole('button',{name:'Edit path',exact:true}).click();const pathInput=address.getByRole('textbox',{name:'Path',exact:true});await pathInput.waitFor();assert.equal(await address.getByRole('navigation',{name:'Path',exact:true}).count(),0,'Editing replaces breadcrumbs in the same row');
+  assert.ok(await pathInput.evaluate(element=>element===document.activeElement&&element.selectionStart===0&&element.selectionEnd===element.value.length),'Path editing focuses and selects the full address');
+  await pathInput.fill('/many');await pathInput.press('Enter');await file('entry-000.txt').waitFor();await address.getByRole('button',{name:'Edit path',exact:true}).waitFor();assert.equal(await address.getByRole('textbox',{name:'Path',exact:true}).count(),0,'Enter navigates and restores breadcrumb mode');
+  await address.getByRole('button',{name:'Edit path',exact:true}).click();await pathInput.fill('/missing-draft');await pathInput.press('Escape');await address.getByRole('button',{name:'Edit path',exact:true}).waitFor();assert.ok(new URLSearchParams(new URL(page.url()).hash.split('?')[1]).get('path')==='/many','Escape cancels address editing without navigation');
+  await address.getByRole('button',{name:'/',exact:true}).click();await file('browser.txt').waitFor();
+  await address.locator('.file-browser-address-space').click();await pathInput.waitFor();await toolbar.getByRole('button',{name:'Refresh',exact:true}).click();await address.getByRole('button',{name:'Edit path',exact:true}).waitFor();assert.equal(await address.getByRole('textbox',{name:'Path',exact:true}).count(),0,'Outside click leaves edit mode');
+  await address.getByRole('button',{name:'Edit path',exact:true}).click();await pathInput.fill('/a-long-parent-directory/another-long-directory/third-level/fourth-level');await pathInput.press('Enter');await address.getByRole('button',{name:'third-level',exact:true}).waitFor();
+  await page.waitForFunction(()=>!document.querySelector('[data-testid="file-loading"]'));assert.equal(await address.getByRole('button',{name:'Parent directories',exact:true}).count(),0,'Path that fits remains fully expanded');
+  await address.locator('.file-browser-breadcrumb').evaluate(element=>{const list=element.querySelector('.file-browser-address-measure [data-slot="breadcrumb-list"]'),items=list.querySelectorAll('[data-crumb-index]'),middle=items[2].getBoundingClientRect().width,menu=element.querySelector('.file-browser-address-measure > span').getBoundingClientRect().width,blank=element.querySelector('.file-browser-address-space'),reserve=parseFloat(getComputedStyle(blank).flexBasis)+parseFloat(getComputedStyle(element).columnGap);element.style.width=`${list.getBoundingClientRect().width-(middle-menu)/2+reserve}px`});
+  await address.getByRole('button',{name:'Parent directories',exact:true}).waitFor();await address.getByRole('button',{name:'a-long-parent-directory',exact:true}).waitFor();await address.getByRole('button',{name:'third-level',exact:true}).waitFor();
+  await address.getByRole('button',{name:'Parent directories',exact:true}).click();assert.equal(await page.getByRole('menuitem').count(),1,'Small overflow hides only the necessary middle directory');await page.keyboard.press('Escape');await address.locator('.file-browser-breadcrumb').evaluate(element=>element.style.width='');await address.getByRole('button',{name:'Parent directories',exact:true}).waitFor({state:'detached'});
+  await page.setViewportSize({width:390,height:1000});await address.getByRole('button',{name:'Parent directories',exact:true}).waitFor();assert.ok(await address.evaluate(element=>element.scrollWidth<=element.clientWidth+1),'Overflow collapses middle ancestors without horizontal scrolling');
+  await address.getByRole('button',{name:'Parent directories',exact:true}).click();await page.getByRole('menuitem',{name:'another-long-directory',exact:true}).click();await address.getByRole('button',{name:'Edit path',exact:true}).waitFor();
+  await page.setViewportSize({width:1440,height:1000});await address.getByRole('button',{name:'a-long-parent-directory',exact:true}).waitFor();assert.equal(await address.getByRole('button',{name:'Parent directories',exact:true}).count(),0,'Resizing wider restores ancestors automatically');
+  await address.getByRole('button',{name:'/',exact:true}).click();await file('browser.txt').waitFor();
+  await toolbar.getByRole('button',{name:'View',exact:true}).click();await page.getByRole('menuitem',{name:'Sort by Size',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.file-browser-list th[data-key="size"]')?.getAttribute('aria-sort')==='ascending');await toolbar.getByRole('button',{name:'View',exact:true}).click();await page.getByRole('menuitem',{name:'Sort by Name',exact:true}).click();
+  const viewSwitch=browserUI.getByRole('group',{name:'View',exact:true});
+  for(const width of [1440,390]){
+   await page.setViewportSize({width,height:1000});await viewSwitch.getByRole('button',{name:'Grid',exact:true}).click();const nativeGrid=browserUI.frameLocator('.file-browser-native-grid');await nativeGrid.getByTitle(longGridName,{exact:true}).waitFor();
+   assert.ok(await nativeGrid.locator('.elfinder-cwd-file').count()>0,'Actual original elFinder file controls exist');await nativeGrid.locator('link.elfinder-theme-ext').waitFor({state:'attached'});await nativeGrid.locator('.elfinder-cwd-icon').first().evaluate(element=>new Promise((resolve,reject)=>{const start=Date.now();const check=()=>{if(getComputedStyle(element).backgroundImage.includes('/themes/nodedance/img/'))return resolve();if(Date.now()-start>5000)return reject(Error('NodeDance icon theme did not load'));setTimeout(check,25)};check()}));assert.equal(await nativeGrid.locator('img[onerror]').count(),0,'Native filename templates do not create executable markup');assert.equal(await nativeGrid.locator('body').evaluate(()=>window.gridScriptExecuted),undefined);
+   for(const selector of ['.file-browser-list-viewport','.file-browser-tree [role="tree"]','.file-browser-location']){const area=browserUI.locator(selector);assert.ok(await area.count()>0);assert.ok(await area.evaluate(element=>element.scrollWidth<=element.clientWidth+1),`File panes have no horizontal overflow at ${width}: ${selector}`)}
+   await nativeGrid.getByTitle(longGridName,{exact:true}).click();await nativeGrid.locator('.elfinder-cwd-file.ui-selected').waitFor();await page.waitForFunction(()=>document.querySelector('.file-browser-footer').textContent.includes('1 selected'));
+   await nativeGrid.getByTitle(longGridName,{exact:true}).click({modifiers:['Control']});await nativeGrid.locator('.elfinder-cwd-file.ui-selected').waitFor({state:'detached'});
+   if(width===1440){await nativeGrid.getByTitle('hello.txt',{exact:true}).dblclick();await dialog().getByRole('textbox',{name:'File contents',exact:true}).waitFor();await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'detached'})}
+
+   const panelBounds=await browserUI.locator('.file-browser-list').boundingBox(),treeBounds=await browserUI.locator('[role="tree"]').boundingBox();assert.ok(panelBounds&&treeBounds&&Math.abs(panelBounds.height-treeBounds.height)<2,'Native grid and directory tree have identical visible heights');
+   if(width===1440&&process.env.NODEDANCE_FILE_GRID_REVIEW)await browserUI.locator('.file-browser-body').screenshot({path:path.join(artifacts,'grid-review.png')});
+   await viewSwitch.getByRole('button',{name:'List',exact:true}).click();await file(longGridName).waitFor();assert.ok(await browserUI.locator('.file-browser-list-viewport').evaluate(element=>element.scrollWidth<=element.clientWidth+1),'List adapts to pane width without horizontal overflow');
+  }
+  await page.setViewportSize({width:1440,height:650});
+  const directoryTree=browserUI.getByRole('tree',{name:'Directories',exact:true}),fileList=browserUI.locator('.file-browser-list');
+  await directoryTree.getByRole('treeitem',{name:'many',exact:true}).waitFor();
+  await page.evaluate(()=>window.scrollTo(0,document.querySelector('.file-browser-body').getBoundingClientRect().top+window.scrollY-80));
+  await page.waitForFunction(()=>{const body=document.querySelector('.file-browser-body'),footer=document.querySelector('.file-browser-footer');return body.getBoundingClientRect().height===Math.max(240,Math.floor(innerHeight-Math.max(16,body.getBoundingClientRect().top)-footer.getBoundingClientRect().height-28))});
+  const directoryScroll=await page.evaluate(()=>window.scrollY);assert.ok(directoryScroll>0,'Directory navigation starts on a scrolled page');
+  const populatedHeight=(await fileList.boundingBox()).height;
+  const itemCountHeight=await fileList.getByRole('table').evaluate(element=>element.closest('[class*="_wrapper_"]').querySelector('[class*="_footer_"]').getBoundingClientRect().height);
+  await directoryTree.getByRole('treeitem',{name:'many',exact:true}).click();await file('entry-000.txt').waitFor();
+  assert.ok(Math.abs(await page.evaluate(()=>window.scrollY)-directoryScroll)<2,'Sidebar directory navigation preserves page scroll');
+  assert.ok(Math.abs((await fileList.boundingBox()).height-populatedHeight)<2,'Large directories retain file pane height');
+  const fileViewport=fileList.getByRole('region',{name:'File manager',exact:true});
+  assert.equal(await fileViewport.evaluate(element=>getComputedStyle(element).scrollbarWidth),'none','Scroll Area hides native scrollbar chrome');
+  const tableViewport=fileList.locator('[class*="_scrollArea_"] > div').first();await tableViewport.hover();await page.mouse.wheel(0,240);await page.waitForFunction(()=>[...document.querySelectorAll('.file-browser-list [class*="_viewport_"]')].some(element=>element.scrollTop>0));
+  await page.waitForFunction(()=>document.querySelector('.file-browser-list [data-axis="y"]:not([data-hidden])'));
+  await directoryTree.getByRole('treeitem',{name:'browser-dir',exact:true}).click();
+  await page.waitForFunction(()=>new URLSearchParams(location.hash.split('?')[1]).get('path')==='/browser-dir'&&!document.querySelector('[data-testid="file-loading"]'));
+  assert.equal(await fileList.locator('[data-file-name]').count(),0,'Empty directory is actually loaded');
+  assert.ok(Math.abs((await fileList.boundingBox()).height-populatedHeight)<2,'Empty directories retain file pane height');
+  const emptyCountBounds=await fileList.getByRole('table').evaluate(element=>{const wrapper=element.closest('[class*="_wrapper_"]'),footer=wrapper.querySelector('[class*="_footer_"]').getBoundingClientRect(),frame=wrapper.getBoundingClientRect();return {height:footer.height,bottom:frame.bottom-footer.bottom}});assert.ok(Math.abs(emptyCountBounds.height-itemCountHeight)<1&&emptyCountBounds.bottom<2,'Empty directory keeps item count bar at its original height and at the bottom');
+  assert.ok(Math.abs(await page.evaluate(()=>window.scrollY)-directoryScroll)<2,`Empty directory navigation preserves page scroll (${directoryScroll} -> ${await page.evaluate(()=>window.scrollY)})`);
+  await toolbar.getByRole('button',{name:'Parent directory',exact:true}).click();await file('browser.txt').waitFor();await page.setViewportSize({width:1440,height:1000});
+  await file('single').click();await file('only.txt').waitFor();
+  const singleRow=await file('only.txt').evaluate(element=>{const row=element.closest('tr').getBoundingClientRect(),table=element.closest('table'),scroller=table.parentElement,frame=element.closest('[class*="_wrapper_"]');return{row:row.height,table:table.getBoundingClientRect().height,scroller:scroller.getBoundingClientRect().height,frame:frame.getBoundingClientRect().height}});
+  assert.ok(singleRow.row<100&&singleRow.scroller<=singleRow.table+1&&singleRow.frame>singleRow.table+50,'Single record keeps a normal row with untinted blank space below the table');
+  const treeFrame=await browserUI.locator('[role="tree"]').boundingBox(),listFrame=await browserUI.locator('.file-browser-list').boundingBox();assert.ok(treeFrame&&listFrame&&Math.abs(treeFrame.height-listFrame.height)<2,'Single-record visible panels remain equal height');
+  if(process.env.NODEDANCE_FILE_GRID_REVIEW)await browserUI.locator('.file-browser-body').screenshot({path:path.join(artifacts,'single-row-review.png')});
+  await toolbar.getByRole('button',{name:'Parent directory',exact:true}).click();await file('browser.txt').waitFor();
+  await select('browser.txt');await menu('Edit file');await dialog().getByRole('textbox',{name:'File contents',exact:true}).fill('browser edited fixture');await dialog().getByRole('button',{name:'Save and close',exact:true}).click();await page.getByRole('dialog').waitFor({state:'detached'});await file('browser.txt').waitFor();assert.equal(fs.readFileSync(path.join(files,'browser.txt'),'utf8'),'browser edited fixture');
+  await select('browser.txt');await menu('Edit file');await dialog().getByRole('textbox',{name:'File contents',exact:true}).fill('stale browser draft');current=await(await context.request.get(endpoint('files.text',{path:'/browser.txt'}))).json();await action({action:'save_text',path:'/browser.txt',content:'external browser change',expectedVersion:current.version});await dialog().getByRole('button',{name:'Save',exact:true}).click();await dialog().getByRole('alert').waitFor();assert.equal(await dialog().getByRole('textbox',{name:'File contents',exact:true}).inputValue(),'stale browser draft');assert.equal(fs.readFileSync(path.join(files,'browser.txt'),'utf8'),'external browser change');await dialog().getByRole('textbox',{name:'Destination path',exact:true}).fill('/saved-as.txt');await dialog().getByRole('button',{name:'Save',exact:true}).click();await file('saved-as.txt').waitFor();assert.equal(fs.readFileSync(path.join(files,'saved-as.txt'),'utf8'),'stale browser draft');assert.equal(fs.readFileSync(path.join(files,'browser.txt'),'utf8'),'external browser change');await dialog().getByRole('textbox',{name:'File contents',exact:true}).fill('discarded draft');await dialog().getByRole('button',{name:'Cancel',exact:true}).click();await dialog().getByRole('button',{name:'Discard unsaved changes',exact:true}).click();
+  await select('browser.txt');await menu('Rename');await dialog().getByRole('textbox',{name:'Name',exact:true}).fill('renamed.txt');await dialog().getByRole('button',{name:'Confirm',exact:true}).click();await file('renamed.txt').waitFor();
+  await select('renamed.txt');await menu('Copy');await file('browser-dir').click();await toolbar.getByRole('button',{name:'Paste',exact:true}).click();await file('renamed.txt').waitFor();assert.equal(fs.readFileSync(path.join(files,'browser-dir/renamed.txt'),'utf8'),'external browser change');await toolbar.getByRole('button',{name:'Parent directory',exact:true}).click();await file('renamed.txt').waitFor();
+  await select('renamed.txt');await menu('Create archive');await dialog().getByRole('textbox',{name:'Name',exact:true}).fill('browser.zip');await dialog().getByRole('button',{name:'Confirm',exact:true}).click();await file('browser.zip').waitFor();
+  await select('renamed.txt');await menu('Delete');await dialog().getByRole('button',{name:'Cancel',exact:true}).click();assert.ok(fs.existsSync(path.join(files,'renamed.txt')));await menu('Delete');await dialog().getByRole('button',{name:'Confirm',exact:true}).click();await file('renamed.txt').waitFor({state:'detached'});assert.ok(!fs.existsSync(path.join(files,'renamed.txt')));
+  await select('browser.zip');await menu('Extract archive');await dialog().getByRole('button',{name:'Confirm',exact:true}).click();await file('renamed.txt').waitFor();assert.equal(fs.readFileSync(path.join(files,'renamed.txt'),'utf8'),'external browser change');
+  await select('renamed.txt');await menu('File information');await dialog().getByRole('button',{name:'Copy full path',exact:true}).waitFor();await page.keyboard.press('Escape');
+  const saved=page.waitForEvent('download');await menu('Download');assert.equal((await saved).suggestedFilename(),'renamed.txt');
+  await toolbar.getByRole('button',{name:'Upload files',exact:true}).click();await dialog().locator('input[type=file]:not([webkitdirectory])').setInputFiles({name:'browser-upload.txt',mimeType:'text/plain',buffer:Buffer.from('browser upload')});await file('browser-upload.txt').waitFor();await page.keyboard.press('Escape');
+  await toolbar.getByRole('button',{name:'Upload files',exact:true}).click();const directoryUpload=path.join(dir,'local-upload-folder');fs.mkdirSync(directoryUpload);fs.writeFileSync(path.join(directoryUpload,'local-child.txt'),'folder upload');await dialog().locator('input[webkitdirectory]').setInputFiles(directoryUpload);await file('local-upload-folder').waitFor();assert.equal(fs.readFileSync(path.join(files,'local-upload-folder/local-child.txt'),'utf8'),'folder upload');await page.keyboard.press('Escape');
+  await file('many').click();await file('entry-000.txt').waitFor();await browserUI.getByRole('button',{name:'Next page',exact:true}).click();await browserUI.getByRole('button',{name:'Next page',exact:true}).click();await browserUI.getByRole('button',{name:'Next page',exact:true}).click();await browserUI.getByRole('button',{name:'Next page',exact:true}).click();await file('entry-204.txt').waitFor();
+  await browserUI.getByRole('textbox',{name:'Search filenames',exact:true}).fill('entry-204');await browserUI.getByRole('button',{name:'Search filenames',exact:true}).click();await browserUI.locator('[data-file-name]').nth(1).waitFor({state:'detached'});await file('entry-204.txt').waitFor();assert.equal(await browserUI.locator('[data-file-name]').count(),1);
+  await toolbar.getByRole('button',{name:'Parent directory',exact:true}).click();await file('image.png').waitFor();await select('image.png');await menu('Edit file');await page.getByTestId('file-image-canvas').locator('canvas').first().waitFor();await dialog().getByRole('button',{name:'Rotate',exact:true}).click();await dialog().getByRole('button',{name:'Undo',exact:true}).click();await dialog().getByRole('button',{name:'Redo',exact:true}).click();await dialog().getByRole('button',{name:'Save',exact:true}).click();await dialog().getByRole('button',{name:'Flip horizontally',exact:true}).click();await dialog().getByRole('button',{name:'Save and close',exact:true}).click();await page.getByTestId('file-image-editor').waitFor({state:'detached'});await file('image.png').waitFor();assert.equal(fs.readFileSync(path.join(files,'image.png')).subarray(0,8).toString('hex'),'89504e470d0a1a0a');
+  const hostile='<svg onload="window.fileScriptExecuted=true">';fs.writeFileSync(path.join(files,'hostile.html'),hostile);await toolbar.getByRole('button',{name:'Refresh',exact:true}).click();await file('hostile.html').click();await dialog().getByRole('textbox',{name:'File contents',exact:true}).waitFor();assert.equal(await dialog().getByRole('textbox',{name:'File contents',exact:true}).inputValue(),hostile);assert.equal(await page.evaluate(()=>window.fileScriptExecuted),undefined);await page.keyboard.press('Escape');
   for(const theme of ['light','dark'])for(const width of [390,1440]){
-   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);
-   await page.waitForTimeout(200);
-   const infoBounds=await info.boundingBox();assert.ok(infoBounds.x>=0&&infoBounds.x+infoBounds.width<=width+1,'Native information fits the viewport');
-   assert.ok(await info.evaluate(el=>el.scrollWidth<=el.clientWidth+2),'Native information wraps the complete long path inside its dialog');
-
+   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((root,theme)=>{root.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);
+   await select('renamed.txt');await menu('Edit file');await dialog().getByRole('textbox',{name:'File contents',exact:true}).waitFor();const bounds=await dialog().boundingBox();assert.ok(bounds&&bounds.x>=0&&bounds.x+bounds.width<=width+1,'Installed editor dialog fits viewport');const controls=dialog().getByRole('textbox');assert.ok(await controls.count()>=2,'Destination and editor controls exist');for(const control of await controls.all()){const box=await control.boundingBox();assert.ok(box&&box.x>=bounds.x&&box.x+box.width<=bounds.x+bounds.width+1,'Actual editor controls fit the dialog');}assert.ok(await dialog().getByRole('button',{name:'Save',exact:true}).isVisible());await page.keyboard.press('Escape');await browserUI.getByRole('checkbox',{name:'Select renamed.txt',exact:true}).uncheck();
   }
-  await info.locator('.ui-dialog-titlebar-close').click();
-  await page.setViewportSize({width:1440,height:1000});
-  let releaseRefresh, startedRefresh;const refreshHeld=new Promise(resolve=>releaseRefresh=resolve),refreshStarted=new Promise(resolve=>startedRefresh=resolve);
-  const holdRefresh=async route=>{startedRefresh();await refreshHeld;await route.continue()};
-  const refreshPattern=endpoint('files.list')+'?*';
-  await page.route(refreshPattern,holdRefresh);
-  await finder.evaluate(el=>{void window.jQuery(el).elfinder('instance').exec('reload')});await Promise.race([refreshStarted,new Promise((_,reject)=>setTimeout(()=>reject(Error('Refresh did not use the discovered file-list route')),10000))]);
-  await finder.locator('.elfinder-cwd-filename').filter({hasText:'hello.txt'}).first().waitFor({state:'visible'});
-  await page.locator('.ui-load-state[data-phase=refresh]').waitFor();
-  releaseRefresh();await page.unroute(refreshPattern,holdRefresh);
-  await page.getByTestId('file-loading').waitFor({state:'detached'});
-
-  await toolbar('mkdir').click();await inline.fill('browser-dir');await inline.press('Enter');await item('browser-dir').waitFor();await eventually(()=>fs.existsSync(path.join(files,'browser-dir')));assert.ok(fs.statSync(path.join(files,'browser-dir')).isDirectory())
-  await page.waitForTimeout(250);await menu('mkfile');await finder.getByText('TXT: Plain text',{exact:true}).click();await inline.fill('browser.txt');await inline.press('Enter');await item('browser.txt').waitFor();await eventually(()=>fs.existsSync(path.join(files,'browser.txt')))
-  await item('browser.txt').dblclick();const editor=finder.locator('.elfinder-to-editing');await editor.waitFor();await editor.locator('textarea:visible').fill('browser edited fixture');await editor.locator('button').filter({hasText:/^Save$/}).click()
-  await page.waitForFunction(()=>!document.querySelector('.elfinder-to-editing .elfinder-button-icon-spinner'))
-  for(let i=0;i<100&&fs.readFileSync(path.join(files,'browser.txt'),'utf8')!=='browser edited fixture';i++)await page.waitForTimeout(25)
-  assert.equal(fs.readFileSync(path.join(files,'browser.txt'),'utf8'),'browser edited fixture')
-  for(const theme of ['light','dark'])for(const width of [390,1440]){
-   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(200)
-   const bounds=await editor.boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=width+1,'Editor fits viewport')
-   const colors=await editor.evaluate(el=>({bg:getComputedStyle(el).backgroundColor,fg:getComputedStyle(el).color}));assert.match(colors.bg,/^rgb\(/)
-
-  }
-  await editor.locator('.ui-dialog-titlebar-close').click();await editor.waitFor({state:'detached'})
-  await page.setViewportSize({width:1440,height:1000});await item('browser.txt').click();await toolbar('edit').click();await editor.locator('textarea:visible').fill('saved-as fixture');await editor.getByRole('button',{name:'Save As',exact:true}).click();await inline.fill('saved-as.txt');await inline.press('Enter');await editor.waitFor({state:'detached'});await eventually(()=>fs.existsSync(path.join(files,'saved-as.txt'))&&fs.readFileSync(path.join(files,'saved-as.txt'),'utf8')==='saved-as fixture');assert.equal(fs.readFileSync(path.join(files,'saved-as.txt'),'utf8'),'saved-as fixture');assert.equal(fs.readFileSync(path.join(files,'browser.txt'),'utf8'),'browser edited fixture');await finder.locator('.elfinder-dialog-edit').waitFor({state:'detached'})
-  await item('large-editor.txt').click();await toolbar('edit').click();await editor.locator('textarea:visible').waitFor({timeout:60000});assert.equal((await editor.locator('textarea:visible').inputValue()).length,editLimit);await editor.locator('.ui-dialog-titlebar-close').click();await editor.waitFor({state:'detached'})
-  await item('browser.txt').click();await menu('archive');await finder.locator('.elfinder-button-archive-menu .elfinder-button-menu-item').filter({hasText:/^ZIP archive$/}).click();await inline.fill('browser-archive.zip');await inline.press('Enter');await item('browser-archive.zip').waitFor();await eventually(()=>fs.existsSync(path.join(files,'browser-archive.zip')));assert.ok(fs.existsSync(path.join(files,'browser-archive.zip')))
-  await item('browser.txt').click();await menu('archive');await finder.locator('.elfinder-button-archive-menu .elfinder-button-menu-item').filter({hasText:/^GZIP archive$/}).click();await inline.fill('browser-gzip.tar.gz');await inline.press('Enter');await item('browser-gzip.tar.gz').waitFor();await eventually(()=>fs.existsSync(path.join(files,'browser-gzip.tar.gz')));const gz=await context.request.get(endpoint('files.download',{path:'/browser-gzip.tar.gz'}));assert.equal(gz.status(),200);assert.equal((await gz.body()).subarray(0,2).toString('hex'),'1f8b')
-  await item('browser.txt').click();await toolbar('rm').click();const confirm=finder.locator('.elfinder-dialog-confirm');await confirm.waitFor();await confirm.locator('button').filter({hasText:/^(Remove|Delete)$/}).click();await item('browser.txt').waitFor({state:'detached'});await eventually(()=>!fs.existsSync(path.join(files,'browser.txt')));assert.ok(!fs.existsSync(path.join(files,'browser.txt')))
-  await item('browser-archive.zip').click();await menu('extract');await finder.getByText('Here',{exact:true}).filter({visible:true}).click();await finder.locator('.elfinder-dialog-confirm').getByRole('button',{name:'Yes',exact:true}).click();await item('browser.txt').waitFor();await eventually(()=>fs.existsSync(path.join(files,'browser.txt')));assert.equal(fs.readFileSync(path.join(files,'browser.txt'),'utf8'),'browser edited fixture');await page.waitForFunction(()=>{const fm=window.jQuery(document.querySelector('.nodedance-elfinder')).elfinder('instance'),selected=fm.selected();return selected.length===1&&fm.file(selected[0]).name==='browser.txt'});await confirm.waitFor({state:'detached'});
-  await toolbar('fullscreen').click();await page.waitForFunction(()=>document.querySelector('.nodedance-elfinder')?.classList.contains('elfinder-fullscreen'));assert.ok(await finder.evaluate(el=>el.classList.contains('elfinder-fullscreen')));await toolbar('fullscreen').click();await page.waitForFunction(()=>!document.querySelector('.nodedance-elfinder')?.classList.contains('elfinder-fullscreen'));assert.ok(!await finder.evaluate(el=>el.classList.contains('elfinder-fullscreen')))
-  await item('image.png').click();await toolbar('edit').click();await finder.locator('.tui-image-editor-canvas-container').waitFor();fs.writeFileSync(path.join(artifacts,'image-theme.json'),JSON.stringify(await finder.locator('.tui-image-editor-container').evaluate(el=>({html:el.outerHTML.slice(0,5000),icons:[...el.querySelectorAll('svg use')].slice(0,8).map(e=>({class:e.getAttribute('class'),fill:getComputedStyle(e).fill,href:e.getAttribute('xlink:href')}))}))));await finder.locator('.elfinder-to-editing .ui-dialog-titlebar-close').click();await finder.locator('.elfinder-to-editing').waitFor({state:'detached'})
-  const download=page.waitForEvent('download');await item('hello.txt').click();await toolbar('download').click();const attachment=await download;assert.equal(attachment.suggestedFilename(),'hello.txt')
-  await toolbar('upload').click();await finder.locator('input[type=file]:not([webkitdirectory])').first().setInputFiles({name:'browser-upload.txt',mimeType:'text/plain',buffer:Buffer.from('browser upload fixture')});await item('browser-upload.txt').waitFor();assert.equal(fs.readFileSync(path.join(files,'browser-upload.txt'),'utf8'),'browser upload fixture')
-  await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.querySelector('.nodedance-elfinder .elfinder-dialog:not([style*="display: none"])'))
-  await item('many').dblclick();await item('entry-000.txt').waitFor();await finder.locator('.elfinder-cwd-wrapper').evaluate(el=>el.scrollTop=el.scrollHeight);await item('entry-204.txt').waitFor()
-  await page.goBack();await item('hello.txt').waitFor();await page.goForward();await item('entry-000.txt').waitFor();await page.reload();await item('entry-000.txt').waitFor()
-  await setBrowserLanguage(page,'zh-CN');await finder.locator('.elfinder-button').filter({has:page.locator('.elfinder-button-icon-mkdir')}).waitFor();await setBrowserLanguage(page,'en')
-  for(const theme of ['light','dark'])for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(200);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));}
-  const composeList=operation('compose.list').path.replace('{nodeId}',node);let composeSubmission
-  await page.route('**'+composeList,route=>{if(route.request().method()==='POST'){composeSubmission=route.request().postDataJSON();return route.fulfill({status:503,body:'Isolated deployment interception'})};return route.fulfill({json:{projects:[],dataStale:false,serverTime:new Date().toISOString()}})})
-  await page.setViewportSize({width:1440,height:1000});await page.goto(base+`/#/nodes?node=${node}&section=compose`);await page.getByTestId('compose-toolbar').getByRole('button',{name:'New project',exact:true}).click();const form=page.getByTestId('compose-create-form');await form.locator('input').first().fill('directory-fixture');await fillExpanded(form.locator('[data-expanded-textarea-trigger]'),'services: {} # preserved draft');await page.getByTestId('compose-directory-open').click()
-  const picker=page.getByTestId('compose-directory-picker'),originalURL=page.url();await picker.locator('.elfinder-cwd-filename').filter({hasText:'many'}).first().waitFor();assert.equal(await picker.locator('.elfinder-cwd-filename').filter({hasText:'hello.txt'}).count(),0)
-  const pickerToolbar=name=>picker.locator('.elfinder-button').filter({has:page.locator('.elfinder-button-icon-'+name)})
-  for(const name of ['mkfile','upload','rm','rename','edit','archive','extract'])assert.equal(await pickerToolbar(name).count(),0)
-  await pickerToolbar('mkdir').click();const field=picker.locator('.elfinder-cwd-file input:visible,.elfinder-cwd-file textarea:visible');await field.fill('compose-workspace');await field.press('Enter');await picker.locator('.elfinder-cwd-filename').filter({hasText:'compose-workspace'}).dblclick();await picker.locator('footer span').filter({hasText:/^\/compose-workspace$/}).waitFor();await page.getByTestId('compose-directory-use').click();await picker.waitFor({state:'detached'});assert.equal(await page.getByTestId('compose-workdir').inputValue(),'/compose-workspace');assert.equal(page.url(),originalURL);assert.equal(await form.locator('textarea').inputValue(),'services: {} # preserved draft')
-  await page.getByTestId('compose-directory-open').click();await picker.locator('.elfinder-cwd-filename').filter({hasText:'many'}).waitFor()
-  for(const theme of ['light','dark'])for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(150);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));}
-  await picker.getByRole('button',{name:'Cancel',exact:true}).click();await picker.waitFor({state:'detached'});assert.equal(await page.getByTestId('compose-workdir').inputValue(),'/compose-workspace');assert.ok(await page.getByTestId('compose-directory-open').evaluate(el=>el===document.activeElement));await form.getByRole('button',{name:'Create and deploy',exact:true}).click();await page.locator('.ui-dialog').getByRole('button',{name:'Confirm',exact:true}).click();await form.getByRole('alert').filter({hasText:'Isolated deployment interception'}).waitFor();assert.equal(composeSubmission.workingDirectory,'/compose-workspace')
-  assert.deepEqual(errors,[]);assert.deepEqual(externalRequests,[],'File UI and editors use only local assets')
-  console.log('elFinder file audit passed: real isolated Core/root Agent, 205 entries, search, tasks, permissions, archives, editor conflicts, 8 MiB text/CLI, uploads, downloads, stock UI, themes/mobile, navigation, Compose directory selection.')
+  await page.setViewportSize({width:1000,height:600});await select('renamed.txt');await menu('Edit file');
+  await dialog().getByRole('textbox',{name:'File contents',exact:true}).waitFor();
+  const overlay=page.locator('[data-state="open"][class*="_overlay_"]');await overlay.waitFor();
+  const overlayBounds=await overlay.boundingBox(),modalBounds=await dialog().boundingBox();assert.ok(overlayBounds&&Math.abs(overlayBounds.x)<1&&Math.abs(overlayBounds.y)<1&&Math.abs(overlayBounds.width-1000)<1&&Math.abs(overlayBounds.height-600)<1,'Dialog overlay covers the viewport after page scrolling');
+  assert.ok(modalBounds&&modalBounds.y>=0&&modalBounds.y+modalBounds.height<=600,'Dialog remains fully inside short viewport');
+  assert.equal(await dialog().locator(':scope > div').first().evaluate(element=>getComputedStyle(element).borderBottomWidth),'0px','Shared dialog header has no divider');
+  const dialogViewport=dialog().getByRole('region',{name:'Edit file',exact:true});await dialogViewport.hover({position:{x:10,y:30}});await page.mouse.wheel(0,350);await page.waitForFunction(()=>{const dialog=document.querySelector('[role="dialog"]');return [...dialog.querySelectorAll('[role="region"]')].some(element=>element.scrollTop>0)});
+  await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'detached'});await browserUI.getByRole('checkbox',{name:'Select renamed.txt',exact:true}).uncheck();
+  await page.setViewportSize({width:1440,height:1000});await toolbar.getByRole('button',{name:'Toggle full screen',exact:true}).click();assert.ok(await browserUI.evaluate(el=>el.classList.contains('file-browser-fullscreen')));await page.keyboard.press('Escape');assert.ok(!await browserUI.evaluate(el=>el.classList.contains('file-browser-fullscreen')));
+  await page.goto(base+'/#/nodes');
+  const shortcut=page.locator(`.vps-card[data-node-id="${node}"]`).getByTestId('node-files-shortcut');await shortcut.click();
+  const overviewFiles=page.getByRole('dialog');await overviewFiles.locator('[data-file-name="hello.txt"]').waitFor();
+  await overviewFiles.getByRole('button',{name:'Edit path',exact:true}).click();await overviewFiles.getByRole('textbox',{name:'Path',exact:true}).press('Escape');await overviewFiles.getByRole('button',{name:'Edit path',exact:true}).waitFor();assert.ok(await overviewFiles.isVisible(),'Escape exits address editing without closing the file dialog');
+  await overviewFiles.locator('[data-file-name="hello.txt"]').click({button:'right'});await page.getByRole('menuitem',{name:'File information',exact:true}).click();
+  await page.getByRole('dialog').last().getByRole('button',{name:'Copy full path',exact:true}).waitFor();await page.keyboard.press('Escape');await overviewFiles.getByRole('button',{name:'Close dialog',exact:true}).click();await page.getByRole('dialog').waitFor({state:'detached'});await page.waitForFunction(element=>element===document.activeElement,await shortcut.elementHandle());assert.ok(await shortcut.evaluate(element=>element===document.activeElement),'Overview dialog restores shortcut focus');
+  const composeList=operation('compose.list').path.replace('{nodeId}',node);let composeSubmission;
+  await page.route('**'+composeList,route=>{if(route.request().method()==='POST'){composeSubmission=route.request().postDataJSON();return route.fulfill({status:503,body:'Isolated deployment interception'})}return route.fulfill({json:{projects:[],dataStale:false,serverTime:new Date().toISOString()}})});
+  await page.goto(base+`/#/nodes?node=${node}&section=compose`);await page.getByTestId('compose-toolbar').getByRole('button',{name:'New project',exact:true}).click();const form=page.getByTestId('compose-create-form');await form.locator('input').first().fill('directory-fixture');await fillExpanded(form.locator('[data-expanded-textarea-trigger]'),'services: {} # preserved draft');await page.getByTestId('compose-directory-open').click();const picker=page.getByRole('dialog').last();await picker.locator('[data-file-name="many"]').waitFor();assert.equal(await picker.locator('[data-file-name="hello.txt"]').count(),0);
+  for(const label of ['New file','Upload files','Delete','Rename'])assert.equal(await picker.getByRole('button',{name:label,exact:true}).count(),0);
+  await picker.locator('[data-file-name="browser-dir"]').click();await picker.getByTestId('compose-directory-use').click();assert.equal(await page.getByTestId('compose-workdir').inputValue(),'/browser-dir');assert.equal(await form.locator('textarea').inputValue(),'services: {} # preserved draft');
+  await setBrowserLanguage(page,'zh-CN');await page.getByTestId('compose-directory-open').click();await page.getByRole('dialog').last().getByRole('button',{name:'新建文件夹',exact:true}).waitFor();await page.keyboard.press('Escape');await setBrowserLanguage(page,'en');
+  assert.deepEqual(errors,[]);assert.deepEqual(externalRequests,[],'All file UI and headless image assets are local');assert.ok(scripts.some(url=>url==='/vendor/elfinder/elfinder.js'));assert.equal(await page.evaluate(()=>typeof window.jQuery),'undefined','Native grid dependencies remain isolated from the management document');
+  console.log('File audit passed: isolated real Core/root Agent; shadcn browsing, selection, dialogs, directory picker, text/image editing, conflicts, uploads/downloads, task execution, all archive formats, pagination/search, passive preview, themes and narrow layouts.');
  }catch(error){if(browser){const p=browser.contexts()[0]?.pages()[0];if(p){fs.writeFileSync(path.join(artifacts,'failure.html'),await p.content());console.error('File browser state:',p.url(),(await p.locator('body').innerText()).slice(-2000));}};throw error}
  finally{if(browser)await browser.close();await stop(agent);await stop(core);execFileSync('sudo',['rm','-rf','--',dir,state])}
 })().catch(e=>{console.error(e);process.exit(1)})

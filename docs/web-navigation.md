@@ -64,9 +64,9 @@ Deletion removes the deployment with `docker compose down --remove-orphans`, ret
 
 The VPS sidebar starts with Overview → Docker details → Compose projects, followed by service probes and the remaining sections. VPS 侧边栏优先排列总览 → Docker 详情 → Compose 项目，再接服务探测等其他功能。
 
-Compose new-project forms include an inline directory-only elFinder picker. Browse folders, create a folder using the existing Core `files.action` mkdir task, then choose the current directory to fill the working-directory field. Files and unrelated file operations are omitted. Directory selection/cancellation preserves the project/YAML draft and Compose URL and returns focus to the browse button. The full file-manager screen retains its existing capabilities.
+Compose new-project forms include a directory-only shadcn dialog. Browse folders, create a folder using the existing Core `files.action` mkdir task, then choose the current directory to fill the working-directory field. Files and unrelated file operations are omitted. Directory selection/cancellation preserves the project/YAML draft and Compose URL and returns focus to the browse button. The full file-manager screen retains its existing capabilities.
 
-Compose 新建项目表单内置仅目录的 elFinder 选择器：浏览文件夹，通过现有 Core `files.action` mkdir 任务新建文件夹，再将当前目录回填工作目录。省去文件和其他文件操作；选择或取消保留项目／YAML 草稿及 Compose 页面地址，并恢复浏览按钮焦点。完整文件管理页面继续提供原有能力。
+Compose 新建项目表单内置仅目录的 shadcn 弹窗：浏览文件夹，通过现有 Core `files.action` mkdir 任务新建文件夹，再将当前目录回填工作目录。省去文件和其他文件操作；选择或取消保留项目／YAML 草稿及 Compose 页面地址，并恢复浏览按钮焦点。完整文件管理页面继续提供原有能力。
 
 Shared form dropdowns, including country/icon choices and filters, render through the installed UIArc Dropdown Menu. Selection fields use radio menu items and keep native form value/change/required validation, numeric values, disabled fieldsets and local browser settings. UIArc supplies keyboard navigation, typeahead, pointer highlighting and transitions. Portals inherit product tokens and remain inside native dialogs when necessary; unmount removes private menus immediately.
 

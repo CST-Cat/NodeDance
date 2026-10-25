@@ -21,7 +21,7 @@
   flex-direction: column;
 }
 .ui-dialog[data-v-b0bbf977]::backdrop {
-  background: rgba(24, 23, 21, 0.65);
+  background: rgb(20 20 19 / .24);
 }
 /* Shared header row: title plus the one close affordance every dialog has. */
 .ui-dialog-head[data-v-b0bbf977] {
@@ -214,26 +214,4 @@ footer[data-v-b0bbf977] {
 
 .ui-dialog.ui-dialog-wide[data-v-b0bbf977] {
   width: min(880px, calc(100% - 32px));
-}
-
-/* The file dialog mounts elFinder lazily; a content-driven height would make
-   the dialog grow from an empty shell to its final size. The size is derived
-   from the viewport (never a fixed pixel value), so on any screen the dialog
-   opens at that screen's final size and the manager streams in inside it. */
-.ui-dialog.vps-files-dialog[data-v-b0bbf977] {
-  height: min(72dvh, calc(100dvh - 64px));
-}
-.ui-dialog.vps-files-dialog[data-v-b0bbf977] .node-files {
-  flex: 1 1 auto;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.ui-dialog.vps-files-dialog[data-v-b0bbf977] .elfinder-host {
-  flex: 1 1 auto;
-  min-height: 0;
-}
-.ui-dialog.vps-files-dialog[data-v-b0bbf977] .form-actions {
-  flex: none;
-  margin-top: 12px;
 }

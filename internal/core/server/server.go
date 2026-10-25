@@ -678,6 +678,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if r.URL.Path == "/vendor/elfinder-grid/" {
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("Content-Security-Policy", strings.Replace(w.Header().Get("Content-Security-Policy"), "frame-ancestors 'none'", "frame-ancestors 'self'", 1))
+	}
 	s.assets.ServeHTTP(w, r)
 }
 

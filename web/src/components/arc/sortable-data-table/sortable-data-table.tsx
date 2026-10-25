@@ -6,6 +6,7 @@ import { ArrowUp } from "lucide-react";
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, type Transition, type Variants } from "motion/react";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./sortable-data-table.module.css";
+import { ScrollArea } from "../scroll-area/scroll-area";
 
 export type SortDirection = "asc" | "desc";
 export type SortState = { key: string; direction: SortDirection };
@@ -29,6 +30,8 @@ export type SortableDataTableProps<T extends Record<string, unknown>> = {
   emptyMessage?: string;
   /** Sort applied on the first render. */
   defaultSort?: SortState;
+  sort?: SortState | null;
+  fillHeight?: boolean;
   onSortChange?: (sort: SortState) => void;
   /** Adds a checkbox column, row click selection, and a count line with a clear action. */
   selectable?: boolean;
@@ -123,12 +126,13 @@ function SelectBox({ checked, mixed = false, label, nav, reduced, onToggle, inpu
   </label>;
 }
 
-export function SortableDataTable<T extends Record<string, unknown>>({ rows, columns, rowKey, caption = "Data table", emptyMessage = "No rows to show", defaultSort, onSortChange, selectable = false, selectedKeys, defaultSelectedKeys, onSelectionChange, itemName = { one: "row", other: "rows" } }: SortableDataTableProps<T>) {
+export function SortableDataTable<T extends Record<string, unknown>>({ rows, columns, rowKey, caption = "Data table", emptyMessage = "No rows to show", defaultSort, sort: controlledSort, fillHeight = false, onSortChange, selectable = false, selectedKeys, defaultSelectedKeys, onSelectionChange, itemName = { one: "row", other: "rows" } }: SortableDataTableProps<T>) {
   const reduced = useReducedMotion() ?? false;
   const tableRef = useRef<HTMLTableElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const anchor = useRef<string | null>(null);
-  const [sort, setSort] = useState<SortState | null>(defaultSort ?? null);
+  const [internalSort, setSort] = useState<SortState | null>(defaultSort ?? null);
+  const sort = controlledSort !== undefined ? controlledSort : internalSort;
   const [announcement, setAnnouncement] = useState("");
   const [internalSelection, setInternalSelection] = useState<string[]>(defaultSelectedKeys ?? []);
   const selection = useMemo(() => new Set(selectedKeys ?? internalSelection), [internalSelection, selectedKeys]);
@@ -266,8 +270,7 @@ export function SortableDataTable<T extends Record<string, unknown>>({ rows, col
     next.focus();
   }
 
-  return <div className={styles.wrapper} onKeyDown={onKeyDown}>
-    <div className={styles.scroller}>
+  const content = <div className={styles.scroller}>
       {band ? <span className={styles.band} style={{ left: band.left, width: band.width }} aria-hidden="true" /> : null}
       <table ref={tableRef} role="table" className={styles.table} data-fixed={widths ? "" : undefined} data-selectable={selectable || undefined}>
         <caption>{caption}</caption>
@@ -296,7 +299,9 @@ export function SortableDataTable<T extends Record<string, unknown>>({ rows, col
           </motion.tr>;
         }) : <tr role="row"><td role="cell" className={styles.empty} colSpan={columns.length + (selectable ? 1 : 0)}>{emptyMessage}</td></tr>}</tbody>
       </table>
-    </div>
+    </div>;
+  return <div className={[styles.wrapper, fillHeight ? styles.fill : ""].filter(Boolean).join(" ")} onKeyDown={onKeyDown}>
+    {fillHeight ? <ScrollArea className={styles.scrollArea} fade={0}>{content}</ScrollArea> : content}
     {selectable ? <div className={styles.footer}>
       <span className={styles.srOnly}>{shownCount} {noun}</span>
       <span className={styles.count} data-active={selectedCount > 0 || undefined} aria-hidden="true">

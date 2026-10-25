@@ -746,13 +746,8 @@ export default function VpsCard(input: Props) {
               ) : null}
             </nav>
           </article>
-          {filesDialogOpen.value ? <UiDialog open
-            title={`${t("m.39932f24fe11")} · ${title.value}`}
-            className="ui-dialog-wide vps-files-dialog"
-            onClose={() => { void closeFiles(); }}>
-            <NodeFiles nodeId={props.node.nodeId} nodeName={title.value} path={filesPath.value}
-              onPathChange={(path: string) => { filesPath.value = path; }} />
-          </UiDialog> : null}
+          {filesDialogOpen.value ? <NodeFiles dialog nodeId={props.node.nodeId} nodeName={title.value} path={filesPath.value}
+            onClose={() => { void closeFiles(); }} onPathChange={(path: string) => { filesPath.value = path; }} /> : null}
           {dockerDialogOpen.value ? <UiDialog open
             title={`${t("m.eee901e4cc16")} · ${title.value}`}
             className="ui-dialog-wide vps-docker-dialog"

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" role="img" aria-label="Box 网盘">
+<title>Box 网盘</title>
+<path d="M24 5.6L41 14.9V33.1L24 42.4L7 33.1V14.9Z" fill="#F5F4ED" stroke="#3D3D3A" stroke-width="1.8" stroke-linejoin="round"/>
+ <path d="M7.4 15L24 24.3L40.6 15M24 24.5V42" fill="none" stroke="#3D3D3A" stroke-width="1.7" stroke-linejoin="round"/>
+ <path d="M16.4 10L32.9 19.4" stroke="#73726C" stroke-width="1.5" stroke-linecap="round"/>
+ <path d="M29.5 26.4L35.1 23.2V31L29.5 34.1Z" fill="#F5E7E0" stroke="#D97757" stroke-width="1.5" stroke-linejoin="round"/>
+</svg>
