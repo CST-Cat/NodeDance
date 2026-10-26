@@ -25,7 +25,7 @@ import { Button as FileButton } from "./ui/button";
 import { FileAddressBreadcrumb, FileNameText } from "./FilePath";
 import { CopyButton } from "./arc/copy-button/copy-button";
 import FileImageEditor from "./FileImageEditor";
-import ElFinderGrid, { type GridAction } from "./ElFinderGrid";
+import ElFinderCommands, { type FileCommand, type FileCommands } from "./ElFinderCommands";
 import { Card } from "./ui/card";
 import "./NodeFiles.css";
 import FileShares from "./FileShares";
@@ -72,7 +72,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
   const [searchOpen, setSearchOpen] = useState(false);
  const [sharing, setSharing] = useState<string[]>();
   const [searchPicker, setSearchPicker] = useState<{ choose: (path: string) => void }>();
-  const [page, setPage] = useState(1), [view, setView] = useState("list"), [gridMounted, setGridMounted] = useState(false), [showHidden, setShowHidden] = useState(true);
+  const [page, setPage] = useState(1), [view, setView] = useState("list"), [showHidden, setShowHidden] = useState(true);
   const viewId = useId();
   const [paneWidth, setPaneWidth] = useState(600);
   const filePane = useRef<HTMLDivElement>(null);
@@ -222,33 +222,33 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
     if (!manager || !clipboard) return;
     await execute(async () => { for (const source of clipboard.paths) await manager.action({ action: clipboard.cut ? "move" : "copy", path: source, newPath: fileJoin(destination, source.split("/").pop()!) }); if (clipboard.cut) setClipboard(undefined); });
   }
-  function gridAction(event: GridAction) {
+  function dispatchFileCommand(event: FileCommand) {
     const files = entries.filter(row => event.paths.includes(row.path));
     if (busy || loading) return;
     if (event.action === "open" && files[0]) void openFile(files[0]);
     else if (["copy", "cut"].includes(event.action)) setClipboard({ paths: event.paths, cut: event.action === "cut" });
-    else if (event.action === "paste") {
-      if (event.paths.length && manager) void execute(async () => { for (const source of event.paths) await manager.action({ action: event.cut ? "move" : "copy", path: source, newPath: fileJoin(event.destination ?? path, source.split("/").pop()!) }); });
-      else void paste(event.destination ?? path);
-    } else if (event.action === "reload") void refresh();
+    else if (event.action === "paste") void paste();
+    else if (event.action === "reload") void refresh();
     else if (event.action === "download") download(files);
  else if (event.action === "share") setSharing(files.map(file => file.path));
     else if (files.length) { const kind = event.action === "quicklook" ? "preview" : event.action === "rm" ? "delete" : event.action; if (["preview", "edit", "rename", "delete", "archive", "extract", "info"].includes(kind)) void openModal(kind, files); }
   }
+  const commands = useRef<FileCommands>(null);
+  const command = (action: string, files: NodeFileEntry[]) => commands.current?.execute(action, files.map(file => file.path));
   const menuItems = (files: NodeFileEntry[]): DropdownItem[] => [
-    { label: f("open"), disabled: files.length !== 1, onSelect: () => { void openFile(files[0]!); } },
+    { label: f("open"), disabled: files.length !== 1, onSelect: () => command("open", files) },
     ...(!directoryPicker ? [
-      { label: f("edit"), disabled: files.length !== 1 || files[0]?.kind !== "file", onSelect: () => { void openModal("edit", files); } },
-      { label: f("download"), disabled: files.some(row => row.kind !== "file") || !files.length, onSelect: () => download(files) },
-      { label: t("shares.share"), disabled: !files.length, onSelect: () => setSharing(files.map(file => file.path)) },
-      { label: f("copy"), disabled: !files.length, onSelect: () => setClipboard({ paths: files.map(row => row.path), cut: false }) },
-      { label: f("cut"), disabled: !files.length, onSelect: () => setClipboard({ paths: files.map(row => row.path), cut: true }) },
-      { label: f("rename"), disabled: files.length !== 1, onSelect: () => { void openModal("rename", files); } },
-      { label: f("archive"), disabled: !files.length, onSelect: () => { void openModal("archive", files); } },
-      { label: f("extract"), disabled: files.length !== 1 || !/\.(zip|tar|gz|tgz|bz2|tbz2)$/i.test(files[0]?.name ?? ""), onSelect: () => { void openModal("extract", files); } },
-      { label: f("delete"), destructive: true, disabled: !files.length, onSelect: () => { void openModal("delete", files); } },
+      { label: f("edit"), disabled: files.length !== 1 || files[0]?.kind !== "file", onSelect: () => command("edit", files) },
+      { label: f("download"), disabled: files.some(row => row.kind !== "file") || !files.length, onSelect: () => command("download", files) },
+      { label: t("shares.share"), disabled: !files.length, onSelect: () => command("share", files) },
+      { label: f("copy"), disabled: !files.length, onSelect: () => command("copy", files) },
+      { label: f("cut"), disabled: !files.length, onSelect: () => command("cut", files) },
+      { label: f("rename"), disabled: files.length !== 1, onSelect: () => command("rename", files) },
+      { label: f("archive"), disabled: !files.length, onSelect: () => command("archive", files) },
+      { label: f("extract"), disabled: files.length !== 1 || !/\.(zip|tar|gz|tgz|bz2|tbz2)$/i.test(files[0]?.name ?? ""), onSelect: () => command("extract", files) },
+      { label: f("delete"), destructive: true, disabled: !files.length, onSelect: () => command("rm", files) },
     ] : []),
-    { label: f("info"), disabled: files.length !== 1, onSelect: () => { void openModal("info", files); } },
+    { label: f("info"), disabled: files.length !== 1, onSelect: () => command("info", files) },
   ];
   async function submit(closeAfter = false) {
     if (!modal || !manager) return;
@@ -275,7 +275,23 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
       if (event.key.toLowerCase() === "v" && clipboard) { event.preventDefault(); event.stopPropagation(); void paste(); }
     }
   }
-  const fileName = (row: NodeFileEntry) => <div className="file-browser-file-open" draggable={!directoryPicker && !busy} onDragStart={event => { event.dataTransfer.setData("application/x-nodedance-files", JSON.stringify({ nodeId, paths: selection.includes(row.path) ? selection : [row.path] })); event.dataTransfer.effectAllowed = "copyMove"; }} onDragOver={event => { if (row.kind === "directory" && !directoryPicker && event.dataTransfer.types.includes("application/x-nodedance-files")) event.preventDefault(); }} onDrop={event => { event.preventDefault(); if (!manager || directoryPicker || row.kind !== "directory") return; try { const payload = JSON.parse(event.dataTransfer.getData("application/x-nodedance-files")); if (payload.nodeId !== nodeId || !Array.isArray(payload.paths)) return; void execute(async () => { for (const source of payload.paths) await manager.action({ action: event.ctrlKey || event.metaKey ? "copy" : "move", path: source, newPath: fileJoin(row.path, source.split("/").pop()!) }); }); } catch (reason) { setError(String(reason)); } }}><ContextMenu><ContextMenuTrigger asChild><FileButton type="button" variant="ghost" size="sm" className="file-browser-name-button" onClick={() => void openFile(row)} data-file-name={row.name} data-file-path={row.path} aria-label={row.name} disabled={row.kind !== "file" && row.kind !== "directory"}>{row.kind === "directory" ? <Folder className="size-4" /> : <File className="size-4" />}<FileNameText name={row.name} /></FileButton></ContextMenuTrigger><ContextMenuContent aria-label={f("actions")} className="file-context-menu registry-controls">{menuItems([row]).map(item => <ContextMenuItem key={item.label} disabled={item.disabled} variant={item.destructive ? "destructive" : "default"} onSelect={item.onSelect}>{item.label}</ContextMenuItem>)}</ContextMenuContent></ContextMenu></div>;
+  const selectionAnchor = useRef<string | undefined>(undefined);
+  function selectGrid(row: NodeFileEntry, event: React.MouseEvent) {
+    if (event.shiftKey && selectionAnchor.current) {
+      const from = pageRows.findIndex(item => item.path === selectionAnchor.current), to = pageRows.indexOf(row);
+      changeSelection(pageRows.slice(Math.max(0, Math.min(from, to)), Math.max(from, to) + 1).map(item => item.path));
+    } else { changeSelection(event.ctrlKey || event.metaKey ? selection.includes(row.path) ? selection.filter(path => path !== row.path) : [...selection, row.path] : [row.path]); selectionAnchor.current = row.path; }
+  }
+  function moveGridFocus(event: React.KeyboardEvent<HTMLButtonElement>) {
+    const buttons = Array.from(root.current?.querySelectorAll<HTMLButtonElement>('.file-browser-grid [data-file-path]') ?? []), current = buttons.indexOf(event.currentTarget);
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    event.preventDefault();
+    const columns = buttons.filter(button => button.getBoundingClientRect().top === buttons[0]?.getBoundingClientRect().top).length;
+    const next = buttons[current + ({ ArrowLeft: -1, ArrowRight: 1, ArrowUp: -columns, ArrowDown: columns }[event.key] ?? 0)];
+    if (next) { next.focus(); if (!event.ctrlKey && !event.metaKey) changeSelection([next.dataset.filePath!]); }
+  }
+  const iconOffset = (row: NodeFileEntry) => row.kind === "directory" ? 50 : /\.(png|jpe?g|webp|gif|bmp|svg)$/i.test(row.name) ? 250 : /\.(mp3|ogg|wav)$/i.test(row.name) ? 300 : /\.(mp4|webm)$/i.test(row.name) ? 350 : /\.(txt|md|log|json|yaml|yml|conf|sh)$/i.test(row.name) ? 200 : 150;
+  const fileName = (row: NodeFileEntry, grid = false) => <div className="file-browser-file-open" draggable={!directoryPicker && !busy} onDragStart={event => { event.dataTransfer.setData("application/x-nodedance-files", JSON.stringify({ nodeId, paths: selection.includes(row.path) ? selection : [row.path] })); event.dataTransfer.effectAllowed = "copyMove"; }} onDragOver={event => { if (row.kind === "directory" && !directoryPicker && event.dataTransfer.types.includes("application/x-nodedance-files")) event.preventDefault(); }} onDrop={event => { event.preventDefault(); if (!manager || directoryPicker || row.kind !== "directory") return; try { const payload = JSON.parse(event.dataTransfer.getData("application/x-nodedance-files")); if (payload.nodeId !== nodeId || !Array.isArray(payload.paths)) return; void execute(async () => { for (const source of payload.paths) await manager.action({ action: event.ctrlKey || event.metaKey ? "copy" : "move", path: source, newPath: fileJoin(row.path, source.split("/").pop()!) }); }); } catch (reason) { setError(String(reason)); } }}><ContextMenu><ContextMenuTrigger asChild><FileButton type="button" variant={grid && selection.includes(row.path) ? "secondary" : "ghost"} size="sm" className={`file-browser-name-button ${grid ? "file-browser-grid-button h-auto flex-col py-3 w-full" : ""}`} onContextMenu={() => { if (!selection.includes(row.path)) setSelection([row.path]); }} onKeyDown={grid ? event => { if (event.key === "Enter") { event.preventDefault(); command("open", [row]); } else moveGridFocus(event); } : undefined} onClick={event => grid ? selectGrid(row, event) : command("open", [row])} onDoubleClick={grid ? () => command("open", [row]) : undefined} aria-pressed={grid ? selection.includes(row.path) : undefined} title={grid ? row.name : undefined} data-file-name={row.name} data-file-path={row.path} aria-label={row.name} disabled={busy || loading || (row.kind !== "file" && row.kind !== "directory")}>{grid ? <span className="file-grid-icon" aria-hidden="true" style={{ backgroundPosition: `0 -${iconOffset(row)}px` }} /> : row.kind === "directory" ? <Folder className="size-4" /> : <File className="size-4" />}<FileNameText name={row.name} /></FileButton></ContextMenuTrigger><ContextMenuContent aria-label={f("actions")} className="file-context-menu registry-controls">{menuItems(selection.includes(row.path) ? selected : [row]).map(item => <ContextMenuItem key={item.label} disabled={item.disabled} variant={item.destructive ? "destructive" : "default"} onSelect={item.onSelect}>{item.label}</ContextMenuItem>)}</ContextMenuContent></ContextMenu></div>;
   const modalContainer = portal;
   const body = <div ref={root} className={`file-browser ${fullscreen ? "file-browser-fullscreen" : ""}`} data-testid="node-files" aria-label={nodeName} aria-busy={loading} onKeyDown={keydown}>
     <div className="file-browser-toolbar" role="toolbar" aria-label={f("title")}>
@@ -287,7 +303,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
       {directoryPicker ? <Button type="button" size="sm" variant="secondary" disabled={!manager || busy} onClick={() => void openModal("mkdir", [])}>{f("mkdir")}</Button> : <DropdownMenu label={t("files.create.new")} icon={<Plus size={16} />} disabled={!manager || busy} portalContainer={portal} items={[{ label: f("mkdir"), onSelect: () => { void openModal("mkdir", []); } }, ...([['txt', 'new.txt'], ['sh', 'script.sh'], ['yaml', 'compose.yaml'], ['json', 'config.json'], ['toml', 'config.toml'], ['ini', 'config.ini'], ['conf', 'server.conf'], ['env', '.env'], ['service', 'app.service'], ['dockerfile', 'Dockerfile']] as const).map(([kind, name]) => ({ label: t(`files.create.${kind}`), onSelect: () => { void openModal("mkfile", [], name); } })), { label: t("files.create.custom"), onSelect: () => { void openModal("mkfile", []); } }]} />}
       {!directoryPicker && <><Button type="button" size="sm" variant="secondary" aria-label={f("upload")} title={f("upload")} disabled={!manager || busy} onClick={() => void openModal("upload", [])}><Upload size={16} /></Button><Button variant="secondary" size="sm" aria-label={t("shares.manage")} title={t("shares.manage")} onClick={() => setSharing([])}><Share2 size={16} /></Button><DropdownMenu label={f("actions")} items={menuItems(selected)} disabled={busy} portalContainer={portal} /><Button type="button" size="sm" variant="secondary" disabled={!clipboard || busy} onClick={() => void paste()}>{f("paste")}</Button></>}
       <div className="file-browser-view-controls"><DropdownMenu label={f("view")} portalContainer={portal} items={[{ label: f("selectAll"), onSelect: () => setSelection(visible.map(row => row.path)) }, { label: f("selectNone"), onSelect: () => setSelection([]) }, { label: f("invert"), onSelect: () => setSelection(visible.filter(row => !selection.includes(row.path)).map(row => row.path)) }, { label: f("hidden"), onSelect: () => setShowHidden(value => !value) }, ...(["name", "size", "modifiedAt", "mode"] as const).map(key => ({ label: `${f("sortBy")} ${f(key === "modifiedAt" ? "modified" : key === "mode" ? "permissions" : key)}`, onSelect: () => { setSort(old => ({ key, direction: old.key === key && old.direction === "asc" ? "desc" : "asc" })); setPage(1); } })), { label: f("help"), onSelect: () => { void openModal("help", []); } }]} />
-      {!directoryPicker && <Tabs className="product-arc arc-ui file-browser-view-switch" data-native-controls value={view} onValueChange={value => { setView(value); if (value === "grid") setGridMounted(true); }}><TabsList aria-label={f("view")} onPointerDownCapture={event => { event.currentTarget.dataset.focusSource = "pointer"; }} onKeyDownCapture={event => { delete event.currentTarget.dataset.focusSource; }} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) delete event.currentTarget.dataset.focusSource; }}>{["list", "grid"].map(value => <TabsTrigger key={value} value={value} id={`${viewId}-${value}`} aria-controls={`${viewId}-panel`}>{f(value)}</TabsTrigger>)}</TabsList></Tabs>}</div>
+      {!directoryPicker && <Tabs className="product-arc arc-ui file-browser-view-switch" data-native-controls value={view} onValueChange={setView}><TabsList aria-label={f("view")} onPointerDownCapture={event => { event.currentTarget.dataset.focusSource = "pointer"; }} onKeyDownCapture={event => { delete event.currentTarget.dataset.focusSource; }} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) delete event.currentTarget.dataset.focusSource; }}>{["list", "grid"].map(value => <TabsTrigger key={value} value={value} id={`${viewId}-${value}`} aria-controls={`${viewId}-panel`}>{f(value)}</TabsTrigger>)}</TabsList></Tabs>}</div>
       <Button type="button" size="sm" variant="ghost" aria-label={f("fullscreen")} onClick={() => setFullscreen(value => !value)}><Maximize size={16} /></Button>
     </div>
     {editingPath ? <form ref={addressForm} className="file-browser-location" onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setEditingPath(false); }} onSubmit={event => { event.preventDefault(); event.stopPropagation(); if (pathDraft) { void navigate(pathDraft); finishPathEditing(); } }}>
@@ -307,12 +323,14 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
           { key: "size", label: f("size"), sortable: true, numeric: true, render: (value, row) => row.kind === "directory" ? "—" : size(Number(value)) },
           { key: "modifiedAt", label: f("modified"), sortable: true, render: value => new Date(Number(value) / 1e6).toLocaleString(locale.value) },
           { key: "mode", label: f("permissions"), render: value => Number(value).toString(8) },
-        ] satisfies DataColumn<NodeFileEntry>[]).filter(column => column.key === "name" || (column.key === "size" ? paneWidth >= 340 : paneWidth >= 640))} /> : null}{gridMounted && <ElFinderGrid path={path} rows={pageRows} selection={selection} busy={busy || loading || !!modal || discard} canPaste={!!clipboard} hidden={view !== "grid"} onSelection={changeSelection} onAction={gridAction} onEscape={() => { if (modal) closeModal(); else if (fullscreen) setFullscreen(false); }} />}
+        ] satisfies DataColumn<NodeFileEntry>[]).filter(column => column.key === "name" || (column.key === "size" ? paneWidth >= 340 : paneWidth >= 640))} /> : null}{view === "grid" && <div className="file-browser-grid" aria-label={f("grid")}>{pageRows.length ? pageRows.map(row => <div key={row.path}>{fileName(row, true)}</div>) : <p>{loading ? t("guest.loading") : f("empty")}</p>}</div>}
+
 
       </ScrollArea>
     </Card>
     <footer ref={footer} className="file-browser-footer"><span>{visible.length} {f("items")} · {selection.length} {f("selected")}</span><Pagination page={page} pageCount={Math.ceil(visible.length / 50)} onPageChange={setPage} label={f("pages")} />{directoryPicker && onChoose && <Button type="button" disabled={loading || !!error} onClick={() => onChoose(path)} data-testid="compose-directory-use">{t("compose.useDirectory")}</Button>}</footer>
     {observations.length > 0 && <section className="file-browser-tasks" aria-label={f("tasks")}>{observations.map(item => <div key={item.taskId}><span>{item.path} · {item.status}</span><Button type="button" size="sm" variant="secondary" onClick={() => { void execute(() => manager!.observe(item.taskId)); }}>{f("observe")}</Button><Button type="button" size="sm" variant="secondary" onClick={() => { void execute(() => manager!.cancel(item.taskId)); }}>{f("cancelTask")}</Button><Button type="button" size="sm" variant="ghost" onClick={() => manager!.forget(item.taskId)}>{t("operations.forget")}</Button></div>)}</section>}
+    {manager && <ElFinderCommands ref={commands} path={path} rows={entries} onAction={dispatchFileCommand} />}
     {sharing && <FileShares nodeId={nodeId} paths={sharing} container={modalContainer} onClose={() => setSharing(undefined)} />}
     {manager && !directoryPicker && <FileSearchDialog open={searchOpen} onOpenChange={setSearchOpen} manager={manager} path={path} portal={modalContainer} onOpenFile={row => { void openFile(row); }} onReveal={row => { void revealSearchResult(row); }} onAction={(action, row) => { if (action === "download") download([row]); else void openModal(action, [row]); }} onPickDirectory={choose => setSearchPicker({ choose })}>{searchPicker && <NodeFiles nodeId={nodeId} nodeName={nodeName} path={path} directoryPicker dialog onClose={() => setSearchPicker(undefined)} onChoose={chosen => { searchPicker.choose(chosen); setSearchPicker(undefined); }} />}</FileSearchDialog>}
     <Dialog open={!!modal} onOpenChange={open => { if (!open) closeModal(); }}><DialogContent container={modalContainer} onCloseAutoFocus={event => { event.preventDefault(); const target = modalReturn.current?.isConnected && !modalReturn.current.matches(":disabled") ? modalReturn.current : root.current?.querySelector<HTMLElement>("button:not(:disabled)"); target?.focus({ preventScroll: true }); }} title={modal ? f(modal.kind) : ""} className={modal?.kind === "edit" || modal?.kind === "preview" ? "file-editor-dialog" : ""} onEscapeKeyDown={event => { if (busy || (event.target instanceof Element && event.target.closest(".cm-editor")?.querySelector(".cm-search, .cm-tooltip-autocomplete"))) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>

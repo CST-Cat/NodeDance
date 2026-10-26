@@ -41,7 +41,7 @@ export default function FileShares({ nodeId, paths, container, onClose }: { node
   async function showQR() { if (!current) return; await run(async () => { const QR = await import("qrcode"); setQr(await QR.toDataURL(link(current), { width: 240, margin: 2, color: { dark: "#000000", light: "#ffffff" } })); }); }
   const active = current && !current.revoked;
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}><DialogContent container={container} title={s("title")} className="file-shares-dialog"><div className="file-shares">
-    <Tabs value={tab} onValueChange={setTab}><TabsList><TabsTrigger value="shares">{s("title")}</TabsTrigger><TabsTrigger value="requests">{s("requests")}</TabsTrigger></TabsList></Tabs>
+    <Tabs className="product-arc arc-ui" data-native-controls value={tab} onValueChange={setTab}><TabsList><TabsTrigger value="shares">{s("title")}</TabsTrigger><TabsTrigger value="requests">{s("requests")}</TabsTrigger></TabsList></Tabs>
  {tab === "requests" ? <FileRequests /> : <>
  {error && <Alert tone="danger" title={error} />}
     <Button variant="secondary" onClick={() => {setCreating(true);setUploading(true);setCurrent(undefined);intent.current=shareIntent();}}>{s("upload")}</Button>

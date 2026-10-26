@@ -23,12 +23,10 @@ for(const [name,hash]of Object.entries(editorManifest.files))if(crypto.createHas
 for(const info of editorManifest.packages)packages.set(info.name+'@'+info.version,{info,notices:[fs.readFileSync(path.join(editors,info.name+'-LICENSE'),'utf8')]})
 const finder=path.resolve(__dirname,'../public/vendor/elfinder'),finderManifest=JSON.parse(fs.readFileSync(path.join(finder,'manifest.json'),'utf8'))
 packages.set('elFinder@'+finderManifest.version,{info:finderManifest,notices:[fs.readFileSync(path.join(finder,'LICENSE.md'),'utf8')]})
-const grid=path.resolve(__dirname,'../public/vendor/elfinder-grid')
-for(const [source,target]of [['jquery/dist/jquery.min.js','jquery.min.js'],['jquery-ui-dist/jquery-ui.min.js','jquery-ui.min.js'],['jquery-ui-dist/jquery-ui.min.css','jquery-ui.min.css']])if(!fs.readFileSync(path.resolve(__dirname,'../node_modules',source)).equals(fs.readFileSync(path.join(grid,target))))throw Error('Vendored grid dependency differs from lock: '+target)
+const grid=path.resolve(__dirname,'../public/vendor/elfinder-commands')
+for(const [source,target]of [['jquery/dist/jquery.min.js','jquery.min.js'],['jquery-ui-dist/jquery-ui.min.js','jquery-ui.min.js']])if(!fs.readFileSync(path.resolve(__dirname,'../node_modules',source)).equals(fs.readFileSync(path.join(grid,target))))throw Error('Vendored command dependency differs from lock: '+target)
 const text='NodeDance file-manager third-party notices\nGenerated from installed, locked dependencies.\n\n'+[...packages].sort(([a],[b])=>a.localeCompare(b)).map(([name,{info,notices}])=>name+'\nLicense: '+JSON.stringify(info.license)+'\n'+(notices.join('\n').replace(/\r\n/g,'\n')||'See the package source for its license notice.')+'\n').join('\n')
 const output=path.resolve(__dirname,'../public/licenses/file-manager-notices.txt')
 if(process.argv.includes('--check')){if(!fs.existsSync(output)||fs.readFileSync(output,'utf8')!==text)throw Error('File manager license notices need regeneration')}
 else{fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,text)}
 console.log(`File manager notices: ${packages.size} packages`)
-
-for(const name of fs.readdirSync(path.resolve(__dirname,"../node_modules/jquery-ui-dist/images")))if(!fs.readFileSync(path.resolve(__dirname,"../node_modules/jquery-ui-dist/images",name)).equals(fs.readFileSync(path.join(grid,"images",name))))throw Error("Vendored grid image differs from lock: "+name)

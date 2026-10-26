@@ -1,6 +1,6 @@
 # File sharing / 文件分享
 
-NodeDance embeds file sharing in its existing file manager and Core. List and native grid right-click menus expose **Share** for files and directories; **Manage shares** opens the same workflow. Direct file uploads, clipboard files, expiry, download limits, password protection, direct links, QR codes, system/email sharing, editing, content replacement, owner downloads, revocation and invitation-only file collection use the current account and operation contract. There is no separate Gokapi login, process, service or installation.
+NodeDance embeds file sharing in its existing file manager and Core. The shared list/grid right-click menu expose **Share** for files and directories; **Manage shares** opens the same workflow. Direct file uploads, clipboard files, expiry, download limits, password protection, direct links, QR codes, system/email sharing, editing, content replacement, owner downloads, revocation and invitation-only file collection use the current account and operation contract. There is no separate Gokapi login, process, service or installation.
 
 文件和文件夹的右键菜单直接提供「分享」，「管理分享」集中查看和修改分享、上传新文件及收集文件。文件夹保留目录层级，接收方浏览目录并逐文件下载；不引导压缩。到期或撤销只影响分享副本，不删除节点源文件。
 

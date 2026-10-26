@@ -1,6 +1,0 @@
-html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
-#grid { width: 100%; height: 100%; box-sizing: border-box; }
-.elfinder-cwd-wrapper { overflow-x: hidden; scrollbar-width: thin; scrollbar-color: #c9c6bd transparent; }
-.elfinder-cwd-wrapper::-webkit-scrollbar { width: 8px; }
-.elfinder-cwd-wrapper::-webkit-scrollbar-track { margin: 8px; }
-.elfinder-cwd-wrapper::-webkit-scrollbar-thumb { border-radius: 999px; background: #c9c6bd; }
