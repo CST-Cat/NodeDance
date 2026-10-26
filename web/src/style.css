@@ -2202,6 +2202,8 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
 }
 
 @theme inline {
+  --color-primary: var(--action-bg);
+  --color-primary-foreground: var(--action-text);
   --color-background: var(--canvas);
   --color-foreground: var(--text);
   --color-popover: var(--surface-raised);

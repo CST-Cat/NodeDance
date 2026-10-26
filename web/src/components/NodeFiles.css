@@ -1,6 +1,6 @@
 .file-browser-boundary, .file-browser, .file-browser-list, .file-browser-portals { min-width: 0; }
 .file-browser { display: flex; flex-direction: column; gap: 12px; }
-.file-browser-toolbar, .file-browser-footer, .file-dialog-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.file-browser-footer, .file-dialog-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .file-browser-location { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: var(--control-height-md, 44px); }
 .file-browser-breadcrumb { position: relative; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .file-browser-breadcrumb > nav { min-width: 0; overflow: hidden; flex: 0 1 auto; }
@@ -55,10 +55,6 @@
 .file-code-panel { display: grid; gap: 8px; min-width: 0; }
 .file-code-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.file-browser-view-switch [role="tablist"][data-focus-source="pointer"] { --focus-outline: transparent; }
-
-.file-browser-view-controls { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
-
 .file-search-dialog { width: min(1100px, calc(100% - 32px)); }
 .file-search { display: flex; flex-direction: column; gap: 12px; height: min(660px, 70dvh); min-height: 320px; min-width: 0; }
 .file-search-query { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(110px, 150px); gap: 8px; align-items: center; }
@@ -94,3 +90,5 @@
 .file-info-path .file-full-path { flex: 0 1 auto; min-width: 0; }
 .file-browser-tree > [role="tree"] > [data-scrollbars] { margin-inline: -8px; }
 .file-browser-tree > [role="tree"] > [data-scrollbars] > :first-child { padding-inline: 8px; }
+
+.file-browser-toolbar-viewport { min-width: 0; overflow-x: auto; padding: 4px; }

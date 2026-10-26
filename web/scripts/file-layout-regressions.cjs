@@ -4,6 +4,28 @@ module.exports=async({page,context,base,browserUI,artifacts,longGridName})=>{
  assert.equal((await create.textContent()).trim(),'','New keeps its accessible name with no visible word')
  assert.equal(await create.locator('svg').count(),2,'Existing plus and dropdown arrow remain')
  await create.click();assert.equal(await page.getByRole('menuitem').count(),12);await page.keyboard.press('Escape')
+ assert.equal(await toolbar.getAttribute('data-slot'),'button-group','Toolbar is the installed Button Group')
+ for(const width of [1440,390]){
+  await page.setViewportSize({width,height:844})
+  const buttons=toolbar.getByRole('button');assert.equal(await buttons.count(),14)
+  const geometry=await buttons.evaluateAll(items=>items.map(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return {x:r.x,right:r.right,y:r.y,height:r.height,left:s.borderTopLeftRadius,rightRadius:s.borderTopRightRadius}}))
+  for(let i=1;i<geometry.length;i++){assert.ok(Math.abs(geometry[i].x-geometry[i-1].right)<1,'Toolbar controls join without gaps');assert.ok(Math.abs(geometry[i].y-geometry[0].y)<1&&Math.abs(geometry[i].height-geometry[0].height)<1,'All visible controls align');assert.equal(geometry[i].left,'0px')}
+  assert.notEqual(geometry[0].left,'0px');assert.notEqual(geometry.at(-1).rightRadius,'0px')
+  assert.ok(await browserUI.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'Narrow toolbar scrolls within the page')
+  await create.focus();await create.press('ArrowDown');await page.getByRole('menuitem',{name:'New folder',exact:true}).waitFor();await page.keyboard.press('Escape');assert.ok(await create.evaluate(el=>el===document.activeElement),'Dropdown returns keyboard focus to its trigger')
+  for(const name of ['Actions','View']){await toolbar.getByRole('button',{name,exact:true}).click();assert.ok(await page.getByRole('menuitem').count()>0);await page.keyboard.press('Escape')}
+  await toolbar.getByRole('button',{name:'Grid',exact:true}).click();await browserUI.locator('.file-browser-grid').waitFor();assert.equal(await toolbar.getByRole('button',{name:'Grid',exact:true}).getAttribute('aria-pressed'),'true')
+  await toolbar.getByRole('button',{name:'List',exact:true}).click();await browserUI.getByRole('table').waitFor();assert.equal(await toolbar.getByRole('button',{name:'List',exact:true}).getAttribute('aria-pressed'),'true')
+ }
+ await page.setViewportSize({width:1440,height:844})
+ const chosen=toolbar.getByRole('button',{name:'List',exact:true}),other=toolbar.getByRole('button',{name:'Grid',exact:true})
+ assert.notEqual(await chosen.evaluate(el=>getComputedStyle(el).backgroundColor),await other.evaluate(el=>getComputedStyle(el).backgroundColor),'Current view is visibly selected')
+ const full=toolbar.getByRole('button',{name:'Toggle full screen',exact:true})
+ await full.click();assert.ok(await browserUI.evaluate(el=>el.classList.contains('file-browser-fullscreen')));await full.click();assert.ok(await browserUI.evaluate(el=>!el.classList.contains('file-browser-fullscreen')))
+ await page.locator('.app-shell').evaluate(root=>{root.dataset.theme='dark';document.documentElement.dataset.theme='dark'})
+ await create.click();const darkMenu=page.getByRole('menu');await darkMenu.waitFor();assert.notEqual(await darkMenu.evaluate(el=>getComputedStyle(el).color),await darkMenu.evaluate(el=>getComputedStyle(el).backgroundColor),'Dark menu labels remain distinct from the menu surface');await page.keyboard.press('Escape')
+ await page.locator('.app-shell').evaluate(root=>{root.dataset.theme='light';document.documentElement.dataset.theme='light'})
+ if(process.env.NODEDANCE_FILE_LAYOUT_REVIEW)await toolbar.screenshot({path:path.join(artifacts,'toolbar-group-review.png')})
  await context.grantPermissions(['clipboard-read','clipboard-write'],{origin:base})
  await browserUI.locator('[data-file-name]').filter({hasText:longGridName}).click({button:'right'})
  await page.getByRole('menuitem',{name:'File information',exact:true}).click()
@@ -33,5 +55,7 @@ module.exports=async({page,context,base,browserUI,artifacts,longGridName})=>{
  await treeBar.waitFor({state:'attached'});await fileBar.waitFor({state:'attached'});assert.equal(await treeBar.count(),1);assert.equal(await fileBar.count(),1)
  const edge=bar=>bar.evaluate(el=>{const bar=el.getBoundingClientRect(),pane=el.closest('.file-browser-tree,.file-browser-list').getBoundingClientRect();return pane.right-bar.right})
  assert.ok(Math.abs(await edge(treeBar)-await edge(fileBar))<1.5,'Directory and file scrollbars have the same inset from their pane edge')
- console.log('File layout: unchanged icon-only New menu, compact aligned copy controls, exact clipboard, long paths, keyboard focus and matching scrollbar edge insets passed.')
+ await page.goto(base+'/#/nodes');await page.getByTestId('node-files-shortcut').click()
+ const overview=page.getByRole('dialog');await overview.locator('[data-file-name]').first().waitFor();await overview.getByRole('button',{name:'New',exact:true}).click();await page.getByRole('menuitem',{name:'New folder',exact:true}).click();await page.getByRole('dialog',{name:'New folder',exact:true}).waitFor();await page.keyboard.press('Escape');assert.equal(await page.getByRole('dialog').count(),1,'Toolbar menu remains usable above the overview file dialog');await overview.getByRole('button',{name:'Close dialog',exact:true}).click()
+ console.log('File layout: connected Button Group, keyboard menus, view switching, icon-only New menu, compact aligned copy controls, exact clipboard, long paths, keyboard focus and matching scrollbar edge insets passed.')
 }

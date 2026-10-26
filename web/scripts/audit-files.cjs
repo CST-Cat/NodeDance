@@ -142,13 +142,13 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   await address.getByRole('button',{name:'/',exact:true}).click();await file('browser.txt').waitFor();
   await toolbar.getByRole('button',{name:'View',exact:true}).click();await page.getByRole('menuitem',{name:'Sort by Size',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.file-browser-list th[data-key="size"]')?.getAttribute('aria-sort')==='ascending');await toolbar.getByRole('button',{name:'View',exact:true}).click();await page.getByRole('menuitem',{name:'Sort by Name',exact:true}).click();
   await browserUI.frameLocator('iframe[title="File commands"]').locator('#commands.elfinder').waitFor({state:'attached'});const warmFrameLoads=frameLoads,warmBundleLoads=bundleLoads;assert.ok(warmFrameLoads>0&&warmBundleLoads>0,'Hidden command runtime actually loaded');
-  const viewSwitch=browserUI.getByRole('tablist',{name:'View',exact:true});
+  const viewSwitch=toolbar;
   for(const width of [1440,390]){
    await page.setViewportSize({width,height:1000});
    await file(longGridName).click({button:'right'});
    const menuState=()=>page.getByRole('menuitem').evaluateAll(items=>items.map(item=>({label:item.textContent,disabled:item.getAttribute('aria-disabled')})));
    const listMenu=await menuState();assert.ok(listMenu.length>0);await page.keyboard.press('Escape');
-   await viewSwitch.getByRole('tab',{name:'Grid',exact:true}).click();const grid=browserUI.locator('.file-browser-grid');await grid.getByRole('button',{name:longGridName,exact:true}).waitFor();
+   await viewSwitch.getByRole('button',{name:'Grid',exact:true}).click();const grid=browserUI.locator('.file-browser-grid');await grid.getByRole('button',{name:longGridName,exact:true}).waitFor();
    assert.ok(await grid.locator('button[data-variant][data-size]').count()>0,'Grid uses actual installed shadcn buttons');assert.ok(await grid.locator('.file-grid-icon').first().evaluate(element=>getComputedStyle(element).backgroundImage.includes('/themes/nodedance/img/')),'Grid preserves supplied icon resources');assert.equal(await page.evaluate(()=>window.gridScriptExecuted),undefined);const runtime=browserUI.frameLocator('iframe[title="File commands"]');assert.equal(await runtime.locator('img[onerror]').count(),0,'Command metadata does not create executable filename markup');assert.equal(await runtime.locator('body').evaluate(()=>window.gridScriptExecuted),undefined,'Hidden command runtime also escapes hostile filenames');
    assert.equal(await browserUI.locator('iframe:not([hidden])').count(),0,'No elFinder interface is displayed');
    for(const selector of ['.file-browser-list-viewport','.file-browser-tree [role="tree"]','.file-browser-location']){const area=browserUI.locator(selector);assert.ok(await area.count()>0);assert.ok(await area.evaluate(element=>element.scrollWidth<=element.clientWidth+1),`File panes have no horizontal overflow at ${width}: ${selector}`)}
@@ -163,7 +163,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
 
    const panelBounds=await browserUI.locator('.file-browser-list').boundingBox(),treeBounds=await browserUI.locator('.file-browser-tree').boundingBox();assert.ok(panelBounds&&treeBounds&&Math.abs(panelBounds.height-treeBounds.height)<2,'Grid and directory tree have identical visible heights');assert.ok(Math.abs(treeBounds.x+treeBounds.width-panelBounds.x)<2,'Directory tree and files share one continuous frame');assert.ok(await browserUI.locator('.file-browser-body[data-slot=card]').count()>0,'File workspace uses the installed Card');
    if(width===1440&&process.env.NODEDANCE_FILE_GRID_REVIEW)await browserUI.locator('.file-browser-body').screenshot({path:path.join(artifacts,'grid-review.png')});
-   await viewSwitch.getByRole('tab',{name:'List',exact:true}).click();await file(longGridName).waitFor();assert.ok(await browserUI.locator('.file-browser-list-viewport').evaluate(element=>element.scrollWidth<=element.clientWidth+1),'List adapts to pane width without horizontal overflow');
+   await viewSwitch.getByRole('button',{name:'List',exact:true}).click();await file(longGridName).waitFor();assert.ok(await browserUI.locator('.file-browser-list-viewport').evaluate(element=>element.scrollWidth<=element.clientWidth+1),'List adapts to pane width without horizontal overflow');
    if(width===1440){
     const table=browserUI.locator('.file-browser-list').getByRole('table');
     assert.equal(await table.count(),1,'The visible file table exists');
