@@ -461,7 +461,7 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  margin: 12px 0;
+  margin: 0;
 }
 .node-settings-status > div[data-v-98aa91ae] {
   display: grid;

@@ -33,7 +33,7 @@ export function SettingsGroup({
   ...props
 }: ComponentProps<"div">) {
   return (
-    <Card className="workspace-group bg-transparent border-(--workspace-divider) text-(--text)">
+    <Card className="workspace-group py-2 bg-transparent border-(--workspace-divider) text-(--text)">
       <CardContent>
         <div {...props} className={`workspace-group-rows ${className}`}>
           <SettingsRows>{children}</SettingsRows>
