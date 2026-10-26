@@ -131,3 +131,7 @@ The public projection continues to use validated, independently owned Core metri
 Notification provider options (`channels.options`) remain administrator-only and are included in the discovered private-operation matrix. Isolated browser fixtures create a disabled channel, verify encrypted Bearer/custom-header values never return in channel responses, and verify channel names, endpoints and credentials never enter public projections, including requests with administrator cookies. 通知渠道与平台配置不会进入游客展示。
 
 Resource metrics use the installed shadcn registry MultiSelect in the standard 44px control row. Options still come from Core; the trigger shows one selected metric and the remaining count. Selecting or clearing updates only the administrator draft until Save display settings; the server publication contract is unchanged. 资源指标使用原版多选组件收起展示，展开支持独立多选，不改变游客配置的保存与发布语义。
+
+## Explicit file shares / 独立文件分享
+
+File sharing is a separate explicit publication action. Visiting guest display does not publish or enumerate file shares. `/s/{id}` and `/r/{id}` require an unguessable, deliberately shared URL and use dedicated public projections independent of administrator cookies. Folder snapshots expose only selected relative entries; collection invitations do not expose received files. Disabling guest display does not revoke independent share links. See [file sharing](file-sharing.md) for revocation and lifecycle rules.

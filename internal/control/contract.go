@@ -41,6 +41,9 @@ func describeTransport(o *Operation) {
 		o.Duplex = true
 	}
 	if o.Transport == "upload" {
+		if o.Headers == nil {
+			o.Headers = map[string]any{}
+		}
 		o.Upload = &UploadContract{ContentType: "application/octet-stream", MaxBytes: protocol.DefaultFileLimit}
 		o.Headers["X-File-Version"] = map[string]any{"type": "string", "description": "Expected existing file version; omit only for an unconditional write"}
 	}
@@ -49,6 +52,13 @@ func describeTransport(o *Operation) {
 		delete(h, "minLength")
 		h["minBytes"] = 8
 		h["maxBytes"] = 128
+	}
+	if o.Name == "shares.upload" {
+		o.Headers["X-Share-Password"] = map[string]any{"type": "string", "maxBytes": 72, "writeOnly": true}
+		delete(o.Headers, "X-File-Version")
+	}
+	if o.Name == "share-requests.upload" {
+		delete(o.Headers, "X-File-Version")
 	}
 	if o.Name == "files.text" {
 		o.MaxResponseBytes = 6*protocol.MaxTextFileBytes + 8192

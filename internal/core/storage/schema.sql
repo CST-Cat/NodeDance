@@ -587,3 +587,36 @@ CREATE TABLE IF NOT EXISTS alert_channel_credentials (
  channel_id TEXT PRIMARY KEY REFERENCES alert_channels(id),
  ciphertext BLOB NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS file_shares (
+ id TEXT PRIMARY KEY,
+ owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ request_id TEXT NOT NULL,
+ node_id TEXT NOT NULL DEFAULT '',
+ paths_json TEXT NOT NULL,
+ name TEXT NOT NULL,
+ entries_json TEXT NOT NULL,
+ size INTEGER NOT NULL,
+ created_at INTEGER NOT NULL,
+ expires_at INTEGER NOT NULL,
+ max_downloads INTEGER NOT NULL,
+ downloads INTEGER NOT NULL DEFAULT 0,
+ password_hash BLOB,
+ revision INTEGER NOT NULL DEFAULT 1,
+ revoked INTEGER NOT NULL DEFAULT 0,
+ UNIQUE(owner_id,request_id)
+);
+CREATE TABLE IF NOT EXISTS file_share_requests (
+ id TEXT PRIMARY KEY,
+ owner_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ request_id TEXT NOT NULL,
+ name TEXT NOT NULL,
+ notes TEXT NOT NULL,
+ expires_at INTEGER NOT NULL,
+ max_files INTEGER NOT NULL,
+ max_bytes INTEGER NOT NULL,
+ entries_json TEXT NOT NULL DEFAULT '[]',
+ revision INTEGER NOT NULL DEFAULT 1,
+ revoked INTEGER NOT NULL DEFAULT 0,
+ UNIQUE(owner_id,request_id)
+);

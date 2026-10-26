@@ -1,7 +1,7 @@
 import { createPortal } from "react-dom";
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from "react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { ArrowLeft, ArrowRight, ArrowUp, Folder, File, RefreshCw, Download, Upload, Search, Plus, Maximize } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUp, Folder, File, RefreshCw, Download, Upload, Search, Plus, Maximize, Share2 } from "lucide-react";
 import { createFileManager, fileJoin, fileParent, type FileManager, type FileObservation } from "../file-manager";
 import type { NodeFileEntry } from "../api";
 import { operationCatalog } from "../operations";
@@ -28,6 +28,7 @@ import FileImageEditor from "./FileImageEditor";
 import ElFinderGrid, { type GridAction } from "./ElFinderGrid";
 import { Card } from "./ui/card";
 import "./NodeFiles.css";
+import FileShares from "./FileShares";
 
 const FileCodeEditor = lazy(() => import("./FileCodeEditor"));
 
@@ -69,6 +70,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
   const [clipboard, setClipboard] = useState<{ paths: string[]; cut: boolean }>();
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+ const [sharing, setSharing] = useState<string[]>();
   const [searchPicker, setSearchPicker] = useState<{ choose: (path: string) => void }>();
   const [page, setPage] = useState(1), [view, setView] = useState("list"), [gridMounted, setGridMounted] = useState(false), [showHidden, setShowHidden] = useState(true);
   const viewId = useId();
@@ -230,6 +232,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
       else void paste(event.destination ?? path);
     } else if (event.action === "reload") void refresh();
     else if (event.action === "download") download(files);
+ else if (event.action === "share") setSharing(files.map(file => file.path));
     else if (files.length) { const kind = event.action === "quicklook" ? "preview" : event.action === "rm" ? "delete" : event.action; if (["preview", "edit", "rename", "delete", "archive", "extract", "info"].includes(kind)) void openModal(kind, files); }
   }
   const menuItems = (files: NodeFileEntry[]): DropdownItem[] => [
@@ -237,6 +240,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
     ...(!directoryPicker ? [
       { label: f("edit"), disabled: files.length !== 1 || files[0]?.kind !== "file", onSelect: () => { void openModal("edit", files); } },
       { label: f("download"), disabled: files.some(row => row.kind !== "file") || !files.length, onSelect: () => download(files) },
+      { label: t("shares.share"), disabled: !files.length, onSelect: () => setSharing(files.map(file => file.path)) },
       { label: f("copy"), disabled: !files.length, onSelect: () => setClipboard({ paths: files.map(row => row.path), cut: false }) },
       { label: f("cut"), disabled: !files.length, onSelect: () => setClipboard({ paths: files.map(row => row.path), cut: true }) },
       { label: f("rename"), disabled: files.length !== 1, onSelect: () => { void openModal("rename", files); } },
@@ -281,7 +285,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
       <Button type="button" size="sm" variant="secondary" aria-label={f("refresh")} title={f("refresh")} disabled={loading || busy} onClick={() => void refresh()}><RefreshCw size={16} /></Button>
       {!directoryPicker && <Button type="button" size="sm" variant="secondary" aria-label={f("search")} title={f("search")} disabled={!manager || busy} onClick={() => setSearchOpen(true)}><Search size={16} /></Button>}
       {directoryPicker ? <Button type="button" size="sm" variant="secondary" disabled={!manager || busy} onClick={() => void openModal("mkdir", [])}>{f("mkdir")}</Button> : <DropdownMenu label={t("files.create.new")} icon={<Plus size={16} />} disabled={!manager || busy} portalContainer={portal} items={[{ label: f("mkdir"), onSelect: () => { void openModal("mkdir", []); } }, ...([['txt', 'new.txt'], ['sh', 'script.sh'], ['yaml', 'compose.yaml'], ['json', 'config.json'], ['toml', 'config.toml'], ['ini', 'config.ini'], ['conf', 'server.conf'], ['env', '.env'], ['service', 'app.service'], ['dockerfile', 'Dockerfile']] as const).map(([kind, name]) => ({ label: t(`files.create.${kind}`), onSelect: () => { void openModal("mkfile", [], name); } })), { label: t("files.create.custom"), onSelect: () => { void openModal("mkfile", []); } }]} />}
-      {!directoryPicker && <><Button type="button" size="sm" variant="secondary" aria-label={f("upload")} title={f("upload")} disabled={!manager || busy} onClick={() => void openModal("upload", [])}><Upload size={16} /></Button><DropdownMenu label={f("actions")} items={menuItems(selected)} disabled={busy} portalContainer={portal} /><Button type="button" size="sm" variant="secondary" disabled={!clipboard || busy} onClick={() => void paste()}>{f("paste")}</Button></>}
+      {!directoryPicker && <><Button type="button" size="sm" variant="secondary" aria-label={f("upload")} title={f("upload")} disabled={!manager || busy} onClick={() => void openModal("upload", [])}><Upload size={16} /></Button><Button variant="secondary" size="sm" aria-label={t("shares.manage")} title={t("shares.manage")} onClick={() => setSharing([])}><Share2 size={16} /></Button><DropdownMenu label={f("actions")} items={menuItems(selected)} disabled={busy} portalContainer={portal} /><Button type="button" size="sm" variant="secondary" disabled={!clipboard || busy} onClick={() => void paste()}>{f("paste")}</Button></>}
       <div className="file-browser-view-controls"><DropdownMenu label={f("view")} portalContainer={portal} items={[{ label: f("selectAll"), onSelect: () => setSelection(visible.map(row => row.path)) }, { label: f("selectNone"), onSelect: () => setSelection([]) }, { label: f("invert"), onSelect: () => setSelection(visible.filter(row => !selection.includes(row.path)).map(row => row.path)) }, { label: f("hidden"), onSelect: () => setShowHidden(value => !value) }, ...(["name", "size", "modifiedAt", "mode"] as const).map(key => ({ label: `${f("sortBy")} ${f(key === "modifiedAt" ? "modified" : key === "mode" ? "permissions" : key)}`, onSelect: () => { setSort(old => ({ key, direction: old.key === key && old.direction === "asc" ? "desc" : "asc" })); setPage(1); } })), { label: f("help"), onSelect: () => { void openModal("help", []); } }]} />
       {!directoryPicker && <Tabs className="product-arc arc-ui file-browser-view-switch" data-native-controls value={view} onValueChange={value => { setView(value); if (value === "grid") setGridMounted(true); }}><TabsList aria-label={f("view")} onPointerDownCapture={event => { event.currentTarget.dataset.focusSource = "pointer"; }} onKeyDownCapture={event => { delete event.currentTarget.dataset.focusSource; }} onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) delete event.currentTarget.dataset.focusSource; }}>{["list", "grid"].map(value => <TabsTrigger key={value} value={value} id={`${viewId}-${value}`} aria-controls={`${viewId}-panel`}>{f(value)}</TabsTrigger>)}</TabsList></Tabs>}</div>
       <Button type="button" size="sm" variant="ghost" aria-label={f("fullscreen")} onClick={() => setFullscreen(value => !value)}><Maximize size={16} /></Button>
@@ -309,6 +313,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
     </Card>
     <footer ref={footer} className="file-browser-footer"><span>{visible.length} {f("items")} · {selection.length} {f("selected")}</span><Pagination page={page} pageCount={Math.ceil(visible.length / 50)} onPageChange={setPage} label={f("pages")} />{directoryPicker && onChoose && <Button type="button" disabled={loading || !!error} onClick={() => onChoose(path)} data-testid="compose-directory-use">{t("compose.useDirectory")}</Button>}</footer>
     {observations.length > 0 && <section className="file-browser-tasks" aria-label={f("tasks")}>{observations.map(item => <div key={item.taskId}><span>{item.path} · {item.status}</span><Button type="button" size="sm" variant="secondary" onClick={() => { void execute(() => manager!.observe(item.taskId)); }}>{f("observe")}</Button><Button type="button" size="sm" variant="secondary" onClick={() => { void execute(() => manager!.cancel(item.taskId)); }}>{f("cancelTask")}</Button><Button type="button" size="sm" variant="ghost" onClick={() => manager!.forget(item.taskId)}>{t("operations.forget")}</Button></div>)}</section>}
+    {sharing && <FileShares nodeId={nodeId} paths={sharing} container={modalContainer} onClose={() => setSharing(undefined)} />}
     {manager && !directoryPicker && <FileSearchDialog open={searchOpen} onOpenChange={setSearchOpen} manager={manager} path={path} portal={modalContainer} onOpenFile={row => { void openFile(row); }} onReveal={row => { void revealSearchResult(row); }} onAction={(action, row) => { if (action === "download") download([row]); else void openModal(action, [row]); }} onPickDirectory={choose => setSearchPicker({ choose })}>{searchPicker && <NodeFiles nodeId={nodeId} nodeName={nodeName} path={path} directoryPicker dialog onClose={() => setSearchPicker(undefined)} onChoose={chosen => { searchPicker.choose(chosen); setSearchPicker(undefined); }} />}</FileSearchDialog>}
     <Dialog open={!!modal} onOpenChange={open => { if (!open) closeModal(); }}><DialogContent container={modalContainer} onCloseAutoFocus={event => { event.preventDefault(); const target = modalReturn.current?.isConnected && !modalReturn.current.matches(":disabled") ? modalReturn.current : root.current?.querySelector<HTMLElement>("button:not(:disabled)"); target?.focus({ preventScroll: true }); }} title={modal ? f(modal.kind) : ""} className={modal?.kind === "edit" || modal?.kind === "preview" ? "file-editor-dialog" : ""} onEscapeKeyDown={event => { if (busy || (event.target instanceof Element && event.target.closest(".cm-editor")?.querySelector(".cm-search, .cm-tooltip-autocomplete"))) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>
       {modalError && <Alert tone="danger" title={modalError} />}

@@ -7,7 +7,7 @@ export default function ElFinderGrid({ path, rows, selection, busy, canPaste, hi
   const frame = useRef<HTMLIFrameElement>(null);
   const [mounted, setMounted] = useState(false);
   const handlers = useRef({ onSelection, onAction, onEscape }); handlers.current = { onSelection, onAction, onEscape };
-  const data = JSON.stringify({ path, rows, language: locale.value });
+  const data = JSON.stringify({ path, rows, language: locale.value, shareLabel: t("shares.share") });
   const send = (value: Record<string, unknown>) => frame.current?.contentWindow?.postMessage({ channel: "nodedance-elfinder-grid", ...value }, location.origin);
   useEffect(() => {
     const receive = (event: MessageEvent) => {

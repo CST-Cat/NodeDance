@@ -236,6 +236,12 @@ func (s *Server) handlePrivateAPI(w http.ResponseWriter, r *http.Request, curren
 	if s.handleComposeAPI(w, r, current) {
 		return
 	}
+	if s.handleShareRequestsAPI(w, r, current) {
+		return
+	}
+	if s.handleSharesAPI(w, r, current) {
+		return
+	}
 	if s.handleFilesAPI(w, r, current) {
 		return
 	}

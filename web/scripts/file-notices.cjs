@@ -15,7 +15,7 @@ function visit(directory){
   if(fs.existsSync(path.join(candidate,'package.json')))visit(candidate)
  }
 }
-for(const name of ['react','react-dom','@preact/signals-react','motion','radix-ui','lucide-react','cn','class-variance-authority','jquery','jquery-ui-dist','codemirror','@codemirror/language-data','@codemirror/state','@codemirror/view','@codemirror/language','@codemirror/commands','@codemirror/autocomplete','@codemirror/search','@lezer/highlight'])visit(path.resolve(__dirname,'../node_modules/'+name))
+for(const name of ['react','react-dom','@preact/signals-react','motion','radix-ui','lucide-react','cn','class-variance-authority','jquery','jquery-ui-dist','qrcode','codemirror','@codemirror/language-data','@codemirror/state','@codemirror/view','@codemirror/language','@codemirror/commands','@codemirror/autocomplete','@codemirror/search','@lezer/highlight'])visit(path.resolve(__dirname,'../node_modules/'+name))
 const crypto=require('node:crypto')
 packages.set('UIArc',{info:{license:'MIT'},notices:[fs.readFileSync(path.resolve(__dirname,'../src/components/arc/LICENSE'),'utf8')]})
 const editors=path.resolve(__dirname,'../public/vendor/file-editors'),editorManifest=JSON.parse(fs.readFileSync(path.join(editors,'manifest.json'),'utf8'))

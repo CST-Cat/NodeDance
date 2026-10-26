@@ -15,7 +15,9 @@ module.exports=async function({page,context,base,node,headers,catalog}){
     await page.goto(base+'/#/alerts')
     await page.getByRole('tab',{name:'Alert rules',exact:true}).click()
     const selectedTab=page.locator('.alert-tabs [aria-selected=true]');assert.equal(await selectedTab.count(),1);
-    assert.equal(await selectedTab.evaluate(el=>getComputedStyle(el).outlineColor),'rgba(0, 0, 0, 0)','Mouse selection does not add a black focus outline');
+    const outline=()=>selectedTab.evaluate(el=>{const s=getComputedStyle(el);return {style:s.outlineStyle,width:parseFloat(s.outlineWidth),color:s.outlineColor,visible:el.matches(':focus-visible')}})
+    const pointerOutline=await outline();assert.ok(pointerOutline.style==='none'||pointerOutline.width===0||pointerOutline.color==='rgba(0, 0, 0, 0)','Mouse selection has no painted focus outline: '+JSON.stringify(pointerOutline))
+    await selectedTab.press('Tab');await page.keyboard.press('Shift+Tab');const keyboardOutline=await outline();assert.ok(keyboardOutline.visible&&keyboardOutline.style!=='none'&&keyboardOutline.width>0&&keyboardOutline.color!=='rgba(0, 0, 0, 0)','Keyboard focus remains visibly outlined: '+JSON.stringify(keyboardOutline))
 
     await page.locator('.alerts-page [role=alert]').filter({hasText:'Server returned an unrecognized response.'}).waitFor()
     assert.equal(metricReads,1)

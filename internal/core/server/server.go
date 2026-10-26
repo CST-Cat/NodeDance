@@ -66,6 +66,10 @@ type Options struct {
 }
 
 type Server struct {
+	shareUploadSlots           chan struct{}
+	shareLimiter               *loginLimiter
+	shareBlobMu                sync.Mutex
+	shareMu                    sync.Mutex
 	countries                  *geolocation.Resolver
 	domains                    *domains.Store
 	feeds                      *feeds.Store
@@ -362,12 +366,19 @@ func New(version string, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := s.shareStore().Init(context.Background()); err != nil {
+		_ = store.DB.Close()
+		return nil, err
+	}
 	s.feeds = feeds.New(store.DB, s.now)
 	if err := s.feeds.Recover(context.Background()); err != nil {
 		log.Printf("NodeDance subscription recovery failed: %v", err)
 		s.feeds = nil
 	}
 	s.agentContext, s.agentCancel = context.WithCancel(context.Background())
+	s.shareUploadSlots = make(chan struct{}, 4)
+	s.shareLimiter = newLoginLimiter(10, 10*time.Minute, s.now)
+	s.startShareCleanup()
 	s.agentWait.Add(1)
 	go func() {
 		defer s.agentWait.Done()
@@ -526,7 +537,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		catalog := control.Describe()
 		for i := range catalog.Operations {
-			if catalog.Operations[i].Name == "files.upload" {
+			if catalog.Operations[i].Name == "files.upload" || catalog.Operations[i].Name == "share-requests.upload" || catalog.Operations[i].Name == "shares.upload" {
 				catalog.Operations[i].Upload.MaxBytes = s.fileTransferLimit
 			}
 		}
@@ -628,6 +639,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handleContainerStreamWebSocket(w, r)
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/public/share-requests/") {
+		s.handlePublicShareRequests(w, r)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/v1/public/shares/") {
+		s.handlePublicShares(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/api/v1/agents/channel/") {
 		s.handleHTTPAgentChannel(w, r)
 		return
@@ -657,7 +676,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.handlePrivateAPI(w, r, current)
 		return
 	}
-	if r.URL.Path == "/" || r.URL.Path == "/login" || r.URL.Path == "/settings" {
+	if r.URL.Path == "/" || r.URL.Path == "/login" || r.URL.Path == "/settings" || strings.HasPrefix(r.URL.Path, "/s/") || strings.HasPrefix(r.URL.Path, "/r/") {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return

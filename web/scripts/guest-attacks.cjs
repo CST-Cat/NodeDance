@@ -16,6 +16,20 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const historyOperation=catalog.operations.find(o=>o.name==='nodes.history');assert.ok(historyOperation);
  const fineHistory=historyOperation.path.replace('{nodeId}',encodeURIComponent(identity.nodeId))+'?'+new URLSearchParams({resolution:'5s',from:new Date(Date.now()-4*3600000).toISOString(),to:new Date().toISOString()});
  const fineDenied=await browserRequest(fineHistory,'GET',null,hostileHeaders);record('fine-history-remains-private',fineDenied.status===401,{status:fineDenied.status});
+ const shareOp=name=>{const o=catalog.operations.find(v=>v.name===name);assert.ok(o,`Missing ${name}`);return o}
+ const shareIntent=require('node:crypto').randomBytes(32).toString('hex')
+ const uploadShare=shareOp('shares.upload')
+ const shareUpload=await admin.request.put(base+uploadShare.path+'?'+new URLSearchParams({name:'guest-share.txt',expiryDays:'1',maxDownloads:'0',requestId:shareIntent}),{headers:{...headers,'Content-Type':'application/octet-stream'},data:'EXPLICIT-SHARE-CONTENT'})
+ assert.equal(shareUpload.status(),201);const fileShare=await shareUpload.json()
+ const sharedPath=shareOp('shares.public').path.replace('{id}',fileShare.id),hotlinkPath=shareOp('shares.hotlink').path.replace('{id}',fileShare.id)
+ const shareAnon=await visitor.request.get(base+sharedPath),shareAdmin=await admin.request.get(base+sharedPath)
+ record('share-public-cookie-independent',shareAnon.status()===200&&JSON.stringify(await shareAnon.json())===JSON.stringify(await shareAdmin.json()),{status:shareAnon.status()})
+ for(const suffix of ['?path=/etc/shadow','?role=admin','?id='+identity.nodeId]){const r=await browserRequest(sharedPath+suffix);record('share-query-expansion:'+suffix,r.status===400,{status:r.status})}
+ for(const method of ['PUT','PATCH','DELETE','HEAD']){const r=await browserRequest(hotlinkPath+'?path=guest-share.txt',method,{},hostileHeaders);record('share-method-boundary:'+method,r.status===405,{status:r.status})}
+ const escaped=await browserRequest(hotlinkPath+'?path=../etc/shadow');record('share-path-cannot-read-host',escaped.status===404,{status:escaped.status})
+ const readShare=await browserRequest(hotlinkPath+'?path=guest-share.txt');record('share-only-explicit-content',readShare.status===200&&readShare.body==='EXPLICIT-SHARE-CONTENT',{status:readShare.status})
+ const revokeShare=shareOp('shares.revoke');assert.equal((await admin.request.delete(base+revokeShare.path.replace('{id}',fileShare.id)+'?revision='+fileShare.revision,{headers})).status(),204)
+ const withdrawnShare=await browserRequest(hotlinkPath+'?path=guest-share.txt');record('share-immediate-withdrawal',withdrawnShare.status===404,{status:withdrawnShare.status})
  const privateOperations=catalog.operations.filter(o=>!publicPaths.has(o.path)&&!o.path.startsWith('/api/v1/public/'))
  console.log('GUEST SECURITY: private operations',privateOperations.length)
  for(let i=0;i<privateOperations.length;i+=8){await Promise.all(privateOperations.slice(i,i+8).map(async o=>{const r=await browserRequest(target(o),o.method,payload,hostileHeaders);record('catalog:'+o.name,r.status===401,{status:r.status})}))}

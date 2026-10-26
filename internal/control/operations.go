@@ -437,6 +437,7 @@ func buildOperations() []Operation {
 		list = append(list, op("appearance."+kind, "GET", "/api/v1/public/appearance/"+kind, "Download appearance image to --output", nil), op("appearance.upload-"+kind, "POST", "/api/v1/settings/appearance/"+kind, "Upload raster image from --input", nil))
 	}
 	list = append(list, domainOperations()...)
+	list = append(list, shareOperations()...)
 	for i := range list {
 		o := &list[i]
 		if o.Name == "nodes.recording" {
@@ -444,7 +445,7 @@ func buildOperations() []Operation {
 		}
 		o.RequiredRole = "administrator"
 		switch o.Name {
-		case "core.operations", "core.health", "core.protocol", "auth.csrf", "auth.status", "auth.setup", "auth.login", "guest.entry", "guest.display", "appearance.get", "appearance.avatar", "appearance.background":
+		case "share-requests.public", "share-requests.upload", "shares.public", "shares.unlock", "shares.receive", "shares.hotlink", "core.operations", "core.health", "core.protocol", "auth.csrf", "auth.status", "auth.setup", "auth.login", "guest.entry", "guest.display", "appearance.get", "appearance.avatar", "appearance.background":
 			o.RequiredRole = "public"
 		case "auth.me", "auth.logout", "auth.password", "auth.switch", "sessions.list", "sessions.revoke", "accounts.list",
 			"profile.get", "profile.update", "profile.avatar", "profile.upload-avatar",

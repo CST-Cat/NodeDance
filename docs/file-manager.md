@@ -79,3 +79,7 @@ Search is a separate installed Dialog with filename queries, recursive current-d
 Read-only search previews use the existing text/image/PDF/media presentation. Preview reads do not update an editor's expected file version. Search and preview requests are bounded by the shared file client and canceled when closed or superseded. Search operates on filenames, not file contents; no unsupported content-search controls are shown. Guest access, protected paths and file mutation checks remain enforced by Core/root Agent.
 
 工具栏刷新、搜索、上传使用带可访问名称的图标按钮。新建合并文件夹、十种服务器常用文件和自定义文件名入口，仅预填名称，沿用 Core 创建流程。搜索弹窗支持当前目录、指定目录、本机根目录的递归文件名搜索、类型及大小筛选、分页排序、右侧预览、字号调整与页面内置顶；作用域和选中文件路径复用现有按实际宽度折叠中间层级的面包屑。直达会打开所在目录、跳到目标分页并选中文件。被动预览不会改写编辑版本基线；关闭或替换搜索会取消旧请求。
+
+## File sharing / 文件分享
+
+Both list and grid right-click menus provide Share for regular files and directories; Manage shares opens settings and file collection using the same Core contract. Folder shares preserve browsable relative paths. Node shares publish verified snapshots, and revocation never deletes source files. See [file sharing](file-sharing.md) for operations, password/direct-link rules, lifecycle, bounds and verification. The file browser audit includes the maintained sharing browser regression.

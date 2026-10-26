@@ -18,7 +18,8 @@ module.exports=async function({page,base,catalog,artifacts}){
  await selectValue(confirm,'true');assert.equal(await selectedValue(confirm),'true')
  assert.ok((await form.textContent()).includes('重试同一操作意图时复用此键'))
  await setBrowserLanguage(page,'en')
- assert.ok((await form.locator('..').locator('h3').first().textContent()).includes('Execute'))
+ const englishDescription=catalog.operations.find(operation=>operation.name==='commands.submit').description
+ await form.getByRole('heading',{level:2,name:englishDescription,exact:true}).waitFor()
  assert.equal(await readOptions(confirm).then(options=>options.find(option=>option.value==='true').label),'true');assert.equal(await selectedValue(confirm),'true')
  for(const [language,theme,width] of [['en','light',1440],['zh-CN','dark',390]]){
   await setBrowserLanguage(page,language);await page.setViewportSize({width,height:1000})
