@@ -2,15 +2,20 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/CST-Cat/NodeDance/internal/core/geolocation"
+	"io"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -246,7 +251,7 @@ func New(version string, options Options) (*Server, error) {
 		guestSlots:   make(chan struct{}, 4),
 		version:      version,
 		updateInvoke: options.UpdateInvoke,
-		assets:       http.FileServer(http.FS(files)),
+		assets:       newAssetHandler(files),
 		index:        index,
 		store:        store,
 		requestSlots: make(chan struct{}, options.MaxConcurrentRequests), jsonReadTimeout: options.JSONReadTimeout, transferReadTimeout: options.TransferReadTimeout,
@@ -811,6 +816,90 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+// assetHandler serves the embedded Web build with class-based caching and
+// precompressed transfer: content-hashed bundles are immutable, every other
+// file revalidates through a content-hash ETag, and .gz siblings ship to
+// clients that accept gzip.
+type assetHandler struct {
+	files  http.Handler
+	source fs.FS
+	etags  map[string]string
+}
+
+var gzipAssets = map[string]bool{".js": true, ".css": true, ".svg": true, ".json": true, ".txt": true, ".html": true}
+
+func newAssetHandler(source fs.FS) *assetHandler {
+	handler := &assetHandler{files: http.FileServer(http.FS(source)), source: source, etags: make(map[string]string)}
+	_ = fs.WalkDir(source, ".", func(name string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || strings.HasSuffix(name, ".gz") {
+			return nil
+		}
+		data, err := fs.ReadFile(source, name)
+		if err != nil {
+			return nil
+		}
+		digest := sha256.Sum256(data)
+		handler.etags["/"+name] = `"` + hex.EncodeToString(digest[:16]) + `"`
+		return nil
+	})
+	return handler
+}
+
+func (h *assetHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, ".gz") {
+		http.NotFound(w, r)
+		return
+	}
+	extension := strings.ToLower(path.Ext(r.URL.Path))
+	if gzipAssets[extension] {
+		w.Header().Set("Vary", "Accept-Encoding")
+	}
+	if strings.HasPrefix(r.URL.Path, "/assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else if etag, ok := h.etags[r.URL.Path]; ok {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+	}
+	if gzipAssets[extension] && acceptsGzip(r.Header.Get("Accept-Encoding")) {
+		name := strings.TrimPrefix(r.URL.Path, "/")
+		if compressed, err := h.source.Open(name + ".gz"); err == nil {
+			if seeker, ok := compressed.(io.ReadSeeker); ok {
+				w.Header().Set("Content-Encoding", "gzip")
+				// Range selects bytes of the decoded representation; serve it whole.
+				trimmed := r.Clone(r.Context())
+				trimmed.Header.Del("Range")
+				http.ServeContent(w, trimmed, name, time.Time{}, seeker)
+				compressed.Close()
+				return
+			}
+			compressed.Close()
+		}
+	}
+	h.files.ServeHTTP(w, r)
+}
+
+func acceptsGzip(header string) bool {
+	for _, part := range strings.Split(header, ",") {
+		token, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if !strings.EqualFold(token, "gzip") {
+			continue
+		}
+		for _, param := range strings.Split(params, ";") {
+			name, value, _ := strings.Cut(strings.TrimSpace(param), "=")
+			if strings.EqualFold(name, "q") {
+				quality, _ := strconv.ParseFloat(value, 64)
+				return quality > 0
+			}
+		}
+		return true
+	}
+	return false
 }
 
 var _ http.Handler = (*Server)(nil)

@@ -4,7 +4,11 @@
 
 ### English
 
+- Keep the native grid frame alive across view switches with once-per-instance theming and incremental same-directory sync, and serve embedded Web assets with immutable hashed-bundle caching, ETag revalidation and precompressed gzip transfer.
+
 ### 简体中文
+
+- 网格 frame 在视图切换间保持存活，主题每实例仅加载一次，同目录刷新改为增量同步；内嵌 Web 资源改为哈希包不可变缓存、ETag 协商复用与预压缩 gzip 传输。
 
 ## [0.1.58]
 

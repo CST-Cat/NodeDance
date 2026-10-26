@@ -29,6 +29,7 @@ typecheck:
 
 frontend: typecheck
 	pnpm --dir web run build
+	find internal/core/webassets/dist -type f \( -name '*.js' -o -name '*.css' -o -name '*.svg' -o -name '*.json' -o -name '*.txt' -o -name '*.html' \) -not -name '*.gz' -exec gzip -9k {} \;
 
 build: frontend
 	mkdir -p .build

@@ -66,8 +66,8 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   for(const name of ['files.download','files.preview'])assert.equal((await context.request.get(endpoint(name,{path:'/missing.txt'}))).status(),404,'Missing downloads preserve Agent not-found semantics')
   const preview=await context.request.get(endpoint('files.preview',{path:'/image.png'}),{headers:{Range:'bytes=0-7'}});assert.equal(preview.status(),206);assert.ok(preview.headers()['content-security-policy'].includes('sandbox'))
   const visitor=await browser.newContext({locale:'en-US'});assert.equal((await visitor.request.get(endpoint('files.preview',{path:'/image.png'}))).status(),401)
-  const page=await context.newPage();page.setDefaultTimeout(15000);const errors=[],externalRequests=[],scripts=[];
-  page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{if(request.resourceType()==='script')scripts.push(new URL(request.url()).pathname);if(request.url().startsWith('http')&&new URL(request.url()).origin!==base)externalRequests.push(request.url())});
+  const page=await context.newPage();page.setDefaultTimeout(15000);const errors=[],externalRequests=[],scripts=[];let frameLoads=0,bundleLoads=0;
+  page.on('pageerror',error=>errors.push(error.message));page.on('request',request=>{const pathname=new URL(request.url()).pathname;if(pathname==='/vendor/elfinder-grid/')frameLoads++;if(pathname==='/vendor/elfinder/elfinder.js')bundleLoads++;if(request.resourceType()==='script')scripts.push(pathname);if(request.url().startsWith('http')&&new URL(request.url()).origin!==base)externalRequests.push(request.url())});
   await page.goto(base+`/#/nodes?node=${node}&section=files`);
   const browserUI=page.getByTestId('node-files');await browserUI.locator('[data-file-name="hello.txt"]').waitFor();
   assert.equal(await page.locator('.elfinder,.tui-image-editor-container').count(),0,'List mode has no embedded native-grid UI');
@@ -143,12 +143,13 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
    for(const selector of ['.file-browser-list-viewport','.file-browser-tree [role="tree"]','.file-browser-location']){const area=browserUI.locator(selector);assert.ok(await area.count()>0);assert.ok(await area.evaluate(element=>element.scrollWidth<=element.clientWidth+1),`File panes have no horizontal overflow at ${width}: ${selector}`)}
    await nativeGrid.getByTitle(longGridName,{exact:true}).click();await nativeGrid.locator('.elfinder-cwd-file.ui-selected').waitFor();await page.waitForFunction(()=>document.querySelector('.file-browser-footer').textContent.includes('1 selected'));
    await nativeGrid.getByTitle(longGridName,{exact:true}).click({modifiers:['Control']});await nativeGrid.locator('.elfinder-cwd-file.ui-selected').waitFor({state:'detached'});
-   if(width===1440){await nativeGrid.getByTitle('hello.txt',{exact:true}).dblclick();await dialog().getByRole('textbox',{name:'File contents',exact:true}).waitFor();await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'detached'})}
+   if(width===1440){await nativeGrid.getByTitle('hello.txt',{exact:true}).dblclick();await dialog().getByRole('textbox',{name:'File contents',exact:true}).waitFor();await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'detached'});await action({action:'mkdir',path:'/grid-refresh-dir'});await toolbar.getByRole('button',{name:'Refresh',exact:true}).click();await nativeGrid.getByTitle('grid-refresh-dir',{exact:true}).waitFor()}
 
    const panelBounds=await browserUI.locator('.file-browser-list').boundingBox(),treeBounds=await browserUI.locator('[role="tree"]').boundingBox();assert.ok(panelBounds&&treeBounds&&Math.abs(panelBounds.height-treeBounds.height)<2,'Native grid and directory tree have identical visible heights');
    if(width===1440&&process.env.NODEDANCE_FILE_GRID_REVIEW)await browserUI.locator('.file-browser-body').screenshot({path:path.join(artifacts,'grid-review.png')});
    await viewSwitch.getByRole('tab',{name:'List',exact:true}).click();await file(longGridName).waitFor();assert.ok(await browserUI.locator('.file-browser-list-viewport').evaluate(element=>element.scrollWidth<=element.clientWidth+1),'List adapts to pane width without horizontal overflow');
   }
+  assert.equal(frameLoads,1,'Warm grid frame document loads once and survives view switches');assert.equal(bundleLoads,1,'elFinder bundle loads once for the warm grid');
   await page.setViewportSize({width:1440,height:650});
   const directoryTree=browserUI.getByRole('tree',{name:'Directories',exact:true}),fileList=browserUI.locator('.file-browser-list');
   await directoryTree.getByRole('treeitem',{name:'many',exact:true}).waitFor();
@@ -224,7 +225,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   for(const label of ['New file','Upload files','Delete','Rename'])assert.equal(await picker.getByRole('button',{name:label,exact:true}).count(),0);
   await picker.locator('[data-file-name="browser-dir"]').click();await picker.getByTestId('compose-directory-use').click();assert.equal(await page.getByTestId('compose-workdir').inputValue(),'/browser-dir');assert.equal(await form.locator('textarea').inputValue(),'services: {} # preserved draft');
   await setBrowserLanguage(page,'zh-CN');await page.getByTestId('compose-directory-open').click();await page.getByRole('dialog').last().getByRole('button',{name:'新建文件夹',exact:true}).waitFor();await page.keyboard.press('Escape');await setBrowserLanguage(page,'en');
-  assert.deepEqual(errors,[]);assert.deepEqual(externalRequests,[],'All file UI and headless image assets are local');assert.ok(scripts.some(url=>url==='/vendor/elfinder/elfinder.js'));assert.equal(await page.evaluate(()=>typeof window.jQuery),'undefined','Native grid dependencies remain isolated from the management document');
+  assert.deepEqual(errors,[]);assert.deepEqual(externalRequests,[],'All file UI and headless image assets are local');assert.equal(bundleLoads,1,'elFinder loads exactly once for the warm native grid');assert.equal(await page.evaluate(()=>typeof window.jQuery),'undefined','Native grid dependencies remain isolated from the management document');
   console.log('File audit passed: isolated real Core/root Agent; shadcn browsing, selection, dialogs, directory picker, text/image editing, conflicts, uploads/downloads, task execution, all archive formats, pagination/search, passive preview, themes and narrow layouts.');
  }catch(error){if(browser){const p=browser.contexts()[0]?.pages()[0];if(p){fs.writeFileSync(path.join(artifacts,'failure.html'),await p.content());console.error('File browser state:',p.url(),(await p.locator('body').innerText()).slice(-2000));}};throw error}
  finally{if(browser)await browser.close();await stop(agent);await stop(core);execFileSync('sudo',['rm','-rf','--',dir,state])}
