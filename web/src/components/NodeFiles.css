@@ -6,9 +6,7 @@
 .file-browser-breadcrumb > nav { min-width: 0; overflow: hidden; flex: 0 1 auto; }
 .file-browser-address-space { flex: 1 0 24px; }
 .file-full-path { overflow-wrap: anywhere; white-space: pre-wrap; }
-.file-browser-search { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(80px, .4fr) minmax(80px, .4fr) auto; gap: 8px; align-items: center; }
-.file-browser-search > [role="group"] { grid-column: 1 / -1; justify-self: end; }
-.file-browser-body { display: grid; grid-template-columns: minmax(110px, 180px) minmax(0, 1fr); gap: 16px; height: 240px; }
+.file-browser-body { flex-shrink: 0; display: grid; grid-template-columns: minmax(110px, 180px) minmax(0, 1fr); gap: 16px; height: 360px; }
 .file-browser-tree, .file-browser-list { height: 100%; min-height: 0; overflow-anchor: none; }
 .file-browser-list-viewport > :not([data-testid="file-loading"]) { min-height: 100%; }
 .file-browser-footer { justify-content: space-between; min-height: 44px; }
@@ -32,8 +30,6 @@
 .file-image-controls { border: 0; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 640px) {
   .file-browser-body { grid-template-columns: minmax(80px, 28%) minmax(0, 1fr); }
-  .file-browser-search { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .file-browser-search > :first-child { grid-column: 1 / -1; }
   .file-image-controls { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -50,3 +46,39 @@
 
 .file-browser-tree [role="tree"] { min-height: 100%; }
 .file-browser-native-grid { display: block; width: 100%; height: 100%; border: 0; }
+
+.file-code-editor { min-width: 0; overflow: hidden; }
+
+.file-code-panel { display: grid; gap: 8px; min-width: 0; }
+.file-code-toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.file-browser-view-switch [role="tablist"][data-focus-source="pointer"] { --focus-outline: transparent; }
+
+.file-browser-view-controls { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+
+.file-search-dialog { width: min(1100px, calc(100% - 32px)); }
+.file-search { display: flex; flex-direction: column; gap: 12px; height: min(660px, 70dvh); min-height: 320px; min-width: 0; }
+.file-search-query { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(110px, 150px); gap: 8px; align-items: center; }
+.file-search-scope-path { min-width: 0; }
+.file-search-scope-path > form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.file-search-filters { display: grid; grid-template-columns: minmax(100px, 160px) minmax(0, 160px) minmax(0, 160px); gap: 8px; align-items: center; }
+.file-search-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; flex: 1; min-height: 140px; min-width: 0; }
+.file-search-body[data-preview="true"] { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.file-search-results { min-height: 0; min-width: 0; overflow: hidden; --text-sm: var(--file-search-font-size); }
+.file-search-results table { min-width: 0; table-layout: fixed; }
+.file-search-results div:has(> table), .file-search-results thead tr { overflow-x: hidden; }
+.file-search-preview { min-height: 0; min-width: 0; }
+.file-search-preview h3 { min-width: 0; margin: 0 0 12px; font-size: var(--file-search-font-size); }
+.file-search-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.file-search-selection-path { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 220px; }
+.file-search-selection-path > .file-browser-breadcrumb { flex: 1; }
+.file-search-controls { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; min-width: 0; margin-left: auto; }
+.file-search-font { width: 140px; }
+@media (max-width: 640px) {
+  .file-search-query { grid-template-columns: minmax(0, 1fr) auto; }
+  .file-search-query > :last-child { grid-column: 1 / -1; }
+  .file-search-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .file-search-filters > :first-child { grid-column: 1 / -1; }
+}
+
+.file-search > :not(.file-search-body) { flex-shrink: 0; }

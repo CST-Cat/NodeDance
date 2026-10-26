@@ -127,3 +127,43 @@
   background-image: url("img/volume_icon_network.svg");
   background-image: url("img/volume_icon_network.png") \9;
 }
+
+.elfinder-navbar-root-local.elfinder-contextmenu-icon {
+  background-image: url("img/volume_icon_local.svg");
+}
+
+.elfinder-navbar-root-trash.elfinder-contextmenu-icon {
+  background-image: url("img/volume_icon_trash.svg");
+}
+
+.elfinder-navbar-root-ftp.elfinder-contextmenu-icon {
+  background-image: url("img/volume_icon_ftp.svg");
+}
+
+.elfinder-navbar-root-sql.elfinder-contextmenu-icon {
+  background-image: url("img/volume_icon_sql.svg");
+}
+
+.elfinder-navbar-root-dropbox.elfinder-contextmenu-icon {
+  background-image: url("img/volume_icon_dropbox.svg");
+}
+
+.elfinder-navbar-root-googledrive.elfinder-contextmenu-icon {
+  background-image: url("img/volume_icon_googledrive.svg");
+}
+
+.elfinder-navbar-root-onedrive.elfinder-contextmenu-icon {
+  background-image: url("img/volume_icon_onedrive.svg");
+}
+
+.elfinder-navbar-root-box.elfinder-contextmenu-icon {
+  background-image: url("img/volume_icon_box.svg");
+}
+
+.elfinder-navbar-root-zip.elfinder-contextmenu-icon {
+  background-image: url("img/volume_icon_zip.svg");
+}
+
+.elfinder-navbar-root-network.elfinder-contextmenu-icon {
+  background-image: url("img/volume_icon_network.svg");
+}

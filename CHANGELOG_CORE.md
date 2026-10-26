@@ -6,6 +6,18 @@
 
 ### 简体中文
 
+## [0.1.58]
+
+### English
+
+- Consolidate file creation into a preset/custom menu and replace inline search with a scoped filename-search dialog, right preview, result context actions, font sizing and page-local pinning; keep passive previews separate from edit version baselines.
+- Add lazy-loaded CodeMirror 6 text previews and editing with the full basic editing setup and language catalog, shared save/conflict behavior, existing theme colors, and newline-preserving undo/redo; remove unused original file/volume icons and their resource hash gate.
+
+### 简体中文
+
+- 文件新建合并为预设／自定义菜单，行内搜索改为带范围、右侧预览、结果右键操作、字号调整及页面内置顶的文件名搜索弹窗；被动预览与编辑版本基线分离。
+- 文件文本预览和编辑接入按需加载的 CodeMirror 6，提供完整基础编辑功能及语言目录，沿用保存与冲突流程和项目配色，撤销重做保留原始换行；移除不再使用的官方文件／卷图标及其资源哈希校验。
+
 ## [0.1.57]
 
 ### English

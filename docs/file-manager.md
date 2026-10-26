@@ -1,8 +1,8 @@
 # File manager / 文件管理
 
-The React file manager uses installed shadcn/UIArc controls for toolbar buttons, sortable selection table, tree, context/dropdown menus, search fields, pagination, upload queues, text editing, image tools and dialogs. At the user’s explicit request, Grid uses the unmodified elFinder 2.1.70 icon view and default theme in an isolated local frame. Its selection, open, clipboard and menu events bind to the same current React/Core workflows; it has no independent connector, remote mutation API, or alternate file permissions. jQuery and jQuery UI load only inside that frame. The same component serves overview dialogs, the inline node-detail screen and Compose directory selection. The image editor uses the locally bundled TOAST UI engine without its built-in UI; only canvas rendering comes from that engine. Every visible image control is an installed shadcn/UIArc component. Assets and notices ship with Core at `/licenses/file-manager-notices.txt`.
+The React file manager uses installed shadcn/UIArc controls for toolbar buttons, sortable selection table, tree, context/dropdown menus, search fields, pagination, upload queues, image tools and dialogs. At the user’s explicit request, Grid preserves the elFinder 2.1.70 icon-view layout with the registered NodeDance icon theme in an isolated local frame. Its selection, open, clipboard and menu events bind to the same current React/Core workflows; it has no independent connector, remote mutation API, or alternate file permissions. jQuery and jQuery UI load only inside that frame. The same component serves overview dialogs, the inline node-detail screen and Compose directory selection. The image editor uses the locally bundled TOAST UI engine without its built-in UI; only canvas rendering comes from that engine. Every visible image control is an installed shadcn/UIArc component. Assets and notices ship with Core at `/licenses/file-manager-notices.txt`.
 
-文件管理界面的工具栏、可排序多选列表、目录树、右键／下拉菜单、搜索、分页、上传队列、文本编辑、图片工具和弹窗，使用已安装的 shadcn／UIArc 组件；用户明确指定的网格例外，恢复 elFinder 2.1.70 原版图标视图与默认样式，在隔离的本地 frame 中加载，选择、双击和菜单操作仍交回现有 Core 流程。总览弹窗、节点详情和 Compose 目录选择复用同一实现。图片处理保留本地无内置 UI 的 TOAST UI 画布引擎，所有可见参数和操作仍为 shadcn 控件；深浅色使用项目现有配色。文件操作和安全边界保持在 Core／root Agent。
+文件管理界面的工具栏、可排序多选列表、目录树、右键／下拉菜单、搜索、分页、上传队列、图片工具和弹窗，使用已安装的 shadcn／UIArc 组件；用户明确指定的网格例外，保留 elFinder 2.1.70 原版图标视图布局，使用注册的 NodeDance 重绘图标主题，在隔离的本地 frame 中加载，选择、双击和菜单操作仍交回现有 Core 流程。总览弹窗、节点详情和 Compose 目录选择复用同一实现。图片处理保留本地无内置 UI 的 TOAST UI 画布引擎，所有可见参数和操作仍为 shadcn 控件；深浅色使用项目现有配色。文件操作和安全边界保持在 Core／root Agent。
 
 ## Shared operations / 统一操作
 
@@ -64,4 +64,18 @@ Text and image editors retain the original file version, keep drafts after faile
 
 文本和图片编辑沿用原文件版本，失败保留草稿，丢弃未保存修改前确认。图片保留裁剪、翻转、旋转、尺寸、自由绘图／线条、形状、文字、图标、蒙版、滤镜、对象删除、缩放、撤销重做和 JPEG 质量。HTML／SVG 仅以惰性文本呈现，媒体预览仍使用鉴权 Core 地址。任务观察和不确定请求身份有界保存在会话存储中，不存储文件内容；恢复观察不自动重做未知操作，取消不声称撤销已提交文件。
 
-文件网格图标通过 elFinder 官方 `themes`／`theme` 接口注册 `nodedance` 主题，Manifest 位于 `web/public/vendor/elfinder/themes/nodedance/manifest.json`。主题包含用户提供的 36 图 Sprite 与 10 种独立卷图标，各提供 SVG 和 PNG；主题 CSS 仅替换原有图像引用，保留官方偏移、布局和交互。官方原始资源及其完整性清单保持原样。
+文件网格图标通过 elFinder 官方 `themes`／`theme` 接口注册 `nodedance` 主题，Manifest 位于 `web/public/vendor/elfinder/themes/nodedance/manifest.json`。主题包含用户提供的 36 图 Sprite 与 10 种独立卷图标，各提供 SVG 和 PNG；主题 CSS 仅替换原有图像引用，保留官方偏移、布局和交互。旧官方基础大图、卷图标及基础 CSS 中对应的图片引用已移除，避免加载旧图；官方网格布局、图标偏移和交互保持原样。elFinder 保留来源、版本与许可证元信息，不再对其前端资源执行官方 SHA-256 清单校验。
+
+Text previews and editing share a lazy-loaded CodeMirror 6 engine with its full basic editing setup and the complete installed language-data catalog. Language parsers load on demand by filename; unknown formats remain plain text. Line numbers, history, search/replace, folding, bracket matching, completion and keyboard editing use the editor engine; enclosing dialogs and file actions remain installed shadcn/UIArc controls. No linter or formatting validation is enabled. Editor transactions preserve untouched LF, CRLF and mixed line endings, and saves retain the existing Core version/conflict/readback contract.
+
+文本预览与编辑共用按需加载的 CodeMirror 6，启用完整基础编辑功能及语言目录；外部撤销、重做和查找按钮复用已安装控件。支持 Ctrl/Cmd+S 保存，查找栏打开时 Escape 先关闭查找，不触发外层草稿丢弃确认。未安装或启用语法校验器、格式校验和自动格式化，保存仍由 Core 返回结果。
+
+## Search and creation / 搜索与新建
+
+The file toolbar exposes icon-only Refresh, Search and Upload controls with accessible labels. New groups folder creation, ten server file presets (TXT, Shell, YAML, JSON, TOML, INI, CONF, ENV, systemd service and Dockerfile) and arbitrary custom filenames. Presets only initialize the filename; creation remains the same Core operation with no overwrite bypass or extra client validation.
+
+Search is a separate installed Dialog with filename queries, recursive current-directory/selected-directory/current-node-root scopes, existing Core size limits, local type filtering, pagination and sort. Scope and selected-result paths reuse the file manager's measured middle-folding breadcrumb. Results support selection, context-menu Open, Show in directory, Edit, Download and Info; reveal navigates to the containing directory and selects the file on the correct page. The footer has the installed font-size Slider, right-preview toggle and a page-local pin that keeps the search window open while allowing background interaction. Pinning does not make the browser window stay above other applications.
+
+Read-only search previews use the existing text/image/PDF/media presentation. Preview reads do not update an editor's expected file version. Search and preview requests are bounded by the shared file client and canceled when closed or superseded. Search operates on filenames, not file contents; no unsupported content-search controls are shown. Guest access, protected paths and file mutation checks remain enforced by Core/root Agent.
+
+工具栏刷新、搜索、上传使用带可访问名称的图标按钮。新建合并文件夹、十种服务器常用文件和自定义文件名入口，仅预填名称，沿用 Core 创建流程。搜索弹窗支持当前目录、指定目录、本机根目录的递归文件名搜索、类型及大小筛选、分页排序、右侧预览、字号调整与页面内置顶；作用域和选中文件路径复用现有按实际宽度折叠中间层级的面包屑。直达会打开所在目录、跳到目标分页并选中文件。被动预览不会改写编辑版本基线；关闭或替换搜索会取消旧请求。

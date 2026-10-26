@@ -75,52 +75,42 @@
 
 /* root icon of each volume */
 .elfinder-navbar-root-local.elfinder-contextmenu-icon {
-    background-image: url("../img/volume_icon_local.svg");
     background-size: contain;
 }
 
 .elfinder-navbar-root-trash.elfinder-contextmenu-icon {
-    background-image: url("../img/volume_icon_trash.svg");
     background-size: contain;
 }
 
 .elfinder-navbar-root-ftp.elfinder-contextmenu-icon {
-    background-image: url("../img/volume_icon_ftp.svg");
     background-size: contain;
 }
 
 .elfinder-navbar-root-sql.elfinder-contextmenu-icon {
-    background-image: url("../img/volume_icon_sql.svg");
     background-size: contain;
 }
 
 .elfinder-navbar-root-dropbox.elfinder-contextmenu-icon {
-    background-image: url("../img/volume_icon_dropbox.svg");
     background-size: contain;
 }
 
 .elfinder-navbar-root-googledrive.elfinder-contextmenu-icon {
-    background-image: url("../img/volume_icon_googledrive.svg");
     background-size: contain;
 }
 
 .elfinder-navbar-root-onedrive.elfinder-contextmenu-icon {
-    background-image: url("../img/volume_icon_onedrive.svg");
     background-size: contain;
 }
 
 .elfinder-navbar-root-box.elfinder-contextmenu-icon {
-    background-image: url("../img/volume_icon_box.svg");
     background-size: contain;
 }
 
 .elfinder-navbar-root-zip.elfinder-contextmenu-icon {
-    background-image: url("../img/volume_icon_zip.svg");
     background-size: contain;
 }
 
 .elfinder-navbar-root-network.elfinder-contextmenu-icon {
-    background-image: url("../img/volume_icon_network.svg");
     background-size: contain;
 }
 

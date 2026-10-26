@@ -288,7 +288,8 @@ export async function createFileManager(
   persist();
   return {
     list, stat, text, image, action,
-    search: (path: string, filter: string, limits: Record<string, string> = {}) => pages("files.search", { path, filter, recursive: "true", ...limits }),
+    previewText: async (path: string, other?: AbortSignal) => (await read<{ text: string; version: string }>("files.text", { path }, other)).text,
+    search: (path: string, filter: string, limits: Record<string, string> = {}, other?: AbortSignal) => pages("files.search", { path, filter, recursive: "true", ...limits }, other),
     saveText,
     saveImage: async (path: string, file: File, source = path) => {
       const expectedVersion = versions.get(source);
