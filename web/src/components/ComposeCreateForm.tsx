@@ -1,3 +1,5 @@
+import { SettingsGroup } from "./SettingsGroup";
+import { Input, Button } from "./ManagementUI";
 import { ExpandedTextarea } from "./ExpandedTextarea";
 import UiTaskProgress from "./UiTaskProgress";
 import type { ContainerTask } from "../api";
@@ -136,9 +138,7 @@ export default function ComposeCreateForm(input: Props) {
           >
             <header data-v-833010c3="">
               <div data-v-833010c3="">
-                <span className={__classes("eyebrow")} data-v-833010c3="">
-                  {t("label.7212dcc44ffd")}
-                </span>
+
                 <h3 data-v-833010c3="">{t("m.2798c23115cf")}</h3>
               </div>
               <span data-v-833010c3="">{t("m.0da9f2878ec4")}</span>
@@ -146,13 +146,13 @@ export default function ComposeCreateForm(input: Props) {
             <p className={__classes("compose-create-note")} data-v-833010c3="">
               {t("m.872a816958dc")}
             </p>
-            <div
+            <SettingsGroup
               className={__classes("compose-create-fields")}
               data-v-833010c3=""
             >
               <label data-v-833010c3="">
                 {t("m.867698fb7b0c")}
-                <input
+                <Input
                   autoComplete="off"
                   placeholder={t("m.d1bcd8876f63") as any}
                   disabled={submitting.value as any}
@@ -166,7 +166,7 @@ export default function ComposeCreateForm(input: Props) {
                     ["trim"],
                   )}
                   data-v-833010c3=""
-                ></input>
+                ></Input>
               </label>
               <div
                 className={__classes("compose-directory-field")}
@@ -174,7 +174,7 @@ export default function ComposeCreateForm(input: Props) {
               >
                 <label data-v-833010c3="">
                   {t("m.e9abe5532d97")}
-                  <input
+                  <Input
                     data-testid="compose-workdir"
                     autoComplete="off"
                     placeholder="/srv/web-stack"
@@ -189,16 +189,16 @@ export default function ComposeCreateForm(input: Props) {
                       ["trim"],
                     )}
                     data-v-833010c3=""
-                  ></input>
+                  ></Input>
                 </label>
-                <button
+                <Button variant="secondary"
                   ref={__dom(directoryButton)}
                   type="button"
                   disabled={__props.disabled || (submitting.value as any)}
                   aria-expanded={directoryPickerOpen.value as any}
                   aria-controls="compose-directory-picker"
                   data-testid="compose-directory-open"
-                  className={__classes("container-action")}
+
                   onClick={(event: any) => {
                     selectedDirectory.value = "";
                     directoryPickerOpen.value = true;
@@ -206,9 +206,9 @@ export default function ComposeCreateForm(input: Props) {
                   data-v-833010c3=""
                 >
                   {t("compose.browseDirectory")}
-                </button>
+                </Button>
               </div>
-            </div>
+            </SettingsGroup>
             {directoryPickerOpen.value ? <NodeFiles dialog directoryPicker nodeId={props.nodeId} nodeName={t("compose.chooseDirectory")}
               onClose={() => { void closeDirectoryPicker(); }}
               onDirectoryReady={(path: string) => { selectedDirectory.value = path; }}
@@ -240,21 +240,19 @@ export default function ComposeCreateForm(input: Props) {
               className={__classes("compose-create-actions")}
               data-v-833010c3=""
             >
-              <button
+              <Button variant="primary"
                 type="button"
                 disabled={
                   __props.disabled || submitting.value || (!validInput() as any)
                 }
-                className={__classes(
-                  "container-action container-action-danger",
-                )}
+
                 onClick={(event: any) => {
                   void createProject();
                 }}
                 data-v-833010c3=""
               >
                 {submitting.value ? t("m.92199e4ba37e") : t("m.6db055dc4ece")}
-              </button>
+              </Button>
               {task.value ? (
                 <UiTaskProgress
                   status={task.value.status}

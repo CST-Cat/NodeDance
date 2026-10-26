@@ -6,7 +6,7 @@ import type { Metric, MetricsView } from "../metrics-contract";
 import { formatBytes } from "../metric-format";
 import { locale, t } from "../i18n";
 import locations from "../country-locations.json";
-import { ManagementPage, Button, Card, Badge, Alert } from "./ManagementUI";
+import { ManagementPage, Button, Card, Alert } from "./ManagementUI";
 import { AnimatedCounter } from "./arc/animated-counter/animated-counter";
 import { Progress } from "./arc/progress/progress";
 import { Skeleton } from "./arc/skeleton/skeleton";
@@ -217,7 +217,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
                 ref={element => { if (element) labels.current.set(point.node.nodeId, element); else labels.current.delete(point.node.nodeId); }}
                 className="global-marker-label" data-active={point.node.nodeId === selected?.nodeId || undefined}
                 style={{ positionAnchor: `--cobe-fleet-${point.id}`, translate: `-50% ${-12 + stack * 30}px` } as CSSProperties}>
-                <Badge>{preferences[point.node.nodeId]?.alias || point.node.displayName}</Badge>
+                <span>{preferences[point.node.nodeId]?.alias || point.node.displayName}</span>
               </span>;
             })}</Globe></GlobeBoundary></div>}
             meta={<span className="global-map-caption"><MapPin size={14} aria-hidden="true" />{selectedPoint ? selectedPoint.label : t("global.waitingLocation")}</span>}
@@ -229,7 +229,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
               description={selectedPoint ? `${selectedPoint.label}${selectedPoint.label === countryName(selectedPoint.code) ? "" : `, ${countryName(selectedPoint.code)}`} · ${t(`global.continent.${selectedPoint.place.continent}`)}` : t("country.unknown")}
               meta={selected.agentVersion || t("global.pending")} status={t("global.following")}
               action={<Button variant="secondary" onClick={() => go(selected)}>{t("global.openNode")}<ArrowUpRight size={16} /></Button>}>
-              <div className="global-node-state"><Badge tone={online(selected) ? "success" : "neutral"}>{online(selected) ? t("global.online") : selected.agentId ? t("global.offline") : t("global.pending")}</Badge>{!fresh ? <span>{t("global.noCurrentMetrics")}</span> : null}</div>
+              <div className="global-node-state"><span>{online(selected) ? t("global.online") : selected.agentId ? t("global.offline") : t("global.pending")}</span>{!fresh ? <span>{t("global.noCurrentMetrics")}</span> : null}</div>
               <div className="global-readings">{readings.map(reading => reading.value != null ? <Progress key={reading.label} label={reading.label} value={reading.value} showValue /> : <p key={reading.label} className="global-missing"><span>{reading.label}</span><span>—</span></p>)}</div>
               <dl className="global-node-facts">
                 <div><dt>{t("global.memory")}</dt><dd>{formatBytes(memory?.usedBytes)} / {formatBytes(memory?.totalBytes)}</dd></div>

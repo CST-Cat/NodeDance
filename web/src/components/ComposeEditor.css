@@ -26,15 +26,6 @@
   color: var(--muted-strong);
   font-size: 12px;
 }
-.compose-file-picker select[data-v-306714f3] {
-  min-height: 40px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 7px 9px;
-  color: var(--text);
-  background: var(--surface-soft);
-  font: inherit;
-}
 .compose-file-picker small[data-v-306714f3] {
   overflow-wrap: anywhere;
   color: var(--muted);

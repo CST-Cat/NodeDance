@@ -1,3 +1,5 @@
+import { SettingsGroup } from "./SettingsGroup";
+import { Button, Input, Checkbox, checkboxProps } from "./ManagementUI";
 import {
   api,
   operationRequest,
@@ -319,25 +321,22 @@ export default function NodeServiceProbes(input: Props) {
           >
             <header className={__classes("probe-heading")} data-v-5be80864="">
               <div data-v-5be80864="">
-                <span className={__classes("eyebrow")} data-v-5be80864="">
-                  {"SERVICE CHECKS · "}
-                  {__props.nodeName}
-                </span>
+
                 <h2 id="service-probes-heading" data-v-5be80864="">
                   {t("m.3fefdc07fa14")}
                 </h2>
                 <p data-v-5be80864="">{t("m.46359b5cb550")}</p>
               </div>
-              <button
+              <Button variant="primary"
                 type="button"
-                className={__classes("probe-primary")}
+
                 onClick={(event: any) => {
                   __call(beginCreate, event);
                 }}
                 data-v-5be80864=""
               >
                 {t("m.41e755cbc3c5")}
-              </button>
+              </Button>
             </header>
             {!__props.nodeOnline ? (
               <p
@@ -379,10 +378,10 @@ export default function NodeServiceProbes(input: Props) {
                 <h3 data-v-5be80864="">
                   {editingID.value ? t("m.5ffc6380c433") : t("m.4a7abfcfad36")}
                 </h3>
-                <div className={__classes("probe-fields")} data-v-5be80864="">
+                <SettingsGroup className={__classes("probe-fields")} data-v-5be80864="">
                   <label data-v-5be80864="">
                     <span data-v-5be80864="">{t("m.d44e9b3d3b31")}</span>
-                    <input
+                    <Input
                       required={true}
                       placeholder={t("m.bd0242098b8e") as any}
                       {...__input(
@@ -395,7 +394,7 @@ export default function NodeServiceProbes(input: Props) {
                         [],
                       )}
                       data-v-5be80864=""
-                    ></input>
+                    ></Input>
                   </label>
                   <label data-v-5be80864="">
                     <span data-v-5be80864="">{t("m.ab2f31f30acf")}</span>
@@ -427,7 +426,7 @@ export default function NodeServiceProbes(input: Props) {
                     data-v-5be80864=""
                   >
                     <span data-v-5be80864="">{t("m.fb60c9043c7a")}</span>
-                    <input
+                    <Input
                       required={true}
                       placeholder={
                         form.kind === "tcp"
@@ -444,12 +443,12 @@ export default function NodeServiceProbes(input: Props) {
                         [],
                       )}
                       data-v-5be80864=""
-                    ></input>
+                    ></Input>
                   </label>
                   {["http", "https"].includes(form.kind) ? (
                     <label data-v-5be80864="">
                       <span data-v-5be80864="">{t("m.3f63bb98cd18")}</span>
-                      <input
+                      <Input
                         type="number"
                         min="100"
                         max="599"
@@ -464,12 +463,12 @@ export default function NodeServiceProbes(input: Props) {
                           ["number"],
                         )}
                         data-v-5be80864=""
-                      ></input>
+                      ></Input>
                     </label>
                   ) : null}
                   <label data-v-5be80864="">
                     <span data-v-5be80864="">{t("m.455adcae032d")}</span>
-                    <input
+                    <Input
                       type="number"
                       min="10"
                       max="86400"
@@ -484,11 +483,11 @@ export default function NodeServiceProbes(input: Props) {
                         ["number"],
                       )}
                       data-v-5be80864=""
-                    ></input>
+                    ></Input>
                   </label>
                   <label data-v-5be80864="">
                     <span data-v-5be80864="">{t("m.e814e078437b")}</span>
-                    <input
+                    <Input
                       type="number"
                       min="1"
                       max="30"
@@ -503,26 +502,20 @@ export default function NodeServiceProbes(input: Props) {
                         ["number"],
                       )}
                       data-v-5be80864=""
-                    ></input>
+                    ></Input>
                   </label>
-                </div>
+                </SettingsGroup>
                 <label
                   className={__classes("probe-enabled")}
                   data-v-5be80864=""
                 >
-                  <input
-                    type="checkbox"
-                    {...__input(
-                      form.enabled,
-                      (__nextValue: any) => {
+                  <Checkbox
+
+                    {...checkboxProps(form.enabled, (__nextValue: any) => {
                         form.enabled = __nextValue;
-                      },
-                      "checkbox",
-                      undefined,
-                      [],
-                    )}
+                      }, undefined)}
                     data-v-5be80864=""
-                  ></input>
+                  ></Checkbox>
                   <span data-v-5be80864="">{t("m.6cdc68ea4c5f")}</span>
                 </label>
                 <p className={__classes("probe-help")} data-v-5be80864="">
@@ -532,25 +525,25 @@ export default function NodeServiceProbes(input: Props) {
                   className={__classes("probe-form-actions")}
                   data-v-5be80864=""
                 >
-                  <button
+                  <Button variant="primary"
                     type="submit"
                     disabled={saving.value as any}
-                    className={__classes("probe-primary")}
+
                     data-v-5be80864=""
                   >
                     {saving.value ? t("m.6bdb4435095e") : t("m.6e584e3d5ce6")}
-                  </button>
-                  <button
+                  </Button>
+                  <Button variant="secondary"
                     type="button"
                     disabled={saving.value as any}
-                    className={__classes("probe-secondary")}
+
                     onClick={(event: any) => {
                       __call(closeForm, event);
                     }}
                     data-v-5be80864=""
                   >
                     {t("m.2cd0f3be8738")}
-                  </button>
+                  </Button>
                 </div>
               </form>
             ) : null}
@@ -567,7 +560,7 @@ export default function NodeServiceProbes(input: Props) {
                 {loading.value ? t("m.86b6d0d63062") : t("m.e0ad4994de04")}
               </p>
             ) : (
-              <div className={__classes("probe-list")} data-v-5be80864="">
+              <SettingsGroup className={__classes("probe-list")} data-v-5be80864="">
                 <Fragment>
                   {__each(nodeProbes(), (probe) => (
                     <article
@@ -639,7 +632,7 @@ export default function NodeServiceProbes(input: Props) {
                         className={__classes("probe-actions")}
                         data-v-5be80864=""
                       >
-                        <button
+                        <Button variant="secondary"
                           type="button"
                           onClick={(event: any) => {
                             toggleHistory(probe);
@@ -649,8 +642,8 @@ export default function NodeServiceProbes(input: Props) {
                           {visibleHistory.value[probe.id]
                             ? t("m.a9f4bab69211")
                             : t("m.a5783b941d7d")}
-                        </button>
-                        <button
+                        </Button>
+                        <Button variant="secondary"
                           type="button"
                           onClick={(event: any) => {
                             beginEdit(probe);
@@ -658,8 +651,8 @@ export default function NodeServiceProbes(input: Props) {
                           data-v-5be80864=""
                         >
                           {t("m.051836569928")}
-                        </button>
-                        <button
+                        </Button>
+                        <Button variant="secondary"
                           type="button"
                           onClick={(event: any) => {
                             toggleEnabled(probe);
@@ -669,11 +662,11 @@ export default function NodeServiceProbes(input: Props) {
                           {probe.enabled
                             ? t("m.4e6fd0e28c55")
                             : t("m.f4f0ead1116b")}
-                        </button>
-                        <button
+                        </Button>
+                        <Button variant="danger"
                           type="button"
                           disabled={deleting.value === (probe.id as any)}
-                          className={__classes("probe-delete")}
+
                           onClick={(event: any) => {
                             removeProbe(probe);
                           }}
@@ -682,7 +675,7 @@ export default function NodeServiceProbes(input: Props) {
                           {deleting.value === probe.id
                             ? t("m.4fd4f40094d4")
                             : t("m.2f9daa828907")}
-                        </button>
+                        </Button>
                       </div>
                       {visibleHistory.value[probe.id] &&
                       quality.value[probe.id] ? (
@@ -778,7 +771,7 @@ export default function NodeServiceProbes(input: Props) {
                     </article>
                   ))}
                 </Fragment>
-              </div>
+              </SettingsGroup>
             )}
           </section>
         </>

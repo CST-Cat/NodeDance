@@ -1,3 +1,4 @@
+import { Button } from "./ManagementUI";
 import { ExpandedTextarea } from "./ExpandedTextarea";
 import UiTaskProgress from "./UiTaskProgress";
 import UiLoadState from "./UiLoadState";
@@ -192,22 +193,20 @@ export default function ComposeEditor(input: Props) {
               data-v-306714f3=""
             >
               <div data-v-306714f3="">
-                <span className={__classes("eyebrow")} data-v-306714f3="">
-                  {t("label.d5cde76290bf")}
-                </span>
+
                 <h3 data-v-306714f3="">{t("m.a5de4df1d563")}</h3>
               </div>
-              <button
+              <Button variant="secondary"
                 type="button"
                 disabled={loading.value || (saving.value as any)}
-                className={__classes("container-action")}
+
                 onClick={(event: any) => {
                   void loadConfig();
                 }}
                 data-v-306714f3=""
               >
                 {t("m.df7392cc96be")}
-              </button>
+              </Button>
             </header>
             <label
               className={__classes("compose-file-picker")}
@@ -267,36 +266,34 @@ export default function ComposeEditor(input: Props) {
               className={__classes("compose-editor-actions")}
               data-v-306714f3=""
             >
-              <button
+              <Button variant="primary"
                 type="button"
                 disabled={
                   loading.value || !dirty.value || (saving.value as any)
                 }
-                className={__classes(
-                  "container-action container-action-danger",
-                )}
+
                 onClick={(event: any) => {
                   void save();
                 }}
                 data-v-306714f3=""
               >
                 {saving.value ? t("m.ff509c9ba052") : t("m.6e584e3d5ce6")}
-              </button>
-              <button
+              </Button>
+              <Button variant="secondary"
                 type="button"
                 disabled={!dirty.value || (saving.value as any)}
-                className={__classes("container-action")}
+
                 onClick={(event: any) => {
                   __call(restore, event);
                 }}
                 data-v-306714f3=""
               >
                 {t("m.131be45b460c")}
-              </button>
-              <button
+              </Button>
+              <Button variant="secondary"
                 type="button"
                 ref={__dom(reviewButton)}
-                className="container-action"
+
                 aria-haspopup="dialog"
                 disabled={loading.value || !dirty.value || saving.value}
                 onClick={() => {
@@ -304,7 +301,7 @@ export default function ComposeEditor(input: Props) {
                 }}
               >
                 {t("diff.review")}
-              </button>
+              </Button>
             </div>
             <UiLoadState
               loading={loading.value}
@@ -347,9 +344,9 @@ export default function ComposeEditor(input: Props) {
             >
               <UiConfigDiff before={savedContent.value} after={content.value} />
               <footer data-v-b0bbf977="">
-                <button type="button" onClick={closeReview}>
+                <Button variant="secondary" type="button" onClick={closeReview}>
                   {t("overview.close")}
-                </button>
+                </Button>
               </footer>
             </UiDialog>
           ) : null}

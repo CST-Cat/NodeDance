@@ -1,3 +1,4 @@
+import { Button } from "./ManagementUI";
 import { t } from "../i18n";
 import { derived } from "../state";
 export type DockerPrimaryAction =
@@ -49,7 +50,7 @@ export default function DockerActionButtons(input: Props) {
           >
             <Fragment>
               {__each(actions.value, ({ action, label }) => (
-                <button
+                <Button variant={action === "delete" ? "danger" : "secondary"}
                   key={action as any}
                   type="button"
                   data-action={action as any}
@@ -59,16 +60,14 @@ export default function DockerActionButtons(input: Props) {
                       ? t("docker.singleOnly")
                       : (t("docker.allApplicable") as any)
                   }
-                  className={__classes("container-action", {
-                    "container-action-danger": action === "delete",
-                  })}
+
                   onClick={(event: any) => {
                     emit("action", action);
                   }}
                   data-v-f0dea680=""
                 >
                   {label}
-                </button>
+                </Button>
               ))}
             </Fragment>
           </div>

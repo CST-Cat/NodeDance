@@ -26,6 +26,7 @@ import { FileAddressBreadcrumb, FileNameText } from "./FilePath";
 import { CopyButton } from "./arc/copy-button/copy-button";
 import FileImageEditor from "./FileImageEditor";
 import ElFinderGrid, { type GridAction } from "./ElFinderGrid";
+import { Card } from "./ui/card";
 import "./NodeFiles.css";
 
 const FileCodeEditor = lazy(() => import("./FileCodeEditor"));
@@ -293,7 +294,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
       <CopyButton value={path} label={f("copyPath")} iconOnly />
     </div>}
     {error && <Alert tone="danger" title={error} />}
-    <div ref={fileBody} className="file-browser-body" style={{ height: paneHeight }}>
+    <Card ref={fileBody} className="file-browser-body border-(--line)" style={{ height: paneHeight }}>
       <div className="file-browser-tree"><TreeView fillHeight maxIndentDepth={3} renderLabel={node => <FileNameText name={node.label} />} aria-label={f("directories")} nodes={treeNodes} expandedIds={expanded} onExpandedChange={values => { setExpanded(values); for (const value of values) if (!tree[value] && !value.startsWith("pending:")) void expandDirectory(value); }} onSelect={node => { if (node.id.startsWith("pending:")) { void expandDirectory(node.id.slice(8)); return; } if (!busy) void navigate(node.id); }} /></div>
       <ScrollArea ref={filePane} id={directoryPicker ? undefined : `${viewId}-panel`} role={directoryPicker ? undefined : "tabpanel"} aria-labelledby={directoryPicker ? undefined : `${viewId}-${view}`} className={`file-browser-list ${view === "grid" ? "file-browser-grid-panel" : ""}`} viewportClassName="file-browser-list-viewport" orientation="vertical" fade={0} label={f("title")}>
     {loading && <div data-testid="file-loading"><Skeleton label={t(entries.length ? "load.refreshing" : "load.initial")} lines={entries.length ? 1 : 3} /></div>}
@@ -305,7 +306,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
         ] satisfies DataColumn<NodeFileEntry>[]).filter(column => column.key === "name" || (column.key === "size" ? paneWidth >= 340 : paneWidth >= 640))} /> : null}{gridMounted && <ElFinderGrid path={path} rows={pageRows} selection={selection} busy={busy || loading || !!modal || discard} canPaste={!!clipboard} hidden={view !== "grid"} onSelection={changeSelection} onAction={gridAction} onEscape={() => { if (modal) closeModal(); else if (fullscreen) setFullscreen(false); }} />}
 
       </ScrollArea>
-    </div>
+    </Card>
     <footer ref={footer} className="file-browser-footer"><span>{visible.length} {f("items")} · {selection.length} {f("selected")}</span><Pagination page={page} pageCount={Math.ceil(visible.length / 50)} onPageChange={setPage} label={f("pages")} />{directoryPicker && onChoose && <Button type="button" disabled={loading || !!error} onClick={() => onChoose(path)} data-testid="compose-directory-use">{t("compose.useDirectory")}</Button>}</footer>
     {observations.length > 0 && <section className="file-browser-tasks" aria-label={f("tasks")}>{observations.map(item => <div key={item.taskId}><span>{item.path} · {item.status}</span><Button type="button" size="sm" variant="secondary" onClick={() => { void execute(() => manager!.observe(item.taskId)); }}>{f("observe")}</Button><Button type="button" size="sm" variant="secondary" onClick={() => { void execute(() => manager!.cancel(item.taskId)); }}>{f("cancelTask")}</Button><Button type="button" size="sm" variant="ghost" onClick={() => manager!.forget(item.taskId)}>{t("operations.forget")}</Button></div>)}</section>}
     {manager && !directoryPicker && <FileSearchDialog open={searchOpen} onOpenChange={setSearchOpen} manager={manager} path={path} portal={modalContainer} onOpenFile={row => { void openFile(row); }} onReveal={row => { void revealSearchResult(row); }} onAction={(action, row) => { if (action === "download") download([row]); else void openModal(action, [row]); }} onPickDirectory={choose => setSearchPicker({ choose })}>{searchPicker && <NodeFiles nodeId={nodeId} nodeName={nodeName} path={path} directoryPicker dialog onClose={() => setSearchPicker(undefined)} onChoose={chosen => { searchPicker.choose(chosen); setSearchPicker(undefined); }} />}</FileSearchDialog>}

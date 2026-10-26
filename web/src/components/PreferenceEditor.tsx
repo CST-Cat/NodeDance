@@ -22,6 +22,7 @@ import CountryLogo from "./CountryLogo";
 import NodeLogo from "./NodeLogo";
 import LocationPicker from "./LocationPicker";
 import "./PreferenceEditor.css";
+import { SettingsGroup } from "./SettingsGroup";
 type Props = {
   preference: DashboardPreference;
   location?: NodeLocation;
@@ -133,6 +134,7 @@ export default function PreferenceEditor(input: Props) {
               <strong>{props.title}</strong>
               <small>{t("m.741981bd96aa")}</small>
             </header>
+            <SettingsGroup>
             <Input
               label={t("m.a98585871c53")}
               placeholder={t("m.0496871244c3")}
@@ -296,6 +298,7 @@ export default function PreferenceEditor(input: Props) {
                 form.pinned = value === true;
               }}
             />
+            </SettingsGroup>
             <div className="preference-actions">
               <Button type="submit" disabled={saving.value}>
                 {saving.value ? t("m.ff509c9ba052") : t("m.f96c9903175e")}

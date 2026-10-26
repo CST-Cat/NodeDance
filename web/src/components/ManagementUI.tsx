@@ -18,7 +18,6 @@ export { Input } from "@/components/arc/input/input";
 export { ExpandedTextarea as Textarea } from "./ExpandedTextarea";
 export { Checkbox } from "@/components/arc/checkbox/checkbox";
 export { Card } from "@/components/arc/card/card";
-export { Badge } from "@/components/arc/badge/badge";
 export { Alert } from "@/components/arc/alert/alert";
 export { Tabs, TabsList, TabsTrigger } from "@/components/arc/tabs/tabs";
 import "./ManagementUI.css";

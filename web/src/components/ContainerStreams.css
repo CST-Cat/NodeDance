@@ -10,28 +10,6 @@
   align-items: center;
   gap: 6px;
 }
-.container-stream-actions button[data-v-e4bd43c8] {
-  min-height: 40px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 6px 10px;
-  color: var(--accent);
-  background: var(--line);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.container-stream-actions button[data-v-e4bd43c8]:hover:not(:disabled) {
-  background: var(--line);
-}
-.container-stream-actions button[data-v-e4bd43c8]:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-.container-stream-actions button.active[data-v-e4bd43c8] {
-  border-color: var(--danger-line);
-  color: var(--warning);
-}
 .stream-label[data-v-e4bd43c8],
 .stream-hint[data-v-e4bd43c8],
 .stream-error[data-v-e4bd43c8] {
@@ -63,53 +41,10 @@
 .stream-log-panel[data-v-e4bd43c8] {
   position: relative;
 }
-/* “Jump to latest” pill shown when the user scrolled away from the stream
-   bottom (OpenUI useClaudeScrollPinning’s jump control). The appear pop and
-   press feedback share the open-claude spring curve; the global
-   prefers-reduced-motion block flattens both. */
 .stream-log-jump[data-v-e4bd43c8] {
   position: absolute;
   right: 9px;
   bottom: 9px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 5px 11px 5px 9px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-pill);
-  background: var(--surface);
-  color: var(--accent);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: var(--overlay-shadow);
-  /* Fill backwards only: once the entrance ends the pill returns to the
-     cascade so :active press feedback (transform) can take over. */
-  animation: stream-jump-enter 0.22s var(--ux-spring) backwards;
-}
-.stream-log-jump[data-v-e4bd43c8]:hover {
-  border-color: var(--accent);
-}
-.stream-log-jump[data-v-e4bd43c8] svg {
-  width: 14px;
-  height: 14px;
-}
-@keyframes stream-jump-enter {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .stream-log-jump[data-v-e4bd43c8] {
-    animation: none;
-  }
 }
 .stream-panel-heading[data-v-e4bd43c8] {
   display: flex;

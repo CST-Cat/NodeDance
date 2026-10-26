@@ -37,7 +37,7 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  await page.route(configRoute,route=>route.fulfill({json:{fileIndex:0,content:route.request().url().includes(keys[0])?'services: {} # first':'services: {} # second',sha256:'c'.repeat(64)}}))
  await page.goto(base+`/#/nodes?node=${node}&section=compose`)
  await page.locator('.compose-project-card').first().waitFor()
- const openEditor=async i=>{const clear=page.locator('.compose-selection-bar').getByRole('button',{name:'Clear selection',exact:true});if(await clear.isEnabled())await clear.click();await page.locator('.compose-project-card').nth(i).locator('input[type=checkbox]').check();await page.getByTestId('compose-toolbar').locator('[data-action=edit]').click()}
+ const openEditor=async i=>{const clear=page.locator('.compose-selection-bar').getByRole('button',{name:'Clear selection',exact:true});if(await clear.isEnabled())await clear.click();await page.locator('.compose-project-card').nth(i).getByRole('checkbox').check();await page.getByTestId('compose-toolbar').locator('[data-action=edit]').click()}
  const editor=page.locator('.compose-editor')
  await openEditor(0);await page.waitForFunction(()=>document.querySelector('.compose-editor textarea')?.value==='services: {} # first')
  await fillExpanded(editor.locator('[data-expanded-textarea-trigger]'),'draft of first project')
@@ -101,7 +101,12 @@ module.exports=async function({page,context,base,node,headers,artifacts,catalog}
  const changed=await context.request.put(base+'/api/v1/probes/'+probe.id,{headers,data:{nodeId:node,name:'Review probe changed remotely',kind:'tcp',target:probe.target,intervalSeconds:60,timeoutSeconds:3,enabled:false,revision:probe.revision}})
  assert.equal(changed.status(),200);const remote=await changed.json()
  await page.locator('.probe-card').filter({hasText:remote.name}).waitFor()
- const form=page.locator('.probe-form');await form.locator('input').first().fill('Stale browser draft')
+ const form=page.locator('.probe-form');await form.locator('input').first().waitFor()
+ const nameRow=form.locator('.workspace-group-row > label').first()
+ assert.ok(await nameRow.count()>0,'The installed probe fields exist')
+ const alignment=await nameRow.evaluate(row=>{const label=row.querySelector('span'),input=row.querySelector('input');if(!label||!input)return null;const a=label.getBoundingClientRect(),b=input.getBoundingClientRect();return {labelRight:a.right,inputLeft:b.left,centerDelta:Math.abs(a.y+a.height/2-b.y-b.height/2)}})
+ assert.ok(alignment&&alignment.labelRight<=alignment.inputLeft&&alignment.centerDelta<2,'Narrow probe forms keep the visible label left and input right')
+ await form.locator('input').first().fill('Stale browser draft')
  let response=page.waitForResponse(r=>r.url().endsWith('/probes/'+probe.id)&&r.request().method()==='PUT')
  await form.locator('button[type=submit]').click();assert.equal((await response).status(),409,'Automatic list refresh must not replace the editor original revision')
  assert.equal((await(await context.request.get(base+'/api/v1/probes')).json()).probes.find(p=>p.id===probe.id).name,remote.name)

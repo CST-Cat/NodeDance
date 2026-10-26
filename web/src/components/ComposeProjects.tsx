@@ -1,3 +1,5 @@
+import { SettingsGroup } from "./SettingsGroup";
+import { Button, Checkbox } from "./ManagementUI";
 import UiLoadState from "./UiLoadState";
 import UiTaskProgress from "./UiTaskProgress";
 import UiPath from "./UiPath";
@@ -17,7 +19,7 @@ import DockerActionButtons, {
 } from "./DockerActionButtons";
 
 import { Fragment } from "react";
-import { __classes, __each, __indeterminate, useController } from "../state";
+import { __classes, __each, useController } from "../state";
 import "./ComposeProjects.css";
 type Props = {
   nodeId: string;
@@ -426,24 +428,22 @@ export default function ComposeProjects(input: Props) {
           >
             <header className={__classes("section-toolbar")} data-v-429264a6="">
               <div data-v-429264a6="">
-                <span className={__classes("eyebrow")} data-v-429264a6="">
-                  {t("label.135e86eb8ca8")}
-                </span>
+
                 <h2 id="compose-projects-title" data-v-429264a6="">
                   {t("compose.projectsTitle")}
                 </h2>
               </div>
-              <button
+              <Button variant="secondary"
                 type="button"
                 disabled={loading.value as any}
-                className={__classes("container-action")}
+
                 onClick={(event: any) => {
                   void refresh();
                 }}
                 data-v-429264a6=""
               >
                 {loading.value ? t("m.7f3c8312816f") : t("m.aee887434131")}
-              </button>
+              </Button>
             </header>
             {stale.value ? (
               <p
@@ -474,23 +474,20 @@ export default function ComposeProjects(input: Props) {
               data-v-429264a6=""
             >
               <label data-v-429264a6="">
-                <input
-                  type="checkbox"
-                  checked={allSelected.value as any}
-                  {...__indeterminate(
-                    selectedProjects.value.length > 0 && !allSelected.value,
-                  )}
+                <Checkbox
+
+                  checked={selectedProjects.value.length > 0 && !allSelected.value ? "indeterminate" : allSelected.value as any}
+
                   disabled={
                     selectionBusy.value || (!projects.value.length as any)
                   }
-                  onChange={(event: any) => {
-                    selectedKeys.value = (event.target as HTMLInputElement)
-                      .checked
+                  onCheckedChange={(checked) => {
+                    selectedKeys.value = checked === true
                       ? projects.value.map((project) => project.ref.key)
                       : [];
                   }}
                   data-v-429264a6=""
-                ></input>
+                ></Checkbox>
                 {t("compose.selectAll")}
               </label>
               <span role="status" data-v-429264a6="">
@@ -499,19 +496,19 @@ export default function ComposeProjects(input: Props) {
                   "1": projects.value.length,
                 })}
               </span>
-              <button
+              <Button variant="secondary"
                 type="button"
                 disabled={
                   selectionBusy.value || (!selectedProjects.value.length as any)
                 }
-                className={__classes("container-action")}
+
                 onClick={(event: any) => {
                   selectedKeys.value = [];
                 }}
                 data-v-429264a6=""
               >
                 {t("docker.clearSelection")}
-              </button>
+              </Button>
             </div>
             <div
               role="group"
@@ -528,36 +525,36 @@ export default function ComposeProjects(input: Props) {
                 }}
                 data-v-429264a6=""
               ></DockerActionButtons>
-              <button
+              <Button variant="secondary"
                 type="button"
                 disabled={!selectionCan("deploy") as any}
                 data-action="deploy"
-                className={__classes("container-action")}
+
                 onClick={(event: any) => {
                   void runSelection("deploy");
                 }}
                 data-v-429264a6=""
               >
                 {t("m.3ca7718593c0")}
-              </button>
-              <button
+              </Button>
+              <Button variant="secondary"
                 type="button"
                 disabled={!selectionCan("edit") as any}
                 data-action="edit"
-                className={__classes("container-action")}
+
                 onClick={(event: any) => {
                   editorProjectKey.value = selectedProjects.value[0].ref.key;
                 }}
                 data-v-429264a6=""
               >
                 {t("m.b2b5b9fafa31")}
-              </button>
-              <button
+              </Button>
+              <Button variant="secondary"
                 type="button"
                 disabled={stale.value as any}
                 aria-expanded={createOpen.value as any}
                 aria-controls="compose-create-project"
-                className={__classes("container-action")}
+
                 onClick={(event: any) => {
                   createOpen.value = !createOpen.value;
                 }}
@@ -568,7 +565,7 @@ export default function ComposeProjects(input: Props) {
                     ? "compose.closeCreate"
                     : "compose.newProject",
                 )}
-              </button>
+              </Button>
             </div>
             {createOpen.value ? (
               <div id="compose-create-project" data-v-429264a6="">
@@ -582,7 +579,7 @@ export default function ComposeProjects(input: Props) {
                 ></ComposeCreateForm>
               </div>
             ) : null}
-            <div
+            <SettingsGroup
               role="list"
               className={__classes("compose-resource-list")}
               data-v-429264a6=""
@@ -608,8 +605,8 @@ export default function ComposeProjects(input: Props) {
                         className={__classes("compose-project-select")}
                         data-v-429264a6=""
                       >
-                        <input
-                          type="checkbox"
+                        <Checkbox
+
                           checked={
                             selectedKeys.value.includes(project.ref.key) as any
                           }
@@ -619,29 +616,20 @@ export default function ComposeProjects(input: Props) {
                               "0": projectTitle(project),
                             }) as any
                           }
-                          onChange={(event: any) => {
+                          onCheckedChange={(checked) => {
                             toggleProject(
                               project.ref.key,
-                              (event.target as HTMLInputElement).checked,
+                              checked === true,
                             );
                           }}
                           data-v-429264a6=""
-                        ></input>
+                        ></Checkbox>
                       </label>
                       <div
                         className={__classes("compose-project-copy")}
                         data-v-429264a6=""
                       >
-                        <span
-                          className={__classes("eyebrow")}
-                          data-v-429264a6=""
-                        >
-                          {t(
-                            project.configAvailable
-                              ? "compose.configAvailable"
-                              : "compose.containersDiscovered",
-                          )}
-                        </span>
+
                         <h3 data-v-429264a6="">{projectTitle(project)}</h3>
                         {projectTitle(project) !== project.ref.name ? (
                           <p data-v-429264a6="">{project.ref.name}</p>
@@ -660,12 +648,12 @@ export default function ComposeProjects(input: Props) {
                             projectErrors.value[project.ref.key].message,
                           )}
                         </p>
-                        <button
+                        <Button variant="secondary"
                           type="button"
                           disabled={
                             selectionBusy.value || (!canRun(project) as any)
                           }
-                          className={__classes("container-action")}
+
                           onClick={(event: any) => {
                             void runAction(
                               project,
@@ -675,7 +663,7 @@ export default function ComposeProjects(input: Props) {
                           data-v-429264a6=""
                         >
                           {t("compose.retry")}
-                        </button>
+                        </Button>
                       </div>
                     ) : null}
                     {!project.configAvailable ? (
@@ -767,7 +755,7 @@ export default function ComposeProjects(input: Props) {
                   </article>
                 ))}
               </Fragment>
-            </div>
+            </SettingsGroup>
             {editorProject.value ? (
               <ComposeEditor
                 key={

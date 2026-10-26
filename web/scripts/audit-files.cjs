@@ -145,9 +145,16 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
    await nativeGrid.getByTitle(longGridName,{exact:true}).click({modifiers:['Control']});await nativeGrid.locator('.elfinder-cwd-file.ui-selected').waitFor({state:'detached'});
    if(width===1440){await nativeGrid.getByTitle('hello.txt',{exact:true}).dblclick();await dialog().getByRole('textbox',{name:'File contents',exact:true}).waitFor();await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'detached'});await action({action:'mkdir',path:'/grid-refresh-dir'});await toolbar.getByRole('button',{name:'Refresh',exact:true}).click();await nativeGrid.getByTitle('grid-refresh-dir',{exact:true}).waitFor()}
 
-   const panelBounds=await browserUI.locator('.file-browser-list').boundingBox(),treeBounds=await browserUI.locator('[role="tree"]').boundingBox();assert.ok(panelBounds&&treeBounds&&Math.abs(panelBounds.height-treeBounds.height)<2,'Native grid and directory tree have identical visible heights');
+   const panelBounds=await browserUI.locator('.file-browser-list').boundingBox(),treeBounds=await browserUI.locator('.file-browser-tree').boundingBox();assert.ok(panelBounds&&treeBounds&&Math.abs(panelBounds.height-treeBounds.height)<2,'Native grid and directory tree have identical visible heights');assert.ok(Math.abs(treeBounds.x+treeBounds.width-panelBounds.x)<2,'Directory tree and files share one continuous frame');assert.ok(await browserUI.locator('.file-browser-body[data-slot=card]').count()>0,'File workspace uses the installed Card');
    if(width===1440&&process.env.NODEDANCE_FILE_GRID_REVIEW)await browserUI.locator('.file-browser-body').screenshot({path:path.join(artifacts,'grid-review.png')});
    await viewSwitch.getByRole('tab',{name:'List',exact:true}).click();await file(longGridName).waitFor();assert.ok(await browserUI.locator('.file-browser-list-viewport').evaluate(element=>element.scrollWidth<=element.clientWidth+1),'List adapts to pane width without horizontal overflow');
+   if(width===1440){
+    const table=browserUI.locator('.file-browser-list').getByRole('table');
+    assert.equal(await table.count(),1,'The visible file table exists');
+    const frames=await table.evaluate(table=>{const frames=[];for(let element=table.parentElement;element;element=element.parentElement){const style=getComputedStyle(element);if(['Top','Right','Bottom','Left'].every(side=>parseFloat(style['border'+side+'Width'])>0&&style['border'+side+'Style']!=='none'))frames.push(element.className);if(element.classList.contains('file-browser-body'))break;}return frames;});
+    assert.equal(frames.length,1,'The file table shares one enclosing frame with the directory tree: '+frames.join(', '));
+   }
+
   }
   assert.equal(frameLoads,1,'Warm grid frame document loads once and survives view switches');assert.equal(bundleLoads,1,'elFinder bundle loads once for the warm grid');
   await page.setViewportSize({width:1440,height:650});
@@ -175,7 +182,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   await file('single').click();await file('only.txt').waitFor();
   const singleRow=await file('only.txt').evaluate(element=>{const row=element.closest('tr').getBoundingClientRect(),table=element.closest('table'),scroller=table.parentElement,frame=element.closest('[class*="_wrapper_"]');return{row:row.height,table:table.getBoundingClientRect().height,scroller:scroller.getBoundingClientRect().height,frame:frame.getBoundingClientRect().height}});
   assert.ok(singleRow.row<100&&singleRow.scroller<=singleRow.table+1&&singleRow.frame>singleRow.table+50,'Single record keeps a normal row with untinted blank space below the table');
-  const treeFrame=await browserUI.locator('[role="tree"]').boundingBox(),listFrame=await browserUI.locator('.file-browser-list').boundingBox();assert.ok(treeFrame&&listFrame&&Math.abs(treeFrame.height-listFrame.height)<2,'Single-record visible panels remain equal height');
+  const treeFrame=await browserUI.locator('.file-browser-tree').boundingBox(),listFrame=await browserUI.locator('.file-browser-list').boundingBox();assert.ok(treeFrame&&listFrame&&Math.abs(treeFrame.height-listFrame.height)<2,'Single-record visible panels remain equal height');
   if(process.env.NODEDANCE_FILE_GRID_REVIEW)await browserUI.locator('.file-browser-body').screenshot({path:path.join(artifacts,'single-row-review.png')});
   await toolbar.getByRole('button',{name:'Parent directory',exact:true}).click();await file('browser.txt').waitFor();
   await select('browser.txt');await menu('Edit file');await dialog().getByRole('textbox',{name:'File contents',exact:true}).fill('browser edited fixture');await dialog().getByRole('button',{name:'Save and close',exact:true}).click();await page.getByRole('dialog').waitFor({state:'detached'});await file('browser.txt').waitFor();assert.equal(fs.readFileSync(path.join(files,'browser.txt'),'utf8'),'browser edited fixture');

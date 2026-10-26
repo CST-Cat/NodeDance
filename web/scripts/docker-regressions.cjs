@@ -57,6 +57,15 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
   async function publish(){assert.ok(dashboardSocket);dashboardSocket.send(JSON.stringify(inventory()));await page.waitForTimeout(100)}
   await page.goto(base+`/#/nodes?node=${node}&section=docker`)
   await row(0).waitFor()
+  const filters=page.locator('.docker-view-controls')
+  const filterControls=filters.locator('input[type=search], button[data-dropdown-field]')
+  assert.equal(await filterControls.count(),3,'Search, state and sort controls exist')
+  assert.equal(await toolbar.locator('button').count(),6,'Primary actions and More exist')
+  const visibleControls=[...await filterControls.all(),page.locator('.docker-selection-bar').getByRole('button',{name:'Clear selection',exact:true}),...await toolbar.locator('button').all()]
+  const heights=await Promise.all(visibleControls.map(control=>control.evaluate(element=>element.getBoundingClientRect().height)))
+  assert.ok(Math.max(...heights)-Math.min(...heights)<1,'Docker filters and actions share one visible height: '+heights.join(', '))
+  if(process.env.NODEDANCE_DOCKER_REVIEW)await page.screenshot({path:process.env.NODEDANCE_DOCKER_REVIEW})
+
   assert.equal(await page.locator('.docker-row[draggable=true], .drag-handle').count(),0,'Docker drag sorting is removed')
   assert.equal(await row(0).getByRole('button',{name:'Stop',exact:true}).count(),0,'Actions are not repeated on rows')
   assert.ok(await action('restart').isDisabled(),'No selection cannot run a task')
@@ -90,7 +99,7 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
   stale=false;online=false;await publish();assert.ok(await action('restart').isDisabled(),'Offline nodes disable toolbar mutations')
   online=true;await publish();await clear()
   await page.getByRole('checkbox',{name:'Select this page',exact:true}).check()
-  assert.equal(await page.getByTestId('docker-table').locator('input:checked').count(),20,'Select all applies to the current page')
+  assert.equal(await page.getByTestId('docker-table').locator('[role=checkbox][data-state=checked]').count(),20,'Select all applies to the current page')
   await page.getByRole('button',{name:'Next',exact:true}).click();assert.equal(await page.getByTestId('docker-table').getByRole('checkbox').count(),4)
   assert.ok(!(await page.getByRole('checkbox',{name:'Select this page',exact:true}).isChecked()))
   await clear();await page.getByRole('button',{name:'Previous',exact:true}).click();await checkbox(0).check();await checkbox(1).check()
@@ -101,14 +110,14 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
   failures.clear();await clear();await row(0).getByRole('button',{name:records[0].container.name,exact:true}).click()
   await page.getByTestId('container-detail').waitFor()
   await publish();assert.ok(await page.getByTestId('container-detail').isVisible(),'Inventory refresh preserves the selected detail')
-  const more=toolbar.locator('details'), moreToggle=more.locator('summary')
-  await moreToggle.click();await more.getByRole('button',{name:'Logs & monitoring',exact:true}).click()
+  const more=page.getByRole('menu'), moreToggle=toolbar.getByRole('button',{name:'More',exact:true})
+  await moreToggle.click();await more.getByRole('menuitem',{name:'Logs & monitoring',exact:true}).click()
   await page.getByTestId('container-streams').waitFor()
   assert.equal(await page.getByTestId('container-streams').count(),1,'Streams exist only for the selected container')
   assert.ok(await moreToggle.evaluate(element=>document.activeElement===element),'Closing the action menu preserves keyboard focus')
   await checkbox(1).check();await page.getByTestId('container-streams').waitFor({state:'detached'})
   await clear();await row(0).getByRole('button',{name:records[0].container.name,exact:true}).click()
-  await moreToggle.click();await page.keyboard.press('Escape');assert.equal(await more.getAttribute('open'),null,'Escape closes the top action menu')
+  await moreToggle.click();await page.keyboard.press('Escape');await more.waitFor({state:'detached'});assert.equal(await more.count(),0,'Escape closes the top action menu')
   for(const language of ['en','zh-CN']) {
     await setBrowserLanguage(page,language)
     for(const [theme,width] of [['light',1440],['dark',390]]){

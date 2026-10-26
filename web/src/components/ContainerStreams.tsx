@@ -1,3 +1,4 @@
+import { Button } from "./ManagementUI";
 import { display, locale, t } from "../i18n";
 import {
   beforeDispose,
@@ -467,7 +468,7 @@ export default function ContainerStreams(input: Props) {
             >
               {logState.value !== "connecting" &&
               logState.value !== "connected" ? (
-                <button
+                <Button variant="secondary"
                   type="button"
                   disabled={__props.disabled as any}
                   onClick={(event: any) => {
@@ -476,9 +477,9 @@ export default function ContainerStreams(input: Props) {
                   data-v-e4bd43c8=""
                 >
                   {t("m.659875587949")}
-                </button>
+                </Button>
               ) : (
-                <button
+                <Button variant="secondary"
                   type="button"
                   className={__classes("active")}
                   onClick={(event: any) => {
@@ -487,7 +488,7 @@ export default function ContainerStreams(input: Props) {
                   data-v-e4bd43c8=""
                 >
                   {t("m.8949c1484d4d")}
-                </button>
+                </Button>
               )}
               <span
                 data-state={logState.value as any}
@@ -501,7 +502,7 @@ export default function ContainerStreams(input: Props) {
               </span>
               {statsState.value !== "connecting" &&
               statsState.value !== "connected" ? (
-                <button
+                <Button variant="secondary"
                   type="button"
                   disabled={
                     __props.disabled || (!__props.statsAvailable as any)
@@ -512,9 +513,9 @@ export default function ContainerStreams(input: Props) {
                   data-v-e4bd43c8=""
                 >
                   {t("m.5f8faa43a270")}
-                </button>
+                </Button>
               ) : (
-                <button
+                <Button variant="secondary"
                   type="button"
                   className={__classes("active")}
                   onClick={(event: any) => {
@@ -523,7 +524,7 @@ export default function ContainerStreams(input: Props) {
                   data-v-e4bd43c8=""
                 >
                   {t("m.31d2201e9d0b")}
-                </button>
+                </Button>
               )}
               <span
                 data-state={statsState.value as any}
@@ -595,7 +596,7 @@ export default function ContainerStreams(input: Props) {
                   {logText.value || t("m.073e53c8c4c3")}
                 </pre>
                 {logFollow.value.canJump && !logFollow.value.pinned ? (
-                  <button
+                  <Button variant="secondary"
                     type="button"
                     data-testid="stream-log-follow"
                     className={__classes("stream-log-jump")}
@@ -606,7 +607,7 @@ export default function ContainerStreams(input: Props) {
                   >
                     <UiIcon name="arrowDown"></UiIcon>
                     <span>{t("stream.jumpToLatest")}</span>
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             ) : null}

@@ -190,15 +190,11 @@
 }
 .vps-card-state[data-v-31185faa] {
   align-self: start;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  padding: 4px 7px;
   color: var(--muted-strong);
   font-size: 12px;
   white-space: nowrap;
 }
 .vps-card-state[data-running="true"][data-v-31185faa] {
-  border-color: var(--success-line);
   color: var(--success);
 }
 .vps-card-actions[data-v-31185faa] {

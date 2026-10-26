@@ -1,0 +1,230 @@
+.app-shell[data-theme] .node-management-page.workspace-page {
+  width: min(var(--workspace-measure), 100%);
+  max-width: var(--workspace-measure);
+  display: grid;
+  gap: var(--workspace-space-xl);
+  padding-block: var(--workspace-space-lg) var(--workspace-space-xl);
+  --workspace-control-measure: min(50%, 280px);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .detail-heading {
+  margin: 0;
+  gap: var(--workspace-space-md);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .detail-heading h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.3;
+  font-weight: 500;
+}
+.app-shell[data-theme] .node-management-page.workspace-page :is(.section-toolbar h2, .docker-heading h2, .probe-heading h2, .images-heading h2, h2, h3) {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+}
+.app-shell[data-theme] .node-management-page.workspace-page :is(.docker-panel, .section-panel, .service-probes, .images-panel) {
+  display: grid;
+  min-width: 0;
+  gap: var(--workspace-space-md);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.app-shell[data-theme] .node-management-page.workspace-page :is(.docker-heading, .section-toolbar, .probe-heading, .images-heading) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--workspace-space-md);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.app-shell[data-theme] .node-management-page.workspace-page :is(.node-terminal-entry, .dashboard-settings-editor, .probe-form, .asset-settings, .preference-editor, .image-pull-form, .compose-create-form) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--workspace-space-md);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+  background: transparent;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .node-terminal-entry {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .node-terminal-entry small {
+  display: none;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .workspace-group-row > label,
+.app-shell[data-theme] .node-management-page.workspace-page .rebuild-container-picker,
+.app-shell[data-theme] .node-management-page.workspace-page .workspace-group-row > .parameter-row,
+.app-shell[data-theme] .node-management-page.workspace-page .asset-grid .workspace-group-row > label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--workspace-control-measure));
+  align-items: center;
+  gap: var(--workspace-space-md);
+  margin: 0;
+  font-size: 13px;
+  min-width: 0;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .workspace-group-row > label > *,
+.app-shell[data-theme] .node-management-page.workspace-page .workspace-group-row > .parameter-row > :last-child {
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .workspace-group-row > label > small {
+  grid-column: 2;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .workspace-group-row > :is(.image-row, .probe-card, .compose-project-card, .event-card) {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.app-shell[data-theme] .node-management-page.workspace-page :is(.image-pull-form, .compose-create-form, .preference-editor, .asset-settings) > button,
+.app-shell[data-theme] .node-management-page.workspace-page :is(.probe-form-actions, .settings-save, .preference-actions, .create-form-actions) {
+  justify-self: end;
+  justify-content: flex-end;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .workspace-group-row > .preference-wide > div,
+.app-shell[data-theme] .node-management-page.workspace-page .preference-editor .workspace-group-row > div:has(> label):not(:has([role="checkbox"])),
+.app-shell[data-theme] .node-management-page.workspace-page .preference-editor .workspace-group-row > div:has(> button[role="combobox"]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--workspace-control-measure));
+  align-items: center;
+  gap: var(--workspace-space-md);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .preference-editor .workspace-group-row label {
+  margin: 0;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .node-settings-status .workspace-group-row > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 50%);
+  align-items: center;
+  gap: var(--workspace-space-md);
+  font-size: 13px;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .node-settings-status strong {
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .custom-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--workspace-space-md);
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .custom-fields label {
+  display: flex;
+  align-items: center;
+  gap: var(--workspace-space-sm);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .rebuild-facts {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .rebuild-facts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 50%);
+  gap: var(--workspace-space-md);
+  border: 0;
+  padding: var(--workspace-space-sm) 0;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .rebuild-facts dd {
+  margin: 0;
+  text-align: end;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .rebuild-dialog {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .history-controls label {
+  display: flex;
+  align-items: center;
+  gap: var(--workspace-space-sm);
+}
+@media (max-width: 600px) {
+  .app-shell[data-theme] .node-management-page.workspace-page {
+    padding-inline: 14px;
+  }
+  .app-shell[data-theme] .node-management-page.workspace-page .workspace-group-row > label,
+  .app-shell[data-theme] .node-management-page.workspace-page .rebuild-container-picker {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 52%);
+  }
+  .app-shell[data-theme] .node-management-page.workspace-page :is(.docker-view-controls, .docker-selection-bar, .docker-toolbar) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--workspace-space-sm);
+  }
+  .app-shell[data-theme] .node-management-page.workspace-page :is(.probe-form-actions, .settings-save, .preference-actions) {
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
+.app-shell[data-theme] .node-management-page.workspace-page .compose-directory-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--workspace-space-sm);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .compose-directory-field > label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 50%);
+  align-items: center;
+  gap: var(--workspace-space-md);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .location-picker {
+  grid-template-columns: minmax(0, 1fr);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .location-picker > div:has(> label),
+.app-shell[data-theme] .node-management-page.workspace-page .location-picker > div:has(> button[role="combobox"]) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--workspace-control-measure));
+  align-items: center;
+  gap: var(--workspace-space-md);
+}
+
+.app-shell[data-theme] .node-management-page.workspace-page .rebuild-mode {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--workspace-control-measure));
+  align-items: center;
+  max-width: none;
+  gap: var(--workspace-space-md);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .rebuild-binding {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--workspace-space-md);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .rebuild-binding > label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--workspace-control-measure));
+  align-items: center;
+  gap: var(--workspace-space-md);
+}
+.app-shell[data-theme] .node-management-page.workspace-page .rebuild-binding > button {
+  justify-self: end;
+}
+.app-shell[data-theme] .node-management-page.workspace-page .container-create-form {
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+.app-shell[data-theme] .node-management-page.workspace-page .asset-grid {
+  display: block;
+}
+
+.app-shell[data-theme] .node-management-page.workspace-page :is(.docker-view-controls .ui-select, .docker-toolbar) {
+  --control-height: var(--control-height-md);
+  --control-height-sm: var(--control-height-md);
+}

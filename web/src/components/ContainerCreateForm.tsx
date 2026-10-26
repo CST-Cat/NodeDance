@@ -1,3 +1,6 @@
+import { Accordion } from "./arc/accordion/accordion";
+import { SettingsGroup } from "./SettingsGroup";
+import { Input, Button, Checkbox, checkboxProps } from "./ManagementUI";
 import { ExpandedTextarea } from "./ExpandedTextarea";
 import type {
   ContainerCreateMount,
@@ -101,12 +104,8 @@ export default function ContainerCreateForm(input: Props) {
       }
       return () => (
         <>
-          <details
-            data-testid="container-create-form"
-            className={__classes("container-create-form")}
-            data-v-3bc66e7f=""
-          >
-            <summary data-v-3bc66e7f="">{t("m.d1f7023b4f8d")}</summary>
+          <section data-testid="container-create-form" className="container-create-form">
+            <Accordion defaultOpen={-1} items={[{ title: t("m.d1f7023b4f8d"), content: (
             <form
               onSubmit={(event: any) => {
                 event.preventDefault();
@@ -114,10 +113,10 @@ export default function ContainerCreateForm(input: Props) {
               }}
               data-v-3bc66e7f=""
             >
-              <div className={__classes("create-form-grid")} data-v-3bc66e7f="">
+              <SettingsGroup className={__classes("create-form-grid")} data-v-3bc66e7f="">
                 <label data-v-3bc66e7f="">
                   {t("m.176c09844e0f")}
-                  <input
+                  <Input
                     required={true}
                     placeholder={t("m.4204fc5cf592") as any}
                     {...__input(
@@ -130,11 +129,11 @@ export default function ContainerCreateForm(input: Props) {
                       [],
                     )}
                     data-v-3bc66e7f=""
-                  ></input>
+                  ></Input>
                 </label>
                 <label data-v-3bc66e7f="">
                   {t("m.62621c43654a")}
-                  <input
+                  <Input
                     required={true}
                     placeholder={t("m.6ae23d2114e1") as any}
                     {...__input(
@@ -147,11 +146,11 @@ export default function ContainerCreateForm(input: Props) {
                       [],
                     )}
                     data-v-3bc66e7f=""
-                  ></input>
+                  ></Input>
                 </label>
                 <label data-v-3bc66e7f="">
                   {t("m.97b31b5d63f5")}
-                  <input
+                  <Input
                     placeholder={t("m.7f630368cc55") as any}
                     {...__input(
                       network.value,
@@ -163,7 +162,7 @@ export default function ContainerCreateForm(input: Props) {
                       [],
                     )}
                     data-v-3bc66e7f=""
-                  ></input>
+                  ></Input>
                 </label>
                 <label data-v-3bc66e7f="">
                   {t("m.c6e4aade79e8")}
@@ -192,7 +191,7 @@ export default function ContainerCreateForm(input: Props) {
                 {restartPolicy.value === "on-failure" ? (
                   <label data-v-3bc66e7f="">
                     {t("m.696303d9c413")}
-                    <input
+                    <Input
                       type="number"
                       min="0"
                       max="1000"
@@ -206,7 +205,7 @@ export default function ContainerCreateForm(input: Props) {
                         ["number"],
                       )}
                       data-v-3bc66e7f=""
-                    ></input>
+                    ></Input>
                   </label>
                 ) : null}
                 <label
@@ -250,7 +249,7 @@ export default function ContainerCreateForm(input: Props) {
                     data-v-3bc66e7f=""
                   ></ExpandedTextarea>
                 </label>
-              </div>
+              </SettingsGroup>
               <fieldset
                 className={__classes("create-form-list")}
                 data-v-3bc66e7f=""
@@ -265,7 +264,7 @@ export default function ContainerCreateForm(input: Props) {
                     >
                       <label data-v-3bc66e7f="">
                         {t("m.9c9980ac48fe")}
-                        <input
+                        <Input
                           type="number"
                           min="1"
                           max="65535"
@@ -279,7 +278,7 @@ export default function ContainerCreateForm(input: Props) {
                             ["number"],
                           )}
                           data-v-3bc66e7f=""
-                        ></input>
+                        ></Input>
                       </label>
                       <label data-v-3bc66e7f="">
                         {t("m.ab2f31f30acf")}
@@ -301,7 +300,7 @@ export default function ContainerCreateForm(input: Props) {
                       </label>
                       <label data-v-3bc66e7f="">
                         {t("m.2ffee39fb19a")}
-                        <input
+                        <Input
                           placeholder={t("m.19caa396b494") as any}
                           {...__input(
                             port.hostIp,
@@ -313,11 +312,11 @@ export default function ContainerCreateForm(input: Props) {
                             [],
                           )}
                           data-v-3bc66e7f=""
-                        ></input>
+                        ></Input>
                       </label>
                       <label data-v-3bc66e7f="">
                         {t("m.f4a4267edc03")}
-                        <input
+                        <Input
                           inputMode="numeric"
                           placeholder={t("m.fdae3b9db051") as any}
                           {...__input(
@@ -330,31 +329,31 @@ export default function ContainerCreateForm(input: Props) {
                             [],
                           )}
                           data-v-3bc66e7f=""
-                        ></input>
+                        ></Input>
                       </label>
-                      <button
+                      <Button variant="secondary"
                         type="button"
-                        className={__classes("container-action")}
+
                         onClick={(event: any) => {
                           removePort(index);
                         }}
                         data-v-3bc66e7f=""
                       >
                         {t("m.6135d4159e89")}
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </Fragment>
-                <button
+                <Button variant="secondary"
                   type="button"
-                  className={__classes("container-action")}
+
                   onClick={(event: any) => {
                     __call(addPort, event);
                   }}
                   data-v-3bc66e7f=""
                 >
                   {t("m.173c6155fb1a")}
-                </button>
+                </Button>
               </fieldset>
               <fieldset
                 className={__classes("create-form-list")}
@@ -390,7 +389,7 @@ export default function ContainerCreateForm(input: Props) {
                         {mount.type === "bind"
                           ? t("m.bb2ab0977e56")
                           : t("m.a8833f0d0a67")}{" "}
-                        <input
+                        <Input
                           placeholder={
                             mount.type === "bind"
                               ? "/srv/data"
@@ -406,11 +405,11 @@ export default function ContainerCreateForm(input: Props) {
                             [],
                           )}
                           data-v-3bc66e7f=""
-                        ></input>
+                        ></Input>
                       </label>
                       <label data-v-3bc66e7f="">
                         {t("m.52e49d585de1")}
-                        <input
+                        <Input
                           placeholder="/var/lib/app"
                           {...__input(
                             mount.target,
@@ -422,50 +421,44 @@ export default function ContainerCreateForm(input: Props) {
                             [],
                           )}
                           data-v-3bc66e7f=""
-                        ></input>
+                        ></Input>
                       </label>
                       <label
                         className={__classes("create-readonly")}
                         data-v-3bc66e7f=""
                       >
-                        <input
-                          type="checkbox"
-                          {...__input(
-                            mount.readOnly,
-                            (__nextValue: any) => {
+                        <Checkbox
+
+                          {...checkboxProps(mount.readOnly, (__nextValue: any) => {
                               mount.readOnly = __nextValue;
-                            },
-                            "checkbox",
-                            undefined,
-                            [],
-                          )}
+                            }, undefined)}
                           data-v-3bc66e7f=""
-                        ></input>
+                        ></Checkbox>
                         {t("m.3b5ec3533b0e")}
                       </label>
-                      <button
+                      <Button variant="secondary"
                         type="button"
-                        className={__classes("container-action")}
+
                         onClick={(event: any) => {
                           removeMount(index);
                         }}
                         data-v-3bc66e7f=""
                       >
                         {t("m.6135d4159e89")}
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </Fragment>
-                <button
+                <Button variant="secondary"
                   type="button"
-                  className={__classes("container-action")}
+
                   onClick={(event: any) => {
                     __call(addMount, event);
                   }}
                   data-v-3bc66e7f=""
                 >
                   {t("m.78c8f87622ca")}
-                </button>
+                </Button>
               </fieldset>
               <p className={__classes("create-form-note")} data-v-3bc66e7f="">
                 {t("m.4576641fd0a6")}
@@ -479,16 +472,17 @@ export default function ContainerCreateForm(input: Props) {
                   {display(props.error)}
                 </p>
               ) : null}
-              <button
+              <Button variant="primary"
                 type="submit"
                 disabled={props.disabled || (props.submitting as any)}
-                className={__classes("container-action create-submit")}
+
                 data-v-3bc66e7f=""
               >
                 {props.submitting ? t("m.18931020ad52") : t("m.cb34cd41fbba")}
-              </button>
+              </Button>
             </form>
-          </details>
+            ) }]} />
+          </section>
         </>
       );
     },

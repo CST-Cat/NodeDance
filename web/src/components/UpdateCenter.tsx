@@ -20,7 +20,7 @@ import {
 } from "motion/react";
 import { motionTokens } from "./arc/lib/motion-tokens";
 import { Skeleton } from "./arc/skeleton/skeleton";
-import { Button, Input, Select, Badge, Alert } from "./ManagementUI";
+import { Button, Input, Select, Alert } from "./ManagementUI";
 import { SettingsGroup } from "./SettingsGroup";
 import { Separator } from "./ui/separator";
 function releaseItems(notes: string) {
@@ -565,20 +565,12 @@ export default function UpdateCenter() {
                               role="status"
                               data-status={job.status}
                             >
-                              <Badge
-                                tone={
-                                  ["failed", "rollback_failed"].includes(
-                                    job.status,
-                                  )
-                                    ? "danger"
-                                    : "neutral"
-                                }
-                              >
+                              <span>
                                 {t(`task.state.${job.status}`) ===
                                 `task.state.${job.status}`
                                   ? job.status
                                   : t(`task.state.${job.status}`)}
-                              </Badge>
+                              </span>
                               {!job.finished &&
                               ["queued", "running"].includes(job.status) &&
                               job.stage !== job.status ? (

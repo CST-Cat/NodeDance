@@ -24,18 +24,7 @@ import {
 
 import { useController } from "../state";
 import { cloneElement, useRef, type ReactElement } from "react";
-import {
-  ManagementPage,
-  Input,
-  Select,
-  Checkbox,
-  Button,
-  Badge,
-  Alert,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-} from "./ManagementUI";
+import { ManagementPage, Input, Select, Checkbox, Button, Alert, Tabs, TabsList, TabsTrigger } from "./ManagementUI";
 import { Dialog, DialogContent } from "./arc/dialog/dialog";
 import { TabsContent } from "./arc/tabs/tabs";
 import { SettingsGroup } from "./SettingsGroup";
@@ -1048,28 +1037,20 @@ export default function AlertCenter(input: Props) {
                           >
                             <div className="alert-record-title">
                               <strong>{item.ruleName}</strong>
-                              <Badge
-                                tone={
-                                  item.status === "active"
-                                    ? item.severity === "critical"
-                                      ? "danger"
-                                      : "warning"
-                                    : "neutral"
-                                }
-                              >
+                              <span>
                                 {item.status === "active"
                                   ? t("m.3c01089ea0e4")
                                   : t("m.3617f737f437")}
-                              </Badge>
+                              </span>
                               {item.acknowledgedAt ? (
-                                <Badge>{t("m.d56a511f498f")}</Badge>
+                                <span>{t("m.d56a511f498f")}</span>
                               ) : null}
                               {item.suppressionReason ? (
-                                <Badge>
+                                <span>
                                   {item.suppressionReason === "node_offline"
                                     ? t("m.c46a19c8d6ca")
                                     : t("m.5329772f4d2b")}
-                                </Badge>
+                                </span>
                               ) : null}
                             </div>
                             <p>{display(item.message)}</p>
@@ -1273,13 +1254,13 @@ export default function AlertCenter(input: Props) {
                           <article key={channel.id} className="alert-record">
                             <div className="alert-record-title">
                               <strong>{channel.name}</strong>
-                              <Badge>
+                              <span>
                                 {channel.config.provider
                                   ? (channelProviders.value.find(
                                       (p) => p.id === channel.config.provider,
                                     )?.name ?? channel.config.provider)
                                   : channel.kind.toUpperCase()}
-                              </Badge>
+                              </span>
                               <span>
                                 {channel.enabled
                                   ? t("m.dfb802238b38")
@@ -1890,15 +1871,9 @@ export default function AlertCenter(input: Props) {
                           key: "status",
                           label: t("m.6320b4a8722a"),
                           render: (_, delivery) => (
-                            <Badge
-                              tone={
-                                delivery.status === "failed"
-                                  ? "danger"
-                                  : "neutral"
-                              }
-                            >
+                            <span>
                               {deliveryLabel(delivery.status)}
-                            </Badge>
+                            </span>
                           ),
                         },
                         {

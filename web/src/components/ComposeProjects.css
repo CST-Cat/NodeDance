@@ -69,12 +69,6 @@
   color: var(--muted-strong);
   font-size: 12px;
 }
-.compose-project-select[data-v-429264a6] {
-  display: grid;
-  place-items: center;
-  min-width: 44px;
-  min-height: 44px;
-}
 .compose-project-copy[data-v-429264a6] {
   flex: 1;
   min-width: 0;

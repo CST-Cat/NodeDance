@@ -26,34 +26,6 @@
 .probe-heading p[data-v-5be80864] {
   margin: 6px 0 0;
 }
-.probe-primary[data-v-5be80864],
-.probe-secondary[data-v-5be80864],
-.probe-actions button[data-v-5be80864] {
-  min-height: 40px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 6px 10px;
-  color: var(--accent);
-  background: var(--control-bg);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.probe-primary[data-v-5be80864]:hover:not(:disabled),
-.probe-actions button[data-v-5be80864]:hover:not(:disabled) {
-  background: var(--control-bg);
-}
-.probe-primary[data-v-5be80864]:disabled,
-.probe-secondary[data-v-5be80864]:disabled,
-.probe-actions button[data-v-5be80864]:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.probe-secondary[data-v-5be80864] {
-  color: var(--muted-strong);
-  border-color: var(--line);
-  background: var(--control-bg);
-}
 .probe-note[data-v-5be80864],
 .probe-empty[data-v-5be80864] {
   margin: 10px 0;
@@ -100,23 +72,6 @@
 }
 .probe-fields .probe-target[data-v-5be80864] {
   grid-column: span 2;
-}
-.probe-fields input[type="number"][data-v-5be80864] {
-  max-width: 160px;
-}
-.probe-fields input[data-v-5be80864],
-.probe-fields select[data-v-5be80864] {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  min-height: 40px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 7px 9px;
-  color: var(--text);
-  background: var(--surface-soft);
-  font: inherit;
-  font-size: 12px;
 }
 .probe-enabled[data-v-5be80864] {
   display: inline-flex;
@@ -168,24 +123,18 @@
 }
 .probe-status[data-v-5be80864] {
   flex: none;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  padding: 5px 9px;
   color: var(--text);
   font-size: 12px;
 }
 .probe-status[data-status="healthy"][data-v-5be80864] {
   color: var(--success);
-  border-color: var(--success-line);
 }
 .probe-status[data-status="unhealthy"][data-v-5be80864] {
   color: var(--danger);
-  border-color: var(--danger-line);
 }
 .probe-status[data-status="unknown"][data-v-5be80864],
 .probe-status[data-status="disabled"][data-v-5be80864] {
   color: var(--warning);
-  border-color: var(--warning-line);
 }
 .probe-meta[data-v-5be80864] {
   display: flex;
@@ -194,11 +143,6 @@
   margin: 9px 0;
   color: var(--muted-strong);
   font-size: 12px;
-}
-.probe-actions .probe-delete[data-v-5be80864] {
-  color: var(--danger);
-  border-color: var(--danger-line);
-  background: var(--danger-soft);
 }
 .probe-history[data-v-5be80864] {
   display: grid;
@@ -232,9 +176,6 @@
   .probe-fields .probe-target[data-v-5be80864] {
     grid-column: span 2;
   }
-  .probe-fields input[type="number"][data-v-5be80864] {
-    max-width: 160px;
-  }
 }
 @media (max-width: 480px) {
   .probe-heading[data-v-5be80864] {
@@ -249,8 +190,5 @@
   }
   .probe-card-heading[data-v-5be80864] {
     align-items: flex-start;
-  }
-  .probe-actions button[data-v-5be80864] {
-    flex: 1 1 auto;
   }
 }

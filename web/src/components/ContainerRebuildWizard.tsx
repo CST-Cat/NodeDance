@@ -1,3 +1,4 @@
+import { Button, Input, Checkbox, checkboxProps } from "./ManagementUI";
 import UiTaskProgress from "./UiTaskProgress";
 import {
   api,
@@ -303,7 +304,7 @@ export default function ContainerRebuildWizard(input: Props) {
       return () => (
         <>
           <div className={__classes("rebuild-entry")} data-v-a7cd5075="">
-            <button
+            <Button variant="secondary"
               type="button"
               disabled={
                 __props.stale ||
@@ -315,26 +316,26 @@ export default function ContainerRebuildWizard(input: Props) {
                   ? t("m.0c6674d92b52")
                   : (t("m.f754d1c47f3e") as any)
               }
-              className={__classes("container-action")}
+
               onClick={(event: any) => {
                 __call(openWizard, event);
               }}
               data-v-a7cd5075=""
             >
               {t("m.e6953475e88d")}
-            </button>
+            </Button>
             {task.value ? <div data-testid="rebuild-task-status" data-status={task.value.status} className="container-task-status">
               <UiTaskProgress status={task.value.status} phase={task.value.progress.phase} completed={task.value.progress.completed} total={task.value.progress.total} message={["queued", "running"].includes(task.value.status) ? undefined : taskMessage.value} />
             </div> : null}
             {cleanupTask.value && !cleanupDone.value ? (
-              <button
+              <Button variant="secondary"
                 type="button"
                 disabled={
                   __props.stale ||
                   __props.container.stale ||
                   (cleaning.value as any)
                 }
-                className={__classes("container-action")}
+
                 onClick={(event: any) => {
                   __call(cleanupRollbackResources, event);
                 }}
@@ -345,7 +346,7 @@ export default function ContainerRebuildWizard(input: Props) {
                   : cleanupRestoredFailure.value
                     ? t("m.606302a043c7")
                     : t("m.4e188c5690ca")}
-              </button>
+              </Button>
             ) : null}
             {cleanupDone.value ? (
               <span
@@ -370,26 +371,24 @@ export default function ContainerRebuildWizard(input: Props) {
                   data-v-a7cd5075=""
                 >
                   <div data-v-a7cd5075="">
-                    <span className={__classes("eyebrow")} data-v-a7cd5075="">
-                      {t("label.08671c7919d1")}
-                    </span>
+
                     <h3 id="rebuild-title" data-v-a7cd5075="">
                       {t("m.4b8d9d4f3850")}
                       {__props.container.name ||
                         __props.container.id.slice(0, 12)}
                     </h3>
                   </div>
-                  <button
+                  <Button variant="secondary"
                     type="button"
                     disabled={submitting.value as any}
-                    className={__classes("container-action")}
+
                     onClick={(event: any) => {
                       opened.value = false;
                     }}
                     data-v-a7cd5075=""
                   >
                     {t("m.3fd47edce45b")}
-                  </button>
+                  </Button>
                 </header>
                 <p className={__classes("rebuild-intro")} data-v-a7cd5075="">
                   {t("m.11edce34ba7c")}
@@ -434,7 +433,7 @@ export default function ContainerRebuildWizard(input: Props) {
                         >
                           <label data-v-a7cd5075="">
                             {t("m.9c9980ac48fe")}
-                            <input
+                            <Input
                               aria-label={
                                 t("m.99af036931c4", {
                                   "0": index + 1,
@@ -454,11 +453,11 @@ export default function ContainerRebuildWizard(input: Props) {
                                 [],
                               )}
                               data-v-a7cd5075=""
-                            ></input>
+                            ></Input>
                           </label>
                           <label data-v-a7cd5075="">
                             {t("m.7782666b6ce5")}
-                            <input
+                            <Input
                               aria-label={
                                 t("m.c8c0858dd7d7", {
                                   "0": index + 1,
@@ -478,11 +477,11 @@ export default function ContainerRebuildWizard(input: Props) {
                                 [],
                               )}
                               data-v-a7cd5075=""
-                            ></input>
+                            ></Input>
                           </label>
                           <label data-v-a7cd5075="">
                             {t("m.5c474b41c45e")}
-                            <input
+                            <Input
                               aria-label={
                                 t("m.c6e031cb1c5f", {
                                   "0": index + 1,
@@ -503,42 +502,42 @@ export default function ContainerRebuildWizard(input: Props) {
                                 [],
                               )}
                               data-v-a7cd5075=""
-                            ></input>
+                            ></Input>
                           </label>
-                          <button
+                          <Button variant="secondary"
                             type="button"
                             aria-label={
                               t("m.6ccdc5171a37", {
                                 "0": index + 1,
                               }) as any
                             }
-                            className={__classes("container-action")}
+
                             onClick={(event: any) => {
                               removeBinding(index);
                             }}
                             data-v-a7cd5075=""
                           >
                             {t("m.6135d4159e89")}
-                          </button>
+                          </Button>
                         </div>
                       ))}
                     </Fragment>
-                    <button
+                    <Button variant="secondary"
                       type="button"
-                      className={__classes("container-action")}
+
                       onClick={(event: any) => {
                         __call(addBinding, event);
                       }}
                       data-v-a7cd5075=""
                     >
                       {t("m.3681abca77fd")}
-                    </button>
+                    </Button>
                   </div>
                 ) : null}
-                <button
+                <Button variant="secondary"
                   type="button"
                   disabled={loadingPlan.value || (submitting.value as any)}
-                  className={__classes("container-action")}
+
                   onClick={(event: any) => {
                     __call(preview, event);
                   }}
@@ -547,7 +546,7 @@ export default function ContainerRebuildWizard(input: Props) {
                   {loadingPlan.value
                     ? t("m.6b72c3d6855c")
                     : t("m.fda000ea51ab")}
-                </button>
+                </Button>
                 {error.value ? (
                   <p
                     role="alert"
@@ -707,23 +706,17 @@ export default function ContainerRebuildWizard(input: Props) {
                       className={__classes("rebuild-ack")}
                       data-v-a7cd5075=""
                     >
-                      <input
-                        type="checkbox"
+                      <Checkbox
+
                         disabled={submitting.value as any}
-                        {...__input(
-                          acknowledged.value,
-                          (__nextValue: any) => {
+                        {...checkboxProps(acknowledged.value, (__nextValue: any) => {
                             acknowledged.value = __nextValue;
-                          },
-                          "checkbox",
-                          undefined,
-                          [],
-                        )}
+                          }, undefined)}
                         data-v-a7cd5075=""
-                      ></input>
+                      ></Checkbox>
                       {t("m.2af7ec0d2b15")}
                     </label>
-                    <button
+                    <Button variant="danger"
                       type="button"
                       data-testid="submit-container-rebuild"
                       disabled={
@@ -732,9 +725,7 @@ export default function ContainerRebuildWizard(input: Props) {
                         __props.stale ||
                         (__props.container.stale as any)
                       }
-                      className={__classes(
-                        "container-action container-action-danger",
-                      )}
+
                       onClick={(event: any) => {
                         __call(submitRebuild, event);
                       }}
@@ -743,7 +734,7 @@ export default function ContainerRebuildWizard(input: Props) {
                       {submitting.value
                         ? t("m.26ef00b7d061")
                         : t("m.be23bb9aeb97")}
-                    </button>
+                    </Button>
                   </div>
                 ) : null}
               </section>

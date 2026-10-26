@@ -1,3 +1,6 @@
+import { DropdownMenu } from "./arc/dropdown-menu/dropdown-menu";
+import { SettingsGroup } from "./SettingsGroup";
+import { Button, Input, Checkbox, checkboxProps } from "./ManagementUI";
 import MetricHistoryData from "./MetricHistoryData";
 import CountryLogo from "./CountryLogo";
 import NodeLogo from "./NodeLogo";
@@ -24,7 +27,6 @@ import {
   __call,
   __classes,
   __each,
-  __indeterminate,
   __input,
   afterMount,
   beforeDispose,
@@ -46,6 +48,7 @@ import ImagesPanel from "./ImagesPanel";
 import MetricsPanel from "./MetricsPanel";
 import NodeAssetSettings from "./NodeAssetSettings";
 import "./NodeDetail.css";
+import "./NodeManagement.css";
 import NodeServiceProbes from "./NodeServiceProbes";
 import PreferenceEditor from "./PreferenceEditor";
 import UiSelect from "./UiSelect";
@@ -505,16 +508,6 @@ export default function NodeDetail(input: Props) {
       function inspectContainer(record: DockerContainerRecord) {
         selectedContainerIDs.value = [record.container.id];
         detailPanel.value = "info";
-      }
-      function closeMoreMenu(event: MouseEvent | KeyboardEvent) {
-        if (
-          event.type !== "keydown" &&
-          !(event.target as HTMLElement).closest("button:not(:disabled), a")
-        )
-          return;
-        const menu = (event.currentTarget as HTMLElement).closest("details");
-        menu?.removeAttribute("open");
-        menu?.querySelector("summary")?.focus();
       }
       function showPanel(panel: typeof detailPanel.value) {
         if (!singleContainer.value) return;
@@ -1030,7 +1023,8 @@ export default function NodeDetail(input: Props) {
           <section
             aria-labelledby="detail-title"
             data-testid="node-detail"
-            className={__classes("node-detail-page workspace-page")}
+            className={__classes("node-detail-page workspace-page product-arc arc-ui registry-controls", activeSection.value !== "files" && activeSection.value !== "overview" && "node-management-page")}
+            data-section={activeSection.value}
             data-v-98aa91ae=""
           >
             <header className={__classes("detail-heading")} data-v-98aa91ae="">
@@ -1093,21 +1087,21 @@ export default function NodeDetail(input: Props) {
                 data-v-98aa91ae=""
               >
                 {__props.pending ? (
-                  <button
+                  <Button variant="secondary"
                     type="button"
                     aria-expanded={
                       enrollmentOpen.value &&
                       activeSection.value !== ("settings" as any)
                     }
                     data-testid="node-install-command"
-                    className={__classes("secondary-button")}
+
                     onClick={(event: any) => {
                       __call(toggleEnrollment, event);
                     }}
                     data-v-98aa91ae=""
                   >
                     {t("node.installCommand")}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             ) : null}
@@ -1147,16 +1141,16 @@ export default function NodeDetail(input: Props) {
                     </small>
                   ) : null}
                 </div>
-                <button
+                <Button variant="secondary"
                   type="button"
-                  className={__classes("secondary-button")}
+
                   onClick={(event: any) => {
                     selectSection("probes");
                   }}
                   data-v-98aa91ae=""
                 >
                   {t("node.probes.open")}
-                </button>
+                </Button>
               </div>
             ) : null}
             {activeSection.value === "overview" && probeSummaryError.value ? (
@@ -1180,9 +1174,7 @@ export default function NodeDetail(input: Props) {
                 className={__classes("metrics-waiting")}
                 data-v-98aa91ae=""
               >
-                <span className={__classes("eyebrow")} data-v-98aa91ae="">
-                  {__props.node.displayName}
-                </span>
+
                 <h2 data-v-98aa91ae="">
                   {__props.pending
                     ? t("m.270c0a7750e1")
@@ -1227,7 +1219,7 @@ export default function NodeDetail(input: Props) {
                     <strong data-v-98aa91ae="">{t("m.725457c84556")}</strong>
                     <small data-v-98aa91ae="">{t("m.a7c1e29fcce5")}</small>
                   </div>
-                  <button
+                  <Button variant="secondary"
                     type="button"
                     disabled={!__props.online as any}
                     onClick={(event: any) => {
@@ -1236,7 +1228,7 @@ export default function NodeDetail(input: Props) {
                     data-v-98aa91ae=""
                   >
                     {t("m.b89a0e4584f2")}
-                  </button>
+                  </Button>
                 </div>
                 <section
                   aria-labelledby="docker-title"
@@ -1249,9 +1241,7 @@ export default function NodeDetail(input: Props) {
                     data-v-98aa91ae=""
                   >
                     <div data-v-98aa91ae="">
-                      <span className={__classes("eyebrow")} data-v-98aa91ae="">
-                        {t("label.c039e720422e")}
-                      </span>
+
                       <h2 id="docker-title" data-v-98aa91ae="">
                         {t("m.7cabcc483eb4")}
                       </h2>
@@ -1326,7 +1316,7 @@ export default function NodeDetail(input: Props) {
                   >
                     <label data-v-98aa91ae="">
                       {t("m.44ce7ae909bb")}
-                      <input
+                      <Input
                         type="search"
                         placeholder={t("m.5a5d5c8b732a") as any}
                         aria-label={t("m.8db3ff343ebc") as any}
@@ -1340,7 +1330,7 @@ export default function NodeDetail(input: Props) {
                           [],
                         )}
                         data-v-98aa91ae=""
-                      ></input>
+                      ></Input>
                     </label>
                     <label data-v-98aa91ae="">
                       {t("docker.state")}
@@ -1396,21 +1386,21 @@ export default function NodeDetail(input: Props) {
                     data-v-98aa91ae=""
                   >
                     <label data-v-98aa91ae="">
-                      <input
-                        type="checkbox"
-                        checked={allPageSelected.value as any}
-                        {...__indeterminate(somePageSelected.value)}
+                      <Checkbox
+
+                        checked={somePageSelected.value ? "indeterminate" : allPageSelected.value as any}
+
                         disabled={
                           !pageContainers.value.length ||
                           (selectionBusy.value as any)
                         }
-                        onChange={(event: any) => {
+                        onCheckedChange={(checked) => {
                           togglePage(
-                            (event.target as HTMLInputElement).checked,
+                            checked === true,
                           );
                         }}
                         data-v-98aa91ae=""
-                      ></input>
+                      ></Checkbox>
                       {t("docker.selectPage")}
                     </label>
                     <span role="status" data-v-98aa91ae="">
@@ -1419,20 +1409,20 @@ export default function NodeDetail(input: Props) {
                         "1": sortedContainers.value.length,
                       })}
                     </span>
-                    <button
+                    <Button variant="secondary"
                       type="button"
                       disabled={
                         !selectedContainers.value.length ||
                         (selectionBusy.value as any)
                       }
-                      className={__classes("container-action")}
+
                       onClick={(event: any) => {
                         selectedContainerIDs.value = [];
                       }}
                       data-v-98aa91ae=""
                     >
                       {t("docker.clearSelection")}
-                    </button>
+                    </Button>
                   </div>
                   <div
                     role="group"
@@ -1448,159 +1438,17 @@ export default function NodeDetail(input: Props) {
                       }}
                       data-v-98aa91ae=""
                     ></DockerActionButtons>
-                    <details
-                      className={__classes("docker-more")}
-                      onKeyDown={(event: any) => {
-                        event.preventDefault();
-                        __call(closeMoreMenu, event);
-                      }}
-                      data-v-98aa91ae=""
-                    >
-                      <summary data-v-98aa91ae="">{t("docker.more")}</summary>
-                      <div
-                        className={__classes("docker-more-menu")}
-                        onClick={(event: any) => {
-                          __call(closeMoreMenu, event);
-                        }}
-                        data-v-98aa91ae=""
-                      >
-                        <button
-                          type="button"
-                          disabled={!selectionCan("pause") as any}
-                          className={__classes("container-action")}
-                          onClick={(event: any) => {
-                            void submitSelection("pause");
-                          }}
-                          data-v-98aa91ae=""
-                        >
-                          {t("m.8d12fc0d4eb2")}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!selectionCan("resume") as any}
-                          className={__classes("container-action")}
-                          onClick={(event: any) => {
-                            void submitSelection("resume");
-                          }}
-                          data-v-98aa91ae=""
-                        >
-                          {t("m.e0534b8a4e46")}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            !singleContainer.value ||
-                            (!selectionCan("restart") as any)
-                          }
-                          className={__classes("container-action")}
-                          onClick={(event: any) => {
-                            singleContainer.value &&
-                              openContainerTerminal(singleContainer.value);
-                          }}
-                          data-v-98aa91ae=""
-                        >
-                          {t("m.d0d07d153161")}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={!singleContainer.value as any}
-                          className={__classes("container-action")}
-                          onClick={(event: any) => {
-                            showPanel("info");
-                          }}
-                          data-v-98aa91ae=""
-                        >
-                          {t("docker.details")}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            !singleContainer.value ||
-                            (Boolean(
-                              rollbackTaskForContainer(
-                                singleContainer.value.container.id,
-                              ),
-                            ) as any)
-                          }
-                          className={__classes("container-action")}
-                          onClick={(event: any) => {
-                            showPanel("streams");
-                          }}
-                          data-v-98aa91ae=""
-                        >
-                          {t("docker.streams")}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            !singleContainer.value ||
-                            !preferenceForEditor(singleContainer.value) ||
-                            (Boolean(
-                              rollbackTaskForContainer(
-                                singleContainer.value.container.id,
-                              ),
-                            ) as any)
-                          }
-                          className={__classes("container-action")}
-                          onClick={(event: any) => {
-                            showPanel("preferences");
-                          }}
-                          data-v-98aa91ae=""
-                        >
-                          {t("m.8299fda55003")}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            !singleContainer.value ||
-                            (!taskForContainer(
-                              singleContainer.value.container.id,
-                            ) as any)
-                          }
-                          className={__classes("container-action")}
-                          onClick={(event: any) => {
-                            showPanel("audit");
-                          }}
-                          data-v-98aa91ae=""
-                        >
-                          {t("m.97f395dec8ce")}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={
-                            !singleContainer.value ||
-                            !canOperate(singleContainer.value) ||
-                            Boolean(singleContainer.value.container.compose) ||
-                            (Boolean(
-                              rollbackTaskForContainer(
-                                singleContainer.value.container.id,
-                              ),
-                            ) as any)
-                          }
-                          className={__classes("container-action")}
-                          onClick={(event: any) => {
-                            __call(openSelectedRebuild, event);
-                          }}
-                          data-v-98aa91ae=""
-                        >
-                          {t("docker.rebuild")}
-                        </button>
-                        {singleContainer.value &&
-                        safeServiceURL(singleContainer.value) ? (
-                          <a
-                            href={safeServiceURL(singleContainer.value) as any}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className={__classes(
-                              "container-action service-link",
-                            )}
-                            data-v-98aa91ae=""
-                          >
-                            {t("m.e4fd01edc24f")}
-                          </a>
-                        ) : null}
-                      </div>
-                    </details>
+                    <DropdownMenu label={t("docker.more")} items={[
+                      { label: t("m.8d12fc0d4eb2"), disabled: !selectionCan("pause"), onSelect: () => { void submitSelection("pause"); } },
+                      { label: t("m.e0534b8a4e46"), disabled: !selectionCan("resume"), onSelect: () => { void submitSelection("resume"); } },
+                      { label: t("m.d0d07d153161"), disabled: !singleContainer.value || !selectionCan("restart"), onSelect: () => { if (singleContainer.value) openContainerTerminal(singleContainer.value); } },
+                      { label: t("docker.details"), disabled: !singleContainer.value, onSelect: () => showPanel("info") },
+                      { label: t("docker.streams"), disabled: !singleContainer.value || Boolean(rollbackTaskForContainer(singleContainer.value.container.id)), onSelect: () => showPanel("streams") },
+                      { label: t("m.8299fda55003"), disabled: !singleContainer.value || !preferenceForEditor(singleContainer.value) || Boolean(rollbackTaskForContainer(singleContainer.value.container.id)), onSelect: () => showPanel("preferences") },
+                      { label: t("m.97f395dec8ce"), disabled: !singleContainer.value || !taskForContainer(singleContainer.value.container.id), onSelect: () => showPanel("audit") },
+                      { label: t("docker.rebuild"), disabled: !singleContainer.value || !canOperate(singleContainer.value) || Boolean(singleContainer.value.container.compose) || Boolean(rollbackTaskForContainer(singleContainer.value.container.id)), onSelect: openSelectedRebuild },
+                      ...(singleContainer.value && safeServiceURL(singleContainer.value) ? [{ label: t("m.e4fd01edc24f"), onSelect: () => window.open(safeServiceURL(singleContainer.value!), "_blank", "noopener,noreferrer") }] : []),
+                    ]} />
                   </div>
                   <p
                     className={__classes("docker-selection-help")}
@@ -1618,16 +1466,16 @@ export default function NodeDetail(input: Props) {
                         <h3 data-v-98aa91ae="">
                           {containerTitle(singleContainer.value)}
                         </h3>
-                        <button
+                        <Button variant="secondary"
                           type="button"
-                          className={__classes("container-action")}
+
                           onClick={(event: any) => {
                             detailPanel.value = "";
                           }}
                           data-v-98aa91ae=""
                         >
                           {t("docker.closeDetails")}
-                        </button>
+                        </Button>
                       </header>
                       {detailPanel.value === "info" ? (
                         <Fragment>
@@ -1904,8 +1752,8 @@ export default function NodeDetail(input: Props) {
                                   className={__classes("container-select")}
                                   data-v-98aa91ae=""
                                 >
-                                  <input
-                                    type="checkbox"
+                                  <Checkbox
+
                                     checked={
                                       selectedContainerIDs.value.includes(
                                         record.container.id,
@@ -1917,21 +1765,20 @@ export default function NodeDetail(input: Props) {
                                         "0": containerTitle(record),
                                       }) as any
                                     }
-                                    onChange={(event: any) => {
+                                    onCheckedChange={(checked) => {
                                       toggleContainer(
                                         record.container.id,
-                                        (event.target as HTMLInputElement)
-                                          .checked,
+                                        checked === true,
                                       );
                                     }}
                                     data-v-98aa91ae=""
-                                  ></input>
+                                  ></Checkbox>
                                 </td>
                                 <td
                                   data-label={t("docker.name") as any}
                                   data-v-98aa91ae=""
                                 >
-                                  <button
+                                  <Button variant="ghost"
                                     type="button"
                                     className={__classes("container-name")}
                                     onClick={(event: any) => {
@@ -1940,7 +1787,7 @@ export default function NodeDetail(input: Props) {
                                     data-v-98aa91ae=""
                                   >
                                     {containerTitle(record)}
-                                  </button>
+                                  </Button>
                                   <small data-v-98aa91ae="">
                                     {record.container.id.slice(0, 12)}
                                     {containerTitle(record) !==
@@ -2154,30 +2001,30 @@ export default function NodeDetail(input: Props) {
                           "1": pageCount.value,
                         })}
                       </span>
-                      <button
+                      <Button variant="secondary"
                         type="button"
                         disabled={(containerPage.value <= 1) as any}
-                        className={__classes("container-action")}
+
                         onClick={(event: any) => {
                           containerPage.value--;
                         }}
                         data-v-98aa91ae=""
                       >
                         {t("docker.previous")}
-                      </button>
-                      <button
+                      </Button>
+                      <Button variant="secondary"
                         type="button"
                         disabled={
                           (containerPage.value >= pageCount.value) as any
                         }
-                        className={__classes("container-action")}
+
                         onClick={(event: any) => {
                           containerPage.value++;
                         }}
                         data-v-98aa91ae=""
                       >
                         {t("docker.next")}
-                      </button>
+                      </Button>
                     </nav>
                   ) : null}
                 </section>
@@ -2209,9 +2056,7 @@ export default function NodeDetail(input: Props) {
                   data-v-98aa91ae=""
                 >
                   <div data-v-98aa91ae="">
-                    <span className={__classes("eyebrow")} data-v-98aa91ae="">
-                      {t("label.08671c7919d1")}
-                    </span>
+
                     <h2 data-v-98aa91ae="">{t("m.e5634738490a")}</h2>
                   </div>
                 </header>
@@ -2294,9 +2139,7 @@ export default function NodeDetail(input: Props) {
                   data-v-98aa91ae=""
                 >
                   <div data-v-98aa91ae="">
-                    <span className={__classes("eyebrow")} data-v-98aa91ae="">
-                      {t("label.8f7889f6a879")}
-                    </span>
+
                     <h2 data-v-98aa91ae="">
                       {t("m.fdc402785198")}
                       {nodeTitle.value}
@@ -2333,17 +2176,17 @@ export default function NodeDetail(input: Props) {
                         </option>
                       </UiSelect>
                     </label>
-                    <button
+                    <Button variant="secondary"
                       type="button"
                       disabled={historyLoading.value as any}
-                      className={__classes("container-action")}
+
                       onClick={(event: any) => {
                         void loadHistory();
                       }}
                       data-v-98aa91ae=""
                     >
                       {t("m.bcd6771e08ec")}
-                    </button>
+                    </Button>
                   </div>
                 </div>
                 <HistoricalMetrics
@@ -2368,24 +2211,22 @@ export default function NodeDetail(input: Props) {
                   data-v-98aa91ae=""
                 >
                   <div data-v-98aa91ae="">
-                    <span className={__classes("eyebrow")} data-v-98aa91ae="">
-                      {"RECENT OPERATIONS"}
-                    </span>
+
                     <h2 data-v-98aa91ae="">
                       {t("m.7d2e3cfc51fb")}
                       {nodeTitle.value}
                     </h2>
                   </div>
-                  <button
+                  <Button variant="secondary"
                     type="button"
-                    className={__classes("container-action")}
+
                     onClick={(event: any) => {
                       emit("refreshTasks", __props.node.nodeId);
                     }}
                     data-v-98aa91ae=""
                   >
                     {t("m.aee887434131")}
-                  </button>
+                  </Button>
                 </header>
                 <p
                   className={__classes("event-source-note")}
@@ -2398,7 +2239,7 @@ export default function NodeDetail(input: Props) {
                     {t("m.a9d063f3f3a9")}
                   </p>
                 ) : null}
-                <Fragment>
+                {selectedTasks.value.length ? <SettingsGroup>
                   {__each(selectedTasks.value, (task) => (
                     <article
                       key={task.taskId as any}
@@ -2428,9 +2269,9 @@ export default function NodeDetail(input: Props) {
                           )}
                         </time>
                       </div>
-                      <button
+                      <Button variant="secondary"
                         type="button"
-                        className={__classes("container-action")}
+
                         onClick={(event: any) => {
                           toggleTaskAudit(task);
                         }}
@@ -2439,7 +2280,7 @@ export default function NodeDetail(input: Props) {
                         {taskAuditVisible.value[task.taskId]
                           ? t("m.54e74c1e7504")
                           : t("m.97f395dec8ce")}
-                      </button>
+                      </Button>
                       {taskAuditErrors.value[task.taskId] ? (
                         <p
                           role="alert"
@@ -2479,7 +2320,7 @@ export default function NodeDetail(input: Props) {
                       ) : null}
                     </article>
                   ))}
-                </Fragment>
+                </SettingsGroup> : null}
               </section>
             ) : null}
             {activeSection.value === "settings" ? (
@@ -2494,16 +2335,14 @@ export default function NodeDetail(input: Props) {
                   data-v-98aa91ae=""
                 >
                   <div data-v-98aa91ae="">
-                    <span className={__classes("eyebrow")} data-v-98aa91ae="">
-                      {t("label.26ae0bd221f2")}
-                    </span>
+
                     <h2 data-v-98aa91ae="">
                       {t("m.1b8b4303f8ba")}
                       {nodeTitle.value}
                     </h2>
                   </div>
                 </header>
-                <div
+                <SettingsGroup
                   className={__classes("node-settings-status")}
                   data-v-98aa91ae=""
                 >
@@ -2535,7 +2374,7 @@ export default function NodeDetail(input: Props) {
                     <span data-v-98aa91ae="">{t("m.bf04f29ea311")}</span>
                     <strong data-v-98aa91ae="">{__props.node.nodeId}</strong>
                   </div>
-                </div>
+                </SettingsGroup>
                 <PreferenceEditor
                   preference={nodePreferenceForEditor() as any}
                   location={__props.node.location}
@@ -2556,7 +2395,7 @@ export default function NodeDetail(input: Props) {
                   data-v-98aa91ae=""
                 >
                   <h3 data-v-98aa91ae="">{t("m.f917a66dfc4f")}</h3>
-                  <div
+                  <SettingsGroup
                     className={__classes("dashboard-settings-grid")}
                     data-v-98aa91ae=""
                   >
@@ -2666,7 +2505,7 @@ export default function NodeDetail(input: Props) {
                       </UiSelect>
                     </label>
 
-                  </div>
+                  </SettingsGroup>
                   <fieldset
                     className={__classes("custom-fields")}
                     data-v-98aa91ae=""
@@ -2675,20 +2514,14 @@ export default function NodeDetail(input: Props) {
                     <Fragment>
                       {__each(customFieldOptions.value, (field) => (
                         <label key={field.id as any} data-v-98aa91ae="">
-                          <input
-                            type="checkbox"
+                          <Checkbox
+
                             value={field.id as any}
-                            {...__input(
-                              customFields.value,
-                              (__nextValue: any) => {
+                            {...checkboxProps(customFields.value, (__nextValue: any) => {
                                 customFields.value = __nextValue;
-                              },
-                              "checkbox",
-                              field.id,
-                              [],
-                            )}
+                              }, field.id)}
                             data-v-98aa91ae=""
-                          ></input>
+                          ></Checkbox>
                           {field.label}
                         </label>
                       ))}
@@ -2698,10 +2531,10 @@ export default function NodeDetail(input: Props) {
                     className={__classes("settings-save")}
                     data-v-98aa91ae=""
                   >
-                    <button
+                    <Button variant="secondary"
                       type="button"
                       disabled={__props.dashboardSettingsSaving as any}
-                      className={__classes("container-action")}
+
                       onClick={(event: any) => {
                         emit("saveSettings");
                       }}
@@ -2710,7 +2543,7 @@ export default function NodeDetail(input: Props) {
                       {__props.dashboardSettingsSaving
                         ? t("m.ff509c9ba052")
                         : t("m.1d6a782c4ccc")}
-                    </button>
+                    </Button>
                     {__props.dashboardSettingsMessage ? (
                       <span role="status" data-v-98aa91ae="">
                         {display(__props.dashboardSettingsMessage)}
@@ -2739,11 +2572,11 @@ export default function NodeDetail(input: Props) {
                   className={__classes("node-settings-delete")}
                   data-v-98aa91ae=""
                 >
-                  <button
+                  <Button variant="danger"
                     type="button"
                     disabled={deletingNode.value as any}
                     data-testid="node-delete"
-                    className={__classes("secondary-button node-delete-button")}
+
                     onClick={(event: any) => {
                       __call(deleteNode, event);
                     }}
@@ -2752,7 +2585,7 @@ export default function NodeDetail(input: Props) {
                     {deletingNode.value
                       ? t("m.ff509c9ba052")
                       : t("node.delete")}
-                  </button>
+                  </Button>
                   {nodeActionError.value ? (
                     <p role="alert" data-v-98aa91ae="">
                       {display(nodeActionError.value)}

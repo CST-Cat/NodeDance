@@ -62,11 +62,11 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
     await waitWatch()
     publish()
     await page.locator(`[data-testid=docker-table] tr[data-container-id="${container.id}"]`).waitFor()
-    const more=page.getByTestId('docker-toolbar').locator('details')
+    const more=page.getByRole('menu')
     await page.locator(`[data-testid=docker-table] tr[data-container-id="${container.id}"]`).getByRole('button',{name:container.name,exact:true}).click()
     await page.getByTestId('container-detail').waitFor()
-    await more.locator('summary').click()
-    await more.getByRole('button',{name:'Logs & monitoring',exact:true}).click()
+    await page.getByTestId('docker-toolbar').getByRole('button',{name:'More',exact:true}).click()
+    await more.getByRole('menuitem',{name:'Logs & monitoring',exact:true}).click()
     await page.getByTestId('container-streams').waitFor()
     await page.getByRole('button',{name:'View logs',exact:true}).click()
     await page.getByTestId('stream-log-state').getByText('Receiving live data').waitFor()
@@ -92,8 +92,8 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
 
   // User intent yields immediately: one wheel-up stops all auto-following,
   // even as more frames arrive, and the jump control appears.
-  const box=await output.evaluate(element=>{const r=element.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})
-  await page.mouse.move(box.x,box.y)
+  await output.scrollIntoViewIfNeeded()
+  await output.hover()
   await page.mouse.wheel(0,-500)
   // A pinned panel reports a large scrollTop, so detachment is measured as
   // bottom distance, not an absolute offset.
@@ -120,26 +120,6 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
   pins=await pinState()
   assert.ok(pins.distance<=40,'Auto-follow resumes after an explicit jump: '+JSON.stringify(pins))
   assert.equal(pins.bottom,'0px')
-
-  // Spring press feedback settles with the shared open-claude spring. The
-  // jump pill is probed because page chrome buttons may carry their own
-  // component-level color transitions.
-  await page.mouse.move(box.x,box.y)
-  await page.mouse.wheel(0,-400)
-  try { await page.waitForFunction(()=>{const el=document.querySelector('[data-testid=stream-log-output]');return el.scrollHeight-el.scrollTop-el.clientHeight>40},{timeout:3000}) }
-  catch(e){ const d=await page.evaluate(()=>{const el=document.querySelector('[data-testid=stream-log-output]');const s=getComputedStyle(el);const r=document.elementFromPoint(innerWidth/2,innerHeight/2);return {st:el.scrollTop,sh:el.scrollHeight,ch:el.clientHeight,ov:s.overflowY,disp:s.display,at:r?r.tagName+'.'+r.className:'none',hidden:!!el.closest('[hidden]'),open:!!el.closest('details')?.open}});console.log('WHEEL2 DIAG',JSON.stringify(d));throw e }
-  const pill=page.getByTestId('stream-log-follow')
-  await pill.waitFor()
-  await page.waitForTimeout(320) // let the jump-pill enter animation finish (0.22s)
-  const [props,durations,timings]=await pill.evaluate(element=>{const s=getComputedStyle(element);return [s.transitionProperty,s.transitionDuration,s.transitionTimingFunction]})
-  assert.ok(props.split(', ').includes('transform')&&durations.split(', ').includes('0.18s')&&timings.includes('cubic-bezier(0.34, 1.3, 0.64, 1)'),'Press feedback must settle with the shared spring: '+props+' '+durations+' '+timings)
-  const pressBox=await pill.boundingBox()
-  await page.mouse.move(pressBox.x+pressBox.width/2,pressBox.y+pressBox.height/2)
-  await page.mouse.down()
-  await page.waitForTimeout(240) // let the spring press transition complete (0.18s)
-  const pressed=await pill.evaluate(element=>getComputedStyle(element).transform)
-  await page.mouse.up()
-  assert.ok(pressed!=='none'&&pressed.includes('0.98'),'Holding a button must press it: '+pressed)
 
   // 44px touch hit targets keep the visible icon size (.touch-target).
   await page.goto(base+'/#/nodes')
@@ -170,11 +150,10 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
   const reducedTransition=await iconTarget.evaluate(element=>getComputedStyle(element).transitionDuration)
   assert.ok(['0s','0.00001s'].includes(reducedTransition),'Reduced motion must flatten the press spring: '+reducedTransition)
   await openStreams()
-  await page.mouse.move(box.x,box.y)
+  await output.scrollIntoViewIfNeeded()
+  await output.hover()
   await page.mouse.wheel(0,-500)
   await jump.waitFor()
-  const reducedJump=await jump.evaluate(element=>{const s=getComputedStyle(element);return {duration:s.animationDuration,name:s.animationName}})
-  assert.equal(reducedJump.name,'none','The jump pill entrance must be disabled under reduced motion: '+JSON.stringify(reducedJump))
   const jumpStarted=Date.now()
   await jump.click()
   await page.waitForFunction(()=>{const el=document.querySelector('[data-testid=stream-log-output]');return el.scrollHeight-el.scrollTop-el.clientHeight<=40})

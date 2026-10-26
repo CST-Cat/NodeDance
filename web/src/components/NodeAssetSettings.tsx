@@ -1,3 +1,4 @@
+import { Button } from "./ManagementUI";
 import { operationRequest } from "../api";
 import { display, t } from "../i18n";
 import { exactJSON, resolveOperation, type BodySchema } from "../operations";
@@ -6,6 +7,7 @@ import NodeAssetFields from "./NodeAssetFields";
 
 import { __call, __classes, useController } from "../state";
 import "./NodeAssetSettings.css";
+import { SettingsGroup } from "./SettingsGroup";
 type Props = {
   nodeId: string;
 } & { children?: import("react").ReactNode; [key: string]: any };
@@ -109,12 +111,14 @@ export default function NodeAssetSettings(input: Props) {
             data-v-c1f6db81=""
           >
             {!loading.value && schema.value ? (
-              <NodeAssetFields
+              <SettingsGroup><NodeAssetFields
+                grouped
+                showHints={false}
                 values={asset.value as any}
                 schema={schema.value as any}
                 disabled={saving.value as any}
                 data-v-c1f6db81=""
-              ></NodeAssetFields>
+              ></NodeAssetFields></SettingsGroup>
             ) : null}
             {loading.value ? (
               <p data-v-c1f6db81="">{t("asset.loading")}</p>
@@ -138,15 +142,15 @@ export default function NodeAssetSettings(input: Props) {
               </p>
             ) : null}
             {!loading.value && schema.value ? (
-              <button
+              <Button variant="primary"
                 type="submit"
                 disabled={saving.value as any}
                 data-testid="asset-save"
-                className={__classes("secondary-button")}
+
                 data-v-c1f6db81=""
               >
                 {t(saving.value ? "asset.saving" : "asset.save")}
-              </button>
+              </Button>
             ) : null}
           </form>
         </>

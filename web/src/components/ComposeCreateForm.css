@@ -40,19 +40,6 @@
   color: var(--muted-strong);
   font-size: 12px;
 }
-.compose-create-form input[data-v-833010c3] {
-  box-sizing: border-box;
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 9px;
-  color: var(--text);
-  background: var(--surface-soft);
-  font: inherit;
-}
-.compose-create-form input[data-v-833010c3] {
-  min-height: 40px;
-}
 .compose-directory-field[data-v-833010c3] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

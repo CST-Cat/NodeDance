@@ -1,3 +1,5 @@
+import { SettingsGroup } from "./SettingsGroup";
+import { Button, Input } from "./ManagementUI";
 import UiLoadState from "./UiLoadState";
 import {
   api,
@@ -304,24 +306,22 @@ export default function ImagesPanel(input: Props) {
           >
             <header className={__classes("images-heading")} data-v-ae74c5fc="">
               <div data-v-ae74c5fc="">
-                <span className={__classes("eyebrow")} data-v-ae74c5fc="">
-                  {t("label.525f325a82b5")}
-                </span>
+
                 <h2 id="images-title" data-v-ae74c5fc="">
                   {t("m.176c09844e0f")}
                 </h2>
               </div>
-              <button
+              <Button variant="secondary"
                 type="button"
                 disabled={loading.value as any}
-                className={__classes("image-button")}
+
                 onClick={(event: any) => {
                   __call(loadImages, event);
                 }}
                 data-v-ae74c5fc=""
               >
                 {loading.value ? t("m.86b6d0d63062") : t("m.aee887434131")}
-              </button>
+              </Button>
             </header>
             <form
               className={__classes("image-pull-form")}
@@ -331,12 +331,13 @@ export default function ImagesPanel(input: Props) {
               }}
               data-v-ae74c5fc=""
             >
+              <SettingsGroup>
               <label
                 className={__classes("image-field image-reference")}
                 data-v-ae74c5fc=""
               >
                 {t("m.1357b2ae4279")}
-                <input
+                <Input
                   name="imageReference"
                   autoComplete="off"
                   placeholder={t("m.15c4c6755fbe") as any}
@@ -351,11 +352,11 @@ export default function ImagesPanel(input: Props) {
                     [],
                   )}
                   data-v-ae74c5fc=""
-                ></input>
+                ></Input>
               </label>
               <label className={__classes("image-field")} data-v-ae74c5fc="">
                 {t("m.4867bdab7b06")}
-                <input
+                <Input
                   name="registryUsername"
                   autoComplete="off"
                   placeholder={t("m.293b74110f45") as any}
@@ -369,11 +370,11 @@ export default function ImagesPanel(input: Props) {
                     [],
                   )}
                   data-v-ae74c5fc=""
-                ></input>
+                ></Input>
               </label>
               <label className={__classes("image-field")} data-v-ae74c5fc="">
                 {t("m.8b7addffb5c2")}
-                <input
+                <Input
                   name="registryPassword"
                   type="password"
                   autoComplete="new-password"
@@ -388,16 +389,17 @@ export default function ImagesPanel(input: Props) {
                     [],
                   )}
                   data-v-ae74c5fc=""
-                ></input>
+                ></Input>
               </label>
-              <button
+              </SettingsGroup>
+              <Button variant="primary"
                 type="submit"
                 disabled={submitting.value || (!reference.value.trim() as any)}
-                className={__classes("image-button primary")}
+
                 data-v-ae74c5fc=""
               >
                 {submitting.value ? t("m.26ef00b7d061") : t("m.2b0005604564")}
-              </button>
+              </Button>
             </form>
             <p className={__classes("image-hint")} data-v-ae74c5fc="">
               {t("m.87bb077c4318")}
@@ -405,7 +407,7 @@ export default function ImagesPanel(input: Props) {
             <div className={__classes("image-filter-row")} data-v-ae74c5fc="">
               <label className={__classes("image-field")} data-v-ae74c5fc="">
                 {t("m.8a6ab3b06580")}
-                <input
+                <Input
                   type="search"
                   placeholder={t("m.f7a89a15336a") as any}
                   onKeyDown={(event: any) => {
@@ -423,18 +425,18 @@ export default function ImagesPanel(input: Props) {
                     [],
                   )}
                   data-v-ae74c5fc=""
-                ></input>
+                ></Input>
               </label>
-              <button
+              <Button variant="secondary"
                 type="button"
-                className={__classes("image-button")}
+
                 onClick={(event: any) => {
                   __call(applyFilter, event);
                 }}
                 data-v-ae74c5fc=""
               >
                 {t("m.b5f15473fdc0")}
-              </button>
+              </Button>
               <span className={__classes("image-total")} data-v-ae74c5fc="">
                 {t("m.76e547a8fa54")}
                 {total.value.toLocaleString(locale.value)}
@@ -489,10 +491,10 @@ export default function ImagesPanel(input: Props) {
                 </div>
                 {activeTask.value.action === "image_pull" &&
                 activeTask.value.status === "running" ? (
-                  <button
+                  <Button variant="secondary"
                     type="button"
                     disabled={cancelPending.value as any}
-                    className={__classes("image-button")}
+
                     onClick={(event: any) => {
                       __call(cancelPull, event);
                     }}
@@ -501,11 +503,11 @@ export default function ImagesPanel(input: Props) {
                     {cancelPending.value
                       ? t("m.e8e08b0f61dd")
                       : t("m.a7d9cc0d2cb9")}
-                  </button>
+                  </Button>
                 ) : null}
-                <button
+                <Button variant="secondary"
                   type="button"
-                  className={__classes("image-button")}
+
                   onClick={(event: any) => {
                     __call(toggleAudit, event);
                   }}
@@ -514,7 +516,7 @@ export default function ImagesPanel(input: Props) {
                   {auditVisible.value
                     ? t("m.54e74c1e7504")
                     : t("m.97f395dec8ce")}
-                </button>
+                </Button>
               </article>
             ) : null}
             {activeTask.value && auditVisible.value ? (
@@ -565,7 +567,7 @@ export default function ImagesPanel(input: Props) {
               </div>
             ) : null}
             {images.value.length ? (
-              <div className={__classes("image-list")} data-v-ae74c5fc="">
+              <SettingsGroup className={__classes("image-list")} data-v-ae74c5fc="">
                 <Fragment>
                   {__each(images.value, (image) => (
                     <article
@@ -615,7 +617,7 @@ export default function ImagesPanel(input: Props) {
                           {image.digests.join(" · ")}
                         </p>
                       ) : null}
-                      <button
+                      <Button variant="danger"
                         type="button"
                         disabled={
                           image.containers > 0 ||
@@ -626,7 +628,7 @@ export default function ImagesPanel(input: Props) {
                             ? t("m.1e695283a66a")
                             : (t("m.62f417a3db56") as any)
                         }
-                        className={__classes("image-button danger")}
+
                         onClick={(event: any) => {
                           submitDelete(image);
                         }}
@@ -637,11 +639,11 @@ export default function ImagesPanel(input: Props) {
                           : image.containers > 0
                             ? t("m.fa48e8938940")
                             : t("m.dc61b6b9b500")}
-                      </button>
+                      </Button>
                     </article>
                   ))}
                 </Fragment>
-              </div>
+              </SettingsGroup>
             ) : !loading.value && !error.value ? (
               <p className={__classes("images-empty")} data-v-ae74c5fc="">
                 {filter.value ? t("m.bf11e3fed6b2") : t("m.715c063e56ec")}
@@ -653,17 +655,17 @@ export default function ImagesPanel(input: Props) {
               className={__classes("image-pagination")}
               data-v-ae74c5fc=""
             >
-              <button
+              <Button variant="secondary"
                 type="button"
                 disabled={page.value === 0 || (loading.value as any)}
-                className={__classes("image-button")}
+
                 onClick={(event: any) => {
                   movePage(-1);
                 }}
                 data-v-ae74c5fc=""
               >
                 {t("m.c9b9ae7a6144")}
-              </button>
+              </Button>
               <span data-v-ae74c5fc="">
                 {t("m.af50a0fe2a50")}
                 {page.value + 1}
@@ -671,19 +673,19 @@ export default function ImagesPanel(input: Props) {
                 {pageCount.value}
                 {t("m.d24d3c99460c")}
               </span>
-              <button
+              <Button variant="secondary"
                 type="button"
                 disabled={
                   page.value + 1 >= pageCount.value || (loading.value as any)
                 }
-                className={__classes("image-button")}
+
                 onClick={(event: any) => {
                   movePage(1);
                 }}
                 data-v-ae74c5fc=""
               >
                 {t("m.8a8542f69648")}
-              </button>
+              </Button>
             </nav>
           </section>
         </>

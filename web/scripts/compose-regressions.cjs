@@ -26,7 +26,7 @@ module.exports=async function({page,base,node,catalog,artifacts}){
  await page.goto(base+`/#/nodes?node=${node}&section=compose`)
  const cards=page.locator('.compose-project-card'),toolbar=page.getByTestId('compose-toolbar'),button=action=>toolbar.locator(`[data-action=${action}]`),selection=page.locator('.compose-selection-bar')
  await cards.first().waitFor();assert.equal(await page.locator('.compose-create-form').count(),0);assert.ok((await selection.innerText()).includes('projects'));assert.ok(!(await page.locator('#compose-projects-title').innerText()).includes(node));assert.equal(await page.locator('.compose-project-actions').count(),0)
- const select=async index=>cards.nth(index).locator('input[type=checkbox]').check()
+ const select=async index=>cards.nth(index).getByRole('checkbox').check()
  const clear=async()=>{const button=selection.getByRole('button',{name:'Clear selection',exact:true});if(await button.isEnabled())await button.click()}
  const refresh=async()=>page.locator('.compose-projects > .section-toolbar').getByRole('button',{name:'Refresh',exact:true}).click()
  const confirm=()=>page.locator('.ui-dialog').getByRole('button',{name:'Confirm',exact:true}).click()
@@ -37,7 +37,7 @@ module.exports=async function({page,base,node,catalog,artifacts}){
  assert.equal(submissions[1].key,submissions[2].key,'Retry only failed project with its original intent');assert.equal(submissions[2].target,keys[1])
  for(const action of ['stop','restart','deploy']){
   const before=submissions.length;await button(action).click();await confirm()
-  await page.waitForFunction(()=>!document.querySelector('.compose-project-select input:disabled'))
+  await page.waitForFunction(()=>!document.querySelector('.compose-project-select [role=checkbox]:disabled'))
   assert.equal(submissions.length,before+2);assert.ok(submissions.slice(before).every(value=>value.body.action===action))
  }
  // Confirmations cannot bypass a stale inventory or a removed selected target.
@@ -47,11 +47,11 @@ module.exports=async function({page,base,node,catalog,artifacts}){
  await clear();await select(0);await button('rename').click();await page.locator('.ui-dialog input').fill('My project display name');await confirm();await cards.nth(0).getByRole('heading',{name:'My project display name',exact:true}).waitFor()
  const preferences=await(await page.request.get(base+routePath('nodes.preferences',{nodeId:node}))).json();assert.equal(preferences.preferences.find(item=>item.identity==='compose_project:'+keys[0]).alias,'My project display name')
  assert.equal(all[0].ref.name,'compose-fixture-0','Display name never changes Docker project identity')
- await select(1);await button('delete').click();assert.ok((await page.locator('.ui-dialog').innerText()).includes('Data volumes'));await confirm();await page.waitForFunction(()=>!document.querySelector('.compose-project-select input:disabled'))
+ await select(1);await button('delete').click();assert.ok((await page.locator('.ui-dialog').innerText()).includes('Data volumes'));await confirm();await page.waitForFunction(()=>!document.querySelector('.compose-project-select [role=checkbox]:disabled'))
  assert.deepEqual(submissions.slice(-2).map(value=>value.body.deleteConfirmationKey),keys.slice(0,2))
  assert.equal(await cards.nth(0).locator('.compose-services').count(),0,'Deleted deployment retains its config entry without live instances')
- await selection.locator('input[type=checkbox]').check();assert.equal(await cards.locator('input:checked').count(),3);await clear();assert.equal(await cards.locator('input:checked').count(),0)
- all[2].configAvailable=false;await refresh();await selection.locator('input[type=checkbox]').check();assert.ok(await button('start').isDisabled());assert.ok(await button('delete').isDisabled());all[2].configAvailable=true;await refresh()
+ await selection.getByRole('checkbox').check();assert.equal(await cards.locator('[role=checkbox][data-state=checked]').count(),3);await clear();assert.equal(await cards.locator('[role=checkbox][data-state=checked]').count(),0)
+ all[2].configAvailable=false;await refresh();await selection.getByRole('checkbox').check();assert.ok(await button('start').isDisabled());assert.ok(await button('delete').isDisabled());all[2].configAvailable=true;await refresh()
  for(const [theme,width] of [['light',1440],['dark',390]]){
   await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme)
   await closeNavigation(page)

@@ -39,42 +39,6 @@
   color: var(--muted-strong);
   font-size: 12px;
 }
-.image-field input[data-v-ae74c5fc] {
-  min-width: 0;
-  min-height: 40px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 7px 9px;
-  color: var(--text);
-  background: var(--surface-soft);
-  font: inherit;
-  font-size: 12px;
-}
-.image-button[data-v-ae74c5fc] {
-  min-height: 40px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 6px 10px;
-  color: var(--accent);
-  background: var(--line);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.image-button.primary[data-v-ae74c5fc] {
-  color: var(--text);
-  background: var(--line);
-}
-.image-button.danger[data-v-ae74c5fc] {
-  color: var(--danger);
-  border-color: var(--danger-line);
-  background: var(--danger-soft);
-}
-.image-button[data-v-ae74c5fc]:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
 .image-hint[data-v-ae74c5fc],
 .images-empty[data-v-ae74c5fc] {
   color: var(--muted);
@@ -197,9 +161,6 @@
   margin: 0;
   color: var(--accent);
   font-size: 12px;
-}
-.image-row > .image-button[data-v-ae74c5fc] {
-  justify-self: start;
 }
 .image-pagination[data-v-ae74c5fc] {
   justify-content: center;

@@ -9,7 +9,7 @@ import {
   KeyRound,
   Play,
 } from "lucide-react";
-import { Badge } from "@/components/arc/badge/badge";
+
 import { Button } from "@/components/arc/button/button";
 import { Alert } from "@/components/arc/alert/alert";
 import { SettingsGroup, SettingsRows } from "./SettingsGroup";
@@ -258,17 +258,9 @@ export default function DomainCertificates() {
           label: t("domains.status"),
           sortable: true,
           render: (value) => (
-            <Badge
-              tone={
-                value === "expired" || value === "revoked"
-                  ? "danger"
-                  : value === "expiring"
-                    ? "warning"
-                    : "neutral"
-              }
-            >
+            <span>
               {t(`domains.status.${value}`)}
-            </Badge>
+            </span>
           ),
         },
         {
@@ -306,7 +298,7 @@ export default function DomainCertificates() {
         {
           key: "status",
           label: t("domains.status"),
-          render: (value) => <Badge>{t(`domains.status.${value}`)}</Badge>,
+          render: (value) => <span>{t(`domains.status.${value}`)}</span>,
         },
         { key: "error", label: t("domains.details") },
         {

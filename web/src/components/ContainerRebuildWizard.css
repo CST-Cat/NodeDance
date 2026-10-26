@@ -35,17 +35,6 @@
   color: var(--text);
   font-size: 12px;
 }
-.rebuild-mode select[data-v-a7cd5075],
-.rebuild-binding input[data-v-a7cd5075] {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  padding: 8px 9px;
-  color: var(--text);
-  background: var(--surface-soft);
-  font: inherit;
-}
 .rebuild-bindings[data-v-a7cd5075] {
   display: grid;
   gap: 8px;
@@ -115,10 +104,6 @@
   align-items: flex-start;
   margin: 14px 0;
   color: var(--warning);
-}
-.rebuild-ack input[data-v-a7cd5075] {
-  flex: 0 0 auto;
-  margin-top: 3px;
 }
 .rebuild-error[data-v-a7cd5075] {
   color: var(--danger);
