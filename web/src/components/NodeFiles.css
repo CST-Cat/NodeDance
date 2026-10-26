@@ -89,3 +89,8 @@
 .file-browser-tree { overflow: hidden; border-right: 1px solid var(--line); }
 .file-browser-tree > [role="tree"] { width: 100%; height: 100%; border: 0; border-radius: 0; }
 .file-browser-list-viewport > div:has(table[role="table"]) { min-height: 100%; border: 0; border-radius: 0; }
+
+.file-info-path { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.file-info-path .file-full-path { flex: 0 1 auto; min-width: 0; }
+.file-browser-tree > [role="tree"] > [data-scrollbars] { margin-inline: -8px; }
+.file-browser-tree > [role="tree"] > [data-scrollbars] > :first-child { padding-inline: 8px; }

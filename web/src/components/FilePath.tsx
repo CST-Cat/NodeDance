@@ -4,9 +4,17 @@ import { locale, t } from "../i18n";
 import { Button } from "./ManagementUI";
 import { Button as FileButton } from "./ui/button";
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbSeparator } from "./ui/breadcrumb";
+import { Copy, Check, CircleAlert } from "lucide-react";
+import { useCopyFeedback } from "./arc/lib/use-copy-feedback";
 import { DropdownMenu } from "./arc/dropdown-menu/dropdown-menu";
 
 const f = (key: string) => t(`files.ui.${key}`);
+export function FilePathCopy({ path }: { path: string }) {
+  useSignals();
+  const { state, copy } = useCopyFeedback();
+  return <><FileButton type="button" variant="ghost" size="icon-xs" aria-label={f("copyPath")} title={f("copyPath")} data-copy-state={state} onClick={() => void copy(path)}>{state === "copied" ? <Check /> : state === "error" ? <CircleAlert /> : <Copy />}</FileButton><span className="sr-only" role="status">{state === "copied" ? t("copy.success") : state === "error" ? t("copy.failed") : ""}</span></>;
+}
+
 export function FileNameText({ name }: { name: string }) {
   const chars = Array.from(name), split = chars.length > 12 ? chars.length - Math.min(8, Math.floor(chars.length / 2)) : chars.length;
   return <span className="file-name-text" title={name}><span className="file-name-start">{chars.slice(0, split).join("")}</span><span className="file-name-end"><span>{chars.slice(split).join("")}</span></span></span>;
