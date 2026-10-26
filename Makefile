@@ -6,6 +6,8 @@ SHELL := /usr/bin/env bash
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 DESTDIR ?=
+CORE_VERSION ?= $(shell git describe --tags --exact-match --match 'core-v*' 2>/dev/null || printf dev)
+AGENT_VERSION ?= $(shell git describe --tags --exact-match --match 'agent-v*' 2>/dev/null || printf dev)
 
 help:
 	@printf '%s\n' \
@@ -33,8 +35,8 @@ frontend: typecheck
 
 build: frontend
 	mkdir -p .build
-	go build -trimpath -o .build/nodedance ./cmd/nodedance
-	go build -trimpath -o .build/nodedance-agent ./cmd/nodedance-agent
+	go build -trimpath -ldflags "-X main.version=$(CORE_VERSION)" -o .build/nodedance ./cmd/nodedance
+	go build -trimpath -ldflags "-X main.version=$(AGENT_VERSION)" -o .build/nodedance-agent ./cmd/nodedance-agent
 
 install:
 	@test -x .build/nodedance || { printf '%s\n' 'run make build before make install' >&2; exit 1; }

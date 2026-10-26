@@ -4,11 +4,19 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.59]
+
+### English
+
 - Keep the native grid frame alive across view switches with once-per-instance theming and incremental same-directory sync, and serve embedded Web assets with immutable hashed-bundle caching, ETag revalidation and precompressed gzip transfer.
+- Unify Docker and node management screens around compact framed settings groups; remove colored status capsules while preserving separators, 44px controls and consistent row spacing.
 
 ### 简体中文
 
 - 网格 frame 在视图切换间保持存活，主题每实例仅加载一次，同目录刷新改为增量同步；内嵌 Web 资源改为哈希包不可变缓存、ETag 协商复用与预压缩 gzip 传输。
+- Docker 与节点管理页面统一使用紧凑、有外框的设置分组；移除彩色胶囊状态样式，同时保留分隔线、44px 控件与一致的行间距。
 
 ## [0.1.58]
 
