@@ -92,3 +92,4 @@
 .file-browser-tree > [role="tree"] > [data-scrollbars] > :first-child { padding-inline: 8px; }
 
 .file-browser-toolbar-viewport { min-width: 0; overflow-x: auto; padding: 4px; }
+.file-browser-toolbar-viewport > .file-browser-toolbar { display: flex; align-items: center; gap: 4px; width: max-content; }
