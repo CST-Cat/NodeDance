@@ -2,7 +2,9 @@ package server
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"image"
 	"image/png"
@@ -654,6 +656,14 @@ func (s *Server) handlePublicImage(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(content) == 0 {
 		http.NotFound(w, r)
+		return
+	}
+	sum := sha256.Sum256(content)
+	etag := "\"" + hex.EncodeToString(sum[:]) + "\""
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	if matchesETag(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 	w.Header().Set("Content-Type", "image/png")

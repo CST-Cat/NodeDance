@@ -383,9 +383,18 @@ func (s *Server) serveShareEntry(w http.ResponseWriter, r *http.Request, v share
 		}
 	}
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": path.Base(entry.Path)}))
-	w.Header().Set("Content-Length", strconv.FormatInt(entry.Size, 10))
-	w.WriteHeader(200)
-	_, _ = io.CopyN(w, f, entry.Size)
+	var modTime time.Time
+	if info, statErr := f.Stat(); statErr == nil {
+		modTime = info.ModTime()
+	}
+	http.ServeContent(shareContentWriter{w}, r, path.Base(entry.Path), modTime, io.NewSectionReader(f, 0, entry.Size))
+}
+
+type shareContentWriter struct{ http.ResponseWriter }
+
+func (w shareContentWriter) WriteHeader(status int) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.ResponseWriter.WriteHeader(status)
 }
 func (s *Server) startShareCleanup() {
 	s.agentWait.Add(1)

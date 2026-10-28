@@ -37,6 +37,8 @@ Visitors cannot supply node IDs, metric keys or arbitrary time ranges to the pub
 
 The public operation catalog is separately revalidated using its content ETag; this does not cache guest display data or change its permissions. 公开操作契约通过内容 ETag 重新验证，不改变游客数据的缓存和权限规则。
 
+Public appearance images also revalidate against a content ETag; the guest data projection remains `no-store`. 公开外观图片通过内容 ETag 重新验证，游客数据仍使用 `no-store`。
+
 ## Verification / 验证
 
 `make check` includes policy validation, persistence, revision/audit behavior, private-field exclusion, selected history filtering, anonymous management denial, resource opt-in, stale metric handling and immediate disable tests. `go test -race ./internal/core/server ./internal/core/guest ./internal/control ./internal/core/cli` checks shared execution and concurrency, including identical CLI/TUI policy submission with an 80-character Unicode public name. `pnpm --dir web audit:guest` starts an isolated real Core, sends metrics through a simulated protocol-only Agent and checks the anonymous browser, administrator-cookie projection equality, session-checked guest exit, browser-mode spoof denial, administrator settings/preview and direct API denial and twenty light/dark desktop/mobile layouts, including node cards and detail headings without visible internal UUIDs. It does not install an Agent or publish production data. `pnpm --dir web audit:guest-security` adds the real-browser adversarial checks documented in [guest-security.md](guest-security.md).

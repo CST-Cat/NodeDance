@@ -542,7 +542,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if etag != "" {
 			w.Header().Set("ETag", etag)
 			w.Header().Set("Cache-Control", "no-cache")
-			if catalogETagMatches(r.Header.Get("If-None-Match"), etag) {
+			if matchesETag(r.Header.Get("If-None-Match"), etag) {
 				w.WriteHeader(http.StatusNotModified)
 				return
 			}
@@ -871,7 +871,7 @@ func (s *Server) operationCatalogBody() ([]byte, string) {
 	return s.catalogBody, s.catalogETag
 }
 
-func catalogETagMatches(header, etag string) bool {
+func matchesETag(header, etag string) bool {
 	for _, candidate := range strings.Split(header, ",") {
 		if candidate = strings.TrimSpace(candidate); candidate == "*" || strings.TrimPrefix(candidate, "W/") == etag {
 			return true
