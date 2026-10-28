@@ -1131,7 +1131,12 @@ export default function App(input: Props) {
                 ) : null}
               </aside>
             ) : null}
-            <header className={__classes("topbar")} data-v-ac863f34="">
+            <header
+              className={__classes("topbar", {
+                "login-topbar": screen.value === "login",
+              })}
+              data-v-ac863f34=""
+            >
               {authenticated.value ? (
                 <div
                   className={__classes("workspace-breadcrumb")}
@@ -1188,7 +1193,7 @@ export default function App(input: Props) {
                   </span>
                   <strong data-v-ac863f34="">{screenTitle.value}</strong>
                 </div>
-              ) : (
+              ) : screen.value === "login" ? null : (
                 <a
                   href="/"
                   aria-label={t("m.f359facd4191") as any}
@@ -1488,59 +1493,14 @@ export default function App(input: Props) {
                 className={__classes("auth-layout login-layout")}
                 data-v-ac863f34=""
               >
-                <div
-                  className={__classes("auth-copy login-copy")}
-                  data-v-ac863f34=""
-                >
-                  <h1 data-v-ac863f34="">{t("m.cb1d97794707")}</h1>
-                  <div
-                    className={__classes("login-identity")}
-                    data-v-ac863f34=""
-                  >
-                    <div
-                      className={__classes("preview-avatar")}
-                      data-v-ac863f34=""
-                    >
-                      {avatarSrc.value ? (
-                        <img
-                          key={avatarRevision.value as any}
-                          src={avatarSrc.value as any}
-                          alt=""
-                          data-v-ac863f34=""
-                        ></img>
-                      ) : (
-                        <span aria-hidden="true" data-v-ac863f34="">
-                          {(appearance.displayName || "N").slice(0, 1)}
-                        </span>
-                      )}
-                    </div>
-                    <div data-v-ac863f34="">
-                      <span
-                        className={__classes("preview-label")}
-                        data-v-ac863f34=""
-                      >
-                        {t("label.e00e2736dd16")}
-                      </span>
-                      <strong data-v-ac863f34="">
-                        {appearance.displayName || "NodeDance"}
-                      </strong>
-                    </div>
-                  </div>
-                </div>
                 <section
                   aria-labelledby="login-title"
                   className={__classes("form-card login-card")}
                   data-v-ac863f34=""
                 >
-                  <span className={__classes("eyebrow")} data-v-ac863f34="">
-                    {t("label.fe274f9f3a26")}
-                  </span>
                   <h2 id="login-title" data-v-ac863f34="">
                     {t("m.c454c61e78ab")}
                   </h2>
-                  <p className={__classes("card-intro")} data-v-ac863f34="">
-                    {t("m.d62d9f683b33")}
-                  </p>
                   {notice.value ? (
                     <div
                       role="status"
@@ -1568,13 +1528,12 @@ export default function App(input: Props) {
                     data-v-ac863f34=""
                   >
                     <label className={__classes("field")} data-v-ac863f34="">
-                      <span data-v-ac863f34="">{t("auth.username")}</span>
+                      <span data-v-ac863f34="">{t("auth.loginUsername")}</span>
                       <input
                         name="username"
                         autoComplete="username"
                         required={true}
                         autoFocus={true}
-                        placeholder={t("auth.username") as any}
                         {...__input(
                           loginUsername.value,
                           (__nextValue: any) => {
@@ -1588,13 +1547,12 @@ export default function App(input: Props) {
                       ></input>
                     </label>
                     <div className={__classes("field")} data-v-ac863f34="">
-                      <label htmlFor="login-password" data-v-ac863f34="">{t("m.c19091521d71")}</label>
+                      <label htmlFor="login-password" data-v-ac863f34="">{t("auth.loginPassword")}</label>
                       <UiPassword
                         id="login-password"
                         name="password"
                         autoComplete="current-password"
                         required={true}
-                        placeholder={t("m.7673702e6ff6") as any}
                         {...__input(
                           loginPassword.value,
                           (__nextValue: any) => {
@@ -1613,10 +1571,7 @@ export default function App(input: Props) {
                       className={__classes("primary-button full-button")}
                       data-v-ac863f34=""
                     >
-                      {busy.value ? busyLabel.value : t("m.d19038809234")}{" "}
-                      <span aria-hidden="true" data-v-ac863f34="">
-                        {"↗"}
-                      </span>
+                      {busy.value ? busyLabel.value : t("m.d19038809234")}
                     </button>
                   </form>
                   {guestEnabled.value ? (

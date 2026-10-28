@@ -455,12 +455,16 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   background: var(--success-soft);
 }
 .login-layout {
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
-  gap: clamp(50px, 10vw, 155px);
+  grid-template-columns: minmax(0, 430px);
+  justify-content: center;
+  gap: 0;
 }
 .app-shell[data-screen="login"] .login-layout {
   position: relative;
   z-index: 1;
+}
+.topbar.login-topbar {
+  border-bottom: 0;
 }
 .login-background {
   position: absolute;
@@ -493,16 +497,6 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   inset: 0;
   background: var(--surface);
 }
-.auth-copy.login-copy h1 {
-  margin: 0 0 12px;
-}
-.login-identity {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 0;
-}
-.preview-avatar,
 .profile-avatar {
   display: grid;
   flex: 0 0 auto;
@@ -518,39 +512,17 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
     system-ui,
     sans-serif;
 }
-.preview-avatar {
-  width: 40px;
-  height: 40px;
-}
-.preview-avatar img,
 .profile-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
-.login-identity > div:nth-child(2) {
-  display: grid;
-  gap: 4px;
-}
-.preview-label {
-  color: var(--muted-strong);
-  font:
-    9px ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
-  letter-spacing: 0.1em;
-}
-.login-identity strong {
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 500;
-}
 .login-card {
-  padding-top: 40px;
+  width: 100%;
+  padding-top: 28px;
 }
 .login-card h2 {
-  margin-top: 15px;
+  margin-top: 0;
 }
 .settings-layout {
   --settings-space-1: 4px;
@@ -1394,8 +1366,7 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.profile-avatar,
-.preview-avatar {
+.profile-avatar {
   background: var(--surface-raised);
   border-color: var(--line-strong);
   color: var(--accent);
