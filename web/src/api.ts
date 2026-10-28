@@ -521,7 +521,7 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
     if (!response.ok) {
       let message = t('m.ad5d5a8f24fc', {"0": (response.status)})
       const body = await response.text()
-      if (name === 'auth.login' && response.status === 403 && body.trim() === 'sign-in security token expired or changed') {
+      if (name === 'auth.login' && response.status === 403 && response.headers.get('X-Error-Code') === 'login_csrf') {
         throw new ApiError(403, t('auth.loginSecurityChanged'), 'login_csrf')
       }
       try {

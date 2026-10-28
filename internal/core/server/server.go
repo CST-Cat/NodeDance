@@ -593,6 +593,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		current, _ := s.authenticateRequest(w, r, false)
 		if !s.validCSRFCookie(r, current) {
+			w.Header().Set("X-Error-Code", "login_csrf")
 			http.Error(w, "sign-in security token expired or changed", http.StatusForbidden)
 			return
 		}

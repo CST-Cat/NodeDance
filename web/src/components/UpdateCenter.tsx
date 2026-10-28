@@ -327,6 +327,7 @@ export default function UpdateCenter() {
         check.value = undefined;
         checkSequence++;
         checking.value = false;
+        busy.value = false;
         jobs.value = [];
         historyMounted.value = false;
         rollbackJob.value = "";
