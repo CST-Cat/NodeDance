@@ -1144,10 +1144,12 @@ export default function NodesDashboard(input: Props) {
           });
         }, 10_000);
         tickTimer = setInterval(() => {
+          if (document.hidden) return;
           elapsed.value = performance.now();
           wallClockNow.value = Date.now();
         }, 1000);
         taskRefreshTimer = setInterval(() => {
+          if (document.hidden) return;
           const active = new Set(
             Object.values(taskViews.value)
               .filter(
