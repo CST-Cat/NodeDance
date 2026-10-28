@@ -116,6 +116,9 @@ async function port() {
     metricsPage.setDefaultTimeout(10000)
     try { await require('./metrics-regressions.cjs')({page:metricsPage,base,node,artifacts,catalog}) }
     finally { await metricsPage.close() }
+    const lazyPage=await context.newPage();lazyPage.setDefaultTimeout(10000)
+    try { await require('./lazy-view-regressions.cjs')({page:lazyPage,base,node}) }
+    finally { await lazyPage.close() }
     const sshPage=await context.newPage()
     sshPage.setDefaultTimeout(10000)
     try { await require('./ssh-shortcut-regressions.cjs')({page:sshPage,base,headers,artifacts,catalog}) }

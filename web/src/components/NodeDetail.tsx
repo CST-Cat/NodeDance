@@ -38,23 +38,25 @@ import {
   useController,
   watchState,
 } from "../state";
-import AgentEnrollment from "./AgentEnrollment";
-import ComposeProjects from "./ComposeProjects";
-import ContainerCreateForm from "./ContainerCreateForm";
-import ContainerRebuildWizard from "./ContainerRebuildWizard";
-import ContainerStreams from "./ContainerStreams";
 import DockerActionButtons from "./DockerActionButtons";
-import ImagesPanel from "./ImagesPanel";
-import MetricsPanel from "./MetricsPanel";
 import NodeAssetSettings from "./NodeAssetSettings";
 import "./NodeDetail.css";
 import "./NodeManagement.css";
-import NodeServiceProbes from "./NodeServiceProbes";
 import PreferenceEditor from "./PreferenceEditor";
 import UiSelect from "./UiSelect";
 
 const HistoricalMetrics = lazyView(() => import("./HistoricalMetrics"));
 const TerminalConsole = lazyView(() => import("./TerminalConsole"));
+const AgentEnrollment = lazyView(() => import("./AgentEnrollment"));
+const ComposeProjects = lazyView(() => import("./ComposeProjects"));
+const ContainerCreateForm = lazyView(() => import("./ContainerCreateForm"));
+const ContainerRebuildWizard = lazyView(
+  () => import("./ContainerRebuildWizard"),
+);
+const ContainerStreams = lazyView(() => import("./ContainerStreams"));
+const ImagesPanel = lazyView(() => import("./ImagesPanel"));
+const MetricsPanel = lazyView(() => import("./MetricsPanel"));
+const NodeServiceProbes = lazyView(() => import("./NodeServiceProbes"));
 const loadNodeFiles = () => import("./NodeFiles");
 const NodeFiles = lazyView(loadNodeFiles);
 type Props = {

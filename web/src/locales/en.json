@@ -3,6 +3,8 @@
   "settings.language.system": "Follow browser",
   "settings.language.zh-CN": "Simplified Chinese",
   "settings.language.en": "English",
+  "view.loadFailed": "This view could not be loaded.",
+  "view.reload": "Reload page",
   "metric.processCount": "Processes",
   "auth.showPassword": "Show password for 5 seconds",
   "auth.hidePassword": "Hide password",

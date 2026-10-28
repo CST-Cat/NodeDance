@@ -3,6 +3,8 @@
   "settings.language.system": "跟随浏览器",
   "settings.language.zh-CN": "简体中文",
   "settings.language.en": "English",
+  "view.loadFailed": "无法加载此页面。",
+  "view.reload": "重新加载页面",
   "metric.processCount": "进程",
   "auth.showPassword": "显示密码（5 秒）",
   "auth.hidePassword": "隐藏密码",

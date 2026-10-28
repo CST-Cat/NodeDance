@@ -8,6 +8,7 @@ import {
 import { useSignals } from "@preact/signals-react/runtime";
 import {
   Children,
+  Component,
   cloneElement,
   createContext,
   Fragment,
@@ -23,6 +24,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
+import { Button } from "./components/ui/button";
 import { t } from "./i18n";
 export type Cell<T> = Signal<T>;
 export type ContextKey<T> = symbol & { readonly __type?: T };
@@ -132,6 +134,19 @@ export function derived<T>(
     peek: () => value.peek(),
   } as Signal<T>;
 }
+class LazyViewBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed) return <div className="center-stage">
+      <p role="alert">{t("view.loadFailed")}</p>
+      <Button className="mt-4" variant="outline" onClick={() => window.location.reload()}>{t("view.reload")}</Button>
+    </div>;
+    return this.props.children;
+  }
+}
 export function lazyView<T extends import("react").ComponentType<any>>(
   loader: () => Promise<{ default: T }>,
 ) {
@@ -143,7 +158,7 @@ export function lazyView<T extends import("react").ComponentType<any>>(
   const View = lazy(preload);
   function LazyContent(props: import("react").ComponentProps<T>) {
     return (
-      <Suspense
+      <LazyViewBoundary><Suspense
         fallback={
           <div className="center-stage" role="status">
             {t("guest.loading")}
@@ -151,7 +166,7 @@ export function lazyView<T extends import("react").ComponentType<any>>(
         }
       >
         <View {...(props as any)} />
-      </Suspense>
+      </Suspense></LazyViewBoundary>
     );
   }
   return Object.assign(LazyContent, { preload });
