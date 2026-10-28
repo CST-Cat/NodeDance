@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"path/filepath"
 	"testing"
 
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
@@ -59,6 +60,7 @@ func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
 	for table, wantColumns := range map[string][]string{
 		"dashboard_preferences": {"group_name"},
 		"dashboard_settings":    {"node_group_by", "node_sort_by"},
+		"appearance":            {"sharks_json"},
 	} {
 		columns, err := tableColumns(ctx, store.DB, table)
 		if err != nil {
@@ -109,6 +111,46 @@ func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
 	}
 	if items[0].SSHHost != "offline.example.net" || items[0].SSHPort != 2222 || items[0].SSHUser != "ops" {
 		t.Fatalf("reopening current schema lost SSH connection settings: %#v", items[0])
+	}
+}
+
+func TestOpenAddsSharkSettingsToExistingAppearanceRow(t *testing.T) {
+	ctx := context.Background()
+	directory := t.TempDir()
+	db, err := sql.Open("sqlite", filepath.Join(directory, "nodedance.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.ExecContext(ctx, `CREATE TABLE appearance (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		display_name TEXT NOT NULL,
+		theme TEXT NOT NULL,
+		background_color TEXT NOT NULL,
+		avatar_png BLOB,
+		background_png BLOB,
+		updated_at INTEGER NOT NULL
+	)`)
+	if err == nil {
+		_, err = db.ExecContext(ctx, `INSERT INTO appearance(id, display_name, theme, background_color, updated_at) VALUES(1, 'Existing', 'system', '#101827', 1)`)
+	}
+	if closeErr := db.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(ctx, directory)
+	if err != nil {
+		t.Fatalf("open existing appearance settings: %v", err)
+	}
+	defer store.Close()
+	var name, sharks string
+	if err := store.DB.QueryRowContext(ctx, `SELECT display_name, sharks_json FROM appearance WHERE id=1`).Scan(&name, &sharks); err != nil {
+		t.Fatal(err)
+	}
+	if name != "Existing" || sharks != `[{"kind":"classic","size":1},{"kind":"classic","size":0.7},{"kind":"classic","size":0.84},{"kind":"classic","size":0.77}]` {
+		t.Fatalf("existing appearance after adding shark settings: name=%q sharks=%s", name, sharks)
 	}
 }
 

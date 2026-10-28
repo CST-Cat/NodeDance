@@ -1,7 +1,9 @@
 package server
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -280,10 +282,15 @@ func (s *Server) handleAccountAPI(w http.ResponseWriter, r *http.Request, curren
 	return true
 }
 
-func (s *Server) writeProfile(w http.ResponseWriter, current *session) {
+func (s *Server) writeProfile(w http.ResponseWriter, ctx context.Context, current *session) {
 	var value appearance
 	var avatar, background []byte
-	if err := s.store.DB.QueryRow(`SELECT u.display_name,u.theme,u.avatar_png,a.background_color,a.background_png FROM users u CROSS JOIN appearance a WHERE u.id=? AND a.id=1`, current.UserID).Scan(&value.DisplayName, &value.Theme, &avatar, &value.BackgroundColor, &background); err != nil {
+	var sharksJSON string
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT u.display_name,u.theme,u.avatar_png,a.background_color,a.background_png,a.sharks_json FROM users u CROSS JOIN appearance a WHERE u.id=? AND a.id=1`, current.UserID).Scan(&value.DisplayName, &value.Theme, &avatar, &value.BackgroundColor, &background, &sharksJSON); err != nil {
+		http.Error(w, "request failed", 500)
+		return
+	}
+	if err := json.Unmarshal([]byte(sharksJSON), &value.Sharks); err != nil || value.Sharks == nil || !validLoginSharks(value.Sharks) {
 		http.Error(w, "request failed", 500)
 		return
 	}
@@ -299,7 +306,7 @@ func (s *Server) writeProfile(w http.ResponseWriter, current *session) {
 func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request, current *session) {
 	switch r.Method {
 	case http.MethodGet:
-		s.writeProfile(w, current)
+		s.writeProfile(w, r.Context(), current)
 	case http.MethodPut:
 		var request protocol.ProfileRequest
 		if !decodeJSON(w, r, &request) {
@@ -314,7 +321,7 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request, current *
 			http.Error(w, "request failed", 500)
 			return
 		}
-		s.writeProfile(w, current)
+		s.writeProfile(w, r.Context(), current)
 	default:
 		http.Error(w, "method not allowed", 405)
 	}

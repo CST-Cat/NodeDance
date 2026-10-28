@@ -2,7 +2,7 @@
  * Draws the World as a grid of ASCII cells:
  *   1. a transparent cell grid tinted with the current theme
  *   2. a wake field that diffuses where things swim, lighting the dots with the accent color
- *   3. fish as minimal ASCII dashes, one per cell, glinting on hard turns
+ *   3. full fish silhouettes, oriented to their heading and shaded by depth
  *   4. sharks rasterised cell-by-cell with supersampled edges: theme-tinted
  *      blocks shaded by the light, dense glyphs, and a warm accent shimmer
  */
@@ -330,6 +330,7 @@ export class AsciiRenderer {
 
   /** Cells holding a fish this frame (frame stamp); dots skip them. */
   private fishStamp = new Uint32Array(0);
+  private fishHeading = new Float32Array(0);
   private frameId = 0;
   /** Fish cells bucketed by brightness, so each bucket is one fillStyle. */
   private fishBuckets: number[][] = FISH_ALPHAS.map(() => []);
@@ -409,6 +410,7 @@ export class AsciiRenderer {
       this.sharkKind = new Uint8Array(n);
       this.sharkShadow = new Uint8Array(n);
       this.fishStamp = new Uint32Array(n);
+      this.fishHeading = new Float32Array(n);
     }
 
     for (let i = 0; i < n; i++) {
@@ -853,7 +855,7 @@ export class AsciiRenderer {
    * claim a cell first when two land in the same one.
    */
   private markFish(world: World) {
-    const { fishStamp, fishBuckets, sharkFlag } = this;
+    const { fishStamp, fishHeading, fishBuckets, sharkFlag } = this;
     const frame = ++this.frameId;
     for (const bucket of fishBuckets) bucket.length = 0;
     for (let pass = 0; pass < 2; pass++) {
@@ -862,6 +864,7 @@ export class AsciiRenderer {
         const i = this.cellIndex(f.x, f.y);
         if (i < 0 || fishStamp[i] === frame || sharkFlag[i]) continue;
         fishStamp[i] = frame;
+        fishHeading[i] = Math.atan2(f.vy, f.vx);
         const glint = clamp(Math.abs(f.turn) / 3.5, 0, 1);
         const v = 0.3 + (0.4 * (f.depth - 0.55)) / 0.45 + 0.3 * Math.max(glint, f.alarm);
         fishBuckets[clamp(Math.floor(v * FISH_ALPHAS.length), 0, FISH_ALPHAS.length - 1)].push(i);
@@ -870,13 +873,35 @@ export class AsciiRenderer {
   }
 
   private drawFish() {
-    const { ctx, cw, ch, cols, fishBuckets } = this;
+    const { ctx, cw, ch, cols, fishBuckets, fishHeading } = this;
+    const halfLength = cw * 0.72;
+    const halfHeight = ch * 0.27;
     for (let b = 0; b < fishBuckets.length; b++) {
       const bucket = fishBuckets[b];
       if (!bucket.length) continue;
       ctx.fillStyle = this.fishStyles[b];
       for (const i of bucket) {
-        ctx.fillText("-", (i % cols) * cw + cw / 2, ((i / cols) | 0) * ch + ch / 2 + 1);
+        const x = (i % cols) * cw + cw / 2;
+        const y = ((i / cols) | 0) * ch + ch / 2;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(fishHeading[i]);
+        ctx.beginPath();
+        ctx.moveTo(halfLength, 0);
+        ctx.quadraticCurveTo(halfLength * 0.55, -halfHeight, -halfLength * 0.28, -halfHeight * 0.62);
+        ctx.lineTo(-halfLength, -halfHeight);
+        ctx.lineTo(-halfLength * 0.64, 0);
+        ctx.lineTo(-halfLength, halfHeight);
+        ctx.lineTo(-halfLength * 0.28, halfHeight * 0.62);
+        ctx.quadraticCurveTo(halfLength * 0.55, halfHeight, halfLength, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = this.inverseColor;
+        ctx.beginPath();
+        ctx.arc(halfLength * 0.58, -halfHeight * 0.12, Math.max(0.65, cw * 0.055), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = this.fishStyles[b];
+        ctx.restore();
       }
     }
   }

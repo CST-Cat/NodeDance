@@ -29,6 +29,7 @@ import {
   type ViewScreen,
 } from "./navigation";
 import { operationURL } from "./operations";
+import { DEFAULT_SHARKS, type SharkSpec } from "./vendor/ascii-sharks/world";
 import {
   __call,
   __classes,
@@ -88,33 +89,6 @@ export default function App(input: Props) {
         | import("./vendor/ascii-sharks/engine").OceanEngine
         | undefined;
       let loginOceanSequence = 0;
-      watchState(screen, async (next) => {
-        const sequence = ++loginOceanSequence;
-        if (next !== "login") {
-          loginOceanEngine?.destroy();
-          loginOceanEngine = undefined;
-          return;
-        }
-        await afterRender();
-        const canvas = loginOceanCanvas.value;
-        if (
-          sequence !== loginOceanSequence ||
-          screen.value !== "login" ||
-          !canvas
-        )
-          return;
-        const { OceanEngine } = await import("./vendor/ascii-sharks/engine");
-        if (sequence !== loginOceanSequence || screen.value !== "login") return;
-        loginOceanEngine?.destroy();
-        loginOceanEngine = new OceanEngine(
-          canvas,
-          [
-            { kind: "classic", size: 1 },
-            { kind: "classic", size: 0.72 },
-          ],
-          96,
-        );
-      });
       const navigationOpen = cell(false);
       const mobileNavigation = cell(false);
       const sidebarElement = cell<HTMLElement>();
@@ -449,8 +423,29 @@ export default function App(input: Props) {
           (document.documentElement.dataset
             .themePreference as Appearance["theme"]) || "system",
         backgroundColor: "#faf9f5",
+        sharks: DEFAULT_SHARKS.map((shark) => ({ ...shark })),
         avatarUrl: "",
         backgroundUrl: "",
+      });
+      watchState([screen, () => appearance.sharks], async ([next]) => {
+        const sequence = ++loginOceanSequence;
+        if (next !== "login") {
+          loginOceanEngine?.destroy();
+          loginOceanEngine = undefined;
+          return;
+        }
+        await afterRender();
+        const canvas = loginOceanCanvas.value;
+        if (
+          sequence !== loginOceanSequence ||
+          screen.value !== "login" ||
+          !canvas
+        )
+          return;
+        const { OceanEngine } = await import("./vendor/ascii-sharks/engine");
+        if (sequence !== loginOceanSequence || screen.value !== "login") return;
+        loginOceanEngine?.destroy();
+        loginOceanEngine = new OceanEngine(canvas, appearance.sharks);
       });
       const safeBackgroundColor = derived(() =>
         /^#[\da-f]{6}$/i.test(appearance.backgroundColor)
@@ -725,6 +720,7 @@ export default function App(input: Props) {
             displayName: appearance.displayName,
             theme: appearance.theme,
             backgroundColor: appearance.backgroundColor,
+            sharks: appearance.sharks,
           });
           else await api.saveProfile({displayName:appearance.displayName,theme:appearance.theme});
           rememberTheme();
@@ -733,6 +729,26 @@ export default function App(input: Props) {
             displayName: appearance.displayName,
           };
           notice.value = t("m.e90110b8adca");
+        } catch (reason) {
+          error.value = errorText(reason);
+        } finally {
+          busy.value = false;
+          busyLabel.value = "";
+        }
+      }
+      async function saveSharks(sharks: SharkSpec[]) {
+        clearMessages();
+        busy.value = true;
+        busyLabel.value = t("settings.asciiSharks.saving");
+        try {
+          await api.saveAppearance({
+            displayName: appearance.displayName,
+            theme: appearance.theme,
+            backgroundColor: appearance.backgroundColor,
+            sharks,
+          });
+          appearance.sharks = sharks.map((shark) => ({ ...shark }));
+          notice.value = t("settings.asciiSharks.saved");
         } catch (reason) {
           error.value = errorText(reason);
         } finally {
@@ -1658,7 +1674,7 @@ export default function App(input: Props) {
             ) : screen.value === "alerts" ? (
               <AlertCenter data-v-ac863f34=""></AlertCenter>
             ) : (
-              <PersonalSettings model={{currentUser, appearance, passwordForm, sessions, busy, busyLabel, uploading, avatarSrc, avatarRevision, visibleName, safeBackgroundColor, notice, error, saveProfile, changePassword, loadSessions, revokeSession, handleImageChange, formatTime}} />
+              <PersonalSettings model={{currentUser, appearance, passwordForm, sessions, busy, busyLabel, uploading, avatarSrc, avatarRevision, visibleName, safeBackgroundColor, notice, error, saveProfile, saveSharks, changePassword, loadSessions, revokeSession, handleImageChange, formatTime}} />
             )}
             <UiDialog data-v-ac863f34=""></UiDialog>
           </main>

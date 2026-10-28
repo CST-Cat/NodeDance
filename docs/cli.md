@@ -206,6 +206,10 @@ The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus disco
 
 连接的 Core 发布 `/api/v1/operations`，CLI 调用与 TUI 菜单从该入口读取操作、schema、路由及传输类型。Web 的请求、流、终端、上传和下载使用同一契约；操作中心依据目录自动生成表单。Core 增加操作后，三端通用入口自动提供，无需分别维护客户端操作清单。验证、授权、审计和危险操作确认仍由 Core 与 Agent 处理，专用页面只定制展示。未指定服务器的 `nodedance operations` 用于离线查看当前 Core 二进制内的契约；使用 `--server` 查看运行中 Core 的实际契约。
 
+`appearance.update` also accepts the optional shared login shark roster as `sharks: [{kind, size}]`. Core stores it with the existing shared appearance settings, and `appearance.get` / `profile.get` return it. The Personal Settings editor and login animation use this same Core value; CLI and TUI expose the field through their discovered operation schema.
+
+`appearance.update` 还支持可选的共享登录页鲨鱼阵容字段 `sharks: [{kind, size}]`。Core 将它保存在现有共享外观设置中，`appearance.get` / `profile.get` 会返回该值。个人设置编辑器与登录页动画读取同一份 Core 配置；CLI 和 TUI 通过发现到的操作 schema 提供该字段。
+
 正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](updates.md).
 
 ## Agent monitoring and fleet operations

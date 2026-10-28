@@ -628,7 +628,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		s.handlePublicAppearance(w)
+		s.handlePublicAppearance(w, r.Context())
 		return
 	case "/api/v1/public/appearance/avatar", "/api/v1/public/appearance/background":
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {

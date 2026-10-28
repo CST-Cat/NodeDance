@@ -21,8 +21,8 @@ export class OceanEngine {
   private themeObserver: MutationObserver;
   private disposed = false;
 
-  constructor(private canvas: HTMLCanvasElement, sharks?: SharkSpec[], fishCount?: number) {
-    this.world = new World(sharks, fishCount);
+  constructor(private canvas: HTMLCanvasElement, sharks?: SharkSpec[]) {
+    this.world = new World(sharks);
     this.renderer = new AsciiRenderer(canvas);
     this.renderer.setFontFamily(getComputedStyle(canvas).fontFamily);
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");

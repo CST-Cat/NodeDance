@@ -88,6 +88,16 @@ func describeTransport(o *Operation) {
 	case "agents.configure":
 		o.MaxBodyBytes = 128 << 10
 		field("commandHistoryRetentionDays", map[string]any{"minimum": 1, "maximum": 3650, "default": 90})
+	case "appearance.update":
+		o.MaxBodyBytes = 1 << 20
+		field("sharks", map[string]any{"items": map[string]any{
+			"type": "object",
+			"required": []string{"kind", "size"},
+			"properties": map[string]any{
+				"kind": map[string]any{"type": "string", "enum": []string{"classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse"}},
+				"size": map[string]any{"type": "number", "exclusiveMinimum": 0},
+			},
+		}})
 	case "commands.submit", "commands.batch":
 		o.MaxBodyBytes = protocol.MaxCommandRequestBytes
 		require("script", "timeoutSeconds", "confirm")
@@ -248,6 +258,8 @@ func describeResponse(o *Operation) {
 	switch o.Name {
 	case "guest.settings":
 		o.ResponseSchema = responseObject([]string{"settings", "metrics", "historyHours"}, map[string]any{"settings": schema(guest.Settings{}), "metrics": map[string]any{"type": "array", "items": schema(guest.Metric{})}, "historyHours": map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}})
+	case "appearance.get", "profile.get", "profile.update":
+		o.ResponseSchema = schema(protocol.AppearanceSettings{})
 	case "guest.configure":
 		o.ResponseSchema = schema(guest.Settings{})
 	case "guest.entry":

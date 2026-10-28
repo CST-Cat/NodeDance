@@ -24,7 +24,7 @@ export type SharkKind = "classic" | "hammerhead" | "zebra" | "tiger" | "greatham
 export type SharkSpec = { kind: SharkKind; size: number };
 
 // The landing hero: four of the same shark at different depths.
-const DEFAULT_SHARKS: SharkSpec[] = [
+export const DEFAULT_SHARKS: SharkSpec[] = [
   { kind: "classic", size: 1 },
   { kind: "classic", size: 0.7 },
   { kind: "classic", size: 0.84 },

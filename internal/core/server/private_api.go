@@ -2,13 +2,16 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"image"
 	"image/png"
 	"io"
+	"math"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -29,13 +32,7 @@ const (
 	maxImagePixels      = 1024 * 1024
 )
 
-type appearance struct {
-	DisplayName     string `json:"displayName"`
-	Theme           string `json:"theme"`
-	BackgroundColor string `json:"backgroundColor"`
-	AvatarURL       string `json:"avatarUrl"`
-	BackgroundURL   string `json:"backgroundUrl"`
-}
+type appearance = protocol.AppearanceSettings
 
 type browserSessionView struct {
 	ID         string `json:"id"`
@@ -493,13 +490,32 @@ func (s *Server) handleUpdateAppearance(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "invalid appearance settings", http.StatusBadRequest)
 		return
 	}
+	var sharksJSON []byte
+	if request.Sharks != nil {
+		if !validLoginSharks(request.Sharks) {
+			http.Error(w, "invalid appearance settings", http.StatusBadRequest)
+			return
+		}
+		encoded, err := json.Marshal(request.Sharks)
+		if err != nil {
+			http.Error(w, "request failed", http.StatusInternalServerError)
+			return
+		}
+		sharksJSON = encoded
+	}
 	tx, err := s.store.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
 	now := s.now().Unix()
-	if _, err := tx.ExecContext(r.Context(), `UPDATE appearance SET display_name=?, theme=?, background_color=?, updated_at=? WHERE id=1`, name, request.Theme, request.BackgroundColor, now); err != nil {
+	query := `UPDATE appearance SET display_name=?, theme=?, background_color=?, updated_at=? WHERE id=1`
+	args := []any{name, request.Theme, request.BackgroundColor, now}
+	if request.Sharks != nil {
+		query = `UPDATE appearance SET display_name=?, theme=?, background_color=?, sharks_json=?, updated_at=? WHERE id=1`
+		args = []any{name, request.Theme, request.BackgroundColor, string(sharksJSON), now}
+	}
+	if _, err := tx.ExecContext(r.Context(), query, args...); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
@@ -518,7 +534,32 @@ func (s *Server) handleUpdateAppearance(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
-	s.writeAppearance(w)
+	s.writeAppearance(w, r.Context())
+}
+
+func validLoginSharks(sharks []protocol.LoginSharkSpec) bool {
+	for _, shark := range sharks {
+		switch shark.Kind {
+		case "classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse":
+		default:
+			return false
+		}
+		if shark.Size <= 0 || math.IsNaN(shark.Size) || math.IsInf(shark.Size, 0) {
+			return false
+		}
+	}
+	return true
+}
+
+func decodeAppearanceSharks(raw string) ([]protocol.LoginSharkSpec, error) {
+	var sharks []protocol.LoginSharkSpec
+	if err := json.Unmarshal([]byte(raw), &sharks); err != nil {
+		return nil, err
+	}
+	if sharks == nil || !validLoginSharks(sharks) {
+		return nil, errors.New("invalid stored login sharks")
+	}
+	return sharks, nil
 }
 
 var backgroundColorPattern = regexp.MustCompile(`^#[[:xdigit:]]{6}$`)
@@ -527,17 +568,24 @@ func validBackgroundColor(value string) bool {
 	return backgroundColorPattern.MatchString(value)
 }
 
-func (s *Server) handlePublicAppearance(w http.ResponseWriter) {
-	s.writeAppearance(w)
+func (s *Server) handlePublicAppearance(w http.ResponseWriter, ctx context.Context) {
+	s.writeAppearance(w, ctx)
 }
 
-func (s *Server) writeAppearance(w http.ResponseWriter) {
+func (s *Server) writeAppearance(w http.ResponseWriter, ctx context.Context) {
 	var value appearance
 	var avatar, background []byte
-	if err := s.store.DB.QueryRow(`SELECT display_name, theme, background_color, avatar_png, background_png FROM appearance WHERE id=1`).Scan(&value.DisplayName, &value.Theme, &value.BackgroundColor, &avatar, &background); err != nil {
+	var sharksJSON string
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT display_name, theme, background_color, avatar_png, background_png, sharks_json FROM appearance WHERE id=1`).Scan(&value.DisplayName, &value.Theme, &value.BackgroundColor, &avatar, &background, &sharksJSON); err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
+	sharks, err := decodeAppearanceSharks(sharksJSON)
+	if err != nil {
+		http.Error(w, "request failed", http.StatusInternalServerError)
+		return
+	}
+	value.Sharks = sharks
 	if len(avatar) > 0 {
 		value.AvatarURL = "/api/v1/public/appearance/avatar"
 	}

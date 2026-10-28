@@ -112,9 +112,22 @@ type PasswordChangeRequest struct {
 	NewPassword     string `json:"newPassword" request:"required"`
 }
 type AppearanceRequest struct {
-	DisplayName     string `json:"displayName" request:"required"`
-	Theme           string `json:"theme" request:"required"`
-	BackgroundColor string `json:"backgroundColor" request:"required"`
+	DisplayName     string           `json:"displayName" request:"required"`
+	Theme           string           `json:"theme" request:"required"`
+	BackgroundColor string           `json:"backgroundColor" request:"required"`
+	Sharks          []LoginSharkSpec `json:"sharks,omitempty"`
+}
+type LoginSharkSpec struct {
+	Kind string  `json:"kind" request:"required"`
+	Size float64 `json:"size" request:"required"`
+}
+type AppearanceSettings struct {
+	DisplayName     string           `json:"displayName"`
+	Theme           string           `json:"theme"`
+	BackgroundColor string           `json:"backgroundColor"`
+	Sharks          []LoginSharkSpec `json:"sharks"`
+	AvatarURL       string           `json:"avatarUrl"`
+	BackgroundURL   string           `json:"backgroundUrl"`
 }
 type RebuildPlanRequest struct {
 	Spec RebuildSpec `json:"spec" request:"required"`

@@ -3,6 +3,7 @@ import { resolveOperation, operationUpload, decodeContractJSON, type BodySchema,
 import { requestIntent, intentKey, finishIntent } from './operation-intent'
 import { t, diagnostic } from "./i18n"
 import type { MetricsView } from './metrics-contract'
+import type { SharkSpec } from './vendor/ascii-sharks/world'
 
 export interface SetupStatus {
   initialized: boolean
@@ -21,6 +22,7 @@ export interface Appearance {
   displayName: string
   theme: string
   backgroundColor: string
+  sharks: SharkSpec[]
   avatarUrl: string
   backgroundUrl: string
 }
@@ -742,7 +744,7 @@ export const api = {
   appearance: () => operationRequest<Appearance>("appearance.get", {}),
   profile: () => operationRequest<Appearance>("profile.get", {}),
   saveProfile: (payload: {displayName:string;theme:string}) => operationRequest<Appearance>("profile.update", {}, {body:JSON.stringify(payload)}),
-  saveAppearance: (payload: Pick<Appearance, 'displayName' | 'theme' | 'backgroundColor'>) =>
+  saveAppearance: (payload: Pick<Appearance, 'displayName' | 'theme' | 'backgroundColor' | 'sharks'>) =>
     operationRequest<void>("appearance.update", {}, {
       body: JSON.stringify(payload),
     }),
