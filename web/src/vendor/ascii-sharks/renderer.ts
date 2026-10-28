@@ -37,6 +37,20 @@ const LIGHT_WATER_STOPS: [number, [number, number, number]][] = [
   [0.78, [26, 168, 202]],
   [1, [14, 128, 182]],
 ];
+const LIGHT_CREATURE_COLORS: Record<LagoonCreatureKind, [string, string, string, string]> = {
+  turtle: ["#0e80b6", "#1aa8ca", "#4ad6d6", "#06303f"],
+  manta: ["#0e80b6", "#1aa8ca", "#b2f4e8", "#06303f"],
+  dolphin: ["#1aa8ca", "#0e80b6", "#b2f4e8", "#06303f"],
+  whale: ["#0e80b6", "#1aa8ca", "#4ad6d6", "#06303f"],
+  tang: ["#ffd84a", "#ff8a2a", "#fff5b5", "#06303f"],
+};
+const DARK_CREATURE_COLORS: Record<LagoonCreatureKind, [string, string, string, string]> = {
+  turtle: ["#476f4f", "#78934e", "#c8d28a", "#fff1c2"],
+  manta: ["#365d7d", "#5c8cab", "#b5e7ef", "#f2fbff"],
+  dolphin: ["#527e9b", "#82b2c7", "#d8f1f5", "#f2fbff"],
+  whale: ["#335982", "#527fa5", "#bbe7ee", "#f2fbff"],
+  tang: ["#ffd84a", "#ff8a2a", "#fff5b5", "#fff5b5"],
+};
 
 export type OceanColorScheme = "dark" | "light";
 type LagoonCreatureKind = "turtle" | "manta" | "dolphin" | "whale" | "tang";
@@ -509,7 +523,7 @@ export class AsciiRenderer {
 
     this.drawHeat();
     this.drawFish();
-    if (this.colorScheme === "light") this.drawLagoonCreatures(t);
+    this.drawLagoonCreatures(t);
     this.drawSharks(t);
   }
 
@@ -1032,14 +1046,10 @@ export class AsciiRenderer {
     const cos = Math.cos(heading);
     const sin = Math.sin(heading);
     const flap = Math.sin(t * 2.1 + phase) * 0.075;
-    const colors: Record<LagoonCreatureKind, [string, string, string, string]> = {
-      turtle: ["#0e80b6", "#1aa8ca", "#4ad6d6", "#06303f"],
-      manta: ["#0e80b6", "#1aa8ca", "#b2f4e8", "#06303f"],
-      dolphin: ["#1aa8ca", "#0e80b6", "#b2f4e8", "#06303f"],
-      whale: ["#0e80b6", "#1aa8ca", "#4ad6d6", "#06303f"],
-      tang: ["#ffd84a", "#ff8a2a", "#fff5b5", "#06303f"],
-    };
-    const palette = colors[kind];
+    const dark = this.colorScheme === "dark";
+    const palette = (dark ? DARK_CREATURE_COLORS : LIGHT_CREATURE_COLORS)[kind];
+    const ink = dark ? "#07131b" : "#06303f";
+    const highlight = dark ? "#eaf7ff" : "#b2f4e8";
     for (let row = r0; row <= r1; row++) {
       for (let col = c0; col <= c1; col++) {
         const px = col * cw + cw / 2 - x;
@@ -1052,11 +1062,11 @@ export class AsciiRenderer {
         ctx.fillStyle = palette[Math.min(3, part - 1)];
         ctx.fillRect(col * cw + 1, row * ch + 1, cw - 1, ch - 1);
         if (part === 4) {
-          ctx.fillStyle = "#06303f";
+          ctx.fillStyle = ink;
           ctx.fillText("o", col * cw + cw / 2, row * ch + ch / 2 + 1);
         } else {
           const glyphs = kind === "turtle" ? "S8%#" : kind === "manta" ? "X8%" : "tS8X";
-          ctx.fillStyle = part === 3 ? "#06303f" : "#b2f4e8";
+          ctx.fillStyle = part === 3 ? ink : highlight;
           ctx.fillText(glyphs[Math.floor(key * glyphs.length)], col * cw + cw / 2, row * ch + ch / 2 + 1);
         }
       }
