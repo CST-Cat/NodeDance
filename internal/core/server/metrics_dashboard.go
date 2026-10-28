@@ -34,7 +34,7 @@ func (s *Server) currentMetricsState(ctx context.Context, nodeID string) (dashbo
 	state := dashboardNodeState{NodeID: nodeID, Status: "offline", ServerTime: now.UTC()}
 	var status string
 	var lastSeen sql.NullInt64
-	err := s.store.DB.QueryRowContext(ctx, `SELECT n.status,n.connection_generation,n.last_seen_at,COALESCE(d.id,'')
+	err := s.store.Reader().QueryRowContext(ctx, `SELECT n.status,n.connection_generation,n.last_seen_at,COALESCE(d.id,'')
 		FROM nodes n LEFT JOIN agent_devices d ON d.node_id=n.id WHERE n.id=?`, nodeID).
 		Scan(&status, &state.Generation, &lastSeen, &state.AgentID)
 	if errors.Is(err, sql.ErrNoRows) {

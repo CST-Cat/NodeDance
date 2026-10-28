@@ -17,8 +17,16 @@ import (
 )
 
 type Store struct {
-	DB  *sql.DB
-	Dir string
+	DB     *sql.DB
+	ReadDB *sql.DB
+	Dir    string
+}
+
+func (s *Store) Reader() *sql.DB {
+	if s != nil && s.ReadDB != nil {
+		return s.ReadDB
+	}
+	return s.DB
 }
 
 //go:embed schema.sql
@@ -90,7 +98,24 @@ func Open(ctx context.Context, directory string) (*Store, error) {
 	if err := initializeCurrentSchema(ctx, db); err != nil {
 		return fail(err)
 	}
-	return &Store{DB: db, Dir: absoluteDir}, nil
+	readQuery := make(url.Values, len(query)+1)
+	for key, values := range query {
+		readQuery[key] = append([]string(nil), values...)
+	}
+	readQuery.Add("_pragma", "query_only(1)")
+	readDSN := url.URL{Scheme: "file", Path: filepath.ToSlash(databasePath), RawQuery: readQuery.Encode()}
+	readDB, err := sql.Open("sqlite", readDSN.String())
+	if err != nil {
+		return fail(fmt.Errorf("open sqlite read pool: %w", err))
+	}
+	readDB.SetMaxOpenConns(8)
+	readDB.SetMaxIdleConns(8)
+	readDB.SetConnMaxLifetime(0)
+	if err := readDB.PingContext(ctx); err != nil {
+		_ = readDB.Close()
+		return fail(fmt.Errorf("connect sqlite read pool: %w", err))
+	}
+	return &Store{DB: db, ReadDB: readDB, Dir: absoluteDir}, nil
 }
 
 func initializeCurrentSchema(ctx context.Context, db *sql.DB) error {
@@ -127,7 +152,14 @@ func (s *Store) Close() error {
 	if s == nil || s.DB == nil {
 		return nil
 	}
-	return s.DB.Close()
+	var err error
+	if s.ReadDB != nil {
+		err = s.ReadDB.Close()
+	}
+	if closeErr := s.DB.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 // Schema returns the current storage contract for release preflight checks.
