@@ -59,11 +59,12 @@ export default function MetricsPanel(input: Props) {
       );
       afterMount(() => {
         ticker = setInterval(() => {
+          if (document.hidden) return;
           elapsedSinceView.value = Math.max(
             0,
             performance.now() - viewStartedAt,
           );
-        }, 250);
+        }, 1000);
       });
       beforeDispose(() => {
         if (ticker !== undefined) clearInterval(ticker);
