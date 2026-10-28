@@ -24,7 +24,9 @@ export default function ContractFields(input: Props) {
               ? BigInt(value)
               : value
             : field.type === "number"
-              ? Number(value)
+              ? value === ""
+                ? ""
+                : Number(value)
               : field.type === "array"
                 ? value
                     .split("\n")

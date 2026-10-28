@@ -37,7 +37,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
    const token=(await(await recovery.request.get(base+'/api/v1/auth/csrf')).json()).token
    assert.equal((await recovery.request.post(base+'/api/v1/auth/login',{headers:{Origin:base,'X-CSRF-Token':token},data:credentials})).status(),200)
    const priorCookies=await recovery.cookies();let attempts=0
-   await recoveryPage.route('**/api/v1/auth/login',async route=>{attempts++;if(attempts<=rejectedAttempts)await route.fulfill({status:403,body:'sign-in security token expired or changed\n'});else await route.continue()})
+   await recoveryPage.route('**/api/v1/auth/login',async route=>{attempts++;if(attempts<=rejectedAttempts)await route.fulfill({status:403,headers:{'X-Error-Code':'login_csrf'},body:'sign-in security token expired or changed\n'});else await route.continue()})
    await recoveryPage.locator('[name=username]').fill(credentials.username)
    await recoveryPage.locator('[name=password]').fill(credentials.password)
    await recoveryPage.locator('form button[type=submit]').click()

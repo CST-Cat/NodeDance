@@ -105,6 +105,9 @@ module.exports=async function({page,base,node,artifacts,catalog}){
  summaryFixture=false;await page.reload();await network.waitFor();
  await page.goto(base+'/#/nodes?node='+node+'&section=history');
  const dataPanel=page.getByTestId('history-data');await dataPanel.waitFor();
+ const historyResponse=page.waitForResponse(response=>response.url().includes(routePath('nodes.history'))&&new URL(response.url()).searchParams.get('resolution')==='minute');
+ await require('./arc-controls.cjs').selectValue(page.locator('.history-controls button[data-dropdown-field]'),'6h');
+ const changedRange=new URL((await historyResponse).url()).searchParams;assert.ok(Math.abs(Date.parse(changedRange.get('to'))-Date.parse(changedRange.get('from'))-6*3600000)<2000,'Changing history range requests the selected interval');
  assert.equal(await dataPanel.locator('tbody tr').count(),100);
  const csvEvent=page.waitForEvent('download');await dataPanel.getByRole('button',{name:'CSV',exact:true}).click();
  const csvDownload=await csvEvent,csv=await require('node:fs/promises').readFile(await csvDownload.path(),'utf8');

@@ -38,6 +38,7 @@ export default function ContainerRebuildWizard(input: Props) {
       const error = cell("");
       let pollTimer: ReturnType<typeof setTimeout> | undefined;
       let generation = 0;
+      let planEpoch = 0;
       const taskMessage = derived(() => {
         if (!task.value) return "";
         if (task.value.status === "queued") return t("m.ab502a2e4167");
@@ -135,6 +136,11 @@ export default function ContainerRebuildWizard(input: Props) {
           })),
         };
       }
+      function invalidatePlan() {
+        planEpoch++;
+        plan.value = undefined;
+        loadingPlan.value = false;
+      }
       function addBinding() {
         mode.value = "replace";
         bindings.value = [
@@ -145,12 +151,12 @@ export default function ContainerRebuildWizard(input: Props) {
             hostPort: "",
           },
         ];
-        plan.value = undefined;
+        invalidatePlan();
       }
       function removeBinding(index: number) {
         mode.value = "replace";
         bindings.value = bindings.value.filter((_, row) => row !== index);
-        plan.value = undefined;
+        invalidatePlan();
       }
       async function openWizard() {
         if (
@@ -163,13 +169,14 @@ export default function ContainerRebuildWizard(input: Props) {
         opened.value = true;
         mode.value = "keep";
         bindings.value = [];
-        plan.value = undefined;
+        invalidatePlan();
         task.value = undefined;
         acknowledged.value = false;
         error.value = "";
         await preview();
       }
       async function preview() {
+        const epoch = ++planEpoch;
         loadingPlan.value = true;
         error.value = "";
         try {
@@ -178,14 +185,16 @@ export default function ContainerRebuildWizard(input: Props) {
             props.container.id,
             specFromForm(),
           );
+          if (epoch !== planEpoch) return;
           plan.value = result;
           acknowledged.value = false;
         } catch (reason) {
+          if (epoch !== planEpoch) return;
           error.value =
             reason instanceof Error ? reason.message : t("m.8dc5598b2ee8");
           plan.value = undefined;
         } finally {
-          loadingPlan.value = false;
+          if (epoch === planEpoch) loadingPlan.value = false;
         }
       }
       async function waitForTask(taskId: string, requestGeneration: number) {
@@ -238,14 +247,18 @@ export default function ContainerRebuildWizard(input: Props) {
               rebuild: specFromForm(),
             },
           );
-          task.value = await api.nodeTask(props.nodeId, accepted.taskId);
-          if (!taskTerminal(task.value) && task.value.status !== "unknown")
+          if (requestGeneration !== generation) return;
+          const updated = await api.nodeTask(props.nodeId, accepted.taskId);
+          if (requestGeneration !== generation) return;
+          task.value = updated;
+          if (!taskTerminal(updated) && updated.status !== "unknown")
             schedulePoll(accepted.taskId, requestGeneration);
         } catch (reason) {
-          error.value =
-            reason instanceof Error ? reason.message : t("m.8beb6052b0fc");
+          if (requestGeneration === generation)
+            error.value =
+              reason instanceof Error ? reason.message : t("m.8beb6052b0fc");
         } finally {
-          submitting.value = false;
+          if (requestGeneration === generation) submitting.value = false;
         }
       }
       async function cleanupRollbackResources() {
@@ -299,6 +312,7 @@ export default function ContainerRebuildWizard(input: Props) {
       }
       beforeDispose(() => {
         generation++;
+        planEpoch++;
         if (pollTimer) clearTimeout(pollTimer);
       });
       return () => (
@@ -398,7 +412,7 @@ export default function ContainerRebuildWizard(input: Props) {
                   <UiSelect
                     disabled={submitting.value as any}
                     onChange={(event: any) => {
-                      plan.value = undefined;
+                      invalidatePlan();
                     }}
                     modelValue={mode.value}
                     onUpdateModelValue={(__nextValue: any) => {
@@ -441,7 +455,7 @@ export default function ContainerRebuildWizard(input: Props) {
                               }
                               placeholder="80/tcp"
                               onInput={(event: any) => {
-                                plan.value = undefined;
+                                invalidatePlan();
                               }}
                               {...__input(
                                 binding.containerPort,
@@ -465,7 +479,7 @@ export default function ContainerRebuildWizard(input: Props) {
                               }
                               placeholder={t("m.50f9c5e2f0a1") as any}
                               onInput={(event: any) => {
-                                plan.value = undefined;
+                                invalidatePlan();
                               }}
                               {...__input(
                                 binding.hostIp,
@@ -490,7 +504,7 @@ export default function ContainerRebuildWizard(input: Props) {
                               inputMode="numeric"
                               placeholder="18080"
                               onInput={(event: any) => {
-                                plan.value = undefined;
+                                invalidatePlan();
                               }}
                               {...__input(
                                 binding.hostPort,

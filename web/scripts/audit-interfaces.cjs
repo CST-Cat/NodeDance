@@ -14,6 +14,7 @@ const artifacts = path.join(root, '.build/interface-audit')
 const operationsOnly = process.env.NODEDANCE_AUDIT_OPERATIONS_ONLY === '1'
 const alertsOnly = process.env.NODEDANCE_AUDIT_ALERTS_ONLY === '1'
 const hostsOnly = process.env.NODEDANCE_AUDIT_HOSTS_ONLY === '1'
+const metricsOnly = process.env.NODEDANCE_AUDIT_METRICS_ONLY === '1'
 fs.mkdirSync(artifacts, {recursive:true})
 
 
@@ -52,10 +53,11 @@ async function port() {
     const enrollment=await context.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'Interface audit',coreUrl:base}})
     assert.equal(enrollment.status(),201)
     const node=(await enrollment.json()).nodeId
-    if(!operationsOnly&&!alertsOnly&&!hostsOnly)await require('./overview-regressions.cjs')({context,base,node,headers,artifacts,catalog})
+    if(!operationsOnly&&!alertsOnly&&!hostsOnly&&!metricsOnly)await require('./overview-regressions.cjs')({context,base,node,headers,artifacts,catalog})
     const page=await context.newPage()
     page.setDefaultTimeout(10000)
     const pageErrors=[];page.on('pageerror',error=>pageErrors.push(error.message))
+    if(metricsOnly){await require('./metrics-regressions.cjs')({page,base,node,artifacts,catalog});assert.deepEqual(pageErrors,[]);return}
     if(hostsOnly){await require('./host-management-regressions.cjs')({page,context,base,node,headers,catalog});assert.deepEqual(pageErrors,[]);return}
     if(alertsOnly){await require('./alert-center-regressions.cjs')({page,context,base,node,headers,catalog});assert.deepEqual(pageErrors,[]);return}
     const {submissions}=await require('./operation-console-regressions.cjs')({page,context,base,node,headers,catalog})

@@ -179,6 +179,7 @@ export default function NodesDashboard(input: Props) {
       const error = cell("");
       const elapsed = cell(0);
       const wallClockNow = cell(Date.now());
+      let serverOffsetMs = 0;
       let socket: WebSocket | undefined;
       let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
       let refreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -489,6 +490,9 @@ export default function NodesDashboard(input: Props) {
           busy.value = false;
           return;
         }
+        const parsedServerTime = Date.parse(payload.serverTime);
+        if (Number.isFinite(parsedServerTime))
+          serverOffsetMs = parsedServerTime - Date.now();
         nodes.value = merged;
         nodesReady.value = true;
         if (
@@ -1146,7 +1150,7 @@ export default function NodesDashboard(input: Props) {
         tickTimer = setInterval(() => {
           if (document.hidden) return;
           elapsed.value = performance.now();
-          wallClockNow.value = Date.now();
+          wallClockNow.value = Date.now() + serverOffsetMs;
         }, 1000);
         taskRefreshTimer = setInterval(() => {
           if (document.hidden) return;

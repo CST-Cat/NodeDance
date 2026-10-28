@@ -67,7 +67,7 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
   const response=await cookieContext.request.get(base+'/api/v1/public/guest/display'),body=await response.text()
   record('channel-public-projection:'+(cookieContext===admin?'administrator':'guest'),response.status()===200&&!['PRIVATE CHANNEL FIXTURE','PRIVATE_BEARER_FIXTURE','PRIVATE_HEADER_FIXTURE','private-notifications'].some(v=>body.includes(v)))
  }
- const deleteChannel=await admin.request.delete(base+'/api/v1/alerts/channels/'+savedChannel.id,{headers,data:{revision:savedChannel.revision}});assert.equal(deleteChannel.status(),204)
+ const deleteChannel=await admin.request.delete(base+'/api/v1/alerts/channels/'+savedChannel.id,{headers,data:{revision:savedChannel.revision,confirm:true}});assert.equal(deleteChannel.status(),204)
  const anonymousInstall=await browserRequest('/api/v1/agents/enrollments','POST',{displayName:'forged-install',coreUrl:base},hostileHeaders)
  record('private-install-command-anonymous',anonymousInstall.status===401)
  // Private RSS subscriptions never enter guest projections, even with admin cookies.

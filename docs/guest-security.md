@@ -164,6 +164,8 @@ Metrics admission validates the report before Core annotations and cache publica
 
 Notification provider options (`channels.options`) remain administrator-only and are included in the discovered private-operation matrix. Isolated browser fixtures create a disabled channel, verify encrypted Bearer/custom-header values never return in channel responses, and verify channel names, endpoints and credentials never enter public projections, including requests with administrator cookies. 通知渠道与平台配置不会进入游客展示。
 
+Alert rule, channel and maintenance-window deletion remain private operations and require an explicit confirmation in the shared Core contract. Login CSRF failures use a structured response header without exposing additional session information. 告警规则、通知渠道和维护窗口删除仍为私有操作，并在共享契约中要求明确确认；登录 CSRF 错误使用结构化响应头，不增加会话信息暴露。
+
 The browser regression opens the compact resource-metric selector, compares its options with Core, verifies selection drafts do not change the saved policy, saves and reloads the selection, and restores the fixture policy. It separately checks the actual 44px trigger/row and native clear-control size at desktop and narrow widths. 权限与公开投影断言继续由原有游客安全回归覆盖。
 
 The static `/vendor/elfinder-commands/` document alone permits same-origin framing for the hidden command runtime. It contains no file metadata or credentials; only the authenticated management component supplies its current listing and receives command events. Management HTML and API responses retain their default frame denial, and passive file previews retain their own sandbox policy.

@@ -47,6 +47,7 @@ module.exports=async function({page,context,base,node,headers,catalog}){
     const op=name=>{const value=catalog.operations.find(op=>op.name===name);assert.ok(value,name);return value};
     const routePath=(name,id)=>op(name).path.replace('{id}',id);
     const waitOperation=(name,id)=>page.waitForResponse(r=>new URL(r.url()).pathname===routePath(name,id)&&r.request().method()===op(name).method);
+    const confirmDelete=()=>page.locator('dialog.ui-dialog[open]').getByRole('button',{name:'Confirm',exact:true}).click();
     const enroll=await context.request.post(base+op('agents.enrollment').path,{headers,data:{displayName:'Other threshold node',coreUrl:base}});assert.equal(enroll.status(),201);const otherNode=(await enroll.json()).nodeId;
     for(const id of [node,otherNode]){const defaults=await context.request.post(base+op('rules.defaults').path,{headers,data:{nodeId:id}});assert.equal(defaults.status(),200)}
     const listRules=async()=> (await(await context.request.get(base+op('rules.list').path)).json()).rules;
@@ -65,8 +66,10 @@ module.exports=async function({page,context,base,node,headers,catalog}){
     await cpuRow.getByRole('button',{name:'Edit',exact:true}).click();assert.equal(await ruleForm.locator('#alert-rule-threshold').inputValue(),'97');await ruleForm.locator('#alert-rule-threshold').fill('98');response=waitOperation('rules.update',nodeCPU.id);await ruleForm.getByRole('button',{name:'Save rule',exact:true}).click();assert.equal((await response).status(),200,'A refreshed revision can be retried');
     await selectValue(screen.locator('#alert-rule-filter'),'');
     const ruleRow=screen.getByRole('row').filter({hasText:'Browser metric rule'});await ruleRow.waitFor();assert.ok((await ruleRow.innerText()).includes('> 90'),'Rule condition retains its threshold');
-    response=waitOperation('rules.delete',(await(await context.request.get(base+op('rules.list').path)).json()).rules.find(rule=>rule.name==='Browser metric rule').id);
-    await ruleRow.getByRole('button',{name:'Delete',exact:true}).click();assert.ok((await response).ok());await ruleRow.waitFor({state:'detached'});
+    const deletable=(await(await context.request.get(base+op('rules.list').path)).json()).rules.find(rule=>rule.name==='Browser metric rule');
+    assert.equal((await context.request.delete(base+routePath('rules.delete',deletable.id),{headers,data:{revision:deletable.revision,confirm:false}})).status(),400);
+    await ruleRow.getByRole('button',{name:'Delete',exact:true}).click();await page.locator('dialog.ui-dialog[open]').getByRole('button',{name:'Cancel',exact:true}).click();assert.ok(await ruleRow.isVisible());
+    response=waitOperation('rules.delete',deletable.id);await ruleRow.getByRole('button',{name:'Delete',exact:true}).click();await confirmDelete();const deletedRule=await response;assert.ok(deletedRule.ok());assert.equal(deletedRule.request().postDataJSON().confirm,true);await ruleRow.waitFor({state:'detached'});
     await tabs.getByRole('tab',{name:'Notification channels',exact:true}).click();const channelForm=screen.locator('.alert-channel-form');await channelForm.waitFor();
     await channelForm.getByLabel('Name',{exact:true}).fill('Isolated SMTP');await selectValue(channelForm.locator('#alert-channel-kind'),'smtp');
     await channelForm.getByLabel('SMTP host',{exact:true}).fill('smtp.example.test');await channelForm.getByLabel('Sender',{exact:true}).fill('NodeDance <alerts@example.test>');await channelForm.getByLabel('Recipient',{exact:true}).fill('运维 <ops@example.test>');
@@ -78,17 +81,18 @@ module.exports=async function({page,context,base,node,headers,catalog}){
     await channelRow.getByRole('button',{name:'Edit',exact:true}).click();await channelForm.getByLabel('Name',{exact:true}).fill('Updated SMTP');
     response=waitOperation('channels.update',channel.id);await channelForm.getByRole('button',{name:'Save channel',exact:true}).click();assert.equal((await response).status(),200);
     const updated=screen.locator('.channel-list article').filter({hasText:'Updated SMTP'});await updated.waitFor();
+    assert.equal((await context.request.delete(base+routePath('channels.delete',channel.id),{headers,data:{revision:channel.revision,confirm:false}})).status(),400);
     assert.ok(!(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))).includes('isolated-secret'),'SMTP secret remains outside browser storage');
     const testPath=routePath('channels.test',channel.id);await page.route('**'+testPath,route=>route.fulfill({status:202,json:{status:'queued'}}));
     response=waitOperation('channels.test',channel.id);await updated.getByRole('button',{name:'Send test',exact:true}).click();assert.equal((await response).status(),202);await screen.locator('.alert-deliveries').waitFor();await page.unroute('**'+testPath);
     await tabs.getByRole('tab',{name:'Notification channels',exact:true}).click();await updated.waitFor();
     let failedDelete=true;const deletePath=routePath('channels.delete',channel.id);await page.route('**'+deletePath,route=>{if(route.request().method()!==op('channels.delete').method)return route.fallback();if(failedDelete){failedDelete=false;return route.fulfill({status:503,body:'Isolated delete failure'})}return route.fallback()});
-    response=waitOperation('channels.delete',channel.id);await updated.getByRole('button',{name:'Delete',exact:true}).click();assert.equal((await response).status(),503);await screen.getByRole('alert').waitFor();assert.ok(await updated.isVisible(),'Failed deletion keeps the channel');
-    response=waitOperation('channels.delete',channel.id);await updated.getByRole('button',{name:'Delete',exact:true}).click();assert.ok((await response).ok());await updated.waitFor({state:'detached'});await page.unroute('**'+deletePath);
+    response=waitOperation('channels.delete',channel.id);await updated.getByRole('button',{name:'Delete',exact:true}).click();await confirmDelete();assert.equal((await response).status(),503);await screen.getByRole('alert').waitFor();assert.ok(await updated.isVisible(),'Failed deletion keeps the channel');
+    response=waitOperation('channels.delete',channel.id);await updated.getByRole('button',{name:'Delete',exact:true}).click();await confirmDelete();assert.ok((await response).ok());await updated.waitFor({state:'detached'});await page.unroute('**'+deletePath);
     await require('./notification-channel-regressions.cjs')({page,context,base,headers,catalog});
     await tabs.getByRole('tab',{name:'Silence and maintenance',exact:true}).click();const windowForm=screen.locator('.alert-window-form');await windowForm.waitFor();
     await windowForm.getByLabel('Reason',{exact:true}).fill('Isolated maintenance');response=waitOperation('windows.create');await windowForm.getByRole('button',{name:'Create window',exact:true}).click();const windowReply=await response;assert.equal(windowReply.status(),201);const createdWindow=(await windowReply.json()).window;
-    const windowRow=screen.locator('.window-list article').filter({hasText:'Isolated maintenance'});await windowRow.waitFor();response=waitOperation('windows.delete',createdWindow.id);await windowRow.getByRole('button',{name:'Disable',exact:true}).click();assert.ok((await response).ok());await windowRow.waitFor({state:'detached'});
+    const windowRow=screen.locator('.window-list article').filter({hasText:'Isolated maintenance'});await windowRow.waitFor();assert.equal((await context.request.delete(base+routePath('windows.delete',createdWindow.id),{headers,data:{confirm:false}})).status(),400);response=waitOperation('windows.delete',createdWindow.id);await windowRow.getByRole('button',{name:'Disable',exact:true}).click();await confirmDelete();assert.ok((await response).ok());await windowRow.waitFor({state:'detached'});
     const sample={id:'isolated-alert',ruleId:'isolated-rule',ruleName:'Fixture alert',nodeId:node,nodeName:'Isolated node',severity:'critical',status:'active',message:'Fixture condition',firstSeenAt:new Date().toISOString(),lastSeenAt:new Date().toISOString()};
     const samples={
       'alerts.list':()=>({alerts:[sample]}),

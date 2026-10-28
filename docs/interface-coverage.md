@@ -63,7 +63,7 @@ CLI and TUI share `terminalOperations`, `executeFinite`, the Core client, JSONL 
 | `certificates.renew` | json | id | Idempotency-Key | certificates.job | discovered / shared execution / discovered |
 | `certificates.revoke` | json | id | Idempotency-Key | certificates.job | discovered / shared execution / discovered |
 | `channels.create` | json | — | — | — | discovered / shared execution / discovered |
-| `channels.delete` | json | id | — | — | discovered / shared execution / discovered |
+| `channels.delete` | json | id | — | — | discovered / shared execution / discovered; confirmed body required |
 | `channels.list` | json | — | — | — | discovered / shared execution / discovered |
 | `channels.options` | json | — | — | — | discovered / shared execution / discovered |
 | `channels.test` | json | id | — | — | discovered / shared execution / discovered |
@@ -173,7 +173,7 @@ CLI and TUI share `terminalOperations`, `executeFinite`, the Core client, JSONL 
 | `profile.upload-avatar` | multipart | — | — | — | discovered / shared execution / discovered |
 | `rules.create` | json | — | — | — | discovered / shared execution / discovered |
 | `rules.defaults` | json | — | — | — | discovered / shared execution / discovered |
-| `rules.delete` | json | id | — | — | discovered / shared execution / discovered |
+| `rules.delete` | json | id | — | — | discovered / shared execution / discovered; confirmed body required |
 | `rules.list` | json | nodeId | — | — | discovered / shared execution / discovered |
 | `rules.update` | json | id | — | — | discovered / shared execution / discovered |
 | `sessions.list` | json | — | — | — | discovered / shared execution / discovered |
@@ -213,7 +213,7 @@ CLI and TUI share `terminalOperations`, `executeFinite`, the Core client, JSONL 
 | `updates.rollback` | json | — | Idempotency-Key | updates.status | discovered / shared execution / discovered |
 | `updates.status` | json | component, nodeId, jobId | — | — | discovered / shared execution / discovered |
 | `windows.create` | json | — | — | — | discovered / shared execution / discovered |
-| `windows.delete` | json | id | — | — | discovered / shared execution / discovered |
+| `windows.delete` | json | id | — | — | discovered / shared execution / discovered; confirmed body required |
 | `windows.list` | json | — | — | — | discovered / shared execution / discovered |
 
 ## Local maintenance and terminal workflows (17)

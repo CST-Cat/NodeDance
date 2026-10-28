@@ -533,6 +533,9 @@ export default function NodeDetail(input: Props) {
           selectedContainerIDs.value = remaining;
         containerPage.value = Math.min(containerPage.value, pageCount.value);
       });
+      watchState(historyRange, () => {
+        if (activeSection.value === "history") void loadHistory();
+      });
       watchState(
         selectedContainerIDs,
         () => {

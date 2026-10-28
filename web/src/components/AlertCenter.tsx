@@ -12,6 +12,7 @@ import {
   type AlertWindow,
 } from "../api";
 import { display, locale, t } from "../i18n";
+import { requestConfirm } from "../dialogs";
 import { useViewTab } from "../navigation";
 import {
   afterMount,
@@ -550,6 +551,12 @@ export default function AlertCenter(input: Props) {
         }
       }
       async function deleteChannel(channel: AlertChannel) {
+        if (
+          !(await requestConfirm(
+            t("alerts.confirmDeleteChannel", { "0": channel.name }),
+          ))
+        )
+          return;
         clearMessages();
         try {
           await api.deleteAlertChannel(channel.id, channel.revision);
@@ -603,6 +610,7 @@ export default function AlertCenter(input: Props) {
         }
       }
       async function deleteWindow(window: AlertWindow) {
+        if (!(await requestConfirm(t("alerts.confirmDeleteWindow")))) return;
         try {
           await api.deleteAlertWindow(window.id);
           notice.value = t("m.7e51b232bf64");
@@ -612,6 +620,12 @@ export default function AlertCenter(input: Props) {
         }
       }
       async function deleteRule(rule: AlertRule) {
+        if (
+          !(await requestConfirm(
+            t("alerts.confirmDeleteRule", { "0": rule.name }),
+          ))
+        )
+          return;
         try {
           await api.deleteAlertRule(rule.id, rule.revision);
           if (editingRule.value?.id === rule.id) clearRuleForm();

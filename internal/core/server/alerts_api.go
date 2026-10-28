@@ -140,8 +140,13 @@ func (s *Server) handleAlertRules(w http.ResponseWriter, r *http.Request, curren
 	if r.Method == http.MethodDelete {
 		var body struct {
 			Revision int64 `json:"revision"`
+			Confirm  bool  `json:"confirm"`
 		}
 		if !decodeJSON(w, r, &body) {
+			return
+		}
+		if !body.Confirm {
+			http.Error(w, "alert rule deletion requires confirmation", http.StatusBadRequest)
 			return
 		}
 		err := s.alerts.DeleteRule(r.Context(), ruleID, body.Revision)
@@ -213,8 +218,13 @@ func (s *Server) handleAlertChannels(w http.ResponseWriter, r *http.Request, cur
 	if channelID != "" && r.Method == http.MethodDelete {
 		var body struct {
 			Revision int64 `json:"revision"`
+			Confirm  bool  `json:"confirm"`
 		}
 		if !decodeJSON(w, r, &body) {
+			return
+		}
+		if !body.Confirm {
+			http.Error(w, "notification channel deletion requires confirmation", http.StatusBadRequest)
 			return
 		}
 		err := s.alerts.DeleteChannel(r.Context(), channelID, body.Revision)
@@ -280,6 +290,16 @@ func (s *Server) handleAlertWindows(w http.ResponseWriter, r *http.Request, curr
 		}
 		if r.Method != http.MethodDelete {
 			http.Error(w, "method not allowed", 405)
+			return
+		}
+		var body struct {
+			Confirm bool `json:"confirm"`
+		}
+		if !decodeJSON(w, r, &body) {
+			return
+		}
+		if !body.Confirm {
+			http.Error(w, "alert window deletion requires confirmation", http.StatusBadRequest)
 			return
 		}
 		if err := s.alerts.DeleteWindow(r.Context(), windowID); err != nil {

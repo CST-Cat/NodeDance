@@ -33,7 +33,7 @@ module.exports=async function({page,context,base,headers,catalog}){
  await form.getByRole('button',{name:'Save channel',exact:true}).click();assert.equal((await response).status(),200)
  const current=(await(await context.request.get(base+operation('channels.list').path)).json()).channels.find(c=>c.id===telegram.id)
  assert.equal(current.hasSecret,true)
- await context.request.delete(base+operation('channels.delete').path.replace('{id}',current.id),{headers,data:{revision:current.revision}})
+ await context.request.delete(base+operation('channels.delete').path.replace('{id}',current.id),{headers,data:{revision:current.revision,confirm:true}})
  let received
  const receiver=http.createServer((req,res)=>{let body='';req.on('data',data=>body+=data);req.on('end',()=>{received={method:req.method,authorization:req.headers.authorization,body:JSON.parse(body)};res.writeHead(204);res.end()})})
  await new Promise(resolve=>receiver.listen(0,'127.0.0.1',resolve))
@@ -55,7 +55,7 @@ module.exports=async function({page,context,base,headers,catalog}){
  assert.equal(received.method,'PATCH');assert.equal(received.authorization,'Bearer private_bearer_token');assert.match(received.body.text,/notification channel test/)
  assert.ok(!(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))).includes('private_bearer_token'))
  }finally{
- if(webhook)await context.request.delete(base+operation('channels.delete').path.replace('{id}',webhook.id),{headers,data:{revision:webhook.revision}})
+ if(webhook)await context.request.delete(base+operation('channels.delete').path.replace('{id}',webhook.id),{headers,data:{revision:webhook.revision,confirm:true}})
  receiver.close();receiver.closeAllConnections()
  }
  await page.getByRole('tab',{name:'Notification channels',exact:true}).click();await form.waitFor()

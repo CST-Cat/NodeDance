@@ -521,7 +521,7 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
     if (!response.ok) {
       let message = t('m.ad5d5a8f24fc', {"0": (response.status)})
       const body = await response.text()
-      if (name === 'auth.login' && response.status === 403 && body.trim() === 'sign-in security token expired or changed') {
+      if (name === 'auth.login' && response.status === 403 && response.headers.get('X-Error-Code') === 'login_csrf') {
         throw new ApiError(403, t('auth.loginSecurityChanged'), 'login_csrf')
       }
       try {
@@ -659,12 +659,12 @@ export const api = {
   alertRules: (nodeId = '') => operationRequest<{ rules: AlertRule[] }>('rules.list', { query: nodeId ? { nodeId } : {} }),
   createAlertRule: (payload: Omit<AlertRule, 'id' | 'revision'>) => operationRequest<{ rule: AlertRule }>("rules.create", {}, { body: JSON.stringify(payload) }),
   updateAlertRule: (id: string, payload: Omit<AlertRule, 'id'>) => operationRequest<{ rule: AlertRule }>("rules.update", { params: { id: String(id) } }, { body: JSON.stringify(payload) }),
-  deleteAlertRule: (id: string, revision: number) => operationRequest<void>("rules.delete", { params: { id: String(id) } }, { body: JSON.stringify({ revision }) }),
+  deleteAlertRule: (id: string, revision: number) => operationRequest<void>("rules.delete", { params: { id: String(id) } }, { body: JSON.stringify({ revision, confirm: true }) }),
   ensureDefaultAlertRules: (nodeId: string) => operationRequest<{ rules: AlertRule[] }>("rules.defaults", {}, { body: JSON.stringify({ nodeId }) }),
   alertChannels: () => operationRequest<{ channels: AlertChannel[] }>("channels.list", {}),
   saveAlertChannel: (payload: { name: string; kind: 'webhook' | 'smtp'; config: AlertChannel['config']; secret?: string; headers?: Record<string, string>; signingSecret?: string; enabled: boolean; revision?: number }, id?: string) =>
     operationRequest<{ channel: AlertChannel }>(id ? 'channels.update' : 'channels.create', { params: id ? { id } : {} }, { body: JSON.stringify(payload) }),
-  deleteAlertChannel: (id: string, revision: number) => operationRequest<void>("channels.delete", { params: { id: String(id) } }, { body: JSON.stringify({ revision }) }),
+  deleteAlertChannel: (id: string, revision: number) => operationRequest<void>("channels.delete", { params: { id: String(id) } }, { body: JSON.stringify({ revision, confirm: true }) }),
   testAlertChannel: (id: string) => operationRequest<{ status: string }>("channels.test", { params: { id: String(id) } }),
   activeAlerts: () => operationRequest<{ alerts: AlertItem[] }>("alerts.list", {}),
   alertHistory: () => operationRequest<{ alerts: AlertItem[] }>("alerts.history", {}),
@@ -673,7 +673,7 @@ export const api = {
   silenceAlert: (id: string, until: string, reason: string) => operationRequest<void>("alerts.silence", { params: { id: String(id) } }, { body: JSON.stringify({ until, reason }) }),
   alertWindows: () => operationRequest<{ windows: AlertWindow[] }>("windows.list", {}),
   createAlertWindow: (payload: Omit<AlertWindow, 'id'>) => operationRequest<{ window: AlertWindow }>("windows.create", {}, { body: JSON.stringify(payload) }),
-  deleteAlertWindow: (id: string) => operationRequest<void>("windows.delete", { params: { id: String(id) } }),
+  deleteAlertWindow: (id: string) => operationRequest<void>("windows.delete", { params: { id: String(id) } }, { body: JSON.stringify({ confirm: true }) }),
   alertDeliveries: () => operationRequest<{ deliveries: AlertDelivery[] }>("deliveries.list", {}),
   createContainerTask: (nodeId: string, containerId: string, payload: CreateContainerTaskPayload) =>
     operationRequest<{ taskId: string; status: ContainerTask['status'] }>("containers.action", { params: { nodeId: String(nodeId), containerId: String(containerId) } }, { body: JSON.stringify(payload) }),
