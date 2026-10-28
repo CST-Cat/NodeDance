@@ -83,6 +83,38 @@ export default function App(input: Props) {
       type ImageKind = "avatar" | "background";
       const screen = cell<Screen>("loading");
       watchState(screen, cancelDialogs);
+      const loginOceanCanvas = cell<HTMLCanvasElement>();
+      let loginOceanEngine:
+        | import("./vendor/ascii-sharks/engine").OceanEngine
+        | undefined;
+      let loginOceanSequence = 0;
+      watchState(screen, async (next) => {
+        const sequence = ++loginOceanSequence;
+        if (next !== "login") {
+          loginOceanEngine?.destroy();
+          loginOceanEngine = undefined;
+          return;
+        }
+        await afterRender();
+        const canvas = loginOceanCanvas.value;
+        if (
+          sequence !== loginOceanSequence ||
+          screen.value !== "login" ||
+          !canvas
+        )
+          return;
+        const { OceanEngine } = await import("./vendor/ascii-sharks/engine");
+        if (sequence !== loginOceanSequence || screen.value !== "login") return;
+        loginOceanEngine?.destroy();
+        loginOceanEngine = new OceanEngine(
+          canvas,
+          [
+            { kind: "classic", size: 1 },
+            { kind: "classic", size: 0.72 },
+          ],
+          96,
+        );
+      });
       const navigationOpen = cell(false);
       const mobileNavigation = cell(false);
       const sidebarElement = cell<HTMLElement>();
@@ -856,6 +888,9 @@ export default function App(input: Props) {
         void initializeScreen();
       });
       beforeDispose(() => {
+        loginOceanSequence++;
+        loginOceanEngine?.destroy();
+        loginOceanEngine = undefined;
         window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
         window.removeEventListener("keydown", handleNavigationKeys);
         window.removeEventListener("pageshow", handleHistoryPageShow);
@@ -880,22 +915,30 @@ export default function App(input: Props) {
             style={__style(shellStyle.value)}
             data-v-ac863f34=""
           >
-            {screen.value === "login" && backgroundSrc.value ? (
+            {screen.value === "login" ? (
               <div
                 aria-hidden="true"
                 className={__classes("login-background")}
                 data-v-ac863f34=""
               >
-                <img
-                  key={backgroundRevision.value as any}
-                  src={backgroundSrc.value as any}
-                  alt=""
-                  data-v-ac863f34=""
-                ></img>
+                {backgroundSrc.value ? (
+                  <img
+                    key={backgroundRevision.value as any}
+                    src={backgroundSrc.value as any}
+                    alt=""
+                    data-v-ac863f34=""
+                  ></img>
+                ) : null}
                 <div
                   className={__classes("login-background-shade")}
                   data-v-ac863f34=""
                 ></div>
+                <canvas
+                  ref={__dom(loginOceanCanvas)}
+                  aria-hidden="true"
+                  className={__classes("login-ocean")}
+                  data-v-ac863f34=""
+                ></canvas>
               </div>
             ) : null}
             {authenticated.value ? (
