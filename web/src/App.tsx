@@ -29,7 +29,7 @@ import {
   type ViewScreen,
 } from "./navigation";
 import { operationURL } from "./operations";
-import { DEFAULT_SHARKS, type SharkSpec } from "./vendor/ascii-sharks/world";
+import { DEFAULT_LOGIN_ANIMALS, type LoginAnimalSpec } from "./vendor/ascii-sharks/world";
 import {
   __call,
   __classes,
@@ -423,7 +423,7 @@ export default function App(input: Props) {
           (document.documentElement.dataset
             .themePreference as Appearance["theme"]) || "system",
         backgroundColor: "#faf9f5",
-        sharks: DEFAULT_SHARKS.map((shark) => ({ ...shark })),
+        sharks: DEFAULT_LOGIN_ANIMALS.map((animal) => ({ ...animal })),
         avatarUrl: "",
         backgroundUrl: "",
       });
@@ -747,7 +747,7 @@ export default function App(input: Props) {
           busyLabel.value = "";
         }
       }
-      async function saveSharks(sharks: SharkSpec[]) {
+      async function saveAnimals(animals: LoginAnimalSpec[]) {
         clearMessages();
         busy.value = true;
         busyLabel.value = t("settings.asciiSharks.saving");
@@ -756,9 +756,9 @@ export default function App(input: Props) {
             displayName: appearance.displayName,
             theme: appearance.theme,
             backgroundColor: appearance.backgroundColor,
-            sharks,
+            sharks: animals,
           });
-          appearance.sharks = sharks.map((shark) => ({ ...shark }));
+          appearance.sharks = animals.map((animal) => ({ ...animal }));
           notice.value = t("settings.asciiSharks.saved");
         } catch (reason) {
           error.value = errorText(reason);
@@ -1640,7 +1640,7 @@ export default function App(input: Props) {
             ) : screen.value === "alerts" ? (
               <AlertCenter data-v-ac863f34=""></AlertCenter>
             ) : (
-              <PersonalSettings model={{currentUser, appearance, passwordForm, sessions, busy, busyLabel, uploading, avatarSrc, avatarRevision, visibleName, safeBackgroundColor, notice, error, saveProfile, saveSharks, changePassword, loadSessions, revokeSession, handleImageChange, formatTime}} />
+              <PersonalSettings model={{currentUser, appearance, passwordForm, sessions, busy, busyLabel, uploading, avatarSrc, avatarRevision, visibleName, safeBackgroundColor, notice, error, saveProfile, saveAnimals, changePassword, loadSessions, revokeSession, handleImageChange, formatTime}} />
             )}
             <UiDialog data-v-ac863f34=""></UiDialog>
           </main>

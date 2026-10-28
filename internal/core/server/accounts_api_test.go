@@ -53,6 +53,43 @@ func (c accountTestClient) call(method, path string, body any, want int) []byte 
 func (c accountTestClient) login(name, password string) {
 	c.call("POST", "/api/v1/auth/login", map[string]any{"username": name, "password": password}, 200)
 }
+
+func TestAppearanceAnimalRosterPersistsAllCreatures(t *testing.T) {
+	_, newClient := newAccountFixture(t)
+	admin := newClient()
+	admin.login("admin", "administrator-password")
+	animals := []map[string]any{
+		{"kind": "turtle", "size": 1},
+		{"kind": "manta", "size": 1},
+		{"kind": "dolphin", "size": 0.9},
+		{"kind": "whale", "size": 1.2},
+		{"kind": "tang", "size": 1},
+	}
+	admin.call("PUT", "/api/v1/settings/appearance", map[string]any{
+		"displayName":     "Animals",
+		"theme":           "dark",
+		"backgroundColor": "#101827",
+		"sharks":          animals,
+	}, 200)
+	data := admin.call("GET", "/api/v1/public/appearance", nil, 200)
+	var result struct {
+		Sharks []struct {
+			Kind string `json:"kind"`
+		} `json:"sharks"`
+	}
+	if err := json.Unmarshal(data, &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Sharks) != len(animals) {
+		t.Fatalf("persisted animal count %d, want %d", len(result.Sharks), len(animals))
+	}
+	for i, animal := range animals {
+		if result.Sharks[i].Kind != animal["kind"] {
+			t.Fatalf("persisted animal %d kind %q, want %q", i, result.Sharks[i].Kind, animal["kind"])
+		}
+	}
+}
+
 func newAccountFixture(t *testing.T) (*Server, func() accountTestClient) {
 	t.Helper()
 	core, err := New("test", Options{DataDir: t.TempDir(), Development: true})

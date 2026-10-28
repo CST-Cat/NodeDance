@@ -1,5 +1,11 @@
 import { AsciiRenderer, type OceanColorScheme } from "./renderer";
-import { World, type SharkSpec } from "./world";
+import {
+  DEFAULT_LOGIN_ANIMALS,
+  World,
+  isSharkKind,
+  type LoginAnimalSpec,
+  type SharkSpec,
+} from "./world";
 
 const STEP = 1 / 60;
 const MAX_STEPS = 4;
@@ -22,12 +28,12 @@ export class OceanEngine {
 
   constructor(
     private canvas: HTMLCanvasElement,
-    sharks?: SharkSpec[],
+    animals: LoginAnimalSpec[] = DEFAULT_LOGIN_ANIMALS,
     colorScheme: OceanColorScheme = "dark",
     backdropImage = false,
   ) {
-    this.world = new World(sharks);
-    this.renderer = new AsciiRenderer(canvas, colorScheme, backdropImage);
+    this.world = new World(animals.filter((animal): animal is SharkSpec => isSharkKind(animal.kind)));
+    this.renderer = new AsciiRenderer(canvas, colorScheme, backdropImage, animals);
     this.renderer.setFontFamily(getComputedStyle(canvas).fontFamily);
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     this.resizeObserver = new ResizeObserver(() => this.resize());

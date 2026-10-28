@@ -3,7 +3,7 @@ import { resolveOperation, operationUpload, decodeContractJSON, type BodySchema,
 import { requestIntent, intentKey, finishIntent } from './operation-intent'
 import { t, diagnostic } from "./i18n"
 import type { MetricsView } from './metrics-contract'
-import type { SharkSpec } from './vendor/ascii-sharks/world'
+import type { LoginAnimalSpec } from './vendor/ascii-sharks/world'
 
 export interface SetupStatus {
   initialized: boolean
@@ -22,7 +22,7 @@ export interface Appearance {
   displayName: string
   theme: string
   backgroundColor: string
-  sharks: SharkSpec[]
+  sharks: LoginAnimalSpec[]
   avatarUrl: string
   backgroundUrl: string
 }

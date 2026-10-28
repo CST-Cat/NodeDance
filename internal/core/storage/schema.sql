@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS appearance (
 	display_name TEXT NOT NULL,
 	theme TEXT NOT NULL,
 	background_color TEXT NOT NULL,
-	sharks_json TEXT NOT NULL DEFAULT '[{"kind":"classic","size":1},{"kind":"classic","size":0.7},{"kind":"classic","size":0.84},{"kind":"classic","size":0.77}]',
+	sharks_json TEXT NOT NULL DEFAULT '[{"kind":"classic","size":1},{"kind":"classic","size":0.7},{"kind":"classic","size":0.84},{"kind":"classic","size":0.77},{"kind":"turtle","size":1},{"kind":"turtle","size":0.8056},{"kind":"manta","size":1},{"kind":"dolphin","size":1},{"kind":"dolphin","size":1},{"kind":"whale","size":1},{"kind":"tang","size":1}]',
 	avatar_png BLOB,
 	background_png BLOB,
 	updated_at INTEGER NOT NULL

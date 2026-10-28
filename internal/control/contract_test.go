@@ -195,3 +195,27 @@ func TestSchemaPresenceAndTransportIsolation(t *testing.T) {
 		}
 	}
 }
+
+func TestAppearanceRosterContractListsLoginAnimals(t *testing.T) {
+	op, err := control.Find("appearance.update")
+	if err != nil {
+		t.Fatal(err)
+	}
+	properties := op.BodySchema.(map[string]any)["properties"].(map[string]any)
+	sharks := properties["sharks"].(map[string]any)
+	items := sharks["items"].(map[string]any)
+	animalProperties := items["properties"].(map[string]any)
+	enum := animalProperties["kind"].(map[string]any)["enum"].([]string)
+	for _, kind := range []string{"turtle", "manta", "dolphin", "whale", "tang"} {
+		found := false
+		for _, candidate := range enum {
+			if candidate == kind {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("appearance.update does not publish animal kind %q", kind)
+		}
+	}
+}

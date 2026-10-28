@@ -94,7 +94,7 @@ func describeTransport(o *Operation) {
 			"type": "object",
 			"required": []string{"kind", "size"},
 			"properties": map[string]any{
-				"kind": map[string]any{"type": "string", "enum": []string{"classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse"}},
+				"kind": map[string]any{"type": "string", "enum": []string{"classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse", "turtle", "manta", "dolphin", "whale", "tang"}},
 				"size": map[string]any{"type": "number", "exclusiveMinimum": 0},
 			},
 		}})

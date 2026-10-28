@@ -540,7 +540,7 @@ func (s *Server) handleUpdateAppearance(w http.ResponseWriter, r *http.Request, 
 func validLoginSharks(sharks []protocol.LoginSharkSpec) bool {
 	for _, shark := range sharks {
 		switch shark.Kind {
-		case "classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse":
+		case "classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse", "turtle", "manta", "dolphin", "whale", "tang":
 		default:
 			return false
 		}

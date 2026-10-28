@@ -7,7 +7,16 @@
  *      shaded by the light, dense glyphs, and shimmering accent colours
  */
 import { clamp, hash3, smoothstep } from "./math";
-import { SHARK_NODES, type Shark, type SharkKind, type World } from "./world";
+import {
+  DEFAULT_LOGIN_ANIMALS,
+  SHARK_NODES,
+  isSharkKind,
+  type LagoonCreatureKind,
+  type LoginAnimalSpec,
+  type Shark,
+  type SharkKind,
+  type World,
+} from "./world";
 
 const ALPHA_LEVELS = 6;
 const FISH_ALPHAS = [0.28, 0.42, 0.58, 0.74, 0.9];
@@ -53,8 +62,6 @@ const DARK_CREATURE_COLORS: Record<LagoonCreatureKind, [string, string, string, 
 };
 
 export type OceanColorScheme = "dark" | "light";
-type LagoonCreatureKind = "turtle" | "manta" | "dolphin" | "whale" | "tang";
-
 interface LagoonCreature {
   kind: LagoonCreatureKind;
   x: number;
@@ -391,6 +398,7 @@ export class AsciiRenderer {
     private canvas: HTMLCanvasElement,
     colorScheme: OceanColorScheme = "dark",
     private backdropImage = false,
+    private animals: LoginAnimalSpec[] = DEFAULT_LOGIN_ANIMALS,
   ) {
     const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) throw new Error("2D canvas unavailable");
@@ -967,6 +975,7 @@ export class AsciiRenderer {
   private drawLagoonCreatures(t: number) {
     const { width, height } = this;
     const shortSide = Math.min(width, height);
+    const counts = new Map<LagoonCreatureKind, number>();
     const orbit = (
       kind: LagoonCreatureKind,
       rx: number,
@@ -985,7 +994,7 @@ export class AsciiRenderer {
         phase,
       };
     };
-    const dolphin = (phase: number): LagoonCreature => {
+    const dolphin = (phase: number, size: number): LagoonCreature => {
       const speed = 0.035;
       const a = t * speed + phase;
       return {
@@ -993,46 +1002,59 @@ export class AsciiRenderer {
         x: width * (0.5 + 0.42 * Math.cos(a)),
         y: height * (0.14 + 0.035 * Math.sin(a * 2)),
         heading: Math.atan2(height * 0.07 * speed * Math.cos(a * 2), -width * 0.42 * speed * Math.sin(a)),
-        scale: shortSide * 0.065,
+        scale: shortSide * 0.065 * size,
         phase,
       };
     };
-    const whaleSpeed = 0.012;
-    const whalePhase = t * whaleSpeed + 2.1;
-    const whale: LagoonCreature = {
-      kind: "whale",
-      x: width * (0.5 + 0.54 * Math.cos(whalePhase)),
-      y: height * (0.86 + 0.025 * Math.sin(whalePhase)),
-      heading: Math.atan2(height * 0.025 * whaleSpeed * Math.cos(whalePhase), -width * 0.54 * whaleSpeed * Math.sin(whalePhase)),
-      scale: shortSide * 0.105,
-      phase: whalePhase,
-    };
-    const tangSpeed = 0.024;
-    const tangPhase = t * tangSpeed + 0.8;
-    const tangX = width * (0.5 + 0.34 * Math.cos(tangPhase));
-    const tangY = height * (0.74 + 0.045 * Math.sin(tangPhase * 2));
-    const tangHeading = Math.atan2(height * 0.09 * tangSpeed * Math.cos(tangPhase * 2), -width * 0.34 * tangSpeed * Math.sin(tangPhase));
-    const creatures = [
-      orbit("turtle", 0.43, 0.4, 0.026, 0.5, 0.072),
-      orbit("turtle", 0.39, 0.42, -0.021, 3.6, 0.058),
-      orbit("manta", 0.34, 0.36, 0.018, 1.8, 0.095),
-      dolphin(0.3),
-      dolphin(2.9),
-      whale,
-    ];
-    for (let i = 0; i < 9; i++) {
-      const col = i % 3;
-      const row = Math.floor(i / 3);
-      creatures.push({
-        kind: "tang",
-        x: tangX - col * shortSide * 0.035 + (row % 2) * shortSide * 0.015,
-        y: tangY + (row - 1) * shortSide * 0.035,
-        heading: tangHeading,
-        scale: shortSide * 0.022,
-        phase: i * 0.8,
-      });
+    for (const animal of this.animals) {
+      if (isSharkKind(animal.kind)) continue;
+      const kind = animal.kind;
+      const index = counts.get(kind) ?? 0;
+      counts.set(kind, index + 1);
+      let creature: LagoonCreature | undefined;
+      if (kind === "turtle") {
+        creature = index === 0
+          ? orbit(kind, 0.43, 0.4, 0.026, 0.5, 0.072 * animal.size)
+          : index === 1
+            ? orbit(kind, 0.39, 0.42, -0.021, 3.6, 0.072 * animal.size)
+            : orbit(kind, 0.36 + (index % 3) * 0.035, 0.4, index % 2 ? -0.021 : 0.026, 0.5 + index * 2.1, 0.072 * animal.size);
+      } else if (kind === "manta") {
+        creature = orbit(kind, 0.34, 0.36, 0.018, 1.8 + index * 2.4, 0.095 * animal.size);
+      } else if (kind === "dolphin") {
+        creature = dolphin(index === 0 ? 0.3 : 2.9 + (index - 1) * 2.6, animal.size);
+      } else if (kind === "whale") {
+        const speed = 0.012;
+        const phase = t * speed + 2.1 + index * 2.4;
+        creature = {
+          kind,
+          x: width * (0.5 + 0.54 * Math.cos(phase)),
+          y: height * (0.86 + 0.025 * Math.sin(phase)),
+          heading: Math.atan2(height * 0.025 * speed * Math.cos(phase), -width * 0.54 * speed * Math.sin(phase)),
+          scale: shortSide * 0.105 * animal.size,
+          phase,
+        };
+      } else {
+        const speed = 0.024;
+        const phase = t * speed + 0.8 + index * 2.4;
+        const tangX = width * (0.5 + 0.34 * Math.cos(phase));
+        const tangY = height * (0.74 + 0.045 * Math.sin(phase * 2));
+        const heading = Math.atan2(height * 0.09 * speed * Math.cos(phase * 2), -width * 0.34 * speed * Math.sin(phase));
+        for (let i = 0; i < 9; i++) {
+          const col = i % 3;
+          const row = Math.floor(i / 3);
+          this.drawLagoonCreature({
+            kind,
+            x: tangX - col * shortSide * 0.035 * animal.size + (row % 2) * shortSide * 0.015 * animal.size,
+            y: tangY + (row - 1) * shortSide * 0.035 * animal.size,
+            heading,
+            scale: shortSide * 0.022 * animal.size,
+            phase: i * 0.8 + index * 2.4,
+          }, t);
+        }
+        continue;
+      }
+      if (creature) this.drawLagoonCreature(creature, t);
     }
-    for (const creature of creatures) this.drawLagoonCreature(creature, t);
   }
 
   private drawLagoonCreature(creature: LagoonCreature, t: number) {
