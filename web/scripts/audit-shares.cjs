@@ -4,10 +4,10 @@ module.exports=async({base,browser,context,page,node,headers,catalog})=>{
  const intent=()=>crypto.randomBytes(32).toString('hex')
  const visitor=await browser.newContext({locale:'en-US'}),receive=await visitor.newPage()
  try{
+  const listView=page.getByTestId('node-files').getByRole('button',{name:'List',exact:true});assert.equal(await listView.count(),1);assert.equal(await listView.getAttribute('aria-pressed'),'true')
   await page.locator('[data-file-name="hello.txt"]').click({button:'right'});await page.getByRole('menuitem',{name:'Share',exact:true}).click()
   const dialog=page.getByRole('dialog',{name:'File sharing',exact:true});await dialog.getByRole('button',{name:'Create link',exact:true}).waitFor()
-  const tabGeometry=tab=>tab.evaluate(element=>{const button=getComputedStyle(element),selection=element.querySelector('[aria-hidden=true]'),surface=selection&&getComputedStyle(selection);return {height:element.getBoundingClientRect().height,radius:button.borderRadius,selectionRadius:surface?.borderRadius}})
-  const shareTab=dialog.getByRole('tab',{name:'File sharing',exact:true}),viewTab=page.getByRole('tab',{name:'List',exact:true,includeHidden:true});assert.equal(await shareTab.count(),1);assert.equal(await viewTab.count(),1);const sharingGeometry=await tabGeometry(shareTab),viewGeometry=await tabGeometry(viewTab);assert.equal(sharingGeometry.radius,viewGeometry.radius);assert.equal(sharingGeometry.selectionRadius,viewGeometry.selectionRadius);assert.ok(Math.abs(sharingGeometry.height-viewGeometry.height)<1,'Sharing tabs preserve installed control height through the dialog entrance animation');
+  const shareTab=dialog.getByRole('tab',{name:'File sharing',exact:true});assert.equal(await shareTab.count(),1)
   if(process.env.NODEDANCE_FILE_GRID_REVIEW)await dialog.locator('[role=tablist]').screenshot({path:require('node:path').resolve(__dirname,'../../.build/file-audit/share-tabs-review.png')});
   await dialog.getByRole('tab',{name:'File requests',exact:true}).click();await dialog.getByRole('button',{name:'Create upload link',exact:true}).waitFor();await shareTab.click();await dialog.getByRole('button',{name:'Create link',exact:true}).waitFor()
 
