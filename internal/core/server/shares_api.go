@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"errors"
-	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -364,7 +363,7 @@ func (s *Server) serveShareEntry(w http.ResponseWriter, r *http.Request, v share
 		return
 	}
 	defer f.Close()
-	if consume {
+	if consume && shareDownloadStartsAtZero(r) {
 		if e = store.Consume(r.Context(), v); e != nil {
 			http.NotFound(w, r)
 			return
@@ -383,9 +382,29 @@ func (s *Server) serveShareEntry(w http.ResponseWriter, r *http.Request, v share
 		}
 	}
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disposition, map[string]string{"filename": path.Base(entry.Path)}))
-	w.Header().Set("Content-Length", strconv.FormatInt(entry.Size, 10))
-	w.WriteHeader(200)
-	_, _ = io.CopyN(w, f, entry.Size)
+	var modTime time.Time
+	if info, statErr := f.Stat(); statErr == nil {
+		modTime = info.ModTime()
+	}
+	http.ServeContent(w, r, path.Base(entry.Path), modTime, f)
+}
+
+func shareDownloadStartsAtZero(r *http.Request) bool {
+	header := r.Header.Get("Range")
+	if header == "" {
+		return true
+	}
+	unit, ranges, found := strings.Cut(header, "=")
+	if !found || unit != "bytes" {
+		return true
+	}
+	first, _, _ := strings.Cut(ranges, ",")
+	start, _, found := strings.Cut(strings.TrimSpace(first), "-")
+	if !found {
+		return true
+	}
+	offset, err := strconv.ParseInt(strings.TrimSpace(start), 10, 64)
+	return err != nil || offset == 0
 }
 func (s *Server) startShareCleanup() {
 	s.agentWait.Add(1)

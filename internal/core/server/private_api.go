@@ -2,7 +2,9 @@ package server
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"image"
 	"image/png"
@@ -656,6 +658,14 @@ func (s *Server) handlePublicImage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	sum := sha256.Sum256(content)
+	etag := "\"" + hex.EncodeToString(sum[:]) + "\""
+	w.Header().Set("ETag", etag)
+	w.Header().Set("Cache-Control", "no-cache")
+	if ifNoneMatchMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
 	w.Header().Set("Content-Disposition", "inline; filename=appearance.png")
@@ -663,4 +673,14 @@ func (s *Server) handlePublicImage(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		_, _ = w.Write(content)
 	}
+}
+
+func ifNoneMatchMatches(header, etag string) bool {
+	for _, candidate := range strings.Split(header, ",") {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "*" || candidate == etag || strings.TrimPrefix(candidate, "W/") == etag {
+			return true
+		}
+	}
+	return false
 }
