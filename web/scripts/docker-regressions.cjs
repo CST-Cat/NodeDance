@@ -17,6 +17,7 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
     return {container:{id:(index+1).toString(16).padStart(64,'0'), name:`docker-fixture-${String(index+1).padStart(2,'0')}`, image:'example/very-long-image-name:fixture', imageId:'sha256:fixture', state:paused?'paused':running?'running':'exited', running, paused, restarting:false, hostNetwork:false, health:'none', healthcheckConfigured:false, stale:false, restartCount:0, ports:[{containerPort:8080,protocol:'tcp',exposed:true,configured:[],published:[{ip:'127.0.0.1',port:'18080'}]}], networks:[], mounts:[], observedAt:now(), startedAt:now(), ...(index===5?{compose:{project:'fixture',service:'web'}}:{})},generation:1,sequence:1,receivedAt:now()}
   })
   const submissions = [], tasks = new Map(), failures = new Set()
+  let slowPolling=false,slowPollRequests=0
   function state() { return {status:online?'online':'offline',generation:1,serverTime:now(),leaseValidUntil:new Date(Date.now()+3600000).toISOString()} }
   function inventory() {
     const s=state()
@@ -32,14 +33,17 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
     if(pathname===metricsPath) return route.fulfill({json:{type:'node_status',nodeId:node,state:state()}})
     if(pathname===settingsPath) return route.fulfill({json:{viewMode:'monitor',groupBy:'node',sortBy:'custom',nodeGroupBy:'status',nodeSortBy:'custom',customFields:['state','image','ports','health','uptime']}})
     if(pathname===preferencesPath && request.method()==='GET') return route.fulfill({json:{preferences:[]}})
-    if(pathname===tasksPath) return route.fulfill({json:{tasks:[...tasks.values()],nextCursor:''}})
+    if(pathname===tasksPath) {
+      if(slowPolling&&tasks.size){slowPollRequests++;await new Promise(resolve=>setTimeout(resolve,2800));for(const task of tasks.values())task.status='succeeded'}
+      return route.fulfill({json:{tasks:[...tasks.values()],nextCursor:''}})
+    }
     if(actions.has(pathname) && request.method()==='POST') {
       const target=actions.get(pathname), body=request.postDataJSON(), key=request.headers()['idempotency-key']
       assert.ok(key,'Every selected target uses a discovered idempotency key')
       submissions.push({target,body,key})
       if(failures.has(target)) return route.fulfill({status:503,body:'Fixture response lost'})
       const id=(submissions.length+100).toString(16).padStart(32,'0')
-      tasks.set(id,{taskId:id,nodeId:node,targetId:target,action:body.action,status:'succeeded',deliveryState:'acknowledged',reconciliationRequired:false,progress:{phase:'complete',completed:1,total:1},result:{observedState:'fixture'},createdAt:now(),updatedAt:now()})
+      tasks.set(id,{taskId:id,nodeId:node,targetId:target,action:body.action,status:slowPolling?'running':'succeeded',deliveryState:'acknowledged',reconciliationRequired:false,progress:{phase:'complete',completed:1,total:1},result:{observedState:'fixture'},createdAt:now(),updatedAt:now()})
       return route.fulfill({status:202,json:{taskId:id,status:'succeeded'}})
     }
     if(pathname.startsWith(taskRoute) && tasks.has(pathname.slice(taskRoute.length))) return route.fulfill({json:tasks.get(pathname.slice(taskRoute.length))})
@@ -72,8 +76,10 @@ module.exports = async function ({page, base, node, artifacts, catalog}) {
   await checkbox(0).check();await checkbox(1).check()
   assert.ok(await action('rename').isDisabled(),'Rename requires exactly one container')
   assert.ok(await action('delete').isDisabled(),'Running containers cannot be deleted')
-  await action('restart').click()
+  slowPolling=true;await action('restart').click()
   await page.waitForFunction(()=>document.querySelectorAll('.container-task-status').length>=2)
+  await page.waitForFunction(()=>document.querySelectorAll('.container-task-status[data-status=succeeded]').length>=2)
+  slowPolling=false;assert.equal(slowPollRequests,1,'Slow task polling is shared instead of continually superseded')
   assert.deepEqual(submissions.map(item=>item.target).sort(),[records[0].container.id,records[1].container.id].sort(),'Batch dispatch targets exactly the selected containers')
   assert.ok(submissions.every(item=>item.body.action==='restart'))
   assert.notEqual(submissions[0].key,submissions[1].key,'Each target has its own task identity')

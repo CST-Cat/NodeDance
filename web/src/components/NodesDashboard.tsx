@@ -22,6 +22,10 @@ import type { MetricsView } from "../metrics-contract";
 import { useViewNavigation } from "../navigation";
 import { operationURL } from "../operations";
 import {
+  createAsyncOperation,
+  type AsyncOperation,
+} from "../async-operation";
+import {
   __call,
   __classes,
   __each,
@@ -159,6 +163,15 @@ export default function NodesDashboard(input: Props) {
       >({});
       const nodePreferences = cell<Record<string, DashboardPreference[]>>({});
       const preferenceRequests = new Map<string, symbol>();
+      const taskLoadOperations = new Map<string, AsyncOperation>();
+      function taskLoadOperation(nodeId: string): AsyncOperation {
+        let operation = taskLoadOperations.get(nodeId);
+        if (!operation) {
+          operation = createAsyncOperation();
+          taskLoadOperations.set(nodeId, operation);
+        }
+        return operation;
+      }
       const dashboardSettings = cell<DashboardSettings>({
         viewMode: "monitor",
         groupBy: "node",
@@ -342,18 +355,24 @@ export default function NodesDashboard(input: Props) {
       }
       async function loadTasks(node: AgentNode) {
         if (__props.readOnly) return;
+        const operation = taskLoadOperation(node.nodeId);
+        let token = operation.current();
         try {
-          const result = await api.nodeTasks(node.nodeId),
-            next = {
-              ...taskViews.value,
-            };
+          const request = operation.run(() => api.nodeTasks(node.nodeId));
+          token = operation.current();
+          const result = await request;
+          if (!result || !operation.isCurrent(token) || disposed || !nodes.value.some(item => item.nodeId === node.nodeId)) return;
+          const next = {
+            ...taskViews.value,
+          };
           for (const [id, task] of Object.entries(next))
             if (task.nodeId === node.nodeId) delete next[id];
           for (const task of result.tasks) next[task.taskId] = task;
           taskViews.value = next;
         } catch (reason) {
-          error.value =
-            reason instanceof Error ? reason.message : t("m.f63256fb13c3");
+          if (operation.isCurrent(token) && !disposed && nodes.value.some(item => item.nodeId === node.nodeId))
+            error.value =
+              reason instanceof Error ? reason.message : t("m.f63256fb13c3");
         }
       }
       async function loadPreferences(node: AgentNode) {
@@ -494,6 +513,12 @@ export default function NodesDashboard(input: Props) {
         if (Number.isFinite(parsedServerTime))
           serverOffsetMs = parsedServerTime - Date.now();
         nodes.value = merged;
+        for (const [nodeId, operation] of taskLoadOperations) {
+          if (!merged.some(node => node.nodeId === nodeId)) {
+            operation.invalidate();
+            taskLoadOperations.delete(nodeId);
+          }
+        }
         nodesReady.value = true;
         if (
           selectedNodeID.value &&
@@ -682,6 +707,8 @@ export default function NodesDashboard(input: Props) {
       function acceptNodeDeletion() {
         const nodeID = selectedNodeID.value;
         nodes.value = nodes.value.filter((node) => node.nodeId !== nodeID);
+        taskLoadOperations.get(nodeID)?.invalidate();
+        taskLoadOperations.delete(nodeID);
         for (const cache of [
           views,
           dockerViews,
@@ -1042,6 +1069,7 @@ export default function NodesDashboard(input: Props) {
             payload,
           );
           const current = await api.nodeTask(nodeID, accepted.taskId);
+          taskLoadOperation(nodeID).invalidate();
           taskViews.value = {
             ...taskViews.value,
             [current.taskId]: current,
@@ -1112,6 +1140,7 @@ export default function NodesDashboard(input: Props) {
         try {
           const accepted = await api.createContainerCreateTask(nodeId, spec);
           const current = await api.nodeTask(nodeId, accepted.taskId);
+          taskLoadOperation(nodeId).invalidate();
           taskViews.value = {
             ...taskViews.value,
             [current.taskId]: current,
@@ -1167,6 +1196,8 @@ export default function NodesDashboard(input: Props) {
       });
       beforeDispose(() => {
         disposed = true;
+        for (const operation of taskLoadOperations.values()) operation.invalidate();
+        taskLoadOperations.clear();
         narrowScreen.removeEventListener("change", updateScreen);
         window.removeEventListener("scroll", followVisibleNode);
         if (inspectFrame) cancelAnimationFrame(inspectFrame);

@@ -14,6 +14,13 @@ const code=ts.transpileModule(fs.readFileSync(path.join(source,'operations.ts'),
 vm.runInNewContext(code,{module:moduleObject,exports:moduleObject.exports, URL, URLSearchParams, TextEncoder, Headers, Blob, File, FormData, crypto, Date:TestDate, window:{location:{origin:'https://core.example'}}, fetch:async url=>{calls++;assert.equal(url,'/api/v1/operations');return {ok:true,headers:new Headers({ETag:catalogETag}),json:async()=>({version:1,operations:catalogOperations})}}})
 ;(async()=>{
  const api=moduleObject.exports
+ const asyncModule={exports:{}}
+ vm.runInNewContext(ts.transpileModule(fs.readFileSync(path.join(source,'async-operation.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{module:asyncModule,exports:asyncModule.exports})
+ const guard=asyncModule.exports.createAsyncOperation();let release,loads=0
+ const slow=new Promise(resolve=>release=resolve),firstLoad=guard.run(()=>{loads++;return slow}),sameLoad=guard.run(()=>{loads++;return slow})
+ assert.equal(loads,1,'Overlapping slow polls share the same request');release('done');assert.equal(await firstLoad,'done');assert.equal(await sameLoad,'done')
+ const stale=new Promise(resolve=>release=resolve),staleLoad=guard.run(()=>stale);guard.invalidate();const freshLoad=guard.run(async()=> 'fresh');release('stale')
+ assert.equal(await staleLoad,undefined);assert.equal(await freshLoad,'fresh','Invalidation permits a fresh request and ignores the stale result')
  const result=await api.resolveOperation('future.inspect',{params:{id:'node'},query:{filter:'a b'}})
  assert.equal(result.path,'/api/v1/future/node?filter=a+b')
  assert.equal((await api.operationURL('future.inspect',{params:{id:'node'}})).href,'https://core.example/api/v1/future/node')
