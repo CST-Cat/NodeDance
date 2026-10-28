@@ -19,10 +19,46 @@ const DOT_RGB: [number, number, number][] = [
   [190, 212, 255],
   [110, 230, 255],
 ];
+const LIGHT_DOT_RGB: [number, number, number][] = [
+  [14, 128, 182],
+  [63, 207, 210],
+  [238, 72, 82],
+  [26, 168, 202],
+  [74, 214, 214],
+];
 const DOT_BASE_ALPHA = [1, 1, 1, 1, 1];
 const WAKE = DOT_RGB.length - 1;
 
 const ACCENTS = ["#e0892c", "#e03a32", "#b44ae0", "#33c8cc", "#3cb54a", "#3150e8", "#d9c14a"];
+const LIGHT_WATER_STOPS: [number, [number, number, number]][] = [
+  [0, [178, 244, 232]],
+  [0.22, [63, 207, 210]],
+  [0.42, [74, 214, 214]],
+  [0.78, [26, 168, 202]],
+  [1, [14, 128, 182]],
+];
+
+export type OceanColorScheme = "dark" | "light";
+type LagoonCreatureKind = "turtle" | "manta" | "dolphin" | "whale" | "tang";
+
+interface LagoonCreature {
+  kind: LagoonCreatureKind;
+  x: number;
+  y: number;
+  heading: number;
+  scale: number;
+  phase: number;
+}
+
+function inEllipse(x: number, y: number, cx: number, cy: number, rx: number, ry: number, angle = 0) {
+  const dx = x - cx;
+  const dy = y - cy;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const localX = dx * cos + dy * sin;
+  const localY = -dx * sin + dy * cos;
+  return (localX / rx) ** 2 + (localY / ry) ** 2 <= 1;
+}
 
 // Sparse glyphs on bright skin, dense glyphs in shadow, so the texture
 // reinforces the shading instead of fighting it.
@@ -246,10 +282,28 @@ function inTriangle(
   return !(neg && pos);
 }
 
-/** Visible dark-grey cell grid, snapped to device pixels. Shared with the sidebar backdrop. */
-export function paintGrid(g: CanvasRenderingContext2D, W: number, H: number, cw: number, ch: number, dpr: number) {
+export function paintGrid(
+  g: CanvasRenderingContext2D,
+  W: number,
+  H: number,
+  cw: number,
+  ch: number,
+  dpr: number,
+  colorScheme: OceanColorScheme = "dark",
+  backdropImage = false,
+) {
   g.setTransform(1, 0, 0, 1, 0, 0);
-  g.strokeStyle = "rgba(255,255,255,0.055)";
+  if (colorScheme === "light") {
+    const gradient = g.createLinearGradient(0, 0, W * 0.45 * dpr, H * 0.9 * dpr);
+    for (const [stop, [r, green, b]] of LIGHT_WATER_STOPS) {
+      gradient.addColorStop(stop, `rgba(${r},${green},${b},${backdropImage ? 0.84 : 1})`);
+    }
+    g.fillStyle = gradient;
+    g.fillRect(0, 0, W * dpr, H * dpr);
+    g.strokeStyle = "rgba(255,255,255,0.19)";
+  } else {
+    g.strokeStyle = "rgba(255,255,255,0.055)";
+  }
   g.lineWidth = 1;
   g.beginPath();
   for (let c = 0; c <= Math.ceil(W / cw); c++) {
@@ -276,6 +330,7 @@ export class AsciiRenderer {
   private cols = 0;
   private rows = 0;
   private fontFamily = "ui-monospace, Menlo, monospace";
+  private colorScheme: OceanColorScheme;
 
   private dotKind = new Uint8Array(0);
   private dotPhase = new Float32Array(0);
@@ -287,6 +342,8 @@ export class AsciiRenderer {
   private bucketOrder = new Int32Array(0);
   private bucketCounts = new Int32Array(DOT_RGB.length * ALPHA_LEVELS + 1);
   private dotStyles: string[] = [];
+  private dotRgb = DOT_RGB;
+  private accents = ACCENTS;
 
   private sharkFlag = new Uint8Array(0);
   private sharkShade = new Float32Array(0);
@@ -314,16 +371,46 @@ export class AsciiRenderer {
   private frameId = 0;
   /** Fish cells bucketed by brightness, so each bucket is one fillStyle. */
   private fishBuckets: number[][] = FISH_ALPHAS.map(() => []);
-  private fishStyles = FISH_ALPHAS.map((alpha) => `rgba(230,238,255,${alpha})`);
+  private fishStyles: string[] = [];
 
-  constructor(private canvas: HTMLCanvasElement) {
+  constructor(
+    private canvas: HTMLCanvasElement,
+    colorScheme: OceanColorScheme = "dark",
+    private backdropImage = false,
+  ) {
     const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) throw new Error("2D canvas unavailable");
     this.ctx = ctx;
     this.bg = document.createElement("canvas");
+    this.colorScheme = colorScheme;
+    this.updatePalette();
+  }
 
-    for (let c = 0; c < DOT_RGB.length; c++) {
-      const [r, g, b] = DOT_RGB[c];
+  setColorScheme(colorScheme: OceanColorScheme) {
+    if (this.colorScheme === colorScheme) return;
+    this.colorScheme = colorScheme;
+    this.updatePalette();
+    this.paintBackground();
+  }
+
+  setBackdropImage(active: boolean) {
+    if (this.backdropImage === active) return;
+    this.backdropImage = active;
+    this.paintBackground();
+  }
+
+  private updatePalette() {
+    const light = this.colorScheme === "light";
+    this.dotRgb = light ? LIGHT_DOT_RGB : DOT_RGB;
+    this.accents = light
+      ? ["#e8483c", "#ef3b5a", "#16c79a", "#ffd84a", "#0e80b6", "#8b6cff", "#ff8a2a"]
+      : ACCENTS;
+    this.dotStyles = [];
+    this.fishStyles = FISH_ALPHAS.map((alpha) =>
+      light ? `rgba(6,48,63,${alpha})` : `rgba(230,238,255,${alpha})`,
+    );
+    for (let c = 0; c < this.dotRgb.length; c++) {
+      const [r, g, b] = this.dotRgb[c];
       for (let l = 0; l < ALPHA_LEVELS; l++) {
         const a = (DOT_BASE_ALPHA[c] * (l + 1)) / ALPHA_LEVELS;
         this.dotStyles.push(`rgba(${r},${g},${b},${a.toFixed(3)})`);
@@ -381,8 +468,8 @@ export class AsciiRenderer {
     for (let i = 0; i < n; i++) {
       const col = i % this.cols;
       const row = (i / this.cols) | 0;
-      // No ambient dots: the grid stays black. Only the cyan wake lights cells.
-      this.dotKind[i] = 0;
+      const dot = hash3(col, row, 59);
+      this.dotKind[i] = dot < 0.13 ? 1 + Math.floor(hash3(col, row, 61) * 4) : 0;
       this.dotPhase[i] = hash3(col, row, 23) * Math.PI * 2;
       this.dotFreq[i] = 0.3 + hash3(col, row, 37) * 1.1;
     }
@@ -393,8 +480,9 @@ export class AsciiRenderer {
     const g = this.bg.getContext("2d");
     if (!g) return;
     const { width: W, height: H, dpr, cw, ch } = this;
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    paintGrid(g, W, H, cw, ch, dpr);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, this.bg.width, this.bg.height);
+    paintGrid(g, W, H, cw, ch, dpr, this.colorScheme, this.backdropImage);
   }
 
   render(world: World, dt: number) {
@@ -421,6 +509,7 @@ export class AsciiRenderer {
 
     this.drawHeat();
     this.drawFish();
+    if (this.colorScheme === "light") this.drawLagoonCreatures(t);
     this.drawSharks(t);
   }
 
@@ -773,7 +862,9 @@ export class AsciiRenderer {
         const g = (70 + shade * 80) * dim;
         ctx.fillStyle =
           roll < 0.07
-            ? ACCENTS[key % ACCENTS.length]
+            ? this.accents[key % this.accents.length]
+            : this.colorScheme === "light"
+              ? `rgba(14,128,182,${(0.38 + shade * 0.48).toFixed(2)})`
             : `rgb(${Math.round(g * tr)},${Math.round(g * tg)},${Math.min(255, Math.round(g * tb + 6))})`;
         ctx.fillText(set[(key >>> 8) % set.length], x + cw / 2, y + ch / 2 + 1);
         continue;
@@ -799,14 +890,20 @@ export class AsciiRenderer {
         glyph = SKIN_RAMP[clamp(Math.floor((1 - shade) * 8.99) + jitter, 0, SKIN_RAMP.length - 1)];
       }
       level *= dim;
-      ctx.fillStyle = `rgb(${Math.min(255, Math.round(level * tr))},${Math.min(255, Math.round(level * tg))},${Math.min(255, Math.round(level * tb + 4))})`;
+      if (this.colorScheme === "light") {
+        const brightness = level / 255;
+        ctx.fillStyle = `rgb(${Math.min(255, Math.round(14 * brightness * tr))},${Math.min(255, Math.round(128 * brightness * tg))},${Math.min(255, Math.round(182 * brightness * tb))})`;
+      } else {
+        ctx.fillStyle = `rgb(${Math.min(255, Math.round(level * tr))},${Math.min(255, Math.round(level * tg))},${Math.min(255, Math.round(level * tb + 4))})`;
+      }
       ctx.fillRect(x + 1, y + 1, cw - 1, ch - 1);
 
       let color: string;
-      if (flag === FLAG_EYE) color = "#9aa0ad";
-      else if (flag === FLAG_MARK) color = `rgb(${Math.round(70 * tr)},${Math.round(70 * tg)},${Math.round(70 * tb)})`;
-      else if (roll < 0.09) color = ACCENTS[key % ACCENTS.length];
+      if (flag === FLAG_EYE) color = this.colorScheme === "light" ? "#06303f" : "#9aa0ad";
+      else if (flag === FLAG_MARK) color = this.colorScheme === "light" ? "#06303f" : `rgb(${Math.round(70 * tr)},${Math.round(70 * tg)},${Math.round(70 * tb)})`;
+      else if (roll < 0.09) color = this.accents[key % this.accents.length];
       else if (roll < 0.13) color = "#ffffff";
+      else if (this.colorScheme === "light") color = shade > 0.55 ? "#b2f4e8" : "#06303f";
       else color = shade > 0.55 ? "#0e0f13" : "#1b1d24";
       ctx.fillStyle = color;
       ctx.fillText(glyph, x + cw / 2, y + ch / 2 + 1);
@@ -851,6 +948,174 @@ export class AsciiRenderer {
         );
       }
     }
+  }
+
+  private drawLagoonCreatures(t: number) {
+    const { width, height } = this;
+    const shortSide = Math.min(width, height);
+    const orbit = (
+      kind: LagoonCreatureKind,
+      rx: number,
+      ry: number,
+      speed: number,
+      phase: number,
+      scale: number,
+    ): LagoonCreature => {
+      const a = t * speed + phase;
+      return {
+        kind,
+        x: width * (0.5 + rx * Math.cos(a)),
+        y: height * (0.5 + ry * Math.sin(a)),
+        heading: Math.atan2(height * ry * speed * Math.cos(a), -width * rx * speed * Math.sin(a)),
+        scale: shortSide * scale,
+        phase,
+      };
+    };
+    const dolphin = (phase: number): LagoonCreature => {
+      const speed = 0.035;
+      const a = t * speed + phase;
+      return {
+        kind: "dolphin",
+        x: width * (0.5 + 0.42 * Math.cos(a)),
+        y: height * (0.14 + 0.035 * Math.sin(a * 2)),
+        heading: Math.atan2(height * 0.07 * speed * Math.cos(a * 2), -width * 0.42 * speed * Math.sin(a)),
+        scale: shortSide * 0.065,
+        phase,
+      };
+    };
+    const whaleSpeed = 0.012;
+    const whalePhase = t * whaleSpeed + 2.1;
+    const whale: LagoonCreature = {
+      kind: "whale",
+      x: width * (0.5 + 0.54 * Math.cos(whalePhase)),
+      y: height * (0.86 + 0.025 * Math.sin(whalePhase)),
+      heading: Math.atan2(height * 0.025 * whaleSpeed * Math.cos(whalePhase), -width * 0.54 * whaleSpeed * Math.sin(whalePhase)),
+      scale: shortSide * 0.105,
+      phase: whalePhase,
+    };
+    const tangSpeed = 0.024;
+    const tangPhase = t * tangSpeed + 0.8;
+    const tangX = width * (0.5 + 0.34 * Math.cos(tangPhase));
+    const tangY = height * (0.74 + 0.045 * Math.sin(tangPhase * 2));
+    const tangHeading = Math.atan2(height * 0.09 * tangSpeed * Math.cos(tangPhase * 2), -width * 0.34 * tangSpeed * Math.sin(tangPhase));
+    const creatures = [
+      orbit("turtle", 0.43, 0.4, 0.026, 0.5, 0.072),
+      orbit("turtle", 0.39, 0.42, -0.021, 3.6, 0.058),
+      orbit("manta", 0.34, 0.36, 0.018, 1.8, 0.095),
+      dolphin(0.3),
+      dolphin(2.9),
+      whale,
+    ];
+    for (let i = 0; i < 9; i++) {
+      const col = i % 3;
+      const row = Math.floor(i / 3);
+      creatures.push({
+        kind: "tang",
+        x: tangX - col * shortSide * 0.035 + (row % 2) * shortSide * 0.015,
+        y: tangY + (row - 1) * shortSide * 0.035,
+        heading: tangHeading,
+        scale: shortSide * 0.022,
+        phase: i * 0.8,
+      });
+    }
+    for (const creature of creatures) this.drawLagoonCreature(creature, t);
+  }
+
+  private drawLagoonCreature(creature: LagoonCreature, t: number) {
+    const { ctx, cw, ch, cols, rows } = this;
+    const { kind, x, y, heading, scale, phase } = creature;
+    const reach = scale * (kind === "whale" ? 1.28 : kind === "manta" ? 1.18 : 1.12);
+    const c0 = Math.max(0, Math.floor((x - reach) / cw));
+    const c1 = Math.min(cols - 1, Math.floor((x + reach) / cw));
+    const r0 = Math.max(0, Math.floor((y - reach) / ch));
+    const r1 = Math.min(rows - 1, Math.floor((y + reach) / ch));
+    const cos = Math.cos(heading);
+    const sin = Math.sin(heading);
+    const flap = Math.sin(t * 2.1 + phase) * 0.075;
+    const colors: Record<LagoonCreatureKind, [string, string, string, string]> = {
+      turtle: ["#0e80b6", "#1aa8ca", "#4ad6d6", "#06303f"],
+      manta: ["#0e80b6", "#1aa8ca", "#b2f4e8", "#06303f"],
+      dolphin: ["#1aa8ca", "#0e80b6", "#b2f4e8", "#06303f"],
+      whale: ["#0e80b6", "#1aa8ca", "#4ad6d6", "#06303f"],
+      tang: ["#ffd84a", "#ff8a2a", "#fff5b5", "#06303f"],
+    };
+    const palette = colors[kind];
+    for (let row = r0; row <= r1; row++) {
+      for (let col = c0; col <= c1; col++) {
+        const px = col * cw + cw / 2 - x;
+        const py = row * ch + ch / 2 - y;
+        const lx = (px * cos + py * sin) / scale;
+        const ly = (-px * sin + py * cos) / scale;
+        const part = this.lagoonCreaturePart(kind, lx, ly, flap);
+        if (!part) continue;
+        const key = hash3(col, row, Math.floor(phase * 11));
+        ctx.fillStyle = palette[Math.min(3, part - 1)];
+        ctx.fillRect(col * cw + 1, row * ch + 1, cw - 1, ch - 1);
+        if (part === 4) {
+          ctx.fillStyle = "#06303f";
+          ctx.fillText("o", col * cw + cw / 2, row * ch + ch / 2 + 1);
+        } else {
+          const glyphs = kind === "turtle" ? "S8%#" : kind === "manta" ? "X8%" : "tS8X";
+          ctx.fillStyle = part === 3 ? "#06303f" : "#b2f4e8";
+          ctx.fillText(glyphs[Math.floor(key * glyphs.length)], col * cw + cw / 2, row * ch + ch / 2 + 1);
+        }
+      }
+    }
+  }
+
+  private lagoonCreaturePart(kind: LagoonCreatureKind, x: number, y: number, flap: number) {
+    if (kind === "turtle") {
+      if (inEllipse(x, y, 0.63, 0, 0.22, 0.16)) return inEllipse(x, y, 0.72, -0.055, 0.025, 0.025) ? 4 : 2;
+      if (inEllipse(x, y, -0.02, 0, 0.5, 0.36)) return 1;
+      if (
+        inEllipse(x, y, 0.22 + flap, -0.37, 0.27, 0.12, -0.55) ||
+        inEllipse(x, y, 0.22 + flap, 0.37, 0.27, 0.12, 0.55) ||
+        inEllipse(x, y, -0.43 - flap * 0.5, -0.29, 0.2, 0.1, -0.62) ||
+        inEllipse(x, y, -0.43 - flap * 0.5, 0.29, 0.2, 0.1, 0.62) ||
+        inTriangle(x, y, -0.45, -0.05, -0.73, 0, -0.45, 0.05)
+      ) return 3;
+      return 0;
+    }
+    if (kind === "manta") {
+      if (inEllipse(x, y, 0.18, 0, 0.53, 0.22)) return 1;
+      const wing = 0.82 + flap * 0.5;
+      if (
+        inTriangle(x, y, 0.34, -0.12, -0.34, -wing, -0.42, -0.12) ||
+        inTriangle(x, y, -0.34, -wing, -0.88, 0, -0.42, -0.12) ||
+        inTriangle(x, y, 0.34, 0.12, -0.34, wing, -0.42, 0.12) ||
+        inTriangle(x, y, -0.34, wing, -0.88, 0, -0.42, 0.12)
+      ) return 2;
+      if (x < -0.75 && x > -1.22 && Math.abs(y) < 0.025) return 3;
+      return 0;
+    }
+    if (kind === "dolphin") {
+      if (inEllipse(x, y, -0.02, 0, 0.57, 0.22) || inEllipse(x, y, 0.5, 0, 0.32, 0.09)) return 1;
+      if (
+        inTriangle(x, y, 0.02, -0.16, 0.2, -0.45, 0.32, -0.12) ||
+        inTriangle(x, y, -0.02, 0.08, 0.2, 0.42, 0.36, 0.12) ||
+        inTriangle(x, y, -0.55, 0, -0.91, -0.3, -0.78, 0) ||
+        inTriangle(x, y, -0.55, 0, -0.91, 0.3, -0.78, 0)
+      ) return 2;
+      return 0;
+    }
+    if (kind === "tang") {
+      if (inEllipse(x, y, 0.08, 0, 0.55, 0.24)) return 1;
+      if (
+        inTriangle(x, y, -0.42, 0, -0.88, -0.28, -0.72, 0) ||
+        inTriangle(x, y, -0.42, 0, -0.88, 0.28, -0.72, 0) ||
+        inTriangle(x, y, -0.05, -0.18, 0.06, -0.39, 0.2, -0.18)
+      ) return 2;
+      return 0;
+    }
+    if (inEllipse(x, y, 0.25, -0.1, 0.08, 0.045)) return 4;
+    if (inEllipse(x, y, -0.02, 0, 0.82, 0.35)) return 1;
+    if (
+      inEllipse(x, y, -0.14, -0.39, 0.42, 0.095, -0.62 - flap) ||
+      inEllipse(x, y, -0.14, 0.39, 0.42, 0.095, 0.62 + flap) ||
+      inTriangle(x, y, -0.72, -0.12, -1.2, -0.36, -1.05, 0) ||
+      inTriangle(x, y, -0.72, 0.12, -1.2, 0.36, -1.05, 0)
+    ) return 2;
+    return 0;
   }
 
   private drawHeat() {

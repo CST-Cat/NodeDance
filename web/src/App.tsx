@@ -427,26 +427,6 @@ export default function App(input: Props) {
         avatarUrl: "",
         backgroundUrl: "",
       });
-      watchState([screen, () => appearance.sharks], async ([next]) => {
-        const sequence = ++loginOceanSequence;
-        if (next !== "login") {
-          loginOceanEngine?.destroy();
-          loginOceanEngine = undefined;
-          return;
-        }
-        await afterRender();
-        const canvas = loginOceanCanvas.value;
-        if (
-          sequence !== loginOceanSequence ||
-          screen.value !== "login" ||
-          !canvas
-        )
-          return;
-        const { OceanEngine } = await import("./vendor/ascii-sharks/engine");
-        if (sequence !== loginOceanSequence || screen.value !== "login") return;
-        loginOceanEngine?.destroy();
-        loginOceanEngine = new OceanEngine(canvas, appearance.sharks);
-      });
       const safeBackgroundColor = derived(() =>
         /^#[\da-f]{6}$/i.test(appearance.backgroundColor)
           ? appearance.backgroundColor
@@ -514,6 +494,37 @@ export default function App(input: Props) {
           "background",
           backgroundRevision.value,
         ),
+      );
+      watchState([screen, () => appearance.sharks], async ([next]) => {
+        const sequence = ++loginOceanSequence;
+        if (next !== "login") {
+          loginOceanEngine?.destroy();
+          loginOceanEngine = undefined;
+          return;
+        }
+        await afterRender();
+        const canvas = loginOceanCanvas.value;
+        if (
+          sequence !== loginOceanSequence ||
+          screen.value !== "login" ||
+          !canvas
+        )
+          return;
+        const { OceanEngine } = await import("./vendor/ascii-sharks/engine");
+        if (sequence !== loginOceanSequence || screen.value !== "login") return;
+        loginOceanEngine?.destroy();
+        loginOceanEngine = new OceanEngine(
+          canvas,
+          appearance.sharks,
+          effectiveTheme.value === "light" ? "light" : "dark",
+          !!backgroundSrc.value,
+        );
+      });
+      watchState(effectiveTheme, (theme) =>
+        loginOceanEngine?.setColorScheme(theme === "light" ? "light" : "dark"),
+      );
+      watchState(backgroundSrc, (src) =>
+        loginOceanEngine?.setBackdropImage(!!src),
       );
       const visibleName = derived(
         () =>
