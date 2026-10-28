@@ -364,7 +364,7 @@ func (s *Server) authenticateRequest(w http.ResponseWriter, r *http.Request, tou
 func (s *Server) sessionStillValid(ctx context.Context, id string) bool {
 	var lastSeen int64
 	var persistent bool
-	if err := s.store.DB.QueryRowContext(ctx, `SELECT s.last_seen_at, EXISTS(SELECT 1 FROM persistent_sessions p WHERE p.session_id=s.id) FROM browser_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=? AND u.enabled=1`, id).Scan(&lastSeen, &persistent); err != nil {
+	if err := s.store.Reader().QueryRowContext(ctx, `SELECT s.last_seen_at, EXISTS(SELECT 1 FROM persistent_sessions p WHERE p.session_id=s.id) FROM browser_sessions s JOIN users u ON u.id=s.user_id WHERE s.id=? AND u.enabled=1`, id).Scan(&lastSeen, &persistent); err != nil {
 		return false
 	}
 	last := time.Unix(0, lastSeen)

@@ -168,6 +168,8 @@ Alert rule, channel and maintenance-window deletion remain private operations an
 
 Concurrent Web mutations share CSRF token discovery while retaining independent cancellation and timeouts. A session change cancels token waiters and prevents an older token response from replacing the new session token. 并发写请求共享 CSRF 令牌获取，仍保留各自的取消和超时；会话变化会取消旧等待，旧响应不能覆盖新令牌。
 
+Session validity reads use a separate SQLite query-only pool; writes remain serialized, and committed revocations remain visible on subsequent reads. 会话有效性通过独立 SQLite 只读连接池读取；写入仍保持串行，提交后的撤销会在后续读取中生效。
+
 The browser regression opens the compact resource-metric selector, compares its options with Core, verifies selection drafts do not change the saved policy, saves and reloads the selection, and restores the fixture policy. It separately checks the actual 44px trigger/row and native clear-control size at desktop and narrow widths. 权限与公开投影断言继续由原有游客安全回归覆盖。
 
 The static `/vendor/elfinder-commands/` document alone permits same-origin framing for the hidden command runtime. It contains no file metadata or credentials; only the authenticated management component supplies its current listing and receives command events. Management HTML and API responses retain their default frame denial, and passive file previews retain their own sandbox policy.

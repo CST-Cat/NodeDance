@@ -136,6 +136,8 @@ Alert configuration deletion is administrator-only and requires confirmation in 
 
 Shared CSRF token discovery preserves each request's cancellation and invalidates waiting requests when the session changes. CSRF 令牌获取支持共享并发请求，会话变化时取消旧请求等待。
 
+Session validity and monitoring status can read through a separate query-only database pool, without changing public display or withdrawal rules. 会话有效性和监控状态使用独立只读数据库连接池，不改变游客展示或撤销规则。
+
 Resource metrics use the installed shadcn registry MultiSelect in the standard 44px control row. Options still come from Core; the trigger shows one selected metric and the remaining count. Selecting or clearing updates only the administrator draft until Save display settings; the server publication contract is unchanged. 资源指标使用原版多选组件收起展示，展开支持独立多选，不改变游客配置的保存与发布语义。
 
 ## Explicit file shares / 独立文件分享
