@@ -473,6 +473,7 @@ export class ApiError extends Error {
 }
 
 let csrfToken = ''
+let csrfTokenPromise: Promise<void> | undefined
 export const SESSION_EXPIRED_EVENT = 'nodedance:session-expired'
 
 function isAnonymousAuthRequest(name: string): boolean {
@@ -502,8 +503,11 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
     }
     if (csrf) {
       if (!csrfToken) {
-        const result = await operationRequest<{ token: string }>('auth.csrf', {}, { signal: controller.signal })
-        csrfToken = result.token
+        csrfTokenPromise ??= (async () => {
+          const result = await operationRequest<{ token: string }>('auth.csrf', {}, {})
+          csrfToken = result.token
+        })().finally(() => { csrfTokenPromise = undefined })
+        await csrfTokenPromise
       }
       headers.set('X-CSRF-Token', csrfToken)
     }

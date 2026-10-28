@@ -96,7 +96,7 @@ export function createGuestPublication(canManage: () => boolean) {
       );
       probes.value = services.probes;
     } catch (e) {
-      if (current === epoch) error.value = String(e);
+      if (current === epoch) error.value = e instanceof Error ? e.message : String(e);
     } finally {
       if (current === epoch) busy.value = false;
     }
@@ -120,7 +120,7 @@ export function createGuestPublication(canManage: () => boolean) {
       settings.value = saved;
       notice.value = t("guest.saved");
     } catch (e) {
-      if (current === epoch) error.value = String(e);
+      if (current === epoch) error.value = e instanceof Error ? e.message : String(e);
     } finally {
       if (current === epoch) busy.value = false;
     }
@@ -133,7 +133,7 @@ export function createGuestPublication(canManage: () => boolean) {
       const result = await operationRequest<GuestDisplay>("guest.preview");
       if (current === epoch) preview.value = result;
     } catch (e) {
-      if (current === epoch) error.value = String(e);
+      if (current === epoch) error.value = e instanceof Error ? e.message : String(e);
     } finally {
       if (current === epoch) busy.value = false;
     }

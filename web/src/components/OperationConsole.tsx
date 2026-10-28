@@ -490,7 +490,7 @@ export default function OperationConsole(input: Props) {
         try {
           await observe(current, pending, generation, controller);
         } catch (reason) {
-          if (generation === revision) error.value = String(reason);
+          if (generation === revision) error.value = reason instanceof Error ? reason.message : String(reason);
         } finally {
           if (generation === revision) busy.value = false;
         }
@@ -515,7 +515,7 @@ export default function OperationConsole(input: Props) {
           socket.send(JSON.stringify(data));
           input.value = "";
         } catch (reason) {
-          error.value = String(reason);
+          error.value = reason instanceof Error ? reason.message : String(reason);
         }
       }
       function newExecution() {
@@ -566,7 +566,7 @@ export default function OperationConsole(input: Props) {
                 );
           } catch {}
         } catch (reason) {
-          error.value = String(reason);
+          error.value = reason instanceof Error ? reason.message : String(reason);
         }
       });
       beforeDispose(disconnect);

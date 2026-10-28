@@ -19,9 +19,9 @@ export default function FileRequests() {
   const [name, setName] = useState(""), [notes, setNotes] = useState(""), [days, setDays] = useState("7"), [files, setFiles] = useState("10"), [bytes, setBytes] = useState("1073741824"), [error, setError] = useState(""), [busy, setBusy] = useState(false);
   const intent = useRef(shareIntent());
   async function refresh(signal?: AbortSignal) { const v = await operationRequest<{ requests: FileRequest[] }>("share-requests.list", {}, { signal }); setItems(v.requests); }
-  useEffect(() => { const controller = new AbortController(); void refresh(controller.signal).catch(e => { if (!controller.signal.aborted) setError(String(e)); }); return () => controller.abort(); }, []);
+  useEffect(() => { const controller = new AbortController(); void refresh(controller.signal).catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e)); }); return () => controller.abort(); }, []);
   function select(v?: FileRequest) { setCurrent(v); setName(v?.name ?? ""); setNotes(v?.notes ?? ""); setFiles(String(v?.maxFiles ?? 10)); setBytes(String(v?.maxBytes ?? 1073741824)); setDays(v ? String(v.expiresAt ? Math.max(1, Math.ceil((v.expiresAt - Date.now() / 1000) / 86400)) : 0) : "7"); intent.current = shareIntent(); }
-  async function run(action: () => Promise<void>) { setBusy(true); setError(""); try { await action(); } catch (e) { setError(String(e)); } finally { setBusy(false); } }
+  async function run(action: () => Promise<void>) { setBusy(true); setError(""); try { await action(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } }
   async function download(entry: SharedEntry) { if (!current) return; const anchor = document.createElement("a"); anchor.href = String(await operationURL("share-requests.download", { params: { id: current.id }, query: { path: entry.path } })); anchor.download = entry.path; document.body.append(anchor); anchor.click(); anchor.remove(); }
   return <div className="file-shares">{error && <Alert tone="danger" title={error} />}<SettingsGroup>
     <ShareSettingRow label={s("name")}><Input label="" aria-label={s("name")} value={name} onChange={e => setName(e.target.value)} /></ShareSettingRow>
@@ -38,6 +38,6 @@ export default function FileRequests() {
 export function PublicFileRequest() {
   useSignals();
   const id = location.pathname.split("/")[2] ?? "", [value, setValue] = useState<FileRequest>(), [error, setError] = useState("");
-  useEffect(() => { const controller = new AbortController(); void operationRequest<FileRequest>("share-requests.public", { params: { id } }, { signal: controller.signal }).then(setValue).catch(e => { if (!controller.signal.aborted) setError(String(e)); }); return () => controller.abort(); }, [id]);
+  useEffect(() => { const controller = new AbortController(); void operationRequest<FileRequest>("share-requests.public", { params: { id } }, { signal: controller.signal }).then(setValue).catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e)); }); return () => controller.abort(); }, [id]);
   return <ManagementPage registryStyles className="public-file-share"><Card><CardContent><div className="file-shares"><h1>{value?.name || s("requests")}</h1>{error && <Alert tone="danger" title={error} />}{value && <><p>{value.notes}</p><FileUpload label={s("upload")} maxSize={value.maxBytes || undefined} onUpload={async (file, { signal }) => { const { operation, path } = await import("../operations").then(m => m.resolveOperation("share-requests.upload", { params: { id }, query: { name: file.name } })); const r = await fetch(path, { method: operation.method, credentials: "omit", headers: { "Content-Type": "application/octet-stream" }, body: file, signal }); if (!r.ok) throw Error(s("uploadFailed")); }} /></>}</div></CardContent></Card></ManagementPage>;
 }

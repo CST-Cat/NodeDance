@@ -1246,6 +1246,7 @@
   "nav.workspace": "工作空间",
   "nav.navigation": "主导航",
   "nav.close": "关闭导航",
+  "ui.close": "关闭",
   "dashboard.title": "基础设施，一目了然。",
   "dashboard.compact.total": "总数",
   "dashboard.compact.online": "在线",
