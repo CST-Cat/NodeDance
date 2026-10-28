@@ -201,6 +201,11 @@ func (s *Server) adminListAgents(w http.ResponseWriter, r *http.Request) {
 		Capabilities    []string                     `json:"capabilities"`
 		Permissions     *protocol.RuntimePermissions `json:"runtimePermissions,omitempty"`
 	}
+	nodeIDs := make([]string, len(nodes))
+	for i, node := range nodes {
+		nodeIDs[i] = node.NodeID
+	}
+	geographyPrefs := s.nodeGeographyPreferences(r.Context(), nodeIDs)
 	result := make([]nodeView, 0, len(nodes))
 	for _, node := range nodes {
 		view := nodeView{NodeID: node.NodeID, AgentID: node.AgentID, DisplayName: node.DisplayName, Status: node.Status,
@@ -223,7 +228,7 @@ func (s *Server) adminListAgents(w http.ResponseWriter, r *http.Request) {
 				view.Status = "offline"
 			}
 		}
-		view.Country, view.Location = s.nodeGeography(r.Context(), node.NodeID, node.AgentID)
+		view.Country, view.Location = s.nodeGeographyWithPreferences(r.Context(), node.NodeID, node.AgentID, geographyPrefs)
 		result = append(result, view)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"nodes": result, "serverTime": serverTime.Format(time.RFC3339Nano)})

@@ -77,10 +77,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		if err := s.writeDashboardMetricsMessage(ctx, conn, node.NodeID); err != nil {
 			return
 		}
-		if !s.dashboardSessionStillValid(ctx, current.ID) {
-			_ = conn.Close(websocket.StatusPolicyViolation, "session expired or revoked")
-			return
-		}
 		fingerprint, _, err := s.writeDashboardDockerMessage(ctx, conn, node.NodeID, nil)
 		if err != nil {
 			return
@@ -102,10 +98,6 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if err := s.writeDashboardMetricsMessage(ctx, conn, nodeID); err != nil {
-				return
-			}
-			if !s.dashboardSessionStillValid(ctx, current.ID) {
-				_ = conn.Close(websocket.StatusPolicyViolation, "session expired or revoked")
 				return
 			}
 			fingerprint, _, err := s.writeDashboardDockerMessage(ctx, conn, nodeID, dockerFingerprintPointer(dockerFingerprints, nodeID))
