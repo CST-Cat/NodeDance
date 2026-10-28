@@ -22,6 +22,10 @@ import type { MetricsView } from "../metrics-contract";
 import { useViewNavigation } from "../navigation";
 import { operationURL } from "../operations";
 import {
+  createAsyncOperation,
+  type AsyncOperation,
+} from "../async-operation";
+import {
   __call,
   __classes,
   __each,
@@ -159,6 +163,15 @@ export default function NodesDashboard(input: Props) {
       >({});
       const nodePreferences = cell<Record<string, DashboardPreference[]>>({});
       const preferenceRequests = new Map<string, symbol>();
+      const taskLoadOperations = new Map<string, AsyncOperation>();
+      function taskLoadOperation(nodeId: string): AsyncOperation {
+        let operation = taskLoadOperations.get(nodeId);
+        if (!operation) {
+          operation = createAsyncOperation();
+          taskLoadOperations.set(nodeId, operation);
+        }
+        return operation;
+      }
       const dashboardSettings = cell<DashboardSettings>({
         viewMode: "monitor",
         groupBy: "node",
@@ -342,10 +355,13 @@ export default function NodesDashboard(input: Props) {
       async function loadTasks(node: AgentNode) {
         if (__props.readOnly) return;
         try {
-          const result = await api.nodeTasks(node.nodeId),
-            next = {
-              ...taskViews.value,
-            };
+          const result = await taskLoadOperation(node.nodeId).run(() =>
+            api.nodeTasks(node.nodeId),
+          );
+          if (!result) return;
+          const next = {
+            ...taskViews.value,
+          };
           for (const [id, task] of Object.entries(next))
             if (task.nodeId === node.nodeId) delete next[id];
           for (const task of result.tasks) next[task.taskId] = task;
@@ -1038,6 +1054,7 @@ export default function NodesDashboard(input: Props) {
             payload,
           );
           const current = await api.nodeTask(nodeID, accepted.taskId);
+          taskLoadOperation(nodeID).invalidate();
           taskViews.value = {
             ...taskViews.value,
             [current.taskId]: current,
@@ -1108,6 +1125,7 @@ export default function NodesDashboard(input: Props) {
         try {
           const accepted = await api.createContainerCreateTask(nodeId, spec);
           const current = await api.nodeTask(nodeId, accepted.taskId);
+          taskLoadOperation(nodeId).invalidate();
           taskViews.value = {
             ...taskViews.value,
             [current.taskId]: current,

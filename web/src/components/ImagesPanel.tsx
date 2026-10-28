@@ -8,6 +8,7 @@ import {
   type TaskAuditEvent,
 } from "../api";
 import { requestPrompt } from "../dialogs";
+import { createAsyncOperation } from "../async-operation";
 import { display, locale, t } from "../i18n";
 import { afterMount, beforeDispose, cell, derived } from "../state";
 
@@ -41,6 +42,7 @@ export default function ImagesPanel(input: Props) {
       const auditVisible = cell(false);
       const auditLoading = cell(false);
       const auditError = cell("");
+      const auditOperation = createAsyncOperation();
       const taskError = cell("");
       const pageCount = derived(() => Math.max(1, Math.ceil(total.value / 50)));
       let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -53,6 +55,8 @@ export default function ImagesPanel(input: Props) {
       function setActiveTask(task: ContainerTask) {
         if (activeTask.value?.taskId !== task.taskId) {
           cancelPending.value = false;
+          auditOperation.invalidate();
+          auditLoading.value = false;
           auditEvents.value = [];
           auditVisible.value = false;
           auditError.value = "";
@@ -247,28 +251,32 @@ export default function ImagesPanel(input: Props) {
         }
       }
       async function toggleAudit() {
-        if (!activeTask.value) return;
+        const task = activeTask.value;
+        if (!task) return;
         auditVisible.value = !auditVisible.value;
-        if (
-          !auditVisible.value ||
-          auditEvents.value.length ||
-          auditLoading.value
-        )
+        if (!auditVisible.value) {
+          auditOperation.invalidate();
+          auditLoading.value = false;
           return;
+        }
+        if (auditEvents.value.length || auditLoading.value) return;
+        const token = auditOperation.begin();
         auditLoading.value = true;
         auditError.value = "";
         try {
-          const result = await api.nodeTaskAudit(
-            props.nodeId,
-            activeTask.value.taskId,
-          );
-          if (!disposed) auditEvents.value = result.events;
+          const result = await api.nodeTaskAudit(props.nodeId, task.taskId);
+          if (
+            !disposed &&
+            auditOperation.isCurrent(token) &&
+            activeTask.value?.taskId === task.taskId
+          )
+            auditEvents.value = result.events;
         } catch (reason) {
-          if (!disposed)
+          if (!disposed && auditOperation.isCurrent(token))
             auditError.value =
               reason instanceof Error ? reason.message : t("m.74c2941dde99");
         } finally {
-          auditLoading.value = false;
+          if (auditOperation.isCurrent(token)) auditLoading.value = false;
         }
       }
       function applyFilter() {
