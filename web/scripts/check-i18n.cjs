@@ -39,8 +39,8 @@ async function runtime(saved, languages, storageDisabled = false) {
   const browserExpected=supported?.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
   assert.equal(api.locale.value,!storageDisabled&&['en','zh-CN'].includes(saved)?saved:browserExpected)
   assert.equal(document.documentElement.lang, api.locale.value)
-  async function browserLanguage(language){navigator.language=language;navigator.languages=[language];listeners.get('languagechange')();await Promise.resolve()}
-  api.setLanguagePreference('system');await Promise.resolve()
+  async function browserLanguage(language){navigator.language=language;navigator.languages=[language];listeners.get('languagechange')();await new Promise(resolve => setTimeout(resolve, 0))}
+  api.setLanguagePreference('system');await new Promise(resolve => setTimeout(resolve, 0))
   const key = Object.keys(en).find(k => slots(en[k]).includes('0'))
   await browserLanguage('en-US')
   assert.equal(api.t(key, {'0': '<script>alert(1)</script>'}).includes('<script>alert(1)</script>'), true, 'Parameters must remain plain text')
@@ -52,11 +52,11 @@ async function runtime(saved, languages, storageDisabled = false) {
   assert.equal(api.display(en[key].replaceAll('{0}', '42')), api.t(key, {'0': '42'}))
   await browserLanguage('en')
   assert.equal(api.display('凭据无效'), 'invalid credentials')
-  api.setLanguagePreference('zh-CN');await Promise.resolve()
+  api.setLanguagePreference('zh-CN');await new Promise(resolve => setTimeout(resolve, 0))
   assert.equal(api.locale.value,'zh-CN')
   await browserLanguage('en-US');assert.equal(api.locale.value,'zh-CN','Explicit preference survives browser language changes')
   if(!storageDisabled)assert.equal(values.get('nodedance.locale'),'zh-CN')
-  api.setLanguagePreference('system');await Promise.resolve()
+  api.setLanguagePreference('system');await new Promise(resolve => setTimeout(resolve, 0))
   assert.equal(api.locale.value,'en')
 
   const webhookKey = Object.keys(en).find(k => en[k].includes('{{event}}'))

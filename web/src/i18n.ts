@@ -1,6 +1,4 @@
 import { signal, computed, effect } from "@preact/signals-react";
-import en from "./locales/en.json";
-import zhCN from "./locales/zh-CN.json";
 
 export type Locale = "zh-CN" | "en";
 export function normalizeLocale(value: string | null | undefined): Locale {
@@ -28,52 +26,28 @@ export const languagePreference = signal<LanguagePreference>(savedLanguagePrefer
 export const locale = computed<Locale>(() =>
   languagePreference.value === "system" ? browserLanguage.value : languagePreference.value,
 );
-export function setLanguagePreference(value: LanguagePreference) {
-  languagePreference.value = value;
-  try { localStorage.setItem(preferenceKey, value); } catch { /* In-memory preference. */ }
-}
-if (typeof window !== "undefined") {
-  window.addEventListener("languagechange", () => {
-    browserLanguage.value = browserLocale();
-  });
-}
 
-effect(() => {
-  if (typeof document !== "undefined")
-    document.documentElement.lang = locale.value;
-});
+const catalogs: Partial<Record<Locale, Record<string, string>>> = {};
+const catalogLoads = new Map<Locale, Promise<void>>();
+const catalogEpoch = signal(0);
+const loaders: Record<Locale, () => Promise<{ default: Record<string, string> }>> = {
+  en: () => import("./locales/en.json"),
+  "zh-CN": () => import("./locales/zh-CN.json"),
+};
 
-const catalogs: Record<Locale, Record<string, string>> = { en, "zh-CN": zhCN };
-export function t(key: string, values: Record<string, unknown> = {}): string {
-  const message = catalogs[locale.value][key] ?? key;
-  // Numeric slots cannot consume webhook template fields such as {{event}}.
-  return message.replace(/(?<!\{)\{(\d+)\}(?!\})/g, (token, name: string) =>
-    Object.hasOwn(values, name) ? String(values[name]) : token,
-  );
-}
-
-const diagnosticKeys = new Map(
-  Object.entries(en)
-    .filter(([key]) => key.startsWith("api."))
-    .map(([key, value]) => [value, key]),
-);
-// Public Core diagnostics are translated at presentation time. Unknown host,
-// Docker, or third-party diagnostics remain intact for troubleshooting.
-export function diagnostic(message: string): string {
-  const key = diagnosticKeys.get(message);
-  return key ? t(key) : message;
-}
-
+const diagnosticKeys = new Map<string, string>();
 const presentationKeys = new Map<string, string>();
-for (const catalog of Object.values(catalogs)) {
+const presentationTemplates: { key: string; slots: string[]; pattern: RegExp; literal: number }[] = [];
+function absorbCatalog(owner: Locale, catalog: Record<string, string>) {
+  if (owner === "en") {
+    for (const [key, value] of Object.entries(catalog)) {
+      if (key.startsWith("api.")) diagnosticKeys.set(value, key);
+    }
+  }
   for (const [key, message] of Object.entries(catalog)) {
     if (!/\{\d+\}/.test(message)) presentationKeys.set(message, key);
-  }
-}
-const presentationTemplates = Object.values(catalogs).flatMap((catalog) =>
-  Object.entries(catalog).flatMap(([key, message]) => {
     const slots = [...message.matchAll(/(?<!\{)\{(\d+)\}(?!\})/g)];
-    if (!slots.length) return [];
+    if (!slots.length) continue;
     const escape = (value: string) =>
       value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     let pattern = "^";
@@ -83,19 +57,75 @@ const presentationTemplates = Object.values(catalogs).flatMap((catalog) =>
       at = slot.index + slot[0].length;
     }
     pattern += escape(message.slice(at)) + "$";
-    return [
-      {
-        key,
-        slots: slots.map((slot) => slot[1]!),
-        pattern: new RegExp(pattern),
-      },
-    ];
-  }),
-);
+    presentationTemplates.push({
+      key,
+      slots: slots.map((slot) => slot[1]!),
+      pattern: new RegExp(pattern),
+      literal: message.length - slots.reduce((total, slot) => total + slot[0].length, 0),
+    });
+  }
+  presentationTemplates.sort((a, b) => b.literal - a.literal);
+}
+
+export function loadCatalog(target: Locale): Promise<void> {
+  const existing = catalogLoads.get(target);
+  if (existing) return existing;
+  const load = loaders[target]().then((loaded) => {
+    const catalog = (loaded as { default?: Record<string, string> }).default
+      ?? (loaded as unknown as Record<string, string>);
+    catalogs[target] = catalog;
+    absorbCatalog(target, catalog);
+    catalogEpoch.value++;
+  }).catch(() => {
+    catalogLoads.delete(target);
+  });
+  catalogLoads.set(target, load);
+  return load;
+}
+
+export function initI18n(): Promise<void> {
+  return loadCatalog(locale.value);
+}
+
+export function setLanguagePreference(value: LanguagePreference) {
+  languagePreference.value = value;
+  try { localStorage.setItem(preferenceKey, value); } catch { /* In-memory preference. */ }
+  void loadCatalog(locale.value);
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("languagechange", () => {
+    browserLanguage.value = browserLocale();
+    void loadCatalog(locale.value);
+  });
+}
+
+effect(() => {
+  if (typeof document !== "undefined")
+    document.documentElement.lang = locale.value;
+});
+
+export function t(key: string, values: Record<string, unknown> = {}): string {
+  void catalogEpoch.value;
+  const message = catalogs[locale.value]?.[key] ?? catalogs.en?.[key] ?? catalogs["zh-CN"]?.[key] ?? key;
+  // Numeric slots cannot consume webhook template fields such as {{event}}.
+  return message.replace(/(?<!\{)\{(\d+)\}(?!\})/g, (token, name: string) =>
+    Object.hasOwn(values, name) ? String(values[name]) : token,
+  );
+}
+
+// Public Core diagnostics are translated at presentation time. Unknown host,
+// Docker, or third-party diagnostics remain intact for troubleshooting.
+export function diagnostic(message: string): string {
+  void catalogEpoch.value;
+  const key = diagnosticKeys.get(message);
+  return key ? t(key) : message;
+}
+
 // Localized notices may have been created before a language switch. Translate
 // only presentation messages here; never apply this to names or terminal/file data.
 export function display(message: string | null | undefined): string {
   if (!message) return "";
+  void catalogEpoch.value;
   const key = presentationKeys.get(message);
   if (key) return t(key);
   for (const template of presentationTemplates) {
@@ -110,3 +140,5 @@ export function display(message: string | null | undefined): string {
   }
   return message;
 }
+
+void loadCatalog(locale.value);

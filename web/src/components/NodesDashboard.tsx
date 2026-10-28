@@ -35,7 +35,6 @@ import {
   useController,
   watchState,
 } from "../state";
-import NodeDetail from "./NodeDetail";
 import "./NodesDashboard.css";
 import OverviewContext from "./OverviewContext";
 import UiIcon from "./UiIcon";
@@ -43,6 +42,7 @@ import UiSelect from "./UiSelect";
 import VpsCard from "./VpsCard";
 
 const TerminalConsole = lazyView(() => import("./TerminalConsole"));
+const NodeDetail = lazyView(() => import("./NodeDetail"));
 type Props = { readOnly?: boolean } & { children?: import("react").ReactNode; [key: string]: any };
 export default function NodesDashboard(input: Props) {
   return useController(

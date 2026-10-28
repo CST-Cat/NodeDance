@@ -12,10 +12,6 @@ import {
 } from "./api";
 import "./App.css";
 import AccountMenu from "./components/AccountMenu";
-import PersonalSettings from "./components/PersonalSettings";
-import AlertCenter from "./components/AlertCenter";
-import NodesDashboard from "./components/NodesDashboard";
-import AgentOnboarding from "./components/AgentOnboarding";
 import "./components/WorkspaceSettings.css";
 import UiDialog from "./components/UiDialog";
 import UiIcon from "./components/UiIcon";
@@ -58,6 +54,10 @@ const OperationConsole = lazyView(() => import("./components/OperationConsole"))
 const DomainCertificates = lazyView(() => import("./components/DomainCertificates"));
 const GuestDisplay = lazyView(() => import("./components/GuestDisplay"));
 const GlobalOverview = lazyView(() => import("./components/GlobalOverview"));
+const NodesDashboard = lazyView(() => import("./components/NodesDashboard"));
+const AgentOnboarding = lazyView(() => import("./components/AgentOnboarding"));
+const AlertCenter = lazyView(() => import("./components/AlertCenter"));
+const PersonalSettings = lazyView(() => import("./components/PersonalSettings"));
 const routeViews = {
   updates: UpdateCenter,
   feeds: FeedsCenter,
@@ -66,6 +66,10 @@ const routeViews = {
   "domain-certificates": DomainCertificates,
   guest: GuestDisplay,
   "global-overview": GlobalOverview,
+  nodes: NodesDashboard,
+  "agent-enrollment": AgentOnboarding,
+  alerts: AlertCenter,
+  settings: PersonalSettings,
 };
 function preloadScreen(screen: ViewScreen) {
   const view = routeViews[screen as keyof typeof routeViews];
