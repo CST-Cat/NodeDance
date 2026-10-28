@@ -488,14 +488,14 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   width: 100%;
   height: 100%;
   color: var(--text);
-  opacity: 0.72;
+  opacity: 1;
   pointer-events: none;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .login-background-shade {
   position: absolute;
   inset: 0;
-  background: var(--surface);
+  background: transparent;
 }
 .profile-avatar {
   display: grid;
@@ -1391,13 +1391,6 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
 .theme-swatch i {
   background: #cc785c;
 }
-.login-background-shade {
-  background: linear-gradient(
-    90deg,
-    var(--canvas),
-    color-mix(in srgb, var(--canvas) 72%, transparent)
-  );
-}
 .settings-heading h2 {
   font-size: 32px;
 }
@@ -1522,7 +1515,7 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
   letter-spacing: -0.02em;
 }
 .app-shell .login-background {
-  background-color: var(--page-color);
+  background-color: #000;
 }
 
 .workspace-notice {

@@ -1,10 +1,10 @@
 /**
  * Draws the World as a grid of ASCII cells:
- *   1. a transparent cell grid tinted with the current theme
- *   2. a wake field that diffuses where things swim, lighting the dots with the accent color
- *   3. full fish silhouettes, oriented to their heading and shaded by depth
- *   4. sharks rasterised cell-by-cell with supersampled edges: theme-tinted
- *      blocks shaded by the light, dense glyphs, and a warm accent shimmer
+ *   1. a pure black cell grid
+ *   2. a wake field that diffuses where things swim, lighting the dots cyan
+ *   3. fish as minimal ASCII dashes, one per cell, glinting on hard turns
+ *   4. sharks rasterised cell-by-cell with supersampled edges: grey blocks
+ *      shaded by the light, dense glyphs, and shimmering accent colours
  */
 import { clamp, hash3, smoothstep } from "./math";
 import { SHARK_NODES, type Shark, type SharkKind, type World } from "./world";
@@ -12,29 +12,17 @@ import { SHARK_NODES, type Shark, type SharkKind, type World } from "./world";
 const ALPHA_LEVELS = 6;
 const FISH_ALPHAS = [0.28, 0.42, 0.58, 0.74, 0.9];
 
-const DOT_COLOR_COUNT = 5;
-const DOT_BASE_ALPHA = [0.4, 0.4, 0.45, 0.5, 0.7];
-const WAKE = DOT_COLOR_COUNT - 1;
+const DOT_RGB: [number, number, number][] = [
+  [48, 52, 235],
+  [52, 205, 60],
+  [228, 50, 44],
+  [190, 212, 255],
+  [110, 230, 255],
+];
+const DOT_BASE_ALPHA = [1, 1, 1, 1, 1];
+const WAKE = DOT_RGB.length - 1;
 
-type RGB = [number, number, number];
-
-function colorChannels(value: string, fallback: RGB): RGB {
-  const hex = value.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i);
-  if (hex) {
-    const digits = hex[1].length === 3
-      ? [...hex[1]].map((digit) => `${digit}${digit}`).join("")
-      : hex[1];
-    return [0, 2, 4].map((offset) => parseInt(digits.slice(offset, offset + 2), 16)) as RGB;
-  }
-  const channels = value.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
-  return channels
-    ? [Number(channels[1]), Number(channels[2]), Number(channels[3])]
-    : fallback;
-}
-
-function rgba([r, g, b]: RGB, alpha: number) {
-  return `rgba(${r},${g},${b},${alpha})`;
-}
+const ACCENTS = ["#e0892c", "#e03a32", "#b44ae0", "#33c8cc", "#3cb54a", "#3150e8", "#d9c14a"];
 
 // Sparse glyphs on bright skin, dense glyphs in shadow, so the texture
 // reinforces the shading instead of fighting it.
@@ -102,7 +90,7 @@ const SHAPES: Record<SharkKind, SharkShape> = {
     secondDorsal: [0.71, 0.76],
     eye: [0.1, 0.14],
     gills: [0.19, 0.29],
-    tint: [1.04, 1, 0.94],
+    tint: [0.92, 0.97, 1.05],
   },
   // Slim neck under a wide, swept-back cephalofoil (drawn in sampleShark),
   // tall first dorsal, long upper tail lobe. Bronze-olive grey.
@@ -258,11 +246,10 @@ function inTriangle(
   return !(neg && pos);
 }
 
-/** Theme-tinted cell grid, snapped to device pixels. */
-export function paintGrid(g: CanvasRenderingContext2D, W: number, H: number, cw: number, ch: number, dpr: number, color: string) {
+/** Visible dark-grey cell grid, snapped to device pixels. Shared with the sidebar backdrop. */
+export function paintGrid(g: CanvasRenderingContext2D, W: number, H: number, cw: number, ch: number, dpr: number) {
   g.setTransform(1, 0, 0, 1, 0, 0);
-  g.strokeStyle = color;
-  g.globalAlpha = 0.055;
+  g.strokeStyle = "rgba(255,255,255,0.055)";
   g.lineWidth = 1;
   g.beginPath();
   for (let c = 0; c <= Math.ceil(W / cw); c++) {
@@ -276,7 +263,6 @@ export function paintGrid(g: CanvasRenderingContext2D, W: number, H: number, cw:
     g.lineTo(W * dpr, y);
   }
   g.stroke();
-  g.globalAlpha = 1;
 }
 
 export class AsciiRenderer {
@@ -299,13 +285,8 @@ export class AsciiRenderer {
   private heat = new Float32Array(0);
   private bucketOf = new Uint8Array(0);
   private bucketOrder = new Int32Array(0);
-  private bucketCounts = new Int32Array(DOT_COLOR_COUNT * ALPHA_LEVELS + 1);
+  private bucketCounts = new Int32Array(DOT_RGB.length * ALPHA_LEVELS + 1);
   private dotStyles: string[] = [];
-  private inkColor = "#242320";
-  private inkRgb: RGB = [36, 35, 32];
-  private accentColor = "#d97757";
-  private accentRgb: RGB = [217, 119, 87];
-  private inverseColor = "#faf9f5";
 
   private sharkFlag = new Uint8Array(0);
   private sharkShade = new Float32Array(0);
@@ -333,7 +314,7 @@ export class AsciiRenderer {
   private frameId = 0;
   /** Fish cells bucketed by brightness, so each bucket is one fillStyle. */
   private fishBuckets: number[][] = FISH_ALPHAS.map(() => []);
-  private fishStyles: string[] = [];
+  private fishStyles = FISH_ALPHAS.map((alpha) => `rgba(230,238,255,${alpha})`);
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d", { alpha: true });
@@ -341,27 +322,13 @@ export class AsciiRenderer {
     this.ctx = ctx;
     this.bg = document.createElement("canvas");
 
-    this.updateTheme();
-  }
-
-  updateTheme() {
-    const style = getComputedStyle(this.canvas);
-    this.inkColor = style.color;
-    this.inkRgb = colorChannels(this.inkColor, this.inkRgb);
-    this.accentColor = style.getPropertyValue("--accent-fill").trim() || this.accentColor;
-    this.accentRgb = colorChannels(this.accentColor, this.accentRgb);
-    const luminance = this.inkRgb[0] * 0.2126 + this.inkRgb[1] * 0.7152 + this.inkRgb[2] * 0.0722;
-    this.inverseColor = luminance < 128 ? "#faf9f5" : "#141413";
-    this.fishStyles = FISH_ALPHAS.map((alpha) => rgba(this.inkRgb, alpha));
-    const dotColors = [this.inkRgb, this.accentRgb, this.inkRgb, this.accentRgb, this.accentRgb];
-    this.dotStyles = [];
-    for (let c = 0; c < DOT_COLOR_COUNT; c++) {
+    for (let c = 0; c < DOT_RGB.length; c++) {
+      const [r, g, b] = DOT_RGB[c];
       for (let l = 0; l < ALPHA_LEVELS; l++) {
-        const alpha = (DOT_BASE_ALPHA[c] * (l + 1)) / ALPHA_LEVELS;
-        this.dotStyles.push(rgba(dotColors[c], Number(alpha.toFixed(3))));
+        const a = (DOT_BASE_ALPHA[c] * (l + 1)) / ALPHA_LEVELS;
+        this.dotStyles.push(`rgba(${r},${g},${b},${a.toFixed(3)})`);
       }
     }
-    if (this.width > 0 && this.height > 0) this.paintBackground();
   }
 
   get cellWidth() {
@@ -414,7 +381,7 @@ export class AsciiRenderer {
     for (let i = 0; i < n; i++) {
       const col = i % this.cols;
       const row = (i / this.cols) | 0;
-      // No ambient dots: the wake alone lights the theme-tinted grid.
+      // No ambient dots: the grid stays black. Only the cyan wake lights cells.
       this.dotKind[i] = 0;
       this.dotPhase[i] = hash3(col, row, 23) * Math.PI * 2;
       this.dotFreq[i] = 0.3 + hash3(col, row, 37) * 1.1;
@@ -427,7 +394,7 @@ export class AsciiRenderer {
     if (!g) return;
     const { width: W, height: H, dpr, cw, ch } = this;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    paintGrid(g, W, H, cw, ch, dpr, this.inkColor);
+    paintGrid(g, W, H, cw, ch, dpr);
   }
 
   render(world: World, dt: number) {
@@ -806,8 +773,8 @@ export class AsciiRenderer {
         const g = (70 + shade * 80) * dim;
         ctx.fillStyle =
           roll < 0.07
-            ? this.accentColor
-            : `rgb(${Math.round(g * tr * this.inkRgb[0] / 255)},${Math.round(g * tg * this.inkRgb[1] / 255)},${Math.min(255, Math.round(g * tb * this.inkRgb[2] / 255 + 4))})`;
+            ? ACCENTS[key % ACCENTS.length]
+            : `rgb(${Math.round(g * tr)},${Math.round(g * tg)},${Math.min(255, Math.round(g * tb + 6))})`;
         ctx.fillText(set[(key >>> 8) % set.length], x + cw / 2, y + ch / 2 + 1);
         continue;
       }
@@ -832,14 +799,15 @@ export class AsciiRenderer {
         glyph = SKIN_RAMP[clamp(Math.floor((1 - shade) * 8.99) + jitter, 0, SKIN_RAMP.length - 1)];
       }
       level *= dim;
-      ctx.fillStyle = `rgb(${Math.min(255, Math.round(level * tr * this.inkRgb[0] / 255))},${Math.min(255, Math.round(level * tg * this.inkRgb[1] / 255))},${Math.min(255, Math.round(level * tb * this.inkRgb[2] / 255 + 4))})`;
+      ctx.fillStyle = `rgb(${Math.min(255, Math.round(level * tr))},${Math.min(255, Math.round(level * tg))},${Math.min(255, Math.round(level * tb + 4))})`;
       ctx.fillRect(x + 1, y + 1, cw - 1, ch - 1);
 
       let color: string;
-      if (flag === FLAG_EYE) color = this.accentColor;
-      else if (flag === FLAG_MARK) color = this.inverseColor;
-      else if (roll < 0.09) color = this.accentColor;
-      else color = this.inverseColor;
+      if (flag === FLAG_EYE) color = "#9aa0ad";
+      else if (flag === FLAG_MARK) color = `rgb(${Math.round(70 * tr)},${Math.round(70 * tg)},${Math.round(70 * tb)})`;
+      else if (roll < 0.09) color = ACCENTS[key % ACCENTS.length];
+      else if (roll < 0.13) color = "#ffffff";
+      else color = shade > 0.55 ? "#0e0f13" : "#1b1d24";
       ctx.fillStyle = color;
       ctx.fillText(glyph, x + cw / 2, y + ch / 2 + 1);
     }
@@ -892,14 +860,14 @@ export class AsciiRenderer {
       if (h < 0.08) continue;
       const col = i % cols;
       const row = (i / cols) | 0;
-      ctx.fillStyle = rgba(this.accentRgb, Math.min(1, h > 0.5 ? h : h * 1.6));
+      ctx.fillStyle = h > 0.5 ? `rgba(255,120,60,${h.toFixed(2)})` : `rgba(220,40,40,${(h * 1.6).toFixed(2)})`;
       ctx.fillText(h > 0.6 ? "*" : "·", col * cw + cw / 2, row * ch + ch / 2 + 1);
     }
   }
 
   /**
    * Every cell's dot twinkles on its own clock, is modulated by slow
-   * caustic light bands, and flares with the accent color where the wake is strong.
+   * caustic light bands, and flares cyan where the wake field is strong.
    * Dots are bucketed by colour/alpha so each bucket is one fillStyle.
    */
   private drawDots(t: number) {

@@ -18,7 +18,6 @@ export class OceanEngine {
   private reducedMotion: MediaQueryList;
   private resizeObserver: ResizeObserver;
   private intersectionObserver: IntersectionObserver;
-  private themeObserver: MutationObserver;
   private disposed = false;
 
   constructor(private canvas: HTMLCanvasElement, sharks?: SharkSpec[]) {
@@ -26,15 +25,6 @@ export class OceanEngine {
     this.renderer = new AsciiRenderer(canvas);
     this.renderer.setFontFamily(getComputedStyle(canvas).fontFamily);
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    this.themeObserver = new MutationObserver(() => {
-      this.renderer.updateTheme();
-      if (this.reducedMotion.matches) this.drawStill();
-    });
-    this.themeObserver.observe(canvas.closest(".app-shell") ?? document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
-
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
     this.intersectionObserver = new IntersectionObserver(([entry]) => {
@@ -62,7 +52,6 @@ export class OceanEngine {
     cancelAnimationFrame(this.raf);
     this.resizeObserver.disconnect();
     this.intersectionObserver.disconnect();
-    this.themeObserver.disconnect();
     this.reducedMotion.removeEventListener("change", this.onMotionPreference);
     window.removeEventListener("pointermove", this.onPointerMove);
     window.removeEventListener("pointerdown", this.onPointerDown);
