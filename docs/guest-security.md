@@ -168,7 +168,9 @@ The browser regression opens the compact resource-metric selector, compares its 
 
 The static `/vendor/elfinder-commands/` document alone permits same-origin framing for the hidden command runtime. It contains no file metadata or credentials; only the authenticated management component supplies its current listing and receives command events. Management HTML and API responses retain their default frame denial, and passive file previews retain their own sandbox policy.
 
-Static Web assets get class-based caching: content-hashed `/assets/*` bundles are `immutable`, all other embedded files revalidate through a content-hash ETag, and gzip variants ship to clients that accept gzip. Headers apply to the embedded file bytes only; API, HTML routes and previews keep `no-store` and their existing security headers, so session and public data are never cacheable.
+Static Web assets get class-based caching: content-hashed `/assets/*` bundles are `immutable`, all other embedded files revalidate through a content-hash ETag, and gzip variants ship to clients that accept gzip. The public operation catalog uses `no-cache` and a content ETag so clients can revalidate the contract; private APIs, guest projections, HTML routes and previews keep `no-store` and their existing security headers. Catalog revalidation does not grant access to private operations.
+
+公开操作契约使用内容 ETag 与 `no-cache` 重新验证；私有 API、游客数据和页面仍使用 `no-store`。契约缓存不改变操作权限。
 
 ## File sharing boundaries / 文件分享边界
 

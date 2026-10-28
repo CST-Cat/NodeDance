@@ -8,8 +8,10 @@ const crypto = require('node:crypto').webcrypto
 const operation = {name:'future.inspect', description:'New server operation', method:'GET', path:'/api/v1/future/{id}', parameters:['id'], query:['filter'], transport:'json'}
 const moduleObject = {exports:{}}
 let calls=0
+let now=0, catalogOperations=[operation], catalogETag='"first"'
+class TestDate extends Date { static now(){return now} }
 const code=ts.transpileModule(fs.readFileSync(path.join(source,'operations.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
-vm.runInNewContext(code,{module:moduleObject,exports:moduleObject.exports, URL, URLSearchParams, TextEncoder, Headers, Blob, File, FormData, crypto, window:{location:{origin:'https://core.example'}}, fetch:async url=>{calls++;assert.equal(url,'/api/v1/operations');return {ok:true,json:async()=>({version:1,operations:[operation]})}}})
+vm.runInNewContext(code,{module:moduleObject,exports:moduleObject.exports, URL, URLSearchParams, TextEncoder, Headers, Blob, File, FormData, crypto, Date:TestDate, window:{location:{origin:'https://core.example'}}, fetch:async url=>{calls++;assert.equal(url,'/api/v1/operations');return {ok:true,headers:new Headers({ETag:catalogETag}),json:async()=>({version:1,operations:catalogOperations})}}})
 ;(async()=>{
  const api=moduleObject.exports
  const result=await api.resolveOperation('future.inspect',{params:{id:'node'},query:{filter:'a b'}})
@@ -20,6 +22,12 @@ vm.runInNewContext(code,{module:moduleObject,exports:moduleObject.exports, URL, 
  assert.throws(()=>api.operationPath(operation,{params:{id:'node'},query:{unknown:'value'}}))
  assert.throws(()=>api.operationPath(operation,{params:{id:'node',unknown:'value'}}))
  await assert.rejects(api.resolveOperation('missing'))
+ catalogOperations=[{...operation,path:'/api/v1/changed/{id}'},{...operation,name:'future.added'}];catalogETag='"second"';now+=31000
+ assert.equal((await api.resolveOperation('future.inspect',{params:{id:'node'}})).path,'/api/v1/changed/node')
+ assert.ok((await api.operationCatalog()).operations.some(item=>item.name==='future.added'))
+ catalogOperations=[catalogOperations[1]];catalogETag='"third"'
+ const before=calls;await Promise.all([api.operationCatalog(true),api.operationCatalog(true)]);assert.equal(calls,before+1,'Concurrent refreshes share one request')
+ await assert.rejects(api.resolveOperation('future.inspect',{params:{id:'node'}}))
  const preference={...operation,bodySchema:{type:'object',required:['identity'],additionalProperties:false,properties:{identity:{type:'string'},alias:{type:'string'},enabled:{type:'boolean'},credentials:{type:'object',properties:{password:{type:'string',writeOnly:true}}}}}}
  assert.equal(api.operationBody(preference,{identity:'node:x',alias:'',enabled:'false'}),' {"identity":"node:x","alias":"","enabled":false}'.trim())
  assert.throws(()=>api.operationBody(preference,{identity:'node:x',enabled:'not-json'}))

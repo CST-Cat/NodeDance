@@ -147,16 +147,34 @@ export interface OperationInput {
 }
 export interface OperationCatalog { version: number; operations: CoreOperation[] }
 let catalogPromise: Promise<OperationCatalog> | undefined
+let catalogValidUntil = 0
+let catalogInFlight = false
+let cachedCatalog: OperationCatalog | undefined
+let cachedETag: string | null = null
 
-export function operationCatalog(): Promise<OperationCatalog> {
-  if (!catalogPromise) {
-    catalogPromise = fetch('/api/v1/operations', { credentials: 'include', cache: 'no-store' }).then(async response => {
+export function operationCatalog(force = false): Promise<OperationCatalog> {
+  if (!catalogPromise || (!catalogInFlight && (force || Date.now() >= catalogValidUntil))) {
+    catalogInFlight = true
+    catalogPromise = fetch('/api/v1/operations', { credentials: 'include', cache: 'no-cache' }).then(async response => {
       if (!response.ok) throw new Error(`Operation catalog: HTTP ${response.status}`)
+      const etag = response.headers?.get('ETag') ?? null
+      if (etag && etag === cachedETag && cachedCatalog) return cachedCatalog
       const catalog = await response.json() as OperationCatalog
+      cachedCatalog = catalog
+      cachedETag = etag
       return catalog
-    }).catch(error => { catalogPromise = undefined; throw error })
+    }).then(catalog => { catalogValidUntil = Date.now() + 30_000; return catalog })
+      .catch(error => { catalogPromise = undefined; catalogValidUntil = 0; throw error })
+      .finally(() => { catalogInFlight = false })
   }
   return catalogPromise
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  const expireCatalog = () => { catalogValidUntil = 0 }
+  window.addEventListener('online', expireCatalog)
+  window.addEventListener('pageshow', expireCatalog)
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', expireCatalog)
 }
 
 export function operationPath(operation: CoreOperation, input: OperationInput = {}): string {
@@ -177,8 +195,12 @@ export function operationPath(operation: CoreOperation, input: OperationInput = 
 }
 
 export async function resolveOperation(name: string, input: OperationInput = {}) {
-  const catalog = await operationCatalog()
-  const operation = catalog.operations.find(item => item.name === name)
+  let catalog = await operationCatalog()
+  let operation = catalog.operations.find(item => item.name === name)
+  if (!operation) {
+    catalog = await operationCatalog(true)
+    operation = catalog.operations.find(item => item.name === name)
+  }
   if (!operation) throw new Error(`Core does not expose operation: ${name}`)
   return { operation, path: operationPath(operation, input) }
 }

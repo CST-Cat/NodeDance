@@ -209,7 +209,7 @@ export default function OperationConsole(input: Props) {
         for (const [key, field] of Object.entries(
           current?.bodySchema?.properties ?? {},
         ))
-          if (field.default !== undefined)
+          if (field.default !== undefined && !(key in values))
             values[key] =
               field.type === "string"
                 ? String(field.default)
@@ -524,14 +524,26 @@ export default function OperationConsole(input: Props) {
         else requestHeaders["Idempotency-Key"] = crypto.randomUUID();
         lastKey = requestHeaders["Idempotency-Key"]!;
       }
+      let disposed = false;
+      let catalogTimer: ReturnType<typeof setInterval> | undefined;
+      let displayedCatalog: Awaited<ReturnType<typeof operationCatalog>> | undefined;
+      async function refreshCatalog(force = false) {
+        const catalog = await operationCatalog(force);
+        if (disposed || catalog === displayedCatalog) return;
+        displayedCatalog = catalog;
+        operations.value = catalog.operations.filter(
+          (operation) => __props.role === "administrator" || operation.requiredRole !== "administrator",
+        );
+      }
+      function refreshVisibleCatalog() {
+        if (!document.hidden) void refreshCatalog(true).catch(() => {});
+      }
       afterMount(async () => {
+        document.addEventListener("visibilitychange", refreshVisibleCatalog);
+        window.addEventListener("pageshow", refreshVisibleCatalog);
+        catalogTimer = setInterval(() => { if (!document.hidden) void refreshCatalog().catch(() => {}); }, 30_000);
         try {
-          const catalog = await operationCatalog();
-          operations.value = catalog.operations.filter(
-            (operation) =>
-              __props.role === "administrator" ||
-              operation.requiredRole !== "administrator",
-          );
+          await refreshCatalog();
           try {
             const records = JSON.parse(
               sessionStorage.getItem(submissionStorage) ?? "[]",
@@ -569,7 +581,13 @@ export default function OperationConsole(input: Props) {
           error.value = String(reason);
         }
       });
-      beforeDispose(disconnect);
+      beforeDispose(() => {
+        disposed = true;
+        if (catalogTimer) clearInterval(catalogTimer);
+        document.removeEventListener("visibilitychange", refreshVisibleCatalog);
+        window.removeEventListener("pageshow", refreshVisibleCatalog);
+        disconnect();
+      });
       const fieldRow = (
         label: string,
         control: import("react").ReactNode,

@@ -8,7 +8,8 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const guestToken=JSON.parse(csrf).token
  for(const [name,origin,token] of [['origin','https://attacker.invalid',guestToken],['missing-token',base,''],['forged-token',base,'forged']]){const denied=await visitor.request.post(base+'/api/v1/auth/login',{headers:{Origin:origin,'X-CSRF-Token':token},data:{username:'admin',password:'forged-password',persistent:true}});record('login-boundary:'+name,denied.status()===403,{status:denied.status()})}
  const hostileHeaders={'Content-Type':'application/json','Idempotency-Key':'guest-attack-matrix','X-CSRF-Token':guestToken,'X-NodeDance-Session':'persistent','User-Agent':'NodeDance CLI/TUI','X-Role':'admin','X-Mode':'admin','X-Forwarded-User':'admin','X-Authenticated-User':'admin'}
- const catalog=JSON.parse((await browserRequest('/api/v1/operations')).body)
+ const catalogResponse=await browserRequest('/api/v1/operations');record('catalog-revalidation',catalogResponse.status===200&&catalogResponse.cache==='no-cache',{status:catalogResponse.status,cache:catalogResponse.cache})
+ const catalog=JSON.parse(catalogResponse.body)
  const publicPaths=new Set(['/api/v1/operations','/api/v1/health','/api/v1/protocol','/api/v1/auth/csrf','/api/v1/auth/setup/status','/api/v1/auth/setup','/api/v1/auth/login'])
  const values={nodeId:identity.nodeId,agentId:identity.agentId,probeId:probe.id,containerId:'a'.repeat(64),imageId:'sha256:'+'b'.repeat(64),taskId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',streamId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',sessionId:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'}
  const target=o=>o.path.replace(/\{([^}]+)\}/g,(_,k)=>encodeURIComponent(values[k]??'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'))+(o.query?.length?'?'+o.query.map(k=>encodeURIComponent(k)+'='+encodeURIComponent(k==='path'?'/etc/shadow':k==='component'?'core':k==='nodeId'?identity.nodeId:k==='revision'?'1':'guest-attack')).join('&'):'')
@@ -44,6 +45,7 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  assert.equal(enrollment.status(),201);const install=await enrollment.json()
  for(const command of [install.nativeInstallCommand,install.dockerInstallCommand])assert.ok(command.includes('--token '+install.token))
  const projection=await browserRequest('/api/v1/public/guest/display')
+ record('guest-projection-no-store',projection.cache?.includes('no-store'),{cache:projection.cache})
  record('private-install-command-projection',projection.status===200&&!projection.body.includes(install.token)&&!projection.body.includes('PRIVATE INSTALL NAME'))
  const assetPath=catalog.operations.find(o=>o.name==='nodes.asset').path.replace('{nodeId}',install.nodeId)
  const savedAsset=await admin.request.get(base+assetPath);assert.equal(savedAsset.status(),200);assert.equal((await savedAsset.json()).billingCycleUnit,'minute')
@@ -95,7 +97,7 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
   const r=await browserRequest(url,method,payload,{...hostileHeaders,'X-HTTP-Method-Override':'GET'});record('private-method:'+method+':'+url.split('/').pop(),r.status===401,{status:r.status})
  }
  const paths=['/%61pi/v1/nodes','/api//v1/nodes','/api/v1/%6eodes','/api/v1/public/guest/../../../v1/nodes','/api/v1/public/guest/display/../../../../v1/nodes','/api/v1/public/guest/display%2f..%2f..%2f..%2fnodes','/api/v1/public/guest/display%252f..%252fnodes','/api/v1/public/guest/display;/../../guest/settings','/API/v1/nodes','/api/v1/nodes%00','/.git/config','/../../etc/shadow']
- for(const url of paths){const r=await browserRequest(url);record('encoded-path:'+url,!r.body?.includes('PRIVATE HOST NAME')&&![200,201,202].includes(r.status),{status:r.status})}
+ for(const url of paths){const r=await browserRequest(url);record('encoded-path:'+url,!r.body?.includes('PRIVATE HOST NAME')&&r.status>=400&&r.status<500,{status:r.status})}
  for(const cookie of ['admin','true','0','f'.repeat(64),Buffer.from(JSON.stringify({role:'admin',authenticated:true})).toString('base64url')]){
   await visitor.addCookies([{name:'nodedance_session',value:cookie,url:base,httpOnly:true,sameSite:'Strict'}])
   const r=await browserRequest('/api/v1/nodes');record('forged-session:'+cookie.length,r.status===401,{status:r.status})

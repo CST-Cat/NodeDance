@@ -6,7 +6,8 @@ module.exports=async function({page,context,base,node,headers,catalog}){
     const submit={name:'future.submit',description:'Future task',method:'POST',path:'/api/v1/audit/start',parameters:[],query:[],transport:'json',bodySchema:{type:'object',required:['revision'],properties:{revision:{type:'integer'}}},requiresIdempotencyKey:true,headers:{'Idempotency-Key':{type:'string'}},completion:{operation:'future.observe',params:{id:'data.id'},statusPath:'status',terminalStatuses:['succeeded','unknown'],successStatuses:['succeeded']}}
     const observe={name:'future.observe',description:'Future observation',method:'GET',path:'/api/v1/audit/{id}',parameters:['id'],query:[],transport:'json'}
     const socket={name:'future.socket',description:'Future stream',method:'GET',path:'/api/v1/audit/socket',parameters:[],query:[],transport:'websocket',duplex:true}
-    await context.route('**/api/v1/operations',route=>route.fulfill({json:{...catalog,operations:[...catalog.operations,submit,observe,socket]}}))
+    let added=[],catalogVersion=1
+    await context.route('**/api/v1/operations',route=>route.fulfill({headers:{ETag:`"audit-${catalogVersion}"`},json:{...catalog,operations:[...catalog.operations,submit,observe,socket,...added]}}))
     const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=','base64')
     await page.setViewportSize({width:1440,height:1000});await page.goto(base)
     await page.getByRole('button',{name:'Operations',exact:true}).click()
@@ -16,6 +17,14 @@ module.exports=async function({page,context,base,node,headers,catalog}){
     const form=page.locator('.operation-form form').first()
     const execute=()=>form.locator('button[type=submit]').click()
     const field=name=>form.locator('label').filter({hasText:new RegExp('^'+name)}).locator('input:not([aria-hidden=true]),[data-expanded-textarea-trigger],button[data-dropdown-field]').first()
+
+    await selectValue(select,'future.submit');await field('revision').fill('123')
+    added=[{...observe,name:'future.added'}];catalogVersion++
+    const refreshed=page.waitForResponse(r=>r.url().endsWith('/api/v1/operations'))
+    await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));await refreshed
+    await select.click();await page.locator('[role=menuitemradio][data-option-value="future.added"]').waitFor()
+    await page.keyboard.press('Escape');await page.getByRole('menu').waitFor({state:'detached'})
+    assert.equal(await field('revision').inputValue(),'123','Revalidation preserves the current draft')
 
     await selectValue(select,'appearance.upload-avatar')
     await form.locator('input[type=file]').setInputFiles({name:'pixel.png',mimeType:'image/png',buffer:png})
