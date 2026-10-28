@@ -136,6 +136,9 @@ type Server struct {
 	terminals                  *terminalStreamManager
 	terminalSessionMu          sync.Mutex
 	fileTransferLimit          int64
+	catalogMu                  sync.Mutex
+	catalogBody                []byte
+	catalogETag                string
 	nonMetricHistoryRetention  time.Duration
 	historyRetentionInterval   time.Duration
 	preferenceMigrator         *coreprefs.SQLiteMigrator
@@ -535,6 +538,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		body, etag := s.operationCatalogBody()
+		if etag != "" {
+			w.Header().Set("ETag", etag)
+			w.Header().Set("Cache-Control", "no-cache")
+			if catalogETagMatches(r.Header.Get("If-None-Match"), etag) {
+				w.WriteHeader(http.StatusNotModified)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(body)
+			return
+		}
 		catalog := control.Describe()
 		for i := range catalog.Operations {
 			if catalog.Operations[i].Name == "files.upload" || catalog.Operations[i].Name == "share-requests.upload" || catalog.Operations[i].Name == "shares.upload" {
@@ -829,6 +846,37 @@ func (s *Server) setSecurityHeaders(w http.ResponseWriter) {
 
 func isUnsafeMethod(method string) bool {
 	return method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions
+}
+
+func (s *Server) operationCatalogBody() ([]byte, string) {
+	s.catalogMu.Lock()
+	defer s.catalogMu.Unlock()
+	if s.catalogBody != nil {
+		return s.catalogBody, s.catalogETag
+	}
+	catalog := control.Describe()
+	for i := range catalog.Operations {
+		if catalog.Operations[i].Name == "files.upload" || catalog.Operations[i].Name == "share-requests.upload" || catalog.Operations[i].Name == "shares.upload" {
+			catalog.Operations[i].Upload.MaxBytes = s.fileTransferLimit
+		}
+	}
+	body, err := json.Marshal(catalog)
+	if err != nil {
+		return nil, ""
+	}
+	sum := sha256.Sum256(body)
+	s.catalogBody = body
+	s.catalogETag = "\"" + hex.EncodeToString(sum[:]) + "\""
+	return s.catalogBody, s.catalogETag
+}
+
+func catalogETagMatches(header, etag string) bool {
+	for _, candidate := range strings.Split(header, ",") {
+		if candidate = strings.TrimSpace(candidate); candidate == "*" || candidate == etag {
+			return true
+		}
+	}
+	return false
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

@@ -150,7 +150,7 @@ let catalogPromise: Promise<OperationCatalog> | undefined
 
 export function operationCatalog(): Promise<OperationCatalog> {
   if (!catalogPromise) {
-    catalogPromise = fetch('/api/v1/operations', { credentials: 'include', cache: 'no-store' }).then(async response => {
+    catalogPromise = fetch('/api/v1/operations', { credentials: 'include' }).then(async response => {
       if (!response.ok) throw new Error(`Operation catalog: HTTP ${response.status}`)
       const catalog = await response.json() as OperationCatalog
       return catalog
@@ -177,8 +177,13 @@ export function operationPath(operation: CoreOperation, input: OperationInput = 
 }
 
 export async function resolveOperation(name: string, input: OperationInput = {}) {
-  const catalog = await operationCatalog()
-  const operation = catalog.operations.find(item => item.name === name)
+  let catalog = await operationCatalog()
+  let operation = catalog.operations.find(item => item.name === name)
+  if (!operation) {
+    catalogPromise = undefined
+    catalog = await operationCatalog()
+    operation = catalog.operations.find(item => item.name === name)
+  }
   if (!operation) throw new Error(`Core does not expose operation: ${name}`)
   return { operation, path: operationPath(operation, input) }
 }
