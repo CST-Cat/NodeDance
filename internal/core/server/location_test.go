@@ -3,8 +3,10 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/CST-Cat/NodeDance/internal/core/dashboard"
 	"github.com/CST-Cat/NodeDance/internal/core/geolocation"
+	"reflect"
 	"testing"
 )
 
@@ -22,6 +24,31 @@ func TestNodeCityPreferencePersistenceIsolationAndReset(t *testing.T) {
 	country, location := s.nodeGeography(ctx, first.NodeID, first.AgentID)
 	if country.Code != "US" || country.Source != "manual" || location.Status != "known" || location.Position.City != "Los Angeles" {
 		t.Fatal(country, location)
+	}
+	ids := []string{first.NodeID, second.NodeID}
+	for i := 0; i < 1000; i++ {
+		ids = append(ids, fmt.Sprintf("absent-%d", i))
+	}
+	prefetched := s.nodeGeographyPreferences(ctx, ids)
+	if prefetched.locations == nil || prefetched.countries == nil {
+		t.Fatal("batch preference read failed")
+	}
+	for _, node := range []struct{ nodeID, agentID string }{{first.NodeID, first.AgentID}, {second.NodeID, second.AgentID}} {
+		wantCountry, wantLocation := s.nodeGeography(ctx, node.nodeID, node.agentID)
+		gotCountry, gotLocation := s.nodeGeographyWithPreferences(ctx, node.nodeID, node.agentID, prefetched)
+		if !reflect.DeepEqual(gotCountry, wantCountry) || !reflect.DeepEqual(gotLocation, wantLocation) {
+			t.Fatalf("batched geography differs: %v %v", gotCountry, gotLocation)
+		}
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	failed := s.nodeGeographyPreferences(canceled, ids[:2])
+	if failed.locations != nil || failed.countries != nil {
+		t.Fatal("failed batch must fall back to individual reads")
+	}
+	fallbackCountry, fallbackLocation := s.nodeGeographyWithPreferences(ctx, first.NodeID, first.AgentID, failed)
+	if !reflect.DeepEqual(fallbackCountry, country) || !reflect.DeepEqual(fallbackLocation, location) {
+		t.Fatal("failed batch changed geography", fallbackCountry, fallbackLocation)
 	}
 	_, other := s.nodeGeography(ctx, second.NodeID, second.AgentID)
 	if other.Status == "known" {
