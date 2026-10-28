@@ -225,6 +225,5 @@
 }
 
 .app-shell[data-theme] .node-management-page.workspace-page :is(.docker-view-controls .ui-select, .docker-toolbar) {
-  --control-height: var(--control-height-md);
-  --control-height-sm: var(--control-height-md);
+  --control-height-sm: var(--control-height);
 }

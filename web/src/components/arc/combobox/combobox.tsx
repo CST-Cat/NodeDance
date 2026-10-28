@@ -196,7 +196,7 @@ export const Combobox = forwardRef<HTMLInputElement, ComboboxProps>(function Com
   return (
     <div ref={rootRef} className={styles.field}>
       <label htmlFor={controlId}>{label}</label>
-      <div className={[styles.control, open ? styles.open : "", disabled ? styles.disabled : "", className ?? ""].filter(Boolean).join(" ")}>
+      <div data-form-control="" className={[styles.control, open ? styles.open : "", disabled ? styles.disabled : "", className ?? ""].filter(Boolean).join(" ")}>
         <Search className={styles.searchIcon} size={16} strokeWidth={1.75} aria-hidden="true" />
         <input
           {...inputProps}

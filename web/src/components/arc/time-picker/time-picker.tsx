@@ -88,7 +88,7 @@ export function TimePicker({ label, value, defaultValue = "09:00", onChange, des
   return <div ref={rootRef} className={[styles.field, className].filter(Boolean).join(" ")}>
     <span id={labelId} className={styles.label}>{label}</span>
     <div className={styles.anchor}>
-      <button type="button" className={styles.trigger} disabled={disabled} aria-labelledby={`${labelId} ${valueId}`} aria-haspopup="listbox" aria-expanded={open} aria-controls={`${id}-listbox`} onClick={() => open ? setOpen(false) : openMenu()} onKeyDown={onKeyDown}>
+      <button data-form-control="" type="button" className={styles.trigger} disabled={disabled} aria-labelledby={`${labelId} ${valueId}`} aria-haspopup="listbox" aria-expanded={open} aria-controls={`${id}-listbox`} onClick={() => open ? setOpen(false) : openMenu()} onKeyDown={onKeyDown}>
         <Clock3 size={16} aria-hidden="true" />
         <span id={valueId} className={styles.srOnly}>{selected ? display(selected) : placeholder}</span>
         <span className={styles.valueText} aria-hidden="true"><AnimatePresence initial={false} custom={direction}><motion.span key={selected || "placeholder"} className={selected ? styles.value : styles.placeholder} custom={direction} variants={reduce ? valueFade : valueRoll} initial="enter" animate="center" exit="exit">{selected ? display(selected) : placeholder}</motion.span></AnimatePresence></span>

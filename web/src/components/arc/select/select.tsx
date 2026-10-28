@@ -58,7 +58,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(function Select
       label={selected?.label ?? placeholder} icon={selected?.icon} value={current}
       items={options} disabled={disabled || inheritedDisabled || !options.some(option => !option.disabled)}
       portalContainer={portalContainer} open={disabled || inheritedDisabled ? false : open ?? expanded} onOpenChange={next => { setExpanded(next); onOpenChange?.(next); }}
-      triggerProps={{ "aria-label": ariaLabel ?? label ?? (caption || selected?.label || placeholder), "aria-describedby": hintId, "aria-invalid": invalid || undefined, "data-field-name": name } as any}
+      triggerProps={{ "data-form-control": "", "aria-label": ariaLabel ?? label ?? (caption || selected?.label || placeholder), "aria-describedby": hintId, "aria-invalid": invalid || undefined, "data-field-name": name } as any}
       onValueChange={next => {
         setInvalid(false); setInner(next);
         if (source.current && nativeProps?.onChange) {

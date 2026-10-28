@@ -102,7 +102,7 @@ export function DatePicker({ label, value, onChange, description, placeholder = 
   return <div className={[styles.field, className].filter(Boolean).join(" ")} ref={rootRef} onBlur={onBlur}>
     <label className={styles.label} htmlFor={controlId}>{label}</label>
     <div className={styles.anchor}>
-      <button {...buttonProps} ref={triggerRef} id={controlId} type="button" disabled={disabled} aria-haspopup="dialog" aria-expanded={open} aria-describedby={hintId} className={styles.trigger} onClick={() => (open ? close() : show())} onKeyDown={onTriggerKeyDown}>
+      <button {...buttonProps} data-form-control="" ref={triggerRef} id={controlId} type="button" disabled={disabled} aria-haspopup="dialog" aria-expanded={open} aria-describedby={hintId} className={styles.trigger} onClick={() => (open ? close() : show())} onKeyDown={onTriggerKeyDown}>
         <CalendarDays size={16} strokeWidth={1.75} aria-hidden="true" />
         <span className={styles.srOnly}>{shown}</span>
         <span className={styles.valueText} aria-hidden="true">

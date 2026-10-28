@@ -107,7 +107,7 @@ export function MultiSelect({ label, options, value, defaultValue = [], onValueC
 
   return <div ref={rootRef} className={[styles.field, className].filter(Boolean).join(" ")}>
     <span id={labelId} className={styles.label}>{label}</span>
-    <div className={styles.control}><button type="button" className={`${styles.trigger} ${selected.length ? styles.hasClear : ""}`} disabled={disabled} aria-labelledby={`${labelId} ${valueId}`} aria-haspopup="listbox" aria-expanded={open} aria-controls={`${id}-listbox`} onClick={() => setOpen((current) => !current)} onKeyDown={onKeyDown}>
+    <div className={styles.control}><button data-form-control="multiple" type="button" className={`${styles.trigger} ${selected.length ? styles.hasClear : ""}`} disabled={disabled} aria-labelledby={`${labelId} ${valueId}`} aria-haspopup="listbox" aria-expanded={open} aria-controls={`${id}-listbox`} onClick={() => setOpen((current) => !current)} onKeyDown={onKeyDown}>
       <span id={valueId} className={styles.srOnly}>{selected.length ? selected.map(labelFor).join(", ") : placeholder}</span>
       <span className={styles.value} aria-hidden="true">
         <AnimatePresence initial={false}>

@@ -88,6 +88,7 @@ export const ExpandedTextarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
               aria-label={accessibleName || undefined}
               aria-invalid={!!error || props["aria-invalid"]}
               aria-describedby={props["aria-describedby"]}
+              data-form-control=""
               data-expanded-textarea-trigger=""
             >
               {String(current).length

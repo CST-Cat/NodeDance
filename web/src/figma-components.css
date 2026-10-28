@@ -94,7 +94,9 @@
 .app-shell[data-theme] :is(a, a:visited):not(:where(.registry-controls, .registry-controls *)) { color: var(--text); }
 .app-shell[data-theme] a:hover:not(:where(.registry-controls, .registry-controls *)) { color: var(--muted-strong); }
 .app-shell[data-theme] :not(:where(.registry-controls, .registry-controls *))::selection { color: var(--selection-text); background: var(--selection); }
-.app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not(.ui-select-source):not(:where(.registry-controls, .registry-controls *)) {
+.app-shell[data-theme] :is(input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="file"]), select:not([size])):not([type="range"]):not(.ui-select-source):not([data-form-control] input):not(:where(.registry-controls, .registry-controls *)) {
+  box-sizing: border-box;
+  height: var(--control-height);
   min-height: var(--control-height);
   padding: 5px 12px;
   padding-inline-end: var(--input-padding-end, 12px);
@@ -120,6 +122,8 @@
   box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--figma-ring-primary);
 }
 .app-shell[data-theme] .ui-select .u031-btn {
+  box-sizing: border-box;
+  height: var(--control-height);
   min-height: var(--control-height);
   padding: 5px 12px;
   font-size: var(--control-font);
@@ -250,3 +254,19 @@ input[type="checkbox"]:not(:where(.registry-controls, .registry-controls *)):dis
 
 .app-shell[data-theme] button[data-dropdown-field]:focus-visible { outline: 2px solid var(--figma-ring-primary); outline-offset: 2px; box-shadow: none; }
 .app-shell[data-theme] button[data-dropdown-field][data-state="open"] { border-color: var(--figma-border-primary); box-shadow: none; }
+
+.app-shell[data-theme] [data-form-control] {
+  box-sizing: border-box;
+  height: var(--control-height);
+  min-height: var(--control-height);
+}
+.app-shell[data-theme] [data-form-control="multiple"] {
+  height: auto;
+  padding-block: 2px;
+}
+.app-shell[data-theme] [data-form-control] > input {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  padding-block: 0;
+}

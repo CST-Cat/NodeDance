@@ -21,11 +21,6 @@
   font-size: 13px;
   min-width: 0;
 }
-.app-shell[data-theme] .asset-fields .asset-grid input[data-v-f325f884] {
-  box-sizing: border-box;
-  height: var(--control-height);
-  min-height: var(--control-height);
-}
 .asset-grid small[data-v-f325f884] {
   color: var(--muted-strong);
   line-height: 1.5;

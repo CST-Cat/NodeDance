@@ -719,7 +719,7 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   max-width: 390px;
 }
 .profile-preferences-row {
-  --preference-control-height: 50px;
+  --preference-control-height: var(--control-height);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
