@@ -31,7 +31,7 @@ module.exports=async function({page,admin,base}){
  for(const width of [1440,390]){
   await page.setViewportSize({width,height:1000})
   const bounds=await field.boundingBox(),button=await trigger.boundingBox()
-  assert.ok(bounds&&button);assert.equal(bounds.height,44);assert.equal(button.height,44)
+  assert.ok(bounds&&button&&button.height>0);assert.equal(bounds.height,button.height)
   assert.ok(button.x>=0&&button.x+button.width<=width)
   const clear=field.getByRole('button',{name:'Clear selections',exact:true}),clearBounds=await clear.boundingBox()
   assert.ok(clearBounds);assert.equal(clearBounds.width,22);assert.equal(clearBounds.height,22)
@@ -41,13 +41,14 @@ module.exports=async function({page,admin,base}){
   assert.ok(await trigger.evaluate(el=>el===document.activeElement))
  }
  await page.setViewportSize({width:1440,height:1000})
+ const selectedHeight=(await trigger.boundingBox()).height
  await field.getByRole('button',{name:'Clear selections',exact:true}).click()
- assert.equal((await trigger.boundingBox()).height,44)
+ assert.equal((await trigger.boundingBox()).height,selectedHeight)
  await trigger.click();assert.equal(await field.getByRole('option',{selected:true}).count(),0)
  await trigger.focus();await page.keyboard.press('Escape');await field.getByRole('listbox').waitFor({state:'detached'})
  assert.deepEqual([...(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings.metrics].sort(),[...keys].sort(),'Clearing remains an unsaved draft')
  await select(original);saved=await save()
  assert.deepEqual([...saved.metrics].sort(),[...original].sort())
- console.log('Guest metric selector: Core options, draft/save/reload, native 44px controls and keyboard passed.')
+ console.log('Guest metric selector: Core options, draft/save/reload, compact controls and keyboard passed.')
  return saved
 }

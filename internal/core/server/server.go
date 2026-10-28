@@ -254,6 +254,10 @@ func New(version string, options Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := (guest.Store{DB: store.DB}).PruneUnavailable(context.Background()); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("prune unavailable guest resources: %w", err)
+	}
 	s := &Server{
 		guestSlots:   make(chan struct{}, 4),
 		version:      version,

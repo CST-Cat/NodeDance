@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/CST-Cat/NodeDance/internal/core/audit"
+	"github.com/CST-Cat/NodeDance/internal/core/guest"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
@@ -234,6 +235,9 @@ func (s *Store) Delete(ctx context.Context, id string, revision int64, event aud
 			return err
 		}
 		event.Target = audit.Target{Kind: audit.TargetNode, ID: nodeID}
+	}
+	if err := guest.PruneUnavailable(ctx, tx); err != nil {
+		return err
 	}
 	if err := audit.Record(ctx, tx, event); err != nil {
 		return fmt.Errorf("audit service probe deletion: %w", err)

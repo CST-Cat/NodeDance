@@ -183,3 +183,5 @@ Static Web assets get class-based caching: content-hashed `/assets/*` bundles ar
 ## File sharing boundaries / 文件分享边界
 
 The discovered private contract now includes share and invitation management; anonymous callers remain denied even with forged role headers. The adversarial browser script additionally creates an explicit temporary uploaded share, compares public projection with and without administrator cookies, rejects metadata query expansion and changed download methods, rejects arbitrary host paths, permits only the published bytes and verifies immediate withdrawal after revocation. `audit-files.cjs` runs `audit-shares.cjs` with isolated root Agent fixtures for source protection, password/QR/folder UI, concurrent download admission, owner downloads, stale revisions and invitation limits/private received content. No private share automatically appears in the guest dashboard. See [file sharing](file-sharing.md) for password, snapshot and cleanup semantics and the exact limits of withdrawal.
+
+删除节点或探针、撤销 Agent 时，Core 在同一事务中清除对应公开选择并递增配置 revision；旧表单不能覆盖清理结果。启动时清理遗留的失效引用。管理页面只列出现存且可公开的资源，不再补回“资源不可用”占位行；离线节点仍可保留明确公开的选择。浏览器回归验证删除后重新打开、刷新设置均不会恢复失效记录。

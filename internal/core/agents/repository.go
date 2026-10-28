@@ -15,6 +15,7 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/core/audit"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
+	"github.com/CST-Cat/NodeDance/internal/core/guest"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
@@ -514,6 +515,9 @@ func (r *Repository) Revoke(ctx context.Context, agentID, remote string, actor s
 	if _, err := tx.ExecContext(ctx, `UPDATE nodes SET status='revoked', connection_generation=connection_generation+1, updated_at=? WHERE id=?`, now.UnixNano(), identity.NodeID); err != nil {
 		return Identity{}, fmt.Errorf("invalidate Agent connection: %w", err)
 	}
+	if err := guest.PruneUnavailable(ctx, tx); err != nil {
+		return Identity{}, err
+	}
 	if err := audit.Record(ctx, tx, audit.Event{OccurredAt: now, Action: "agent_revoke", Outcome: "succeeded", ActorID: actor, RemoteAddr: remote, Target: audit.Target{Kind: audit.TargetAgent, ID: agentID}}); err != nil {
 		return Identity{}, fmt.Errorf("audit Agent revocation: %w", err)
 	}
@@ -889,6 +893,9 @@ func (r *Repository) DeleteNode(ctx context.Context, nodeID, remote string, acto
 		if _, err = tx.ExecContext(ctx, query, args...); err != nil {
 			return Identity{}, fmt.Errorf("remove node state: %w", err)
 		}
+	}
+	if err := guest.PruneUnavailable(ctx, tx); err != nil {
+		return Identity{}, err
 	}
 	if err = audit.Record(ctx, tx, audit.Event{OccurredAt: r.now(), Action: "node_delete", Outcome: "succeeded", ActorID: actor, RemoteAddr: remote, Target: audit.Target{Kind: audit.TargetNode, ID: nodeID}}); err != nil {
 		return Identity{}, err

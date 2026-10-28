@@ -129,8 +129,10 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  await browserRequest('/api/v1/public/guest/display')
  // Withdraw a real probe and revoke the protocol fixture after warming the cache.
  const deleted=await admin.request.delete(base+'/api/v1/probes/'+probe.id+'?revision='+probe.revision,{headers});assert.equal(deleted.status(),204)
+ policy=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings;assert.ok(!policy.probes.some(p=>p.id===probe.id),'Deleting a probe removes its saved publication');
  const afterDelete=await browserRequest('/api/v1/public/guest/display');record('warm-cache-deleted-probe',afterDelete.status===200&&!JSON.parse(afterDelete.body).probes.some(p=>p.name==='Public service'),{status:afterDelete.status,probes:JSON.parse(afterDelete.body).probes.length})
  await stopReporting();const revoked=await admin.request.post(base+'/api/v1/agents/'+identity.agentId+'/revoke',{headers});assert.equal(revoked.status(),200)
+ policy=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings;assert.ok(!policy.nodes.some(n=>n.id===identity.nodeId),'Revocation removes the saved node publication');
  const afterRevoke=await browserRequest('/api/v1/public/guest/display');record('warm-cache-revoked-node',afterRevoke.status===200&&JSON.parse(afterRevoke.body).nodes.length===0,{status:afterRevoke.status,nodes:JSON.parse(afterRevoke.body).nodes.length})
  // A deleted node must disappear immediately even with a warmed public cache.
  const fresh=await admin.request.post(base+'/api/v1/agents/enrollments',{headers,data:{displayName:'Deletion fixture',coreUrl:base}});assert.equal(fresh.status(),201)
@@ -139,6 +141,8 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const deletionPolicy=await save({nodes:[{id:candidate.nodeId,name:'Published deletion fixture'}],probes:[]});assert.equal(deletionPolicy.status(),200)
  const warm=await browserRequest('/api/v1/public/guest/display');assert.ok(JSON.parse(warm.body).nodes.some(n=>n.name==='Published deletion fixture'))
  const removed=await admin.request.delete(base+'/api/v1/nodes/'+candidate.nodeId,{headers,data:{confirm:true}});assert.equal(removed.status(),200)
+ policy=(await(await admin.request.get(base+'/api/v1/guest/settings')).json()).settings;assert.ok(!policy.nodes.some(n=>n.id===candidate.nodeId),'Deleting a node removes its saved publication');
+ const settingsPage=await admin.newPage();await settingsPage.goto(base+'/#/settings');await settingsPage.locator('.guest-settings').waitFor();await settingsPage.locator('.guest-settings [type=submit]').waitFor();assert.equal(await settingsPage.locator('.guest-resource').filter({hasText:/Published deletion fixture|resource unavailable/i}).count(),0);await settingsPage.reload();await settingsPage.locator('.guest-settings [type=submit]').waitFor();assert.equal(await settingsPage.locator('.guest-resource').filter({hasText:/Published deletion fixture|resource unavailable/i}).count(),0);await settingsPage.close();
  const afterNodeDelete=await browserRequest('/api/v1/public/guest/display');record('warm-cache-deleted-node',afterNodeDelete.status===200&&JSON.parse(afterNodeDelete.body).nodes.length===0,{status:afterNodeDelete.status})
  const rejected=await admin.request.post(base+'/api/v1/agents/enroll',{headers:{Origin:base,Authorization:'Enrollment '+candidate.token},data:{credential:'e'.repeat(64),requestId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc'}});record('deleted-node-enrollment-rejected',rejected.status()===401,{status:rejected.status()})
  const disabled=await save({enabled:false});record('disable-with-unavailable-selected-resources',disabled.status()===200,{status:disabled.status()})

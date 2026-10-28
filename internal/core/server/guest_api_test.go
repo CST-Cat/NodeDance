@@ -251,7 +251,7 @@ func TestGuestUnknownMetricsNeverExposeStaleValues(t *testing.T) {
 }
 
 func TestGuestWithdrawsRemovedResourcesFromWarmCache(t *testing.T) {
-	for _, removal := range []string{"probe deletion", "agent revocation"} {
+	for _, removal := range []string{"probe deletion", "agent revocation", "node deletion"} {
 		t.Run(removal, func(t *testing.T) {
 			s := featureCore(t)
 			ctx := context.Background()
@@ -286,6 +286,8 @@ func TestGuestWithdrawsRemovedResourcesFromWarmCache(t *testing.T) {
 			}
 			if removal == "probe deletion" {
 				err = s.probes.Delete(ctx, probe.ID, probe.Revision, audit.Event{Action: "probe_delete", Outcome: "succeeded"})
+			} else if removal == "node deletion" {
+				_, err = s.agents.DeleteNode(ctx, identity.NodeID, "", sql.NullInt64{})
 			} else {
 				_, err = s.agents.Revoke(ctx, identity.AgentID, "", sql.NullInt64{})
 			}
@@ -293,14 +295,14 @@ func TestGuestWithdrawsRemovedResourcesFromWarmCache(t *testing.T) {
 				t.Fatal(err)
 			}
 			view := read()
-			if len(view.Probes) != 0 || removal == "agent revocation" && len(view.Nodes) != 0 {
+			if len(view.Probes) != 0 || removal != "probe deletion" && len(view.Nodes) != 0 {
 				t.Fatal("removed resource survived warm cache", view)
 			}
 			if len(initial.Probes) != 1 || len(initial.Nodes) != 1 {
 				t.Fatal("already issued snapshot was mutated", initial)
 			}
 			preview, err := s.buildGuestDisplay(ctx, policy)
-			if err != nil || len(preview.Probes) != 0 || removal == "agent revocation" && len(preview.Nodes) != 0 {
+			if err != nil || len(preview.Probes) != 0 || removal != "probe deletion" && len(preview.Nodes) != 0 {
 				t.Fatal("preview differs from public scope", preview, err)
 			}
 			probeOnly := policy
@@ -308,6 +310,16 @@ func TestGuestWithdrawsRemovedResourcesFromWarmCache(t *testing.T) {
 			if _, err = store.Save(ctx, probeOnly, audit.Event{Action: "guest_display_update", Outcome: "succeeded"}); !errors.Is(err, guest.ErrInvalid) {
 				t.Fatal("cannot republish unavailable selections", err)
 			}
+			latest, err := store.Get(ctx)
+			if err != nil || latest.Revision != policy.Revision+1 || len(latest.Probes) != 0 || removal != "probe deletion" && len(latest.Nodes) != 0 {
+				t.Fatal("removed resource remained in saved publication", latest, err)
+			}
+			stale := policy
+			stale.Enabled = false
+			if _, err = store.Save(ctx, stale, audit.Event{Action: "guest_display_update", Outcome: "succeeded"}); !errors.Is(err, guest.ErrConflict) {
+				t.Fatal("stale form overwrote resource cleanup", err)
+			}
+			policy = latest
 			policy.Enabled = false
 			if _, err = store.Save(ctx, policy, audit.Event{Action: "guest_display_update", Outcome: "succeeded"}); err != nil {
 				t.Fatal("unavailable selection prevented immediate disable", err)
@@ -386,5 +398,32 @@ func TestGuestHistoryFiltersSelectedSeriesAcrossRollups(t *testing.T) {
 		if !found {
 			t.Fatal("rollup bucket lost", history)
 		}
+	}
+}
+
+func TestGuestStartupPrunesUnavailableSelections(t *testing.T) {
+	ctx := context.Background()
+	directory := t.TempDir()
+	s, err := New("test", Options{DataDir: directory, Development: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := guest.Defaults()
+	policy.Title = "Kept title"
+	policy.Nodes = []guest.Resource{{ID: "removed-node", Name: "Old node"}}
+	policy.Probes = []guest.Resource{{ID: "removed-probe", Name: "Old probe"}}
+	saved, err := (guest.Store{DB: s.store.DB}).Save(ctx, policy, audit.Event{Action: "guest_display_update", Outcome: "succeeded"})
+	s.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := New("test", Options{DataDir: directory, Development: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	loaded, err := (guest.Store{DB: reopened.store.DB}).Get(ctx)
+	if err != nil || loaded.Title != saved.Title || loaded.Enabled || loaded.Revision != saved.Revision+1 || len(loaded.Nodes)+len(loaded.Probes) != 0 {
+		t.Fatal(loaded, err)
 	}
 }

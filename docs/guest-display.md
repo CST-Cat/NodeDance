@@ -145,3 +145,5 @@ Resource metrics use the installed shadcn registry MultiSelect in the standard 4
 ## Explicit file shares / 独立文件分享
 
 File sharing is a separate explicit publication action. Visiting guest display does not publish or enumerate file shares. `/s/{id}` and `/r/{id}` require an unguessable, deliberately shared URL and use dedicated public projections independent of administrator cookies. Folder snapshots expose only selected relative entries; collection invitations do not expose received files. Disabling guest display does not revoke independent share links. See [file sharing](file-sharing.md) for revocation and lifecycle rules.
+
+删除节点或探针、撤销 Agent 时，Core 在同一事务中清除对应公开选择并递增配置 revision；旧表单不能覆盖清理结果。启动时清理遗留的失效引用。管理页面只列出现存且可公开的资源，不再补回“资源不可用”占位行；离线节点仍可保留明确公开的选择。浏览器回归验证删除后重新打开、刷新设置均不会恢复失效记录。

@@ -25,6 +25,7 @@ export function createGuestPublication(canManage: () => boolean) {
     probes = cell<
       Array<{
         id: string;
+        nodeId: string;
         name: string;
       }>
     >([]),
@@ -32,28 +33,8 @@ export function createGuestPublication(canManage: () => boolean) {
     busy = cell(false),
     error = cell(""),
     notice = cell("");
-  const nodeChoices = derived(() => [
-    ...nodes.value,
-    ...(settings.value?.nodes ?? [])
-      .filter((r) => !nodes.value.some((n) => n.nodeId === r.id))
-      .map((r) => ({
-        nodeId: r.id,
-        displayName: t("guest.missingResource", {
-          "0": r.name,
-        }),
-      })),
-  ]);
-  const probeChoices = derived(() => [
-    ...probes.value,
-    ...(settings.value?.probes ?? [])
-      .filter((r) => !probes.value.some((p) => p.id === r.id))
-      .map((r) => ({
-        id: r.id,
-        name: t("guest.missingResource", {
-          "0": r.name,
-        }),
-      })),
-  ]);
+  const nodeChoices = derived(() => nodes.value);
+  const probeChoices = derived(() => probes.value);
   function selected(kind: "nodes" | "probes", id: string) {
     return settings.value?.[kind].find((r) => r.id === id);
   }
@@ -84,6 +65,7 @@ export function createGuestPublication(canManage: () => boolean) {
         operationRequest<{
           probes: Array<{
             id: string;
+            nodeId: string;
             name: string;
           }>;
         }>("probes.list"),
@@ -94,7 +76,7 @@ export function createGuestPublication(canManage: () => boolean) {
       nodes.value = list.nodes.filter(
         (n) => !["pending", "revoked"].includes(n.status),
       );
-      probes.value = services.probes;
+      probes.value = services.probes.filter((probe) => nodes.value.some((node) => node.nodeId === probe.nodeId));
     } catch (e) {
       if (current === epoch) error.value = e instanceof Error ? e.message : String(e);
     } finally {

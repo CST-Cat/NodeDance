@@ -3,6 +3,7 @@ package guest
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strings"
 )
 
@@ -58,4 +59,41 @@ func availableResources(ctx context.Context, reader resourceReader, settings Set
 	}
 	settings.Nodes, settings.Probes = filter("node", settings.Nodes), filter("probe", settings.Probes)
 	return settings, nil
+}
+
+func PruneUnavailable(ctx context.Context, tx *sql.Tx) error {
+	var raw string
+	if err := tx.QueryRowContext(ctx, "SELECT settings_json FROM guest_display WHERE id=1").Scan(&raw); err != nil {
+		return err
+	}
+	var settings Settings
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		return err
+	}
+	available, err := availableResources(ctx, tx, settings)
+	if err != nil {
+		return err
+	}
+	if len(available.Nodes) == len(settings.Nodes) && len(available.Probes) == len(settings.Probes) {
+		return nil
+	}
+	available.Revision++
+	body, err := json.Marshal(available)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, "UPDATE guest_display SET settings_json=?,revision=? WHERE id=1", string(body), available.Revision)
+	return err
+}
+
+func (s Store) PruneUnavailable(ctx context.Context) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = PruneUnavailable(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
