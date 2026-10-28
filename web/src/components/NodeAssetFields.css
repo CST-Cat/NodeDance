@@ -21,6 +21,11 @@
   font-size: 13px;
   min-width: 0;
 }
+.asset-grid > label > input[data-v-f325f884] {
+  box-sizing: border-box;
+  height: var(--control-height-md);
+  min-height: var(--control-height-md);
+}
 .asset-grid small[data-v-f325f884] {
   color: var(--muted-strong);
   line-height: 1.5;
