@@ -45,7 +45,7 @@ function FormDialog(input: Props) {
     onCancel={event => { event.preventDefault(); if (!input.busy) input.onClose?.(); }}>
     <div className="ui-dialog-head" data-v-b0bbf977="">
       <h2 id={`${id}-title`} data-v-b0bbf977="">{input.title}</h2>
-      <button type="button" className="ui-dialog-close" aria-label="Close"
+      <button type="button" className="ui-dialog-close" aria-label={t("ui.close")}
         onClick={event => { if (!input.busy) input.onClose?.(); }} data-v-b0bbf977="">×</button>
     </div>
     <div className="ui-dialog-body scroll-fade" ref={body} data-v-b0bbf977="">{input.children}</div>

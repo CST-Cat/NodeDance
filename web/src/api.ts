@@ -473,14 +473,54 @@ export class ApiError extends Error {
 }
 
 let csrfToken = ''
+let csrfTokenPromise: Promise<void> | undefined
+let csrfGeneration = 0
+let csrfSession = new AbortController()
 export const SESSION_EXPIRED_EVENT = 'nodedance:session-expired'
+
+function setCSRFToken(token: string) {
+  csrfGeneration++
+  csrfToken = token
+  csrfTokenPromise = undefined
+  csrfSession.abort(new DOMException('Session changed', 'AbortError'))
+  csrfSession = new AbortController()
+}
+
+function sharedCSRFRequest(): Promise<void> {
+  if (!csrfTokenPromise) {
+    const generation = csrfGeneration
+    const pending = operationRequest<{ token: string }>('auth.csrf', {}, { signal: csrfSession.signal }).then(result => {
+      if (generation === csrfGeneration) csrfToken = result.token
+    }).finally(() => {
+      if (csrfTokenPromise === pending) csrfTokenPromise = undefined
+    })
+    csrfTokenPromise = pending
+  }
+  return csrfTokenPromise
+}
+
+function waitForCSRF(pending: Promise<void>, requestSignal: AbortSignal, sessionSignal: AbortSignal): Promise<void> {
+  if (requestSignal.aborted) return Promise.reject(requestSignal.reason)
+  if (sessionSignal.aborted) return Promise.reject(sessionSignal.reason)
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      requestSignal.removeEventListener('abort', requestAborted)
+      sessionSignal.removeEventListener('abort', sessionAborted)
+    }
+    const requestAborted = () => { cleanup(); reject(requestSignal.reason) }
+    const sessionAborted = () => { cleanup(); reject(sessionSignal.reason) }
+    requestSignal.addEventListener('abort', requestAborted, { once: true })
+    sessionSignal.addEventListener('abort', sessionAborted, { once: true })
+    pending.then(() => { cleanup(); resolve() }, error => { cleanup(); reject(error) })
+  })
+}
 
 function isAnonymousAuthRequest(name: string): boolean {
   return ['auth.csrf', 'auth.status', 'auth.setup', 'auth.login'].includes(name)
 }
 
 function clearExpiredSession(path: string) {
-  csrfToken = ''
+  setCSRFToken('')
   if (!isAnonymousAuthRequest(path)) {
     window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT))
   }
@@ -501,10 +541,12 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
       headers.set('Content-Type', 'application/json')
     }
     if (csrf) {
+      if (controller.signal.aborted) throw controller.signal.reason
+      const sessionSignal = csrfSession.signal
       if (!csrfToken) {
-        const result = await operationRequest<{ token: string }>('auth.csrf', {}, { signal: controller.signal })
-        csrfToken = result.token
+        await waitForCSRF(sharedCSRFRequest(), controller.signal, sessionSignal)
       }
+      if (sessionSignal.aborted) throw sessionSignal.reason
       headers.set('X-CSRF-Token', csrfToken)
     }
 
@@ -547,10 +589,10 @@ export async function request<T>(path: string, init: RequestInit = {}, csrf = fa
     } catch {
       throw new ApiError(response.status, t('m.e03b23b49908'))
     }
-    if ((name === 'auth.setup' || name === 'auth.login') &&
+    if ((name === 'auth.setup' || name === 'auth.login' || name === 'auth.switch') &&
       typeof payload === 'object' && payload !== null && 'csrfToken' in payload &&
       typeof payload.csrfToken === 'string') {
-      csrfToken = payload.csrfToken
+      setCSRFToken(payload.csrfToken)
     }
     return payload as T
   } finally {
@@ -577,14 +619,14 @@ export async function operationRequest<T>(name: string, input: OperationInput = 
 export const api = {
   setupStatus: () => operationRequest<SetupStatus>("auth.status", {}),
   setup: (payload: { credential: string; username?: string; password?: string; displayName?: string }) => {
-    csrfToken = ''
+    setCSRFToken('')
     return operationRequest<AuthResponse>("auth.setup", {}, {
       body: JSON.stringify(payload),
     })
   },
   login: async (username: string, password: string) => {
     const submit = () => {
-      csrfToken = ''
+      setCSRFToken('')
       return operationRequest<AuthResponse>("auth.login", {}, {
         body: JSON.stringify({ username, password }),
       })
@@ -598,7 +640,7 @@ export const api = {
   me: () => operationRequest<{ user: User }>("auth.me", {}),
   logout: async () => {
     const result = await operationRequest<void>("auth.logout", {})
-    csrfToken = ''
+    setCSRFToken('')
     return result
   },
 
@@ -606,7 +648,7 @@ export const api = {
     const result = await operationRequest<void>("auth.password", {}, {
       body: JSON.stringify({ currentPassword, newPassword }),
     })
-    csrfToken = ''
+    setCSRFToken('')
     return result
   },
   sessions: () => operationRequest<{ sessions: Session[] }>("sessions.list", {}),

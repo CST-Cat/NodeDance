@@ -67,7 +67,7 @@ export default function FileSearchDialog({ open, onOpenChange, manager, path, po
       const found = await manager.search(root, query, { ...(minimum ? { minSize: minimum } : {}), ...(maximum ? { maxSize: maximum } : {}) }, request.signal);
       if (request.signal.aborted) return;
       setRows(found); setSelection([]); setPage(1);
-    } catch (reason) { if (!request.signal.aborted) setError(String(reason)); }
+    } catch (reason) { if (!request.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { if (controller.current === request && !request.signal.aborted) setBusy(false); }
   }
   const filtered = useMemo(() => rows.filter(row => kind === "all" || (kind === "file" ? row.kind === "file" : category(row) === kind)).sort((a, b) => {

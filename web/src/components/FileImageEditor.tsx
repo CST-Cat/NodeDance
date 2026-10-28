@@ -43,7 +43,7 @@ export default function FileImageEditor({ file, manager, onSaved, onDirty }: { f
       instance.on("objectActivated", (object: { id: number }) => { if (active.current) setSelected(object.id); });
       instance.on("selectionCleared", () => { if (active.current) setSelected(undefined); });
       setReady(true);
-    })().catch(reason => { if (active.current) setError(String(reason)); });
+    })().catch(reason => { if (active.current) setError(reason instanceof Error ? reason.message : String(reason)); });
     return () => { active.current = false; instance?.destroy(); engine.current = null; };
   }, [file.path, manager]);
   useEffect(() => {
@@ -61,7 +61,7 @@ export default function FileImageEditor({ file, manager, onSaved, onDirty }: { f
       if (active.current && ["resize", "rotate", "setAngle", "crop", "undo", "redo"].includes(method)) { const dimensions = engine.current.getCanvasSize(); setWidth(String(dimensions.width)); setHeight(String(dimensions.height)); }
       return result;
     }
-    catch (reason) { if (active.current) setError(String(reason)); }
+    catch (reason) { if (active.current) setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { if (active.current) setBusy(false); }
   }
   function drawing(value: string) {
@@ -79,7 +79,7 @@ export default function FileImageEditor({ file, manager, onSaved, onDirty }: { f
       const data = engine.current.toDataURL({ format, quality }), base64 = data.slice(data.indexOf(",") + 1), bytes = Uint8Array.from(atob(base64), value => value.charCodeAt(0));
       await manager.saveImage(destination, new File([bytes], destination.split("/").pop()!, { type: `image/${format}` }), file.path);
       if (active.current) { engine.current.clearUndoStack(); engine.current.clearRedoStack(); dirty.current(false); await onSaved(destination, closeAfter); }
-    } catch (reason) { if (active.current) setError(String(reason)); }
+    } catch (reason) { if (active.current) setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { if (active.current) setBusy(false); }
   }
   const options = (values: string[]) => values.map(value => ({ value, label: f(value) }));

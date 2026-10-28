@@ -1248,6 +1248,7 @@
   "nav.workspace": "Workspace",
   "nav.navigation": "Main navigation",
   "nav.close": "Close navigation",
+  "ui.close": "Close",
   "dashboard.title": "Your infrastructure, at a glance.",
   "dashboard.compact.total": "Total",
   "dashboard.compact.online": "Online",

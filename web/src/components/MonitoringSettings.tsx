@@ -16,7 +16,7 @@ export default function MonitoringSettings() {
     void operationRequest<Policy>("monitoring.settings", {}, { signal: controller.signal }).then(result => {
       setPolicy(result);
       setDays(String(result.retentionDays));
-    }).catch(reason => { if (!controller.signal.aborted) setError(String(reason)); });
+    }).catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason)); });
     return () => controller.abort();
   }, []);
   async function save() {
@@ -25,7 +25,7 @@ export default function MonitoringSettings() {
     try {
       await operationRequest("monitoring.configure", {}, { body: JSON.stringify({ retentionDays: Number(days) }) });
       setPolicy(current => current && { ...current, retentionDays: Number(days) });
-    } catch (reason) { setError(String(reason)); }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setBusy(false); }
   }
   return <section className="workspace-section settings-section" aria-labelledby="monitoring-settings-heading" data-testid="monitoring-settings">

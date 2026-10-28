@@ -23,7 +23,6 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { createPortal } from "react-dom";
 import { Button } from "./components/ui/button";
 import { t } from "./i18n";
 export type Cell<T> = Signal<T>;
@@ -118,7 +117,6 @@ export function cell<T>(value?: T) {
     subscribe: inner.subscribe.bind(inner),
   } as Signal<T | undefined>;
 }
-export const shallowCell = signal;
 export function derived<T>(
   source: (() => T) | { get: () => T; set: (value: T) => void },
 ): Signal<T> {
@@ -286,13 +284,6 @@ export function attributes() {
 export function uniqueId() {
   return (current?.id ?? "global") + "-" + serial++;
 }
-export function __indeterminate(value: boolean) {
-  return {
-    ref: (element: HTMLInputElement | null) => {
-      if (element) element.indeterminate = !!value;
-    },
-  };
-}
 export function __call(handler: (...values: any[]) => unknown, event: any) {
   return handler(event);
 }
@@ -346,15 +337,6 @@ export function __each<T>(
       ? cloneElement(node, { key: String(key) })
       : node;
   });
-}
-export function __portal(
-  children: ReactNode,
-  target: string,
-  disabled: boolean,
-) {
-  return disabled
-    ? children
-    : createPortal(children, document.querySelector(target) ?? document.body);
 }
 export function __input(
   value: any,
