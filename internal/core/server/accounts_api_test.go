@@ -54,19 +54,19 @@ func (c accountTestClient) login(name, password string) {
 	c.call("POST", "/api/v1/auth/login", map[string]any{"username": name, "password": password}, 200)
 }
 
-func TestAppearanceAnimalRosterPersistsAllCreatures(t *testing.T) {
+func TestAppearanceSharkRosterPersists(t *testing.T) {
 	_, newClient := newAccountFixture(t)
 	admin := newClient()
 	admin.login("admin", "administrator-password")
 	animals := []map[string]any{
-		{"kind": "turtle", "size": 1},
-		{"kind": "manta", "size": 1},
-		{"kind": "dolphin", "size": 0.9},
-		{"kind": "whale", "size": 1.2},
-		{"kind": "tang", "size": 1},
+		{"kind": "classic", "size": 1},
+		{"kind": "hammerhead", "size": 1},
+		{"kind": "mako", "size": 0.9},
+		{"kind": "greathammer", "size": 1.2},
+		{"kind": "nurse", "size": 1},
 	}
 	admin.call("PUT", "/api/v1/settings/appearance", map[string]any{
-		"displayName":     "Animals",
+		"displayName":     "Sharks",
 		"theme":           "dark",
 		"backgroundColor": "#101827",
 		"sharks":          animals,

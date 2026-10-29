@@ -18,36 +18,17 @@ import { pickSpecies, SPECIES } from "./species";
 
 export const SHARK_NODES = 20;
 
-export const SHARK_KINDS = ["classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse"] as const;
-
-export type SharkKind = (typeof SHARK_KINDS)[number];
-export type LagoonCreatureKind = "turtle" | "manta" | "dolphin" | "whale" | "tang";
-export type LoginAnimalKind = SharkKind | LagoonCreatureKind;
+export type SharkKind = "classic" | "hammerhead" | "zebra" | "tiger" | "greathammer" | "mako" | "thresher" | "nurse";
 
 /** Which sharks to put in the water; size is relative to the biggest. */
 export type SharkSpec = { kind: SharkKind; size: number };
-export type LoginAnimalSpec = { kind: LoginAnimalKind; size: number };
-
-export function isSharkKind(kind: LoginAnimalKind): kind is SharkKind {
-  return (SHARK_KINDS as readonly string[]).includes(kind);
-}
 
 // The landing hero: four of the same shark at different depths.
-export const DEFAULT_SHARKS: SharkSpec[] = [
+const DEFAULT_SHARKS: SharkSpec[] = [
   { kind: "classic", size: 1 },
   { kind: "classic", size: 0.7 },
   { kind: "classic", size: 0.84 },
   { kind: "classic", size: 0.77 },
-];
-export const DEFAULT_LOGIN_ANIMALS: LoginAnimalSpec[] = [
-  ...DEFAULT_SHARKS.map((shark) => ({ ...shark })),
-  { kind: "turtle", size: 1 },
-  { kind: "turtle", size: 0.8056 },
-  { kind: "manta", size: 1 },
-  { kind: "dolphin", size: 1 },
-  { kind: "dolphin", size: 1 },
-  { kind: "whale", size: 1 },
-  { kind: "tang", size: 1 },
 ];
 
 export interface Fish {

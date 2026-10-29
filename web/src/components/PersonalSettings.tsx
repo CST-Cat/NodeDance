@@ -86,26 +86,25 @@ import { MultiSelect } from "./arc/multi-select/multi-select";
 import { useEffect, useRef, type InputHTMLAttributes } from "react";
 import { PasswordField } from "./arc/password-field/password-field";
 import AccountManagement from "./AccountManagement";
-import {
-  DEFAULT_LOGIN_ANIMALS,
-  SHARK_KINDS,
-  type LoginAnimalKind,
-  type LoginAnimalSpec,
-} from "../vendor/ascii-sharks/world";
+import { DEFAULT_SHARKS } from "../api";
+import type { SharkKind, SharkSpec } from "../vendor/ascii-sharks/world";
+
+const SHARK_KINDS: SharkKind[] = [
+  "classic",
+  "hammerhead",
+  "zebra",
+  "tiger",
+  "greathammer",
+  "mako",
+  "thresher",
+  "nurse",
+];
 const GuestDisplay = lazyView(() => import("./GuestDisplay"));
 import "./PersonalSettings.css";
 
-const LOGIN_ANIMALS: { kind: LoginAnimalKind; key: string }[] = [
-  ...SHARK_KINDS.map((kind) => ({
-    kind,
-    key: `settings.asciiSharks.species.${kind}`,
-  })),
-  { kind: "turtle", key: "settings.asciiSharks.species.turtle" },
-  { kind: "manta", key: "settings.asciiSharks.species.manta" },
-  { kind: "dolphin", key: "settings.asciiSharks.species.dolphin" },
-  { kind: "whale", key: "settings.asciiSharks.species.whale" },
-  { kind: "tang", key: "settings.asciiSharks.species.tang" },
-];
+const SHARK_OPTIONS: { kind: SharkKind; key: string }[] = SHARK_KINDS.map(
+  (kind) => ({ kind, key: `settings.asciiSharks.species.${kind}` }),
+);
 
 type Value<T> = { readonly value: T };
 export interface PersonalSettingsModel {
@@ -127,7 +126,7 @@ export interface PersonalSettingsModel {
   notice: Value<string>;
   error: Value<string>;
   saveProfile: () => Promise<void>;
-  saveAnimals: (animals: LoginAnimalSpec[]) => Promise<void>;
+  saveSharks: (sharks: SharkSpec[]) => Promise<void>;
   changePassword: () => Promise<void>;
   loadSessions: () => Promise<void>;
   revokeSession: (session: Session) => Promise<void>;
@@ -163,32 +162,32 @@ export default function PersonalSettings(input: {
       const model = props.model;
       const sessionsRefreshing = cell(false),
         sessionsError = cell("");
-      const animalRoster = cell<LoginAnimalSpec[]>(
-        model.appearance.sharks.map((animal) => ({ ...animal })),
+      const sharkRoster = cell<SharkSpec[]>(
+        model.appearance.sharks.map((shark) => ({ ...shark })),
       );
-      const animalSizeDrafts = cell<Record<number, string>>({});
-      function setAnimalRoster(next: LoginAnimalSpec[]) {
-        animalRoster.value = next;
+      const sharkSizeDrafts = cell<Record<number, string>>({});
+      function setSharkRoster(next: SharkSpec[]) {
+        sharkRoster.value = next;
       }
-      function updateAnimal(index: number, next: Partial<LoginAnimalSpec>) {
-        setAnimalRoster(
-          animalRoster.value.map((animal, current) =>
-            current === index ? { ...animal, ...next } : animal,
+      function updateShark(index: number, next: Partial<SharkSpec>) {
+        setSharkRoster(
+          sharkRoster.value.map((shark, current) =>
+            current === index ? { ...shark, ...next } : shark,
           ),
         );
       }
-      function addAnimal() {
-        const current = animalRoster.value;
-        animalSizeDrafts.value = {};
-        setAnimalRoster([
+      function addShark() {
+        const current = sharkRoster.value;
+        sharkSizeDrafts.value = {};
+        setSharkRoster([
           ...current,
           { kind: "classic", size: Math.max(0.1, 1 - current.length * 0.1) },
         ]);
       }
-      function removeAnimal(index: number) {
-        animalSizeDrafts.value = {};
-        setAnimalRoster(
-          animalRoster.value.filter(
+      function removeShark(index: number) {
+        sharkSizeDrafts.value = {};
+        setSharkRoster(
+          sharkRoster.value.filter(
             (_, current) => current !== index,
           ),
         );
@@ -232,8 +231,8 @@ export default function PersonalSettings(input: {
             label: probe.name,
           })),
         ];
-        const animals = animalRoster.value;
-        const animalOptions = LOGIN_ANIMALS.map(({ kind, key }) => ({
+        const sharks = sharkRoster.value;
+        const sharkOptions = SHARK_OPTIONS.map(({ kind, key }) => ({
           value: kind,
           label: t(key),
         }));
@@ -624,8 +623,8 @@ export default function PersonalSettings(input: {
                       type="button"
                       variant="secondary"
                       onClick={() => {
-                        animalSizeDrafts.value = {};
-                        setAnimalRoster(DEFAULT_LOGIN_ANIMALS.map((animal) => ({ ...animal })));
+                        sharkSizeDrafts.value = {};
+                        setSharkRoster(DEFAULT_SHARKS.map((shark) => ({ ...shark })));
                       }}
                     >
                       {t("settings.asciiSharks.reset")}
@@ -633,7 +632,7 @@ export default function PersonalSettings(input: {
                     <Button
                       type="button"
                       variant="secondary"
-                      onClick={addAnimal}
+                      onClick={addShark}
                     >
                       {t("settings.asciiSharks.add")}
                     </Button>
@@ -643,8 +642,8 @@ export default function PersonalSettings(input: {
                   <p className="ascii-sharks-hint">
                     {t("settings.asciiSharks.hint")}
                   </p>
-                  {animals.length ? (
-                    animals.map((animal, index) => (
+                  {sharks.length ? (
+                    sharks.map((shark, index) => (
                       <div className="ascii-sharks-row" key={index}>
                         <span>
                           {t("settings.asciiSharks.animal", {
@@ -654,10 +653,10 @@ export default function PersonalSettings(input: {
                         <div className="ascii-sharks-controls">
                           <Select
                             aria-label={`${t("settings.asciiSharks.species")} ${index + 1}`}
-                            value={animal.kind}
-                            options={animalOptions}
+                            value={shark.kind}
+                            options={sharkOptions}
                             onValueChange={(value) =>
-                              updateAnimal(index, { kind: value as LoginAnimalKind })
+                              updateShark(index, { kind: value as SharkKind })
                             }
                           />
                           <Input
@@ -665,12 +664,12 @@ export default function PersonalSettings(input: {
                             step="any"
                             aria-label={`${t("settings.asciiSharks.size")} ${index + 1}`}
                             value={
-                              animalSizeDrafts.value[index] ??
-                              String(animal.size)
+                              sharkSizeDrafts.value[index] ??
+                              String(shark.size)
                             }
                             onChange={(event) => {
-                              animalSizeDrafts.value = {
-                                ...animalSizeDrafts.value,
+                              sharkSizeDrafts.value = {
+                                ...sharkSizeDrafts.value,
                                 [index]: event.target.value,
                               };
                             }}
@@ -681,10 +680,10 @@ export default function PersonalSettings(input: {
                                 Number.isFinite(Number(draft)) &&
                                 Number(draft) > 0
                               )
-                                updateAnimal(index, { size: Number(draft) });
-                              const next = { ...animalSizeDrafts.value };
+                                updateShark(index, { size: Number(draft) });
+                              const next = { ...sharkSizeDrafts.value };
                               delete next[index];
-                              animalSizeDrafts.value = next;
+                              sharkSizeDrafts.value = next;
                             }}
                           />
                           <Button
@@ -694,7 +693,7 @@ export default function PersonalSettings(input: {
                             aria-label={t("settings.asciiSharks.removeAnimal", {
                               "0": index + 1,
                             })}
-                            onClick={() => removeAnimal(index)}
+                            onClick={() => removeShark(index)}
                           >
                             {t("settings.asciiSharks.removeAction")}
                           </Button>
@@ -712,7 +711,7 @@ export default function PersonalSettings(input: {
                     type="button"
                     className="primary-button"
                     disabled={model.busy.value}
-                    onClick={() => void model.saveAnimals(animals)}
+                    onClick={() => void model.saveSharks(sharks)}
                   >
                     {model.busy.value
                       ? model.busyLabel.value

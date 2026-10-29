@@ -91,10 +91,10 @@ func describeTransport(o *Operation) {
 	case "appearance.update":
 		o.MaxBodyBytes = 1 << 20
 		field("sharks", map[string]any{"items": map[string]any{
-			"type": "object",
+			"type":     "object",
 			"required": []string{"kind", "size"},
 			"properties": map[string]any{
-				"kind": map[string]any{"type": "string", "enum": []string{"classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse", "turtle", "manta", "dolphin", "whale", "tang"}},
+				"kind": map[string]any{"type": "string", "enum": []string{"classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse"}},
 				"size": map[string]any{"type": "number", "exclusiveMinimum": 0},
 			},
 		}})

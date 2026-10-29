@@ -196,7 +196,7 @@ func TestSchemaPresenceAndTransportIsolation(t *testing.T) {
 	}
 }
 
-func TestAppearanceRosterContractListsLoginAnimals(t *testing.T) {
+func TestAppearanceRosterContractListsSharks(t *testing.T) {
 	op, err := control.Find("appearance.update")
 	if err != nil {
 		t.Fatal(err)
@@ -206,7 +206,7 @@ func TestAppearanceRosterContractListsLoginAnimals(t *testing.T) {
 	items := sharks["items"].(map[string]any)
 	animalProperties := items["properties"].(map[string]any)
 	enum := animalProperties["kind"].(map[string]any)["enum"].([]string)
-	for _, kind := range []string{"turtle", "manta", "dolphin", "whale", "tang"} {
+	for _, kind := range []string{"classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse"} {
 		found := false
 		for _, candidate := range enum {
 			if candidate == kind {
@@ -215,7 +215,7 @@ func TestAppearanceRosterContractListsLoginAnimals(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("appearance.update does not publish animal kind %q", kind)
+			t.Errorf("appearance.update does not publish shark kind %q", kind)
 		}
 	}
 }

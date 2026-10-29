@@ -77,7 +77,7 @@ func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
 		_ = store.Close()
 		t.Fatal(err)
 	}
-	if defaultRoster != `[{"kind":"classic","size":1},{"kind":"classic","size":0.7},{"kind":"classic","size":0.84},{"kind":"classic","size":0.77},{"kind":"turtle","size":1},{"kind":"turtle","size":0.8056},{"kind":"manta","size":1},{"kind":"dolphin","size":1},{"kind":"dolphin","size":1},{"kind":"whale","size":1},{"kind":"tang","size":1}]` {
+	if defaultRoster != `[{"kind":"classic","size":1},{"kind":"classic","size":0.7},{"kind":"classic","size":0.84},{"kind":"classic","size":0.77}]` {
 		_ = store.Close()
 		t.Fatalf("default animal roster: %s", defaultRoster)
 	}

@@ -206,9 +206,9 @@ The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus disco
 
 连接的 Core 发布 `/api/v1/operations`，CLI 调用与 TUI 菜单从该入口读取操作、schema、路由及传输类型。Web 的请求、流、终端、上传和下载使用同一契约；操作中心依据目录自动生成表单。Core 增加操作后，三端通用入口自动提供，无需分别维护客户端操作清单。验证、授权、审计和危险操作确认仍由 Core 与 Agent 处理，专用页面只定制展示。未指定服务器的 `nodedance operations` 用于离线查看当前 Core 二进制内的契约；使用 `--server` 查看运行中 Core 的实际契约。
 
-`appearance.update` also accepts the optional shared login animal roster as `sharks: [{kind, size}]`, including sharks, turtles, manta rays, dolphins, whales and yellow tang schools. Core stores it with the existing shared appearance settings, and `appearance.get` / `profile.get` return it. Personal Settings and the login animation use this same Core value; CLI and TUI discover the supported animal kinds from the operation schema.
+`appearance.update` also accepts the optional shared login shark roster as `sharks: [{kind, size}]`. Core stores it with the existing shared appearance settings, and `appearance.get` / `profile.get` return it. Personal Settings and the login animation use this same Core value; CLI and TUI discover the supported shark kinds from the operation schema.
 
-`appearance.update` 还支持可选的共享登录页动物阵容字段 `sharks: [{kind, size}]`，包括鲨鱼、海龟、蝠鲼、海豚、鲸和黄吊鱼群。Core 将它保存在现有共享外观设置中，`appearance.get` / `profile.get` 会返回该值。个人设置与登录页动画读取同一份 Core 配置；CLI 和 TUI 从操作 schema 发现可用动物种类。
+`appearance.update` 还支持可选的共享登录页鲨鱼阵容字段 `sharks: [{kind, size}]`。Core 将它保存在现有共享外观设置中，`appearance.get` / `profile.get` 会返回该值。个人设置与登录页动画读取同一份 Core 配置；CLI 和 TUI 从操作 schema 发现可用鲨鱼种类。
 
 正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](updates.md).
 

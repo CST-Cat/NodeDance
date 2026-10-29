@@ -540,7 +540,7 @@ func (s *Server) handleUpdateAppearance(w http.ResponseWriter, r *http.Request, 
 func validLoginSharks(sharks []protocol.LoginSharkSpec) bool {
 	for _, shark := range sharks {
 		switch shark.Kind {
-		case "classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse", "turtle", "manta", "dolphin", "whale", "tang":
+		case "classic", "hammerhead", "zebra", "tiger", "greathammer", "mako", "thresher", "nurse":
 		default:
 			return false
 		}
@@ -551,13 +551,29 @@ func validLoginSharks(sharks []protocol.LoginSharkSpec) bool {
 	return true
 }
 
+var defaultLoginSharks = []protocol.LoginSharkSpec{
+	{Kind: "classic", Size: 1},
+	{Kind: "classic", Size: 0.7},
+	{Kind: "classic", Size: 0.84},
+	{Kind: "classic", Size: 0.77},
+}
+
 func decodeAppearanceSharks(raw string) ([]protocol.LoginSharkSpec, error) {
-	var sharks []protocol.LoginSharkSpec
-	if err := json.Unmarshal([]byte(raw), &sharks); err != nil {
+	var stored []protocol.LoginSharkSpec
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
 		return nil, err
 	}
-	if sharks == nil || !validLoginSharks(sharks) {
+	if stored == nil {
 		return nil, errors.New("invalid stored login sharks")
+	}
+	sharks := make([]protocol.LoginSharkSpec, 0, len(stored))
+	for _, shark := range stored {
+		if validLoginSharks([]protocol.LoginSharkSpec{shark}) {
+			sharks = append(sharks, shark)
+		}
+	}
+	if len(sharks) == 0 {
+		return defaultLoginSharks, nil
 	}
 	return sharks, nil
 }

@@ -3,7 +3,7 @@ import { resolveOperation, operationUpload, decodeContractJSON, type BodySchema,
 import { requestIntent, intentKey, finishIntent } from './operation-intent'
 import { t, diagnostic } from "./i18n"
 import type { MetricsView } from './metrics-contract'
-import type { LoginAnimalSpec } from './vendor/ascii-sharks/world'
+import type { SharkSpec } from './vendor/ascii-sharks/world'
 
 export interface SetupStatus {
   initialized: boolean
@@ -22,10 +22,17 @@ export interface Appearance {
   displayName: string
   theme: string
   backgroundColor: string
-  sharks: LoginAnimalSpec[]
+  sharks: SharkSpec[]
   avatarUrl: string
   backgroundUrl: string
 }
+
+export const DEFAULT_SHARKS: SharkSpec[] = [
+  { kind: "classic", size: 1 },
+  { kind: "classic", size: 0.7 },
+  { kind: "classic", size: 0.84 },
+  { kind: "classic", size: 0.77 },
+]
 
 export interface Session {
   id: string

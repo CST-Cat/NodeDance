@@ -1,11 +1,5 @@
-import { AsciiRenderer, type OceanColorScheme } from "./renderer";
-import {
-  DEFAULT_LOGIN_ANIMALS,
-  World,
-  isSharkKind,
-  type LoginAnimalSpec,
-  type SharkSpec,
-} from "./world";
+import { AsciiRenderer } from "./renderer";
+import { World, type SharkSpec } from "./world";
 
 const STEP = 1 / 60;
 const MAX_STEPS = 4;
@@ -26,16 +20,12 @@ export class OceanEngine {
   private intersectionObserver: IntersectionObserver;
   private disposed = false;
 
-  constructor(
-    private canvas: HTMLCanvasElement,
-    animals: LoginAnimalSpec[] = DEFAULT_LOGIN_ANIMALS,
-    colorScheme: OceanColorScheme = "dark",
-    backdropImage = false,
-  ) {
-    this.world = new World(animals.filter((animal): animal is SharkSpec => isSharkKind(animal.kind)));
-    this.renderer = new AsciiRenderer(canvas, colorScheme, backdropImage, animals);
+  constructor(private canvas: HTMLCanvasElement, sharks?: SharkSpec[]) {
+    this.world = new World(sharks);
+    this.renderer = new AsciiRenderer(canvas);
     this.renderer.setFontFamily(getComputedStyle(canvas).fontFamily);
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
     this.intersectionObserver = new IntersectionObserver(([entry]) => {
@@ -56,17 +46,6 @@ export class OceanEngine {
       if (!this.disposed && this.reducedMotion.matches) this.drawStill();
     });
     this.schedule();
-  }
-
-  setColorScheme(colorScheme: OceanColorScheme) {
-    this.renderer.setColorScheme(colorScheme);
-    if (this.reducedMotion.matches) this.drawStill();
-    else this.schedule();
-  }
-
-  setBackdropImage(active: boolean) {
-    this.renderer.setBackdropImage(active);
-    if (this.reducedMotion.matches) this.drawStill();
   }
 
   destroy() {

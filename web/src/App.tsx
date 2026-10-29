@@ -6,6 +6,7 @@ import {
   ApiError,
   operationRequest,
   SESSION_EXPIRED_EVENT,
+  DEFAULT_SHARKS,
   type Appearance,
   type Session,
   type User,
@@ -29,7 +30,7 @@ import {
   type ViewScreen,
 } from "./navigation";
 import { operationURL } from "./operations";
-import { DEFAULT_LOGIN_ANIMALS, type LoginAnimalSpec } from "./vendor/ascii-sharks/world";
+import type { SharkSpec } from "./vendor/ascii-sharks/world";
 import {
   __call,
   __classes,
@@ -423,7 +424,7 @@ export default function App(input: Props) {
           (document.documentElement.dataset
             .themePreference as Appearance["theme"]) || "system",
         backgroundColor: "#faf9f5",
-        sharks: DEFAULT_LOGIN_ANIMALS.map((animal) => ({ ...animal })),
+        sharks: DEFAULT_SHARKS.map((shark) => ({ ...shark })),
         avatarUrl: "",
         backgroundUrl: "",
       });
@@ -513,19 +514,8 @@ export default function App(input: Props) {
         const { OceanEngine } = await import("./vendor/ascii-sharks/engine");
         if (sequence !== loginOceanSequence || screen.value !== "login") return;
         loginOceanEngine?.destroy();
-        loginOceanEngine = new OceanEngine(
-          canvas,
-          appearance.sharks,
-          effectiveTheme.value === "light" ? "light" : "dark",
-          !!backgroundSrc.value,
-        );
+        loginOceanEngine = new OceanEngine(canvas, appearance.sharks);
       });
-      watchState(effectiveTheme, (theme) =>
-        loginOceanEngine?.setColorScheme(theme === "light" ? "light" : "dark"),
-      );
-      watchState(backgroundSrc, (src) =>
-        loginOceanEngine?.setBackdropImage(!!src),
-      );
       const visibleName = derived(
         () =>
           currentUser.value?.displayName ||
@@ -747,7 +737,7 @@ export default function App(input: Props) {
           busyLabel.value = "";
         }
       }
-      async function saveAnimals(animals: LoginAnimalSpec[]) {
+      async function saveSharks(sharks: SharkSpec[]) {
         clearMessages();
         busy.value = true;
         busyLabel.value = t("settings.asciiSharks.saving");
@@ -756,9 +746,9 @@ export default function App(input: Props) {
             displayName: appearance.displayName,
             theme: appearance.theme,
             backgroundColor: appearance.backgroundColor,
-            sharks: animals,
+            sharks,
           });
-          appearance.sharks = animals.map((animal) => ({ ...animal }));
+          appearance.sharks = sharks.map((shark) => ({ ...shark }));
           notice.value = t("settings.asciiSharks.saved");
         } catch (reason) {
           error.value = errorText(reason);
@@ -963,7 +953,7 @@ export default function App(input: Props) {
                 <canvas
                   ref={__dom(loginOceanCanvas)}
                   aria-hidden="true"
-                  className={__classes("login-ocean")}
+                  className={__classes("login-ocean ascii-ocean")}
                   data-v-ac863f34=""
                 ></canvas>
               </div>
@@ -1640,7 +1630,7 @@ export default function App(input: Props) {
             ) : screen.value === "alerts" ? (
               <AlertCenter data-v-ac863f34=""></AlertCenter>
             ) : (
-              <PersonalSettings model={{currentUser, appearance, passwordForm, sessions, busy, busyLabel, uploading, avatarSrc, avatarRevision, visibleName, safeBackgroundColor, notice, error, saveProfile, saveAnimals, changePassword, loadSessions, revokeSession, handleImageChange, formatTime}} />
+              <PersonalSettings model={{currentUser, appearance, passwordForm, sessions, busy, busyLabel, uploading, avatarSrc, avatarRevision, visibleName, safeBackgroundColor, notice, error, saveProfile, saveSharks, changePassword, loadSessions, revokeSession, handleImageChange, formatTime}} />
             )}
             <UiDialog data-v-ac863f34=""></UiDialog>
           </main>

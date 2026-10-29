@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -290,10 +289,12 @@ func (s *Server) writeProfile(w http.ResponseWriter, ctx context.Context, curren
 		http.Error(w, "request failed", 500)
 		return
 	}
-	if err := json.Unmarshal([]byte(sharksJSON), &value.Sharks); err != nil || value.Sharks == nil || !validLoginSharks(value.Sharks) {
+	sharks, err := decodeAppearanceSharks(sharksJSON)
+	if err != nil {
 		http.Error(w, "request failed", 500)
 		return
 	}
+	value.Sharks = sharks
 	if len(avatar) > 0 {
 		value.AvatarURL = "/api/v1/auth/profile/avatar"
 	}
