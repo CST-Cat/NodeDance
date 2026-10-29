@@ -821,7 +821,7 @@ export class AsciiRenderer {
           roll < 0.07
             ? this.accents[key % this.accents.length]
             : this.colorScheme === "light"
-              ? `rgba(14,128,182,${(0.38 + shade * 0.48).toFixed(2)})`
+              ? `rgba(6,48,63,${(0.4 + shade * 0.5).toFixed(2)})`
               : `rgb(${Math.round(g * tr)},${Math.round(g * tg)},${Math.min(255, Math.round(g * tb + 6))})`;
         ctx.fillText(set[(key >>> 8) % set.length], x + cw / 2, y + ch / 2 + 1);
         continue;
@@ -857,11 +857,11 @@ export class AsciiRenderer {
       ctx.fillRect(x + 1, y + 1, cw - 1, ch - 1);
 
       let color: string;
-      if (flag === FLAG_EYE) color = this.colorScheme === "light" ? "#06303f" : "#9aa0ad";
+      if (flag === FLAG_EYE) color = this.colorScheme === "light" ? "#b2f4e8" : "#9aa0ad";
       else if (flag === FLAG_MARK) color = this.colorScheme === "light" ? "#06303f" : `rgb(${Math.round(70 * tr)},${Math.round(70 * tg)},${Math.round(70 * tb)})`;
       else if (roll < 0.09) color = this.accents[key % this.accents.length];
       else if (roll < 0.13) color = "#ffffff";
-      else if (this.colorScheme === "light") color = shade > 0.55 ? "#b2f4e8" : "#06303f";
+      else if (this.colorScheme === "light") color = "#b2f4e8";
       else color = shade > 0.55 ? "#0e0f13" : "#1b1d24";
       ctx.fillStyle = color;
       ctx.fillText(glyph, x + cw / 2, y + ch / 2 + 1);
