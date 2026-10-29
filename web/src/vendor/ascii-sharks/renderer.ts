@@ -386,7 +386,10 @@ export class AsciiRenderer {
     this.width = width;
     this.height = height;
     this.dpr = dpr;
-    this.cw = clamp(Math.round(width / 168), 8, 13);
+    const baseLength = clamp(Math.min(width, height) * 0.44, 170, 430);
+    let cw = clamp(Math.round(baseLength / 46), 8, 13);
+    while (cw < 13 && (width / cw) * (height / (cw * 1.45)) > 30000) cw++;
+    this.cw = cw;
     this.ch = Math.round(this.cw * 1.45);
     this.cols = Math.ceil(width / this.cw);
     this.rows = Math.ceil(height / this.ch);
