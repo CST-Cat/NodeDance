@@ -386,7 +386,7 @@ export class AsciiRenderer {
     this.width = width;
     this.height = height;
     this.dpr = dpr;
-    this.cw = clamp(Math.round(width / 124), 8, 13);
+    this.cw = clamp(Math.round(width / 168), 8, 13);
     this.ch = Math.round(this.cw * 1.45);
     this.cols = Math.ceil(width / this.cw);
     this.rows = Math.ceil(height / this.ch);
