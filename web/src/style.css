@@ -547,6 +547,12 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
 .login-card h2 {
   margin-top: 0;
 }
+.login-card .form-actions {
+  padding-top: 0;
+}
+.login-card .form-actions > button + button {
+  margin-left: 12px;
+}
 .app-shell[data-theme="dark"] .login-layout .login-card {
   text-shadow:
     0 0 3px rgba(0, 0, 0, 0.65),

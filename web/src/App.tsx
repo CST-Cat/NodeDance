@@ -1571,31 +1571,36 @@ export default function App(input: Props) {
                         data-v-ac863f34=""
                       />
                     </div>
-                    <button
-                      type="submit"
-                      disabled={busy.value as any}
-                      className={__classes("primary-button full-button")}
+                    <div
+                      className={__classes("form-actions")}
                       data-v-ac863f34=""
                     >
-                      {busy.value ? busyLabel.value : t("m.d19038809234")}
-                    </button>
+                      {guestEnabled.value ? (
+                        <button
+                          type="button"
+                          disabled={busy.value as any}
+                          className={__classes(
+                            "secondary-button full-button guest-entry",
+                          )}
+                          onClick={(event: any) => {
+                            navigate("guest");
+                          }}
+                          data-v-ac863f34=""
+                        >
+                          <UiIcon name="guest" data-v-ac863f34=""></UiIcon>
+                          {t("guest.enter")}
+                        </button>
+                      ) : null}
+                      <button
+                        type="submit"
+                        disabled={busy.value as any}
+                        className={__classes("primary-button full-button")}
+                        data-v-ac863f34=""
+                      >
+                        {busy.value ? busyLabel.value : t("m.d19038809234")}
+                      </button>
+                    </div>
                   </form>
-                  {guestEnabled.value ? (
-                    <button
-                      type="button"
-                      disabled={busy.value as any}
-                      className={__classes(
-                        "secondary-button full-button guest-entry",
-                      )}
-                      onClick={(event: any) => {
-                        navigate("guest");
-                      }}
-                      data-v-ac863f34=""
-                    >
-                      <UiIcon name="guest" data-v-ac863f34=""></UiIcon>
-                      {t("guest.enter")}
-                    </button>
-                  ) : null}
                 </section>
               </section>
             ) : screen.value === "guest" ? (
