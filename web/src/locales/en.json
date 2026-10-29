@@ -1431,7 +1431,7 @@
   "guest.settings": "Guest display",
   "guest.settingsHint": "Select exactly what visitors may see. Everything is private until selected and published.",
   "guest.readOnly": "Read-only display of explicitly published data.",
-  "guest.enter": "Enter guest mode",
+  "guest.enter": "Guest mode",
   "guest.back": "Back to login",
   "guest.refresh": "Refresh",
   "guest.loading": "Loading published data…",
