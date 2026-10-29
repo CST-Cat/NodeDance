@@ -1,4 +1,4 @@
-import { AsciiRenderer } from "./renderer";
+import { AsciiRenderer, type OceanColorScheme } from "./renderer";
 import { World, type SharkSpec } from "./world";
 
 const STEP = 1 / 60;
@@ -20,9 +20,9 @@ export class OceanEngine {
   private intersectionObserver: IntersectionObserver;
   private disposed = false;
 
-  constructor(private canvas: HTMLCanvasElement, sharks?: SharkSpec[]) {
+  constructor(private canvas: HTMLCanvasElement, sharks?: SharkSpec[], colorScheme: OceanColorScheme = "dark") {
     this.world = new World(sharks);
-    this.renderer = new AsciiRenderer(canvas);
+    this.renderer = new AsciiRenderer(canvas, colorScheme);
     this.renderer.setFontFamily(getComputedStyle(canvas).fontFamily);
     this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -46,6 +46,12 @@ export class OceanEngine {
       if (!this.disposed && this.reducedMotion.matches) this.drawStill();
     });
     this.schedule();
+  }
+
+  setColorScheme(colorScheme: OceanColorScheme) {
+    this.renderer.setColorScheme(colorScheme);
+    if (this.reducedMotion.matches) this.drawStill();
+    else this.schedule();
   }
 
   destroy() {

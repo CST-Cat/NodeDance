@@ -450,6 +450,7 @@ export default function App(input: Props) {
           document
             .querySelector("meta[name=theme-color]")
             ?.setAttribute("content", theme === "dark" ? "#141413" : "#faf9f5");
+          loginOceanEngine?.setColorScheme(theme === "light" ? "light" : "dark");
         },
         {
           immediate: true,
@@ -514,7 +515,11 @@ export default function App(input: Props) {
         const { OceanEngine } = await import("./vendor/ascii-sharks/engine");
         if (sequence !== loginOceanSequence || screen.value !== "login") return;
         loginOceanEngine?.destroy();
-        loginOceanEngine = new OceanEngine(canvas, appearance.sharks);
+        loginOceanEngine = new OceanEngine(
+          canvas,
+          appearance.sharks,
+          effectiveTheme.value === "light" ? "light" : "dark",
+        );
       });
       const visibleName = derived(
         () =>
@@ -953,7 +958,7 @@ export default function App(input: Props) {
                 <canvas
                   ref={__dom(loginOceanCanvas)}
                   aria-hidden="true"
-                  className={__classes("login-ocean ascii-ocean")}
+                  className={__classes("login-ocean")}
                   data-v-ac863f34=""
                 ></canvas>
               </div>

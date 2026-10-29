@@ -20,10 +20,27 @@ const DOT_RGB: [number, number, number][] = [
   [190, 212, 255],
   [110, 230, 255],
 ];
+const LIGHT_DOT_RGB: [number, number, number][] = [
+  [14, 128, 182],
+  [63, 207, 210],
+  [238, 72, 82],
+  [26, 168, 202],
+  [74, 214, 214],
+];
 const DOT_BASE_ALPHA = [1, 1, 1, 1, 1];
 const WAKE = DOT_RGB.length - 1;
 
 const ACCENTS = ["#e0892c", "#e03a32", "#b44ae0", "#33c8cc", "#3cb54a", "#3150e8", "#d9c14a"];
+const LIGHT_ACCENTS = ["#e8483c", "#ef3b5a", "#16c79a", "#ffd84a", "#0e80b6", "#8b6cff", "#ff8a2a"];
+const LIGHT_WATER_STOPS: [number, [number, number, number]][] = [
+  [0, [178, 244, 232]],
+  [0.22, [63, 207, 210]],
+  [0.42, [74, 214, 214]],
+  [0.78, [26, 168, 202]],
+  [1, [14, 128, 182]],
+];
+
+export type OceanColorScheme = "dark" | "light";
 
 // Sparse glyphs on bright skin, dense glyphs in shadow, so the texture
 // reinforces the shading instead of fighting it.
@@ -248,9 +265,9 @@ function inTriangle(
 }
 
 /** Visible dark-grey cell grid, snapped to device pixels. Shared with the sidebar backdrop. */
-export function paintGrid(g: CanvasRenderingContext2D, W: number, H: number, cw: number, ch: number, dpr: number) {
+export function paintGrid(g: CanvasRenderingContext2D, W: number, H: number, cw: number, ch: number, dpr: number, light = false) {
   g.setTransform(1, 0, 0, 1, 0, 0);
-  g.strokeStyle = "rgba(255,255,255,0.055)";
+  g.strokeStyle = light ? "rgba(255,255,255,0.19)" : "rgba(255,255,255,0.055)";
   g.lineWidth = 1;
   g.beginPath();
   for (let c = 0; c <= Math.ceil(W / cw); c++) {
@@ -277,6 +294,9 @@ export class AsciiRenderer {
   private cols = 0;
   private rows = 0;
   private fontFamily = "ui-monospace, Menlo, monospace";
+  private colorScheme: OceanColorScheme;
+  private dotRgb = DOT_RGB;
+  private accents = ACCENTS;
 
   private dotKind = new Uint8Array(0); // 0 none, 1 blue, 2 green, 3 red, 4 pale
   private dotPhase = new Float32Array(0);
@@ -315,16 +335,32 @@ export class AsciiRenderer {
   private frameId = 0;
   /** Fish cells bucketed by brightness, so each bucket is one fillStyle. */
   private fishBuckets: number[][] = FISH_ALPHAS.map(() => []);
-  private fishStyles = FISH_ALPHAS.map((a) => `rgba(230,238,255,${a})`);
+  private fishStyles: string[] = [];
 
-  constructor(private canvas: HTMLCanvasElement) {
+  constructor(private canvas: HTMLCanvasElement, colorScheme: OceanColorScheme = "dark") {
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("2D canvas unavailable");
     this.ctx = ctx;
     this.bg = document.createElement("canvas");
+    this.colorScheme = colorScheme;
+    this.updatePalette();
+  }
 
-    for (let c = 0; c < DOT_RGB.length; c++) {
-      const [r, g, b] = DOT_RGB[c];
+  setColorScheme(colorScheme: OceanColorScheme) {
+    if (this.colorScheme === colorScheme) return;
+    this.colorScheme = colorScheme;
+    this.updatePalette();
+    this.paintBackground();
+  }
+
+  private updatePalette() {
+    const light = this.colorScheme === "light";
+    this.dotRgb = light ? LIGHT_DOT_RGB : DOT_RGB;
+    this.accents = light ? LIGHT_ACCENTS : ACCENTS;
+    this.fishStyles = FISH_ALPHAS.map((a) => (light ? `rgba(6,48,63,${a})` : `rgba(230,238,255,${a})`));
+    this.dotStyles = [];
+    for (let c = 0; c < this.dotRgb.length; c++) {
+      const [r, g, b] = this.dotRgb[c];
       for (let l = 0; l < ALPHA_LEVELS; l++) {
         const a = (DOT_BASE_ALPHA[c] * (l + 1)) / ALPHA_LEVELS;
         this.dotStyles.push(`rgba(${r},${g},${b},${a.toFixed(3)})`);
@@ -395,9 +431,17 @@ export class AsciiRenderer {
     if (!g) return;
     const { width: W, height: H, dpr, cw, ch } = this;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.fillStyle = "#000";
+    if (this.colorScheme === "light") {
+      const gradient = g.createLinearGradient(0, 0, W * 0.45, H * 0.9);
+      for (const [stop, [r, green, b]] of LIGHT_WATER_STOPS) {
+        gradient.addColorStop(stop, `rgb(${r},${green},${b})`);
+      }
+      g.fillStyle = gradient;
+    } else {
+      g.fillStyle = "#000";
+    }
     g.fillRect(0, 0, W, H);
-    paintGrid(g, W, H, cw, ch, dpr);
+    paintGrid(g, W, H, cw, ch, dpr, this.colorScheme === "light");
   }
 
   render(world: World, dt: number) {
@@ -775,8 +819,10 @@ export class AsciiRenderer {
         const g = (70 + shade * 80) * dim;
         ctx.fillStyle =
           roll < 0.07
-            ? ACCENTS[key % ACCENTS.length]
-            : `rgb(${Math.round(g * tr)},${Math.round(g * tg)},${Math.min(255, Math.round(g * tb + 6))})`;
+            ? this.accents[key % this.accents.length]
+            : this.colorScheme === "light"
+              ? `rgba(14,128,182,${(0.38 + shade * 0.48).toFixed(2)})`
+              : `rgb(${Math.round(g * tr)},${Math.round(g * tg)},${Math.min(255, Math.round(g * tb + 6))})`;
         ctx.fillText(set[(key >>> 8) % set.length], x + cw / 2, y + ch / 2 + 1);
         continue;
       }
@@ -801,15 +847,21 @@ export class AsciiRenderer {
         glyph = SKIN_RAMP[clamp(Math.floor((1 - shade) * 8.99) + jitter, 0, SKIN_RAMP.length - 1)];
       }
       level *= dim;
-      // Tinted per species; the classic tint is a cool blue-grey, like a back seen through deep water.
-      ctx.fillStyle = `rgb(${Math.min(255, Math.round(level * tr))},${Math.min(255, Math.round(level * tg))},${Math.min(255, Math.round(level * tb + 4))})`;
+      if (this.colorScheme === "light") {
+        const brightness = level / 255;
+        ctx.fillStyle = `rgb(${Math.min(255, Math.round(14 * brightness * tr))},${Math.min(255, Math.round(128 * brightness * tg))},${Math.min(255, Math.round(182 * brightness * tb))})`;
+      } else {
+        // Tinted per species; the classic tint is a cool blue-grey, like a back seen through deep water.
+        ctx.fillStyle = `rgb(${Math.min(255, Math.round(level * tr))},${Math.min(255, Math.round(level * tg))},${Math.min(255, Math.round(level * tb + 4))})`;
+      }
       ctx.fillRect(x + 1, y + 1, cw - 1, ch - 1);
 
       let color: string;
-      if (flag === FLAG_EYE) color = "#9aa0ad";
-      else if (flag === FLAG_MARK) color = `rgb(${Math.round(70 * tr)},${Math.round(70 * tg)},${Math.round(70 * tb)})`;
-      else if (roll < 0.09) color = ACCENTS[key % ACCENTS.length];
+      if (flag === FLAG_EYE) color = this.colorScheme === "light" ? "#06303f" : "#9aa0ad";
+      else if (flag === FLAG_MARK) color = this.colorScheme === "light" ? "#06303f" : `rgb(${Math.round(70 * tr)},${Math.round(70 * tg)},${Math.round(70 * tb)})`;
+      else if (roll < 0.09) color = this.accents[key % this.accents.length];
       else if (roll < 0.13) color = "#ffffff";
+      else if (this.colorScheme === "light") color = shade > 0.55 ? "#b2f4e8" : "#06303f";
       else color = shade > 0.55 ? "#0e0f13" : "#1b1d24";
       ctx.fillStyle = color;
       ctx.fillText(glyph, x + cw / 2, y + ch / 2 + 1);

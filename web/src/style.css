@@ -18,6 +18,7 @@
   --radius-card: 12px;
   --radius-pill: 999px;
   --login-ocean-background-dark: #000;
+  --login-ocean-background-light: #b2f4e8;
   --display-font:
     "Copernicus", "Tiempos Headline", "EB Garamond", "Cormorant Garamond",
     "Iowan Old Style", "Palatino Linotype", "Noto Serif CJK SC", "Songti SC",
@@ -1518,8 +1519,8 @@ textarea:not(:where(.registry-controls, .registry-controls *)) {
 .app-shell .login-background {
   background-color: var(--login-ocean-background-dark);
 }
-.app-shell[data-theme="light"] .ascii-ocean {
-  filter: invert(1) hue-rotate(180deg);
+.app-shell[data-theme="light"] .login-background {
+  background-color: var(--login-ocean-background-light);
 }
 
 .workspace-notice {
