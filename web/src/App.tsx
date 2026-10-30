@@ -429,13 +429,7 @@ export default function App(input: Props) {
         avatarUrl: "",
         backgroundUrl: "",
       });
-      const safeBackgroundColor = derived(() =>
-        /^#[\da-f]{6}$/i.test(appearance.backgroundColor)
-          ? appearance.backgroundColor
-          : "var(--canvas)",
-      );
       const shellStyle = derived(() => ({
-        "--page-color": safeBackgroundColor.value,
         "--sidebar-width": `${sidebarCollapsed.value && !mobileNavigation.value ? 52 : sidebarWidth.value}px`,
       }));
       const effectiveTheme = derived(() =>
@@ -1650,7 +1644,7 @@ export default function App(input: Props) {
             ) : screen.value === "alerts" ? (
               <AlertCenter data-v-ac863f34=""></AlertCenter>
             ) : (
-              <PersonalSettings model={{currentUser, appearance, passwordForm, sessions, busy, busyLabel, uploading, avatarSrc, avatarRevision, visibleName, safeBackgroundColor, notice, error, saveProfile, saveSharks, changePassword, loadSessions, revokeSession, handleImageChange, formatTime}} />
+              <PersonalSettings model={{currentUser, appearance, passwordForm, sessions, busy, busyLabel, uploading, avatarSrc, avatarRevision, visibleName, notice, error, saveProfile, saveSharks, changePassword, loadSessions, revokeSession, handleImageChange, formatTime}} />
             )}
             <UiDialog data-v-ac863f34=""></UiDialog>
           </main>

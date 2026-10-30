@@ -80,7 +80,7 @@ import {
   Alert,
 } from "./ManagementUI";
 import { Avatar } from "./arc/avatar/avatar";
-import ColorPicker from "./arc/color-picker/color-picker";
+
 import SegmentedControl from "./arc/segmented-control/segmented-control";
 import { MultiSelect } from "./arc/multi-select/multi-select";
 import { useEffect, useRef, type InputHTMLAttributes } from "react";
@@ -122,7 +122,6 @@ export interface PersonalSettingsModel {
   avatarSrc: Value<string>;
   avatarRevision: Value<number>;
   visibleName: Value<string>;
-  safeBackgroundColor: Value<string>;
   notice: Value<string>;
   error: Value<string>;
   saveProfile: () => Promise<void>;
@@ -380,25 +379,6 @@ export default function PersonalSettings(input: {
                           </div>
                         </div>
                         {admin ? (
-                          <div className="parameter-row color-field">
-                            <span>{t("m.882fe2e84241")}</span>
-                            <div
-                              className="parameter-control"
-                              role="group"
-                              aria-label={t("m.882fe2e84241")}
-                            >
-                              <ColorPicker
-                                label=""
-                                value={model.appearance.backgroundColor}
-                                onValueChange={(color) => {
-                                  model.appearance.backgroundColor =
-                                    color.slice(0, 7);
-                                }}
-                              />
-                            </div>
-                          </div>
-                        ) : null}
-                        {admin ? (
                           <div className="parameter-row">
                             <span>{t("settings.loginBackground")}</span>
                             <div className="parameter-select">
@@ -473,6 +453,116 @@ export default function PersonalSettings(input: {
                   </div>
                 </form>
               </section>
+              {admin && model.appearance.backgroundMode === "shark" ? <section
+                className="workspace-section settings-section ascii-sharks-settings"
+                aria-labelledby="ascii-sharks-heading"
+              >
+                <div className="workspace-section-heading">
+                  <h2 id="ascii-sharks-heading">
+                    {t("settings.asciiSharks.title")}
+                  </h2>
+                  <div className="workspace-actions">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        sharkSizeDrafts.value = {};
+                        setSharkRoster(DEFAULT_SHARKS.map((shark) => ({ ...shark })));
+                      }}
+                    >
+                      {t("settings.asciiSharks.reset")}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={addShark}
+                    >
+                      {t("settings.asciiSharks.add")}
+                    </Button>
+                  </div>
+                </div>
+                <SettingsGroup className="ascii-sharks-group">
+                  <p className="ascii-sharks-hint">
+                    {t("settings.asciiSharks.hint")}
+                  </p>
+                  {sharks.length ? (
+                    sharks.map((shark, index) => (
+                      <div className="ascii-sharks-row" key={index}>
+                        <span>
+                          {t("settings.asciiSharks.animal", {
+                            "0": index + 1,
+                          })}
+                        </span>
+                        <div className="ascii-sharks-controls">
+                          <Select
+                            aria-label={`${t("settings.asciiSharks.species")} ${index + 1}`}
+                            value={shark.kind}
+                            options={sharkOptions}
+                            onValueChange={(value) =>
+                              updateShark(index, { kind: value as SharkKind })
+                            }
+                          />
+                          <Input
+                            type="number"
+                            step="any"
+                            aria-label={`${t("settings.asciiSharks.size")} ${index + 1}`}
+                            value={
+                              sharkSizeDrafts.value[index] ??
+                              String(shark.size)
+                            }
+                            onChange={(event) => {
+                              sharkSizeDrafts.value = {
+                                ...sharkSizeDrafts.value,
+                                [index]: event.target.value,
+                              };
+                            }}
+                            onBlur={(event) => {
+                              const draft = event.target.value;
+                              if (
+                                draft !== "" &&
+                                Number.isFinite(Number(draft)) &&
+                                Number(draft) > 0
+                              )
+                                updateShark(index, { size: Number(draft) });
+                              const next = { ...sharkSizeDrafts.value };
+                              delete next[index];
+                              sharkSizeDrafts.value = next;
+                            }}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            aria-label={t("settings.asciiSharks.removeAnimal", {
+                              "0": index + 1,
+                            })}
+                            onClick={() => removeShark(index)}
+                          >
+                            {t("settings.asciiSharks.removeAction")}
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="ascii-sharks-empty" role="status">
+                      {t("settings.asciiSharks.empty")}
+                    </p>
+                  )}
+                </SettingsGroup>
+                <div className="form-actions">
+                  <Button
+                    type="button"
+                    className="primary-button"
+                    disabled={model.busy.value}
+                    onClick={() => void model.saveSharks(sharks)}
+                  >
+                    {model.busy.value
+                      ? model.busyLabel.value
+                      : t("settings.asciiSharks.save")}
+                  </Button>
+                </div>
+              </section> : null}
+
               <section
                 className="workspace-section settings-section security-settings"
                 aria-labelledby="security-heading"
@@ -636,115 +726,6 @@ export default function PersonalSettings(input: {
                   )}
                 </div>
               </section>
-              {admin && model.appearance.backgroundMode === "shark" ? <section
-                className="workspace-section settings-section ascii-sharks-settings"
-                aria-labelledby="ascii-sharks-heading"
-              >
-                <div className="workspace-section-heading">
-                  <h2 id="ascii-sharks-heading">
-                    {t("settings.asciiSharks.title")}
-                  </h2>
-                  <div className="workspace-actions">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => {
-                        sharkSizeDrafts.value = {};
-                        setSharkRoster(DEFAULT_SHARKS.map((shark) => ({ ...shark })));
-                      }}
-                    >
-                      {t("settings.asciiSharks.reset")}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={addShark}
-                    >
-                      {t("settings.asciiSharks.add")}
-                    </Button>
-                  </div>
-                </div>
-                <SettingsGroup className="ascii-sharks-group">
-                  <p className="ascii-sharks-hint">
-                    {t("settings.asciiSharks.hint")}
-                  </p>
-                  {sharks.length ? (
-                    sharks.map((shark, index) => (
-                      <div className="ascii-sharks-row" key={index}>
-                        <span>
-                          {t("settings.asciiSharks.animal", {
-                            "0": index + 1,
-                          })}
-                        </span>
-                        <div className="ascii-sharks-controls">
-                          <Select
-                            aria-label={`${t("settings.asciiSharks.species")} ${index + 1}`}
-                            value={shark.kind}
-                            options={sharkOptions}
-                            onValueChange={(value) =>
-                              updateShark(index, { kind: value as SharkKind })
-                            }
-                          />
-                          <Input
-                            type="number"
-                            step="any"
-                            aria-label={`${t("settings.asciiSharks.size")} ${index + 1}`}
-                            value={
-                              sharkSizeDrafts.value[index] ??
-                              String(shark.size)
-                            }
-                            onChange={(event) => {
-                              sharkSizeDrafts.value = {
-                                ...sharkSizeDrafts.value,
-                                [index]: event.target.value,
-                              };
-                            }}
-                            onBlur={(event) => {
-                              const draft = event.target.value;
-                              if (
-                                draft !== "" &&
-                                Number.isFinite(Number(draft)) &&
-                                Number(draft) > 0
-                              )
-                                updateShark(index, { size: Number(draft) });
-                              const next = { ...sharkSizeDrafts.value };
-                              delete next[index];
-                              sharkSizeDrafts.value = next;
-                            }}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            aria-label={t("settings.asciiSharks.removeAnimal", {
-                              "0": index + 1,
-                            })}
-                            onClick={() => removeShark(index)}
-                          >
-                            {t("settings.asciiSharks.removeAction")}
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="ascii-sharks-empty" role="status">
-                      {t("settings.asciiSharks.empty")}
-                    </p>
-                  )}
-                </SettingsGroup>
-                <div className="form-actions">
-                  <Button
-                    type="button"
-                    className="primary-button"
-                    disabled={model.busy.value}
-                    onClick={() => void model.saveSharks(sharks)}
-                  >
-                    {model.busy.value
-                      ? model.busyLabel.value
-                      : t("settings.asciiSharks.save")}
-                  </Button>
-                </div>
-              </section> : null}
               {admin ? (
                 <MonitoringSettings key={model.currentUser.value!.id} />
               ) : null}

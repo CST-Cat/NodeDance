@@ -276,22 +276,10 @@
 }
 
 :is(.personal-settings, .preferences-page) .appearance-control,
-:is(.personal-settings, .preferences-page) .parameter-select,
-:is(.personal-settings, .preferences-page) .color-field .parameter-control {
+:is(.personal-settings, .preferences-page) .parameter-select {
   width: var(--appearance-control-width, 180px);
   max-width: 100%;
   justify-self: end;
-}
-:is(.personal-settings, .preferences-page)
-  .color-field
-  .parameter-control
-  > div,
-:is(.personal-settings, .preferences-page)
-  .color-field
-  .parameter-control
-  > div
-  > button {
-  width: 100%;
 }
 @media (max-width: 600px) {
   :is(.personal-settings, .preferences-page) .appearance-control,
