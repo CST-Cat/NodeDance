@@ -14,7 +14,9 @@
 .global-node-card h3 { width: 100%; }
 .global-node-title { display: grid; grid-template-columns: 28px minmax(0, 1fr) 28px; align-items: center; gap: 10px; width: 100%; }
 .global-node-title > span { overflow-wrap: anywhere; }
-.global-node-card .global-node-title .global-node-name { justify-self: start; padding: 0; border: 0; min-height: 36px; color: var(--text); background: transparent; text-align: left; font: inherit; overflow-wrap: anywhere; cursor: pointer; }
+.global-node-card .global-node-title .global-node-name { justify-self: start; padding: 0; border: 0; min-height: 30px; color: var(--text); background: transparent; text-align: left; font: inherit; overflow-wrap: anywhere; cursor: pointer; }
+.global-node-card > div > p { margin-top: 6px; }
+.global-node-card .global-readings { margin-top: 6px; }
 .global-node-card .global-node-title .global-node-name:hover { color: var(--accent); background: transparent; }
 .global-readings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .global-node-card > div { padding-block: 16px; }
