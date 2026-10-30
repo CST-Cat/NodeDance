@@ -423,7 +423,6 @@ export default function App(input: Props) {
         theme:
           (document.documentElement.dataset
             .themePreference as Appearance["theme"]) || "system",
-        backgroundColor: "#faf9f5",
         backgroundMode: "shark",
         sharks: DEFAULT_SHARKS.map((shark) => ({ ...shark })),
         avatarUrl: "",
@@ -723,7 +722,6 @@ export default function App(input: Props) {
           if (currentUser.value?.role === "administrator") await api.saveAppearance({
             displayName: appearance.displayName,
             theme: appearance.theme,
-            backgroundColor: appearance.backgroundColor,
             backgroundMode: appearance.backgroundMode,
             sharks: appearance.sharks,
           });
@@ -749,7 +747,6 @@ export default function App(input: Props) {
           await api.saveAppearance({
             displayName: appearance.displayName,
             theme: appearance.theme,
-            backgroundColor: appearance.backgroundColor,
             backgroundMode: appearance.backgroundMode,
             sharks,
           });

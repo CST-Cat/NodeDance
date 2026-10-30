@@ -66,10 +66,9 @@ func TestAppearanceSharkRosterPersists(t *testing.T) {
 		{"kind": "nurse", "size": 1},
 	}
 	admin.call("PUT", "/api/v1/settings/appearance", map[string]any{
-		"displayName":     "Sharks",
-		"theme":           "dark",
-		"backgroundColor": "#101827",
-		"sharks":          animals,
+		"displayName": "Sharks",
+		"theme":       "dark",
+		"sharks":      animals,
 	}, 200)
 	data := admin.call("GET", "/api/v1/public/appearance", nil, 200)
 	var result struct {
@@ -128,7 +127,7 @@ func TestMultiAccountPermissionsSessionsAndLifecycle(t *testing.T) {
 		viewer.call("GET", path, nil, 403)
 	}
 	viewer.call("POST", "/api/v1/accounts", map[string]any{"username": "forged", "role": "administrator"}, 403)
-	viewer.call("PUT", "/api/v1/settings/appearance", map[string]any{"displayName": "forged", "theme": "light", "backgroundColor": "#000000"}, 403)
+	viewer.call("PUT", "/api/v1/settings/appearance", map[string]any{"displayName": "forged", "theme": "light"}, 403)
 	viewer.call("PUT", "/api/v1/auth/profile", map[string]any{"displayName": "Reader profile", "theme": "dark"}, 200)
 	if data := admin.call("GET", "/api/v1/auth/me", nil, 200); bytes.Contains(data, []byte("Reader profile")) {
 		t.Fatal("profile crossed account boundary")

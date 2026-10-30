@@ -41,7 +41,6 @@ CREATE TABLE IF NOT EXISTS appearance (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	display_name TEXT NOT NULL,
 	theme TEXT NOT NULL,
-	background_color TEXT NOT NULL,
 	background_mode TEXT NOT NULL DEFAULT 'shark',
 	sharks_json TEXT NOT NULL DEFAULT '[{"kind":"classic","size":1},{"kind":"classic","size":0.7},{"kind":"classic","size":0.84},{"kind":"classic","size":0.77}]',
 	avatar_png BLOB,
@@ -49,8 +48,8 @@ CREATE TABLE IF NOT EXISTS appearance (
 	updated_at INTEGER NOT NULL
 );
 
-INSERT OR IGNORE INTO appearance(id, display_name, theme, background_color, updated_at)
-	VALUES(1, 'NodeDance Admin', 'system', '#101827', 0);
+INSERT OR IGNORE INTO appearance(id, display_name, theme, updated_at)
+	VALUES(1, 'NodeDance Admin', 'system', 0);
 
 CREATE TABLE IF NOT EXISTS audit_entries (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,

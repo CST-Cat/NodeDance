@@ -133,10 +133,45 @@ func initializeCurrentSchema(ctx context.Context, db *sql.DB) error {
 	if err := ensureAppearanceBackgroundModeColumn(ctx, tx); err != nil {
 		return fmt.Errorf("initialize appearance settings: %w", err)
 	}
+	if err := dropAppearanceBackgroundColorColumn(ctx, tx); err != nil {
+		return fmt.Errorf("initialize appearance settings: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit current SQLite schema initialization: %w", err)
 	}
 	return nil
+}
+
+func dropAppearanceBackgroundColorColumn(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `PRAGMA table_info(appearance)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if name == "background_color" {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	_, err = tx.ExecContext(ctx, `ALTER TABLE appearance DROP COLUMN background_color`)
+	return err
 }
 
 func ensureAppearanceBackgroundModeColumn(ctx context.Context, tx *sql.Tx) error {

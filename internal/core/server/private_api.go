@@ -15,7 +15,6 @@ import (
 	"io"
 	"math"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -494,7 +493,7 @@ func (s *Server) handleUpdateAppearance(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	name, ok := normalizeDisplayName(request.DisplayName)
-	if !ok || (request.Theme != "light" && request.Theme != "dark" && request.Theme != "system") || !validBackgroundColor(request.BackgroundColor) || (request.BackgroundMode != "" && request.BackgroundMode != "shark" && request.BackgroundMode != "image") {
+	if !ok || (request.Theme != "light" && request.Theme != "dark" && request.Theme != "system") || (request.BackgroundMode != "" && request.BackgroundMode != "shark" && request.BackgroundMode != "image") {
 		http.Error(w, "invalid appearance settings", http.StatusBadRequest)
 		return
 	}
@@ -517,8 +516,8 @@ func (s *Server) handleUpdateAppearance(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	now := s.now().Unix()
-	query := `UPDATE appearance SET display_name=?, theme=?, background_color=?`
-	args := []any{name, request.Theme, request.BackgroundColor}
+	query := `UPDATE appearance SET display_name=?, theme=?`
+	args := []any{name, request.Theme}
 	if request.BackgroundMode != "" {
 		query += `, background_mode=?`
 		args = append(args, request.BackgroundMode)
@@ -599,12 +598,6 @@ func normalizeBackgroundMode(value string) string {
 	return "shark"
 }
 
-var backgroundColorPattern = regexp.MustCompile(`^#[[:xdigit:]]{6}$`)
-
-func validBackgroundColor(value string) bool {
-	return backgroundColorPattern.MatchString(value)
-}
-
 func (s *Server) handlePublicAppearance(w http.ResponseWriter, ctx context.Context) {
 	s.writeAppearance(w, ctx)
 }
@@ -613,7 +606,7 @@ func (s *Server) writeAppearance(w http.ResponseWriter, ctx context.Context) {
 	var value appearance
 	var avatar, background []byte
 	var sharksJSON string
-	if err := s.store.DB.QueryRowContext(ctx, `SELECT display_name, theme, background_color, background_mode, avatar_png, background_png, sharks_json FROM appearance WHERE id=1`).Scan(&value.DisplayName, &value.Theme, &value.BackgroundColor, &value.BackgroundMode, &avatar, &background, &sharksJSON); err != nil {
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT display_name, theme, background_mode, avatar_png, background_png, sharks_json FROM appearance WHERE id=1`).Scan(&value.DisplayName, &value.Theme, &value.BackgroundMode, &avatar, &background, &sharksJSON); err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
