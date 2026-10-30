@@ -59,7 +59,7 @@ func TestOpenInitializesOnlyCurrentSchemaAndDoesNotResetIt(t *testing.T) {
 	for table, wantColumns := range map[string][]string{
 		"dashboard_preferences": {"group_name"},
 		"dashboard_settings":    {"node_group_by", "node_sort_by"},
-		"appearance":            {"sharks_json"},
+		"appearance":            {"sharks_json", "background_mode"},
 	} {
 		columns, err := tableColumns(ctx, store.DB, table)
 		if err != nil {

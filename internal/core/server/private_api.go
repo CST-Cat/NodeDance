@@ -486,7 +486,7 @@ func (s *Server) handleUpdateAppearance(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	name, ok := normalizeDisplayName(request.DisplayName)
-	if !ok || (request.Theme != "light" && request.Theme != "dark" && request.Theme != "system") || !validBackgroundColor(request.BackgroundColor) {
+	if !ok || (request.Theme != "light" && request.Theme != "dark" && request.Theme != "system") || !validBackgroundColor(request.BackgroundColor) || (request.BackgroundMode != "" && request.BackgroundMode != "shark" && request.BackgroundMode != "image") {
 		http.Error(w, "invalid appearance settings", http.StatusBadRequest)
 		return
 	}
@@ -509,12 +509,18 @@ func (s *Server) handleUpdateAppearance(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	now := s.now().Unix()
-	query := `UPDATE appearance SET display_name=?, theme=?, background_color=?, updated_at=? WHERE id=1`
-	args := []any{name, request.Theme, request.BackgroundColor, now}
-	if request.Sharks != nil {
-		query = `UPDATE appearance SET display_name=?, theme=?, background_color=?, sharks_json=?, updated_at=? WHERE id=1`
-		args = []any{name, request.Theme, request.BackgroundColor, string(sharksJSON), now}
+	query := `UPDATE appearance SET display_name=?, theme=?, background_color=?`
+	args := []any{name, request.Theme, request.BackgroundColor}
+	if request.BackgroundMode != "" {
+		query += `, background_mode=?`
+		args = append(args, request.BackgroundMode)
 	}
+	if request.Sharks != nil {
+		query += `, sharks_json=?`
+		args = append(args, string(sharksJSON))
+	}
+	query += `, updated_at=? WHERE id=1`
+	args = append(args, now)
 	if _, err := tx.ExecContext(r.Context(), query, args...); err != nil {
 		_ = tx.Rollback()
 		http.Error(w, "request failed", http.StatusInternalServerError)
@@ -578,6 +584,13 @@ func decodeAppearanceSharks(raw string) ([]protocol.LoginSharkSpec, error) {
 	return sharks, nil
 }
 
+func normalizeBackgroundMode(value string) string {
+	if value == "image" {
+		return "image"
+	}
+	return "shark"
+}
+
 var backgroundColorPattern = regexp.MustCompile(`^#[[:xdigit:]]{6}$`)
 
 func validBackgroundColor(value string) bool {
@@ -592,10 +605,11 @@ func (s *Server) writeAppearance(w http.ResponseWriter, ctx context.Context) {
 	var value appearance
 	var avatar, background []byte
 	var sharksJSON string
-	if err := s.store.DB.QueryRowContext(ctx, `SELECT display_name, theme, background_color, avatar_png, background_png, sharks_json FROM appearance WHERE id=1`).Scan(&value.DisplayName, &value.Theme, &value.BackgroundColor, &avatar, &background, &sharksJSON); err != nil {
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT display_name, theme, background_color, background_mode, avatar_png, background_png, sharks_json FROM appearance WHERE id=1`).Scan(&value.DisplayName, &value.Theme, &value.BackgroundColor, &value.BackgroundMode, &avatar, &background, &sharksJSON); err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)
 		return
 	}
+	value.BackgroundMode = normalizeBackgroundMode(value.BackgroundMode)
 	sharks, err := decodeAppearanceSharks(sharksJSON)
 	if err != nil {
 		http.Error(w, "request failed", http.StatusInternalServerError)

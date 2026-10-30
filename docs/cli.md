@@ -210,6 +210,10 @@ The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus disco
 
 `appearance.update` 还支持可选的共享登录页鲨鱼阵容字段 `sharks: [{kind, size}]`。Core 将它保存在现有共享外观设置中，`appearance.get` / `profile.get` 会返回该值。个人设置与登录页动画读取同一份 Core 配置；CLI 和 TUI 从操作 schema 发现可用鲨鱼种类。
 
+`appearance.update` also accepts the optional login background mode as `backgroundMode: "shark" | "image"`. The login page shows exactly one of them: the ASCII sharks, or the uploaded background image at full strength. `appearance.get` / `profile.get` return the stored mode, defaulting to `"shark"`.
+
+`appearance.update` 还支持可选的登录页背景模式字段 `backgroundMode: "shark" | "image"`。登录页只显示其中一种：ASCII 鲨鱼，或全强度显示的已上传背景图片。`appearance.get` / `profile.get` 会返回已保存的模式，默认为 `"shark"`。
+
 正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](updates.md).
 
 ## Agent monitoring and fleet operations

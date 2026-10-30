@@ -483,6 +483,9 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   object-fit: cover;
   opacity: 0.43;
 }
+.login-background.is-image > img {
+  opacity: 1;
+}
 .login-ocean {
   position: absolute;
   z-index: 1;

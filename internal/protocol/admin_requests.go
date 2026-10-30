@@ -115,6 +115,7 @@ type AppearanceRequest struct {
 	DisplayName     string           `json:"displayName" request:"required"`
 	Theme           string           `json:"theme" request:"required"`
 	BackgroundColor string           `json:"backgroundColor" request:"required"`
+	BackgroundMode  string           `json:"backgroundMode,omitempty"`
 	Sharks          []LoginSharkSpec `json:"sharks,omitempty"`
 }
 type LoginSharkSpec struct {
@@ -125,6 +126,7 @@ type AppearanceSettings struct {
 	DisplayName     string           `json:"displayName"`
 	Theme           string           `json:"theme"`
 	BackgroundColor string           `json:"backgroundColor"`
+	BackgroundMode  string           `json:"backgroundMode"`
 	Sharks          []LoginSharkSpec `json:"sharks"`
 	AvatarURL       string           `json:"avatarUrl"`
 	BackgroundURL   string           `json:"backgroundUrl"`

@@ -285,7 +285,7 @@ func (s *Server) writeProfile(w http.ResponseWriter, ctx context.Context, curren
 	var value appearance
 	var avatar, background []byte
 	var sharksJSON string
-	if err := s.store.DB.QueryRowContext(ctx, `SELECT u.display_name,u.theme,u.avatar_png,a.background_color,a.background_png,a.sharks_json FROM users u CROSS JOIN appearance a WHERE u.id=? AND a.id=1`, current.UserID).Scan(&value.DisplayName, &value.Theme, &avatar, &value.BackgroundColor, &background, &sharksJSON); err != nil {
+	if err := s.store.DB.QueryRowContext(ctx, `SELECT u.display_name,u.theme,u.avatar_png,a.background_color,a.background_mode,a.background_png,a.sharks_json FROM users u CROSS JOIN appearance a WHERE u.id=? AND a.id=1`, current.UserID).Scan(&value.DisplayName, &value.Theme, &avatar, &value.BackgroundColor, &value.BackgroundMode, &background, &sharksJSON); err != nil {
 		http.Error(w, "request failed", 500)
 		return
 	}
@@ -295,6 +295,7 @@ func (s *Server) writeProfile(w http.ResponseWriter, ctx context.Context, curren
 		return
 	}
 	value.Sharks = sharks
+	value.BackgroundMode = normalizeBackgroundMode(value.BackgroundMode)
 	if len(avatar) > 0 {
 		value.AvatarURL = "/api/v1/auth/profile/avatar"
 	}

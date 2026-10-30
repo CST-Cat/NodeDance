@@ -22,6 +22,7 @@ export interface Appearance {
   displayName: string
   theme: string
   backgroundColor: string
+  backgroundMode: "shark" | "image"
   sharks: SharkSpec[]
   avatarUrl: string
   backgroundUrl: string
@@ -751,7 +752,7 @@ export const api = {
   appearance: () => operationRequest<Appearance>("appearance.get", {}),
   profile: () => operationRequest<Appearance>("profile.get", {}),
   saveProfile: (payload: {displayName:string;theme:string}) => operationRequest<Appearance>("profile.update", {}, {body:JSON.stringify(payload)}),
-  saveAppearance: (payload: Pick<Appearance, 'displayName' | 'theme' | 'backgroundColor' | 'sharks'>) =>
+  saveAppearance: (payload: Pick<Appearance, 'displayName' | 'theme' | 'backgroundColor' | 'backgroundMode' | 'sharks'>) =>
     operationRequest<void>("appearance.update", {}, {
       body: JSON.stringify(payload),
     }),

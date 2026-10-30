@@ -398,9 +398,35 @@ export default function PersonalSettings(input: {
                             </div>
                           </div>
                         ) : null}
+                        {admin ? (
+                          <div className="parameter-row">
+                            <span>{t("settings.loginBackground")}</span>
+                            <div className="parameter-select">
+                              <Select
+                                aria-label={t("settings.loginBackground")}
+                                data-testid="login-background-mode"
+                                value={model.appearance.backgroundMode}
+                                onValueChange={(value) => {
+                                  model.appearance.backgroundMode =
+                                    value as Appearance["backgroundMode"];
+                                }}
+                                options={[
+                                  {
+                                    value: "shark",
+                                    label: t("settings.loginBackground.shark"),
+                                  },
+                                  {
+                                    value: "image",
+                                    label: t("settings.loginBackground.image"),
+                                  },
+                                ]}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
                       </SettingsRows>
                     </div>
-                    {admin ? (
+                    {admin && model.appearance.backgroundMode === "image" ? (
                       <div className="background-upload-row">
                         <div className="upload-copy">
                           <strong>{t("m.99cf84163dfc")}</strong>
@@ -610,7 +636,7 @@ export default function PersonalSettings(input: {
                   )}
                 </div>
               </section>
-              {admin ? <section
+              {admin && model.appearance.backgroundMode === "shark" ? <section
                 className="workspace-section settings-section ascii-sharks-settings"
                 aria-labelledby="ascii-sharks-heading"
               >

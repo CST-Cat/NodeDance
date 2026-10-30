@@ -424,6 +424,7 @@ export default function App(input: Props) {
           (document.documentElement.dataset
             .themePreference as Appearance["theme"]) || "system",
         backgroundColor: "#faf9f5",
+        backgroundMode: "shark",
         sharks: DEFAULT_SHARKS.map((shark) => ({ ...shark })),
         avatarUrl: "",
         backgroundUrl: "",
@@ -497,9 +498,12 @@ export default function App(input: Props) {
           backgroundRevision.value,
         ),
       );
-      watchState([screen, () => appearance.sharks], async ([next]) => {
+      const loginUsesImage = derived(
+        () => appearance.backgroundMode === "image" && !!backgroundSrc.value,
+      );
+      watchState([screen, () => appearance.sharks, loginUsesImage], async ([next]) => {
         const sequence = ++loginOceanSequence;
-        if (next !== "login") {
+        if (next !== "login" || loginUsesImage.value) {
           loginOceanEngine?.destroy();
           loginOceanEngine = undefined;
           return;
@@ -726,6 +730,7 @@ export default function App(input: Props) {
             displayName: appearance.displayName,
             theme: appearance.theme,
             backgroundColor: appearance.backgroundColor,
+            backgroundMode: appearance.backgroundMode,
             sharks: appearance.sharks,
           });
           else await api.saveProfile({displayName:appearance.displayName,theme:appearance.theme});
@@ -751,6 +756,7 @@ export default function App(input: Props) {
             displayName: appearance.displayName,
             theme: appearance.theme,
             backgroundColor: appearance.backgroundColor,
+            backgroundMode: appearance.backgroundMode,
             sharks,
           });
           appearance.sharks = sharks.map((shark) => ({ ...shark }));
@@ -940,10 +946,12 @@ export default function App(input: Props) {
             {screen.value === "login" ? (
               <div
                 aria-hidden="true"
-                className={__classes("login-background")}
+                className={__classes("login-background", {
+                  "is-image": loginUsesImage.value,
+                })}
                 data-v-ac863f34=""
               >
-                {backgroundSrc.value ? (
+                {loginUsesImage.value ? (
                   <img
                     key={backgroundRevision.value as any}
                     src={backgroundSrc.value as any}
@@ -955,12 +963,14 @@ export default function App(input: Props) {
                   className={__classes("login-background-shade")}
                   data-v-ac863f34=""
                 ></div>
-                <canvas
-                  ref={__dom(loginOceanCanvas)}
-                  aria-hidden="true"
-                  className={__classes("login-ocean")}
-                  data-v-ac863f34=""
-                ></canvas>
+                {loginUsesImage.value ? null : (
+                  <canvas
+                    ref={__dom(loginOceanCanvas)}
+                    aria-hidden="true"
+                    className={__classes("login-ocean")}
+                    data-v-ac863f34=""
+                  ></canvas>
+                )}
               </div>
             ) : null}
             {authenticated.value ? (

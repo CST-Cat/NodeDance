@@ -130,10 +130,45 @@ func initializeCurrentSchema(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("initialize current SQLite schema statement %d: %w", index+1, err)
 		}
 	}
+	if err := ensureAppearanceBackgroundModeColumn(ctx, tx); err != nil {
+		return fmt.Errorf("initialize appearance settings: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit current SQLite schema initialization: %w", err)
 	}
 	return nil
+}
+
+func ensureAppearanceBackgroundModeColumn(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `PRAGMA table_info(appearance)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if name == "background_mode" {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = tx.ExecContext(ctx, `ALTER TABLE appearance ADD COLUMN background_mode TEXT NOT NULL DEFAULT 'shark'`)
+	return err
 }
 
 func splitCurrentSchema(source string) []string {
