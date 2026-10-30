@@ -14,13 +14,13 @@
 .global-node-card h3 { width: 100%; }
 .global-node-title { display: grid; grid-template-columns: 28px minmax(0, 1fr) 28px; align-items: center; gap: 10px; width: 100%; }
 .global-node-title > span { overflow-wrap: anywhere; }
-.global-node-card .global-node-title .global-node-name { justify-self: start; padding: 0; border: 0; min-height: 40px; color: var(--text); background: transparent; text-align: left; font: inherit; overflow-wrap: anywhere; cursor: pointer; }
+.global-node-card .global-node-title .global-node-name { justify-self: start; padding: 0; border: 0; min-height: 36px; color: var(--text); background: transparent; text-align: left; font: inherit; overflow-wrap: anywhere; cursor: pointer; }
 .global-node-card .global-node-title .global-node-name:hover { color: var(--accent); background: transparent; }
 .global-readings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.global-node-card .resource-reading { display: grid; grid-template-columns: auto auto; justify-content: center; align-items: baseline; column-gap: 5px; }
-.global-node-card .resource-gauge { grid-column: 1 / -1; justify-self: center; width: 64px; }
+.global-node-card > div { padding-block: 16px; }
+.global-node-card .resource-reading { gap: 6px; }
+.global-node-card .resource-gauge { width: 64px; }
 .global-node-card .resource-gauge strong { font-size: 13px; }
-.global-node-card .resource-reading small::before { content: "· "; }
 .global-unlocated { display: grid; gap: 8px; margin-top: 16px; }
 .global-unlocated button { overflow-wrap: anywhere; min-width: 0; }
 @media (max-width: 1000px) { .global-layout { grid-template-columns: minmax(0, 1fr); } .global-orbit { max-width: 600px; } }
