@@ -15,8 +15,7 @@
 .global-node-title { display: grid; grid-template-columns: 28px minmax(0, 1fr) 28px; align-items: center; gap: 10px; width: 100%; }
 .global-node-title > span { overflow-wrap: anywhere; }
 .global-node-state { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-block: 20px; color: var(--text-muted); font-size: 12px; }
-.global-readings { display: grid; gap: 20px; }
-.global-missing { display: flex; justify-content: space-between; margin: 0; color: var(--text-muted); font-size: 13px; }
+.global-readings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .global-node-facts { display: grid; gap: 12px; margin: 24px 0 0; font-size: 13px; }
 .global-node-facts > div { display: flex; justify-content: space-between; gap: 12px; }
 .global-node-facts dt { color: var(--text-secondary); }

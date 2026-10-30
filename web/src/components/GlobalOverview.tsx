@@ -8,12 +8,12 @@ import { locale, t } from "../i18n";
 import locations from "../country-locations.json";
 import { ManagementPage, Button, Card, Alert } from "./ManagementUI";
 import { AnimatedCounter } from "./arc/animated-counter/animated-counter";
-import { Progress } from "./arc/progress/progress";
 import { Skeleton } from "./arc/skeleton/skeleton";
 import { EmptyState } from "./arc/empty-state/empty-state";
 import { Globe } from "./ui/globe";
 import CountryLogo from "./CountryLogo";
 import NodeLogo from "./NodeLogo";
+import ResourceReading from "./ResourceReading";
 import "./GlobalOverview.css";
 
 type Place = { location: number[]; continent: string };
@@ -199,7 +199,11 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   const preference = selected ? preferences[selected.nodeId] : undefined;
   const title = selected ? preference?.alias || selected.displayName : "";
   const go = (node: AgentNode, section = "overview") => onOpenNode(node.nodeId, section);
-  const readings = [{ label: "CPU", value: percent(known(metrics?.cpu.usagePercent)) }, { label: t("global.memory"), value: percent(memory?.usedPercent) }, { label: t("global.disk"), value: percent(disk?.usedPercent) }];
+  const readings = [
+    { resource: "cpu", label: "CPU", value: percent(known(metrics?.cpu.usagePercent)), detail: `${known(metrics?.cpu.logicalCores) ?? "—"} ${t("overview.cores")}` },
+    { resource: "memory", label: t("global.memory"), value: percent(memory?.usedPercent), detail: `${formatBytes(memory?.usedBytes)} / ${formatBytes(memory?.totalBytes)}` },
+    { resource: "disk", label: t("global.disk"), value: percent(disk?.usedPercent), detail: `${formatBytes(disk?.usedBytes)} / ${formatBytes(disk?.totalBytes)}` },
+  ];
   return <ManagementPage className="global-overview" aria-labelledby="global-title">
     <div ref={host} className="global-page-content">
       <header className="global-heading"><div><h1 id="global-title">{t("global.title")}</h1></div><Button variant="secondary" disabled={busy} onClick={() => setEpoch(value => value + 1)}><RefreshCw size={16} />{t("global.refresh")}</Button></header>
@@ -230,10 +234,8 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
               meta={selected.agentVersion || t("global.pending")} status={t("global.following")}
               action={<Button variant="secondary" onClick={() => go(selected)}>{t("global.openNode")}<ArrowUpRight size={16} /></Button>}>
               <div className="global-node-state"><span>{online(selected) ? t("global.online") : selected.agentId ? t("global.offline") : t("global.pending")}</span>{!fresh ? <span>{t("global.noCurrentMetrics")}</span> : null}</div>
-              <div className="global-readings">{readings.map(reading => reading.value != null ? <Progress key={reading.label} label={reading.label} value={reading.value} showValue /> : <p key={reading.label} className="global-missing"><span>{reading.label}</span><span>—</span></p>)}</div>
+              <div className="global-readings">{readings.map(reading => <ResourceReading key={reading.resource} resource={reading.resource} label={reading.label} value={reading.value} detail={reading.detail} />)}</div>
               <dl className="global-node-facts">
-                <div><dt>{t("global.memory")}</dt><dd>{formatBytes(memory?.usedBytes)} / {formatBytes(memory?.totalBytes)}</dd></div>
-                <div><dt>{t("global.disk")}</dt><dd>{formatBytes(disk?.usedBytes)} / {formatBytes(disk?.totalBytes)}</dd></div>
                 <div><dt>{t("global.download")}</dt><dd>{network ? `${formatBytes(network.receivedBytesPerSecond)}/s` : "—"}</dd></div>
                 <div><dt>{t("global.upload")}</dt><dd>{network ? `${formatBytes(network.sentBytesPerSecond)}/s` : "—"}</dd></div>
                 <div><dt>{t("global.uptime")}</dt><dd>{uptime ? t("global.hours", { "0": Math.floor(uptime.seconds / 3600) }) : "—"}</dd></div>

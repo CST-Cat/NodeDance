@@ -53,9 +53,9 @@ const root=path.resolve(__dirname,'../..'),artifacts=path.join(root,'.build/glob
   const labelGeometry=await page.locator('.global-marker-label:visible').first().evaluate(el=>{const r=el.getBoundingClientRect(),orbit=el.closest('.global-orbit').getBoundingClientRect();return{inside:r.left>=orbit.left-60&&r.right<=orbit.right+60&&r.bottom>=orbit.top&&r.top<=orbit.bottom,anchor:getComputedStyle(el).positionAnchor}});
   assert.ok(labelGeometry.inside);assert.ok(labelGeometry.anchor.startsWith('--cobe-fleet-'));
   const labels=await page.locator('.workspace-nav button').allTextContents();assert.equal(labels.indexOf('Global overview')+1,labels.indexOf('Settings'),'Navigation places the new page immediately above personal settings');
-  await page.locator('.global-node-card [role=progressbar]').first().waitFor();assert.equal(await page.locator('.global-node-card [role=progressbar]').first().getAttribute('aria-valuenow'),'0','A real zero CPU sample is not an unknown');
+  await page.locator('.global-node-card [data-resource="cpu"] .resource-gauge[data-state="known"]').waitFor();assert.equal(await page.locator('.global-node-card [data-resource="cpu"] .resource-gauge strong').textContent(),'0.0%','A real zero CPU sample is not an unknown');
   const first=await page.locator('.global-node-card').getAttribute('data-node-id');await page.waitForFunction(id=>document.querySelector('.global-node-card')?.getAttribute('data-node-id')!==id,first,{timeout:30000});
-  assert.equal(await page.locator('.global-node-card [role=progressbar]').count(),2,'Tour handoff reuses prefetched CPU and memory metrics instead of clearing the card');
+  assert.equal(await page.locator('.global-node-card .resource-gauge[data-state="known"]').count(),2,'Tour handoff reuses prefetched CPU and memory metrics instead of clearing the card');
   assert.equal(await page.evaluate(()=>window.__cobeAudit.created),3,'Touring/config updates preserve native WebGL instance');
   const canvas=page.locator('.global-orbit canvas'),bounds=await canvas.boundingBox();
   const anchor=page.locator('[style*="anchor-name: --cobe-fleet-US"]');
