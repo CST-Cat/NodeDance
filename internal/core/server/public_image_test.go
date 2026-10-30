@@ -1,13 +1,87 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/color"
+	"image/jpeg"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
 )
+
+func encodeTestImage(t *testing.T, width, height int, asJPEG bool) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			img.Set(x, y, color.RGBA{
+				uint8(x * 255 / max(width-1, 1)),
+				uint8(y * 255 / max(height-1, 1)),
+				uint8((x + y) * 255 / max(width+height-2, 1)),
+				255,
+			})
+		}
+	}
+	var buffer bytes.Buffer
+	var err error
+	if asJPEG {
+		err = jpeg.Encode(&buffer, img, &jpeg.Options{Quality: 90})
+	} else {
+		err = png.Encode(&buffer, img)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return buffer.Bytes()
+}
+
+func TestBackgroundImageAcceptsWallpaperSizes(t *testing.T) {
+	normalized, err := normalizeBackgroundImage(encodeTestImage(t, 1920, 1080, true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, format, err := image.DecodeConfig(bytes.NewReader(normalized))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if format != "jpeg" || config.Width != 1920 || config.Height != 1080 {
+		t.Fatalf("stored %s %dx%d; want jpeg 1920x1080", format, config.Width, config.Height)
+	}
+	if _, err := normalizeRasterImage(encodeTestImage(t, 1920, 1080, true)); err == nil {
+		t.Fatal("avatar normalization still accepts wallpaper sizes")
+	}
+}
+
+func TestBackgroundImageDownscalesToStoredBox(t *testing.T) {
+	normalized, err := normalizeBackgroundImage(encodeTestImage(t, 5000, 3000, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, format, err := image.DecodeConfig(bytes.NewReader(normalized))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if format != "png" {
+		t.Fatalf("stored format %s; want png", format)
+	}
+	if config.Width > maxBackgroundStoredWidth || config.Height > maxBackgroundStoredHeight {
+		t.Fatalf("stored %dx%d exceeds box %dx%d", config.Width, config.Height, maxBackgroundStoredWidth, maxBackgroundStoredHeight)
+	}
+	if config.Width != 3600 || config.Height != 2160 {
+		t.Fatalf("stored %dx%d; want proportional 3600x2160", config.Width, config.Height)
+	}
+}
+
+func TestBackgroundImageRejectsBeyondAdmission(t *testing.T) {
+	if _, err := normalizeBackgroundImage(encodeTestImage(t, 8192, 5000, true)); err == nil {
+		t.Fatal("background normalization accepts more than the admission pixel cap")
+	}
+}
 
 func TestPublicImageETagRevalidation(t *testing.T) {
 	ctx := context.Background()

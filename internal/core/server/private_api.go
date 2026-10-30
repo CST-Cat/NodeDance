@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"image"
+	"image/color"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"math"
@@ -22,7 +24,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	_ "image/gif"
-	_ "image/jpeg"
 )
 
 const (
@@ -30,6 +31,13 @@ const (
 	maxImageStoredBytes = 8 << 20
 	maxImageDimension   = 1024
 	maxImagePixels      = 1024 * 1024
+
+	maxBackgroundUploadBytes  = protocol.MaxBackgroundImageBytes
+	maxBackgroundDimension    = 8192
+	maxBackgroundPixels       = 7680 * 4320
+	maxBackgroundStoredBytes  = 16 << 20
+	maxBackgroundStoredWidth  = 3840
+	maxBackgroundStoredHeight = 2160
 )
 
 type appearance = protocol.AppearanceSettings
@@ -626,8 +634,26 @@ func (s *Server) writeAppearance(w http.ResponseWriter, ctx context.Context) {
 }
 
 func (s *Server) handleUploadAppearanceImage(w http.ResponseWriter, r *http.Request, current *session) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxImageUploadBytes+64*1024)
-	if err := r.ParseMultipartForm(maxImageUploadBytes); err != nil {
+	column, publicURL := "", ""
+	background := false
+	switch r.URL.Path {
+	case "/api/v1/auth/profile/avatar":
+		column, publicURL = "avatar_png", "/api/v1/auth/profile/avatar"
+	case "/api/v1/settings/appearance/avatar":
+		column, publicURL = "avatar_png", "/api/v1/public/appearance/avatar"
+	case "/api/v1/settings/appearance/background":
+		column, publicURL = "background_png", "/api/v1/public/appearance/background"
+		background = true
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	uploadLimit := int64(maxImageUploadBytes)
+	if background {
+		uploadLimit = maxBackgroundUploadBytes
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit+64*1024)
+	if err := r.ParseMultipartForm(uploadLimit); err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			http.Error(w, "image is too large", http.StatusRequestEntityTooLarge)
@@ -645,26 +671,19 @@ func (s *Server) handleUploadAppearanceImage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	defer file.Close()
-	encoded, err := io.ReadAll(io.LimitReader(file, maxImageUploadBytes+1))
-	if err != nil || len(encoded) == 0 || len(encoded) > maxImageUploadBytes {
+	encoded, err := io.ReadAll(io.LimitReader(file, uploadLimit+1))
+	if err != nil || len(encoded) == 0 || int64(len(encoded)) > uploadLimit {
 		http.Error(w, "image is too large or unreadable", http.StatusRequestEntityTooLarge)
 		return
 	}
-	normalized, err := normalizeRasterImage(encoded)
+	var normalized []byte
+	if background {
+		normalized, err = normalizeBackgroundImage(encoded)
+	} else {
+		normalized, err = normalizeRasterImage(encoded)
+	}
 	if err != nil {
 		http.Error(w, "unsupported or unsafe image", http.StatusBadRequest)
-		return
-	}
-	column, publicURL := "", ""
-	switch r.URL.Path {
-	case "/api/v1/auth/profile/avatar":
-		column, publicURL = "avatar_png", "/api/v1/auth/profile/avatar"
-	case "/api/v1/settings/appearance/avatar":
-		column, publicURL = "avatar_png", "/api/v1/public/appearance/avatar"
-	case "/api/v1/settings/appearance/background":
-		column, publicURL = "background_png", "/api/v1/public/appearance/background"
-	default:
-		http.NotFound(w, r)
 		return
 	}
 	ctx := r.Context()
@@ -718,6 +737,104 @@ func normalizeRasterImage(encoded []byte) ([]byte, error) {
 	return output.Bytes(), nil
 }
 
+func normalizeBackgroundImage(encoded []byte) ([]byte, error) {
+	config, format, err := image.DecodeConfig(bytes.NewReader(encoded))
+	if err != nil || (format != "png" && format != "jpeg" && format != "gif") {
+		return nil, errors.New("unsupported image format")
+	}
+	if config.Width < 1 || config.Height < 1 || config.Width > maxBackgroundDimension || config.Height > maxBackgroundDimension || int64(config.Width)*int64(config.Height) > maxBackgroundPixels {
+		return nil, errors.New("image dimensions exceed limit")
+	}
+	decoded, decodedFormat, err := image.Decode(bytes.NewReader(encoded))
+	if err != nil || decodedFormat != format {
+		return nil, errors.New("image decode failed")
+	}
+	scaled := scaleImageToFit(decoded, maxBackgroundStoredWidth, maxBackgroundStoredHeight)
+	encode := func(asJPEG bool) ([]byte, error) {
+		var output bytes.Buffer
+		var encodeErr error
+		if asJPEG {
+			encodeErr = jpeg.Encode(&output, scaled, &jpeg.Options{Quality: 87})
+		} else {
+			encodeErr = png.Encode(&output, scaled)
+		}
+		if encodeErr != nil {
+			return nil, encodeErr
+		}
+		return output.Bytes(), nil
+	}
+	normalized, err := encode(format == "jpeg")
+	if err != nil {
+		return nil, err
+	}
+	if len(normalized) > maxBackgroundStoredBytes && format != "jpeg" {
+		normalized, err = encode(true)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(normalized) > maxBackgroundStoredBytes {
+		return nil, errors.New("normalized image exceeds limit")
+	}
+	return normalized, nil
+}
+
+func scaleImageToFit(src image.Image, maxWidth, maxHeight int) image.Image {
+	bounds := src.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	if width <= maxWidth && height <= maxHeight {
+		return src
+	}
+	ratio := math.Min(float64(maxWidth)/float64(width), float64(maxHeight)/float64(height))
+	targetWidth := max(int(float64(width)*ratio), 1)
+	targetHeight := max(int(float64(height)*ratio), 1)
+	sample := func(x, y int) color.RGBA64 {
+		return color.RGBA64Model.Convert(src.At(bounds.Min.X+x, bounds.Min.Y+y)).(color.RGBA64)
+	}
+	if fast, ok := src.(interface{ RGBA64At(int, int) color.RGBA64 }); ok {
+		sample = func(x, y int) color.RGBA64 {
+			return fast.RGBA64At(bounds.Min.X+x, bounds.Min.Y+y)
+		}
+	}
+	dst := image.NewRGBA(image.Rect(0, 0, targetWidth, targetHeight))
+	xRatio := float64(width) / float64(targetWidth)
+	yRatio := float64(height) / float64(targetHeight)
+	for y := 0; y < targetHeight; y++ {
+		srcY := (float64(y)+0.5)*yRatio - 0.5
+		y0 := int(math.Floor(srcY))
+		fy := srcY - float64(y0)
+		if y0 < 0 {
+			y0, fy = 0, 0
+		}
+		y1 := min(y0+1, height-1)
+		for x := 0; x < targetWidth; x++ {
+			srcX := (float64(x)+0.5)*xRatio - 0.5
+			x0 := int(math.Floor(srcX))
+			fx := srcX - float64(x0)
+			if x0 < 0 {
+				x0, fx = 0, 0
+			}
+			x1 := min(x0+1, width-1)
+			p00 := sample(x0, y0)
+			p10 := sample(x1, y0)
+			p01 := sample(x0, y1)
+			p11 := sample(x1, y1)
+			blend := func(a, b, c, d uint32) uint32 {
+				top := float64(a)*(1-fx) + float64(b)*fx
+				bottom := float64(c)*(1-fx) + float64(d)*fx
+				return uint32(top*(1-fy) + bottom*fy)
+			}
+			dst.SetRGBA64(x, y, color.RGBA64{
+				R: uint16(blend(uint32(p00.R), uint32(p10.R), uint32(p01.R), uint32(p11.R))),
+				G: uint16(blend(uint32(p00.G), uint32(p10.G), uint32(p01.G), uint32(p11.G))),
+				B: uint16(blend(uint32(p00.B), uint32(p10.B), uint32(p01.B), uint32(p11.B))),
+				A: uint16(blend(uint32(p00.A), uint32(p10.A), uint32(p01.A), uint32(p11.A))),
+			})
+		}
+	}
+	return dst
+}
+
 func (s *Server) handlePublicImage(w http.ResponseWriter, r *http.Request) {
 	column := "avatar_png"
 	if r.URL.Path == "/api/v1/public/appearance/background" {
@@ -744,9 +861,17 @@ func (s *Server) handlePublicImage(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	w.Header().Set("Content-Type", "image/png")
+	contentType := http.DetectContentType(content)
+	filename := "appearance.png"
+	switch contentType {
+	case "image/jpeg":
+		filename = "appearance.jpg"
+	case "image/gif":
+		filename = "appearance.gif"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.Itoa(len(content)))
-	w.Header().Set("Content-Disposition", "inline; filename=appearance.png")
+	w.Header().Set("Content-Disposition", "inline; filename="+filename)
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodGet {
 		_, _ = w.Write(content)

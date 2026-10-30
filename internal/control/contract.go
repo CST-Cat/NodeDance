@@ -35,7 +35,11 @@ func describeTransport(o *Operation) {
 		o.Headers = map[string]any{"Idempotency-Key": map[string]any{"type": "string", "minLength": 1, "maxBytes": taskstate.MaxIdempotencyKeyBytes, "description": "Reuse for retries of the same intent"}}
 	}
 	if o.Transport == "multipart" {
-		o.Upload = &UploadContract{Field: protocol.AppearanceImageField, ContentType: "multipart/form-data", MaxBytes: protocol.MaxAppearanceImageBytes}
+		uploadMaxBytes := int64(protocol.MaxAppearanceImageBytes)
+		if o.Name == "appearance.upload-background" {
+			uploadMaxBytes = protocol.MaxBackgroundImageBytes
+		}
+		o.Upload = &UploadContract{Field: protocol.AppearanceImageField, ContentType: "multipart/form-data", MaxBytes: uploadMaxBytes}
 	}
 	if o.Transport == "terminal" || o.Name == "terminal.connect" {
 		o.Duplex = true

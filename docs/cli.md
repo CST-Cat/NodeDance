@@ -214,6 +214,10 @@ The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus disco
 
 `appearance.update` 还支持可选的登录页背景模式字段 `backgroundMode: "shark" | "image"`。登录页只显示其中一种：ASCII 鲨鱼，或全强度显示的已上传背景图片。`appearance.get` / `profile.get` 会返回已保存的模式，默认为 `"shark"`。
 
+The background upload (`appearance.upload-background`) accepts wallpaper-sized images: up to 32 MB per file and up to 8192 px / 8K pixels on input. Core stores at most a 3840×2160 proportional downscale, keeping JPEG as JPEG and PNG as PNG, and serves the stored format as-is. Avatar uploads keep the small 1024×1024 profile-picture limits.
+
+背景图片上传（`appearance.upload-background`）接受壁纸级尺寸：单文件至多 32 MB，输入至多 8192 px / 8K 像素。Core 最多保存 3840×2160 的等比缩放结果，JPEG 仍存 JPEG、PNG 仍存 PNG，并按保存格式原样提供。头像上传保持 1024×1024 的小图限制不变。
+
 正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](updates.md).
 
 ## Agent monitoring and fleet operations
