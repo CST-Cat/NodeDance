@@ -16,10 +16,6 @@
 .global-node-title > span { overflow-wrap: anywhere; }
 .global-node-state { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-block: 20px; color: var(--text-muted); font-size: 12px; }
 .global-readings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-.global-node-facts { display: grid; gap: 12px; margin: 24px 0 0; font-size: 13px; }
-.global-node-facts > div { display: flex; justify-content: space-between; gap: 12px; }
-.global-node-facts dt { color: var(--text-secondary); }
-.global-node-facts dd { margin: 0; text-align: end; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .global-unlocated { display: grid; gap: 8px; margin-top: 16px; }
 .global-unlocated button { overflow-wrap: anywhere; min-width: 0; }
 @media (max-width: 1000px) { .global-layout { grid-template-columns: minmax(0, 1fr); } .global-orbit { max-width: 600px; } }

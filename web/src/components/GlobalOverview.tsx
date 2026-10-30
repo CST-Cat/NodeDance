@@ -195,7 +195,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   const fresh = !!selected && online(selected) && sample?.nodeId === selected.nodeId && sample.generation === selected.generation && sample.activeGeneration === selected.generation && sample.nodeStatus === "online" && Date.parse(sample.leaseValidUntil) > now();
   const metrics = fresh ? sample?.metrics : undefined;
   const memory = known(metrics?.memory), rootDisk = metrics?.disk.mounts.find(mount => mount.mountpoint === "/");
-  const disk = known(rootDisk?.usage), network = known(metrics?.network.summary), uptime = known(metrics?.uptime);
+  const disk = known(rootDisk?.usage);
   const preference = selected ? preferences[selected.nodeId] : undefined;
   const title = selected ? preference?.alias || selected.displayName : "";
   const go = (node: AgentNode, section = "overview") => onOpenNode(node.nodeId, section);
@@ -231,15 +231,9 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
             {selected ? <Card className="global-node-card" data-node-id={selected.nodeId}
               title={<span className="global-node-title"><CountryLogo country={selected.country} /><span>{title}</span><NodeLogo icon={preference?.icon} platform={metrics?.system.platform.value} os={metrics?.system.os.value} /></span>}
               description={selectedPoint ? `${selectedPoint.label}${selectedPoint.label === countryName(selectedPoint.code) ? "" : `, ${countryName(selectedPoint.code)}`} · ${t(`global.continent.${selectedPoint.place.continent}`)}` : t("country.unknown")}
-              meta={selected.agentVersion || t("global.pending")} status={t("global.following")}
-              action={<Button variant="secondary" onClick={() => go(selected)}>{t("global.openNode")}<ArrowUpRight size={16} /></Button>}>
+              >
               <div className="global-node-state"><span>{online(selected) ? t("global.online") : selected.agentId ? t("global.offline") : t("global.pending")}</span>{!fresh ? <span>{t("global.noCurrentMetrics")}</span> : null}</div>
               <div className="global-readings">{readings.map(reading => <ResourceReading key={reading.resource} resource={reading.resource} label={reading.label} value={reading.value} detail={reading.detail} />)}</div>
-              <dl className="global-node-facts">
-                <div><dt>{t("global.download")}</dt><dd>{network ? `${formatBytes(network.receivedBytesPerSecond)}/s` : "—"}</dd></div>
-                <div><dt>{t("global.upload")}</dt><dd>{network ? `${formatBytes(network.sentBytesPerSecond)}/s` : "—"}</dd></div>
-                <div><dt>{t("global.uptime")}</dt><dd>{uptime ? t("global.hours", { "0": Math.floor(uptime.seconds / 3600) }) : "—"}</dd></div>
-              </dl>
             </Card> : <EmptyState icon={<Server />} title={t("global.empty")} description={t("global.emptyHint")} />}
             {!points.length && visible.length ? <Alert tone="info" title={t("global.waitingLocation")}>{t("global.locationHint")}</Alert> : null}
             {visible.length > points.length ? <Card title={t("global.unlocated")} description={t("global.locationHint")}><div className="global-unlocated">{visible.filter(node => !points.some(point => point.node.nodeId === node.nodeId)).map(node => <Button key={node.nodeId} variant="ghost" onClick={() => go(node, "settings")}>{preferences[node.nodeId]?.alias || node.displayName}<ArrowUpRight size={14} /></Button>)}</div></Card> : null}
