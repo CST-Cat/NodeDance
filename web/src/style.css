@@ -481,10 +481,6 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.43;
-}
-.login-background.is-image > img {
-  opacity: 1;
 }
 .login-ocean {
   position: absolute;
@@ -496,11 +492,6 @@ summary:focus-visible:not(:where(.registry-controls, .registry-controls *)) {
   opacity: 1;
   pointer-events: none;
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-.login-background-shade {
-  position: absolute;
-  inset: 0;
-  background: transparent;
 }
 .profile-avatar {
   display: grid;

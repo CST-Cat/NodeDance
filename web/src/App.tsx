@@ -770,7 +770,6 @@ export default function App(input: Props) {
           await api.uploadImage(kind, image);
           if (kind === "avatar") avatarRevision.value += 1;
           else backgroundRevision.value += 1;
-          await loadAppearance();
           notice.value =
             kind === "avatar" ? t("m.38e48df5ee98") : t("m.4e208b8c6edc");
         } catch (reason) {
@@ -950,10 +949,6 @@ export default function App(input: Props) {
                     data-v-ac863f34=""
                   ></img>
                 ) : null}
-                <div
-                  className={__classes("login-background-shade")}
-                  data-v-ac863f34=""
-                ></div>
                 {loginUsesImage.value ? null : (
                   <canvas
                     ref={__dom(loginOceanCanvas)}
