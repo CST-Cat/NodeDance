@@ -133,13 +133,13 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   useEffect(() => {
     const update = () => setFrontIds(current => {
       const pointIds = new Set(latest.current.map(point => point.node.nodeId));
-      const next: string[] = [];
-      const pinned = selectedRef.current;
-      if (pinned && pointIds.has(pinned)) next.push(pinned);
-      for (const id of current) if (pointIds.has(id) && !next.includes(id) && (scores.current.get(id) ?? 0) > 0.02) next.push(id);
-      const ranked = latest.current.map(point => point.node.nodeId).sort((a, b) => (scores.current.get(b) ?? 0) - (scores.current.get(a) ?? 0));
-      for (const id of ranked) { if (next.length >= 6) break; if (!next.includes(id) && (scores.current.get(id) ?? 0) > 0.2) next.push(id); }
-      const ordered = next.sort((a, b) => (scores.current.get(b) ?? 0) - (scores.current.get(a) ?? 0));
+      const members = new Set(current.filter(id => pointIds.has(id)));
+      const pinned = selectedRef.current && pointIds.has(selectedRef.current) ? selectedRef.current : "";
+      const raw = (id: string) => scores.current.get(id) ?? 0;
+      const ranked = latest.current.map(point => point.node.nodeId).filter(id => raw(id) > 0.2 || (members.has(id) && raw(id) > 0.02)).sort((a, b) => raw(b) + (members.has(b) ? .05 : 0) - raw(a) - (members.has(a) ? .05 : 0));
+      const chosen = new Set(ranked.slice(0, pinned ? 5 : 6));
+      if (pinned) chosen.add(pinned);
+      const ordered = [...chosen].sort((a, b) => raw(b) - raw(a));
       return ordered.join() === current.join() ? current : ordered;
     });
     update();
