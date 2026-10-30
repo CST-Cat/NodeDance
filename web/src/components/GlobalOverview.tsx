@@ -8,6 +8,8 @@ import { locale, t } from "../i18n";
 import locations from "../country-locations.json";
 import { ManagementPage, Button, Card, Alert } from "./ManagementUI";
 import { AnimatedCounter } from "./arc/animated-counter/animated-counter";
+import { TextMorph } from "./arc/text-morph/text-morph";
+import { Separator } from "./ui/separator";
 import { Skeleton } from "./arc/skeleton/skeleton";
 import { EmptyState } from "./arc/empty-state/empty-state";
 import { Globe } from "./ui/globe";
@@ -209,9 +211,6 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
       <header className="global-heading"><div><h1 id="global-title">{t("global.title")}</h1></div><Button variant="secondary" disabled={busy} onClick={() => setEpoch(value => value + 1)}><RefreshCw size={16} />{t("global.refresh")}</Button></header>
       {error ? <Alert tone="warning" title={t("global.refreshError")}>{error}</Alert> : null}
       {!ready ? <Skeleton label={t("global.loading")} lines={4} /> : <>
-        <dl className="global-stats">
-          {[{ id: "nodes", label: t("global.nodes"), value: visible.length }, { id: "online", label: t("global.online"), value: visible.filter(online).length }, { id: "countries", label: t("global.countriesShort"), value: new Set(points.map(point => point.code)).size }, { id: "continents", label: t("global.continentsShort"), value: new Set(points.map(point => point.place.continent)).size }].map(stat => <div className="global-stat" key={stat.id}><dt>{stat.label}</dt><dd><AnimatedCounter value={stat.value} animateOnView /></dd></div>)}
-        </dl>
         <div className="global-layout">
           <Card className="global-map-card" title={null}
             media={<div className="global-orbit" role="img" aria-label={t("global.globeLabel")} data-marker-count={markers.length} data-label-count={points.length} data-metrics-count={Object.keys(samples).length} data-active-country={selectedPoint?.code ?? ""}><GlobeBoundary><Globe className="global-globe-canvas" config={config} onFrame={onFrame}>{points.map(point => {
@@ -228,10 +227,13 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
             status={selectedPoint ? t(`global.continent.${selectedPoint.place.continent}`) : undefined}>
           </Card>
           <aside className="global-side" aria-label={t("global.currentNode")}>
-            {selected ? <Card className="global-node-card" data-node-id={selected.nodeId}
-              title={<span className="global-node-title"><CountryLogo country={selected.country} /><button type="button" className="global-node-name" onClick={() => go(selected)}>{title}</button><NodeLogo icon={preference?.icon} platform={metrics?.system.platform.value} os={metrics?.system.os.value} /></span>}
-              description={`${online(selected) ? t("global.online") : selected.agentId ? t("global.offline") : t("global.pending")}${!fresh ? ` · ${t("global.noCurrentMetrics")}` : ""} · ${selectedPoint ? `${selectedPoint.label}${selectedPoint.label === countryName(selectedPoint.code) ? "" : `, ${countryName(selectedPoint.code)}`} · ${t(`global.continent.${selectedPoint.place.continent}`)}` : t("country.unknown")}`}
-              >
+            {selected ? <Card className="global-node-card" data-node-id={selected.nodeId} title={null}>
+              <dl className="global-stats">
+                {[{ id: "nodes", label: t("global.nodes"), value: visible.length }, { id: "online", label: t("global.online"), value: visible.filter(online).length }, { id: "countries", label: t("global.countriesShort"), value: new Set(points.map(point => point.code)).size }, { id: "continents", label: t("global.continentsShort"), value: new Set(points.map(point => point.place.continent)).size }].map(stat => <div className="global-stat" key={stat.id}><dt>{stat.label}</dt><dd><AnimatedCounter value={stat.value} animateOnView /></dd></div>)}
+              </dl>
+              <Separator className="global-stats-separator" />
+              <h3 className="global-node-heading"><span className="global-node-title"><CountryLogo country={selected.country} /><button type="button" className="global-node-name" onClick={() => go(selected)}><TextMorph>{title}</TextMorph></button><NodeLogo icon={preference?.icon} platform={metrics?.system.platform.value} os={metrics?.system.os.value} /></span></h3>
+              <p className="global-node-description">{`${online(selected) ? t("global.online") : selected.agentId ? t("global.offline") : t("global.pending")}${!fresh ? ` · ${t("global.noCurrentMetrics")}` : ""} · ${selectedPoint ? `${selectedPoint.label}${selectedPoint.label === countryName(selectedPoint.code) ? "" : `, ${countryName(selectedPoint.code)}`} · ${t(`global.continent.${selectedPoint.place.continent}`)}` : t("country.unknown")}`}</p>
               <div className="global-readings">{readings.map(reading => <ResourceReading key={reading.resource} resource={reading.resource} label={reading.label} value={reading.value} detail={reading.detail} />)}</div>
             </Card> : <EmptyState icon={<Server />} title={t("global.empty")} description={t("global.emptyHint")} />}
             {!points.length && visible.length ? <Alert tone="info" title={t("global.waitingLocation")}>{t("global.locationHint")}</Alert> : null}
