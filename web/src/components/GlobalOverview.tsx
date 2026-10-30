@@ -230,9 +230,8 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
           <aside className="global-side" aria-label={t("global.currentNode")}>
             {selected ? <Card className="global-node-card" data-node-id={selected.nodeId}
               title={<span className="global-node-title"><CountryLogo country={selected.country} /><button type="button" className="global-node-name" onClick={() => go(selected)}>{title}</button><NodeLogo icon={preference?.icon} platform={metrics?.system.platform.value} os={metrics?.system.os.value} /></span>}
-              description={selectedPoint ? `${selectedPoint.label}${selectedPoint.label === countryName(selectedPoint.code) ? "" : `, ${countryName(selectedPoint.code)}`} · ${t(`global.continent.${selectedPoint.place.continent}`)}` : t("country.unknown")}
+              description={`${online(selected) ? t("global.online") : selected.agentId ? t("global.offline") : t("global.pending")}${!fresh ? ` · ${t("global.noCurrentMetrics")}` : ""} · ${selectedPoint ? `${selectedPoint.label}${selectedPoint.label === countryName(selectedPoint.code) ? "" : `, ${countryName(selectedPoint.code)}`} · ${t(`global.continent.${selectedPoint.place.continent}`)}` : t("country.unknown")}`}
               >
-              <div className="global-node-state"><span>{online(selected) ? t("global.online") : selected.agentId ? t("global.offline") : t("global.pending")}</span>{!fresh ? <span>{t("global.noCurrentMetrics")}</span> : null}</div>
               <div className="global-readings">{readings.map(reading => <ResourceReading key={reading.resource} resource={reading.resource} label={reading.label} value={reading.value} detail={reading.detail} />)}</div>
             </Card> : <EmptyState icon={<Server />} title={t("global.empty")} description={t("global.emptyHint")} />}
             {!points.length && visible.length ? <Alert tone="info" title={t("global.waitingLocation")}>{t("global.locationHint")}</Alert> : null}
