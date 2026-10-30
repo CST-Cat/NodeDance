@@ -3,8 +3,14 @@
 .global-heading h1 { margin: 0 0 8px; }
 .global-stats { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; margin: 0; padding: 0; }
 .global-stats-separator { margin-block: 12px; }
-.global-node-heading { margin: 0; font-size: var(--text-lg); font-weight: 500; line-height: 1.3; letter-spacing: var(--tracking-body); }
-.global-node-description { margin: 6px 0 0; color: var(--text-secondary); font-size: var(--text-sm); line-height: var(--leading-body); }
+.global-matrix { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.global-cell { min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); }
+.global-cell[data-focused] { border-color: var(--accent); }
+.global-cell-head { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 8px; }
+.global-node-card .global-cell .global-cell-name { justify-self: start; max-width: 100%; min-height: 24px; overflow: hidden; padding: 0; border: 0; color: var(--text); background: transparent; font: inherit; font-size: 13px; font-weight: 500; text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.global-node-card .global-cell .global-cell-name:hover { color: var(--accent); background: transparent; }
+.global-cell-desc { margin: 4px 0 0; overflow: hidden; color: var(--text-secondary); font-size: 12px; line-height: var(--leading-body); white-space: nowrap; text-overflow: ellipsis; }
+.global-cell .global-readings { margin-top: 8px; gap: 4px; }
 .global-stat { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; white-space: nowrap; }
 .global-stat dt { color: var(--text-secondary); font-size: 12px; }
 .global-stat dd { --text-3xl: 18px; margin: 0; }
@@ -14,17 +20,12 @@
 .global-overview .global-globe-canvas { position: relative; inset: auto; width: 100%; max-width: none; }
 .global-globe-fallback { position: absolute; inset: 0; display: grid; align-items: center; padding: 24px; }
 .global-map-caption { display: inline-flex; align-items: center; gap: 8px; }
-.global-node-card h3 { width: 100%; }
-.global-node-title { display: grid; grid-template-columns: 28px minmax(0, 1fr) 28px; align-items: center; gap: 10px; width: 100%; }
-.global-node-title > span { overflow-wrap: anywhere; }
-.global-node-card .global-node-title .global-node-name { justify-self: start; max-width: 100%; overflow: hidden; padding: 0; border: 0; min-height: 30px; color: var(--text); background: transparent; text-align: left; font: inherit; overflow-wrap: anywhere; cursor: pointer; }
-.global-node-card .global-readings { margin-top: 6px; }
-.global-node-card .global-node-title .global-node-name:hover { color: var(--accent); background: transparent; }
+
 .global-readings { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .global-node-card > div { padding-block: 16px; }
-.global-node-card .resource-reading { gap: 6px; }
-.global-node-card .resource-gauge { width: 64px; }
-.global-node-card .resource-gauge strong { font-size: 13px; }
+.global-node-card .global-cell .resource-reading { gap: 4px; }
+.global-node-card .global-cell .resource-gauge { width: 44px; }
+.global-node-card .global-cell .resource-gauge strong { font-size: 11px; }
 .global-unlocated { display: grid; gap: 8px; margin-top: 16px; }
 .global-unlocated button { overflow-wrap: anywhere; min-width: 0; }
 @media (max-width: 1000px) { .global-layout { grid-template-columns: minmax(0, 1fr); } .global-orbit { max-width: 600px; } }

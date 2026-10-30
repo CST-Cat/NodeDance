@@ -8,13 +8,13 @@ import { locale, t } from "../i18n";
 import locations from "../country-locations.json";
 import { ManagementPage, Button, Card, Alert } from "./ManagementUI";
 import { AnimatedCounter } from "./arc/animated-counter/animated-counter";
-import { TextMorph } from "./arc/text-morph/text-morph";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motionTokens } from "./arc/motion-tokens";
 import { Separator } from "./ui/separator";
 import { Skeleton } from "./arc/skeleton/skeleton";
 import { EmptyState } from "./arc/empty-state/empty-state";
 import { Globe } from "./ui/globe";
 import CountryLogo from "./CountryLogo";
-import NodeLogo from "./NodeLogo";
 import ResourceReading from "./ResourceReading";
 import "./GlobalOverview.css";
 
@@ -50,6 +50,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   const [epoch, setEpoch] = useState(0), [activeId, setActiveId] = useState("");
   const [samples, setSamples] = useState<Record<string, MetricsView>>({});
   const [colors, setColors] = useState({ dark: 0, base: [0.5, 0.5, 0.5], glow: [1, 1, 1], marker: [0.5, 0.5, 0.5] });
+  const reduced = useReducedMotion();
   const metricReads = useRef(new Map<string, { controller: AbortController; promise: Promise<AgentMetricsResponse> }>());
   const readMetrics = useCallback((node: AgentNode) => {
     const key = `${node.nodeId}:${node.generation}`;
@@ -127,6 +128,24 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   const markers = useMemo<NonNullable<COBEOptions["markers"]>>(() => locationKeys ? locationKeys.split(",").map(id => ({ location: points.find(point => point.id === id)!.place.location as [number, number], size: 0.06, id: `fleet-${id}` })) : [], [locationKeys]);
   const hub = selectedPoint?.id;
   const arcs = useMemo<COBEOptions["arcs"]>(() => hub ? markers.filter(marker => marker.id !== `fleet-${hub}`).map(marker => ({ from: marker.location, to: markers.find(marker => marker.id === `fleet-${hub}`)!.location, id: `fleet-${marker.id}-${hub}` })) : [], [markers, hub]);
+  const scores = useRef(new Map<string, number>());
+  const [frontIds, setFrontIds] = useState<string[]>([]);
+  useEffect(() => {
+    const update = () => setFrontIds(current => {
+      const pointIds = new Set(latest.current.map(point => point.node.nodeId));
+      const next: string[] = [];
+      const pinned = selectedRef.current;
+      if (pinned && pointIds.has(pinned)) next.push(pinned);
+      for (const id of current) if (pointIds.has(id) && !next.includes(id) && (scores.current.get(id) ?? 0) > 0.02) next.push(id);
+      const ranked = latest.current.map(point => point.node.nodeId).sort((a, b) => (scores.current.get(b) ?? 0) - (scores.current.get(a) ?? 0));
+      for (const id of ranked) { if (next.length >= 6) break; if (!next.includes(id) && (scores.current.get(id) ?? 0) > 0.2) next.push(id); }
+      const ordered = next.sort((a, b) => (scores.current.get(b) ?? 0) - (scores.current.get(a) ?? 0));
+      return ordered.join() === current.join() ? current : ordered;
+    });
+    update();
+    const timer = window.setInterval(update, 700);
+    return () => window.clearInterval(timer);
+  }, [locationKeys]);
   const labels = useRef(new Map<string, HTMLSpanElement>());
   const onFrame = useCallback((state: { phi: number; theta: number }) => {
     for (const point of latest.current) {
@@ -136,6 +155,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
     const stamp = performance.now(), memory = tour.current;
     if (stamp - memory.checked < 500 || document.hidden) return;
     memory.checked = stamp;
+    for (const point of latest.current) scores.current.set(point.node.nodeId, frontScore(point.place.location, state.phi, state.theta ?? 0.3));
     const visibleRegions = new Map<string, { point: Point; score: number }>();
     for (const point of latest.current) {
       const score = frontScore(point.place.location, state.phi, state.theta ?? 0.3);
@@ -193,19 +213,22 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
     };
     void read(); return () => { controller.abort(); clearTimeout(timer); };
   }, [selected?.nodeId, selected?.generation, epoch, readMetrics]);
-  const sample = selected ? samples[selected.nodeId] : undefined;
-  const fresh = !!selected && online(selected) && sample?.nodeId === selected.nodeId && sample.generation === selected.generation && sample.activeGeneration === selected.generation && sample.nodeStatus === "online" && Date.parse(sample.leaseValidUntil) > now();
-  const metrics = fresh ? sample?.metrics : undefined;
-  const memory = known(metrics?.memory), rootDisk = metrics?.disk.mounts.find(mount => mount.mountpoint === "/");
-  const disk = known(rootDisk?.usage);
-  const preference = selected ? preferences[selected.nodeId] : undefined;
-  const title = selected ? preference?.alias || selected.displayName : "";
   const go = (node: AgentNode, section = "overview") => onOpenNode(node.nodeId, section);
-  const readings = [
-    { resource: "cpu", label: "CPU", value: percent(known(metrics?.cpu.usagePercent)), detail: `${known(metrics?.cpu.logicalCores) ?? "—"} ${t("overview.cores")}` },
-    { resource: "memory", label: t("global.memory"), value: percent(memory?.usedPercent), detail: `${formatBytes(memory?.usedBytes)} / ${formatBytes(memory?.totalBytes)}` },
-    { resource: "disk", label: t("global.disk"), value: percent(disk?.usedPercent), detail: `${formatBytes(disk?.usedBytes)} / ${formatBytes(disk?.totalBytes)}` },
-  ];
+  const freshSample = (node: AgentNode) => {
+    const sample = samples[node.nodeId];
+    return online(node) && sample?.nodeId === node.nodeId && sample.generation === node.generation && sample.activeGeneration === node.generation && sample.nodeStatus === "online" && Date.parse(sample.leaseValidUntil) > now() ? sample : undefined;
+  };
+  const buildReadings = (node: AgentNode) => {
+    const metrics = freshSample(node)?.metrics;
+    const memory = known(metrics?.memory), rootDisk = metrics?.disk.mounts.find(mount => mount.mountpoint === "/");
+    const disk = known(rootDisk?.usage);
+    return [
+      { resource: "cpu", label: "CPU", value: percent(known(metrics?.cpu.usagePercent)), detail: `${known(metrics?.cpu.logicalCores) ?? "—"} ${t("overview.cores")}` },
+      { resource: "memory", label: t("global.memory"), value: percent(memory?.usedPercent), detail: `${formatBytes(memory?.usedBytes)} / ${formatBytes(memory?.totalBytes)}` },
+      { resource: "disk", label: t("global.disk"), value: percent(disk?.usedPercent), detail: `${formatBytes(disk?.usedBytes)} / ${formatBytes(disk?.totalBytes)}` },
+    ];
+  };
+  const frontPoints = frontIds.map(id => points.find(point => point.node.nodeId === id)).filter(point => point != null);
   return <ManagementPage className="global-overview" aria-labelledby="global-title">
     <div ref={host} className="global-page-content">
       <header className="global-heading"><div><h1 id="global-title">{t("global.title")}</h1></div><Button variant="secondary" disabled={busy} onClick={() => setEpoch(value => value + 1)}><RefreshCw size={16} />{t("global.refresh")}</Button></header>
@@ -227,14 +250,25 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
             status={selectedPoint ? t(`global.continent.${selectedPoint.place.continent}`) : undefined}>
           </Card>
           <aside className="global-side" aria-label={t("global.currentNode")}>
-            {selected ? <Card className="global-node-card" data-node-id={selected.nodeId} title={null}>
+            {points.length ? <Card className="global-node-card" title={null}>
               <dl className="global-stats">
                 {[{ id: "nodes", label: t("global.nodes"), value: visible.length }, { id: "online", label: t("global.online"), value: visible.filter(online).length }, { id: "countries", label: t("global.countriesShort"), value: new Set(points.map(point => point.code)).size }, { id: "continents", label: t("global.continentsShort"), value: new Set(points.map(point => point.place.continent)).size }].map(stat => <div className="global-stat" key={stat.id}><dt>{stat.label}</dt><dd><AnimatedCounter value={stat.value} animateOnView /></dd></div>)}
               </dl>
               <Separator className="global-stats-separator" />
-              <h3 className="global-node-heading"><span className="global-node-title"><CountryLogo country={selected.country} /><button type="button" className="global-node-name" onClick={() => go(selected)}><TextMorph>{title}</TextMorph></button><NodeLogo icon={preference?.icon} platform={metrics?.system.platform.value} os={metrics?.system.os.value} /></span></h3>
-              <p className="global-node-description">{`${online(selected) ? t("global.online") : selected.agentId ? t("global.offline") : t("global.pending")}${!fresh ? ` · ${t("global.noCurrentMetrics")}` : ""} · ${selectedPoint ? `${selectedPoint.label}${selectedPoint.label === countryName(selectedPoint.code) ? "" : `, ${countryName(selectedPoint.code)}`} · ${t(`global.continent.${selectedPoint.place.continent}`)}` : t("country.unknown")}`}</p>
-              <div className="global-readings">{readings.map(reading => <ResourceReading key={reading.resource} resource={reading.resource} label={reading.label} value={reading.value} detail={reading.detail} />)}</div>
+              <div className="global-matrix">
+                <AnimatePresence mode="popLayout">
+                  {frontPoints.map(point => {
+                    const node = point.node, preference = preferences[node.nodeId], live = !!freshSample(node);
+                    return <motion.section key={node.nodeId} className="global-cell" data-node-id={node.nodeId} data-focused={node.nodeId === selected?.nodeId || undefined}
+                      layout={!reduced} initial={{ opacity: 0, scale: .96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, transition: { duration: motionTokens.duration.exit, ease: [...motionTokens.ease.exit] as [number, number, number, number] } }}
+                      transition={{ layout: motionTokens.spring.smooth, duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] as [number, number, number, number] }}>
+                      <div className="global-cell-head"><CountryLogo country={node.country} /><button type="button" className="global-cell-name" onClick={() => go(node)}>{preference?.alias || node.displayName}</button></div>
+                      <p className="global-cell-desc">{`${online(node) ? t("global.online") : node.agentId ? t("global.offline") : t("global.pending")}${!live ? ` · ${t("global.noCurrentMetrics")}` : ""} · ${point.label}${point.label === countryName(point.code) ? "" : `, ${countryName(point.code)}`}`}</p>
+                      <div className="global-readings">{buildReadings(node).map(reading => <ResourceReading key={reading.resource} resource={reading.resource} label={reading.label} value={reading.value} detail={reading.detail} />)}</div>
+                    </motion.section>;
+                  })}
+                </AnimatePresence>
+              </div>
             </Card> : <EmptyState icon={<Server />} title={t("global.empty")} description={t("global.emptyHint")} />}
             {!points.length && visible.length ? <Alert tone="info" title={t("global.waitingLocation")}>{t("global.locationHint")}</Alert> : null}
             {visible.length > points.length ? <Card title={t("global.unlocated")} description={t("global.locationHint")}><div className="global-unlocated">{visible.filter(node => !points.some(point => point.node.nodeId === node.nodeId)).map(node => <Button key={node.nodeId} variant="ghost" onClick={() => go(node, "settings")}>{preferences[node.nodeId]?.alias || node.displayName}<ArrowUpRight size={14} /></Button>)}</div></Card> : null}
