@@ -3,7 +3,7 @@
 .global-heading h1 { margin: 0 0 8px; }
 .global-stats { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; margin: 0; padding: 0; }
 .global-stats-separator { margin-block: 12px; }
-.global-matrix { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.global-matrix { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-right: 4px; }
 .global-cell { min-width: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-panel); background: var(--surface); }
 .global-cell[data-focused] { border-color: var(--accent); }
 .global-cell-head { display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 8px; }

@@ -54,7 +54,7 @@ const root=path.resolve(__dirname,'../..'),artifacts=path.join(root,'.build/glob
   assert.ok(labelGeometry.inside);assert.ok(labelGeometry.anchor.startsWith('--cobe-fleet-'));
   const labels=await page.locator('.workspace-nav button').allTextContents();assert.equal(labels.indexOf('Global overview')+1,labels.indexOf('Settings'),'Navigation places the new page immediately above personal settings');
   await page.locator('.global-cell[data-focused] [data-resource="cpu"] .resource-gauge[data-state="known"]').waitFor();assert.equal(await page.locator('.global-cell[data-focused] [data-resource="cpu"] .resource-gauge strong').textContent(),'0.0%','A real zero CPU sample is not an unknown');
-  const cellCount=await page.locator('.global-cell').count();assert.ok(cellCount>=1&&cellCount<=6,'Matrix shows at most six in-view VPS at once');
+  const cellCount=await page.locator('.global-cell').count();assert.ok(cellCount>=4&&cellCount<=24,'Matrix lists the in-view VPS without a display cap');assert.equal(await page.locator('.global-matrix-scroll').count(),1,'Matrix scrolls inside its own region');
   const first=await page.locator('.global-cell[data-focused]').getAttribute('data-node-id');await page.waitForFunction(id=>document.querySelector('.global-cell[data-focused]')?.getAttribute('data-node-id')!==id,first,{timeout:30000});
   assert.equal(await page.locator('.global-cell[data-focused] .resource-gauge[data-state="known"]').count(),2,'Tour handoff reuses prefetched CPU and memory metrics instead of clearing the card');
   assert.equal(await page.evaluate(()=>window.__cobeAudit.created),3,'Touring/config updates preserve native WebGL instance');

@@ -11,6 +11,7 @@ import { AnimatedCounter } from "./arc/animated-counter/animated-counter";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { motionTokens } from "./arc/motion-tokens";
 import { Separator } from "./ui/separator";
+import { ScrollArea } from "./arc/scroll-area/scroll-area";
 import { Skeleton } from "./arc/skeleton/skeleton";
 import { EmptyState } from "./arc/empty-state/empty-state";
 import { Globe } from "./ui/globe";
@@ -136,8 +137,8 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
       const members = new Set(current.filter(id => pointIds.has(id)));
       const pinned = selectedRef.current && pointIds.has(selectedRef.current) ? selectedRef.current : "";
       const raw = (id: string) => scores.current.get(id) ?? 0;
-      const ranked = latest.current.map(point => point.node.nodeId).filter(id => raw(id) > 0.2 || (members.has(id) && raw(id) > 0.02)).sort((a, b) => raw(b) + (members.has(b) ? .05 : 0) - raw(a) - (members.has(a) ? .05 : 0));
-      const chosen = new Set(ranked.slice(0, pinned ? 5 : 6));
+      const ranked = latest.current.map(point => point.node.nodeId).filter(id => raw(id) > 0.1 || (members.has(id) && raw(id) > 0.02)).sort((a, b) => raw(b) + (members.has(b) ? .05 : 0) - raw(a) - (members.has(a) ? .05 : 0));
+      const chosen = new Set(ranked);
       if (pinned) chosen.add(pinned);
       const ordered = [...chosen].sort((a, b) => raw(b) - raw(a));
       return ordered.join() === current.join() ? current : ordered;
@@ -255,6 +256,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
                 {[{ id: "nodes", label: t("global.nodes"), value: visible.length }, { id: "online", label: t("global.online"), value: visible.filter(online).length }, { id: "countries", label: t("global.countriesShort"), value: new Set(points.map(point => point.code)).size }, { id: "continents", label: t("global.continentsShort"), value: new Set(points.map(point => point.place.continent)).size }].map(stat => <div className="global-stat" key={stat.id}><dt>{stat.label}</dt><dd><AnimatedCounter value={stat.value} animateOnView /></dd></div>)}
               </dl>
               <Separator className="global-stats-separator" />
+              <ScrollArea className="global-matrix-scroll" maxHeight={640}>
               <div className="global-matrix">
                 <AnimatePresence mode="popLayout">
                   {frontPoints.map(point => {
@@ -269,6 +271,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
                   })}
                 </AnimatePresence>
               </div>
+              </ScrollArea>
             </Card> : <EmptyState icon={<Server />} title={t("global.empty")} description={t("global.emptyHint")} />}
             {!points.length && visible.length ? <Alert tone="info" title={t("global.waitingLocation")}>{t("global.locationHint")}</Alert> : null}
             {visible.length > points.length ? <Card title={t("global.unlocated")} description={t("global.locationHint")}><div className="global-unlocated">{visible.filter(node => !points.some(point => point.node.nodeId === node.nodeId)).map(node => <Button key={node.nodeId} variant="ghost" onClick={() => go(node, "settings")}>{preferences[node.nodeId]?.alias || node.displayName}<ArrowUpRight size={14} /></Button>)}</div></Card> : null}
