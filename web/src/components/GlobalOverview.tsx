@@ -229,7 +229,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
           </Card>
           <aside className="global-side" aria-label={t("global.currentNode")}>
             {selected ? <Card className="global-node-card" data-node-id={selected.nodeId}
-              title={<span className="global-node-title"><CountryLogo country={selected.country} /><span>{title}</span><NodeLogo icon={preference?.icon} platform={metrics?.system.platform.value} os={metrics?.system.os.value} /></span>}
+              title={<span className="global-node-title"><CountryLogo country={selected.country} /><button type="button" className="global-node-name" onClick={() => go(selected)}>{title}</button><NodeLogo icon={preference?.icon} platform={metrics?.system.platform.value} os={metrics?.system.os.value} /></span>}
               description={selectedPoint ? `${selectedPoint.label}${selectedPoint.label === countryName(selectedPoint.code) ? "" : `, ${countryName(selectedPoint.code)}`} · ${t(`global.continent.${selectedPoint.place.continent}`)}` : t("country.unknown")}
               >
               <div className="global-node-state"><span>{online(selected) ? t("global.online") : selected.agentId ? t("global.offline") : t("global.pending")}</span>{!fresh ? <span>{t("global.noCurrentMetrics")}</span> : null}</div>
