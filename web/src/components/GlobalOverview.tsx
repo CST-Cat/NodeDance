@@ -164,16 +164,16 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   const selectedRef = useRef(selected?.nodeId); selectedRef.current = selected?.nodeId;
   const tour = useRef({ code: "", since: 0, checked: 0, cursors: new Map<string, number>(), visited: new Map<string, number>() });
   const locationKeys = [...new Set(points.map(point => point.id))].sort().join(",");
-  const markers = useMemo<NonNullable<COBEOptions["markers"]>>(() => locationKeys ? locationKeys.split(",").map(id => ({ location: points.find(point => point.id === id)!.place.location as [number, number], size: 0.06, id: `fleet-${id}` })) : [], [locationKeys]);
+  const markers = useMemo<NonNullable<COBEOptions["markers"]>>(() => locationKeys ? locationKeys.split(",").map(id => ({ location: points.find(point => point.id === id)!.place.location as [number, number], size: 0.03, id: `fleet-${id}` })) : [], [locationKeys]);
   const hub = selectedPoint?.id;
   const scores = useRef(new Map<string, number>());
   const [frontIds, setFrontIds] = useState<string[]>([]);
+  const [arcIds, setArcIds] = useState<string[]>([]);
+  const arcSet = useRef(new Set<string>());
   const arcs = useMemo<COBEOptions["arcs"]>(() => {
     if (!hub || !selectedPoint) return [];
-    const frontPlaces = new Map<string, [number, number]>();
-    for (const id of frontIds) { const point = points.find(candidate => candidate.node.nodeId === id); if (point && point.id !== hub) frontPlaces.set(point.id, point.place.location as [number, number]); }
-    return [...frontPlaces].map(([id, location]) => ({ from: location, to: selectedPoint.place.location as [number, number], id: `fleet-${id}-${hub}` }));
-  }, [points, frontIds, hub, selectedPoint]);
+    return arcIds.filter(id => id !== hub).flatMap(id => { const point = points.find(candidate => candidate.id === id); return point ? [{ from: point.place.location as [number, number], to: selectedPoint.place.location as [number, number], id: `fleet-${id}-${hub}` }] : []; });
+  }, [points, hub, selectedPoint, arcIds]);
   useEffect(() => {
     const update = () => setFrontIds(current => {
       const pointIds = new Set(latest.current.map(point => point.node.nodeId));
@@ -192,10 +192,17 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   }, [locationKeys]);
   const labels = useRef(new Map<string, HTMLSpanElement>());
   const onFrame = useCallback((state: { phi: number; theta: number }) => {
+    const placeScores = new Map<string, number>();
     for (const point of latest.current) {
       const label = labels.current.get(point.node.nodeId);
       if (label) label.style.visibility = frontScore(point.place.location, state.phi, state.theta) > 0.1 ? "visible" : "hidden";
+      const score = frontScore(point.place.location, state.phi, state.theta);
+      if (score > (placeScores.get(point.id) ?? -Infinity)) placeScores.set(point.id, score);
     }
+    const hubPlace = latest.current.find(point => point.node.nodeId === selectedRef.current)?.id;
+    const next = new Set<string>();
+    for (const [id, score] of placeScores) { if (id !== hubPlace && (score > 0 || (arcSet.current.has(id) && score > -0.01))) next.add(id); }
+    if (next.size !== arcSet.current.size || [...next].some(id => !arcSet.current.has(id))) { arcSet.current = next; setArcIds([...next]); }
     const stamp = performance.now(), memory = tour.current;
     if (stamp - memory.checked < 500 || document.hidden) return;
     memory.checked = stamp;

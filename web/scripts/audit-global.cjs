@@ -39,7 +39,7 @@ const root=path.resolve(__dirname,'../..'),artifacts=path.join(root,'.build/glob
   await page.locator(`.global-orbit[data-metrics-count="${nodes.length}"]`).waitFor();
   await page.waitForFunction(()=>{const canvas=document.querySelector('.global-orbit canvas');return canvas&&canvas.width>100&&getComputedStyle(canvas).opacity==='1'});
   assert.equal(await page.locator('.global-globe-fallback').count(),0,'Use the actual WebGL globe');
-  await page.waitForFunction(({codes,ids,placeCount})=>{const place=id=>codes[ids.indexOf(id)%codes.length];const front=new Set([...document.querySelectorAll('.global-cell')].map(cell=>place(cell.getAttribute('data-node-id'))));const focused=document.querySelector('.global-cell[data-focused]');const expected=front.size-(focused&&front.has(place(focused.getAttribute('data-node-id')))?1:0);return window.__cobeAudit.markers===placeCount&&expected>=1&&window.__cobeAudit.arcs===expected},{codes,ids:nodes.map(node=>node.nodeId),placeCount});
+  await page.waitForFunction(placeCount=>window.__cobeAudit.markers===placeCount&&window.__cobeAudit.arcs>=1&&window.__cobeAudit.arcs<=placeCount-1,placeCount);
   const render=await page.locator('.global-orbit canvas').evaluate(c=>{
     const g=c.getContext('webgl2'),state=window.__cobeAudit;
     const uniforms=[...state.programs].flatMap(p=>Array.from({length:g.getProgramParameter(p,g.ACTIVE_UNIFORMS)},(_,i)=>{const n=g.getActiveUniform(p,i).name,v=g.getUniform(p,g.getUniformLocation(p,n));return typeof v==='number'?v:Array.from(v)})).flat();
