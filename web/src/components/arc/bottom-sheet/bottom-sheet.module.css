@@ -1,4 +1,4 @@
-.overlay { position: fixed; inset: 0; z-index: 50; background: oklch(16% 0 0 / .34); }
+.overlay { position: fixed; inset: 0; width: 100vw; height: 100dvh; z-index: 50; background: oklch(16% 0 0 / .34); }
 :global(:root[data-theme="dark"]) .overlay { background: oklch(0% 0 0 / .52); }
 /* While it leaves, nothing underneath is blocked and the sheet cannot be grabbed again.
    Radix sets pointer-events: auto inline on the overlay, so only !important lets a click reach the trigger and reverse the exit. */
