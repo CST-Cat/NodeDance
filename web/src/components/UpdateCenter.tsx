@@ -642,7 +642,16 @@ export default function UpdateCenter() {
                             </div>
                           ) : null}
                           {job.error ? (
-                            <Alert tone="danger" title={t("management.error")}>
+                            <Alert
+                              tone={
+                                job.status === "rolled_back" ? "info" : "danger"
+                              }
+                              title={
+                                job.status === "rolled_back"
+                                  ? t("management.notice")
+                                  : t("management.error")
+                              }
+                            >
                               {job.error}
                             </Alert>
                           ) : null}
