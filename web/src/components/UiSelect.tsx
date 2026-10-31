@@ -16,10 +16,11 @@ export default function UiSelect({ modelValue, value, menuClass, modelModifiers,
     const original = values.find(value => String(value) === next);
     const result = modelModifiers?.number ? Number(next) : original ?? next;
     onUpdateModelValue?.(result);
+    attrs.onChange?.({ target: { value: next }, currentTarget: { value: next } });
   };
   return <span className="ui-select product-arc arc-ui" style={attrs.style}>
-    <Select value={String(modelValue ?? value ?? "")} options={selectOptions(children)} nativeChildren={children}
-      nativeProps={attrs} disabled={attrs.disabled} required={attrs.required} name={attrs.name}
+    <Select value={String(modelValue ?? value ?? "")} options={selectOptions(children)}
+      disabled={attrs.disabled} name={attrs.name}
       aria-label={attrs["aria-label"]} className="u031-btn" onValueChange={change} />
   </span>;
 }
