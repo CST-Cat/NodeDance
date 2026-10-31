@@ -6,6 +6,7 @@ import type { Metric, MetricsView } from "../metrics-contract";
 import { formatBytes } from "../metric-format";
 import { locale, t } from "../i18n";
 import locations from "../country-locations.json";
+import countryCodes from "../country-codes.json";
 import { ManagementPage, Button, Card, Alert } from "./ManagementUI";
 import { AnimatedCounter } from "./arc/animated-counter/animated-counter";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -31,6 +32,10 @@ export function frontScore(location: number[], phi: number, theta: number) {
 }
 function countryName(code: string) {
   return new Intl.DisplayNames([locale.value], { type: "region" }).of(code) ?? code;
+}
+const countryShorts: Record<string, string> = countryCodes;
+function countryShort(code: string) {
+  return countryShorts[code] ?? code;
 }
 function known<T>(metric?: Metric<T>): T | null {
   return metric?.status === "known" && metric.value != null ? metric.value : null;
@@ -265,7 +270,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
                       layout={!reduced} initial={{ opacity: 0, scale: .96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, transition: { duration: motionTokens.duration.exit, ease: [...motionTokens.ease.exit] as [number, number, number, number] } }}
                       transition={{ layout: motionTokens.spring.smooth, duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] as [number, number, number, number] }}>
                       <div className="global-cell-head"><CountryLogo country={node.country} /><button type="button" className="global-cell-name" onClick={() => go(node)}>{preference?.alias || node.displayName}</button></div>
-                      <p className="global-cell-desc">{`${online(node) ? t("global.online") : node.agentId ? t("global.offline") : t("global.pending")}${!live ? ` · ${t("global.noCurrentMetrics")}` : ""} · ${point.label}${point.label === countryName(point.code) ? "" : `, ${countryName(point.code)}`}`}</p>
+                      <p className="global-cell-desc">{`${!live ? `${t("global.noCurrentMetrics")} · ` : ""}${point.label === countryName(point.code) ? countryShort(point.code) : `${point.label}, ${countryShort(point.code)}`}`}</p>
                       <div className="global-readings">{buildReadings(node).map(reading => <ResourceReading key={reading.resource} resource={reading.resource} label={reading.label} value={reading.value} detail={reading.detail} />)}</div>
                     </motion.section>;
                   })}
