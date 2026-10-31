@@ -6,6 +6,22 @@
 
 ### 简体中文
 
+## [0.1.60]
+
+### English
+
+- Add peer file transfer: send files from any node to any other node or to Core from the file manager's share menu, relayed by Core with batch workers, idempotent batch resume and SHA-256 verification, including nodes without public addresses.
+- Add a beta update channel: entering beta as the target version pulls origin/main in the installed source checkout, rebuilds, installs and restarts Core with health verification, restoring the previous binary when verification fails.
+- Polish dialogs and the update center: the transfer dialog uses a single-column form whose action morphs into a check on completion without changing height, dialog close buttons drop their boxed frame, and update history records keep even spacing at both ends.
+- Track globe arcs from the frame loop against the true horizon so arcs appear and retire exactly with their nodes.
+
+### 简体中文
+
+- 新增文件对传：在文件管理的分享菜单中把任意节点的文件直接发送到其他节点或 Core，由 Core 中继传输，支持批量并行、整批幂等续跑与 SHA-256 校验，无公网地址的节点同样可达。
+- 新增 beta 更新通道：在更新中心把目标版本填为 beta 后，自动在已安装的源码目录拉取 origin/main、重新构建、安装并重启 Core，带健康验证，验证失败时自动恢复上一个二进制。
+- 打磨弹窗与更新中心：对传弹窗改为单列表单，完成后主按钮原地变为对勾且弹窗高度不变；弹窗关闭键去掉方框；更新记录列表首尾间距与中间一致。
+- 地球仪弧线改为由帧循环按真实地平线追踪，弧线与节点的出现和消失严格同步。
+
 ## [0.1.59]
 
 ### English
