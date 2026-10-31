@@ -17,7 +17,7 @@
 /* Line height sits on the text itself, so a page-level heading reset cannot shrink the title and pull the close button off its line. */
 .title .swap { line-height: var(--leading-body); }
 /* A compact icon button: quick press, spring release. The negative margin centres it on the title's first line. */
-.close { flex: 0 0 auto; margin-block: calc((var(--text-lg) * var(--leading-body) - var(--space-8)) / 2); display: grid; place-items: center; width: var(--space-8); height: var(--space-8); border: 1px solid var(--border); border-radius: var(--radius-control); background: color-mix(in oklab, var(--surface-muted) 50%, transparent); color: var(--text-secondary); cursor: pointer; transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), transform var(--duration-spring) var(--ease-spring); }
+.close { flex: 0 0 auto; margin-block: calc((var(--text-lg) * var(--leading-body) - var(--space-8)) / 2); display: grid; place-items: center; width: var(--space-8); height: var(--space-8); border: 1px solid transparent; border-radius: var(--radius-control); background: transparent; color: var(--text-secondary); cursor: pointer; transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), transform var(--duration-spring) var(--ease-spring); }
 @media (hover: hover) and (pointer: fine) { .close:hover { background: var(--surface-muted); color: var(--foreground); } }
 .close:active { transform: scale(.96); transition: background-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), transform var(--duration-instant) var(--ease-standard); }
 .bodyScroll { flex: 1 1 auto; min-height: 0; }

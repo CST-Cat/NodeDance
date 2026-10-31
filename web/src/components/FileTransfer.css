@@ -7,6 +7,7 @@
   flex-direction: column;
   gap: 20px;
   min-width: 0;
+  margin-top: calc(var(--space-3) * -1);
 }
 
 .file-transfer-field {
