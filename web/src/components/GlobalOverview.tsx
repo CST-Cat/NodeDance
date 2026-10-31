@@ -265,12 +265,12 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
               <div className="global-matrix">
                 <AnimatePresence mode="popLayout">
                   {frontPoints.map(point => {
-                    const node = point.node, preference = preferences[node.nodeId], live = !!freshSample(node);
+                    const node = point.node, preference = preferences[node.nodeId];
                     return <motion.section key={node.nodeId} className="global-cell" data-node-id={node.nodeId} data-focused={node.nodeId === selected?.nodeId || undefined}
                       layout={!reduced} initial={{ opacity: 0, scale: .96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, transition: { duration: motionTokens.duration.exit, ease: [...motionTokens.ease.exit] as [number, number, number, number] } }}
                       transition={{ layout: motionTokens.spring.smooth, duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] as [number, number, number, number] }}>
                       <div className="global-cell-head"><CountryLogo country={node.country} /><button type="button" className="global-cell-name" onClick={() => go(node)}>{preference?.alias || node.displayName}</button></div>
-                      <p className="global-cell-desc">{`${!live ? `${t("global.noCurrentMetrics")} · ` : ""}${point.label === countryName(point.code) ? countryShort(point.code) : `${point.label}, ${countryShort(point.code)}`}`}</p>
+                      <p className="global-cell-desc">{point.label === countryName(point.code) ? countryShort(point.code) : `${point.label}, ${countryShort(point.code)}`}</p>
                       <div className="global-readings">{buildReadings(node).map(reading => <ResourceReading key={reading.resource} resource={reading.resource} label={reading.label} value={reading.value} detail={reading.detail} />)}</div>
                     </motion.section>;
                   })}
