@@ -1,9 +1,92 @@
+.file-transfer-dialog {
+  width: min(30rem, calc(100% - 2rem));
+}
+
+.file-transfer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+.file-transfer-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.file-transfer-label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.file-transfer-field > :not(.file-transfer-label) {
+  width: 100%;
+}
+
 .file-transfer-path {
   display: flex;
   gap: 8px;
-  align-items: center;
+  align-items: stretch;
 }
 
 .file-transfer-path > :first-child {
   flex: 1;
+  min-width: 0;
+}
+
+.file-transfer-files-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.file-transfer-count {
+  font-weight: 400;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.file-transfer-files {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  max-height: 168px;
+  overflow-y: auto;
+}
+
+.file-transfer-files li {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 7px 0;
+}
+
+.file-transfer-files li + li {
+  border-top: 1px solid var(--line);
+}
+
+.file-transfer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-transfer-size {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.file-transfer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }

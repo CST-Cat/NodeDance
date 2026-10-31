@@ -7,8 +7,6 @@ import type { FileManager } from "../file-manager";
 import { Button, Input, Select } from "./ManagementUI";
 import { Dialog, DialogContent } from "./arc/dialog/dialog";
 import { Alert } from "./arc/alert/alert";
-import { SettingsGroup } from "./SettingsGroup";
-import { ShareSettingRow } from "./FileShares";
 import NodeFiles from "./NodeFiles";
 import "./FileTransfer.css";
 
@@ -48,19 +46,27 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
     }
   }
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent container={container} title={x("title")} className="file-transfer-dialog">
-    {error && <Alert tone="danger" title={error} />}
-    {done && <Alert tone="success" title={x("done")} />}
-    <SettingsGroup>
-      <ShareSettingRow label={x("targetNode")}><Select label="" aria-label={x("targetNode")} value={targetId} disabled={busy || done} onValueChange={value => { setTargetId(value); }} options={nodes.map(node => ({ value: node.nodeId, label: node.displayName }))} /></ShareSettingRow>
-      <ShareSettingRow label={x("targetDirectory")}><div className="file-transfer-path"><Input label="" aria-label={x("targetDirectory")} value={targetPath} disabled={busy || done} onChange={event => setTargetPath(event.target.value)} /><Button type="button" variant="secondary" disabled={busy || done || !targetNode} onClick={() => setPicker(true)}>{x("browse")}</Button></div></ShareSettingRow>
-    </SettingsGroup>
-    <SettingsGroup>
-      <div className="share-file-row"><span>{x("files")}</span><span>{files.length}</span></div>
-      {files.map(file => <div className="share-file-row" key={file.path}><span>{file.path}</span><span>{size(file.size)}</span></div>)}
-    </SettingsGroup>
-    <div className="share-actions">
-      {busy && <Button variant="secondary" onClick={() => pending.current?.abort()}>{t("dialog.cancel")}</Button>}
-      {done ? <Button onClick={onClose}>{t("dialog.confirm")}</Button> : <Button disabled={busy || !targetNode || !targetPath.startsWith("/")} loading={busy} onClick={() => void start()}>{x("start")}</Button>}
+    <div className="file-transfer">
+      {error && <Alert tone="danger" title={error} />}
+      {done && <Alert tone="success" title={x("done")} />}
+      <div className="file-transfer-field">
+        <span className="file-transfer-label">{x("targetNode")}</span>
+        <Select label="" aria-label={x("targetNode")} value={targetId} disabled={busy || done} onValueChange={value => { setTargetId(value); }} options={nodes.map(node => ({ value: node.nodeId, label: node.displayName }))} />
+      </div>
+      <div className="file-transfer-field">
+        <span className="file-transfer-label">{x("targetDirectory")}</span>
+        <div className="file-transfer-path"><Input label="" aria-label={x("targetDirectory")} value={targetPath} disabled={busy || done} onChange={event => setTargetPath(event.target.value)} /><Button type="button" variant="secondary" disabled={busy || done || !targetNode} onClick={() => setPicker(true)}>{x("browse")}</Button></div>
+      </div>
+      <div>
+        <div className="file-transfer-files-head"><span>{x("files")}</span><span className="file-transfer-count">{files.length}</span></div>
+        <ul className="file-transfer-files">
+          {files.map(file => <li key={file.path}><span className="file-transfer-name">{file.path}</span><span className="file-transfer-size">{size(file.size)}</span></li>)}
+        </ul>
+      </div>
+      <div className="file-transfer-actions">
+        {busy && <Button variant="secondary" onClick={() => pending.current?.abort()}>{t("dialog.cancel")}</Button>}
+        {done ? <Button onClick={onClose}>{t("dialog.confirm")}</Button> : <Button disabled={busy || !targetNode || !targetPath.startsWith("/")} loading={busy} onClick={() => void start()}>{x("start")}</Button>}
+      </div>
     </div>
     {picker && targetNode && <NodeFiles nodeId={targetNode.nodeId} nodeName={targetNode.displayName} path={targetPath} directoryPicker dialog onClose={() => setPicker(false)} onChoose={chosen => { setTargetPath(chosen); setPicker(false); }} />}
   </DialogContent></Dialog>;
