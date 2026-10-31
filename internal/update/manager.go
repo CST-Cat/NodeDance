@@ -620,13 +620,17 @@ func (m *Manager) run(job Job, release Release) {
 		if err := m.start(ctx, job); err != nil {
 			return err
 		}
-		if err := m.save(&job, "verifying"); err != nil {
-			return err
-		}
-		healthCtx, healthCancel := context.WithTimeout(ctx, m.healthTimeout)
-		defer healthCancel()
-		if err := m.verify(healthCtx, job.Component, job.Target, job.AgentGeneration); err != nil {
-			return err
+		// A development runtime has no release lineage to verify against:
+		// once its replacement is installed and started, the update is done.
+		if job.Current != "dev" {
+			if err := m.save(&job, "verifying"); err != nil {
+				return err
+			}
+			healthCtx, healthCancel := context.WithTimeout(ctx, m.healthTimeout)
+			defer healthCancel()
+			if err := m.verify(healthCtx, job.Component, job.Target, job.AgentGeneration); err != nil {
+				return err
+			}
 		}
 		if target.ComposeFile != "" {
 			if err := m.writeCompose(ctx, target, job.Component, job.Target); err != nil {

@@ -286,6 +286,37 @@ func TestFailedHealthAutomaticallyRollsBack(t *testing.T) {
 		t.Fatal("rollback version mismatch")
 	}
 }
+func TestDevelopmentUpdateSkipsVerificationAndStaysInstalled(t *testing.T) {
+	m, _, running := nativeFixture(t)
+	binary := m.Config.Targets["core"].Binary
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\necho NodeDance dev\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	original := m.command
+	m.command = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		raw, err := original(ctx, name, args...)
+		if name == "systemctl" && args[0] == "start" {
+			version, _ := execute(ctx, binary, "--version")
+			if strings.Contains(string(version), "core-v0.1.9") {
+				running.Store(false)
+			}
+		}
+		return raw, err
+	}
+	job, err := m.Apply(context.Background(), Request{Component: "core", Confirm: true}, "development-unverified-001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	job = waitJob(t, m, job.ID)
+	if job.Status != "succeeded" || job.Stage != "complete" || job.Progress != 1 {
+		t.Fatalf("%+v", job)
+	}
+	version, _ := m.current(context.Background(), "core")
+	if version != "core-v0.1.9" {
+		t.Fatal("development update was rolled back despite verification being skipped")
+	}
+}
+
 func TestInterruptedDownloadRecoveryDoesNotStopRuntime(t *testing.T) {
 	m, _, running := nativeFixture(t)
 	job := Job{ID: strings.Repeat("a", 32), Component: "core", Current: "core-v0.1.8", Target: "core-v0.1.9", Status: "running", Stage: "downloading"}
