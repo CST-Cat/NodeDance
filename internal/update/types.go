@@ -14,6 +14,7 @@ import (
 )
 
 const Repository = "CST-Cat/NodeDance"
+const ChannelBeta = "beta"
 
 var tagPattern = regexp.MustCompile(`^(core|agent)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 var idPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
@@ -42,6 +43,7 @@ type Target struct {
 	Binary           string `json:"binary,omitempty"`
 	Unit             string `json:"unit,omitempty"`
 	DataDir          string `json:"dataDir"`
+	SourceDir        string `json:"sourceDir,omitempty"`
 	HealthCAFile     string `json:"healthCaFile,omitempty"`
 	HealthServerName string `json:"healthServerName,omitempty"`
 	HealthURL        string `json:"healthUrl,omitempty"`
@@ -91,6 +93,7 @@ type Job struct {
 	OldCompose      string     `json:"-"`
 	Snapshot        bool       `json:"-"`
 	Switched        bool       `json:"-"`
+	Source          bool       `json:"-"`
 	IdempotencyKey  string     `json:"-"`
 }
 
@@ -104,11 +107,12 @@ type journal struct {
 	OldCompose     string
 	Snapshot       bool
 	Switched       bool
+	Source         bool
 	IdempotencyKey string
 }
 
 func (j Job) record() journal {
-	return journal{Job: j, AgentGeneration: j.AgentGeneration, OldContainer: j.OldContainer, NewContainer: j.NewContainer, OldBinary: j.OldBinary, OldCompose: j.OldCompose, Snapshot: j.Snapshot, Switched: j.Switched, IdempotencyKey: j.IdempotencyKey}
+	return journal{Job: j, AgentGeneration: j.AgentGeneration, OldContainer: j.OldContainer, NewContainer: j.NewContainer, OldBinary: j.OldBinary, OldCompose: j.OldCompose, Snapshot: j.Snapshot, Switched: j.Switched, Source: j.Source, IdempotencyKey: j.IdempotencyKey}
 }
 
 func (j journal) job() Job {
@@ -119,6 +123,7 @@ func (j journal) job() Job {
 	j.Job.OldCompose = j.OldCompose
 	j.Job.Snapshot = j.Snapshot
 	j.Job.Switched = j.Switched
+	j.Job.Source = j.Source
 	j.Job.IdempotencyKey = j.IdempotencyKey
 	return j.Job
 }
@@ -126,7 +131,11 @@ func Validate(r Request) error {
 	if r.Component != "core" && r.Component != "agent" {
 		return errors.New("component must be core or agent")
 	}
-	if r.Version != "" && !ValidTag(r.Component, r.Version) {
+	if r.Version == ChannelBeta {
+		if r.Component != "core" {
+			return errors.New("the beta channel is only available for Core")
+		}
+	} else if r.Version != "" && !ValidTag(r.Component, r.Version) {
 		return errors.New("invalid component release tag")
 	}
 	if r.JobID != "" && !idPattern.MatchString(r.JobID) {

@@ -42,6 +42,8 @@ install:
 	@test -x .build/nodedance || { printf '%s\n' 'run make build before make install' >&2; exit 1; }
 	install -d -m 0755 "$(DESTDIR)$(BINDIR)"
 	install -m 0755 .build/nodedance "$(DESTDIR)$(BINDIR)/nodedance"
+	@printf '%s\n' '$(CURDIR)' > "$(DESTDIR)$(BINDIR)/.nodedance-source"
+	@chmod 0644 "$(DESTDIR)$(BINDIR)/.nodedance-source"
 
 install-agent:
 	@test -x .build/nodedance-agent || { printf '%s\n' 'run make build before make install-agent' >&2; exit 1; }

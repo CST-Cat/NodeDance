@@ -167,7 +167,7 @@ func New(config Config, resolver Resolver) (*Manager, error) {
 							err = errors.New("rollback parent journal is missing")
 						}
 					}
-					if err == nil {
+					if err == nil && !(job.Source && (job.Stage == "pulling" || job.Stage == "building")) {
 						err = m.rollback(ctx, &recovery)
 					}
 				}
@@ -278,6 +278,9 @@ func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
 	if err := Validate(r); err != nil {
 		return Check{}, err
 	}
+	if r.Version == ChannelBeta {
+		return m.checkSource(ctx, r)
+	}
 	release, err := m.Resolver.Resolve(ctx, r.Component, r.Version)
 	if err != nil {
 		return Check{}, err
@@ -293,6 +296,51 @@ func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
 		}
 	}
 	result.Available = result.Current != "" && (result.Current == "dev" || Compare(release.Version, result.Current) > 0)
+	return result, nil
+}
+func (m *Manager) checkSource(ctx context.Context, r Request) (Check, error) {
+	result := Check{Component: r.Component, Latest: ChannelBeta}
+	target, configured := m.Config.Targets[r.Component]
+	result.Mode = target.Mode
+	if !configured {
+		result.Reason = "the beta channel requires the managed Core service"
+		return result, nil
+	}
+	if target.SourceDir == "" {
+		result.Reason = "NodeDance source checkout was not found on this host"
+		return result, nil
+	}
+	if filepath.Base(filepath.Dir(target.Binary)) != "bin" {
+		result.Reason = "the installed Core binary is not under a bin directory"
+		return result, nil
+	}
+	result.Configured = true
+	current, err := m.current(ctx, r.Component)
+	if err != nil {
+		return result, err
+	}
+	result.Current = current
+	local, err := gitHead(ctx, target.SourceDir)
+	if err != nil {
+		return result, err
+	}
+	remote, err := gitRemoteMain(ctx, target.SourceDir)
+	if err != nil {
+		return result, err
+	}
+	if local == remote {
+		result.Reason = "source checkout already matches origin/main"
+		return result, nil
+	}
+	ancestor, err := gitIsAncestor(ctx, target.SourceDir, local, remote)
+	if err != nil {
+		return result, err
+	}
+	if !ancestor {
+		result.Reason = "source checkout has diverged from origin/main"
+		return result, nil
+	}
+	result.Available = true
 	return result, nil
 }
 func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error) {
@@ -368,7 +416,7 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 	if _, err = rand.Read(bytes[:]); err != nil {
 		return Job{}, err
 	}
-	job := Job{ID: hex.EncodeToString(bytes[:]), Component: r.Component, Mode: check.Mode, Current: check.Current, Target: check.Latest, Status: "queued", Stage: "queued", Started: time.Now().UTC(), Parent: r.JobID, IdempotencyKey: key}
+	job := Job{ID: hex.EncodeToString(bytes[:]), Component: r.Component, Mode: check.Mode, Current: check.Current, Target: check.Latest, Status: "queued", Stage: "queued", Started: time.Now().UTC(), Parent: r.JobID, Source: r.JobID == "" && r.Version == ChannelBeta, IdempotencyKey: key}
 	if err = privateDirectory(filepath.Join(m.Config.StateDir, job.ID)); err != nil {
 		return Job{}, err
 	}
@@ -388,6 +436,10 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 		defer m.workers.Done()
 		if parent.ID != "" {
 			m.runRollback(job, parent)
+			return
+		}
+		if job.Source {
+			m.runSource(job)
 			return
 		}
 		m.run(job, check.Release)
@@ -576,6 +628,117 @@ func (m *Manager) run(job Job, release Release) {
 		job.Status = "failed"
 	}
 	m.finish(&job)
+}
+func (m *Manager) runSource(job Job) {
+	ctx, cancel := context.WithTimeout(m.ctx, 20*time.Minute)
+	defer cancel()
+	job.Status = "running"
+	target := m.Config.Targets[job.Component]
+	source := target.SourceDir
+	workspace := filepath.Join(m.Config.StateDir, job.ID)
+	err := func() error {
+		if err := m.save(&job, "pulling"); err != nil {
+			return err
+		}
+		if _, err := gitOutput(ctx, source, "fetch", "origin", "main"); err != nil {
+			return err
+		}
+		if _, err := gitOutput(ctx, source, "pull", "--ff-only", "origin", "main"); err != nil {
+			return err
+		}
+		job.OldBinary = filepath.Join(workspace, "previous-binary")
+		if err := copyBinary(target.Binary, job.OldBinary); err != nil {
+			return err
+		}
+		if err := m.save(&job, "building"); err != nil {
+			return err
+		}
+		if _, err := runSourceCommand(ctx, source, "make", "build"); err != nil {
+			return err
+		}
+		if err := m.save(&job, "installing"); err != nil {
+			return err
+		}
+		prefix := filepath.Dir(filepath.Dir(target.Binary))
+		if _, err := runSourceCommand(ctx, source, "make", "install", "PREFIX="+prefix); err != nil {
+			return err
+		}
+		job.Switched = true
+		if err := m.save(&job, "restarting"); err != nil {
+			return err
+		}
+		if _, err := m.command(ctx, "systemctl", "restart", target.Unit); err != nil {
+			return err
+		}
+		if err := m.save(&job, "verifying"); err != nil {
+			return err
+		}
+		healthCtx, healthCancel := context.WithTimeout(ctx, m.healthTimeout)
+		defer healthCancel()
+		return m.verifySource(healthCtx, target)
+	}()
+	if err == nil {
+		job.Status = "succeeded"
+		job.Stage = "complete"
+		m.finish(&job)
+		return
+	}
+	job.Error = err.Error()
+	if job.Switched {
+		rollbackCtx, rollbackCancel := context.WithTimeout(context.Background(), 4*time.Minute)
+		defer rollbackCancel()
+		m.save(&job, "rolling_back")
+		if rollbackErr := m.rollbackSource(rollbackCtx, job, target); rollbackErr != nil {
+			job.Status = "rollback_failed"
+			job.Error += "; rollback: " + rollbackErr.Error()
+		} else {
+			job.Status = "rolled_back"
+			job.Stage = "rolled_back"
+		}
+	} else {
+		job.Status = "failed"
+	}
+	m.finish(&job)
+}
+func (m *Manager) rollbackSource(ctx context.Context, job Job, target Target) error {
+	if err := installBinary(job.OldBinary, target.Binary); err != nil {
+		return err
+	}
+	if _, err := m.command(ctx, "systemctl", "restart", target.Unit); err != nil {
+		return err
+	}
+	healthCtx, cancel := context.WithTimeout(ctx, m.healthTimeout)
+	defer cancel()
+	return m.verifySource(healthCtx, target)
+}
+func (m *Manager) verifySource(ctx context.Context, target Target) error {
+	for {
+		ready := false
+		req, reqErr := http.NewRequestWithContext(ctx, "GET", target.HealthURL, nil)
+		if reqErr != nil {
+			return reqErr
+		}
+		client, clientErr := healthClient(target.HealthCAFile, target.HealthServerName)
+		if clientErr != nil {
+			return clientErr
+		}
+		response, err := client.Do(req)
+		client.CloseIdleConnections()
+		if err == nil {
+			var health struct {
+				Status string `json:"status"`
+			}
+			json.NewDecoder(response.Body).Decode(&health)
+			response.Body.Close()
+			ready = response.StatusCode == 200 && health.Status == "ok"
+		}
+		if ready {
+			return nil
+		}
+		if err := pause(ctx, time.Second); err != nil {
+			return errors.New("source-built runtime failed health verification")
+		}
+	}
 }
 func copyBinary(source, destination string) error {
 	return atomicCopy(source, destination, 0700)

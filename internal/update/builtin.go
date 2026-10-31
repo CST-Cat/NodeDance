@@ -30,6 +30,14 @@ func Invoke(ctx context.Context, component, dataDir string, rpc RPC) (Response, 
 	}
 	config, container, engine, err := discover(ctx, component, dataDir)
 	if err != nil {
+		if rpc.Action == "check" && component == "core" && rpc.Request.Version == ChannelBeta {
+			reason := "NodeDance source checkout was not found on this host: " + err.Error()
+			if findSourceDir(ctx, "", dataDir, 0) != "" {
+				reason = "the beta channel requires the managed nodedance.service Core: " + err.Error()
+			}
+			raw, _ := json.Marshal(Check{Component: component, Latest: ChannelBeta, Reason: reason})
+			return Response{Status: 200, Data: raw}, nil
+		}
 		if rpc.Action == "check" {
 			release, resolveErr := NewGitHub().Resolve(ctx, component, rpc.Request.Version)
 			if resolveErr != nil {
@@ -205,6 +213,7 @@ func discover(ctx context.Context, component, dataDir string) (Config, map[strin
 			return Config{}, nil, nil, errors.New("this instance does not run the managed Core service binary")
 		}
 		target.HealthURL = "http://127.0.0.1:8180/api/v1/health"
+		target.SourceDir = findSourceDir(ctx, target.Binary, dataDir, pid)
 	}
 	if err := runtimeHealth(&target, dataDir); err != nil {
 		return Config{}, nil, nil, err
