@@ -344,3 +344,35 @@ func TestUpdateAvailabilityUsesOnlyComponentTags(t *testing.T) {
 		}
 	}
 }
+
+func TestStageProgressFollowsEachFlow(t *testing.T) {
+	flows := []struct {
+		job    Job
+		stages []string
+	}{
+		{Job{}, releaseStages},
+		{Job{Source: true}, sourceStages},
+		{Job{Parent: "parent"}, rollbackStages},
+	}
+	for _, flow := range flows {
+		job := flow.job
+		previous := -1.0
+		for _, stage := range flow.stages {
+			job.Stage = stage
+			job.Progress = stageProgress(job)
+			if job.Progress < previous || job.Progress > 1 {
+				t.Fatalf("stage %s progress %v after %v", stage, job.Progress, previous)
+			}
+			previous = job.Progress
+		}
+		if job.Progress != 1 {
+			t.Fatalf("final stage progress = %v, want 1", job.Progress)
+		}
+	}
+	frozen := Job{Stage: "switching"}
+	frozen.Progress = stageProgress(frozen)
+	frozen.Stage = "rolling_back"
+	if got := stageProgress(frozen); got != frozen.Progress {
+		t.Fatalf("rolling_back moved progress to %v, want frozen %v", got, frozen.Progress)
+	}
+}

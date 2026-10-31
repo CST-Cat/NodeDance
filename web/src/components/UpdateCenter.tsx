@@ -20,9 +20,14 @@ import {
 } from "motion/react";
 import { motionTokens } from "./arc/lib/motion-tokens";
 import { Skeleton } from "./arc/skeleton/skeleton";
+import { Progress } from "./arc/progress/progress";
 import { Button, Input, Select, Alert } from "./ManagementUI";
 import { SettingsGroup } from "./SettingsGroup";
 import { Separator } from "./ui/separator";
+function stageLabel(stage: string) {
+  const key = `updates.stage.${stage}`;
+  return t(key) === key ? stage : t(key);
+}
 function releaseItems(notes: string) {
   const sections = notes.split(/^### (?:English|简体中文)\s*$/m);
   const text = sections[locale.value === "zh-CN" ? 2 : 1] ?? notes;
@@ -109,6 +114,7 @@ export default function UpdateCenter() {
         target: string;
         status: string;
         stage: string;
+        progress: number;
         error?: string;
         started: string;
         finished?: string;
@@ -132,6 +138,23 @@ export default function UpdateCenter() {
       const checking = cell(false);
       let checkSequence = 0;
       const pollError = cell("");
+      const coreUpdated = cell(false);
+      let lastActive: Job | undefined;
+      const activeJob = derived(() =>
+        jobs.value.find((job) => !job.finished),
+      );
+      const restartImminent = derived(() => {
+        const job = activeJob.value;
+        return (
+          job?.component === "core" &&
+          ["stopping", "switching", "starting", "restarting"].includes(
+            job.stage,
+          )
+        );
+      });
+      const restartWaiting = derived(
+        () => !!pollError.value && lastActive?.component === "core",
+      );
       const error = cell(""),
         busy = cell(false),
         rollbackJob = cell("");
@@ -165,6 +188,16 @@ export default function UpdateCenter() {
           if (current === epoch) {
             jobs.value = result.jobs;
             pollError.value = "";
+            const active = result.jobs.find((job) => !job.finished);
+            if (active) lastActive = active;
+            else if (lastActive) {
+              const done = result.jobs.find(
+                (job) => job.id === lastActive!.id,
+              );
+              if (done?.component === "core" && done.status === "succeeded")
+                coreUpdated.value = true;
+              lastActive = undefined;
+            }
           }
         } catch (e) {
           if (current === epoch) pollError.value = message(e);
@@ -334,6 +367,8 @@ export default function UpdateCenter() {
         rollbackError.value = "";
         deleteJob.value = "";
         deleteError.value = "";
+        coreUpdated.value = false;
+        lastActive = undefined;
         if (timer) clearTimeout(timer);
         void history();
       });
@@ -373,9 +408,31 @@ export default function UpdateCenter() {
                   {t("management.updateTarget")}
                 </h2>
               </div>
-              {pollError.value ? (
+              {restartWaiting.value ? (
+                <Alert role="status" title={t("management.notice")}>
+                  {t("updates.restartWaiting")}
+                </Alert>
+              ) : pollError.value ? (
                 <Alert role="status" title={t("management.notice")}>
                   {pollError.value}
+                </Alert>
+              ) : null}
+              {restartImminent.value ? (
+                <Alert role="status" tone="warning" title={t("management.notice")}>
+                  {t("updates.restartImminent")}
+                </Alert>
+              ) : null}
+              {coreUpdated.value ? (
+                <Alert role="status" tone="success" title={t("management.notice")}>
+                  {t("updates.coreUpdated")}
+                  <div className="settings-section-actions">
+                    <Button
+                      variant="secondary"
+                      onClick={() => window.location.reload()}
+                    >
+                      {t("updates.refreshPage")}
+                    </Button>
+                  </div>
                 </Alert>
               ) : null}
               {error.value ? (
@@ -572,11 +629,16 @@ export default function UpdateCenter() {
                                   ? job.status
                                   : t(`task.state.${job.status}`)}
                               </span>
-                              {!job.finished &&
-                              ["queued", "running"].includes(job.status) &&
-                              job.stage !== job.status ? (
-                                <span>{job.stage}</span>
-                              ) : null}
+                            </div>
+                          ) : null}
+                          {!job.finished &&
+                          ["queued", "running"].includes(job.status) ? (
+                            <div className="update-progress">
+                              <Progress
+                                value={Math.round((job.progress ?? 0) * 100)}
+                                label={stageLabel(job.stage)}
+                                showValue
+                              />
                             </div>
                           ) : null}
                           {job.error ? (

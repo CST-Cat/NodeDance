@@ -79,6 +79,7 @@ type Job struct {
 	Target          string     `json:"target"`
 	Status          string     `json:"status"`
 	Stage           string     `json:"stage"`
+	Progress        float64    `json:"progress"`
 	Error           string     `json:"error,omitempty"`
 	Started         time.Time  `json:"started"`
 	Finished        *time.Time `json:"finished,omitempty"`

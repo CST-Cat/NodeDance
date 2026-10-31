@@ -210,15 +210,45 @@ func (m *Manager) persist(job Job) error {
 	m.jobs[job.ID] = job
 	return nil
 }
+// stageProgress maps a job's stage to its fraction complete using the
+// ordered stage sequence of the flow the job belongs to. Stages outside the
+// forward sequence (rolling_back on a failed update) keep the progress the
+// job already reached, so the reported value never moves backwards.
+var releaseStages = []string{"queued", "downloading", "stopping", "backing_up", "switching", "starting", "verifying", "complete"}
+var sourceStages = []string{"queued", "pulling", "building", "installing", "restarting", "verifying", "complete"}
+var rollbackStages = []string{"queued", "rolling_back", "rolled_back"}
+
+func stageProgress(job Job) float64 {
+	stages := releaseStages
+	switch {
+	case job.Parent != "":
+		stages = rollbackStages
+	case job.Source:
+		stages = sourceStages
+	}
+	for index, stage := range stages {
+		if stage == job.Stage {
+			if value := float64(index) / float64(len(stages)-1); value > job.Progress {
+				return value
+			}
+		}
+	}
+	return job.Progress
+}
+
 func (m *Manager) save(job *Job, stage string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	job.Stage = stage
+	job.Progress = stageProgress(*job)
 	return m.persist(*job)
 }
 func (m *Manager) finish(job *Job) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if job.Status == "succeeded" {
+		job.Progress = 1
+	}
 	now := time.Now().UTC()
 	job.Finished = &now
 	if err := m.persist(*job); err != nil {

@@ -453,6 +453,9 @@
 .preferences-page .update-record-slot:last-child .update-job {
   padding-bottom: calc(var(--workspace-space-md) + 1px);
 }
+.preferences-page .update-progress {
+  margin-top: var(--workspace-space-sm);
+}
 
 .preferences-page .update-confirm-dialog > div:first-child > button {
   width: 44px;
