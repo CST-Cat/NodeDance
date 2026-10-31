@@ -1,12 +1,12 @@
 import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { COBEOptions } from "cobe";
-import { ArrowUpRight, Globe2, RefreshCw, Server, MapPin } from "lucide-react";
+import { Globe2, Server } from "lucide-react";
 import { operationRequest, type AgentNode, type AgentNodesResponse, type DashboardPreference, type AgentMetricsResponse } from "../api";
 import type { Metric, MetricsView } from "../metrics-contract";
 import { formatBytes } from "../metric-format";
 import { locale, t } from "../i18n";
 import locations from "../country-locations.json";
-import { ManagementPage, Button, Card, Alert } from "./ManagementUI";
+import { ManagementPage, Card, Alert } from "./ManagementUI";
 import { AnimatedCounter } from "./arc/animated-counter/animated-counter";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { motionTokens } from "./arc/motion-tokens";
@@ -16,7 +16,7 @@ import { Skeleton } from "./arc/skeleton/skeleton";
 import { EmptyState } from "./arc/empty-state/empty-state";
 import { Globe } from "./ui/globe";
 import CountryLogo from "./CountryLogo";
-import ResourceReading from "./ResourceReading";
+import { Progress } from "./arc/progress/progress";
 import "./GlobalOverview.css";
 
 type Place = { location: number[]; continent: string };
@@ -84,8 +84,10 @@ class GlobeBoundary extends Component<{ children: ReactNode }, { failed: boolean
 export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: string, section: string) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<AgentNode[]>([]), [preferences, setPreferences] = useState<Record<string, DashboardPreference>>({});
-  const [ready, setReady] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
-  const [epoch, setEpoch] = useState(0), [activeId, setActiveId] = useState("");
+  const [ready, setReady] = useState(false), [error, setError] = useState("");
+  const [activeId, setActiveId] = useState("");
+  const matrixGrid = useRef<HTMLDivElement>(null);
+  const [rowBudget, setRowBudget] = useState(0), [matrixMax, setMatrixMax] = useState(640);
   const [samples, setSamples] = useState<Record<string, MetricsView>>({});
   const [colors, setColors] = useState({ dark: 0, base: [0.5, 0.5, 0.5], glow: [1, 1, 1], marker: [0.5, 0.5, 0.5] });
   const reduced = useReducedMotion();
@@ -104,7 +106,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   useEffect(() => () => {
     for (const read of metricReads.current.values()) read.controller.abort();
     metricReads.current.clear();
-  }, [epoch]);
+  }, []);
   const clockOffset = useRef(0);
   const now = () => Date.now() + clockOffset.current;
   const online = (node: AgentNode) => node.status === "online" && (!node.leaseValidUntil || Date.parse(node.leaseValidUntil) > now());
@@ -112,7 +114,6 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
     const controller = new AbortController(); let timer = 0, preferenceReadAt = 0;
     const read = async () => {
       if (document.hidden) { timer = window.setTimeout(read, 5000); return; }
-      setBusy(true);
       try {
         const payload = await operationRequest<AgentNodesResponse>("nodes.list", {}, { signal: controller.signal });
         if (controller.signal.aborted) return;
@@ -140,11 +141,11 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
           preferenceReadAt = Date.now();
         }
       } catch (reason) { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason)); }
-      finally { if (!controller.signal.aborted) { setReady(true); setBusy(false); timer = window.setTimeout(read, 10000); } }
+      finally { if (!controller.signal.aborted) { setReady(true); timer = window.setTimeout(read, 10000); } }
     };
     void read();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [epoch]);
+  }, []);
   const visible = useMemo(() => nodes.filter(node => node.status !== "revoked" && preferences[node.nodeId]?.visible !== false), [nodes, preferences]);
   const points = useMemo(() => visible.flatMap(node => {
     const position = node.location?.status === "known" ? node.location.position : undefined;
@@ -238,7 +239,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
       }
     }));
     return () => controller.abort();
-  }, [preloadKey, epoch, readMetrics]);
+  }, [preloadKey, readMetrics]);
   useEffect(() => {
     if (!selected?.nodeId) return;
     const controller = new AbortController(); let timer = 0;
@@ -250,7 +251,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
       if (!controller.signal.aborted) timer = window.setTimeout(read, 5000);
     };
     void read(); return () => { controller.abort(); clearTimeout(timer); };
-  }, [selected?.nodeId, selected?.generation, epoch, readMetrics]);
+  }, [selected?.nodeId, selected?.generation, readMetrics]);
   const go = (node: AgentNode, section = "overview") => onOpenNode(node.nodeId, section);
   const freshSample = (node: AgentNode) => {
     const sample = samples[node.nodeId];
@@ -267,14 +268,30 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
     ];
   };
   const frontPoints = frontIds.map(id => points.find(point => point.node.nodeId === id)).filter(point => point != null);
-  return <ManagementPage className="global-overview" aria-labelledby="global-title">
+  useEffect(() => {
+    const measure = () => {
+      const grid = matrixGrid.current, scroll = host.current?.querySelector(".global-matrix-scroll"), cellEl = grid?.querySelector(".global-cell");
+      if (!grid || !scroll || !cellEl) return;
+      const cellHeight = (cellEl as HTMLElement).offsetHeight;
+      if (!cellHeight) return;
+      const top = (scroll as HTMLElement).getBoundingClientRect().top + window.scrollY;
+      const available = Math.max(160, window.innerHeight - top - 24);
+      setMatrixMax(available);
+      setRowBudget(Math.max(1, Math.floor((available + 12) / (cellHeight + 12))));
+    };
+    const frame = requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener("resize", measure); };
+  }, [frontPoints.length, ready]);
+  const pairRows = rowBudget ? Math.min(Math.max(frontPoints.length - rowBudget, 0), Math.floor(frontPoints.length / 2)) : 0;
+  const soloCount = frontPoints.length - pairRows * 2;
+  return <ManagementPage className="global-overview" aria-label={t("global.title")}>
     <div ref={host} className="global-page-content">
-      <header className="global-heading"><div><h1 id="global-title">{t("global.title")}</h1></div><Button variant="secondary" disabled={busy} onClick={() => setEpoch(value => value + 1)}><RefreshCw size={16} />{t("global.refresh")}</Button></header>
       {error ? <Alert tone="warning" title={t("global.refreshError")}>{error}</Alert> : null}
       {!ready ? <Skeleton label={t("global.loading")} lines={4} /> : <>
         <div className="global-layout">
-          <Card className="global-map-card" title={null}
-            media={<div className="global-orbit" role="img" aria-label={t("global.globeLabel")} data-marker-count={markers.length} data-label-count={points.length} data-metrics-count={Object.keys(samples).length} data-active-country={selectedPoint?.code ?? ""}><GlobeBoundary><Globe className="global-globe-canvas" config={config} onFrame={onFrame}>{points.map(point => {
+          <div className="global-map">
+            <div className="global-orbit" role="img" aria-label={t("global.globeLabel")} data-marker-count={markers.length} data-label-count={points.length} data-metrics-count={Object.keys(samples).length} data-active-country={selectedPoint?.code ?? ""}><GlobeBoundary><Globe className="global-globe-canvas" config={config} onFrame={onFrame}>{points.map(point => {
               const colocated = points.filter(candidate => candidate.id === point.id);
               const stack = colocated.findIndex(candidate => candidate.node.nodeId === point.node.nodeId);
               return <span key={point.node.nodeId}
@@ -283,27 +300,25 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
                 style={{ positionAnchor: `--cobe-fleet-${point.id}`, translate: `-50% ${-12 + stack * 30}px` } as CSSProperties}>
                 <span>{preferences[point.node.nodeId]?.alias || point.node.displayName}</span>
               </span>;
-            })}</Globe></GlobeBoundary></div>}
-            meta={<span className="global-map-caption"><MapPin size={14} aria-hidden="true" />{selectedPoint ? selectedPoint.label : t("global.waitingLocation")}</span>}
-            status={selectedPoint ? t(`global.continent.${selectedPoint.place.continent}`) : undefined}>
-          </Card>
+            })}</Globe></GlobeBoundary></div>
+          </div>
           <aside className="global-side" aria-label={t("global.currentNode")}>
             {points.length ? <Card className="global-node-card" title={null}>
               <dl className="global-stats">
                 {[{ id: "nodes", label: t("global.nodes"), value: visible.length }, { id: "online", label: t("global.online"), value: visible.filter(online).length }, { id: "countries", label: t("global.countriesShort"), value: new Set(points.map(point => point.code)).size }, { id: "continents", label: t("global.continentsShort"), value: new Set(points.map(point => point.place.continent)).size }].map(stat => <div className="global-stat" key={stat.id}><dt>{stat.label}</dt><dd><AnimatedCounter value={stat.value} animateOnView /></dd></div>)}
               </dl>
               <Separator className="global-stats-separator" />
-              <ScrollArea className="global-matrix-scroll" maxHeight={640}>
-              <div className="global-matrix">
+              <ScrollArea className="global-matrix-scroll" maxHeight={matrixMax} fade={0}>
+              <div className="global-matrix" ref={matrixGrid}>
                 <AnimatePresence mode="popLayout">
-                  {frontPoints.map(point => {
+                  {frontPoints.map((point, cellIndex) => {
                     const node = point.node, preference = preferences[node.nodeId];
-                    return <motion.section key={node.nodeId} className="global-cell" data-node-id={node.nodeId} data-focused={node.nodeId === selected?.nodeId || undefined}
+                    return <motion.section key={node.nodeId} className={cellIndex < soloCount ? "global-cell global-cell-solo" : "global-cell"} data-node-id={node.nodeId} data-focused={node.nodeId === selected?.nodeId || undefined}
                       layout={!reduced} initial={{ opacity: 0, scale: .96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: .96, transition: { duration: motionTokens.duration.exit, ease: [...motionTokens.ease.exit] as [number, number, number, number] } }}
                       transition={{ layout: motionTokens.spring.smooth, duration: motionTokens.duration.standard, ease: [...motionTokens.ease.enter] as [number, number, number, number] }}>
                       <div className="global-cell-head"><CountryLogo country={node.country} /><button type="button" className="global-cell-name" onClick={() => go(node)}>{preference?.alias || node.displayName}</button></div>
                       <p className="global-cell-desc">{point.label === countryName(point.code) ? countryShort(point.code) : `${point.label}, ${countryShort(point.code)}`}</p>
-                      <div className="global-readings">{buildReadings(node).map(reading => <ResourceReading key={reading.resource} resource={reading.resource} label={reading.label} value={reading.value} detail={reading.detail} />)}</div>
+                      <div className="global-readings">{buildReadings(node).map(reading => { const pct = reading.value !== null && Number.isFinite(reading.value) && reading.value >= 0 ? Math.min(100, reading.value) : null; return <div key={reading.resource} className="global-bar" data-resource={reading.resource} data-state={pct === null ? "unknown" : "known"}><div className="global-bar-head"><span>{reading.label}</span><strong>{pct === null ? "—" : pct.toFixed(1) + "%"}</strong></div><Progress value={pct ?? 0} /><small>{reading.detail}</small></div>; })}</div>
                     </motion.section>;
                   })}
                 </AnimatePresence>
@@ -311,7 +326,6 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
               </ScrollArea>
             </Card> : <EmptyState icon={<Server />} title={t("global.empty")} description={t("global.emptyHint")} />}
             {!points.length && visible.length ? <Alert tone="info" title={t("global.waitingLocation")}>{t("global.locationHint")}</Alert> : null}
-            {visible.length > points.length ? <Card title={t("global.unlocated")} description={t("global.locationHint")}><div className="global-unlocated">{visible.filter(node => !points.some(point => point.node.nodeId === node.nodeId)).map(node => <Button key={node.nodeId} variant="ghost" onClick={() => go(node, "settings")}>{preferences[node.nodeId]?.alias || node.displayName}<ArrowUpRight size={14} /></Button>)}</div></Card> : null}
           </aside>
         </div>
       </>}
