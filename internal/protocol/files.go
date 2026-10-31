@@ -18,6 +18,7 @@ const (
 
 	FileList         = "list"
 	FileStat         = "stat"
+	FileHash         = "hash"
 	FileSearch       = "search"
 	FileMkdir        = "mkdir"
 	FileRename       = "rename"
@@ -78,6 +79,7 @@ type FileResponse struct {
 	Code        string      `json:"code,omitempty"`
 	Message     string      `json:"message,omitempty"`
 	Version     string      `json:"version,omitempty"`
+	SHA256      string      `json:"sha256,omitempty"`
 	Size        int64       `json:"size,omitempty"`
 	Entries     []FileEntry `json:"entries,omitempty"`
 	Entry       *FileEntry  `json:"entry,omitempty"`
@@ -125,7 +127,7 @@ func ValidateFileRequest(envelope Envelope, generation uint64, request FileReque
 		return errors.New("invalid file browse options")
 	}
 	switch request.Operation {
-	case FileList, FileSearch, FileStat, FileReadText, FileDownload:
+	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileHash:
 		if request.Path == "" {
 			return errors.New("file path is required")
 		}
@@ -174,9 +176,12 @@ func ValidateFileResponse(envelope Envelope, generation uint64, response FileRes
 		return errors.New("file response is outside its bound")
 	}
 	switch response.Operation {
-	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileUploadBegin, FileUploadChunk:
+	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileHash, FileUploadBegin, FileUploadChunk:
 	default:
 		return errors.New("file response operation is invalid")
+	}
+	if response.SHA256 != "" && !validFileDigest(response.SHA256) {
+		return errors.New("file response digest is invalid")
 	}
 	if response.Code != "" {
 		switch response.Code {

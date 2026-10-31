@@ -28,6 +28,7 @@ import { Card } from "./ui/card";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "./ui/dropdown-menu";
 import "./NodeFiles.css";
 import FileShares from "./FileShares";
+import FileTransfer from "./FileTransfer";
 
 const FileCodeEditor = lazy(() => import("./FileCodeEditor"));
 
@@ -76,6 +77,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
   const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
  const [sharing, setSharing] = useState<string[]>();
+  const [transferring, setTransferring] = useState<NodeFileEntry[]>();
   const [searchPicker, setSearchPicker] = useState<{ choose: (path: string) => void }>();
   const [page, setPage] = useState(1), [view, setView] = useState("list"), [showHidden, setShowHidden] = useState(true);
   const viewId = useId();
@@ -236,6 +238,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
     else if (event.action === "reload") void refresh();
     else if (event.action === "download") download(files);
  else if (event.action === "share") setSharing(files.map(file => file.path));
+    else if (event.action === "transfer") setTransferring(files);
     else if (files.length) { const kind = event.action === "quicklook" ? "preview" : event.action === "rm" ? "delete" : event.action; if (["preview", "edit", "rename", "delete", "archive", "extract", "info"].includes(kind)) void openModal(kind, files); }
   }
   const commands = useRef<FileCommands>(null);
@@ -246,6 +249,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
       { label: f("edit"), disabled: files.length !== 1 || files[0]?.kind !== "file", onSelect: () => command("edit", files) },
       { label: f("download"), disabled: files.some(row => row.kind !== "file") || !files.length, onSelect: () => command("download", files) },
       { label: t("shares.share"), disabled: !files.length, onSelect: () => command("share", files) },
+      { label: t("files.transfer.title"), disabled: !files.length || files.some(row => row.kind !== "file"), onSelect: () => command("transfer", files) },
       { label: f("copy"), disabled: !files.length, onSelect: () => command("copy", files) },
       { label: f("cut"), disabled: !files.length, onSelect: () => command("cut", files) },
       { label: f("rename"), disabled: files.length !== 1, onSelect: () => command("rename", files) },
@@ -337,6 +341,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
     {observations.length > 0 && <section className="file-browser-tasks" aria-label={f("tasks")}>{observations.map(item => <div key={item.taskId}><span>{item.path} · {item.status}</span><Button type="button" size="sm" variant="secondary" onClick={() => { void execute(() => manager!.observe(item.taskId)); }}>{f("observe")}</Button><Button type="button" size="sm" variant="secondary" onClick={() => { void execute(() => manager!.cancel(item.taskId)); }}>{f("cancelTask")}</Button><Button type="button" size="sm" variant="ghost" onClick={() => manager!.forget(item.taskId)}>{t("operations.forget")}</Button></div>)}</section>}
     {manager && <ElFinderCommands ref={commands} path={path} rows={entries} onAction={dispatchFileCommand} />}
     {sharing && <FileShares nodeId={nodeId} paths={sharing} container={modalContainer} onClose={() => setSharing(undefined)} />}
+    {transferring && manager && <FileTransfer sourceNodeId={nodeId} files={transferring} manager={manager} container={modalContainer} onClose={() => setTransferring(undefined)} />}
     {manager && !directoryPicker && <FileSearchDialog open={searchOpen} onOpenChange={setSearchOpen} manager={manager} path={path} portal={modalContainer} onOpenFile={row => { void openFile(row); }} onReveal={row => { void revealSearchResult(row); }} onAction={(action, row) => { if (action === "download") download([row]); else void openModal(action, [row]); }} onPickDirectory={choose => setSearchPicker({ choose })}>{searchPicker && <NodeFiles nodeId={nodeId} nodeName={nodeName} path={path} directoryPicker dialog onClose={() => setSearchPicker(undefined)} onChoose={chosen => { searchPicker.choose(chosen); setSearchPicker(undefined); }} />}</FileSearchDialog>}
     <Dialog open={!!modal} onOpenChange={open => { if (!open) closeModal(); }}><DialogContent container={modalContainer} onCloseAutoFocus={event => { event.preventDefault(); const target = modalReturn.current?.isConnected && !modalReturn.current.matches(":disabled") ? modalReturn.current : root.current?.querySelector<HTMLElement>("button:not(:disabled)"); target?.focus({ preventScroll: true }); }} title={modal ? f(modal.kind) : ""} className={modal?.kind === "edit" || modal?.kind === "preview" ? "file-editor-dialog" : ""} onEscapeKeyDown={event => { if (busy || (event.target instanceof Element && event.target.closest(".cm-editor")?.querySelector(".cm-search, .cm-tooltip-autocomplete"))) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>
       {modalError && <Alert tone="danger" title={modalError} />}

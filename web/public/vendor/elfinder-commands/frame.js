@@ -15,7 +15,8 @@
     if(finder) finder.destroy();
     document.getElementById('commands').replaceChildren();
     elFinder.prototype.commands.share=function(){this.getstate=()=>0;this.exec=()=>jQuery.Deferred().resolve()};
-    const commands=['open','edit','download','share','info','copy','cut','paste','rename','rm','archive','extract','reload'];
+    elFinder.prototype.commands.transfer=function(){this.getstate=()=>0;this.exec=()=>jQuery.Deferred().resolve()};
+    const commands=['open','edit','download','share','transfer','info','copy','cut','paste','rename','rm','archive','extract','reload'];
     finder=new elFinder(document.getElementById('commands'),{url:'/',baseUrl:'/vendor/elfinder/',cssAutoLoad:false,lang:state.language==='zh-CN'?'zh_CN':'en',ui:[],commands,rememberLastDir:false,useBrowserHistory:false,resizable:false,allowShortcuts:false,dragUploadAllow:'none',contextmenu:{navbar:[],cwd:[],files:[]},transport:{send:options=>{const pending=jQuery.Deferred();pending.abort=()=>pending.reject({status:0,statusText:'abort'});queueMicrotask(()=>options.data.cmd==='open'?pending.resolve(snapshot()):options.data.cmd==='ls'?pending.resolve({list:{}}):pending.reject(['errUnknownCmd']));return pending}},handlers:{load:()=>emit('ready',{})}});
     for(const name of commands){const command=finder.getCommand(name);if(command)command.exec=targets=>{emit('action',{action:name,paths:paths(targets)});return jQuery.Deferred().resolve()}}
   };

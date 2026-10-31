@@ -33,6 +33,10 @@ func (s *Server) handleFilesAPI(w http.ResponseWriter, r *http.Request, current 
 		s.handleCreateFileTask(w, r, current, nodeID)
 		return true
 	}
+	if operation == "transfer" {
+		s.handleFileTransfer(w, r, current, nodeID)
+		return true
+	}
 	if operation == "upload" {
 		s.handleFileUpload(w, r, current, nodeID)
 		return true
@@ -125,7 +129,7 @@ func filesRoute(requestPath string) (nodeID, operation string, ok bool) {
 	}
 	if len(parts) == 3 {
 		switch parts[2] {
-		case "stat", "text", "download", "preview", "search", "tasks", "upload":
+		case "stat", "text", "download", "preview", "search", "tasks", "upload", "transfer":
 			return parts[0], parts[2], true
 		}
 	}

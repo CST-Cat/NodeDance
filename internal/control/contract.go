@@ -153,6 +153,9 @@ func describeTransport(o *Operation) {
 		}
 	case "windows.create":
 		require("kind", "scopeType", "startsAt", "endsAt")
+	case "files.transfer":
+		field("paths", map[string]any{"maxItems": 100, "items": map[string]any{"type": "string", "maxBytes": 4096}})
+		o.MaxBodyBytes = 512 * 1024
 	case "files.action":
 		field("action", map[string]any{"enum": []string{"mkdir", "rename", "move", "copy", "archive", "extract", "delete", "save_text"}})
 		field("format", map[string]any{"enum": []string{"zip", "tar", "tar.gz"}, "description": "Archive format; inferred from .zip/.tar/.tar.gz/.tgz filename when omitted"})
@@ -336,6 +339,8 @@ func describeResponse(o *Operation) {
 			r["required"] = []string{"status", "job"}
 		}
 		o.ResponseSchema = r
+	case "files.transfer":
+		o.ResponseSchema = responseObject([]string{"transferred"}, map[string]any{"transferred": map[string]any{"type": "array", "items": responseObject([]string{"sourcePath", "targetPath", "size", "sha256", "taskId"}, map[string]any{"sourcePath": text, "targetPath": text, "size": map[string]any{"type": "integer"}, "sha256": text, "taskId": text})}, "failed": map[string]any{"type": "array", "items": responseObject([]string{"sourcePath", "error"}, map[string]any{"sourcePath": text, "error": text})}})
 	case "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "tasks.get", "tasks.cancel":
 		o.ResponseSchema = task
 	case "tasks.list":

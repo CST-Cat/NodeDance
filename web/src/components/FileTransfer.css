@@ -1,0 +1,9 @@
+.file-transfer-path {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.file-transfer-path > :first-child {
+  flex: 1;
+}

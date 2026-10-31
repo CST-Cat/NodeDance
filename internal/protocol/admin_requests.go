@@ -30,6 +30,12 @@ type ComposeCreateRequest struct {
 	Content          string `json:"content" request:"required"`
 }
 
+type FileTransferRequest struct {
+	TargetNodeID string   `json:"targetNodeId" request:"required"`
+	Paths        []string `json:"paths" request:"required"`
+	TargetPath   string   `json:"targetPath" request:"required"`
+}
+
 type FileActionRequest struct {
 	Format           string   `json:"format,omitempty"`
 	Paths            []string `json:"paths,omitempty"`

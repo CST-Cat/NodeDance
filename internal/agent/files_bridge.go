@@ -109,6 +109,9 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 	case protocol.FileStat:
 		entry, err := b.service.Stat(request.Path)
 		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry}, err)
+	case protocol.FileHash:
+		entry, digest, err := b.service.Hash(request.Path)
+		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry, SHA256: digest, Size: entry.Size}, err)
 	case protocol.FileReadText:
 		text, version, err := b.service.ReadText(request.Path)
 		response := protocol.FileResponse{Operation: request.Operation, Version: version}

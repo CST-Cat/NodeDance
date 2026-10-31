@@ -374,6 +374,7 @@ func buildOperations() []Operation {
 		op("files.download", "GET", node+"/files/download", "Download to --output; never overwrite an existing file", nil, "path"),
 		op("files.upload", "PUT", node+"/files/upload", "Upload --input; optional --file-version protects existing content", nil, "path"),
 		op("files.action", "POST", node+"/files/tasks", "File tasks including ZIP/TAR/TAR.GZ creation and ZIP/TAR/TAR.GZ/TAR.BZ2 extraction; deletion needs exact confirmationPath", schema(protocol.FileActionRequest{})),
+		op("files.transfer", "POST", node+"/files/transfer", "Transfer files from this node to a directory on any node, relayed and integrity-checked through Core over the existing Agent connections", schema(protocol.FileTransferRequest{})),
 		op("terminal.open", "POST", node+"/terminals", "Open host/container shell; TUI is interactive, CLI uses JSONL frames with automatic streamId", schema(protocol.TerminalCreateRequest{})),
 		op("terminal.create", "POST", node+"/terminals", "Authorize host/container terminal; returns a single-use ticket", schema(protocol.TerminalCreateRequest{})),
 		op("terminal.resume", "POST", node+"/terminals/{streamId}/resume", "Reattach the same tmux session after transport loss", fields("")),

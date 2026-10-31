@@ -263,6 +263,24 @@ export async function createFileManager(
     persist();
     return observe(item, other);
   }
+  async function transfer(targetNodeId: string, paths: string[], targetPath: string, other?: AbortSignal) {
+    active();
+    const payload = exactJSON({ targetNodeId, paths, targetPath });
+    const intent = await requestIntent("files.transfer", { params }, payload);
+    active();
+    const result = await operationRequest<{ transferred: { sourcePath: string; targetPath: string; size: number; sha256: string; taskId: string }[]; failed?: { sourcePath: string; error: string }[] }>(
+      "files.transfer",
+      { params },
+      {
+        headers: { "Idempotency-Key": intentKey(intent) },
+        body: payload,
+        signal: signal(other),
+      },
+      30 * 60_000,
+    );
+    finishIntent(intent);
+    return result;
+  }
   async function text(path: string) {
     const result = await read<{ text: string; version: string }>("files.text", { path });
     active();
@@ -287,7 +305,7 @@ export async function createFileManager(
   }
   persist();
   return {
-    list, stat, text, image, action,
+    list, stat, text, image, action, transfer,
     previewText: async (path: string, other?: AbortSignal) => (await read<{ text: string; version: string }>("files.text", { path }, other)).text,
     search: (path: string, filter: string, limits: Record<string, string> = {}, other?: AbortSignal) => pages("files.search", { path, filter, recursive: "true", ...limits }, other),
     saveText,

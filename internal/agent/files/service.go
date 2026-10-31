@@ -417,6 +417,40 @@ func (s *Service) Stat(virtual string) (protocol.FileEntry, error) {
 	return entry, err
 }
 
+func (s *Service) Hash(virtual string) (protocol.FileEntry, string, error) {
+	name, canonical, err := s.normalize(virtual)
+	if err != nil {
+		return protocol.FileEntry{}, "", err
+	}
+	info, err := s.lstat(name)
+	if err != nil {
+		return protocol.FileEntry{}, "", err
+	}
+	if !info.Mode().IsRegular() {
+		return protocol.FileEntry{}, "", errors.New("hash target must be a regular file")
+	}
+	if info.Size() > s.limit {
+		return protocol.FileEntry{}, "", ErrLimitExceeded
+	}
+	file, err := s.open(name)
+	if err != nil {
+		return protocol.FileEntry{}, "", err
+	}
+	hash := sha256.New()
+	read, copyErr := io.Copy(hash, io.LimitReader(file, s.limit+1))
+	closeErr := file.Close()
+	if copyErr != nil {
+		return protocol.FileEntry{}, "", copyErr
+	}
+	if closeErr != nil {
+		return protocol.FileEntry{}, "", closeErr
+	}
+	if read != info.Size() {
+		return protocol.FileEntry{}, "", errors.New("file changed while hashing")
+	}
+	return makeEntry(path.Base(canonical), canonical, info), hex.EncodeToString(hash.Sum(nil)), nil
+}
+
 func makeEntry(name, virtual string, info os.FileInfo) protocol.FileEntry {
 	kind := "file"
 	switch {
