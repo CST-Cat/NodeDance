@@ -2691,7 +2691,6 @@
   "files.transfer.targetDirectory": "目标目录",
   "files.transfer.browse": "浏览",
   "files.transfer.start": "开始对传",
-  "files.transfer.done": "对传完成",
   "files.transfer.files": "待传文件",
   "shares.manage": "管理分享",
   "shares.name": "名称",

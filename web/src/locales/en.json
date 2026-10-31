@@ -2691,7 +2691,6 @@
   "files.transfer.targetDirectory": "Target directory",
   "files.transfer.browse": "Browse",
   "files.transfer.start": "Start transfer",
-  "files.transfer.done": "Transfer complete",
   "files.transfer.files": "Files to transfer",
   "shares.manage": "Manage shares",
   "shares.name": "Name",

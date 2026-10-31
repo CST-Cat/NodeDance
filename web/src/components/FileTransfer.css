@@ -29,7 +29,12 @@
 .file-transfer-path {
   display: flex;
   gap: 8px;
-  align-items: stretch;
+  align-items: center;
+}
+
+.file-transfer-path > .file-transfer-browse {
+  height: 2rem;
+  min-height: 2rem;
 }
 
 .file-transfer-path > :first-child {

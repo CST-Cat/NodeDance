@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { operationRequest, type AgentNode, type AgentNodesResponse, type NodeFileEntry } from "../api";
 import { t } from "../i18n";
@@ -48,14 +49,13 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent container={container} title={x("title")} className="file-transfer-dialog">
     <div className="file-transfer">
       {error && <Alert tone="danger" title={error} />}
-      {done && <Alert tone="success" title={x("done")} />}
       <div className="file-transfer-field">
         <span className="file-transfer-label">{x("targetNode")}</span>
         <Select label="" aria-label={x("targetNode")} value={targetId} disabled={busy || done} onValueChange={value => { setTargetId(value); }} options={nodes.map(node => ({ value: node.nodeId, label: node.displayName }))} />
       </div>
       <div className="file-transfer-field">
         <span className="file-transfer-label">{x("targetDirectory")}</span>
-        <div className="file-transfer-path"><Input label="" aria-label={x("targetDirectory")} value={targetPath} disabled={busy || done} onChange={event => setTargetPath(event.target.value)} /><Button type="button" variant="secondary" disabled={busy || done || !targetNode} onClick={() => setPicker(true)}>{x("browse")}</Button></div>
+        <div className="file-transfer-path"><Input label="" aria-label={x("targetDirectory")} value={targetPath} disabled={busy || done} onChange={event => setTargetPath(event.target.value)} /><Button type="button" variant="secondary" className="file-transfer-browse" disabled={busy || done || !targetNode} onClick={() => setPicker(true)}>{x("browse")}</Button></div>
       </div>
       <div>
         <div className="file-transfer-files-head"><span>{x("files")}</span><span className="file-transfer-count">{files.length}</span></div>
@@ -64,8 +64,8 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
         </ul>
       </div>
       <div className="file-transfer-actions">
-        {busy && <Button variant="secondary" onClick={() => pending.current?.abort()}>{t("dialog.cancel")}</Button>}
-        {done ? <Button onClick={onClose}>{t("dialog.confirm")}</Button> : <Button disabled={busy || !targetNode || !targetPath.startsWith("/")} loading={busy} onClick={() => void start()}>{x("start")}</Button>}
+        {busy && !done && <Button variant="secondary" onClick={() => pending.current?.abort()}>{t("dialog.cancel")}</Button>}
+        <Button onClick={done ? onClose : () => void start()} disabled={!done && (busy || !targetNode || !targetPath.startsWith("/"))} loading={busy && !done} aria-label={done ? t("dialog.confirm") : undefined}>{done ? <Check size={18} /> : x("start")}</Button>
       </div>
     </div>
     {picker && targetNode && <NodeFiles nodeId={targetNode.nodeId} nodeName={targetNode.displayName} path={targetPath} directoryPicker dialog onClose={() => setPicker(false)} onChoose={chosen => { setTargetPath(chosen); setPicker(false); }} />}
