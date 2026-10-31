@@ -87,7 +87,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   const [ready, setReady] = useState(false), [error, setError] = useState("");
   const [activeId, setActiveId] = useState("");
   const matrixGrid = useRef<HTMLDivElement>(null);
-  const [rowBudget, setRowBudget] = useState(0), [matrixMax, setMatrixMax] = useState(640);
+  const [rowBudget, setRowBudget] = useState(0), [matrixMax, setMatrixMax] = useState(0);
   const [samples, setSamples] = useState<Record<string, MetricsView>>({});
   const [colors, setColors] = useState({ dark: 0, base: [0.5, 0.5, 0.5], glow: [1, 1, 1], marker: [0.5, 0.5, 0.5] });
   const reduced = useReducedMotion();
@@ -279,10 +279,13 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
       if (!grid || !scroll || !cellEl) return;
       const cellHeight = (cellEl as HTMLElement).offsetHeight;
       if (!cellHeight) return;
+      const gap = parseFloat(getComputedStyle(grid).rowGap) || 0;
+      let reserve = 0, ancestor = (scroll as HTMLElement).parentElement;
+      while (ancestor && ancestor !== document.body) { reserve += parseFloat(getComputedStyle(ancestor).paddingBottom) || 0; ancestor = ancestor.parentElement; }
       const top = (scroll as HTMLElement).getBoundingClientRect().top + window.scrollY;
-      const available = Math.max(160, window.innerHeight - top - 24);
+      const available = Math.max(cellHeight, window.innerHeight - top - reserve);
       setMatrixMax(available);
-      setRowBudget(Math.max(1, Math.floor((available + 12) / (cellHeight + 12))));
+      setRowBudget(Math.max(1, Math.floor((available + gap) / (cellHeight + gap))));
     };
     const frame = requestAnimationFrame(measure);
     window.addEventListener("resize", measure);
@@ -313,7 +316,7 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
                 {[{ id: "nodes", label: t("global.nodes"), value: visible.length }, { id: "online", label: t("global.online"), value: visible.filter(online).length }, { id: "countries", label: t("global.countriesShort"), value: new Set(points.map(point => point.code)).size }, { id: "continents", label: t("global.continentsShort"), value: new Set(points.map(point => point.place.continent)).size }].map(stat => <div className="global-stat" key={stat.id}><dt>{stat.label}</dt><dd><AnimatedCounter value={stat.value} animateOnView /></dd></div>)}
               </dl>
               <Separator className="global-stats-separator" />
-              <ScrollArea className="global-matrix-scroll" maxHeight={matrixMax} fade={0}>
+              <ScrollArea className="global-matrix-scroll" maxHeight={matrixMax || undefined} fade={0}>
               <div className="global-matrix" ref={matrixGrid}>
                 <AnimatePresence mode="popLayout">
                   {frontPoints.map((point, cellIndex) => {

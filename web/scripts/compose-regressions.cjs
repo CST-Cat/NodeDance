@@ -42,8 +42,8 @@ module.exports=async function({page,base,node,catalog,artifacts}){
  }
  // Confirmations cannot bypass a stale inventory or a removed selected target.
  let before=submissions.length;await button('delete').click();stale=true;await confirm();await page.locator('.compose-error').waitFor();assert.equal(submissions.length,before)
- stale=false;await refresh();await page.waitForFunction(()=>!document.querySelector('.compose-stale'));await button('delete').click();projects=all.slice(1);await confirm();await page.waitForFunction(()=>document.querySelectorAll('.compose-project-card').length===2);assert.equal(submissions.length,before)
- projects=[...all];await refresh();await page.waitForFunction(()=>document.querySelectorAll('.compose-project-card').length===3)
+ stale=false;await refresh();await page.waitForFunction(()=>!document.querySelector('.compose-stale'));await button('delete').click();projects=all.slice(1);await confirm();await page.waitForFunction(expected=>document.querySelectorAll('.compose-project-card').length===expected,all.length-1);assert.equal(submissions.length,before)
+ projects=[...all];await refresh();await page.waitForFunction(expected=>document.querySelectorAll('.compose-project-card').length===expected,all.length)
  await clear();await select(0);await button('rename').click();await page.locator('.ui-dialog input').fill('My project display name');await confirm();await cards.nth(0).getByRole('heading',{name:'My project display name',exact:true}).waitFor()
  const preferences=await(await page.request.get(base+routePath('nodes.preferences',{nodeId:node}))).json();assert.equal(preferences.preferences.find(item=>item.identity==='compose_project:'+keys[0]).alias,'My project display name')
  assert.equal(all[0].ref.name,'compose-fixture-0','Display name never changes Docker project identity')

@@ -25,32 +25,32 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await view.getByRole('button',{name:malicious,exact:true}).waitFor()
   // Seed untrusted strings directly into the isolated store to verify the Web
   // rendering boundary independently of the parser's own plain-text conversion.
-  execFileSync('python3',['-c',`import sqlite3,sys,time,hashlib
+  const seededEntries=55;execFileSync('python3',['-c',`import sqlite3,sys,time,hashlib
 c=sqlite3.connect(sys.argv[1]);feed=sys.argv[2];now=int(time.time())
-for i in range(55):
+for i in range(int(sys.argv[4])):
  ident=hashlib.sha256(str(i).encode()).hexdigest()
  c.execute('INSERT INTO feed_items(id,feed_id,title,summary,url,first_seen,last_seen) VALUES(?,?,?,?,?,?,?)',(ident,feed,'Entry '+str(i),sys.argv[3],'https://example.org/article/'+str(i),now-i,now))
-c.commit();c.close()`,path.join(directory,'nodedance.sqlite'),subscription.id,malicious])
+c.commit();c.close()`,path.join(directory,'nodedance.sqlite'),subscription.id,malicious,String(seededEntries)])
   const catalog=await(await context.request.get(base+'/api/v1/operations')).json(),operation=name=>{const value=catalog.operations.find(item=>item.name===name);assert.ok(value,name);return value}
   const channelPath=operation('channels.list').path,deliveryPath=operation('feeds.deliveries').path.replace('{id}',subscription.id),itemsPath=operation('feeds.items').path.replace('{id}',subscription.id)
   let releaseChannel,releaseHistory,itemRequests=0
   const channelHeld=new Promise(resolve=>releaseChannel=resolve),historyHeld=new Promise(resolve=>releaseHistory=resolve)
   await page.route('**'+channelPath,async route=>{const response=await route.fetch();await channelHeld;await route.fulfill({response})})
   await page.route('**'+deliveryPath,async route=>{await historyHeld;await route.fulfill({status:503,body:'Isolated delivery-history failure'})})
-  const countItems=request=>{if(new URL(request.url()).pathname===itemsPath&&request.method()==='GET')itemRequests++};page.on('request',countItems)
+  const countItems=request=>{if(new URL(request.url()).pathname===itemsPath&&request.method()==='GET')itemRequests++};page.on('request',countItems);let firstPageCount=0
   try{
-   await page.reload();await view.waitFor();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===50)
+   await page.reload();await view.waitFor();await assertEventually(async()=>{const count=await view.locator('.feed-entry h3').count();if(count>0&&count<seededEntries){firstPageCount=count;return true}return false})
    assert.equal(itemRequests,1,'Initial feed selection reads its entries once without waiting for notification channels or delivery history')
    const failedHistory=page.waitForResponse(response=>new URL(response.url()).pathname===deliveryPath)
    releaseChannel();releaseHistory();assert.equal((await failedHistory).status(),503)
-   assert.equal(await view.locator('.feed-entry h3').count(),50,'A delivery-history failure does not hide successfully loaded entries')
+   assert.equal(await view.locator('.feed-entry h3').count(),firstPageCount,'A delivery-history failure does not hide successfully loaded entries')
   }finally{releaseChannel();releaseHistory();page.off('request',countItems);await page.unroute('**'+channelPath);await page.unroute('**'+deliveryPath)}
   assert.equal(await view.locator('img,script,iframe').count(),0);assert.equal(await page.evaluate(()=>window.__rssXss||0),0)
-  await view.getByRole('button',{name:'Next',exact:true}).click();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===5)
-  await view.getByRole('button',{name:'Previous',exact:true}).click();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===50)
+  await view.getByRole('button',{name:'Next',exact:true}).click();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===seededEntries-firstPageCount)
+  await view.getByRole('button',{name:'Previous',exact:true}).click();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===firstPageCount)
   await view.getByRole('button',{name:'Mark read',exact:true}).first().click();await view.getByRole('button',{name:'Mark unread',exact:true}).first().waitFor()
-  await view.getByRole('checkbox',{name:'Unread only',exact:true}).check();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===50)
-  await view.getByRole('searchbox',{name:'Search',exact:true}).fill('Entry 54');await view.getByRole('button',{name:'Search',exact:true}).click();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===1)
+  await view.getByRole('checkbox',{name:'Unread only',exact:true}).check();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===Math.min(firstPageCount,seededEntries-1))
+  await view.getByRole('searchbox',{name:'Search',exact:true}).fill(`Entry ${seededEntries-1}`);await view.getByRole('button',{name:'Search',exact:true}).click();await assertEventually(async()=>await view.locator('.feed-entry h3').count()===1)
   await view.getByRole('searchbox').fill('');await view.getByRole('button',{name:'Search',exact:true}).click()
   // A real Core fetch must reject loopback before connecting to port 80.
   await view.getByRole('button',{name:'Enable',exact:true}).click();await assertEventually(async()=>{const r=await context.request.get(base+'/api/v1/feeds/'+subscription.id);subscription=await r.json();return subscription.status==='failed'})

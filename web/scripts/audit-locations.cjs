@@ -40,13 +40,13 @@ const root = path.resolve(__dirname, '../..'), artifacts = path.join(root, '.bui
   let saved=(await(await context.request.get(base+`/api/v1/nodes/${node.nodeId}/preferences`)).json()).preferences.find(p=>p.targetKind==='node');assert.deepEqual(saved.location,point(la));
   await page.reload();await editor.getByRole('button',{name:'Location source',exact:true}).waitFor();await page.waitForFunction(()=>document.querySelector('.location-picker button[data-dropdown-field]')?.getAttribute('data-selected-value')==='city');
   for(const [index,city] of [[1,sj],[2,ny]]){const n=nodes[index];assert.equal(cli(['call','nodes.save-preference','--params',JSON.stringify({nodeId:n.nodeId}),'--body','-'],{targetKind:'node',identity:'node:'+n.nodeId,alias:city.city+' VPS',visible:true,location:point(city)}).status,204)}
-  const listed=(await(await context.request.get(base+'/api/v1/nodes')).json()).nodes;assert.equal(new Set(listed.map(n=>n.country.code)).size,1);assert.equal(new Set(listed.map(n=>n.location.position.city)).size,3);
-  await page.goto(base+'/#/global-overview');await page.locator('.global-orbit[data-marker-count="3"]').waitFor();
-  await page.waitForFunction(()=>document.querySelectorAll('[style*="anchor-name: --cobe-fleet-US-"]').length===3);
+  const listed=(await(await context.request.get(base+'/api/v1/nodes')).json()).nodes;const placedCountries=new Set([la,sj,ny].map(city=>city.countryCode)).size,placedCities=new Set([la,sj,ny].map(city=>city.city)).size;assert.equal(new Set(listed.map(n=>n.country.code)).size,placedCountries);assert.equal(new Set(listed.map(n=>n.location.position.city)).size,placedCities);
+  await page.goto(base+'/#/global-overview');await page.locator(`.global-orbit[data-marker-count="${placedCities}"]`).waitFor();
+  await page.waitForFunction(expected=>document.querySelectorAll('[style*="anchor-name: --cobe-fleet-US-"]').length===expected,placedCities);
   const appearance=await(await context.request.get(base+'/api/v1/public/appearance')).json();
   for(const [theme,width] of [['light',1440],['dark',390]]){
    await context.request.put(base+'/api/v1/settings/appearance',{headers,data:{displayName:appearance.displayName,backgroundColor:appearance.backgroundColor,theme}});
-   await page.setViewportSize({width,height:1000});await page.goto(base+'/?city-visual='+theme+'-'+width+'#/global-overview');await page.locator('.global-orbit[data-marker-count="3"]').waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+   await page.setViewportSize({width,height:1000});await page.goto(base+'/?city-visual='+theme+'-'+width+'#/global-overview');await page.locator(`.global-orbit[data-marker-count="${placedCities}"]`).waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
 
    await page.goto(base+`/#/nodes?node=${node.nodeId}&section=settings`);await editor.getByRole('button',{name:'Location source',exact:true}).waitFor();
    await editor.getByRole('button',{name:'City',exact:true}).click();await page.getByRole('menu').waitFor();await page.keyboard.press('Escape');

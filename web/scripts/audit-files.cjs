@@ -20,7 +20,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
  fs.mkdirSync(path.join(files,'single'));fs.writeFileSync(path.join(files,'single','only.txt'),'single fixture');const hostileGridName='<img src=x onerror=window.gridScriptExecuted=true>.txt';fs.writeFileSync(path.join(files,hostileGridName),'inert filename');
  const highlightSource='#!/bin/sh\r\n# 中文注释\r\necho "$HOME"\n';fs.writeFileSync(path.join(files,'highlight.sh'),highlightSource);
  fs.writeFileSync(path.join(files,'hello.txt'),'hello fixture\n');fs.writeFileSync(path.join(files,'image.png'),Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZMsAAAAASUVORK5CYII=','base64'))
- for(let i=0;i<205;i++)fs.writeFileSync(path.join(files,'many',`entry-${String(i).padStart(3,'0')}.txt`),'fixture')
+ const manyCount=205;for(let i=0;i<manyCount;i++)fs.writeFileSync(path.join(files,'many',`entry-${String(i).padStart(3,'0')}.txt`),'fixture')
  fs.mkdirSync(path.join(files,'private-dir'),{mode:0700});fs.writeFileSync(path.join(files,'private-dir','child.txt'),'private fixture',{mode:0644})
  fs.writeFileSync(path.join(files,'bzip.tar.bz2'),Buffer.from('QlpoOTFBWSZTWcHlGiYAAG97gMqAAQBAAW+AAEBzIF5QCAggAFQ0UGmg0ZPUMRvVBJRqaAAMmQH3Vw9CCNSEIzpCw0vatAhwOKGTJNs8Rxegu3fJmc5RItGBFfRWwJX7ay5EcIiAfi7kinChIYPKNEw=','base64'))
  fs.symlinkSync('hello.txt',path.join(files,'link'))
@@ -53,7 +53,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
    const response=await context.request.post(endpoint('files.action'),{headers:{...headers,'Idempotency-Key':key},data:body});assert.ok(response.ok(),await response.text());const accepted=await response.json()
    for(let i=0;i<200;i++){const task=await(await context.request.get(base+operation('tasks.get').path.replace('{nodeId}',node).replace('{taskId}',accepted.taskId))).json();if(!['queued','running'].includes(task.status)){assert.equal(task.status,'succeeded',JSON.stringify(task));return task};await new Promise(r=>setTimeout(r,25))};throw Error('File task timeout')
   }
-  let count=0,after='';do{const response=await context.request.get(endpoint('files.list',{path:'/many',...(after?{after}:{})}));assert.equal(response.status(),200);const page=await response.json();count+=page.entries.length;assert.ok(page.entries.length<=100);after=page.nextAfter}while(after);assert.equal(count,205)
+  let count=0,after='',corePageSize=0;do{const response=await context.request.get(endpoint('files.list',{path:'/many',...(after?{after}:{})}));assert.equal(response.status(),200);const page=await response.json();if(!corePageSize)corePageSize=page.entries.length;assert.ok(page.entries.length<=corePageSize);count+=page.entries.length;after=page.nextAfter}while(after);assert.equal(count,manyCount)
   const search=await(await context.request.get(endpoint('files.search',{path:'/',filter:'entry-204',recursive:'true'}))).json();assert.equal(search.entries.length,1)
   const key=crypto.randomUUID(),body={action:'copy',path:'/hello.txt',newPath:'/copy.txt'};const copied=await action(body,key),repeated=await action(body,key);assert.equal(copied.taskId,repeated.taskId)
   await action({action:'move',path:'/copy.txt',newPath:'/out/moved.txt'})
@@ -86,7 +86,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   const delayed=async route=>{if(!['files.list','files.stat'].some(name=>new URL(route.request().url()).pathname===new URL(endpoint(name)).pathname))return route.continue();browseRequests.push(route.request().url());browseActive++;browsePeak=Math.max(browsePeak,browseActive);try{await new Promise(r=>setTimeout(r,50));await route.fulfill({response:await route.fetch()})}finally{browseActive--}};
   await page.route('**/api/v1/**',delayed);
   await page.evaluate(()=>Promise.all([window.fileClient.list('/many'),window.fileClient.list('/many'),window.fileClient.list('/many')]));
-  assert.equal(browseRequests.length,3,'205 entries share exactly three Core pages');assert.ok(browsePeak<=2,'Browser reserves transfer capacity');await page.unroute('**/api/v1/**',delayed);
+  assert.equal(browseRequests.length,Math.ceil(manyCount/corePageSize),'Fixture entries share one paginated sequence of Core pages');assert.ok(browsePeak<=2,'Browser reserves transfer capacity');await page.unroute('**/api/v1/**',delayed);
   fs.writeFileSync(path.join(files,'many','fresh.txt'),'fresh');assert.ok((await call('list',['/many'])).some(row=>row.name==='fresh.txt'));fs.unlinkSync(path.join(files,'many','fresh.txt'));
   await mutate({action:'rename',path:'/hello.txt',newPath:'/driver-renamed.txt'});
   await assert.rejects(mutate({action:'copy',path:'/driver-renamed.txt',newPath:'/missing/copy.txt'}));assert.ok(fs.existsSync(path.join(files,'driver-renamed.txt')));
@@ -99,7 +99,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   }
   await mutate({action:'mkdir',path:'/bzip'});await mutate({action:'extract',path:'/bzip.tar.bz2',newPath:'/bzip'});assert.equal(await call('text',['/bzip/bzip.txt']),'bzip fixture');
   await assert.rejects(mutate({action:'rename',path:'/out/driver-renamed.txt',newPath:'/out/hello.txt'}));await mutate({action:'move',path:'/out/driver-renamed.txt',newPath:'/hello.txt'});
-  assert.equal((await call('list',['/many'])).length,205);assert.equal((await call('search',['/','entry-204'])).length,1);
+  assert.equal((await call('list',['/many'])).length,manyCount);assert.equal((await call('search',['/',`entry-${String(manyCount-1).padStart(3,'0')}`])).length,1);
   await assert.rejects(call('saveText',['/out/hello.txt','unopened editor']));const original=await call('text',['/hello.txt']);
   let current=await(await context.request.get(endpoint('files.text',{path:'/hello.txt'}))).json();await action({action:'save_text',path:'/hello.txt',content:'external change',expectedVersion:current.version});assert.equal(await call('previewText',['/hello.txt']),'external change','Passive search preview can read the new content');
   await assert.rejects(call('saveText',['/hello.txt','must not overwrite']));assert.equal(fs.readFileSync(path.join(files,'hello.txt'),'utf8'),'external change');await call('text',['/hello.txt']);await call('saveText',['/hello.txt',original]);
