@@ -199,9 +199,8 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
       const score = frontScore(point.place.location, state.phi, state.theta);
       if (score > (placeScores.get(point.id) ?? -Infinity)) placeScores.set(point.id, score);
     }
-    const hubPlace = latest.current.find(point => point.node.nodeId === selectedRef.current)?.id;
     const next = new Set<string>();
-    for (const [id, score] of placeScores) { if (id !== hubPlace && (score > 0 || (arcSet.current.has(id) && score > -0.01))) next.add(id); }
+    for (const [id, score] of placeScores) { if (score > 0 || (arcSet.current.has(id) && score > -0.01)) next.add(id); }
     if (next.size !== arcSet.current.size || [...next].some(id => !arcSet.current.has(id))) { arcSet.current = next; setArcIds([...next]); }
     const stamp = performance.now(), memory = tour.current;
     if (stamp - memory.checked < 500 || document.hidden) return;
