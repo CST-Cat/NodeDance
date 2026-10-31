@@ -166,9 +166,14 @@ export default function GlobalOverview({ onOpenNode }: { onOpenNode: (nodeId: st
   const locationKeys = [...new Set(points.map(point => point.id))].sort().join(",");
   const markers = useMemo<NonNullable<COBEOptions["markers"]>>(() => locationKeys ? locationKeys.split(",").map(id => ({ location: points.find(point => point.id === id)!.place.location as [number, number], size: 0.06, id: `fleet-${id}` })) : [], [locationKeys]);
   const hub = selectedPoint?.id;
-  const arcs = useMemo<COBEOptions["arcs"]>(() => hub ? markers.filter(marker => marker.id !== `fleet-${hub}`).map(marker => ({ from: marker.location, to: markers.find(marker => marker.id === `fleet-${hub}`)!.location, id: `fleet-${marker.id}-${hub}` })) : [], [markers, hub]);
   const scores = useRef(new Map<string, number>());
   const [frontIds, setFrontIds] = useState<string[]>([]);
+  const arcs = useMemo<COBEOptions["arcs"]>(() => {
+    if (!hub || !selectedPoint) return [];
+    const frontPlaces = new Map<string, [number, number]>();
+    for (const id of frontIds) { const point = points.find(candidate => candidate.node.nodeId === id); if (point && point.id !== hub) frontPlaces.set(point.id, point.place.location as [number, number]); }
+    return [...frontPlaces].map(([id, location]) => ({ from: location, to: selectedPoint.place.location as [number, number], id: `fleet-${id}-${hub}` }));
+  }, [points, frontIds, hub, selectedPoint]);
   useEffect(() => {
     const update = () => setFrontIds(current => {
       const pointIds = new Set(latest.current.map(point => point.node.nodeId));

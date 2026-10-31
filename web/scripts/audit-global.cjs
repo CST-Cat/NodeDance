@@ -39,14 +39,14 @@ const root=path.resolve(__dirname,'../..'),artifacts=path.join(root,'.build/glob
   await page.locator('.global-orbit[data-metrics-count="24"]').waitFor();
   await page.waitForFunction(()=>{const canvas=document.querySelector('.global-orbit canvas');return canvas&&canvas.width>100&&getComputedStyle(canvas).opacity==='1'});
   assert.equal(await page.locator('.global-globe-fallback').count(),0,'Use the actual WebGL globe');
-  await page.waitForFunction(()=>window.__cobeAudit.markers===6&&window.__cobeAudit.arcs===5);
+  await page.waitForFunction(()=>window.__cobeAudit.markers===6&&window.__cobeAudit.arcs>=1&&window.__cobeAudit.arcs<=4);
   const render=await page.locator('.global-orbit canvas').evaluate(c=>{
     const g=c.getContext('webgl2'),state=window.__cobeAudit;
     const uniforms=[...state.programs].flatMap(p=>Array.from({length:g.getProgramParameter(p,g.ACTIVE_UNIFORMS)},(_,i)=>{const n=g.getActiveUniform(p,i).name,v=g.getUniform(p,g.getUniformLocation(p,n));return typeof v==='number'?v:Array.from(v)})).flat();
     return{finite:uniforms.every(Number.isFinite),created:state.created,active:state.programs.size,dpr:c.width/c.offsetWidth};
   });
   assert.ok(render.finite,'All native v2 shader uniforms are finite');assert.equal(render.created,3);assert.equal(render.active,3);assert.ok(Math.abs(render.dpr-2)<.02,'v2 applies devicePixelRatio exactly once');
-  await page.waitForFunction(()=>document.querySelectorAll('[style*="anchor-name: --cobe-fleet-"]').length===6&&document.querySelectorAll('[style*="anchor-name: --cobe-arc-"]').length===5);
+  await page.waitForFunction(()=>document.querySelectorAll('[style*="anchor-name: --cobe-fleet-"]').length===6&&document.querySelectorAll('[style*="anchor-name: --cobe-arc-"]').length===window.__cobeAudit.arcs);
   assert.equal(await page.locator('.global-marker-label').count(),24,'Every located VPS has its own anchored name');
   await page.waitForFunction(()=>[...document.querySelectorAll('.global-marker-label')].some(label=>getComputedStyle(label).visibility==='visible'));
   assert.ok(await page.locator('.global-marker-label:visible').count()>1,'All VPS names on the visible hemisphere are shown together');
