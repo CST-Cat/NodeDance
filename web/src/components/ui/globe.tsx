@@ -62,7 +62,7 @@ export function Globe({ className, config = GLOBE_CONFIG, onFrame, children }: {
     resize.observe(host)
     let frame = 0
     const render = () => {
-      if (!pointerInteracting.current) phiRef.current += 0.005
+      if (!pointerInteracting.current) phiRef.current += 0.0025
       const camera = { phi: phiRef.current + rs.get(), theta: current.current.config.theta }
       globe.update(camera)
       current.current.onFrame?.(camera)
