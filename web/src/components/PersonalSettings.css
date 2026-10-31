@@ -448,10 +448,10 @@
   padding-block: var(--workspace-space-md);
 }
 .preferences-page .update-record-slot:first-child .update-job {
-  padding-top: 0;
+  padding-top: calc(var(--workspace-space-md) + 1px);
 }
 .preferences-page .update-record-slot:last-child .update-job {
-  padding-bottom: 0;
+  padding-bottom: calc(var(--workspace-space-md) + 1px);
 }
 
 .preferences-page .update-confirm-dialog > div:first-child > button {
