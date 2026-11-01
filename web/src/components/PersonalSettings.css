@@ -471,7 +471,31 @@
 }
 
 .preferences-page .update-notice .update-progress {
-  margin-top: var(--workspace-space-xs);
+  margin-top: 0;
+  display: grid;
+  gap: var(--workspace-space-xs);
+}
+
+.preferences-page .update-progress-stage {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.preferences-page .update-progress-row {
+  display: flex;
+  align-items: center;
+  gap: var(--workspace-space-sm);
+}
+
+.preferences-page .update-progress-row [role="progressbar"] {
+  flex: 1;
+  min-width: 0;
+}
+
+.preferences-page .update-progress-value {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .preferences-page .update-notice-refresh p {

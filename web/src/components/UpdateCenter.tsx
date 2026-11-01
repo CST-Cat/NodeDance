@@ -434,11 +434,20 @@ export default function UpdateCenter() {
                   className="update-notice"
                 >
                   <div className="update-progress">
-                    <Progress
-                      value={Math.round((activeJob.value.progress ?? 0) * 100)}
-                      label={stageLabel(activeJob.value.stage)}
-                      showValue
-                    />
+                    <span className="update-progress-stage">
+                      {stageLabel(activeJob.value.stage)}
+                    </span>
+                    <div className="update-progress-row">
+                      <Progress
+                        value={Math.round(
+                          (activeJob.value.progress ?? 0) * 100,
+                        )}
+                        aria-label={stageLabel(activeJob.value.stage)}
+                      />
+                      <span className="update-progress-value">
+                        {Math.round((activeJob.value.progress ?? 0) * 100)}%
+                      </span>
+                    </div>
                   </div>
                 </Alert>
               ) : null}
