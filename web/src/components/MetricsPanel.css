@@ -1,13 +1,12 @@
-.host-metrics[data-v-64f045e3] {
-  margin-top: 16px;
-}
 .metrics-panel[data-v-64f045e3] {
   --metric-bg: var(--surface-soft);
-  --metric-card: var(--surface-soft);
   --metric-line: var(--line);
   --metric-text: var(--text);
   --metric-muted: var(--muted);
   --metric-title-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   width: 100%;
   container-type: inline-size;
   container-name: metrics;
@@ -18,7 +17,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 16px;
 }
 .metrics-header h2[data-v-64f045e3] {
   margin: 0;
@@ -30,24 +28,24 @@
   color: var(--metric-muted);
   font-size: 12px;
 }
-.metrics-grid[data-v-64f045e3] {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 16px;
-}
-.metric-card[data-v-64f045e3] {
-  width: 100%;
-  aspect-ratio: 1;
+.metric-section[data-v-64f045e3] {
   min-width: 0;
-  min-height: 0;
-  overflow: auto;
   overflow-wrap: anywhere;
-  scrollbar-width: thin;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
-  background: var(--surface);
-  box-shadow: none;
-  padding: 16px;
+}
+.metrics-panel .trends-sections,
+.metrics-panel .details-sections {
+  display: grid;
+  gap: 20px;
+}
+.metrics-panel .trends-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.metrics-panel .details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px 32px;
 }
 .card-heading[data-v-64f045e3] {
   display: flex;
@@ -74,10 +72,6 @@
     monospace;
   overflow-wrap: anywhere;
 }
-.hardware-card[data-v-64f045e3] {
-  grid-column: 1 / -1;
-  aspect-ratio: auto;
-}
 .network-pair[data-v-64f045e3] {
   display: flex;
   align-items: baseline;
@@ -99,11 +93,9 @@
 }
 
 @container (max-width: 760px) {
-  .metrics-grid[data-v-64f045e3] {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .metric-card[data-v-64f045e3] {
-    padding: 12px;
+  .metrics-panel .trends-row,
+  .metrics-panel .details-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
   .network-pair[data-v-64f045e3] {
     gap: 8px;
@@ -111,10 +103,13 @@
   }
 }
 
-.metrics-panel .metric-card .telemetry-plot { margin-top: 5px; }
-.metric-mount-reading + .metric-mount-reading { margin-top: 16px; }
+.metrics-panel .metric-section .telemetry-plot { margin-top: 5px; }
+.metric-mount-row { margin-top: 10px; display: grid; gap: 1px; text-align: left; }
+.mount-row-label { font-size: 11px; color: var(--metric-muted); overflow-wrap: anywhere; }
+.mount-row-value { font-size: 12px; font-variant-numeric: tabular-nums; }
+.mount-gauge-label { margin: 2px 0 0; font-size: 11px; color: var(--metric-muted); overflow-wrap: anywhere; }
 
-.metrics-panel .metric-card .resource-reading { margin-top: 8px; }
+.metrics-panel .resource-summary .resource-reading { margin-top: 8px; }
 
 .metrics-panel .resource-reading > small { font-size: var(--metric-title-size); }
 
@@ -130,7 +125,7 @@
 
 @container metrics (max-width: 760px) { .core-gauges { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; --core-rows: var(--core-mobile-rows); } }
 
-.metrics-panel .resource-summary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; aspect-ratio: auto; }
+.metrics-panel .resource-summary { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
 .summary-item { min-width: 0; text-align: center; }
 .summary-item .card-heading { justify-content: center; }
 .summary-item .network-pair { justify-content: center; flex-wrap: wrap; }

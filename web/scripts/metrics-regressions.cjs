@@ -31,7 +31,7 @@ module.exports=async function({page,base,node,artifacts,catalog}){
  const network=page.getByTestId('network-card');await network.waitFor()
  assert.equal(await page.locator('.metrics-eyebrow,.detail-heading-navigation').count(),0,'Redundant detail/monitoring eyebrow labels are removed');
  assert.ok(!/agent-v/.test(await page.locator('.detail-heading').innerText()),'Agent version is omitted from the page heading');
- assert.equal(await page.locator('.metrics-grid > .metric-card:not(.hardware-card) > .card-heading > h3').count(),3,'Network, disk I/O and process cards retain their top titles')
+ assert.equal(await page.locator('[data-testid="trends-card"] .card-heading > h3').count(),3,'Network, disk I/O and process sections retain their top titles')
  assert.equal(await page.locator('.metrics-panel .resource-gauge').count(),5,'CPU, memory, disk, swap and load reuse the VPS reading')
  assert.equal(await page.locator('.metrics-panel .gauge-needle').count(),0,'No extra pointer or alternate gauge design')
  assert.equal(await page.locator('[data-hardware=ipv4] dd').innerText(),'192.0.2.1','Public IPv4 is retained');
@@ -61,10 +61,10 @@ module.exports=async function({page,base,node,artifacts,catalog}){
  const gap=view();gap.metrics.network.summary.status='unknown';await publish({metrics:gap.metrics});await publish()
  assert.ok(((await network.locator('.chart-line').first().getAttribute('d')).match(/M/g)||[]).length>=2,'Missing persisted five-second samples leave gaps instead of invented zeros')
  for(let sample=0;sample<62;sample++)await publish()
- assert.equal(await page.locator('.metrics-grid .rate-chart').nth(2).getAttribute('data-points'),'60','The unrelated process chart retains its existing bound');
+ assert.equal(await page.locator('[data-testid="trends-card"] .rate-chart').nth(2).getAttribute('data-points'),'60','The unrelated process chart retains its existing bound');
  assert.ok(Number(await network.locator('.rate-chart').getAttribute('data-points'))>=2880,'Network retains the complete four-hour window')
  const reboot=view();reboot.metrics.uptime.value.bootId='reboot-fixture';await publish({metrics:reboot.metrics})
- assert.equal(await page.locator('.metrics-grid .rate-chart').nth(2).getAttribute('data-points'),'1','A reboot starts a new process series');
+ assert.equal(await page.locator('[data-testid="trends-card"] .rate-chart').nth(2).getAttribute('data-points'),'1','A reboot starts a new process series');
  assert.ok((await network.locator('.chart-line').first().getAttribute('d')).includes('L'),'An Agent reboot does not erase persisted network history')
  for(let point=0;point<4;point++){const live=view();live.metrics.uptime.value.bootId='reboot-fixture';await publish({metrics:live.metrics})}
  assert.equal(await network.getByTestId('network-interface').count(),0,'Interface rows are omitted from the summary card')
