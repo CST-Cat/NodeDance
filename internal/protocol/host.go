@@ -431,6 +431,9 @@ type NodeAsset struct {
 	TrafficLimitBytes     uint64     `json:"trafficLimitBytes"`
 	TrafficAccounting     string     `json:"trafficAccounting"`
 	TrafficWarningPercent float64    `json:"trafficWarningPercent"`
+	TransferHost          string     `json:"transferHost,omitempty"`
+	TransferPort          int        `json:"transferPort,omitempty"`
+	TransferBindPort      int        `json:"transferBindPort,omitempty"`
 }
 
 // Currencies lists the supported billing currencies published in the operation
@@ -458,6 +461,11 @@ func ValidateNodeAsset(a NodeAsset) error {
 	case "sum", "max", "min", "up", "down":
 	default:
 		return errors.New("invalid traffic accounting")
+	}
+	if a.TransferPort < 0 || a.TransferPort > 65535 || a.TransferBindPort < 0 || a.TransferBindPort > 65535 ||
+		a.TransferHost == "" != (a.TransferPort == 0) || a.TransferHost != "" && !validRsyncHost(a.TransferHost) ||
+		a.TransferBindPort != 0 && a.TransferPort == 0 {
+		return errors.New("invalid node transfer endpoint")
 	}
 	return nil
 }

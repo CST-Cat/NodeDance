@@ -40,6 +40,7 @@ const defaultTransferLimit int64 = protocol.DefaultFileLimit
 
 type Service struct {
 	root        *os.File
+	rootPath    string
 	limit       int64
 	blockedPath []string
 	// afterAtomicReplace is a package-test fault-injection hook for the
@@ -82,7 +83,7 @@ func New(rootPath string, limit int64, protectedPaths ...string) (*Service, erro
 			_ = root.Close()
 		}
 	}()
-	service := &Service{root: root, limit: limit}
+	service := &Service{root: root, rootPath: absRoot, limit: limit}
 	if absRoot == string(filepath.Separator) {
 		service.blockedPath = []string{"/proc", "/sys", "/dev", "/run"}
 	}
@@ -818,6 +819,73 @@ func validUploadTempName(targetBase, temporaryBase string) bool {
 		}
 	}
 	return true
+}
+
+func rsyncStagingName(targetBase, taskID string) string {
+	sum := sha256.Sum256([]byte(taskID))
+	return "." + targetBase + ".nodedance-rsync-" + hex.EncodeToString(sum[:12])
+}
+
+func validRsyncStagingName(targetBase, stagingBase string) bool {
+	prefix := "." + targetBase + ".nodedance-rsync-"
+	if !strings.HasPrefix(stagingBase, prefix) || len(stagingBase) != len(prefix)+24 {
+		return false
+	}
+	for _, char := range strings.TrimPrefix(stagingBase, prefix) {
+		if !(char >= '0' && char <= '9' || char >= 'a' && char <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// RealPath resolves a virtual path to the host path beneath the file root.
+// Virtual paths are normalized first, so the result cannot escape the root.
+func (s *Service) RealPath(virtual string) (string, error) {
+	name, _, err := s.normalize(virtual)
+	if err != nil {
+		return "", err
+	}
+	if name == "." {
+		return s.rootPath, nil
+	}
+	return filepath.Join(s.rootPath, name), nil
+}
+
+// PrepareRsyncStaging creates the per-task directory an rsync daemon serves
+// while receiving one file for an accepted upload task. When the target file
+// already exists, its content is hardlinked under the same base name so the
+// rsync delta algorithm has a basis; the original is never modified because
+// rsync writes a fresh inode and the upload commit path stays authoritative.
+func (s *Service) PrepareRsyncStaging(targetVirtual, taskID string) (string, error) {
+	target, _, err := s.normalize(targetVirtual)
+	if err != nil || target == "." {
+		return "", ErrInvalidPath
+	}
+	staging := path.Join(path.Dir(target), rsyncStagingName(path.Base(target), taskID))
+	real := filepath.Join(s.rootPath, staging)
+	if err := os.MkdirAll(real, 0o700); err != nil {
+		return "", err
+	}
+	if info, statErr := s.lstat(target); statErr == nil && info.Mode().IsRegular() {
+		_ = os.Link(filepath.Join(s.rootPath, target), filepath.Join(real, path.Base(target)))
+	}
+	return "/" + staging, nil
+}
+
+// RemoveRsyncStaging removes only the exact staging directory this service
+// derives for a target and task; it never scans or removes anything else.
+func (s *Service) RemoveRsyncStaging(targetVirtual, stagingVirtual string) error {
+	target, _, err := s.normalize(targetVirtual)
+	if err != nil || target == "." {
+		return ErrInvalidPath
+	}
+	staging, _, err := s.normalize(stagingVirtual)
+	if err != nil || staging == "." || path.Dir(staging) != path.Dir(target) ||
+		!validRsyncStagingName(path.Base(target), path.Base(staging)) {
+		return ErrInvalidPath
+	}
+	return os.RemoveAll(filepath.Join(s.rootPath, staging))
 }
 
 // RemoveUploadTemporary removes only a temporary upload path that was returned

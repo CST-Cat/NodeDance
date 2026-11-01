@@ -36,21 +36,30 @@ type agentFileTransfer struct {
 }
 
 type agentFileBridge struct {
-	service     *agentfiles.Service
-	tasks       *agentfiles.TaskExecutor
-	generation  uint64
-	writer      fileEnvelopeWriter
-	mu          sync.Mutex
-	transfers   map[string]*agentFileTransfer
-	canceled    map[string]struct{}
-	cancelOrder []string
-	closed      bool
-	wg          sync.WaitGroup
+	service       *agentfiles.Service
+	tasks         *agentfiles.TaskExecutor
+	generation    uint64
+	writer        fileEnvelopeWriter
+	stateDir      string
+	coreHost      string
+	mu            sync.Mutex
+	transfers     map[string]*agentFileTransfer
+	canceled      map[string]struct{}
+	cancelOrder   []string
+	closed        bool
+	wg            sync.WaitGroup
+	rsyncMu       sync.Mutex
+	rsyncSessions map[string]*agentRsyncSession
+	rsyncOnce     sync.Once
+	rsyncBin      string
+	rsyncErr      error
 }
 
-func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer fileEnvelopeWriter, tasks *agentfiles.TaskExecutor) *agentFileBridge {
+func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer fileEnvelopeWriter, tasks *agentfiles.TaskExecutor, stateDir, coreHost string) *agentFileBridge {
 	return &agentFileBridge{service: service, tasks: tasks, generation: generation, writer: writer,
-		transfers: make(map[string]*agentFileTransfer), canceled: make(map[string]struct{})}
+		stateDir: stateDir, coreHost: coreHost,
+		transfers: make(map[string]*agentFileTransfer), canceled: make(map[string]struct{}),
+		rsyncSessions: make(map[string]*agentRsyncSession)}
 }
 
 func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Envelope) error {
@@ -149,6 +158,24 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 		go func() {
 			defer b.wg.Done()
 			b.beginUpload(ctx, id, request)
+		}()
+		return nil
+	case protocol.FileRsyncReceive:
+		return b.rsyncReceive(ctx, id, request)
+	case protocol.FileRsyncFinish:
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			b.rsyncFinish(ctx, id, request)
+		}()
+		return nil
+	case protocol.FileRsyncAbort:
+		return b.rsyncAbort(ctx, id, request)
+	case protocol.FileRsyncSend:
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			b.rsyncSend(ctx, id, request)
 		}()
 		return nil
 	default:
@@ -393,6 +420,7 @@ func (b *agentFileBridge) cancel(id string) bool {
 	transfer := b.transfers[id]
 	delete(b.transfers, id)
 	b.mu.Unlock()
+	b.rsyncAbortByRequest(id)
 	if transfer != nil {
 		if transfer.cancel != nil {
 			transfer.cancel()
@@ -416,6 +444,17 @@ func (b *agentFileBridge) isCanceled(id string) bool {
 }
 
 func (b *agentFileBridge) closeAll() {
+	b.rsyncMu.Lock()
+	taskIDs := make([]string, 0, len(b.rsyncSessions))
+	for taskID := range b.rsyncSessions {
+		taskIDs = append(taskIDs, taskID)
+	}
+	b.rsyncMu.Unlock()
+	for _, taskID := range taskIDs {
+		if session := b.stopRsyncSession(taskID); session != nil {
+			b.cleanupRsyncSession(session)
+		}
+	}
 	b.mu.Lock()
 	b.closed = true
 	ids := make([]string, 0, len(b.transfers))

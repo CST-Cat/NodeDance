@@ -83,6 +83,64 @@ func (e *TaskExecutor) AttachUpload(ctx context.Context, taskID string, request 
 	}
 }
 
+// UploadSpec returns the accepted upload task's spec once the task has been
+// prepared, waiting briefly for the task runner to register it.
+func (e *TaskExecutor) UploadSpec(ctx context.Context, taskID string) (protocol.FileTaskSpec, error) {
+	deadline := time.NewTimer(uploadAttachTimeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		e.mu.Lock()
+		pending := e.uploads[taskID]
+		e.mu.Unlock()
+		if pending != nil {
+			return pending.spec, nil
+		}
+		select {
+		case <-ctx.Done():
+			return protocol.FileTaskSpec{}, ctx.Err()
+		case <-deadline.C:
+			return protocol.FileTaskSpec{}, errors.New("file upload task is not ready")
+		case <-ticker.C:
+		}
+	}
+}
+
+// FeedUploadFromFile attaches to the pending upload exactly like a streamed
+// upload begin, then feeds it the bytes of a file an rsync daemon received.
+// Size and digest verification stay with the upload commit path.
+func (e *TaskExecutor) FeedUploadFromFile(ctx context.Context, taskID, stagedPath string) error {
+	spec, err := e.UploadSpec(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	begin := protocol.FileRequest{Operation: protocol.FileUploadBegin, TaskID: taskID, Path: spec.Path,
+		ExpectedVersion: spec.ExpectedVersion, Size: spec.Size, SHA256: spec.SHA256}
+	writer, err := e.AttachUpload(ctx, taskID, begin)
+	if err != nil {
+		return err
+	}
+	file, err := os.Open(stagedPath)
+	if err != nil {
+		_ = writer.CloseWithError(err)
+		return err
+	}
+	lease := transferbuffer.Acquire()
+	_, copyErr := io.CopyBuffer(writer, file, lease[:])
+	transferbuffer.Release(lease)
+	closeErr := file.Close()
+	if copyErr != nil {
+		_ = writer.CloseWithError(copyErr)
+		return copyErr
+	}
+	if closeErr != nil {
+		_ = writer.CloseWithError(closeErr)
+		return closeErr
+	}
+	return writer.Close()
+}
+
 func (e *TaskExecutor) ExecuteFile(ctx context.Context, dispatch protocol.TaskDispatch, onRunning func(taskjournal.Snapshot)) (taskjournal.Snapshot, error) {
 	identity, err := protocol.TaskIdentity(dispatch.TaskID, dispatch.NodeID, dispatch.IdempotencyKey, dispatch.Intent)
 	if err != nil {
