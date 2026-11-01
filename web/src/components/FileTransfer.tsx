@@ -18,7 +18,6 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
   const [nodes, setNodes] = useState<AgentNode[]>([]);
   const [targetId, setTargetId] = useState(sourceNodeId);
   const [targetPath, setTargetPath] = useState("/");
-  const [mode, setMode] = useState("relay");
   const [picker, setPicker] = useState(false);
   const [error, setError] = useState(""), [busy, setBusy] = useState(false), [done, setDone] = useState(false);
   const pending = useRef<AbortController | null>(null);
@@ -37,7 +36,7 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
     pending.current = controller;
     setBusy(true); setError("");
     try {
-      const result = await manager.transfer(targetId, files.map(file => file.path), targetPath, mode, controller.signal);
+      const result = await manager.transfer(targetId, files.map(file => file.path), targetPath, controller.signal);
       if (result.failed?.length) setError(result.failed.map(failure => `${failure.sourcePath}: ${failure.error}`).join("; "));
       else setDone(true);
     } catch (reason) {
@@ -64,12 +63,6 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
         </ul>
       </div>
       <div className="file-transfer-actions">
-        <div className="file-transfer-mode">
-          <Select label="" aria-label={x("mode")} value={mode} disabled={busy || done} onValueChange={value => { setMode(value); }} options={[
-            { value: "relay", label: x("modeRelay") },
-            { value: "direct", label: x("modeDirect") },
-          ]} />
-        </div>
         {busy && !done && <Button variant="secondary" onClick={() => pending.current?.abort()}>{t("dialog.cancel")}</Button>}
         <Button onClick={done ? onClose : () => void start()} disabled={!done && (busy || !targetNode || !targetPath.startsWith("/"))} loading={busy && !done} aria-label={done ? t("dialog.confirm") : undefined}>{done ? <Check size={18} /> : x("start")}</Button>
       </div>

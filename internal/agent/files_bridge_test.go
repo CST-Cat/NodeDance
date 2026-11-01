@@ -25,7 +25,7 @@ func TestDownloadFinalQueueFailureIsReported(t *testing.T) {
 		t.Fatal(err)
 	}
 	writer := &failingFinalFileWriter{}
-	b := newAgentFileBridge(nil, 1, writer, nil, t.TempDir(), "core.example")
+	b := newAgentFileBridge(nil, 1, writer, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	transfer := &agentFileTransfer{id: "01234567-89ab-4cde-8123-456789abcdef", download: file, cancel: cancel, sequence: 1}

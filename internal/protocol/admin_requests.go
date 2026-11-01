@@ -34,20 +34,6 @@ type FileTransferRequest struct {
 	TargetNodeID string   `json:"targetNodeId" request:"required"`
 	Paths        []string `json:"paths" request:"required"`
 	TargetPath   string   `json:"targetPath" request:"required"`
-	Mode         string   `json:"mode,omitempty"`
-}
-
-const (
-	FileTransferModeDirect = "direct"
-	FileTransferModeRelay  = "relay"
-)
-
-func ValidFileTransferMode(mode string) bool {
-	switch mode {
-	case FileTransferModeDirect, FileTransferModeRelay:
-		return true
-	}
-	return false
 }
 
 type FileActionRequest struct {

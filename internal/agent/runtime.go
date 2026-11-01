@@ -283,7 +283,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityCompose)
 	}
 	if fileService != nil {
-		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles, protocol.CapabilityFileRsync)
+		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles)
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
 		return errors.New("send Agent hello failed")
@@ -346,17 +346,13 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	if !containsCapability(welcome.Capabilities, protocol.CapabilityFiles) {
 		fileService = nil
 	}
-	coreHost := ""
-	if parsed, parseErr := url.Parse(config.Server); parseErr == nil {
-		coreHost = parsed.Hostname()
-	}
 	return runHeartbeatLoop(connectionCtx, conn, reads, welcome.Generation, configPath, metricUpdates, sharedDocker,
-		taskBridge, streamBridge, composeBridge, config.Shell, config.NodeID, fileService, welcome.Capabilities, hostManager, coreHost)
+		taskBridge, streamBridge, composeBridge, config.Shell, config.NodeID, fileService, welcome.Capabilities, hostManager)
 }
 
 const agentHelloDeadline = 5 * time.Second
 
-func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, sharedDocker *agentdocker.SDKEngine, taskBridge *taskBridgeRuntime, streamBridge *containerStreamBridge, composeBridge *agentcompose.Bridge, hostShell, nodeID string, fileService *agentfiles.Service, negotiatedCapabilities []string, hostManager *hostcontrol.Manager, coreHost string) (returnErr error) {
+func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-chan socketRead, generation uint64, configPath string, metricUpdates <-chan hostmetrics.Snapshot, sharedDocker *agentdocker.SDKEngine, taskBridge *taskBridgeRuntime, streamBridge *containerStreamBridge, composeBridge *agentcompose.Bridge, hostShell, nodeID string, fileService *agentfiles.Service, negotiatedCapabilities []string, hostManager *hostcontrol.Manager) (returnErr error) {
 	hostSlots := make(chan struct{}, 8)
 	updateSlots := make(chan struct{}, 2)
 	activeCapabilities := append([]string(nil), negotiatedCapabilities...)
@@ -584,11 +580,7 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 		if taskBridge != nil {
 			fileTasks = taskBridge.files
 		}
-		stateDir, stateErr := filepath.Abs(filepath.Dir(configPath))
-		if stateErr != nil {
-			stateDir = ""
-		}
-		bridge := newAgentFileBridge(fileService, generation, writer, fileTasks, stateDir, coreHost)
+		bridge := newAgentFileBridge(fileService, generation, writer, fileTasks)
 		go func() {
 			defer close(finished)
 			done <- bridge.run(fileCtx, fileMessages)

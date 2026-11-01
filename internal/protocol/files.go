@@ -4,14 +4,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net"
 	"regexp"
 	"strings"
 )
 
 const (
-	CapabilityFiles     = "agent.files.v1"
-	CapabilityFileRsync = "agent.files.rsync.v1"
+	CapabilityFiles = "agent.files.v1"
 
 	TypeFileRequest  = "file_request"
 	TypeFileResponse = "file_response"
@@ -33,11 +31,6 @@ const (
 	FileUploadAck    = "upload_ack"
 	FileDownload     = "download"
 	FileDownloadAck  = "download_ack"
-	FileRsyncReceive = "rsync_receive"
-	FileRsyncFinish  = "rsync_finish"
-	FileRsyncAbort   = "rsync_abort"
-	FileRsyncSend    = "rsync_send"
-	FileRsyncFetch   = "rsync_fetch"
 
 	MaxFileControlBytes = 256 << 10
 	MaxFileChunkBytes   = 32 << 10
@@ -63,26 +56,9 @@ type FileRequest struct {
 	TransferID      string `json:"transferId,omitempty"`
 	Sequence        uint64 `json:"sequence,omitempty"`
 	TaskID          string `json:"taskId,omitempty"`
-	ExpectedVersion string          `json:"expectedVersion,omitempty"`
-	Size            int64           `json:"size,omitempty"`
-	SHA256          string          `json:"sha256,omitempty"`
-	Rsync           *FileRsyncSpec  `json:"rsync,omitempty"`
-}
-
-// FileRsyncSpec carries one negotiated rsync session. Core issues the
-// credentials per transfer task; the receiving side opens its daemon only
-// for the lease window and only for AllowedHost.
-type FileRsyncSpec struct {
-	Host           string `json:"host,omitempty"`
-	Port           int    `json:"port,omitempty"`
-	BindPort       int    `json:"bindPort,omitempty"`
-	LocalOnly      bool   `json:"localOnly,omitempty"`
-	User           string `json:"user,omitempty"`
-	Password       string `json:"password,omitempty"`
-	AllowedHost    string `json:"allowedHost,omitempty"`
-	RemoteName     string `json:"remoteName,omitempty"`
-	LeaseSeconds   int    `json:"leaseSeconds,omitempty"`
-	TimeoutSeconds int    `json:"timeoutSeconds,omitempty"`
+	ExpectedVersion string `json:"expectedVersion,omitempty"`
+	Size            int64  `json:"size,omitempty"`
+	SHA256          string `json:"sha256,omitempty"`
 }
 
 type FileEntry struct {
@@ -107,7 +83,6 @@ type FileResponse struct {
 	Size        int64       `json:"size,omitempty"`
 	Entries     []FileEntry `json:"entries,omitempty"`
 	Entry       *FileEntry  `json:"entry,omitempty"`
-	Port        int         `json:"port,omitempty"`
 	Text        string      `json:"text,omitempty"`
 	AckSequence uint64      `json:"ackSequence,omitempty"`
 }
@@ -172,77 +147,10 @@ func ValidateFileRequest(envelope Envelope, generation uint64, request FileReque
 		if request.TransferID != envelope.RequestID || request.Sequence == 0 {
 			return errors.New("upload acknowledgement is invalid")
 		}
-	case FileRsyncReceive:
-		if request.TransferID != envelope.RequestID || !validFileTaskID(request.TaskID) || !validRsyncCredentials(request.Rsync) ||
-			request.Rsync.BindPort < 0 || request.Rsync.BindPort > 65535 ||
-			request.Rsync.LeaseSeconds < 30 || request.Rsync.LeaseSeconds > 7200 ||
-			!(request.Rsync.LocalOnly && request.Rsync.AllowedHost == "" || validRsyncPeer(request.Rsync.AllowedHost)) {
-			return errors.New("rsync receive negotiation is invalid")
-		}
-	case FileRsyncFinish, FileRsyncAbort:
-		if request.TransferID != envelope.RequestID || !validFileTaskID(request.TaskID) {
-			return errors.New("rsync session close is invalid")
-		}
-	case FileRsyncSend:
-		if request.TransferID != envelope.RequestID || request.Path == "" || !validRsyncCredentials(request.Rsync) ||
-			!validRsyncHost(request.Rsync.Host) || request.Rsync.Port < 1 || request.Rsync.Port > 65535 ||
-			!validRsyncRemoteName(request.Rsync.RemoteName) ||
-			request.Rsync.TimeoutSeconds < 10 || request.Rsync.TimeoutSeconds > 7200 {
-			return errors.New("rsync send is invalid")
-		}
-	case FileRsyncFetch:
-		if request.TransferID != envelope.RequestID || !validFileTaskID(request.TaskID) || !validRsyncCredentials(request.Rsync) ||
-			!validRsyncHost(request.Rsync.Host) || request.Rsync.Port < 1 || request.Rsync.Port > 65535 ||
-			!validRsyncRemoteName(request.Rsync.RemoteName) ||
-			request.Rsync.TimeoutSeconds < 10 || request.Rsync.TimeoutSeconds > 7200 {
-			return errors.New("rsync fetch is invalid")
-		}
 	default:
 		return fmt.Errorf("unsupported file operation %q", request.Operation)
 	}
 	return nil
-}
-
-func validRsyncCredentials(spec *FileRsyncSpec) bool {
-	if spec == nil || len(spec.User) < 1 || len(spec.User) > 32 || len(spec.Password) < 16 || len(spec.Password) > 128 {
-		return false
-	}
-	for _, character := range spec.User {
-		if !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '-' || character == '_') {
-			return false
-		}
-	}
-	return !strings.ContainsAny(spec.Password, "\r\n\x00")
-}
-
-func validRsyncPeer(value string) bool {
-	if value == "" {
-		return false
-	}
-	if ip := net.ParseIP(value); ip != nil {
-		return true
-	}
-	_, _, err := net.ParseCIDR(value)
-	return err == nil
-}
-
-func validRsyncHost(value string) bool {
-	if value == "" {
-		return true
-	}
-	if len(value) > 253 || strings.HasPrefix(value, ".") || strings.HasSuffix(value, ".") || strings.Contains(value, "..") {
-		return false
-	}
-	for _, character := range value {
-		if !(character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' || character == '-' || character == '.' || character == ':') {
-			return false
-		}
-	}
-	return true
-}
-
-func validRsyncRemoteName(value string) bool {
-	return value != "" && len(value) <= 255 && value != "." && value != ".." && !strings.ContainsAny(value, "/\\\x00")
 }
 
 func validFileTaskID(value string) bool {
@@ -268,13 +176,9 @@ func ValidateFileResponse(envelope Envelope, generation uint64, response FileRes
 		return errors.New("file response is outside its bound")
 	}
 	switch response.Operation {
-	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileHash, FileUploadBegin, FileUploadChunk,
-		FileRsyncReceive, FileRsyncFinish, FileRsyncAbort, FileRsyncSend, FileRsyncFetch:
+	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileHash, FileUploadBegin, FileUploadChunk:
 	default:
 		return errors.New("file response operation is invalid")
-	}
-	if response.Port < 0 || response.Port > 65535 || response.Port != 0 && response.Operation != FileRsyncReceive {
-		return errors.New("file response port is invalid")
 	}
 	if response.SHA256 != "" && !validFileDigest(response.SHA256) {
 		return errors.New("file response digest is invalid")

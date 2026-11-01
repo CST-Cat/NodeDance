@@ -6,16 +6,6 @@
 
 ### 简体中文
 
-## [0.1.33]
-
-### English
-
-- Move peer file transfer to the rsync engine bundled with the Agent: Core negotiates a one-shot rsync session per file over the existing control connection, with per-task credentials and a listener that exists only for that transfer — direct node-to-node when the target node has a configured endpoint, or relayed through Core in two negotiated hops otherwise. Existing files seed delta transfers, and received files still land through the upload task's SHA-256 verification. The hand-written node-to-node chunk relay is removed.
-
-### 简体中文
-
-- 文件对传改由 Agent 内置的 rsync 引擎传输：Core 经现有控制连接按文件协商一次性 rsync 会话，使用单次任务凭证、监听只在该次传输期间存在——目标节点配置了直连端点时节点间直达，否则经 Core 协商两跳中继。已有文件作为增量传输的基底，收到的文件仍经上传任务的 SHA-256 校验后落盘。原自研的节点间分片中继已移除。
-
 ## [0.1.32]
 
 ### English

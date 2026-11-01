@@ -94,20 +94,5 @@
 .file-transfer-actions {
   display: flex;
   justify-content: flex-end;
-  align-items: center;
   gap: 8px;
-}
-
-.file-transfer-mode {
-  margin-right: auto;
-  width: fit-content;
-  flex: none;
-}
-
-.file-transfer-dialog .product-dropdown-menu {
-  min-width: max-content;
-}
-
-.file-transfer-dialog .product-dropdown-menu [role="menuitem"] {
-  white-space: nowrap;
 }

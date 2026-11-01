@@ -44,7 +44,7 @@ export default function FileShares({ nodeId, paths, container, onClose }: { node
     <Tabs className="product-arc arc-ui" data-native-controls value={tab} onValueChange={setTab}><TabsList><TabsTrigger value="shares">{s("title")}</TabsTrigger><TabsTrigger value="requests">{s("requests")}</TabsTrigger></TabsList></Tabs>
  {tab === "requests" ? <FileRequests /> : <>
  {error && <Alert tone="danger" title={error} />}
-    <div className="share-actions"><Button variant="secondary" onClick={() => {setCreating(true);setUploading(true);setCurrent(undefined);intent.current=shareIntent();}}>{s("upload")}</Button></div>
+    <Button variant="secondary" onClick={() => {setCreating(true);setUploading(true);setCurrent(undefined);intent.current=shareIntent();}}>{s("upload")}</Button>
     {(creating || current) && <>
       <SettingsGroup>
         <ShareSettingRow label={s("name")}><Input label="" aria-label={s("name")} value={name} disabled={busy || !!current?.revoked} onChange={e => setName(e.target.value)} /></ShareSettingRow>
@@ -63,7 +63,7 @@ export default function FileShares({ nodeId, paths, container, onClose }: { node
         <p>{s("count").replace("{0}", String(current.downloads))}</p>
       </>}
     </>}
-    {items.length ? <SettingsGroup>{items.map(v => <div className="share-file-row" key={v.id}><Button variant="ghost" onClick={() => void run(async signal => {select(await operationRequest<FileShare>("shares.get",{params:{id:v.id}},{signal}));})}>{v.name}</Button><span>{v.revoked ? s("revoked") : v.expiresAt && v.expiresAt <= Date.now() / 1000 || v.maxDownloads > 0 && v.downloads >= v.maxDownloads ? s("expired") : s("active")}</span><span>{size(v.size)}</span></div>)}</SettingsGroup> : <p className="share-empty">{s("empty")}</p>}
+    <SettingsGroup>{items.length ? items.map(v => <div className="share-file-row" key={v.id}><Button variant="ghost" onClick={() => void run(async signal => {select(await operationRequest<FileShare>("shares.get",{params:{id:v.id}},{signal}));})}>{v.name}</Button><span>{v.revoked ? s("revoked") : v.expiresAt && v.expiresAt <= Date.now() / 1000 || v.maxDownloads > 0 && v.downloads >= v.maxDownloads ? s("expired") : s("active")}</span><span>{size(v.size)}</span></div>) : <p>{s("empty")}</p>}</SettingsGroup>
   </>}</div></DialogContent></Dialog>;
 }
 

@@ -163,10 +163,6 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdin io.Rea
 	if err != nil {
 		return err
 	}
-	fileTransferPort, err := config.RuntimeFileTransferPort(fileConfig, lookupValue(lookup, "NODEDANCE_FILE_TRANSFER_PORT"))
-	if err != nil {
-		return err
-	}
 	historyRetentionDays, err := config.RuntimeNonMetricHistoryRetentionDays(fileConfig, lookupValue(lookup, "NODEDANCE_HISTORY_RETENTION_DAYS"), *historyRetentionDaysFlag)
 	if err != nil {
 		return err
@@ -187,7 +183,6 @@ func runServe(ctx context.Context, args []string, lookup LookupEnv, stdin io.Rea
 		LoginLockoutDuration:      loginLockout,
 		WebSocketCheckInterval:    websocketCheckInterval,
 		FileTransferLimit:         fileTransferLimit,
-		FileTransferPort:          fileTransferPort,
 		NonMetricHistoryRetention: time.Duration(historyRetentionDays) * 24 * time.Hour,
 	})
 	if err != nil {

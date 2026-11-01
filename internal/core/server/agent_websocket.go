@@ -52,7 +52,6 @@ type agentConnection struct {
 	taskReconcileAttempted   map[string]struct{}
 	taskSnapshot             *agentTaskSnapshot
 	dockerFrames             chan dockerFrame
-	remoteIP                 string
 	commands                 chan protocol.Envelope
 	streamMu                 sync.Mutex
 	streams                  map[string]*coreBrowserStream
@@ -498,10 +497,10 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(protocol.MaxMessageBytes)
 	defer conn.Close(websocket.StatusNormalClosure, "Agent connection closed")
 
-	s.serveAgentChannel(r.Context(), conn, identity, digest, s.effectiveRemoteAddr(r))
+	s.serveAgentChannel(r.Context(), conn, identity, digest)
 }
 
-func (s *Server) serveAgentChannel(parent context.Context, conn protocol.AgentChannel, identity agents.Identity, digest []byte, remoteIP string) {
+func (s *Server) serveAgentChannel(parent context.Context, conn protocol.AgentChannel, identity agents.Identity, digest []byte) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	firstCtx, firstCancel := context.WithTimeout(ctx, agentHelloTimeout)
@@ -560,7 +559,7 @@ func (s *Server) serveAgentChannel(parent context.Context, conn protocol.AgentCh
 	}
 	connectionCtx, connectionCancel := context.WithCancel(parent)
 	managed := &agentConnection{conn: conn, cancel: connectionCancel, agentID: identity.AgentID, generation: lease.ConnectionGeneration,
-		ctx: connectionCtx, nodeID: identity.NodeID, remoteIP: remoteIP,
+		ctx: connectionCtx, nodeID: identity.NodeID,
 		imageResponses: make(map[string]imageResponseWaiter),
 		taskSignal:     make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),
