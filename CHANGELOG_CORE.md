@@ -4,6 +4,12 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.62]
+
+### English
+
 - Correct the peer transfer modes: the dialog now offers exactly Core Relay and Agent Direct (Core Relay by default) — the Auto mode shipped in 0.1.61 was never part of the design and is removed, and the mode picker shrinks to fit its label.
 - Rework the file upload dialog layout: a single drop zone for files plus a natural-width Upload folder button, replacing the raw native file control that sat above the drop zone.
 - Fix the file sharing dialog layout: the dialog keeps one fixed size across the Share and Collect tabs so switching no longer resizes it, Refresh becomes a small button in the action row instead of a full-width block, and empty lists render as a plain line of text instead of an empty card.
