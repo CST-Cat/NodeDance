@@ -78,6 +78,7 @@ func TestSourceEnvDerivesGoPathsWithoutHome(t *testing.T) {
 func TestSourceEnvPreservesExplicitGoPaths(t *testing.T) {
 	custom := filepath.Join(t.TempDir(), "gopath")
 	t.Setenv("GOPATH", custom)
+	t.Setenv("GOMODCACHE", "")
 	values := map[string]string{}
 	for _, entry := range sourceEnv(t.TempDir()) {
 		key, value, _ := strings.Cut(entry, "=")
