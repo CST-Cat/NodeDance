@@ -123,6 +123,8 @@ func (b *agentFileBridge) rsyncReceive(ctx context.Context, id string, request p
 		"pid file = " + filepath.Join(configDir, "rsyncd.pid"),
 		"lock file = " + filepath.Join(configDir, "rsyncd.lock"),
 		"use chroot = no",
+		"uid = " + strconv.Itoa(os.Getuid()),
+		"gid = " + strconv.Itoa(os.Getgid()),
 		"max connections = 1",
 		"timeout = " + strconv.Itoa(spec.LeaseSeconds),
 		"[xfer]",
@@ -305,7 +307,7 @@ func (b *agentFileBridge) rsyncFetch(ctx context.Context, id string, request pro
 	destination := filepath.Join(stagingReal, path.Base(targetPath))
 	command := exec.CommandContext(ctx, binary,
 		"--timeout="+strconv.Itoa(spec.TimeoutSeconds), "--contimeout=30",
-		"-t", "--no-perms", "--no-owner", "--no-group", "--", source, destination)
+		"-t", "--ignore-times", "--no-perms", "--no-owner", "--no-group", "--", source, destination)
 	command.Env = append(os.Environ(), "RSYNC_PASSWORD="+spec.Password)
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -354,7 +356,7 @@ func (b *agentFileBridge) rsyncSend(ctx context.Context, id string, request prot
 	target := "rsync://" + spec.User + "@" + net.JoinHostPort(host, strconv.Itoa(spec.Port)) + "/xfer/" + spec.RemoteName
 	command := exec.CommandContext(ctx, binary,
 		"--timeout="+strconv.Itoa(spec.TimeoutSeconds), "--contimeout=30",
-		"-t", "--no-perms", "--no-owner", "--no-group", "--", source, target)
+		"-t", "--ignore-times", "--no-perms", "--no-owner", "--no-group", "--", source, target)
 	command.Env = append(os.Environ(), "RSYNC_PASSWORD="+spec.Password)
 	output, err := command.CombinedOutput()
 	if err != nil {

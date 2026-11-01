@@ -86,6 +86,8 @@ func (m *rsyncRelayManager) open(dir, staging string, readOnly bool, allowedHost
 		"pid file = " + filepath.Join(dir, "rsyncd.pid"),
 		"lock file = " + filepath.Join(dir, "rsyncd.lock"),
 		"use chroot = no",
+		"uid = " + strconv.Itoa(os.Getuid()),
+		"gid = " + strconv.Itoa(os.Getgid()),
 		"max connections = 1",
 		"timeout = " + strconv.Itoa(leaseSeconds),
 		"[xfer]",

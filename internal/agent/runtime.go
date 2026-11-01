@@ -283,7 +283,7 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityCompose)
 	}
 	if fileService != nil {
-		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles)
+		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles, protocol.CapabilityFileRsync)
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
 		return errors.New("send Agent hello failed")
