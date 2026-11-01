@@ -459,6 +459,15 @@
 
 .preferences-page .update-notice {
   padding: var(--workspace-space-sm) var(--workspace-space-md);
+  align-items: center;
+}
+
+.preferences-page .update-notice strong {
+  display: none;
+}
+
+.preferences-page .update-notice p {
+  margin-top: 0;
 }
 
 .preferences-page .update-notice .update-progress {
