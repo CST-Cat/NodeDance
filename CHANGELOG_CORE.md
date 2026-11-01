@@ -6,6 +6,16 @@
 
 ### 简体中文
 
+## [0.1.61]
+
+### English
+
+- Rebuild peer file transfer on the rsync engine bundled with the Agent: the transfer dialog gains an Auto / Direct / Via Core mode picker — nodes with a direct endpoint configured in the new node asset fields receive transfers node-to-node, everything else relays through Core in two hops negotiated per file, with one-shot ports and credentials that close when the transfer ends. Re-transferring a changed file sends only the delta, and the target upload task's SHA-256 verification still gates every write.
+
+### 简体中文
+
+- 文件对传改建于 Agent 内置的 rsync 引擎：对传弹窗新增自动、直连、Core 中继模式选择——节点资产设置中配好直连端点的节点可节点间直达，其余经 Core 按文件协商两跳中继，端口与凭证均为一次性、随传输结束关闭。已变更文件重传时只发送增量，所有落盘仍由目标上传任务的 SHA-256 校验把关。
+
 ## [0.1.60]
 
 ### English
