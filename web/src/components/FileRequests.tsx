@@ -23,7 +23,7 @@ export default function FileRequests() {
   function select(v?: FileRequest) { setCurrent(v); setName(v?.name ?? ""); setNotes(v?.notes ?? ""); setFiles(String(v?.maxFiles ?? 10)); setBytes(String(v?.maxBytes ?? 1073741824)); setDays(v ? String(v.expiresAt ? Math.max(1, Math.ceil((v.expiresAt - Date.now() / 1000) / 86400)) : 0) : "7"); intent.current = shareIntent(); }
   async function run(action: () => Promise<void>) { setBusy(true); setError(""); try { await action(); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); } }
   async function download(entry: SharedEntry) { if (!current) return; const anchor = document.createElement("a"); anchor.href = String(await operationURL("share-requests.download", { params: { id: current.id }, query: { path: entry.path } })); anchor.download = entry.path; document.body.append(anchor); anchor.click(); anchor.remove(); }
-  return <div className="file-shares">{error && <Alert tone="danger" title={error} />}<SettingsGroup>
+  return <div className="file-requests">{error && <Alert tone="danger" title={error} />}<SettingsGroup>
     <ShareSettingRow label={s("name")}><Input label="" aria-label={s("name")} value={name} onChange={e => setName(e.target.value)} /></ShareSettingRow>
     <ShareSettingRow label={s("notes")}><Input label="" aria-label={s("notes")} value={notes} onChange={e => setNotes(e.target.value)} /></ShareSettingRow>
     <ShareSettingRow label={s("days")}><Input label="" aria-label={s("days")} type="number" min={0} value={days} onChange={e => setDays(e.target.value)} /></ShareSettingRow>

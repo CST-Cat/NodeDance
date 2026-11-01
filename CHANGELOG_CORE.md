@@ -4,7 +4,11 @@
 
 ### English
 
+- Shrink the file sharing dialog's fixed height to fit its content: both tabs now share a shorter frame with only a small margin below the last row instead of a tall blank area.
+
 ### 简体中文
+
+- 缩减文件分享弹窗的固定高度以贴合内容：两个页签共用更矮的同一尺寸，最后一行下方只留少量边距，不再留出大片空白。
 
 ## [0.1.62]
 
