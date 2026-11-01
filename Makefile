@@ -9,7 +9,7 @@ DESTDIR ?=
 CORE_VERSION ?= $(shell git describe --tags --exact-match --match 'core-v*' 2>/dev/null || printf dev)
 AGENT_VERSION ?= $(shell git describe --tags --exact-match --match 'agent-v*' 2>/dev/null || printf dev)
 
-FALLBACK_HOME := $(shell h=$$(getent passwd $$(stat -c %u "$(CURDIR)" 2>/dev/null) 2>/dev/null | cut -d : -f 6); if [ -z "$$h" ]; then h=$${HOME:-}; fi; if [ -z "$$h" ]; then h=$$(getent passwd $$(id -u) 2>/dev/null | cut -d : -f 6); fi; if [ -z "$$h" ]; then h=$${TMPDIR:-/tmp}; fi; printf %s "$$h")
+FALLBACK_HOME := $(shell h=$$(getent passwd $$(stat -c %u "$(CURDIR)" 2>/dev/null) 2>/dev/null | cut -d : -f 6); if [ ! -d "$$h" ]; then h=$${HOME:-}; fi; if [ ! -d "$$h" ]; then h=$$(getent passwd $$(id -u) 2>/dev/null | cut -d : -f 6); fi; if [ ! -d "$$h" ]; then h=$${TMPDIR:-/tmp}; fi; printf %s "$$h")
 ifeq ($(strip $(HOME)),)
 export HOME := $(FALLBACK_HOME)
 endif

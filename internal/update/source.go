@@ -114,6 +114,26 @@ func findSourceDir(ctx context.Context, binary, dataDir string, mainPID int) str
 	return ""
 }
 
+func getentHome(uid string) string {
+	raw, err := exec.Command("getent", "passwd", uid).Output()
+	if err != nil {
+		return ""
+	}
+	fields := strings.Split(strings.TrimSpace(string(raw)), ":")
+	if len(fields) != 7 {
+		return ""
+	}
+	return fields[5]
+}
+
+func passwdHome(uid uint32) string {
+	id := strconv.FormatUint(uint64(uid), 10)
+	if owner, err := user.LookupId(id); err == nil && owner.HomeDir != "" {
+		return owner.HomeDir
+	}
+	return getentHome(id)
+}
+
 func sourceHomes(dir string) []string {
 	homes := []string{}
 	add := func(home string) {
@@ -121,6 +141,9 @@ func sourceHomes(dir string) []string {
 			return
 		}
 		home = filepath.Clean(home)
+		if info, err := os.Stat(home); err != nil || !info.IsDir() {
+			return
+		}
 		for _, existing := range homes {
 			if existing == home {
 				return
@@ -130,13 +153,13 @@ func sourceHomes(dir string) []string {
 	}
 	if info, err := os.Stat(dir); err == nil {
 		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-			if owner, err := user.LookupId(strconv.FormatUint(uint64(stat.Uid), 10)); err == nil {
-				add(owner.HomeDir)
-			}
+			add(passwdHome(stat.Uid))
 		}
 	}
 	if current, err := user.Current(); err == nil {
 		add(current.HomeDir)
+	} else {
+		add(passwdHome(uint32(os.Getuid())))
 	}
 	if home, err := os.UserHomeDir(); err == nil {
 		add(home)
@@ -150,9 +173,9 @@ func sourceEnv(dir string) []string {
 		paths = append(paths, filepath.SplitList(current)...)
 	}
 	homes := sourceHomes(dir)
-	candidates := []string{"/usr/local/go/bin", "/usr/local/bin", "/opt/go/bin", "/opt/node/bin", "/usr/lib/go/bin"}
+	candidates := []string{"/usr/local/go/bin", "/usr/local/bin", "/opt/go/bin", "/opt/node/bin", "/usr/lib/go/bin", "/home/linuxbrew/.linuxbrew/bin", "/snap/bin", "/nix/var/nix/profiles/default/bin"}
 	for _, home := range homes {
-		candidates = append(candidates, filepath.Join(home, ".local", "share", "pnpm"), filepath.Join(home, ".volta", "bin"), filepath.Join(home, "go", "bin"))
+		candidates = append(candidates, filepath.Join(home, ".local", "share", "pnpm"), filepath.Join(home, ".local", "bin"), filepath.Join(home, ".volta", "bin"), filepath.Join(home, "go", "bin"), filepath.Join(home, ".asdf", "shims"), filepath.Join(home, ".local", "share", "mise", "shims"), filepath.Join(home, ".nix-profile", "bin"))
 		if nodeVersions, err := filepath.Glob(filepath.Join(home, ".nvm", "versions", "node", "*", "bin")); err == nil {
 			candidates = append(candidates, nodeVersions...)
 		}
