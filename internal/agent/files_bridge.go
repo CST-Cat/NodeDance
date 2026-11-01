@@ -40,17 +40,35 @@ type agentFileBridge struct {
 	tasks       *agentfiles.TaskExecutor
 	generation  uint64
 	writer      fileEnvelopeWriter
+	stateDir    string
 	mu          sync.Mutex
 	transfers   map[string]*agentFileTransfer
 	canceled    map[string]struct{}
 	cancelOrder []string
 	closed      bool
 	wg          sync.WaitGroup
+
+	rsyncOnce         sync.Once
+	rsyncBin          string
+	rsyncErr          error
+	rsyncTemplateOnce sync.Once
+	rsyncTemplate     []string
+	rsyncTemplateErr  error
+	streamMu          sync.Mutex
+	streamSessions    map[string]*rsyncStreamSession
+	streamOps         map[string]*rsyncStreamSession
+	streamPending     map[string][]pendingStreamData
+	streamPendingN    map[string]uint64
+	streamDead        map[string]struct{}
+	streamDeadOrder   []string
 }
 
-func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer fileEnvelopeWriter, tasks *agentfiles.TaskExecutor) *agentFileBridge {
-	return &agentFileBridge{service: service, tasks: tasks, generation: generation, writer: writer,
-		transfers: make(map[string]*agentFileTransfer), canceled: make(map[string]struct{})}
+func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer fileEnvelopeWriter, tasks *agentfiles.TaskExecutor, stateDir string) *agentFileBridge {
+	return &agentFileBridge{service: service, tasks: tasks, generation: generation, writer: writer, stateDir: stateDir,
+		transfers: make(map[string]*agentFileTransfer), canceled: make(map[string]struct{}),
+		streamSessions: make(map[string]*rsyncStreamSession), streamOps: make(map[string]*rsyncStreamSession),
+		streamPending: make(map[string][]pendingStreamData), streamPendingN: make(map[string]uint64),
+		streamDead: make(map[string]struct{})}
 }
 
 func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Envelope) error {
@@ -77,6 +95,16 @@ func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Enve
 					return errors.New("Core file chunk is invalid")
 				}
 				if err := b.acceptUploadChunk(ctx, chunk); err != nil {
+					return err
+				}
+				continue
+			}
+			if envelope.Type == protocol.TypeStreamData {
+				var frame protocol.StreamFrame
+				if decodeSocketPayload(envelope.Payload, &frame) != nil || protocol.ValidateStreamFrame(envelope, b.generation, frame) != nil {
+					return errors.New("Core stream frame is invalid")
+				}
+				if err := b.deliverStreamFrame(ctx, frame); err != nil {
 					return err
 				}
 				continue
@@ -151,6 +179,32 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 			b.beginUpload(ctx, id, request)
 		}()
 		return nil
+	case protocol.FileRsyncReceive:
+		if b.tasks == nil {
+			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, errors.New("durable file task runner is unavailable"))
+		}
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			b.beginRsyncReceive(ctx, id, request)
+		}()
+		return nil
+	case protocol.FileRsyncSend:
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			b.beginRsyncSend(ctx, id, request)
+		}()
+		return nil
+	case protocol.FileRsyncStart:
+		err := b.startRsyncServer(request)
+		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, err)
+	case protocol.FileRsyncGo:
+		err := b.signalRsyncGo(request.TaskID)
+		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, err)
+	case protocol.FileRsyncAbort:
+		b.abortRsyncSession(request.TaskID)
+		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, nil)
 	default:
 		return errors.New("unsupported file operation")
 	}
@@ -393,6 +447,12 @@ func (b *agentFileBridge) cancel(id string) bool {
 	transfer := b.transfers[id]
 	delete(b.transfers, id)
 	b.mu.Unlock()
+	b.streamMu.Lock()
+	session := b.streamOps[id]
+	b.streamMu.Unlock()
+	if session != nil && session.cancel != nil {
+		session.cancel()
+	}
 	if transfer != nil {
 		if transfer.cancel != nil {
 			transfer.cancel()
@@ -423,6 +483,17 @@ func (b *agentFileBridge) closeAll() {
 		ids = append(ids, id)
 	}
 	b.mu.Unlock()
+	b.streamMu.Lock()
+	sessions := make([]*rsyncStreamSession, 0, len(b.streamSessions))
+	for _, session := range b.streamSessions {
+		sessions = append(sessions, session)
+	}
+	b.streamMu.Unlock()
+	for _, session := range sessions {
+		if session.cancel != nil {
+			session.cancel()
+		}
+	}
 	for _, id := range ids {
 		b.cancel(id)
 	}

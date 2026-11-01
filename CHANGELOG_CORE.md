@@ -4,7 +4,11 @@
 
 ### English
 
+- Route peer file transfers as rsync protocol streams over the existing Agent connections: Core links the two Agents' stream sessions for the duration of a transfer and forwards binary frames in both directions without parsing or spooling them. The transfer dialog keeps its single flow — no mode picker, no new ports.
+
 ### 简体中文
+
+- 文件对传改为在既有 Agent 连接上路由 rsync 协议流：Core 在传输期间关联两端 Agent 的流会话，双向转发二进制帧，不解析、不落盘。对传弹窗保持单一流程——无模式选择，不新增任何端口。
 
 ## [0.1.63]
 

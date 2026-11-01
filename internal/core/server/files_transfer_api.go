@@ -2,13 +2,12 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"path"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
@@ -136,6 +135,15 @@ func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeI
 			expectedVersion, resolved = existing.Intent.File.ExpectedVersion, true
 		}
 	}
+	for _, nodeID := range []string{sourceNodeID, targetNodeID} {
+		connection, err := s.activeFileConnection(ctx, nodeID)
+		if err != nil {
+			return fileTransferResult{}, err
+		}
+		if !connection.capabilityEnabled(protocol.CapabilityFileRsyncStream) {
+			return fileTransferResult{}, errors.New("Agent does not support rsync stream transfer")
+		}
+	}
 	if !resolved {
 		expectedVersion, err = s.targetFileVersion(ctx, current, targetNodeID, targetPath)
 		if err != nil {
@@ -174,112 +182,63 @@ func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeI
 		}
 		return fileTransferResult{}, errors.New("target upload task did not become ready: " + string(readyTask.Status))
 	}
-	sourceConnection, sourceTransfer, err := s.newCoreFileTransfer(ctx, sourceNodeID, current, []string{protocol.FileDownload}, true)
+	targetConnection, receiveTransfer, err := s.newCoreFileTransfer(ctx, targetNodeID, current, []string{protocol.FileRsyncReceive}, false)
 	if err != nil {
 		return fileTransferResult{}, err
 	}
-	defer s.closeCoreFileTransfer(sourceConnection, sourceTransfer, true, nil)
-	download := protocol.FileRequest{Operation: protocol.FileDownload, Path: sourcePath, TransferID: sourceTransfer.requestID}
-	if err := s.sendFileRequest(ctx, sourceConnection, sourceTransfer, download); err != nil {
-		return fileTransferResult{}, err
-	}
-	first, err := s.waitFileMessage(ctx, sourceConnection, sourceTransfer)
+	defer s.closeCoreFileTransfer(targetConnection, receiveTransfer, false, nil)
+	sourceConnection, sendTransfer, err := s.newCoreFileTransfer(ctx, sourceNodeID, current, []string{protocol.FileRsyncSend}, false)
 	if err != nil {
 		return fileTransferResult{}, err
 	}
-	var metadata protocol.FileResponse
-	if first.Type != protocol.TypeFileResponse || decodeAgentPayload(first.Payload, &metadata) != nil || metadata.Operation != protocol.FileDownload {
-		return fileTransferResult{}, errors.New("Agent download metadata is invalid")
-	}
-	if metadata.Code != "" {
-		return fileTransferResult{}, fileRemoteError{code: metadata.Code}
-	}
-	if metadata.Entry == nil || metadata.Entry.Kind != "file" || metadata.Size != size || metadata.Entry.Size != size {
-		return fileTransferResult{}, errors.New("source file changed during transfer")
-	}
-	connection, transfer, err := s.newCoreFileTransfer(ctx, targetNodeID, current, []string{protocol.FileUploadBegin, protocol.FileUploadChunk}, false)
-	if err != nil {
-		return fileTransferResult{}, err
-	}
-	defer s.closeCoreFileTransfer(connection, transfer, true, nil)
-	begin := protocol.FileRequest{Operation: protocol.FileUploadBegin, TransferID: transfer.requestID, TaskID: taskID,
+	defer s.closeCoreFileTransfer(sourceConnection, sendTransfer, true, nil)
+	streamID := taskID
+	s.registerStreamRoute(streamID, sourceConnection, targetConnection)
+	defer s.unregisterStreamRoute(streamID)
+	receive := protocol.FileRequest{Operation: protocol.FileRsyncReceive, TransferID: receiveTransfer.requestID, TaskID: taskID,
 		Path: targetPath, ExpectedVersion: expectedVersion, Size: size, SHA256: digest}
-	if err := s.sendFileRequest(ctx, connection, transfer, begin); err != nil {
+	if err := s.sendFileRequest(ctx, targetConnection, receiveTransfer, receive); err != nil {
 		return fileTransferResult{}, err
 	}
-	beginResponse, err := s.waitFileMessage(ctx, connection, transfer)
+	receiveEnvelope, err := s.waitFileMessage(ctx, targetConnection, receiveTransfer)
 	if err != nil {
 		return fileTransferResult{}, err
 	}
-	if beginResponse.Type != protocol.TypeFileResponse {
-		return fileTransferResult{}, errors.New("Agent did not start the transfer upload")
+	if err := decodeFileOperationResponse(receiveEnvelope, protocol.FileRsyncReceive); err != nil {
+		return fileTransferResult{}, err
 	}
-	var beginResult protocol.FileResponse
-	if decodeAgentPayload(beginResponse.Payload, &beginResult) != nil || beginResult.Operation != protocol.FileUploadBegin {
-		return fileTransferResult{}, errors.New("Agent transfer upload response is invalid")
+	send := protocol.FileRequest{Operation: protocol.FileRsyncSend, TransferID: sendTransfer.requestID, TaskID: taskID, Path: sourcePath}
+	if err := s.sendFileRequest(ctx, sourceConnection, sendTransfer, send); err != nil {
+		s.abortRsyncReceive(ctx, current, targetNodeID, taskID)
+		return fileTransferResult{}, err
 	}
-	if beginResult.Code != "" {
-		return fileTransferResult{}, fileRemoteError{code: beginResult.Code}
+	prelimEnvelope, err := s.waitStreamResponse(ctx, sourceConnection, sendTransfer)
+	if err != nil {
+		s.abortRsyncReceive(ctx, current, targetNodeID, taskID)
+		return fileTransferResult{}, err
 	}
-	if beginResult.Size != size {
-		return fileTransferResult{}, errors.New("Agent transfer upload target is inconsistent")
+	serverArgs, err := decodeRsyncPrelimResponse(prelimEnvelope)
+	if err != nil {
+		s.abortRsyncReceive(ctx, current, targetNodeID, taskID)
+		return fileTransferResult{}, err
 	}
-	hash := sha256.New()
-	var total int64
-	var uploadSequence uint64
-	for {
-		envelope, waitErr := s.waitFileMessage(ctx, sourceConnection, sourceTransfer)
-		if waitErr != nil {
-			return fileTransferResult{}, waitErr
-		}
-		if envelope.Type == protocol.TypeFileResponse {
-			var failure protocol.FileResponse
-			if decodeAgentPayload(envelope.Payload, &failure) == nil && failure.Code != "" {
-				return fileTransferResult{}, fileRemoteError{code: failure.Code}
-			}
-			return fileTransferResult{}, errors.New("Agent download stream failed")
-		}
-		var chunk protocol.FileChunk
-		if decodeAgentPayload(envelope.Payload, &chunk) != nil || protocol.ValidateFileChunkEnvelope(envelope, sourceTransfer.generation, chunk) != nil {
-			return fileTransferResult{}, errors.New("Agent download chunk is invalid")
-		}
-		if chunk.Final {
-			if total != size || hex.EncodeToString(hash.Sum(nil)) != chunk.SHA256 || chunk.SHA256 != digest {
-				return fileTransferResult{}, errors.New("source file changed during transfer")
-			}
-			uploadSequence++
-			finalChunk := protocol.FileChunk{TransferID: transfer.requestID, Sequence: uploadSequence, Final: true, SHA256: digest}
-			if err := sendCoreFileChunk(ctx, s, current, connection, transfer, finalChunk); err != nil {
-				return fileTransferResult{}, err
-			}
-			if err := waitFileUploadAck(ctx, s, current, connection, transfer, uploadSequence); err != nil {
-				return fileTransferResult{}, err
-			}
-			break
-		}
-		data, decodeErr := protocol.DecodeFileChunk(chunk)
-		if decodeErr != nil || len(data) == 0 || total+int64(len(data)) > size {
-			return fileTransferResult{}, errors.New("Agent download chunk is invalid")
-		}
-		_, _ = hash.Write(data)
-		total += int64(len(data))
-		uploadSequence++
-		forward := protocol.FileChunk{TransferID: transfer.requestID, Sequence: uploadSequence, Data: chunk.Data}
-		if err := sendCoreFileChunk(ctx, s, current, connection, transfer, forward); err != nil {
-			return fileTransferResult{}, err
-		}
-		if err := waitFileUploadAck(ctx, s, current, connection, transfer, uploadSequence); err != nil {
-			return fileTransferResult{}, err
-		}
-		ack := protocol.FileRequest{Operation: protocol.FileDownloadAck, TransferID: sourceTransfer.requestID, Sequence: chunk.Sequence}
-		if err := s.sendFileRequest(ctx, sourceConnection, sourceTransfer, ack); err != nil {
-			return fileTransferResult{}, err
-		}
-		if !s.dashboardSessionStillValid(ctx, current.ID) {
-			return fileTransferResult{}, errors.New("browser Session was revoked or expired")
-		}
+	if _, err := s.runFileOperation(ctx, current, targetNodeID, protocol.FileRequest{Operation: protocol.FileRsyncStart, TaskID: taskID, Args: serverArgs}); err != nil {
+		s.abortRsyncReceive(ctx, current, targetNodeID, taskID)
+		return fileTransferResult{}, err
 	}
-	s.closeCoreFileTransfer(connection, transfer, false, nil)
+	if _, err := s.runFileOperation(ctx, current, sourceNodeID, protocol.FileRequest{Operation: protocol.FileRsyncGo, TaskID: taskID}); err != nil {
+		s.abortRsyncReceive(ctx, current, targetNodeID, taskID)
+		return fileTransferResult{}, err
+	}
+	sendEnvelope, err := s.waitStreamResponse(ctx, sourceConnection, sendTransfer)
+	if err != nil {
+		s.abortRsyncReceive(ctx, current, targetNodeID, taskID)
+		return fileTransferResult{}, err
+	}
+	if err := decodeFileOperationResponse(sendEnvelope, protocol.FileRsyncSend); err != nil {
+		s.abortRsyncReceive(ctx, current, targetNodeID, taskID)
+		return fileTransferResult{}, err
+	}
 	final, err := s.waitFileTask(ctx, current.ID, targetNodeID, taskID)
 	if err != nil {
 		return fileTransferResult{}, err
@@ -306,4 +265,41 @@ func (s *Server) targetFileVersion(ctx context.Context, current *session, nodeID
 		return "", errors.New("transfer target exists and is not a file")
 	}
 	return stated.Entry.Version, nil
+}
+
+func decodeRsyncPrelimResponse(envelope protocol.Envelope) ([]string, error) {
+	if envelope.Type != protocol.TypeFileResponse {
+		return nil, errors.New("Agent returned an unexpected file frame")
+	}
+	var response protocol.FileResponse
+	if decodeAgentPayload(envelope.Payload, &response) != nil || response.Operation != protocol.FileRsyncSend {
+		return nil, errors.New("Agent file response does not match request")
+	}
+	if response.Code != "" {
+		return nil, fileRemoteError{code: response.Code, message: response.Message}
+	}
+	if len(response.Args) == 0 {
+		return nil, errors.New("Agent did not provide rsync server arguments")
+	}
+	return response.Args, nil
+}
+
+func decodeFileOperationResponse(envelope protocol.Envelope, operation string) error {
+	if envelope.Type != protocol.TypeFileResponse {
+		return errors.New("Agent returned an unexpected file frame")
+	}
+	var response protocol.FileResponse
+	if decodeAgentPayload(envelope.Payload, &response) != nil || response.Operation != operation {
+		return errors.New("Agent file response does not match request")
+	}
+	if response.Code != "" {
+		return fileRemoteError{code: response.Code, message: response.Message}
+	}
+	return nil
+}
+
+func (s *Server) abortRsyncReceive(ctx context.Context, current *session, targetNodeID, taskID string) {
+	abortCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, _ = s.runFileOperation(abortCtx, current, targetNodeID, protocol.FileRequest{Operation: protocol.FileRsyncAbort, TaskID: taskID})
 }

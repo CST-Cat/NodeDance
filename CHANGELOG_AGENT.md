@@ -4,7 +4,11 @@
 
 ### English
 
+- Rebuild peer file transfer on the bundled rsync engine carried over the existing Core-Agent WebSocket connection: the source Agent runs rsync through a NodeDance remote-shell adapter, the target Agent validates the server command rsync itself proposes before starting it inside the authorized path, and Core forwards only the raw protocol bytes — no extra ports, no SSH, no relay files. Re-transferring a changed file sends only the delta; the target upload task's SHA-256 verification still gates every write.
+
 ### 简体中文
+
+- 文件对传改用内置 rsync 引擎，复用既有 Core-Agent WebSocket 长连接传输：源端 Agent 以 NodeDance 远程 Shell 适配器启动 rsync，目标端 Agent 在授权路径内先校验 rsync 自己提议的服务器命令再启动，Core 只转发原始协议字节——不新增端口、不用 SSH、不落中继文件。文件变更后重传只发增量；目标端上传任务的 SHA-256 校验仍守住每次落盘。
 
 ## [0.1.32]
 

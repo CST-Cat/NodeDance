@@ -22,6 +22,7 @@ const (
 )
 
 var (
+	errFileWriterQueueFull     = errors.New("Agent file writer queue is full")
 	errDockerWriterQueueFull   = errors.New("Agent Docker frame queue is full")
 	errStreamWriterQueueFull   = errors.New("Agent container stream queue is full")
 	errStreamWriterUnavailable = errors.New("Agent container stream writer is unavailable")
@@ -87,7 +88,7 @@ func (w *socketEnvelopeWriter) offerFile(ctx context.Context, envelope protocol.
 	case <-w.ctx.Done():
 		return errors.New("Agent file writer stopped")
 	default:
-		return errors.New("Agent file writer queue is full")
+		return errFileWriterQueueFull
 	}
 }
 

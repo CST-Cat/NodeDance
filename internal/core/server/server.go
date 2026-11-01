@@ -82,6 +82,8 @@ type Server struct {
 	transferReadTimeout        time.Duration
 	httpChannelsMu             sync.Mutex
 	httpChannels               map[string]*httpAgentChannel
+	streamRoutesMu             sync.Mutex
+	streamRoutes               map[string]*streamRoute
 	updateInvoke               func(context.Context, update.RPC) (update.Response, error)
 	version                    string
 	assets                     http.Handler

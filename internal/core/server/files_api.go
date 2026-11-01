@@ -20,9 +20,17 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-type fileRemoteError struct{ code string }
+type fileRemoteError struct {
+	code    string
+	message string
+}
 
-func (e fileRemoteError) Error() string { return "Agent file operation failed: " + e.code }
+func (e fileRemoteError) Error() string {
+	if e.message != "" {
+		return "Agent file operation failed: " + e.code + ": " + e.message
+	}
+	return "Agent file operation failed: " + e.code
+}
 
 func (s *Server) handleFilesAPI(w http.ResponseWriter, r *http.Request, current *session) bool {
 	nodeID, operation, ok := filesRoute(r.URL.Path)
@@ -142,6 +150,7 @@ func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID 
 		return protocol.FileResponse{}, err
 	}
 	defer s.closeCoreFileTransfer(connection, transfer, false, nil)
+	request.TransferID = transfer.requestID
 	payload, err := json.Marshal(request)
 	if err != nil || len(payload) > protocol.MaxFileControlBytes {
 		return protocol.FileResponse{}, errors.New("file request exceeds its protocol bound")
@@ -166,7 +175,7 @@ func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID 
 		return protocol.FileResponse{}, errors.New("Agent file response does not match request")
 	}
 	if response.Code != "" {
-		return response, fileRemoteError{code: response.Code}
+		return response, fileRemoteError{code: response.Code, message: response.Message}
 	}
 	return response, nil
 }

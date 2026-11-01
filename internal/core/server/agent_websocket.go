@@ -922,6 +922,22 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid or unpersisted Agent Compose response")
 					return
 				}
+			case protocol.TypeStreamData:
+				if !connection.capabilityNegotiated(protocol.CapabilityFileRsyncStream) {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent rsync stream capability was not negotiated")
+					return
+				}
+				if !connection.capabilityEnabled(protocol.CapabilityFileRsyncStream) {
+					if _, err := validateAgentStreamFrame(connection, envelope); err != nil {
+						s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent stream frame")
+						return
+					}
+					continue
+				}
+				if err := s.routeStreamFrame(connection, envelope); err != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent stream frame")
+					return
+				}
 			case protocol.TypeFileResponse, protocol.TypeFileChunk:
 				if !connection.capabilityNegotiated(protocol.CapabilityFiles) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent file service was not negotiated")

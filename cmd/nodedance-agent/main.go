@@ -43,6 +43,20 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 		return agentterminal.RunContainerShell(ctx, args[1], input, output)
 	}
+	if len(args) > 0 && args[0] == "rsync-rsh" {
+		input, inputOK := stdin.(*os.File)
+		output, outputOK := stdout.(*os.File)
+		if len(args) < 4 || !inputOK || !outputOK {
+			return fmt.Errorf("invalid rsync remote shell child")
+		}
+		return agent.RunRsyncRSH(args[1:], input, output)
+	}
+	if len(args) > 0 && args[0] == "rsync-argv" {
+		if len(args) < 2 {
+			return fmt.Errorf("invalid rsync argv child")
+		}
+		return agent.RunRsyncArgv(args[1:])
+	}
 	var err error
 	ctx, args, err = i18n.Options(ctx, args, os.LookupEnv)
 	if err != nil {
