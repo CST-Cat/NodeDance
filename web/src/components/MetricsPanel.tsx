@@ -8,8 +8,6 @@ import { afterMount, beforeDispose, cell, derived, watchState } from "../state";
 
 import { Fragment } from "react";
 import { __classes, __each, useController } from "../state";
-import { Card, CardContent } from "./ui/card";
-import { Separator } from "./ui/separator";
 import "./MetricsPanel.css";
 import RateHistoryChart from "./RateHistoryChart";
 import ResourceReading from "./ResourceReading";
@@ -281,9 +279,7 @@ export default function MetricsPanel(input: Props) {
                 </p>
               </div>
             </header>
-            <Card data-testid="resource-summary">
-              <CardContent>
-                <div className="resource-summary" data-v-64f045e3="">
+            <div className="metric-card resource-summary" data-testid="resource-summary" data-v-64f045e3="">
               {__props.view.metrics.host ? (<section data-summary-item="load"
                   className="summary-item"
                   data-v-64f045e3=""
@@ -352,52 +348,26 @@ export default function MetricsPanel(input: Props) {
                 {__props.view.metrics.disk.mounts.length === 0 ? (
                   <ResourceReading labelContent={false} label={t("overview.disk")} resource="disk" value={null} detail={t("overview.noData")} />
                 ) : null}
-                {__props.view.metrics.disk.mounts[0] ? (
-                  <div
-                    className={__classes("metric-mount-reading")}
-                    data-v-64f045e3=""
-                  >
-                    <ResourceReading labelContent={false} label={__props.view.metrics.disk.mounts.length === 1 ? t("overview.disk") : `${t("overview.disk")} ${__props.view.metrics.disk.mounts[0].mountpoint}`} resource="disk" value={percentage(__props.view.metrics.disk.mounts[0].usage, __props.view.metrics.disk.mounts[0].usage.value?.usedPercent, DISK_TTL_MS.value)} detail={`${formatBytes(__props.view.metrics.disk.mounts[0].usage.value?.usedBytes)} / ${formatBytes(__props.view.metrics.disk.mounts[0].usage.value?.totalBytes)}`} />
-                    {__props.view.metrics.disk.mounts.length > 1 ? (
-                      <p className={__classes("mount-gauge-label")} data-v-64f045e3="">
-                        {__props.view.metrics.disk.mounts[0].mountpoint}
-                      </p>
-                    ) : null}
-                    {metricReason(__props.view.metrics.disk.mounts[0].usage, DISK_TTL_MS.value) ? (
-                      <p
-                        className={__classes("metric-reason")}
-                        data-v-64f045e3=""
-                      >
-                        {metricReason(__props.view.metrics.disk.mounts[0].usage, DISK_TTL_MS.value)}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : null}
+                <Fragment>
+                  {__each(__props.view.metrics.disk.mounts, (mount) => (
+                    <div
+                      key={`${mount.device}:${mount.mountpoint}` as any}
+                      className={__classes("metric-mount-reading")}
+                      data-v-64f045e3=""
+                    >
+                      <ResourceReading labelContent={false} label={__props.view.metrics.disk.mounts.length === 1 ? t("overview.disk") : `${t("overview.disk")} ${mount.mountpoint}`} resource="disk" value={percentage(mount.usage, mount.usage.value?.usedPercent, DISK_TTL_MS.value)} detail={`${formatBytes(mount.usage.value?.usedBytes)} / ${formatBytes(mount.usage.value?.totalBytes)}`} />
+                      {metricReason(mount.usage, DISK_TTL_MS.value) ? (
+                        <p
+                          className={__classes("metric-reason")}
+                          data-v-64f045e3=""
+                        >
+                          {metricReason(mount.usage, DISK_TTL_MS.value)}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </Fragment>
               </section>
-              <Fragment>
-                {__each(__props.view.metrics.disk.mounts.slice(1), (mount) => (
-                  <section
-                    key={`${mount.device}:${mount.mountpoint}` as any}
-                    data-summary-item="disk"
-                    className="summary-item"
-                    data-v-64f045e3=""
-                  >
-                    <div className={__classes("card-heading")} data-v-64f045e3=""><h3 data-v-64f045e3="">{t("m.de7b72a3f852")}</h3></div>
-                    <ResourceReading labelContent={false} label={`${t("overview.disk")} ${mount.mountpoint}`} resource="disk" value={percentage(mount.usage, mount.usage.value?.usedPercent, DISK_TTL_MS.value)} detail={`${formatBytes(mount.usage.value?.usedBytes)} / ${formatBytes(mount.usage.value?.totalBytes)}`} />
-                    <p className={__classes("mount-gauge-label")} data-v-64f045e3="">
-                      {mount.mountpoint}
-                    </p>
-                    {metricReason(mount.usage, DISK_TTL_MS.value) ? (
-                      <p
-                        className={__classes("metric-reason")}
-                        data-v-64f045e3=""
-                      >
-                        {metricReason(mount.usage, DISK_TTL_MS.value)}
-                      </p>
-                    ) : null}
-                  </section>
-                ))}
-              </Fragment>
               {__props.view.metrics.host ? (<Fragment><section data-summary-item="swap"
                   className="summary-item"
                   data-v-64f045e3=""
@@ -408,7 +378,7 @@ export default function MetricsPanel(input: Props) {
                     {metricReason(__props.view.metrics.host.swap)}
                   </p>
                 </section>
-{((trafficAsset.value?.trafficLimitBytes ?? 0) > 0 || (__props.view.metrics.host.traffic.reason !== "partial_coverage" && !!metricReason(__props.view.metrics.host.traffic))) ? (<section data-summary-item="traffic"
+<section data-summary-item="traffic"
                   className="summary-item"
                   data-v-64f045e3=""
                 >
@@ -421,16 +391,12 @@ export default function MetricsPanel(input: Props) {
                       {metricReason(__props.view.metrics.host.traffic)}
                     </p>
                   ) : null}
-                </section>) : null}</Fragment>) : null}
-                </div>
-              </CardContent>
-            </Card>
-            <Card data-testid="trends-card">
-              <CardContent className="trends-sections">
-                <div className="trends-row" data-v-64f045e3="">
-              <section
+                </section></Fragment>) : null}
+            </div>
+            <div className="metrics-grid host-metrics" data-v-64f045e3="">
+              <article
                 data-testid="network-card"
-                className={__classes("metric-section")}
+                className={__classes("metric-card network-card")}
                 data-v-64f045e3=""
               >
                 <div className={__classes("card-heading")} data-v-64f045e3="">
@@ -446,17 +412,15 @@ export default function MetricsPanel(input: Props) {
                     {metricReason(__props.view.metrics.network.summary)}
                   </p>
                 ) : null}
-              </section>
-              <section data-testid="io-card" className={__classes("metric-section")} data-v-64f045e3="">
+              </article>
+              <article data-testid="io-card" className="metric-card" data-v-64f045e3="">
                 <div className="card-heading" data-v-64f045e3=""><h3 data-v-64f045e3="">{t("overview.io")}</h3></div>
                 <RateHistoryChart showTotals kind="io" history={rateHistory} values={[reading(__props.view.metrics.host?.diskIO, __props.view.metrics.host?.diskIO?.value?.readBytesPerSecond), reading(__props.view.metrics.host?.diskIO, __props.view.metrics.host?.diskIO?.value?.writeBytesPerSecond)]} />
                 {__props.view.metrics.host?.diskIO && metricReason(__props.view.metrics.host.diskIO) ? <p className="metric-reason" data-v-64f045e3="">{metricReason(__props.view.metrics.host.diskIO)}</p> : null}
-              </section>
-                </div>
+              </article>
               {__props.view.metrics.host ? (<Fragment>
-                <Separator className="bg-(--workspace-divider)" />
-                <section
-                  className={__classes("metric-section")}
+                <article
+                  className={__classes("metric-card")}
                   data-v-64f045e3=""
                 >
                   <div className={__classes("card-heading")} data-v-64f045e3="">
@@ -467,13 +431,7 @@ export default function MetricsPanel(input: Props) {
                   <p className={__classes("metric-reason")} data-v-64f045e3="">
                     {metricReason(__props.view.metrics.host.processes)}
                   </p>
-                </section>
-              </Fragment>) : null}
-              </CardContent>
-            </Card>
-            {__props.view.metrics.host ? (<Card data-testid="details-card">
-              <CardContent className="details-sections">
-                <div className="details-grid" data-v-64f045e3="">
+                </article>
                 <DiagnosticCards collectorDetails={<Fragment><p className="network-pair" data-v-64f045e3="">
                 <span data-v-64f045e3="">{t("host.collectedAt")}</span>
                 <strong data-v-64f045e3="">
@@ -506,11 +464,8 @@ export default function MetricsPanel(input: Props) {
                   {__props.view.sequence}
                 </strong>
               </p></Fragment>} view={props.view} definitions={diagnosticDefinitions.value} entityDefinitions={entityDefinitions.value} online={nodeOnline.value} elapsedMs={elapsedSinceView.value} />
-                </div>
-                <Separator className="bg-(--workspace-divider)" />
-                <section
-                  data-testid="hardware-card"
-                  className={__classes("metric-section")}
+                <article
+                  className={__classes("metric-card hardware-card")}
                   data-v-64f045e3=""
                 >
                   <div className="card-heading" data-v-64f045e3=""><h3 data-v-64f045e3="">{t("host.hardware")}</h3></div>
@@ -519,9 +474,10 @@ export default function MetricsPanel(input: Props) {
                       <dt>{row.label}</dt><dd>{row.text}</dd>
                     </div>)}
                   </dl>
-                </section>
-              </CardContent>
-            </Card>) : null}
+                </article>
+              </Fragment>) : null}
+            </div>
+
           </section>
         </>
       );
