@@ -7,7 +7,8 @@ module.exports=async function({page,base,node,artifacts,catalog,view,publish}){
  const now=()=>new Date().toISOString(),metric=value=>({status:'known',value,sampledAt:now(),sampleAgeMillis:0})
  const metricCatalog=await(await page.request.get(base+routePath('metrics.catalog'))).json()
  const definitions=metricCatalog.definitions
- await page.route('**/api/v1/metrics/catalog',r=>r.fulfill({json:metricCatalog}))
+ let catalogOutage=false,catalogAttempts=0
+ await page.route('**/api/v1/metrics/catalog',r=>{catalogAttempts++;if(catalogOutage&&catalogAttempts<=2)return r.abort();return r.fulfill({json:metricCatalog})})
  let coreCount=4;
  const observation=()=>({slowIntervalSeconds:60,truncated:false,values:{
   ...Object.fromEntries(Object.entries(definitions).filter(([key])=>!['cpu.usage_percent','memory.used_percent','memory.used_bytes','network.received_bytes_per_second','network.sent_bytes_per_second','swap.used_percent','disk.read_bytes_per_second','disk.write_bytes_per_second'].includes(key)).map(([key,d])=>[key,metric(d.unit==='bytes'?1048576:d.unit==='%'?2.5:1)])),
@@ -56,5 +57,8 @@ module.exports=async function({page,base,node,artifacts,catalog,view,publish}){
  }
  coreCount=4;await publish({...sample()});
  await setBrowserLanguage(page,'en');const offline=sample();offline.nodeStatus='offline';offline.metrics.cpu.usagePercent.status='stale';offline.metrics.host.observability.values['cpu.steal_percent'].value=98.7;await publish({...offline});await page.waitForFunction(()=>document.querySelector('.metrics-panel')?.getAttribute('data-node-status')==='offline'&&document.querySelector('[data-diagnostic="cpu.steal_percent"] strong')?.textContent==='—');assert.equal(await page.locator('[data-diagnostic="cpu.steal_percent"] strong').innerText(),'—','Lease loss hides retained diagnostic readings')
- console.log('Diagnostic card regressions passed: combined resource rectangle, three chart cards and five diagnostic square cards, no separate UI, known zero/idle unknown/per-core/process readings, lease loss, English/Chinese/light/dark/wide/mobile.')
+ await publish({...sample()});catalogOutage=true;catalogAttempts=0;await page.reload()
+ await page.waitForFunction(()=>document.querySelector('[data-diagnostic="cpu.steal_percent"] strong')?.textContent==='12.5%',null,{timeout:20000})
+ assert.ok(catalogAttempts>=3,'A failed catalog request is retried until the definitions arrive: '+catalogAttempts)
+ console.log('Diagnostic card regressions passed: combined resource rectangle, three chart cards and five diagnostic square cards, no separate UI, known zero/idle unknown/per-core/process readings, lease loss, catalog retry, English/Chinese/light/dark/wide/mobile.')
 }

@@ -24,9 +24,11 @@ export default function MetricsPanel(input: Props) {
       const rateHistory = recentHistory(() => props.view.nodeId);
       const diagnosticDefinitions=cell<Record<string,DiagnosticDefinition>>({});
       const entityDefinitions=cell<Record<string,Record<string,DiagnosticDefinition>>>({});
-      let definitionsRequested=false,disposed=false;
-      beforeDispose(()=>{disposed=true});
-      watchState(()=>!!props.view.metrics.host?.observability,available=>{if(!available||definitionsRequested)return;definitionsRequested=true;void operationRequest<{definitions:Record<string,DiagnosticDefinition>;entityDefinitions:Record<string,Record<string,DiagnosticDefinition>>}>('metrics.catalog').then(result=>{if(!disposed){diagnosticDefinitions.value=result.definitions??{};entityDefinitions.value=result.entityDefinitions??{}}}).catch(()=>{definitionsRequested=false})},{immediate:true});
+      let definitionsInFlight=false,definitionsLoaded=false,definitionsRetry:ReturnType<typeof setTimeout>|undefined,disposed=false;
+      beforeDispose(()=>{disposed=true;if(definitionsRetry!==undefined)clearTimeout(definitionsRetry)});
+      function retryDefinitions(){if(disposed||definitionsLoaded||definitionsRetry!==undefined)return;definitionsRetry=setTimeout(()=>{definitionsRetry=undefined;loadDefinitions()},3000)}
+      function loadDefinitions(){if(disposed||definitionsInFlight||definitionsLoaded)return;definitionsInFlight=true;void operationRequest<{definitions:Record<string,DiagnosticDefinition>;entityDefinitions:Record<string,Record<string,DiagnosticDefinition>>}>('metrics.catalog').then(result=>{definitionsInFlight=false;if(disposed)return;const loaded=result.definitions??{};if(Object.keys(loaded).length===0){retryDefinitions();return}diagnosticDefinitions.value=loaded;entityDefinitions.value=result.entityDefinitions??{};definitionsLoaded=true}).catch(()=>{definitionsInFlight=false;retryDefinitions()})}
+      watchState(()=>!!props.view.metrics.host?.observability,available=>{if(available)loadDefinitions()},{immediate:true});
 
 
       const trafficAsset = cell<{trafficLimitBytes: number | bigint; trafficAccounting: string; trafficWarningPercent: number} | null>(null);
