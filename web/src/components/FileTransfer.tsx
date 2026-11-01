@@ -3,7 +3,6 @@ import { Check } from "lucide-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { operationRequest, type AgentNode, type AgentNodesResponse, type NodeFileEntry } from "../api";
 import { t } from "../i18n";
-import { fileParent } from "../file-manager";
 import type { FileManager } from "../file-manager";
 import { Button, Input, Select } from "./ManagementUI";
 import { Dialog, DialogContent } from "./arc/dialog/dialog";
@@ -18,7 +17,7 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
   useSignals();
   const [nodes, setNodes] = useState<AgentNode[]>([]);
   const [targetId, setTargetId] = useState(sourceNodeId);
-  const [targetPath, setTargetPath] = useState(files[0] ? fileParent(files[0].path) : "/");
+  const [targetPath, setTargetPath] = useState("/");
   const [picker, setPicker] = useState(false);
   const [error, setError] = useState(""), [busy, setBusy] = useState(false), [done, setDone] = useState(false);
   const pending = useRef<AbortController | null>(null);
@@ -68,6 +67,6 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
         <Button onClick={done ? onClose : () => void start()} disabled={!done && (busy || !targetNode || !targetPath.startsWith("/"))} loading={busy && !done} aria-label={done ? t("dialog.confirm") : undefined}>{done ? <Check size={18} /> : x("start")}</Button>
       </div>
     </div>
-    {picker && targetNode && <NodeFiles nodeId={targetNode.nodeId} nodeName={targetNode.displayName} path={targetPath} directoryPicker dialog onClose={() => setPicker(false)} onChoose={chosen => { setTargetPath(chosen); setPicker(false); }} />}
+    {picker && targetNode && <NodeFiles nodeId={targetNode.nodeId} nodeName={targetNode.displayName} path="/" directoryPicker dialog onClose={() => setPicker(false)} onChoose={chosen => { setTargetPath(chosen); setPicker(false); }} />}
   </DialogContent></Dialog>;
 }
