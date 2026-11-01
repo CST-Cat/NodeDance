@@ -4,6 +4,12 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.63]
+
+### English
+
 - Shrink the file sharing dialog's fixed height to fit its content: both tabs now share a shorter frame with only a small margin below the last row instead of a tall blank area.
 
 ### 简体中文
