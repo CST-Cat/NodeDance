@@ -4,7 +4,15 @@
 
 ### English
 
+- Correct the peer transfer modes: the dialog now offers exactly Core Relay and Agent Direct (Core Relay by default) — the Auto mode shipped in 0.1.61 was never part of the design and is removed, and the mode picker shrinks to fit its label.
+- Rework the file upload dialog layout: a single drop zone for files plus a natural-width Upload folder button, replacing the raw native file control that sat above the drop zone.
+- Fix the file sharing dialog layout: the dialog keeps one fixed size across the Share and Collect tabs so switching no longer resizes it, Refresh becomes a small button in the action row instead of a full-width block, and empty lists render as a plain line of text instead of an empty card.
+
 ### 简体中文
+
+- 纠正文件对传模式：弹窗现在只有 Core中继 与 Agent直连 两项（默认 Core中继）——0.1.61 中的「自动」模式从未在设计之内，现已移除；模式选择按钮缩至贴合文字的宽度。
+- 重排上传文件弹窗：文件只留一个拖放区，下方是自然宽度的「上传文件夹」按钮，不再使用压在拖放区上方的浏览器原生文件控件。
+- 优化文件分享弹窗排版：弹窗在「文件分享」与「收集文件」页签间保持同一固定尺寸，切换不再跳动；刷新改为操作行内的小按钮，不再整行拉满；空列表只显示一行文字，不再撑出一个空卡片。
 
 ## [0.1.61]
 

@@ -1,7 +1,10 @@
 .file-shares { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .file-shares-dialog { width: min(640px, calc(100% - 32px)); }
+.file-shares-dialog .file-shares { height: min(600px, calc(100dvh - 220px)); overflow-y: auto; }
 .share-setting-row { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(0, 240px); align-items: center; gap: 16px; }
 .share-setting-row > div { min-width: 0; }
 .share-actions, .share-file-row, .share-link { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .share-file-row > :first-child, .share-link > :first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.share-refresh { margin-left: auto; }
+.share-empty { margin: 0; color: var(--muted-strong); }
 .public-file-share { max-width: 680px; margin: 32px auto; padding: 16px; }

@@ -61,27 +61,20 @@ func (s *Server) runRsyncTransfer(ctx context.Context, current *session, sourceN
 		return err
 	}
 	sameNode := sourceNodeID == targetNodeID
-	direct := sameNode
+	if mode == protocol.FileTransferModeRelay {
+		return s.rsyncViaCore(ctx, current, sourceNodeID, sourcePath, targetNodeID, targetPath, taskID, key, sourceIP, targetIP, size)
+	}
 	var asset protocol.NodeAsset
 	if !sameNode {
 		asset, err = s.nodeAsset(ctx, targetNodeID)
 		if err != nil {
 			return err
 		}
-		direct = asset.TransferHost != "" && asset.TransferPort > 0
-	}
-	switch mode {
-	case protocol.FileTransferModeDirect:
-		if !direct {
+		if asset.TransferHost == "" || asset.TransferPort <= 0 {
 			return errors.New("direct transfer is unavailable: the target node has no configured transfer endpoint")
 		}
-	case protocol.FileTransferModeRelay:
-		direct = false
 	}
-	if direct {
-		return s.rsyncDirect(ctx, current, sourceNodeID, sourcePath, targetNodeID, targetPath, taskID, asset, sameNode, sourceIP)
-	}
-	return s.rsyncViaCore(ctx, current, sourceNodeID, sourcePath, targetNodeID, targetPath, taskID, key, sourceIP, targetIP, size)
+	return s.rsyncDirect(ctx, current, sourceNodeID, sourcePath, targetNodeID, targetPath, taskID, asset, sameNode, sourceIP)
 }
 
 func (s *Server) rsyncDirect(ctx context.Context, current *session, sourceNodeID, sourcePath, targetNodeID, targetPath, taskID string, asset protocol.NodeAsset, sameNode bool, sourceIP string) error {

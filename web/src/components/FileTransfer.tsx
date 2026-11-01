@@ -18,7 +18,7 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
   const [nodes, setNodes] = useState<AgentNode[]>([]);
   const [targetId, setTargetId] = useState(sourceNodeId);
   const [targetPath, setTargetPath] = useState("/");
-  const [mode, setMode] = useState("auto");
+  const [mode, setMode] = useState("relay");
   const [picker, setPicker] = useState(false);
   const [error, setError] = useState(""), [busy, setBusy] = useState(false), [done, setDone] = useState(false);
   const pending = useRef<AbortController | null>(null);
@@ -66,9 +66,8 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
       <div className="file-transfer-actions">
         <div className="file-transfer-mode">
           <Select label="" aria-label={x("mode")} value={mode} disabled={busy || done} onValueChange={value => { setMode(value); }} options={[
-            { value: "auto", label: x("modeAuto") },
-            { value: "direct", label: x("modeDirect") },
             { value: "relay", label: x("modeRelay") },
+            { value: "direct", label: x("modeDirect") },
           ]} />
         </div>
         {busy && !done && <Button variant="secondary" onClick={() => pending.current?.abort()}>{t("dialog.cancel")}</Button>}

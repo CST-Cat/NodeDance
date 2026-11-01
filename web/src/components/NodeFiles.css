@@ -17,6 +17,7 @@
 .file-info { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 12px; }
 .file-info dd { margin: 0; overflow-wrap: anywhere; }
 .file-dialog-form, .file-image-editor, .file-media { display: grid; gap: 16px; min-width: 0; }
+.file-upload-fields { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .file-dialog-actions { justify-content: end; }
 .file-browser-dialog { width: min(1100px, calc(100% - 32px)); }
 .file-browser-dialog > :first-child { padding-bottom: 8px; }

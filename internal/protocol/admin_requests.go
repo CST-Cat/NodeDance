@@ -38,14 +38,13 @@ type FileTransferRequest struct {
 }
 
 const (
-	FileTransferModeAuto   = "auto"
 	FileTransferModeDirect = "direct"
 	FileTransferModeRelay  = "relay"
 )
 
 func ValidFileTransferMode(mode string) bool {
 	switch mode {
-	case "", FileTransferModeAuto, FileTransferModeDirect, FileTransferModeRelay:
+	case FileTransferModeDirect, FileTransferModeRelay:
 		return true
 	}
 	return false
