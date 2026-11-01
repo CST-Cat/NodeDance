@@ -47,22 +47,42 @@ func rsyncSessionName(taskID string) string {
 	return "rsync-" + hex.EncodeToString(sum[:12])
 }
 
-func (b *agentFileBridge) rsyncReceive(ctx context.Context, id string, request protocol.FileRequest) error {
-	spec := request.Rsync
+func (b *agentFileBridge) prepareRsyncStaging(ctx context.Context, request protocol.FileRequest) (string, string, error) {
 	if b.tasks == nil {
-		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, errors.New("durable file task runner is unavailable"))
+		return "", "", errors.New("durable file task runner is unavailable")
 	}
 	uploadSpec, err := b.tasks.UploadSpec(ctx, request.TaskID)
 	if err != nil {
-		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, err)
+		return "", "", err
 	}
 	if previous := b.stopRsyncSession(request.TaskID); previous != nil {
 		b.cleanupRsyncSession(previous)
 	}
 	stagingVirtual, err := b.service.PrepareRsyncStaging(uploadSpec.Path, request.TaskID)
 	if err != nil {
+		return "", "", err
+	}
+	return uploadSpec.Path, stagingVirtual, nil
+}
+
+func (b *agentFileBridge) registerRsyncStaging(request protocol.FileRequest, id, targetPath, stagingVirtual string) *agentRsyncSession {
+	done := make(chan struct{})
+	close(done)
+	session := &agentRsyncSession{taskID: request.TaskID, requestID: id, targetVirtual: targetPath,
+		stagingVirtual: stagingVirtual, done: done}
+	b.rsyncMu.Lock()
+	b.rsyncSessions[request.TaskID] = session
+	b.rsyncMu.Unlock()
+	return session
+}
+
+func (b *agentFileBridge) rsyncReceive(ctx context.Context, id string, request protocol.FileRequest) error {
+	spec := request.Rsync
+	targetPath, stagingVirtual, err := b.prepareRsyncStaging(ctx, request)
+	if err != nil {
 		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, err)
 	}
+	uploadSpec := protocol.FileTaskSpec{Path: targetPath}
 	fail := func(err error) error {
 		_ = b.service.RemoveRsyncStaging(uploadSpec.Path, stagingVirtual)
 		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, err)
@@ -185,7 +205,7 @@ func (b *agentFileBridge) stopRsyncSession(taskID string) *agentRsyncSession {
 	if session.leaseTimer != nil {
 		session.leaseTimer.Stop()
 	}
-	if session.cmd.Process != nil {
+	if session.cmd != nil && session.cmd.Process != nil {
 		_ = session.cmd.Process.Kill()
 	}
 	<-session.done
@@ -247,6 +267,53 @@ func (b *agentFileBridge) rsyncAbortByRequest(id string) {
 		if session := b.stopRsyncSession(taskID); session != nil {
 			b.cleanupRsyncSession(session)
 		}
+	}
+}
+
+func (b *agentFileBridge) rsyncFetch(ctx context.Context, id string, request protocol.FileRequest) {
+	spec := request.Rsync
+	respondErr := func(err error) {
+		if !b.isCanceled(id) {
+			b.sendFailure(context.Background(), id, request.Operation, fileErrorCode(err))
+		}
+	}
+	targetPath, stagingVirtual, err := b.prepareRsyncStaging(ctx, request)
+	if err != nil {
+		respondErr(err)
+		return
+	}
+	b.registerRsyncStaging(request, id, targetPath, stagingVirtual)
+	stagingReal, err := b.service.RealPath(stagingVirtual)
+	if err != nil {
+		respondErr(err)
+		return
+	}
+	host := spec.Host
+	if host == "" {
+		host = b.coreHost
+	}
+	if host == "" {
+		respondErr(errors.New("rsync source host is unknown"))
+		return
+	}
+	binary, err := b.rsyncBinaryPath()
+	if err != nil {
+		respondErr(err)
+		return
+	}
+	source := "rsync://" + spec.User + "@" + net.JoinHostPort(host, strconv.Itoa(spec.Port)) + "/xfer/" + spec.RemoteName
+	destination := filepath.Join(stagingReal, path.Base(targetPath))
+	command := exec.CommandContext(ctx, binary,
+		"--timeout="+strconv.Itoa(spec.TimeoutSeconds), "--contimeout=30",
+		"-t", "--no-perms", "--no-owner", "--no-group", "--", source, destination)
+	command.Env = append(os.Environ(), "RSYNC_PASSWORD="+spec.Password)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		respondErr(fmt.Errorf("rsync fetch failed: %w: %s", err, strings.TrimSpace(string(output))))
+		return
+	}
+	if err := b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, nil); err != nil {
+		b.cancel(id)
 	}
 }
 

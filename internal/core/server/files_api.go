@@ -142,6 +142,9 @@ func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID 
 		return protocol.FileResponse{}, err
 	}
 	defer s.closeCoreFileTransfer(connection, transfer, false, nil)
+	if request.TransferID == "" {
+		request.TransferID = transfer.requestID
+	}
 	payload, err := json.Marshal(request)
 	if err != nil || len(payload) > protocol.MaxFileControlBytes {
 		return protocol.FileResponse{}, errors.New("file request exceeds its protocol bound")

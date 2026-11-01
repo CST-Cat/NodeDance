@@ -60,6 +60,7 @@ type Options struct {
 	AgentOfflineTimeout       time.Duration
 	AgentSweepInterval        time.Duration
 	FileTransferLimit         int64
+	FileTransferPort          int
 	NonMetricHistoryRetention time.Duration
 	HistoryRetentionInterval  time.Duration
 	Now                       func() time.Time
@@ -136,6 +137,8 @@ type Server struct {
 	terminals                  *terminalStreamManager
 	terminalSessionMu          sync.Mutex
 	fileTransferLimit          int64
+	fileTransferPort           int
+	rsyncRelay                 *rsyncRelayManager
 	catalogMu                  sync.Mutex
 	catalogBody                []byte
 	catalogETag                string
@@ -207,6 +210,12 @@ func New(version string, options Options) (*Server, error) {
 	}
 	if options.FileTransferLimit < 1 || options.FileTransferLimit > protocol.MaxFileSize {
 		return nil, errors.New("file transfer limit is outside the protocol hard limit")
+	}
+	if options.FileTransferPort == 0 {
+		options.FileTransferPort = config.DefaultFileTransferPort
+	}
+	if options.FileTransferPort < 1 || options.FileTransferPort > 65535 {
+		return nil, errors.New("file transfer port is outside the valid range")
 	}
 	if options.NonMetricHistoryRetention == 0 {
 		options.NonMetricHistoryRetention = time.Duration(coreretention.DefaultDays) * 24 * time.Hour
@@ -293,6 +302,7 @@ func New(version string, options Options) (*Server, error) {
 		containerStreamSlots:      make(chan struct{}, 64),
 		terminals:                 newTerminalStreamManager(),
 		fileTransferLimit:         options.FileTransferLimit,
+		fileTransferPort:          options.FileTransferPort,
 		nonMetricHistoryRetention: options.NonMetricHistoryRetention,
 		historyRetentionInterval:  options.HistoryRetentionInterval,
 		preferenceMigrator:        coreprefs.NewSQLiteMigrator(store.DB),
@@ -302,6 +312,7 @@ func New(version string, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, fmt.Errorf("initialize Compose project registry: %w", err)
 	}
+	s.rsyncRelay = newRsyncRelayManager(s)
 	s.tasks, err = coretasks.New(store.DB, coretasks.Options{Now: options.Now})
 	if err != nil {
 		_ = store.Close()
@@ -458,6 +469,9 @@ func (s *Server) historyRetentionWorker() {
 }
 
 func (s *Server) Close() error {
+	if s.rsyncRelay != nil {
+		s.rsyncRelay.closeAll()
+	}
 	if s.terminals != nil {
 		s.terminals.closeAll(s, "Core shutdown")
 	}

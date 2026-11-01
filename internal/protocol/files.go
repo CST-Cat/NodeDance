@@ -37,6 +37,7 @@ const (
 	FileRsyncFinish  = "rsync_finish"
 	FileRsyncAbort   = "rsync_abort"
 	FileRsyncSend    = "rsync_send"
+	FileRsyncFetch   = "rsync_fetch"
 
 	MaxFileControlBytes = 256 << 10
 	MaxFileChunkBytes   = 32 << 10
@@ -189,6 +190,13 @@ func ValidateFileRequest(envelope Envelope, generation uint64, request FileReque
 			request.Rsync.TimeoutSeconds < 10 || request.Rsync.TimeoutSeconds > 7200 {
 			return errors.New("rsync send is invalid")
 		}
+	case FileRsyncFetch:
+		if request.TransferID != envelope.RequestID || !validFileTaskID(request.TaskID) || !validRsyncCredentials(request.Rsync) ||
+			!validRsyncHost(request.Rsync.Host) || request.Rsync.Port < 1 || request.Rsync.Port > 65535 ||
+			!validRsyncRemoteName(request.Rsync.RemoteName) ||
+			request.Rsync.TimeoutSeconds < 10 || request.Rsync.TimeoutSeconds > 7200 {
+			return errors.New("rsync fetch is invalid")
+		}
 	default:
 		return fmt.Errorf("unsupported file operation %q", request.Operation)
 	}
@@ -261,7 +269,7 @@ func ValidateFileResponse(envelope Envelope, generation uint64, response FileRes
 	}
 	switch response.Operation {
 	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileHash, FileUploadBegin, FileUploadChunk,
-		FileRsyncReceive, FileRsyncFinish, FileRsyncAbort, FileRsyncSend:
+		FileRsyncReceive, FileRsyncFinish, FileRsyncAbort, FileRsyncSend, FileRsyncFetch:
 	default:
 		return errors.New("file response operation is invalid")
 	}

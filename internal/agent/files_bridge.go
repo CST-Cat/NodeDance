@@ -178,6 +178,13 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 			b.rsyncSend(ctx, id, request)
 		}()
 		return nil
+	case protocol.FileRsyncFetch:
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			b.rsyncFetch(ctx, id, request)
+		}()
+		return nil
 	default:
 		return errors.New("unsupported file operation")
 	}

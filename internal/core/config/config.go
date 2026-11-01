@@ -32,6 +32,7 @@ type File struct {
 	LoginLockoutDuration          string   `json:"login_lockout_duration"`
 	WebSocketCheckInterval        string   `json:"websocket_check_interval"`
 	MaxFileTransferBytes          int64    `json:"max_file_transfer_bytes"`
+	FileTransferPort              int      `json:"file_transfer_port"`
 	NonMetricHistoryRetentionDays int      `json:"non_metric_history_retention_days"`
 }
 
@@ -229,6 +230,25 @@ func RuntimeFileTransferLimit(file File, envValue, cliValue string) (int64, erro
 		return file.MaxFileTransferBytes, nil
 	}
 	return protocol.DefaultFileLimit, nil
+}
+
+const DefaultFileTransferPort = 8730
+
+func RuntimeFileTransferPort(file File, envValue string) (int, error) {
+	if strings.TrimSpace(envValue) != "" {
+		value, err := strconv.Atoi(strings.TrimSpace(envValue))
+		if err != nil || value < 1 || value > 65535 {
+			return 0, errors.New("file transfer port must be between 1 and 65535")
+		}
+		return value, nil
+	}
+	if file.FileTransferPort != 0 {
+		if file.FileTransferPort < 1 || file.FileTransferPort > 65535 {
+			return 0, errors.New("file_transfer_port must be between 1 and 65535")
+		}
+		return file.FileTransferPort, nil
+	}
+	return DefaultFileTransferPort, nil
 }
 
 // RuntimeNonMetricHistoryRetentionDays applies CLI > environment > config >
