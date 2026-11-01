@@ -409,21 +409,56 @@ export default function UpdateCenter() {
                 </h2>
               </div>
               {restartWaiting.value ? (
-                <Alert role="status" title={t("management.notice")}>
+                <Alert
+                  role="status"
+                  title={t("management.notice")}
+                  className="update-notice"
+                >
                   {t("updates.restartWaiting")}
                 </Alert>
               ) : pollError.value ? (
-                <Alert role="status" title={t("management.notice")}>
+                <Alert
+                  role="status"
+                  title={t("management.notice")}
+                  className="update-notice"
+                >
                   {pollError.value}
                 </Alert>
               ) : null}
+              {activeJob.value &&
+              !activeJob.value.finished &&
+              ["queued", "running"].includes(activeJob.value.status) ? (
+                <Alert
+                  role="status"
+                  title={t("management.notice")}
+                  className="update-notice"
+                >
+                  <div className="update-progress">
+                    <Progress
+                      value={Math.round((activeJob.value.progress ?? 0) * 100)}
+                      label={stageLabel(activeJob.value.stage)}
+                      showValue
+                    />
+                  </div>
+                </Alert>
+              ) : null}
               {restartImminent.value ? (
-                <Alert role="status" tone="warning" title={t("management.notice")}>
+                <Alert
+                  role="status"
+                  tone="warning"
+                  title={t("management.notice")}
+                  className="update-notice"
+                >
                   {t("updates.restartImminent")}
                 </Alert>
               ) : null}
               {coreUpdated.value ? (
-                <Alert role="status" tone="success" title={t("management.notice")}>
+                <Alert
+                  role="status"
+                  tone="success"
+                  title={t("management.notice")}
+                  className="update-notice update-notice-refresh"
+                >
                   {t("updates.coreUpdated")}
                   <div className="settings-section-actions">
                     <Button
@@ -436,7 +471,12 @@ export default function UpdateCenter() {
                 </Alert>
               ) : null}
               {error.value ? (
-                <Alert role="alert" tone="danger" title={t("management.error")}>
+                <Alert
+                  role="alert"
+                  tone="danger"
+                  title={t("management.error")}
+                  className="update-notice"
+                >
                   {error.value}
                 </Alert>
               ) : null}
@@ -629,16 +669,6 @@ export default function UpdateCenter() {
                                   ? job.status
                                   : t(`task.state.${job.status}`)}
                               </span>
-                            </div>
-                          ) : null}
-                          {!job.finished &&
-                          ["queued", "running"].includes(job.status) ? (
-                            <div className="update-progress">
-                              <Progress
-                                value={Math.round((job.progress ?? 0) * 100)}
-                                label={stageLabel(job.stage)}
-                                showValue
-                              />
                             </div>
                           ) : null}
                           {job.error ? (

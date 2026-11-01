@@ -457,6 +457,29 @@
   margin-top: var(--workspace-space-sm);
 }
 
+.preferences-page .update-notice {
+  padding: var(--workspace-space-sm) var(--workspace-space-md);
+}
+
+.preferences-page .update-notice .update-progress {
+  margin-top: var(--workspace-space-xs);
+}
+
+.preferences-page .update-notice-refresh p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--workspace-space-sm);
+}
+
+.preferences-page .update-notice-refresh .settings-section-actions {
+  display: contents;
+}
+
+.preferences-page .update-notice-refresh .settings-section-actions > button {
+  margin-inline-start: auto;
+}
+
 .preferences-page .update-confirm-dialog > div:first-child > button {
   width: 44px;
   height: 44px;
