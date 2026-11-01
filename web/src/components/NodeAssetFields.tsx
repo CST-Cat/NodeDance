@@ -106,6 +106,63 @@ export default function NodeAssetFields(input: Props) {
                       <small data-v-f325f884="">{t("asset.trafficHint")}</small>
                     ) : null}
                   </label>
+                  <label data-v-f325f884="">
+                    <span data-v-f325f884="">{t("asset.transferHost")}</span>
+                    <Input
+                      type="text"
+                      data-testid="asset-transfer-host"
+                      value={String(__props.values.transferHost ?? "")}
+                      onChange={(event) => { __props.values.transferHost = event.target.value; }}
+                      data-v-f325f884=""
+                    />
+                    {__props.showHints !== false ? (
+                      <small data-v-f325f884="">{t("asset.transferHostHint")}</small>
+                    ) : null}
+                  </label>
+                  <label data-v-f325f884="">
+                    <span data-v-f325f884="">{t("asset.transferPort")}</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="65535"
+                      data-testid="asset-transfer-port"
+                      {...__input(
+                        __props.values.transferPort,
+                        (__nextValue: any) => {
+                          __props.values.transferPort = __nextValue;
+                        },
+                        "number",
+                        undefined,
+                        ["number"],
+                      )}
+                      data-v-f325f884=""
+                    />
+                    {__props.showHints !== false ? (
+                      <small data-v-f325f884="">{t("asset.transferPortHint")}</small>
+                    ) : null}
+                  </label>
+                  <label data-v-f325f884="">
+                    <span data-v-f325f884="">{t("asset.transferBindPort")}</span>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="65535"
+                      data-testid="asset-transfer-bind-port"
+                      {...__input(
+                        __props.values.transferBindPort,
+                        (__nextValue: any) => {
+                          __props.values.transferBindPort = __nextValue;
+                        },
+                        "number",
+                        undefined,
+                        ["number"],
+                      )}
+                      data-v-f325f884=""
+                    />
+                    {__props.showHints !== false ? (
+                      <small data-v-f325f884="">{t("asset.transferBindPortHint")}</small>
+                    ) : null}
+                  </label>
                   <label className={__classes("asset-date")} data-v-f325f884="">
                     <span data-v-f325f884="">{t("asset.purchase")}</span>
                     <Input

@@ -263,9 +263,9 @@ export async function createFileManager(
     persist();
     return observe(item, other);
   }
-  async function transfer(targetNodeId: string, paths: string[], targetPath: string, other?: AbortSignal) {
+  async function transfer(targetNodeId: string, paths: string[], targetPath: string, mode: string, other?: AbortSignal) {
     active();
-    const payload = exactJSON({ targetNodeId, paths, targetPath });
+    const payload = exactJSON({ targetNodeId, paths, targetPath, mode });
     const intent = await requestIntent("files.transfer", { params }, payload);
     active();
     const result = await operationRequest<{ transferred: { sourcePath: string; targetPath: string; size: number; sha256: string; taskId: string }[]; failed?: { sourcePath: string; error: string }[] }>(

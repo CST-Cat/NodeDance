@@ -94,5 +94,11 @@
 .file-transfer-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
+}
+
+.file-transfer-mode {
+  margin-right: auto;
+  min-width: 9rem;
 }
