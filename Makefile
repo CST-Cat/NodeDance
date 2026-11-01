@@ -49,8 +49,8 @@ frontend: typecheck
 
 build: frontend
 	mkdir -p .build
-	go build -trimpath -ldflags "-X main.version=$(CORE_VERSION)" -o .build/nodedance ./cmd/nodedance
-	go build -trimpath -ldflags "-X main.version=$(AGENT_VERSION)" -o .build/nodedance-agent ./cmd/nodedance-agent
+	go build -buildvcs=false -trimpath -ldflags "-X main.version=$(CORE_VERSION)" -o .build/nodedance ./cmd/nodedance
+	go build -buildvcs=false -trimpath -ldflags "-X main.version=$(AGENT_VERSION)" -o .build/nodedance-agent ./cmd/nodedance-agent
 
 install:
 	@test -x .build/nodedance || { printf '%s\n' 'run make build before make install' >&2; exit 1; }
