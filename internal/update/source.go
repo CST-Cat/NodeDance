@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -111,14 +114,44 @@ func findSourceDir(ctx context.Context, binary, dataDir string, mainPID int) str
 	return ""
 }
 
-func sourceEnv() []string {
+func sourceHomes(dir string) []string {
+	homes := []string{}
+	add := func(home string) {
+		if home == "" || !filepath.IsAbs(home) {
+			return
+		}
+		home = filepath.Clean(home)
+		for _, existing := range homes {
+			if existing == home {
+				return
+			}
+		}
+		homes = append(homes, home)
+	}
+	if info, err := os.Stat(dir); err == nil {
+		if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+			if owner, err := user.LookupId(strconv.FormatUint(uint64(stat.Uid), 10)); err == nil {
+				add(owner.HomeDir)
+			}
+		}
+	}
+	if current, err := user.Current(); err == nil {
+		add(current.HomeDir)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		add(home)
+	}
+	return homes
+}
+
+func sourceEnv(dir string) []string {
 	paths := []string{}
 	if current := os.Getenv("PATH"); current != "" {
 		paths = append(paths, filepath.SplitList(current)...)
 	}
-	home, _ := os.UserHomeDir()
+	homes := sourceHomes(dir)
 	candidates := []string{"/usr/local/go/bin", "/usr/local/bin", "/opt/go/bin", "/opt/node/bin", "/usr/lib/go/bin"}
-	if home != "" {
+	for _, home := range homes {
 		candidates = append(candidates, filepath.Join(home, ".local", "share", "pnpm"), filepath.Join(home, ".volta", "bin"), filepath.Join(home, "go", "bin"))
 		if nodeVersions, err := filepath.Glob(filepath.Join(home, ".nvm", "versions", "node", "*", "bin")); err == nil {
 			candidates = append(candidates, nodeVersions...)
@@ -126,32 +159,59 @@ func sourceEnv() []string {
 	}
 	seen := map[string]bool{}
 	merged := []string{}
-	for _, dir := range append(paths, candidates...) {
-		if dir == "" || seen[dir] {
+	for _, candidate := range append(paths, candidates...) {
+		if candidate == "" || seen[candidate] {
 			continue
 		}
-		seen[dir] = true
-		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			merged = append(merged, dir)
+		seen[candidate] = true
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			merged = append(merged, candidate)
 		}
+	}
+	home := ""
+	if len(homes) > 0 {
+		home = homes[0]
+	}
+	base := home
+	if base == "" {
+		base = os.TempDir()
+	}
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = filepath.Join(base, "go")
+	}
+	modCache := os.Getenv("GOMODCACHE")
+	if modCache == "" {
+		modCache = filepath.Join(filepath.SplitList(goPath)[0], "pkg", "mod")
+	}
+	goCache := os.Getenv("GOCACHE")
+	if goCache == "" {
+		cacheHome := os.Getenv("XDG_CACHE_HOME")
+		if cacheHome == "" || !filepath.IsAbs(cacheHome) {
+			cacheHome = filepath.Join(base, ".cache")
+		}
+		goCache = filepath.Join(cacheHome, "go-build")
 	}
 	env := []string{}
 	for _, entry := range os.Environ() {
-		if !strings.HasPrefix(entry, "PATH=") && !strings.HasPrefix(entry, "HOME=") {
-			env = append(env, entry)
+		key, _, _ := strings.Cut(entry, "=")
+		if key == "PATH" || key == "HOME" || key == "GOPATH" || key == "GOMODCACHE" || key == "GOCACHE" {
+			continue
 		}
+		env = append(env, entry)
 	}
 	env = append(env, "PATH="+strings.Join(merged, string(filepath.ListSeparator)))
 	if home != "" {
 		env = append(env, "HOME="+home)
 	}
+	env = append(env, "GOPATH="+goPath, "GOMODCACHE="+modCache, "GOCACHE="+goCache)
 	return env
 }
 
 func runSourceCommand(ctx context.Context, dir, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
-	cmd.Env = sourceEnv()
+	cmd.Env = sourceEnv(dir)
 	raw, err := cmd.CombinedOutput()
 	output := strings.TrimSpace(string(raw))
 	if err != nil {

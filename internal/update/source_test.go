@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -50,6 +51,43 @@ func TestBetaChannelValidation(t *testing.T) {
 	}
 	if err := Validate(Request{Component: "core", Version: "beta-v1"}); err == nil {
 		t.Fatal("non-channel beta string accepted as a release tag")
+	}
+}
+
+func TestSourceEnvDerivesGoPathsWithoutHome(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("GOPATH", "")
+	t.Setenv("GOMODCACHE", "")
+	t.Setenv("GOCACHE", "")
+	t.Setenv("XDG_CACHE_HOME", "")
+	values := map[string]string{}
+	for _, entry := range sourceEnv(t.TempDir()) {
+		key, value, _ := strings.Cut(entry, "=")
+		values[key] = value
+	}
+	for _, key := range []string{"HOME", "GOPATH", "GOMODCACHE", "GOCACHE"} {
+		if values[key] == "" || !filepath.IsAbs(values[key]) {
+			t.Fatalf("%s = %q, want a non-empty absolute path in %v", key, values[key], values)
+		}
+	}
+	if values["GOMODCACHE"] != filepath.Join(values["GOPATH"], "pkg", "mod") {
+		t.Fatalf("GOMODCACHE = %q, want it under GOPATH %q", values["GOMODCACHE"], values["GOPATH"])
+	}
+}
+
+func TestSourceEnvPreservesExplicitGoPaths(t *testing.T) {
+	custom := filepath.Join(t.TempDir(), "gopath")
+	t.Setenv("GOPATH", custom)
+	values := map[string]string{}
+	for _, entry := range sourceEnv(t.TempDir()) {
+		key, value, _ := strings.Cut(entry, "=")
+		values[key] = value
+	}
+	if values["GOPATH"] != custom {
+		t.Fatalf("GOPATH = %q, want preserved %q", values["GOPATH"], custom)
+	}
+	if values["GOMODCACHE"] != filepath.Join(custom, "pkg", "mod") {
+		t.Fatalf("GOMODCACHE = %q, want it derived from the preserved GOPATH", values["GOMODCACHE"])
 	}
 }
 
