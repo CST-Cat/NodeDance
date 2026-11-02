@@ -51,7 +51,7 @@ type AgentSettings struct {
 }
 
 func DefaultAgentSettings() AgentSettings {
-	return AgentSettings{MemoryMode: "available", FastIntervalSeconds: 5, DiskIntervalSeconds: 30, BillingDay: 1, EnableGPU: true, Compression: true, Transport: "auto", UpdateIntervalHours: 6, CommandHistoryRetentionDays: 90, IncludeInterfaces: []string{}, ExcludeInterfaces: []string{}, IncludeMountpoints: []string{}}
+	return AgentSettings{MemoryMode: "available", FastIntervalSeconds: 5, DiskIntervalSeconds: 30, BillingDay: 1, EnableGPU: true, Compression: true, Transport: "auto", UpdateChannel: "stable", UpdateIntervalHours: 6, CommandHistoryRetentionDays: 90, IncludeInterfaces: []string{}, ExcludeInterfaces: []string{}, IncludeMountpoints: []string{}}
 }
 func ValidateAgentSettings(s AgentSettings) error {
 	if err := ValidateObservationSettings(s.Observability); err != nil {
