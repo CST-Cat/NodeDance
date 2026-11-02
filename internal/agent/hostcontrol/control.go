@@ -394,6 +394,7 @@ func (m *Manager) RunUpdates() {
 		if s.AutoUpdate {
 			ctx, cancel := context.WithTimeout(m.ctx, 60*time.Second)
 			r := update.Request{Component: "agent"}
+			if s.UpdateChannel == "dev" { r.Version = update.ChannelDev }
 			response, err := update.Invoke(ctx, "agent", m.dir, update.RPC{Action: "check", Request: r})
 			if err == nil && response.Status == 200 {
 				var check update.Check

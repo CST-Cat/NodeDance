@@ -45,6 +45,7 @@ type AgentSettings struct {
 	Transport                   string               `json:"transport" request:"required"`
 	PublicIPURL                 string               `json:"publicIpUrl,omitempty"`
 	AutoUpdate                  bool                 `json:"autoUpdate"`
+	UpdateChannel               string               `json:"updateChannel,omitempty"`
 	UpdateIntervalHours         int                  `json:"updateIntervalHours" request:"required"`
 	CommandHistoryRetentionDays int                  `json:"commandHistoryRetentionDays" request:"required"`
 }
@@ -73,6 +74,7 @@ func ValidateAgentSettings(s AgentSettings) error {
 			}
 		}
 	}
+	if s.UpdateChannel != "" && s.UpdateChannel != "stable" && s.UpdateChannel != "dev" { return errors.New("updateChannel must be stable or dev") }
 	if s.Transport != "auto" && s.Transport != "websocket" && s.Transport != "http" {
 		return errors.New("transport must be auto, websocket or http")
 	}

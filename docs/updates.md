@@ -17,6 +17,18 @@ The `nodedance agent update` command updates the local managed Agent and require
 nodedance update --server https://core.example --component agent --node-id NODE_UUID
 ```
 
+## Agent development channel
+
+The default Stable channel continues to resolve published `agent-vMAJOR.MINOR.PATCH` GitHub Releases. Opt-in Dev checks the newest fully published `main` commit in GHCR without any Dev Git tags. Native amd64/arm64 Agent binaries are stored as OCI artifact layers in `ghcr.io/cst-cat/nodedance-agent-binaries`; Docker images use the existing `ghcr.io/cst-cat/nodedance-agent` package. Checks pin and validate OCI digests; the existing transactional updater still verifies exact runtime version and reconnection and rolls back on failure.
+
+```sh
+sudo nodedance agent update --channel dev --check
+sudo nodedance agent update --channel dev
+nodedance update --server https://core.example --component agent --node-id NODE_UUID --channel dev
+```
+
+To automatically follow Dev, set `updateChannel` to `dev` with the authenticated Agent configuration operation and enable `autoUpdate`; empty or `stable` keeps the default Stable behavior. Switching channels is an explicit administrator choice. The first new GHCR binaries package must be publicly readable for anonymous Agent downloads; configure its package visibility after first publication if necessary. No Dev artifacts are published on PR builds.
+
 ## Observation and recovery / 观察与恢复
 
 `--check` 只检查，`--version core-vX.Y.Z`／`agent-vX.Y.Z` 可固定版本。默认等待完成；`--no-wait` 在持久接受后返回。提交前输出 `Idempotency-Key`；连接中断后用 `--idempotency-key KEY` 重试原请求，避免重复执行。`--status` 查看历史，`--status --job-id JOB_ID` 查看进度。Core 回滚使用 `--rollback JOB_ID`，交互确认后执行；Agent 本地回滚同样交互确认，`--yes` 可跳过确认。远端 Agent 的观察和回滚沿用相同的 `--component agent --node-id NODE_UUID` 目标选择。

@@ -293,7 +293,7 @@ func (m *Manager) current(ctx context.Context, component string) (string, error)
 		return "", err
 	}
 	for _, word := range strings.Fields(string(raw)) {
-		if ValidTag(component, word) {
+		if ValidTag(component, word) || component == "agent" && ValidDevVersion(word) {
 			return word, nil
 		}
 	}
@@ -325,7 +325,7 @@ func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
 			return result, err
 		}
 	}
-	result.Available = result.Current != "" && (result.Current == "dev" || Compare(release.Version, result.Current) > 0)
+	result.Available = result.Current != "" && (result.Current == "dev" || ValidDevVersion(release.Version) && result.Current != release.Version || ValidTag(r.Component, release.Version) && (ValidDevVersion(result.Current) || Compare(release.Version, result.Current) > 0))
 	return result, nil
 }
 func (m *Manager) checkSource(ctx context.Context, r Request) (Check, error) {
@@ -538,7 +538,9 @@ func (m *Manager) run(job Job, release Release) {
 				return err
 			}
 			var err error
-			image, err = m.Docker.pull(ctx, "ghcr.io/cst-cat/nodedance-"+job.Component+":"+release.Version)
+			imageRef := "ghcr.io/cst-cat/nodedance-" + job.Component + ":" + release.Version
+			if release.ImageDigest != "" { imageRef = "ghcr.io/cst-cat/nodedance-agent@" + release.ImageDigest }
+			image, err = m.Docker.pull(ctx, imageRef)
 			if err != nil {
 				return err
 			}
@@ -620,9 +622,7 @@ func (m *Manager) run(job Job, release Release) {
 		if err := m.start(ctx, job); err != nil {
 			return err
 		}
-		// A development runtime has no release lineage to verify against:
-		// once its replacement is installed and started, the update is done.
-		if job.Current != "dev" {
+		{
 			if err := m.save(&job, "verifying"); err != nil {
 				return err
 			}
