@@ -2,7 +2,7 @@
 
 ## Build and embedded Web
 
-`make build` first runs the Vue type check and production Vite build, then builds the Core and Agent Go binaries. Vite writes the production files to `internal/core/webassets/dist`; `internal/core/webassets/assets.go` embeds that directory in the Core binary. `make check` runs the same front-end checks before the Go checks.
+`make build` first runs the React/TypeScript type check and production Vite build, then builds the Core and Agent Go binaries. Vite writes the production files to `internal/core/webassets/dist`; `internal/core/webassets/assets.go` embeds that directory in the Core binary. `make check` runs the same front-end checks before the Go checks.
 
 ## Core
 
@@ -29,6 +29,10 @@ Backup hashing, copying and restore extraction check cancellation between reads;
 The Agent starts host metric sampling before connecting to the Core. Production Core origins require HTTPS and the Agent uses authenticated WSS with the operating system certificate trust store. A custom CA file is optional for private PKI. Plain HTTP/WS is limited to a literal loopback Core address in development mode. CPU, memory, disk, network, and uptime collection has its own context and does not use Docker. A Docker SDK client is created once by `internal/agent/docker/engine.go` and shared with discovery, task actions, streams, images, Compose, and rebuild adapters. Hello advertises Docker only when that client was initialized; if the configured Docker socket cannot be used, the Agent continues host metrics and heartbeats without claiming Docker support. If a valid client cannot reach the Engine, discovery reports the unavailable Engine state while host monitoring remains active.
 
 The Agent task journal and runner are process-owned across WebSocket reconnects. A reconnect attaches a new generation to the same runner; it does not recreate the task journal or cancel accepted work. Container lifecycle actions use the common runner and journal. Rebuild persistence in `rebuilds.sqlite` is optional for basic container actions: if it cannot be opened, start/stop/restart remain available and rebuild requests report that the rebuild capability is unavailable. Hello advertises only initialized connection-scoped capabilities. Each heartbeat reports the current set over the same WebSocket; Core accepts only unique, known capabilities that were negotiated in Hello and persists the live set. When an optional worker exits, Agent stops that worker, removes its capability from subsequent heartbeats, and keeps the host metrics and heartbeat loop active. Core disables that capability's requests and closes associated streams or transfers.
+
+## File transport
+
+Core schedules regular-file transfers through the shared `files.transfer` and `files.transfer-retry` operations. Agents discover temporary peer endpoints and probe direct WSS reachability, then use dedicated Core WSS rsync relay connections when direct access fails. The bounded chunk relay remains the final fallback over independent data connections. Persistent Agent WSS carries only control/progress/task messages for file work. Runtime receiver templates, Landlock confinement, one-use credentials, SHA-256 verification, destination version checks and private retained partials share the existing root file service and durable task journal. See [multi-node file transfers](file-transfers.md).
 
 ## Web
 

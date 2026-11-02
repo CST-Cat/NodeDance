@@ -26,7 +26,8 @@ The table below describes the maintained boundaries; operation and attack covera
 | Private method changes, including HEAD and OPTIONS | 401 |
 | Encoded paths, traversal, NUL, repository/config and host-file paths | 401 or 404; no private data |
 | Forged session cookies, Bearer, Enrollment and Basic credentials | 401 |
-| Dashboard, logs, stats, terminal-ticket and Agent WebSockets | Handshake fails; connection never opens |
+| Dashboard, logs, stats, terminal-ticket, Agent and independent file-data WebSockets | Handshake fails; connection never opens |
+| File rsync/chunk data endpoints with administrator cookies or forged Task credentials | Handshake fails; cookies do not authorize task data |
 | Cross-origin browser form with a real administrator session | 403 |
 | HTML injection in display title, node alias and service alias | Literal text; no injected image or script execution |
 | Management request during bounded concurrent guest refresh | Remains available; public responses contain no unselected fields/private hostname |

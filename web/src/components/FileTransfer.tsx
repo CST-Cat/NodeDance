@@ -18,6 +18,8 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
   const [nodes, setNodes] = useState<AgentNode[]>([]);
   const [targetId, setTargetId] = useState(sourceNodeId);
   const [targetPath, setTargetPath] = useState("/");
+  const [bandwidth, setBandwidth] = useState("0");
+  const [transport, setTransport] = useState("");
   const [picker, setPicker] = useState(false);
   const [error, setError] = useState(""), [busy, setBusy] = useState(false), [done, setDone] = useState(false);
   const pending = useRef<AbortController | null>(null);
@@ -36,9 +38,13 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
     pending.current = controller;
     setBusy(true); setError("");
     try {
-      const result = await manager.transfer(targetId, files.map(file => file.path), targetPath, controller.signal);
+      const result = await manager.transfer(targetId, files.map(file => file.path), targetPath, controller.signal, Number(bandwidth || 0));
       if (result.failed?.length) setError(result.failed.map(failure => `${failure.sourcePath}: ${failure.error}`).join("; "));
-      else setDone(true);
+      else {
+        const transports = new Set(result.transferred.map(file => file.transport));
+        setTransport(transports.size === 1 ? result.transferred[0]?.transport ?? "" : "");
+        setDone(true);
+      }
     } catch (reason) {
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -56,6 +62,10 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
         <span className="file-transfer-label">{x("targetDirectory")}</span>
         <div className="file-transfer-path"><Input label="" aria-label={x("targetDirectory")} value={targetPath} disabled={busy || done} onChange={event => setTargetPath(event.target.value)} /><Button type="button" variant="secondary" className="file-transfer-browse" disabled={busy || done || !targetNode} onClick={() => setPicker(true)}>{x("browse")}</Button></div>
       </div>
+      <div className="file-transfer-field">
+        <span className="file-transfer-label">{x("bandwidth")}</span>
+        <Input label="" aria-label={x("bandwidth")} type="number" value={bandwidth} disabled={busy || done} onChange={event => setBandwidth(event.target.value)} />
+      </div>
       <div>
         <div className="file-transfer-files-head"><span>{x("files")}</span><span className="file-transfer-count">{files.length}</span></div>
         <ul className="file-transfer-files">
@@ -63,8 +73,9 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
         </ul>
       </div>
       <div className="file-transfer-actions">
+        {done && <span role="status">{x(transport === "rsync_direct" ? "direct" : transport === "rsync_relay" ? "relay" : transport === "chunk_relay" ? "chunks" : "completed")}</span>}
         {busy && !done && <Button variant="secondary" onClick={() => pending.current?.abort()}>{t("dialog.cancel")}</Button>}
-        <Button onClick={done ? onClose : () => void start()} disabled={!done && (busy || !targetNode || !targetPath.startsWith("/"))} loading={busy && !done} aria-label={done ? t("dialog.confirm") : undefined}>{done ? <Check size={18} /> : x("start")}</Button>
+        <Button onClick={done ? onClose : () => void start()} disabled={!done && (busy || !targetNode || !targetPath.trim())} loading={busy && !done} aria-label={done ? t("dialog.confirm") : undefined}>{done ? <Check size={18} /> : x("start")}</Button>
       </div>
     </div>
     {picker && targetNode && <NodeFiles nodeId={targetNode.nodeId} nodeName={targetNode.displayName} path="/" directoryPicker dialog onClose={() => setPicker(false)} onChoose={chosen => { setTargetPath(chosen); setPicker(false); }} />}

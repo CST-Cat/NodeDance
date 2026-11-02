@@ -25,6 +25,10 @@ type fileRemoteError struct{ code string }
 func (e fileRemoteError) Error() string { return "Agent file operation failed: " + e.code }
 
 func (s *Server) handleFilesAPI(w http.ResponseWriter, r *http.Request, current *session) bool {
+	if nodeID, taskID, ok := fileTransferRetryRoute(r.URL.Path); ok {
+		s.handleFileTransferRetry(w, r, current, nodeID, taskID)
+		return true
+	}
 	nodeID, operation, ok := filesRoute(r.URL.Path)
 	if !ok {
 		return false

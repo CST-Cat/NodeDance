@@ -1,11 +1,11 @@
 package files
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"github.com/CST-Cat/NodeDance/internal/agent/transferbuffer"
 	"io"
 	"os"
 	"path"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
+	"github.com/CST-Cat/NodeDance/internal/agent/transferbuffer"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
 )
@@ -26,33 +27,51 @@ type fileTaskJournal interface {
 	Get(context.Context, string) (taskjournal.Snapshot, error)
 	Finish(context.Context, string, taskstate.Status, taskstate.Evidence, taskjournal.Result) error
 	MarkUnknown(context.Context, string) error
+	UpdateProgress(context.Context, string, taskjournal.Progress) error
 }
 
 type pendingUpload struct {
-	spec   protocol.FileTaskSpec
-	reader chan *io.PipeReader
-	used   bool
-	upload *Upload
+	spec        protocol.FileTaskSpec
+	reader      chan *io.PipeReader
+	used        bool
+	upload      *Upload
+	ctx         context.Context
+	cancel      context.CancelCauseFunc
+	nodeID      string
+	notify      func(taskjournal.Snapshot)
+	attemptDone chan struct{}
+	stage       *RsyncStage
+	completed   bool
+	committing  bool
+	transport   string
 }
 
 // TaskExecutor performs filesystem mutations through the Agent's existing
 // durable task journal. The pending upload map is a connection rendezvous for
 // one streaming body; it is not persistent task state.
 type TaskExecutor struct {
-	service *Service
-	journal fileTaskJournal
-	mu      sync.Mutex
-	uploads map[string]*pendingUpload
+	service       *Service
+	journal       fileTaskJournal
+	mu            sync.Mutex
+	uploads       map[string]*pendingUpload
+	stateRoot     *os.File
+	stateDir      string
+	cancellations map[string]bool
+	cancelOrder   []string
 }
 
 func NewTaskExecutor(service *Service, journal fileTaskJournal) (*TaskExecutor, error) {
 	if service == nil || journal == nil {
 		return nil, errors.New("file task executor requires the configured file service and shared task journal")
 	}
-	return &TaskExecutor{service: service, journal: journal, uploads: make(map[string]*pendingUpload)}, nil
+	return &TaskExecutor{service: service, journal: journal, uploads: make(map[string]*pendingUpload), cancellations: make(map[string]bool)}, nil
 }
 
 func (e *TaskExecutor) AttachUpload(ctx context.Context, taskID string, request protocol.FileRequest) (*io.PipeWriter, error) {
+	return e.attachUpload(ctx, taskID, request, false)
+}
+
+func (e *TaskExecutor) attachUpload(ctx context.Context, taskID string, request protocol.FileRequest, rsyncCommit bool) (*io.PipeWriter, error) {
 	deadline := time.NewTimer(uploadAttachTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(25 * time.Millisecond)
@@ -61,7 +80,7 @@ func (e *TaskExecutor) AttachUpload(ctx context.Context, taskID string, request 
 		e.mu.Lock()
 		pending := e.uploads[taskID]
 		if pending != nil {
-			if pending.used || request.Operation != protocol.FileUploadBegin || request.Path != pending.spec.Path ||
+			if pending.used || pending.committing != rsyncCommit || pending.attemptDone != nil || pending.ctx.Err() != nil || request.Operation != protocol.FileUploadBegin || request.Path != pending.spec.Path ||
 				request.ExpectedVersion != pending.spec.ExpectedVersion || request.Size != pending.spec.Size || request.SHA256 != pending.spec.SHA256 {
 				e.mu.Unlock()
 				return nil, errors.New("upload metadata does not match the accepted file task")
@@ -105,10 +124,15 @@ func (e *TaskExecutor) ExecuteFile(ctx context.Context, dispatch protocol.TaskDi
 	if err != nil || running.Status != taskstate.Running || !running.Evidence.ExecutionAttempted {
 		return e.markUnknown(ctx, dispatch.TaskID)
 	}
-	if dispatch.Intent.Action == protocol.TaskFileUpload {
-		if err := e.prepareUpload(dispatch.TaskID, *dispatch.Intent.File); err != nil {
+	uploadTask := dispatch.Intent.Action == protocol.TaskFileUpload || dispatch.Intent.Action == protocol.TaskFileSaveText
+	if uploadTask {
+		if err := e.prepareUpload(ctx, dispatch.TaskID, *dispatch.Intent.File); err != nil {
 			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", stableFileError(err))
 		}
+		e.mu.Lock()
+		pending := e.uploads[dispatch.TaskID]
+		pending.nodeID, pending.notify = dispatch.NodeID, onRunning
+		e.mu.Unlock()
 		defer e.removePending(dispatch.TaskID)
 	}
 	if dispatch.Intent.Action == protocol.TaskFileCopy || dispatch.Intent.Action == protocol.TaskFileArchive || dispatch.Intent.Action == protocol.TaskFileExtract {
@@ -127,7 +151,7 @@ func (e *TaskExecutor) ExecuteFile(ctx context.Context, dispatch protocol.TaskDi
 	var baseline MutationBaseline
 	baseline, err = e.service.CaptureMutationBaseline(fileOperation(dispatch.Intent.Action), dispatch.Intent.File.Path, dispatch.Intent.File.NewPath)
 	if err != nil {
-		if dispatch.Intent.Action == protocol.TaskFileUpload {
+		if uploadTask {
 			e.removePending(dispatch.TaskID)
 		}
 		return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", stableFileError(err))
@@ -149,19 +173,20 @@ func (e *TaskExecutor) ExecuteFile(ctx context.Context, dispatch protocol.TaskDi
 		err = e.service.Delete(dispatch.Intent.File.Path, dispatch.Intent.DeleteConfirmed)
 		observed = "deleted"
 	case protocol.TaskFileSaveText:
-		if dispatch.FileContent == nil || dispatch.FileContent.SHA256 != dispatch.Intent.File.SHA256 {
-			return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", "payload_unavailable")
-		}
-		entry, saveErr := e.service.SaveText(dispatch.Intent.File.Path, dispatch.Intent.File.ExpectedVersion, string(dispatch.FileContent.Content))
-		err = saveErr
-		if err == nil && entry.Size != int64(len(dispatch.FileContent.Content)) {
-			return e.markUnknown(ctx, dispatch.TaskID)
-		}
+		err = e.receiveTextUpload(ctx, dispatch.TaskID, *dispatch.Intent.File)
 		observed = "saved"
-		expectedSize, expectedDigest = int64(len(dispatch.FileContent.Content)), dispatch.Intent.File.SHA256
+		expectedSize, expectedDigest = dispatch.Intent.File.Size, dispatch.Intent.File.SHA256
 	case protocol.TaskFileUpload:
 		err = e.receiveUpload(ctx, dispatch.TaskID, *dispatch.Intent.File)
 		observed = "uploaded"
+		if dispatch.Intent.File.Transfer != nil {
+			e.mu.Lock()
+			observed = e.uploads[dispatch.TaskID].transport
+			e.mu.Unlock()
+			if observed == "" {
+				observed = "chunk_relay"
+			}
+		}
 		expectedSize, expectedDigest = dispatch.Intent.File.Size, dispatch.Intent.File.SHA256
 	default:
 		return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", "operation_rejected")
@@ -175,6 +200,9 @@ func (e *TaskExecutor) ExecuteFile(ctx context.Context, dispatch protocol.TaskDi
 			}
 			return e.markUnknown(ctx, dispatch.TaskID)
 		}
+		if dispatch.Intent.File.Transfer != nil && errors.Is(err, taskstate.ErrCancellationRequested) {
+			return e.finishCanceled(ctx, dispatch.TaskID)
+		}
 		return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", stableFileError(err))
 	}
 	verified, verifyErr := e.service.VerifyMutation(fileOperation(dispatch.Intent.Action), dispatch.Intent.File.Path,
@@ -185,7 +213,7 @@ func (e *TaskExecutor) ExecuteFile(ctx context.Context, dispatch protocol.TaskDi
 	return e.finish(ctx, dispatch.TaskID, taskstate.Succeeded, observed, expectedDigestOrPath(dispatch.Intent.File, expectedDigest))
 }
 
-func (e *TaskExecutor) prepareUpload(taskID string, spec protocol.FileTaskSpec) error {
+func (e *TaskExecutor) prepareUpload(ctx context.Context, taskID string, spec protocol.FileTaskSpec) error {
 	temporary := uploadTemporaryPath(spec.Path, taskID)
 	upload, err := e.service.BeginUploadAtTemporary(spec.Path, spec.ExpectedVersion, spec.Size, spec.SHA256, temporary)
 	if err != nil {
@@ -194,58 +222,127 @@ func (e *TaskExecutor) prepareUpload(taskID string, spec protocol.FileTaskSpec) 
 	// Keep the staged file on the executor while the Core streams bytes. A
 	// failed or revoked transfer closes the reader and the deferred Abort
 	// removes this exact random sibling temporary path.
-	pending := &pendingUpload{spec: spec, reader: make(chan *io.PipeReader, 1), upload: upload}
+	uploadCtx, cancel := context.WithCancelCause(ctx)
+	pending := &pendingUpload{spec: spec, reader: make(chan *io.PipeReader, 1), upload: upload, ctx: uploadCtx, cancel: cancel}
 	e.mu.Lock()
 	if e.uploads[taskID] != nil {
 		e.mu.Unlock()
+		cancel(context.Canceled)
 		upload.Abort()
 		return errors.New("duplicate file upload task")
 	}
 	e.uploads[taskID] = pending
+	if spec.Transfer != nil && e.cancellations[taskID] {
+		cancel(taskstate.ErrCancellationRequested)
+	}
 	e.mu.Unlock()
 	return nil
 }
 
 func (e *TaskExecutor) receiveUpload(ctx context.Context, taskID string, spec protocol.FileTaskSpec) error {
+	e.mu.Lock()
+	pending := e.uploads[taskID]
+	e.mu.Unlock()
+	if pending != nil && spec.Transfer != nil {
+		ctx = pending.ctx
+	}
 	reader, err := e.waitUploadReader(ctx, taskID)
 	if err != nil {
-		return err
+		return uploadCause(ctx, err)
 	}
 	defer reader.Close()
 	stopClose := context.AfterFunc(ctx, func() { _ = reader.CloseWithError(ctx.Err()) })
 	defer stopClose()
 	e.mu.Lock()
-	pending := e.uploads[taskID]
+	pending = e.uploads[taskID]
 	e.mu.Unlock()
 	if pending == nil || pending.upload == nil || !reflect.DeepEqual(pending.spec, spec) {
 		return errors.New("file upload task state is unavailable")
 	}
 	upload := pending.upload
 	defer upload.Abort()
+	if spec.Transfer != nil && pending.transport == "" {
+		if pending.stage == nil {
+			stage, err := e.openRsyncStage(ctx, protocol.FileTransferDescriptor{TaskID: taskID, TargetNodeID: pending.nodeID, File: spec})
+			if err != nil {
+				return err
+			}
+			e.mu.Lock()
+			pending.stage = stage
+			e.mu.Unlock()
+		}
+		defer pending.stage.Payload.Sync()
+	}
 	lease := transferbuffer.Acquire()
 	defer transferbuffer.Release(lease)
 	buffer := lease[:]
+	lastProgress := time.Time{}
 	for {
 		if err := ctx.Err(); err != nil {
-			return err
+			return uploadCause(ctx, err)
 		}
 		n, readErr := reader.Read(buffer)
 		if err := ctx.Err(); err != nil {
-			return err
+			return uploadCause(ctx, err)
 		}
 		if n > 0 {
+			if spec.Transfer != nil && pending.transport == "" {
+				if int64(n) > spec.Size-upload.written {
+					return ErrLimitExceeded
+				}
+				if _, err := pending.stage.Payload.WriteAt(buffer[:n], upload.written); err != nil {
+					return err
+				}
+			}
 			if err := upload.WriteChunk(buffer[:n]); err != nil {
 				return err
+			}
+			if time.Since(lastProgress) >= 250*time.Millisecond {
+				lastProgress = time.Now()
+				if pending.transport == "" {
+					e.TransferProgress(taskID, uint64(upload.written), taskjournal.PhaseExecuting)
+				}
 			}
 		}
 		if errors.Is(readErr, io.EOF) {
 			break
 		}
 		if readErr != nil {
-			return readErr
+			return uploadCause(ctx, readErr)
 		}
 	}
+	e.TransferProgress(taskID, uint64(spec.Size), taskjournal.PhaseVerifying)
 	_, err = upload.CommitWithDigest(spec.SHA256)
+	if err == nil {
+		e.mu.Lock()
+		pending.completed = true
+		e.mu.Unlock()
+	}
+	return err
+}
+
+func (e *TaskExecutor) receiveTextUpload(ctx context.Context, taskID string, spec protocol.FileTaskSpec) error {
+	reader, err := e.waitUploadReader(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	stop := context.AfterFunc(ctx, func() { _ = reader.CloseWithError(ctx.Err()) })
+	defer stop()
+	buffer := bytes.NewBuffer(make([]byte, 0, int(spec.Size)))
+	defer func() { clear(buffer.Bytes()) }()
+	n, err := io.Copy(buffer, transferContextReader{ctx: ctx, reader: io.LimitReader(reader, spec.Size+1)})
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(buffer.Bytes())
+	if n != spec.Size || hex.EncodeToString(digest[:]) != spec.SHA256 {
+		return ErrTransferDigest
+	}
+	entry, err := e.service.SaveText(spec.Path, spec.ExpectedVersion, buffer.String())
+	if err == nil && entry.Size != spec.Size {
+		return ErrMutationResultUnknown
+	}
 	return err
 }
 
@@ -256,7 +353,11 @@ func (e *TaskExecutor) waitUploadReader(ctx context.Context, taskID string) (*io
 	if pending == nil {
 		return nil, errors.New("file upload task is not registered")
 	}
-	timer := time.NewTimer(uploadAttachTimeout)
+	timeout := uploadAttachTimeout
+	if pending.spec.Transfer != nil {
+		timeout = 30 * time.Minute
+	}
+	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	select {
 	case reader := <-pending.reader:
@@ -271,11 +372,100 @@ func (e *TaskExecutor) waitUploadReader(ctx context.Context, taskID string) (*io
 func (e *TaskExecutor) removePending(taskID string) {
 	e.mu.Lock()
 	pending := e.uploads[taskID]
+	var done chan struct{}
+	if pending != nil {
+		pending.cancel(context.Canceled)
+		done = pending.attemptDone
+	}
+	e.mu.Unlock()
+	if done != nil {
+		<-done
+	}
+	e.mu.Lock()
 	delete(e.uploads, taskID)
 	e.mu.Unlock()
 	if pending != nil && pending.upload != nil {
 		pending.upload.Abort()
 	}
+	if pending != nil && pending.stage != nil {
+		pending.stage.Close()
+		if pending.completed {
+			e.removeRsyncStage(taskID)
+		}
+	}
+}
+
+func uploadCause(ctx context.Context, err error) error {
+	if cause := context.Cause(ctx); cause != nil {
+		return cause
+	}
+	return err
+}
+
+func (e *TaskExecutor) CancelFileTransfer(taskID string) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	pending := e.uploads[taskID]
+	if pending == nil {
+		if e.cancellations == nil {
+			e.cancellations = make(map[string]bool)
+		}
+		if !e.cancellations[taskID] {
+			e.cancellations[taskID] = true
+			e.cancelOrder = append(e.cancelOrder, taskID)
+			if len(e.cancelOrder) > 128 {
+				delete(e.cancellations, e.cancelOrder[0])
+				e.cancelOrder = e.cancelOrder[1:]
+			}
+		}
+		return true
+	}
+	if pending.spec.Transfer == nil || pending.completed {
+		return false
+	}
+	pending.cancel(taskstate.ErrCancellationRequested)
+	return true
+}
+
+func (e *TaskExecutor) TransferProgress(taskID string, completed uint64, phase taskjournal.ProgressPhase) {
+	e.mu.Lock()
+	pending := e.uploads[taskID]
+	if pending == nil || e.journal == nil || completed > uint64(pending.spec.Size) {
+		e.mu.Unlock()
+		return
+	}
+	notify := pending.notify
+	total := uint64(pending.spec.Size)
+	e.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if e.journal.UpdateProgress(ctx, taskID, taskjournal.Progress{Phase: phase, Completed: completed, Total: total}) == nil && notify != nil {
+		if snapshot, err := e.journal.Get(ctx, taskID); err == nil {
+			notify(snapshot)
+		}
+	}
+}
+
+func (e *TaskExecutor) finishCanceled(ctx context.Context, taskID string) (taskjournal.Snapshot, error) {
+	e.mu.Lock()
+	pending := e.uploads[taskID]
+	var done chan struct{}
+	if pending != nil {
+		done = pending.attemptDone
+	}
+	e.mu.Unlock()
+	if done != nil {
+		<-done
+	}
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	evidence := taskstate.Evidence{ExecutionAttempted: true, ExecutionCompleted: true, ProcessTerminated: true, CancellationConfirmed: true, ActualResultConfirmed: true}
+	err := e.journal.Finish(writeCtx, taskID, taskstate.Canceled, evidence, taskjournal.Result{Code: taskjournal.ResultCanceled, ObservedState: "unchanged"})
+	snapshot, readErr := e.journal.Get(writeCtx, taskID)
+	if err != nil {
+		return snapshot, err
+	}
+	return snapshot, readErr
 }
 
 func (e *TaskExecutor) ReconcileFile(ctx context.Context, taskID string, intent protocol.TaskIntent) (taskjournal.Snapshot, error) {
@@ -288,6 +478,9 @@ func (e *TaskExecutor) ReconcileFile(ctx context.Context, taskID string, intent 
 	if intent.Action == protocol.TaskFileUpload && intent.File != nil {
 		if err := e.service.RemoveUploadTemporary(intent.File.Path, uploadTemporaryPath(intent.File.Path, taskID)); err != nil {
 			return task, err
+		}
+		if intent.File.Transfer != nil {
+			return e.reconcileTransfer(ctx, task, *intent.File)
 		}
 	}
 	if intent.File != nil && (intent.Action == protocol.TaskFileCopy || intent.Action == protocol.TaskFileArchive || intent.Action == protocol.TaskFileExtract) {

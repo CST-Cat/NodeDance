@@ -56,7 +56,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   const options=await(await admin.request.get(base+'/api/v1/guest/settings')).json();assert.equal(options.settings.enabled,false);assert.deepEqual(options.settings.nodes,[]);assert.deepEqual(options.settings.metrics,[])
   const page=await visitor.newPage();page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Guest page error:',e.stack)})
   let guestReads=0;const privateReads=[];page.on('request',r=>{if(new URL(r.url()).pathname==='/api/v1/public/guest/display')guestReads++;const p=new URL(r.url()).pathname;if(p.startsWith('/api/v1/nodes')||p.startsWith('/api/v1/guest/settings')||p.startsWith('/api/v1/guest/preview'))privateReads.push(p)})
-  await page.goto(base);await page.locator('#login-title').waitFor();assert.equal(await page.getByRole('button',{name:'Enter guest mode',exact:true}).count(),0)
+  await page.goto(base);await page.locator('#login-title').waitFor();assert.equal(await page.getByRole('button',{name:'Guest mode',exact:true}).count(),0)
   // Password reveal is temporary, keyboard-accessible and never submits login.
   const passwordInput=page.locator('#login-password');let revealLoginRequests=0
   const countRevealLogin=request=>{if(new URL(request.url()).pathname==='/api/v1/auth/login')revealLoginRequests++}
@@ -117,9 +117,9 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   }
   assert.ok(historyPoints>0,'History bounds must be checked against actual persisted fixture samples')
   const privilegedGuest=await admin.request.get(base+'/api/v1/public/guest/display');assert.equal(privilegedGuest.status(),200);assert.deepEqual(await privilegedGuest.json(),JSON.parse(raw),'Administrator cookie must not expand guest projection')
-  await page.reload();await page.getByRole('button',{name:'Enter guest mode',exact:true}).waitFor();assert.equal(guestReads,0,'Display data must not be loaded before guest selection')
+  await page.reload();await page.getByRole('button',{name:'Guest mode',exact:true}).waitFor();assert.equal(guestReads,0,'Display data must not be loaded before guest selection')
   for(const theme of ['light','dark'])for(const width of [390,1440]){await page.setViewportSize({width,height:1000});await page.locator('.app-shell').evaluate((el,theme)=>{el.dataset.theme=theme;document.documentElement.dataset.theme=theme},theme);await page.waitForTimeout(350);assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));}
-  await page.getByRole('button',{name:'Enter guest mode',exact:true}).click();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  await page.getByRole('button',{name:'Guest mode',exact:true}).click();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   assert.equal(guestReads,1,'Entering guest mode reads the public display once')
   const display=page.locator('[data-testid=guest-display]');try{await display.getByText('25.0 %',{exact:true}).waitFor()}catch(e){console.error('Guest response:',raw,'Guest text:',await display.textContent());throw e};await display.getByRole('button',{name:'Refresh',exact:true}).click()
   assert.deepEqual(privateReads,[],'Guest screen must not load private APIs');assert.equal(await page.locator('#workspace-navigation').count(),0)
@@ -138,7 +138,7 @@ async function freePort(){const s=net.createServer();await new Promise(r=>s.list
   await page.evaluate(()=>{localStorage.setItem('nodedance.mode','admin');sessionStorage.setItem('nodedance.mode','admin');document.querySelector('.app-shell').dataset.authenticated='true'})
   assert.equal((await visitor.request.get(base+'/api/v1/guest/settings',{headers:{'X-Mode':'admin'}})).status(),401,'A browser mode marker cannot authenticate')
   await display.getByRole('button',{name:'Back to login',exact:true}).click();await page.locator('#login-title').waitFor();assert.equal(await page.locator('#workspace-navigation').count(),0,'Guest exit must revalidate the session')
-  await page.getByRole('button',{name:'Enter guest mode',exact:true}).click();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
+  await page.getByRole('button',{name:'Guest mode',exact:true}).click();await page.getByRole('heading',{name:'Public node',exact:true}).waitFor()
   const adminPage=await admin.newPage();adminPage.setDefaultTimeout(10000);adminPage.on('pageerror',e=>{errors.push(e.message);console.error('Guest page error:',e.stack)});await adminPage.goto(base)
   const card=adminPage.locator('.vps-card').first();await card.waitFor()
   const accountTrigger=adminPage.locator('.account-trigger'),accountPanel=adminPage.locator('.account-panel')

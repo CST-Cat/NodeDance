@@ -31,9 +31,10 @@ type ComposeCreateRequest struct {
 }
 
 type FileTransferRequest struct {
-	TargetNodeID string   `json:"targetNodeId" request:"required"`
-	Paths        []string `json:"paths" request:"required"`
-	TargetPath   string   `json:"targetPath" request:"required"`
+	BandwidthLimit int64    `json:"bandwidthLimit,omitempty"`
+	TargetNodeID   string   `json:"targetNodeId" request:"required"`
+	Paths          []string `json:"paths" request:"required"`
+	TargetPath     string   `json:"targetPath" request:"required"`
 }
 
 type FileActionRequest struct {

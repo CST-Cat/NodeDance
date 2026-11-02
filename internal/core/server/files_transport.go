@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/coder/websocket"
 )
 
 const (
@@ -19,19 +20,25 @@ const (
 var errFileTransferSlowConsumer = errors.New("file transfer consumer is too slow")
 
 type coreFileTransfer struct {
-	requestID  string
-	nodeID     string
-	sessionID  string
-	generation uint64
-	allowed    map[string]struct{}
-	download   bool
-	updates    chan protocol.Envelope
-	done       chan struct{}
-	mu         sync.Mutex
-	lastSeq    uint64
-	terminal   bool
-	closed     bool
-	err        error
+	data        *websocket.Conn
+	dataGrant   *protocol.FileStreamGrant
+	dataSecret  []byte
+	dataReady   chan struct{}
+	dataUsed    bool
+	dataWriteMu sync.Mutex
+	requestID   string
+	nodeID      string
+	sessionID   string
+	generation  uint64
+	allowed     map[string]struct{}
+	download    bool
+	updates     chan protocol.Envelope
+	done        chan struct{}
+	mu          sync.Mutex
+	lastSeq     uint64
+	terminal    bool
+	closed      bool
+	err         error
 }
 
 func (transfer *coreFileTransfer) finish(err error) {
@@ -49,6 +56,9 @@ func (transfer *coreFileTransfer) finishLocked(err error) {
 	transfer.closed = true
 	transfer.err = err
 	close(transfer.done)
+	if transfer.data != nil {
+		_ = transfer.data.CloseNow()
+	}
 }
 
 func (transfer *coreFileTransfer) error() error {
@@ -199,6 +209,7 @@ func (s *Server) closeFileTransfersForSession(sessionID string) {
 	if sessionID == "" {
 		return
 	}
+	s.cancelFileTransferSession(sessionID)
 	s.agentConnectionsMu.Lock()
 	connections := make([]*agentConnection, 0, len(s.agentConnections))
 	for _, connection := range s.agentConnections {
@@ -381,6 +392,9 @@ func (s *Server) newCoreFileTransferOnConnection(connection *agentConnection, cu
 }
 
 func (s *Server) sendFileRequest(ctx context.Context, connection *agentConnection, transfer *coreFileTransfer, request protocol.FileRequest) error {
+	if (request.Operation == protocol.FileDownload || request.Operation == protocol.FileReadText || request.Operation == protocol.FileUploadBegin) && !protocol.ValidVirtualFilePath(request.Path) {
+		return fileRemoteError{code: "invalid_path"}
+	}
 	if connection == nil || transfer == nil || connection.ctx.Err() != nil || connection.generation != transfer.generation || connection.nodeID != transfer.nodeID {
 		return errors.New("file transfer connection generation changed")
 	}
@@ -396,24 +410,12 @@ func (s *Server) sendFileRequest(ctx context.Context, connection *agentConnectio
 	if err := protocol.ValidateFileRequest(envelope, transfer.generation, request); err != nil {
 		return err
 	}
-	transfer.mu.Lock()
-	defer transfer.mu.Unlock()
-	if transfer.closed {
-		return errors.New("file transfer was canceled")
+	if request.Operation == protocol.FileDownload || request.Operation == protocol.FileReadText || request.Operation == protocol.FileUploadBegin {
+		if err := s.openFileDataConnection(ctx, connection, transfer, request); err != nil {
+			return err
+		}
 	}
-	if !s.dashboardSessionStillValid(ctx, transfer.sessionID) {
-		return errors.New("browser Session was revoked or expired")
-	}
-	select {
-	case connection.commands <- envelope:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-connection.ctx.Done():
-		return errors.New("Agent disconnected")
-	default:
-		return errors.New("Agent command queue is full")
-	}
+	return s.sendFileEnvelope(ctx, connection, transfer, envelope)
 }
 
 func (s *Server) waitFileMessage(ctx context.Context, connection *agentConnection, transfer *coreFileTransfer) (protocol.Envelope, error) {

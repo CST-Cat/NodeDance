@@ -73,6 +73,7 @@ type ComposeExecutor interface {
 type FileExecutor interface {
 	ExecuteFile(context.Context, protocol.TaskDispatch, func(taskjournal.Snapshot)) (taskjournal.Snapshot, error)
 	ReconcileFile(context.Context, string, protocol.TaskIntent) (taskjournal.Snapshot, error)
+	CancelFileTransfer(string) bool
 }
 
 type Options struct {
@@ -339,6 +340,13 @@ func (r *Runner) CancelImagePull(taskID string) bool {
 	return true
 }
 
+func (r *Runner) CancelFileTransfer(taskID string) bool {
+	if r.files == nil {
+		return false
+	}
+	return r.files.CancelFileTransfer(taskID)
+}
+
 // ReportsChanged is a coalesced, nonblocking wake signal for the currently
 // attached transport. The SQLite journal remains the source of truth; callers
 // must DrainReports after a wake and use a complete snapshot when requested.
@@ -418,11 +426,6 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 			content.Content = append([]byte(nil), dispatch.ComposeContent.Content...)
 			copyOfDispatch.ComposeContent = &content
 		}
-		if dispatch.FileContent != nil {
-			content := *dispatch.FileContent
-			content.Content = append([]byte(nil), dispatch.FileContent.Content...)
-			copyOfDispatch.FileContent = &content
-		}
 		if dispatch.RegistryAuth != nil {
 			credentials := *dispatch.RegistryAuth
 			copyOfDispatch.RegistryAuth = &credentials
@@ -441,9 +444,6 @@ func (r *Runner) AcceptDispatch(ctx context.Context, generation uint64, envelope
 			delete(r.activeTasks, dispatch.TaskID)
 			if copyOfDispatch.RegistryAuth != nil {
 				copyOfDispatch.RegistryAuth.Username, copyOfDispatch.RegistryAuth.Password = "", ""
-			}
-			if copyOfDispatch.FileContent != nil {
-				clear(copyOfDispatch.FileContent.Content)
 			}
 			protocol.ClearComposeContent(copyOfDispatch.ComposeContent)
 			clearRunnerContainerCreateSpec(copyOfDispatch.ContainerCreate)
@@ -782,12 +782,6 @@ func (r *Runner) runJob(job taskJob) {
 	if job.dispatch != nil {
 		defer clearRunnerContainerCreateSpec(job.dispatch.ContainerCreate)
 		defer protocol.ClearComposeContent(job.dispatch.ComposeContent)
-		defer func() {
-			if job.dispatch.FileContent != nil {
-				clear(job.dispatch.FileContent.Content)
-				job.dispatch.FileContent = nil
-			}
-		}()
 	}
 	ctx := r.processCtx
 	if job.reconcile {

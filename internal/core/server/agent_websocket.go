@@ -63,6 +63,10 @@ type agentConnection struct {
 	fileTransfers            map[string]*coreFileTransfer
 	fileTombstones           map[string]struct{}
 	fileTombstoneOrder       []string
+	rsyncMu                  sync.Mutex
+	rsyncWaiters             map[string]*coreRsyncWaiter
+	rsyncTombstones          map[string]bool
+	rsyncTombstoneOrder      []string
 	rebuildPlanMu            sync.Mutex
 	rebuildPlanWaiters       map[string]rebuildPlanWaiter
 	leaseUpdates             chan time.Time
@@ -923,6 +927,10 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 					return
 				}
 			case protocol.TypeFileResponse, protocol.TypeFileChunk:
+				if envelope.Type == protocol.TypeFileChunk {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "file bytes require a dedicated data connection")
+					return
+				}
 				if !connection.capabilityNegotiated(protocol.CapabilityFiles) {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "Agent file service was not negotiated")
 					return
@@ -936,6 +944,11 @@ func (s *Server) runAgentConnection(ctx context.Context, connection *agentConnec
 				}
 				if err := s.handleAgentFileMessage(connection, envelope); err != nil {
 					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid Agent file transfer frame")
+					return
+				}
+			case protocol.TypeFileRsyncResponse:
+				if !connection.capabilityEnabled(protocol.CapabilityFiles) || s.handleFileRsyncResponse(connection, envelope) != nil {
+					s.closeAgentProtocol(connection.conn, websocket.StatusPolicyViolation, "invalid rsync control response")
 					return
 				}
 			case protocol.TypeContainerRebuildPlanResponse:

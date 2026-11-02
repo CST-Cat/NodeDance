@@ -128,6 +128,9 @@ func openTaskBridge(ctx context.Context, configPath, nodeID string, shared *agen
 		if err != nil {
 			return closeOnError(fmt.Errorf("create durable file task executor: %w", err), rebuildStore)
 		}
+		if err := fileExecutor.ConfigureTransfers(filepath.Dir(configPath)); err != nil {
+			return closeOnError(fmt.Errorf("configure private file transfer state: %w", err), rebuildStore)
+		}
 		if err := runner.SetFileExecutor(fileExecutor); err != nil {
 			return closeOnError(fmt.Errorf("attach file task executor: %w", err), rebuildStore)
 		}
@@ -148,6 +151,9 @@ func (b *taskBridgeRuntime) close() error {
 		first = fmt.Errorf("stop Agent task runner: %w", err)
 	}
 	cancel()
+	if err := b.files.Close(); err != nil && first == nil {
+		first = err
+	}
 	if err := b.journal.Close(); err != nil && first == nil {
 		first = fmt.Errorf("close Agent task journal: %w", err)
 	}
@@ -256,7 +262,7 @@ func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, run
 				}
 			case protocol.TypeTaskDispatch:
 				var dispatch protocol.TaskDispatch
-				decodeErr := decodeSocketPayloadLimit(envelope.Payload, &dispatch, protocol.MaxTextControlBytes)
+				decodeErr := decodeSocketPayloadLimit(envelope.Payload, &dispatch, protocol.MaxTaskPayloadBytes)
 				clear(envelope.Payload)
 				if decodeErr != nil {
 					wipeRegistryCredentials(dispatch.RegistryAuth)
@@ -293,6 +299,7 @@ func runTaskBridgeSession(ctx context.Context, writer *socketEnvelopeWriter, run
 				// report remains authoritative; cancellation is never acknowledged
 				// until the executor confirms the stopped Engine state.
 				runner.CancelImagePull(request.TaskID)
+				runner.CancelFileTransfer(request.TaskID)
 			case protocol.TypeTaskReportAck:
 				var ack protocol.TaskReportAck
 				if err := decodeSocketPayload(envelope.Payload, &ack); err != nil || protocol.ValidateTaskReportAck(envelope, ack, generation) != nil {

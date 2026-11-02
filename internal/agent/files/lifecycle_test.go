@@ -43,7 +43,7 @@ func TestUploadCancellationInterruptsIdlePipe(t *testing.T) {
 	sum := sha256.Sum256(content)
 	spec := protocol.FileTaskSpec{Path: "/target", Size: 1, SHA256: hex.EncodeToString(sum[:])}
 	executor := &TaskExecutor{service: s, uploads: make(map[string]*pendingUpload)}
-	if err := executor.prepareUpload("task", spec); err != nil {
+	if err := executor.prepareUpload(context.Background(), "task", spec); err != nil {
 		t.Fatal(err)
 	}
 	defer executor.removePending("task")

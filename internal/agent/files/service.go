@@ -422,7 +422,12 @@ func (s *Service) Hash(virtual string) (protocol.FileEntry, string, error) {
 	if err != nil {
 		return protocol.FileEntry{}, "", err
 	}
-	info, err := s.lstat(name)
+	file, err := s.open(name)
+	if err != nil {
+		return protocol.FileEntry{}, "", err
+	}
+	defer file.Close()
+	info, err := file.Stat()
 	if err != nil {
 		return protocol.FileEntry{}, "", err
 	}
@@ -432,23 +437,26 @@ func (s *Service) Hash(virtual string) (protocol.FileEntry, string, error) {
 	if info.Size() > s.limit {
 		return protocol.FileEntry{}, "", ErrLimitExceeded
 	}
-	file, err := s.open(name)
-	if err != nil {
-		return protocol.FileEntry{}, "", err
-	}
 	hash := sha256.New()
-	read, copyErr := io.Copy(hash, io.LimitReader(file, s.limit+1))
-	closeErr := file.Close()
+	version := fileVersionHash(info)
+	var output io.Writer = hash
+	if info.Size() <= protocol.MaxTextFileBytes {
+		output = io.MultiWriter(hash, version)
+	}
+	read, copyErr := io.Copy(output, io.LimitReader(file, s.limit+1))
 	if copyErr != nil {
 		return protocol.FileEntry{}, "", copyErr
 	}
-	if closeErr != nil {
-		return protocol.FileEntry{}, "", closeErr
+	after, err := file.Stat()
+	if err != nil {
+		return protocol.FileEntry{}, "", err
 	}
-	if read != info.Size() {
+	if read != info.Size() || after.Size() != info.Size() || after.ModTime() != info.ModTime() || after.Mode() != info.Mode() || ownerID(after) != ownerID(info) {
 		return protocol.FileEntry{}, "", errors.New("file changed while hashing")
 	}
-	return makeEntry(path.Base(canonical), canonical, info), hex.EncodeToString(hash.Sum(nil)), nil
+	entry := makeEntry(path.Base(canonical), canonical, info)
+	entry.Version = hex.EncodeToString(version.Sum(nil))
+	return entry, hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func makeEntry(name, virtual string, info os.FileInfo) protocol.FileEntry {

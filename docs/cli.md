@@ -59,7 +59,7 @@ Network discovery uses `nodedance discovery peers` or the TUI's discovered `disc
 | Docker | Inventory, inspect, create, start/stop/restart/pause/resume/rename/delete, rebuild plan/rebuild/cleanup, logs, stats |
 | Images | Paginated listing, authenticated pull, deletion |
 | Compose | Projects, create/deploy, config read/validate/save, start/stop/restart/delete |
-| Files | List, stat, text read/save, mkdir, rename, confirmed delete, upload, download |
+| Files | List/search/stat, text and media read, copy/move, archives, mkdir/rename/confirmed delete, upload/download, multi-node transfer, observation/cancellation/retry |
 | Terminal | Host or container interactive shell, authorization, cancellation, JSONL connection |
 | Probes | List, get, create, update, delete, run history |
 | Alerts | Active/history/events, acknowledge, silence, rules/defaults, channels/test, maintenance windows, delivery history |
@@ -77,6 +77,8 @@ CLI and TUI discover the same `rules.list` and `rules.update` operations. Supply
 CLI、TUI 通过相同的 `rules.list`、`rules.update` 操作管理规则。更新请求的路径携带规则 ID，请求体携带当前 `revision`。保存成功会关闭原活动告警并重新计时；修订冲突时保留草稿，刷新并重新打开规则后再提交。取消编辑不发出修改请求。
 
 ## Tasks and files
+
+Multi-node transfers use the discovered `files.transfer` operation with a source node, target node/directory, regular-file paths and optional bandwidth in bytes/s. Core chooses direct Agent WSS, dedicated Core WSS rsync relay or chunk fallback. Observe and cancel the target task through `tasks.*`; retry a confirmed failed/canceled/timed-out task through `files.transfer-retry` with a new idempotency key. TUI exposes the same inputs and workflow. [Transfer integrity and recovery](file-transfers.md).
 
 Supply a stable `--idempotency-key` for task operations. Reuse it for a retry of the exact same intent; a new key means a new intent. The client never silently generates a new key or retries mutations.
 

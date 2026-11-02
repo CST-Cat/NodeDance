@@ -20,20 +20,21 @@ import (
 type containerActionRequest = protocol.ContainerActionRequest
 
 type taskView struct {
-	TaskID                 string           `json:"taskId"`
-	NodeID                 string           `json:"nodeId"`
-	TargetID               string           `json:"targetId"`
-	Action                 string           `json:"action"`
-	Status                 taskstate.Status `json:"status"`
-	DeliveryState          string           `json:"deliveryState"`
-	ReconciliationRequired bool             `json:"reconciliationRequired"`
-	Progress               taskProgressView `json:"progress"`
-	Result                 taskResultView   `json:"result"`
-	CreatedAt              string           `json:"createdAt"`
-	UpdatedAt              string           `json:"updatedAt"`
-	StartedAt              *string          `json:"startedAt,omitempty"`
-	FinishedAt             *string          `json:"finishedAt,omitempty"`
-	CancelRequested        bool             `json:"cancelRequested,omitempty"`
+	Transfer               *protocol.FileTransferDescriptor `json:"transfer,omitempty"`
+	TaskID                 string                           `json:"taskId"`
+	NodeID                 string                           `json:"nodeId"`
+	TargetID               string                           `json:"targetId"`
+	Action                 string                           `json:"action"`
+	Status                 taskstate.Status                 `json:"status"`
+	DeliveryState          string                           `json:"deliveryState"`
+	ReconciliationRequired bool                             `json:"reconciliationRequired"`
+	Progress               taskProgressView                 `json:"progress"`
+	Result                 taskResultView                   `json:"result"`
+	CreatedAt              string                           `json:"createdAt"`
+	UpdatedAt              string                           `json:"updatedAt"`
+	StartedAt              *string                          `json:"startedAt,omitempty"`
+	FinishedAt             *string                          `json:"finishedAt,omitempty"`
+	CancelRequested        bool                             `json:"cancelRequested,omitempty"`
 }
 
 type taskProgressView struct {
@@ -117,6 +118,16 @@ func (s *Server) handleCancelUndeliveredTask(w http.ResponseWriter, r *http.Requ
 	}
 	if lookupErr != nil {
 		http.Error(w, "task cancellation could not be read", http.StatusInternalServerError)
+		return
+	}
+	if currentTask.Intent.File != nil && currentTask.Intent.File.Transfer != nil && !taskstate.IsTerminal(currentTask.Status) && currentTask.Evidence.DeliveryCommitted {
+		if err := s.signalFileTransferCancellation(currentTask); err != nil {
+			http.Error(w, "file transfer cancellation could not be delivered", http.StatusServiceUnavailable)
+			return
+		}
+		view := toTaskView(currentTask)
+		view.CancelRequested = true
+		writeJSON(w, http.StatusAccepted, view)
 		return
 	}
 	if currentTask.Intent.Action == protocol.TaskImagePull && currentTask.Status == taskstate.Running {
@@ -587,6 +598,9 @@ func toTaskView(task coretasks.Task) taskView {
 		Progress:  taskProgressView{Phase: string(task.Progress.Phase), Completed: task.Progress.Completed, Total: task.Progress.Total},
 		Result:    taskResultView{Code: string(task.Result.Code), ObservedState: task.Result.ObservedState, ResourceRevision: task.Result.ResourceRevision},
 		CreatedAt: task.CreatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: task.UpdatedAt.UTC().Format(time.RFC3339Nano)}
+	if task.Intent.File != nil && task.Intent.File.Transfer != nil {
+		view.Transfer = &protocol.FileTransferDescriptor{TaskID: task.TaskID, TargetNodeID: task.NodeID, File: *task.Intent.File}
+	}
 	if task.StartedAt != nil {
 		value := task.StartedAt.UTC().Format(time.RFC3339Nano)
 		view.StartedAt = &value

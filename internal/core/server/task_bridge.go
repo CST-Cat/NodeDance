@@ -260,9 +260,6 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		if (task.Intent.Action == protocol.TaskComposeSave || task.Intent.Action == protocol.TaskComposeCreate) && task.Intent.Compose != nil {
 			dispatch.ComposeContent = s.takeComposeContent(task.TaskID, task.NodeID, connection.generation, journalID, task.Intent.Compose.ContentSHA256)
 		}
-		if task.Intent.Action == protocol.TaskFileSaveText && task.Intent.File != nil {
-			dispatch.FileContent = s.takeFileContent(task.TaskID, task.NodeID, task.Intent.File.SHA256)
-		}
 		if task.Intent.Action == protocol.TaskContainerCreate {
 			dispatch.ContainerCreate = s.takeContainerCreateSpec(task.TaskID, task.NodeID, connection.generation, journalID, task.Intent.CreateSHA256)
 		}
@@ -276,10 +273,6 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			if dispatch.ComposeContent != nil {
 				protocol.ClearComposeContent(dispatch.ComposeContent)
 				dispatch.ComposeContent = nil
-			}
-			if dispatch.FileContent != nil {
-				clear(dispatch.FileContent.Content)
-				dispatch.FileContent = nil
 			}
 			clearContainerCreateSpec(dispatch.ContainerCreate)
 			dispatch.ContainerCreate = nil
@@ -299,10 +292,6 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 			protocol.ClearComposeContent(dispatch.ComposeContent)
 			dispatch.ComposeContent = nil
 		}
-		if dispatch.FileContent != nil {
-			clear(dispatch.FileContent.Content)
-			dispatch.FileContent = nil
-		}
 		clearContainerCreateSpec(dispatch.ContainerCreate)
 		dispatch.ContainerCreate = nil
 		writeErr := s.writeAgentEnvelope(ctx, connection.conn, message)
@@ -310,6 +299,10 @@ func (s *Server) dispatchAgentTasks(ctx context.Context, connection *agentConnec
 		message.Payload = nil
 		if writeErr != nil {
 			return writeErr // Core delivery is already committed; reconnect reconciliation will mark uncertainty.
+		}
+		if task.Intent.Action == protocol.TaskFileSaveText && task.Intent.File != nil {
+			content := s.takeFileContent(task.TaskID, task.NodeID, task.Intent.File.SHA256)
+			go s.sendFileTaskContent(task, content)
 		}
 	}
 	if connection.taskSlots > 0 {

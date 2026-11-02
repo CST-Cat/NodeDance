@@ -30,9 +30,9 @@ func TestWriterServesEveryLaneUnderContinuousDockerLoad(t *testing.T) {
 	w := &socketEnvelopeWriter{
 		ctx: ctx, cancel: cancel, done: make(chan struct{}), high: make(chan envelopeWrite, 1),
 		docker: make(chan protocol.Envelope, 2), metrics: make(chan protocol.Envelope, 1),
-		terminal: make(chan protocol.Envelope, 1), streams: make(chan protocol.Envelope, 1), files: make(chan protocol.Envelope, 1),
+		terminal: make(chan protocol.Envelope, 1), streams: make(chan protocol.Envelope, 1),
 	}
-	lanes := map[string]chan protocol.Envelope{"docker": w.docker, "metrics": w.metrics, "terminal": w.terminal, "streams": w.streams, "files": w.files}
+	lanes := map[string]chan protocol.Envelope{"docker": w.docker, "metrics": w.metrics, "terminal": w.terminal, "streams": w.streams}
 	for name, queue := range lanes {
 		queue <- protocol.Envelope{Type: name}
 	}

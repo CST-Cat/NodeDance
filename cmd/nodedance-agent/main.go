@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/CST-Cat/NodeDance/internal/agent"
+	agentrsync "github.com/CST-Cat/NodeDance/internal/agent/rsync"
 	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
 	"github.com/CST-Cat/NodeDance/internal/agent/terminal/tmuxbundle"
 	"github.com/CST-Cat/NodeDance/internal/update"
@@ -20,6 +21,13 @@ import (
 var version = "dev"
 
 func main() {
+	if handled, err := agentrsync.Internal(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if handled, err := update.Internal(os.Args[1:], os.Stdout, os.Stderr); handled {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

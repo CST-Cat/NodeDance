@@ -13,13 +13,13 @@ import (
 type failingFinalFileWriter struct{ responses []protocol.Envelope }
 
 func (w *failingFinalFileWriter) send(_ context.Context, e protocol.Envelope) error {
+	if e.Type == protocol.TypeFileChunk {
+		return errors.New("data connection failed")
+	}
 	w.responses = append(w.responses, e)
 	return nil
 }
-func (w *failingFinalFileWriter) offerFile(context.Context, protocol.Envelope) error {
-	return errors.New("queue full")
-}
-func TestDownloadFinalQueueFailureIsReported(t *testing.T) {
+func TestDownloadFinalDataFailureIsReported(t *testing.T) {
 	file, err := os.CreateTemp(t.TempDir(), "empty")
 	if err != nil {
 		t.Fatal(err)

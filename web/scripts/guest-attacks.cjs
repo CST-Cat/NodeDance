@@ -105,8 +105,17 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  for(const authorization of ['Bearer '+'f'.repeat(64),'Enrollment '+'f'.repeat(64),'Basic '+Buffer.from('admin:admin').toString('base64')]){
   const r=await browserRequest('/api/v1/nodes','GET',null,{Authorization:authorization});record('forged-authorization:'+authorization.split(' ')[0],r.status===401,{status:r.status})
  }
- const sockets=['/ws/v1/dashboard','/ws/v1/streams/logs?nodeId='+identity.nodeId+'&containerId='+values.containerId,'/ws/v1/streams/stats?nodeId='+identity.nodeId+'&containerId='+values.containerId,'/ws/v1/streams/terminal?ticket='+'f'.repeat(64),'/ws/v1/agent']
- for(const target of sockets){const r=await page.evaluate(target=>new Promise(resolve=>{const ws=new WebSocket(location.origin.replace(/^http/,'ws')+target);let opened=false;const timer=setTimeout(()=>{ws.close();resolve({opened,timeout:true})},3000);ws.onopen=()=>{opened=true;ws.close()};ws.onclose=e=>{clearTimeout(timer);resolve({opened,code:e.code})};ws.onerror=()=>{} }),target);record('websocket:'+target.split('?')[0],!r.opened&&!r.timeout,r)}
+ const fileSockets=['/ws/v1/files/rsync','/ws/v1/files/chunks']
+ const sockets=['/ws/v1/dashboard','/ws/v1/streams/logs?nodeId='+identity.nodeId+'&containerId='+values.containerId,'/ws/v1/streams/stats?nodeId='+identity.nodeId+'&containerId='+values.containerId,'/ws/v1/streams/terminal?ticket='+'f'.repeat(64),'/ws/v1/agent',...fileSockets]
+ const socketResult=(actor,target)=>actor.evaluate(target=>new Promise(resolve=>{const ws=new WebSocket(location.origin.replace(/^http/,'ws')+target);let opened=false;const timer=setTimeout(()=>{ws.close();resolve({opened,timeout:true})},3000);ws.onopen=()=>{opened=true;ws.close()};ws.onclose=e=>{clearTimeout(timer);resolve({opened,code:e.code})};ws.onerror=()=>{} }),target)
+ for(const target of sockets){const r=await socketResult(page,target);record('websocket:'+target.split('?')[0],!r.opened&&!r.timeout,r)}
+ const fileSocketPage=await admin.newPage()
+ try{
+  await fileSocketPage.goto(base+'/#/guest')
+  for(const target of fileSockets){const r=await socketResult(fileSocketPage,target);record('file-websocket-admin-cookie:'+target,!r.opened&&!r.timeout,r)}
+  const forgedTask={Authorization:'Task '+'f'.repeat(64),'X-NodeDance-Stream':values.streamId,'X-NodeDance-Task':'ndt_'+'f'.repeat(32),'X-NodeDance-Node':identity.nodeId,'X-NodeDance-Direction':'sender','X-NodeDance-Binding':'f'.repeat(64)}
+  for(const [actorName,actor] of [['guest',visitor],['administrator',admin]])for(const target of fileSockets){const r=await actor.request.get(base+target,{headers:forgedTask});record('file-websocket-forged-task:'+actorName+':'+target,r.status()===401,{status:r.status()})}
+ }finally{await fileSocketPage.close()}
  // Real browser HTML-form CSRF from another origin, using administrator cookies.
  const cross=http.createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Foreign origin</title>')});await new Promise(r=>cross.listen(0,'127.0.0.1',r))
  const crossPage=await admin.newPage();try{await crossPage.goto('http://127.0.0.1:'+cross.address().port);const response=crossPage.waitForResponse(r=>r.url()===base+'/api/v1/updates/apply');await crossPage.evaluate(url=>{const form=document.createElement('form');form.method='POST';form.action=url;document.body.append(form);form.submit()},base+'/api/v1/updates/apply');record('cross-origin-form-CSRF',(await response).status()===403,{status:(await response).status()})}finally{void crossPage.close().catch(()=>{});cross.close();cross.closeAllConnections()}

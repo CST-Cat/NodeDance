@@ -369,6 +369,12 @@ export interface ContainerTask {
   startedAt?: string
   finishedAt?: string
   cancelRequested?: boolean
+  transfer?: { taskId: string; targetNodeId: string; file: { path: string; expectedVersion?: string; size: number; sha256: string; transfer: { sourceNodeId: string; sourcePath: string; sourceVersion: string; bandwidthLimit?: number; retryOfTaskId?: string } } }
+}
+
+export interface FileTransferResponse {
+  transferred: { sourcePath: string; targetPath: string; size: number; sha256: string; taskId: string; transport: string }[]
+  failed?: { sourcePath: string; error: string; taskId?: string }[]
 }
 
 export interface TaskAuditEvent {

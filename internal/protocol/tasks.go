@@ -163,16 +163,15 @@ type RebuildSpec struct {
 }
 
 // FileTaskSpec contains only bounded metadata for one filesystem operation.
-// File contents are carried once in TaskDispatch or streamed through the
-// existing file channel; they are never written to either task journal.
 type FileTaskSpec struct {
-	Format          string   `json:"format,omitempty"`
-	Paths           []string `json:"paths,omitempty"`
-	Path            string   `json:"path"`
-	NewPath         string   `json:"newPath,omitempty"`
-	ExpectedVersion string   `json:"expectedVersion,omitempty"`
-	Size            int64    `json:"size,omitempty"`
-	SHA256          string   `json:"sha256,omitempty"`
+	Transfer        *FileTransferSpec `json:"transfer,omitempty"`
+	Format          string            `json:"format,omitempty"`
+	Paths           []string          `json:"paths,omitempty"`
+	Path            string            `json:"path"`
+	NewPath         string            `json:"newPath,omitempty"`
+	ExpectedVersion string            `json:"expectedVersion,omitempty"`
+	Size            int64             `json:"size,omitempty"`
+	SHA256          string            `json:"sha256,omitempty"`
 }
 
 // AgentDeployTaskSpec identifies a Tailscale peer for Core-local provisioning.
@@ -510,6 +509,14 @@ func validFileTaskSpec(intent TaskIntent) bool {
 		return false
 	}
 	file := intent.File
+	if file.Transfer != nil {
+		transfer := file.Transfer
+		if intent.Action != TaskFileUpload || !fileRequestID.MatchString(transfer.SourceNodeID) || !ValidVirtualFilePath(transfer.SourcePath) || transfer.SourcePath == "/" ||
+			transfer.SourceVersion == "" || len(transfer.SourceVersion) > 128 || strings.ContainsAny(transfer.SourceVersion, "\x00\r\n") || !ValidFileBandwidth(transfer.BandwidthLimit) ||
+			transfer.RetryOfTaskID != "" && !validFileTaskID(transfer.RetryOfTaskID) {
+			return false
+		}
+	}
 	validVersion := func(value string) bool {
 		return len(value) <= 128 && !strings.ContainsAny(value, "\x00\r\n")
 	}
@@ -800,9 +807,6 @@ type TaskDispatch struct {
 	// ComposeContent is a one-delivery create/save body; only its SHA-256 is
 	// persisted in TaskIntent and Agent journal records.
 	ComposeContent *ComposeContent `json:"composeContent,omitempty"`
-	// FileContent is a one-delivery UTF-8 text body. Uploads use the existing
-	// bounded file chunk channel and never place file bytes in a task journal.
-	FileContent *FileContent `json:"fileContent,omitempty"`
 	// ContainerCreate is a single-delivery specification. Only its digest is
 	// persisted in the task intent and Agent journal.
 	ContainerCreate *ContainerCreateSpec `json:"containerCreate,omitempty"`
@@ -819,11 +823,6 @@ func ClearComposeContent(content *ComposeContent) {
 	}
 	clear(content.Content)
 	content.SHA256 = ""
-}
-
-type FileContent struct {
-	SHA256  string `json:"sha256"`
-	Content []byte `json:"content"`
 }
 
 type RegistryCredentials struct {
@@ -956,18 +955,6 @@ func ValidateTaskDispatch(envelope Envelope, dispatch TaskDispatch, nodeID, jour
 	} else if dispatch.Intent.Action == TaskComposeSave || dispatch.Intent.Action == TaskComposeCreate {
 		// The Core keeps file bodies only in memory. If that one-use payload was
 		// lost, the Agent will persist a failed result without changing the file.
-	}
-	if dispatch.FileContent != nil {
-		if dispatch.Intent.Action != TaskFileSaveText || dispatch.Intent.File == nil ||
-			dispatch.FileContent.SHA256 != dispatch.Intent.File.SHA256 || len(dispatch.FileContent.Content) > MaxTextFileBytes ||
-			sha256.Sum256(dispatch.FileContent.Content) != mustDecodeSHA256(dispatch.FileContent.SHA256) {
-			return fmt.Errorf("%w: file text payload is invalid for this dispatch", ErrInvalidTaskMessage)
-		}
-	} else if dispatch.Intent.Action != TaskFileSaveText && IsFileTaskAction(dispatch.Intent.Action) {
-		// Only the text editor uses a bounded one-delivery body. Other file
-		// mutations contain all of their required metadata in the intent.
-	} else if dispatch.Intent.Action == TaskFileSaveText {
-		// Missing one-use content is handled as a failed task by the Agent.
 	}
 	if dispatch.ContainerCreate != nil {
 		if dispatch.Intent.Action != TaskContainerCreate {
@@ -1185,10 +1172,7 @@ func safeTaskToken(value string, maximum int) bool {
 	return true
 }
 
-func TaskDispatchLimit(action TaskAction) int {
-	if action == TaskFileSaveText {
-		return MaxTextControlBytes
-	}
+func TaskDispatchLimit(_ TaskAction) int {
 	return MaxTaskPayloadBytes
 }
 func ValidArchiveFormat(format string) bool {

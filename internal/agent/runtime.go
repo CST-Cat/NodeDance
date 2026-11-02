@@ -88,8 +88,6 @@ func agentRootRequirement(uid int, operation string) error {
 	return fmt.Errorf("NodeDance Agent %s requires root privileges for full host management", operation)
 }
 
-// Run keeps an enrolled Agent connected with bounded exponential backoff and
-// jitter. It never opens an inbound listener; all protocol traffic is outbound.
 func Run(ctx context.Context, configPath, version string, stderr io.Writer) error {
 	if err := requireAgentRoot("runtime"); err != nil {
 		return err
@@ -581,6 +579,7 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 			fileTasks = taskBridge.files
 		}
 		bridge := newAgentFileBridge(fileService, generation, writer, fileTasks)
+		bridge.configPath, bridge.nodeID = configPath, nodeID
 		go func() {
 			defer close(finished)
 			done <- bridge.run(fileCtx, fileMessages)
@@ -986,7 +985,7 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 						return errors.New("Agent terminal error response could not be sent")
 					}
 				}
-			case protocol.TypeFileRequest, protocol.TypeFileCancel:
+			case protocol.TypeFileRequest, protocol.TypeFileCancel, protocol.TypeFileRsyncRequest:
 				if fileMessages == nil || envelope.Sequence != 0 || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
 					if fileMessages == nil && containsCapability(negotiatedCapabilities, protocol.CapabilityFiles) {
 						continue
@@ -1003,21 +1002,7 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 					fileMessages = nil
 				}
 			case protocol.TypeFileChunk:
-				if fileMessages == nil || envelope.Sequence == 0 || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
-					if fileMessages == nil && containsCapability(negotiatedCapabilities, protocol.CapabilityFiles) {
-						continue
-					}
-					return errors.New("Core file chunk is invalid or was not negotiated")
-				}
-				select {
-				case fileMessages <- envelope:
-				default:
-					if err := degradeCapability(protocol.CapabilityFiles, cancelFile, fileFinished); err != nil {
-						return errors.New("send Agent file capability downgrade failed")
-					}
-					fileBridgeDone = nil
-					fileMessages = nil
-				}
+				return errors.New("file bytes require a dedicated data connection")
 			case protocol.TypeProbeDispatch:
 				if probeMessages == nil || envelope.Sequence != 0 {
 					if probeMessages == nil && containsCapability(negotiatedCapabilities, protocol.CapabilityProbes) {

@@ -3,6 +3,7 @@ import {
   ApiError,
   operationRequest,
   type ContainerTask,
+  type FileTransferResponse,
   type NodeFileEntry,
 } from "./api";
 import { operationCatalog, operationPath, exactJSON } from "./operations";
@@ -13,6 +14,8 @@ export interface FileObservation {
   intent: string;
   path: string;
   status: string;
+  nodeId?: string;
+  transfer?: boolean;
 }
 export async function createFileManager(
   nodeId: string,
@@ -117,7 +120,7 @@ export async function createFileManager(
       active();
       const task = await operationRequest<ContainerTask>(
         "tasks.get",
-        { params: { ...params, taskId: item.taskId } },
+        { params: { nodeId: item.nodeId ?? nodeId, taskId: item.taskId } },
         { signal: signal(other) },
       );
       active();
@@ -142,8 +145,8 @@ export async function createFileManager(
         continue;
       }
       if (task.status === "unknown") throw Error(t("files.unknown"));
-      finishIntent(item.intent);
-      observations = observations.filter((v) => v !== item);
+      if (observations.every(value => value.intent !== item.intent || ["succeeded", "failed", "canceled", "timed_out"].includes(value.status))) finishIntent(item.intent);
+      if (!item.transfer || task.status === "succeeded") observations = observations.filter((v) => v !== item);
       persist();
       if (task.status !== "succeeded")
         throw Error(t("files.failed", { 0: task.result?.resourceRevision || task.result?.code || task.status }));
@@ -263,12 +266,20 @@ export async function createFileManager(
     persist();
     return observe(item, other);
   }
-  async function transfer(targetNodeId: string, paths: string[], targetPath: string, other?: AbortSignal) {
+  function retainTransferFailures(result: FileTransferResponse, targetNodeId: string, intent: string) {
     active();
-    const payload = exactJSON({ targetNodeId, paths, targetPath });
+    for (const failure of result.failed ?? []) {
+      if (failure.taskId && !observations.some(item => item.taskId === failure.taskId) && observations.length < 100) observations.push({ taskId: failure.taskId, intent, path: failure.sourcePath, status: "unknown", nodeId: targetNodeId, transfer: true });
+    }
+    persist();
+    if (!result.failed?.length) finishIntent(intent);
+  }
+  async function transfer(targetNodeId: string, paths: string[], targetPath: string, other?: AbortSignal, bandwidthLimit = 0) {
+    active();
+    const payload = exactJSON({ targetNodeId, paths, targetPath, bandwidthLimit });
     const intent = await requestIntent("files.transfer", { params }, payload);
     active();
-    const result = await operationRequest<{ transferred: { sourcePath: string; targetPath: string; size: number; sha256: string; taskId: string }[]; failed?: { sourcePath: string; error: string }[] }>(
+    const result = await operationRequest<FileTransferResponse>(
       "files.transfer",
       { params },
       {
@@ -278,7 +289,19 @@ export async function createFileManager(
       },
       30 * 60_000,
     );
-    finishIntent(intent);
+    retainTransferFailures(result, targetNodeId, intent);
+    return result;
+  }
+  async function retryTransfer(taskId: string) {
+    active();
+    const previous = observations.find(item => item.taskId === taskId);
+    if (!previous?.nodeId) return;
+    const params = { nodeId: previous.nodeId, taskId };
+    const intent = await requestIntent("files.transfer-retry", { params }, "");
+    const result = await operationRequest<FileTransferResponse>("files.transfer-retry", { params }, { headers: { "Idempotency-Key": intentKey(intent) }, signal: controller.signal }, 30 * 60_000);
+    retainTransferFailures(result, previous.nodeId, intent);
+    if (!result.failed?.length) { observations = observations.filter(item => item !== previous); persist(); }
+    if (result.failed?.length) throw Error(result.failed.map(failure => `${failure.sourcePath}: ${failure.error}`).join("; "));
     return result;
   }
   async function text(path: string) {
@@ -305,7 +328,7 @@ export async function createFileManager(
   }
   persist();
   return {
-    list, stat, text, image, action, transfer,
+    list, stat, text, image, action, transfer, retryTransfer,
     previewText: async (path: string, other?: AbortSignal) => (await read<{ text: string; version: string }>("files.text", { path }, other)).text,
     search: (path: string, filter: string, limits: Record<string, string> = {}, other?: AbortSignal) => pages("files.search", { path, filter, recursive: "true", ...limits }, other),
     saveText,
@@ -329,7 +352,7 @@ export async function createFileManager(
     previewURL: (path: string) => url("files.preview", path),
     maxFileSize,
     archiveFormats: catalog.operations.find(operation => operation.name === "files.action")?.bodySchema?.properties?.format?.enum?.map(String) ?? [],
-    cancel: (taskId: string) => operationRequest("tasks.cancel", { params: { ...params, taskId } }),
+    cancel: (taskId: string) => operationRequest("tasks.cancel", { params: { nodeId: observations.find(item => item.taskId === taskId)?.nodeId ?? nodeId, taskId } }),
     dispose() { controller.abort(); versions.clear(); pendingReads.clear(); },
     observations: () => [...observations],
     observe: async (id: string) => {

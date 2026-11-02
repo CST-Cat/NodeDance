@@ -10,6 +10,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/agent/transferbuffer"
 	"io"
 	"os"
+	"reflect"
 	"sync"
 
 	agentfiles "github.com/CST-Cat/NodeDance/internal/agent/files"
@@ -20,7 +21,6 @@ const maxAgentFileTransfers = 4
 
 type fileEnvelopeWriter interface {
 	send(context.Context, protocol.Envelope) error
-	offerFile(context.Context, protocol.Envelope) error
 }
 
 type agentFileTransfer struct {
@@ -36,21 +36,28 @@ type agentFileTransfer struct {
 }
 
 type agentFileBridge struct {
-	service     *agentfiles.Service
-	tasks       *agentfiles.TaskExecutor
-	generation  uint64
-	writer      fileEnvelopeWriter
-	mu          sync.Mutex
-	transfers   map[string]*agentFileTransfer
-	canceled    map[string]struct{}
-	cancelOrder []string
-	closed      bool
-	wg          sync.WaitGroup
+	configPath    string
+	nodeID        string
+	dataID        string
+	dataBinding   *protocol.FileRequest
+	dataStarted   bool
+	dataSessions  map[string]context.CancelFunc
+	rsyncSessions map[string]*agentRsyncSession
+	service       *agentfiles.Service
+	tasks         *agentfiles.TaskExecutor
+	generation    uint64
+	writer        fileEnvelopeWriter
+	mu            sync.Mutex
+	transfers     map[string]*agentFileTransfer
+	canceled      map[string]struct{}
+	cancelOrder   []string
+	closed        bool
+	wg            sync.WaitGroup
 }
 
 func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer fileEnvelopeWriter, tasks *agentfiles.TaskExecutor) *agentFileBridge {
 	return &agentFileBridge{service: service, tasks: tasks, generation: generation, writer: writer,
-		transfers: make(map[string]*agentFileTransfer), canceled: make(map[string]struct{})}
+		transfers: make(map[string]*agentFileTransfer), canceled: make(map[string]struct{}), dataSessions: make(map[string]context.CancelFunc), rsyncSessions: make(map[string]*agentRsyncSession)}
 }
 
 func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Envelope) error {
@@ -63,6 +70,18 @@ func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Enve
 			if !ok {
 				return errors.New("file control channel closed")
 			}
+			if b.dataID != "" && envelope.RequestID != b.dataID {
+				return errors.New("file data connection identity mismatch")
+			}
+			if envelope.Type == protocol.TypeFileRsyncRequest && b.dataID == "" {
+				var request protocol.FileRsyncRequest
+				if decodeSocketPayload(envelope.Payload, &request) != nil || protocol.ValidateFileRsyncRequest(envelope, b.generation, request) != nil {
+					return errors.New("invalid Core rsync control request")
+				}
+				b.wg.Add(1)
+				go func() { defer b.wg.Done(); b.handleRsync(ctx, envelope.RequestID, request) }()
+				continue
+			}
 			if envelope.Type == protocol.TypeFileCancel {
 				var cancel protocol.FileCancel
 				if decodeSocketPayload(envelope.Payload, &cancel) != nil || protocol.ValidateFileCancel(envelope, b.generation, cancel) != nil {
@@ -72,6 +91,9 @@ func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Enve
 				continue
 			}
 			if envelope.Type == protocol.TypeFileChunk {
+				if b.dataBinding == nil || !b.dataStarted || b.dataBinding.Operation != protocol.FileUploadBegin {
+					return errors.New("file chunks require the bound upload data connection")
+				}
 				var chunk protocol.FileChunk
 				if decodeSocketPayload(envelope.Payload, &chunk) != nil || protocol.ValidateFileChunkEnvelope(envelope, b.generation, chunk) != nil {
 					return errors.New("Core file chunk is invalid")
@@ -88,6 +110,19 @@ func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Enve
 			if decodeSocketPayload(envelope.Payload, &request) != nil || protocol.ValidateFileRequest(envelope, b.generation, request) != nil {
 				return errors.New("Core file request is invalid")
 			}
+			if b.dataBinding != nil {
+				if !b.dataStarted {
+					if !reflect.DeepEqual(request, *b.dataBinding) {
+						return errors.New("file data request differs from its credential binding")
+					}
+					b.dataStarted = true
+				} else if b.dataBinding.Operation != protocol.FileDownload || request.Operation != protocol.FileDownloadAck ||
+					!reflect.DeepEqual(request, protocol.FileRequest{Operation: protocol.FileDownloadAck, TransferID: b.dataID, Sequence: request.Sequence}) {
+					return errors.New("file data request differs from its credential binding")
+				}
+			} else if request.Operation == protocol.FileDownload || request.Operation == protocol.FileReadText || request.Operation == protocol.FileUploadBegin {
+				return errors.New("file contents require a dedicated data connection")
+			}
 			if request.Operation == protocol.FileDownloadAck {
 				if !b.acknowledge(envelope.RequestID, request.Sequence) {
 					return errors.New("Core file download acknowledgement is invalid")
@@ -103,6 +138,13 @@ func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Enve
 
 func (b *agentFileBridge) handle(ctx context.Context, id string, request protocol.FileRequest) error {
 	switch request.Operation {
+	case protocol.FileOpenData:
+		if b.dataID != "" || b.configPath == "" || request.Data.Grant.NodeID != b.nodeID {
+			return errors.New("invalid file data connection request")
+		}
+		b.wg.Add(1)
+		go func() { defer b.wg.Done(); b.openFileData(ctx, id, *request.Data) }()
+		return nil
 	case protocol.FileList, protocol.FileSearch:
 		entries, next, err := b.service.Browse(ctx, request.Path, request.After, request.Filter, request.Operation == protocol.FileSearch && request.Recursive, request.MinSize, request.MaxSize)
 		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entries: entries, NextAfter: next}, err)
@@ -264,7 +306,7 @@ func (b *agentFileBridge) offerChunk(ctx context.Context, transfer *agentFileTra
 	if protocol.ValidateFileChunkEnvelope(envelope, b.generation, chunk) != nil {
 		return errors.New("Agent produced an invalid file chunk")
 	}
-	return b.writer.offerFile(ctx, envelope)
+	return b.writer.send(ctx, envelope)
 }
 
 func (b *agentFileBridge) waitAck(ctx context.Context, transfer *agentFileTransfer, sequence uint64) bool {
@@ -372,7 +414,11 @@ func (b *agentFileBridge) removeTransfer(id string) *agentFileTransfer {
 	b.mu.Lock()
 	transfer := b.transfers[id]
 	delete(b.transfers, id)
+	dataCancel := b.dataSessions[id]
 	b.mu.Unlock()
+	if dataCancel != nil {
+		dataCancel()
+	}
 	if transfer != nil && transfer.cancel != nil {
 		transfer.cancel()
 	}
@@ -392,7 +438,11 @@ func (b *agentFileBridge) cancel(id string) bool {
 	}
 	transfer := b.transfers[id]
 	delete(b.transfers, id)
+	dataCancel := b.dataSessions[id]
 	b.mu.Unlock()
+	if dataCancel != nil {
+		dataCancel()
+	}
 	if transfer != nil {
 		if transfer.cancel != nil {
 			transfer.cancel()
@@ -418,6 +468,12 @@ func (b *agentFileBridge) isCanceled(id string) bool {
 func (b *agentFileBridge) closeAll() {
 	b.mu.Lock()
 	b.closed = true
+	for _, cancel := range b.dataSessions {
+		cancel()
+	}
+	for _, session := range b.rsyncSessions {
+		session.cancel()
+	}
 	ids := make([]string, 0, len(b.transfers))
 	for id := range b.transfers {
 		ids = append(ids, id)

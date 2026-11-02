@@ -366,7 +366,7 @@ func buildOperations() []Operation {
 		op("tasks.list", "GET", node+"/tasks", "Task history with pagination", nil, "limit", "after"),
 		op("tasks.get", "GET", node+"/tasks/{taskId}", "Task status and result; poll until terminal status", nil),
 		op("tasks.audit", "GET", node+"/tasks/{taskId}/audit", "Task audit trail", nil),
-		op("tasks.cancel", "DELETE", node+"/tasks/{taskId}", "Cancel undelivered task or running image pull", nil),
+		op("tasks.cancel", "DELETE", node+"/tasks/{taskId}", "Cancel undelivered task, running image pull or file transfer; committed files remain authoritative", nil),
 		op("files.list", "GET", node+"/files", "Paginated host directory within Agent file policy", nil, "path", "after"),
 		op("files.search", "GET", node+"/files/search", "Bounded paginated filename search", nil, "path", "after", "filter", "recursive", "minSize", "maxSize"),
 		op("files.preview", "GET", node+"/files/preview", "Authenticated passive media preview; active formats download only", nil, "path"),
@@ -375,7 +375,8 @@ func buildOperations() []Operation {
 		op("files.download", "GET", node+"/files/download", "Download to --output; never overwrite an existing file", nil, "path"),
 		op("files.upload", "PUT", node+"/files/upload", "Upload --input; optional --file-version protects existing content", nil, "path"),
 		op("files.action", "POST", node+"/files/tasks", "File tasks including ZIP/TAR/TAR.GZ creation and ZIP/TAR/TAR.GZ/TAR.BZ2 extraction; deletion needs exact confirmationPath", schema(protocol.FileActionRequest{})),
-		op("files.transfer", "POST", node+"/files/transfer", "Transfer files from this node to a directory on any node, relayed and integrity-checked through Core over the existing Agent connections", schema(protocol.FileTransferRequest{})),
+		op("files.transfer", "POST", node+"/files/transfer", "Core schedules Agent rsync direct connections, then dedicated WSS byte relay, then chunk data relay; SHA-256 before atomic commit; optional bandwidthLimit in bytes/s (0 unlimited, otherwise at least 1024); observe target tasks and cancel with tasks.cancel", schema(protocol.FileTransferRequest{})),
+		op("files.transfer-retry", "POST", node+"/files/transfers/{taskId}/retry", "Retry a confirmed failed or canceled transfer with a new Idempotency-Key, the original descriptor and retained partial; unknown results require observation", nil),
 		op("terminal.open", "POST", node+"/terminals", "Open host/container shell; TUI is interactive, CLI uses JSONL frames with automatic streamId", schema(protocol.TerminalCreateRequest{})),
 		op("terminal.create", "POST", node+"/terminals", "Authorize host/container terminal; returns a single-use ticket", schema(protocol.TerminalCreateRequest{})),
 		op("terminal.resume", "POST", node+"/terminals/{streamId}/resume", "Reattach the same tmux session after transport loss", fields("")),
@@ -459,7 +460,7 @@ func buildOperations() []Operation {
 		switch o.Name {
 		case "feeds.refresh":
 			o.Completion = &CompletionContract{Operation: "feeds.get", Params: map[string]string{"id": "params.id"}, StatusPath: "status", TerminalStatuses: []string{"succeeded", "failed", "canceled", "inactive"}, SuccessStatuses: []string{"succeeded"}}
-		case "probes.batch", "commands.batch", "commands.submit", "updates.apply", "updates.rollback", "updates.delete-backup", "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "deployments.create":
+		case "probes.batch", "commands.batch", "commands.submit", "updates.apply", "updates.rollback", "updates.delete-backup", "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "files.transfer", "files.transfer-retry", "deployments.create":
 			o.Idempotent = true
 		}
 		if o.Name == "terminal.open" {

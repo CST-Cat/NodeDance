@@ -155,6 +155,8 @@ func describeTransport(o *Operation) {
 		require("kind", "scopeType", "startsAt", "endsAt")
 	case "files.transfer":
 		field("paths", map[string]any{"maxItems": 100, "items": map[string]any{"type": "string", "maxBytes": 4096}})
+		field("bandwidthLimit", map[string]any{"anyOf": []any{map[string]any{"type": "integer", "enum": []any{0}}, map[string]any{"type": "integer", "minimum": 1024, "maximum": protocol.MaxFileSize}}, "default": 0, "description": "Bytes/s: 0 unlimited; nonzero values must be at least 1024"})
+		o.Headers["Idempotency-Key"].(map[string]any)["maxBytes"] = taskstate.MaxIdempotencyKeyBytes - 3
 		o.MaxBodyBytes = 512 * 1024
 	case "files.action":
 		field("action", map[string]any{"enum": []string{"mkdir", "rename", "move", "copy", "archive", "extract", "delete", "save_text"}})
@@ -258,6 +260,7 @@ func describeResponse(o *Operation) {
 	job := schema(protocol.CommandJob{}).(map[string]any)
 	job["required"] = []string{"id", "status"}
 	task := responseObject([]string{"taskId", "status"}, map[string]any{"taskId": text, "status": text, "nodeId": text, "progress": responseObject(nil, map[string]any{"completed": map[string]any{"type": "integer"}, "total": map[string]any{"type": "integer"}})})
+	task["properties"].(map[string]any)["transfer"] = schema(protocol.FileTransferDescriptor{})
 	list := func(key string, item any) any {
 		return responseObject([]string{key}, map[string]any{key: map[string]any{"type": "array", "items": item}})
 	}
@@ -339,8 +342,8 @@ func describeResponse(o *Operation) {
 			r["required"] = []string{"status", "job"}
 		}
 		o.ResponseSchema = r
-	case "files.transfer":
-		o.ResponseSchema = responseObject([]string{"transferred"}, map[string]any{"transferred": map[string]any{"type": "array", "items": responseObject([]string{"sourcePath", "targetPath", "size", "sha256", "taskId"}, map[string]any{"sourcePath": text, "targetPath": text, "size": map[string]any{"type": "integer"}, "sha256": text, "taskId": text})}, "failed": map[string]any{"type": "array", "items": responseObject([]string{"sourcePath", "error"}, map[string]any{"sourcePath": text, "error": text})}})
+	case "files.transfer", "files.transfer-retry":
+		o.ResponseSchema = responseObject([]string{"transferred"}, map[string]any{"transferred": map[string]any{"type": "array", "items": responseObject([]string{"sourcePath", "targetPath", "size", "sha256", "taskId", "transport"}, map[string]any{"sourcePath": text, "targetPath": text, "size": map[string]any{"type": "integer"}, "sha256": text, "taskId": text, "transport": text})}, "failed": map[string]any{"type": "array", "items": responseObject([]string{"sourcePath", "error"}, map[string]any{"sourcePath": text, "error": text, "taskId": text})}})
 	case "containers.create", "containers.action", "images.pull", "images.delete", "compose.create", "compose.action", "files.action", "files.upload", "tasks.get", "tasks.cancel":
 		o.ResponseSchema = task
 	case "tasks.list":

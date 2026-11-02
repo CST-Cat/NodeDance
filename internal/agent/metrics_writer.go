@@ -18,7 +18,6 @@ const (
 	maxDockerWriteBurst   = 8
 	maxStreamWriteBurst   = 4
 	maxTerminalWriteBurst = 8
-	maxFileWriteBurst     = 4
 )
 
 var (
@@ -46,7 +45,6 @@ type socketEnvelopeWriter struct {
 	docker                chan protocol.Envelope
 	streams               chan protocol.Envelope
 	terminal              chan protocol.Envelope
-	files                 chan protocol.Envelope
 	metrics               chan protocol.Envelope
 	streamFailures        chan struct{}
 	streamFailureMu       sync.Mutex
@@ -63,32 +61,13 @@ func newSocketEnvelopeWriter(ctx context.Context, conn protocol.AgentChannel) *s
 		conn: conn, ctx: writerCtx, cancel: cancel,
 		high: make(chan envelopeWrite, 8), metrics: make(chan protocol.Envelope, 1),
 		docker: make(chan protocol.Envelope, 16), streams: make(chan protocol.Envelope, 32),
-		terminal: make(chan protocol.Envelope, 16), files: make(chan protocol.Envelope, 8),
+		terminal:       make(chan protocol.Envelope, 16),
 		streamFailures: make(chan struct{}, 1), failedStreams: make(map[string]error),
 		pendingStreamFailures: make(map[string]error),
 		failures:              make(chan error, 1), done: make(chan struct{}),
 	}
 	go w.run()
 	return w
-}
-
-// offerFile is a separate bounded queue for bulk file data. It is lower
-// priority than control, Docker state, and interactive streams, so uploads or
-// downloads cannot monopolize the heartbeat WebSocket writer.
-func (w *socketEnvelopeWriter) offerFile(ctx context.Context, envelope protocol.Envelope) error {
-	if w == nil || w.files == nil {
-		return errors.New("Agent file writer is unavailable")
-	}
-	select {
-	case w.files <- envelope:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-w.ctx.Done():
-		return errors.New("Agent file writer stopped")
-	default:
-		return errors.New("Agent file writer queue is full")
-	}
 }
 
 // offerStream keeps log and on-demand stats data in a separate low-priority,
@@ -270,7 +249,6 @@ func (w *socketEnvelopeWriter) run() {
 		{w.metrics, 1, metricWriteTimeout, false},
 		{w.terminal, maxTerminalWriteBurst, terminalWriteTimeout, false},
 		{w.streams, maxStreamWriteBurst, streamWriteTimeout, true},
-		{w.files, maxFileWriteBurst, streamWriteTimeout, false},
 	}
 	current, burst := 0, 0
 	writeLane := func(index int, envelope protocol.Envelope) {
@@ -328,8 +306,6 @@ func (w *socketEnvelopeWriter) run() {
 			writeLane(2, envelope)
 		case envelope := <-w.streams:
 			writeLane(3, envelope)
-		case envelope := <-w.files:
-			writeLane(4, envelope)
 		}
 	}
 }

@@ -110,6 +110,9 @@ type Server struct {
 	composeContents            map[string]pendingComposeContent
 	fileContentMu              sync.Mutex
 	fileContents               map[string]pendingFileContent
+	fileTransferMu             sync.Mutex
+	fileTransferRuns           map[string]*coreFileTransferRun
+	fileRsyncRelays            map[string]*coreRsyncRelay
 	containerCreateMu          sync.Mutex
 	containerCreateSpecs       map[string]pendingContainerCreateSpec
 	imageAuthMu                sync.Mutex
@@ -285,6 +288,8 @@ func New(version string, options Options) (*Server, error) {
 		imageAuth:                 make(map[string]pendingImageCredential),
 		composeContents:           make(map[string]pendingComposeContent),
 		fileContents:              make(map[string]pendingFileContent),
+		fileTransferRuns:          make(map[string]*coreFileTransferRun),
+		fileRsyncRelays:           make(map[string]*coreRsyncRelay),
 		containerCreateSpecs:      make(map[string]pendingContainerCreateSpec),
 		agentOfflineTimeout:       options.AgentOfflineTimeout,
 		agentSweepInterval:        options.AgentSweepInterval,
@@ -656,6 +661,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/ws/v1/agent":
 		s.handleAgentWebSocket(w, r)
+		return
+	case protocol.FileChunkDataRoute:
+		s.handleFileChunkData(w, r)
+		return
+	case protocol.FileRsyncDataRoute:
+		s.handleFileRsyncData(w, r)
 		return
 	case "/ws/v1/streams/logs", "/ws/v1/streams/stats":
 		s.handleContainerStreamWebSocket(w, r)

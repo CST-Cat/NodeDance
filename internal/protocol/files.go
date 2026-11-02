@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 )
 
 const (
@@ -46,19 +47,20 @@ var fileRequestID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[8
 // FileRequest is a typed, read-only request sent by Core after authenticating
 // the administrator Session and binding the transfer to a node generation.
 type FileRequest struct {
-	Operation       string `json:"operation"`
-	After           string `json:"after,omitempty"`
-	Filter          string `json:"filter,omitempty"`
-	Recursive       bool   `json:"recursive,omitempty"`
-	MinSize         int64  `json:"minSize,omitempty"`
-	MaxSize         int64  `json:"maxSize,omitempty"`
-	Path            string `json:"path,omitempty"`
-	TransferID      string `json:"transferId,omitempty"`
-	Sequence        uint64 `json:"sequence,omitempty"`
-	TaskID          string `json:"taskId,omitempty"`
-	ExpectedVersion string `json:"expectedVersion,omitempty"`
-	Size            int64  `json:"size,omitempty"`
-	SHA256          string `json:"sha256,omitempty"`
+	Data            *FileDataOpen `json:"data,omitempty"`
+	Operation       string        `json:"operation"`
+	After           string        `json:"after,omitempty"`
+	Filter          string        `json:"filter,omitempty"`
+	Recursive       bool          `json:"recursive,omitempty"`
+	MinSize         int64         `json:"minSize,omitempty"`
+	MaxSize         int64         `json:"maxSize,omitempty"`
+	Path            string        `json:"path,omitempty"`
+	TransferID      string        `json:"transferId,omitempty"`
+	Sequence        uint64        `json:"sequence,omitempty"`
+	TaskID          string        `json:"taskId,omitempty"`
+	ExpectedVersion string        `json:"expectedVersion,omitempty"`
+	Size            int64         `json:"size,omitempty"`
+	SHA256          string        `json:"sha256,omitempty"`
 }
 
 type FileEntry struct {
@@ -127,6 +129,19 @@ func ValidateFileRequest(envelope Envelope, generation uint64, request FileReque
 		return errors.New("invalid file browse options")
 	}
 	switch request.Operation {
+	case FileOpenData:
+		if request.Data == nil || !ValidFileStreamGrant(request.Data.Grant, time.Now()) || request.Data.Grant.SessionID != envelope.RequestID ||
+			request.Data.Grant.Path != request.Data.Request.Path || request.Data.Grant.TaskID != request.Data.Request.TaskID || request.Data.Grant.Binding != FileStreamDigest(request.Data.Request) {
+			return errors.New("file data credential is invalid")
+		}
+		initial := request.Data.Request.FileRequest(envelope.RequestID)
+		if initial.Operation != FileDownload && initial.Operation != FileUploadBegin && initial.Operation != FileReadText {
+			return errors.New("file data operation is invalid")
+		}
+		if initial.Operation == FileUploadBegin && request.Data.Grant.Role != "receiver" || initial.Operation != FileUploadBegin && request.Data.Grant.Role != "sender" || !ValidVirtualFilePath(initial.Path) {
+			return errors.New("file data direction or path is invalid")
+		}
+		return ValidateFileRequest(envelope, generation, initial)
 	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileHash:
 		if request.Path == "" {
 			return errors.New("file path is required")
@@ -149,6 +164,9 @@ func ValidateFileRequest(envelope Envelope, generation uint64, request FileReque
 		}
 	default:
 		return fmt.Errorf("unsupported file operation %q", request.Operation)
+	}
+	if request.Data != nil {
+		return errors.New("unexpected file data credential")
 	}
 	return nil
 }

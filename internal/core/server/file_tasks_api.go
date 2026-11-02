@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -24,10 +25,11 @@ const maxPendingFileContentBytes = 64 << 20
 var errFileContentCapacity = errors.New("too many pending file edits")
 
 type pendingFileContent struct {
-	nodeID  string
-	digest  string
-	content []byte
-	expires time.Time
+	nodeID    string
+	sessionID string
+	digest    string
+	content   []byte
+	expires   time.Time
 }
 
 type fileTaskRequest = protocol.FileActionRequest
@@ -185,7 +187,7 @@ func (s *Server) enqueueFileTask(ctx context.Context, current *session, nodeID, 
 		return coretasks.EnqueueResult{}, err
 	}
 	if withContent && result.Task.Status == taskstate.Queued && result.Task.DeliveryState == "ready" && !result.Task.Evidence.DeliveryCommitted {
-		s.storeFileContentLocked(result.Task.TaskID, nodeID, intent.File.SHA256, content)
+		s.storeFileContentLocked(result.Task.TaskID, nodeID, current.ID, intent.File.SHA256, content)
 	}
 	if withContent {
 		s.fileContentMu.Unlock()
@@ -193,15 +195,15 @@ func (s *Server) enqueueFileTask(ctx context.Context, current *session, nodeID, 
 	return result, nil
 }
 
-func (s *Server) storeFileContentLocked(taskID, nodeID, digest string, content []byte) {
+func (s *Server) storeFileContentLocked(taskID, nodeID, sessionID, digest string, content []byte) {
 	s.expireFileContentLocked()
 	if previous, ok := s.fileContents[taskID]; ok {
 		clear(previous.content)
 	}
-	s.fileContents[taskID] = pendingFileContent{nodeID: nodeID, digest: digest, content: append([]byte(nil), content...), expires: s.now().Add(fileTaskPayloadLifetime)}
+	s.fileContents[taskID] = pendingFileContent{nodeID: nodeID, sessionID: sessionID, digest: digest, content: append([]byte(nil), content...), expires: s.now().Add(fileTaskPayloadLifetime)}
 }
 
-func (s *Server) takeFileContent(taskID, nodeID, digest string) *protocol.FileContent {
+func (s *Server) takeFileContent(taskID, nodeID, digest string) *pendingFileContent {
 	s.fileContentMu.Lock()
 	defer s.fileContentMu.Unlock()
 	s.expireFileContentLocked()
@@ -214,7 +216,43 @@ func (s *Server) takeFileContent(taskID, nodeID, digest string) *protocol.FileCo
 	if entry.nodeID != nodeID || entry.digest != digest || s.now().After(entry.expires) {
 		return nil
 	}
-	return &protocol.FileContent{SHA256: entry.digest, Content: append([]byte(nil), entry.content...)}
+	entry.content = append([]byte(nil), entry.content...)
+	return &entry
+}
+
+func (s *Server) sendFileTaskContent(task coretasks.Task, content *pendingFileContent) {
+	if content == nil {
+		return
+	}
+	defer clear(content.content)
+	ctx, cancel := context.WithTimeout(s.agentContext, 30*time.Minute)
+	defer cancel()
+	current := &session{ID: content.sessionID}
+	_, ready, err := s.waitFileTaskReady(ctx, current.ID, task.NodeID, task.TaskID)
+	if err != nil || !ready {
+		return
+	}
+	connection, transfer, err := s.newCoreFileTransfer(ctx, task.NodeID, current, []string{protocol.FileUploadBegin, protocol.FileUploadChunk}, false)
+	if err != nil {
+		return
+	}
+	defer s.closeCoreFileTransfer(connection, transfer, true, nil)
+	spec := task.Intent.File
+	begin := protocol.FileRequest{Operation: protocol.FileUploadBegin, TransferID: transfer.requestID, TaskID: task.TaskID,
+		Path: spec.Path, ExpectedVersion: spec.ExpectedVersion, Size: spec.Size, SHA256: spec.SHA256}
+	if err := s.sendFileRequest(ctx, connection, transfer, begin); err != nil {
+		return
+	}
+	envelope, err := s.waitFileMessage(ctx, connection, transfer)
+	var response protocol.FileResponse
+	if err != nil || envelope.Type != protocol.TypeFileResponse || decodeAgentPayload(envelope.Payload, &response) != nil ||
+		response.Operation != protocol.FileUploadBegin || response.Code != "" || response.Size != spec.Size {
+		return
+	}
+	if err := streamCoreFileUpload(ctx, s, current, connection, transfer, bytes.NewReader(content.content), spec.Size, spec.SHA256); err != nil {
+		return
+	}
+	s.closeCoreFileTransfer(connection, transfer, false, nil)
 }
 
 func (s *Server) expireFileContentLocked() {
@@ -376,7 +414,7 @@ func (s *Server) handleFileUpload(w http.ResponseWriter, r *http.Request, curren
 	writeJSON(w, http.StatusOK, toTaskView(resultTask))
 }
 
-func streamCoreFileUpload(ctx context.Context, s *Server, current *session, connection *agentConnection, transfer *coreFileTransfer, spool *os.File, size int64, digest string) error {
+func streamCoreFileUpload(ctx context.Context, s *Server, current *session, connection *agentConnection, transfer *coreFileTransfer, spool io.Reader, size int64, digest string) error {
 	hasher := sha256.New()
 	buffer := make([]byte, protocol.MaxFileChunkBytes)
 	var total int64
@@ -423,21 +461,7 @@ func sendCoreFileChunk(ctx context.Context, s *Server, current *session, connect
 	if protocol.ValidateFileChunkEnvelope(envelope, transfer.generation, chunk) != nil {
 		return errors.New("file upload chunk is invalid")
 	}
-	transfer.mu.Lock()
-	defer transfer.mu.Unlock()
-	if transfer.closed || connection.ctx.Err() != nil || !s.dashboardSessionStillValid(ctx, transfer.sessionID) {
-		return errors.New("file upload was canceled")
-	}
-	select {
-	case connection.commands <- envelope:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-connection.ctx.Done():
-		return errors.New("Agent disconnected")
-	default:
-		return errors.New("Agent command queue is full")
-	}
+	return s.sendFileEnvelope(ctx, connection, transfer, envelope)
 }
 
 func waitFileUploadAck(ctx context.Context, s *Server, current *session, connection *agentConnection, transfer *coreFileTransfer, sequence uint64) error {
