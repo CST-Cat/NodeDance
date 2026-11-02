@@ -17,23 +17,7 @@ const Repository = "CST-Cat/NodeDance"
 const ChannelBeta = "beta"
 const ChannelDev = "dev"
 
-var devVersionPattern = regexp.MustCompile(`^agent-dev-[0-9a-f]{40}// Package update owns release selection and transactional Core/Agent updates.
-// Clients submit these same requests through the Core operation contract.
-package update
-
-import (
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
-)
-
-const Repository = "CST-Cat/NodeDance"
-)
+var devVersionPattern = regexp.MustCompile(`^agent-dev-[0-9a-f]{40}$`)
 
 func ValidDevVersion(value string) bool { return devVersionPattern.MatchString(value) }
 
