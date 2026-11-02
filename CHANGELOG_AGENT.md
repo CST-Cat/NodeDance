@@ -4,10 +4,18 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.33]
+
+### English
+
+- Add an opt-in Dev update channel: an Agent can follow per-commit Dev builds identified by the full commit SHA (`agent-dev-<sha>`), published as OCI artifacts on GHCR and resolved and downloaded anonymously through the OCI registry without any GitHub API calls; downloads verify SHA-256 and size and reuse the existing transactional update, runtime verification and rollback. Stable remains the default channel, and Dev builds never create release tags or GitHub Releases.
 - Fix overwriting an existing file (upload commit and text save) failing with "operation not permitted" on hosts where changing the replacement file's owner is restricted even when it already matches the target's owner (for example unmapped ids in a user namespace): the owner is now only changed when it actually differs.
 
 ### 简体中文
 
+- 新增可选的 Dev 更新通道：Agent 可跟随以完整提交 SHA 标识的逐提交 Dev 构建（`agent-dev-<sha>`），其制品以 OCI 形式发布于 GHCR，经 OCI 仓库匿名解析与下载，全程不调用 GitHub API；下载经 SHA-256 与大小校验，并复用既有的事务化更新、运行版本核验与回滚。Stable 仍为默认通道，Dev 构建不产生发布标签与 GitHub Release。
 - 修复覆盖已有文件（上传落盘与文本保存）在属主变更受限环境下必定失败的问题：当替换文件属主与目标文件本就一致时（如用户命名空间中未映射的 id），仍发出 chown 系统调用会得到「operation not permitted」；现改为仅在属主确实不同时才变更。
 
 ## [0.1.32]
