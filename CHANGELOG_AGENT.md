@@ -4,6 +4,12 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.41]
+
+### English
+
 - Rebuild peer file transfer on the bundled rsync engine carried over the existing Core-Agent WebSocket connection: the source Agent runs rsync through a NodeDance remote-shell adapter, the target Agent validates the server command rsync itself proposes before starting it inside the authorized path, and Core forwards only the raw protocol bytes — no extra ports, no SSH, no relay files. Re-transferring a changed file sends only the delta; the target upload task's SHA-256 verification still gates every write.
 - Fix overwriting an existing file (upload commit and text save) failing with "operation not permitted" on hosts where changing the replacement file's owner is restricted even when it already matches the target's owner (for example unmapped ids in a user namespace): the owner is now only changed when it actually differs.
 
