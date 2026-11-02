@@ -9,14 +9,12 @@ import (
 )
 
 const (
-	CapabilityFiles           = "agent.files.v1"
-	CapabilityFileRsyncStream = "agent.files.rsync-stream.v1"
+	CapabilityFiles = "agent.files.v1"
 
 	TypeFileRequest  = "file_request"
 	TypeFileResponse = "file_response"
 	TypeFileChunk    = "file_chunk"
 	TypeFileCancel   = "file_cancel"
-	TypeStreamData   = "stream_data"
 
 	FileList         = "list"
 	FileStat         = "stat"
@@ -33,11 +31,6 @@ const (
 	FileUploadAck    = "upload_ack"
 	FileDownload     = "download"
 	FileDownloadAck  = "download_ack"
-	FileRsyncReceive = "rsync_receive"
-	FileRsyncSend    = "rsync_send"
-	FileRsyncStart   = "rsync_start"
-	FileRsyncGo      = "rsync_go"
-	FileRsyncAbort   = "rsync_abort"
 
 	MaxFileControlBytes = 256 << 10
 	MaxFileChunkBytes   = 32 << 10
@@ -53,20 +46,19 @@ var fileRequestID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[8
 // FileRequest is a typed, read-only request sent by Core after authenticating
 // the administrator Session and binding the transfer to a node generation.
 type FileRequest struct {
-	Operation       string   `json:"operation"`
-	After           string   `json:"after,omitempty"`
-	Filter          string   `json:"filter,omitempty"`
-	Recursive       bool     `json:"recursive,omitempty"`
-	MinSize         int64    `json:"minSize,omitempty"`
-	MaxSize         int64    `json:"maxSize,omitempty"`
-	Path            string   `json:"path,omitempty"`
-	TransferID      string   `json:"transferId,omitempty"`
-	Sequence        uint64   `json:"sequence,omitempty"`
-	TaskID          string   `json:"taskId,omitempty"`
-	ExpectedVersion string   `json:"expectedVersion,omitempty"`
-	Size            int64    `json:"size,omitempty"`
-	SHA256          string   `json:"sha256,omitempty"`
-	Args            []string `json:"args,omitempty"`
+	Operation       string `json:"operation"`
+	After           string `json:"after,omitempty"`
+	Filter          string `json:"filter,omitempty"`
+	Recursive       bool   `json:"recursive,omitempty"`
+	MinSize         int64  `json:"minSize,omitempty"`
+	MaxSize         int64  `json:"maxSize,omitempty"`
+	Path            string `json:"path,omitempty"`
+	TransferID      string `json:"transferId,omitempty"`
+	Sequence        uint64 `json:"sequence,omitempty"`
+	TaskID          string `json:"taskId,omitempty"`
+	ExpectedVersion string `json:"expectedVersion,omitempty"`
+	Size            int64  `json:"size,omitempty"`
+	SHA256          string `json:"sha256,omitempty"`
 }
 
 type FileEntry struct {
@@ -93,7 +85,6 @@ type FileResponse struct {
 	Entry       *FileEntry  `json:"entry,omitempty"`
 	Text        string      `json:"text,omitempty"`
 	AckSequence uint64      `json:"ackSequence,omitempty"`
-	Args        []string    `json:"args,omitempty"`
 }
 
 type FileChunk struct {
@@ -106,36 +97,6 @@ type FileChunk struct {
 
 type FileCancel struct {
 	TransferID string `json:"transferId"`
-}
-
-type StreamFrame struct {
-	StreamID string `json:"streamId"`
-	Sequence uint64 `json:"sequence"`
-	Data     string `json:"data,omitempty"`
-	Final    bool   `json:"final,omitempty"`
-}
-
-func DecodeStreamData(frame StreamFrame) ([]byte, error) {
-	if frame.StreamID == "" || len(frame.StreamID) > 64 || frame.Sequence == 0 || len(frame.Data) > base64.StdEncoding.EncodedLen(MaxFileChunkBytes) {
-		return nil, errors.New("stream frame metadata is invalid")
-	}
-	data, err := base64.StdEncoding.DecodeString(frame.Data)
-	if err != nil || len(data) > MaxFileChunkBytes {
-		return nil, errors.New("stream frame data is invalid")
-	}
-	if frame.Final && len(data) != 0 {
-		return nil, errors.New("final stream frame must not contain data")
-	}
-	return data, nil
-}
-
-func ValidateStreamFrame(envelope Envelope, generation uint64, frame StreamFrame) error {
-	if envelope.Type != TypeStreamData || envelope.Version != CurrentVersion || envelope.Generation == 0 || envelope.Generation != generation ||
-		envelope.RequestID == "" || envelope.RequestID != frame.StreamID || envelope.Sequence == 0 || envelope.Sequence != frame.Sequence {
-		return errors.New("stream frame envelope is invalid")
-	}
-	_, err := DecodeStreamData(frame)
-	return err
 }
 
 func DecodeFileChunk(chunk FileChunk) ([]byte, error) {
@@ -165,9 +126,6 @@ func ValidateFileRequest(envelope Envelope, generation uint64, request FileReque
 	if len(request.After) > 4096 || len(request.Filter) > 200 || request.MinSize < 0 || request.MaxSize < 0 || request.MaxSize > 0 && request.MaxSize < request.MinSize {
 		return errors.New("invalid file browse options")
 	}
-	if len(request.Args) != 0 && request.Operation != FileRsyncStart {
-		return errors.New("file request arguments are invalid")
-	}
 	switch request.Operation {
 	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileHash:
 		if request.Path == "" {
@@ -189,48 +147,10 @@ func ValidateFileRequest(envelope Envelope, generation uint64, request FileReque
 		if request.TransferID != envelope.RequestID || request.Sequence == 0 {
 			return errors.New("upload acknowledgement is invalid")
 		}
-	case FileRsyncReceive:
-		if request.TransferID != envelope.RequestID || !validFileTaskID(request.TaskID) || request.Path == "" ||
-			request.Size < 0 || request.Size > MaxFileSize || !validFileDigest(request.SHA256) || len(request.ExpectedVersion) > 128 {
-			return errors.New("rsync receive initialization is invalid")
-		}
-	case FileRsyncSend:
-		if request.TransferID != envelope.RequestID || !validFileTaskID(request.TaskID) || request.Path == "" {
-			return errors.New("rsync send initialization is invalid")
-		}
-	case FileRsyncStart:
-		if request.TransferID != envelope.RequestID || !validFileTaskID(request.TaskID) || !validRsyncArgs(request.Args) {
-			return errors.New("rsync start is invalid")
-		}
-	case FileRsyncGo:
-		if request.TransferID != envelope.RequestID || !validFileTaskID(request.TaskID) || len(request.Args) != 0 {
-			return errors.New("rsync go is invalid")
-		}
-	case FileRsyncAbort:
-		if request.TransferID != envelope.RequestID || !validFileTaskID(request.TaskID) {
-			return errors.New("rsync abort is invalid")
-		}
 	default:
 		return fmt.Errorf("unsupported file operation %q", request.Operation)
 	}
 	return nil
-}
-
-func validRsyncArgs(args []string) bool {
-	if len(args) < 4 || len(args) > 8 {
-		return false
-	}
-	for _, arg := range args {
-		if len(arg) == 0 || len(arg) > 512 {
-			return false
-		}
-		for _, character := range arg {
-			if character < 0x20 || character == 0x7f {
-				return false
-			}
-		}
-	}
-	return true
 }
 
 func validFileTaskID(value string) bool {
@@ -256,12 +176,9 @@ func ValidateFileResponse(envelope Envelope, generation uint64, response FileRes
 		return errors.New("file response is outside its bound")
 	}
 	switch response.Operation {
-	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileHash, FileUploadBegin, FileUploadChunk, FileRsyncReceive, FileRsyncSend, FileRsyncStart, FileRsyncGo, FileRsyncAbort:
+	case FileList, FileSearch, FileStat, FileReadText, FileDownload, FileHash, FileUploadBegin, FileUploadChunk:
 	default:
 		return errors.New("file response operation is invalid")
-	}
-	if len(response.Args) != 0 && (response.Operation != FileRsyncSend || !validRsyncArgs(response.Args)) {
-		return errors.New("file response arguments are invalid")
 	}
 	if response.SHA256 != "" && !validFileDigest(response.SHA256) {
 		return errors.New("file response digest is invalid")

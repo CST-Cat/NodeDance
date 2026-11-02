@@ -27,7 +27,6 @@ import (
 	agentprobes "github.com/CST-Cat/NodeDance/internal/agent/probes"
 	agentterminal "github.com/CST-Cat/NodeDance/internal/agent/terminal"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
-	"github.com/CST-Cat/NodeDance/internal/transfer/rsyncbundle"
 	"github.com/CST-Cat/NodeDance/internal/update"
 	"github.com/coder/websocket"
 	mobyclient "github.com/moby/moby/client"
@@ -285,9 +284,6 @@ func runConnection(ctx context.Context, configPath string, config Config, versio
 	}
 	if fileService != nil {
 		hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFiles)
-		if rsyncbundle.Available() {
-			hello.Capabilities = append(hello.Capabilities, protocol.CapabilityFileRsyncStream)
-		}
 	}
 	if err := writeSocketEnvelope(connectionCtx, conn, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeHello, Payload: encodePayload(hello)}); err != nil {
 		return errors.New("send Agent hello failed")
@@ -584,18 +580,10 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 		if taskBridge != nil {
 			fileTasks = taskBridge.files
 		}
-		stateDir, stateErr := filepath.Abs(filepath.Dir(configPath))
-		if stateErr != nil {
-			stateDir = ""
-		}
-		bridge := newAgentFileBridge(fileService, generation, writer, fileTasks, stateDir)
+		bridge := newAgentFileBridge(fileService, generation, writer, fileTasks)
 		go func() {
 			defer close(finished)
-			runErr := bridge.run(fileCtx, fileMessages)
-			if runErr != nil {
-				fmt.Fprintf(os.Stderr, "nodedance-agent: file bridge stopped: %v\n", runErr)
-			}
-			done <- runErr
+			done <- bridge.run(fileCtx, fileMessages)
 		}()
 		defer func() {
 			cancelFileFunc()
@@ -1029,18 +1017,6 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 					}
 					fileBridgeDone = nil
 					fileMessages = nil
-				}
-			case protocol.TypeStreamData:
-				if fileMessages == nil || envelope.Sequence == 0 || len(envelope.Payload) == 0 || len(envelope.Payload) > protocol.MaxFileControlBytes {
-					if fileMessages == nil && containsCapability(negotiatedCapabilities, protocol.CapabilityFileRsyncStream) {
-						continue
-					}
-					return errors.New("Core stream frame is invalid or was not negotiated")
-				}
-				select {
-				case fileMessages <- envelope:
-				case <-ctx.Done():
-					return nil
 				}
 			case protocol.TypeProbeDispatch:
 				if probeMessages == nil || envelope.Sequence != 0 {
