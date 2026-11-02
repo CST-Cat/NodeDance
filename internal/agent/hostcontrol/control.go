@@ -3,6 +3,7 @@ package hostcontrol
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -379,8 +380,21 @@ func (m *Manager) execute(ctx context.Context, j protocol.CommandJob, script str
 	m.history[j.ID] = j
 }
 
-// Automatic updates use the installed supervisor and the published agent tag
-// resolver, retaining its preflight, backup, health checks and rollback.
+func eligibleAutomaticUpdate(channel string, check update.Check) bool {
+	if !check.Configured || !check.Available {
+		return false
+	}
+	return channel == update.ChannelDev || check.Current != "dev" && !update.ValidDevVersion(check.Current)
+}
+
+func newAutomaticUpdateKey(version string) (string, error) {
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return "", err
+	}
+	return "auto-agent-" + version + "-" + hex.EncodeToString(nonce[:]), nil
+}
+
 func (m *Manager) RunUpdates() {
 	timer := time.NewTimer(time.Minute)
 	defer timer.Stop()
@@ -394,15 +408,18 @@ func (m *Manager) RunUpdates() {
 		if s.AutoUpdate {
 			ctx, cancel := context.WithTimeout(m.ctx, 60*time.Second)
 			r := update.Request{Component: "agent"}
-			if s.UpdateChannel == "dev" { r.Version = update.ChannelDev }
+			if s.UpdateChannel == update.ChannelDev {
+				r.Version = update.ChannelDev
+			}
 			response, err := update.Invoke(ctx, "agent", m.dir, update.RPC{Action: "check", Request: r})
 			if err == nil && response.Status == 200 {
 				var check update.Check
-				if json.Unmarshal(response.Data, &check) == nil && check.Available && check.Configured {
+				if json.Unmarshal(response.Data, &check) == nil && eligibleAutomaticUpdate(s.UpdateChannel, check) {
 					r.Confirm = true
 					r.Version = check.Release.Version
-					key := "auto-agent-" + r.Version
-					_, _ = update.Invoke(ctx, "agent", m.dir, update.RPC{Action: "apply", Request: r, IdempotencyKey: key})
+					if key, err := newAutomaticUpdateKey(r.Version); err == nil {
+						_, _ = update.Invoke(ctx, "agent", m.dir, update.RPC{Action: "apply", Request: r, IdempotencyKey: key})
+					}
 				}
 			}
 			cancel()

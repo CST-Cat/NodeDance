@@ -2,6 +2,7 @@ package hostcontrol
 
 import (
 	"context"
+	"github.com/CST-Cat/NodeDance/internal/update"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"os"
 	"path/filepath"
@@ -150,5 +151,52 @@ func TestRemoteControlPolicyRejectsNewScriptsAndCancelsRunning(t *testing.T) {
 	}
 	if j := awaitJob(t, m, job.Job.ID); j.Status != "cancelled" {
 		t.Fatal(j)
+	}
+}
+
+func TestAutomaticUpdateChannelBoundary(t *testing.T) {
+	revision := "agent-dev-" + strings.Repeat("a", 40)
+	tests := []struct {
+		name string
+		channel string
+		current string
+		available bool
+		configured bool
+		want bool
+	}{
+		{"stable current, stable channel", "stable", "agent-v0.1.1", true, true, true},
+		{"unconfigured stable, dev installed", "", revision, true, true, false},
+		{"stable channel, dev installed", "stable", revision, true, true, false},
+		{"stable channel, legacy dev installed", "stable", "dev", true, true, false},
+		{"dev channel, stable installed", "dev", "agent-v0.1.1", true, true, true},
+		{"dev channel, dev installed", "dev", revision, true, true, true},
+		{"no update available", "dev", revision, false, true, false},
+		{"unconfigured target", "dev", "agent-v0.1.1", true, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := eligibleAutomaticUpdate(tt.channel, update.Check{Current: tt.current, Configured: tt.configured, Available: tt.available})
+			if got != tt.want {
+				t.Fatalf("eligibleAutomaticUpdate(%q, %q) = %v, want %v", tt.channel, tt.current, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAutomaticUpdateRetryUsesFreshAttemptIdentity(t *testing.T) {
+	version := "agent-dev-" + strings.Repeat("b", 40)
+	keys := make(map[string]bool)
+	for range 12 {
+		key, err := newAutomaticUpdateKey(version)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(key) < 8 || len(key) > 128 || !strings.HasPrefix(key, "auto-agent-"+version+"-") {
+			t.Fatalf("invalid automatic update key %q", key)
+		}
+		if keys[key] {
+			t.Fatal("new update attempt reused an idempotency key")
+		}
+		keys[key] = true
 	}
 }

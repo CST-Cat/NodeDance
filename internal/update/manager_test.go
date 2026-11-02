@@ -407,3 +407,33 @@ func TestStageProgressFollowsEachFlow(t *testing.T) {
 		t.Fatalf("rolling_back moved progress to %v, want frozen %v", got, frozen.Progress)
 	}
 }
+
+func TestFailedUpdateCanRetryWithNewIdempotencyKey(t *testing.T) {
+	m, _, _ := nativeFixture(t)
+	m.Resolver = fixtureResolver{fail: true}
+	request := Request{Component: "core", Confirm: true}
+	first, err := m.Apply(context.Background(), request, "auto-agent-core-v0.1.9-attempt-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first = waitJob(t, m, first.ID)
+	if first.Status != "failed" {
+		t.Fatalf("expected failed first attempt: %+v", first)
+	}
+	m.Resolver = fixtureResolver{}
+	previous, err := m.Apply(context.Background(), request, "auto-agent-core-v0.1.9-attempt-a")
+	if err != nil || previous.ID != first.ID {
+		t.Fatalf("retry with the same key must return the original task: %+v, %v", previous, err)
+	}
+	second, err := m.Apply(context.Background(), request, "auto-agent-core-v0.1.9-attempt-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID == first.ID {
+		t.Fatal("new automatic attempt did not create a fresh task")
+	}
+	second = waitJob(t, m, second.ID)
+	if second.Status != "succeeded" {
+		t.Fatalf("new automatic attempt could not recover: %+v", second)
+	}
+}

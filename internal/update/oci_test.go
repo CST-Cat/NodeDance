@@ -64,7 +64,7 @@ func TestAgentDevOCIResolutionAndDownload(t *testing.T) {
 			}
 			w.Write([]byte("{\"token\":\"fixture-token\"}"))
 		case strings.Contains(r.URL.Path, "/nodedance-agent-binaries/manifests/"):
-			if r.URL.Path != "/v2/"+devBinaryRepository+"/manifests/dev" && r.URL.Path != "/v2/"+devBinaryRepository+"/manifests/agent-dev-"+revision {
+			if r.URL.Path != "/v2/"+devBinaryRepository+"/manifests/dev" && r.URL.Path != "/v2/"+devBinaryRepository+"/manifests/dev-"+revision {
 				http.NotFound(w, r)
 				return
 			}

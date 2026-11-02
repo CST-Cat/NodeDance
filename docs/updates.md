@@ -27,7 +27,7 @@ sudo nodedance agent update --channel dev
 nodedance update --server https://core.example --component agent --node-id NODE_UUID --channel dev
 ```
 
-To automatically follow Dev, set `updateChannel` to `dev` with the authenticated Agent configuration operation and enable `autoUpdate`; empty or `stable` keeps the default Stable behavior. Switching channels is an explicit administrator choice. The first new GHCR binaries package must be publicly readable for anonymous Agent downloads; configure its package visibility after first publication if necessary. No Dev artifacts are published on PR builds.
+To automatically follow Dev, set `updateChannel` to `dev` with the authenticated Agent configuration operation and enable `autoUpdate`; empty or `stable` keeps the default Stable behavior. `--channel dev` selects the channel for one manual update only and does not mutate saved Agent settings. An Agent running Dev is never automatically downgraded to Stable merely because the saved channel is Stable; automatic Dev updates require explicitly selecting Dev in Agent settings. To return to Stable from Dev, run an explicit Stable update; manual version changes never implicitly change the persistent automatic-update channel. Failed automatic attempts are retried with fresh idempotency keys on the next scheduled check, while interrupted submissions retain their individual request identity. The first new GHCR binaries package must be publicly readable for anonymous Agent downloads; configure its package visibility after first publication if necessary. No Dev artifacts are published on PR builds.
 
 ## Observation and recovery / 观察与恢复
 

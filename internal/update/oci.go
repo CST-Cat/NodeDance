@@ -123,7 +123,7 @@ func (g *GitHub) registryManifest(ctx context.Context, repository, reference, ac
 func (g *GitHub) resolveDev(ctx context.Context, version string) (Release, error) {
 	reference := "dev"
 	if ValidDevVersion(version) {
-		reference = version
+		reference = strings.TrimPrefix(version, "agent-")
 	}
 	_, manifest, _, err := g.registryManifest(ctx, devBinaryRepository, reference, ociManifestType)
 	if err != nil {
