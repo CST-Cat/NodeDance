@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -163,5 +162,4 @@ func TestOCIManifestRejectsInvalidMetadata(t *testing.T) {
 	if err := g.downloadDev(context.Background(), broken, filepath.Join(t.TempDir(), "bad")); err == nil {
 		t.Fatal("accepted zero-length blob")
 	}
-	_ = io.EOF
 }
