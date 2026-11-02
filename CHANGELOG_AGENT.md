@@ -5,10 +5,12 @@
 ### English
 
 - Rebuild peer file transfer on the bundled rsync engine carried over the existing Core-Agent WebSocket connection: the source Agent runs rsync through a NodeDance remote-shell adapter, the target Agent validates the server command rsync itself proposes before starting it inside the authorized path, and Core forwards only the raw protocol bytes — no extra ports, no SSH, no relay files. Re-transferring a changed file sends only the delta; the target upload task's SHA-256 verification still gates every write.
+- Fix overwriting an existing file (upload commit and text save) failing with "operation not permitted" on hosts where changing the replacement file's owner is restricted even when it already matches the target's owner (for example unmapped ids in a user namespace): the owner is now only changed when it actually differs.
 
 ### 简体中文
 
 - 文件对传改用内置 rsync 引擎，复用既有 Core-Agent WebSocket 长连接传输：源端 Agent 以 NodeDance 远程 Shell 适配器启动 rsync，目标端 Agent 在授权路径内先校验 rsync 自己提议的服务器命令再启动，Core 只转发原始协议字节——不新增端口、不用 SSH、不落中继文件。文件变更后重传只发增量；目标端上传任务的 SHA-256 校验仍守住每次落盘。
+- 修复覆盖已有文件（上传落盘与文本保存）在属主变更受限环境下必定失败的问题：当替换文件属主与目标文件本就一致时（如用户命名空间中未映射的 id），仍发出 chown 系统调用会得到「operation not permitted」；现改为仅在属主确实不同时才变更。
 
 ## [0.1.32]
 

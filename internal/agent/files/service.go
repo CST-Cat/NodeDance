@@ -901,6 +901,20 @@ func (s *Service) RemoveUploadTemporary(targetVirtual, temporaryVirtual string) 
 	}
 }
 
+func preserveFileOwner(file *os.File, info os.FileInfo) error {
+	uid, gid := ownerIDs(info)
+	if current, err := file.Stat(); err == nil {
+		currentUID, currentGID := ownerIDs(current)
+		if currentUID == uid && currentGID == gid {
+			return nil
+		}
+	}
+	if err := file.Chown(uid, gid); err != nil {
+		return fmt.Errorf("preserve target owner: %w", err)
+	}
+	return nil
+}
+
 func (u *Upload) WriteChunk(data []byte) error {
 	if u == nil || u.closed || u.file == nil || len(data) > protocol.MaxFileChunkBytes {
 		return errors.New("upload is not active or chunk is invalid")
@@ -942,9 +956,8 @@ func (u *Upload) CommitWithDigest(expectedDigest string) (protocol.FileEntry, er
 		return protocol.FileEntry{}, err
 	}
 	if u.initialInfo != nil {
-		uid, gid := ownerIDs(u.initialInfo)
-		if err := u.file.Chown(uid, gid); err != nil {
-			return protocol.FileEntry{}, fmt.Errorf("preserve target owner: %w", err)
+		if err := preserveFileOwner(u.file, u.initialInfo); err != nil {
+			return protocol.FileEntry{}, err
 		}
 		if err := u.file.Chmod(u.initialInfo.Mode().Perm()); err != nil {
 			return protocol.FileEntry{}, fmt.Errorf("preserve target mode: %w", err)
@@ -1119,9 +1132,8 @@ func (s *Service) SaveText(virtual, expectedVersion, text string) (protocol.File
 	if err := replacement.Sync(); err != nil {
 		return protocol.FileEntry{}, err
 	}
-	uid, gid := ownerIDs(info)
-	if err := replacement.Chown(uid, gid); err != nil {
-		return protocol.FileEntry{}, fmt.Errorf("preserve target owner: %w", err)
+	if err := preserveFileOwner(replacement, info); err != nil {
+		return protocol.FileEntry{}, err
 	}
 	if err := replacement.Chmod(info.Mode().Perm()); err != nil {
 		return protocol.FileEntry{}, fmt.Errorf("preserve target mode: %w", err)
