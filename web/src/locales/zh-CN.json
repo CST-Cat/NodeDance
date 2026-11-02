@@ -1391,6 +1391,7 @@
   "host.field.transport": "连接方式",
   "host.field.publicIpUrl": "公网 IP 查询地址（HTTPS）",
   "host.field.autoUpdate": "Agent 自动更新",
+  "host.field.updateChannel": "Agent 更新通道",
   "host.field.updateIntervalHours": "更新检查间隔（小时）",
   "host.field.price": "每账期价格",
   "host.field.currency": "币种",

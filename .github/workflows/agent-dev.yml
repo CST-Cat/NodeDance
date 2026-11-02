@@ -1,0 +1,173 @@
+name: Agent Dev
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-dev-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test linux/${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build exact commit
+        env:
+          SHA: ${{ github.sha }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          [[ "$(go env GOHOSTARCH)" == "$ARCH" ]]
+          python3 scripts/vendor-tmux.py --check
+          mkdir -p dist
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=agent-dev-$SHA" -o "dist/nodedance-agent-linux-$ARCH" ./cmd/nodedance-agent
+          [[ "$(dist/nodedance-agent-linux-$ARCH --version)" == "NodeDance Agent agent-dev-$SHA" ]]
+          [[ "$(dist/nodedance-agent-linux-$ARCH --tmux-version)" == "tmux 3.7c" ]]
+      - name: Run native Agent and updater tests
+        run: |
+          set -euo pipefail
+          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" "$(command -v go)" test -count=1 ./internal/agent/... ./internal/protocol/... ./internal/i18n/... ./cmd/nodedance-agent/... ./internal/update/...
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-dev-binary-${{ matrix.arch }}
+          path: dist/nodedance-agent-linux-${{ matrix.arch }}
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+      - name: Set up Docker Buildx
+        if: github.event_name != 'pull_request'
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve image name
+        if: github.event_name != 'pull_request'
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: echo "IMAGE=ghcr.io/${OWNER,,}/nodedance-agent" >> "$GITHUB_ENV"
+      - name: Publish tested image by digest
+        if: github.event_name != 'pull_request'
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.agent
+          target: release
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Verify pushed image matches native Agent binary
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          DIGEST: ${{ steps.image.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+          VERSION: agent-dev-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          python3 scripts/release_images.py verify --component agent --architecture "$ARCH" --image "$IMAGE@$DIGEST" --version "$VERSION" --artifacts dist
+          mkdir -p image-digests
+          printf '%s\n' "$DIGEST" > "image-digests/$ARCH"
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: agent-dev-image-${{ matrix.arch }}
+          path: image-digests/${{ matrix.arch }}
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: Publish immutable artifacts and advance dev
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: agent-dev-binary-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: agent-dev-image-*
+          path: image-digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: oras-project/setup-oras@v2
+        with:
+          version: 1.3.6
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish paired image and OCI binaries
+        env:
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${OWNER,,}/nodedance-agent"
+          binaries="ghcr.io/${OWNER,,}/nodedance-agent-binaries"
+          amd64=$(cat image-digests/amd64)
+          arm64=$(cat image-digests/arm64)
+          [[ "$amd64" =~ ^sha256:[0-9a-f]{64}$ && "$arm64" =~ ^sha256:[0-9a-f]{64}$ ]]
+          chmod 0755 dist/nodedance-agent-linux-amd64 dist/nodedance-agent-linux-arm64
+          docker buildx imagetools create --tag "$image:dev-$SHA" "$image@$amd64" "$image@$arm64"
+          docker buildx imagetools inspect "$image:dev-$SHA"
+          printf '%s' "$GH_TOKEN" | oras login ghcr.io --username "$ACTOR" --password-stdin
+          (
+            cd dist
+            oras push "$binaries:dev-$SHA" \
+              --artifact-type application/vnd.nodedance.agent.dev.v1 \
+              --annotation "org.opencontainers.image.revision=$SHA" \
+              nodedance-agent-linux-amd64:application/vnd.nodedance.agent.binary.v1 \
+              nodedance-agent-linux-arm64:application/vnd.nodedance.agent.binary.v1
+          )
+          oras manifest fetch "$binaries:dev-$SHA" > /tmp/agent-dev-manifest.json
+          jq -e --arg sha "$SHA" '
+            .schemaVersion == 2 and
+            .mediaType == "application/vnd.oci.image.manifest.v1+json" and
+            .artifactType == "application/vnd.nodedance.agent.dev.v1" and
+            .annotations["org.opencontainers.image.revision"] == $sha and
+            (.layers | length) == 2 and
+            ([.layers[].annotations["org.opencontainers.image.title"]] | sort) ==
+            ["nodedance-agent-linux-amd64","nodedance-agent-linux-arm64"]
+          ' /tmp/agent-dev-manifest.json
+          docker buildx imagetools create --tag "$image:dev" "$image:dev-$SHA"
+          oras tag "$binaries:dev-$SHA" dev

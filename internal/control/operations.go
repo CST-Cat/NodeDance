@@ -161,6 +161,7 @@ func schema(value any) any {
 		}
 		enum("memoryMode", "available", "raw", "cached")
 		enum("transport", "auto", "websocket", "http")
+		enum("updateChannel", "stable", "dev")
 		enum("preferIpVersion", "", "4", "6")
 	case protocol.NodeAsset:
 		raw, _ := json.Marshal(protocol.DefaultNodeAsset())

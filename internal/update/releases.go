@@ -30,7 +30,7 @@ func NewGitHub() *GitHub {
 			return errors.New("unsafe release redirect")
 		}
 		switch req.URL.Hostname() {
-		case "github.com", "raw.githubusercontent.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com":
+		case "github.com", "raw.githubusercontent.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com", "ghcr.io", "pkg-containers.githubusercontent.com":
 			return nil
 		}
 		return errors.New("unexpected release download host")
@@ -82,6 +82,9 @@ func (g *GitHub) Resolve(ctx context.Context, component, tag string) (Release, e
 	if err := Validate(Request{Component: component, Version: tag}); err != nil {
 		return Release{}, err
 	}
+	if component == "agent" && (tag == ChannelDev || ValidDevVersion(tag)) {
+		return g.resolveDev(ctx, tag)
+	}
 	if tag == "" {
 		raw, err := g.fetch(ctx, fmt.Sprintf(latestVersionURL, component), 4096)
 		if err != nil {
@@ -106,6 +109,7 @@ func (g *GitHub) Resolve(ctx context.Context, component, tag string) (Release, e
 	return release, nil
 }
 func (g *GitHub) Download(ctx context.Context, release Release, path string) error {
+	if ValidDevVersion(release.Version) { return g.downloadDev(ctx, release, path) }
 	raw, err := g.fetch(ctx, release.ChecksumURL, 1<<20)
 	if err != nil {
 		return err
@@ -176,6 +180,10 @@ func (g *GitHub) Release(ctx context.Context, component, tag string) (Release, e
 	release, err := g.Resolve(ctx, component, tag)
 	if err != nil {
 		return Release{}, err
+	}
+	if ValidDevVersion(release.Version) {
+		release.Notes = "Development build from main commit " + strings.TrimPrefix(release.Version, "agent-dev-")
+		return release, nil
 	}
 	address := "https://raw.githubusercontent.com/" + Repository + "/" + release.Version + "/CHANGELOG_" + strings.ToUpper(component) + ".md"
 	raw, err := g.fetch(ctx, address, 4<<20)

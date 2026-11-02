@@ -1391,6 +1391,7 @@
   "host.field.transport": "Transport",
   "host.field.publicIpUrl": "Public IP lookup (HTTPS)",
   "host.field.autoUpdate": "Automatic Agent updates",
+  "host.field.updateChannel": "Agent update channel",
   "host.field.updateIntervalHours": "Update interval (hours)",
   "host.field.price": "Price per billing cycle",
   "host.field.currency": "Currency",

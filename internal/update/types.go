@@ -15,6 +15,11 @@ import (
 
 const Repository = "CST-Cat/NodeDance"
 const ChannelBeta = "beta"
+const ChannelDev = "dev"
+
+var devVersionPattern = regexp.MustCompile(`^agent-dev-[0-9a-f]{40}$`)
+
+func ValidDevVersion(value string) bool { return devVersionPattern.MatchString(value) }
 
 var tagPattern = regexp.MustCompile(`^(core|agent)-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 var idPattern = regexp.MustCompile(`^[a-f0-9]{32}$`)
@@ -60,6 +65,9 @@ type Release struct {
 	Notes       string `json:"notes"`
 	BinaryURL   string `json:"-"`
 	ChecksumURL string `json:"-"`
+	BinaryDigest string `json:"-"`
+	BinarySize int64 `json:"-"`
+	ImageDigest string `json:"-"`
 }
 type Check struct {
 	Component  string  `json:"component"`
@@ -136,7 +144,7 @@ func Validate(r Request) error {
 		if r.Component != "core" {
 			return errors.New("the beta channel is only available for Core")
 		}
-	} else if r.Version != "" && !ValidTag(r.Component, r.Version) {
+	} else if r.Version != "" && !ValidTag(r.Component, r.Version) && !(r.Component == "agent" && (r.Version == ChannelDev || ValidDevVersion(r.Version))) {
 		return errors.New("invalid component release tag")
 	}
 	if r.JobID != "" && !idPattern.MatchString(r.JobID) {

@@ -286,7 +286,7 @@ func TestFailedHealthAutomaticallyRollsBack(t *testing.T) {
 		t.Fatal("rollback version mismatch")
 	}
 }
-func TestDevelopmentUpdateSkipsVerificationAndStaysInstalled(t *testing.T) {
+func TestDevelopmentUpdateVerifiesAndRollsBackFailedRuntime(t *testing.T) {
 	m, _, running := nativeFixture(t)
 	binary := m.Config.Targets["core"].Binary
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\necho NodeDance dev\n"), 0755); err != nil {
@@ -308,12 +308,12 @@ func TestDevelopmentUpdateSkipsVerificationAndStaysInstalled(t *testing.T) {
 		t.Fatal(err)
 	}
 	job = waitJob(t, m, job.ID)
-	if job.Status != "succeeded" || job.Stage != "complete" || job.Progress != 1 {
-		t.Fatalf("%+v", job)
+	if job.Status != "rolled_back" || job.Stage != "rolled_back" || !running.Load() {
+		t.Fatalf("failed development runtime must roll back: %+v", job)
 	}
 	version, _ := m.current(context.Background(), "core")
-	if version != "core-v0.1.9" {
-		t.Fatal("development update was rolled back despite verification being skipped")
+	if version != "dev" {
+		t.Fatal("failed runtime was not restored to the previous development version")
 	}
 }
 
@@ -405,5 +405,35 @@ func TestStageProgressFollowsEachFlow(t *testing.T) {
 	frozen.Stage = "rolling_back"
 	if got := stageProgress(frozen); got != frozen.Progress {
 		t.Fatalf("rolling_back moved progress to %v, want frozen %v", got, frozen.Progress)
+	}
+}
+
+func TestFailedUpdateCanRetryWithNewIdempotencyKey(t *testing.T) {
+	m, _, _ := nativeFixture(t)
+	m.Resolver = fixtureResolver{fail: true}
+	request := Request{Component: "core", Confirm: true}
+	first, err := m.Apply(context.Background(), request, "auto-agent-core-v0.1.9-attempt-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first = waitJob(t, m, first.ID)
+	if first.Status != "failed" {
+		t.Fatalf("expected failed first attempt: %+v", first)
+	}
+	m.Resolver = fixtureResolver{}
+	previous, err := m.Apply(context.Background(), request, "auto-agent-core-v0.1.9-attempt-a")
+	if err != nil || previous.ID != first.ID {
+		t.Fatalf("retry with the same key must return the original task: %+v, %v", previous, err)
+	}
+	second, err := m.Apply(context.Background(), request, "auto-agent-core-v0.1.9-attempt-b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.ID == first.ID {
+		t.Fatal("new automatic attempt did not create a fresh task")
+	}
+	second = waitJob(t, m, second.ID)
+	if second.Status != "succeeded" {
+		t.Fatalf("new automatic attempt could not recover: %+v", second)
 	}
 }

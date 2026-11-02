@@ -42,6 +42,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	component := flags.String("component", "core", "core or agent")
 	node := flags.String("node-id", "", "Agent node ID")
 	version := flags.String("version", "", "published component tag; default is newest stable")
+	channel := flags.String("channel", "stable", "stable or dev (Agent only)")
 	rollback := flags.String("rollback", "", "successful update job ID to roll back")
 	status := flags.Bool("status", false, "show durable update history or --job-id progress")
 	jobID := flags.String("job-id", "", "update job ID for --status")
@@ -58,6 +59,10 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 		return err
 	}
 	defer client.Close()
+	if *channel != "stable" && *channel != "dev" { return errors.New("update channel must be stable or dev") }
+	if *channel == "dev" && *component != "agent" { return errors.New("dev updates are only available for Agent") }
+	if *channel == "dev" && *version != "" { return errors.New("do not combine --channel dev with --version") }
+	if *channel == "dev" { *version = update.ChannelDev }
 	request := update.Request{Component: *component, NodeID: *node, Version: *version, Confirm: true}
 	requestContext := func(parent context.Context) (context.Context, context.CancelFunc) {
 		if *connection.timeout == 0 {
