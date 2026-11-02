@@ -631,7 +631,11 @@ func (m *Manager) run(job Job, release Release) {
 			return err
 		}
 		if target.ComposeFile != "" {
-			if err := m.writeCompose(ctx, target, job.Component, job.Target); err != nil {
+			composeReference := job.Target
+			if release.ImageDigest != "" {
+				composeReference = "@" + release.ImageDigest
+			}
+			if err := m.writeCompose(ctx, target, job.Component, composeReference); err != nil {
 				return err
 			}
 		}
@@ -928,7 +932,13 @@ func (m *Manager) writeCompose(ctx context.Context, target Target, component, ve
 	for name, value := range services {
 		service, _ := value.(map[string]any)
 		if service["container_name"] == target.Container || name == component {
-			service["image"] = "ghcr.io/cst-cat/nodedance-" + component + ":" + version
+			image := "ghcr.io/cst-cat/nodedance-" + component
+			if strings.HasPrefix(version, "@sha256:") {
+				image += version
+			} else {
+				image += ":" + version
+			}
+			service["image"] = image
 			delete(service, "build")
 			found = true
 		}
