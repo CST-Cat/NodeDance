@@ -120,11 +120,12 @@ func (b *agentFileBridge) prepareRsync(id string, session *agentRsyncSession) {
 		b.respondRsync(session.ctx, id, response)
 		return
 	}
-	binary, err := agentrsync.Available()
+	binary, cleanupBinary, err := agentrsync.Available(filepath.Dir(b.configPath))
 	if err != nil {
 		b.respondRsync(session.ctx, id, response)
 		return
 	}
+	defer cleanupBinary()
 	ctx, stage, release, err := b.tasks.AcquireRsync(session.ctx, request.Descriptor)
 	if err != nil {
 		response.Code = fileErrorCode(err)
@@ -197,11 +198,12 @@ func (b *agentFileBridge) sendRsync(id string, session *agentRsyncSession) {
 		b.respondRsync(session.ctx, id, response)
 		return
 	}
-	binary, err := agentrsync.Available()
+	binary, cleanupBinary, err := agentrsync.Available(filepath.Dir(b.configPath))
 	if err != nil {
 		b.respondRsync(session.ctx, id, response)
 		return
 	}
+	defer cleanupBinary()
 	source, entry, err := b.service.OpenDownload(request.Descriptor.File.Transfer.SourcePath)
 	if err != nil || entry.Size != request.Descriptor.File.Size || entry.Version != request.Descriptor.File.Transfer.SourceVersion {
 		response.State, response.Code = "error", "source_changed"

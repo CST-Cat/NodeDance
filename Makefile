@@ -1,11 +1,12 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-.PHONY: help deps frontend typecheck build install install-agent check run agent
+.PHONY: help deps frontend typecheck rsync-bundle build install install-agent check run agent
 
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 DESTDIR ?=
+BUILD_DIR ?= .build
 CORE_VERSION ?= $(shell git describe --tags --exact-match --match 'core-v*' 2>/dev/null || printf dev)
 AGENT_VERSION ?= $(shell git describe --tags --exact-match --match 'agent-v*' 2>/dev/null || printf dev)
 
@@ -47,10 +48,13 @@ frontend: typecheck
 	pnpm --dir web run build
 	find internal/core/webassets/dist -type f \( -name '*.js' -o -name '*.css' -o -name '*.svg' -o -name '*.json' -o -name '*.txt' -o -name '*.html' \) -not -name '*.gz' -exec gzip -9k {} \;
 
-build: frontend
-	mkdir -p .build
-	go build -buildvcs=false -trimpath -ldflags "-X main.version=$(CORE_VERSION)" -o .build/nodedance ./cmd/nodedance
-	go build -buildvcs=false -trimpath -ldflags "-X main.version=$(AGENT_VERSION)" -o .build/nodedance-agent ./cmd/nodedance-agent
+rsync-bundle:
+	python3 scripts/vendor-rsync.py --check
+
+build: frontend rsync-bundle
+	mkdir -p "$(BUILD_DIR)"
+	go build -buildvcs=false -trimpath -ldflags "-X main.version=$(CORE_VERSION)" -o "$(BUILD_DIR)/nodedance" ./cmd/nodedance
+	go build -buildvcs=false -trimpath -ldflags "-X main.version=$(AGENT_VERSION)" -o "$(BUILD_DIR)/nodedance-agent" ./cmd/nodedance-agent
 
 install:
 	@test -x .build/nodedance || { printf '%s\n' 'run make build before make install' >&2; exit 1; }
@@ -64,7 +68,7 @@ install-agent:
 	install -d -m 0755 "$(DESTDIR)$(BINDIR)"
 	install -m 0755 .build/nodedance-agent "$(DESTDIR)$(BINDIR)/nodedance-agent"
 
-check: frontend
+check: frontend rsync-bundle
 	python3 -m unittest discover -s scripts/tests
 	go test ./...
 	python3 scripts/interface-coverage.py --check

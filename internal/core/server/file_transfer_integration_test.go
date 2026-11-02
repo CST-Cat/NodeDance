@@ -88,13 +88,14 @@ type transferIntegrationFixture struct {
 	logs           transferTestLog
 }
 
-func newTransferIntegrationFixture(t *testing.T, noSourceRsync bool) *transferIntegrationFixture {
+func newTransferIntegrationFixture(t *testing.T, rejectRsyncData bool) *transferIntegrationFixture {
 	t.Helper()
 	if os.Geteuid() != 0 {
 		t.Skip("isolated file transfers require root Agents")
 	}
 	core, newClient := newAccountFixture(t)
 	f := &transferIntegrationFixture{core: core, admin: newClient()}
+	f.blockDirect.Store(rejectRsyncData)
 	f.admin.login("admin", "administrator-password")
 	upstream, _ := url.Parse(f.admin.base)
 	forward := httputil.NewSingleHostReverseProxy(upstream)
@@ -107,6 +108,10 @@ func newTransferIntegrationFixture(t *testing.T, noSourceRsync bool) *transferIn
 	f.proxy = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == protocol.FileRsyncDataRoute {
 			f.relayStreams.Add(1)
+			if rejectRsyncData {
+				http.Error(w, "isolated unavailable rsync data endpoint", http.StatusBadGateway)
+				return
+			}
 		} else if r.URL.Path == protocol.FileChunkDataRoute {
 			f.chunkStreams.Add(1)
 		}
@@ -208,10 +213,7 @@ func newTransferIntegrationFixture(t *testing.T, noSourceRsync bool) *transferIn
 			t.Fatal(err)
 		}
 		cmd := exec.Command(executable, "__test-file-agent", config)
-		cmd.Env = append(os.Environ(), "NODEDANCE_AGENT_FILE_ROOT="+root, "DOCKER_HOST=unix:///nonexistent/nodedance-file-transfer-fixture.sock")
-		if index == 0 && noSourceRsync {
-			cmd.Env = append(cmd.Env, "PATH=/nonexistent")
-		}
+		cmd.Env = append(os.Environ(), "NODEDANCE_AGENT_FILE_ROOT="+root, "DOCKER_HOST=unix:///nonexistent/nodedance-file-transfer-fixture.sock", "PATH=/nonexistent")
 		cmd.Stdout, cmd.Stderr = &f.logs, &f.logs
 		if err := cmd.Start(); err != nil {
 			t.Fatal(err)
@@ -284,10 +286,27 @@ func (f *transferIntegrationFixture) request(ctx context.Context, operation stri
 	return response.StatusCode, data, err
 }
 
-func TestCoreSchedulesDirectAndFallsBackToIndependentRsyncRelay(t *testing.T) {
-	if _, err := agentrsync.Available(); err != nil {
-		t.Skipf("real rsync transport unavailable: %v", err)
+func requireBundledTransferRsync(t *testing.T) {
+	t.Helper()
+	if os.Geteuid() != 0 {
+		t.Skip("isolated file transfers require root Agents")
 	}
+	state := t.TempDir()
+	if err := os.Chmod(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	_, cleanupRsync, err := agentrsync.Available(state)
+	if err != nil {
+		if strings.Contains(err.Error(), "requires Landlock") {
+			t.Skipf("rsync confinement unavailable: %v", err)
+		}
+		t.Fatal("bundled rsync is unavailable", err)
+	}
+	cleanupRsync()
+}
+
+func TestCoreSchedulesDirectAndFallsBackToIndependentRsyncRelay(t *testing.T) {
+	requireBundledTransferRsync(t)
 	f := newTransferIntegrationFixture(t, false)
 	content := bytes.Repeat([]byte("binary\x00payload\xff"), 16000)
 	if err := os.WriteFile(filepath.Join(f.sourceRoot, "payload.bin"), content, 0600); err != nil {
@@ -370,9 +389,7 @@ func TestCoreTextSaveUsesIndependentDataConnection(t *testing.T) {
 }
 
 func TestCoreCancelsRetainsPartialAndRetriesTheOriginalTransfer(t *testing.T) {
-	if _, err := agentrsync.Available(); err != nil {
-		t.Skipf("real rsync transport unavailable: %v", err)
-	}
+	requireBundledTransferRsync(t)
 	f := newTransferIntegrationFixture(t, false)
 	f.blockDirect.Store(true)
 	content := make([]byte, 2<<20)

@@ -8,11 +8,11 @@ Core 通过 `files.transfer` 调度普通文件对传：优先 Agent 间直连 W
 
 The target opens a temporary TLS listener on an operating-system-assigned port and offers addresses discovered from its active network interfaces. The source probes the offers concurrently, verifies the task's temporary certificate SHA-256 fingerprint and opens one WSS stream using a one-use credential. IP addresses and ports are not configured or hardcoded. Existing Tailscale interfaces participate like other interfaces; NodeDance does not install or configure Tailscale.
 
-目标端临时监听系统分配的端口，从当前网卡发现地址；源端并发探测可达性，核对 Core 转交的临时证书指纹，再使用一次性任务凭证连接。NodeDance 不修改防火墙，不做 NAT 打洞或端口映射，也不自动安装 rsync。网卡地址在另一台机器上不可达时自动进入中继。
+目标端临时监听系统分配的端口，从当前网卡发现地址；源端并发探测可达性，核对 Core 转交的临时证书指纹，再使用一次性任务凭证连接。NodeDance 不修改防火墙，不做 NAT 打洞或端口映射。网卡地址在另一台机器上不可达时自动进入中继。
 
-Both Agents need a protected root-owned rsync executable and Linux Landlock ABI 3 or newer for the rsync availability check. The receiver must additionally pass a runtime confinement probe. Before starting `rsync --server`, the target generates an argument template with its own installed rsync and accepts only an exact match from the source. Delete, sender, daemon, files-from, backup and redirected-log arguments are forbidden. Different rsync builds that produce incompatible templates fall back safely.
+Each Agent embeds a trimmed static rsync 3.4.1 executable for its Linux amd64 or arm64 architecture. Runtime uses only this bundle, extracted beneath protected root Agent state; no system rsync is discovered or used. Linux Landlock ABI 3 or newer is required for the rsync availability check, and the receiver must additionally pass a runtime confinement probe. Before starting `rsync --server`, the target generates an argument template with its bundled rsync and accepts only an exact match from the source. Delete, sender, daemon, files-from, backup and redirected-log arguments are forbidden. See [bundled rsync](bundled-rsync.md) for source, checksums, architecture builds and notices.
 
-目标接收进程启动前，必须通过本机 rsync 运行时模板和隔离探针。接收参数只允许精确匹配该模板；Landlock 将文件读写限制到已固定句柄的私有 payload，并限制可写大小。缺少必要内核支持或探针失败时使用分片兜底，不放宽隔离要求。
+Agent 自带对应架构的静态 rsync 3.4.1，无需在节点安装 rsync；可用性检查、参数模板和执行只使用包内文件。目标接收进程启动前，必须通过内置 rsync 运行时模板和隔离探针。接收参数只允许精确匹配该模板；Landlock 将文件读写限制到已固定句柄的私有 payload，并限制可写大小。缺少必要内核支持或探针失败时使用分片兜底，不放宽隔离要求。
 
 ## Core relay / Core 中继
 
@@ -52,7 +52,7 @@ TUI 的通用操作界面填写同样的参数和幂等键。Web 将失败目标
 
 ## Verification / 验证
 
-`internal/core/server/file_transfer_integration_test.go` starts a real isolated Core and two separate root Agent processes, with real rsync and disposable file/state directories. Its TLS proxy injects an unreachable direct offer and a data-only disconnect without a product test switch. The cases cover direct transfer, WSS relay, rsync-unavailable chunk fallback, data reconnection, cancellation, retained-partial retry, consumed-credential rejection and absence of chunks on persistent control connections. Receiver and staging tests cover altered wire arguments, SHA-256 failure, target-version conflicts, unsafe partial links and recovery without replay.
+`internal/core/server/file_transfer_integration_test.go` starts a real isolated Core and two separate root Agent processes, with bundled rsync, an unavailable system-command PATH and disposable file/state directories. Its TLS proxy injects an unreachable direct offer, unavailable rsync data endpoints and a data-only disconnect without a product test switch. The cases cover direct transfer, WSS relay, chunk fallback, data reconnection, cancellation, retained-partial retry, consumed-credential rejection and absence of chunks on persistent control connections. Receiver and staging tests cover altered wire arguments, SHA-256 failure, target-version conflicts, unsafe partial links and recovery without replay.
 
 ```sh
 make build
@@ -63,4 +63,4 @@ node web/scripts/file-notices.cjs --check
 python3 scripts/interface-coverage.py --check
 ```
 
-浏览器回归使用新构建的内嵌资源和隔离 Core／root Agent，覆盖限速输入、真实取消后的未知观察和重试、结果方式、CLI 契约调用及已有文件安全边界。Go 端到端案例使用同一主机上的两个独立 Agent 进程；这不代表跨物理主机、WAN、NAT 或生产网络已经实测。测试环境不满足 root、rsync 或 Landlock 要求时，相关实测案例明确跳过，不能将跳过记为验证通过。
+浏览器回归使用新构建的内嵌资源和隔离 Core／root Agent，覆盖限速输入、真实取消后的未知观察和重试、结果方式、CLI 契约调用及已有文件安全边界。Go 端到端案例使用同一主机上的两个独立 Agent 进程；这不代表跨物理主机、WAN、NAT 或生产网络已经实测。测试环境不满足 root 或 Landlock 要求时，相关实测案例明确跳过，不能将跳过记为验证通过；内置包损坏或缺失属于失败。

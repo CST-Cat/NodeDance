@@ -34,6 +34,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Build trimmed static rsync for the native architecture
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc make libc6-dev binutils
+          sh scripts/build-rsync.sh --architecture "$ARCH"
+          python3 scripts/vendor-rsync.py --check --architecture "$ARCH"
       - name: Build exact commit
         env:
           SHA: ${{ github.sha }}
@@ -46,10 +55,11 @@ jobs:
           CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=agent-dev-$SHA" -o "dist/nodedance-agent-linux-$ARCH" ./cmd/nodedance-agent
           [[ "$(dist/nodedance-agent-linux-$ARCH --version)" == "NodeDance Agent agent-dev-$SHA" ]]
           [[ "$(dist/nodedance-agent-linux-$ARCH --tmux-version)" == "tmux 3.7c" ]]
+          sudo env PATH=/nonexistent "dist/nodedance-agent-linux-$ARCH" --rsync-version | grep -F 'rsync  version 3.4.1'
       - name: Run native Agent and updater tests
         run: |
           set -euo pipefail
-          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" "$(command -v go)" test -count=1 ./internal/agent/... ./internal/protocol/... ./internal/i18n/... ./cmd/nodedance-agent/... ./internal/update/...
+          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" "$(command -v go)" test -count=1 ./internal/agent/... ./internal/transfer/rsyncbundle ./internal/protocol/... ./internal/i18n/... ./cmd/nodedance-agent/... ./internal/update/...
       - uses: actions/upload-artifact@v4
         with:
           name: agent-dev-binary-${{ matrix.arch }}

@@ -20,7 +20,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/agent/localstate"
 	"github.com/CST-Cat/NodeDance/internal/filetransport"
+	"github.com/CST-Cat/NodeDance/internal/transfer/rsyncbundle"
 	"github.com/coder/websocket"
 )
 
@@ -29,40 +31,52 @@ const serverCommand = "__nodedance-rsync-server"
 
 var progressLine = regexp.MustCompile(`^\s*([0-9,]+)\s+([0-9]+)%\s`)
 
-func Available() (string, error) {
-	binary, err := exec.LookPath("rsync")
-	if err != nil {
-		return "", err
+func Available(stateDirectory string) (string, func(), error) {
+	if err := confinementAvailable(); err != nil {
+		return "", nil, err
 	}
-	binary, err = filepath.EvalSymlinks(binary)
+	binary, cleanup, err := rsyncbundle.Install(stateDirectory)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	info, err := os.Stat(binary)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0022 != 0 {
-		return "", errors.New("rsync executable is not protected")
+	info, err := os.Lstat(binary)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0700 {
+		cleanup()
+		return "", nil, errors.New("bundled rsync executable is not protected")
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || stat.Uid != 0 {
-		return "", errors.New("rsync executable must be root-owned")
+	if !ok || stat.Uid != 0 || stat.Nlink != 1 {
+		cleanup()
+		return "", nil, errors.New("bundled rsync executable must be root-owned with one link")
 	}
-	for directory := filepath.Dir(binary); ; directory = filepath.Dir(directory) {
-		info, err := os.Stat(directory)
-		if err != nil || !info.IsDir() || info.Mode().Perm()&0022 != 0 {
-			return "", errors.New("rsync executable path is not protected")
-		}
-		stat, ok := info.Sys().(*syscall.Stat_t)
-		if !ok || stat.Uid != 0 {
-			return "", errors.New("rsync executable path must be root-owned")
-		}
-		if directory == filepath.Dir(directory) {
-			break
-		}
+	if err := localstate.Directory(filepath.Dir(binary)); err != nil {
+		cleanup()
+		return "", nil, err
 	}
-	if err := confinementAvailable(); err != nil {
-		return "", err
+	return binary, cleanup, nil
+}
+
+func PrintVersion(ctx context.Context, output io.Writer) error {
+	if os.Geteuid() != 0 {
+		return errors.New("bundled rsync requires the root Agent")
 	}
-	return binary, nil
+	state, err := os.MkdirTemp("/tmp", "nodedance-rsync-version-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(state)
+	binary, cleanup, err := rsyncbundle.Install(state)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, binary, "--version")
+	cmd.Env = []string{"PATH=", "LC_ALL=C"}
+	cmd.Stdout, cmd.Stderr = output, io.Discard
+	configureProcess(cmd)
+	return cmd.Run()
 }
 
 func Internal(args []string) (bool, error) {
@@ -116,7 +130,7 @@ func clientCommand(ctx context.Context, binary, socket string, source *os.File, 
 	args = append(args, "-e", remoteShell, "--", "/proc/self/fd/3", "nodedance:payload")
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.ExtraFiles = []*os.File{source}
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
+	cmd.Env = []string{"PATH=", "LC_ALL=C"}
 	cmd.Stdout = output
 	cmd.Stderr = io.Discard
 	configureProcess(cmd)
@@ -239,7 +253,7 @@ func confinedCommand(ctx context.Context, binary string, directory, payload *os.
 	}
 	cmd := exec.CommandContext(ctx, executable, append([]string{serverCommand, strconv.FormatInt(size, 10)}, args...)...)
 	cmd.ExtraFiles = []*os.File{directory, payload, rs}
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
+	cmd.Env = []string{"PATH=", "LC_ALL=C"}
 	cmd.Stderr = io.Discard
 	configureProcess(cmd)
 	return cmd, func() { _ = rs.Close() }, nil

@@ -33,14 +33,18 @@ func rsyncFixture(t *testing.T, content []byte) (string, string, *os.File, *os.F
 	if os.Geteuid() != 0 {
 		t.Skip("real rsync transfer requires a root Agent")
 	}
-	binary, err := Available()
-	if err != nil {
-		t.Skipf("real rsync is unavailable: %v", err)
+	if err := confinementAvailable(); err != nil {
+		t.Skipf("rsync confinement is unavailable: %v", err)
 	}
 	state := t.TempDir()
 	if err := os.Chmod(state, 0700); err != nil {
 		t.Fatal(err)
 	}
+	binary, cleanup, err := Available(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cleanup)
 	stage := filepath.Join(state, "stage")
 	if err := os.Mkdir(stage, 0700); err != nil {
 		t.Fatal(err)
@@ -236,7 +240,7 @@ func TestReceiverRejectsAlteredWireArguments(t *testing.T) {
 	}
 }
 
-func TestAvailableRejectsWritableExecutableDirectory(t *testing.T) {
+func TestAvailableRejectsUnsafeBundleState(t *testing.T) {
 	if os.Geteuid() != 0 {
 		t.Skip("rsync executable policy requires the root Agent")
 	}
@@ -244,11 +248,7 @@ func TestAvailableRejectsWritableExecutableDirectory(t *testing.T) {
 	if err := os.Chmod(directory, 0777); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "rsync"), []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", directory)
-	if _, err := Available(); err == nil || !strings.Contains(err.Error(), "executable path is not protected") {
-		t.Fatal("a replaceable root-owned executable was accepted", err)
+	if _, _, err := Available(directory); err == nil {
+		t.Fatal("an unsafe bundled executable directory was accepted")
 	}
 }

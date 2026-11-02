@@ -1,0 +1,39 @@
+{
+  "assets": {
+    "rsync-linux-amd64.tar.gz": {
+      "machine": 62,
+      "sha256": "5a71f15ebf3cfd4b03d950051a0b88477ef82e90bbf9e5ff60eac6381415a94a",
+      "binarySHA256": "67f4ba0bea900a38f9f42cde46ce51982596469ad324c6645935b0c85e1f7fff",
+      "size": 1559264
+    },
+    "rsync-linux-arm64.tar.gz": {
+      "machine": 183,
+      "sha256": "43b371fdb10750b715b6292b6234ed8689ef44d83cbd04186caa6766d3bedfc7",
+      "binarySHA256": "e127392541c7adb0ced95947417758c6164855d502bd56ff483d4c0699930dfc",
+      "size": 1335528
+    }
+  },
+  "source": {
+    "name": "rsync-3.4.1.tar.gz",
+    "sha256": "2924bcb3a1ed8b551fc101f740b9f0fe0a202b115027647cf69850d65fd88c52",
+    "url": "https://github.com/RsyncProject/rsync/releases/download/v3.4.1/rsync-3.4.1.tar.gz"
+  },
+  "trim": [
+    "--disable-openssl",
+    "--disable-xxhash",
+    "--disable-zstd",
+    "--disable-lz4",
+    "--disable-acl-support",
+    "--disable-xattr-support",
+    "--disable-iconv",
+    "--with-included-zlib",
+    "--with-included-popt"
+  ],
+  "version": "3.4.1",
+  "licenseSHA256": "85c19ea50a224c2d0067a69c083584e5717b40b76610ec1218f91385775067dd",
+  "build": {
+    "cflags": "-Os -ffunction-sections -fdata-sections -ffile-prefix-map=<source>=.",
+    "ldflags": "-static -Wl,--gc-sections",
+    "strip": "--strip-all"
+  }
+}

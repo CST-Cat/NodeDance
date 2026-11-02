@@ -70,6 +70,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	case "--tmux-version":
 		fmt.Fprintln(stdout, "tmux "+tmuxbundle.Version)
 		return nil
+	case "--rsync-version":
+		return agentrsync.PrintVersion(ctx, stdout)
 	case "help", "--help", "-h":
 		printUsage(stdout)
 		return nil

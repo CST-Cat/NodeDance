@@ -32,7 +32,7 @@ The Agent task journal and runner are process-owned across WebSocket reconnects.
 
 ## File transport
 
-Core schedules regular-file transfers through the shared `files.transfer` and `files.transfer-retry` operations. Agents discover temporary peer endpoints and probe direct WSS reachability, then use dedicated Core WSS rsync relay connections when direct access fails. The bounded chunk relay remains the final fallback over independent data connections. Persistent Agent WSS carries only control/progress/task messages for file work. Runtime receiver templates, Landlock confinement, one-use credentials, SHA-256 verification, destination version checks and private retained partials share the existing root file service and durable task journal. See [multi-node file transfers](file-transfers.md).
+Core schedules regular-file transfers through the shared `files.transfer` and `files.transfer-retry` operations. Each Agent embeds its architecture's trimmed static rsync 3.4.1; runtime never searches for system rsync. Agents discover temporary peer endpoints and probe direct WSS reachability, then use dedicated Core WSS rsync relay connections when direct access fails. The bounded chunk relay remains the final fallback over independent data connections. Persistent Agent WSS carries only control/progress/task messages for file work. Bundled runtime receiver templates, Landlock confinement, one-use credentials, SHA-256 verification, destination version checks and private retained partials share the existing root file service and durable task journal. See [multi-node file transfers](file-transfers.md).
 
 ## Web
 

@@ -43,6 +43,9 @@ def verify(image, architecture, version, artifacts):
         output = docker('run', '--rm', '--entrypoint', '/usr/local/bin/nodedance-agent', image, '--version')
         if output != f'NodeDance Agent {version}':
             raise ValueError('Agent image binary version mismatch')
+        rsync = docker('run', '--rm', '--entrypoint', '/usr/local/bin/nodedance-agent', image, '--rsync-version')
+        if not rsync.startswith('rsync  version 3.4.1 '):
+            raise ValueError('Agent image cannot execute its bundled rsync')
     if docker('run', '--rm', image, '--version') != f'NodeDance Agent {version}':
         raise ValueError('Agent entrypoint did not preserve version execution')
     print(f'Verified Agent linux/{architecture}: artifact bytes, version, root runtime')
