@@ -181,6 +181,10 @@ func (g *GitHub) Release(ctx context.Context, component, tag string) (Release, e
 	if err != nil {
 		return Release{}, err
 	}
+	if ValidDevVersion(release.Version) {
+		release.Notes = "Development build from main commit " + strings.TrimPrefix(release.Version, "agent-dev-")
+		return release, nil
+	}
 	address := "https://raw.githubusercontent.com/" + Repository + "/" + release.Version + "/CHANGELOG_" + strings.ToUpper(component) + ".md"
 	raw, err := g.fetch(ctx, address, 4<<20)
 	if err != nil {

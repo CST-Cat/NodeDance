@@ -82,6 +82,7 @@ type Release struct {
 	BinaryURL   string `json:"-"`
 	ChecksumURL string `json:"-"`
 	BinaryDigest string `json:"-"`
+	BinarySize int64 `json:"-"`
 	ImageDigest string `json:"-"`
 }
 type Check struct {

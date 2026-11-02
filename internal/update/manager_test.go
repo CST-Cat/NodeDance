@@ -286,7 +286,7 @@ func TestFailedHealthAutomaticallyRollsBack(t *testing.T) {
 		t.Fatal("rollback version mismatch")
 	}
 }
-func TestDevelopmentUpdateSkipsVerificationAndStaysInstalled(t *testing.T) {
+func TestDevelopmentUpdateVerifiesAndRollsBackFailedRuntime(t *testing.T) {
 	m, _, running := nativeFixture(t)
 	binary := m.Config.Targets["core"].Binary
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\necho NodeDance dev\n"), 0755); err != nil {
@@ -308,12 +308,12 @@ func TestDevelopmentUpdateSkipsVerificationAndStaysInstalled(t *testing.T) {
 		t.Fatal(err)
 	}
 	job = waitJob(t, m, job.ID)
-	if job.Status != "succeeded" || job.Stage != "complete" || job.Progress != 1 {
-		t.Fatalf("%+v", job)
+	if job.Status != "rolled_back" || job.Stage != "rolled_back" || !running.Load() {
+		t.Fatalf("failed development runtime must roll back: %+v", job)
 	}
 	version, _ := m.current(context.Background(), "core")
-	if version != "core-v0.1.9" {
-		t.Fatal("development update was rolled back despite verification being skipped")
+	if version != "dev" {
+		t.Fatal("failed runtime was not restored to the previous development version")
 	}
 }
 
