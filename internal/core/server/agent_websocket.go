@@ -35,6 +35,7 @@ type agentConnection struct {
 	cancel                   context.CancelFunc
 	agentID                  string
 	nodeID                   string
+	remoteAddr               string
 	generation               uint64
 	capabilityMu             sync.RWMutex
 	negotiatedCapabilities   map[string]struct{}
@@ -494,6 +495,7 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Agent authentication failed", http.StatusInternalServerError)
 		return
 	}
+	remoteAddr := s.effectiveRemoteAddr(r)
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionContextTakeover})
 	if err != nil {
 		return
@@ -501,10 +503,10 @@ func (s *Server) handleAgentWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(protocol.MaxMessageBytes)
 	defer conn.Close(websocket.StatusNormalClosure, "Agent connection closed")
 
-	s.serveAgentChannel(r.Context(), conn, identity, digest)
+	s.serveAgentChannel(r.Context(), conn, identity, digest, remoteAddr)
 }
 
-func (s *Server) serveAgentChannel(parent context.Context, conn protocol.AgentChannel, identity agents.Identity, digest []byte) {
+func (s *Server) serveAgentChannel(parent context.Context, conn protocol.AgentChannel, identity agents.Identity, digest []byte, remoteAddr string) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	firstCtx, firstCancel := context.WithTimeout(ctx, agentHelloTimeout)
@@ -563,7 +565,7 @@ func (s *Server) serveAgentChannel(parent context.Context, conn protocol.AgentCh
 	}
 	connectionCtx, connectionCancel := context.WithCancel(parent)
 	managed := &agentConnection{conn: conn, cancel: connectionCancel, agentID: identity.AgentID, generation: lease.ConnectionGeneration,
-		ctx: connectionCtx, nodeID: identity.NodeID,
+		ctx: connectionCtx, nodeID: identity.NodeID, remoteAddr: remoteAddr,
 		imageResponses: make(map[string]imageResponseWaiter),
 		taskSignal:     make(chan struct{}, 1), taskOutstanding: make(map[string]struct{}),
 		taskReconcileOutstanding: make(map[string]struct{}), taskReconcileAttempted: make(map[string]struct{}),

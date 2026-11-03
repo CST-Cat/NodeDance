@@ -86,6 +86,7 @@ func (s *Server) metricsViewForNode(ctx context.Context, nodeID string) (dashboa
 	state.Generation = view.ActiveGeneration
 	state.ServerTime = view.ServerTime
 	state.LeaseValidUntil = view.LeaseValidUntil
+	s.applyConnectionPublicIP(&view, nodeID)
 	return state, &view, nil
 }
 

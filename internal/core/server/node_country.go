@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/CST-Cat/NodeDance/internal/core/geolocation"
+	coremetrics "github.com/CST-Cat/NodeDance/internal/core/metrics"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 type nodeGeographyPreferences struct {
@@ -78,8 +80,41 @@ func (s *Server) nodeGeographyWithPreferences(ctx context.Context, nodeID, agent
 	}
 	return automatic, geolocation.LocationFromCountry(automatic)
 }
+func (s *Server) agentConnectionRemoteAddr(nodeID string) string {
+	s.agentConnectionsMu.Lock()
+	defer s.agentConnectionsMu.Unlock()
+	for _, connection := range s.agentConnections {
+		if connection.nodeID == nodeID {
+			return connection.remoteAddr
+		}
+	}
+	return ""
+}
+
+func (s *Server) connectionPublicIP(nodeID string) string {
+	return geolocation.PublicIP(s.agentConnectionRemoteAddr(nodeID))
+}
+
+func (s *Server) applyConnectionPublicIP(view *coremetrics.View, nodeID string) {
+	if view == nil || view.Metrics.Host == nil {
+		return
+	}
+	ip := s.connectionPublicIP(nodeID)
+	if ip == "" {
+		return
+	}
+	metric := protocol.Metric[string]{Status: protocol.MetricKnown, Value: &ip, SampledAt: s.now()}
+	if strings.Contains(ip, ":") {
+		view.Metrics.Host.PublicIPv6 = metric
+	} else {
+		view.Metrics.Host.PublicIPv4 = metric
+	}
+}
+
 func (s *Server) automaticCountry(ctx context.Context, nodeID, agentID string) geolocation.Country {
-	// Prefer the current Agent-reported public exit IP, including for NAT nodes.
+	if ip := s.connectionPublicIP(nodeID); ip != "" {
+		return s.countries.Lookup(ip)
+	}
 	_, view, err := s.metricsViewForNode(ctx, nodeID)
 	if err == nil && view != nil && view.Metrics.Host != nil {
 		for _, metric := range []struct{ value *string }{{view.Metrics.Host.PublicIPv4.Value}, {view.Metrics.Host.PublicIPv6.Value}} {

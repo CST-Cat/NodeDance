@@ -52,6 +52,26 @@ func (gopsutilSource) networkInterfaces(ctx context.Context) ([]net.InterfaceSta
 	return net.InterfacesWithContext(ctx)
 }
 
+func (gopsutilSource) defaultRoutes(context.Context) ([]defaultRoute, error) {
+	root := os.Getenv("HOST_PROC")
+	if root == "" {
+		root = "/proc"
+	}
+	data, err := os.ReadFile(filepath.Join(root, "net", "route"))
+	if err != nil {
+		return nil, err
+	}
+	routes := parseIPv4DefaultRoutes(string(data))
+	data, err = os.ReadFile(filepath.Join(root, "net", "ipv6_route"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return routes, nil
+		}
+		return nil, err
+	}
+	return append(routes, parseIPv6DefaultRoutes(string(data))...), nil
+}
+
 func (gopsutilSource) linkMetadata(name string) (linkMetadata, error) {
 	root := os.Getenv("HOST_SYS")
 	if root == "" {

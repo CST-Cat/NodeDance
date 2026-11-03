@@ -30,51 +30,58 @@ type linkMetadata struct {
 	upperLinks []string
 }
 
-func classifyInterface(name string, facts interfaceFacts, factsOK bool, link linkMetadata, linkErr error, masterKind string) (bool, string, bool) {
-	lowerName := strings.ToLower(name)
-	if lowerName == "lo" || facts.loopback || hasPrefix(lowerName, "lo:") {
-		return false, "loopback", true
-	}
-	if hasPrefix(lowerName, "veth", "docker", "br-", "br0", "virbr", "cni", "flannel", "podman", "tun", "tap", "wg", "tailscale", "ifb", "dummy") {
-		return false, "virtual_interface", true
-	}
-	if !factsOK {
-		return false, "interface_metadata_unavailable", false
-	}
-	if !facts.up {
-		return false, "interface_down", true
-	}
-	if linkErr != nil {
-		return false, "topology_unavailable", false
-	}
-	if link.kind == "bridge" {
-		return false, "bridge", true
-	}
-	if link.kind == "veth" || link.kind == "tunnel" {
-		return false, "virtual_interface", true
-	}
-	if link.kind == "bond" {
-		return true, "", true
-	}
-	if link.ifindex > 0 && link.iflink > 0 && link.ifindex != link.iflink {
-		return false, "lower_or_virtual_interface", true
-	}
-	if len(link.lowerLinks) > 0 {
-		return false, "upper_or_virtual_interface", true
-	}
-	if link.master != "" && masterKind != "bridge" {
-		return false, "enslaved_interface", true
-	}
-	return true, "", true
+type defaultRoute struct {
+	name   string
+	ipv6   bool
+	metric uint32
 }
 
-func hasPrefix(value string, prefixes ...string) bool {
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(value, prefix) {
-			return true
+func parseIPv4DefaultRoutes(data string) []defaultRoute {
+	var routes []defaultRoute
+	for _, line := range strings.Split(data, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 8 || fields[1] != "00000000" || fields[7] != "00000000" {
+			continue
+		}
+		metric, err := strconv.ParseUint(fields[6], 10, 32)
+		if err != nil {
+			continue
+		}
+		routes = append(routes, defaultRoute{name: fields[0], metric: uint32(metric)})
+	}
+	return routes
+}
+
+func parseIPv6DefaultRoutes(data string) []defaultRoute {
+	var routes []defaultRoute
+	for _, line := range strings.Split(data, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 10 || fields[1] != "00" || strings.Trim(fields[0], "0") != "" {
+			continue
+		}
+		metric, err := strconv.ParseUint(fields[5], 16, 32)
+		if err != nil {
+			continue
+		}
+		routes = append(routes, defaultRoute{name: fields[9], ipv6: true, metric: uint32(metric)})
+	}
+	return routes
+}
+
+func primaryInterfaces(routes []defaultRoute) map[string]bool {
+	best := make(map[bool]uint32, 2)
+	for _, route := range routes {
+		if current, ok := best[route.ipv6]; !ok || route.metric < current {
+			best[route.ipv6] = route.metric
 		}
 	}
-	return false
+	primary := make(map[string]bool, len(routes))
+	for _, route := range routes {
+		if route.metric == best[route.ipv6] {
+			primary[route.name] = true
+		}
+	}
+	return primary
 }
 
 func linkKindForPath(name string, ifindex, iflink int, bridge, bond, tun bool) string {

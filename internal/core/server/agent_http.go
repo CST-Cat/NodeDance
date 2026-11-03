@@ -119,6 +119,7 @@ func (s *Server) handleHTTPAgentChannel(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		ctx, cancel := context.WithCancel(s.agentContext)
+		remoteAddr := s.effectiveRemoteAddr(r)
 		c := &httpAgentChannel{ctx: ctx, cancel: cancel, agentID: identity.AgentID, nodeID: identity.NodeID, in: make(chan []byte, 32), out: make(chan []byte, 32)}
 		s.httpChannelsMu.Lock()
 		if s.httpChannels == nil {
@@ -138,7 +139,7 @@ func (s *Server) handleHTTPAgentChannel(w http.ResponseWriter, r *http.Request) 
 			defer s.agentWait.Done()
 			defer cancel()
 			defer func() { s.httpChannelsMu.Lock(); delete(s.httpChannels, id); s.httpChannelsMu.Unlock() }()
-			s.serveAgentChannel(ctx, c, identity, digest)
+			s.serveAgentChannel(ctx, c, identity, digest, remoteAddr)
 		}()
 		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, 201, map[string]string{"channelId": id})

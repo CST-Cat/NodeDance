@@ -33,6 +33,7 @@ type collectorSource interface {
 	networkCounters(context.Context) ([]net.IOCountersStat, error)
 	networkInterfaces(context.Context) ([]net.InterfaceStat, error)
 	linkMetadata(string) (linkMetadata, error)
+	defaultRoutes(context.Context) ([]defaultRoute, error)
 	diskPartitions(context.Context) ([]disk.PartitionStat, error)
 	diskUsage(context.Context, string) (*disk.UsageStat, error)
 	uptime(context.Context) (uint64, error)
@@ -300,7 +301,6 @@ type networkTopology struct {
 	factsByName     map[string]interfaceFacts
 	linkByName      map[string]linkMetadata
 	linkErrors      map[string]error
-	masterKinds     map[string]string
 	interfacesErr   error
 }
 
@@ -311,7 +311,6 @@ func (c *Collector) readNetworkTopology(ctx context.Context) networkTopology {
 		factsByName:     make(map[string]interfaceFacts, len(interfaces)),
 		linkByName:      make(map[string]linkMetadata, len(interfaces)),
 		linkErrors:      make(map[string]error, len(interfaces)),
-		masterKinds:     make(map[string]string, len(interfaces)),
 		interfacesErr:   interfacesErr,
 	}
 	for _, iface := range interfaces {
@@ -320,14 +319,6 @@ func (c *Collector) readNetworkTopology(ctx context.Context) networkTopology {
 		link, linkErr := c.source.linkMetadata(iface.Name)
 		topology.linkByName[iface.Name] = link
 		topology.linkErrors[iface.Name] = linkErr
-	}
-	for _, link := range topology.linkByName {
-		if link.master == "" {
-			continue
-		}
-		if master, ok := topology.linkByName[link.master]; ok {
-			topology.masterKinds[link.master] = master.kind
-		}
 	}
 	return topology
 }
@@ -367,25 +358,27 @@ func (c *Collector) collectNetwork(ctx context.Context, at time.Time) NetworkSna
 		return NetworkSnapshot{Summary: unknown[NetworkRate](reasonFromError(err), at)}
 	}
 	after := c.readNetworkTopology(ctx)
+	routes, routesErr := c.source.defaultRoutes(ctx)
+	primary := primaryInterfaces(routes)
+	for name := range primary {
+		if facts, ok := after.factsByName[name]; ok && facts.loopback {
+			delete(primary, name)
+		}
+	}
 
 	sort.Slice(counters, func(i, j int) bool { return counters[i].Name < counters[j].Name })
 	current := make(map[string]networkCounter, len(counters))
 	result := NetworkSnapshot{Interfaces: make([]NetworkInterface, 0, len(counters))}
 	eligibleNames := make([]string, 0, len(counters))
-	classificationKnown := after.interfacesErr == nil
 	for _, counter := range counters {
 		identity, identityReason, identityStable := identityAcrossSample(before, after, counter.Name)
 		facts, factsOK := after.factsByName[counter.Name]
-		link, linkOK := after.linkByName[counter.Name]
-		linkErr := after.linkErrors[counter.Name]
-		if !linkOK && linkErr == nil {
-			linkErr = errInvalidData
+		included := primary[counter.Name]
+		summaryReason := "not_default_route"
+		if included {
+			summaryReason = ""
 		}
-		included, summaryReason, classifiable := classifyInterface(counter.Name, facts, factsOK, link, linkErr, after.masterKinds[link.master])
 		included, summaryReason = c.filterInterface(counter.Name, included, summaryReason)
-		if !classifiable {
-			classificationKnown = false
-		}
 		item := NetworkInterface{Name: counter.Name, IncludedInSummary: included, SummaryReason: summaryReason}
 		if factsOK {
 			up := facts.up
@@ -419,10 +412,10 @@ func (c *Collector) collectNetwork(ctx context.Context, at time.Time) NetworkSna
 
 	if after.interfacesErr != nil {
 		result.Summary = unknown[NetworkRate](reasonFromError(after.interfacesErr), at)
-	} else if !classificationKnown {
+	} else if routesErr != nil {
 		result.Summary = unknown[NetworkRate]("topology_unavailable", at)
 	} else if len(eligibleNames) == 0 {
-		result.Summary = unknown[NetworkRate]("no_eligible_interfaces", at)
+		result.Summary = unknown[NetworkRate]("no_default_route", at)
 	} else if c.prevNetSummaryNames == nil {
 		result.Summary = unknown[NetworkRate]("warming_up", at)
 	} else if !sameStrings(c.prevNetSummaryNames, eligibleNames) {
@@ -458,7 +451,7 @@ func (c *Collector) collectNetwork(ctx context.Context, at time.Time) NetworkSna
 	}
 
 	c.prevNet = current
-	if classificationKnown && after.interfacesErr == nil {
+	if routesErr == nil && after.interfacesErr == nil {
 		c.prevNetSummaryNames = append([]string(nil), eligibleNames...)
 	} else {
 		c.prevNetSummaryNames = nil
