@@ -4,6 +4,12 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.34]
+
+### English
+
 - Add regular-file rsync between Agents over automatically discovered and probed direct WSS connections, with dedicated Core WSS rsync and chunk relays as fallbacks. Persistent WSS carries control and progress; retained private partials support retries. Receivers require a runtime argument template, Landlock confinement, one-use credentials, protected paths and SHA-256 verification before atomic publication.
 - Embed a trimmed static rsync 3.4.1 for Linux amd64 and arm64. Native CI and Docker builds compile their architecture's bundle; availability checks, parameter probes and transfer processes execute only the verified, root-protected embedded executable, without a system rsync lookup or fallback.
 - Refactor built-in update admission and recovery: ignore unknown journal and update metadata fields, skip corrupt history records individually, share history loading, submit manual updates without duplicate preflight and permit reinstallation, explicit downgrades and channel switches. Missing current-version labels do not block installation; native callers bound reply waits. Preserve artifact SHA-256, root credentials, authorization, request identity, backups, runtime health, reconnection and rollback.
