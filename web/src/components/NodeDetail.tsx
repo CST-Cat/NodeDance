@@ -1,4 +1,5 @@
 import { DropdownMenu } from "./arc/dropdown-menu/dropdown-menu";
+import { displayVersion } from "../metric-format";
 import { SettingsGroup } from "./SettingsGroup";
 import { Button, Input, Checkbox, checkboxProps } from "./ManagementUI";
 import MetricHistoryData from "./MetricHistoryData";
@@ -2371,8 +2372,8 @@ export default function NodeDetail(input: Props) {
                   </div>
                   <div data-v-98aa91ae="">
                     <span data-v-98aa91ae="">{t("m.e31132b9de5a")}</span>
-                    <strong data-v-98aa91ae="">
-                      {__props.node.agentVersion || t("m.4d8c1c5b4283")}
+                    <strong data-v-98aa91ae="" title={__props.node.agentVersion || undefined}>
+                      {__props.node.agentVersion ? displayVersion(__props.node.agentVersion) : t("m.4d8c1c5b4283")}
                     </strong>
                   </div>
                   <div data-v-98aa91ae="">

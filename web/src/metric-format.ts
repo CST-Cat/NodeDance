@@ -1,3 +1,8 @@
+export function displayVersion(version: string): string {
+  const match = /^(.*-dev-)([0-9a-f]{40})$/.exec(version);
+  return match ? `${match[1]}${match[2].slice(0, 7)}` : version;
+}
+
 export function formatBytes(value: number | bigint | null | undefined): string {
   if (value == null) return "—";
   const numeric = Number(value);

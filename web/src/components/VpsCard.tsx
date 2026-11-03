@@ -1,4 +1,5 @@
 import { clipboardFeedback } from "../clipboard";
+import { displayVersion } from "../metric-format";
 import UiCopyFeedback from "./UiCopyFeedback";
 import type {
   AgentNode,
@@ -286,7 +287,7 @@ export default function VpsCard(input: Props) {
       function nodeStateText(): string {
         if (props.pending) return t("m.a890b3be09aa");
         if (!props.online) return t("m.d07581c22bb2");
-        return props.node.agentVersion || t("m.d07581c22bb2");
+        return props.node.agentVersion ? displayVersion(props.node.agentVersion) : t("m.d07581c22bb2");
       }
       function healthText(record: DockerContainerRecord): string {
         const container = record.container;
@@ -647,7 +648,7 @@ export default function VpsCard(input: Props) {
                   <NodeLogo icon={__props.nodePreference?.icon} platform={__props.metrics?.metrics.system.platform.value} os={__props.metrics?.metrics.system.os.value} />
                 </span>
                 <p className={__classes("vps-card-version")} data-v-31185faa="">
-                  <span className={__classes("agent-version")} data-v-31185faa="">
+                  <span className={__classes("agent-version")} data-v-31185faa="" title={__props.node.agentVersion || undefined}>
                     {nodeStateText()}
                   </span>
                   {props.pending ? null : (

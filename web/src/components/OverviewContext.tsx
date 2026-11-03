@@ -1,4 +1,5 @@
 import { clipboardFeedback } from "../clipboard";
+import { displayVersion } from "../metric-format";
 import UiCopyFeedback from "./UiCopyFeedback";
 import { ApiError, api, operationRequest, type AgentNode } from "../api";
 import { display, locale, t } from "../i18n";
@@ -257,7 +258,7 @@ type Props = {
                 "—",
               date(m?.uptime.value?.bootTimeUnix),
               duration(m?.uptime.value?.seconds),
-              props.node.agentVersion || "—",
+              props.node.agentVersion ? displayVersion(props.node.agentVersion) : "—",
             ]
           : [
               get(info?.hostname),
@@ -269,7 +270,7 @@ type Props = {
               info?.addresses?.join(" · ") || "—",
               date(info?.bootTime),
               duration(info?.uptime),
-              get(info?.version),
+              displayVersion(get(info?.version)),
             ];
         return fieldKeys.map((key, index) => ({
           key,

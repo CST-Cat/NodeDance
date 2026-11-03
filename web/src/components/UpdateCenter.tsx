@@ -1,4 +1,5 @@
 import { ManagementPage } from "./ManagementUI";
+import { displayVersion } from "../metric-format";
 import "./PersonalSettings.css";
 import { api, operationRequest, type AgentNode } from "../api";
 import { locale, t } from "../i18n";
@@ -543,11 +544,11 @@ export default function UpdateCenter() {
                   <div className="update-details settings-detail-list">
                     <div className="parameter-row">
                       <span>{t("updates.current")}</span>
-                      <span>{check.value.current || "—"}</span>
+                      <span title={check.value.current || undefined}>{check.value.current ? displayVersion(check.value.current) : "—"}</span>
                     </div>
                     <div className="parameter-row">
                       <span>{t("updates.latest")}</span>
-                      <span>{check.value.latest}</span>
+                      <span title={check.value.latest}>{displayVersion(check.value.latest)}</span>
                     </div>
                     <div className="parameter-row">
                       <span>{t("updates.deployment")}</span>
