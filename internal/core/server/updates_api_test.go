@@ -99,7 +99,7 @@ func TestAgentUpdateDoesNotRequireCapabilityNegotiation(t *testing.T) {
 			done <- fmt.Errorf("unexpected update request: %+v", envelope)
 			return
 		}
-		reply := protocol.Envelope{Generation: connection.generation - 1, RequestID: envelope.RequestID, Payload: json.RawMessage(`{"status":202,"data":{"id":"fixture"}}`)}
+		reply := protocol.Envelope{Generation: connection.generation - 1, RequestID: envelope.RequestID, Payload: json.RawMessage(`{"status":202,"data":{"id":"fixture"},"futureMetadata":{"format":900}}`)}
 		if err := server.handleUpdateResponse(connection, reply); err == nil {
 			done <- fmt.Errorf("stale generation accepted")
 			return

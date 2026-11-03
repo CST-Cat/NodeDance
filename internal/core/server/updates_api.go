@@ -136,7 +136,7 @@ func (s *Server) handleUpdateResponse(c *agentConnection, e protocol.Envelope) e
 		return errors.New("invalid update response envelope")
 	}
 	var response update.Response
-	if err := decodeAgentPayloadLimit(e.Payload, &response, protocol.MaxMessageBytes); err != nil || response.Status < 200 || response.Status > 599 {
+	if len(e.Payload) > protocol.MaxMessageBytes || update.Decode(e.Payload, &response) != nil || response.Status < 200 || response.Status > 599 {
 		return errors.New("invalid update response")
 	}
 	c.updateMu.Lock()

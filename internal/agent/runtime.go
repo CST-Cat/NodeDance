@@ -890,7 +890,7 @@ func runHeartbeatLoop(ctx context.Context, conn protocol.AgentChannel, reads <-c
 					return errors.New("invalid update request envelope")
 				}
 				var request update.RPC
-				if decodeSocketPayload(envelope.Payload, &request) != nil || update.Validate(request.Request) != nil || request.Request.Component != "agent" {
+				if len(envelope.Payload) > protocol.MaxMessageBytes || update.Decode(envelope.Payload, &request) != nil || update.Validate(request.Request) != nil || request.Request.Component != "agent" {
 					return errors.New("invalid Agent update request")
 				}
 				select {

@@ -59,10 +59,18 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 		return err
 	}
 	defer client.Close()
-	if *channel != "stable" && *channel != "dev" { return errors.New("update channel must be stable or dev") }
-	if *channel == "dev" && *component != "agent" { return errors.New("dev updates are only available for Agent") }
-	if *channel == "dev" && *version != "" { return errors.New("do not combine --channel dev with --version") }
-	if *channel == "dev" { *version = update.ChannelDev }
+	if *channel != "stable" && *channel != "dev" {
+		return errors.New("update channel must be stable or dev")
+	}
+	if *channel == "dev" && *component != "agent" {
+		return errors.New("dev updates are only available for Agent")
+	}
+	if *channel == "dev" && *version != "" {
+		return errors.New("do not combine --channel dev with --version")
+	}
+	if *channel == "dev" {
+		*version = update.ChannelDev
+	}
 	request := update.Request{Component: *component, NodeID: *node, Version: *version, Confirm: true}
 	requestContext := func(parent context.Context) (context.Context, context.CancelFunc) {
 		if *connection.timeout == 0 {
@@ -111,7 +119,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 		}
 		return encoder.Encode(json.RawMessage(result.Data))
 	}
-	if *rollback == "" {
+	if *checkOnly {
 		result, err := invoke(ctx, "check", request, "")
 		if err != nil {
 			return err
@@ -119,23 +127,9 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 		if err = encoder.Encode(json.RawMessage(result.Data)); err != nil {
 			return err
 		}
-		if *checkOnly {
-			return nil
-		}
-		var check update.Check
-		if err = json.Unmarshal(result.Data, &check); err != nil {
-			return err
-		}
-		if !check.Configured {
-			return errors.New("update preflight did not pass: " + check.Reason)
-		}
-		if !check.Available {
-			return nil
-		}
-		request.Version = check.Latest
-	} else {
-		request.JobID = *rollback
+		return nil
 	}
+	request.JobID = *rollback
 	if *rollback != "" && !*yes {
 		fmt.Fprint(stderr, "Roll back to the previous version and restore its data? [y/N] ")
 		line, err := bufio.NewReader(stdin).ReadString('\n')

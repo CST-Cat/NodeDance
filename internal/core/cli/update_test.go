@@ -64,6 +64,7 @@ func TestLocalUpdateEntrypointsShareRollbackCancellation(t *testing.T) {
 
 func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
 	var submissions atomic.Int32
+	var preflights atomic.Int32
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/operations":
@@ -75,14 +76,15 @@ func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
 			}
 			json.NewEncoder(w).Encode(catalog)
 		case "/api/v1/discovered/check":
-			json.NewEncoder(w).Encode(update.Check{Component: "core", Current: "core-v0.1.8", Latest: "core-v0.1.9", Available: true, Configured: true, Release: update.Release{Component: "core", Version: "core-v0.1.9", URL: "https://github.com/CST-Cat/NodeDance/releases/tag/core-v0.1.9"}})
+			preflights.Add(1)
+			json.NewEncoder(w).Encode(update.Check{Component: "core", Current: "core-v0.1.8", Latest: "core-v0.1.9", Available: true, Configured: true})
 		case "/api/v1/auth/csrf":
 			io.WriteString(w, `{"token":"csrf"}`)
 		case "/api/v1/discovered/apply":
 			submissions.Add(1)
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
-			if body["confirm"] != true || body["version"] != "core-v0.1.9" || r.Header.Get("Idempotency-Key") == "" {
+			if body["confirm"] != true || body["version"] != nil || r.Header.Get("Idempotency-Key") == "" {
 				t.Error("incorrect update confirmation or pinned release")
 			}
 			w.WriteHeader(202)
@@ -116,6 +118,9 @@ func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
 	})
 	if submissions.Load() != 2 {
 		t.Fatal("TUI did not update directly through the shared workflow")
+	}
+	if preflights.Load() != 1 {
+		t.Fatalf("manual CLI/TUI performed a redundant preflight: %d", preflights.Load())
 	}
 }
 

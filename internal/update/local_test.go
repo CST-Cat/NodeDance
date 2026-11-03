@@ -24,9 +24,9 @@ func TestLocalUpdateNeedsNoArgumentsAndWaitsForLatestRelease(t *testing.T) {
 				var value any
 				switch rpc.Action {
 				case "check":
-					value = Check{Component: component, Configured: true, Available: true, Current: component + "-v0.1.13", Latest: component + "-v0.1.14"}
+					t.Fatal("manual update performed a redundant preflight")
 				case "apply":
-					if rpc.Request.Version != component+"-v0.1.14" || !rpc.Request.Confirm || len(rpc.IdempotencyKey) != 32 {
+					if rpc.Request.Version != "" || !rpc.Request.Confirm || len(rpc.IdempotencyKey) != 32 {
 						t.Fatalf("default submission: %+v", rpc)
 					}
 					value = Job{ID: id, Status: "queued"}
@@ -45,7 +45,7 @@ func TestLocalUpdateNeedsNoArgumentsAndWaitsForLatestRelease(t *testing.T) {
 			if err := local(context.Background(), component, "/private-product", nil, strings.NewReader(""), &stdout, &stderr, invoke); err != nil {
 				t.Fatal(err)
 			}
-			if len(calls) != 3 || !strings.Contains(stdout.String(), `"succeeded"`) || !strings.Contains(stderr.String(), "Idempotency-Key:") {
+			if len(calls) != 2 || !strings.Contains(stdout.String(), `"succeeded"`) || !strings.Contains(stderr.String(), "Idempotency-Key:") {
 				t.Fatalf("default workflow: %v %s %s", calls, stdout.String(), stderr.String())
 			}
 		})

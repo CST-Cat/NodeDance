@@ -60,6 +60,8 @@ func Invoke(ctx context.Context, component, dataDir string, rpc RPC) (Response, 
 	return launchNative(ctx, executable, string(configRaw), string(rpcRaw))
 }
 func launchNative(ctx context.Context, executable, configRaw, rpcRaw string) (Response, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
 	var nonce [12]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return Response{}, err
@@ -73,7 +75,8 @@ func launchNative(ctx context.Context, executable, configRaw, rpcRaw string) (Re
 	path := reply.Name()
 	reply.Close()
 	defer os.Remove(path)
-	cmd := exec.CommandContext(ctx, "systemd-run", "--quiet", "--collect", "--no-block", "--property=UMask=0077", "--property=StandardOutput=file:"+path, "--property=StandardError=journal", "--unit=nodedance-update-"+hex.EncodeToString(nonce[:]), executable, "__update-rpc", configRaw, rpcRaw)
+	unit := "nodedance-update-" + hex.EncodeToString(nonce[:])
+	cmd := exec.CommandContext(ctx, "systemd-run", "--quiet", "--collect", "--no-block", "--property=UMask=0077", "--property=StandardOutput=file:"+path, "--property=StandardError=journal", "--unit="+unit, executable, "__update-rpc", configRaw, rpcRaw)
 	if raw, err := cmd.CombinedOutput(); err != nil {
 		return Response{}, fmt.Errorf("start built-in update worker: %w: %s", err, strings.TrimSpace(string(raw)))
 	}
@@ -283,31 +286,15 @@ func runRPC(config Config, rpc RPC, stdout io.Writer, resolver Resolver) error {
 
 func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolver, factory func(Config, Resolver) (*Manager, error)) error {
 	if len(config.Targets) != 1 || config.Targets[rpc.Request.Component].Mode == "" {
-		return errors.New("worker must manage its own product")
+		return json.NewEncoder(stdout).Encode(Response{Status: 400, Error: "worker must manage its own product"})
+	}
+	jobs, err := loadJournals(config.StateDir)
+	if err != nil {
+		return json.NewEncoder(stdout).Encode(Response{Status: 500, Error: err.Error()})
 	}
 	if rpc.Action != "apply" && rpc.Action != "rollback" && rpc.Action != "delete-backup" {
 		// Observation must remain available while the transaction holds its lock.
-		manager := &Manager{Config: config, Resolver: resolver, command: execute, Docker: NewDocker(), jobs: map[string]Job{}}
-		entries, err := os.ReadDir(config.StateDir)
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		for _, entry := range entries {
-			id := strings.TrimSuffix(entry.Name(), ".json")
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || !idPattern.MatchString(id) {
-				continue
-			}
-			raw, e := os.ReadFile(filepath.Join(config.StateDir, entry.Name()))
-			if e != nil {
-				return e
-			}
-			var record journal
-			if Decode(raw, &record) != nil {
-				return errors.New("invalid update journal")
-			}
-			job := record.job()
-			manager.jobs[job.ID] = job
-		}
+		manager := &Manager{Config: config, Resolver: resolver, command: execute, Docker: NewDocker(), jobs: jobs}
 		interrupted := false
 		for _, job := range manager.jobs {
 			if job.Status == "queued" || job.Status == "running" {
@@ -320,8 +307,8 @@ func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolv
 				defer recovery.Close()
 				defer recovery.workers.Wait()
 				manager = recovery
-			} else if err.Error() != "an update controller is already running" {
-				return err
+			} else if !errors.Is(err, errControllerRunning) {
+				return json.NewEncoder(stdout).Encode(Response{Status: 500, Error: err.Error()})
 			}
 		}
 		return json.NewEncoder(stdout).Encode(manager.Handle(context.Background(), rpc))
@@ -334,25 +321,12 @@ func runRPCWithFactory(config Config, rpc RPC, stdout io.Writer, resolver Resolv
 	if rpc.IdempotencyKey == "" || !rpc.Request.Confirm {
 		return json.NewEncoder(stdout).Encode(Response{Status: 400, Error: "confirmation and retry identity are required"})
 	}
-	entries, _ := os.ReadDir(config.StateDir)
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || !idPattern.MatchString(strings.TrimSuffix(entry.Name(), ".json")) {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(config.StateDir, entry.Name()))
-		if err != nil {
-			return err
-		}
-		var record journal
-		if Decode(raw, &record) != nil {
-			return errors.New("invalid update journal")
-		}
-		job := record.job()
+	for _, job := range jobs {
 		if rpc.Action != "delete-backup" && job.IdempotencyKey == rpc.IdempotencyKey {
-			if job.Component != rpc.Request.Component || (rpc.Request.Version != "" && rpc.Request.Version != job.Target) || rpc.Request.JobID != job.Parent {
+			if !job.matches(rpc.Request) {
 				return json.NewEncoder(stdout).Encode(Response{Status: 409, Error: "idempotency key was used for another update"})
 			}
-			raw, _ = json.Marshal(job)
+			raw, _ := json.Marshal(job)
 			return json.NewEncoder(stdout).Encode(Response{Status: 202, Data: raw})
 		}
 	}

@@ -4,7 +4,15 @@
 
 ### English
 
+- Add regular-file rsync between Agents over automatically discovered and probed direct WSS connections, with dedicated Core WSS rsync and chunk relays as fallbacks. Persistent WSS carries control and progress; retained private partials support retries. Receivers require a runtime argument template, Landlock confinement, one-use credentials, protected paths and SHA-256 verification before atomic publication.
+- Embed a trimmed static rsync 3.4.1 for Linux amd64 and arm64. Native CI and Docker builds compile their architecture's bundle; availability checks, parameter probes and transfer processes execute only the verified, root-protected embedded executable, without a system rsync lookup or fallback.
+- Refactor built-in update admission and recovery: ignore unknown journal and update metadata fields, skip corrupt history records individually, share history loading, submit manual updates without duplicate preflight and permit reinstallation, explicit downgrades and channel switches. Missing current-version labels do not block installation; native callers bound reply waits. Preserve artifact SHA-256, root credentials, authorization, request identity, backups, runtime health, reconnection and rollback.
+
 ### 简体中文
+
+- 新增 Agent 间普通文件 rsync：自动发现并探测直连 WSS，失败后使用独立 Core WSS rsync 中继及分片兜底。常驻 WSS 承载控制与进度，私有 partial 保留供重试复用；接收端启动前验证运行时参数模板、Landlock、一次性凭证与路径围栏，提交前校验 SHA-256 并原子落盘。
+- 为 Linux amd64、arm64 内置裁剪后的静态 rsync 3.4.1，原生 CI 与 Docker 按架构编译捆绑。可用性检查、参数探针和传输进程只执行经过校验、root 保护的包内程序，删除系统 rsync 查找与兜底。
+- 重构内置更新准入与恢复：日志及更新元数据忽略未知字段，坏历史直接跳过，共用日志读取；手工更新直接提交，移除重复预检，允许重装、显式降级和通道切换。当前版本标记缺失不阻断安装；原生调用方限制回复等待。保留制品 SHA-256、root 凭据、授权、重试身份、备份、运行健康、重连及回滚。
 
 ## [0.1.33]
 

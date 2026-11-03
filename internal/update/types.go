@@ -5,11 +5,8 @@ package update
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"io"
 	"regexp"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -59,15 +56,15 @@ type Config struct {
 	Targets  map[string]Target `json:"targets"`
 }
 type Release struct {
-	Component   string `json:"component"`
-	Version     string `json:"version"`
-	URL         string `json:"url"`
-	Notes       string `json:"notes"`
-	BinaryURL   string `json:"-"`
-	ChecksumURL string `json:"-"`
+	Component    string `json:"component"`
+	Version      string `json:"version"`
+	URL          string `json:"url"`
+	Notes        string `json:"notes"`
+	BinaryURL    string `json:"-"`
+	ChecksumURL  string `json:"-"`
 	BinaryDigest string `json:"-"`
-	BinarySize int64 `json:"-"`
-	ImageDigest string `json:"-"`
+	BinarySize   int64  `json:"-"`
+	ImageDigest  string `json:"-"`
 }
 type Check struct {
 	Component  string  `json:"component"`
@@ -136,6 +133,11 @@ func (j journal) job() Job {
 	j.Job.IdempotencyKey = j.IdempotencyKey
 	return j.Job
 }
+
+func (j Job) matches(r Request) bool {
+	return j.Component == r.Component && j.Parent == r.JobID && (r.Version == "" || r.Version == j.Target || r.Version == ChannelDev && ValidDevVersion(j.Target))
+}
+
 func Validate(r Request) error {
 	if r.Component != "core" && r.Component != "agent" {
 		return errors.New("component must be core or agent")
@@ -182,13 +184,5 @@ func Compare(a, b string) int {
 	return 0
 }
 func Decode(raw []byte, target any) error {
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return err
-	}
-	if decoder.Decode(new(any)) != io.EOF {
-		return fmt.Errorf("unexpected trailing JSON")
-	}
-	return nil
+	return json.Unmarshal(raw, target)
 }

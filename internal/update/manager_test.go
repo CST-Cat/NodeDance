@@ -376,6 +376,42 @@ func TestUpdateAvailabilityUsesOnlyComponentTags(t *testing.T) {
 	}
 }
 
+func TestManualInstallAcceptsSameOlderAndUnreportedVersions(t *testing.T) {
+	for _, entry := range []struct {
+		name    string
+		current string
+		target  string
+	}{
+		{"same", "core-v0.1.8", "core-v0.1.8"},
+		{"older", "core-v0.1.8", "core-v0.1.7"},
+		{"default-reinstall", "core-v0.1.9", ""},
+		{"missing-metadata", "", "core-v0.1.9"},
+	} {
+		t.Run(entry.name, func(t *testing.T) {
+			m, data, _ := nativeFixture(t)
+			defer m.Close()
+			body := "#!/bin/sh\necho NodeDance " + entry.current + "\n"
+			if entry.current == "" {
+				body = "#!/bin/sh\nexit 1\n"
+			}
+			if err := os.WriteFile(m.Config.Targets["core"].Binary, []byte(body), 0755); err != nil {
+				t.Fatal(err)
+			}
+			job, err := m.Apply(context.Background(), Request{Component: "core", Version: entry.target, Confirm: true}, "manual-install-"+entry.name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			job = waitJob(t, m, job.ID)
+			if job.Status != "succeeded" || entry.current == "" && job.Current != "unknown" {
+				t.Fatalf("installation was rejected by version metadata: %+v", job)
+			}
+			if raw, err := os.ReadFile(filepath.Join(data, "credentials")); err != nil || string(raw) != "preserve-secret" {
+				t.Fatal("manual installation changed product state")
+			}
+		})
+	}
+}
+
 func TestStageProgressFollowsEachFlow(t *testing.T) {
 	flows := []struct {
 		job    Job

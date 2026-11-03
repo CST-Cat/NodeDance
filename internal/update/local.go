@@ -58,12 +58,20 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 		}
 		dataDir = filepath.Dir(path)
 	}
-	if *channel != "stable" && *channel != "dev" { return errors.New("update channel must be stable or dev") }
-	if *channel == "dev" && component != "agent" { return errors.New("dev updates are only available for Agent") }
-	if *channel == "dev" && *version != "" { return errors.New("do not combine --channel dev with --version") }
-	if *channel == "dev" { *version = ChannelDev }
+	if *channel != "stable" && *channel != "dev" {
+		return errors.New("update channel must be stable or dev")
+	}
+	if *channel == "dev" && component != "agent" {
+		return errors.New("dev updates are only available for Agent")
+	}
+	if *channel == "dev" && *version != "" {
+		return errors.New("do not combine --channel dev with --version")
+	}
+	if *channel == "dev" {
+		*version = ChannelDev
+	}
 	request := Request{Component: component, Version: *version, Confirm: true}
-	action := "check"
+	action := "apply"
 	if *status {
 		action = "status"
 		request.JobID = *job
@@ -75,7 +83,10 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 	output.SetIndent("", "  ")
 	var response Response
 	var err error
-	if *status || *check || *rollback == "" {
+	if *status || *check {
+		if *check && !*status {
+			action = "check"
+		}
 		response, err = call(action, "")
 		if err != nil {
 			return err
@@ -83,9 +94,7 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 		if response.Error != "" {
 			return errors.New(response.Error)
 		}
-		if *check || *status {
-			return output.Encode(json.RawMessage(response.Data))
-		}
+		return output.Encode(json.RawMessage(response.Data))
 	}
 	if *rollback != "" {
 		if !*yes {
@@ -97,19 +106,6 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 		}
 		request.JobID = *rollback
 		action = "rollback"
-	} else {
-		var result Check
-		if err = json.Unmarshal(response.Data, &result); err != nil {
-			return err
-		}
-		if !result.Configured {
-			return errors.New("update preflight did not pass: " + result.Reason)
-		}
-		if !result.Available {
-			return output.Encode(json.RawMessage(response.Data))
-		}
-		request.Version = result.Latest
-		action = "apply"
 	}
 	if *key == "" {
 		var nonce [16]byte

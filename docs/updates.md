@@ -31,6 +31,18 @@ To automatically follow Dev, set `updateChannel` to `dev` with the authenticated
 
 ## Observation and recovery / 观察与恢复
 
+手工更新直接提交给同一个事务执行器，不先运行另一轮客户端预检。`--check` 仍是独立的只读操作。安装不要求目标版本比现役版本更高：可以重装同一版本、显式选择较旧的已发布版本或切换 Stable／Dev；当前程序的版本标记缺失或变化也不会阻止安装。自动更新仍按所选通道检查新版本，不自动降级。Core 的源码 Beta 更新允许重新构建已经与 `origin/main` 对齐的工作区，不把源码提交相同误判为运行程序已经同步。
+
+Manual updates submit directly to the shared transaction executor; they do not require a separate client preflight. `--check` remains read-only. Installation accepts the same version, an explicitly selected older published version, and Stable/Dev switches. Missing or changed current-version labels do not prevent installation. Automatic updates continue to check their selected channel for newer builds and do not automatically downgrade. Core source Beta updates can rebuild a checkout already at `origin/main`; source equality does not establish that the installed executable is current.
+
+更新日志、内部请求与响应忽略未知 JSON 字段，不用格式号、协议号或能力指纹决定能否升级。历史日志共用一处读取：坏 JSON、读不到的条目、身份不一致或非普通文件直接跳过，保留原文件，其他历史、观察、重试和新安装继续可用。不增加隔离目录、迁移或历史管理流程。目录权限或当前事务的持久化失败仍会拒绝操作，避免丢失恢复依据。原生工作器的回复等待有时限，不会无限等待。
+
+Update journals and internal request/response metadata ignore unknown JSON fields. Format, protocol and capability fingerprints do not decide update eligibility. A single shared history reader skips malformed JSON, unreadable entries, mismatched identities and nonregular files, leaving the original files in place. Other history, observation, retries and new installation remain available. There is no quarantine, migration or additional history-management flow. Unsafe directory permissions and failure to persist the current transaction still stop that transaction so recovery intent is retained. Native worker replies have a bounded wait.
+
+保留必要的组件与架构选择、发布／OCI 下载 SHA-256 校验、root 凭据与路径保护、管理员授权／CSRF／重试身份、单事务锁、切换前备份以及启动后的实际版本、健康和 Agent 重连检查。更新前不再要求旧 Agent 已连接；启动后的重连仍须通过，失败按原流程回滚。这些要求验证安装的对象与结果，不比较新旧产品的兼容性元数据。
+
+Component and architecture selection, release/OCI SHA-256 verification, root credential/path protection, administrator authorization/CSRF/retry identity, the single-transaction lock, pre-switch backups and post-start runtime-version, health and Agent reconnection checks remain required. The old Agent need not be connected before download; post-start reconnection remains required and failure rolls back. These checks establish artifact identity and installation outcome, rather than comparing old/new compatibility metadata.
+
 `--check` 只检查，`--version core-vX.Y.Z`／`agent-vX.Y.Z` 可固定版本。默认等待完成；`--no-wait` 在持久接受后返回。提交前输出 `Idempotency-Key`；连接中断后用 `--idempotency-key KEY` 重试原请求，避免重复执行。`--status` 查看历史，`--status --job-id JOB_ID` 查看进度。Core 回滚使用 `--rollback JOB_ID`，交互确认后执行；Agent 本地回滚同样交互确认，`--yes` 可跳过确认。远端 Agent 的观察和回滚沿用相同的 `--component agent --node-id NODE_UUID` 目标选择。
 
 `--check` is read-only; `--version` optionally pins a release. Updates wait by default; `--no-wait` returns after durable acceptance. Reuse the printed `--idempotency-key` after interrupted submission. `--status` lists history and `--job-id` selects a job. Rollback requires confirmation; Agent local rollback also asks for confirmation; `--yes` skips the prompt. Remote Agent observation and rollback keep the same component/node selection.

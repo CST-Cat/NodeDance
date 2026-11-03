@@ -45,10 +45,9 @@ type Manager struct {
 	lock            *os.File
 }
 
+var errControllerRunning = errors.New("an update controller is already running")
+
 func New(config Config, resolver Resolver) (*Manager, error) {
-	if target, ok := config.Targets["core"]; ok && target.Mode != "systemd" {
-		return nil, errors.New("Core updates require the native nodedance.service")
-	}
 	if os.Geteuid() != 0 {
 		return nil, errors.New("update controller requires root")
 	}
@@ -121,32 +120,16 @@ func New(config Config, resolver Resolver) (*Manager, error) {
 	}
 	if err = unix.Flock(int(lock.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		lock.Close()
-		return nil, errors.New("an update controller is already running")
+		return nil, errControllerRunning
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	m := &Manager{Config: config, Resolver: resolver, command: execute, healthTimeout: 3 * time.Minute, Docker: NewDocker(), jobs: map[string]Job{}, ctx: ctx, cancel: cancel, lock: lock}
-	entries, err := os.ReadDir(config.StateDir)
+	jobs, err := loadJournals(config.StateDir)
 	if err != nil {
 		m.Close()
 		return nil, err
 	}
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".json") || !idPattern.MatchString(strings.TrimSuffix(entry.Name(), ".json")) {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(config.StateDir, entry.Name()))
-		if err != nil {
-			m.Close()
-			return nil, err
-		}
-		var record journal
-		if err = json.Unmarshal(raw, &record); err != nil {
-			m.Close()
-			return nil, errors.New("invalid durable update journal")
-		}
-		job := record.job()
-		m.jobs[job.ID] = job
-	}
+	m.jobs = jobs
 	for _, job := range m.jobs {
 		if job.Status == "running" || job.Status == "queued" {
 			m.active = true
@@ -210,6 +193,7 @@ func (m *Manager) persist(job Job) error {
 	m.jobs[job.ID] = job
 	return nil
 }
+
 // stageProgress maps a job's stage to its fraction complete using the
 // ordered stage sequence of the flow the job belongs to. Stages outside the
 // forward sequence (rolling_back on a failed update) keep the progress the
@@ -302,12 +286,20 @@ func (m *Manager) current(ctx context.Context, component string) (string, error)
 			return "dev", nil
 		}
 	}
-	return "", errors.New("managed runtime does not report a component version")
+	words := strings.Fields(string(raw))
+	if len(words) > 0 {
+		return words[len(words)-1], nil
+	}
+	return "", errors.New("managed runtime did not report a version")
 }
 func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
 	if err := Validate(r); err != nil {
 		return Check{}, err
 	}
+	return m.check(ctx, r)
+}
+
+func (m *Manager) check(ctx context.Context, r Request) (Check, error) {
 	if r.Version == ChannelBeta {
 		return m.checkSource(ctx, r)
 	}
@@ -322,10 +314,11 @@ func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
 	if configured {
 		result.Current, err = m.current(ctx, r.Component)
 		if err != nil {
-			return result, err
+			result.Current = "unknown"
+			result.Reason = "current version is unavailable; installation remains available"
 		}
 	}
-	result.Available = result.Current != "" && (result.Current == "dev" || ValidDevVersion(release.Version) && result.Current != release.Version || ValidTag(r.Component, release.Version) && (ValidDevVersion(result.Current) || Compare(release.Version, result.Current) > 0))
+	result.Available = configured && result.Current != release.Version && (!ValidTag(r.Component, result.Current) || ValidDevVersion(release.Version) || Compare(release.Version, result.Current) > 0)
 	return result, nil
 }
 func (m *Manager) checkSource(ctx context.Context, r Request) (Check, error) {
@@ -347,7 +340,8 @@ func (m *Manager) checkSource(ctx context.Context, r Request) (Check, error) {
 	result.Configured = true
 	current, err := m.current(ctx, r.Component)
 	if err != nil {
-		return result, err
+		current = "unknown"
+		result.Reason = "current version is unavailable; installation remains available"
 	}
 	result.Current = current
 	local, err := gitHead(ctx, target.SourceDir)
@@ -358,17 +352,16 @@ func (m *Manager) checkSource(ctx context.Context, r Request) (Check, error) {
 	if err != nil {
 		return result, err
 	}
-	if local == remote {
-		result.Reason = "source checkout already matches origin/main"
-		return result, nil
-	}
-	ancestor, err := gitIsAncestor(ctx, target.SourceDir, local, remote)
-	if err != nil {
-		return result, err
-	}
-	if !ancestor {
-		result.Reason = "source checkout has diverged from origin/main"
-		return result, nil
+	if local != remote {
+		ancestor, err := gitIsAncestor(ctx, target.SourceDir, local, remote)
+		if err != nil {
+			return result, err
+		}
+		if !ancestor {
+			result.Configured = false
+			result.Reason = "source checkout has diverged from origin/main"
+			return result, nil
+		}
 	}
 	result.Available = true
 	return result, nil
@@ -391,7 +384,7 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 	for _, job := range m.jobs {
 		if job.IdempotencyKey == key {
 			m.mu.Unlock()
-			if job.Component != r.Component || (r.Version != "" && r.Version != job.Target) || r.JobID != job.Parent {
+			if !job.matches(r) {
 				return Job{}, errors.New("idempotency key was used for another update")
 			}
 			return job, nil
@@ -434,12 +427,12 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 		}
 		check = Check{Current: current, Latest: parent.Current, Mode: parent.Mode}
 	} else {
-		check, err = m.Check(ctx, r)
+		check, err = m.check(ctx, r)
 		if err != nil {
 			return Job{}, err
 		}
-		if !check.Configured || !check.Available {
-			return Job{}, errors.New("no newer release is available")
+		if !check.Configured {
+			return Job{}, errors.New("update target is not configured: " + check.Reason)
 		}
 	}
 	var bytes [16]byte
@@ -524,10 +517,7 @@ func (m *Manager) run(job Job, release Release) {
 		}
 		workspace := filepath.Join(m.Config.StateDir, job.ID)
 		if job.Component == "agent" {
-			generation, ok := m.agentOnline(ctx, target, 0)
-			if !ok {
-				return errors.New("Agent must be connected before updating")
-			}
+			generation, _ := m.agentOnline(ctx, target, 0)
 			job.AgentGeneration = generation
 		}
 
@@ -539,7 +529,9 @@ func (m *Manager) run(job Job, release Release) {
 			}
 			var err error
 			imageRef := "ghcr.io/cst-cat/nodedance-" + job.Component + ":" + release.Version
-			if release.ImageDigest != "" { imageRef = "ghcr.io/cst-cat/nodedance-agent@" + release.ImageDigest }
+			if release.ImageDigest != "" {
+				imageRef = "ghcr.io/cst-cat/nodedance-agent@" + release.ImageDigest
+			}
 			image, err = m.Docker.pull(ctx, imageRef)
 			if err != nil {
 				return err
@@ -803,6 +795,13 @@ func (m *Manager) verify(ctx context.Context, component, version string, previou
 	for {
 		current, err := m.current(ctx, component)
 		ready := err == nil && current == version
+		if version == "unknown" {
+			ready = target.Mode == "docker"
+			if target.Mode == "systemd" {
+				raw, e := m.command(ctx, "systemctl", "is-active", target.Unit)
+				ready = e == nil && strings.TrimSpace(string(raw)) == "active"
+			}
+		}
 		if ready && target.Mode == "docker" {
 			value, err := m.Docker.inspect(ctx, target.Container)
 			ready = err == nil && healthy(value)
@@ -823,7 +822,7 @@ func (m *Manager) verify(ctx context.Context, component, version string, previou
 				}
 				json.NewDecoder(response.Body).Decode(&health)
 				response.Body.Close()
-				ready = response.StatusCode == 200 && health.Status == "ok" && health.Version == version
+				ready = response.StatusCode == 200 && health.Status == "ok" && (version == "unknown" || health.Version == version)
 			}
 		}
 		if ready && component == "agent" {

@@ -149,7 +149,7 @@ func TestCheckSourceChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !check.Configured || check.Available || check.Latest != ChannelBeta || check.Current != "dev" {
+	if !check.Configured || !check.Available || check.Latest != ChannelBeta || check.Current != "dev" {
 		t.Fatalf("up-to-date check = %+v", check)
 	}
 	if err := os.WriteFile(filepath.Join(upstream, "next.txt"), []byte("next\n"), 0644); err != nil {
