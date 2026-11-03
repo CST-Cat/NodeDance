@@ -29,6 +29,12 @@ function stageLabel(stage: string) {
   const key = `updates.stage.${stage}`;
   return t(key) === key ? stage : t(key);
 }
+function targetChannel(target: string): "beta" | "dev" | "stable" {
+  const value = target.trim().toLowerCase();
+  if (value === "beta") return "beta";
+  if (value === "dev" || value.startsWith("agent-dev-")) return "dev";
+  return "stable";
+}
 function releaseItems(notes: string) {
   const sections = notes.split(/^### (?:English|简体中文)\s*$/m);
   const text = sections[locale.value === "zh-CN" ? 2 : 1] ?? notes;
@@ -162,6 +168,23 @@ export default function UpdateCenter() {
       const rollbackError = cell("");
       const selected = derived(
         () => component.value === "core" || !!nodeId.value,
+      );
+      const checkChannel = derived(() =>
+        targetChannel(check.value?.latest ?? version.value),
+      );
+      const latestKey = derived(() =>
+        checkChannel.value === "beta"
+          ? "updates.latestBeta"
+          : checkChannel.value === "dev"
+            ? "updates.latestDev"
+            : "updates.latest",
+      );
+      const noticeKey = derived(() =>
+        checkChannel.value === "beta"
+          ? "updates.currentNoticeBeta"
+          : checkChannel.value === "dev"
+            ? "updates.currentNoticeDev"
+            : "updates.currentNotice",
       );
       const query = derived(() => ({
         component: component.value,
@@ -547,7 +570,7 @@ export default function UpdateCenter() {
                       <span title={check.value.current || undefined}>{check.value.current ? displayVersion(check.value.current) : "—"}</span>
                     </div>
                     <div className="parameter-row">
-                      <span>{t("updates.latest")}</span>
+                      <span>{t(latestKey.value)}</span>
                       <span title={check.value.latest}>{displayVersion(check.value.latest)}</span>
                     </div>
                     <div className="parameter-row">
@@ -560,7 +583,7 @@ export default function UpdateCenter() {
                     {!check.value.configured ? (
                       <p>{t("updates.install")}</p>
                     ) : !check.value.available ? (
-                      <p>{t("updates.currentNotice")}</p>
+                      <p>{t(noticeKey.value)}</p>
                     ) : null}
                   </div>
                 ) : null}
@@ -662,7 +685,7 @@ export default function UpdateCenter() {
                       {visibleJobs.value.map((job, index) => (
                         <UpdateRecord key={job.id} separated={index > 0}>
                           <strong>
-                            {job.current} → {job.target}
+                            {displayVersion(job.current)} → {displayVersion(job.target)}
                           </strong>
                           <span>
                             {new Date(job.started).toLocaleString()} · {job.id}
