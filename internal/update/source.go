@@ -2,7 +2,6 @@ package update
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -260,16 +259,4 @@ func gitRemoteMain(ctx context.Context, dir string) (string, error) {
 		return "", err
 	}
 	return gitOutput(ctx, dir, "rev-parse", "FETCH_HEAD")
-}
-
-func gitIsAncestor(ctx context.Context, dir, ancestor, descendant string) (bool, error) {
-	_, err := gitOutput(ctx, dir, "merge-base", "--is-ancestor", ancestor, descendant)
-	if err == nil {
-		return true, nil
-	}
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-		return false, nil
-	}
-	return false, err
 }

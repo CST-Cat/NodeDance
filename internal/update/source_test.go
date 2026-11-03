@@ -165,6 +165,35 @@ func TestCheckSourceChannel(t *testing.T) {
 	if !check.Configured || !check.Available {
 		t.Fatalf("behind check = %+v", check)
 	}
+	if err := os.WriteFile(filepath.Join(checkout, "local.txt"), []byte("local\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, checkout, "add", ".")
+	git(t, checkout, "commit", "-m", "local divergence")
+	check, err = m.Check(context.Background(), Request{Component: "core", Version: ChannelBeta})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !check.Configured || !check.Available {
+		t.Fatalf("diverged check = %+v", check)
+	}
+	remote, err := gitRemoteMain(context.Background(), checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitOutput(context.Background(), checkout, "reset", "--hard", remote); err != nil {
+		t.Fatal(err)
+	}
+	head, err := gitHead(context.Background(), checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head != remote {
+		t.Fatalf("head after hard reset = %s, want %s", head, remote)
+	}
+	if status, err := gitOutput(context.Background(), checkout, "status", "--porcelain"); err != nil || status != "" {
+		t.Fatalf("status after hard reset = %q, %v", status, err)
+	}
 	m.Config.Targets["core"] = Target{Mode: "systemd", Unit: "nodedance.service", Binary: binary}
 	check, err = m.Check(context.Background(), Request{Component: "core", Version: ChannelBeta})
 	if err != nil {

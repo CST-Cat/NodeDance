@@ -344,24 +344,11 @@ func (m *Manager) checkSource(ctx context.Context, r Request) (Check, error) {
 		result.Reason = "current version is unavailable; installation remains available"
 	}
 	result.Current = current
-	local, err := gitHead(ctx, target.SourceDir)
-	if err != nil {
+	if _, err := gitHead(ctx, target.SourceDir); err != nil {
 		return result, err
 	}
-	remote, err := gitRemoteMain(ctx, target.SourceDir)
-	if err != nil {
+	if _, err := gitRemoteMain(ctx, target.SourceDir); err != nil {
 		return result, err
-	}
-	if local != remote {
-		ancestor, err := gitIsAncestor(ctx, target.SourceDir, local, remote)
-		if err != nil {
-			return result, err
-		}
-		if !ancestor {
-			result.Configured = false
-			result.Reason = "source checkout has diverged from origin/main"
-			return result, nil
-		}
 	}
 	result.Available = true
 	return result, nil
@@ -668,10 +655,11 @@ func (m *Manager) runSource(job Job) {
 		if err := m.save(&job, "pulling"); err != nil {
 			return err
 		}
-		if _, err := gitOutput(ctx, source, "fetch", "origin", "main"); err != nil {
+		remote, err := gitRemoteMain(ctx, source)
+		if err != nil {
 			return err
 		}
-		if _, err := gitOutput(ctx, source, "pull", "--ff-only", "origin", "main"); err != nil {
+		if _, err := gitOutput(ctx, source, "reset", "--hard", remote); err != nil {
 			return err
 		}
 		job.OldBinary = filepath.Join(workspace, "previous-binary")
