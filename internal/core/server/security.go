@@ -412,5 +412,31 @@ func (s *Server) isTrustedProxy(ip net.IP) bool {
 			return true
 		}
 	}
+	return isSelfAddress(ip)
+}
+
+func isSelfAddress(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	addresses, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, address := range addresses {
+		var local net.IP
+		switch value := address.(type) {
+		case *net.IPNet:
+			local = value.IP
+		case *net.IPAddr:
+			local = value.IP
+		}
+		if local != nil && local.Equal(ip) {
+			return true
+		}
+	}
 	return false
 }
