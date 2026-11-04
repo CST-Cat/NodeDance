@@ -87,3 +87,14 @@ Read-only search previews use the existing text/image/PDF/media presentation. Pr
 Both list and grid right-click menus provide Share for regular files and directories; Manage shares opens settings and file collection using the same Core contract. Folder shares preserve browsable relative paths. Node shares publish verified snapshots, and revocation never deletes source files. See [file sharing](file-sharing.md) for operations, password/direct-link rules, lifecycle, bounds and verification. The file browser audit includes the maintained sharing browser regression.
 
 Sharing tabs and the list/grid selector both opt into installed native control geometry with `data-native-controls`; theme mapping does not replace their radii. The file browser audit compares actual tab and selection surfaces, verifies identical custom-menu actions and disabled states across views, multi-selection, keyboard navigation, sharing and hidden command isolation.
+
+
+## Narrow workspaces / 窄屏工作区
+
+At workspace widths up to 640px, files occupy one column. The folder button opens the existing directory tree in an accessible dialog; choosing a directory closes the dialog and opens its contents. Back, parent directory, search and upload stay in the toolbar. More contains refresh, forward navigation, New, shared file actions, paste, sharing, view/sort options and full screen. These entries use the same commands and permissions as the desktop toolbar.
+
+窄屏默认收起左侧目录树，点击文件夹图标可按需打开，选择目录后回到完整宽度的文件列表。文件名下方展示大小／类型与日期，每行右侧的操作菜单复用已有命令；勾选文件后，底部显示批量操作入口。列表、网格与排序位于“更多”的“视图”菜单，切换时保留选择。路径面包屑、手动输入路径、分页与目录选择仍可使用。响应依据工作区实际宽度，适用于手机页面和较窄的文件管理弹窗。
+
+`web/scripts/mobile-file-regressions.cjs` runs a touch-enabled browser against isolated real Core/root Agent fixtures. It checks 320px/390px layouts, directory navigation, long filenames, row and batch actions, list/grid selection preservation, pagination, nested creation dialogs and dark menus. The regular file audit invokes it; `NODEDANCE_AUDIT_FILE_LAYOUT_ONLY=1` additionally runs the focused layout checks without the unrelated transfer-cancellation suite. `NODEDANCE_FILE_MOBILE_REVIEW=1` saves one targeted mobile image for visual inspection.
+
+Navigation references: [Files on iPhone](https://support.apple.com/en-ie/guide/iphone/iphc61044c11/ios) and [Files by Google](https://support.google.com/files/answer/9765314?hl=en). Their list/grid choices and contextual menus inform this adaptation; the existing NodeDance components and command model remain the implementation.

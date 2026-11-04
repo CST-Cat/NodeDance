@@ -2791,5 +2791,6 @@
   "terminal.searchPrevious": "上一个匹配",
   "terminal.searchNext": "下一个匹配",
   "terminal.searchClose": "关闭搜索",
-  "terminal.searchMissing": "无匹配结果"
+  "terminal.searchMissing": "无匹配结果",
+  "files.ui.more": "更多"
 }

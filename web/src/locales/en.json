@@ -2791,5 +2791,6 @@
   "terminal.searchPrevious": "Previous match",
   "terminal.searchNext": "Next match",
   "terminal.searchClose": "Close search",
-  "terminal.searchMissing": "No matches"
+  "terminal.searchMissing": "No matches",
+  "files.ui.more": "More"
 }
