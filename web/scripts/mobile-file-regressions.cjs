@@ -42,6 +42,14 @@ module.exports=async({browser,context,url,artifacts,longGridName})=>{
   await page.locator('.app-shell').evaluate(el=>{el.dataset.theme='dark';document.documentElement.dataset.theme='dark'})
   await toolbar.getByRole('button',{name:'More',exact:true}).tap();const menu=page.getByRole('menu').first();await menu.waitFor();assert.notEqual(await menu.evaluate(el=>getComputedStyle(el).color),await menu.evaluate(el=>getComputedStyle(el).backgroundColor),'Mobile menu keeps theme contrast');await page.keyboard.press('Escape')
   if(process.env.NODEDANCE_FILE_MOBILE_REVIEW==='1')await page.screenshot({path:path.join(artifacts,'mobile-files-review.png')})
+  await page.setViewportSize({width:320,height:844})
+  await page.goto(new URL(url).origin+'/#/nodes');await page.getByTestId('node-files-shortcut').tap()
+  const overlay=page.getByRole('dialog').getByTestId('node-files');await overlay.locator('[data-file-name]').first().waitFor()
+  const overlayToolbar=overlay.getByRole('toolbar',{name:'File manager',exact:true})
+  assert.ok(await overlayToolbar.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'Overview file dialog keeps its toolbar inside a narrow viewport')
+  await overlayToolbar.getByRole('button',{name:'More',exact:true}).tap();await page.getByRole('menuitem',{name:'New',exact:true}).tap();await page.getByRole('menuitem',{name:'New folder',exact:true}).tap()
+  await page.getByRole('dialog',{name:'New folder',exact:true}).waitFor();await page.getByRole('dialog',{name:'New folder',exact:true}).getByRole('button',{name:'Cancel',exact:true}).tap()
+  assert.equal(await page.getByRole('dialog').count(),1,'Canceling a nested mobile form returns to the file dialog')
   console.log('Mobile files: touch navigation, full-width list, long names, metadata, row and batch actions, view selection, pagination, new-folder dialog and themed menus passed at 320/390px.')
  }finally{await phone.close()}
 }
