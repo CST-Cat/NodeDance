@@ -77,12 +77,21 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build native Core Web assets and binary
+      - name: Build native Core and Agent with Web assets
         run: |
           pnpm --dir web install --frozen-lockfile
-          make frontend
-          mkdir -p .build
-          CGO_ENABLED=0 go build -trimpath -o .build/nodedance ./cmd/nodedance
+          make build
+
+      - name: Verify direct peer negotiation, NAT traversal and rsync transfer recovery
+        run: |
+          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" NODEDANCE_STUN_SERVERS=off NODEDANCE_REQUIRE_RSYNC_TESTS=1 \
+            "$(command -v go)" test -count=1 -v ./internal/peertransport ./internal/core/server -run 'TestDirect|TestUnreachableNAT|TestCoreTransfersInExplicit|TestCoreDirectNegotiates|TestCoreCancelsRetainsPartial|TestCoreChunkFallback'
+
+      - name: Verify file-manager browser behavior
+        if: matrix.arch == 'amd64'
+        run: |
+          pnpm --dir web exec playwright install --with-deps chromium
+          node web/scripts/audit-files.cjs
 
       - name: Build Agent Docker image and validate Compose
         run: |

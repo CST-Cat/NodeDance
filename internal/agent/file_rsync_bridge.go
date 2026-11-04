@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io"
 	"log"
@@ -17,16 +18,20 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	agentrsync "github.com/CST-Cat/NodeDance/internal/agent/rsync"
 	"github.com/CST-Cat/NodeDance/internal/agent/taskjournal"
+	"github.com/CST-Cat/NodeDance/internal/filetransport"
+	"github.com/CST-Cat/NodeDance/internal/peertransport"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/coder/websocket"
 	"golang.org/x/net/netutil"
@@ -40,6 +45,8 @@ type agentRsyncSession struct {
 	mu       sync.Mutex
 	used     bool
 	received bool
+	signaled bool
+	signal   chan protocol.FileRsyncRequest
 }
 
 func (b *agentFileBridge) respondRsync(ctx context.Context, id string, response protocol.FileRsyncResponse) {
@@ -53,6 +60,21 @@ func (b *agentFileBridge) handleRsync(ctx context.Context, id string, request pr
 		return
 	}
 	switch request.Operation {
+	case "connect":
+		b.mu.Lock()
+		session := b.rsyncSessions["prepare/"+request.SessionID]
+		b.mu.Unlock()
+		if session == nil || !reflect.DeepEqual(session.request.Descriptor, request.Descriptor) || session.request.PeerMode != request.PeerMode || session.request.Grant != request.Grant {
+			break
+		}
+		session.mu.Lock()
+		if !session.signaled && session.ctx.Err() == nil {
+			session.signaled = true
+			session.signal <- request
+			response.State, response.Code = "signaled", ""
+		}
+		session.mu.Unlock()
+
 	case "abort":
 		b.mu.Lock()
 		var sessions []*agentRsyncSession
@@ -99,7 +121,7 @@ func (b *agentFileBridge) handleRsync(ctx context.Context, id string, request pr
 			break
 		}
 		sessionCtx, cancel := context.WithCancel(ctx)
-		session := &agentRsyncSession{request: request, ctx: sessionCtx, cancel: cancel, done: make(chan struct{})}
+		session := &agentRsyncSession{request: request, ctx: sessionCtx, cancel: cancel, done: make(chan struct{}), signal: make(chan protocol.FileRsyncRequest, 1)}
 		b.rsyncSessions[key] = session
 		b.mu.Unlock()
 		defer close(session.done)
@@ -144,32 +166,22 @@ func (b *agentFileBridge) prepareRsync(id string, session *agentRsyncSession) {
 		b.respondRsync(session.ctx, id, response)
 		return
 	}
-	var conn *websocket.Conn
+	var conn filetransport.Connection
 	var cleanup func()
 	if request.Transport == "direct" {
-		var offer protocol.FileRsyncResponse
-		var incoming <-chan *websocket.Conn
-		incoming, offer, cleanup, err = listenRsync(ctx, session)
-		if err == nil {
-			offer.Operation, offer.SessionID, offer.State = request.Operation, request.SessionID, "ready"
-			b.respondRsync(session.ctx, id, offer)
-			timer := time.NewTimer(time.Until(request.Grant.ExpiresAt))
-			select {
-			case conn = <-incoming:
-			case <-ctx.Done():
-				err = ctx.Err()
-			case <-timer.C:
-				err = errors.New("direct rsync credential expired before connection")
-			}
-			timer.Stop()
-		}
+		conn, cleanup, err = b.receiveDirect(ctx, id, session)
 	} else {
 		response.State, response.Code = "ready", ""
 		b.respondRsync(session.ctx, id, response)
 		conn, cleanup, err = b.dialCoreFileStream(ctx, protocol.FileRsyncDataRoute, request.Grant)
 	}
+
 	if cleanup != nil {
 		defer cleanup()
+	}
+	failureCode := "rsync_failed"
+	if request.Transport == "direct" && err != nil {
+		failureCode = directRsyncError(request.PeerMode, err)
 	}
 	if err == nil {
 		stop := context.AfterFunc(ctx, func() { _ = conn.CloseNow() })
@@ -182,7 +194,7 @@ func (b *agentFileBridge) prepareRsync(id string, session *agentRsyncSession) {
 	finish()
 	response.State, response.Code = "received", ""
 	if err != nil {
-		response.State, response.Code = "error", "rsync_failed"
+		response.State, response.Code = "error", failureCode
 	} else {
 		session.mu.Lock()
 		session.received = true
@@ -214,18 +226,19 @@ func (b *agentFileBridge) sendRsync(id string, session *agentRsyncSession) {
 		return
 	}
 	defer source.Close()
-	var conn *websocket.Conn
+	var conn filetransport.Connection
 	var cleanup func()
 	if request.Transport == "direct" {
-		conn, cleanup, err = dialDirectRsync(session.ctx, request)
+		conn, cleanup, err = b.sendDirect(id, session)
 		if err != nil {
-			response.Code = "direct_unavailable"
+			response.State, response.Code = "error", directRsyncError(request.PeerMode, err)
 			b.respondRsync(session.ctx, id, response)
 			return
 		}
 	} else {
 		conn, cleanup, err = b.dialCoreFileStream(session.ctx, protocol.FileRsyncDataRoute, request.Grant)
 	}
+
 	if cleanup != nil {
 		defer cleanup()
 	}
@@ -287,56 +300,110 @@ func rsyncEndpoints(listener net.Listener) []string {
 	return result
 }
 
-func listenRsync(ctx context.Context, session *agentRsyncSession) (<-chan *websocket.Conn, protocol.FileRsyncResponse, func(), error) {
-	certificate, fingerprint, err := rsyncCertificate()
-	if err != nil {
-		return nil, protocol.FileRsyncResponse{}, nil, err
+type rsyncListener struct {
+	listener    net.Listener
+	server      *http.Server
+	fingerprint string
+	pending     map[string]*rsyncIncoming
+}
+
+type rsyncIncoming struct {
+	session  *agentRsyncSession
+	incoming chan *websocket.Conn
+}
+
+func (b *agentFileBridge) listenRsync(ctx context.Context, session *agentRsyncSession) (<-chan *websocket.Conn, protocol.FileRsyncResponse, func(), error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	port := session.request.ListenPort
+	if b.directListeners == nil {
+		b.directListeners = make(map[int]*rsyncListener)
 	}
-	listener, err := net.Listen("tcp", ":"+strconv.Itoa(session.request.ListenPort))
-	if err != nil {
-		return nil, protocol.FileRsyncResponse{}, nil, err
+	shared := b.directListeners[port]
+	if port == 0 {
+		shared = nil
 	}
-	offer := protocol.FileRsyncResponse{Endpoints: rsyncEndpoints(listener), Fingerprint: fingerprint}
-	incoming := make(chan *websocket.Conn, 1)
-	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 10 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0), BaseContext: func(net.Listener) context.Context { return ctx }}
-	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		grant := session.request.Grant
-		scheme, secret, _ := strings.Cut(r.Header.Get("Authorization"), " ")
-		actual, expected := sha256.Sum256([]byte(secret)), sha256.Sum256([]byte(grant.Secret))
-		if r.Method != http.MethodGet || r.URL.Path != protocol.FileRsyncDataRoute || r.URL.RawQuery != "" || !strings.EqualFold(scheme, "Task") ||
-			!grant.MatchesHeaders(r.Header) || !grant.ExpiresAt.After(time.Now()) || subtle.ConstantTimeCompare(actual[:], expected[:]) != 1 {
-			http.Error(w, "file task credential rejected", http.StatusUnauthorized)
-			return
-		}
-		session.mu.Lock()
-		if session.used || ctx.Err() != nil {
-			session.mu.Unlock()
-			http.Error(w, "file task credential consumed", http.StatusUnauthorized)
-			return
-		}
-		session.used = true
-		session.mu.Unlock()
-		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionDisabled})
+	if shared == nil {
+		certificate, fingerprint, err := rsyncCertificate()
 		if err != nil {
-			return
+			return nil, protocol.FileRsyncResponse{}, nil, err
 		}
-		select {
-		case incoming <- conn:
-		case <-ctx.Done():
-			_ = conn.CloseNow()
-			return
+		listener, err := net.Listen("tcp", ":"+strconv.Itoa(port))
+		if err != nil {
+			return nil, protocol.FileRsyncResponse{}, nil, err
 		}
-		select {
-		case <-session.done:
-		case <-ctx.Done():
+		shared = &rsyncListener{listener: listener, fingerprint: fingerprint, pending: make(map[string]*rsyncIncoming)}
+		shared.server = &http.Server{ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 10 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: log.New(io.Discard, "", 0)}
+		current := shared
+		shared.server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b.mu.Lock()
+			pending := current.pending[r.Header.Get("X-Nodedance-Stream")]
+			b.mu.Unlock()
+			if pending == nil {
+				http.Error(w, "unknown file task", http.StatusUnauthorized)
+				return
+			}
+			active := pending.session
+			grant := active.request.Grant
+			scheme, secret, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+			actual, expected := sha256.Sum256([]byte(secret)), sha256.Sum256([]byte(grant.Secret))
+			if r.Method != http.MethodGet || r.URL.Path != protocol.FileRsyncDataRoute || r.URL.RawQuery != "" || !strings.EqualFold(scheme, "Task") ||
+				!grant.MatchesHeaders(r.Header) || !grant.ExpiresAt.After(time.Now()) || subtle.ConstantTimeCompare(actual[:], expected[:]) != 1 {
+				http.Error(w, "file task credential rejected", http.StatusUnauthorized)
+				return
+			}
+			active.mu.Lock()
+			if active.used || active.ctx.Err() != nil {
+				active.mu.Unlock()
+				http.Error(w, "file task credential consumed", http.StatusUnauthorized)
+				return
+			}
+			active.used = true
+			active.mu.Unlock()
+			conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionDisabled})
+			if err != nil {
+				return
+			}
+			defer conn.CloseNow()
+			select {
+			case pending.incoming <- conn:
+			case <-active.ctx.Done():
+				return
+			}
+			select {
+			case <-active.done:
+			case <-active.ctx.Done():
+			}
+		})
+		tlsListener := tls.NewListener(netutil.LimitListener(listener, 8), &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS13})
+		go func() { _ = current.server.Serve(tlsListener) }()
+		if port != 0 {
+			b.directListeners[port] = shared
 		}
-		_ = conn.CloseNow()
-	})
-	tlsListener := tls.NewListener(netutil.LimitListener(listener, 8), &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS13})
-	go func() { _ = server.Serve(tlsListener) }()
-	stop := context.AfterFunc(ctx, func() { _ = server.Close() })
-	cleanup := func() { stop(); _ = server.Close(); _ = listener.Close() }
-	return incoming, offer, cleanup, nil
+	}
+	if shared.pending[session.request.SessionID] != nil {
+		return nil, protocol.FileRsyncResponse{}, nil, errors.New("duplicate direct session")
+	}
+	pending := &rsyncIncoming{session: session, incoming: make(chan *websocket.Conn, 1)}
+	shared.pending[session.request.SessionID] = pending
+	var once sync.Once
+	cleanup := func() {
+		once.Do(func() {
+			b.mu.Lock()
+			delete(shared.pending, session.request.SessionID)
+			empty := len(shared.pending) == 0
+			if empty && port != 0 {
+				delete(b.directListeners, port)
+			}
+			if empty {
+				_ = shared.server.Close()
+				_ = shared.listener.Close()
+			}
+			b.mu.Unlock()
+		})
+	}
+	stop := context.AfterFunc(ctx, cleanup)
+	return pending.incoming, protocol.FileRsyncResponse{Endpoints: rsyncEndpoints(shared.listener), Fingerprint: shared.fingerprint}, func() { stop(); cleanup() }, nil
 }
 
 func dialDirectRsync(ctx context.Context, request protocol.FileRsyncRequest) (*websocket.Conn, func(), error) {
@@ -403,4 +470,165 @@ func dialDirectRsync(ctx context.Context, request protocol.FileRsyncRequest) (*w
 	}
 	cleanup := func() { _ = conn.CloseNow(); transport.CloseIdleConnections() }
 	return conn, cleanup, nil
+}
+
+func directSTUNServers() []string {
+	value, ok := os.LookupEnv("NODEDANCE_STUN_SERVERS")
+	if !ok {
+		return []string{"stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"}
+	}
+	if strings.TrimSpace(value) == "" || value == "off" {
+		return nil
+	}
+	return strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' })
+}
+
+func waitIncoming(ctx context.Context, incoming <-chan *websocket.Conn) (*websocket.Conn, error) {
+	select {
+	case conn := <-incoming:
+		return conn, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (b *agentFileBridge) receiveDirect(ctx context.Context, id string, session *agentRsyncSession) (filetransport.Connection, func(), error) {
+	setup, cancel := context.WithDeadline(ctx, minTime(session.request.Grant.ExpiresAt, time.Now().Add(20*time.Second)))
+	defer cancel()
+	ready := protocol.FileRsyncResponse{Operation: "prepare", SessionID: session.request.SessionID, State: "ready"}
+	if session.request.PeerMode == "tcp" {
+		incoming, offer, cleanup, err := b.listenRsync(ctx, session)
+		if err != nil {
+			return nil, nil, err
+		}
+		ready.Endpoints, ready.Fingerprint = offer.Endpoints, offer.Fingerprint
+		b.respondRsync(ctx, id, ready)
+		conn, err := waitIncoming(setup, incoming)
+		return conn, cleanup, err
+	}
+	var peer *peertransport.Peer
+	if session.request.PeerMode == "ice" {
+		var err error
+		peer, err = peertransport.New(ctx, directSTUNServers())
+		if err != nil {
+			return nil, nil, err
+		}
+		ready.SDP, err = peer.Offer(setup)
+		if err != nil {
+			peer.Close()
+			return nil, nil, err
+		}
+	}
+	b.respondRsync(ctx, id, ready)
+	var signal protocol.FileRsyncRequest
+	select {
+	case signal = <-session.signal:
+	case <-setup.Done():
+		if peer != nil {
+			peer.Close()
+		}
+		return nil, nil, setup.Err()
+	}
+	if peer == nil {
+		conn, cleanup, err := dialDirectRsync(setup, signal)
+		return conn, cleanup, err
+	}
+	cleanup := func() { peer.Close() }
+	if err := peer.Accept(signal.SDP); err != nil {
+		return nil, cleanup, err
+	}
+	conn, err := peer.Wait(setup)
+	if err == nil {
+		err = authenticatePeer(setup, conn, session.request.Grant, true)
+	}
+	return conn, cleanup, err
+}
+
+func (b *agentFileBridge) sendDirect(id string, session *agentRsyncSession) (filetransport.Connection, func(), error) {
+	request := session.request
+	if request.PeerMode == "tcp" {
+		return dialDirectRsync(session.ctx, request)
+	}
+	setup, cancel := context.WithDeadline(session.ctx, minTime(request.Grant.ExpiresAt, time.Now().Add(20*time.Second)))
+	defer cancel()
+	offer := protocol.FileRsyncResponse{Operation: "send", SessionID: request.SessionID, State: "offer"}
+	if request.PeerMode == "reverse" {
+		incoming, endpoint, cleanup, err := b.listenRsync(session.ctx, session)
+		if err != nil {
+			return nil, nil, err
+		}
+		offer.Endpoints, offer.Fingerprint = endpoint.Endpoints, endpoint.Fingerprint
+		b.respondRsync(session.ctx, id, offer)
+		conn, err := waitIncoming(setup, incoming)
+		if err != nil {
+			cleanup()
+			return nil, nil, err
+		}
+		return conn, cleanup, err
+	}
+	peer, err := peertransport.New(session.ctx, directSTUNServers())
+	if err != nil {
+		return nil, nil, err
+	}
+	cleanup := func() { peer.Close() }
+	offer.SDP, err = peer.Answer(setup, request.SDP)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	b.respondRsync(session.ctx, id, offer)
+	conn, err := peer.Wait(setup)
+	if err == nil {
+		err = authenticatePeer(setup, conn, request.Grant, false)
+	}
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	return conn, cleanup, nil
+}
+
+func authenticatePeer(ctx context.Context, conn filetransport.Connection, grant protocol.FileStreamGrant, receiver bool) error {
+	conn.SetReadLimit(8 << 10)
+	if receiver {
+		kind, data, err := conn.Read(ctx)
+		var actual protocol.FileStreamGrant
+		if err != nil {
+			return err
+		}
+		expectedDigest := protocol.FileStreamDigest(grant)
+		if kind != websocket.MessageText || json.Unmarshal(data, &actual) != nil || !grant.ExpiresAt.After(time.Now()) || subtle.ConstantTimeCompare([]byte(protocol.FileStreamDigest(actual)), []byte(expectedDigest)) != 1 {
+			return errors.New("peer task credential rejected")
+		}
+		return conn.Write(ctx, websocket.MessageText, []byte("OK"))
+	}
+	data, _ := json.Marshal(grant)
+	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+		return err
+	}
+	kind, data, err := conn.Read(ctx)
+	if err != nil {
+		return err
+	}
+	if kind != websocket.MessageText || string(data) != "OK" {
+		return errors.New("peer task authorization failed")
+	}
+	return nil
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+func directRsyncError(mode string, err error) string {
+	if errors.Is(err, syscall.EADDRINUSE) {
+		return "direct_listen_in_use"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "direct_" + mode + "_timeout"
+	}
+	return "direct_" + mode + "_unavailable"
 }

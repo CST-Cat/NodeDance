@@ -59,7 +59,7 @@ jobs:
       - name: Run native Agent and updater tests
         run: |
           set -euo pipefail
-          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" "$(command -v go)" test -count=1 ./internal/agent/... ./internal/transfer/rsyncbundle ./internal/protocol/... ./internal/i18n/... ./cmd/nodedance-agent/... ./internal/update/...
+          sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" "$(command -v go)" test -count=1 ./internal/agent/... ./internal/peertransport ./internal/transfer/rsyncbundle ./internal/protocol/... ./internal/i18n/... ./cmd/nodedance-agent/... ./internal/update/...
       - uses: actions/upload-artifact@v4
         with:
           name: agent-dev-binary-${{ matrix.arch }}

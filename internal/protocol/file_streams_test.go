@@ -60,3 +60,32 @@ func TestFilePeerOffersRejectRedirectsCredentialsAndPathEscapes(t *testing.T) {
 		}
 	}
 }
+
+func TestRsyncPeerNegotiationRemainsBoundToTask(t *testing.T) {
+	source := "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+	target := "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+	descriptor := FileTransferDescriptor{TaskID: "ndt_" + strings.Repeat("c", 32), TargetNodeID: target, File: FileTaskSpec{Path: "/out/data", Size: 42, SHA256: strings.Repeat("a", 64), Transfer: &FileTransferSpec{Mode: "direct", SourceNodeID: source, SourcePath: "/data", SourceVersion: "original"}}}
+	grant := FileStreamGrant{SessionID: source, TaskID: descriptor.TaskID, NodeID: source, Role: "sender", Path: descriptor.File.Path, Binding: FileStreamDigest(descriptor), ExpiresAt: time.Now().Add(FileStreamLifetime), Secret: strings.Repeat("d", 64)}
+	request := FileRsyncRequest{Operation: "connect", SessionID: source, Descriptor: descriptor, Grant: grant, Transport: "direct", PeerMode: "ice", SDP: "v=0\r\n"}
+	envelope := Envelope{Version: CurrentVersion, Type: TypeFileRsyncRequest, Generation: 1, RequestID: target}
+	if err := ValidateFileRsyncRequest(envelope, 1, request); err != nil {
+		t.Fatal(err)
+	}
+	for _, change := range []func(*FileRsyncRequest){
+		func(r *FileRsyncRequest) { r.Descriptor.File.Size++ },
+		func(r *FileRsyncRequest) { r.Grant.Role = "receiver" },
+		func(r *FileRsyncRequest) { r.SDP = strings.Repeat("x", (64<<10)+1) },
+		func(r *FileRsyncRequest) { r.Operation = "commit" },
+		func(r *FileRsyncRequest) { r.Transport = "relay" },
+		func(r *FileRsyncRequest) { r.SessionID = target },
+	} {
+		modified := request
+		change(&modified)
+		if ValidateFileRsyncRequest(envelope, 1, modified) == nil {
+			t.Fatal("accepted unbound peer negotiation")
+		}
+	}
+	if ValidateFileRsyncRequest(envelope, 2, request) == nil {
+		t.Fatal("accepted obsolete Agent generation")
+	}
+}

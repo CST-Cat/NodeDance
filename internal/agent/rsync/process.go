@@ -270,7 +270,7 @@ func ProbeConfinement(ctx context.Context, binary string, directory, payload *os
 	return cmd.Run()
 }
 
-func Receive(ctx context.Context, binary string, directory, payload *os.File, size int64, template []string, conn *websocket.Conn) error {
+func Receive(ctx context.Context, binary string, directory, payload *os.File, size int64, template []string, conn filetransport.Connection) error {
 	handshake, cancelHandshake := context.WithTimeout(ctx, 10*time.Second)
 	defer cancelHandshake()
 	conn.SetReadLimit(32 << 10)
@@ -358,7 +358,7 @@ func (w *progressWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
-func Send(ctx context.Context, binary, stateDir string, source *os.File, bandwidth int64, conn *websocket.Conn, onProgress func(uint64)) error {
+func Send(ctx context.Context, binary, stateDir string, source *os.File, bandwidth int64, conn filetransport.Connection, onProgress func(uint64)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	socket, listener, cleanup, err := openShellSocket(stateDir)

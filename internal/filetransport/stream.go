@@ -10,16 +10,25 @@ import (
 	"github.com/coder/websocket"
 )
 
+type Connection interface {
+	Read(context.Context) (websocket.MessageType, []byte, error)
+	Reader(context.Context) (websocket.MessageType, io.Reader, error)
+	Write(context.Context, websocket.MessageType, []byte) error
+	SetReadLimit(int64)
+	CloseNow() error
+	Close(websocket.StatusCode, string) error
+}
+
 type Stream struct {
 	ctx        context.Context
-	conn       *websocket.Conn
+	conn       Connection
 	reader     io.Reader
 	eof        bool
 	mu         sync.Mutex
 	writtenEOF bool
 }
 
-func New(ctx context.Context, conn *websocket.Conn) *Stream {
+func New(ctx context.Context, conn Connection) *Stream {
 	conn.SetReadLimit(protocol.MaxFileStreamMessage)
 	return &Stream{ctx: ctx, conn: conn}
 }

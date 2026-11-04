@@ -36,23 +36,24 @@ type agentFileTransfer struct {
 }
 
 type agentFileBridge struct {
-	configPath    string
-	nodeID        string
-	dataID        string
-	dataBinding   *protocol.FileRequest
-	dataStarted   bool
-	dataSessions  map[string]context.CancelFunc
-	rsyncSessions map[string]*agentRsyncSession
-	service       *agentfiles.Service
-	tasks         *agentfiles.TaskExecutor
-	generation    uint64
-	writer        fileEnvelopeWriter
-	mu            sync.Mutex
-	transfers     map[string]*agentFileTransfer
-	canceled      map[string]struct{}
-	cancelOrder   []string
-	closed        bool
-	wg            sync.WaitGroup
+	configPath      string
+	nodeID          string
+	dataID          string
+	dataBinding     *protocol.FileRequest
+	dataStarted     bool
+	dataSessions    map[string]context.CancelFunc
+	rsyncSessions   map[string]*agentRsyncSession
+	directListeners map[int]*rsyncListener
+	service         *agentfiles.Service
+	tasks           *agentfiles.TaskExecutor
+	generation      uint64
+	writer          fileEnvelopeWriter
+	mu              sync.Mutex
+	transfers       map[string]*agentFileTransfer
+	canceled        map[string]struct{}
+	cancelOrder     []string
+	closed          bool
+	wg              sync.WaitGroup
 }
 
 func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer fileEnvelopeWriter, tasks *agentfiles.TaskExecutor) *agentFileBridge {

@@ -128,6 +128,8 @@ type FileRsyncRequest struct {
 	Descriptor  FileTransferDescriptor `json:"descriptor"`
 	Grant       FileStreamGrant        `json:"grant"`
 	Transport   string                 `json:"transport,omitempty"`
+	PeerMode    string                 `json:"peerMode,omitempty"`
+	SDP         string                 `json:"sdp,omitempty"`
 	ListenPort  int                    `json:"listenPort,omitempty"`
 	Endpoints   []string               `json:"endpoints,omitempty"`
 	Fingerprint string                 `json:"fingerprint,omitempty"`
@@ -135,6 +137,7 @@ type FileRsyncRequest struct {
 }
 
 type FileRsyncResponse struct {
+	SDP         string   `json:"sdp,omitempty"`
 	Operation   string   `json:"operation"`
 	SessionID   string   `json:"sessionId"`
 	State       string   `json:"state"`
@@ -158,7 +161,7 @@ func ValidateFileRsyncRequest(envelope Envelope, generation uint64, request File
 	if envelope.Type != TypeFileRsyncRequest || envelope.Version != CurrentVersion || generation == 0 || envelope.Generation != generation ||
 		envelope.Sequence != 0 || !fileRequestID.MatchString(envelope.RequestID) || !fileRequestID.MatchString(request.SessionID) || !ValidFileTransferDescriptor(request.Descriptor) ||
 		len(request.Endpoints) > 64 || request.Completed > uint64(request.Descriptor.File.Size) ||
-		request.ListenPort < 0 || request.ListenPort > 65535 {
+		request.ListenPort < 0 || request.ListenPort > 65535 || len(request.SDP) > 64<<10 {
 		return errors.New("invalid rsync control request")
 	}
 	for _, endpoint := range request.Endpoints {
@@ -167,7 +170,7 @@ func ValidateFileRsyncRequest(envelope Envelope, generation uint64, request File
 		}
 	}
 	switch request.Operation {
-	case "prepare", "send":
+	case "prepare", "send", "connect":
 		if request.Transport != "direct" && request.Transport != "relay" || !ValidFileStreamGrant(request.Grant, time.Now()) ||
 			request.Grant.SessionID != request.SessionID || request.Grant.TaskID != request.Descriptor.TaskID || request.Grant.Binding != FileStreamDigest(request.Descriptor) ||
 			request.Grant.Path != request.Descriptor.File.Path {
@@ -180,21 +183,24 @@ func ValidateFileRsyncRequest(envelope Envelope, generation uint64, request File
 		} else if request.Grant.Role != "sender" || request.Grant.NodeID != request.Descriptor.File.Transfer.SourceNodeID {
 			return errors.New("invalid rsync sender credential")
 		}
-		if request.Operation == "send" && request.Transport == "direct" && (len(request.Endpoints) == 0 || !validFileDigest(request.Fingerprint)) {
+		if request.Transport == "direct" && !validRsyncPeerFields(request) {
 			return errors.New("invalid direct rsync offer")
 		}
 		if request.Completed != 0 || request.Operation == "prepare" && (len(request.Endpoints) != 0 || request.Fingerprint != "") || request.Transport == "relay" && (len(request.Endpoints) != 0 || request.Fingerprint != "") {
 			return errors.New("unexpected rsync offer fields")
 		}
-		if request.ListenPort != 0 && (request.Operation != "prepare" || request.Transport != "direct") {
+		if request.Transport == "relay" && (request.PeerMode != "" || request.SDP != "" || request.Operation == "connect") {
+			return errors.New("unexpected rsync peer negotiation")
+		}
+		if request.ListenPort != 0 && (request.Transport != "direct" || !(request.Operation == "prepare" && request.PeerMode == "tcp") && !(request.Operation == "send" && request.PeerMode == "reverse")) {
 			return errors.New("unexpected rsync listen port")
 		}
 	case "commit":
-		if request.Transport != "direct" && request.Transport != "relay" || request.Grant != (FileStreamGrant{}) || len(request.Endpoints) != 0 || request.Fingerprint != "" || request.Completed != 0 || request.ListenPort != 0 {
+		if request.Transport != "direct" && request.Transport != "relay" || request.Grant != (FileStreamGrant{}) || len(request.Endpoints) != 0 || request.Fingerprint != "" || request.Completed != 0 || request.ListenPort != 0 || request.PeerMode != "" || request.SDP != "" {
 			return errors.New("invalid rsync commit")
 		}
 	case "abort", "progress":
-		if request.Transport != "" || request.Grant != (FileStreamGrant{}) || len(request.Endpoints) != 0 || request.Fingerprint != "" || request.ListenPort != 0 || request.Operation == "abort" && request.Completed != 0 {
+		if request.Transport != "" || request.Grant != (FileStreamGrant{}) || len(request.Endpoints) != 0 || request.Fingerprint != "" || request.ListenPort != 0 || request.PeerMode != "" || request.SDP != "" || request.Operation == "abort" && request.Completed != 0 {
 			return errors.New("unexpected rsync control fields")
 		}
 	default:
@@ -206,11 +212,11 @@ func ValidateFileRsyncRequest(envelope Envelope, generation uint64, request File
 func ValidateFileRsyncResponse(envelope Envelope, generation uint64, response FileRsyncResponse) error {
 	if envelope.Type != TypeFileRsyncResponse || envelope.Version != CurrentVersion || generation == 0 || envelope.Generation != generation || envelope.Sequence != 0 ||
 		!fileRequestID.MatchString(envelope.RequestID) || !fileRequestID.MatchString(response.SessionID) || len(response.Endpoints) > 64 ||
-		response.Fingerprint != "" && !validFileDigest(response.Fingerprint) {
+		response.Fingerprint != "" && !validFileDigest(response.Fingerprint) || len(response.SDP) > 64<<10 {
 		return errors.New("invalid rsync control response")
 	}
 	switch response.State {
-	case "ready", "progress", "received", "sent", "aborted", "committed", "unavailable", "error":
+	case "offer", "signaled", "ready", "progress", "received", "sent", "aborted", "committed", "unavailable", "error":
 	default:
 		return errors.New("invalid rsync response state")
 	}
@@ -223,4 +229,41 @@ func ValidateFileRsyncResponse(envelope Envelope, generation uint64, response Fi
 		}
 	}
 	return nil
+}
+
+func validRsyncPeerFields(r FileRsyncRequest) bool {
+	if r.PeerMode != "tcp" && r.PeerMode != "reverse" && r.PeerMode != "ice" {
+		return false
+	}
+	if r.Operation == "prepare" {
+		return r.SDP == "" && len(r.Endpoints) == 0 && r.Fingerprint == ""
+	}
+	if r.PeerMode == "ice" {
+		return r.SDP != "" && len(r.Endpoints) == 0 && r.Fingerprint == "" && r.ListenPort == 0
+	}
+	if r.SDP != "" {
+		return false
+	}
+	if r.Operation == "send" && r.PeerMode == "reverse" {
+		return len(r.Endpoints) == 0 && r.Fingerprint == ""
+	}
+	return len(r.Endpoints) > 0 && validFileDigest(r.Fingerprint) && (r.Operation != "connect" || r.PeerMode == "reverse")
+}
+
+func ValidFileRsyncOffer(mode string, endpoints []string, fingerprint, sdp string) bool {
+	if mode == "ice" {
+		return sdp != "" && len(sdp) <= 64<<10 && len(endpoints) == 0 && fingerprint == ""
+	}
+	if mode != "tcp" && mode != "reverse" {
+		return false
+	}
+	if len(endpoints) == 0 || len(endpoints) > 64 || !validFileDigest(fingerprint) || sdp != "" {
+		return false
+	}
+	for _, endpoint := range endpoints {
+		if !ValidFilePeerEndpoint(endpoint) {
+			return false
+		}
+	}
+	return true
 }

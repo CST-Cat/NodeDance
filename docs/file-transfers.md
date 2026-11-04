@@ -6,13 +6,17 @@ Core 通过 `files.transfer` 调度普通文件对传：每次传输按所选模
 
 ## Direct connections / 直连
 
-The target opens a temporary TLS listener on an operating-system-assigned port and offers addresses discovered from its active network interfaces. The source probes the offers concurrently, verifies the task's temporary certificate SHA-256 fingerprint and opens one WSS stream using a one-use credential. IP addresses and ports are not configured or hardcoded. Existing Tailscale interfaces participate like other interfaces; NodeDance does not install or configure Tailscale.
+Direct mode tries three task-scoped paths in order: source-dials-target TCP/WSS, target-dials-source TCP/WSS, then Pion WebRTC reliable ordered DataChannel over ICE/DTLS/SCTP. Connection initiator and file sender are independent. Core forwards only task authorization, bounded SDP offers/answers, progress and outcomes; the selected direct connection carries the rsync bytes. Neither TURN candidates nor automatic Core relay are allowed in direct mode.
 
-A node behind NAT whose provider forwards a port to it can declare that port in its node settings: a direct listen port, and the public port when it differs. The target then listens on the declared port and Core offers a single endpoint built from the node's public address as observed on its current connection and the declared public port. NodeDance does not modify firewalls, punch NAT holes or create port mappings; without a provider forwarding, a NAT node's declared endpoint is unreachable and the direct attempt fails like any other unreachable endpoint.
+直连依次尝试源端连接目标、目标反向连接源端、Pion WebRTC 可靠有序 DataChannel。最后一种通过 ICE/STUN 探测局域网、IPv4/IPv6 与公网 UDP 映射并进行打洞。Core 通过现有认证控制连接转交完成候选采集的 SDP offer/answer；DTLS 验证 SDP 中的证书指纹，数据通道还校验一次性、绑定任务的凭证。每个直连通道都有缓冲上限、写入背压、连接超时与取消处理。选中路径必须不含 TURN 中继，无法直连时报告失败。
 
-目标端临时监听系统分配的端口，从当前网卡发现地址；源端并发探测可达性，核对 Core 转交的临时证书指纹，再使用一次性任务凭证连接。NodeDance 不修改防火墙，不做 NAT 打洞或端口映射。直连模式下端点不可达即传输失败，不自动改走中继；可经重试入口以同一模式重试。
+A target without a declared port listens on an operating-system-assigned TCP port. A declared listen/public port uses the provider's existing TCP forwarding; it does not create a mapping. The declared endpoint is added to interface candidates, rather than replacing them. Fixed TCP listeners are shared within the Agent control connection and route independently authenticated sessions by task identity, allowing concurrent file transfers. Both directions preserve existing Tailscale interface candidates. NodeDance does not install or configure Tailscale or change host firewall rules.
 
-位于 NAT 之后、且服务商已为其转发端口的节点，可在节点设置中声明该端口：直连监听端口，以及与监听端口不同时的对外端口。目标端随即改在声明的监听端口上监听，Core 以节点当前连接所见的公网地址与声明的对外端口组成唯一直连端点。NodeDance 不创建端口映射；服务商没有转发时，声明的端点同样不可达，直连如实失败。
+配置的监听端口与公网端口只描述已有的 TCP 端口转发，不会自动配置路由器。两端网卡候选与声明的公网候选同时保留，IPv6、同局域网及已有 Tailscale 路径仍可尝试。一个固定 TCP 端口可承载多个独立认证任务；ICE 使用自己的 UDP socket，不使用 TCP 端口转发声明推算 UDP 映射。
+
+Agent uses `stun:stun.cloudflare.com:3478` and `stun:stun.l.google.com:19302` by default. Set the Agent service environment variable `NODEDANCE_STUN_SERVERS` to a comma-separated list of `stun:` URLs for private STUN infrastructure; an empty value or `off` disables STUN while retaining host candidates. TURN configuration is rejected. STUN services see discovery traffic and observed IP/port, not file contents. If STUN is hosted beside Core, expose its UDP listener separately; the HTTPS/WSS reverse proxy does not provide STUN service. Allow outbound UDP and its stateful replies on Agents. Each candidate-gathering phase waits up to three seconds for STUN, and direct connection setup has a twenty-second bound per Agent attempt within the task credential lifetime.
+
+默认 STUN 服务只参与公网映射发现，不接收文件数据；可用 Agent 服务环境变量 `NODEDANCE_STUN_SERVERS` 配置自建服务，设为 `off` 或空值可关闭 STUN。普通 NAT 的打洞成功率取决于映射及过滤行为；双端对称 NAT、部分 CGNAT、禁用 UDP 或严格防火墙仍可能无法直连。这些环境应明确选择 Core 中继，或配置可达 IPv6／端口映射。已有组网通道自身也可能中继，不能仅凭虚拟网卡地址声称底层为公网直连。
 
 Each Agent embeds a trimmed static rsync 3.4.1 executable for its Linux amd64 or arm64 architecture. Runtime uses only this bundle, extracted beneath protected root Agent state; no system rsync is discovered or used. Linux Landlock ABI 3 or newer is required for the rsync availability check, and the receiver must additionally pass a runtime confinement probe. Before starting `rsync --server`, the target generates an argument template with its bundled rsync and accepts only an exact match from the source. Delete, sender, daemon, files-from, backup and redirected-log arguments are forbidden. See [bundled rsync](bundled-rsync.md) for source, checksums, architecture builds and notices.
 
@@ -56,7 +60,7 @@ TUI 的通用操作界面填写同样的参数和幂等键。Web 将失败目标
 
 ## Verification / 验证
 
-`internal/core/server/file_transfer_integration_test.go` starts a real isolated Core and two separate root Agent processes, with bundled rsync, an unavailable system-command PATH and disposable file/state directories. Its TLS proxy injects an unreachable direct offer, unavailable rsync data endpoints and a data-only disconnect without a product test switch. The cases cover direct transfer, WSS relay, chunk fallback, data reconnection, cancellation, retained-partial retry, consumed-credential rejection and absence of chunks on persistent control connections. Receiver and staging tests cover altered wire arguments, SHA-256 failure, target-version conflicts, unsafe partial links and recovery without replay.
+`internal/core/server/file_transfer_integration_test.go` starts a real isolated Core and two separate root Agent processes, with bundled rsync, an unavailable system-command PATH and disposable file/state directories. Its TLS proxy injects an unreachable direct offer, unavailable rsync data endpoints and a data-only disconnect without a product test switch. The cases cover forward TCP, reverse TCP and ICE-negotiated rsync direct transfer, WSS relay, chunk fallback, data reconnection, cancellation, retained-partial retry, consumed-credential rejection and absence of chunks on persistent control connections. Receiver and staging tests cover altered wire arguments, SHA-256 failure, target-version conflicts, unsafe partial links and recovery without replay.
 
 ```sh
 make build
@@ -68,3 +72,7 @@ python3 scripts/interface-coverage.py --check
 ```
 
 浏览器回归使用新构建的内嵌资源和隔离 Core／root Agent，覆盖限速输入、真实取消后的未知观察和重试、结果方式、CLI 契约调用及已有文件安全边界。Go 端到端案例使用同一主机上的两个独立 Agent 进程；这不代表跨物理主机、WAN、NAT 或生产网络已经实测。测试环境不满足 root 或 Landlock 要求时，相关实测案例明确跳过，不能将跳过记为验证通过；内置包损坏或缺失属于失败。
+
+`internal/peertransport/peer_test.go` uses Pion virtual networks with two separate port-restricted NAT routers and a STUN server. It verifies bidirectional reliable transfer without relay, and bounded failure for the tested symmetric-NAT and UDP-blocked topologies. Agent transport tests independently exercise Core-style offer/answer signaling, task authorization, duplicate-signal rejection and shared fixed TCP listeners. Virtual-network success is not evidence of live provider/CGNAT connectivity. Real rsync integration requires root and Landlock ABI >= 3; set `NODEDANCE_REQUIRE_RSYNC_TESTS=1` to fail rather than skip when unavailable, as native CI does.
+
+新增 NAT 测试使用两个独立的虚拟 NAT 路由器，不代表生产运营商网络已经实测。运行环境不提供所需 Landlock 时，真实 rsync 用例只能记录为跳过；原生 Linux CI 必须实际运行这些用例，不能降低文件隔离要求来通过测试。

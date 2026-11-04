@@ -20,6 +20,7 @@ type coreRsyncWaiter struct {
 	request  protocol.FileRsyncRequest
 	updates  chan protocol.FileRsyncResponse
 	ready    bool
+	offered  bool
 	terminal bool
 }
 
@@ -88,7 +89,21 @@ func (s *Server) handleFileRsyncResponse(connection *agentConnection, envelope p
 	if response.SessionID != waiter.request.SessionID || response.Operation != waiter.request.Operation || response.Completed > uint64(waiter.request.Descriptor.File.Size) || waiter.terminal {
 		return errors.New("rsync response does not match its task")
 	}
-	if response.State == "ready" {
+	if response.State == "ready" || response.State == "offer" {
+		mode := waiter.request.PeerMode
+		hasOffer := mode != "" && !(response.State == "ready" && mode == "reverse")
+		if hasOffer && !protocol.ValidFileRsyncOffer(mode, response.Endpoints, response.Fingerprint, response.SDP) || !hasOffer && (len(response.Endpoints) != 0 || response.Fingerprint != "" || response.SDP != "") {
+			return errors.New("peer offer does not match the selected transport")
+		}
+	} else if len(response.Endpoints) != 0 || response.Fingerprint != "" || response.SDP != "" {
+		return errors.New("unexpected peer offer payload")
+	}
+	if response.State == "offer" {
+		if waiter.request.Operation != "send" || waiter.request.Transport != "direct" || waiter.request.PeerMode == "tcp" || waiter.offered || response.Completed != 0 {
+			return errors.New("unexpected peer offer")
+		}
+		waiter.offered = true
+	} else if response.State == "ready" {
 		if waiter.request.Operation != "prepare" || waiter.ready {
 			return errors.New("unexpected rsync ready response")
 		}

@@ -81,6 +81,8 @@ type transferIntegrationFixture struct {
 	targetRoot     string
 	targetState    string
 	blockDirect    atomic.Bool
+	blockReverse   atomic.Bool
+	peerMode       atomic.Value
 	controlBytes   atomic.Int64
 	chunkStreams   atomic.Int64
 	relayStreams   atomic.Int64
@@ -152,9 +154,15 @@ func newTransferIntegrationFixture(t *testing.T, rejectRsyncData bool) *transfer
 							f.controlBytes.Add(1)
 						}
 					}
+					if fromCore && envelope.Type == protocol.TypeFileRsyncRequest {
+						var request protocol.FileRsyncRequest
+						if json.Unmarshal(envelope.Payload, &request) == nil && request.Operation == "prepare" && request.Transport == "direct" {
+							f.peerMode.Store(request.PeerMode)
+						}
+					}
 					if fromCore && f.blockDirect.Load() && envelope.Type == protocol.TypeFileRsyncRequest {
 						var request protocol.FileRsyncRequest
-						if json.Unmarshal(envelope.Payload, &request) == nil && request.Operation == "send" && request.Transport == "direct" {
+						if json.Unmarshal(envelope.Payload, &request) == nil && request.Transport == "direct" && (request.Operation == "send" && request.PeerMode == "tcp" || request.Operation == "connect" && request.PeerMode == "reverse" && f.blockReverse.Load()) {
 							request.Endpoints = []string{closedEndpoint}
 							envelope.Payload, _ = json.Marshal(request)
 							data, _ = json.Marshal(envelope)
@@ -297,7 +305,7 @@ func requireBundledTransferRsync(t *testing.T) {
 	}
 	_, cleanupRsync, err := agentrsync.Available(state)
 	if err != nil {
-		if strings.Contains(err.Error(), "requires Landlock") {
+		if strings.Contains(err.Error(), "requires Landlock") && os.Getenv("NODEDANCE_REQUIRE_RSYNC_TESTS") != "1" {
 			t.Skipf("rsync confinement unavailable: %v", err)
 		}
 		t.Fatal("bundled rsync is unavailable", err)
@@ -525,5 +533,41 @@ func TestCoreCancelsRetainsPartialAndRetriesTheOriginalTransfer(t *testing.T) {
 	}
 	if f.controlBytes.Load() != 0 {
 		t.Fatal("recovery sent file bytes on the control channel")
+	}
+}
+
+func TestCoreDirectNegotiatesReverseAndICEWithoutRelaying(t *testing.T) {
+	requireBundledTransferRsync(t)
+	t.Setenv("NODEDANCE_STUN_SERVERS", "off")
+	f := newTransferIntegrationFixture(t, false)
+	f.blockDirect.Store(true)
+	content := bytes.Repeat([]byte("negotiated rsync\x00payload"), 32000)
+	if err := os.WriteFile(filepath.Join(f.sourceRoot, "peer.bin"), content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"reverse", "ice"} {
+		t.Run(mode, func(t *testing.T) {
+			f.blockReverse.Store(mode == "ice")
+			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+			defer cancel()
+			status, data, err := f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{Mode: "direct", TargetNodeID: f.target, Paths: []string{"/peer.bin"}, TargetPath: "/out"}, "direct-"+mode)
+			var result struct {
+				Transferred []fileTransferResult
+				Failed      []fileTransferFailure
+			}
+			if err != nil || status != 200 || json.Unmarshal(data, &result) != nil || len(result.Transferred) != 1 || len(result.Failed) != 0 {
+				t.Fatal(status, string(data), err, f.logs.String())
+			}
+			if f.peerMode.Load() != mode || result.Transferred[0].Transport != "rsync_direct" {
+				t.Fatal("unexpected selected path", f.peerMode.Load(), result.Transferred)
+			}
+			actual, err := os.ReadFile(filepath.Join(f.targetRoot, "out", "peer.bin"))
+			if err != nil || !bytes.Equal(actual, content) {
+				t.Fatal("rsync destination differs", err)
+			}
+		})
+	}
+	if f.controlBytes.Load() != 0 || f.relayStreams.Load() != 0 || f.chunkStreams.Load() != 0 {
+		t.Fatal("direct transfer used a Core data connection")
 	}
 }

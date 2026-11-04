@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"time"
@@ -20,19 +21,19 @@ func (e rsyncCommitError) Error() string { return e.cause.Error() }
 func (e rsyncCommitError) Unwrap() error { return e.cause }
 
 func (s *Server) runRsyncMode(ctx context.Context, current *session, descriptor protocol.FileTransferDescriptor, mode string) (string, error) {
-	attempts := 1
+	attempts := []string{"tcp", "reverse", "ice"}
 	if mode == protocol.FileTransferModeRelay {
-		attempts = 2
+		attempts = []string{"", ""}
 	}
-	var lastErr error
-	for range attempts {
+	var attemptErrors []error
+	for _, peerMode := range attempts {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		if err := s.runRsyncAttempt(ctx, current, descriptor, mode); err == nil {
+		if err := s.runRsyncAttempt(ctx, current, descriptor, mode, peerMode); err == nil {
 			return "rsync_" + mode, nil
 		} else {
-			lastErr = err
+			attemptErrors = append(attemptErrors, fmt.Errorf("%s: %w", mode+"/"+peerMode, err))
 			var committing rsyncCommitError
 			if errors.As(err, &committing) {
 				return "", err
@@ -42,7 +43,7 @@ func (s *Server) runRsyncMode(ctx context.Context, current *session, descriptor 
 			}
 		}
 	}
-	return "", lastErr
+	return "", errors.Join(attemptErrors...)
 }
 
 func (s *Server) waitRsyncConnections(ctx context.Context, descriptor protocol.FileTransferDescriptor) (*agentConnection, *agentConnection, error) {
@@ -99,7 +100,7 @@ func rsyncResponseError(response protocol.FileRsyncResponse) error {
 	return errors.New("Agent rsync attempt failed: " + response.Code)
 }
 
-func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descriptor protocol.FileTransferDescriptor, transport string) error {
+func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descriptor protocol.FileTransferDescriptor, transport, peerMode string) error {
 	source, target, err := s.waitRsyncConnections(ctx, descriptor)
 	if err != nil {
 		return err
@@ -129,9 +130,9 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 	if transport == "relay" {
 		prepareGrant = receiver
 	}
-	prepare := protocol.FileRsyncRequest{Operation: "prepare", SessionID: id, Descriptor: descriptor, Grant: prepareGrant, Transport: transport}
+	prepare := protocol.FileRsyncRequest{Operation: "prepare", SessionID: id, Descriptor: descriptor, Grant: prepareGrant, Transport: transport, PeerMode: peerMode}
 	var directAsset protocol.NodeAsset
-	if transport == "direct" {
+	if transport == "direct" && peerMode == "tcp" {
 		if asset, assetErr := s.nodeAsset(ctx, descriptor.TargetNodeID); assetErr == nil {
 			directAsset = asset
 		}
@@ -151,10 +152,18 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 	if offer.State != "ready" {
 		return rsyncResponseError(offer)
 	}
-	send := protocol.FileRsyncRequest{Operation: "send", SessionID: id, Descriptor: descriptor, Grant: sender, Transport: transport, Endpoints: offer.Endpoints, Fingerprint: offer.Fingerprint}
-	if transport == "direct" {
+	send := protocol.FileRsyncRequest{Operation: "send", SessionID: id, Descriptor: descriptor, Grant: sender, Transport: transport, Endpoints: offer.Endpoints, Fingerprint: offer.Fingerprint, PeerMode: peerMode, SDP: offer.SDP}
+	if transport == "direct" && peerMode == "tcp" {
 		if endpoint, ok := declaredDirectEndpoint(directAsset, s.connectionPublicIP(descriptor.TargetNodeID)); ok {
-			send.Endpoints = []string{endpoint}
+			send.Endpoints = append([]string{endpoint}, send.Endpoints...)
+			if len(send.Endpoints) > 64 {
+				send.Endpoints = send.Endpoints[:64]
+			}
+		}
+	}
+	if transport == "direct" && peerMode == "reverse" {
+		if asset, assetErr := s.nodeAsset(ctx, descriptor.File.Transfer.SourceNodeID); assetErr == nil {
+			send.ListenPort = asset.DirectListenPort
 		}
 	}
 	sending, cleanupSending, err := s.sendRsyncRequest(ctx, source, send)
@@ -162,10 +171,51 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 		return err
 	}
 	defer cleanupSending()
+	var received protocol.FileRsyncResponse
+	receivedUpdates := prepared.updates
 	for {
-		response, err := waitRsyncResponse(ctx, source, sending)
-		if err != nil {
-			return err
+		var response protocol.FileRsyncResponse
+		select {
+		case response = <-sending.updates:
+		case received = <-receivedUpdates:
+			if received.State != "received" {
+				return rsyncResponseError(received)
+			}
+			receivedUpdates = nil
+			continue
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-source.ctx.Done():
+			return errors.New("source Agent disconnected")
+		case <-target.ctx.Done():
+			return errors.New("target Agent disconnected")
+		}
+
+		if response.State == "offer" {
+			signal := protocol.FileRsyncRequest{Operation: "connect", SessionID: id, Descriptor: descriptor, Grant: sender, Transport: transport, PeerMode: peerMode, Endpoints: response.Endpoints, Fingerprint: response.Fingerprint, SDP: response.SDP}
+			if peerMode == "reverse" {
+				if asset, assetErr := s.nodeAsset(ctx, descriptor.File.Transfer.SourceNodeID); assetErr == nil {
+					if endpoint, ok := declaredDirectEndpoint(asset, s.connectionPublicIP(source.nodeID)); ok {
+						signal.Endpoints = append([]string{endpoint}, signal.Endpoints...)
+						if len(signal.Endpoints) > 64 {
+							signal.Endpoints = signal.Endpoints[:64]
+						}
+					}
+				}
+			}
+			signaled, cleanup, err := s.sendRsyncRequest(ctx, target, signal)
+			if err != nil {
+				return err
+			}
+			response, err := waitRsyncResponse(ctx, target, signaled)
+			cleanup()
+			if err != nil {
+				return err
+			}
+			if response.State != "signaled" {
+				return rsyncResponseError(response)
+			}
+			continue
 		}
 		if response.State == "progress" {
 			s.rsyncProgress(target, descriptor, id, response.Completed)
@@ -176,9 +226,11 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 		}
 		break
 	}
-	received, err := waitRsyncResponse(ctx, target, prepared)
-	if err != nil {
-		return err
+	if receivedUpdates != nil {
+		received, err = waitRsyncResponse(ctx, target, prepared)
+		if err != nil {
+			return err
+		}
 	}
 	if received.State != "received" {
 		return rsyncResponseError(received)
