@@ -23,7 +23,7 @@ func (e rsyncCommitError) Error() string { return e.cause.Error() }
 func (e rsyncCommitError) Unwrap() error { return e.cause }
 
 func (s *Server) runRsyncMode(ctx context.Context, current *session, descriptor protocol.FileTransferDescriptor, mode string) (string, error) {
-	attempts := []string{"tcp", "reverse", "ice", "tcp_punch"}
+	attempts := []string{"tcp", "reverse", "tcp_punch", "ice"}
 	if mode == protocol.FileTransferModeRelay {
 		attempts = []string{"", ""}
 	}

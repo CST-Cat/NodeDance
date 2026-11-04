@@ -84,6 +84,7 @@ type transferIntegrationFixture struct {
 	blockDirect    atomic.Bool
 	blockReverse   atomic.Bool
 	blockICE       atomic.Bool
+	blockPunch     atomic.Bool
 	peerMode       atomic.Value
 	controlBytes   atomic.Int64
 	chunkStreams   atomic.Int64
@@ -163,6 +164,11 @@ func newTransferIntegrationFixture(t *testing.T, rejectRsyncData bool, tcpSTUN .
 					}
 					if fromCore && envelope.Type == protocol.TypeFileRsyncRequest {
 						var request protocol.FileRsyncRequest
+						if json.Unmarshal(envelope.Payload, &request) == nil && request.Operation == "send" && request.PeerMode == "tcp_punch" && f.blockPunch.Load() {
+							request.Grant.Secret = strings.Repeat("0", 64)
+							envelope.Payload, _ = json.Marshal(request)
+							data, _ = json.Marshal(envelope)
+						}
 						if json.Unmarshal(envelope.Payload, &request) == nil && request.Operation == "prepare" && request.Transport == "direct" {
 							f.peerMode.Store(request.PeerMode)
 						}
@@ -631,6 +637,7 @@ func TestCoreDirectNegotiatesReverseAndICEWithoutRelaying(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			f.blockReverse.Store(mode != "reverse")
 			f.blockICE.Store(mode == "tcp_punch")
+			f.blockPunch.Store(mode == "ice")
 			ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
 			defer cancel()
 			status, data, err := f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{Mode: "direct", TargetNodeID: f.target, Paths: []string{"/peer.bin"}, TargetPath: "/out"}, "direct-"+mode)
