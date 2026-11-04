@@ -42,7 +42,7 @@ func (s *Server) handleFileTransferRetry(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	transfer := task.Intent.File.Transfer
-	result, err := s.transferFile(r.Context(), current, transfer.SourceNodeID, transfer.SourcePath, nodeID, path.Dir(task.Intent.File.Path), key, transfer.BandwidthLimit, taskID)
+	result, err := s.transferFile(r.Context(), current, transfer.SourceNodeID, transfer.SourcePath, nodeID, path.Dir(task.Intent.File.Path), key, transfer.BandwidthLimit, transfer.Mode, taskID)
 	if err != nil {
 		failure := fileTransferFailure{SourcePath: transfer.SourcePath, Error: err.Error()}
 		var taskErr fileTransferTaskError

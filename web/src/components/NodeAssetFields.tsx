@@ -215,6 +215,48 @@ export default function NodeAssetFields(input: Props) {
                       </Fragment>
                     </UiSelect>
                   </label>
+                  <label data-v-f325f884="">
+                    <span data-v-f325f884="">
+                      {t("asset.directListenPort")}
+                    </span>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="65535"
+                      data-testid="asset-direct-listen-port"
+                      {...__input(
+                        __props.values.directListenPort,
+                        (__nextValue: any) => {
+                          __props.values.directListenPort = __nextValue;
+                        },
+                        "number",
+                        undefined,
+                        ["number"],
+                      )}
+                      data-v-f325f884=""
+                    />
+                  </label>
+                  <label data-v-f325f884="">
+                    <span data-v-f325f884="">
+                      {t("asset.directPublicPort")}
+                    </span>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="65535"
+                      data-testid="asset-direct-public-port"
+                      {...__input(
+                        __props.values.directPublicPort,
+                        (__nextValue: any) => {
+                          __props.values.directPublicPort = __nextValue;
+                        },
+                        "number",
+                        undefined,
+                        ["number"],
+                      )}
+                      data-v-f325f884=""
+                    />
+                  </label>
                   {cycle.value === "day" ? (
                     <label data-v-f325f884="">
                       <span data-v-f325f884="">

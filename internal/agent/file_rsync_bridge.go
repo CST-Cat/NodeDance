@@ -292,7 +292,7 @@ func listenRsync(ctx context.Context, session *agentRsyncSession) (<-chan *webso
 	if err != nil {
 		return nil, protocol.FileRsyncResponse{}, nil, err
 	}
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", ":"+strconv.Itoa(session.request.ListenPort))
 	if err != nil {
 		return nil, protocol.FileRsyncResponse{}, nil, err
 	}

@@ -22,7 +22,17 @@ const (
 	MaxFileStreamMessage  = 1 << 20
 )
 
+const (
+	FileTransferModeRelay  = "relay"
+	FileTransferModeDirect = "direct"
+)
+
+func ValidFileTransferMode(value string) bool {
+	return value == FileTransferModeRelay || value == FileTransferModeDirect
+}
+
 type FileTransferSpec struct {
+	Mode           string `json:"mode"`
 	SourceNodeID   string `json:"sourceNodeId"`
 	SourcePath     string `json:"sourcePath"`
 	SourceVersion  string `json:"sourceVersion"`
@@ -118,6 +128,7 @@ type FileRsyncRequest struct {
 	Descriptor  FileTransferDescriptor `json:"descriptor"`
 	Grant       FileStreamGrant        `json:"grant"`
 	Transport   string                 `json:"transport,omitempty"`
+	ListenPort  int                    `json:"listenPort,omitempty"`
 	Endpoints   []string               `json:"endpoints,omitempty"`
 	Fingerprint string                 `json:"fingerprint,omitempty"`
 	Completed   uint64                 `json:"completed,omitempty"`
@@ -146,7 +157,8 @@ func ValidFilePeerEndpoint(value string) bool {
 func ValidateFileRsyncRequest(envelope Envelope, generation uint64, request FileRsyncRequest) error {
 	if envelope.Type != TypeFileRsyncRequest || envelope.Version != CurrentVersion || generation == 0 || envelope.Generation != generation ||
 		envelope.Sequence != 0 || !fileRequestID.MatchString(envelope.RequestID) || !fileRequestID.MatchString(request.SessionID) || !ValidFileTransferDescriptor(request.Descriptor) ||
-		len(request.Endpoints) > 64 || request.Completed > uint64(request.Descriptor.File.Size) {
+		len(request.Endpoints) > 64 || request.Completed > uint64(request.Descriptor.File.Size) ||
+		request.ListenPort < 0 || request.ListenPort > 65535 {
 		return errors.New("invalid rsync control request")
 	}
 	for _, endpoint := range request.Endpoints {
@@ -174,12 +186,15 @@ func ValidateFileRsyncRequest(envelope Envelope, generation uint64, request File
 		if request.Completed != 0 || request.Operation == "prepare" && (len(request.Endpoints) != 0 || request.Fingerprint != "") || request.Transport == "relay" && (len(request.Endpoints) != 0 || request.Fingerprint != "") {
 			return errors.New("unexpected rsync offer fields")
 		}
+		if request.ListenPort != 0 && (request.Operation != "prepare" || request.Transport != "direct") {
+			return errors.New("unexpected rsync listen port")
+		}
 	case "commit":
-		if request.Transport != "direct" && request.Transport != "relay" || request.Grant != (FileStreamGrant{}) || len(request.Endpoints) != 0 || request.Fingerprint != "" || request.Completed != 0 {
+		if request.Transport != "direct" && request.Transport != "relay" || request.Grant != (FileStreamGrant{}) || len(request.Endpoints) != 0 || request.Fingerprint != "" || request.Completed != 0 || request.ListenPort != 0 {
 			return errors.New("invalid rsync commit")
 		}
 	case "abort", "progress":
-		if request.Transport != "" || request.Grant != (FileStreamGrant{}) || len(request.Endpoints) != 0 || request.Fingerprint != "" || request.Operation == "abort" && request.Completed != 0 {
+		if request.Transport != "" || request.Grant != (FileStreamGrant{}) || len(request.Endpoints) != 0 || request.Fingerprint != "" || request.ListenPort != 0 || request.Operation == "abort" && request.Completed != 0 {
 			return errors.New("unexpected rsync control fields")
 		}
 	default:

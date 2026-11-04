@@ -44,9 +44,14 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request, curr
 		http.Error(w, "Idempotency-Key is required", http.StatusBadRequest)
 		return
 	}
-	if !validUUID(request.TargetNodeID) || len(request.Paths) == 0 || len(request.Paths) > 100 || !protocol.ValidVirtualFilePath(request.TargetPath) || !protocol.ValidFileBandwidth(request.BandwidthLimit) {
+	if !validUUID(request.TargetNodeID) || len(request.Paths) == 0 || len(request.Paths) > 100 || !protocol.ValidVirtualFilePath(request.TargetPath) || !protocol.ValidFileBandwidth(request.BandwidthLimit) ||
+		request.Mode != "" && !protocol.ValidFileTransferMode(request.Mode) {
 		http.Error(w, "invalid file transfer", http.StatusBadRequest)
 		return
+	}
+	mode := request.Mode
+	if mode == "" {
+		mode = protocol.FileTransferModeRelay
 	}
 	seen := map[string]struct{}{}
 	for _, sourcePath := range request.Paths {
@@ -85,7 +90,7 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request, curr
 		go func() {
 			defer wg.Done()
 			for index := range jobs {
-				result, transferErr := s.transferFile(r.Context(), current, sourceNodeID, request.Paths[index], request.TargetNodeID, request.TargetPath, key+"-"+strconv.Itoa(index), request.BandwidthLimit, "")
+				result, transferErr := s.transferFile(r.Context(), current, sourceNodeID, request.Paths[index], request.TargetNodeID, request.TargetPath, key+"-"+strconv.Itoa(index), request.BandwidthLimit, mode, "")
 				if transferErr != nil {
 					failures[index] = &fileTransferFailure{SourcePath: request.Paths[index], Error: transferErr.Error()}
 					var taskErr fileTransferTaskError
@@ -120,7 +125,7 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request, curr
 	writeJSON(w, http.StatusOK, payload)
 }
 
-func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeID, sourcePath, targetNodeID, targetDirectory, key string, bandwidthLimit int64, retryOfTaskID string) (_ fileTransferResult, failure error) {
+func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeID, sourcePath, targetNodeID, targetDirectory, key string, bandwidthLimit int64, mode, retryOfTaskID string) (_ fileTransferResult, failure error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	targetPath := path.Join(targetDirectory, path.Base(sourcePath))
@@ -132,14 +137,14 @@ func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeI
 		return fileTransferResult{}, errors.New("source file metadata is inconsistent")
 	}
 	size, digest := hashed.Size, hashed.SHA256
-	transferSpec := &protocol.FileTransferSpec{SourceNodeID: sourceNodeID, SourcePath: sourcePath, SourceVersion: hashed.Entry.Version, BandwidthLimit: bandwidthLimit, RetryOfTaskID: retryOfTaskID}
+	transferSpec := &protocol.FileTransferSpec{Mode: mode, SourceNodeID: sourceNodeID, SourcePath: sourcePath, SourceVersion: hashed.Entry.Version, BandwidthLimit: bandwidthLimit, RetryOfTaskID: retryOfTaskID}
 	var expectedVersion string
 	resolved := false
 	if retryOfTaskID != "" {
 		previous, err := s.tasks.Get(ctx, targetNodeID, retryOfTaskID)
 		if err != nil || previous.Intent.File == nil || previous.Intent.File.Transfer == nil || previous.Intent.File.Size != size || previous.Intent.File.SHA256 != digest ||
 			previous.Intent.File.Path != targetPath || previous.Intent.File.Transfer.SourceNodeID != sourceNodeID || previous.Intent.File.Transfer.SourcePath != sourcePath ||
-			previous.Intent.File.Transfer.SourceVersion != transferSpec.SourceVersion || previous.Intent.File.Transfer.BandwidthLimit != bandwidthLimit ||
+			previous.Intent.File.Transfer.SourceVersion != transferSpec.SourceVersion || previous.Intent.File.Transfer.BandwidthLimit != bandwidthLimit || previous.Intent.File.Transfer.Mode != mode ||
 			previous.Status != taskstate.Failed && previous.Status != taskstate.Canceled && previous.Status != taskstate.TimedOut {
 			return fileTransferResult{}, errors.New("retry source or destination differs from the original transfer")
 		}
@@ -147,7 +152,7 @@ func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeI
 	}
 	if existing, found, lookupErr := s.tasks.FindByIdempotency(ctx, targetNodeID, key); lookupErr == nil && found && existing.Intent.File != nil &&
 		existing.Intent.File.Path == targetPath && existing.Intent.File.Size == size && existing.Intent.File.SHA256 == digest && existing.Intent.File.Transfer != nil &&
-		existing.Intent.File.Transfer.SourceNodeID == sourceNodeID && existing.Intent.File.Transfer.SourcePath == sourcePath && existing.Intent.File.Transfer.BandwidthLimit == bandwidthLimit &&
+		existing.Intent.File.Transfer.SourceNodeID == sourceNodeID && existing.Intent.File.Transfer.SourcePath == sourcePath && existing.Intent.File.Transfer.BandwidthLimit == bandwidthLimit && existing.Intent.File.Transfer.Mode == mode &&
 		existing.Intent.File.Transfer.RetryOfTaskID == retryOfTaskID {
 		transferSpec.SourceVersion = existing.Intent.File.Transfer.SourceVersion
 		switch existing.Status {
@@ -206,7 +211,8 @@ func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeI
 		return fileTransferResult{}, errors.New("target upload task did not become ready: " + string(readyTask.Status))
 	}
 	descriptor := protocol.FileTransferDescriptor{TaskID: taskID, TargetNodeID: targetNodeID, File: *intent.File}
-	if transport, err := s.tryRsyncTransfer(ctx, current, descriptor); err == nil {
+	transport, err := s.runRsyncMode(ctx, current, descriptor, mode)
+	if err == nil {
 		final, err := s.waitFileTask(ctx, current.ID, targetNodeID, taskID)
 		if err != nil {
 			return fileTransferResult{}, err
@@ -216,23 +222,26 @@ func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeI
 		}
 		result.Transport = transport
 		return result, nil
-	} else if ctx.Err() != nil {
-		return fileTransferResult{}, ctx.Err()
-	} else {
-		var committing rsyncCommitError
-		if errors.As(err, &committing) {
-			final, observeErr := s.waitFileTask(ctx, current.ID, targetNodeID, taskID)
-			if observeErr != nil {
-				return fileTransferResult{}, observeErr
-			}
-			if final.Status != taskstate.Succeeded {
-				return fileTransferResult{}, err
-			}
-			result.Transport = final.Result.ObservedState
-			return result, nil
-		}
 	}
-	return s.transferFileChunks(ctx, current, descriptor)
+	if ctx.Err() != nil {
+		return fileTransferResult{}, ctx.Err()
+	}
+	var committing rsyncCommitError
+	if errors.As(err, &committing) {
+		final, observeErr := s.waitFileTask(ctx, current.ID, targetNodeID, taskID)
+		if observeErr != nil {
+			return fileTransferResult{}, observeErr
+		}
+		if final.Status != taskstate.Succeeded {
+			return fileTransferResult{}, err
+		}
+		result.Transport = final.Result.ObservedState
+		return result, nil
+	}
+	if mode == protocol.FileTransferModeRelay {
+		return s.transferFileChunks(ctx, current, descriptor)
+	}
+	return fileTransferResult{}, err
 }
 
 type fileTransferTaskError struct {

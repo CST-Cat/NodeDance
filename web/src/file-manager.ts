@@ -274,9 +274,9 @@ export async function createFileManager(
     persist();
     if (!result.failed?.length) finishIntent(intent);
   }
-  async function transfer(targetNodeId: string, paths: string[], targetPath: string, other?: AbortSignal, bandwidthLimit = 0) {
+  async function transfer(targetNodeId: string, paths: string[], targetPath: string, other?: AbortSignal, bandwidthLimit = 0, mode = "relay") {
     active();
-    const payload = exactJSON({ targetNodeId, paths, targetPath, bandwidthLimit });
+    const payload = exactJSON({ targetNodeId, paths, targetPath, bandwidthLimit, mode });
     const intent = await requestIntent("files.transfer", { params }, payload);
     active();
     const result = await operationRequest<FileTransferResponse>(

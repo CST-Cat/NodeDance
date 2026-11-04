@@ -19,6 +19,7 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
   const [targetId, setTargetId] = useState(sourceNodeId);
   const [targetPath, setTargetPath] = useState("/");
   const [bandwidth, setBandwidth] = useState("0");
+  const [mode, setMode] = useState("relay");
   const [transport, setTransport] = useState("");
   const [picker, setPicker] = useState(false);
   const [error, setError] = useState(""), [busy, setBusy] = useState(false), [done, setDone] = useState(false);
@@ -38,7 +39,7 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
     pending.current = controller;
     setBusy(true); setError("");
     try {
-      const result = await manager.transfer(targetId, files.map(file => file.path), targetPath, controller.signal, Number(bandwidth || 0));
+      const result = await manager.transfer(targetId, files.map(file => file.path), targetPath, controller.signal, Number(bandwidth || 0), mode);
       if (result.failed?.length) setError(result.failed.map(failure => `${failure.sourcePath}: ${failure.error}`).join("; "));
       else {
         const transports = new Set(result.transferred.map(file => file.transport));
@@ -65,6 +66,10 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
       <div className="file-transfer-field">
         <span className="file-transfer-label">{x("bandwidth")}</span>
         <Input label="" aria-label={x("bandwidth")} type="number" value={bandwidth} disabled={busy || done} onChange={event => setBandwidth(event.target.value)} />
+      </div>
+      <div className="file-transfer-field">
+        <span className="file-transfer-label">{x("mode")}</span>
+        <Select label="" aria-label={x("mode")} value={mode} disabled={busy || done} onValueChange={value => { setMode(value); }} options={[{ value: "relay", label: x("modeRelay") }, { value: "direct", label: x("modeDirect") }]} />
       </div>
       <div>
         <div className="file-transfer-files-head"><span>{x("files")}</span><span className="file-transfer-count">{files.length}</span></div>

@@ -74,7 +74,9 @@ func ValidateAgentSettings(s AgentSettings) error {
 			}
 		}
 	}
-	if s.UpdateChannel != "" && s.UpdateChannel != "stable" && s.UpdateChannel != "dev" { return errors.New("updateChannel must be stable or dev") }
+	if s.UpdateChannel != "" && s.UpdateChannel != "stable" && s.UpdateChannel != "dev" {
+		return errors.New("updateChannel must be stable or dev")
+	}
 	if s.Transport != "auto" && s.Transport != "websocket" && s.Transport != "http" {
 		return errors.New("transport must be auto, websocket or http")
 	}
@@ -433,6 +435,8 @@ type NodeAsset struct {
 	TrafficLimitBytes     uint64     `json:"trafficLimitBytes"`
 	TrafficAccounting     string     `json:"trafficAccounting"`
 	TrafficWarningPercent float64    `json:"trafficWarningPercent"`
+	DirectListenPort      int        `json:"directListenPort"`
+	DirectPublicPort      int        `json:"directPublicPort"`
 }
 
 // Currencies lists the supported billing currencies published in the operation
@@ -450,6 +454,9 @@ func ValidCurrency(value string) bool {
 func ValidateNodeAsset(a NodeAsset) error {
 	if !finiteNonnegative(a.Price) || !ValidCurrency(a.Currency) || a.BillingCycleDays < 1 || a.BillingCycleDays > 3660 || a.ExpiryNoticeDays < 0 || a.ExpiryNoticeDays > 365 || !percent(a.TrafficWarningPercent) {
 		return errors.New("invalid node asset settings")
+	}
+	if a.DirectListenPort < 0 || a.DirectListenPort > 65535 || a.DirectPublicPort < 0 || a.DirectPublicPort > 65535 {
+		return errors.New("invalid direct transfer port settings")
 	}
 	switch a.BillingCycleUnit {
 	case "", "day", "year", "month", "hour", "minute":
