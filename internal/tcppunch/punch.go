@@ -232,7 +232,7 @@ func (p *Peer) Connect(ctx context.Context, addresses []string, authenticate fun
 				if peer.Addr().Is4() {
 					network = "tcp4"
 				}
-				dialer := net.Dialer{Control: reuseSocket, LocalAddr: m.local, Timeout: 2 * time.Second}
+				dialer := net.Dialer{Control: reuseSocket, LocalAddr: m.local}
 				for ctx.Err() == nil {
 					if raw, err := dialer.DialContext(ctx, network, peer.String()); err == nil {
 						publish(raw)

@@ -12,6 +12,8 @@ Direct mode tries four task-scoped paths in order: source-dials-target TCP/WSS, 
 
 The TCP punch path uses a task-specific TLS 1.3 certificate on each Agent, pins both certificate fingerprints received through Core, and selects one authenticated stream before the existing WSS task-credential handshake. Port reuse is confined to that task's discovered ephemeral source port. Discovery connections, candidate listeners and losing connections are closed after selection, cancellation or timeout. It adds no Core listener, public API, persistent service, firewall rule or router configuration.
 
+TCP 同时打开保留正在进行的拨号，让内核在建链总时限内重传 SYN；不会每两秒销毁半连接并重置 NAT/TCP 状态。
+
 TCP 打洞使用双方各自的任务证书和 TLS 1.3，固定验证 Core 转交的双向证书指纹，选定一条认证连接后继续执行原有 WSS 一次性任务凭证校验。端口复用只涉及本次任务的临时源端口；选定、取消或超时后清理发现连接、候选监听和未选中的连接。不会新增 Core 监听端口、公开 API、常驻服务、防火墙规则或路由器配置。
 
 TCP discovery defaults to `stun:stun.nextcloud.com:443`. The root Agent environment variable `NODEDANCE_TCP_STUN_SERVERS` accepts one to four comma-separated `stun:` URLs for TCP-capable STUN services; empty or `off` disables this path. It is separate from `NODEDANCE_STUN_SERVERS`, which configures UDP discovery. STUN/TCP carries only binding requests and observed addresses, never file contents or task credentials. A forward HTTP proxy is not a TCP mapping observer. Servers and address families are probed concurrently with a shared three-second discovery bound, within the existing twenty-second connection-setup bound.
