@@ -50,6 +50,19 @@ module.exports=async({browser,context,url,artifacts,longGridName})=>{
   await overlayToolbar.getByRole('button',{name:'More',exact:true}).tap();await page.getByRole('menuitem',{name:'New',exact:true}).tap();await page.getByRole('menuitem',{name:'New folder',exact:true}).tap()
   await page.getByRole('dialog',{name:'New folder',exact:true}).waitFor();await page.getByRole('dialog',{name:'New folder',exact:true}).getByRole('button',{name:'Cancel',exact:true}).tap()
   assert.equal(await page.getByRole('dialog').count(),1,'Canceling a nested mobile form returns to the file dialog')
+  const mouse=await context.newPage()
+  try{
+   await mouse.setViewportSize({width:390,height:844});await mouse.goto(url)
+   const files=mouse.getByTestId('node-files'),controls=files.getByRole('toolbar',{name:'File manager',exact:true})
+   await files.locator('[data-file-name="hello.txt"]').waitFor()
+   for(const name of ['Grid','List']){
+    await files.getByRole('button',{name:longGridName,exact:true}).click({button:'right'});await mouse.keyboard.press('Escape');await mouse.locator('[data-slot=context-menu-content]').waitFor({state:'detached'})
+    await controls.getByRole('button',{name:'More',exact:true}).click();await mouse.getByRole('menuitem',{name:'View',exact:true}).click();
+    const item=mouse.getByRole('menuitemcheckbox',{name,exact:true}),target=await item.boundingBox();assert.ok(target,'View choice is visible')
+    await mouse.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:8});await item.click()
+    if(name==='Grid')await files.locator('.file-browser-grid').waitFor();else await files.getByRole('table').waitFor()
+   }
+  }finally{await mouse.close()}
   console.log('Mobile files: touch navigation, full-width list, long names, metadata, row and batch actions, view selection, pagination, new-folder dialog and themed menus passed at 320/390px.')
  }finally{await phone.close()}
 }

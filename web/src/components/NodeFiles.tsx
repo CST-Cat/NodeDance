@@ -1,7 +1,7 @@
 import { createPortal } from "react-dom";
 import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from "react";
 import { useSignals } from "@preact/signals-react/runtime";
-import { ArrowLeft, ArrowRight, ArrowUp, Folder, File, RefreshCw, ChevronDown, Download, Upload, Search, Plus, Maximize, Share2, MoreHorizontal, List, LayoutGrid } from "lucide-react";
+import { ArrowLeft, ArrowRight, ArrowUp, Folder, File, RefreshCw, ChevronDown, Download, Upload, Search, Plus, Maximize, Share2, MoreHorizontal } from "lucide-react";
 import { createFileManager, fileJoin, fileParent, type FileManager, type FileObservation } from "../file-manager";
 import type { NodeFileEntry } from "../api";
 import { operationCatalog } from "../operations";
@@ -25,7 +25,7 @@ import { FileAddressBreadcrumb, FileNameText, FilePathCopy } from "./FilePath";
 import FileImageEditor from "./FileImageEditor";
 import ElFinderCommands, { type FileCommand, type FileCommands } from "./ElFinderCommands";
 import { Card } from "./ui/card";
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuCheckboxItem } from "./ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuPortal, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuCheckboxItem } from "./ui/dropdown-menu";
 import "./NodeFiles.css";
 import FileShares from "./FileShares";
 import FileTransfer from "./FileTransfer";
@@ -60,7 +60,7 @@ function FileToolbarMenu({ label, items, icon, iconOnly, iconSize = "icon-lg", d
   const [layer, setLayer] = useState<number>();
   const renderItems = (rows: FileToolbarItem[]): React.ReactNode => rows.map(item => <Fragment key={item.label}>
     {item.separatorBefore && <DropdownMenuSeparator />}
-    {item.children ? <DropdownMenuSub><DropdownMenuSubTrigger disabled={item.disabled}>{item.icon}{item.label}</DropdownMenuSubTrigger><DropdownMenuSubContent className="registry-controls" style={{ zIndex: layer }}>{renderItems(item.children)}</DropdownMenuSubContent></DropdownMenuSub> : item.checked !== undefined ? <DropdownMenuCheckboxItem checked={item.checked} disabled={item.disabled} onSelect={item.onSelect}>{item.label}</DropdownMenuCheckboxItem> : <DropdownMenuItem disabled={item.disabled} variant={item.destructive ? "destructive" : "default"} onSelect={item.onSelect}>{item.icon}{item.label}</DropdownMenuItem>}
+    {item.children ? <DropdownMenuSub><DropdownMenuSubTrigger disabled={item.disabled}>{item.icon}{item.label}</DropdownMenuSubTrigger><DropdownMenuPortal><DropdownMenuSubContent className="registry-controls" style={{ zIndex: layer }}>{renderItems(item.children)}</DropdownMenuSubContent></DropdownMenuPortal></DropdownMenuSub> : item.checked !== undefined ? <DropdownMenuCheckboxItem checked={item.checked} disabled={item.disabled} onSelect={item.onSelect}>{item.label}</DropdownMenuCheckboxItem> : <DropdownMenuItem disabled={item.disabled} variant={item.destructive ? "destructive" : "default"} onSelect={item.onSelect}>{item.icon}{item.label}</DropdownMenuItem>}
   </Fragment>);
   return <DropdownMenu onOpenChange={open => { if (open) { const dialog = trigger.current?.closest('[role="dialog"]'); setLayer(dialog ? Number(getComputedStyle(dialog).zIndex) + 1 : undefined); } }}><DropdownMenuTrigger asChild><FileButton ref={trigger} type="button" variant="ghost" size={iconOnly ? iconSize : "default"} disabled={disabled} {...triggerProps}>{icon}{label}{!iconOnly && <ChevronDown />}</FileButton></DropdownMenuTrigger><DropdownMenuContent className="registry-controls" style={{ zIndex: layer }} align="start">{renderItems(items)}</DropdownMenuContent></DropdownMenu>;
 }
