@@ -22,13 +22,13 @@ import (
 // Each managed terminal gets a private server. Closing it kills all windows and
 // panes, while detaching kills only the client, leaving the shell with tmux.
 type tmuxEndpoint struct {
-	mu             sync.Mutex
-	client         *ptyClient
-	changed        chan struct{}
-	closed         bool
-	binary, socket string
-	env            []string
-	rows, columns  uint16
+	mu                     sync.Mutex
+	client                 *ptyClient
+	changed                chan struct{}
+	closed                 bool
+	binary, socket, config string
+	env                    []string
+	rows, columns          uint16
 }
 
 func newTmuxEndpoint(ctx context.Context, directory, socketDirectory string, env []string, request protocol.TerminalFrame, args []string) (*tmuxEndpoint, error) {
@@ -47,7 +47,11 @@ func newTmuxEndpoint(ctx context.Context, directory, socketDirectory string, env
 	env = append(filtered, "PATH="+directory+":"+path)
 	digest := sha256.Sum256([]byte(request.StreamID))
 	e := &tmuxEndpoint{binary: filepath.Join(directory, "tmux"), socket: filepath.Join(socketDirectory, fmt.Sprintf("s-%x", digest[:12])), env: append(env, "TERMINFO="+filepath.Join(directory, "assets/terminfo")), changed: make(chan struct{}), rows: request.Rows, columns: request.Columns}
-	command := exec.CommandContext(ctx, e.binary, "-f", filepath.Join(directory, "tmux.conf"), "-S", e.socket, "new-session", "-d", "-s", "main", "-x", strconv.Itoa(int(e.columns)), "-y", strconv.Itoa(int(e.rows)), "--")
+	e.config = e.socket + ".conf"
+	if err := os.WriteFile(e.config, []byte(terminalTmuxConfig(request.Capabilities)), 0600); err != nil {
+		return nil, err
+	}
+	command := exec.CommandContext(ctx, e.binary, "-f", e.config, "-S", e.socket, "new-session", "-d", "-s", "main", "-x", strconv.Itoa(int(e.columns)), "-y", strconv.Itoa(int(e.rows)), "--")
 	command.Args = append(command.Args, args...)
 	command.Env = e.env
 	if output, err := command.CombinedOutput(); err != nil {
@@ -208,6 +212,7 @@ func (e *tmuxEndpoint) Close() error {
 	command.Env = e.env
 	// An exited shell may already have removed its server.
 	_ = command.Run()
+	_ = os.Remove(e.config)
 	if client != nil {
 		return client.Close()
 	}

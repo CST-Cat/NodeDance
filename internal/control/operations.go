@@ -96,6 +96,10 @@ func schema(value any) any {
 		}
 	}
 	switch value.(type) {
+	case protocol.TerminalCreateRequest:
+		capabilities := props["capabilities"].(map[string]any)["properties"].(map[string]any)
+		capabilities["colorDepth"].(map[string]any)["enum"] = []any{0, 4, 8, 24}
+		props["capabilities"].(map[string]any)["description"] = "Client rendering capabilities, fixed for the session; omitted capabilities are monochrome without OSC 8 links"
 	case dashboard.Preference:
 		enum("icon", dashboard.PreferenceIcons()...)
 		enum("countryCode", dashboard.CountryCodes()...)

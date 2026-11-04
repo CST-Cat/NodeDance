@@ -2781,5 +2781,10 @@
   "operations.contract.b3dae754873c": "下载已分享的文件，消耗一次下载次数",
   "operations.contract.09f9e2a08ae4": "无密码分享的文件直链；每次访问计为一次下载",
   "operations.contract.3a35d0cd7bc2": "监控数据保留设置和可选时长",
-  "operations.contract.8668e0f35530": "设置最长监控保留时间并立即清除过期样本"
+  "operations.contract.8668e0f35530": "设置最长监控保留时间并立即清除过期样本",
+  "terminal.search": "搜索终端输出",
+  "terminal.searchPrevious": "上一个匹配",
+  "terminal.searchNext": "下一个匹配",
+  "terminal.searchClose": "关闭搜索",
+  "terminal.searchMissing": "无匹配结果"
 }

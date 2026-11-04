@@ -1,5 +1,10 @@
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
+import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
+import { Button } from "./arc/button/button";
+import { Input } from "./arc/input/input";
 import { ApiError, api } from "../api";
 import { display, t } from "../i18n";
 import { operationURL } from "../operations";
@@ -35,6 +40,10 @@ export default function TerminalConsole(input: Props) {
       }
       const terminalElement = cell<HTMLDivElement>();
       const dialogElement = cell<HTMLElement>();
+      const searchElement = cell<HTMLInputElement>();
+      const searchOpen = cell(false);
+      const searchQuery = cell("");
+      const searchFound = cell(true);
       let previousFocus: HTMLElement | null = null;
       let previousOverflow = "";
       function handleDialogKey(event: KeyboardEvent) {
@@ -42,12 +51,13 @@ export default function TerminalConsole(input: Props) {
         if ((event.target as HTMLElement).closest(".terminal-screen")) return;
         if (event.key === "Escape") {
           event.preventDefault();
-          close();
+          if (searchOpen.value) hideSearch();
+          else close();
           return;
         }
         if (event.key !== "Tab") return;
         const controls = dialogElement.value?.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), textarea, [tabindex="0"]',
+          'button:not(:disabled), input, textarea, [tabindex="0"]',
         );
         if (!controls?.length) return;
         const first = controls[0]!,
@@ -66,6 +76,7 @@ export default function TerminalConsole(input: Props) {
       const error = cell("");
       let terminal: Terminal | undefined;
       let fit: FitAddon | undefined;
+      let search: SearchAddon | undefined;
       let socket: WebSocket | undefined;
       let resizeObserver: ResizeObserver | undefined;
       let disposed = false;
@@ -118,6 +129,37 @@ export default function TerminalConsole(input: Props) {
         sendInput(value);
         terminal?.focus();
       }
+      async function showSearch() {
+        searchOpen.value = true;
+        await afterRender();
+        searchElement.value?.focus();
+        searchElement.value?.select();
+      }
+      function hideSearch() {
+        searchOpen.value = false;
+        terminal?.clearSelection();
+        terminal?.focus();
+      }
+      function findSearch(previous = false, incremental = false) {
+        if (!searchQuery.value) {
+          terminal?.clearSelection();
+          searchFound.value = true;
+          return;
+        }
+        searchFound.value = previous
+          ? search?.findPrevious(searchQuery.value) ?? false
+          : search?.findNext(searchQuery.value, { incremental }) ?? false;
+      }
+      function openLink(event: MouseEvent, uri: string) {
+        event.preventDefault();
+        try {
+          const url = new URL(uri);
+          if (url.protocol === "https:" || url.protocol === "http:")
+            window.open(url.href, "_blank", "noopener,noreferrer");
+        } catch {
+          return;
+        }
+      }
       function close() {
         dispose();
         emit("close");
@@ -158,7 +200,10 @@ export default function TerminalConsole(input: Props) {
                 };
           const authorization = resume
             ? await api.resumeTerminal(props.nodeId, streamId)
-            : await api.createTerminal(props.nodeId, target);
+            : await api.createTerminal(props.nodeId, {
+                ...target,
+                capabilities: { colorDepth: 24, hyperlinks: true },
+              });
           streamId = authorization.streamId;
           if (disposed) {
             // Unmount can race the POST response. Once the stream ID is known, revoke
@@ -208,7 +253,7 @@ export default function TerminalConsole(input: Props) {
               error.value = "";
               statusKey.value = "m.5be0323e8adc";
               fitTerminal();
-              terminal?.focus();
+              if (!searchOpen.value) terminal?.focus();
             } else if (frame.action === "output" && frame.data) {
               const bytes = Uint8Array.from(atob(frame.data), (character) =>
                 character.charCodeAt(0),
@@ -277,6 +322,7 @@ export default function TerminalConsole(input: Props) {
         const palette = getComputedStyle(
           terminalElement.value ?? document.documentElement,
         );
+        const color = (token: string) => palette.getPropertyValue(token).trim();
         terminal = new Terminal({
           cursorBlink: true,
           convertEol: false,
@@ -285,19 +331,53 @@ export default function TerminalConsole(input: Props) {
           fontFamily:
             "JetBrains Mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
           theme: {
-            background: palette.getPropertyValue("--product-canvas").trim(),
-            foreground: palette.getPropertyValue("--product-text").trim(),
-            cursor: palette.getPropertyValue("--accent-fill").trim(),
-            selectionBackground: palette
-              .getPropertyValue("--product-line-strong")
-              .trim(),
+            background: color("--product-canvas"),
+            foreground: color("--product-text"),
+            cursor: color("--product-text"),
+            cursorAccent: color("--product-canvas"),
+            selectionBackground: color("--product-text"),
+            selectionInactiveBackground: color("--product-text"),
+            selectionForeground: color("--product-canvas"),
+            black: color("--terminal-black"),
+            red: color("--terminal-red"),
+            green: color("--terminal-green"),
+            yellow: color("--terminal-yellow"),
+            blue: color("--terminal-blue"),
+            magenta: color("--terminal-magenta"),
+            cyan: color("--terminal-cyan"),
+            white: color("--terminal-white"),
+            brightBlack: color("--terminal-bright-black"),
+            brightRed: color("--terminal-bright-red"),
+            brightGreen: color("--terminal-bright-green"),
+            brightYellow: color("--terminal-bright-yellow"),
+            brightBlue: color("--terminal-bright-blue"),
+            brightMagenta: color("--terminal-bright-magenta"),
+            brightCyan: color("--terminal-bright-cyan"),
+            brightWhite: color("--terminal-bright-white"),
           },
+          minimumContrastRatio: 4.5,
+          linkHandler: { activate: openLink },
           allowProposedApi: false,
         });
         fit = new FitAddon();
         terminal.loadAddon(fit);
+        search = new SearchAddon();
+        terminal.loadAddon(search);
+        terminal.loadAddon(new WebLinksAddon(openLink));
         if (terminalElement.value) terminal.open(terminalElement.value);
         terminal.onData(sendInput);
+        terminal.attachCustomKeyEventHandler((event) => {
+          if (
+            event.type === "keydown" &&
+            (event.ctrlKey && event.shiftKey || event.metaKey) &&
+            event.key.toLowerCase() === "f"
+          ) {
+            event.preventDefault();
+            void showSearch();
+            return false;
+          }
+          return true;
+        });
         resizeObserver = new ResizeObserver(() => {
           if (ready.value) fitTerminal();
           else fit?.fit();
@@ -317,7 +397,8 @@ export default function TerminalConsole(input: Props) {
         <>
           <div
             data-testid="terminal-backdrop"
-            className={__classes("terminal-backdrop")}
+            className={__classes("terminal-backdrop product-arc arc-ui")}
+            data-theme="dark"
             onClick={(event: any) => {
               if (event.target !== event.currentTarget) return;
               __call(close, event);
@@ -354,18 +435,95 @@ export default function TerminalConsole(input: Props) {
                   </h2>
                   <p data-v-b8b9dc12="">{status.value}</p>
                 </div>
-                <button
-                  type="button"
-                  aria-label={t("m.16707b59cf5e") as any}
-                  className={__classes("terminal-close")}
-                  onClick={(event: any) => {
-                    __call(close, event);
-                  }}
-                  data-v-b8b9dc12=""
-                >
-                  {"×"}
-                </button>
+                <div className="terminal-heading-actions">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="md"
+                    aria-label={t("terminal.search")}
+                    aria-expanded={searchOpen.value}
+                    aria-controls="terminal-search"
+                    onClick={() => void showSearch()}
+                  >
+                    <Search width={16} height={16} aria-hidden="true" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="md"
+                    aria-label={t("m.16707b59cf5e")}
+                    onClick={close}
+                  >
+                    <X width={16} height={16} aria-hidden="true" />
+                  </Button>
+                </div>
               </header>
+              {searchOpen.value ? (
+                <form
+                  id="terminal-search"
+                  role="search"
+                  className="terminal-search"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    findSearch();
+                  }}
+                >
+                  <Input
+                    ref={__dom(searchElement)}
+                    type="search"
+                    aria-label={t("terminal.search")}
+                    placeholder={t("terminal.search")}
+                    value={searchQuery.value}
+                    onChange={(event) => {
+                      searchQuery.value = event.target.value;
+                      findSearch(false, true);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        findSearch(event.shiftKey);
+                      } else if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        hideSearch();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="md"
+                    aria-label={t("terminal.searchPrevious")}
+                    disabled={!searchQuery.value}
+                    onClick={() => findSearch(true)}
+                  >
+                    <ArrowUp width={16} height={16} aria-hidden="true" />
+                  </Button>
+                  <Button
+                    type="submit"
+                    variant="ghost"
+                    size="md"
+                    aria-label={t("terminal.searchNext")}
+                    disabled={!searchQuery.value}
+                  >
+                    <ArrowDown width={16} height={16} aria-hidden="true" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="md"
+                    aria-label={t("terminal.searchClose")}
+                    onClick={hideSearch}
+                  >
+                    <X width={16} height={16} aria-hidden="true" />
+                  </Button>
+                  {searchQuery.value && !searchFound.value ? (
+                    <span role="status" className="terminal-search-result">
+                      {t("terminal.searchMissing")}
+                    </span>
+                  ) : null}
+                </form>
+              ) : null}
               {error.value ? (
                 <p
                   role="alert"
@@ -387,7 +545,9 @@ export default function TerminalConsole(input: Props) {
                 className={__classes("terminal-keys")}
                 data-v-b8b9dc12=""
               >
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   disabled={!ready.value as any}
                   onClick={(event: any) => {
@@ -396,8 +556,10 @@ export default function TerminalConsole(input: Props) {
                   data-v-b8b9dc12=""
                 >
                   {"Tab"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   disabled={!ready.value as any}
                   onClick={(event: any) => {
@@ -406,8 +568,10 @@ export default function TerminalConsole(input: Props) {
                   data-v-b8b9dc12=""
                 >
                   {"Ctrl+C"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   disabled={!ready.value as any}
                   onClick={(event: any) => {
@@ -416,8 +580,10 @@ export default function TerminalConsole(input: Props) {
                   data-v-b8b9dc12=""
                 >
                   {"Ctrl+D"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   disabled={!ready.value as any}
                   onClick={(event: any) => {
@@ -426,8 +592,10 @@ export default function TerminalConsole(input: Props) {
                   data-v-b8b9dc12=""
                 >
                   {"Esc"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   disabled={!ready.value as any}
                   onClick={(event: any) => {
@@ -436,8 +604,10 @@ export default function TerminalConsole(input: Props) {
                   data-v-b8b9dc12=""
                 >
                   {"↑"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   disabled={!ready.value as any}
                   onClick={(event: any) => {
@@ -446,8 +616,10 @@ export default function TerminalConsole(input: Props) {
                   data-v-b8b9dc12=""
                 >
                   {"↓"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   disabled={!ready.value as any}
                   onClick={(event: any) => {
@@ -456,8 +628,10 @@ export default function TerminalConsole(input: Props) {
                   data-v-b8b9dc12=""
                 >
                   {"←"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   disabled={!ready.value as any}
                   onClick={(event: any) => {
@@ -466,7 +640,7 @@ export default function TerminalConsole(input: Props) {
                   data-v-b8b9dc12=""
                 >
                   {"→"}
-                </button>
+                </Button>
               </nav>
               <footer
                 className={__classes("terminal-footer")}
@@ -481,7 +655,9 @@ export default function TerminalConsole(input: Props) {
                         : "terminal.reconnectingHint",
                   )}
                 </span>
-                <button
+                <Button
+                  variant="secondary"
+                  size="md"
                   type="button"
                   onClick={(event: any) => {
                     __call(close, event);
@@ -489,7 +665,7 @@ export default function TerminalConsole(input: Props) {
                   data-v-b8b9dc12=""
                 >
                   {t("m.3eaf8d1b8148")}
-                </button>
+                </Button>
               </footer>
             </section>
           </div>

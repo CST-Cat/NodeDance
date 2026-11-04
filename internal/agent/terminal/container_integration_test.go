@@ -18,8 +18,8 @@ import (
 
 func TestMain(m *testing.M) {
 	// Provider's child uses the same bridge as the production Agent executable.
-	if len(os.Args) == 3 && os.Args[1] == "terminal-container" {
-		if err := RunContainerShell(context.Background(), os.Args[2], os.Stdin, os.Stdout); err != nil {
+	if len(os.Args) == 4 && os.Args[1] == "terminal-container" {
+		if err := RunContainerShell(context.Background(), os.Args[2], os.Args[3], os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

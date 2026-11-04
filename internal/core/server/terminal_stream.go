@@ -49,6 +49,7 @@ type terminalStream struct {
 	generation       uint64
 	targetKind       string
 	containerID      string
+	capabilities     protocol.TerminalCapabilities
 	agent            *agentConnection
 	conn             *websocket.Conn
 	out              chan protocol.TerminalFrame
@@ -104,6 +105,10 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, current 
 	}
 	var request createTerminalRequest
 	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := request.Capabilities.Validate(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if request.TargetKind != protocol.TerminalTargetHost && request.TargetKind != protocol.TerminalTargetContainer {
@@ -169,7 +174,7 @@ func (s *Server) createTerminal(w http.ResponseWriter, r *http.Request, current 
 		http.Error(w, "authentication required", http.StatusUnauthorized)
 		return
 	}
-	stream, ticket, err := s.terminals.create(current, nodeID, node.AgentID, node.ConnectionGeneration, request.TargetKind, request.ContainerID, connection, s.now())
+	stream, ticket, err := s.terminals.create(current, nodeID, node.AgentID, node.ConnectionGeneration, request.TargetKind, request.ContainerID, request.Capabilities, connection, s.now())
 	if err != nil {
 		if errors.Is(err, errTerminalLimit) {
 			http.Error(w, "node already has two active terminals", http.StatusTooManyRequests)
@@ -215,7 +220,7 @@ func (s *Server) cancelTerminalTicket(w http.ResponseWriter, r *http.Request, cu
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (m *terminalStreamManager) create(current *session, nodeID, agentID string, generation uint64, targetKind, containerID string, connection *agentConnection, now time.Time) (*terminalStream, string, error) {
+func (m *terminalStreamManager) create(current *session, nodeID, agentID string, generation uint64, targetKind, containerID string, capabilities protocol.TerminalCapabilities, connection *agentConnection, now time.Time) (*terminalStream, string, error) {
 	streamID, _, err := auth.NewToken()
 	if err != nil {
 		return nil, "", err
@@ -230,7 +235,7 @@ func (m *terminalStreamManager) create(current *session, nodeID, agentID string,
 	key := hex.EncodeToString(digest)
 	stream := &terminalStream{streamID: streamID, ticket: key, created: now, expires: now.Add(terminalTicketLifetime),
 		browserSessionID: current.ID, userID: current.UserID, remoteAddr: current.RemoteAddr, nodeID: nodeID, agentID: agentID,
-		generation: generation, targetKind: targetKind, containerID: containerID, agent: connection,
+		generation: generation, targetKind: targetKind, containerID: containerID, capabilities: capabilities, agent: connection,
 		out: make(chan protocol.TerminalFrame, terminalBrowserQueue)}
 	m.mu.Lock()
 	if m.byNode[nodeID] >= 2 {
@@ -531,6 +536,7 @@ func (s *Server) handleTerminalWebSocket(w http.ResponseWriter, r *http.Request,
 		frame.Action = protocol.TerminalActionOpen
 		frame.TargetKind = stream.targetKind
 		frame.ContainerID = stream.containerID
+		frame.Capabilities = stream.capabilities
 		frame.Rows = 24
 		frame.Columns = 80
 	}

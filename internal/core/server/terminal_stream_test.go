@@ -30,7 +30,7 @@ func terminalFixture(t *testing.T) (*Server, *session, *agentConnection, *termin
 	}
 	connection := &agentConnection{agentID: "agent", nodeID: terminalTestNode, generation: 1, commands: make(chan protocol.Envelope, 32)}
 	s.agentConnections["agent"] = connection
-	stream, ticket, err := s.terminals.create(current, terminalTestNode, "agent", 1, protocol.TerminalTargetHost, "", connection, s.now())
+	stream, ticket, err := s.terminals.create(current, terminalTestNode, "agent", 1, protocol.TerminalTargetHost, "", protocol.TerminalCapabilities{ColorDepth: 24, Hyperlinks: true}, connection, s.now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,6 +71,9 @@ func TestTerminalTransportReattachesTmuxWithoutOutputReplay(t *testing.T) {
 	json.Unmarshal(envelope.Payload, &frame)
 	if frame.Action != protocol.TerminalActionOpen {
 		t.Fatal("missing initial shell open")
+	}
+	if frame.Capabilities != stream.capabilities {
+		t.Fatalf("client capabilities were lost: %+v", frame.Capabilities)
 	}
 	s.terminals.handleAgentFrame(s, agent, agents.Identity{AgentID: "agent", NodeID: terminalTestNode}, protocol.TerminalFrame{StreamID: stream.streamID, Action: protocol.TerminalActionReady})
 	_, raw, err := conn.Read(ctx)

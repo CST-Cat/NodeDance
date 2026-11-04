@@ -74,7 +74,7 @@
   --figma-radius-sm: 6px;
   --figma-weight-mobile-medium: 550;
 }
-:root[data-theme="dark"], .app-shell[data-theme="dark"] {
+:root[data-theme="dark"], .app-shell[data-theme="dark"], .terminal-backdrop {
   --figma-background-primary: #30302eff;
   --figma-background-secondary: #262624ff;
   --figma-background-tertiary: #141413ff;

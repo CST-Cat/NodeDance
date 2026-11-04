@@ -2781,5 +2781,10 @@
   "operations.contract.b3dae754873c": "Download a published file, consuming one download",
   "operations.contract.09f9e2a08ae4": "Direct download of a share without a password; counts once",
   "operations.contract.3a35d0cd7bc2": "Monitoring retention settings and available durations",
-  "operations.contract.8668e0f35530": "Set maximum monitoring retention and immediately expire older samples"
+  "operations.contract.8668e0f35530": "Set maximum monitoring retention and immediately expire older samples",
+  "terminal.search": "Search terminal output",
+  "terminal.searchPrevious": "Previous match",
+  "terminal.searchNext": "Next match",
+  "terminal.searchClose": "Close search",
+  "terminal.searchMissing": "No matches"
 }

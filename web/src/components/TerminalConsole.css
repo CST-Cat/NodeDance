@@ -1,13 +1,28 @@
 @import "@xterm/xterm/css/xterm.css";
-/* Independent terminal surface; ANSI and terminal colors do not follow page inversion. */
 .terminal-backdrop {
-  --product-canvas: #1f1e1d;
-  --product-surface: #262624;
-  --product-elevated: #30302e;
-  --product-text: #faf9f5;
-  --product-muted: #aaa69e;
-  --product-line: #3d3933;
-  --product-line-strong: #565046;
+  --product-canvas: var(--figma-background-tertiary);
+  --product-surface: var(--figma-background-secondary);
+  --product-elevated: var(--figma-background-primary);
+  --product-text: var(--figma-text-primary);
+  --product-muted: var(--figma-text-tertiary);
+  --product-line: var(--figma-border-tertiary);
+  --product-line-strong: var(--figma-border-primary);
+  --terminal-black: var(--product-canvas);
+  --terminal-red: var(--figma-text-danger);
+  --terminal-green: var(--figma-text-success);
+  --terminal-yellow: var(--figma-text-warning);
+  --terminal-blue: oklch(from var(--terminal-green) l c calc(h + 110));
+  --terminal-magenta: oklch(from var(--terminal-red) l c calc(h + 300));
+  --terminal-cyan: oklch(from var(--terminal-green) l c calc(h + 60));
+  --terminal-white: var(--figma-text-secondary);
+  --terminal-bright-black: var(--product-muted);
+  --terminal-bright-red: color-mix(in srgb, var(--terminal-red) 80%, var(--product-text));
+  --terminal-bright-green: color-mix(in srgb, var(--terminal-green) 80%, var(--product-text));
+  --terminal-bright-yellow: color-mix(in srgb, var(--terminal-yellow) 80%, var(--product-text));
+  --terminal-bright-blue: color-mix(in srgb, var(--terminal-blue) 80%, var(--product-text));
+  --terminal-bright-magenta: color-mix(in srgb, var(--terminal-magenta) 80%, var(--product-text));
+  --terminal-bright-cyan: color-mix(in srgb, var(--terminal-cyan) 80%, var(--product-text));
+  --terminal-bright-white: var(--product-text);
 }
 
 .terminal-backdrop[data-v-b8b9dc12] {
@@ -17,7 +32,7 @@
   display: grid;
   place-items: center;
   padding: 20px;
-  background: rgba(24, 23, 21, 0.78);
+  background: color-mix(in srgb, var(--product-canvas) 78%, transparent);
   backdrop-filter: blur(8px);
 }
 .terminal-dialog[data-v-b8b9dc12] {
@@ -25,8 +40,8 @@
   width: min(1040px, 100%);
   height: min(820px, 94dvh);
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-  grid-template-areas: "heading" "error" "screen" "keys" "footer";
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "heading" "search" "error" "screen" "keys" "footer";
   overflow: hidden;
   border: 1px solid var(--overlay-edge);
   border-radius: var(--radius-card);
@@ -66,15 +81,24 @@
   color: var(--product-muted);
   font-size: 11px;
 }
-.terminal-close[data-v-b8b9dc12] {
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--product-line);
-  border-radius: var(--radius-control);
-  color: var(--product-text);
-  background: var(--product-elevated);
-  font-size: 22px;
-  cursor: pointer;
+.terminal-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.terminal-search {
+  grid-area: search;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--product-line);
+}
+.terminal-search-result {
+  grid-column: 1 / -1;
+  color: var(--product-muted);
+  font-size: 11px;
 }
 .terminal-screen[data-v-b8b9dc12] {
   grid-area: screen;
@@ -92,8 +116,8 @@
   grid-area: error;
   margin: 0;
   padding: 9px 20px;
-  color: #ffc1b8;
-  background: rgba(184, 77, 72, 0.12);
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, var(--product-canvas));
   font-size: 11px;
   overflow-wrap: anywhere;
 }
@@ -105,25 +129,6 @@
   padding: 10px 14px;
   border-top: 1px solid var(--product-line);
   background: var(--product-surface);
-}
-.terminal-keys button[data-v-b8b9dc12],
-.terminal-footer button[data-v-b8b9dc12] {
-  min-width: 40px;
-  min-height: 40px;
-  border: 1px solid var(--product-line);
-  border-radius: var(--radius-control);
-  padding: 6px 10px;
-  color: var(--product-text);
-  background: var(--product-elevated);
-  font:
-    11px ui-monospace,
-    monospace;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.terminal-keys button[data-v-b8b9dc12]:active,
-.terminal-footer button[data-v-b8b9dc12]:active {
-  background: #534338;
 }
 .terminal-footer[data-v-b8b9dc12] {
   grid-area: footer;
@@ -137,10 +142,6 @@
 .terminal-footer span[data-v-b8b9dc12] {
   color: var(--product-muted);
   font-size: 10px;
-}
-.terminal-footer button[data-v-b8b9dc12] {
-  color: #ffc1b8;
-  border-color: rgba(255, 129, 116, 0.25);
 }
 @media (max-width: 600px) {
   .terminal-backdrop[data-v-b8b9dc12] {
@@ -165,14 +166,9 @@
     padding: 8px;
   }
   .terminal-keys button[data-v-b8b9dc12] {
-    min-height: 44px;
-    min-width: 44px;
     flex: 1 0 auto;
   }
   .terminal-footer[data-v-b8b9dc12] {
     padding: 8px;
-  }
-  .terminal-footer button[data-v-b8b9dc12] {
-    min-height: 44px;
   }
 }

@@ -4,6 +4,7 @@ package terminal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -44,6 +45,9 @@ func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFram
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if err := request.Capabilities.Validate(); err != nil {
+		return nil, err
+	}
 	if !filepath.IsAbs(p.shell) || strings.ContainsAny(p.shell, "\x00\r\n") {
 		return nil, errors.New("configured host shell must be an absolute executable path")
 	}
@@ -64,7 +68,8 @@ func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFram
 		// executable. Its original pathname need not exist on the host. The
 		// running process's executable inode is the authoritative child binary.
 		executable := fmt.Sprintf("/proc/%d/exe", os.Getpid())
-		args = []string{executable, "terminal-container", request.ContainerID}
+		capabilities, _ := json.Marshal(request.Capabilities)
+		args = []string{executable, "terminal-container", request.ContainerID, string(capabilities)}
 	} else if request.TargetKind != protocol.TerminalTargetHost {
 		return nil, errors.New("unsupported terminal target")
 	}
@@ -75,11 +80,6 @@ func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFram
 		if err != nil {
 			return nil, err
 		}
-		config := "set -g status off\nset -g default-terminal tmux-256color\nset -g history-limit 3000\nset -g destroy-unattached off\n"
-		if err := os.WriteFile(filepath.Join(directory, "tmux.conf"), []byte(config), 0600); err != nil {
-			_ = os.RemoveAll(directory)
-			return nil, err
-		}
 		socketDirectory, err := os.MkdirTemp("/run", "nodedance-terminal-")
 		if err != nil {
 			_ = os.RemoveAll(directory)
@@ -88,7 +88,7 @@ func (p *SystemProvider) Open(ctx context.Context, request protocol.TerminalFram
 		p.socketDirectory = socketDirectory
 		p.directory = directory
 	}
-	return newTmuxEndpoint(ctx, p.directory, p.socketDirectory, terminalEnvironment(p.shell), request, args)
+	return newTmuxEndpoint(ctx, p.directory, p.socketDirectory, terminalEnvironment(p.shell, request.Capabilities), request, args)
 }
 
 // Close is called only after the manager has terminated all its tmux servers.
@@ -104,8 +104,8 @@ func (p *SystemProvider) Close() error {
 	return err
 }
 
-func terminalEnvironment(shell string) []string {
-	values := []string{"TERM=xterm-256color", "SHELL=" + shell}
+func terminalEnvironment(shell string, capabilities protocol.TerminalCapabilities) []string {
+	values := append(terminalColorEnvironment(capabilities, "xterm-256color"), "SHELL="+shell)
 	for _, key := range []string{"PATH", "HOME", "USER", "LANG", "LC_ALL", "DOCKER_HOST"} {
 		if value := os.Getenv(key); value != "" {
 			values = append(values, key+"="+value)
@@ -169,6 +169,7 @@ func (p *SystemProvider) openContainer(ctx, attachCtx context.Context, request p
 		TTY: true, AttachStdin: true, AttachStdout: true, AttachStderr: true,
 		ConsoleSize: client.ConsoleSize{Height: uint(request.Rows), Width: uint(request.Columns)},
 		Cmd:         []string{"/bin/sh", "-i"},
+		Env:         terminalColorEnvironment(request.Capabilities, terminalPaneType(request.Capabilities)),
 	})
 	if err != nil || execResult.ID == "" {
 		return nil, errors.New("could not create Docker terminal Exec; container may not contain /bin/sh")

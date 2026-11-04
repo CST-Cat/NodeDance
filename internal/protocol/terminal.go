@@ -34,18 +34,39 @@ const (
 // TerminalFrame is a deliberately small interactive terminal contract. Open
 // selects only a fixed host shell or Docker Exec; no shell command is accepted.
 type TerminalFrame struct {
-	StreamID    string `json:"streamId"`
-	Action      string `json:"action"`
-	TargetKind  string `json:"targetKind,omitempty"`
-	ContainerID string `json:"containerId,omitempty"`
-	Data        []byte `json:"data,omitempty"`
-	Rows        uint16 `json:"rows,omitempty"`
-	Columns     uint16 `json:"columns,omitempty"`
-	ExitCode    *int   `json:"exitCode,omitempty"`
-	Message     string `json:"message,omitempty"`
+	StreamID     string               `json:"streamId"`
+	Action       string               `json:"action"`
+	TargetKind   string               `json:"targetKind,omitempty"`
+	ContainerID  string               `json:"containerId,omitempty"`
+	Capabilities TerminalCapabilities `json:"capabilities,omitzero"`
+	Data         []byte               `json:"data,omitempty"`
+	Rows         uint16               `json:"rows,omitempty"`
+	Columns      uint16               `json:"columns,omitempty"`
+	ExitCode     *int                 `json:"exitCode,omitempty"`
+	Message      string               `json:"message,omitempty"`
+}
+
+type TerminalCapabilities struct {
+	ColorDepth uint8 `json:"colorDepth"`
+	Hyperlinks bool  `json:"hyperlinks"`
+}
+
+func (c TerminalCapabilities) Validate() error {
+	switch c.ColorDepth {
+	case 0, 4, 8, 24:
+		return nil
+	default:
+		return errors.New("terminal color depth must be 0, 4, 8 or 24")
+	}
 }
 
 func ValidateTerminalFrame(frame TerminalFrame, fromAgent bool) error {
+	if err := frame.Capabilities.Validate(); err != nil {
+		return err
+	}
+	if (fromAgent || frame.Action != TerminalActionOpen) && frame.Capabilities != (TerminalCapabilities{}) {
+		return errors.New("terminal capabilities belong only to the open frame")
+	}
 	if len(frame.StreamID) < 32 || len(frame.StreamID) > 64 || strings.TrimSpace(frame.StreamID) != frame.StreamID {
 		return errors.New("terminal stream ID is invalid")
 	}

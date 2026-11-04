@@ -1,4 +1,8 @@
 #	Reconstructed via infocmp from file: /usr/share/terminfo/x/xterm-256color
+tmux|tmux with 16 colors,
+	colors#16, pairs#256, use=tmux-256color,
+dumb|80-column dumb tty,
+	am, cols#80, bel=^G, cr=\r, cud1=\n, ind=\n,
 xterm-256color|xterm with 256 colors,
 	OTbs, am, bce, ccc, km, mc5i, mir, msgr, npc, xenl, AX, XF, XT,
 	colors#0x100, cols#80, it#8, lines#24, pairs#0x10000,

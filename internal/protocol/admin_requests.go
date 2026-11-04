@@ -31,6 +31,7 @@ type ComposeCreateRequest struct {
 }
 
 type FileTransferRequest struct {
+	Mode           string   `json:"mode,omitempty"`
 	BandwidthLimit int64    `json:"bandwidthLimit,omitempty"`
 	TargetNodeID   string   `json:"targetNodeId" request:"required"`
 	Paths          []string `json:"paths" request:"required"`
@@ -61,8 +62,9 @@ type ImageDeleteRequest struct {
 }
 
 type TerminalCreateRequest struct {
-	TargetKind  string `json:"targetKind" request:"required"`
-	ContainerID string `json:"containerId,omitempty"`
+	TargetKind   string               `json:"targetKind" request:"required"`
+	ContainerID  string               `json:"containerId,omitempty"`
+	Capabilities TerminalCapabilities `json:"capabilities"`
 }
 
 type ProbeConfigRequest struct {

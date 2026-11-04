@@ -46,10 +46,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	if len(args) > 0 && args[0] == "terminal-container" {
 		input, inputOK := stdin.(*os.File)
 		output, outputOK := stdout.(*os.File)
-		if len(args) != 2 || !inputOK || !outputOK {
+		if len(args) != 3 || !inputOK || !outputOK {
 			return fmt.Errorf("invalid terminal container child")
 		}
-		return agentterminal.RunContainerShell(ctx, args[1], input, output)
+		return agentterminal.RunContainerShell(ctx, args[1], args[2], input, output)
 	}
 	var err error
 	ctx, args, err = i18n.Options(ctx, args, os.LookupEnv)

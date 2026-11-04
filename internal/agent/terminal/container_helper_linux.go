@@ -4,6 +4,7 @@ package terminal
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -19,11 +20,14 @@ import (
 // RunContainerShell is the fixed, root-only child process placed in a tmux pane.
 // It uses the existing Docker API provider; no Docker CLI or container-side
 // installation is required. Its stdin/stdout are terminal bytes, never i18n text.
-func RunContainerShell(ctx context.Context, id string, stdin, stdout *os.File) error {
+func RunContainerShell(ctx context.Context, id, capabilitiesJSON string, stdin, stdout *os.File) error {
 	if os.Geteuid() != 0 {
 		return errors.New("Agent terminal requires root")
 	}
 	request := protocol.TerminalFrame{StreamID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Action: protocol.TerminalActionOpen, TargetKind: protocol.TerminalTargetContainer, ContainerID: id, Rows: 24, Columns: 80}
+	if err := json.Unmarshal([]byte(capabilitiesJSON), &request.Capabilities); err != nil {
+		return errors.New("invalid terminal capabilities")
+	}
 	if err := protocol.ValidateTerminalFrame(request, false); err != nil {
 		return err
 	}

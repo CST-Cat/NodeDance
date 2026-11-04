@@ -60,7 +60,7 @@ def main():
     assert ('const Version = "' + manifest["version"] + '"') in (BUNDLE / "bundle_linux.go").read_text()
     for filename in {"COPYING.tmux", "COPYING.ncurses", "COPYRIGHT.musl", "LICENSE.libevent", "LICENSE.utf8proc"}:
         assert (BUNDLE / "licenses" / filename).stat().st_size > 0
-    for name in {"x/xterm-256color", "t/tmux-256color", "s/screen-256color"}:
+    for name in {"x/xterm-256color", "t/tmux-256color", "s/screen-256color", "t/tmux", "d/dumb"}:
         assert (BUNDLE / "assets/terminfo" / name).stat().st_size > 0
     print("Embedded tmux " + manifest["version"] + ": both static architectures, terminfo and notices verified")
 

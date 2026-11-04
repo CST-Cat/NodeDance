@@ -8,6 +8,10 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/i18n"
 	"io"
 	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/control"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -18,6 +22,17 @@ import (
 func interactiveTerminal(ctx context.Context, client *control.Client, in control.Input, tty *os.File, output io.Writer) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(in.Body, &body); err != nil {
+		return err
+	}
+	if body == nil {
+		return errors.New("invalid terminal request")
+	}
+	if _, declared := body["capabilities"]; !declared {
+		body["capabilities"], _ = json.Marshal(localTerminalCapabilities(ctx))
+		in.Body, _ = json.Marshal(body)
+	}
 	dimensions := func() (uint16, uint16) {
 		w, h, err := term.GetSize(int(tty.Fd()))
 		if err != nil {
@@ -110,4 +125,39 @@ func interactiveTerminal(ctx context.Context, client *control.Client, in control
 			return nil
 		}
 	}
+}
+
+func localTerminalCapabilities(ctx context.Context) protocol.TerminalCapabilities {
+	capabilities := protocol.TerminalCapabilities{}
+	if termType := os.Getenv("TERM"); termType == "" || termType == "dumb" {
+		return capabilities
+	}
+	probe := func(name string) ([]byte, error) {
+		probeCtx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		return exec.CommandContext(probeCtx, "tput", name).Output()
+	}
+	output, _ := probe("colors")
+	colors, _ := strconv.Atoi(strings.TrimSpace(string(output)))
+	switch {
+	case colors >= 1<<24:
+		capabilities.ColorDepth = 24
+	case colors >= 256:
+		capabilities.ColorDepth = 8
+	case colors >= 8:
+		capabilities.ColorDepth = 4
+	}
+	switch strings.ToLower(os.Getenv("COLORTERM")) {
+	case "truecolor", "24bit":
+		capabilities.ColorDepth = 24
+	default:
+		if _, err := probe("RGB"); err == nil {
+			capabilities.ColorDepth = 24
+		} else if _, err := probe("Tc"); err == nil {
+			capabilities.ColorDepth = 24
+		}
+	}
+	output, err := probe("Hls")
+	capabilities.Hyperlinks = err == nil && len(output) != 0
+	return capabilities
 }

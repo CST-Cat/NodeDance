@@ -451,6 +451,11 @@ export interface ContainerCreateSpec {
   restartRetries?: number
 }
 
+export interface TerminalCapabilities {
+  colorDepth: 0 | 4 | 8 | 24;
+  hyperlinks: boolean;
+}
+
 export interface TerminalAuthorization {
   streamId: string
   ticket: string
@@ -746,7 +751,7 @@ export const api = {
   nodeContainer: (nodeId: string, containerId: string) =>
     operationRequest<{ type: 'node_container'; nodeId: string; container: DockerContainerRecord }>("containers.get", { params: { nodeId: String(nodeId), containerId: String(containerId) } }),
   revokeSession: (id: string) => operationRequest<void>("sessions.revoke", { params: { id: String(id) } }),
-  createTerminal: (nodeId: string, target: { targetKind: 'host' } | { targetKind: 'container'; containerId: string }) =>
+  createTerminal: (nodeId: string, target: ({ targetKind: 'host' } | { targetKind: 'container'; containerId: string }) & { capabilities: TerminalCapabilities }) =>
     operationRequest<TerminalAuthorization>("terminal.create", { params: { nodeId: String(nodeId) } }, {
       body: JSON.stringify(target),
     }),
