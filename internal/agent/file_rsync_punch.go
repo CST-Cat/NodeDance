@@ -137,6 +137,23 @@ func (l *punchedListener) Close() error {
 
 func (l *punchedListener) Addr() net.Addr { return l.conn.LocalAddr() }
 
+func connectPunchedRsync(ctx context.Context, peer *tcppunch.Peer, endpoints []string, certificate tls.Certificate, fingerprint, taskID string, receiver bool) (net.Conn, error) {
+	started := time.Now()
+	deadline, _ := ctx.Deadline()
+	log.Printf("Agent direct TCP punch task=%s receiver=%t stage=connect candidates=%d remaining=%s", taskID, receiver, len(endpoints), time.Until(deadline).Round(time.Millisecond))
+	authenticate := punchHandshake(certificate, fingerprint, receiver)
+	conn, err := peer.Connect(ctx, punchAddresses(endpoints), func(ctx context.Context, raw net.Conn) (net.Conn, error) {
+		log.Printf("Agent direct TCP punch task=%s receiver=%t stage=tls peer=%s", taskID, receiver, raw.RemoteAddr())
+		secured, err := authenticate(ctx, raw)
+		if err != nil {
+			log.Printf("Agent direct TCP punch task=%s receiver=%t stage=tls_rejected error=%v", taskID, receiver, err)
+		}
+		return secured, err
+	})
+	log.Printf("Agent direct TCP punch task=%s receiver=%t stage=connect_result elapsed=%s error=%v", taskID, receiver, time.Since(started).Round(time.Millisecond), err)
+	return conn, err
+}
+
 func (b *agentFileBridge) receivePunchedRsync(ctx context.Context, id string, session *agentRsyncSession, ready protocol.FileRsyncResponse) (filetransport.Connection, func(), error) {
 	peer, err := tcppunch.Discover(ctx, tcpSTUNServers())
 	if err != nil {
@@ -155,7 +172,7 @@ func (b *agentFileBridge) receivePunchedRsync(ctx context.Context, id string, se
 	case <-ctx.Done():
 		return nil, nil, ctx.Err()
 	}
-	raw, err := peer.Connect(ctx, punchAddresses(signal.Endpoints), punchHandshake(certificate, signal.Fingerprint, true))
+	raw, err := connectPunchedRsync(ctx, peer, signal.Endpoints, certificate, signal.Fingerprint, session.request.Descriptor.TaskID, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -186,7 +203,7 @@ func (b *agentFileBridge) sendPunchedRsync(ctx context.Context, id string, sessi
 	request := session.request
 	offer := protocol.FileRsyncResponse{Operation: "send", SessionID: request.SessionID, State: "offer", Endpoints: punchEndpoints(peer), Fingerprint: fingerprint}
 	b.respondRsync(ctx, id, offer)
-	raw, err := peer.Connect(ctx, punchAddresses(request.Endpoints), punchHandshake(certificate, request.Fingerprint, false))
+	raw, err := connectPunchedRsync(ctx, peer, request.Endpoints, certificate, request.Fingerprint, request.Descriptor.TaskID, false)
 	if err != nil {
 		return nil, nil, err
 	}
