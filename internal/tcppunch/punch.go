@@ -6,8 +6,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"net/netip"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -89,7 +91,10 @@ func discover(ctx context.Context, network, address string) (_ *mapping, failure
 			_ = stream.Close()
 		}
 	}()
-	stop := context.AfterFunc(ctx, func() { _ = stream.Close() })
+	stop := context.AfterFunc(ctx, func() {
+		log.Printf("TCP punch discovery canceled local=%v error=%v", stream.LocalAddr(), ctx.Err())
+		_ = stream.Close()
+	})
 	defer stop()
 	if deadline, ok := ctx.Deadline(); ok {
 		_ = stream.SetDeadline(deadline)
@@ -153,6 +158,7 @@ func (p *Peer) Addresses() []string {
 
 func (p *Peer) Close() {
 	p.once.Do(func() {
+		log.Printf("TCP punch close addresses=%v stack=%s", p.Addresses(), debug.Stack())
 		for _, m := range p.mappings {
 			_ = m.listener.Close()
 			_ = m.stream.Close()
@@ -200,6 +206,7 @@ func (p *Peer) Connect(ctx context.Context, addresses []string, authenticate fun
 			for {
 				raw, err := m.listener.Accept()
 				if err != nil {
+					log.Printf("TCP punch accept ended local=%v error=%v", m.local, err)
 					return
 				}
 				select {
@@ -233,10 +240,14 @@ func (p *Peer) Connect(ctx context.Context, addresses []string, authenticate fun
 					network = "tcp4"
 				}
 				dialer := net.Dialer{Control: reuseSocket, LocalAddr: m.local}
+				first := true
 				for ctx.Err() == nil {
 					if raw, err := dialer.DialContext(ctx, network, peer.String()); err == nil {
 						publish(raw)
 						return
+					} else if first {
+						log.Printf("TCP punch dial failed local=%v peer=%v error=%v", m.local, peer, err)
+						first = false
 					}
 					timer := time.NewTimer(200 * time.Millisecond)
 					select {
