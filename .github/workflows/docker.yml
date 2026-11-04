@@ -85,7 +85,7 @@ jobs:
       - name: Verify direct peer negotiation, NAT traversal and rsync transfer recovery
         run: |
           sudo env "PATH=$PATH" "GOPATH=$(go env GOPATH)" "GOMODCACHE=$(go env GOMODCACHE)" "GOCACHE=$(go env GOCACHE)" NODEDANCE_STUN_SERVERS=off NODEDANCE_REQUIRE_RSYNC_TESTS=1 \
-            "$(command -v go)" test -count=1 -v ./internal/peertransport ./internal/core/server -run 'TestDirect|TestUnreachableNAT|TestCoreTransfersInExplicit|TestCoreDirectNegotiates|TestCoreCancelsRetainsPartial|TestCoreChunkFallback'
+            "$(command -v go)" test -count=1 -v ./internal/peertransport ./internal/core/server -run 'TestICECandidateDiagnostics|TestDirect|TestUnreachableNAT|TestCoreTransfersInExplicit|TestCoreDirectNegotiates|TestCoreCancelsRetainsPartial|TestCoreChunkFallback'
 
       - name: Verify file-manager browser behavior
         if: matrix.arch == 'amd64'

@@ -76,3 +76,12 @@ python3 scripts/interface-coverage.py --check
 `internal/peertransport/peer_test.go` uses Pion virtual networks with two separate port-restricted NAT routers and a STUN server. It verifies bidirectional reliable transfer without relay, and bounded failure for the tested symmetric-NAT and UDP-blocked topologies. Agent transport tests independently exercise Core-style offer/answer signaling, task authorization, duplicate-signal rejection and shared fixed TCP listeners. Virtual-network success is not evidence of live provider/CGNAT connectivity. Real rsync integration requires root and Landlock ABI >= 3; set `NODEDANCE_REQUIRE_RSYNC_TESTS=1` to fail rather than skip when unavailable, as native CI does.
 
 新增 NAT 测试使用两个独立的虚拟 NAT 路由器，不代表生产运营商网络已经实测。运行环境不提供所需 Landlock 时，真实 rsync 用例只能记录为跳过；原生 Linux CI 必须实际运行这些用例，不能降低文件隔离要求来通过测试。
+
+
+## ICE failure diagnostics / ICE 失败诊断
+
+When an ICE attempt fails after the target offer and before confirmed data transfer, Core appends `ICE stage=... source{...} target{...}` to the original error. It counts advertised UDP `host`, `public_host`, `srflx` and `relay` candidates from the offer/answer already exchanged through Core. No Agent protocol change or Agent update is needed for these counters. Addresses, ICE credentials and certificate fingerprints are excluded. Missing answers appear as `not_advertised`; `connectivity_or_dtls` means the answer was acknowledged, not that ICE or DTLS completed. Successful transfers and commit errors keep their existing behavior.
+
+只有 `direct_ice_timeout` 不能判定对称 NAT 或必须映射端口。双方 `public_host=0 srflx=0` 表示本次未公布公网地址或 STUN 映射，应优先检查 STUN 的 DNS、出站 UDP 与返回流量，以及 `NODEDANCE_STUN_SERVERS` 是否被置空／关闭。`srflx>0` 只证明采集到了对应 STUN 服务观察到的映射，不保证该映射对另一 Agent 可达；仍需检查网关过滤、端点相关映射、多层 NAT、防火墙及 DTLS 建链。`public_host>0` 也不保证入站可达。计数仅来自 SDP，不包含随后学到的 peer-reflexive 候选，不是 NAT 类型检测或实时 ICE 状态。
+
+A reachable private STUN server may replace unreachable public discovery servers without exposing Agent TCP ports. It must have a directly reachable UDP endpoint; an HTTP reverse proxy or Cloudflare HTTP tunnel alone does not supply one. Some networks still cannot establish a direct path. Public IPv6, an existing forwarded port, or gateway-supported PCP/NAT-PMP/UPnP mapping can provide alternatives, but automatic gateway mapping is not currently implemented by NodeDance and user-side mappings cannot bypass an uncontrolled upstream CGNAT. Select Core relay when direct connectivity is unavailable.

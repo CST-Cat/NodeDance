@@ -82,6 +82,7 @@ type transferIntegrationFixture struct {
 	targetState    string
 	blockDirect    atomic.Bool
 	blockReverse   atomic.Bool
+	blockICE       atomic.Bool
 	peerMode       atomic.Value
 	controlBytes   atomic.Int64
 	chunkStreams   atomic.Int64
@@ -162,8 +163,18 @@ func newTransferIntegrationFixture(t *testing.T, rejectRsyncData bool) *transfer
 					}
 					if fromCore && f.blockDirect.Load() && envelope.Type == protocol.TypeFileRsyncRequest {
 						var request protocol.FileRsyncRequest
-						if json.Unmarshal(envelope.Payload, &request) == nil && request.Transport == "direct" && (request.Operation == "send" && request.PeerMode == "tcp" || request.Operation == "connect" && request.PeerMode == "reverse" && f.blockReverse.Load()) {
-							request.Endpoints = []string{closedEndpoint}
+						if json.Unmarshal(envelope.Payload, &request) == nil && request.Transport == "direct" && (request.Operation == "send" && request.PeerMode == "tcp" || request.Operation == "connect" && request.PeerMode == "reverse" && f.blockReverse.Load() || request.Operation == "send" && request.PeerMode == "ice" && f.blockICE.Load()) {
+							if request.PeerMode == "ice" {
+								lines := strings.Split(request.SDP, "\n")
+								for i, line := range lines {
+									if strings.HasPrefix(line, "a=fingerprint:") {
+										lines[i] = "a=fingerprint:sha-256 " + strings.TrimSuffix(strings.Repeat("00:", 32), ":") + "\r"
+									}
+								}
+								request.SDP = strings.Join(lines, "\n")
+							} else {
+								request.Endpoints = []string{closedEndpoint}
+							}
 							envelope.Payload, _ = json.Marshal(request)
 							data, _ = json.Marshal(envelope)
 						}
@@ -569,5 +580,39 @@ func TestCoreDirectNegotiatesReverseAndICEWithoutRelaying(t *testing.T) {
 	}
 	if f.controlBytes.Load() != 0 || f.relayStreams.Load() != 0 || f.chunkStreams.Load() != 0 {
 		t.Fatal("direct transfer used a Core data connection")
+	}
+}
+
+func TestICECandidateDiagnosticsReachCoreFailureResponse(t *testing.T) {
+	requireBundledTransferRsync(t)
+	t.Setenv("NODEDANCE_STUN_SERVERS", "off")
+	f := newTransferIntegrationFixture(t, false)
+	f.blockDirect.Store(true)
+	f.blockReverse.Store(true)
+	f.blockICE.Store(true)
+	if err := os.WriteFile(filepath.Join(f.sourceRoot, "diagnostic.bin"), []byte("diagnostic fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	status, data, err := f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{Mode: "direct", TargetNodeID: f.target, Paths: []string{"/diagnostic.bin"}, TargetPath: "/out"}, "ice-diagnostic-failure")
+	var result struct {
+		Transferred []fileTransferResult
+		Failed      []fileTransferFailure
+	}
+	if err != nil || status != 200 || json.Unmarshal(data, &result) != nil || len(result.Transferred) != 0 || len(result.Failed) != 1 {
+		t.Fatal(status, string(data), err, f.logs.String())
+	}
+	message := result.Failed[0].Error
+	for _, part := range []string{"direct/tcp:", "direct/reverse:", "direct/ice:", "ICE stage=connectivity_or_dtls", "source{host=", "target{host=", "srflx=0"} {
+		if !strings.Contains(message, part) {
+			t.Fatal("missing diagnostic context", part, message, f.logs.String())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(f.targetRoot, "out", "diagnostic.bin")); !os.IsNotExist(err) {
+		t.Fatal("failed direct attempt published a file", err)
+	}
+	if f.controlBytes.Load() != 0 || f.relayStreams.Load() != 0 || f.chunkStreams.Load() != 0 {
+		t.Fatal("failed direct attempt used a Core data relay")
 	}
 }

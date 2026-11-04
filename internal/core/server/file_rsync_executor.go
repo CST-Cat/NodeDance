@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/core/geolocation"
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
@@ -100,7 +102,15 @@ func rsyncResponseError(response protocol.FileRsyncResponse) error {
 	return errors.New("Agent rsync attempt failed: " + response.Code)
 }
 
-func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descriptor protocol.FileTransferDescriptor, transport, peerMode string) error {
+func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descriptor protocol.FileTransferDescriptor, transport, peerMode string) (failure error) {
+	var sourceSDP, targetSDP string
+	phase := "target_offer"
+	connected := false
+	defer func() {
+		if failure != nil && peerMode == "ice" && targetSDP != "" && !connected {
+			failure = iceFailureDetails(failure, phase, sourceSDP, targetSDP)
+		}
+	}()
 	source, target, err := s.waitRsyncConnections(ctx, descriptor)
 	if err != nil {
 		return err
@@ -152,6 +162,7 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 	if offer.State != "ready" {
 		return rsyncResponseError(offer)
 	}
+	targetSDP = offer.SDP
 	send := protocol.FileRsyncRequest{Operation: "send", SessionID: id, Descriptor: descriptor, Grant: sender, Transport: transport, Endpoints: offer.Endpoints, Fingerprint: offer.Fingerprint, PeerMode: peerMode, SDP: offer.SDP}
 	if transport == "direct" && peerMode == "tcp" {
 		if endpoint, ok := declaredDirectEndpoint(directAsset, s.connectionPublicIP(descriptor.TargetNodeID)); ok {
@@ -181,6 +192,7 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 			if received.State != "received" {
 				return rsyncResponseError(received)
 			}
+			connected = true
 			receivedUpdates = nil
 			continue
 		case <-ctx.Done():
@@ -192,6 +204,8 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 		}
 
 		if response.State == "offer" {
+			sourceSDP = response.SDP
+			phase = "answer_forwarding"
 			signal := protocol.FileRsyncRequest{Operation: "connect", SessionID: id, Descriptor: descriptor, Grant: sender, Transport: transport, PeerMode: peerMode, Endpoints: response.Endpoints, Fingerprint: response.Fingerprint, SDP: response.SDP}
 			if peerMode == "reverse" {
 				if asset, assetErr := s.nodeAsset(ctx, descriptor.File.Transfer.SourceNodeID); assetErr == nil {
@@ -215,15 +229,18 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 			if response.State != "signaled" {
 				return rsyncResponseError(response)
 			}
+			phase = "connectivity_or_dtls"
 			continue
 		}
 		if response.State == "progress" {
+			connected = true
 			s.rsyncProgress(target, descriptor, id, response.Completed)
 			continue
 		}
 		if response.State != "sent" {
 			return rsyncResponseError(response)
 		}
+		connected = true
 		break
 	}
 	if receivedUpdates != nil {
@@ -293,4 +310,37 @@ func (s *Server) signalFileTransferCancellation(task coretasks.Task) error {
 		}
 	}
 	return errors.New("file Agent is offline")
+}
+
+func iceFailureDetails(cause error, phase, sourceSDP, targetSDP string) error {
+	return fmt.Errorf("%w; ICE stage=%s source{%s} target{%s}", cause, phase, iceOfferSummary(sourceSDP), iceOfferSummary(targetSDP))
+}
+
+func iceOfferSummary(sdp string) string {
+	if sdp == "" {
+		return "not_advertised"
+	}
+	var host, publicHost, reflexive, relay int
+	for line := range strings.SplitSeq(sdp, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 8 || !strings.HasPrefix(fields[0], "a=candidate:") || !strings.EqualFold(fields[2], "udp") || fields[6] != "typ" || net.ParseIP(fields[4]) == nil {
+			continue
+		}
+		port, err := strconv.Atoi(fields[5])
+		if err != nil || port < 1 || port > 65535 {
+			continue
+		}
+		switch fields[7] {
+		case "host":
+			host++
+			if geolocation.PublicIP(fields[4]) != "" {
+				publicHost++
+			}
+		case "srflx":
+			reflexive++
+		case "relay":
+			relay++
+		}
+	}
+	return fmt.Sprintf("host=%d public_host=%d srflx=%d relay=%d", host, publicHost, reflexive, relay)
 }
