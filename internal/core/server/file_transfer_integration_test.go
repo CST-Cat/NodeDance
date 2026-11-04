@@ -33,6 +33,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 	"github.com/CST-Cat/NodeDance/internal/taskstate"
+	"github.com/CST-Cat/NodeDance/internal/tcppunch/testutil"
 	"github.com/coder/websocket"
 )
 
@@ -91,8 +92,13 @@ type transferIntegrationFixture struct {
 	logs           transferTestLog
 }
 
-func newTransferIntegrationFixture(t *testing.T, rejectRsyncData bool) *transferIntegrationFixture {
+func newTransferIntegrationFixture(t *testing.T, rejectRsyncData bool, tcpSTUN ...string) *transferIntegrationFixture {
 	t.Helper()
+	value := "off"
+	if len(tcpSTUN) > 0 {
+		value = strings.Join(tcpSTUN, ",")
+	}
+	t.Setenv("NODEDANCE_TCP_STUN_SERVERS", value)
 	if os.Geteuid() != 0 {
 		t.Skip("isolated file transfers require root Agents")
 	}
@@ -379,6 +385,71 @@ func TestCoreChunkFallbackKeepsControlChannelFreeOfFileBytes(t *testing.T) {
 	}
 }
 
+func TestCoreCancelsChunkTransferBeforeClosingItsDataStream(t *testing.T) {
+	f := newTransferIntegrationFixture(t, true)
+	f.source = f.target
+	content := bytes.Repeat([]byte("cancel chunk payload\x00"), 50000)
+	if err := os.WriteFile(filepath.Join(f.targetRoot, "cancel.bin"), content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{TargetNodeID: f.target, Paths: []string{"/cancel.bin"}, TargetPath: "/out", BandwidthLimit: 128 << 10}, "cancel-chunk")
+	}()
+	var taskID string
+	for taskID == "" {
+		tasks, err := f.core.tasks.List(ctx, f.target, 10, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, task := range tasks.Tasks {
+			name := filepath.Join(f.targetState, "file-transfers", task.TaskID, "payload")
+			if info, err := os.Stat(name); err == nil && info.Size() > 0 && info.Size() < int64(len(content)) {
+				taskID = task.TaskID
+				break
+			}
+		}
+		if ctx.Err() != nil {
+			t.Fatal("partial was not produced", f.logs.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	status, data, err := f.request(ctx, "tasks.cancel", map[string]string{"nodeId": f.target, "taskId": taskID}, nil, "")
+	if err != nil || status != http.StatusAccepted {
+		t.Fatal(status, string(data), err)
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	for {
+		task, err := f.core.tasks.Get(ctx, f.target, taskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if taskstate.IsTerminal(task.Status) {
+			if task.Status != taskstate.Canceled {
+				t.Fatal("cancellation became a transport failure", task.Status, task.Result)
+			}
+			break
+		}
+		if ctx.Err() != nil {
+			t.Fatal(ctx.Err())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := os.Stat(filepath.Join(f.targetRoot, "out", "cancel.bin")); !os.IsNotExist(err) {
+		t.Fatal("canceled transfer published its target", err)
+	}
+	if f.chunkStreams.Load() != 2 {
+		t.Fatal("expected an active chunk data stream", f.chunkStreams.Load())
+	}
+}
+
 func TestCoreTextSaveUsesIndependentDataConnection(t *testing.T) {
 	f := newTransferIntegrationFixture(t, true)
 	content := strings.Repeat("verified UTF-8 文本\r\n", 20000)
@@ -550,16 +621,17 @@ func TestCoreCancelsRetainsPartialAndRetriesTheOriginalTransfer(t *testing.T) {
 func TestCoreDirectNegotiatesReverseAndICEWithoutRelaying(t *testing.T) {
 	requireBundledTransferRsync(t)
 	t.Setenv("NODEDANCE_STUN_SERVERS", "off")
-	f := newTransferIntegrationFixture(t, false)
+	f := newTransferIntegrationFixture(t, false, testutil.STUNServer(t))
 	f.blockDirect.Store(true)
 	content := bytes.Repeat([]byte("negotiated rsync\x00payload"), 32000)
 	if err := os.WriteFile(filepath.Join(f.sourceRoot, "peer.bin"), content, 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, mode := range []string{"reverse", "ice"} {
+	for _, mode := range []string{"reverse", "ice", "tcp_punch"} {
 		t.Run(mode, func(t *testing.T) {
-			f.blockReverse.Store(mode == "ice")
-			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+			f.blockReverse.Store(mode != "reverse")
+			f.blockICE.Store(mode == "tcp_punch")
+			ctx, cancel := context.WithTimeout(context.Background(), 70*time.Second)
 			defer cancel()
 			status, data, err := f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{Mode: "direct", TargetNodeID: f.target, Paths: []string{"/peer.bin"}, TargetPath: "/out"}, "direct-"+mode)
 			var result struct {

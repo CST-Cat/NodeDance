@@ -232,7 +232,7 @@ func ValidateFileRsyncResponse(envelope Envelope, generation uint64, response Fi
 }
 
 func validRsyncPeerFields(r FileRsyncRequest) bool {
-	if r.PeerMode != "tcp" && r.PeerMode != "reverse" && r.PeerMode != "ice" {
+	if r.PeerMode != "tcp" && r.PeerMode != "reverse" && r.PeerMode != "ice" && r.PeerMode != "tcp_punch" {
 		return false
 	}
 	if r.Operation == "prepare" {
@@ -247,14 +247,14 @@ func validRsyncPeerFields(r FileRsyncRequest) bool {
 	if r.Operation == "send" && r.PeerMode == "reverse" {
 		return len(r.Endpoints) == 0 && r.Fingerprint == ""
 	}
-	return len(r.Endpoints) > 0 && validFileDigest(r.Fingerprint) && (r.Operation != "connect" || r.PeerMode == "reverse")
+	return len(r.Endpoints) > 0 && validFileDigest(r.Fingerprint) && (r.Operation != "connect" || r.PeerMode == "reverse" || r.PeerMode == "tcp_punch")
 }
 
 func ValidFileRsyncOffer(mode string, endpoints []string, fingerprint, sdp string) bool {
 	if mode == "ice" {
 		return sdp != "" && len(sdp) <= 64<<10 && len(endpoints) == 0 && fingerprint == ""
 	}
-	if mode != "tcp" && mode != "reverse" {
+	if mode != "tcp" && mode != "reverse" && mode != "tcp_punch" {
 		return false
 	}
 	if len(endpoints) == 0 || len(endpoints) > 64 || !validFileDigest(fingerprint) || sdp != "" {

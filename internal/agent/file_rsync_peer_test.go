@@ -13,6 +13,7 @@ import (
 
 	"github.com/CST-Cat/NodeDance/internal/filetransport"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/tcppunch/testutil"
 )
 
 type peerTestWriter chan protocol.FileRsyncResponse
@@ -38,16 +39,17 @@ type peerTestResult struct {
 
 func TestAgentNegotiatesReverseAndICEDataStreams(t *testing.T) {
 	t.Setenv("NODEDANCE_STUN_SERVERS", "off")
-	for _, mode := range []string{"reverse", "ice", "ice_bad_credential"} {
+	t.Setenv("NODEDANCE_TCP_STUN_SERVERS", testutil.STUNServer(t))
+	for _, mode := range []string{"reverse", "ice", "ice_bad_credential", "tcp_punch", "tcp_punch_bad_credential", "tcp_punch_bad_fingerprint", "tcp_punch_bad_source_fingerprint"} {
 		t.Run(mode, func(t *testing.T) {
-			peerMode := mode
-			if peerMode == "ice_bad_credential" {
-				peerMode = "ice"
-			}
+			peerMode := strings.Split(mode, "_bad_")[0]
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			descriptor := protocol.FileTransferDescriptor{TaskID: "task", TargetNodeID: "target", File: protocol.FileTaskSpec{Transfer: &protocol.FileTransferSpec{SourceNodeID: "source"}}}
 			grant := protocol.FileStreamGrant{SessionID: "session", Secret: strings.Repeat("a", 64), ExpiresAt: time.Now().Add(time.Minute)}
+			if strings.Contains(mode, "_bad_") {
+				grant.ExpiresAt = time.Now().Add(2 * time.Second)
+			}
 			request := protocol.FileRsyncRequest{Operation: "prepare", SessionID: "session", Descriptor: descriptor, Grant: grant, Transport: "direct", PeerMode: peerMode}
 			receiver := &agentRsyncSession{request: request, ctx: ctx, done: make(chan struct{}), signal: make(chan protocol.FileRsyncRequest, 1)}
 			defer close(receiver.done)
@@ -68,8 +70,11 @@ func TestAgentNegotiatesReverseAndICEDataStreams(t *testing.T) {
 				t.Fatal(ctx.Err())
 			}
 			request.Operation, request.Endpoints, request.Fingerprint, request.SDP = "send", ready.Endpoints, ready.Fingerprint, ready.SDP
-			if mode == "ice_bad_credential" {
+			if strings.HasSuffix(mode, "_bad_credential") {
 				request.Grant.Secret = strings.Repeat("b", 64)
+			}
+			if strings.HasSuffix(mode, "_bad_fingerprint") {
+				request.Fingerprint = strings.Repeat("0", 64)
 			}
 			sender := &agentRsyncSession{request: request, ctx: ctx, done: make(chan struct{})}
 			defer close(sender.done)
@@ -88,6 +93,9 @@ func TestAgentNegotiatesReverseAndICEDataStreams(t *testing.T) {
 			signal := request
 			signal.Grant = grant
 			signal.Operation, signal.Endpoints, signal.Fingerprint, signal.SDP = "connect", offer.Endpoints, offer.Fingerprint, offer.SDP
+			if strings.HasSuffix(mode, "_bad_source_fingerprint") {
+				signal.Fingerprint = strings.Repeat("0", 64)
+			}
 			target.handleRsync(ctx, "connect", signal)
 			if reply := <-target.writer.(peerTestWriter); reply.State != "signaled" {
 				t.Fatal(reply)
@@ -113,7 +121,7 @@ func TestAgentNegotiatesReverseAndICEDataStreams(t *testing.T) {
 			if b.cleanup != nil {
 				defer b.cleanup()
 			}
-			if mode == "ice_bad_credential" {
+			if strings.Contains(mode, "_bad_") {
 				if a.err == nil || b.err == nil {
 					t.Fatal("accepted another task credential", a.err, b.err)
 				}

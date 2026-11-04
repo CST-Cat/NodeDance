@@ -23,7 +23,7 @@ func (e rsyncCommitError) Error() string { return e.cause.Error() }
 func (e rsyncCommitError) Unwrap() error { return e.cause }
 
 func (s *Server) runRsyncMode(ctx context.Context, current *session, descriptor protocol.FileTransferDescriptor, mode string) (string, error) {
-	attempts := []string{"tcp", "reverse", "ice"}
+	attempts := []string{"tcp", "reverse", "ice", "tcp_punch"}
 	if mode == protocol.FileTransferModeRelay {
 		attempts = []string{"", ""}
 	}
@@ -284,9 +284,7 @@ func (s *Server) signalFileTransferCancellation(task coretasks.Task) error {
 		return errors.New("task is not an active file transfer")
 	}
 	s.fileTransferMu.Lock()
-	if run := s.fileTransferRuns[task.TaskID]; run != nil {
-		run.cancel(taskstate.ErrCancellationRequested)
-	}
+	run := s.fileTransferRuns[task.TaskID]
 	s.fileTransferMu.Unlock()
 	s.agentConnectionsMu.Lock()
 	defer s.agentConnectionsMu.Unlock()
@@ -304,6 +302,9 @@ func (s *Server) signalFileTransferCancellation(task coretasks.Task) error {
 		}
 		select {
 		case connection.commands <- command:
+			if run != nil {
+				run.cancelRequested.Store(true)
+			}
 			return nil
 		default:
 			return errors.New("Agent command queue is full")

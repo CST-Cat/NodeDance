@@ -343,37 +343,7 @@ func (b *agentFileBridge) listenRsync(ctx context.Context, session *agentRsyncSe
 				http.Error(w, "unknown file task", http.StatusUnauthorized)
 				return
 			}
-			active := pending.session
-			grant := active.request.Grant
-			scheme, secret, _ := strings.Cut(r.Header.Get("Authorization"), " ")
-			actual, expected := sha256.Sum256([]byte(secret)), sha256.Sum256([]byte(grant.Secret))
-			if r.Method != http.MethodGet || r.URL.Path != protocol.FileRsyncDataRoute || r.URL.RawQuery != "" || !strings.EqualFold(scheme, "Task") ||
-				!grant.MatchesHeaders(r.Header) || !grant.ExpiresAt.After(time.Now()) || subtle.ConstantTimeCompare(actual[:], expected[:]) != 1 {
-				http.Error(w, "file task credential rejected", http.StatusUnauthorized)
-				return
-			}
-			active.mu.Lock()
-			if active.used || active.ctx.Err() != nil {
-				active.mu.Unlock()
-				http.Error(w, "file task credential consumed", http.StatusUnauthorized)
-				return
-			}
-			active.used = true
-			active.mu.Unlock()
-			conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionDisabled})
-			if err != nil {
-				return
-			}
-			defer conn.CloseNow()
-			select {
-			case pending.incoming <- conn:
-			case <-active.ctx.Done():
-				return
-			}
-			select {
-			case <-active.done:
-			case <-active.ctx.Done():
-			}
+			acceptRsyncStream(w, r, pending.session, pending.incoming)
 		})
 		tlsListener := tls.NewListener(netutil.LimitListener(listener, 8), &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS13})
 		go func() { _ = current.server.Serve(tlsListener) }()
@@ -404,6 +374,39 @@ func (b *agentFileBridge) listenRsync(ctx context.Context, session *agentRsyncSe
 	}
 	stop := context.AfterFunc(ctx, cleanup)
 	return pending.incoming, protocol.FileRsyncResponse{Endpoints: rsyncEndpoints(shared.listener), Fingerprint: shared.fingerprint}, func() { stop(); cleanup() }, nil
+}
+
+func acceptRsyncStream(w http.ResponseWriter, r *http.Request, active *agentRsyncSession, incoming chan<- *websocket.Conn) {
+	grant := active.request.Grant
+	scheme, secret, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+	actual, expected := sha256.Sum256([]byte(secret)), sha256.Sum256([]byte(grant.Secret))
+	if r.Method != http.MethodGet || r.URL.Path != protocol.FileRsyncDataRoute || r.URL.RawQuery != "" || !strings.EqualFold(scheme, "Task") ||
+		!grant.MatchesHeaders(r.Header) || !grant.ExpiresAt.After(time.Now()) || subtle.ConstantTimeCompare(actual[:], expected[:]) != 1 {
+		http.Error(w, "file task credential rejected", http.StatusUnauthorized)
+		return
+	}
+	active.mu.Lock()
+	if active.used || active.ctx.Err() != nil {
+		active.mu.Unlock()
+		http.Error(w, "file task credential consumed", http.StatusUnauthorized)
+		return
+	}
+	active.used = true
+	active.mu.Unlock()
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionDisabled})
+	if err != nil {
+		return
+	}
+	defer conn.CloseNow()
+	select {
+	case incoming <- conn:
+	case <-active.ctx.Done():
+		return
+	}
+	select {
+	case <-active.done:
+	case <-active.ctx.Done():
+	}
 }
 
 func dialDirectRsync(ctx context.Context, request protocol.FileRsyncRequest) (*websocket.Conn, func(), error) {
@@ -496,6 +499,9 @@ func (b *agentFileBridge) receiveDirect(ctx context.Context, id string, session 
 	setup, cancel := context.WithDeadline(ctx, minTime(session.request.Grant.ExpiresAt, time.Now().Add(20*time.Second)))
 	defer cancel()
 	ready := protocol.FileRsyncResponse{Operation: "prepare", SessionID: session.request.SessionID, State: "ready"}
+	if session.request.PeerMode == "tcp_punch" {
+		return b.receivePunchedRsync(setup, id, session, ready)
+	}
 	if session.request.PeerMode == "tcp" {
 		incoming, offer, cleanup, err := b.listenRsync(ctx, session)
 		if err != nil {
@@ -551,6 +557,9 @@ func (b *agentFileBridge) sendDirect(id string, session *agentRsyncSession) (fil
 	}
 	setup, cancel := context.WithDeadline(session.ctx, minTime(request.Grant.ExpiresAt, time.Now().Add(20*time.Second)))
 	defer cancel()
+	if request.PeerMode == "tcp_punch" {
+		return b.sendPunchedRsync(setup, id, session)
+	}
 	offer := protocol.FileRsyncResponse{Operation: "send", SessionID: request.SessionID, State: "offer"}
 	if request.PeerMode == "reverse" {
 		incoming, endpoint, cleanup, err := b.listenRsync(session.ctx, session)

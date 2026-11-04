@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
@@ -141,9 +142,10 @@ func waitRsyncResponse(ctx context.Context, connection *agentConnection, waiter 
 }
 
 type coreFileTransferRun struct {
-	sessionID string
-	nodeID    string
-	cancel    context.CancelCauseFunc
+	sessionID       string
+	nodeID          string
+	cancel          context.CancelCauseFunc
+	cancelRequested atomic.Bool
 }
 
 func (s *Server) beginFileTransferRun(parent context.Context, current *session, nodeID, taskID string) (context.Context, func()) {
@@ -163,6 +165,12 @@ func (s *Server) beginFileTransferRun(parent context.Context, current *session, 
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
+				if run.cancelRequested.Load() {
+					if task, err := s.tasks.Get(ctx, nodeID, taskID); err == nil && task.Status == taskstate.Canceled {
+						cancel(taskstate.ErrCancellationRequested)
+						return
+					}
+				}
 				if !s.dashboardSessionStillValid(ctx, current.ID) {
 					cancel(taskstate.ErrCancellationRequested)
 					return

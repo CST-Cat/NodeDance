@@ -6,9 +6,17 @@ Core 通过 `files.transfer` 调度普通文件对传：每次传输按所选模
 
 ## Direct connections / 直连
 
-Direct mode tries three task-scoped paths in order: source-dials-target TCP/WSS, target-dials-source TCP/WSS, then Pion WebRTC reliable ordered DataChannel over ICE/DTLS/SCTP. Connection initiator and file sender are independent. Core forwards only task authorization, bounded SDP offers/answers, progress and outcomes; the selected direct connection carries the rsync bytes. Neither TURN candidates nor automatic Core relay are allowed in direct mode.
+Direct mode tries four task-scoped paths in order: source-dials-target TCP/WSS, target-dials-source TCP/WSS, Pion WebRTC reliable ordered DataChannel over ICE/DTLS/SCTP, then TCP simultaneous open with STUN/TCP mapping discovery. Connection initiator and file sender are independent. Core forwards only task authorization, bounded candidate offers/answers, progress and outcomes; the selected direct connection carries the rsync bytes. Neither TURN candidates nor automatic Core relay are allowed in direct mode.
 
-直连依次尝试源端连接目标、目标反向连接源端、Pion WebRTC 可靠有序 DataChannel。最后一种通过 ICE/STUN 探测局域网、IPv4/IPv6 与公网 UDP 映射并进行打洞。Core 通过现有认证控制连接转交完成候选采集的 SDP offer/answer；DTLS 验证 SDP 中的证书指纹，数据通道还校验一次性、绑定任务的凭证。每个直连通道都有缓冲上限、写入背压、连接超时与取消处理。选中路径必须不含 TURN 中继，无法直连时报告失败。
+直连依次尝试源端连接目标、目标反向连接源端、Pion WebRTC 可靠有序 DataChannel、TCP 同时打开。ICE/STUN 探测局域网、IPv4/IPv6 与公网 UDP 映射并进行打洞；UDP 路径不可用时，TCP 打洞通过 STUN/TCP 独立发现 TCP 映射，保留该映射连接，并使用同一个本地源端口监听及主动连接。它不从 UDP 映射推算 TCP 端口，不依赖某台节点、供应商或固定 Agent 端口。Core 通过现有认证控制连接转交候选；文件内容始终由 Agent 互传。
+
+The TCP punch path uses a task-specific TLS 1.3 certificate on each Agent, pins both certificate fingerprints received through Core, and selects one authenticated stream before the existing WSS task-credential handshake. Port reuse is confined to that task's discovered ephemeral source port. Discovery connections, candidate listeners and losing connections are closed after selection, cancellation or timeout. It adds no Core listener, public API, persistent service, firewall rule or router configuration.
+
+TCP 打洞使用双方各自的任务证书和 TLS 1.3，固定验证 Core 转交的双向证书指纹，选定一条认证连接后继续执行原有 WSS 一次性任务凭证校验。端口复用只涉及本次任务的临时源端口；选定、取消或超时后清理发现连接、候选监听和未选中的连接。不会新增 Core 监听端口、公开 API、常驻服务、防火墙规则或路由器配置。
+
+TCP discovery defaults to `stun:stun.nextcloud.com:443`. The root Agent environment variable `NODEDANCE_TCP_STUN_SERVERS` accepts one to four comma-separated `stun:` URLs for TCP-capable STUN services; empty or `off` disables this path. It is separate from `NODEDANCE_STUN_SERVERS`, which configures UDP discovery. STUN/TCP carries only binding requests and observed addresses, never file contents or task credentials. A forward HTTP proxy is not a TCP mapping observer. Servers and address families are probed concurrently with a shared three-second discovery bound, within the existing twenty-second connection-setup bound.
+
+TCP 发现默认使用 `stun:stun.nextcloud.com:443`，可通过 root Agent 环境变量 `NODEDANCE_TCP_STUN_SERVERS` 指定一至四个支持 TCP 的 STUN 服务，空值或 `off` 关闭此路径；它与 UDP 的 `NODEDANCE_STUN_SERVERS` 分开配置。STUN/TCP 只接收绑定请求和观测地址，不接收文件内容或任务凭证。HTTP 正向代理不能代替 TCP 映射发现。多个服务和地址族并发发现，共享三秒采集上限，仍受现有二十秒建链总时限约束。
 
 A target without a declared port listens on an operating-system-assigned TCP port. A declared listen/public port uses the provider's existing TCP forwarding; it does not create a mapping. The declared endpoint is added to interface candidates, rather than replacing them. Fixed TCP listeners are shared within the Agent control connection and route independently authenticated sessions by task identity, allowing concurrent file transfers. Both directions preserve existing Tailscale interface candidates. NodeDance does not install or configure Tailscale or change host firewall rules.
 
@@ -16,7 +24,7 @@ A target without a declared port listens on an operating-system-assigned TCP por
 
 Agent uses `stun:stun.cloudflare.com:3478` and `stun:stun.l.google.com:19302` by default. Set the Agent service environment variable `NODEDANCE_STUN_SERVERS` to a comma-separated list of `stun:` URLs for private STUN infrastructure; an empty value or `off` disables STUN while retaining host candidates. TURN configuration is rejected. STUN services see discovery traffic and observed IP/port, not file contents. If STUN is hosted beside Core, expose its UDP listener separately; the HTTPS/WSS reverse proxy does not provide STUN service. Allow outbound UDP and its stateful replies on Agents. Each candidate-gathering phase waits up to three seconds for STUN, and direct connection setup has a twenty-second bound per Agent attempt within the task credential lifetime.
 
-默认 STUN 服务只参与公网映射发现，不接收文件数据；可用 Agent 服务环境变量 `NODEDANCE_STUN_SERVERS` 配置自建服务，设为 `off` 或空值可关闭 STUN。普通 NAT 的打洞成功率取决于映射及过滤行为；双端对称 NAT、部分 CGNAT、禁用 UDP 或严格防火墙仍可能无法直连。这些环境应明确选择 Core 中继，或配置可达 IPv6／端口映射。已有组网通道自身也可能中继，不能仅凭虚拟网卡地址声称底层为公网直连。
+默认 STUN 服务只参与公网映射发现，不接收文件数据；可用 Agent 服务环境变量 `NODEDANCE_STUN_SERVERS` 配置自建 UDP 服务，设为 `off` 或空值可关闭 UDP STUN。禁用 UDP 不等于所有直连路径都不可用，应继续尝试独立的 TCP 映射发现与同时打开。打洞成功率仍取决于映射及过滤行为；双端端点相关映射、部分 CGNAT、不支持 TCP 同时打开的网关或严格防火墙仍可能阻止全部直连路径。严格直连模式在这些情况下明确失败，不自动转中继，也不承诺所有 NAT 都能穿透。已有组网通道自身也可能中继，不能仅凭虚拟网卡地址声称底层为公网直连。
 
 Each Agent embeds a trimmed static rsync 3.4.1 executable for its Linux amd64 or arm64 architecture. Runtime uses only this bundle, extracted beneath protected root Agent state; no system rsync is discovered or used. Linux Landlock ABI 3 or newer is required for the rsync availability check, and the receiver must additionally pass a runtime confinement probe. Before starting `rsync --server`, the target generates an argument template with its bundled rsync and accepts only an exact match from the source. Delete, sender, daemon, files-from, backup and redirected-log arguments are forbidden. See [bundled rsync](bundled-rsync.md) for source, checksums, architecture builds and notices.
 
@@ -58,9 +66,13 @@ nodedance call files.transfer-retry --params '{"nodeId":"TARGET_NODE_UUID","task
 
 TUI 的通用操作界面填写同样的参数和幂等键。Web 将失败目标任务保留在文件管理器的观察区；未知结果先观察，确认失败或取消后启用“重试传输”。批量返回 `transferred` 与可选 `failed`；成功项包含 `transport`、SHA-256 和目标 `taskId`，已创建任务的失败项也包含 `taskId`。单次传输请求复用原幂等键只观察／返回原任务，不自动创建新的写入。
 
+Cancellation reaches the target Agent over its existing task control connection before Core cancels its local transfer context. Core waits for the Agent’s confirmed cancellation so closing a data stream cannot turn an explicit cancellation into a transport failure. CLI, TUI and Web share this task workflow.
+
+取消指令先经现有任务控制连接交给目标 Agent，待 Agent 确认取消后 Core 才取消本地传输上下文，避免先拆数据流将取消误记成传输失败。CLI、TUI 与 Web 共用此任务取消流程。
+
 ## Verification / 验证
 
-`internal/core/server/file_transfer_integration_test.go` starts a real isolated Core and two separate root Agent processes, with bundled rsync, an unavailable system-command PATH and disposable file/state directories. Its TLS proxy injects an unreachable direct offer, unavailable rsync data endpoints and a data-only disconnect without a product test switch. The cases cover forward TCP, reverse TCP and ICE-negotiated rsync direct transfer, WSS relay, chunk fallback, data reconnection, cancellation, retained-partial retry, consumed-credential rejection and absence of chunks on persistent control connections. Receiver and staging tests cover altered wire arguments, SHA-256 failure, target-version conflicts, unsafe partial links and recovery without replay.
+`internal/core/server/file_transfer_integration_test.go` starts a real isolated Core and two separate root Agent processes, with bundled rsync, an unavailable system-command PATH and disposable file/state directories. Its TLS proxy injects an unreachable direct offer, unavailable rsync data endpoints and a data-only disconnect without a product test switch. The cases cover forward TCP, reverse TCP, ICE and TCP-punch rsync direct transfer, WSS relay, chunk fallback, data reconnection, cancellation, retained-partial retry, consumed-credential rejection and absence of chunks on persistent control connections. TCP-punch tests use an isolated STUN/TCP fixture and verify that file bytes never traverse Core. Agent tests reject another task's credentials and a mismatched peer certificate. Discovery tests reject unbound/oversized STUN responses and verify cancellation cleanup. Receiver and staging tests cover altered wire arguments, SHA-256 failure, target-version conflicts, unsafe partial links and recovery without replay.
 
 ```sh
 make build
