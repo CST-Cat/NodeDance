@@ -140,7 +140,7 @@ func (l *punchedListener) Addr() net.Addr { return l.conn.LocalAddr() }
 func connectPunchedRsync(ctx context.Context, peer *tcppunch.Peer, endpoints []string, certificate tls.Certificate, fingerprint, taskID string, receiver bool) (net.Conn, error) {
 	started := time.Now()
 	deadline, _ := ctx.Deadline()
-	log.Printf("Agent direct TCP punch task=%s receiver=%t stage=connect candidates=%d remaining=%s", taskID, receiver, len(endpoints), time.Until(deadline).Round(time.Millisecond))
+	log.Printf("Agent direct TCP punch task=%s receiver=%t stage=connect local=%v peer=%v remaining=%s", taskID, receiver, peer.Addresses(), punchAddresses(endpoints), time.Until(deadline).Round(time.Millisecond))
 	authenticate := punchHandshake(certificate, fingerprint, receiver)
 	conn, err := peer.Connect(ctx, punchAddresses(endpoints), func(ctx context.Context, raw net.Conn) (net.Conn, error) {
 		log.Printf("Agent direct TCP punch task=%s receiver=%t stage=tls peer=%s", taskID, receiver, raw.RemoteAddr())
