@@ -23,19 +23,39 @@ module.exports=async({browser,context,url,artifacts,longGridName})=>{
    assert.ok((await file.locator('.file-browser-entry-meta').innerText()).length>0,'Metadata is visible below the filename')
   }
   await page.setViewportSize({width:390,height:844})
+  const touch=await phone.newCDPSession(page)
+  async function pressStart(control){await control.scrollIntoViewIfNeeded();const frame=await control.boundingBox();assert.ok(frame,'Gesture target exists');const point={x:frame.x+frame.width/2,y:frame.y+frame.height/2,id:1};await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});return point}
+  async function hold(control){const point=await pressStart(control);await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...point,x:point.x+3,y:point.y+2}]});const menu=page.locator('[data-slot=context-menu-content]');await menu.waitFor();await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});assert.ok(await menu.isVisible(),'Releasing a long press keeps the action menu open');assert.equal(await page.getByRole('dialog').count(),0,'Long press does not also open a preview');return menu}
+  const held=await hold(ui.locator('[data-file-name="hello.txt"]'));assert.ok(await ui.getByRole('checkbox',{name:'Select hello.txt',exact:true,includeHidden:true}).isChecked(),'Long press selects its file')
+  await held.getByRole('menuitem',{name:'File information',exact:true}).tap();const heldInfo=page.getByRole('dialog',{name:'File information',exact:true});await heldInfo.waitFor();assert.equal(await heldInfo.locator('.file-full-path').textContent(),'/hello.txt');await heldInfo.getByRole('button',{name:'Close dialog',exact:true}).tap();await heldInfo.waitFor({state:'detached'})
+  await ui.locator('[data-file-name="hello.txt"]').tap();const tappedPreview=page.getByRole('dialog',{name:'Preview',exact:true});await tappedPreview.waitFor();await tappedPreview.getByRole('button',{name:'Close dialog',exact:true}).tap();await tappedPreview.waitFor({state:'detached'})
   const rowActions=ui.getByRole('button',{name:'Actions: hello.txt',exact:true})
   await rowActions.tap();await page.getByRole('menuitem',{name:'File information',exact:true}).tap()
   const info=page.getByRole('dialog',{name:'File information',exact:true});await info.waitFor();await info.getByRole('button',{name:'Close dialog',exact:true}).tap();await info.waitFor({state:'detached'})
   await toolbar.getByRole('button',{name:'Directories',exact:true}).tap()
   const directories=page.getByRole('dialog',{name:'Directories',exact:true});await directories.waitFor()
   await directories.getByRole('treeitem',{name:'many',exact:true}).tap();await directories.waitFor({state:'detached'});await ui.locator('[data-file-name="entry-000.txt"]').waitFor()
+  const fileViewport=ui.locator('.file-browser-list [data-scrollbars]').first().locator(':scope > div').first(),beforeScroll=await fileViewport.evaluate(el=>el.scrollTop)
+  const swipe=await pressStart(ui.locator('[data-file-name="entry-000.txt"]'))
+  for(const distance of [25,90]){await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...swipe,y:swipe.y-distance}]});await page.evaluate(()=>new Promise(requestAnimationFrame))}
+  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await page.waitForTimeout(850)
+  assert.equal(await page.locator('[data-slot=context-menu-content]').count(),0,'Scrolling cancels long press');assert.equal(await page.getByRole('dialog').count(),0,'Scrolling does not open a file');assert.ok(await fileViewport.evaluate(el=>el.scrollTop)>beforeScroll,'Vertical touch scrolling remains available')
+  await pressStart(ui.locator('[data-file-name="entry-000.txt"]'));await touch.send('Input.dispatchTouchEvent',{type:'touchCancel',touchPoints:[]});await page.waitForTimeout(850);assert.equal(await page.locator('[data-slot=context-menu-content]').count(),0,'Canceled touch does not open a delayed menu')
   await ui.getByRole('checkbox',{name:'Select entry-000.txt',exact:true}).tap()
   await ui.locator('.file-browser-footer').getByRole('button',{name:'Actions',exact:true}).tap();await page.getByRole('menuitem',{name:'Copy',exact:true}).waitFor();await page.keyboard.press('Escape')
   for(const view of ['Grid','List']){
    await toolbar.getByRole('button',{name:'More',exact:true}).tap();await page.getByRole('menuitem',{name:'View',exact:true}).tap();await page.getByRole('menuitemcheckbox',{name:view,exact:true}).tap()
    if(view==='Grid')await ui.locator('.file-browser-grid').waitFor();else await ui.getByRole('table').waitFor()
    assert.ok(await ui.locator('.file-browser-footer').innerText().then(text=>text.includes('1 selected')),'View changes preserve selection')
+   if(view==='Grid'){
+    const menu=await hold(ui.locator('[data-file-name="entry-001.txt"]'));assert.equal(await ui.locator('[data-file-name="entry-001.txt"]').getAttribute('aria-pressed'),'true');assert.equal(await ui.locator('[data-file-name="entry-000.txt"]').getAttribute('aria-pressed'),'false')
+    await menu.getByRole('menuitem',{name:'File information',exact:true}).tap();const details=page.getByRole('dialog',{name:'File information',exact:true});await details.waitFor();assert.equal(await details.locator('.file-full-path').textContent(),'/many/entry-001.txt');await details.getByRole('button',{name:'Close dialog',exact:true}).tap();await details.waitFor({state:'detached'})
+   }
+
   }
+  await ui.getByRole('checkbox',{name:'Select entry-000.txt',exact:true}).tap();const batch=await hold(ui.locator('[data-file-name="entry-000.txt"]'));assert.equal(await batch.getByRole('menuitem',{name:'Rename',exact:true}).getAttribute('aria-disabled'),'true','Holding a selected file preserves the batch');assert.ok(await ui.getByRole('checkbox',{name:'Select entry-001.txt',exact:true,includeHidden:true}).isChecked());await page.keyboard.press('Escape');await batch.waitFor({state:'detached'});await ui.getByRole('checkbox',{name:'Select entry-000.txt',exact:true}).tap()
+  await toolbar.getByRole('button',{name:'Search filenames',exact:true}).tap();const search=page.getByTestId('file-search');await search.getByRole('textbox',{name:'Search filenames',exact:true}).fill('entry-004');await search.getByRole('button',{name:'Search filenames',exact:true}).tap();const searchFile=search.locator('[data-search-file="/many/entry-004.txt"]');await searchFile.waitFor()
+  await pressStart(searchFile);const searchMenu=page.locator('[data-slot=context-menu-content]');await searchMenu.waitFor();await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});assert.ok(await searchMenu.isVisible());await searchMenu.getByRole('menuitem',{name:'File information',exact:true}).tap();const searchInfo=page.getByRole('dialog',{name:'File information',exact:true});await searchInfo.waitFor();assert.equal(await searchInfo.locator('.file-full-path').textContent(),'/many/entry-004.txt');await searchInfo.getByRole('button',{name:'Close dialog',exact:true}).tap();await searchInfo.waitFor({state:'detached'})
   await ui.getByRole('button',{name:'Page 2',exact:true}).tap();await ui.locator('[data-file-name="entry-050.txt"]').waitFor()
   await toolbar.getByRole('button',{name:'Parent directory',exact:true}).tap();await ui.locator('[data-file-name="hello.txt"]').waitFor()
   await toolbar.getByRole('button',{name:'More',exact:true}).tap();await page.getByRole('menuitem',{name:'New',exact:true}).tap();await page.getByRole('menuitem',{name:'New folder',exact:true}).tap();await page.getByRole('dialog',{name:'New folder',exact:true}).waitFor();await page.getByRole('dialog',{name:'New folder',exact:true}).getByRole('button',{name:'Cancel',exact:true}).tap()
@@ -63,6 +83,6 @@ module.exports=async({browser,context,url,artifacts,longGridName})=>{
     if(name==='Grid')await files.locator('.file-browser-grid').waitFor();else await files.getByRole('table').waitFor()
    }
   }finally{await mouse.close()}
-  console.log('Mobile files: touch navigation, full-width list, long names, metadata, row and batch actions, view selection, pagination, new-folder dialog and themed menus passed at 320/390px.')
+  console.log('Mobile files: long press with jitter, release suppression, ordinary taps, canceled gestures, scrolling, batch selection, search-result menus, touch navigation, full-width list, long names, metadata, row and batch actions, view selection, pagination, new-folder dialog and themed menus passed at 320/390px.')
  }finally{await phone.close()}
 }

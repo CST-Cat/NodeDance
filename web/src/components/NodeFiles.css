@@ -108,3 +108,5 @@
 .file-browser-fullscreen[data-compact="true"] { padding: 8px; }
 .file-browser-directory-picker { height: min(60dvh, 480px); min-height: 200px; min-width: 0; }
 .file-browser-directory-picker > [role="tree"] { height: 100%; }
+
+.file-browser-name-button { touch-action: pan-y pinch-zoom; user-select: none; -webkit-user-select: none; }

@@ -98,3 +98,8 @@ At workspace widths up to 640px, files occupy one column. The folder button open
 `web/scripts/mobile-file-regressions.cjs` runs a touch-enabled browser against isolated real Core/root Agent fixtures. It checks 320px/390px layouts, directory navigation, long filenames, row and batch actions, list/grid selection preservation, pagination, nested creation dialogs and dark menus. The regular file audit invokes it; `NODEDANCE_AUDIT_FILE_LAYOUT_ONLY=1` additionally runs the focused layout checks without the unrelated transfer-cancellation suite. `NODEDANCE_FILE_MOBILE_REVIEW=1` saves one targeted mobile image for visual inspection.
 
 Navigation references: [Files on iPhone](https://support.apple.com/en-ie/guide/iphone/iphc61044c11/ios) and [Files by Google](https://support.google.com/files/answer/9765314?hl=en). Their list/grid choices and contextual menus inform this adaptation; the existing NodeDance components and command model remain the implementation.
+
+
+On touch and pen input, hold a filename or file icon for about 700ms to open its existing action menu in list/grid views and search results. A small finger movement of up to 10px is tolerated. Vertical scrolling and pointer cancellation abort the hold; release after opening the menu does not activate the file. Holding an unselected file selects it, while holding a member of the current selection preserves the batch. Desktop right-click and keyboard actions continue to use the same installed menu and command definitions.
+
+触屏／触控笔长按文件名或图标约 0.7 秒即可打开操作菜单，列表、网格和搜索结果使用同一套手势处理。轻微手抖允许 10px 范围；滑动和触控取消会中止长按，松手不会再误触打开文件。长按未选文件会选中它，长按已选文件会保留原来的批量选择。桌面仍可右键操作。
