@@ -60,9 +60,16 @@ func (b *agentFileBridge) handleRsync(ctx context.Context, id string, request pr
 		return
 	}
 	switch request.Operation {
-	case "connect":
+	case "connect", "start":
+		key := "prepare/"
+		if request.Operation == "start" {
+			if request.PeerMode != "tcp_punch" || b.nodeID != request.Descriptor.File.Transfer.SourceNodeID {
+				break
+			}
+			key = "send/"
+		}
 		b.mu.Lock()
-		session := b.rsyncSessions["prepare/"+request.SessionID]
+		session := b.rsyncSessions[key+request.SessionID]
 		b.mu.Unlock()
 		if session == nil || !reflect.DeepEqual(session.request.Descriptor, request.Descriptor) || session.request.PeerMode != request.PeerMode || session.request.Grant != request.Grant {
 			break

@@ -203,6 +203,11 @@ func (b *agentFileBridge) sendPunchedRsync(ctx context.Context, id string, sessi
 	request := session.request
 	offer := protocol.FileRsyncResponse{Operation: "send", SessionID: request.SessionID, State: "offer", Endpoints: punchEndpoints(peer), Fingerprint: fingerprint}
 	b.respondRsync(ctx, id, offer)
+	select {
+	case <-session.signal:
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	}
 	raw, err := connectPunchedRsync(ctx, peer, request.Endpoints, certificate, request.Fingerprint, request.Descriptor.TaskID, false)
 	if err != nil {
 		return nil, nil, err

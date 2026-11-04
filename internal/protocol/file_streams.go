@@ -170,7 +170,7 @@ func ValidateFileRsyncRequest(envelope Envelope, generation uint64, request File
 		}
 	}
 	switch request.Operation {
-	case "prepare", "send", "connect":
+	case "prepare", "send", "connect", "start":
 		if request.Transport != "direct" && request.Transport != "relay" || !ValidFileStreamGrant(request.Grant, time.Now()) ||
 			request.Grant.SessionID != request.SessionID || request.Grant.TaskID != request.Descriptor.TaskID || request.Grant.Binding != FileStreamDigest(request.Descriptor) ||
 			request.Grant.Path != request.Descriptor.File.Path {
@@ -189,7 +189,7 @@ func ValidateFileRsyncRequest(envelope Envelope, generation uint64, request File
 		if request.Completed != 0 || request.Operation == "prepare" && (len(request.Endpoints) != 0 || request.Fingerprint != "") || request.Transport == "relay" && (len(request.Endpoints) != 0 || request.Fingerprint != "") {
 			return errors.New("unexpected rsync offer fields")
 		}
-		if request.Transport == "relay" && (request.PeerMode != "" || request.SDP != "" || request.Operation == "connect") {
+		if request.Transport == "relay" && (request.PeerMode != "" || request.SDP != "" || (request.Operation == "connect" || request.Operation == "start")) {
 			return errors.New("unexpected rsync peer negotiation")
 		}
 		if request.ListenPort != 0 && (request.Transport != "direct" || !(request.Operation == "prepare" && request.PeerMode == "tcp") && !(request.Operation == "send" && request.PeerMode == "reverse")) {
@@ -234,6 +234,9 @@ func ValidateFileRsyncResponse(envelope Envelope, generation uint64, response Fi
 func validRsyncPeerFields(r FileRsyncRequest) bool {
 	if r.PeerMode != "tcp" && r.PeerMode != "reverse" && r.PeerMode != "ice" && r.PeerMode != "tcp_punch" {
 		return false
+	}
+	if r.Operation == "start" {
+		return r.PeerMode == "tcp_punch" && r.SDP == "" && len(r.Endpoints) == 0 && r.Fingerprint == "" && r.ListenPort == 0
 	}
 	if r.Operation == "prepare" {
 		return r.SDP == "" && len(r.Endpoints) == 0 && r.Fingerprint == ""

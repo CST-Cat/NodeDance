@@ -6,9 +6,9 @@ Core 通过 `files.transfer` 调度普通文件对传：每次传输按所选模
 
 ## Direct connections / 直连
 
-Direct mode tries four task-scoped paths in order: source-dials-target TCP/WSS, target-dials-source TCP/WSS, TCP simultaneous open with STUN/TCP mapping discovery, then Pion WebRTC reliable ordered DataChannel over ICE/DTLS/SCTP. Connection initiator and file sender are independent. Core forwards only task authorization, bounded candidate offers/answers, progress and outcomes; the selected direct connection carries the rsync bytes. Neither TURN candidates nor automatic Core relay are allowed in direct mode.
+Direct mode tries four task-scoped paths in order: source-dials-target TCP/WSS, target-dials-source TCP/WSS, TCP simultaneous open with STUN/TCP mapping discovery, then Pion WebRTC reliable ordered DataChannel over ICE/DTLS/SCTP. Connection initiator and file sender are independent. Core forwards only task authorization, bounded candidate offers/answers, coordinated punch start signals, progress and outcomes; the selected direct connection carries the rsync bytes. Neither TURN candidates nor automatic Core relay are allowed in direct mode.
 
-直连依次尝试源端连接目标、目标反向连接源端、TCP 同时打开、Pion WebRTC 可靠有序 DataChannel。ICE/STUN 探测局域网、IPv4/IPv6 与公网 UDP 映射并进行打洞；TCP 打洞通过 STUN/TCP 独立发现 TCP 映射，保留该映射连接，并使用同一个本地源端口监听及主动连接。它不从 UDP 映射推算 TCP 端口，不依赖某台节点、供应商或固定 Agent 端口。Core 通过现有认证控制连接转交候选；文件内容始终由 Agent 互传。
+直连依次尝试源端连接目标、目标反向连接源端、TCP 同时打开、Pion WebRTC 可靠有序 DataChannel。ICE/STUN 探测局域网、IPv4/IPv6 与公网 UDP 映射并进行打洞；TCP 打洞通过 STUN/TCP 独立发现 TCP 映射，保留该映射连接，并使用同一个本地源端口监听及主动连接。它不从 UDP 映射推算 TCP 端口，不依赖某台节点、供应商或固定 Agent 端口。双方完成候选收集后，Core 通过现有认证控制连接同时触发两端打洞，源端不会在目标端收到候选前提前拨号。Core 仅转交候选和启动信号；文件内容始终由 Agent 互传。
 
 The TCP punch path uses a task-specific TLS 1.3 certificate on each Agent, pins both certificate fingerprints received through Core, and selects one authenticated stream before the existing WSS task-credential handshake. Port reuse is confined to that task's discovered ephemeral source port. Discovery connections, candidate listeners and losing connections are closed after selection, cancellation or timeout. It adds no Core listener, public API, persistent service, firewall rule or router configuration.
 

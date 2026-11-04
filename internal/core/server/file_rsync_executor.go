@@ -221,6 +221,17 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 			if err != nil {
 				return err
 			}
+			var started *coreRsyncWaiter
+			if peerMode == "tcp_punch" {
+				start := protocol.FileRsyncRequest{Operation: "start", SessionID: id, Descriptor: descriptor, Grant: sender, Transport: transport, PeerMode: peerMode}
+				var cleanupStart func()
+				started, cleanupStart, err = s.sendRsyncRequest(ctx, source, start)
+				if err != nil {
+					cleanup()
+					return err
+				}
+				defer cleanupStart()
+			}
 			response, err := waitRsyncResponse(ctx, target, signaled)
 			cleanup()
 			if err != nil {
@@ -228,6 +239,15 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 			}
 			if response.State != "signaled" {
 				return rsyncResponseError(response)
+			}
+			if started != nil {
+				response, err = waitRsyncResponse(ctx, source, started)
+				if err != nil {
+					return err
+				}
+				if response.State != "signaled" {
+					return rsyncResponseError(response)
+				}
 			}
 			phase = "connectivity_or_dtls"
 			continue

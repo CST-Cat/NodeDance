@@ -76,9 +76,9 @@ func TestAgentNegotiatesReverseAndICEDataStreams(t *testing.T) {
 			if strings.HasSuffix(mode, "_bad_fingerprint") {
 				request.Fingerprint = strings.Repeat("0", 64)
 			}
-			sender := &agentRsyncSession{request: request, ctx: ctx, done: make(chan struct{})}
+			sender := &agentRsyncSession{request: request, ctx: ctx, done: make(chan struct{}), signal: make(chan protocol.FileRsyncRequest, 1)}
 			defer close(sender.done)
-			source := &agentFileBridge{writer: make(peerTestWriter, 4)}
+			source := &agentFileBridge{nodeID: "source", writer: make(peerTestWriter, 4), rsyncSessions: map[string]*agentRsyncSession{"send/session": sender}}
 			sourceResult := make(chan peerTestResult, 1)
 			go func() {
 				conn, cleanup, err := source.sendDirect("send", sender)
@@ -103,6 +103,25 @@ func TestAgentNegotiatesReverseAndICEDataStreams(t *testing.T) {
 			target.handleRsync(ctx, "replay", signal)
 			if reply := <-target.writer.(peerTestWriter); reply.State != "error" {
 				t.Fatal("accepted repeated negotiation", reply)
+			}
+			if peerMode == "tcp_punch" {
+				if mode == "tcp_punch" {
+					select {
+					case <-sourceResult:
+						t.Fatal("sender dialed before both offers reached Core")
+					case <-time.After(100 * time.Millisecond):
+					}
+				}
+				start := sender.request
+				start.Operation, start.Endpoints, start.Fingerprint, start.SDP = "start", nil, "", ""
+				source.handleRsync(ctx, "start", start)
+				if reply := <-source.writer.(peerTestWriter); reply.State != "signaled" {
+					t.Fatal(reply)
+				}
+				source.handleRsync(ctx, "start_replay", start)
+				if reply := <-source.writer.(peerTestWriter); reply.State != "error" {
+					t.Fatal("accepted repeated start", reply)
+				}
 			}
 			var a, b peerTestResult
 			select {

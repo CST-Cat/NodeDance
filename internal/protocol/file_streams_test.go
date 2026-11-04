@@ -109,4 +109,21 @@ func TestRsyncPeerNegotiationRemainsBoundToTask(t *testing.T) {
 			t.Fatal("accepted unbound TCP punch signaling")
 		}
 	}
+	request.Operation, request.Endpoints, request.Fingerprint = "start", nil, ""
+	if err := ValidateFileRsyncRequest(envelope, 1, request); err != nil {
+		t.Fatal("TCP punch start rejected", err)
+	}
+	for _, change := range []func(*FileRsyncRequest){
+		func(r *FileRsyncRequest) { r.Transport = "relay" },
+		func(r *FileRsyncRequest) { r.PeerMode = "tcp" },
+		func(r *FileRsyncRequest) { r.Grant.Role = "receiver" },
+		func(r *FileRsyncRequest) { r.Grant.Binding = strings.Repeat("0", 64) },
+		func(r *FileRsyncRequest) { r.Endpoints = []string{"wss://127.0.0.1:1234" + FileRsyncDataRoute} },
+	} {
+		modified := request
+		change(&modified)
+		if ValidateFileRsyncRequest(envelope, 1, modified) == nil {
+			t.Fatal("accepted unbound TCP punch start")
+		}
+	}
 }

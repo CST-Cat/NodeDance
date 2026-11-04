@@ -164,10 +164,14 @@ func newTransferIntegrationFixture(t *testing.T, rejectRsyncData bool, tcpSTUN .
 					}
 					if fromCore && envelope.Type == protocol.TypeFileRsyncRequest {
 						var request protocol.FileRsyncRequest
-						if json.Unmarshal(envelope.Payload, &request) == nil && request.Operation == "send" && request.PeerMode == "tcp_punch" && f.blockPunch.Load() {
-							request.Grant.Secret = strings.Repeat("0", 64)
-							envelope.Payload, _ = json.Marshal(request)
-							data, _ = json.Marshal(envelope)
+						if json.Unmarshal(envelope.Payload, &request) == nil && request.Operation == "prepare" && request.PeerMode == "tcp_punch" && f.blockPunch.Load() {
+							envelope.Type = protocol.TypeFileRsyncResponse
+							envelope.Payload, _ = json.Marshal(protocol.FileRsyncResponse{Operation: "prepare", SessionID: request.SessionID, State: "unavailable", Code: "direct_tcp_punch_unavailable"})
+							response, _ := json.Marshal(envelope)
+							if from.Write(ctx, kind, response) != nil {
+								return
+							}
+							continue
 						}
 						if json.Unmarshal(envelope.Payload, &request) == nil && request.Operation == "prepare" && request.Transport == "direct" {
 							f.peerMode.Store(request.PeerMode)

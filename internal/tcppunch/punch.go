@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"net/netip"
-	"runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -92,7 +91,6 @@ func discover(ctx context.Context, network, address string) (_ *mapping, failure
 		}
 	}()
 	stop := context.AfterFunc(ctx, func() {
-		log.Printf("TCP punch discovery canceled local=%v error=%v", stream.LocalAddr(), ctx.Err())
 		_ = stream.Close()
 	})
 	defer stop()
@@ -158,7 +156,6 @@ func (p *Peer) Addresses() []string {
 
 func (p *Peer) Close() {
 	p.once.Do(func() {
-		log.Printf("TCP punch close addresses=%v stack=%s", p.Addresses(), debug.Stack())
 		for _, m := range p.mappings {
 			_ = m.listener.Close()
 			_ = m.stream.Close()
@@ -206,7 +203,6 @@ func (p *Peer) Connect(ctx context.Context, addresses []string, authenticate fun
 			for {
 				raw, err := m.listener.Accept()
 				if err != nil {
-					log.Printf("TCP punch accept ended local=%v error=%v", m.local, err)
 					return
 				}
 				select {
