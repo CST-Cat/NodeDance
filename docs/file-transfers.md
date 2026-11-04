@@ -1,22 +1,22 @@
 # Multi-node file transfers / 多机文件对传
 
-Core schedules regular-file transfers through `files.transfer`. Agents first attempt a direct WSS connection, then a dedicated Core WSS rsync relay. If rsync or its confinement is unavailable, or both relay attempts fail before commit, Core uses the bounded chunk relay over separate task data connections. The persistent Agent connection carries control requests, progress and task outcomes; file contents use independent connections.
+Core schedules regular-file transfers through `files.transfer`. Each transfer runs in the mode selected for it: Core relay (the default) or Agent direct. The selected mode never switches automatically. In relay mode, Agents run rsync through a dedicated Core WSS relay; if rsync or its confinement is unavailable, Core uses the bounded chunk relay over separate task data connections instead. In direct mode, the Agents connect to each other and a failed attempt fails the transfer. The persistent Agent connection carries control requests, progress and task outcomes; file contents use independent connections.
 
-Core 通过 `files.transfer` 调度普通文件对传：优先 Agent 间直连 WSS，失败后走独立的 Core WSS rsync 中继，提交前仍不可用时走独立连接上的原分片中继。常驻 Agent WSS 只承载控制请求、进度和任务结果。批量中的每个文件有独立目标任务，已完成项不会因其他项失败而回滚。
+Core 通过 `files.transfer` 调度普通文件对传：每次传输按所选模式运行——Core 中继（默认）或 Agent 直连，所选模式不会自动切换。中继模式下经独立的 Core WSS rsync 中继传输，rsync 或其隔离不可用时改走独立连接上的分片中继；直连模式下两端 Agent 互连，尝试失败即传输失败。常驻 Agent WSS 只承载控制请求、进度和任务结果。批量中的每个文件有独立目标任务，已完成项不会因其他项失败而回滚。
 
 ## Direct connections / 直连
 
 The target opens a temporary TLS listener on an operating-system-assigned port and offers addresses discovered from its active network interfaces. The source probes the offers concurrently, verifies the task's temporary certificate SHA-256 fingerprint and opens one WSS stream using a one-use credential. IP addresses and ports are not configured or hardcoded. Existing Tailscale interfaces participate like other interfaces; NodeDance does not install or configure Tailscale.
 
-目标端临时监听系统分配的端口，从当前网卡发现地址；源端并发探测可达性，核对 Core 转交的临时证书指纹，再使用一次性任务凭证连接。NodeDance 不修改防火墙，不做 NAT 打洞或端口映射。网卡地址在另一台机器上不可达时自动进入中继。
+目标端临时监听系统分配的端口，从当前网卡发现地址；源端并发探测可达性，核对 Core 转交的临时证书指纹，再使用一次性任务凭证连接。NodeDance 不修改防火墙，不做 NAT 打洞或端口映射。直连模式下端点不可达即传输失败，不自动改走中继；可经重试入口以同一模式重试。
 
 Each Agent embeds a trimmed static rsync 3.4.1 executable for its Linux amd64 or arm64 architecture. Runtime uses only this bundle, extracted beneath protected root Agent state; no system rsync is discovered or used. Linux Landlock ABI 3 or newer is required for the rsync availability check, and the receiver must additionally pass a runtime confinement probe. Before starting `rsync --server`, the target generates an argument template with its bundled rsync and accepts only an exact match from the source. Delete, sender, daemon, files-from, backup and redirected-log arguments are forbidden. See [bundled rsync](bundled-rsync.md) for source, checksums, architecture builds and notices.
 
-Agent 自带对应架构的静态 rsync 3.4.1，无需在节点安装 rsync；可用性检查、参数模板和执行只使用包内文件。目标接收进程启动前，必须通过内置 rsync 运行时模板和隔离探针。接收参数只允许精确匹配该模板；Landlock 将文件读写限制到已固定句柄的私有 payload，并限制可写大小。缺少必要内核支持或探针失败时使用分片兜底，不放宽隔离要求。
+Agent 自带对应架构的静态 rsync 3.4.1，无需在节点安装 rsync；可用性检查、参数模板和执行只使用包内文件。目标接收进程启动前，必须通过内置 rsync 运行时模板和隔离探针。接收参数只允许精确匹配该模板；Landlock 将文件读写限制到已固定句柄的私有 payload，并限制可写大小。缺少必要内核支持或探针失败时，中继模式改走分片中继、直连模式直接失败，不放宽隔离要求。
 
 ## Core relay / Core 中继
 
-The source and target make outbound connections to `/ws/v1/files/rsync` using separate sender and receiver credentials. Core pairs the two streams and forwards rsync bytes with bounded buffers. A data disconnect before commit triggers one new relay attempt with fresh credentials and the same retained payload; persistent control connections can remain active. Chunk fallback uses `/ws/v1/files/chunks`, including upload/download acknowledgments, and never moves file chunks back onto the persistent socket. Text reads and saves use this independent data transport too; save task dispatch carries metadata and the Agent verifies the streamed body before its existing UTF-8/version-protected save.
+The source and target make outbound connections to `/ws/v1/files/rsync` using separate sender and receiver credentials. Core pairs the two streams and forwards rsync bytes with bounded buffers. A data disconnect before commit triggers one new relay attempt with fresh credentials and the same retained payload; persistent control connections can remain active. If rsync relay cannot complete, relay mode uses the chunk relay over `/ws/v1/files/chunks`, including upload/download acknowledgments, and never moves file chunks back onto the persistent socket. Text reads and saves use this independent data transport too; save task dispatch carries metadata and the Agent verifies the streamed body before its existing UTF-8/version-protected save.
 
 中继连接绑定管理员会话、当前 Agent 连接、源和目标节点、目标任务、方向、路径及完整传输描述符。凭证通过请求头传递，创建后一分钟内才可消费，只能使用一次；匿名请求、管理员 Cookie 和伪造凭证均不能打开数据连接。管理员会话撤销、任务取消或 Core 停止会终止本次传输。
 
@@ -34,7 +34,7 @@ Retry uses `files.transfer-retry` on the **target node** with a fresh `Idempoten
 
 ## Shared operations / 统一操作
 
-Web, CLI and TUI discover the same Core operation contract. The Web transfer dialog chooses a node and existing directory, accepts `bandwidthLimit` in bytes/s and displays the actual result transport. Zero means unlimited; nonzero limits must be at least 1024 B/s and no greater than the published maximum. The limit applies per file, including chunk fallback, rather than to the aggregate batch. File size uses the configured Agent/Core bound (default 1 GiB, maximum 16 GiB). Directory transfers, recursive rsync synchronization and mirrored deletion are not included.
+Web, CLI and TUI discover the same Core operation contract. The Web transfer dialog chooses a node and existing directory, selects the transfer mode (`relay` by default, or `direct`), accepts `bandwidthLimit` in bytes/s and displays the actual result transport. Zero means unlimited; nonzero limits must be at least 1024 B/s and no greater than the published maximum. The limit applies per file, including chunk fallback, rather than to the aggregate batch. File size uses the configured Agent/Core bound (default 1 GiB, maximum 16 GiB). Directory transfers, recursive rsync synchronization and mirrored deletion are not included.
 
 ```sh
 nodedance describe files.transfer

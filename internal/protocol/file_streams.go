@@ -22,7 +22,17 @@ const (
 	MaxFileStreamMessage  = 1 << 20
 )
 
+const (
+	FileTransferModeRelay  = "relay"
+	FileTransferModeDirect = "direct"
+)
+
+func ValidFileTransferMode(value string) bool {
+	return value == FileTransferModeRelay || value == FileTransferModeDirect
+}
+
 type FileTransferSpec struct {
+	Mode           string `json:"mode"`
 	SourceNodeID   string `json:"sourceNodeId"`
 	SourcePath     string `json:"sourcePath"`
 	SourceVersion  string `json:"sourceVersion"`

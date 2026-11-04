@@ -47,7 +47,7 @@ func transferExecutorFixture(t *testing.T) (*TaskExecutor, *taskjournal.Store, s
 	sum := sha256.Sum256([]byte("verified payload"))
 	descriptor := protocol.FileTransferDescriptor{TaskID: "ndt_" + string(bytes.Repeat([]byte("a"), 32)), TargetNodeID: node,
 		File: protocol.FileTaskSpec{Path: "/target", Size: int64(len("verified payload")), SHA256: hex.EncodeToString(sum[:]),
-			Transfer: &protocol.FileTransferSpec{SourceNodeID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", SourcePath: "/source", SourceVersion: "source-version"}}}
+			Transfer: &protocol.FileTransferSpec{Mode: protocol.FileTransferModeRelay, SourceNodeID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", SourcePath: "/source", SourceVersion: "source-version"}}}
 	return executor, journal, root, state, descriptor
 }
 

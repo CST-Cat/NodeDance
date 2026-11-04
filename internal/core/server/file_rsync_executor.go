@@ -17,14 +17,18 @@ type rsyncCommitError struct{ cause error }
 func (e rsyncCommitError) Error() string { return e.cause.Error() }
 func (e rsyncCommitError) Unwrap() error { return e.cause }
 
-func (s *Server) tryRsyncTransfer(ctx context.Context, current *session, descriptor protocol.FileTransferDescriptor) (string, error) {
+func (s *Server) runRsyncMode(ctx context.Context, current *session, descriptor protocol.FileTransferDescriptor, mode string) (string, error) {
+	attempts := 1
+	if mode == protocol.FileTransferModeRelay {
+		attempts = 2
+	}
 	var lastErr error
-	for _, transport := range []string{"direct", "relay", "relay"} {
+	for range attempts {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		if err := s.runRsyncAttempt(ctx, current, descriptor, transport); err == nil {
-			return "rsync_" + transport, nil
+		if err := s.runRsyncAttempt(ctx, current, descriptor, mode); err == nil {
+			return "rsync_" + mode, nil
 		} else {
 			lastErr = err
 			var committing rsyncCommitError

@@ -305,7 +305,7 @@ func requireBundledTransferRsync(t *testing.T) {
 	cleanupRsync()
 }
 
-func TestCoreSchedulesDirectAndFallsBackToIndependentRsyncRelay(t *testing.T) {
+func TestCoreTransfersInExplicitDirectAndRelayModes(t *testing.T) {
 	requireBundledTransferRsync(t)
 	f := newTransferIntegrationFixture(t, false)
 	content := bytes.Repeat([]byte("binary\x00payload\xff"), 16000)
@@ -313,9 +313,13 @@ func TestCoreSchedulesDirectAndFallsBackToIndependentRsyncRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, transport := range []string{"rsync_direct", "rsync_relay"} {
-		f.blockDirect.Store(transport == "rsync_relay")
+		f.blockDirect.Store(false)
+		mode := protocol.FileTransferModeRelay
+		if transport == "rsync_direct" {
+			mode = protocol.FileTransferModeDirect
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		status, data, err := f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{TargetNodeID: f.target, Paths: []string{"/payload.bin"}, TargetPath: "/out"}, transport)
+		status, data, err := f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{Mode: mode, TargetNodeID: f.target, Paths: []string{"/payload.bin"}, TargetPath: "/out"}, transport)
 		cancel()
 		var result struct {
 			Transferred []fileTransferResult

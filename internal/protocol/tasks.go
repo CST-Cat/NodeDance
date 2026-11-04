@@ -511,7 +511,7 @@ func validFileTaskSpec(intent TaskIntent) bool {
 	file := intent.File
 	if file.Transfer != nil {
 		transfer := file.Transfer
-		if intent.Action != TaskFileUpload || !fileRequestID.MatchString(transfer.SourceNodeID) || !ValidVirtualFilePath(transfer.SourcePath) || transfer.SourcePath == "/" ||
+		if intent.Action != TaskFileUpload || !ValidFileTransferMode(transfer.Mode) || !fileRequestID.MatchString(transfer.SourceNodeID) || !ValidVirtualFilePath(transfer.SourcePath) || transfer.SourcePath == "/" ||
 			transfer.SourceVersion == "" || len(transfer.SourceVersion) > 128 || strings.ContainsAny(transfer.SourceVersion, "\x00\r\n") || !ValidFileBandwidth(transfer.BandwidthLimit) ||
 			transfer.RetryOfTaskID != "" && !validFileTaskID(transfer.RetryOfTaskID) {
 			return false
