@@ -8,7 +8,11 @@ Core 通过 `files.transfer` 调度普通文件对传：每次传输按所选模
 
 The target opens a temporary TLS listener on an operating-system-assigned port and offers addresses discovered from its active network interfaces. The source probes the offers concurrently, verifies the task's temporary certificate SHA-256 fingerprint and opens one WSS stream using a one-use credential. IP addresses and ports are not configured or hardcoded. Existing Tailscale interfaces participate like other interfaces; NodeDance does not install or configure Tailscale.
 
+A node behind NAT whose provider forwards a port to it can declare that port in its node settings: a direct listen port, and the public port when it differs. The target then listens on the declared port and Core offers a single endpoint built from the node's public address as observed on its current connection and the declared public port. NodeDance does not modify firewalls, punch NAT holes or create port mappings; without a provider forwarding, a NAT node's declared endpoint is unreachable and the direct attempt fails like any other unreachable endpoint.
+
 目标端临时监听系统分配的端口，从当前网卡发现地址；源端并发探测可达性，核对 Core 转交的临时证书指纹，再使用一次性任务凭证连接。NodeDance 不修改防火墙，不做 NAT 打洞或端口映射。直连模式下端点不可达即传输失败，不自动改走中继；可经重试入口以同一模式重试。
+
+位于 NAT 之后、且服务商已为其转发端口的节点，可在节点设置中声明该端口：直连监听端口，以及与监听端口不同时的对外端口。目标端随即改在声明的监听端口上监听，Core 以节点当前连接所见的公网地址与声明的对外端口组成唯一直连端点。NodeDance 不创建端口映射；服务商没有转发时，声明的端点同样不可达，直连如实失败。
 
 Each Agent embeds a trimmed static rsync 3.4.1 executable for its Linux amd64 or arm64 architecture. Runtime uses only this bundle, extracted beneath protected root Agent state; no system rsync is discovered or used. Linux Landlock ABI 3 or newer is required for the rsync availability check, and the receiver must additionally pass a runtime confinement probe. Before starting `rsync --server`, the target generates an argument template with its bundled rsync and accepts only an exact match from the source. Delete, sender, daemon, files-from, backup and redirected-log arguments are forbidden. See [bundled rsync](bundled-rsync.md) for source, checksums, architecture builds and notices.
 

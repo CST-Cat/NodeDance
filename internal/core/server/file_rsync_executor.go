@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"net"
+	"strconv"
 	"time"
 
 	coretasks "github.com/CST-Cat/NodeDance/internal/core/tasks"
@@ -128,6 +130,13 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 		prepareGrant = receiver
 	}
 	prepare := protocol.FileRsyncRequest{Operation: "prepare", SessionID: id, Descriptor: descriptor, Grant: prepareGrant, Transport: transport}
+	var directAsset protocol.NodeAsset
+	if transport == "direct" {
+		if asset, assetErr := s.nodeAsset(ctx, descriptor.TargetNodeID); assetErr == nil {
+			directAsset = asset
+		}
+		prepare.ListenPort = directAsset.DirectListenPort
+	}
 	prepared, cleanupPrepared, err := s.sendRsyncRequest(ctx, target, prepare)
 	if err != nil {
 		return err
@@ -143,6 +152,11 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 		return rsyncResponseError(offer)
 	}
 	send := protocol.FileRsyncRequest{Operation: "send", SessionID: id, Descriptor: descriptor, Grant: sender, Transport: transport, Endpoints: offer.Endpoints, Fingerprint: offer.Fingerprint}
+	if transport == "direct" {
+		if endpoint, ok := declaredDirectEndpoint(directAsset, s.connectionPublicIP(descriptor.TargetNodeID)); ok {
+			send.Endpoints = []string{endpoint}
+		}
+	}
 	sending, cleanupSending, err := s.sendRsyncRequest(ctx, source, send)
 	if err != nil {
 		return err
@@ -183,6 +197,17 @@ func (s *Server) runRsyncAttempt(ctx context.Context, current *session, descript
 		return rsyncCommitError{cause: rsyncResponseError(response)}
 	}
 	return nil
+}
+
+func declaredDirectEndpoint(asset protocol.NodeAsset, publicIP string) (string, bool) {
+	if asset.DirectListenPort <= 0 || publicIP == "" {
+		return "", false
+	}
+	port := asset.DirectPublicPort
+	if port <= 0 {
+		port = asset.DirectListenPort
+	}
+	return "wss://" + net.JoinHostPort(publicIP, strconv.Itoa(port)) + protocol.FileRsyncDataRoute, true
 }
 
 func (s *Server) signalFileTransferCancellation(task coretasks.Task) error {

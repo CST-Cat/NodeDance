@@ -310,7 +310,7 @@ func buildOperations() []Operation {
 		op("locations.get", "GET", "/api/v1/locations/{id}", "Get a city and its coordinates from the local directory", nil),
 		op("nodes.list", "GET", "/api/v1/nodes", "Nodes, online state and Agent capabilities", nil),
 		op("nodes.asset", "GET", node+"/asset", "Node cost, expiry and traffic quota settings", nil),
-		op("nodes.save-asset", "PUT", node+"/asset", "Save node asset and reminder settings", schema(protocol.NodeAsset{})),
+		op("nodes.save-asset", "PUT", node+"/asset", "Save node asset, reminder and direct-transfer port settings", schema(protocol.NodeAsset{})),
 		op("agents.settings", "GET", node+"/agent-settings", "Agent sampling, networking and update settings", nil),
 		op("agents.configure", "PUT", node+"/agent-settings", "Persist Agent settings; connection changes apply on reconnect", schema(protocol.AgentSettings{})),
 		op("agents.diagnostics", "GET", node+"/diagnostics", "Effective Agent configuration and discovered SSH connection; credentials redacted", nil),
