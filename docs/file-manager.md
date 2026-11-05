@@ -23,6 +23,8 @@ nodedance call files.action --params '{"nodeId":"NODE_UUID"}' --body '{"action":
 
 Web 的菜单、右键操作、复制移动、ZIP／TAR 系列压缩解压、文本编辑、图片编辑、上传下载和搜索均使用这些契约。主题与语言跟随 NodeDance；列表／网格、目录树、全屏、导航历史属于浏览器本地视图能力。目录路径写入私有视图 URL，支持前进／后退和刷新。不另维护业务权限或确认规则。
 
+目录树的手动折叠不会被目录列表或子目录的迟到响应、刷新或文件操作后的重读覆盖。主动导航到其他路径时才展开目标及祖先；点击当前目录只切换树的展开状态，不重复加载或追加导航历史。`web/scripts/file-tree-regressions.cjs` 在隔离文件审查中延迟真实 Core 响应，验证折叠、刷新和后续导航。
+
 ## Bounds and outcomes / 边界与结果
 
 Directory/search pages contain at most 100 entries and fit the bounded file control envelope (256 KiB); `nextAfter` is the last path and is empty at completion. Memory during scanning is bounded to a page plus directory batches. Each scan examines at most 100,000 entries with depth at most 64 and respects context cancellation. The Web client reads successive Core pages up to the shared scan bound and presents 50 rows per browser page. It buffers the resulting entries; it does not promise virtualized scanning for 100,000 files. Concurrent directory changes can alter subsequent pages: this is not a filesystem snapshot. Refresh to reconcile a changing directory.

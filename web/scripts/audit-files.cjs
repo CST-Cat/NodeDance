@@ -15,6 +15,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
  await build({configFile:false,logLevel:'error',define:{'process.env.NODE_ENV':JSON.stringify('production')},build:{lib:{entry:path.join(root,'web/src/file-manager.ts'),formats:['es'],fileName:()=> 'driver-audit.js'},outDir:path.join(artifacts,'driver'),emptyOutDir:true}})
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'nodedance-file-audit-')),data=path.join(dir,'core'),files=path.join(dir,'files'),state=execFileSync('sudo',['mktemp','-d','/run/nodedance-file-audit-XXXXXX'],{encoding:'utf8'}).trim(),base=`http://127.0.0.1:${await port()}`
  fs.mkdirSync(files);fs.mkdirSync(path.join(files,'many'));fs.mkdirSync(path.join(files,'out'))
+ fs.mkdirSync(path.join(files,'tree-parent','tree-child'),{recursive:true});fs.writeFileSync(path.join(files,'tree-parent','tree-child','leaf.txt'),'tree fixture')
  if(process.env.NODEDANCE_AUDIT_FILE_LAYOUT_ONLY==='1')for(let i=0;i<24;i++)fs.mkdirSync(path.join(files,`scroll-directory-${i}`))
  const longGridName='a-very-long-file-name-that-keeps-the-important-ending-report.txt';fs.writeFileSync(path.join(files,longGridName),'grid fixture');fs.mkdirSync(path.join(files,'a-long-parent-directory','another-long-directory','third-level','fourth-level'),{recursive:true});
  fs.mkdirSync(path.join(files,'single'));fs.writeFileSync(path.join(files,'single','only.txt'),'single fixture');const hostileGridName='<img src=x onerror=window.gridScriptExecuted=true>.txt';fs.writeFileSync(path.join(files,hostileGridName),'inert filename');
@@ -80,6 +81,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   await page.goto(base+`/#/nodes?node=${node}&section=files`);
   const browserUI=page.getByTestId('node-files');await browserUI.locator('[data-file-name="hello.txt"]').waitFor();
   await require('./mobile-file-regressions.cjs')({browser,context,base,url:page.url(),artifacts,longGridName});
+  await require('./file-tree-regressions.cjs')({page,browserUI,listPath:new URL(endpoint('files.list')).pathname});
   if(process.env.NODEDANCE_AUDIT_FILE_LAYOUT_ONLY==='1'){await require('./file-layout-regressions.cjs')({page,context,base,browserUI,artifacts,longGridName});return}
   await require('./audit-shares.cjs')({base,browser,context,page,node,headers,catalog});
   if(process.env.NODEDANCE_AUDIT_SHARES_ONLY==='1')return;

@@ -5,10 +5,12 @@
 ### English
 
 - Unify Core and Agent development updates under `dev` across Web, CLI and TUI. Core builds from `origin/main`; Agent installs its published Dev artifact. Preserve update verification and rollback.
+- Preserve manual file-tree collapse when directory responses arrive or listings refresh; toggling the current folder no longer reloads it or adds navigation history.
 
 ### 简体中文
 
 - Web、CLI、TUI 的 Core 与 Agent 开发更新通道统一为 `dev`：Core 从 `origin/main` 构建，Agent 安装已发布 Dev 构建，保留更新核验与回滚。
+- 文件目录树手动折叠后，不再被迟到的目录响应或列表刷新重新展开；切换当前文件夹的展开状态不重复加载或追加导航历史。
 
 ## [0.1.64]
 

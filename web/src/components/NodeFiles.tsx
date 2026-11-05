@@ -110,25 +110,28 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
     }).catch(reason => { if (!disposed) { setError(reason instanceof Error ? reason.message : String(reason)); setLoading(false); } });
     return () => { disposed = true; lifecycle.current++; generation.current++; client?.dispose(); propsRef.current.onDirectoryReady?.(""); };
   }, [nodeId]);
-  const load = useCallback(async (target: string) => {
+  const load = useCallback(async (target: string, reveal = false) => {
     if (!manager) return;
     const epoch = ++generation.current; setLoading(true); setError("");
+    if (reveal) {
+      const chain: string[] = ["/"]; let ancestor = target; while (ancestor !== "/") { chain.push(ancestor); ancestor = fileParent(ancestor); }
+      setExpanded(old => [...new Set([...old, ...chain])]);
+    }
     try {
       const info = await manager.stat(target);
       if (info.kind !== "directory") throw Error(t("files.notDirectory"));
       const rows = await manager.list(target);
       if (generation.current !== epoch) return;
       setEntries(rows); setSelection([]); setPage(1); setConfirmedPath(target);
-      const chain: string[] = ["/"]; let ancestor = target; while (ancestor !== "/") { chain.push(ancestor); ancestor = fileParent(ancestor); } setExpanded(old => [...new Set([...old, ...chain])]);
       setTree(old => ({ ...old, [target]: rows.filter(row => row.kind === "directory") }));
       propsRef.current.onDirectoryReady?.(target);
       return rows;
     } catch (reason) { if (generation.current === epoch) { setError(reason instanceof Error ? reason.message : String(reason)); propsRef.current.onDirectoryReady?.(""); } }
     finally { if (generation.current === epoch) setLoading(false); }
   }, [manager]);
-  useEffect(() => { if (manager) void load(path); }, [manager]);
+  useEffect(() => { if (manager) void load(path, true); }, [manager]);
   useEffect(() => {
-    if (manager && !directoryPicker && initialPath !== pathsRef.current.path) { setPath(initialPath); setPathDraft(initialPath); void load(initialPath); }
+    if (manager && !directoryPicker && initialPath !== pathsRef.current.path) { setPath(initialPath); setPathDraft(initialPath); void load(initialPath, true); }
   }, [initialPath]);
   useEffect(() => {
     const pane = filePane.current;
@@ -165,9 +168,8 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
   async function navigate(target: string, index?: number) {
     setDirectoriesOpen(false); setEditingPath(false); setPath(target); setPathDraft(target); setEntries([]); setSelection([]);
     setHistory(old => index === undefined ? { paths: [...old.paths.slice(0, old.index + 1), target], index: old.index + 1 } : { ...old, index });
-    setExpanded(old => [...new Set([...old, target, fileParent(target)])]);
     if (!directoryPicker) propsRef.current.onPathChange?.(target);
-    return await load(target);
+    return await load(target, true);
   }
   const compareEntries = (a: NodeFileEntry, b: NodeFileEntry) => {
     const left = a[sort.key as keyof NodeFileEntry], right = b[sort.key as keyof NodeFileEntry];
@@ -314,7 +316,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
   const compactIconSize = paneWidth < 260 ? "icon" : "icon-lg";
   const createItems: FileToolbarItem[] = [{ label: f("mkdir"), onSelect: () => { void openModal("mkdir", []); } }, ...([['txt', 'new.txt'], ['sh', 'script.sh'], ['yaml', 'compose.yaml'], ['json', 'config.json'], ['toml', 'config.toml'], ['ini', 'config.ini'], ['conf', 'server.conf'], ['env', '.env'], ['service', 'app.service'], ['dockerfile', 'Dockerfile']] as const).map(([kind, name]) => ({ label: t(`files.create.${kind}`), onSelect: () => { void openModal("mkfile", [], name); } })), { label: t("files.create.custom"), onSelect: () => { void openModal("mkfile", []); } }];
   const viewItems: FileToolbarItem[] = [{ label: f("selectAll"), onSelect: () => setSelection(visible.map(row => row.path)) }, { label: f("selectNone"), onSelect: () => setSelection([]) }, { label: f("invert"), onSelect: () => setSelection(visible.filter(row => !selection.includes(row.path)).map(row => row.path)) }, { label: f("hidden"), onSelect: () => setShowHidden(value => !value) }, ...(["name", "size", "modifiedAt", "mode"] as const).map(key => ({ label: `${f("sortBy")} ${f(key === "modifiedAt" ? "modified" : key === "mode" ? "permissions" : key)}`, onSelect: () => { setSort(old => ({ key, direction: old.key === key && old.direction === "asc" ? "desc" : "asc" })); setPage(1); } })), { label: f("help"), onSelect: () => { void openModal("help", []); } }];
-  const directoryTree = <TreeView fillHeight maxIndentDepth={3} renderLabel={node => <FileNameText name={node.label} />} aria-label={f("directories")} nodes={treeNodes} expandedIds={expanded} onExpandedChange={values => { setExpanded(values); for (const value of values) if (!tree[value] && !value.startsWith("pending:")) void expandDirectory(value); }} onSelect={node => { if (node.id.startsWith("pending:")) { void expandDirectory(node.id.slice(8)); return; } if (!busy) void navigate(node.id); }} />;
+  const directoryTree = <TreeView fillHeight maxIndentDepth={3} renderLabel={node => <FileNameText name={node.label} />} aria-label={f("directories")} nodes={treeNodes} expandedIds={expanded} onExpandedChange={values => { setExpanded(values); for (const value of values) if (!tree[value] && !value.startsWith("pending:")) void expandDirectory(value); }} onSelect={node => { if (node.id.startsWith("pending:")) { void expandDirectory(node.id.slice(8)); return; } if (!busy && node.id !== pathsRef.current.path) void navigate(node.id); }} />;
   const mobileItems: FileToolbarItem[] = [
     { label: f("refresh"), icon: <RefreshCw />, disabled: loading || busy, onSelect: () => { void refresh(); } },
     { label: f("forward"), disabled: busy || history.index >= history.paths.length - 1, onSelect: () => { void navigate(history.paths[history.index + 1]!, history.index + 1); } },
