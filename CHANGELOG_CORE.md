@@ -4,21 +4,23 @@
 
 ### English
 
-- Node line types (`kvm`, `nat`, `homelab`) are detected by the Agent at installation — homelab from desktop chassis or wireless, nat from container virtualization, kvm only with a public address on an interface, otherwise unlabeled — and editable in node settings; direct transfers prune the attempt chain by the pair of labels — unlabeled or `kvm ↔ kvm` pairs keep the full order, `nat`/`homelab` combinations without a declared port start at TCP punch, and `nat ↔ homelab` or `homelab ↔ homelab` pairs are pointed at Core relay.
+- Node line types (`kvm`, `nat`, `homelab`) are detected by the Agent at installation — homelab from desktop chassis or wireless, nat from container virtualization, kvm only with a public address on an interface, otherwise unlabeled — and editable in node settings; direct transfers prune the attempt chain by the pair of labels — unlabeled or `kvm ↔ kvm` pairs keep the full order, `nat` pairs without a declared port and any `homelab` side start at TCP punch, and `nat ↔ homelab` or `homelab ↔ homelab` pairs are pointed at Core relay.
 - Support automatic bounded tar.gz packaging and validated atomic extraction for directory peer transfers; regular files stream unchanged. Unify transfer bandwidth as decimal MB/s across the contract and clients.
 - Replace the transfer mode dropdown with existing selection buttons beside bandwidth; show task-backed progress bars, completed/total bytes and sampled actual rates through the shared `files.transfer-status` operation.
 
 - Unify Core and Agent development updates under `dev` across Web, CLI and TUI. Core builds from `origin/main`; Agent installs its published Dev artifact. Preserve update verification and rollback.
 - Preserve manual file-tree collapse when directory responses arrive or listings refresh; toggling the current folder no longer reloads it or adds navigation history.
+- Complete Chinese translations for CLI/TUI usage lines, update prompts and the devweb maintenance entry.
 
 ### 简体中文
 
-- 节点线路类型（`kvm`、`nat`、`homelab`）由 Agent 安装时自动识别——桌面机箱或无线为 `homelab`，容器虚拟化为 `nat`，仅网卡直接持有公网地址才判 `kvm`，其余不猜测保持未标注——并可在节点设置中修改；直连传输按标签组合裁剪尝试链——未标注或 `kvm ↔ kvm` 保持完整顺序，未声明端口的 `nat`/`homelab` 组合直接从 TCP 同时打开开始，`nat ↔ homelab` 与 `homelab ↔ homelab` 组合建议使用 Core 中继。
+- 节点线路类型（`kvm`、`nat`、`homelab`）由 Agent 安装时自动识别——桌面机箱或无线为 `homelab`，容器虚拟化为 `nat`，仅网卡直接持有公网地址才判 `kvm`，其余不猜测保持未标注——并可在节点设置中修改；直连传输按标签组合裁剪尝试链——未标注或 `kvm ↔ kvm` 保持完整顺序，未声明端口的 `nat` 组合与任意 `homelab` 组合直接从 TCP 同时打开开始，`nat ↔ homelab` 与 `homelab ↔ homelab` 组合建议使用 Core 中继。
 - 文件夹对传自动进行有界 tar.gz 打包、校验和原子解包，普通文件保持原始传输；契约与客户端统一使用可带小数的 MB/s 限速。
 - 对传模式复用选择按钮并与限速并排，通过统一 `files.transfer-status` 操作显示真实任务进度条、已传／总大小与采样实际速率。
 
 - Web、CLI、TUI 的 Core 与 Agent 开发更新通道统一为 `dev`：Core 从 `origin/main` 构建，Agent 安装已发布 Dev 构建，保留更新核验与回滚。
 - 文件目录树手动折叠后，不再被迟到的目录响应或列表刷新重新展开；切换当前文件夹的展开状态不重复加载或追加导航历史。
+- 补全 CLI/TUI 用法行、更新提示与 devweb 维护入口的中文翻译。
 
 ## [0.1.64]
 
