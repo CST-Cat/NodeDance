@@ -25,7 +25,7 @@ func TestCanonicalJSONRejectsInvalidBodies(t *testing.T) {
 		[]byte(strings.Repeat("[", 130) + strings.Repeat("]", 130)),
 		[]byte(`1e10001`),
 		[]byte(`1e1234567`),
-		[]byte(`1.` + strings.Repeat("1", 97)),
+		[]byte(`1.` + strings.Repeat("1", 96)),
 		[]byte(strings.Repeat("1", 129)),
 		[]byte(strings.Repeat("x", (64<<10)+1)),
 		[]byte(""),
@@ -34,7 +34,7 @@ func TestCanonicalJSONRejectsInvalidBodies(t *testing.T) {
 			t.Fatalf("invalid body was accepted: %.40q", raw)
 		}
 	}
-	for _, raw := range []string{`1e10000`, `1e-10000`, `1.` + strings.Repeat("1", 96), strings.Repeat("9", 128), strings.Repeat("[", 129) + strings.Repeat("]", 129)} {
+	for _, raw := range []string{`1e10000`, `1e-10000`, `1.` + strings.Repeat("1", 95), strings.Repeat("9", 96), strings.Repeat("[", 129) + strings.Repeat("]", 129)} {
 		if _, err := CanonicalJSON([]byte(raw)); err != nil {
 			t.Fatalf("bounded value was rejected: %s: %v", raw, err)
 		}
