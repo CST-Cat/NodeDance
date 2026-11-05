@@ -6,20 +6,6 @@
 
 ### 简体中文
 
-## [0.1.42]
-
-### English
-
-- Add regular-file rsync between Agents in the mode selected per transfer: Agent direct WSS or Core relay (dedicated Core rsync relay, with the independent chunk relay when rsync is unavailable), with no automatic mode switching or fallback between modes. Direct attempts cover direct TCP, reverse and ICE connectivity (including coordinated TCP punching) and can use a node-declared listen/public port pair. Persistent WSS carries control and progress; retained private partials support retries. Receivers require a runtime argument template, Landlock confinement, one-use credentials, protected paths and SHA-256 verification before atomic publication.
-- Embed a trimmed static rsync 3.4.1 for Linux amd64 and arm64. Native CI and Docker builds compile their architecture's bundle; availability checks, parameter probes and transfer processes execute only the verified, root-protected embedded executable, without a system rsync lookup or fallback.
-- Refactor built-in update admission and recovery: ignore unknown journal and update metadata fields, skip corrupt history records individually, share history loading, submit manual updates without duplicate preflight and permit reinstallation, explicit downgrades and channel switches. Missing current-version labels do not block installation; native callers bound reply waits. Preserve artifact SHA-256, root credentials, authorization, request identity, backups, runtime health, reconnection and rollback.
-
-### 简体中文
-
-- 新增 Agent 间普通文件 rsync，按每次传输所选模式运行：Agent 直连 WSS 或 Core 中继（独立 Core rsync 中继，rsync 不可用时走独立分片中继），模式之间不自动切换、不互相兜底。直连尝试涵盖直连 TCP、reverse 与 ICE 连通（含双端协调的 TCP 打洞），并可使用节点声明的监听/对外端口对。常驻 WSS 承载控制与进度，私有 partial 保留供重试复用；接收端启动前验证运行时参数模板、Landlock、一次性凭证与路径围栏，提交前校验 SHA-256 并原子落盘。
-- 为 Linux amd64、arm64 内置裁剪后的静态 rsync 3.4.1，原生 CI 与 Docker 按架构编译捆绑。可用性检查、参数探针和传输进程只执行经过校验、root 保护的包内程序，删除系统 rsync 查找与兜底。
-- 重构内置更新准入与恢复：日志及更新元数据忽略未知字段，坏历史直接跳过，共用日志读取；手工更新直接提交，移除重复预检，允许重装、显式降级和通道切换。当前版本标记缺失不阻断安装；原生调用方限制回复等待。保留制品 SHA-256、root 凭据、授权、重试身份、备份、运行健康、重连及回滚。
-
 ## [0.1.33]
 
 ### English
