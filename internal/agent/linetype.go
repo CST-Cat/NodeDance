@@ -2,46 +2,60 @@ package agent
 
 import (
 	"net"
+	"net/netip"
 	"os"
+	"os/exec"
 	"strings"
 )
 
-// DetectLineType classifies the node's line type at enrollment time: kvm for
-// virtual machines, nat for provider container virtualization, homelab for
-// desktop-form or wireless machines. An empty result means unknown; the
-// operator can set the label on the node afterwards.
+// DetectLineType classifies the node's line type at enrollment time using only
+// what the machine itself can know: homelab for desktop chassis or wireless
+// machines, nat for container virtualization, kvm only when an interface
+// carries a public address (a dedicated line). Anything else stays unlabeled —
+// a VM behind provider NAT cannot be told apart from a shared-NAT VPS from
+// inside, so guessing kvm from DMI alone would mislabel NAT VPSes.
 func DetectLineType() string {
-	return classifyLineType(readDMI(), hasWirelessInterface(), isOpenVZ())
+	return classifyLineType(readDMI(), detectVirt(), hasWirelessInterface(), hasPublicInterfaceAddress())
 }
 
 // classifyLineType is the pure decision core behind DetectLineType.
-func classifyLineType(dmi dmiInfo, wireless, openvz bool) string {
-	chassis := ""
-	for _, part := range strings.Split(dmi.chassisType, ",") {
-		part = strings.TrimSpace(part)
-		if part != "" {
-			chassis = part
-			break
-		}
-	}
-	markers := strings.ToLower(dmi.sysVendor + " " + dmi.productName + " " + dmi.boardName)
-	virtual := strings.Contains(markers, "qemu") || strings.Contains(markers, "kvm") ||
-		strings.Contains(markers, "vmware") || strings.Contains(markers, "virtualbox") ||
-		strings.Contains(markers, "bochs") || strings.Contains(markers, "hyper-v") ||
-		strings.Contains(markers, "xen") || strings.Contains(markers, "virtual machine") ||
-		strings.Contains(markers, "amazon ec2") || strings.Contains(markers, "cloud compute")
-	switch chassis {
+func classifyLineType(dmi dmiInfo, virt string, wireless, publicNIC bool) string {
+	switch firstChassisType(dmi.chassisType) {
 	case "3", "4", "6", "7", "8", "9", "10", "11", "13", "30", "31", "32":
 		return "homelab"
 	}
 	if wireless {
 		return "homelab"
 	}
-	if virtual {
+	if virt == "openvz" || virt == "lxc" || virt == "lxc-libvirt" {
+		return "nat"
+	}
+	if strings.Contains(strings.ToLower(dmi.sysVendor), "openvz") {
+		return "nat"
+	}
+	if publicNIC {
 		return "kvm"
 	}
-	if openvz {
-		return "nat"
+	return ""
+}
+
+func firstChassisType(value string) string {
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			return part
+		}
+	}
+	return ""
+}
+
+// detectVirt asks systemd-detect-virt first and falls back to /proc/vz.
+func detectVirt() string {
+	if out, err := exec.Command("systemd-detect-virt", "--container").Output(); err == nil {
+		return strings.TrimSpace(string(out))
+	}
+	if _, err := os.Stat("/proc/vz"); err == nil {
+		return "openvz"
 	}
 	return ""
 }
@@ -84,9 +98,36 @@ func hasWirelessInterface() bool {
 	return false
 }
 
-func isOpenVZ() bool {
-	if _, err := os.Stat("/proc/vz"); err == nil {
-		return true
+// hasPublicInterfaceAddress reports whether any interface holds a global
+// unicast address — the dedicated-line signal.
+func hasPublicInterfaceAddress() bool {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return false
+	}
+	for _, iface := range interfaces {
+		addresses, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, address := range addresses {
+			prefix, err := netip.ParsePrefix(address.String())
+			if err != nil {
+				if peer, err := netip.ParseAddr(address.String()); err == nil {
+					prefix = netip.PrefixFrom(peer, peer.BitLen())
+				} else {
+					continue
+				}
+			}
+			ip := prefix.Addr()
+			if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() {
+				continue
+			}
+			if ip.IsPrivate() {
+				continue
+			}
+			return true
+		}
 	}
 	return false
 }

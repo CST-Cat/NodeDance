@@ -4,25 +4,28 @@ import "testing"
 
 func TestClassifyLineType(t *testing.T) {
 	for _, tt := range []struct {
-		name     string
-		dmi      dmiInfo
-		wireless bool
-		openvz   bool
-		want     string
+		name      string
+		dmi       dmiInfo
+		virt      string
+		wireless  bool
+		publicNIC bool
+		want      string
 	}{
-		{name: "qemu_vm", dmi: dmiInfo{sysVendor: "QEMU", productName: "Standard PC (Q35 + ICH9, 2009)"}, want: "kvm"},
-		{name: "amazon_ec2", dmi: dmiInfo{sysVendor: "Amazon EC2", productName: "c7i.xlarge"}, want: "kvm"},
-		{name: "vmware", dmi: dmiInfo{sysVendor: "VMware, Inc.", productName: "VMware Virtual Platform"}, want: "kvm"},
-		{name: "oracle_cloud", dmi: dmiInfo{sysVendor: "AMD", productName: "Cloud Compute"}, want: "kvm"},
-		{name: "desktop_chassis", dmi: dmiInfo{sysVendor: "ASUSTeK COMPUTER INC.", productName: "ProArt X670E", chassisType: "3"}, want: "homelab"},
-		{name: "laptop_chassis", dmi: dmiInfo{sysVendor: "LENOVO", productName: "ThinkPad X1", chassisType: "10"}, want: "homelab"},
-		{name: "wireless_override", dmi: dmiInfo{sysVendor: "QEMU", productName: "Standard PC"}, wireless: true, want: "homelab"},
-		{name: "openvz_provider", dmi: dmiInfo{sysVendor: "OpenVZ"}, openvz: true, want: "nat"},
-		{name: "unknown_bare_metal", dmi: dmiInfo{sysVendor: "Supermicro", productName: "X12STH"}, want: ""},
+		{name: "public_ip_on_nic_is_kvm", dmi: dmiInfo{sysVendor: "QEMU", productName: "Standard PC"}, publicNIC: true, want: "kvm"},
+		{name: "vm_without_public_ip_stays_unknown", dmi: dmiInfo{sysVendor: "QEMU", productName: "Standard PC (Q35 + ICH9, 2009)"}, want: ""},
+		{name: "ec2_without_public_ip_stays_unknown", dmi: dmiInfo{sysVendor: "Amazon EC2", productName: "c7i.xlarge"}, want: ""},
+		{name: "oracle_cloud_without_public_ip_stays_unknown", dmi: dmiInfo{sysVendor: "AMD", productName: "Cloud Compute"}, want: ""},
+		{name: "openvz_is_nat", dmi: dmiInfo{sysVendor: "OpenVZ"}, virt: "openvz", want: "nat"},
+		{name: "lxc_is_nat", virt: "lxc", want: "nat"},
+		{name: "container_beats_public_nic", virt: "lxc", publicNIC: true, want: "nat"},
+		{name: "desktop_chassis_is_homelab", dmi: dmiInfo{sysVendor: "ASUSTeK COMPUTER INC.", productName: "ProArt X670E", chassisType: "3"}, want: "homelab"},
+		{name: "laptop_chassis_is_homelab", dmi: dmiInfo{sysVendor: "LENOVO", productName: "ThinkPad X1", chassisType: "10"}, want: "homelab"},
+		{name: "wireless_is_homelab", dmi: dmiInfo{sysVendor: "QEMU", productName: "Standard PC"}, wireless: true, want: "homelab"},
+		{name: "bare_metal_without_public_ip_stays_unknown", dmi: dmiInfo{sysVendor: "Supermicro", productName: "X12STH"}, want: ""},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := classifyLineType(tt.dmi, tt.wireless, tt.openvz); got != tt.want {
-				t.Fatalf("classifyLineType(%+v, wireless=%t, openvz=%t) = %q, want %q", tt.dmi, tt.wireless, tt.openvz, got, tt.want)
+			if got := classifyLineType(tt.dmi, tt.virt, tt.wireless, tt.publicNIC); got != tt.want {
+				t.Fatalf("classifyLineType(%+v, virt=%q, wireless=%t, publicNIC=%t) = %q, want %q", tt.dmi, tt.virt, tt.wireless, tt.publicNIC, got, tt.want)
 			}
 		})
 	}
