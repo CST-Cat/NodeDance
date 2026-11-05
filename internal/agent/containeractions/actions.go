@@ -47,7 +47,6 @@ var (
 	ErrBaselineUnverifiable  = errors.New("durable execution baseline cannot prove the action result")
 	ErrRunningUnconfirmed    = errors.New("durable running state could not be confirmed")
 	ErrTaskNotReconcileable  = errors.New("only unknown tasks can be reconciled")
-	dockerIDPattern          = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	bootIDPattern            = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	startedAtLayout          = time.RFC3339Nano
 	defaultOperationLimit    = 30 * time.Second
