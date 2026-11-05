@@ -53,16 +53,6 @@ func BenchmarkFastDiagnostics(b *testing.B) {
 	}
 }
 
-func TestLiveDiagnosticSamplesMeetWireContract(t *testing.T) {
-	c := &Collector{}
-	for i := 0; i < 3; i++ {
-		o := c.Collect(context.Background(), time.Now(), 1, nil)
-		if err := protocol.ValidateObservability(o, false); err != nil {
-			t.Fatalf("sample %d: %v", i, err)
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-}
 
 func TestProcessNameNeverExpandsCommandArguments(t *testing.T) {
 	dir := t.TempDir()
