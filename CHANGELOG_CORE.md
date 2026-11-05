@@ -4,15 +4,25 @@
 
 ### English
 
+### 简体中文
+
+## [0.1.64]
+
+### English
+
 - Schedule multi-node regular-file rsync in the mode selected per transfer: Core relay (dedicated Core rsync relay, with the independent chunk relay when rsync is unavailable) or Agent direct WSS, with no automatic mode switching or fallback between modes. Web, CLI and TUI share transfer, observation, cancellation and retained-partial retry operations; persistent Agent connections carry only the transfer control plane. Text file data also uses independent task connections.
 - Direct transfers can use a node-declared port pair: when a node's settings declare a direct listen port (and its public port when different), the target listens on that port and Core offers one endpoint at the node's connection-observed public address and the declared public port, so a provider-forwarded NAT port carries direct transfers without hole punching or probing.
 - Share the refactored update executor: ignore unknown update metadata, skip corrupt history individually, remove duplicate terminal preflight and permit manual same-version or older-version installation. Core source Beta updates can rebuild a checkout already matching main while preserving transactional backup, health verification and rollback.
+- Negotiate terminal color and link capabilities end to end (Web and CLI through Core to Agent): truecolor output is preserved instead of being reduced to 256 colors by tmux, OSC 8 hyperlinks and plain URLs in terminal output are clickable, and terminal search is supported.
+- Agent direct transfers additionally attempt reverse and ICE connectivity (including coordinated TCP punching) alongside direct TCP, and failures report the ICE stage with per-side candidate counters (host, public_host, srflx, relay), so an unreachable NAT can be diagnosed from the error text.
 
 ### 简体中文
 
 - 新增多节点普通文件 rsync 调度，按每次传输所选模式运行：Core 中继（独立 Core rsync 中继，rsync 不可用时走独立分片中继）或 Agent 直连 WSS；模式之间不自动切换、不互相兜底。Web、CLI、TUI 共用传输、观察、取消和 partial 重试操作；常驻 Agent 连接只承载传输控制面，文本文件数据也使用按任务建立的独立连接。
 - 直连可使用节点声明的端口对：节点设置中声明直连监听端口（及不同时的对外端口）后，目标端在该端口监听，Core 以节点当前连接所见公网地址与声明的对外端口组成唯一直连端点；服务商已转发的 NAT 端口由此可承载直连，不打洞、不探测。
 - 共用重构后的更新执行器：未知更新元数据宽容解码，坏历史直接跳过，移除终端重复预检并允许手工重装或安装较旧版本。Core 源码 Beta 更新可重新构建已与 main 对齐的工作区，保留事务备份、健康核验与回滚。
+- 终端颜色与链接能力协商贯通 Web/CLI→Core→Agent：真彩色输出不再被 tmux 降为 256 色，终端输出中的 OSC 8 超链接与普通 URL 可点击，并支持终端内搜索。
+- Agent 直连在直连 TCP 之外追加 reverse 与 ICE 连通尝试（含双端协调的 TCP 打洞）；失败时错误文案带回 ICE 阶段与两侧候选计数（host、public_host、srflx、relay），可据此诊断不可达的 NAT。
 
 ## [0.1.63]
 
