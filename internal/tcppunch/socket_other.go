@@ -7,6 +7,6 @@ import (
 	"syscall"
 )
 
-func ReuseSocketControl(_, _ string, _ syscall.RawConn) error {
+func reuseSocket(_, _ string, _ syscall.RawConn) error {
 	return errors.New("TCP simultaneous open requires Linux")
 }

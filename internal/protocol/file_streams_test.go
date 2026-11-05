@@ -128,27 +128,3 @@ func TestRsyncPeerNegotiationRemainsBoundToTask(t *testing.T) {
 		}
 	}
 }
-
-func TestFilePunchObservationValidation(t *testing.T) {
-	if !ValidFilePunchObservation(FilePunchObservation{RemoteAddr: "203.0.113.5:51024"}) ||
-		!ValidFilePunchObservation(FilePunchObservation{RemoteAddr: "[2001:db8::1]:443"}) ||
-		!ValidFilePunchObservation(FilePunchObservation{RemoteAddr: "192.168.1.20:60010"}) {
-		t.Fatal("valid punch observations were rejected")
-	}
-	if !ValidFilePunchObservation(FilePunchObservation{Error: FilePunchUnobservable}) {
-		t.Fatal("unobservable observation was rejected")
-	}
-	for _, invalid := range []FilePunchObservation{
-		{},
-		{RemoteAddr: "203.0.113.5"},
-		{RemoteAddr: "203.0.113.5:0"},
-		{RemoteAddr: "0.0.0.0:51024"},
-		{RemoteAddr: "example.invalid:51024"},
-		{RemoteAddr: "203.0.113.5:51024", Error: FilePunchUnobservable},
-		{Error: "other"},
-	} {
-		if ValidFilePunchObservation(invalid) {
-			t.Fatal("accepted invalid punch observation", invalid)
-		}
-	}
-}

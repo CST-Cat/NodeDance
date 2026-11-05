@@ -29,34 +29,7 @@ type Peer struct {
 	once     sync.Once
 }
 
-// Mapping is one observed NAT binding: Stream keeps the binding alive, Listener
-// re-binds the same local source port for the simultaneous open, Public is the
-// externally observed address.
-type Mapping struct {
-	Stream   net.Conn
-	Listener net.Listener
-	Local    *net.TCPAddr
-	Public   netip.AddrPort
-}
-
-func NewPeer(mappings ...Mapping) *Peer {
-	p := &Peer{}
-	for _, m := range mappings {
-		p.mappings = append(p.mappings, &mapping{stream: m.Stream, listener: m.Listener, local: m.Local, public: m.Public})
-	}
-	return p
-}
-
 func Discover(ctx context.Context, servers []string) (*Peer, error) {
-	mappings, err := Observe(ctx, servers)
-	if err != nil {
-		return nil, err
-	}
-	return NewPeer(mappings...), nil
-}
-
-// Observe gathers TCP NAT mappings from STUN servers over TCP without building a Peer.
-func Observe(ctx context.Context, servers []string) ([]Mapping, error) {
 	if len(servers) == 0 || len(servers) > 4 {
 		return nil, errors.New("TCP STUN requires between one and four servers")
 	}
@@ -68,7 +41,7 @@ func Observe(ctx context.Context, servers []string) ([]Mapping, error) {
 		}
 		addresses = append(addresses, net.JoinHostPort(u.Host, strconv.Itoa(u.Port)))
 	}
-	results := make(chan Mapping, 2)
+	results := make(chan *mapping, 2)
 	gather, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	var wg sync.WaitGroup
@@ -83,8 +56,8 @@ func Observe(ctx context.Context, servers []string) ([]Mapping, error) {
 					if found.CompareAndSwap(false, true) {
 						results <- m
 					} else {
-						_ = m.Listener.Close()
-						_ = m.Stream.Close()
+						_ = m.listener.Close()
+						_ = m.stream.Close()
 					}
 				}
 			}()
@@ -92,32 +65,25 @@ func Observe(ctx context.Context, servers []string) ([]Mapping, error) {
 	}
 	wg.Wait()
 	close(results)
-	var mappings []Mapping
+	p := &Peer{}
 	for m := range results {
-		mappings = append(mappings, m)
+		p.mappings = append(p.mappings, m)
 	}
-	if ctx.Err() != nil || len(mappings) == 0 {
-		closeMappings(mappings)
+	if ctx.Err() != nil || len(p.mappings) == 0 {
+		p.Close()
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		return nil, errors.New("no TCP STUN mapping available")
 	}
-	return mappings, nil
+	return p, nil
 }
 
-func closeMappings(mappings []Mapping) {
-	for _, m := range mappings {
-		_ = m.Listener.Close()
-		_ = m.Stream.Close()
-	}
-}
-
-func discover(ctx context.Context, network, address string) (_ Mapping, failure error) {
-	dialer := net.Dialer{Control: ReuseSocketControl, LocalAddr: &net.TCPAddr{}}
+func discover(ctx context.Context, network, address string) (_ *mapping, failure error) {
+	dialer := net.Dialer{Control: reuseSocket, LocalAddr: &net.TCPAddr{}}
 	stream, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
-		return Mapping{}, err
+		return nil, err
 	}
 	defer func() {
 		if failure != nil {
@@ -133,45 +99,45 @@ func discover(ctx context.Context, network, address string) (_ Mapping, failure 
 	}
 	request, err := stun.Build(stun.TransactionID, stun.BindingRequest, stun.Fingerprint)
 	if err != nil {
-		return Mapping{}, err
+		return nil, err
 	}
 	if _, err = io.Copy(stream, bytes.NewReader(request.Raw)); err != nil {
-		return Mapping{}, err
+		return nil, err
 	}
 	header := make([]byte, 20)
 	if _, err = io.ReadFull(stream, header); err != nil {
-		return Mapping{}, err
+		return nil, err
 	}
 	size := int(binary.BigEndian.Uint16(header[2:4]))
 	if size > 2048 || size%4 != 0 || !bytes.Equal(header[8:20], request.TransactionID[:]) {
-		return Mapping{}, errors.New("invalid TCP STUN response")
+		return nil, errors.New("invalid TCP STUN response")
 	}
 	message := &stun.Message{Raw: make([]byte, 20+size)}
 	copy(message.Raw, header)
 	if _, err = io.ReadFull(stream, message.Raw[20:]); err != nil {
-		return Mapping{}, err
+		return nil, err
 	}
 	if err = message.Decode(); err != nil || message.Type != stun.BindingSuccess {
-		return Mapping{}, errors.New("TCP STUN binding failed")
+		return nil, errors.New("TCP STUN binding failed")
 	}
 	if message.Contains(stun.AttrFingerprint) && stun.Fingerprint.Check(message) != nil {
-		return Mapping{}, errors.New("invalid TCP STUN fingerprint")
+		return nil, errors.New("invalid TCP STUN fingerprint")
 	}
 	var mapped stun.XORMappedAddress
 	if err = mapped.GetFrom(message); err != nil || mapped.Port <= 0 || mapped.Port > 65535 {
-		return Mapping{}, errors.New("TCP STUN response has no usable mapping")
+		return nil, errors.New("TCP STUN response has no usable mapping")
 	}
 	ip, ok := netip.AddrFromSlice(mapped.IP)
 	local := stream.LocalAddr().(*net.TCPAddr)
 	if !ok || ip.IsUnspecified() || ip.IsMulticast() || ip.Unmap().Is4() != (network == "tcp4") {
-		return Mapping{}, errors.New("invalid TCP STUN mapped address")
+		return nil, errors.New("invalid TCP STUN mapped address")
 	}
-	listener, err := (&net.ListenConfig{Control: ReuseSocketControl}).Listen(ctx, network, local.String())
+	listener, err := (&net.ListenConfig{Control: reuseSocket}).Listen(ctx, network, local.String())
 	if err != nil {
-		return Mapping{}, err
+		return nil, err
 	}
 	_ = stream.SetDeadline(time.Time{})
-	return Mapping{Stream: stream, Listener: listener, Local: local, Public: netip.AddrPortFrom(ip.Unmap(), uint16(mapped.Port))}, nil
+	return &mapping{stream: stream, listener: listener, local: local, public: netip.AddrPortFrom(ip.Unmap(), uint16(mapped.Port))}, nil
 }
 
 func (p *Peer) Addresses() []string {
@@ -269,7 +235,7 @@ func (p *Peer) Connect(ctx context.Context, addresses []string, authenticate fun
 				if peer.Addr().Is4() {
 					network = "tcp4"
 				}
-				dialer := net.Dialer{Control: ReuseSocketControl, LocalAddr: m.local}
+				dialer := net.Dialer{Control: reuseSocket, LocalAddr: m.local}
 				first := true
 				for ctx.Err() == nil {
 					if raw, err := dialer.DialContext(ctx, network, peer.String()); err == nil {

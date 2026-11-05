@@ -8,7 +8,6 @@ import (
 	"math"
 	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"strconv"
 	"time"
@@ -20,11 +19,8 @@ const (
 	FileOpenData          = "open_data"
 	FileRsyncDataRoute    = "/ws/v1/files/rsync"
 	FileChunkDataRoute    = "/ws/v1/files/chunks"
-	FilePunchProbeRoute   = "/ws/v1/files/punch"
 	FileStreamLifetime    = time.Minute
 	MaxFileStreamMessage  = 1 << 20
-	MaxFilePunchMessage   = 512
-	FilePunchUnobservable = "unobservable"
 )
 
 const (
@@ -166,23 +162,6 @@ func ValidFilePeerEndpoint(value string) bool {
 	ip := net.ParseIP(parsed.Hostname())
 	port, err := strconv.Atoi(parsed.Port())
 	return ip != nil && !ip.IsUnspecified() && !ip.IsMulticast() && err == nil && port > 0 && port <= 65535
-}
-
-type FilePunchObservation struct {
-	RemoteAddr string `json:"remoteAddr,omitempty"`
-	Error      string `json:"error,omitempty"`
-}
-
-func ValidFilePunchObservation(value FilePunchObservation) bool {
-	if value.Error != "" {
-		return value.RemoteAddr == "" && value.Error == FilePunchUnobservable
-	}
-	peer, err := netip.ParseAddrPort(value.RemoteAddr)
-	if err != nil {
-		return false
-	}
-	addr := peer.Addr()
-	return !addr.IsUnspecified() && !addr.IsMulticast() && peer.Port() > 0
 }
 
 func ValidateFileRsyncRequest(envelope Envelope, generation uint64, request FileRsyncRequest) error {

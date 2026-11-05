@@ -6,13 +6,11 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -25,8 +23,6 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/tcppunch"
 	"github.com/coder/websocket"
 )
-
-const punchProbeTimeout = 8 * time.Second
 
 func tcpSTUNServers() []string {
 	value, ok := os.LookupEnv("NODEDANCE_TCP_STUN_SERVERS")
@@ -56,140 +52,6 @@ func punchAddresses(endpoints []string) []string {
 		}
 	}
 	return addresses
-}
-
-func punchProbeURL(serverURL string, development bool) (string, error) {
-	server, err := url.Parse(serverURL)
-	if err != nil {
-		return "", err
-	}
-	if server.Scheme == "https" {
-		server.Scheme = "wss"
-	} else if development && isLiteralLoopback(server.Hostname()) {
-		server.Scheme = "ws"
-	} else {
-		return "", errors.New("punch probe connections require WSS")
-	}
-	server.Path = protocol.FilePunchProbeRoute
-	return server.String(), nil
-}
-
-func probeCoreMapping(ctx context.Context, config *Config, taskID string) (tcppunch.Mapping, error) {
-	endpoint, err := punchProbeURL(config.Server, config.Development)
-	if err != nil {
-		return tcppunch.Mapping{}, err
-	}
-	tlsConfig, err := newTLSConfig(config.CAFile)
-	if err != nil {
-		return tcppunch.Mapping{}, err
-	}
-	var raw net.Conn
-	transport := &http.Transport{
-		TLSClientConfig: tlsConfig,
-		DialContext: func(dialCtx context.Context, network, address string) (net.Conn, error) {
-			dialer := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 5 * time.Second, Control: tcppunch.ReuseSocketControl}
-			conn, err := dialer.DialContext(dialCtx, network, address)
-			if err != nil {
-				return nil, err
-			}
-			raw = conn
-			return conn, nil
-		},
-		DialTLSContext: func(dialCtx context.Context, network, address string) (net.Conn, error) {
-			dialer := net.Dialer{Timeout: 10 * time.Second, KeepAlive: 5 * time.Second, Control: tcppunch.ReuseSocketControl}
-			conn, err := dialer.DialContext(dialCtx, network, address)
-			if err != nil {
-				return nil, err
-			}
-			handshakeConfig := tlsConfig
-			if host, _, splitErr := net.SplitHostPort(address); splitErr == nil {
-				handshakeConfig = tlsConfig.Clone()
-				handshakeConfig.ServerName = host
-			}
-			secured := tls.Client(conn, handshakeConfig)
-			if err := secured.HandshakeContext(dialCtx); err != nil {
-				_ = conn.Close()
-				return nil, err
-			}
-			raw = conn
-			return secured, nil
-		},
-	}
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	probeCtx, cancel := context.WithTimeout(ctx, punchProbeTimeout)
-	defer cancel()
-	conn, _, err := websocket.Dial(probeCtx, endpoint, &websocket.DialOptions{HTTPClient: client, HTTPHeader: http.Header{"Authorization": {"Bearer " + config.Credential}}, CompressionMode: websocket.CompressionDisabled})
-	if err != nil {
-		transport.CloseIdleConnections()
-		return tcppunch.Mapping{}, err
-	}
-	conn.SetReadLimit(protocol.MaxFilePunchMessage)
-	var observation protocol.FilePunchObservation
-	kind, data, err := conn.Read(probeCtx)
-	if err != nil {
-		_ = conn.CloseNow()
-		transport.CloseIdleConnections()
-		return tcppunch.Mapping{}, err
-	}
-	if kind != websocket.MessageText || json.Unmarshal(data, &observation) != nil || !protocol.ValidFilePunchObservation(observation) {
-		_ = conn.CloseNow()
-		transport.CloseIdleConnections()
-		return tcppunch.Mapping{}, errors.New("invalid punch probe observation")
-	}
-	if observation.Error != "" {
-		_ = conn.CloseNow()
-		transport.CloseIdleConnections()
-		return tcppunch.Mapping{}, errors.New("punch mapping not observable: " + observation.Error)
-	}
-	_ = conn.CloseRead(probeCtx)
-	public, err := netip.ParseAddrPort(observation.RemoteAddr)
-	if err != nil {
-		_ = conn.CloseNow()
-		transport.CloseIdleConnections()
-		return tcppunch.Mapping{}, err
-	}
-	local := raw.LocalAddr().(*net.TCPAddr)
-	network := "tcp6"
-	if local.IP.To4() != nil {
-		network = "tcp4"
-	}
-	listener, err := (&net.ListenConfig{Control: tcppunch.ReuseSocketControl}).Listen(ctx, network, local.String())
-	if err != nil {
-		_ = conn.CloseNow()
-		transport.CloseIdleConnections()
-		return tcppunch.Mapping{}, err
-	}
-	log.Printf("Agent direct TCP punch task=%s stage=core_mapping public=%s local=%s", taskID, public, local)
-	return tcppunch.Mapping{Stream: raw, Listener: listener, Local: local, Public: public}, nil
-}
-
-func (b *agentFileBridge) discoverPunchMappings(ctx context.Context, taskID string) (*tcppunch.Peer, error) {
-	var mappings []tcppunch.Mapping
-	var probeErr error
-	config, err := LoadConfig(b.configPath)
-	if err != nil {
-		probeErr = err
-	} else if mapping, err := probeCoreMapping(ctx, &config, taskID); err != nil {
-		probeErr = err
-		log.Printf("Agent direct TCP punch task=%s stage=core_mapping_unavailable error=%v", taskID, err)
-	} else {
-		mappings = append(mappings, mapping)
-	}
-	if servers := tcpSTUNServers(); len(servers) > 0 {
-		observed, err := tcppunch.Observe(ctx, servers)
-		if err != nil {
-			log.Printf("Agent direct TCP punch task=%s stage=stun_unavailable error=%v", taskID, err)
-		} else {
-			mappings = append(mappings, observed...)
-		}
-	}
-	if len(mappings) == 0 {
-		if probeErr != nil {
-			return nil, probeErr
-		}
-		return nil, errors.New("no TCP punch mapping available")
-	}
-	return tcppunch.NewPeer(mappings...), nil
 }
 
 func punchHandshake(certificate tls.Certificate, fingerprint string, receiver bool) func(context.Context, net.Conn) (net.Conn, error) {
@@ -293,7 +155,7 @@ func connectPunchedRsync(ctx context.Context, peer *tcppunch.Peer, endpoints []s
 }
 
 func (b *agentFileBridge) receivePunchedRsync(ctx context.Context, id string, session *agentRsyncSession, ready protocol.FileRsyncResponse) (filetransport.Connection, func(), error) {
-	peer, err := b.discoverPunchMappings(ctx, session.request.Descriptor.TaskID)
+	peer, err := tcppunch.Discover(ctx, tcpSTUNServers())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -329,7 +191,7 @@ func (b *agentFileBridge) receivePunchedRsync(ctx context.Context, id string, se
 }
 
 func (b *agentFileBridge) sendPunchedRsync(ctx context.Context, id string, session *agentRsyncSession) (filetransport.Connection, func(), error) {
-	peer, err := b.discoverPunchMappings(ctx, session.request.Descriptor.TaskID)
+	peer, err := tcppunch.Discover(ctx, tcpSTUNServers())
 	if err != nil {
 		return nil, nil, err
 	}

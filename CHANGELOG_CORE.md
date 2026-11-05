@@ -4,7 +4,6 @@
 
 ### English
 
-- TCP punch file transfers observe the Agents' NAT mappings on Core itself: each Agent opens an authenticated punch-probe connection to the connected Core, receives the raw TCP endpoint Core observes, and re-binds the same local source port for the simultaneous open. When Core does not terminate the Agent TCP connection (reverse proxy or tunnel), the probe reports explicitly unavailable and punch falls back to external TCP STUN (default `stun.nextcloud.com:443`); `NODEDANCE_TCP_STUN_SERVERS` remains optional.
 - Support automatic bounded tar.gz packaging and validated atomic extraction for directory peer transfers; regular files stream unchanged. Unify transfer bandwidth as decimal MB/s across the contract and clients.
 - Replace the transfer mode dropdown with existing selection buttons beside bandwidth; show task-backed progress bars, completed/total bytes and sampled actual rates through the shared `files.transfer-status` operation.
 
@@ -13,7 +12,6 @@
 
 ### 简体中文
 
-- TCP 打洞的 NAT 映射观察者改为 Core 本身：Agent 向已连接的 Core 发起认证探测连接，读取 Core 观测到的原始 TCP 端点，并在同一本地源端口重新监听完成同时打开。Core 未经反向代理或隧道直接终结 Agent TCP 时，探测显式不可用并回落外部 TCP STUN（默认 `stun.nextcloud.com:443`）；`NODEDANCE_TCP_STUN_SERVERS` 仍可选配置。
 - 文件夹对传自动进行有界 tar.gz 打包、校验和原子解包，普通文件保持原始传输；契约与客户端统一使用可带小数的 MB/s 限速。
 - 对传模式复用选择按钮并与限速并排，通过统一 `files.transfer-status` 操作显示真实任务进度条、已传／总大小与采样实际速率。
 
