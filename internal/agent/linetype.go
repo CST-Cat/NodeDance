@@ -119,15 +119,24 @@ func hasPublicInterfaceAddress() bool {
 					continue
 				}
 			}
-			ip := prefix.Addr()
-			if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() {
-				continue
+			if isDedicatedLineAddress(prefix.Addr()) {
+				return true
 			}
-			if ip.IsPrivate() {
-				continue
-			}
-			return true
 		}
 	}
 	return false
+}
+
+// isDedicatedLineAddress reports whether the address proves a dedicated line:
+// global unicast outside private, shared CGNAT and other non-global ranges.
+func isDedicatedLineAddress(ip netip.Addr) bool {
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
+		return false
+	}
+	if ip.Is4() {
+		if octets := ip.As4(); octets[0] == 100 && octets[1] >= 64 && octets[1] <= 127 {
+			return false
+		}
+	}
+	return true
 }
