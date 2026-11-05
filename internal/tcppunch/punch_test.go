@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/netip"
 	"testing"
 	"time"
 
@@ -130,5 +131,42 @@ func TestCanceledPunchClosesMappingAndListener(t *testing.T) {
 	}
 	if _, err := p.mappings[0].listener.Accept(); !errors.Is(err, net.ErrClosed) {
 		t.Fatal("canceled punch left a listener open", err)
+	}
+}
+
+func TestNewPeerKeepsSyntheticMappingAndClosesResources(t *testing.T) {
+	backend, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := backend.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+	dialer := net.Dialer{Control: ReuseSocketControl}
+	stream, err := dialer.Dial("tcp4", backend.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := stream.LocalAddr().(*net.TCPAddr)
+	listener, err := (&net.ListenConfig{Control: ReuseSocketControl}).Listen(context.Background(), "tcp4", local.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	public := netip.MustParseAddrPort("203.0.113.5:51024")
+	p := NewPeer(Mapping{Stream: stream, Listener: listener, Local: local, Public: public})
+	if addresses := p.Addresses(); len(addresses) != 2 || addresses[0] != public.String() || addresses[1] != local.String() {
+		t.Fatalf("synthetic mapping addresses were not advertised: %v", addresses)
+	}
+	p.Close()
+	if _, err := listener.Accept(); !errors.Is(err, net.ErrClosed) {
+		t.Fatal("synthetic mapping listener survived cleanup", err)
+	}
+	if _, err := stream.Write([]byte("closed")); !errors.Is(err, net.ErrClosed) {
+		t.Fatal("synthetic mapping stream survived cleanup", err)
 	}
 }

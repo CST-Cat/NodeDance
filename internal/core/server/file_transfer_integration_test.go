@@ -89,6 +89,7 @@ type transferIntegrationFixture struct {
 	controlBytes   atomic.Int64
 	chunkStreams   atomic.Int64
 	relayStreams   atomic.Int64
+	punchProbes    atomic.Int64
 	proxy          *httptest.Server
 	logs           transferTestLog
 }
@@ -124,6 +125,8 @@ func newTransferIntegrationFixture(t *testing.T, rejectRsyncData bool, tcpSTUN .
 			}
 		} else if r.URL.Path == protocol.FileChunkDataRoute {
 			f.chunkStreams.Add(1)
+		} else if r.URL.Path == protocol.FilePunchProbeRoute {
+			f.punchProbes.Add(1)
 		}
 		if r.URL.Path != "/ws/v1/agent" {
 			forward.ServeHTTP(w, r)
@@ -670,6 +673,9 @@ func TestCoreDirectNegotiatesReverseAndICEWithoutRelaying(t *testing.T) {
 			}
 			if f.peerMode.Load() != mode || result.Transferred[0].Transport != "rsync_direct" {
 				t.Fatal("unexpected selected path", f.peerMode.Load(), result.Transferred)
+			}
+			if mode == "tcp_punch" && f.punchProbes.Load() < 2 {
+				t.Fatal("TCP punch did not probe the Core mapping observer", f.punchProbes.Load(), f.logs.String())
 			}
 			actual, err := os.ReadFile(filepath.Join(f.targetRoot, "out", "peer.bin"))
 			if err != nil || !bytes.Equal(actual, content) {

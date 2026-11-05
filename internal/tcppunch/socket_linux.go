@@ -6,7 +6,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func reuseSocket(_, _ string, raw syscall.RawConn) error {
+func ReuseSocketControl(_, _ string, raw syscall.RawConn) error {
 	var optionErr error
 	err := raw.Control(func(fd uintptr) {
 		if optionErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEADDR, 1); optionErr == nil {

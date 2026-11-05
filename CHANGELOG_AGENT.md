@@ -4,10 +4,12 @@
 
 ### English
 
+- Direct TCP punch first observes the Agent's NAT mapping from the connected Core over an authenticated probe connection and re-binds the same local source port for the simultaneous open; external TCP STUN (default `stun.nextcloud.com:443`) remains the fallback when Core does not terminate the Agent TCP connection directly.
 - Support automatic bounded tar.gz packaging and validated atomic extraction for directory peer transfers; regular files stream unchanged. Unify transfer bandwidth as decimal MB/s across the contract and clients.
 
 ### 简体中文
 
+- 直连 TCP 打洞优先通过已连接 Core 的认证探测连接观测本机 NAT 映射，并在同一本地源端口重新监听完成同时打开；Core 无法直接终结 Agent TCP 连接时回落外部 TCP STUN（默认 `stun.nextcloud.com:443`）。
 - 文件夹对传自动进行有界 tar.gz 打包、校验和原子解包，普通文件保持原始传输；契约与客户端统一使用可带小数的 MB/s 限速。
 
 ## [0.1.34]
