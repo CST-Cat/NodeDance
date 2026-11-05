@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"sort"
 	"strings"
 
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -147,7 +148,7 @@ func (s *Service) copyTree(ctx context.Context, source, target string, depth int
 		return err
 	}
 	*count++
-	if *count > maxWalkEntries || depth > maxWalkDepth {
+	if *count > maxWalkEntries || depth >= maxWalkDepth {
 		return ErrLimitExceeded
 	}
 	name, _, err := s.normalize(source)
@@ -207,7 +208,7 @@ func (s *Service) archiveTree(ctx context.Context, add func(os.FileInfo, string)
 		return err
 	}
 	*count++
-	if *count > maxWalkEntries || depth > maxWalkDepth {
+	if *count > maxWalkEntries || depth >= maxWalkDepth {
 		return ErrLimitExceeded
 	}
 	name, _, err := s.normalize(source)
@@ -231,20 +232,31 @@ func (s *Service) archiveTree(ctx context.Context, add func(os.FileInfo, string)
 			return err
 		}
 		defer dir.Close()
+		var children []os.DirEntry
 		for {
-			items, err := dir.ReadDir(256)
-			if err != nil && !errors.Is(err, io.EOF) {
-				return err
+			items, readErr := dir.ReadDir(256)
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				return readErr
 			}
-			for _, item := range items {
-				if err := s.archiveTree(ctx, add, path.Join(source, item.Name()), path.Join(relative, item.Name()), depth+1, count, total); err != nil {
-					return err
-				}
+			children = append(children, items...)
+			if len(children) > maxWalkEntries-*count {
+				return ErrLimitExceeded
 			}
-			if errors.Is(err, io.EOF) {
-				return nil
+			if errors.Is(readErr, io.EOF) {
+				break
 			}
 		}
+		sort.Slice(children, func(i, j int) bool { return children[i].Name() < children[j].Name() })
+		for _, item := range children {
+			if err := s.archiveTree(ctx, add, path.Join(source, item.Name()), path.Join(relative, item.Name()), depth+1, count, total); err != nil {
+				return err
+			}
+		}
+		after, err := s.lstat(name)
+		if err == nil && (!os.SameFile(info, after) || !info.ModTime().Equal(after.ModTime()) || info.Mode() != after.Mode()) {
+			return ErrConflict
+		}
+		return err
 	}
 	if info.Size() > s.limit-*total {
 		return ErrLimitExceeded
@@ -255,7 +267,21 @@ func (s *Service) archiveTree(ctx context.Context, add func(os.FileInfo, string)
 		return err
 	}
 	defer file.Close()
-	n, err := io.Copy(writer, io.LimitReader(file, info.Size()+1))
+	before, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	if !os.SameFile(info, before) || !info.ModTime().Equal(before.ModTime()) || info.Size() != before.Size() {
+		return ErrConflict
+	}
+	n, err := io.Copy(writer, io.LimitReader(transferContextReader{ctx: ctx, reader: file}, info.Size()+1))
+	after, statErr := file.Stat()
+	if statErr != nil {
+		return statErr
+	}
+	if !before.ModTime().Equal(after.ModTime()) || before.Size() != after.Size() || before.Mode() != after.Mode() {
+		return ErrConflict
+	}
 	if err == nil && n != info.Size() {
 		return ErrConflict
 	}

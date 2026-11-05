@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -32,12 +33,13 @@ func ValidFileTransferMode(value string) bool {
 }
 
 type FileTransferSpec struct {
-	Mode           string `json:"mode"`
-	SourceNodeID   string `json:"sourceNodeId"`
-	SourcePath     string `json:"sourcePath"`
-	SourceVersion  string `json:"sourceVersion"`
-	BandwidthLimit int64  `json:"bandwidthLimit,omitempty"`
-	RetryOfTaskID  string `json:"retryOfTaskId,omitempty"`
+	Directory      bool    `json:"directory,omitempty"`
+	Mode           string  `json:"mode"`
+	SourceNodeID   string  `json:"sourceNodeId"`
+	SourcePath     string  `json:"sourcePath"`
+	SourceVersion  string  `json:"sourceVersion"`
+	BandwidthLimit float64 `json:"bandwidthLimit,omitempty"`
+	RetryOfTaskID  string  `json:"retryOfTaskId,omitempty"`
 }
 
 type FileTransferDescriptor struct {
@@ -63,8 +65,12 @@ func FileStreamDigest(value any) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func ValidFileBandwidth(value int64) bool {
-	return value == 0 || value >= 1024 && value <= MaxFileSize
+func ValidFileBandwidth(value float64) bool {
+	return value == 0 || !math.IsInf(value, 0) && value >= 1024.0/1000000 && value <= float64(MaxFileSize)/1000000
+}
+
+func FileBandwidthBytes(value float64) int64 {
+	return int64(math.Round(value * 1000000))
 }
 
 func ValidFileTransferDescriptor(value FileTransferDescriptor) bool {
@@ -102,6 +108,7 @@ type FileDataOpen struct {
 }
 
 type FileDataRequest struct {
+	Directory       bool   `json:"directory,omitempty"`
 	Operation       string `json:"operation"`
 	Path            string `json:"path"`
 	TaskID          string `json:"taskId,omitempty"`
@@ -111,7 +118,7 @@ type FileDataRequest struct {
 }
 
 func (value FileDataRequest) FileRequest(id string) FileRequest {
-	request := FileRequest{Operation: value.Operation, Path: value.Path, TaskID: value.TaskID, ExpectedVersion: value.ExpectedVersion, Size: value.Size, SHA256: value.SHA256}
+	request := FileRequest{Directory: value.Directory, Operation: value.Operation, Path: value.Path, TaskID: value.TaskID, ExpectedVersion: value.ExpectedVersion, Size: value.Size, SHA256: value.SHA256}
 	if value.Operation == FileDownload || value.Operation == FileUploadBegin {
 		request.TransferID = id
 	}
@@ -119,7 +126,7 @@ func (value FileDataRequest) FileRequest(id string) FileRequest {
 }
 
 func FileDataRequestFor(value FileRequest) FileDataRequest {
-	return FileDataRequest{Operation: value.Operation, Path: value.Path, TaskID: value.TaskID, ExpectedVersion: value.ExpectedVersion, Size: value.Size, SHA256: value.SHA256}
+	return FileDataRequest{Directory: value.Directory, Operation: value.Operation, Path: value.Path, TaskID: value.TaskID, ExpectedVersion: value.ExpectedVersion, Size: value.Size, SHA256: value.SHA256}
 }
 
 type FileRsyncRequest struct {

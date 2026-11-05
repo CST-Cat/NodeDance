@@ -3,11 +3,12 @@ import { Check } from "lucide-react";
 import { useSignals } from "@preact/signals-react/runtime";
 import { operationRequest, type AgentNode, type AgentNodesResponse, type NodeFileEntry } from "../api";
 import { t } from "../i18n";
-import type { FileManager } from "../file-manager";
+import type { FileManager, FileTransferProgress } from "../file-manager";
 import { Button, Input, Select } from "./ManagementUI";
 import { Dialog, DialogContent } from "./arc/dialog/dialog";
 import { Alert } from "./arc/alert/alert";
 import NodeFiles from "./NodeFiles";
+import { Progress } from "./arc/progress/progress";
 import "./FileTransfer.css";
 
 const x = (key: string) => t(`files.transfer.${key}`);
@@ -21,6 +22,28 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
   const [bandwidth, setBandwidth] = useState("0");
   const [mode, setMode] = useState("relay");
   const [transport, setTransport] = useState("");
+  const [started, setStarted] = useState(false);
+  const [progress, setProgress] = useState<Record<number, { completed: number; total: number; rate: number | null; phase: string }>>({});
+  const samples = useRef(new Map<number, { completed: number; time: number }>());
+  function updateProgress(items: FileTransferProgress[] | null) {
+    if (!items) {
+      samples.current.clear();
+      setProgress(previous => Object.fromEntries(Object.entries(previous).map(([index, item]) => [index, { ...item, rate: null }])));
+      return;
+    }
+    const now = performance.now();
+    const next: typeof progress = {};
+    for (const { index, task } of items) {
+      const total = task.transfer?.file.size ?? task.progress.total;
+      const completed = task.status === "succeeded" ? total : Math.min(total, task.progress.completed);
+      const last = samples.current.get(index);
+      const rate = last && now > last.time ? Math.max(0, completed - last.completed) * 1000 / (now - last.time) : 0;
+      samples.current.set(index, { completed, time: now });
+      const phase = task.status === "succeeded" ? "completed" : task.status === "running" || task.status === "queued" ? task.progress.phase === "verifying" ? files[index]?.kind === "directory" ? "unpacking" : "verifying" : completed > 0 ? "transferring" : "preparing" : task.status;
+      next[index] = { completed, total, rate: phase === "transferring" ? rate : 0, phase };
+    }
+    setProgress(previous => ({ ...previous, ...next }));
+  }
   const [picker, setPicker] = useState(false);
   const [error, setError] = useState(""), [busy, setBusy] = useState(false), [done, setDone] = useState(false);
   const pending = useRef<AbortController | null>(null);
@@ -37,9 +60,15 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
   async function start() {
     const controller = new AbortController();
     pending.current = controller;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setStarted(true); setProgress({}); samples.current.clear();
     try {
-      const result = await manager.transfer(targetId, files.map(file => file.path), targetPath, controller.signal, Number(bandwidth || 0), mode);
+      const result = await manager.transfer(targetId, files.map(file => file.path), targetPath, controller.signal, Number(bandwidth || 0), mode, updateProgress);
+      setProgress(previous => {
+        const next = { ...previous };
+        result.transferred.forEach(file => { const index = files.findIndex(item => item.path === file.sourcePath); if (index >= 0) next[index] = { completed: file.size, total: file.size, rate: 0, phase: "completed" }; });
+        result.failed?.forEach(file => { const index = files.findIndex(item => item.path === file.sourcePath); if (index >= 0) next[index] = { completed: next[index]?.completed ?? 0, total: next[index]?.total ?? 0, rate: 0, phase: "failed" }; });
+        return next;
+      });
       if (result.failed?.length) setError(result.failed.map(failure => `${failure.sourcePath}: ${failure.error}`).join("; "));
       else {
         const transports = new Set(result.transferred.map(file => file.transport));
@@ -50,6 +79,7 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       pending.current = null; setBusy(false);
+      setProgress(previous => Object.fromEntries(Object.entries(previous).map(([index, item]) => [index, { ...item, rate: 0, phase: ["preparing", "transferring", "verifying", "unpacking"].includes(item.phase) ? "stopped" : item.phase }])));
     }
   }
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent container={container} title={x("title")} className="file-transfer-dialog">
@@ -63,18 +93,31 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
         <span className="file-transfer-label">{x("targetDirectory")}</span>
         <div className="file-transfer-path"><Input label="" aria-label={x("targetDirectory")} value={targetPath} disabled={busy || done} onChange={event => setTargetPath(event.target.value)} /><Button type="button" variant="secondary" className="file-transfer-browse" disabled={busy || done || !targetNode} onClick={() => setPicker(true)}>{x("browse")}</Button></div>
       </div>
-      <div className="file-transfer-field">
-        <span className="file-transfer-label">{x("bandwidth")}</span>
-        <Input label="" aria-label={x("bandwidth")} type="number" value={bandwidth} disabled={busy || done} onChange={event => setBandwidth(event.target.value)} />
-      </div>
-      <div className="file-transfer-field">
-        <span className="file-transfer-label">{x("mode")}</span>
-        <Select label="" aria-label={x("mode")} value={mode} disabled={busy || done} onValueChange={value => { setMode(value); }} options={[{ value: "relay", label: x("modeRelay") }, { value: "direct", label: x("modeDirect") }]} />
+      <div className="file-transfer-options">
+        <div className="file-transfer-field">
+          <span className="file-transfer-label">{x("mode")}</span>
+          <div className="file-transfer-modes" role="group" aria-label={x("mode")}>
+            {["relay", "direct"].map(value => <Button key={value} type="button" variant={mode === value ? "primary" : "ghost"} aria-pressed={mode === value} disabled={busy || done} onClick={() => setMode(value)}>{x(value === "relay" ? "modeRelay" : "modeDirect")}</Button>)}
+          </div>
+        </div>
+        <div className="file-transfer-field">
+          <span className="file-transfer-label">{x("bandwidth")}</span>
+          <Input label="" aria-label={x("bandwidth")} type="number" step="any" value={bandwidth} disabled={busy || done} onChange={event => setBandwidth(event.target.value)} />
+        </div>
       </div>
       <div>
         <div className="file-transfer-files-head"><span>{x("files")}</span><span className="file-transfer-count">{files.length}</span></div>
         <ul className="file-transfer-files">
-          {files.map(file => <li key={file.path}><span className="file-transfer-name">{file.path}</span><span className="file-transfer-size">{size(file.size)}</span></li>)}
+          {files.map((file, index) => {
+            const item = progress[index];
+            return <li key={file.path}>
+              <div className="file-transfer-file-heading"><span className="file-transfer-name">{file.path}</span><span className="file-transfer-size">{file.kind === "directory" ? t("files.ui.folder") : size(file.size)}</span></div>
+              {started && <div className="file-transfer-progress">
+                <Progress label={item ? x(item.phase) : busy ? x("preparing") : x("stopped")} value={item?.phase === "completed" && item.total === 0 ? 1 : item?.completed ?? 0} max={item?.total || 1} showValue />
+                <div className="file-transfer-progress-meta"><span>{size(item?.completed ?? 0)} / {item ? size(item.total) : file.kind === "file" ? size(file.size) : "—"}</span><span>{item?.rate === null ? "—" : ((item?.rate ?? 0) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })} MB/s</span></div>
+              </div>}
+            </li>;
+          })}
         </ul>
       </div>
       <div className="file-transfer-actions">

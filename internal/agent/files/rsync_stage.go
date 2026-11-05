@@ -403,6 +403,17 @@ func (e *TaskExecutor) reconcileTransfer(ctx context.Context, task taskjournal.S
 	if err != nil {
 		return task, err
 	}
+	if spec.Transfer.Directory {
+		verified, err := e.verifyDirectoryTransfer(ctx, spec)
+		if err != nil || !verified {
+			return task, err
+		}
+		final, err := e.finish(ctx, task.TaskID, taskstate.Succeeded, "transfer_verified", spec.SHA256)
+		if err == nil {
+			e.removeRsyncStage(task.TaskID)
+		}
+		return final, err
+	}
 	if entry.Kind != "file" || entry.Size != spec.Size {
 		return task, nil
 	}

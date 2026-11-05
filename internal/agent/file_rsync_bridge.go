@@ -164,7 +164,7 @@ func (b *agentFileBridge) prepareRsync(id string, session *agentRsyncSession) {
 	var releaseOnce sync.Once
 	finish := func() { releaseOnce.Do(release) }
 	defer finish()
-	template, err := agentrsync.ProbeReceiver(ctx, binary, filepath.Dir(b.configPath), request.Descriptor.File.Transfer.BandwidthLimit)
+	template, err := agentrsync.ProbeReceiver(ctx, binary, filepath.Dir(b.configPath), protocol.FileBandwidthBytes(request.Descriptor.File.Transfer.BandwidthLimit))
 	if err == nil {
 		err = agentrsync.ProbeConfinement(ctx, binary, stage.Directory, stage.Payload, request.Descriptor.File.Size)
 	}
@@ -223,7 +223,7 @@ func (b *agentFileBridge) sendRsync(id string, session *agentRsyncSession) {
 		return
 	}
 	defer cleanupBinary()
-	source, entry, err := b.service.OpenDownload(request.Descriptor.File.Transfer.SourcePath)
+	source, entry, err := b.openTransfer(session.ctx, request.Descriptor.File.Transfer.SourcePath, request.Descriptor.File.Transfer.Directory)
 	if err != nil || entry.Size != request.Descriptor.File.Size || entry.Version != request.Descriptor.File.Transfer.SourceVersion {
 		response.State, response.Code = "error", "source_changed"
 		b.respondRsync(session.ctx, id, response)
@@ -250,7 +250,7 @@ func (b *agentFileBridge) sendRsync(id string, session *agentRsyncSession) {
 		defer cleanup()
 	}
 	if err == nil {
-		err = agentrsync.Send(session.ctx, binary, filepath.Dir(b.configPath), source, request.Descriptor.File.Transfer.BandwidthLimit, conn, func(completed uint64) {
+		err = agentrsync.Send(session.ctx, binary, filepath.Dir(b.configPath), source, protocol.FileBandwidthBytes(request.Descriptor.File.Transfer.BandwidthLimit), conn, func(completed uint64) {
 			if completed <= uint64(request.Descriptor.File.Size) {
 				b.respondRsync(session.ctx, id, protocol.FileRsyncResponse{Operation: "send", SessionID: request.SessionID, State: "progress", Completed: completed})
 			}

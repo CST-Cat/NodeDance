@@ -419,7 +419,17 @@ func (s *Server) sendFileRequest(ctx context.Context, connection *agentConnectio
 }
 
 func (s *Server) waitFileMessage(ctx context.Context, connection *agentConnection, transfer *coreFileTransfer) (protocol.Envelope, error) {
-	timer := time.NewTimer(fileTransferIdle)
+	idle := fileTransferIdle
+	if _, hash := transfer.allowed[protocol.FileHash]; hash {
+		idle = 30 * time.Minute
+	}
+	transfer.mu.Lock()
+	initial := transfer.lastSeq == 0
+	transfer.mu.Unlock()
+	if _, download := transfer.allowed[protocol.FileDownload]; download && initial {
+		idle = 30 * time.Minute
+	}
+	timer := time.NewTimer(idle)
 	defer timer.Stop()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()

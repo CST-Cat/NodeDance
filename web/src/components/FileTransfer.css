@@ -68,8 +68,8 @@
 
 .file-transfer-files li {
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 8px;
   padding: 7px 0;
 }
 
@@ -96,4 +96,47 @@
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.file-transfer-options {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  gap: 6px 16px;
+}
+
+.file-transfer-options > .file-transfer-field {
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+}
+
+.file-transfer-options .file-transfer-field > :not(.file-transfer-label) {
+  align-self: center;
+}
+
+.file-transfer-modes {
+  display: flex;
+  gap: 4px;
+}
+
+.file-transfer-file-heading,
+.file-transfer-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.file-transfer-progress {
+  width: 100%;
+  min-width: 0;
+}
+
+.file-transfer-progress-meta {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
 }

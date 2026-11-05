@@ -20,6 +20,7 @@ func TestFileStreamCredentialsBindTaskNodePathDirectionAndDescriptor(t *testing.
 		func(v *FileDataOpen) { v.Grant.Role = "receiver" },
 		func(v *FileDataOpen) { v.Grant.Path = "/different" },
 		func(v *FileDataOpen) { v.Request.Path = "/different" },
+		func(v *FileDataOpen) { v.Request.Directory = true },
 		func(v *FileDataOpen) { v.Grant.SessionID = node },
 		func(v *FileDataOpen) { v.Grant.ExpiresAt = time.Now().Add(-time.Second) },
 		func(v *FileDataOpen) { v.Grant.Binding = strings.Repeat("d", 64) },

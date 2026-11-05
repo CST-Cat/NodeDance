@@ -153,8 +153,35 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 		entry, err := b.service.Stat(request.Path)
 		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry}, err)
 	case protocol.FileHash:
-		entry, digest, err := b.service.Hash(request.Path)
-		return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry, SHA256: digest, Size: entry.Size}, err)
+		transferCtx, cancel := context.WithCancel(ctx)
+		transfer := &agentFileTransfer{id: id, cancel: cancel}
+		if !b.addTransfer(transfer) {
+			cancel()
+			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, errors.New("file transfer limit reached"))
+		}
+		b.wg.Add(1)
+		go func() {
+			defer b.wg.Done()
+			defer b.removeTransfer(id)
+			entry, err := b.service.Stat(request.Path)
+			var digest string
+			if err == nil && entry.Kind == "directory" {
+				if b.tasks == nil {
+					err = errors.New("file transfer runner is unavailable")
+				} else {
+					var file *os.File
+					file, entry, err = b.tasks.OpenTransfer(transferCtx, request.Path, true)
+					if file != nil {
+						file.Close()
+					}
+					digest = entry.Version
+				}
+			} else if err == nil {
+				entry, digest, err = b.service.Hash(request.Path)
+			}
+			_ = b.respond(transferCtx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry, SHA256: digest, Size: entry.Size}, err)
+		}()
+		return nil
 	case protocol.FileReadText:
 		text, version, err := b.service.ReadText(request.Path)
 		response := protocol.FileResponse{Operation: request.Operation, Version: version}
@@ -163,24 +190,35 @@ func (b *agentFileBridge) handle(ctx context.Context, id string, request protoco
 		}
 		return b.respond(ctx, id, response, err)
 	case protocol.FileDownload:
-		file, entry, err := b.service.OpenDownload(request.Path)
-		if err != nil {
-			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, err)
-		}
 		transferCtx, cancel := context.WithCancel(ctx)
-		transfer := &agentFileTransfer{id: id, download: file, ack: make(chan uint64, 1), cancel: cancel, lastDownloadAck: 1}
+		transfer := &agentFileTransfer{id: id, ack: make(chan uint64, 1), cancel: cancel, lastDownloadAck: 1}
 		if !b.addTransfer(transfer) {
 			cancel()
-			_ = file.Close()
 			return b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation}, errors.New("file transfer limit reached"))
-		}
-		if err := b.respond(ctx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry, Size: entry.Size}, nil); err != nil {
-			b.cancel(id)
-			return err
 		}
 		b.wg.Add(1)
 		go func() {
 			defer b.wg.Done()
+			defer b.removeTransfer(id)
+			file, entry, err := b.openTransfer(transferCtx, request.Path, request.Directory)
+			if err != nil {
+				_ = b.respond(transferCtx, id, protocol.FileResponse{Operation: request.Operation}, err)
+				return
+			}
+			b.mu.Lock()
+			active := b.transfers[id] == transfer && transferCtx.Err() == nil
+			if active {
+				transfer.download = file
+			}
+			b.mu.Unlock()
+			if !active {
+				file.Close()
+				return
+			}
+			if err := b.respond(transferCtx, id, protocol.FileResponse{Operation: request.Operation, Entry: &entry, Size: entry.Size}, nil); err != nil {
+				file.Close()
+				return
+			}
 			b.streamDownload(transferCtx, transfer)
 		}()
 		return nil
@@ -484,4 +522,14 @@ func (b *agentFileBridge) closeAll() {
 		b.cancel(id)
 	}
 	b.wg.Wait()
+}
+
+func (b *agentFileBridge) openTransfer(ctx context.Context, virtual string, directory bool) (*os.File, protocol.FileEntry, error) {
+	if directory {
+		if b.tasks == nil {
+			return nil, protocol.FileEntry{}, errors.New("file transfer runner is unavailable")
+		}
+		return b.tasks.OpenTransfer(ctx, virtual, true)
+	}
+	return b.service.OpenDownload(virtual)
 }

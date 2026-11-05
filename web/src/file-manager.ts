@@ -9,6 +9,8 @@ import {
 import { operationCatalog, operationPath, exactJSON } from "./operations";
 import { requestIntent, intentKey, finishIntent } from "./operation-intent";
 
+export interface FileTransferProgress { index: number; task: ContainerTask }
+
 export interface FileObservation {
   taskId: string;
   intent: string;
@@ -274,21 +276,37 @@ export async function createFileManager(
     persist();
     if (!result.failed?.length) finishIntent(intent);
   }
-  async function transfer(targetNodeId: string, paths: string[], targetPath: string, other?: AbortSignal, bandwidthLimit = 0, mode = "relay") {
+  async function transfer(targetNodeId: string, paths: string[], targetPath: string, other?: AbortSignal, bandwidthLimit = 0, mode = "relay", progress?: (items: FileTransferProgress[] | null) => void) {
     active();
     const payload = exactJSON({ targetNodeId, paths, targetPath, bandwidthLimit, mode });
     const intent = await requestIntent("files.transfer", { params }, payload);
     active();
-    const result = await operationRequest<FileTransferResponse>(
-      "files.transfer",
-      { params },
-      {
-        headers: { "Idempotency-Key": intentKey(intent) },
-        body: payload,
-        signal: signal(other),
-      },
-      30 * 60_000,
-    );
+    const watching = new AbortController();
+    const watchSignal = AbortSignal.any([signal(other), watching.signal]);
+    const watch = progress ? (async () => {
+      while (!watchSignal.aborted) {
+        try {
+          const result = await operationRequest<{ items: FileTransferProgress[] }>("files.transfer-status", { params: { nodeId: targetNodeId }, query: { requestKey: intentKey(intent), count: String(paths.length) } }, { signal: watchSignal });
+          if (!watchSignal.aborted) progress(result.items);
+        } catch {
+          if (watchSignal.aborted) return;
+          progress(null);
+        }
+        await new Promise<void>(resolve => {
+          if (watchSignal.aborted) { resolve(); return; }
+          const finish = () => { clearTimeout(timer); watchSignal.removeEventListener("abort", finish); resolve(); };
+          const timer = setTimeout(finish, 1000);
+          watchSignal.addEventListener("abort", finish, { once: true });
+        });
+      }
+    })() : Promise.resolve();
+    let result: FileTransferResponse;
+    try {
+      result = await operationRequest<FileTransferResponse>("files.transfer", { params }, { headers: { "Idempotency-Key": intentKey(intent) }, body: payload, signal: signal(other) }, 30 * 60_000);
+    } finally {
+      watching.abort();
+      await watch;
+    }
     retainTransferFailures(result, targetNodeId, intent);
     return result;
   }

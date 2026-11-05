@@ -47,6 +47,7 @@ var fileRequestID = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[8
 // FileRequest is a typed, read-only request sent by Core after authenticating
 // the administrator Session and binding the transfer to a node generation.
 type FileRequest struct {
+	Directory       bool          `json:"directory,omitempty"`
 	Data            *FileDataOpen `json:"data,omitempty"`
 	Operation       string        `json:"operation"`
 	After           string        `json:"after,omitempty"`
@@ -127,6 +128,9 @@ func ValidateFileRequest(envelope Envelope, generation uint64, request FileReque
 	}
 	if len(request.After) > 4096 || len(request.Filter) > 200 || request.MinSize < 0 || request.MaxSize < 0 || request.MaxSize > 0 && request.MaxSize < request.MinSize {
 		return errors.New("invalid file browse options")
+	}
+	if request.Directory && request.Operation != FileDownload {
+		return errors.New("directory payload is only valid for transfer downloads")
 	}
 	switch request.Operation {
 	case FileOpenData:

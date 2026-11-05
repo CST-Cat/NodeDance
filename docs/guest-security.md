@@ -188,3 +188,5 @@ The discovered private contract now includes share and invitation management; an
 Core／Agent 的 Stable 和 `dev` 更新均为管理员私有操作，不进入游客投影。安全浏览器回归通过发现的更新契约验证 Core `dev` 检查与提交的匿名拒绝，以及管理员提交的 CSRF 拒绝；测试不执行实际更新。
 
 Stable and `dev` updates remain administrator-only for Core and Agent. The adversarial browser suite discovers update operations and checks anonymous denial for Core `dev` checks/submissions and CSRF denial for an administrator submission, without executing an update.
+
+Directory transfers and `files.transfer-status` remain administrator-only. Compressed archives, extracted content, per-item bytes, source/target paths and rate samples never enter guest projections. The guest suite discovers the progress operation from the live contract and verifies anonymous API denial alongside existing file/transfer boundaries. 文件夹对传及进度查询继续要求管理员身份，不向游客公开压缩包、解包内容、路径或传输进度；游客安全套件从运行中契约发现新操作并检查未认证访问边界。

@@ -806,7 +806,7 @@ func (s *Service) BeginUploadAtTemporary(virtual, expectedVersion string, size i
 	if err != nil || path.Dir(temporary) != path.Dir(target) || !validUploadTempName(path.Base(target), path.Base(temporary)) {
 		return nil, ErrInvalidPath
 	}
-	file, err := s.openFile(temporary, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	file, err := s.openFile(temporary, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return nil, err
 	}

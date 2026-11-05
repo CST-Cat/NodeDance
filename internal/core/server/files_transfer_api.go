@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -54,6 +55,7 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request, curr
 		mode = protocol.FileTransferModeRelay
 	}
 	seen := map[string]struct{}{}
+	names := map[string]bool{}
 	for _, sourcePath := range request.Paths {
 		if !protocol.ValidVirtualFilePath(sourcePath) {
 			http.Error(w, "invalid file transfer", http.StatusBadRequest)
@@ -63,6 +65,11 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request, curr
 			http.Error(w, "invalid file transfer", http.StatusBadRequest)
 			return
 		}
+		if names[path.Base(sourcePath)] {
+			http.Error(w, "duplicate destination names", http.StatusBadRequest)
+			return
+		}
+		names[path.Base(sourcePath)] = true
 		seen[sourcePath] = struct{}{}
 	}
 	target, err := s.runFileOperation(r.Context(), current, request.TargetNodeID, protocol.FileRequest{Operation: protocol.FileStat, Path: request.TargetPath})
@@ -125,26 +132,29 @@ func (s *Server) handleFileTransfer(w http.ResponseWriter, r *http.Request, curr
 	writeJSON(w, http.StatusOK, payload)
 }
 
-func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeID, sourcePath, targetNodeID, targetDirectory, key string, bandwidthLimit int64, mode, retryOfTaskID string) (_ fileTransferResult, failure error) {
+func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeID, sourcePath, targetNodeID, targetDirectory, key string, bandwidthLimit float64, mode, retryOfTaskID string) (_ fileTransferResult, failure error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 	targetPath := path.Join(targetDirectory, path.Base(sourcePath))
+	if sourcePath == "/" || sourceNodeID == targetNodeID && (targetPath == sourcePath || strings.HasPrefix(targetPath, sourcePath+"/")) {
+		return fileTransferResult{}, errors.New("transfer destination must be outside the source")
+	}
 	hashed, err := s.runFileOperation(ctx, current, sourceNodeID, protocol.FileRequest{Operation: protocol.FileHash, Path: sourcePath})
 	if err != nil {
 		return fileTransferResult{}, err
 	}
-	if hashed.Entry == nil || hashed.Entry.Kind != "file" || hashed.SHA256 == "" || hashed.Size != hashed.Entry.Size || hashed.Size < 0 || hashed.Size > s.fileTransferLimit {
+	if hashed.Entry == nil || hashed.Entry.Kind != "file" && hashed.Entry.Kind != "directory" || hashed.SHA256 == "" || hashed.Size != hashed.Entry.Size || hashed.Size < 0 || hashed.Size > s.fileTransferLimit {
 		return fileTransferResult{}, errors.New("source file metadata is inconsistent")
 	}
 	size, digest := hashed.Size, hashed.SHA256
-	transferSpec := &protocol.FileTransferSpec{Mode: mode, SourceNodeID: sourceNodeID, SourcePath: sourcePath, SourceVersion: hashed.Entry.Version, BandwidthLimit: bandwidthLimit, RetryOfTaskID: retryOfTaskID}
+	transferSpec := &protocol.FileTransferSpec{Directory: hashed.Entry.Kind == "directory", Mode: mode, SourceNodeID: sourceNodeID, SourcePath: sourcePath, SourceVersion: hashed.Entry.Version, BandwidthLimit: bandwidthLimit, RetryOfTaskID: retryOfTaskID}
 	var expectedVersion string
 	resolved := false
 	if retryOfTaskID != "" {
 		previous, err := s.tasks.Get(ctx, targetNodeID, retryOfTaskID)
 		if err != nil || previous.Intent.File == nil || previous.Intent.File.Transfer == nil || previous.Intent.File.Size != size || previous.Intent.File.SHA256 != digest ||
 			previous.Intent.File.Path != targetPath || previous.Intent.File.Transfer.SourceNodeID != sourceNodeID || previous.Intent.File.Transfer.SourcePath != sourcePath ||
-			previous.Intent.File.Transfer.SourceVersion != transferSpec.SourceVersion || previous.Intent.File.Transfer.BandwidthLimit != bandwidthLimit || previous.Intent.File.Transfer.Mode != mode ||
+			previous.Intent.File.Transfer.Directory != transferSpec.Directory || previous.Intent.File.Transfer.SourceVersion != transferSpec.SourceVersion || previous.Intent.File.Transfer.BandwidthLimit != bandwidthLimit || previous.Intent.File.Transfer.Mode != mode ||
 			previous.Status != taskstate.Failed && previous.Status != taskstate.Canceled && previous.Status != taskstate.TimedOut {
 			return fileTransferResult{}, errors.New("retry source or destination differs from the original transfer")
 		}
@@ -152,7 +162,7 @@ func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeI
 	}
 	if existing, found, lookupErr := s.tasks.FindByIdempotency(ctx, targetNodeID, key); lookupErr == nil && found && existing.Intent.File != nil &&
 		existing.Intent.File.Path == targetPath && existing.Intent.File.Size == size && existing.Intent.File.SHA256 == digest && existing.Intent.File.Transfer != nil &&
-		existing.Intent.File.Transfer.SourceNodeID == sourceNodeID && existing.Intent.File.Transfer.SourcePath == sourcePath && existing.Intent.File.Transfer.BandwidthLimit == bandwidthLimit && existing.Intent.File.Transfer.Mode == mode &&
+		existing.Intent.File.Transfer.Directory == transferSpec.Directory && existing.Intent.File.Transfer.SourceNodeID == sourceNodeID && existing.Intent.File.Transfer.SourcePath == sourcePath && existing.Intent.File.Transfer.BandwidthLimit == bandwidthLimit && existing.Intent.File.Transfer.Mode == mode &&
 		existing.Intent.File.Transfer.RetryOfTaskID == retryOfTaskID {
 		transferSpec.SourceVersion = existing.Intent.File.Transfer.SourceVersion
 		switch existing.Status {
@@ -168,6 +178,9 @@ func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeI
 		expectedVersion, err = s.targetFileVersion(ctx, current, targetNodeID, targetPath)
 		if err != nil {
 			return fileTransferResult{}, err
+		}
+		if transferSpec.Directory && expectedVersion != "" {
+			return fileTransferResult{}, errors.New("destination_exists")
 		}
 	}
 	intent := protocol.TaskIntent{Action: protocol.TaskFileUpload, ContainerID: protocol.FileTargetKey(targetPath),
@@ -262,7 +275,7 @@ func (s *Server) transferFileChunks(ctx context.Context, current *session, descr
 		return fileTransferResult{}, err
 	}
 	defer s.closeCoreFileTransfer(sourceConnection, sourceTransfer, true, nil)
-	download := protocol.FileRequest{Operation: protocol.FileDownload, Path: sourcePath, TransferID: sourceTransfer.requestID}
+	download := protocol.FileRequest{Directory: descriptor.File.Transfer.Directory, Operation: protocol.FileDownload, Path: sourcePath, TransferID: sourceTransfer.requestID}
 	if err := s.sendFileRequest(ctx, sourceConnection, sourceTransfer, download); err != nil {
 		return fileTransferResult{}, err
 	}
@@ -277,7 +290,7 @@ func (s *Server) transferFileChunks(ctx context.Context, current *session, descr
 	if metadata.Code != "" {
 		return fileTransferResult{}, fileRemoteError{code: metadata.Code}
 	}
-	if metadata.Entry == nil || metadata.Entry.Kind != "file" || metadata.Size != size || metadata.Entry.Size != size || metadata.Entry.Version != descriptor.File.Transfer.SourceVersion {
+	if metadata.Entry == nil || (metadata.Entry.Kind == "directory") != descriptor.File.Transfer.Directory || metadata.Size != size || metadata.Entry.Size != size || metadata.Entry.Version != descriptor.File.Transfer.SourceVersion {
 		return fileTransferResult{}, errors.New("source file changed during transfer")
 	}
 	connection, transfer, err := s.newCoreFileTransfer(ctx, targetNodeID, current, []string{protocol.FileUploadBegin, protocol.FileUploadChunk}, false)
@@ -347,7 +360,7 @@ func (s *Server) transferFileChunks(ctx context.Context, current *session, descr
 		}
 		_, _ = hash.Write(data)
 		total += int64(len(data))
-		if rate := descriptor.File.Transfer.BandwidthLimit; rate > 0 {
+		if rate := protocol.FileBandwidthBytes(descriptor.File.Transfer.BandwidthLimit); rate > 0 {
 			delay := time.Until(started.Add(time.Duration(float64(total) / float64(rate) * float64(time.Second))))
 			if delay > 0 {
 				timer := time.NewTimer(delay)

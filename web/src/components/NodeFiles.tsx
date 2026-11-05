@@ -261,7 +261,7 @@ function FileBrowser({ nodeId, nodeName, path: initialPath = "/", directoryPicke
       { label: f("edit"), disabled: files.length !== 1 || files[0]?.kind !== "file", onSelect: () => command("edit", files) },
       { label: f("download"), disabled: files.some(row => row.kind !== "file") || !files.length, onSelect: () => command("download", files) },
       { label: t("shares.share"), disabled: !files.length, onSelect: () => command("share", files) },
-      { label: t("files.transfer.title"), disabled: !files.length || files.some(row => row.kind !== "file"), onSelect: () => command("transfer", files) },
+      { label: t("files.transfer.title"), disabled: !files.length || files.some(row => row.kind !== "file" && row.kind !== "directory"), onSelect: () => command("transfer", files) },
       { label: f("copy"), disabled: !files.length, onSelect: () => command("copy", files) },
       { label: f("cut"), disabled: !files.length, onSelect: () => command("cut", files) },
       { label: f("rename"), disabled: files.length !== 1, onSelect: () => command("rename", files) },

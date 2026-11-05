@@ -1,0 +1,29 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path')
+module.exports=async function({page,browserUI,files,endpoint,sourceFile}){
+  const toolbar=browserUI.getByRole('toolbar');
+  async function select(name){await browserUI.getByRole('checkbox',{name:`Select ${name}`,exact:true}).check()}
+  async function menu(label){if(await browserUI.getAttribute('data-compact')==='true')await browserUI.locator('.file-browser-footer').getByRole('button',{name:'Actions',exact:true}).click();else await toolbar.getByRole('button',{name:'Actions',exact:true}).click();await page.getByRole('menuitem',{name:label,exact:true}).click()}
+  await select(sourceFile);await menu('Peer transfer');const transferDialog=page.getByRole('dialog',{name:'Peer transfer',exact:true});const bandwidthInput=transferDialog.getByRole('spinbutton',{name:'Bandwidth (MB/s, 0 unlimited)',exact:true});await bandwidthInput.waitFor();const relayMode=transferDialog.getByRole('button',{name:'Core relay',exact:true}),directMode=transferDialog.getByRole('button',{name:'Agent direct',exact:true});assert.equal(await relayMode.getAttribute('aria-pressed'),'true');await directMode.click();assert.equal(await directMode.getAttribute('aria-pressed'),'true');await relayMode.click();const modeBounds=await relayMode.boundingBox(),rateBounds=await bandwidthInput.boundingBox();assert.ok(modeBounds&&rateBounds&&Math.abs(modeBounds.y+modeBounds.height/2-rateBounds.y-rateBounds.height/2)<2,'Mode buttons and bandwidth share a row: '+JSON.stringify({modeBounds,rateBounds}));await bandwidthInput.fill('0.004096');await transferDialog.getByRole('textbox',{name:'Target directory',exact:true}).fill('/out');const browserTransferResponse=page.waitForResponse(response=>new URL(response.url()).pathname===new URL(endpoint('files.transfer')).pathname&&response.request().method()==='POST');await transferDialog.getByRole('button',{name:'Start transfer',exact:true}).click();const browserTransfer=await browserTransferResponse;assert.equal(browserTransfer.request().postDataJSON().bandwidthLimit,0.004096);const browserTransferBody=await browserTransfer.json();await transferDialog.getByRole('button',{name:'Confirm',exact:true}).waitFor();const transportText={rsync_direct:'Direct transfer complete',rsync_relay:'Core relay complete',chunk_relay:'Chunk relay complete'}[browserTransferBody.transferred[0].transport];assert.ok(transportText);assert.equal(await transferDialog.getByRole('status').innerText(),transportText);assert.ok(await bandwidthInput.isDisabled());assert.equal(fs.readFileSync(path.join(files,'out',sourceFile),'utf8'),fs.readFileSync(path.join(files,sourceFile),'utf8'));await transferDialog.getByRole('button',{name:'Confirm',exact:true}).click();await page.getByRole('dialog').waitFor({state:'detached'});
+  await browserUI.getByRole('checkbox',{name:`Select ${sourceFile}`,exact:true}).uncheck();await select('transfer-progress.bin');await select('single');await menu('Peer transfer');
+  const progressDialog=page.getByRole('dialog',{name:'Peer transfer',exact:true});
+  await progressDialog.getByRole('textbox',{name:'Target directory',exact:true}).fill('/out');
+  await progressDialog.getByRole('spinbutton',{name:'Bandwidth (MB/s, 0 unlimited)',exact:true}).fill('0.064');
+  await page.setViewportSize({width:390,height:844});
+  const rateControl=progressDialog.getByRole('spinbutton',{name:'Bandwidth (MB/s, 0 unlimited)',exact:true});
+  const modeControl=progressDialog.getByRole('button',{name:'Core relay',exact:true});
+  const rateFrame=await rateControl.boundingBox(),modeFrame=await modeControl.boundingBox(),dialogFrame=await progressDialog.boundingBox();
+  assert.ok(rateFrame&&modeFrame&&dialogFrame&&rateFrame.width>=48&&Math.abs(rateFrame.y+rateFrame.height/2-modeFrame.y-modeFrame.height/2)<2&&rateFrame.x+rateFrame.width<=dialogFrame.x+dialogFrame.width,'Visible mobile mode buttons and bandwidth remain on one row');
+  await progressDialog.getByRole('button',{name:'Start transfer',exact:true}).click();
+  await progressDialog.getByRole('progressbar').first().waitFor();assert.equal(await progressDialog.getByRole('progressbar').count(),2);
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('.file-transfer-progress [role="progressbar"]')).some(element=>Number(element.getAttribute('aria-valuenow'))>0&&Number(element.getAttribute('aria-valuenow'))<Number(element.getAttribute('aria-valuemax'))));
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('.file-transfer-progress-meta')).some(element=>{const value=element.lastElementChild?.textContent??'';return /MB\/s/.test(value)&&parseFloat(value)>0}));
+  const unavailable='**/files/transfer-status?**';await page.route(unavailable,route=>route.fulfill({status:503,body:'Isolated progress outage'}));
+  await page.waitForFunction(()=>Array.from(document.querySelectorAll('.file-transfer-progress-meta')).some(element=>element.lastElementChild?.textContent==='— MB/s'));await page.unroute(unavailable);
+  await progressDialog.getByRole('button',{name:'Confirm',exact:true}).waitFor();
+  for(const bar of await progressDialog.getByRole('progressbar').all())assert.equal(await bar.getAttribute('aria-valuenow'),await bar.getAttribute('aria-valuemax'));
+  assert.deepEqual(fs.readFileSync(path.join(files,'out/transfer-progress.bin')),fs.readFileSync(path.join(files,'transfer-progress.bin')));
+  assert.equal(fs.readFileSync(path.join(files,'out/single/only.txt'),'utf8'),'single fixture');
+  await progressDialog.getByRole('button',{name:'Confirm',exact:true}).click();await page.getByRole('dialog').waitFor({state:'detached'});await page.setViewportSize({width:1440,height:1000});
+
+  console.log('Peer transfer: real file/folder copy, mode selection, MB/s request, visible mobile controls, live byte progress, actual rate and progress outage passed.');
+}

@@ -32,7 +32,7 @@ type ComposeCreateRequest struct {
 
 type FileTransferRequest struct {
 	Mode           string   `json:"mode,omitempty"`
-	BandwidthLimit int64    `json:"bandwidthLimit,omitempty"`
+	BandwidthLimit float64  `json:"bandwidthLimit,omitempty"`
 	TargetNodeID   string   `json:"targetNodeId" request:"required"`
 	Paths          []string `json:"paths" request:"required"`
 	TargetPath     string   `json:"targetPath" request:"required"`

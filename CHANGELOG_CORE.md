@@ -4,10 +4,16 @@
 
 ### English
 
+- Support automatic bounded tar.gz packaging and validated atomic extraction for directory peer transfers; regular files stream unchanged. Unify transfer bandwidth as decimal MB/s across the contract and clients.
+- Replace the transfer mode dropdown with existing selection buttons beside bandwidth; show task-backed progress bars, completed/total bytes and sampled actual rates through the shared `files.transfer-status` operation.
+
 - Unify Core and Agent development updates under `dev` across Web, CLI and TUI. Core builds from `origin/main`; Agent installs its published Dev artifact. Preserve update verification and rollback.
 - Preserve manual file-tree collapse when directory responses arrive or listings refresh; toggling the current folder no longer reloads it or adds navigation history.
 
 ### 简体中文
+
+- 文件夹对传自动进行有界 tar.gz 打包、校验和原子解包，普通文件保持原始传输；契约与客户端统一使用可带小数的 MB/s 限速。
+- 对传模式复用选择按钮并与限速并排，通过统一 `files.transfer-status` 操作显示真实任务进度条、已传／总大小与采样实际速率。
 
 - Web、CLI、TUI 的 Core 与 Agent 开发更新通道统一为 `dev`：Core 从 `origin/main` 构建，Agent 安装已发布 Dev 构建，保留更新核验与回滚。
 - 文件目录树手动折叠后，不再被迟到的目录响应或列表刷新重新展开；切换当前文件夹的展开状态不重复加载或追加导航历史。

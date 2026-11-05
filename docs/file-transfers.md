@@ -1,8 +1,8 @@
 # Multi-node file transfers / 多机文件对传
 
-Core schedules regular-file transfers through `files.transfer`. Each transfer runs in the mode selected for it: Core relay (the default) or Agent direct. The selected mode never switches automatically. In relay mode, Agents run rsync through a dedicated Core WSS relay; if rsync or its confinement is unavailable, Core uses the bounded chunk relay over separate task data connections instead. In direct mode, the Agents connect to each other and a failed attempt fails the transfer. The persistent Agent connection carries control requests, progress and task outcomes; file contents use independent connections.
+Core schedules file and directory transfers through `files.transfer`. Each transfer runs in the mode selected for it: Core relay (the default) or Agent direct. The selected mode never switches automatically. In relay mode, Agents run rsync through a dedicated Core WSS relay; if rsync or its confinement is unavailable, Core uses the bounded chunk relay over separate task data connections instead. In direct mode, the Agents connect to each other and a failed attempt fails the transfer. The persistent Agent connection carries control requests, progress and task outcomes; file contents use independent connections.
 
-Core 通过 `files.transfer` 调度普通文件对传：每次传输按所选模式运行——Core 中继（默认）或 Agent 直连，所选模式不会自动切换。中继模式下经独立的 Core WSS rsync 中继传输，rsync 或其隔离不可用时改走独立连接上的分片中继；直连模式下两端 Agent 互连，尝试失败即传输失败。常驻 Agent WSS 只承载控制请求、进度和任务结果。批量中的每个文件有独立目标任务，已完成项不会因其他项失败而回滚。
+Core 通过 `files.transfer` 调度文件与文件夹对传：每次传输按所选模式运行——Core 中继（默认）或 Agent 直连，所选模式不会自动切换。中继模式下经独立的 Core WSS rsync 中继传输，rsync 或其隔离不可用时改走独立连接上的分片中继；直连模式下两端 Agent 互连，尝试失败即传输失败。常驻 Agent WSS 只承载控制请求、进度和任务结果。批量中的每个文件有独立目标任务，已完成项不会因其他项失败而回滚。
 
 ## Direct connections / 直连
 
@@ -42,7 +42,7 @@ Core relay uses two TLS connections. Core terminates TLS and can access the forw
 
 ## Integrity and recovery / 完整性与恢复
 
-Core records the source node/path/version, size, SHA-256, target path and original target version in the durable task descriptor. Sources are opened through the existing file service. Target partials live under the root Agent's `0700` state directory with `0600` regular files; symlinks, hardlinks, traversal, credentials and protected host trees are rejected. The received payload is verified by SHA-256 before copying into the normal staged upload and atomically publishing the destination. Commit rechecks the original target version, so external changes are not overwritten. File modes, ownership, ACLs and extended attributes are not replicated.
+Core records the source node/path/version, size, SHA-256, target path and original target version in the durable task descriptor. Sources are opened through the existing file service. Target partials live under the root Agent's `0700` state directory with `0600` regular files; symlinks, hardlinks, traversal, credentials and protected host trees are rejected. The received payload is verified by SHA-256 before copying into the normal staged upload and atomically publishing the destination. Commit rechecks the original target version, so external changes are not overwritten. Regular file transfers retain their existing destination mode/ownership rules. Directory transfers preserve basic permission bits and empty directories; ownership, timestamps, ACLs and extended attributes are not replicated.
 
 失败、取消和断线保留私有 partial；新任务可以采用同一描述符的 partial，由 rsync 重跑时复用已有块。首次传输从空 payload 开始，不以已有目标文件作为增量基础；分片兜底会完整重传。已完成任务清理自己的 payload，失败 partial 没有自动过期策略，需由 root 在确认无活跃任务后清理相应私有暂存目录。
 
@@ -52,15 +52,17 @@ Retry uses `files.transfer-retry` on the **target node** with a fresh `Idempoten
 
 ## Shared operations / 统一操作
 
-Web, CLI and TUI discover the same Core operation contract. The Web transfer dialog chooses a node and existing directory, selects the transfer mode (`relay` by default, or `direct`), accepts `bandwidthLimit` in bytes/s and displays the actual result transport. Zero means unlimited; nonzero limits must be at least 1024 B/s and no greater than the published maximum. The limit applies per file, including chunk fallback, rather than to the aggregate batch. File size uses the configured Agent/Core bound (default 1 GiB, maximum 16 GiB). Directory transfers, recursive rsync synchronization and mirrored deletion are not included.
+Web, CLI and TUI discover the same Core operation contract. The Web transfer dialog chooses a node and existing directory, selects the transfer mode (`relay` by default, or `direct`), accepts decimal `bandwidthLimit` in MB/s (1 MB = 1,000,000 bytes) and displays the actual result transport. Zero means unlimited; nonzero limits must be at least 0.001024 MB/s and no greater than the published maximum. The limit applies per file, including chunk fallback, rather than to the aggregate batch. File size uses the configured Agent/Core bound (default 1 GiB, maximum 16 GiB). Directories are automatically packed as tar.gz by the source Agent, SHA-256 checked and extracted into a private staging tree on the target, then published as one directory with an atomic no-overwrite rename. Both archive bytes and expanded contents obey the configured size bound; existing targets, links, special files, traversal, protected paths and duplicate destination names are rejected. This is a directory copy, without recursive synchronization or mirrored deletion.
 
 ```sh
 nodedance describe files.transfer
 nodedance call files.transfer --params '{"nodeId":"SOURCE_NODE_UUID"}' \
-  --body '{"targetNodeId":"TARGET_NODE_UUID","paths":["/srv/data.bin"],"targetPath":"/srv/incoming","bandwidthLimit":1048576}' \
+  --body '{"targetNodeId":"TARGET_NODE_UUID","paths":["/srv/data.bin","/srv/project"],"targetPath":"/srv/incoming","bandwidthLimit":1}' \
   --idempotency-key TRANSFER_KEY
 nodedance call tasks.get --params '{"nodeId":"TARGET_NODE_UUID","taskId":"TASK_ID"}'
 nodedance call tasks.cancel --params '{"nodeId":"TARGET_NODE_UUID","taskId":"TASK_ID"}'
+nodedance call files.transfer-status --params '{"nodeId":"TARGET_NODE_UUID"}' \
+  --query '{"requestKey":"TRANSFER_KEY","count":"2"}'
 nodedance call files.transfer-retry --params '{"nodeId":"TARGET_NODE_UUID","taskId":"TASK_ID"}' \
   --idempotency-key NEW_RETRY_KEY
 ```
@@ -98,3 +100,11 @@ When an ICE attempt fails after the target offer and before confirmed data trans
 只有 `direct_ice_timeout` 不能判定对称 NAT 或必须映射端口。双方 `public_host=0 srflx=0` 表示本次未公布公网地址或 STUN 映射，应优先检查 STUN 的 DNS、出站 UDP 与返回流量，以及 `NODEDANCE_STUN_SERVERS` 是否被置空／关闭。`srflx>0` 只证明采集到了对应 STUN 服务观察到的映射，不保证该映射对另一 Agent 可达；仍需检查网关过滤、端点相关映射、多层 NAT、防火墙及 DTLS 建链。`public_host>0` 也不保证入站可达。计数仅来自 SDP，不包含随后学到的 peer-reflexive 候选，不是 NAT 类型检测或实时 ICE 状态。
 
 A reachable private STUN server may replace unreachable public discovery servers without exposing Agent TCP ports. It must have a directly reachable UDP endpoint; an HTTP reverse proxy or Cloudflare HTTP tunnel alone does not supply one. Some networks still cannot establish a direct path. Public IPv6, an existing forwarded port, or gateway-supported PCP/NAT-PMP/UPnP mapping can provide alternatives, but automatic gateway mapping is not currently implemented by NodeDance and user-side mappings cannot bypass an uncontrolled upstream CGNAT. Select Core relay when direct connectivity is unavailable.
+
+文件保持原始内容直接传输；文件夹由源 Agent 自动生成有大小限制的 tar.gz，目标 Agent 校验 SHA-256、完整验证解包清单，再原子发布同名文件夹。保留空目录和普通权限位，不复制所有者、时间戳、ACL 或扩展属性。同名目标已存在时失败，不合并、不覆盖；同节点目标必须位于源目录之外。源端临时压缩数据仅保留在 root 私有状态目录内已解除路径的文件句柄中，关闭后释放；失败的接收 partial 仍遵循现有重试策略。压缩包大小和展开后总大小分别受配置限制，不是无限制目录同步。
+
+Web 的模式按钮与限速并排，Web、CLI、TUI 和 Core 请求体统一使用 MB/s，支持小数，0 不限速。限速按单项传输计算，文件夹使用压缩后的传输大小；底层字节限速器执行相同限制。
+
+`files.transfer-status` uses the **target node**, the original submission `Idempotency-Key` as `requestKey`, and the original number of paths as `count`. It returns indexed durable target tasks while the transfer POST is still running; a missing index means source preparation has not yet created its target task. Web reuses the installed Progress component for each item, showing actual completed/total payload bytes and a sampled byte-delta rate. Directory totals become known after packing. Verification and extraction remain visible after all bytes arrive; only a successful task confirms completion. A rate is an observation, not the configured bandwidth limit.
+
+传输进度由同一 Core 契约提供：在目标节点调用 `files.transfer-status`，传入原提交键和路径项数，可读取已传字节、总大小与任务阶段；CLI/TUI 可直接调用，单项仍通过 `tasks.get` 观察、`tasks.cancel` 取消。Web 每秒读取真实进度，按相邻采样的字节增量显示实际 MB/s；文件夹打包完成前不虚构总大小，传完后继续显示校验／解包阶段，任务成功才显示完成。

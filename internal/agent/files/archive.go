@@ -167,6 +167,10 @@ func (reader *archiveReadBound) Read(data []byte) (int, error) {
 }
 
 func (s *Service) extractArchive(ctx context.Context, source *os.File, size int64, stage, target string) error {
+	return s.extractArchiveRoot(ctx, source, size, stage, target, "")
+}
+
+func (s *Service) extractArchiveRoot(ctx context.Context, source *os.File, size int64, stage, target, root string) error {
 	magic := make([]byte, 4)
 	_, _ = source.ReadAt(magic, 0)
 	var scan func(func(archiveItem, io.Reader) error) error
@@ -269,6 +273,12 @@ func (s *Service) extractArchive(ctx context.Context, source *os.File, size int6
 			}
 		}
 	}
+	if root != "" {
+		item, ok := seen[root]
+		if !ok || !item.directory() || len(tops) != 1 || !tops[root] {
+			return ErrInvalidPath
+		}
+	}
 	for top := range tops {
 		if _, err := s.Stat(path.Join(target, top)); err == nil {
 			return ErrExists
@@ -276,8 +286,15 @@ func (s *Service) extractArchive(ctx context.Context, source *os.File, size int6
 			return err
 		}
 	}
-	if err := s.Mkdir(stage); err != nil {
+	stageName, _, err := s.normalize(stage)
+	if err != nil {
 		return err
+	}
+	if err := s.mkdir(stageName, 0700); err != nil {
+		return err
+	}
+	if root != "" {
+		defer s.Delete(stage, true)
 	}
 	index := 0
 	if err := scan(func(item archiveItem, input io.Reader) error {

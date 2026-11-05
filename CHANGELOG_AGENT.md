@@ -4,7 +4,11 @@
 
 ### English
 
+- Support automatic bounded tar.gz packaging and validated atomic extraction for directory peer transfers; regular files stream unchanged. Unify transfer bandwidth as decimal MB/s across the contract and clients.
+
 ### 简体中文
+
+- 文件夹对传自动进行有界 tar.gz 打包、校验和原子解包，普通文件保持原始传输；契约与客户端统一使用可带小数的 MB/s 限速。
 
 ## [0.1.34]
 

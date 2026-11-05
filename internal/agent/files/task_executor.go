@@ -191,6 +191,21 @@ func (e *TaskExecutor) ExecuteFile(ctx context.Context, dispatch protocol.TaskDi
 	default:
 		return e.finish(ctx, dispatch.TaskID, taskstate.Failed, "unchanged", "operation_rejected")
 	}
+	if dispatch.Intent.File.Transfer != nil && dispatch.Intent.File.Transfer.Directory {
+		if err == nil {
+			return e.finish(ctx, dispatch.TaskID, taskstate.Succeeded, observed, expectedDigest)
+		}
+		if errors.Is(err, ErrMutationResultUnknown) {
+			verified, verifyErr := e.verifyDirectoryTransfer(context.WithoutCancel(ctx), *dispatch.Intent.File)
+			if verified && verifyErr == nil {
+				e.mu.Lock()
+				e.uploads[dispatch.TaskID].completed = true
+				e.mu.Unlock()
+				return e.finish(ctx, dispatch.TaskID, taskstate.Succeeded, observed, expectedDigest)
+			}
+			return e.markUnknown(ctx, dispatch.TaskID)
+		}
+	}
 	if err != nil {
 		if errors.Is(err, ErrMutationResultUnknown) {
 			verified, verifyErr := e.service.VerifyMutation(fileOperation(dispatch.Intent.Action), dispatch.Intent.File.Path,
@@ -312,7 +327,14 @@ func (e *TaskExecutor) receiveUpload(ctx context.Context, taskID string, spec pr
 		}
 	}
 	e.TransferProgress(taskID, uint64(spec.Size), taskjournal.PhaseVerifying)
-	_, err = upload.CommitWithDigest(spec.SHA256)
+	if spec.Transfer != nil && spec.Transfer.Directory {
+		err = upload.commitDirectory(ctx, taskID)
+		if err != nil && !errors.Is(err, ErrMutationResultUnknown) {
+			err = uploadCause(ctx, err)
+		}
+	} else {
+		_, err = upload.CommitWithDigest(spec.SHA256)
+	}
 	if err == nil {
 		e.mu.Lock()
 		pending.completed = true
@@ -480,6 +502,12 @@ func (e *TaskExecutor) ReconcileFile(ctx context.Context, taskID string, intent 
 			return task, err
 		}
 		if intent.File.Transfer != nil {
+			if intent.File.Transfer.Directory {
+				stage := directoryTransferStage(intent.File.Path, taskID)
+				if err := e.service.Delete(stage, true); err != nil && !errors.Is(err, os.ErrNotExist) {
+					return task, err
+				}
+			}
 			return e.reconcileTransfer(ctx, task, *intent.File)
 		}
 	}

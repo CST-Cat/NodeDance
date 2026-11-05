@@ -347,6 +347,12 @@ func TestCoreTransfersInExplicitDirectAndRelayModes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(f.sourceRoot, "payload.bin"), content, 0600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Join(f.sourceRoot, "folder/empty"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.sourceRoot, "folder/child.bin"), content, 0640); err != nil {
+		t.Fatal(err)
+	}
 	for _, transport := range []string{"rsync_direct", "rsync_relay"} {
 		f.blockDirect.Store(false)
 		mode := protocol.FileTransferModeRelay
@@ -354,14 +360,24 @@ func TestCoreTransfersInExplicitDirectAndRelayModes(t *testing.T) {
 			mode = protocol.FileTransferModeDirect
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		status, data, err := f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{Mode: mode, TargetNodeID: f.target, Paths: []string{"/payload.bin"}, TargetPath: "/out"}, transport)
+		status, data, err := f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{Mode: mode, TargetNodeID: f.target, Paths: []string{"/payload.bin", "/folder"}, TargetPath: "/out"}, transport)
 		cancel()
 		var result struct {
 			Transferred []fileTransferResult
 			Failed      []fileTransferFailure
 		}
-		if err != nil || status != 200 || json.Unmarshal(data, &result) != nil || len(result.Transferred) != 1 || len(result.Failed) != 0 {
+		if err != nil || status != 200 || json.Unmarshal(data, &result) != nil || len(result.Transferred) != 2 || len(result.Failed) != 0 {
 			t.Fatal("scheduled transfer", status, string(data), err, f.logs.String())
+		}
+		if result.Transferred[1].Transport != transport {
+			t.Fatal("directory used wrong transport", result.Transferred[1])
+		}
+		child, err := os.ReadFile(filepath.Join(f.targetRoot, "out/folder/child.bin"))
+		if err != nil || !bytes.Equal(child, content) {
+			t.Fatal("directory bytes differ", err)
+		}
+		if err := os.RemoveAll(filepath.Join(f.targetRoot, "out/folder")); err != nil {
+			t.Fatal(err)
 		}
 		if result.Transferred[0].Transport != transport {
 			t.Fatalf("wanted %s, got %+v", transport, result.Transferred[0])
@@ -371,7 +387,7 @@ func TestCoreTransfersInExplicitDirectAndRelayModes(t *testing.T) {
 			t.Fatal("destination differs", err)
 		}
 	}
-	if f.controlBytes.Load() != 0 || f.chunkStreams.Load() != 0 || f.relayStreams.Load() != 2 {
+	if f.controlBytes.Load() != 0 || f.chunkStreams.Load() != 0 || f.relayStreams.Load() != 4 {
 		t.Fatalf("wrong data path: control=%d chunk=%d rsync=%d", f.controlBytes.Load(), f.chunkStreams.Load(), f.relayStreams.Load())
 	}
 }
@@ -407,7 +423,7 @@ func TestCoreCancelsChunkTransferBeforeClosingItsDataStream(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{TargetNodeID: f.target, Paths: []string{"/cancel.bin"}, TargetPath: "/out", BandwidthLimit: 128 << 10}, "cancel-chunk")
+		f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{TargetNodeID: f.target, Paths: []string{"/cancel.bin"}, TargetPath: "/out", BandwidthLimit: 0.131072}, "cancel-chunk")
 	}()
 	var taskID string
 	for taskID == "" {
@@ -508,7 +524,7 @@ func TestCoreCancelsRetainsPartialAndRetriesTheOriginalTransfer(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{TargetNodeID: f.target, Paths: []string{"/resume.bin"}, TargetPath: "/out", BandwidthLimit: 128 << 10}, "retained-partial")
+		f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, protocol.FileTransferRequest{TargetNodeID: f.target, Paths: []string{"/resume.bin"}, TargetPath: "/out", BandwidthLimit: 0.131072}, "retained-partial")
 	}()
 	var taskID string
 	for taskID == "" {
@@ -697,5 +713,73 @@ func TestICECandidateDiagnosticsReachCoreFailureResponse(t *testing.T) {
 	}
 	if f.controlBytes.Load() != 0 || f.relayStreams.Load() != 0 || f.chunkStreams.Load() != 0 {
 		t.Fatal("failed direct attempt used a Core data relay")
+	}
+}
+
+func TestCoreDirectoryChunkTransferRejectsConflictsAndRecursiveDestination(t *testing.T) {
+	f := newTransferIntegrationFixture(t, true)
+	if err := os.MkdirAll(filepath.Join(f.sourceRoot, "folder/empty"), 0750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.sourceRoot, "folder/child.txt"), []byte("folder payload"), 0640); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	request := protocol.FileTransferRequest{TargetNodeID: f.target, Paths: []string{"/folder"}, TargetPath: "/out", BandwidthLimit: 0.25}
+	status, data, err := f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, request, "directory-batch")
+	var result struct {
+		Transferred []fileTransferResult
+		Failed      []fileTransferFailure
+	}
+	if err != nil || status != 200 || json.Unmarshal(data, &result) != nil || len(result.Transferred) != 1 || result.Transferred[0].Transport != "chunk_relay" {
+		t.Fatal(status, string(data), err, f.logs.String())
+	}
+	actual, err := os.ReadFile(filepath.Join(f.targetRoot, "out/folder/child.txt"))
+	if err != nil || string(actual) != "folder payload" {
+		t.Fatal(string(actual), err)
+	}
+	response, err := f.admin.client.Get(f.admin.base + "/api/v1/nodes/" + f.target + "/files/transfer-status?requestKey=directory-batch&count=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(response.Body)
+	response.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	observed := response.StatusCode
+	var progress struct {
+		Items []struct {
+			Index int
+			Task  taskView
+		}
+	}
+	if observed != 200 || json.Unmarshal(body, &progress) != nil || len(progress.Items) != 1 || progress.Items[0].Task.Status != taskstate.Succeeded || !progress.Items[0].Task.Transfer.File.Transfer.Directory {
+		t.Fatal(observed, string(body))
+	}
+	for _, key := range []string{"directory-batch", "new-conflicting-batch"} {
+		status, data, err = f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, request, key)
+		if err != nil || status != 200 || json.Unmarshal(data, &result) != nil {
+			t.Fatal(status, string(data), err)
+		}
+		if key == "directory-batch" && len(result.Transferred) != 1 {
+			t.Fatal("idempotent directory changed", string(data))
+		}
+		if key != "directory-batch" && len(result.Failed) != 1 {
+			t.Fatal("existing tree was overwritten", string(data))
+		}
+	}
+	request.TargetNodeID, request.TargetPath = f.source, "/folder"
+	status, data, err = f.request(ctx, "files.transfer", map[string]string{"nodeId": f.source}, request, "recursive-folder")
+	result = struct {
+		Transferred []fileTransferResult
+		Failed      []fileTransferFailure
+	}{}
+	if err != nil || status != 200 || json.Unmarshal(data, &result) != nil || len(result.Failed) != 1 {
+		t.Fatal("recursive transfer accepted", status, string(data), err)
+	}
+	if f.controlBytes.Load() != 0 {
+		t.Fatal("directory bytes leaked into control")
 	}
 }

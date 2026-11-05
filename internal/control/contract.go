@@ -155,7 +155,7 @@ func describeTransport(o *Operation) {
 		require("kind", "scopeType", "startsAt", "endsAt")
 	case "files.transfer":
 		field("paths", map[string]any{"maxItems": 100, "items": map[string]any{"type": "string", "maxBytes": 4096}})
-		field("bandwidthLimit", map[string]any{"anyOf": []any{map[string]any{"type": "integer", "enum": []any{0}}, map[string]any{"type": "integer", "minimum": 1024, "maximum": protocol.MaxFileSize}}, "default": 0, "description": "Bytes/s: 0 unlimited; nonzero values must be at least 1024"})
+		field("bandwidthLimit", map[string]any{"anyOf": []any{map[string]any{"type": "integer", "enum": []any{0}}, map[string]any{"type": "number", "minimum": 1024.0 / 1000000, "maximum": float64(protocol.MaxFileSize) / 1000000}}, "default": 0, "description": "MB/s (1 MB = 1,000,000 bytes): 0 unlimited; decimals supported; nonzero values must be at least 0.001024"})
 		o.Headers["Idempotency-Key"].(map[string]any)["maxBytes"] = taskstate.MaxIdempotencyKeyBytes - 3
 		o.MaxBodyBytes = 512 * 1024
 	case "files.action":

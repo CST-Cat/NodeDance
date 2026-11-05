@@ -37,6 +37,10 @@ func (s *Server) handleFilesAPI(w http.ResponseWriter, r *http.Request, current 
 		s.handleCreateFileTask(w, r, current, nodeID)
 		return true
 	}
+	if operation == "transfer-status" {
+		s.handleFileTransferStatus(w, r, nodeID)
+		return true
+	}
 	if operation == "transfer" {
 		s.handleFileTransfer(w, r, current, nodeID)
 		return true
@@ -133,7 +137,7 @@ func filesRoute(requestPath string) (nodeID, operation string, ok bool) {
 	}
 	if len(parts) == 3 {
 		switch parts[2] {
-		case "stat", "text", "download", "preview", "search", "tasks", "upload", "transfer":
+		case "stat", "text", "download", "preview", "search", "tasks", "upload", "transfer", "transfer-status":
 			return parts[0], parts[2], true
 		}
 	}
@@ -145,7 +149,7 @@ func (s *Server) runFileOperation(ctx context.Context, current *session, nodeID 
 	if err != nil {
 		return protocol.FileResponse{}, err
 	}
-	defer s.closeCoreFileTransfer(connection, transfer, false, nil)
+	defer func() { s.closeCoreFileTransfer(connection, transfer, ctx.Err() != nil, nil) }()
 	payload, err := json.Marshal(request)
 	if err != nil || len(payload) > protocol.MaxFileControlBytes {
 		return protocol.FileResponse{}, errors.New("file request exceeds its protocol bound")
