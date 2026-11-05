@@ -22,9 +22,40 @@ type rsyncCommitError struct{ cause error }
 func (e rsyncCommitError) Error() string { return e.cause.Error() }
 func (e rsyncCommitError) Unwrap() error { return e.cause }
 
+// directAttemptChain prunes the four direct layers by the operator-maintained
+// line type of both nodes. Unknown labels always run the full chain.
+func directAttemptChain(source, target protocol.NodeAsset) []string {
+	full := []string{"tcp", "reverse", "tcp_punch", "ice"}
+	if !protocol.ValidNodeLineType(source.LineType) || !protocol.ValidNodeLineType(target.LineType) {
+		return full
+	}
+	sourceType, targetType := source.LineType, target.LineType
+	if sourceType == "" || targetType == "" {
+		return full
+	}
+	declaredPort := source.DirectListenPort > 0 || target.DirectListenPort > 0
+	homelab := sourceType == protocol.LineTypeHomelab || targetType == protocol.LineTypeHomelab
+	if homelab {
+		return []string{"tcp_punch", "ice"}
+	}
+	if sourceType == protocol.LineTypeNAT || targetType == protocol.LineTypeNAT {
+		if declaredPort {
+			return full
+		}
+		return []string{"tcp_punch", "ice"}
+	}
+	return full
+}
+
 func (s *Server) runRsyncMode(ctx context.Context, current *session, descriptor protocol.FileTransferDescriptor, mode string) (string, error) {
 	attempts := []string{"tcp", "reverse", "tcp_punch", "ice"}
-	if mode == protocol.FileTransferModeRelay {
+	if mode == protocol.FileTransferModeDirect {
+		sourceAsset, sourceErr := s.nodeAsset(ctx, descriptor.File.Transfer.SourceNodeID)
+		targetAsset, targetErr := s.nodeAsset(ctx, descriptor.TargetNodeID)
+		if sourceErr == nil && targetErr == nil {
+			attempts = directAttemptChain(sourceAsset, targetAsset)
+		}
+	} else {
 		attempts = []string{"", ""}
 	}
 	var attemptErrors []error

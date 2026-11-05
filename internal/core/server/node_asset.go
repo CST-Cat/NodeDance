@@ -119,3 +119,21 @@ func assetSamples(node, name string, a protocol.NodeAsset, h *protocol.MetricsHo
 	}
 	return []corealerts.Sample{expiry, traffic}
 }
+
+// seedNodeLineType stores an Agent-detected line type on a freshly enrolled
+// node without overwriting a label an operator may already have set.
+func (s *Server) seedNodeLineType(ctx context.Context, node, lineType string) {
+	if !protocol.ValidNodeLineType(lineType) || lineType == "" {
+		return
+	}
+	asset, err := s.nodeAsset(ctx, node)
+	if err != nil || asset.LineType != "" {
+		return
+	}
+	asset.LineType = lineType
+	if err := protocol.ValidateNodeAsset(asset); err != nil {
+		return
+	}
+	raw, _ := json.Marshal(asset)
+	_, _ = s.store.DB.ExecContext(ctx, `INSERT INTO node_assets(node_id,settings_json,updated_at) VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at`, node, string(raw), s.now().Unix())
+}

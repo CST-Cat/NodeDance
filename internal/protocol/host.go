@@ -437,6 +437,17 @@ type NodeAsset struct {
 	TrafficWarningPercent float64    `json:"trafficWarningPercent"`
 	DirectListenPort      int        `json:"directListenPort"`
 	DirectPublicPort      int        `json:"directPublicPort"`
+	LineType              string     `json:"lineType,omitempty"`
+}
+
+const (
+	LineTypeKVM     = "kvm"
+	LineTypeNAT     = "nat"
+	LineTypeHomelab = "homelab"
+)
+
+func ValidNodeLineType(value string) bool {
+	return value == "" || value == LineTypeKVM || value == LineTypeNAT || value == LineTypeHomelab
 }
 
 // Currencies lists the supported billing currencies published in the operation
@@ -457,6 +468,9 @@ func ValidateNodeAsset(a NodeAsset) error {
 	}
 	if a.DirectListenPort < 0 || a.DirectListenPort > 65535 || a.DirectPublicPort < 0 || a.DirectPublicPort > 65535 {
 		return errors.New("invalid direct transfer port settings")
+	}
+	if !ValidNodeLineType(a.LineType) {
+		return errors.New("invalid node line type")
 	}
 	switch a.BillingCycleUnit {
 	case "", "day", "year", "month", "hour", "minute":

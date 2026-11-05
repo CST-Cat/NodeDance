@@ -58,6 +58,17 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
     return () => { controller.abort(); pending.current?.abort(); };
   }, [sourceNodeId]);
   const targetNode = nodes.find(node => node.nodeId === targetId);
+  const [lineTypes, setLineTypes] = useState<{ source: string; target: string }>({ source: "", target: "" });
+  useEffect(() => {
+    const controller = new AbortController();
+    const fetchType = (nodeId: string) => operationRequest<{ lineType?: string }>("nodes.asset", { params: { nodeId } }, { signal: controller.signal }).then(asset => asset.lineType ?? "").catch(() => "");
+    void Promise.all([fetchType(sourceNodeId), targetId && targetId !== sourceNodeId ? fetchType(targetId) : Promise.resolve("")]).then(([source, target]) => {
+      if (!controller.signal.aborted) setLineTypes({ source, target });
+    });
+    return () => controller.abort();
+  }, [sourceNodeId, targetId]);
+  const relayHint = [lineTypes.source, lineTypes.target].filter(Boolean).length === 2 &&
+    ([lineTypes.source, lineTypes.target].includes("homelab") && [lineTypes.source, lineTypes.target].every(value => value === "homelab" || value === "nat"));
   async function start() {
     const controller = new AbortController();
     pending.current = controller;
@@ -103,6 +114,7 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
               <TabsTrigger value="direct" disabled={busy || done}>{x("modeDirect")}</TabsTrigger>
             </TabsList>
           </Tabs>
+          {relayHint ? <span className="file-transfer-hint">{x("relayHint")}</span> : null}
         </div>
         <div className="file-transfer-field">
           <span className="file-transfer-label">{x("bandwidth")}</span>

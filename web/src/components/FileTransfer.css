@@ -135,3 +135,10 @@
   font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
+
+.file-transfer-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--surface-muted-foreground, var(--muted-foreground, inherit));
+}

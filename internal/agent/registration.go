@@ -137,7 +137,7 @@ func Recover(ctx context.Context, configPath string) error {
 }
 
 func consumeEnrollment(ctx context.Context, client *http.Client, config Config) (assignedIdentity, error) {
-	body, err := json.Marshal(map[string]string{"requestId": config.RequestID, "credential": config.Credential})
+	body, err := json.Marshal(map[string]string{"requestId": config.RequestID, "credential": config.Credential, "lineType": DetectLineType()})
 	if err != nil {
 		return assignedIdentity{}, err
 	}

@@ -42,6 +42,17 @@ export default function NodeAssetFields(input: Props) {
       const currencies = derived(() => [
         ...(props.schema?.properties?.currency?.enum ?? []),
       ]);
+      const lineTypes = derived(() =>
+        (props.schema?.properties?.lineType?.enum ?? []).filter(
+          (value) => value !== "",
+        ),
+      );
+      const lineType = derived({
+        get: () => String(props.values.lineType || ""),
+        set: (value) => {
+          props.values.lineType = value;
+        },
+      });
       const purchase = derived({
         get: () =>
           props.values.purchasedAt
@@ -210,6 +221,35 @@ export default function NodeAssetFields(input: Props) {
                             data-v-f325f884=""
                           >
                             {t(unitLabels[String(unit)] ?? String(unit))}
+                          </option>
+                        ))}
+                      </Fragment>
+                    </UiSelect>
+                  </label>
+                  <label data-v-f325f884="">
+                    <span data-v-f325f884="">
+                      {t("asset.lineType")}
+                    </span>
+                    <UiSelect
+                      data-testid="asset-line-type"
+                      modelValue={lineType.value}
+                      onUpdateModelValue={(__nextValue: any) => {
+                        lineType.value = __nextValue;
+                      }}
+                      modelModifiers={{}}
+                      data-v-f325f884=""
+                    >
+                      <Fragment>
+                        <option key="empty" value="" data-v-f325f884="">
+                          {t("asset.lineType.unknown")}
+                        </option>
+                        {__each(lineTypes.value, (value) => (
+                          <option
+                            key={String(value) as any}
+                            value={value as any}
+                            data-v-f325f884=""
+                          >
+                            {t(`asset.lineType.${String(value)}`)}
                           </option>
                         ))}
                       </Fragment>

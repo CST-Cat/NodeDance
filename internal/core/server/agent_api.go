@@ -17,6 +17,7 @@ import (
 type consumeAgentEnrollmentRequest struct {
 	RequestID  string `json:"requestId"`
 	Credential string `json:"credential"`
+	LineType   string `json:"lineType,omitempty"`
 }
 
 type agentIdentityResponse struct {
@@ -38,7 +39,7 @@ func (s *Server) handleAgentEnroll(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &request) {
 		return
 	}
-	if !validUUID(request.RequestID) || !validDeviceCredential(request.Credential) {
+	if !validUUID(request.RequestID) || !validDeviceCredential(request.Credential) || !protocol.ValidNodeLineType(request.LineType) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
@@ -51,6 +52,7 @@ func (s *Server) handleAgentEnroll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "enrollment failed", http.StatusInternalServerError)
 		return
 	}
+	s.seedNodeLineType(r.Context(), identity.NodeID, request.LineType)
 	writeJSON(w, http.StatusCreated, agentIdentityResponse{AgentID: identity.AgentID, NodeID: identity.NodeID, DisplayName: identity.DisplayName, Status: identity.Status, CredentialState: "active"})
 }
 
