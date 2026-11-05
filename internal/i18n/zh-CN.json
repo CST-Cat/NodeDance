@@ -73,6 +73,7 @@
   "NodeDance Agent %s\n": "NodeDance Agent %s\n",
   "NodeDance Agent - outbound-only Linux host management agent": "NodeDance Agent - 仅向外连接的 Linux 主机管理 Agent",
   "Usage:": "用法：",
+  "  nodedance agent update [--check | --status]  # local root Agent maintenance": "  nodedance agent update [--check | --status]  # 本机 root Agent 维护",
   "  nodedance-agent enroll --server https://core.example --token-stdin [--ca-file path] [--config path]": "  nodedance-agent enroll --server https://core.example --token-stdin [--ca-file path] [--config path]",
   "  nodedance-agent recover [--config path]": "  nodedance-agent recover [--config path]",
   "  nodedance-agent run [--config path]": "  nodedance-agent run [--config path]",
