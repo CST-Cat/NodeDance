@@ -109,7 +109,9 @@ func (g *GitHub) Resolve(ctx context.Context, component, tag string) (Release, e
 	return release, nil
 }
 func (g *GitHub) Download(ctx context.Context, release Release, path string) error {
-	if ValidDevVersion(release.Version) { return g.downloadDev(ctx, release, path) }
+	if ValidDevVersion(release.Version) {
+		return g.downloadDev(ctx, release, path)
+	}
 	raw, err := g.fetch(ctx, release.ChecksumURL, 1<<20)
 	if err != nil {
 		return err

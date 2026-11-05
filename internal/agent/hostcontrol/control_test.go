@@ -2,8 +2,8 @@ package hostcontrol
 
 import (
 	"context"
-	"github.com/CST-Cat/NodeDance/internal/update"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
+	"github.com/CST-Cat/NodeDance/internal/update"
 	"os"
 	"path/filepath"
 	"strings"
@@ -157,12 +157,12 @@ func TestRemoteControlPolicyRejectsNewScriptsAndCancelsRunning(t *testing.T) {
 func TestAutomaticUpdateChannelBoundary(t *testing.T) {
 	revision := "agent-dev-" + strings.Repeat("a", 40)
 	tests := []struct {
-		name string
-		channel string
-		current string
-		available bool
+		name       string
+		channel    string
+		current    string
+		available  bool
 		configured bool
-		want bool
+		want       bool
 	}{
 		{"stable current, stable channel", "stable", "agent-v0.1.1", true, true, true},
 		{"unconfigured stable, dev installed", "", revision, true, true, false},
