@@ -11,11 +11,19 @@ nodedance agent update  # 更新本机 Agent / Update the local Agent
 
 `nodedance agent update` 默认更新本机 Agent，需要 root，由 `nodedance` 直接调用共用的内置更新流程。通过 Core 更新指定远端 Agent 时仍需选择节点，这是更新目标的选择，不是安装更新器：
 
-The `nodedance agent update` command updates the local managed Agent and requires root. It runs the shared built-in transaction directly from `nodedance`. Selecting a remote Agent through Core still requires its node ID:
+The `nodedance agent update` command updates the local managed Agent and requires root. It runs the shared built-in transaction directly from `nodedance`. Remote Agent updates accept a node name or full ID and reuse the saved Core connection:
 
 ```sh
-nodedance update --server https://core.example --component agent --node-id NODE_UUID
+nodedance update --node 'Node 2'
 ```
+
+先用 `nodedance auth login --server https://core.example --body @/private/login.json` 登录一次。之后 `--node 名称或完整UUID` 自动选择 Agent，复用已保存的 Core 地址、登录、Origin 与私有 CA；无需重复 `--server`、`--component agent` 和长 UUID。名称精确匹配 Core 的 `displayName`，重名、空目标或不存在时拒绝提交；已有 `--node-id UUID` 也自动选择 Agent。检查、历史和回滚使用相同目标参数。TUI 选择 `client.update`，输入同一参数数组，例如 `["--node","Node 2","--channel","dev"]`，复用当前 TUI 连接。
+
+Sign in once with `nodedance auth login --server https://core.example --body @/private/login.json`. `--node NAME_OR_UUID` infers the Agent component and preserves the saved server, login, Origin and private CA. Names match Core's `displayName` exactly; ambiguous, empty or missing targets fail before submission. `--node-id UUID` also infers Agent. Checks, history and rollback use the same target selection. TUI's `client.update` executes the same arguments and inherits its current connection.
+
+Core 源码 Beta 可用 `sudo nodedance update --channel beta`，远端 Core 则显式添加 `--server URL`。本机默认更新仍独立于保存的远端连接。`--channel beta` 与 `--version beta` 选择相同的现有源码更新事务，会强制覆盖源码工作区；不会创建发布标签。
+
+Use `sudo nodedance update --channel beta` for local Core source Beta, or explicitly add `--server URL` for remote Core. Default local updates remain independent of saved remote connections. This selects the same existing hard-overwrite source transaction as `--version beta` and creates no release tag.
 
 ## Agent development channel
 
@@ -24,7 +32,9 @@ The default Stable channel continues to resolve published `agent-vMAJOR.MINOR.PA
 ```sh
 sudo nodedance agent update --channel dev --check
 sudo nodedance agent update --channel dev
-nodedance update --server https://core.example --component agent --node-id NODE_UUID --channel dev
+nodedance update --node 'Node 2' --channel dev
+nodedance update --node 'Node 2' --channel dev --check
+nodedance update --node 'Node 2' --status
 ```
 
 To automatically follow Dev, set `updateChannel` to `dev` with the authenticated Agent configuration operation and enable `autoUpdate`; empty or `stable` keeps the default Stable behavior. `--channel dev` selects the channel for one manual update only and does not mutate saved Agent settings. An Agent running Dev is never automatically downgraded to Stable merely because the saved channel is Stable; automatic Dev updates require explicitly selecting Dev in Agent settings. To return to Stable from Dev, run an explicit Stable update; manual version changes never implicitly change the persistent automatic-update channel. Failed automatic attempts are retried with fresh idempotency keys on the next scheduled check, while interrupted submissions retain their individual request identity. The first new GHCR binaries package must be publicly readable for anonymous Agent downloads; configure its package visibility after first publication if necessary. No Dev artifacts are published on PR builds.

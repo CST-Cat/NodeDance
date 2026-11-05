@@ -59,3 +59,23 @@ func TestLocalRollbackCancellationDoesNotLookUpOrApplyRelease(t *testing.T) {
 		t.Fatal("cancelled rollback performed a request")
 	}
 }
+
+func TestLocalUpdateChannelSelectsTheSharedRequest(t *testing.T) {
+	for _, entry := range []struct{ component, channel string }{{"core", "beta"}, {"agent", "dev"}} {
+		called := false
+		invoke := func(_ context.Context, _ string, _ string, rpc RPC) (Response, error) {
+			called = true
+			if rpc.Action != "check" || rpc.Request.Component != entry.component || rpc.Request.Version != entry.channel {
+				t.Fatalf("wrong channel request: %+v", rpc)
+			}
+			return Response{Status: 200, Data: json.RawMessage(`{}`)}, nil
+		}
+		if err := local(context.Background(), entry.component, "/unused", []string{"--channel", entry.channel, "--check"}, strings.NewReader(""), io.Discard, io.Discard, invoke); err != nil || !called {
+			t.Fatal(entry, err)
+		}
+		called = false
+		if err := local(context.Background(), entry.component, "/unused", []string{"--channel", entry.channel, "--version", "other", "--check"}, strings.NewReader(""), io.Discard, io.Discard, invoke); err == nil || called {
+			t.Fatal("conflicting channel/version reached the executor")
+		}
+	}
+}

@@ -218,7 +218,7 @@ CLI and TUI share `terminalOperations`, `executeFinite`, the Core client, JSONL 
 | `windows.delete` | json | id | — | — | discovered / shared execution / discovered |
 | `windows.list` | json | — | — | — | discovered / shared execution / discovered |
 
-## Local maintenance and terminal workflows (17)
+## Local maintenance and terminal workflows (19)
 
 | Operation | CLI and TUI | Web |
 | --- | --- | --- |
@@ -226,6 +226,7 @@ CLI and TUI share `terminalOperations`, `executeFinite`, the Core client, JSONL 
 | `agent.install-systemd` | shared local dispatch | local host operation; no remote Web privilege |
 | `agent.prepare-systemd-state` | shared local dispatch | local host operation; no remote Web privilege |
 | `agent.recover` | shared local dispatch | local host operation; no remote Web privilege |
+| `agent.rsync-version` | shared local dispatch | local host operation; no remote Web privilege |
 | `agent.run` | shared local dispatch | local host operation; no remote Web privilege |
 | `agent.tmux-version` | shared local dispatch | local host operation; no remote Web privilege |
 | `agent.uninstall-systemd` | shared local dispatch | local host operation; no remote Web privilege |
@@ -236,6 +237,7 @@ CLI and TUI share `terminalOperations`, `executeFinite`, the Core client, JSONL 
 | `client.batch` | shared local dispatch | local host operation; no remote Web privilege |
 | `client.update` | shared local dispatch | local host operation; no remote Web privilege |
 | `core.backup` | shared local dispatch | local host operation; no remote Web privilege |
+| `core.devweb` | shared local dispatch | local host operation; no remote Web privilege |
 | `core.restore` | shared local dispatch | local host operation; no remote Web privilege |
 | `core.serve` | shared local dispatch | local host operation; no remote Web privilege |
 | `core.version` | shared local dispatch | local host operation; no remote Web privilege |

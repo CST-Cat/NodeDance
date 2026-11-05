@@ -9,9 +9,12 @@ nodedance operations
 nodedance describe containers.action
 nodedance describe files.action
 nodedance describe channels.create
+nodedance operations --offline  # bundled contract and local maintenance without Core
 ```
 
-The JSON catalog includes names, descriptions, HTTP paths/methods, path parameters, allowed query parameters, body schemas, transport kinds and idempotency requirements. Body schemas describe input shape; Core remains authoritative for enum values, bounds, revisions, confirmations and permissions. Local operation schemas describe a string array of native command arguments.
+The JSON catalog includes names, descriptions, HTTP paths/methods, path parameters, allowed query parameters, body schemas, transport kinds and idempotency requirements. `operations` and `describe` discover the connected Core using the saved connection by default and include the shared local-maintenance entries. Discovery failures remain errors; `--offline` explicitly inspects this binary without contacting Core. Body schemas describe input shape; Core remains authoritative for enum values, bounds, revisions, confirmations and permissions. Local operation schemas describe a string array of native command arguments.
+
+`operations`／`describe` 默认复用保存的连接，读取当前 Core 契约并附加共享本地维护入口；连接失败不会静默替换成本机旧目录。明确离线查看使用 `--offline`。
 
 ```sh
 export NODEDANCE_SERVER=https://core.example
@@ -78,7 +81,7 @@ CLI、TUI 通过相同的 `rules.list`、`rules.update` 操作管理规则。更
 
 ## Tasks and files
 
-Multi-node transfers use the discovered `files.transfer` operation with a source node, target node/directory, regular-file paths and optional bandwidth in bytes/s. Core chooses direct Agent WSS, dedicated Core WSS rsync relay or chunk fallback. Observe and cancel the target task through `tasks.*`; retry a confirmed failed/canceled/timed-out task through `files.transfer-retry` with a new idempotency key. TUI exposes the same inputs and workflow. [Transfer integrity and recovery](file-transfers.md).
+Multi-node transfers use the discovered `files.transfer` operation with a source node, target node/directory, regular-file paths, explicit `mode: "direct" | "relay"` and optional bandwidth in bytes/s. Direct attempts forward TCP, reverse TCP, authenticated TCP hole punching and UDP ICE; unreachable direct paths fail explicitly. Relay explicitly uses dedicated Core WSS rsync or chunk fallback. Observe and cancel the target task through `tasks.*`; retry a confirmed failed/canceled/timed-out task through `files.transfer-retry` with a new idempotency key. TUI exposes the same inputs and workflow. [Transfer integrity and recovery](file-transfers.md).
 
 Supply a stable `--idempotency-key` for task operations. Reuse it for a retry of the exact same intent; a new key means a new intent. The client never silently generates a new key or retries mutations.
 
@@ -204,9 +207,9 @@ Web 操作中心支持契约声明的请求头、版本条件、上传约定、�
 
 `make check` regenerates neither code nor documentation: it checks the committed capability matrix against the shared catalogue and runs the Go/Web checks. `pnpm --dir web audit:interfaces` builds an isolated Core and tests actual browser behavior without Agents or privileged services. `audit:design` is the separate light/dark/mobile fixture matrix. Existing rootful Docker/Agent/update tests remain opt-in; they are not implied by browser or catalogue coverage.
 
-The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus discover their operations, schemas, routes, and transports from this endpoint. Web uses the same contract for every request, stream, terminal, upload, and download; its Operations page generates forms from the catalog. Adding a Core operation makes it immediately available in all three generic interfaces without updating client operation lists. Core and Agent remain responsible for validation, authorization, auditing, and destructive-action confirmation. Specialized pages only customize presentation. `nodedance operations` without a server provides offline inspection of the contract compiled into that Core binary; use `--server` to inspect the running Core.
+The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus discover their operations, schemas, routes, and transports from this endpoint. Web uses the same contract for every request, stream, terminal, upload, and download; its Operations page generates forms from the catalog. Adding a Core operation makes it immediately available in all three generic interfaces without updating client operation lists. Core and Agent remain responsible for validation, authorization, auditing, and destructive-action confirmation. Specialized pages only customize presentation. `nodedance operations` uses the connected Core; `--offline` explicitly inspects the contract compiled into this binary.
 
-连接的 Core 发布 `/api/v1/operations`，CLI 调用与 TUI 菜单从该入口读取操作、schema、路由及传输类型。Web 的请求、流、终端、上传和下载使用同一契约；操作中心依据目录自动生成表单。Core 增加操作后，三端通用入口自动提供，无需分别维护客户端操作清单。验证、授权、审计和危险操作确认仍由 Core 与 Agent 处理，专用页面只定制展示。未指定服务器的 `nodedance operations` 用于离线查看当前 Core 二进制内的契约；使用 `--server` 查看运行中 Core 的实际契约。
+连接的 Core 发布 `/api/v1/operations`，CLI 调用与 TUI 菜单从该入口读取操作、schema、路由及传输类型。Web 的请求、流、终端、上传和下载使用同一契约；操作中心依据目录自动生成表单。Core 增加操作后，三端通用入口自动提供，无需分别维护客户端操作清单。验证、授权、审计和危险操作确认仍由 Core 与 Agent 处理，专用页面只定制展示。`nodedance operations` 默认查看已连接 Core 的实际契约；明确离线查看当前二进制使用 `--offline`。
 
 `appearance.update` also accepts the optional shared login shark roster as `sharks: [{kind, size}]`. Core stores it with the existing shared appearance settings, and `appearance.get` / `profile.get` return it. Personal Settings and the login animation use this same Core value; CLI and TUI discover the supported shark kinds from the operation schema.
 
@@ -249,6 +252,10 @@ File editing supports up to 8 MiB UTF-8 text. Body input and text response bound
 Node lifecycle is shared with Web: discover `nodes.renew-enrollment` to regenerate native/Docker commands for an existing pending node (body: `coreUrl`, `deploymentMethod`), and `nodes.delete` to remove any node state (body: `confirm: true`). Both use `nodeId` as a path parameter and are available in CLI/TUI generic operation forms. Renewal invalidates previous tokens; deletion does not uninstall Agent or stop already dispatched remote work.
 
 `nodedance update` defaults to updating the local Core as root without login; `nodedance agent update` independently updates the local managed Agent as root without login. Explicit remote update targets still require authentication. Neither needs a separate update program, registration step or additional update parameters. / 两个默认更新命令均无需独立更新程序、登记步骤或额外更新参数。
+
+After signing in, `nodedance update --node 'Node 2' --channel dev` updates that remote Agent through the saved Core connection. The same `--node` target supports `--check`, `--status` and `--rollback JOB`. Names match exactly and must be unique; use a full UUID when ambiguous. `sudo nodedance update --channel beta` selects the existing local Core source transaction. TUI's `client.update` uses the same argument arrays and executor. See [built-in updates](updates.md) and the [recent capability audit](core-convergence-audit.md).
+
+登录后，远端 Agent 更新简化为 `nodedance update --node '节点 2' --channel dev`，不必重复 Core 地址、组件和 UUID。TUI 选择 `client.update` 使用同样参数。`agent.rsync-version`／`nodedance agent --rsync-version` 查询本机 Agent 内置 rsync；TUI 的 `core.devweb` 仅在明确选择时运行隔离预览。
 
 Agent enrollment supports an optional `asset` object with monthly traffic quota (`trafficLimitBytes`), purchase date (`purchasedAt`, calendar date at UTC midnight), VPS expiry (`expiresAt`, ISO UTC), renewal price/currency, and `billingCycleUnit` (`year`, `month`, `hour`, `minute`, or custom `day` with `billingCycleDays`). Read the connected `agents.enrollment` / `nodes.renew-enrollment` schema; Core validates and saves the node, credential and asset atomically. Use `nodes.asset` and `nodes.save-asset` for later changes, including while the Agent is offline. A zero quota removes the limit; a null expiry clears the date. The shared discovered CLI and TUI workflows expose all these inputs.
 

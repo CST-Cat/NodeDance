@@ -78,7 +78,7 @@ func TestLocalizedCatalogKeepsMachineContract(t *testing.T) {
 		language string
 		output   *bytes.Buffer
 	}{{"en", &english}, {"zh-CN", &chinese}} {
-		if err := RunWithInput(context.Background(), []string{"operations", "nodes.list", "--lang", entry.language}, lookup, strings.NewReader(""), entry.output, io.Discard, "test"); err != nil {
+		if err := RunWithInput(context.Background(), []string{"operations", "nodes.list", "--offline", "--lang", entry.language}, lookup, strings.NewReader(""), entry.output, io.Discard, "test"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -142,6 +142,8 @@ func TestCLIEnrollmentSelectsDeploymentMethod(t *testing.T) {
 }
 
 func TestCLIUsesOperationAddedOnlyByConnectedCore(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", home)
 	operation := control.Operation{Name: "future.inspect", Method: "GET", Path: "/api/v1/future/{id}", Parameters: []string{"id"}, Query: []string{}, Transport: "json", Description: "Server-only operation"}
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -159,7 +161,7 @@ func TestCLIUsesOperationAddedOnlyByConnectedCore(t *testing.T) {
 	}
 	lookup := func(string) (string, bool) { return "", false }
 	for _, command := range [][]string{{"call", operation.Name, "--params", `{"id":"new"}`}, {"operations", operation.Name}} {
-		args := append(command, "--server", host.URL, "--dev", "--state-dir", filepath.Join(t.TempDir(), "client"))
+		args := append(command, "--server", host.URL, "--dev")
 		var output strings.Builder
 		if err := RunWithInput(context.Background(), args, lookup, strings.NewReader(""), &output, io.Discard, "test"); err != nil {
 			t.Fatal(err)
@@ -167,6 +169,30 @@ func TestCLIUsesOperationAddedOnlyByConnectedCore(t *testing.T) {
 		if !strings.Contains(output.String(), operation.Name) {
 			t.Fatal("server operation was not discovered")
 		}
+	}
+	for _, command := range [][]string{{"operations", operation.Name}, {"describe", operation.Name}, {"operations"}} {
+		var output strings.Builder
+		if err := RunWithInput(context.Background(), command, lookup, strings.NewReader(""), &output, io.Discard, "test"); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(output.String(), operation.Name) || strings.Contains(output.String(), `"nodes.list"`) {
+			t.Fatal("saved Core discovery was replaced by the bundled contract", output.String())
+		}
+		if len(command) == 1 && !strings.Contains(output.String(), "agent.rsync-version") {
+			t.Fatal("connected catalogue omitted shared local maintenance")
+		}
+	}
+	if err := RunWithInput(context.Background(), []string{"operations", operation.Name, "--offline"}, lookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err == nil {
+		t.Fatal("offline catalogue unexpectedly discovered a server-only operation")
+	}
+	offlineLookup := func(name string) (string, bool) {
+		if name == "NODEDANCE_SERVER" {
+			return "https://unavailable.invalid", true
+		}
+		return "", false
+	}
+	if err := RunWithInput(context.Background(), []string{"operations", "nodes.list", "--offline"}, offlineLookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err != nil {
+		t.Fatal("explicit offline inspection depended on a configured server", err)
 	}
 }
 

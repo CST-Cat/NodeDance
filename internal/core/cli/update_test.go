@@ -78,14 +78,19 @@ func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
 		case "/api/v1/discovered/check":
 			preflights.Add(1)
 			json.NewEncoder(w).Encode(update.Check{Component: "core", Current: "core-v0.1.8", Latest: "core-v0.1.9", Available: true, Configured: true})
+		case "/api/v1/nodes":
+			io.WriteString(w, `{"nodes":[{"nodeId":"node-two","displayName":"Node 2"}]}`)
 		case "/api/v1/auth/csrf":
 			io.WriteString(w, `{"token":"csrf"}`)
 		case "/api/v1/discovered/apply":
 			submissions.Add(1)
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
-			if body["confirm"] != true || body["version"] != nil || r.Header.Get("Idempotency-Key") == "" {
+			if body["confirm"] != true || r.Header.Get("Idempotency-Key") == "" {
 				t.Error("incorrect update confirmation or pinned release")
+			}
+			if body["version"] != nil && (body["version"] != "dev" || body["nodeId"] != "node-two" || body["component"] != "agent") {
+				t.Error("TUI short update did not use the shared target resolution")
 			}
 			w.WriteHeader(202)
 			io.WriteString(w, `{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"queued"}`)
@@ -119,6 +124,12 @@ func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
 	if submissions.Load() != 2 {
 		t.Fatal("TUI did not update directly through the shared workflow")
 	}
+	driveTerminal(t, host.URL, []tuiStep{
+		{"Select:", "/client.update"}, {"Filter: client.update", "1"}, {"Arguments as JSON array", `["--node","Node 2","--channel","dev","--no-wait"]`}, {"Enter to return:", ""}, {"Select:", "q"},
+	})
+	if submissions.Load() != 3 {
+		t.Fatal("TUI did not submit the short Agent update")
+	}
 	if preflights.Load() != 1 {
 		t.Fatalf("manual CLI/TUI performed a redundant preflight: %d", preflights.Load())
 	}
@@ -128,6 +139,7 @@ func TestRemoteUpdateUsesSavedSessionAndPrivateCA(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", home)
 	var submitted atomic.Int32
+	requests := make(chan update.Request, 8)
 	host := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/auth/csrf":
@@ -142,14 +154,33 @@ func TestRemoteUpdateUsesSavedSessionAndPrivateCA(t *testing.T) {
 			}
 			switch r.URL.Path {
 			case "/api/v1/operations":
-				json.NewEncoder(w).Encode(control.Describe())
-			case "/api/v1/updates/check":
+				catalog := control.Describe()
+				for i := range catalog.Operations {
+					if catalog.Operations[i].Name == "nodes.list" || strings.HasPrefix(catalog.Operations[i].Name, "updates.") {
+						catalog.Operations[i].Path = "/api/v1/discovered/" + catalog.Operations[i].Name
+					}
+				}
+				json.NewEncoder(w).Encode(catalog)
+			case "/api/v1/discovered/nodes.list":
+				io.WriteString(w, `{"nodes":[{"nodeId":"node-two","displayName":"Node 2"},{"nodeId":"node-a","displayName":"Duplicate"},{"nodeId":"node-b","displayName":"Duplicate"}]}`)
+			case "/api/v1/discovered/updates.check":
 				json.NewEncoder(w).Encode(update.Check{Component: "core", Current: "core-v0.1.8", Latest: "core-v0.1.9", Available: true, Configured: true})
-			case "/api/v1/updates/apply":
+			case "/api/v1/discovered/updates.apply":
+				if r.Header.Get("Origin") != "https://public.core.example" || r.Header.Get("X-CSRF-Token") != "fixture-csrf" {
+					t.Error("saved public Origin or CSRF was lost")
+				}
+				var request update.Request
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				requests <- request
 				submitted.Add(1)
 				w.WriteHeader(202)
 				io.WriteString(w, `{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"queued"}`)
-			case "/api/v1/updates/status":
+			case "/api/v1/discovered/updates.status":
+				if r.URL.Query().Has("version") {
+					t.Error("status sent a channel as an undeclared version query")
+				}
 				io.WriteString(w, `{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"succeeded","finished":"2026-10-13T00:00:00Z"}`)
 			default:
 				http.NotFound(w, r)
@@ -162,7 +193,7 @@ func TestRemoteUpdateUsesSavedSessionAndPrivateCA(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := filepath.Join(home, "nodedance-client")
-	client, err := control.NewClient(control.ClientOptions{Server: host.URL, StateDir: state, CAFile: ca})
+	client, err := control.NewClient(control.ClientOptions{Server: host.URL, Origin: "https://public.core.example", StateDir: state, CAFile: ca})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,6 +212,44 @@ func TestRemoteUpdateUsesSavedSessionAndPrivateCA(t *testing.T) {
 	}
 	if submitted.Load() != 1 {
 		t.Fatalf("default update submitted %d jobs", submitted.Load())
+	}
+	<-requests
+	for _, args := range [][]string{
+		{"update", "--node", "Node 2", "--channel", "dev", "--no-wait"},
+		{"update", "--node", "node-two", "--channel", "dev", "--no-wait"},
+		{"update", "--node-id", "node-two", "--channel", "dev", "--no-wait"},
+	} {
+		if err := RunWithInput(context.Background(), args, lookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err != nil {
+			t.Fatal(args, err)
+		}
+		request := <-requests
+		if request.Component != "agent" || request.NodeID != "node-two" || request.Version != "dev" || !request.Confirm {
+			t.Fatalf("short update changed target: %+v", request)
+		}
+	}
+	for _, args := range [][]string{
+		{"update", "--node", "Duplicate", "--channel", "dev"},
+		{"update", "--node", "missing", "--channel", "dev"},
+		{"update", "--node", "Node 2", "--component", "core"},
+		{"update", "--node", "Node 2", "--node-id", "node-two"},
+		{"update", "--node", ""},
+		{"update", "--node-id", " "},
+	} {
+		if err := RunWithInput(context.Background(), args, lookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err == nil {
+			t.Fatal("unsafe or unresolved target accepted", args)
+		}
+	}
+	if submitted.Load() != 4 {
+		t.Fatal("unresolved target submitted an update")
+	}
+	if err := RunWithInput(context.Background(), []string{"update", "--node", "Node 2", "--channel", "dev", "--status"}, lookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err != nil {
+		t.Fatal("channel selection broke update observation", err)
+	}
+	if err := RunWithInput(context.Background(), []string{"update", "--server", host.URL, "--channel", "beta", "--no-wait"}, lookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err != nil {
+		t.Fatal("remote Core Beta did not use the shared channel selection", err)
+	}
+	if request := <-requests; request.Component != "core" || request.NodeID != "" || request.Version != "beta" {
+		t.Fatal("remote Core Beta target changed", request)
 	}
 	// An explicit target must never receive a different server's saved cookies.
 	if _, err = control.NewClient(control.ClientOptions{Server: "https://other.example", StateDir: state, UseSavedConnection: true}); err == nil {

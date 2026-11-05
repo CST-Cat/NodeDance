@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -117,10 +118,23 @@ func TestCLIAndTUIObserveTheSameDiscoveredTask(t *testing.T) {
 }
 
 func TestTUILocalMaintenanceWorksWithoutCore(t *testing.T) {
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "nodedance-agent"), []byte("#!/bin/sh\n[ \"$1\" = --rsync-version ] || exit 7\nprintf 'rsync fixture 3.4.1\\n'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	var output strings.Builder
+	if err := runControl(context.Background(), "agent.rsync-version", nil, func(string) (string, bool) { return "", false }, strings.NewReader(""), &output, io.Discard, "test"); err != nil || !strings.Contains(output.String(), "rsync fixture") {
+		t.Fatal("CLI did not dispatch the rsync version command", err)
+	}
 	host := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "unavailable", 503) }))
 	defer host.Close()
 	driveTerminal(t, host.URL, []tuiStep{
 		{"Select:", "/core.version"}, {"Filter: core.version", "1"}, {"Arguments as JSON array", "[]"}, {"Enter to return:", ""}, {"Select:", "q"},
+	})
+	driveTerminal(t, host.URL, []tuiStep{
+		{"Select:", "/agent.rsync-version"}, {"Filter: agent.rsync-version", "1"}, {"Arguments as JSON array", "[]"}, {"rsync fixture 3.4.1", ""},
+		{"Select:", "/core.devweb"}, {"Filter: core.devweb", "1"}, {"Arguments as JSON array", `["--help"]`}, {"Usage of nodedance devweb:", ""}, {"Select:", "q"},
 	})
 }
 
@@ -134,7 +148,7 @@ func TestSharedTerminalCatalogueIncludesLocalWorkflows(t *testing.T) {
 		}
 		seen[o.Name] = true
 	}
-	for _, name := range []string{"future.inspect", "client.update", "core.backup", "core.restore", "agent.enroll", "agent.recover", "agent.tmux-version"} {
+	for _, name := range []string{"future.inspect", "client.update", "core.backup", "core.restore", "core.devweb", "agent.enroll", "agent.recover", "agent.tmux-version", "agent.rsync-version"} {
 		if !seen[name] {
 			t.Fatal("missing terminal capability", name)
 		}

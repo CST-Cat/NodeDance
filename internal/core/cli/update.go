@@ -21,7 +21,7 @@ func updateUsesRemote(args []string, lookup LookupEnv) bool {
 	remote := lookupValue(lookup, "NODEDANCE_SERVER") != ""
 	for i, arg := range args {
 		arg = strings.TrimLeft(arg, "-")
-		if arg == "server" || strings.HasPrefix(arg, "server=") || arg == "node-id" || strings.HasPrefix(arg, "node-id=") || arg == "component=agent" || arg == "component" && i+1 < len(args) && args[i+1] == "agent" {
+		if arg == "server" || strings.HasPrefix(arg, "server=") || arg == "node" || strings.HasPrefix(arg, "node=") || arg == "node-id" || strings.HasPrefix(arg, "node-id=") || arg == "component=agent" || arg == "component" && i+1 < len(args) && args[i+1] == "agent" {
 			remote = true
 		}
 	}
@@ -41,8 +41,9 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	yes := flags.Bool("yes", false, "skip rollback confirmation")
 	component := flags.String("component", "core", "core or agent")
 	node := flags.String("node-id", "", "Agent node ID")
+	nodeName := flags.String("node", "", "Agent node name or full ID; selects Agent updates through the saved Core connection")
 	version := flags.String("version", "", "published component tag; default is newest stable")
-	channel := flags.String("channel", "stable", "stable or dev (Agent only)")
+	channel := flags.String("channel", "stable", "stable, beta (Core), or dev (Agent)")
 	rollback := flags.String("rollback", "", "successful update job ID to roll back")
 	status := flags.Bool("status", false, "show durable update history or --job-id progress")
 	jobID := flags.String("job-id", "", "update job ID for --status")
@@ -54,24 +55,30 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	if flags.NArg() != 0 {
 		return errors.New("unexpected update arguments")
 	}
+	explicit := map[string]bool{}
+	flags.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	if explicit["node"] && explicit["node-id"] {
+		return errors.New("use either --node or --node-id")
+	}
+	if explicit["node"] && strings.TrimSpace(*nodeName) == "" || explicit["node-id"] && strings.TrimSpace(*node) == "" {
+		return errors.New("node target must not be empty")
+	}
+	if explicit["node"] || explicit["node-id"] {
+		if explicit["component"] && *component != "agent" {
+			return errors.New("a node target requires component agent")
+		}
+		*component = "agent"
+	}
+	selectedVersion, err := update.ChannelVersion(*channel, *version)
+	if err != nil {
+		return err
+	}
 	client, err := connection.client()
 	if err != nil {
 		return err
 	}
 	defer client.Close()
-	if *channel != "stable" && *channel != "dev" {
-		return errors.New("update channel must be stable or dev")
-	}
-	if *channel == "dev" && *component != "agent" {
-		return errors.New("dev updates are only available for Agent")
-	}
-	if *channel == "dev" && *version != "" {
-		return errors.New("do not combine --channel dev with --version")
-	}
-	if *channel == "dev" {
-		*version = update.ChannelDev
-	}
-	request := update.Request{Component: *component, NodeID: *node, Version: *version, Confirm: true}
+	request := update.Request{Component: *component, NodeID: *node, Version: selectedVersion, Confirm: true}
 	requestContext := func(parent context.Context) (context.Context, context.CancelFunc) {
 		if *connection.timeout == 0 {
 			return context.WithCancel(parent)
@@ -83,6 +90,12 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	catalog, err := client.Catalog(catalogCtx)
 	if err != nil {
 		return err
+	}
+	if *nodeName != "" {
+		request.NodeID, err = resolveUpdateNode(catalogCtx, client, catalog, *nodeName)
+		if err != nil {
+			return err
+		}
 	}
 	encoder := json.NewEncoder(stdout)
 	encoder.SetIndent("", "  ")
@@ -97,7 +110,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 			if r.NodeID != "" {
 				input.Query["nodeId"] = r.NodeID
 			}
-			if r.Version != "" {
+			if r.Version != "" && action != "status" {
 				input.Query["version"] = r.Version
 			}
 			if r.JobID != "" {
@@ -198,4 +211,42 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 			return nil
 		}
 	}
+}
+
+func resolveUpdateNode(ctx context.Context, client *control.Client, catalog control.Catalog, name string) (string, error) {
+	operation, err := control.FindIn(catalog, "nodes.list")
+	if err != nil {
+		return "", err
+	}
+	result := client.Execute(ctx, operation, control.Input{}, nil, nil)
+	if err := result.Err(); err != nil {
+		return "", err
+	}
+	var response struct {
+		Nodes []struct {
+			ID   string `json:"nodeId"`
+			Name string `json:"displayName"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(result.Data, &response); err != nil {
+		return "", err
+	}
+	for _, node := range response.Nodes {
+		if node.ID == name {
+			return node.ID, nil
+		}
+	}
+	matched := ""
+	for _, node := range response.Nodes {
+		if node.Name == name && node.ID != "" {
+			if matched != "" {
+				return "", fmt.Errorf("node name %q is ambiguous; use the full node ID", name)
+			}
+			matched = node.ID
+		}
+	}
+	if matched == "" {
+		return "", fmt.Errorf("node %q was not found in the connected Core", name)
+	}
+	return matched, nil
 }

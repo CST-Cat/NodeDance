@@ -32,7 +32,7 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 	check := flags.Bool("check", false, "check without updating")
 	status := flags.Bool("status", false, "show update history or job progress")
 	version := flags.String("version", "", "pin a published version")
-	channel := flags.String("channel", "stable", "stable or dev (Agent only)")
+	channel := flags.String("channel", "stable", "stable, beta (Core), or dev (Agent)")
 	job := flags.String("job-id", "", "job to observe")
 	rollback := flags.String("rollback", "", "roll back a successful update")
 	yes := flags.Bool("yes", false, "confirm rollback")
@@ -58,19 +58,11 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 		}
 		dataDir = filepath.Dir(path)
 	}
-	if *channel != "stable" && *channel != "dev" {
-		return errors.New("update channel must be stable or dev")
+	selectedVersion, err := ChannelVersion(*channel, *version)
+	if err != nil {
+		return err
 	}
-	if *channel == "dev" && component != "agent" {
-		return errors.New("dev updates are only available for Agent")
-	}
-	if *channel == "dev" && *version != "" {
-		return errors.New("do not combine --channel dev with --version")
-	}
-	if *channel == "dev" {
-		*version = ChannelDev
-	}
-	request := Request{Component: component, Version: *version, Confirm: true}
+	request := Request{Component: component, Version: selectedVersion, Confirm: true}
 	action := "apply"
 	if *status {
 		action = "status"
@@ -82,7 +74,6 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 	output := json.NewEncoder(stdout)
 	output.SetIndent("", "  ")
 	var response Response
-	var err error
 	if *status || *check {
 		if *check && !*status {
 			action = "check"

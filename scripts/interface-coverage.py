@@ -11,7 +11,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--check', action='store_true')
 args = parser.parse_args()
 catalog = json.loads(subprocess.check_output(
-    ['go', 'run', './cmd/nodedance', 'operations', '--lang', 'en'], cwd=ROOT, text=True))
+    ['go', 'run', './cmd/nodedance', 'operations', '--offline', '--lang', 'en'], cwd=ROOT, text=True))
 remote = [operation for operation in catalog['operations'] if operation['transport'] != 'local']
 local = [operation for operation in catalog['operations'] if operation['transport'] == 'local']
 lines = [

@@ -59,8 +59,9 @@ func (f connectionFlags) client() (*control.Client, error) {
 func localOperations() []control.Operation {
 	result := []control.Operation{}
 	for _, item := range []struct{ name, desc string }{
+		{"core.devweb", "Run the isolated development Web preview only when explicitly selected"},
 		{"client.batch", "Execute finite Core operations from JSONL; shared CLI/TUI preflight, JSONL results, stable identities and private downloads"}, {"client.update", "Update local Core without login; explicit remote targets use the connected Core; confirm rollback"}, {"core.serve", "Run Core; arguments are the same as nodedance serve"}, {"core.backup", "Back up Core to a new private archive"}, {"core.restore", "Restore Core to a new/empty directory"}, {"core.version", "Show Core version"},
-		{"agent.enroll", "Enroll root Agent; --token-stdin; stdin is never placed in process arguments"}, {"agent.recover", "Recover root Agent enrollment"}, {"agent.update", "Update the local root Agent to the latest stable release"}, {"agent.run", "Run root Agent"}, {"agent.install-systemd", "Install root Agent systemd service"}, {"agent.uninstall-systemd", "Remove managed Agent unit; preserve credentials"}, {"agent.validate-systemd-state", "Validate protected Agent credentials"}, {"agent.prepare-systemd-state", "Prepare root-owned Agent state"}, {"agent.validate-file-root", "Validate Agent file root"}, {"agent.version", "Show Agent version"}, {"agent.tmux-version", "Show bundled Agent tmux version"},
+		{"agent.enroll", "Enroll root Agent; --token-stdin; stdin is never placed in process arguments"}, {"agent.recover", "Recover root Agent enrollment"}, {"agent.update", "Update the local root Agent through the stable or dev channel"}, {"agent.run", "Run root Agent"}, {"agent.install-systemd", "Install root Agent systemd service"}, {"agent.uninstall-systemd", "Remove managed Agent unit; preserve credentials"}, {"agent.validate-systemd-state", "Validate protected Agent credentials"}, {"agent.prepare-systemd-state", "Prepare root-owned Agent state"}, {"agent.validate-file-root", "Validate Agent file root"}, {"agent.version", "Show Agent version"}, {"agent.tmux-version", "Show bundled Agent tmux version"}, {"agent.rsync-version", "Show bundled Agent rsync version"},
 	} {
 		result = append(result, control.Operation{Name: item.name, Description: item.desc, Method: "LOCAL", Transport: "local", Parameters: []string{}, Query: []string{}, BodySchema: map[string]any{"type": "array", "items": map[string]string{"type": "string"}}})
 	}
@@ -91,15 +92,6 @@ func runOperations(args []string, stdout io.Writer) error {
 	return encoder.Encode(map[string]any{"version": 1, "operations": localizedOperations(stdout)})
 }
 func runOperationCatalog(ctx context.Context, args []string, lookup LookupEnv, stdout, stderr io.Writer) error {
-	remote := lookupValue(lookup, "NODEDANCE_SERVER") != ""
-	for _, arg := range args {
-		if arg == "--server" || strings.HasPrefix(arg, "--server=") {
-			remote = true
-		}
-	}
-	if !remote {
-		return runOperations(args, stdout)
-	}
 	name := ""
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		name, args = args[0], args[1:]
@@ -107,14 +99,30 @@ func runOperationCatalog(ctx context.Context, args []string, lookup LookupEnv, s
 	flags := flag.NewFlagSet("operations", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	connection := addConnectionFlags(flags, lookup)
+	offline := flags.Bool("offline", false, "inspect this binary's bundled contract and local maintenance without contacting Core")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() > 1 || (flags.NArg() > 0 && name != "") {
-		return errors.New("usage: nodedance operations [NAME] --server URL")
+		return errors.New("usage: nodedance operations [NAME] [--offline | --server URL]")
 	}
 	if flags.NArg() == 1 {
 		name = flags.Arg(0)
+	}
+	if *offline {
+		serverExplicit := false
+		flags.Visit(func(f *flag.Flag) {
+			if f.Name == "server" {
+				serverExplicit = true
+			}
+		})
+		if serverExplicit {
+			return errors.New("--offline cannot be combined with a Core server")
+		}
+		if name == "" {
+			return runOperations(nil, stdout)
+		}
+		return runOperations([]string{name}, stdout)
 	}
 	client, err := connection.client()
 	if err != nil {
@@ -127,6 +135,7 @@ func runOperationCatalog(ctx context.Context, args []string, lookup LookupEnv, s
 	if err != nil {
 		return err
 	}
+	catalog.Operations = terminalOperations(catalog)
 	for i := range catalog.Operations {
 		catalog.Operations[i].Description = i18n.TextFor(stdout, catalog.Operations[i].Description)
 	}
@@ -197,8 +206,8 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 				return runUpdate(ctx, args, lookup, stdin, stdout, stderr)
 			}
 			if strings.HasPrefix(name, "agent.") {
-				if name == "agent.tmux-version" {
-					return runAgentCommand(ctx, append([]string{"--tmux-version"}, args...), stdin, stdout, stderr)
+				if name == "agent.tmux-version" || name == "agent.rsync-version" {
+					return runAgentCommand(ctx, append([]string{"--" + strings.TrimPrefix(name, "agent.")}, args...), stdin, stdout, stderr)
 				}
 				return runAgentCommand(ctx, append([]string{strings.TrimPrefix(name, "agent.")}, args...), stdin, stdout, stderr)
 			}
