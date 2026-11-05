@@ -9,6 +9,9 @@ import (
 )
 
 func TestSaveConfigRequiresExplicitCurrentSchema(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("Agent credential access requires a root test process")
+	}
 	for _, schema := range []int{0, ConfigSchema, ConfigSchema + 1} {
 		t.Run(strconv.Itoa(schema), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "state", "agent.json")
