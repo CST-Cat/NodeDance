@@ -47,7 +47,7 @@
   "development mode; requires a loopback address": "开发模式；必须使用回环地址",
   "unexpected TUI arguments": "TUI 参数无效",
   "TUI requires a terminal; use nodedance operations and nodedance call for automation": "TUI 需要终端；自动化请使用 nodedance operations 和 nodedance call",
-  "\nNumber: open operation | /text: search | n/p: page | q: quit\n": "\n数字：打开操作 | /文本：搜索 | n/p：翻页 | l：语言 | q：退出\n",
+  "\nNumber: open operation | /text: search | n/p: page | r: refresh Core | l: language | q: quit\n": "\n数字：打开操作 | /文本：搜索 | n/p：翻页 | r：刷新 Core | l：语言 | q：退出\n",
   "Select": "选择",
   "Arguments as JSON array (or @file); blank returns": "JSON 参数数组（或 @file）；留空返回",
   "Enrollment token (hidden)": "注册令牌（隐藏输入）",
