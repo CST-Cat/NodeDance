@@ -9,6 +9,7 @@ import { Dialog, DialogContent } from "./arc/dialog/dialog";
 import { Alert } from "./arc/alert/alert";
 import NodeFiles from "./NodeFiles";
 import { Progress } from "./arc/progress/progress";
+import { Tabs, TabsList, TabsTrigger } from "./arc/tabs/tabs";
 import "./FileTransfer.css";
 
 const x = (key: string) => t(`files.transfer.${key}`);
@@ -96,9 +97,12 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
       <div className="file-transfer-options">
         <div className="file-transfer-field">
           <span className="file-transfer-label">{x("mode")}</span>
-          <div className="file-transfer-modes" role="group" aria-label={x("mode")}>
-            {["relay", "direct"].map(value => <Button key={value} type="button" variant={mode === value ? "primary" : "ghost"} aria-pressed={mode === value} disabled={busy || done} onClick={() => setMode(value)}>{x(value === "relay" ? "modeRelay" : "modeDirect")}</Button>)}
-          </div>
+          <Tabs className="product-arc arc-ui" data-native-controls value={mode} onValueChange={setMode}>
+            <TabsList aria-label={x("mode")}>
+              <TabsTrigger value="relay" disabled={busy || done}>{x("modeRelay")}</TabsTrigger>
+              <TabsTrigger value="direct" disabled={busy || done}>{x("modeDirect")}</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
         <div className="file-transfer-field">
           <span className="file-transfer-label">{x("bandwidth")}</span>

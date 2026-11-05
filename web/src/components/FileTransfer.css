@@ -115,11 +115,6 @@
   align-self: center;
 }
 
-.file-transfer-modes {
-  display: flex;
-  gap: 4px;
-}
-
 .file-transfer-file-heading,
 .file-transfer-progress-meta {
   display: flex;
