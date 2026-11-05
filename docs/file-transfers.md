@@ -48,7 +48,7 @@ Core records the source node/path/version, size, SHA-256, target path and origin
 
 Retry uses `files.transfer-retry` on the **target node** with a fresh `Idempotency-Key`. Only confirmed `failed`, `canceled` or `timed_out` outcomes can be retried. The original source version, digest, target version and bandwidth remain binding; changed source or destination data requires an explicitly new transfer. An `unknown` result must be observed first. Agent restart never replays a started write: reconciliation verifies actual destination contents, confirms an unchanged destination as failed, or keeps an unproven outcome unknown.
 
-对传进入提交阶段后，Core 只观察原任务，不再切换通道重复写入。取消会保留 partial，但不承诺撤销已经提交的文件。每个文件任务最多运行 30 分钟；请求中断或 Core 重启后，先通过 `tasks.get`／`tasks.observe` 确认原任务，再决定是否重试。
+对传进入提交阶段后，Core 只观察原任务，不再切换通道重复写入。取消会保留 partial，但不承诺撤销已经提交的文件。每个文件任务最多运行 30 分钟；请求中断或 Core 重启后，先通过 `tasks.get` 读取原任务状态；仍未确定时继续读取，确认结果后再决定是否重试。
 
 ## Shared operations / 统一操作
 
@@ -60,7 +60,6 @@ nodedance call files.transfer --params '{"nodeId":"SOURCE_NODE_UUID"}' \
   --body '{"targetNodeId":"TARGET_NODE_UUID","paths":["/srv/data.bin"],"targetPath":"/srv/incoming","bandwidthLimit":1048576}' \
   --idempotency-key TRANSFER_KEY
 nodedance call tasks.get --params '{"nodeId":"TARGET_NODE_UUID","taskId":"TASK_ID"}'
-nodedance call tasks.observe --params '{"nodeId":"TARGET_NODE_UUID","taskId":"TASK_ID"}'
 nodedance call tasks.cancel --params '{"nodeId":"TARGET_NODE_UUID","taskId":"TASK_ID"}'
 nodedance call files.transfer-retry --params '{"nodeId":"TARGET_NODE_UUID","taskId":"TASK_ID"}' \
   --idempotency-key NEW_RETRY_KEY

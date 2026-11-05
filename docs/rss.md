@@ -54,20 +54,9 @@ nodedance call feeds.delete --params '{"id":"FEED_UUID"}' --body '{"revision":1,
 ## 验证入口
 
 - `go test -race -exec 'sudo -n' ./...`：抓取、条件请求、恶意 XML、去重、通知、修订竞争、取消、恢复、真实 Core 操作契约与 CLI／PTY TUI。
-- 新鲜 Web 构建后 `node web/scripts/audit-feeds.cjs`：临时真实 Core，增删、间隔、分页搜索、阅读状态、实际 SSRF 拒绝、取消、存储型脚本注入和中英文各四种明暗／移动布局。
+- 新鲜 Web 构建后 `node web/scripts/audit-feeds.cjs`：临时真实 Core，增删、间隔、分页搜索、阅读状态、实际 SSRF 拒绝、取消、存储型脚本注入及适用的语言、明暗和移动布局。
 - 新鲜 Web 构建后 `NODEDANCE_GUEST_ATTACKS=1 node web/scripts/audit-guest.cjs`：从运行 Core 发现新增操作，验证匿名拒绝、私有 RSS 投影排除及原有完整游客安全用例。
 
 所有浏览器审查仅使用临时数据和隔离 Core。没有操作真实 Agent、远程资源或生产数据库。
-
-### 本次验证结果
-
-- 最终全项目 root race 测试通过：`/tmp/nodedance-feeds-delivery-all.log`；真实 Core／CLI／PTY TUI 包均通过。
-- 最终 `go vet ./...` 通过：`/tmp/nodedance-feeds-complete-vet.log`。
-- Web 类型、契约、1563 条双语消息、96 项文件依赖许可检查及生产构建通过。
-- RSS 浏览器回归通过 11 类行为与 8 个中英文明暗／移动布局：`.build/feed-audit/report.json`。
-- 新鲜构建上的完整游客安全回归通过：本次 461 个用例、零失败，动态发现 121 个私有操作；`.build/guest-audit/security-results.json`。
-- 共享界面浏览器回归通过：本次发现 133 个远程操作，24 个界面布局及 12 个既有修复回归布局。
-
-未递增产品、协议或能力版本，未执行正式发布。
 
 The subscription list and entries load independently of interval options, notification channels and delivery history. A slow or failed history/channel read does not suppress successful entries. Initial selection reads entries once; search, unread filters and pagination do not reload delivery history, and superseded entry reads are canceled. Core still enforces subscription revisions, safe fetch targets and mutation semantics.

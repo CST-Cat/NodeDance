@@ -14,11 +14,11 @@ Every version entry needs reviewed `### English` and `### 简体中文` sections
 每个版本必须包含经审阅的 `### English`、`### 简体中文` 内容。变更先记录到相应组件的 `[Unreleased]`，创建标签前准备版本条目：
 
 ```sh
-# Example versions; choose the intended component/version.
-python3 scripts/release-notes.py promote agent agent-v0.1.0
-python3 scripts/release-notes.py render agent agent-v0.1.0
-# Review and commit the changelog, then create/push the matching tag.
-python3 scripts/release-notes.py promote core core-v0.1.0
+# Set AGENT_TAG and CORE_TAG to the explicitly authorized tags before these commands.
+python3 scripts/release-notes.py promote agent "$AGENT_TAG"
+python3 scripts/release-notes.py render agent "$AGENT_TAG"
+# Review and commit the changelog, then complete the rehearsal below before tagging.
+python3 scripts/release-notes.py promote core "$CORE_TAG"
 # Set agent-release.version to the intended exact Agent tag before tagging Core.
 # Publish Agent first; after it is stable, rehearse and publish the paired Core.
 ```
@@ -27,18 +27,22 @@ Only `agent-v*` tags trigger `.github/workflows/agent-release.yml`; only `core-v
 
 ## Release rehearsal / 发布彩排
 
+Only create or increment a release tag when explicitly authorized. A requested tag reuse is not authorization to choose a higher version; confirm the requested tag is absent before rehearsing it. Rehearsal does not replace compilation, native tests, artifact verification or publication checks.
+
+仅在明确授权时创建或递增发布标签；要求复用指定标签不等于允许另选高版本。复用前核实指定标签已撤回，再执行彩排。彩排不代替编译、原生测试、产物核验和最终发布检查。
+
 A tag is never the first execution of release validation. Before pushing an `agent-v*` or `core-v*` tag, rehearse it:
 
 tag 绝不是发布校验的第一次执行。推送 `agent-v*` 或 `core-v*` 标签之前必须先彩排：
 
 ```sh
-python3 scripts/release-rehearsal.py run agent agent-v0.1.22
-python3 scripts/release-rehearsal.py run core core-v0.1.37 --agent-tag "$(cat agent-release.version)"
+python3 scripts/release-rehearsal.py run agent "$AGENT_TAG"
+python3 scripts/release-rehearsal.py run core "$CORE_TAG" --agent-tag "$(cat agent-release.version)"
 ```
 
-The rehearsal runs every check the release workflows perform without creating a tag, release or artifact: tag format, reviewed bilingual changelog entry, committed (not staged) changelog and pairing file, exact Agent pairing in `agent-release.version`, Core pairing against the newest stable published Agent, and that the tag/release does not exist yet locally or on origin. A passing rehearsal is recorded in `.release-rehearsals`; both release workflows verify that record in their publish job and refuse to publish an unrehearsed tag. If a rehearsal fails, stop, fix the cause and rehearse again — pushing the tag anyway wastes the tag, because a failed publication leaves the tag behind.
+The rehearsal checks release metadata and publication eligibility without creating a tag, release or artifact: tag format, reviewed bilingual changelog entry, committed (not staged) changelog and pairing file, exact Agent pairing in `agent-release.version`, Core pairing against the newest stable published Agent, and that the tag/release does not exist yet locally or on origin. A passing rehearsal is recorded in `.release-rehearsals`; both release workflows verify that record in their publish job and refuse to publish an unrehearsed tag. If a rehearsal fails, stop, fix the cause and rehearse again — pushing the tag anyway wastes the tag, because a failed publication leaves the tag behind.
 
-彩排以只读方式执行发布工作流的全部校验（tag 格式、双语 changelog 条目、changelog 与配对文件已提交、`agent-release.version` 精确配对、Core 配对为最新稳定 Agent、tag/release 尚不存在），不创建任何 tag、release 或产物。通过的彩排记录在 `.release-rehearsals`；两个发布工作流在 publish 阶段核对该记录，拒绝发布未彩排的 tag。彩排失败时停止并修复后重新彩排——直接推 tag 一旦失败，tag 会残留，造成浪费。
+彩排以只读方式校验发布元数据及发布条件（tag 格式、双语 changelog 条目、changelog 与配对文件已提交、`agent-release.version` 精确配对、Core 配对为最新稳定 Agent、tag/release 尚不存在），不创建任何 tag、release 或产物。通过的彩排记录在 `.release-rehearsals`；两个发布工作流在 publish 阶段核对该记录，拒绝发布未彩排的 tag。彩排失败时停止并修复后重新彩排——直接推 tag 一旦失败，tag 会残留，造成浪费。
 
 ## Enrollment tokens / 注册令牌
 
@@ -48,7 +52,7 @@ Enrollment tokens are single-use with no time limit. A token stays valid until a
 
 两个工作流分别由自己的标签触发，并拒绝无效版本或缺少双语说明的发布。创建 Core tag 前，`agent-release.version` 必须写明本次配对的 Agent tag。构建与测试不等待 Agent 发布；最终发布最多等待十分钟，确认这个确切版本已正式发布、不是草稿或预发布，再写入说明第一行。不会自动换成恰好最新的其他版本。Agent 必须先发布为稳定版，随后才可完成 Core 配对彩排并推送 Core tag；超时只阻止 Core 最终发布，不修改配对版本。Agent 不占用仓库全局 latest，Core 为全局 latest。
 
-Installers resolve the latest stable release from the static version files (`agent-latest.txt`, `core-latest.txt`) that the release workflows publish to `main` after a release is confirmed; they download everything else from `releases/download`. The install path uses only plain HTTPS file downloads — no GitHub REST API and no per-IP rate quota. `--release-tag` pins an explicit release and bypasses resolution entirely. Installers never use the repository-wide `/releases/latest` URL. Agent credentials remain root-owned, with a 0700 state directory and 0600 regular config file.
+Installers resolve the latest stable release from the static version files (`agent-latest.txt`, `core-latest.txt`) that the release workflows publish to `main` after a release is confirmed; they download everything else from `releases/download`. The install path uses only plain HTTPS file downloads — no GitHub REST API and no per-IP rate quota. `--release-tag` pins an explicit release and bypasses resolution entirely. Component version resolution does not use the repository-wide `/releases/latest` URL. The initial Core installer download may use that URL because Core owns the repository-wide latest release. Agent credentials remain root-owned, with a 0700 state directory and 0600 regular config file.
 
 Agent 安装器解析并固定已发布的 `agent-v*` 标签，不使用指向 Core 的仓库 `/releases/latest`。Agent 凭据继续要求 root 所有、0700 状态目录和 0600 普通配置文件。
 
@@ -76,4 +80,4 @@ The paired `agent-release.version` file is embedded into Core for release public
 
 `agent-release.version` 随 Core 编译嵌入，用于发布配对检查。生成的原生／Docker 安装命令不固定该标签，安装时自动解析最新正式 Agent release。修改 `scripts/install-agent.sh` 后，必须发布包含该脚本的 Agent，并在发布 Core 前更新配对版本。一条命令安装入口使用 `--mode native|docker` 和 `--token`，Core 必须配对包含此安装脚本的 Agent 发布。
 
-Core and Agent releases include their component binaries, installer, update manifest and checksums. Updates run through the component binary; no separate updater assets or installation are required. / Core 与 Agent 的更新由组件二进制执行，发布包不包含独立 updater 程序或安装脚本。
+Core and Agent releases include their component binaries, installer and checksums. Core also publishes architecture-specific archives; Agent publishes its matching Docker image. Updates run through the component binary, without an update manifest or separate updater assets. / Core 与 Agent 发布各自的组件二进制、安装器和校验清单；Core 另含架构归档，Agent 另含对应 Docker 镜像。更新由组件二进制执行，不依赖更新 manifest 或独立 updater 产物。

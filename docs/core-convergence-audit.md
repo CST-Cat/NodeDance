@@ -1,21 +1,6 @@
-# Core 与三端能力收束审计 / Core convergence audit
+# Shared capability coverage / 共享能力收束
 
-本次检查以 `bee4368` 为审计基线，重点追踪从 Agent Dev 通道引入的 `57a2214` 到 TCP 打洞启动协调的近期变更，同时检查当前全部 Core 操作目录、本地命令分发和三端通用执行器。审计取证阶段对生产资源仅做只读目录与健康检查；测试更新请求使用隔离 HTTP/TLS 服务，未触发生产 Agent 更新、Core Dev 覆盖、备份回滚或 Devweb 启动。
-
-Baseline: `bee4368`. The review follows recent work from Agent Dev (`57a2214`) through TCP hole-punch coordination, then checks the current Core catalogue, local command dispatch and all three generic executors. Production inspection during the audit is read-only. Update tests use isolated HTTP/TLS fixtures and perform no production update, rollback, source overwrite or preview launch.
-
-## 确认并修复的问题 / Confirmed and repaired gaps
-
-| 项目 | 审计前 | 修复后 |
-| --- | --- | --- |
-| 远端 Agent 更新 | 已有 Core API，命令却需重复组件、Core 地址与 UUID | `nodedance update --node '节点 2' --channel dev` 复用保存的连接，自动选择 Agent；名称精确匹配，重名、空目标、缺失目标拒绝提交 |
-| Core Dev 参数 | 源码更新与 Agent 开发构建的通道名称和命令曾不统一 | Web 版本填 `dev`；CLI/TUI 本机与远端 Core 使用 `--channel dev`，沿用已有源码事务，无新更新器或发布标签 |
-| 更新观察 | 携带 `--channel dev` 的 `--status` 会多传未声明的 `version` 查询参数 | 历史／状态请求仅发送该操作接受的目标和任务参数，不受通道选项影响 |
-| 操作发现 | 未传 `--server` 的 `operations`／`describe` 使用编译时目录，即使已经保存了其他 Core 的登录 | 默认读取已连接 Core，附加 CLI/TUI 共用本地维护入口；明确离线查看改用 `--offline`，发现失败不会静默回退 |
-| 本地 rsync 查询 | Agent 已有 `--rsync-version`，共享终端目录缺少入口 | `agent.rsync-version` 由 CLI/TUI 同一分发执行，保留 `nodedance agent --rsync-version` |
-| Devweb 本地维护 | CLI 有命令，TUI 没有同等入口 | 共享本地目录加入 `core.devweb`；只在明确调用时运行，不自动创建或维护预览 |
-
-The changes reuse Core's discovered `nodes.list` and `updates.*` definitions. They add no client-owned remote operation list, endpoint, permission rule, arbitrary deployment target or SSH updater. Local Core and local Agent default updates remain independent of saved remote sessions. CLI and TUI use the same workflow, including target resolution, submission, retry identity, observation and rollback confirmation.
+Web、CLI、TUI 以连接的 Core `/api/v1/operations` 为准；CLI/TUI 共用终端操作定义和执行器。本文记录当前入口和边界，完整生成表见 [interface coverage](interface-coverage.md)。
 
 ## 近期功能的收束情况 / Recent capability coverage
 
@@ -42,11 +27,8 @@ Core 监听／TLS／代理信任、Agent 注册凭据、systemd 安装、文件�
 
 Core listening/TLS/proxy trust, Agent credentials and systemd installation, local file-access boundaries and local backup/restore are deployment or recovery responsibilities. They do not require a Web remote equivalent. Their existing local maintenance presentations must remain equal in CLI/TUI. Build/release automation is outside the remote management contract.
 
-## 检查方法和边界 / Verification boundaries
+## 更新入口 / Update entrypoints
 
-- 读取生产 `/api/v1/operations` 并对照共享目录和执行器；通过 TypeScript AST 检查 Web 固定操作名，未发现固定名称引用未发布操作。条件分支、变量和通用操作中心另外按执行代码核对，静态数量不代表行为覆盖率。
-- 隔离 TLS fixture 验证保存的登录、Origin／私有 CA、名称及完整 ID 选择、发现的自定义路由、重名／缺失／空目标拒绝、通道参数与状态观察；PTY TUI 使用同一更新函数和连接继承。
-- 本地更新 fixture 验证 Core／Agent 的 `dev` 选择经共享参数解析转为各自事务请求，冲突选项不提交；本地维护测试验证 Core 不在线时 TUI 能调用 rsync 查询和 Devweb 帮助，不执行部署。
-- `internal/core/cli`、`internal/update`、`internal/control` 回归及自动生成的接口表检查负责终端／契约行为；浏览器通用操作和更新中心检查使用全新构建的内嵌 Web 与隔离 Core，不把目录表行数或静态引用数当作实机管理验证。
+本机 Core 使用 `sudo nodedance update --channel dev`；本机 Agent 使用 `sudo nodedance agent update --channel dev`。远端 Agent 使用 `nodedance update --node NAME_OR_UUID --channel dev`；远端 Core 显式指定 `--server URL`。TUI 的 `client.update` 接收相同参数数组，Web 版本号填 `dev`。Core 从 `origin/main` 构建，Agent 拉取已发布 Dev 构建；默认不选通道仍为 Stable。
 
-没有为本次入口改动升级产品版本、创建发布标签、重启远端 Agent 或改变严格直连策略。生产交付使用标准 Makefile 构建／安装／重启流程；健康、实际运行二进制和本地／公开静态资源另行核对。
+`agent.rsync-version` 与 `core.devweb` 是 CLI/TUI 共用的本机维护入口；Devweb 仅在明确调用时运行。更新观察、重试身份和回滚见 [updates](updates.md)，验证方法见 [verification](verification.md)。目录覆盖不能代替实际副作用测试。

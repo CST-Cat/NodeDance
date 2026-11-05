@@ -23,8 +23,9 @@ nodedance nodes list --server https://core.example
 
 Private `nodes.list` responses include a `country` object with `status`, and when
 known, `code`, `name`, `source` and `sampledAt`. CLI/TUI expose these fields through
-the same discovered read operation. Core prefers the Agent-reported public exit
-IP; when unavailable it uses the authenticated Agent enrollment audit IP. It
+the same discovered read operation. Automatic lookup first uses the public IP
+observed on the active Agent connection, then the Agent-reported public IPv4/IPv6,
+then the authenticated Agent enrollment audit IP. It
 never geolocates the administrator's browser or guesses from a node name. NAT
 nodes use the public exit, not their private interface address. Offline nodes may
 retain their last reported IP. A node that changes exit IP gets a new lookup.
@@ -56,11 +57,12 @@ and verifies save/reload, automatic default, brand rendering and equal-size flag
 in light/dark and narrow/wide layouts. Country provider tests inject transport;
 no external lookup or real remote resource is needed by the suites.
 
-公网 IP 探测由现有 Agent 配置 `publicIpUrl` 控制。若 Agent 尚未提供公网地址，
-且注册记录仅有内网/代理地址，国家为 `unknown`。可通过同一 Core 操作
+Agent 主动公网 IP 探测由配置 `publicIpUrl` 控制；自动定位也可直接使用当前
+Agent 连接的公网地址。若连接、上报和注册记录均没有可用公网地址，国家为
+`unknown`。可通过同一 Core 操作
 `agents.configure` 将 `publicIpUrl` 设为 `https://api.ipify.org`，保留其他配置；
 Web 的 Agent 配置、CLI 和 TUI 均支持这一字段。读取节点列表本身不会静默修改
-Agent 配置。离线且从未提供公网地址的节点需恢复连接后才能完成识别。
+Agent 配置。离线且没有可用公网地址的节点可恢复连接或使用手动位置。
 
 ### 手动国家 / 地区
 

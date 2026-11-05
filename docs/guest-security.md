@@ -13,7 +13,7 @@ When the working tree already has a completed fresh `make build`, run the Node c
 
 The suite discovers private operations from the connected Core's operation contract rather than keeping another operation list. Responses, not hidden buttons, determine whether an attack succeeds. Administrator requests create the fixture and withdraw its resources; they are not counted as successful guest operations.
 
-## Verified cases
+## Maintained cases
 
 The table below describes the maintained boundaries; operation and attack coverage is discovered at runtime. The browser suite also checks persisted guest history points against the exact `[from, to)` timestamps. Go regressions cover fractional-second minute/hour boundaries for both full and selected-key history queries. Node detail regressions select tabs by accessible name, verify service-probe reload and browser Back, and ensure the full probe panel does not remain on overview or history.
 
@@ -35,15 +35,15 @@ The table below describes the maintained boundaries; operation and attack covera
 
 The same run checks default-disabled entry, absence of display requests before guest selection, identical public projections with administrator cookies, session validation when leaving guest mode, browser-mode spoof denial, administrator save/preview and guest publication under Settings. Browser cases cover Back/Forward and reload, forged history markers, administrator-cookie guest URLs without private requests, missing sessions on return to management, and stale authenticated responses after newer guest navigation. Private-operation coverage is discovered from the running Core contract; no fixed operation or case count defines completeness. Layout checks are separate from these authentication and data-boundary assertions.
 
-## Findings and fixes
+## Publication withdrawal regressions
 
-The initial run reproduced three failures: a deleted probe remained in the 15-second snapshot, a revoked node remained in that snapshot, and resource-existence validation prevented switching guest mode off while unavailable resources remained selected. These were publication withdrawal and disable problems; the private-operation matrix did not expose administrator access.
+Maintain regressions for deleted probes, revoked nodes and disabling guest display with unavailable selections. Cached data must never retain withdrawn publication scope or prevent disabling access.
 
-Public requests now recheck selected resource availability even when metric data is cached. The cache key includes the current available publication scope as well as the saved settings, and revoked nodes' service probes are also omitted. Database failures return an unavailable response instead of the old cached projection. Preview uses the same resource filter. Disabled drafts can retain unavailable selections, while enabling still requires available resources and valid fields. Raw query strings are rejected, including malformed queries that Go's parsed query map would omit.
+Public requests now recheck selected resource availability even when metric data is cached. Cached snapshots compare the effective policy and currently available resources; revoked nodes' service probes are omitted as well. Database failures return an unavailable response instead of the old cached projection. Preview uses the same resource filter. Disabled drafts can retain unavailable selections, while enabling still requires available resources and valid fields. Raw query strings are rejected, including malformed queries that Go's parsed query map would omit.
 
-Backend regression tests warm the cache, delete a probe or revoke its Agent through the actual stores, verify immediate removal and matching preview, verify that unavailable probes cannot be republished, and disable without clearing the saved selection. The browser attack run then repeats the original failures against HTTP and passes.
+Backend regression tests warm the cache, delete a probe or revoke its Agent through the actual stores, verify immediate removal and matching preview, verify that unavailable probes cannot be republished, and disable without clearing the saved selection. The browser attack suite repeats these cases against HTTP.
 
-## Scope of the result
+## Verification scope
 
 This is reproducible verification of the listed routes, inputs and browser flows, not proof that every possible vulnerability is absent. It does not measure distributed denial of service or test production network/TLS configuration. Previously delivered public data cannot be recalled, and requests already in flight when an administrator withdraws publication may finish with the scope they had already read.
 
@@ -59,9 +59,7 @@ Archive format denial cases are derived from the connected `files.action.format`
 
 Management deployment polling stops after its view unmounts; a late SSH fingerprint response is bound to the peer it requested. The fresh-assets guest suite also checks first-load history canvas initialization without adding private guest data reads.
 
-## 69 文件收尾审查验证
 
-2026-10-13，使用新构建 Web 资产和隔离真实 Core/协议模拟 Agent，再次通过完整访客安全套件。公共投影、匿名边界和撤销语义保持原约束；当前 Core 终端/更新响应复用严格有界 JSON 解码。实际 WebSocket 回归确认尾随 JSON 不会作为终端输入转发，跨会话和撤销测试保留。详细结果及覆盖范围见 [69 文件报告](code-review-69-files.md)。
 
 RSS 增量回归从连接的 Core 契约发现全部 feeds.* 私有操作，验证匿名拒绝；另创建含私密标记的停用订阅，检查管理员 cookie 与游客公开响应一致且不包含源名称或 URL 令牌，并核验删除。临时订阅不执行外部抓取。
 

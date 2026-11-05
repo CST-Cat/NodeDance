@@ -58,7 +58,7 @@ Network discovery uses `nodedance discovery peers` or the TUI's discovered `disc
 | Core | Serve, health, protocol descriptor, version, backup, restore |
 | Authentication | Setup status, setup, login, current identity, password change, logout, sessions, revocation |
 | Nodes/dashboard | Nodes, metrics, history, preferences, settings, live dashboard |
-| Agents | Enrollment including pinned installer command, revoke, rotate; local enrollment, recovery, runtime, state/file-root validation and root systemd lifecycle |
+| Agents | Enrollment including latest-stable installer command, revoke, rotate; local enrollment, recovery, runtime, state/file-root validation and root systemd lifecycle |
 | Docker | Inventory, inspect, create, start/stop/restart/pause/resume/rename/delete, rebuild plan/rebuild/cleanup, logs, stats |
 | Images | Paginated listing, authenticated pull, deletion |
 | Compose | Projects, create/deploy, config read/validate/save, start/stop/restart/delete |
@@ -100,7 +100,7 @@ nodedance files download --params '{"nodeId":"NODE_UUID"}' \
 
 Downloads create new `0600` files, refuse existing destinations, and remove partial files on failure. Uploads use the existing transfer API. File mutations retain Agent traversal/symlink/protected-tree/credential-path checks. File deletion requires `deleteConfirmed: true` and an exact `confirmationPath`. Container/image deletion and rebuild retain their existing exact-target confirmation rules. Probe/rule/channel edits use the current revision.
 
-Create an enrollment with `agents.enrollment` and a body containing `displayName` and optionally `coreUrl` (the URL reachable from the Agent). Choose `deploymentMethod: "native"` or `"docker"` in the shared JSON request, or pass CLI `--deployment-method native|docker`. The response contains the token, expiry, the selected `installCommand`, plus `nativeInstallCommand` and `dockerInstallCommand`. TUI provides node-name, reachable Core URL, and deployment-method prompts using the default declared by Core. Both installer commands contain the issued enrollment token, so the copied command installs and enrolls without an extra token prompt. They default to the latest stable published Agent at execution time without a hardcoded tag; Web displays expiry in Beijing time (UTC+8), and API timestamps remain ISO UTC.
+Create an enrollment with `agents.enrollment` and a body containing `displayName` and optionally `coreUrl` (the URL reachable from the Agent). Choose `deploymentMethod: "native"` or `"docker"` in the shared JSON request, or pass CLI `--deployment-method native|docker`. The response contains a single-use token with no time limit, the selected `installCommand`, plus `nativeInstallCommand` and `dockerInstallCommand`. TUI provides node-name, reachable Core URL, and deployment-method prompts using the default declared by Core. Both installer commands contain the issued enrollment token, so the copied command installs and enrolls without an extra token prompt. They default to the latest stable published Agent at execution time without a hardcoded tag. Enrollment tokens have no expiry; optional VPS asset expiry is a separate field, displayed in Beijing time (UTC+8), while API timestamps remain ISO UTC.
 
 ```sh
 nodedance agents enrollment --server https://core.example \
@@ -160,7 +160,7 @@ See [bundled tmux](bundled-tmux.md) for provenance and licenses. `nodedance-agen
 
 ## Language and releases / 语言与发布
 
-支持 English 和简体中文。Web 顶部切换语言；CLI 使用 `--lang en|zh-CN`，TUI 还可按 `l` 切换。Core 使用 `core-v*`，Agent 使用 `agent-v*` 独立发布，发布说明提供中英双语。
+支持 English 和简体中文。Web 在个人设置切换语言，默认跟随浏览器；CLI 使用 `--lang en|zh-CN`，TUI 还可按 `l` 切换。Core 使用 `core-v*`，Agent 使用 `agent-v*` 独立发布，发布说明提供中英双语。
 
 [语言约定](i18n.md) · [发布流程](releases.md) · [Komari 优化学习](komari-optimizations.md)
 
@@ -205,7 +205,7 @@ Web 操作中心支持契约声明的请求头、版本条件、上传约定、�
 
 ### Verify synchronization / 验证同步
 
-`make check` regenerates neither code nor documentation: it checks the committed capability matrix against the shared catalogue and runs the Go/Web checks. `pnpm --dir web audit:interfaces` builds an isolated Core and tests actual browser behavior without Agents or privileged services. `audit:design` is the separate light/dark/mobile fixture matrix. Existing rootful Docker/Agent/update tests remain opt-in; they are not implied by browser or catalogue coverage.
+`make check` regenerates neither code nor documentation: it checks the committed capability matrix against the shared catalogue and runs the Go/Web checks. After `make build`, `pnpm --dir web audit:interfaces` starts an isolated Core from the fresh build and tests actual browser behavior with protocol-only fixtures. Run the applicable root Agent, Docker and update checks separately; browser or catalogue coverage does not imply those checks passed. See [verification](verification.md).
 
 The connected Core publishes `/api/v1/operations`. CLI calls and TUI menus discover their operations, schemas, routes, and transports from this endpoint. Web uses the same contract for every request, stream, terminal, upload, and download; its Operations page generates forms from the catalog. Adding a Core operation makes it immediately available in all three generic interfaces without updating client operation lists. Core and Agent remain responsible for validation, authorization, auditing, and destructive-action confirmation. Specialized pages only customize presentation. `nodedance operations` uses the connected Core; `--offline` explicitly inspects the contract compiled into this binary.
 

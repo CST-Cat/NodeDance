@@ -22,7 +22,7 @@ On first interactive start, enter a username and password or press Enter to gene
 
 ### Agent
 
-Sign in to Core, open **Add Agent**, enter a node name, and generate the installer command. Choose the side-by-side native/systemd or Docker option and run the complete command on the target Linux host. The enrollment token is included; no second token input is required. The command resolves the latest stable Agent release when run. Agent runs as root; expiry is shown in Beijing time (UTC+8).
+Sign in to Core, open **Add Agent**, enter a node name, and generate the installer command. Choose the side-by-side native/systemd or Docker option and run the complete command on the target Linux host. The enrollment token is included; no second token input is required. The command resolves the latest stable Agent release when run. Agent runs as root. Single-use enrollment tokens have no time limit and are invalidated by successful enrollment or regeneration.
 
 Core is installed natively on the controller host. Only Agent supports [Docker deployment](docs/docker.md).
 
@@ -42,6 +42,8 @@ Agent enrollment, recovery, runtime, file service, and systemd service require r
 
 ## Documentation
 
+[Complete documentation index](docs/README.md)
+
 - [Detailed setup and operations](docs/installation.en.md)
 - [CLI and terminal UI](docs/cli.md)
 - [Node overview, host information and memo](docs/overview.md)
@@ -49,7 +51,7 @@ Agent enrollment, recovery, runtime, file service, and systemd service require r
 - [Architecture](docs/architecture.md)
 - [Release notes](docs/releases.md)
 
-正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](docs/updates.md).
+[Built-in updates and rollback](docs/updates.md): Core and Agent use `dev` for development updates; Stable remains the default.
 
 The Core includes [RSS/Atom subscriptions](docs/rss.md), with adjustable refresh intervals (minimum 1 minute, default 30 minutes), shared read state, keyword notifications and digests.
 

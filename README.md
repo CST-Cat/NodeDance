@@ -22,7 +22,7 @@ curl -fsSL https://github.com/CST-Cat/NodeDance/releases/latest/download/install
 
 ### Agent
 
-登录 Core 后进入 **添加 Agent**，填写节点名称并生成安装命令。选择左右排列的直接安装或 Docker 部署，复制完整命令到目标 Linux 主机运行即可，无需再次输入 Token。命令执行时自动解析最新稳定 Agent release；Agent 以 root 运行，Token 过期时间显示北京时间。
+登录 Core 后进入 **添加 Agent**，填写节点名称并生成安装命令。选择左右排列的直接安装或 Docker 部署，复制完整命令到目标 Linux 主机运行即可，无需再次输入 Token。命令执行时自动解析最新稳定 Agent release；Agent 以 root 运行；单次注册 Token 不设时间限制，注册成功或重新生成后失效。
 
 Core 原生安装到主控机，安装器会自动创建并启动 root `nodedance.service`，监听 `0.0.0.0:8180`，数据保存在 `/var/lib/nodedance`。仅 Agent 支持 [Docker 部署](docs/docker.md)。
 
@@ -42,13 +42,15 @@ Agent 注册、恢复、运行、文件服务和 systemd 服务均要求 root �
 
 ## 文档
 
+[完整文档索引](docs/README.md)
+
 - [详细部署与运维指南](docs/installation.en.md)
 - [命令行与终端界面](docs/cli.md)
 - [节点总览、主机信息与备忘录](docs/overview.md)
 - [架构说明](docs/architecture.md)
 - [版本发布说明](docs/releases.md)
 
-正式更新 / Updates: [Web、CLI、TUI 更新、回滚与控制服务配置](docs/updates.md).
+[内置更新与回滚](docs/updates.md)：Core 与 Agent 开发通道统一使用 `dev`，默认仍为 Stable。
 
 Core 内置 [RSS／Atom 订阅中心](docs/rss.md)，支持多档刷新（最低 1 分钟，默认 30 分钟）、共享阅读状态、关键词通知和摘要。
 

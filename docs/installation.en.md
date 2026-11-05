@@ -6,7 +6,7 @@ NodeDance is a self-hosted Go Core and per-host Go Agent for managing Linux serv
 
 The Core owns administrator identity, Agent enrollment, task records, history, preferences, and SQLite data. Each Agent opens an outbound authenticated WebSocket connection and reports host state. Docker access is optional: an Agent without access to Docker continues to report host metrics and can provide host file and terminal features that are enabled for it.
 
-NodeDance is currently pre-release software. The product version is `0.0.0`; build artifacts from this repository report `dev` unless a build supplies another version. Read the data compatibility note below before replacing a v0 binary.
+Core and Agent have independent stable release tags. Source builds report `dev` unless built at their component tag or given an explicit build version. See [built-in updates](updates.md) for Stable/Dev selection and rollback, and the data schema note below before replacing a binary.
 
 For Agent container deployment, see [Agent Docker deployment](docker.md). Core runs natively on the controller host.
 
@@ -23,8 +23,6 @@ Docker is not required to run the Core or collect host metrics.
 
 ```sh
 make deps
-make typecheck
-make frontend
 make build
 ```
 
@@ -73,11 +71,11 @@ The Core data directory contains the SQLite database and authentication/encrypti
 
 ## Enroll and run an Agent
 
-After signing in to the Core console, choose **添加 Agent**, enter a node display name, and generate a one-time enrollment. Choose the URL the target Agent can reach; it defaults to the current console origin and may be a different Core address on a private network. Native/systemd and Docker are side-by-side choices, visible before generating the command. Copy the complete command to the target Linux host and run it; it includes the short-lived token and does not prompt for it again. Expiry is displayed in Beijing time (UTC+8), while the API retains an ISO UTC timestamp.
+After signing in to the Core console, choose **添加 Agent**, enter a node display name, and generate a one-time enrollment. Choose the URL the target Agent can reach; it defaults to the current console origin and may be a different Core address on a private network. Native/systemd and Docker are side-by-side choices, visible before generating the command. Copy the complete command to the target Linux host and run it; it includes the single-use token and does not prompt for it again. This token has no time limit; successful enrollment consumes it, and regeneration invalidates the previous token. Shared enrollment grants separately enforce their configured expiry and use limit.
 
-The generated command downloads the current installation script and defaults to the latest stable published Agent at execution time, without a hardcoded tag. Python 3 parses the paginated release listing, excludes Core tags, drafts and prereleases, and compares Agent version numbers. The selected release supplies the matching binary, checksum manifest and Docker image. `agent-release.version` remains a Core publication pairing check. The installer supports Linux `amd64` and `arm64`, verifies the matching Agent binary against that release's SHA256 manifest, prepares root-owned state, enrolls through `nodedance-agent enroll --token-stdin`, then installs, enables, and starts the root systemd service or the rootful Docker container, according to the selected mode. It refuses existing Agent state, binaries, or a same-name service, and will not overwrite existing config or service files. If enrollment may have reached Core but the response was lost, it preserves the protected config and provides the recovery command.
+The generated command downloads the current installation script and defaults to the latest stable published Agent at execution time, without a hardcoded tag. The installer reads `agent-latest.txt` over HTTPS and accepts only a stable `agent-vMAJOR.MINOR.PATCH` tag; it does not query the GitHub REST API or require Python for release resolution. The selected release supplies the matching binary, checksum manifest and Docker image. `agent-release.version` remains a Core publication pairing check. The installer supports Linux `amd64` and `arm64`, verifies the matching Agent binary against that release's SHA256 manifest, prepares root-owned state, enrolls through `nodedance-agent enroll --token-stdin`, then installs, enables, and starts the root systemd service or the rootful Docker container, according to the selected mode. It refuses existing Agent state, binaries, or a same-name service, and will not overwrite existing config or service files. If enrollment may have reached Core but the response was lost, it preserves the protected config and provides the recovery command.
 
-To publish Agent artifacts, add the workflow to the tagged commit, then create and push an Agent-only tag such as `agent-v0.1.0`. Only `agent-v*` tags trigger `.github/workflows/agent-release.yml`; it builds Linux amd64/arm64 binaries, creates `SHA256SUMS`, and attaches those files plus the installer to a release with the same tag. Core release tags do not trigger this workflow. Generated commands do not specify a release tag; the installer uses Python 3 to parse the release listing and selects the newest stable Agent at execution time. If none exists, installation stops before creating credentials or starting a container.
+Agent publication uses the existing `.github/workflows/agent-release.yml` and an explicitly authorized `agent-v*` tag after a passing rehearsal. See [release procedure](releases.md). Generated commands select the published stable Agent at execution time. An unavailable or invalid version file stops installation before enrollment or container startup; `--release-tag` can select an explicit published Agent tag.
 
 The Agent runs as root for full host management; `enroll`, `recover`, and `run` reject non-root callers. It verifies the config remains root-owned, regular, and mode `0600` inside a `0700` state directory. Root file management exposes host paths while blocking kernel/runtime trees and Agent credentials. NodeDance does not change Docker socket permissions.
 
@@ -114,11 +112,11 @@ nodedance describe containers.action
 nodedance tui --timeout 0
 ```
 
-Remote CLI operations return JSON; logs, metrics and terminal connections use JSONL. The TUI provides searchable operations, parameter forms, file transfers, paginated results and an interactive host/container shell. Local Agent lifecycle commands are available through `sudo nodedance agent ...`, which invokes the separate Agent binary. Read [CLI/TUI usage](cli.md) for authentication, task idempotency, streams and examples, and [the Komari communication study](komari-communication.md) for the protocol design.
+Remote CLI operations return JSON; logs, metrics and terminal connections use JSONL. The TUI provides searchable operations, parameter forms, file transfers, paginated results and an interactive host/container shell. Local Agent lifecycle commands are available through `sudo nodedance agent ...`, which invokes the separate Agent binary. The built-in `sudo nodedance agent update` workflow is executed directly by Core without requiring that wrapper dispatch. Read [CLI/TUI usage](cli.md) for authentication, task idempotency, streams and examples, and [the Komari communication study](komari-communication.md) for the protocol design.
 
 ## Use probes and alerts
 
-Service probes are configured from a node's service-probe panel and execute from that node's Agent. Supported targets are HTTP, HTTPS, and TCP. HTTPS certificate validation is enabled; redirects are not followed. Probe timeouts are bounded, and offline or unsupported Agents produce an unknown result rather than a service failure. Three consecutive failures mark a probe unhealthy; two consecutive successes restore healthy status.
+Service probes are configured from a node's service-probe panel and execute from that node's Agent. Supported targets are HTTP, HTTPS, TCP, and IPv4/IPv6 ICMP (`icmp://host`). HTTPS certificate validation is enabled; redirects are not followed. Probe timeouts are bounded, and offline or unsupported Agents produce an unknown result rather than a service failure. Three consecutive failures mark a probe unhealthy; two consecutive successes restore healthy status.
 
 The Alert Center manages rules, maintenance windows, notification channels, and delivery history. Webhooks use administrator-configured HTTP(S) URLs. SMTP requires STARTTLS or implicit TLS; plaintext SMTP is rejected, including on loopback. Notification secrets are encrypted in the Core database using a key stored in the private data directory.
 
@@ -148,7 +146,7 @@ The database snapshot keeps administrator and Agent credentials, node identities
 
 Run `nodedance update` to select the newest stable Core tag. Protocol, capability, API and SQLite fingerprints do not gate version selection. The built-in transaction verifies the release artifact, preserves data for recovery, switches the runtime and checks its health; failed startup restores the previous runtime and pre-update data. A raw binary replacement alone does not restore data changed by the newer runtime. See [updates](updates.md).
 
-NodeDance is still at product version `0.0.0`. The current SQLite schema is initialized directly; automatic upgrades from older development schema layouts are not supported. An incompatible development database may be removed and initialized with the current schema. Normal backup/restore applies to a database created by a compatible current v0 build. Product version and SQLite structure are separate concepts.
+Core initializes the current SQLite schema directly and does not migrate retired development layouts. Preserve the complete private data directory in a backup before an upgrade. Restore targets a new or empty directory and does not convert older schemas. Product release versions do not establish database schema compatibility.
 
 Agent systemd installation is root-only. It recognizes only the current NodeDance-managed root unit and refuses to overwrite unrelated, unmarked, shadowed, or changed units. Uninstall removes that unit while preserving the Agent config and identity.
 
@@ -165,8 +163,8 @@ For local API and Web debugging, set `VITE_CORE_TARGET` when the Core is not at 
 
 ## Language and releases / 语言与发布
 
-支持 English 和简体中文。Web 顶部切换语言；CLI 使用 `--lang en|zh-CN`，TUI 还可按 `l` 切换。Core 使用 `core-v*`，Agent 使用 `agent-v*` 独立发布，发布说明提供中英双语。
+支持 English 和简体中文。Web 在个人设置中切换语言；CLI 使用 `--lang en|zh-CN`，TUI 还可按 `l` 切换。Core 使用 `core-v*`，Agent 使用 `agent-v*` 独立发布，发布说明提供中英双语。
 
 [语言约定](i18n.md) · [发布流程](releases.md) · [Komari 优化学习](komari-optimizations.md)
 
-Pending nodes retain an Installation command entry on their detail page. Reopening it lets you regenerate a fresh ten-minute credential for the same node and repeatedly copy either deployment command. Core stores only token digests, so regeneration invalidates previously issued commands. Once registered, enrollment regeneration is rejected. Delete node is located at the bottom of the Web Node settings tab and is available in every node state and removes Core-owned records and credentials, without uninstalling the remote Agent or claiming to stop dispatched work.
+Pending nodes retain an Installation command entry on their detail page. Reopening it lets you regenerate a fresh single-use credential with no time limit for the same node and repeatedly copy either deployment command. Core stores only token digests, so regeneration invalidates previously issued commands. Once registered, enrollment regeneration is rejected. Delete node is located at the bottom of the Web Node settings tab and is available in every node state and removes Core-owned records and credentials, without uninstalling the remote Agent or claiming to stop dispatched work.

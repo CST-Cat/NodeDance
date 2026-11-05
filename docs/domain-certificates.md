@@ -1,6 +1,6 @@
 # 域名与证书 / Domains and certificates
 
-“域名证书”位于节点总览下方，仅管理员可用。Web 使用经 shadcn CLI 安装的本地 UIArc 组件，并将配色、焦点和圆角映射到项目现有 Token。全部管理行为来自 Core 的 `/api/v1/operations`，CLI、TUI 和 Web 操作中心自动发现同一组能力。
+“域名证书”位于节点总览下方，仅管理员可用。Web 使用经 shadcn CLI 安装的本地 UIArc 组件，仅将配色映射到项目现有 Token，保留安装组件的焦点行为和原生圆角。全部管理行为来自 Core 的 `/api/v1/operations`，CLI、TUI 和 Web 操作中心自动发现同一组能力。
 
 ## 能力与边界
 

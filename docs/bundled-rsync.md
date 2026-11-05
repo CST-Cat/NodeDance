@@ -14,7 +14,7 @@ CI 在 amd64、arm64 原生 runner 上各自构建对应 rsync，并执行 Agent
 
 Runtime requires the root Agent and its protected `0700` state directory. Each attempt verifies both embedded archive and executable SHA-256, confirms the static ELF architecture, and creates a temporary `0700` executable beneath a private `0700` subdirectory; upstream [COPYING](../internal/transfer/rsyncbundle/licenses/COPYING) is extracted with `0600` permissions. Root ownership, one-link regular files and protected ancestors are checked. The attempt removes its executable workspace after its processes stop. Retained transfer payloads have a separate lifecycle and remain available for retry.
 
-运行时校验包与二进制的 SHA-256、静态 ELF 架构及 root 受保护路径，生成 `0700` 的私有可执行文件与 `0600` 的许可证。参数模板探针及接收进程只执行这一文件；Landlock 限制仍然生效。程序目录在本次进程退出后清理，失败传输的 partial 继续保留。缺少 Landlock 或数据通道不可用时使用既有分片兜底，不改用系统 rsync。
+运行时校验包与二进制的 SHA-256、静态 ELF 架构及 root 受保护路径，生成 `0700` 的私有可执行文件与 `0600` 的许可证。参数模板探针及接收进程只执行这一文件；Landlock 限制仍然生效。程序目录在本次进程退出后清理，失败传输的 partial 继续保留。缺少 Landlock 或 rsync 数据通道不可用时，中继模式使用既有分片中继；严格直连模式明确失败，不转中继，也不改用系统 rsync。
 
 ```sh
 sh scripts/build-rsync.sh --architecture amd64

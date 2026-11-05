@@ -10,26 +10,21 @@ The Agent needs rootful Docker on Linux, root, privileged mode, host PID/network
 
 Agent 需要 Linux 上的 rootful Docker、root、privileged、宿主机 PID／网络命名空间，以及只读挂载的宿主机根目录。入口进入宿主机命名空间，确保监控、文件和终端功能作用于真实主机。Docker Desktop 暴露的是 Linux 虚拟机；切换 Docker Agent 前，先停止同一主机上的 systemd Agent。
 
-Prepare root-owned private state on the target host and build the image there:
+Use the Core-generated command for a new installation; it creates the private state directory. The installer refuses existing Agent state. The Compose file under `deploy/docker/` is for source builds and expects an already enrolled private Agent configuration.
 
-```sh
-sudo install -d -o root -g root -m 0700 /var/lib/nodedance-agent
-docker compose -f deploy/docker/compose.agent.yml build
-```
+Core 的“添加 Agent”页面提供直接安装（systemd）和 Docker 部署选项。选择 Docker 后，复制完整生成命令并在目标 Linux 主机运行。命令不固定 tag，执行时解析最新稳定 Agent release、校验 SHA256、完成注册并启动 root 容器。安装器通过 HTTPS 读取 `agent-latest.txt`，只接受稳定 `agent-v*` 标签，不查询 GitHub REST API，不需要 Python 解析发布列表。
 
-Core 的“添加 Agent”页面提供直接安装（systemd）和 Docker 部署选项。选择 Docker 后，复制完整生成命令并在目标 Linux 主机运行。命令不固定 tag，执行时解析最新稳定 Agent release、校验 SHA256、完成注册并启动 root 容器。安装主机需要 Python 3 解析分页后的 release 列表。
+The Core Add Agent page offers native/systemd and Docker deployment. Choose Docker, copy the generated command, and run it on the target Linux host. It resolves the latest stable Agent release at execution time, verifies SHA256, enrolls, and starts the root container. Release resolution reads `agent-latest.txt` over HTTPS and accepts only stable `agent-v*` tags, without GitHub REST API calls or Python.
 
-The Core Add Agent page offers native/systemd and Docker deployment. Choose Docker, copy the generated command, and run it on the target Linux host. It resolves the latest stable Agent release at execution time, verifies SHA256, enrolls, and starts the root container. Python 3 is required to parse the paginated release list.
+The configuration is stored on the host at `/var/lib/nodedance-agent/agent.json`, as a root-owned regular file with mode `0600` in a `0700` directory. After namespace entry, configuration and CA paths are host paths. Restarts reuse the saved credentials; `nodedance-agent recover --config /var/lib/nodedance-agent/agent.json` verifies the saved device credential after an uncertain enrollment response, without replaying the enrollment token. The installer does not install or configure Tailscale.
 
-The configuration is stored on the host at `/var/lib/nodedance-agent/agent.json`, as a root-owned regular file with mode `0600` in a `0700` directory. After namespace entry, configuration and CA paths are host paths. Restarts reuse the saved credentials; recovery uses a newly issued Core recovery token. The installer does not install or configure Tailscale.
-
-Agent 配置保存在宿主机 `/var/lib/nodedance-agent/agent.json`，要求 root 所有、普通文件 `0600`，目录 `0700`。进入宿主机命名空间后，配置和 CA 路径均指宿主机路径。重启会复用现有凭据；恢复注册使用 Core 新签发的恢复 Token。安装器不会安装或配置 Tailscale。
+Agent 配置保存在宿主机 `/var/lib/nodedance-agent/agent.json`，要求 root 所有、普通文件 `0600`，目录 `0700`。进入宿主机命名空间后，配置和 CA 路径均指宿主机路径。重启会复用现有凭据；注册结果不确定时，`nodedance-agent recover --config /var/lib/nodedance-agent/agent.json` 验证保存的设备凭据，不重放注册 Token。安装器不会安装或配置 Tailscale。
 
 ## Updates and checks / 更新与验证
 
-Agent updates are built in. `nodedance agent update` updates the local Agent; the Core update center and `nodedance update --component agent --node-id NODE_UUID` can update a remote Docker Agent through the existing rootful Docker runtime. No separate updater image or daemon is installed.
+Agent updates are built in. `nodedance agent update` updates the local Agent; the Core update center and `nodedance update --node NAME_OR_UUID` can update a remote Docker Agent through the existing rootful Docker runtime. No separate updater image or daemon is installed.
 
-Agent 更新已内置：`nodedance agent update` 更新本机 Agent；Core 更新中心和 `nodedance update --component agent --node-id NODE_UUID` 可通过现有 rootful Docker runtime 更新远端 Docker Agent。不会安装独立 updater 镜像或守护进程。
+Agent 更新已内置：`nodedance agent update` 更新本机 Agent；Core 更新中心和 `nodedance update --node NAME_OR_UUID` 可通过现有 rootful Docker runtime 更新远端 Docker Agent。不会安装独立 updater 镜像或守护进程。
 
 To run the isolated Agent Docker integration against a locally built native Core:
 
