@@ -49,7 +49,6 @@ type session struct {
 	endpoint   Endpoint
 	emit       func(protocol.TerminalFrame) error
 	activity   chan struct{}
-	closed     chan struct{}
 	readerDone chan struct{}
 	once       sync.Once
 	mu         sync.Mutex
@@ -154,7 +153,7 @@ func (m *Manager) open(parent context.Context, frame protocol.TerminalFrame, emi
 		return ErrSessionLimit
 	}
 	ctx, cancel := context.WithCancel(parent)
-	current := &session{id: frame.StreamID, ctx: ctx, cancel: cancel, emit: emit, activity: make(chan struct{}, 1), closed: make(chan struct{}), readerDone: make(chan struct{})}
+	current := &session{id: frame.StreamID, ctx: ctx, cancel: cancel, emit: emit, activity: make(chan struct{}, 1), readerDone: make(chan struct{})}
 	m.sessions[current.id] = current
 	m.mu.Unlock()
 	readerStarted := false
@@ -311,7 +310,6 @@ func (m *Manager) close(current *session, notify bool) {
 		if notify {
 			_ = current.emit(protocol.TerminalFrame{StreamID: current.id, Action: protocol.TerminalActionClosed})
 		}
-		close(current.closed)
 	})
 }
 
