@@ -6,14 +6,13 @@
 
 ### 简体中文
 
-## [0.1.43]
+## [0.1.34]
 
 ### English
 
 - Add regular-file rsync between Agents in the mode selected per transfer: Agent direct WSS or Core relay (dedicated Core rsync relay, with the independent chunk relay when rsync is unavailable), with no automatic mode switching or fallback between modes. Direct attempts cover direct TCP, reverse and ICE connectivity (including coordinated TCP punching) and can use a node-declared listen/public port pair. Persistent WSS carries control and progress; retained private partials support retries. Receivers require a runtime argument template, Landlock confinement, one-use credentials, protected paths and SHA-256 verification before atomic publication.
 - Embed a trimmed static rsync 3.4.1 for Linux amd64 and arm64. Native CI and Docker builds compile their architecture's bundle; availability checks, parameter probes and transfer processes execute only the verified, root-protected embedded executable, without a system rsync lookup or fallback.
 - Refactor built-in update admission and recovery: ignore unknown journal and update metadata fields, skip corrupt history records individually, share history loading, submit manual updates without duplicate preflight and permit reinstallation, explicit downgrades and channel switches. Missing current-version labels do not block installation; native callers bound reply waits. Preserve artifact SHA-256, root credentials, authorization, request identity, backups, runtime health, reconnection and rollback.
-
 - Preserve negotiated terminal colors and hyperlink capabilities through bundled tmux, and count default-route interfaces in network summaries. Local updates accept the shared channel selector while retaining Agent-only Dev validation.
 
 ### 简体中文

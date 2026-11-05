@@ -6,7 +6,7 @@
 
 ### 简体中文
 
-## [0.1.65]
+## [0.1.64]
 
 ### English
 
@@ -15,7 +15,6 @@
 - Share the refactored update executor: ignore unknown update metadata, skip corrupt history individually, remove duplicate terminal preflight and permit manual same-version or older-version installation. Core source Beta updates can rebuild a checkout already matching main while preserving transactional backup, health verification and rollback.
 - Negotiate terminal color and link capabilities end to end (Web and CLI through Core to Agent): truecolor output is preserved instead of being reduced to 256 colors by tmux, OSC 8 hyperlinks and plain URLs in terminal output are clickable, and terminal search is supported.
 - Agent direct transfers additionally attempt reverse and ICE connectivity (including coordinated TCP punching) alongside direct TCP, and failures report the ICE stage with per-side candidate counters (host, public_host, srflx, relay), so an unreachable NAT can be diagnosed from the error text.
-
 - Simplify remote Agent updates to `nodedance update --node NAME_OR_UUID --channel dev`, reusing the saved Core session and discovered routes. Share Core `--channel beta`, fix status query parameters, discover the connected operation catalogue by default with explicit `--offline`, and complete CLI/TUI rsync-version and Devweb maintenance entries.
 - Improve narrow-screen file dialogs, submenu placement and touch long-press actions; show resolved update channels and compact Dev commit labels, and resolve node geography from the live Agent connection.
 
