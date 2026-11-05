@@ -13,6 +13,22 @@
 - Web must expose shared remote management capabilities and may add graphical interactions and browser-local view operations. Any graphical operation that changes shared configuration, permissions, tasks or remote resources must use a Core operation also accessible from CLI and TUI. Presentation differences must not create separate business validation, permissions, confirmations or execution semantics. A capability change is incomplete until applicable interfaces, documentation and behavior verification are updated.
 - The connected Core publishes the single operation contract at `/api/v1/operations`. Web, CLI, and TUI must discover operations, request schemas, methods, routes, and transports from that contract. New Core capabilities must appear automatically in their generic operation interfaces; specialized screens are presentation only. Do not maintain independent client operation lists or duplicate business validation.
 
+## 内置命令速查 / Built-in command quick reference
+
+- 开发版快速升级：Core 使用源码 `beta` 通道，Agent 使用 `dev` 通道；不要把 Core 写成 `--channel dev`。本机更新需要 root，无需登录；默认不加通道仍选择 Stable。
+
+```sh
+sudo nodedance update --channel beta                 # 本机 Core：拉取 origin/main、构建并更新
+sudo nodedance agent update --channel dev            # 本机 Agent：最新已发布 Dev 构建
+sudo nodedance-agent update --channel dev            # 仅安装 Agent 的主机使用此入口
+nodedance update --node '节点 2' --channel dev         # 已登录 Core：更新远端 Agent
+```
+
+- Core Beta 会强制覆盖源码工作区的本地提交和已跟踪改动；先提交并推送需要保留的代码。Agent Dev 下载已发布的 `main` 构建，不需要 SSH、手动替换二进制或新建发布标签。
+- 远端 `--node` 接受唯一节点名称或完整 UUID，自动选择 Agent，并复用保存的 Core 登录；TUI 的 `client.update` 使用相同参数数组。追加 `--check` 只检查，`--status` 查看历史，`--status --job-id JOB` 观察任务，`--rollback JOB` 回滚；中断提交复用原 `--idempotency-key`。
+- `nodedance operations`／`nodedance describe NAME` 默认发现已连接 Core 的契约；`nodedance operations --offline` 明确离线查看。`agent.rsync-version` 是 CLI/TUI 共享的本地查询入口（CLI：`sudo nodedance call agent.rsync-version`）；`core.devweb` 是共享的显式预览维护入口，不自动启动。
+- CLI/TUI 的 `files.transfer` 使用同一 Core 操作：请求体 `mode: "direct"` 为严格 Agent 直连，`mode: "relay"` 为 Core 中继（默认）；通过 `tasks.get/observe/cancel` 观察或取消，通过 `files.transfer-retry` 重试。结果检查 `transferred`、`failed` 和实际 `transport`。详见 `docs/updates.md`、`docs/file-transfers.md` 与 `docs/core-convergence-audit.md`。
+
 ## Web UI rules
 
 - Integrate elFinder only for its command capabilities. Do not expose its native context menu or introduce its native file-manager UI, toolbars or dialogs. File operations remain downstream of the shared Core operation contract and Agent security policy.
