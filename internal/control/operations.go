@@ -258,6 +258,7 @@ func updateSchema() any {
 	body := schema(update.Request{}).(map[string]any)
 	props := body["properties"].(map[string]any)
 	props["component"].(map[string]any)["enum"] = []string{"core", "agent"}
+	props["version"].(map[string]any)["description"] = "Omit for latest stable; dev builds Core from origin/main or installs the published Agent Dev build"
 	body["required"] = []string{"component", "confirm"}
 	return body
 }
@@ -284,7 +285,7 @@ func buildOperations() []Operation {
 	list := []Operation{
 		op("updates.release", "GET", "/api/v1/updates/release", "Read published component changelog independently of the installed runtime", nil, "component", "version"),
 		op("updates.delete-backup", "POST", "/api/v1/updates/delete-backup", "Confirm deletion of a finished update backup while retaining its history", updateSchema()),
-		op("updates.check", "GET", "/api/v1/updates/check", "Check stable component release and update preflight", nil, "component", "nodeId", "version"),
+		op("updates.check", "GET", "/api/v1/updates/check", "Check stable or dev component updates and preflight", nil, "component", "nodeId", "version"),
 		op("updates.status", "GET", "/api/v1/updates/status", "Durable update progress and history", nil, "component", "nodeId", "jobId"),
 		op("updates.apply", "POST", "/api/v1/updates/apply", "Confirm and update managed Core or Agent with failure rollback", updateSchema()),
 		op("updates.rollback", "POST", "/api/v1/updates/rollback", "Confirm rollback of a successful update", updateSchema()),

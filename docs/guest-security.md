@@ -186,3 +186,7 @@ Static Web assets get class-based caching: content-hashed `/assets/*` bundles ar
 The discovered private contract now includes share and invitation management; anonymous callers remain denied even with forged role headers. The adversarial browser script additionally creates an explicit temporary uploaded share, compares public projection with and without administrator cookies, rejects metadata query expansion and changed download methods, rejects arbitrary host paths, permits only the published bytes and verifies immediate withdrawal after revocation. `audit-files.cjs` runs `audit-shares.cjs` with isolated root Agent fixtures for source protection, password/QR/folder UI, concurrent download admission, owner downloads, stale revisions and invitation limits/private received content. No private share automatically appears in the guest dashboard. See [file sharing](file-sharing.md) for password, snapshot and cleanup semantics and the exact limits of withdrawal.
 
 删除节点或探针、撤销 Agent 时，Core 在同一事务中清除对应公开选择并递增配置 revision；旧表单不能覆盖清理结果。启动时清理遗留的失效引用。管理页面只列出现存且可公开的资源，不再补回“资源不可用”占位行；离线节点仍可保留明确公开的选择。浏览器回归验证删除后重新打开、刷新设置均不会恢复失效记录。
+
+Core／Agent 的 Stable 和 `dev` 更新均为管理员私有操作，不进入游客投影。安全浏览器回归通过发现的更新契约验证 Core `dev` 检查与提交的匿名拒绝，以及管理员提交的 CSRF 拒绝；测试不执行实际更新。
+
+Stable and `dev` updates remain administrator-only for Core and Agent. The adversarial browser suite discovers update operations and checks anonymous denial for Core `dev` checks/submissions and CSRF denial for an administrator submission, without executing an update.

@@ -253,7 +253,7 @@ Node lifecycle is shared with Web: discover `nodes.renew-enrollment` to regenera
 
 `nodedance update` defaults to updating the local Core as root without login; `nodedance agent update` independently updates the local managed Agent as root without login. Explicit remote update targets still require authentication. Neither needs a separate update program, registration step or additional update parameters. / 两个默认更新命令均无需独立更新程序、登记步骤或额外更新参数。
 
-After signing in, `nodedance update --node 'Node 2' --channel dev` updates that remote Agent through the saved Core connection. The same `--node` target supports `--check`, `--status` and `--rollback JOB`. Names match exactly and must be unique; use a full UUID when ambiguous. `sudo nodedance update --channel beta` selects the existing local Core source transaction. TUI's `client.update` uses the same argument arrays and executor. See [built-in updates](updates.md) and the [recent capability audit](core-convergence-audit.md).
+After signing in, `nodedance update --node 'Node 2' --channel dev` updates that remote Agent through the saved Core connection. The same `--node` target supports `--check`, `--status` and `--rollback JOB`. Names match exactly and must be unique; use a full UUID when ambiguous. `sudo nodedance update --channel dev` selects the existing local Core source transaction. TUI's `client.update` uses the same argument arrays and executor. See [built-in updates](updates.md) and the [recent capability audit](core-convergence-audit.md).
 
 登录后，远端 Agent 更新简化为 `nodedance update --node '节点 2' --channel dev`，不必重复 Core 地址、组件和 UUID。TUI 选择 `client.update` 使用同样参数。`agent.rsync-version`／`nodedance agent --rsync-version` 查询本机 Agent 内置 rsync；TUI 的 `core.devweb` 仅在明确选择时运行隔离预览。
 

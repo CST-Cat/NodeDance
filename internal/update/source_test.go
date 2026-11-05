@@ -2,11 +2,14 @@ package update
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func git(t *testing.T, dir string, args ...string) string {
@@ -42,15 +45,15 @@ func sourceRepo(t *testing.T, origin string) string {
 	return dir
 }
 
-func TestBetaChannelValidation(t *testing.T) {
-	if err := Validate(Request{Component: "core", Version: ChannelBeta}); err != nil {
-		t.Fatalf("core beta rejected: %v", err)
+func TestDevChannelValidation(t *testing.T) {
+	if err := Validate(Request{Component: "core", Version: ChannelDev}); err != nil {
+		t.Fatalf("core dev rejected: %v", err)
 	}
-	if err := Validate(Request{Component: "agent", Version: ChannelBeta}); err == nil {
-		t.Fatal("agent beta accepted")
+	if err := Validate(Request{Component: "agent", Version: ChannelDev}); err != nil {
+		t.Fatalf("agent dev rejected: %v", err)
 	}
-	if err := Validate(Request{Component: "core", Version: "beta-v1"}); err == nil {
-		t.Fatal("non-channel beta string accepted as a release tag")
+	if err := Validate(Request{Component: "core", Version: "dev-v1"}); err == nil {
+		t.Fatal("non-channel dev string accepted as a release tag")
 	}
 }
 
@@ -145,11 +148,11 @@ func TestCheckSourceChannel(t *testing.T) {
 		},
 		jobs: map[string]Job{},
 	}
-	check, err := m.Check(context.Background(), Request{Component: "core", Version: ChannelBeta})
+	check, err := m.Check(context.Background(), Request{Component: "core", Version: ChannelDev})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !check.Configured || !check.Available || check.Latest != ChannelBeta || check.Current != "dev" {
+	if !check.Configured || !check.Available || check.Latest != ChannelDev || check.Current != "dev" {
 		t.Fatalf("up-to-date check = %+v", check)
 	}
 	if err := os.WriteFile(filepath.Join(upstream, "next.txt"), []byte("next\n"), 0644); err != nil {
@@ -158,7 +161,7 @@ func TestCheckSourceChannel(t *testing.T) {
 	git(t, upstream, "add", ".")
 	git(t, upstream, "commit", "-m", "next")
 	git(t, upstream, "push", bare, "main")
-	check, err = m.Check(context.Background(), Request{Component: "core", Version: ChannelBeta})
+	check, err = m.Check(context.Background(), Request{Component: "core", Version: ChannelDev})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +173,7 @@ func TestCheckSourceChannel(t *testing.T) {
 	}
 	git(t, checkout, "add", ".")
 	git(t, checkout, "commit", "-m", "local divergence")
-	check, err = m.Check(context.Background(), Request{Component: "core", Version: ChannelBeta})
+	check, err = m.Check(context.Background(), Request{Component: "core", Version: ChannelDev})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,11 +198,82 @@ func TestCheckSourceChannel(t *testing.T) {
 		t.Fatalf("status after hard reset = %q, %v", status, err)
 	}
 	m.Config.Targets["core"] = Target{Mode: "systemd", Unit: "nodedance.service", Binary: binary}
-	check, err = m.Check(context.Background(), Request{Component: "core", Version: ChannelBeta})
+	check, err = m.Check(context.Background(), Request{Component: "core", Version: ChannelDev})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if check.Configured || check.Reason == "" {
 		t.Fatalf("missing-checkout check = %+v", check)
+	}
+}
+
+func TestCoreDevBuildInstallAndHealthRollback(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("root transaction test")
+	}
+	for _, failHealth := range []bool{false, true} {
+		t.Run(map[bool]string{false: "healthy", true: "rollback"}[failHealth], func(t *testing.T) {
+			upstream := sourceRepo(t, "")
+			makefile := "build:\n\tmkdir -p .build\n\tprintf '#!/bin/sh\\necho NodeDance dev\\n' > .build/nodedance\n\tchmod 0755 .build/nodedance\ninstall:\n\tinstall -m 0755 .build/nodedance $(PREFIX)/bin/nodedance\n"
+			if err := os.WriteFile(filepath.Join(upstream, "Makefile"), []byte(makefile), 0644); err != nil {
+				t.Fatal(err)
+			}
+			git(t, upstream, "add", "Makefile")
+			git(t, upstream, "commit", "-m", "source build fixture")
+			bare := filepath.Join(t.TempDir(), "remote.git")
+			git(t, filepath.Dir(bare), "clone", "--bare", upstream, bare)
+			checkout := filepath.Join(t.TempDir(), "checkout")
+			git(t, filepath.Dir(checkout), "clone", bare, checkout)
+			root := t.TempDir()
+			data := filepath.Join(root, "data")
+			if err := os.Mkdir(data, 0700); err != nil {
+				t.Fatal(err)
+			}
+			binary := filepath.Join(root, "bin", "nodedance")
+			if err := os.MkdirAll(filepath.Dir(binary), 0755); err != nil {
+				t.Fatal(err)
+			}
+			previous := "#!/bin/sh\necho NodeDance core-v0.1.0\n"
+			if err := os.WriteFile(binary, []byte(previous), 0755); err != nil {
+				t.Fatal(err)
+			}
+			health := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				raw, err := os.ReadFile(binary)
+				if err != nil || failHealth && strings.Contains(string(raw), "NodeDance dev") {
+					w.WriteHeader(503)
+					return
+				}
+				w.Write([]byte(`{"status":"ok"}`))
+			}))
+			defer health.Close()
+			m, err := New(Config{StateDir: filepath.Join(root, "state"), Targets: map[string]Target{"core": {
+				Mode: "systemd", Unit: "nodedance.service", Binary: binary, SourceDir: checkout, DataDir: data, HealthURL: health.URL + "/api/v1/health",
+			}}}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			m.healthTimeout = 150 * time.Millisecond
+			m.command = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+				if name == "systemctl" {
+					return nil, nil
+				}
+				return execute(ctx, name, args...)
+			}
+			job, err := m.Apply(context.Background(), Request{Component: "core", Version: ChannelDev, Confirm: true}, "core-dev-source-fixture")
+			if err != nil {
+				t.Fatal(err)
+			}
+			m.workers.Wait()
+			job, err = m.Get("core", job.ID)
+			wantStatus, wantVersion := "succeeded", "dev"
+			if failHealth {
+				wantStatus, wantVersion = "rolled_back", "core-v0.1.0"
+			}
+			version, versionErr := m.current(context.Background(), "core")
+			if err != nil || versionErr != nil || !job.Source || !job.Switched || job.Target != ChannelDev || job.Status != wantStatus || version != wantVersion {
+				t.Fatalf("Core Dev source transaction: %+v version=%q err=%v/%v", job, version, err, versionErr)
+			}
+		})
 	}
 }

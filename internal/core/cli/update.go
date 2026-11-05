@@ -43,7 +43,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	node := flags.String("node-id", "", "Agent node ID")
 	nodeName := flags.String("node", "", "Agent node name or full ID; selects Agent updates through the saved Core connection")
 	version := flags.String("version", "", "published component tag; default is newest stable")
-	channel := flags.String("channel", "stable", "stable, beta (Core), or dev (Agent)")
+	channel := flags.String("channel", "stable", "stable or dev")
 	rollback := flags.String("rollback", "", "successful update job ID to roll back")
 	status := flags.Bool("status", false, "show durable update history or --job-id progress")
 	jobID := flags.String("job-id", "", "update job ID for --status")

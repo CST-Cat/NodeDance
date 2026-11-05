@@ -59,12 +59,12 @@ func TestUpdateAPIRequiresSessionCSRFConfirmationAndUsesBuiltInExecutor(t *testi
 			t.Fatalf("invalid update status: %+v", result)
 		}
 	}
-	result = client.Execute(context.Background(), apply, control.Input{Body: json.RawMessage(`{"component":"core","confirm":true}`), IdempotencyKey: "update-test-key"}, nil, nil)
+	result = client.Execute(context.Background(), apply, control.Input{Body: json.RawMessage(`{"component":"core","version":"dev","confirm":true}`), IdempotencyKey: "update-test-key"}, nil, nil)
 	if err = result.Err(); err != nil || result.Status != 202 {
 		t.Fatalf("update submission: %+v %v", result, err)
 	}
 	rpc := <-received
-	if rpc.Action != "apply" || rpc.Request.Component != "core" || !rpc.Request.Confirm || rpc.IdempotencyKey != "update-test-key" {
+	if rpc.Action != "apply" || rpc.Request.Component != "core" || rpc.Request.Version != update.ChannelDev || !rpc.Request.Confirm || rpc.IdempotencyKey != "update-test-key" {
 		t.Fatalf("invalid forwarded request: %+v", rpc)
 	}
 	cleanup, _ := control.FindIn(catalog, "updates.delete-backup")

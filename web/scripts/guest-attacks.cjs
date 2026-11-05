@@ -18,6 +18,13 @@ module.exports=async function attack({base,page,visitor,admin,headers,current,id
  const fineHistory=historyOperation.path.replace('{nodeId}',encodeURIComponent(identity.nodeId))+'?'+new URLSearchParams({resolution:'5s',from:new Date(Date.now()-4*3600000).toISOString(),to:new Date().toISOString()});
  const fineDenied=await browserRequest(fineHistory,'GET',null,hostileHeaders);record('fine-history-remains-private',fineDenied.status===401,{status:fineDenied.status});
  const shareOp=name=>{const o=catalog.operations.find(v=>v.name===name);assert.ok(o,`Missing ${name}`);return o}
+ const devCheck=await browserRequest(shareOp('updates.check').path+'?'+new URLSearchParams({component:'core',version:'dev'}),'GET',null,hostileHeaders)
+ record('core-dev-check-private',devCheck.status===401,{status:devCheck.status})
+ const devBody={component:'core',version:'dev',confirm:true},devApply=shareOp('updates.apply').path
+ const devDenied=await browserRequest(devApply,'POST',devBody,hostileHeaders)
+ record('core-dev-apply-private',devDenied.status===401,{status:devDenied.status})
+ const devCSRF=await admin.request.post(base+devApply,{headers:{Origin:base,'Idempotency-Key':'core-dev-csrf-denied','X-CSRF-Token':'forged'},data:devBody})
+ record('core-dev-apply-csrf',devCSRF.status()===403,{status:devCSRF.status()})
  const shareIntent=require('node:crypto').randomBytes(32).toString('hex')
  const uploadShare=shareOp('shares.upload')
  const shareUpload=await admin.request.put(base+uploadShare.path+'?'+new URLSearchParams({name:'guest-share.txt',expiryDays:'1',maxDownloads:'0',requestId:shareIntent}),{headers:{...headers,'Content-Type':'application/octet-stream'},data:'EXPLICIT-SHARE-CONTENT'})

@@ -342,7 +342,7 @@ func TestConfirmationAndTagNamespace(t *testing.T) {
 	if _, err := m.Apply(context.Background(), Request{Component: "core"}, "unconfirmed-key"); err == nil {
 		t.Fatal("unconfirmed update accepted")
 	}
-	for _, tag := range []string{"agent-v0.1.9", "core-v01.1.9", "core-v18446744073709551616.0.0", "core-v0.1.9-beta"} {
+	for _, tag := range []string{"agent-v0.1.9", "core-v01.1.9", "core-v18446744073709551616.0.0", "core-v0.1.9-rc1"} {
 		if ValidTag("core", tag) {
 			t.Fatalf("invalid tag accepted: %s", tag)
 		}

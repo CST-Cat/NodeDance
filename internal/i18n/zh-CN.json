@@ -1,4 +1,7 @@
 {
+  "Check stable or dev component updates and preflight": "检查组件正式版或 dev 更新及更新条件",
+  "Omit for latest stable; dev builds Core from origin/main or installs the published Agent Dev build": "留空使用最新正式版；dev 从 origin/main 构建 Core 或安装已发布 Agent Dev 构建",
+  "stable or dev": "stable 或 dev",
   "\r\nConnected. Ctrl-] returns to NodeDance.\r\n": "\r\n已连接。Ctrl-] 返回 NodeDance。\r\n",
   "Core backup created.": "Core 备份已创建。",
   "Core data restored.": "Core 数据已恢复。",

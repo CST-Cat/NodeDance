@@ -300,7 +300,7 @@ func (m *Manager) Check(ctx context.Context, r Request) (Check, error) {
 }
 
 func (m *Manager) check(ctx context.Context, r Request) (Check, error) {
-	if r.Version == ChannelBeta {
+	if r.Component == "core" && r.Version == ChannelDev {
 		return m.checkSource(ctx, r)
 	}
 	release, err := m.Resolver.Resolve(ctx, r.Component, r.Version)
@@ -322,11 +322,11 @@ func (m *Manager) check(ctx context.Context, r Request) (Check, error) {
 	return result, nil
 }
 func (m *Manager) checkSource(ctx context.Context, r Request) (Check, error) {
-	result := Check{Component: r.Component, Latest: ChannelBeta}
+	result := Check{Component: r.Component, Latest: ChannelDev}
 	target, configured := m.Config.Targets[r.Component]
 	result.Mode = target.Mode
 	if !configured {
-		result.Reason = "the beta channel requires the managed Core service"
+		result.Reason = "the dev channel requires the managed Core service"
 		return result, nil
 	}
 	if target.SourceDir == "" {
@@ -426,7 +426,7 @@ func (m *Manager) Apply(ctx context.Context, r Request, key string) (Job, error)
 	if _, err = rand.Read(bytes[:]); err != nil {
 		return Job{}, err
 	}
-	job := Job{ID: hex.EncodeToString(bytes[:]), Component: r.Component, Mode: check.Mode, Current: check.Current, Target: check.Latest, Status: "queued", Stage: "queued", Started: time.Now().UTC(), Parent: r.JobID, Source: r.JobID == "" && r.Version == ChannelBeta, IdempotencyKey: key}
+	job := Job{ID: hex.EncodeToString(bytes[:]), Component: r.Component, Mode: check.Mode, Current: check.Current, Target: check.Latest, Status: "queued", Stage: "queued", Started: time.Now().UTC(), Parent: r.JobID, Source: r.JobID == "" && r.Component == "core" && r.Version == ChannelDev, IdempotencyKey: key}
 	if err = privateDirectory(filepath.Join(m.Config.StateDir, job.ID)); err != nil {
 		return Job{}, err
 	}

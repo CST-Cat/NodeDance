@@ -29,9 +29,8 @@ function stageLabel(stage: string) {
   const key = `updates.stage.${stage}`;
   return t(key) === key ? stage : t(key);
 }
-function targetChannel(target: string): "beta" | "dev" | "stable" {
+function targetChannel(target: string): "dev" | "stable" {
   const value = target.trim().toLowerCase();
-  if (value === "beta") return "beta";
   if (value === "dev" || value.startsWith("agent-dev-")) return "dev";
   return "stable";
 }
@@ -173,18 +172,12 @@ export default function UpdateCenter() {
         targetChannel(check.value?.latest ?? version.value),
       );
       const latestKey = derived(() =>
-        checkChannel.value === "beta"
-          ? "updates.latestBeta"
-          : checkChannel.value === "dev"
-            ? "updates.latestDev"
-            : "updates.latest",
+        checkChannel.value === "dev" ? "updates.latestDev" : "updates.latest",
       );
       const noticeKey = derived(() =>
-        checkChannel.value === "beta"
-          ? "updates.currentNoticeBeta"
-          : checkChannel.value === "dev"
-            ? "updates.currentNoticeDev"
-            : "updates.currentNotice",
+        checkChannel.value === "dev"
+          ? "updates.currentNoticeDev"
+          : "updates.currentNotice",
       );
       const query = derived(() => ({
         component: component.value,
@@ -554,7 +547,7 @@ export default function UpdateCenter() {
                   <span>{t("updates.version")}</span>
                   <Input
                     value={version.value}
-                    placeholder={t("updates.latest")}
+                    placeholder={t("updates.versionPlaceholder")}
                     onChange={(event) => {
                       version.value = event.target.value;
                       checkSequence++;

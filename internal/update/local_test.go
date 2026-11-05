@@ -61,7 +61,7 @@ func TestLocalRollbackCancellationDoesNotLookUpOrApplyRelease(t *testing.T) {
 }
 
 func TestLocalUpdateChannelSelectsTheSharedRequest(t *testing.T) {
-	for _, entry := range []struct{ component, channel string }{{"core", "beta"}, {"agent", "dev"}} {
+	for _, entry := range []struct{ component, channel string }{{"core", "dev"}, {"agent", "dev"}} {
 		called := false
 		invoke := func(_ context.Context, _ string, _ string, rpc RPC) (Response, error) {
 			called = true

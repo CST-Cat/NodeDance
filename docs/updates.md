@@ -21,9 +21,9 @@ nodedance update --node 'Node 2'
 
 Sign in once with `nodedance auth login --server https://core.example --body @/private/login.json`. `--node NAME_OR_UUID` infers the Agent component and preserves the saved server, login, Origin and private CA. Names match Core's `displayName` exactly; ambiguous, empty or missing targets fail before submission. `--node-id UUID` also infers Agent. Checks, history and rollback use the same target selection. TUI's `client.update` executes the same arguments and inherits its current connection.
 
-Core 源码 Beta 可用 `sudo nodedance update --channel beta`，远端 Core 则显式添加 `--server URL`。本机默认更新仍独立于保存的远端连接。`--channel beta` 与 `--version beta` 选择相同的现有源码更新事务，会强制覆盖源码工作区；不会创建发布标签。
+Web 更新中心选择 Core 后，版本号输入 `dev` 即执行源码构建更新；TUI 的 `client.update` 输入 `["--channel","dev"]` 使用同一本机流程。Core 源码 Dev 可用 `sudo nodedance update --channel dev`，远端 Core 则显式添加 `--server URL`。本机默认更新仍独立于保存的远端连接。`--channel dev` 与 `--version dev` 选择相同的现有源码更新事务，会强制覆盖源码工作区；不会创建发布标签。
 
-Use `sudo nodedance update --channel beta` for local Core source Beta, or explicitly add `--server URL` for remote Core. Default local updates remain independent of saved remote connections. This selects the same existing hard-overwrite source transaction as `--version beta` and creates no release tag.
+In the Web update center, select Core and enter `dev` as the version to build from source. TUI `client.update` accepts `["--channel","dev"]` for the same local workflow. Use `sudo nodedance update --channel dev` for local Core source Dev, or explicitly add `--server URL` for remote Core. Default local updates remain independent of saved remote connections. This selects the same existing hard-overwrite source transaction as `--version dev` and creates no release tag.
 
 ## Agent development channel
 
@@ -41,9 +41,9 @@ To automatically follow Dev, set `updateChannel` to `dev` with the authenticated
 
 ## Observation and recovery / 观察与恢复
 
-手工更新直接提交给同一个事务执行器，不先运行另一轮客户端预检。`--check` 仍是独立的只读操作。安装不要求目标版本比现役版本更高：可以重装同一版本、显式选择较旧的已发布版本或切换 Stable／Dev；当前程序的版本标记缺失或变化也不会阻止安装。自动更新仍按所选通道检查新版本，不自动降级。Core 的源码 Beta 更新允许重新构建已经与 `origin/main` 对齐的工作区，不把源码提交相同误判为运行程序已经同步。Beta 是硬覆盖：应用时把源码目录强制重置到 `origin/main`，本地提交与已跟踪改动一律丢弃，分叉不构成阻挡。
+手工更新直接提交给同一个事务执行器，不先运行另一轮客户端预检。`--check` 仍是独立的只读操作。安装不要求目标版本比现役版本更高：可以重装同一版本、显式选择较旧的已发布版本或切换 Stable／Dev；当前程序的版本标记缺失或变化也不会阻止安装。自动更新仍按所选通道检查新版本，不自动降级。Core 的源码 Dev 更新允许重新构建已经与 `origin/main` 对齐的工作区，不把源码提交相同误判为运行程序已经同步。Dev 是硬覆盖：应用时把源码目录强制重置到 `origin/main`，本地提交与已跟踪改动一律丢弃，分叉不构成阻挡。
 
-Manual updates submit directly to the shared transaction executor; they do not require a separate client preflight. `--check` remains read-only. Installation accepts the same version, an explicitly selected older published version, and Stable/Dev switches. Missing or changed current-version labels do not prevent installation. Automatic updates continue to check their selected channel for newer builds and do not automatically downgrade. Core source Beta updates can rebuild a checkout already at `origin/main`; source equality does not establish that the installed executable is current. Beta is a hard overwrite: applying it forcibly resets the source checkout to `origin/main`, discarding local commits and tracked changes, and divergence never blocks it.
+Manual updates submit directly to the shared transaction executor; they do not require a separate client preflight. `--check` remains read-only. Installation accepts the same version, an explicitly selected older published version, and Stable/Dev switches. Missing or changed current-version labels do not prevent installation. Automatic updates continue to check their selected channel for newer builds and do not automatically downgrade. Core source Dev updates can rebuild a checkout already at `origin/main`; source equality does not establish that the installed executable is current. Dev is a hard overwrite: applying it forcibly resets the source checkout to `origin/main`, discarding local commits and tracked changes, and divergence never blocks it.
 
 更新日志、内部请求与响应忽略未知 JSON 字段，不用格式号、协议号或能力指纹决定能否升级。历史日志共用一处读取：坏 JSON、读不到的条目、身份不一致或非普通文件直接跳过，保留原文件，其他历史、观察、重试和新安装继续可用。不增加隔离目录、迁移或历史管理流程。目录权限或当前事务的持久化失败仍会拒绝操作，避免丢失恢复依据。原生工作器的回复等待有时限，不会无限等待。
 

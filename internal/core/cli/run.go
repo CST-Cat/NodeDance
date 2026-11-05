@@ -279,7 +279,7 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance restore --input FILE --data-dir NEW_DIR"))
 	fmt.Fprintln(w, "       nodedance update [--check | --yes | --status | --rollback JOB]  # local root Core; --server URL for remote updates")
 	fmt.Fprintln(w, "       nodedance update --node NAME_OR_UUID [--channel stable|dev]  # remote Agent through the saved Core connection")
-	fmt.Fprintln(w, "       nodedance update --channel beta  # local root Core from origin/main")
+	fmt.Fprintln(w, "       nodedance update --channel dev  # local root Core from origin/main")
 	fmt.Fprintln(w, "       nodedance agent update [--check | --status | --rollback JOB]  # local root Agent")
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance version"))
 	fmt.Fprintln(w, i18n.TextFor(w, "       nodedance batch --input @FILE.jsonl [--dry-run] [--continue-on-error]"))

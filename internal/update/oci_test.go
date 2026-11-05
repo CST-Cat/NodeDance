@@ -33,17 +33,17 @@ func TestAgentDevOCIResolutionAndDownload(t *testing.T) {
 	binaryManifest, _ := json.Marshal(ociManifest{
 		SchemaVersion: 2, MediaType: ociManifestType, ArtifactType: devArtifactType,
 		Annotations: map[string]string{"org.opencontainers.image.revision": revision},
-		Layers: layers,
+		Layers:      layers,
 	})
 	imageManifest, _ := json.Marshal(ociManifest{
 		SchemaVersion: 2, MediaType: ociIndexType,
 		Manifests: []ociDescriptor{
 			{Digest: "sha256:" + strings.Repeat("b", 64), Size: 900, Platform: &struct {
-				OS string `json:"os"`
+				OS           string `json:"os"`
 				Architecture string `json:"architecture"`
 			}{OS: "linux", Architecture: "amd64"}},
 			{Digest: "sha256:" + strings.Repeat("c", 64), Size: 800, Platform: &struct {
-				OS string `json:"os"`
+				OS           string `json:"os"`
 				Architecture string `json:"architecture"`
 			}{OS: "linux", Architecture: "arm64"}},
 		},
@@ -109,6 +109,14 @@ func TestAgentDevOCIResolutionAndDownload(t *testing.T) {
 	if apiCalled {
 		t.Fatal("GHCR resolution attempted GitHub API")
 	}
+	m := &Manager{Config: Config{Targets: map[string]Target{"agent": {Mode: "systemd", Binary: "/fixture/nodedance-agent"}}}, Resolver: g,
+		command: func(context.Context, string, ...string) ([]byte, error) {
+			return []byte("NodeDance Agent agent-v0.1.0\n"), nil
+		}}
+	check, err := m.Check(context.Background(), Request{Component: "agent", Version: ChannelDev})
+	if err != nil || !check.Configured || !check.Available || check.Latest != release.Version || check.Release.BinaryDigest != release.BinaryDigest {
+		t.Fatalf("Agent Dev must resolve the published artifact without a source checkout: %+v %v", check, err)
+	}
 	pinned, err := g.Resolve(context.Background(), "agent", release.Version)
 	if err != nil || pinned.BinaryDigest != release.BinaryDigest {
 		t.Fatalf("pinned OCI Dev resolve: %+v %v", pinned, err)
@@ -145,9 +153,6 @@ func TestAgentDevVersionValidation(t *testing.T) {
 		if err := Validate(Request{Component: "agent", Version: candidate}); err == nil {
 			t.Fatalf("accepted invalid Dev version %s", candidate)
 		}
-	}
-	if err := Validate(Request{Component: "core", Version: ChannelDev}); err == nil {
-		t.Fatal("Core must not accept the Agent Dev channel")
 	}
 }
 

@@ -32,7 +32,7 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 	check := flags.Bool("check", false, "check without updating")
 	status := flags.Bool("status", false, "show update history or job progress")
 	version := flags.String("version", "", "pin a published version")
-	channel := flags.String("channel", "stable", "stable, beta (Core), or dev (Agent)")
+	channel := flags.String("channel", "stable", "stable or dev")
 	job := flags.String("job-id", "", "job to observe")
 	rollback := flags.String("rollback", "", "roll back a successful update")
 	yes := flags.Bool("yes", false, "confirm rollback")

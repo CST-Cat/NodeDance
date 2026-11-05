@@ -89,8 +89,10 @@ func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
 			if body["confirm"] != true || r.Header.Get("Idempotency-Key") == "" {
 				t.Error("incorrect update confirmation or pinned release")
 			}
-			if body["version"] != nil && (body["version"] != "dev" || body["nodeId"] != "node-two" || body["component"] != "agent") {
-				t.Error("TUI short update did not use the shared target resolution")
+			if body["version"] != nil {
+				if body["version"] != "dev" || (body["component"] == "agent" && body["nodeId"] != "node-two") || (body["component"] == "core" && body["nodeId"] != nil) {
+					t.Error("TUI Dev update did not preserve the shared channel and target")
+				}
 			}
 			w.WriteHeader(202)
 			io.WriteString(w, `{"id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","status":"queued"}`)
@@ -119,7 +121,7 @@ func TestUpdateCLIUpdatesDirectlyAndConfirmsOnlyRollback(t *testing.T) {
 		t.Fatal("declined rollback was submitted")
 	}
 	driveTerminal(t, host.URL, []tuiStep{
-		{"Select:", "/client.update"}, {"Filter: client.update", "1"}, {"Arguments as JSON array", `["--server","` + host.URL + `","--dev"]`}, {"Enter to return:", ""}, {"Select:", "q"},
+		{"Select:", "/client.update"}, {"Filter: client.update", "1"}, {"Arguments as JSON array", `["--server","` + host.URL + `","--dev","--channel","dev"]`}, {"Enter to return:", ""}, {"Select:", "q"},
 	})
 	if submissions.Load() != 2 {
 		t.Fatal("TUI did not update directly through the shared workflow")
@@ -245,11 +247,11 @@ func TestRemoteUpdateUsesSavedSessionAndPrivateCA(t *testing.T) {
 	if err := RunWithInput(context.Background(), []string{"update", "--node", "Node 2", "--channel", "dev", "--status"}, lookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err != nil {
 		t.Fatal("channel selection broke update observation", err)
 	}
-	if err := RunWithInput(context.Background(), []string{"update", "--server", host.URL, "--channel", "beta", "--no-wait"}, lookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err != nil {
-		t.Fatal("remote Core Beta did not use the shared channel selection", err)
+	if err := RunWithInput(context.Background(), []string{"update", "--server", host.URL, "--channel", "dev", "--no-wait"}, lookup, strings.NewReader(""), io.Discard, io.Discard, "test"); err != nil {
+		t.Fatal("remote Core Dev did not use the shared channel selection", err)
 	}
-	if request := <-requests; request.Component != "core" || request.NodeID != "" || request.Version != "beta" {
-		t.Fatal("remote Core Beta target changed", request)
+	if request := <-requests; request.Component != "core" || request.NodeID != "" || request.Version != "dev" {
+		t.Fatal("remote Core Dev target changed", request)
 	}
 	// An explicit target must never receive a different server's saved cookies.
 	if _, err = control.NewClient(control.ClientOptions{Server: "https://other.example", StateDir: state, UseSavedConnection: true}); err == nil {

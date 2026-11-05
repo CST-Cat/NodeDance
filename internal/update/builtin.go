@@ -30,12 +30,12 @@ func Invoke(ctx context.Context, component, dataDir string, rpc RPC) (Response, 
 	}
 	config, container, engine, err := discover(ctx, component, dataDir)
 	if err != nil {
-		if rpc.Action == "check" && component == "core" && rpc.Request.Version == ChannelBeta {
+		if rpc.Action == "check" && component == "core" && rpc.Request.Version == ChannelDev {
 			reason := "NodeDance source checkout was not found on this host: " + err.Error()
 			if findSourceDir(ctx, "", dataDir, 0) != "" {
-				reason = "the beta channel requires the managed nodedance.service Core: " + err.Error()
+				reason = "the dev channel requires the managed nodedance.service Core: " + err.Error()
 			}
-			raw, _ := json.Marshal(Check{Component: component, Latest: ChannelBeta, Reason: reason})
+			raw, _ := json.Marshal(Check{Component: component, Latest: ChannelDev, Reason: reason})
 			return Response{Status: 200, Data: raw}, nil
 		}
 		if rpc.Action == "check" {
