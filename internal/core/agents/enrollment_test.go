@@ -296,3 +296,56 @@ func TestExpireLeaseExactDeadline(t *testing.T) {
 		t.Fatalf("double expiry must be a no-op: %v %v", expired, err)
 	}
 }
+
+func TestRenewEnrollmentReplacesUnconsumedCredential(t *testing.T) {
+	ctx := context.Background()
+	repository, _ := newAgentRepository(t)
+	enrollment, err := repository.CreateEnrollment(ctx, "Pending VPS", "127.0.0.1", actor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewed, err := repository.RenewEnrollment(ctx, enrollment.NodeID, "127.0.0.1", actor())
+	if err != nil {
+		t.Fatalf("renew enrollment: %v", err)
+	}
+	if renewed.NodeID != enrollment.NodeID || renewed.DisplayName != "Pending VPS" || renewed.Token == "" {
+		t.Fatalf("unexpected renewal: %+v", renewed)
+	}
+	if _, err := repository.ConsumeEnrollment(ctx, auth.DigestToken(enrollment.Token), digestOf(t, "stale-device"), "request-1", "127.0.0.1"); !errors.Is(err, agents.ErrEnrollmentRejected) {
+		t.Fatal("renewed node still accepted the replaced credential")
+	}
+	identity, err := repository.ConsumeEnrollment(ctx, auth.DigestToken(renewed.Token), digestOf(t, "fresh-device"), "request-2", "127.0.0.1")
+	if err != nil {
+		t.Fatalf("consume renewed credential: %v", err)
+	}
+	if _, err := repository.RenewEnrollment(ctx, identity.NodeID, "127.0.0.1", actor()); !errors.Is(err, agents.ErrConflict) {
+		t.Fatalf("renewal after consumption must conflict: %v", err)
+	}
+}
+
+func TestDeleteNodeRemovesAllCoreState(t *testing.T) {
+	ctx := context.Background()
+	repository, _ := newAgentRepository(t)
+	enrollment, err := repository.CreateEnrollment(ctx, "Doomed VPS", "127.0.0.1", actor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, digest := deviceCredential(t)
+	identity, err := repository.ConsumeEnrollment(ctx, auth.DigestToken(enrollment.Token), digest, "request-1", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.DeleteNode(ctx, identity.NodeID, "127.0.0.1", actor()); err != nil {
+		t.Fatalf("delete node: %v", err)
+	}
+	if _, err := repository.IdentityByCredential(ctx, digest); !errors.Is(err, agents.ErrUnauthorized) {
+		t.Fatal("deleted device credential still authenticates")
+	}
+	nodes, err := repository.ListNodes(ctx)
+	if err != nil || len(nodes) != 0 {
+		t.Fatalf("deleted node remained listed: %v %d", err, len(nodes))
+	}
+	if _, err := repository.DeleteNode(ctx, identity.NodeID, "127.0.0.1", actor()); !errors.Is(err, agents.ErrNotFound) {
+		t.Fatalf("second delete must be ErrNotFound: %v", err)
+	}
+}
