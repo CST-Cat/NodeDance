@@ -15,14 +15,15 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
-func newAgentRepository(t *testing.T) *agents.Repository {
+func newAgentRepository(t *testing.T) (*agents.Repository, *sql.DB) {
 	t.Helper()
 	database, err := storage.Open(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("open Core database: %v", err)
 	}
 	t.Cleanup(func() { database.Close() })
-	return agents.NewRepository(database.DB, func() time.Time { return time.Unix(1730000000, 0) })
+	repository := agents.NewRepository(database.DB, func() time.Time { return time.Unix(1730000000, 0) })
+	return repository, database.DB
 }
 
 func deviceCredential(t *testing.T) (string, []byte) {
@@ -37,7 +38,7 @@ func deviceCredential(t *testing.T) (string, []byte) {
 
 func TestEnrollmentCreateConsumeAndRevoke(t *testing.T) {
 	ctx := context.Background()
-	repository := newAgentRepository(t)
+	repository, _ := newAgentRepository(t)
 	enrollment, err := repository.CreateEnrollment(ctx, "Edge VPS", "127.0.0.1", actor())
 	if err != nil {
 		t.Fatalf("create enrollment: %v", err)
@@ -81,7 +82,7 @@ func TestEnrollmentCreateConsumeAndRevoke(t *testing.T) {
 
 func TestEnrollmentGrantConsumption(t *testing.T) {
 	ctx := context.Background()
-	repository := newAgentRepository(t)
+	repository, _ := newAgentRepository(t)
 	grant, err := repository.CreateGrant(ctx, agents.GrantRequest{DisplayPrefix: "edge", MaxUses: 2, LifetimeSeconds: 3600}, "127.0.0.1", actor())
 	if err != nil {
 		t.Fatalf("create grant: %v", err)
@@ -136,7 +137,7 @@ func rotationPermissions() protocol.RuntimePermissions {
 
 func TestCredentialRotationLifecycle(t *testing.T) {
 	ctx := context.Background()
-	repository := newAgentRepository(t)
+	repository, _ := newAgentRepository(t)
 	enrollment, err := repository.CreateEnrollment(ctx, "Rotating VPS", "127.0.0.1", actor())
 	if err != nil {
 		t.Fatal(err)
@@ -201,5 +202,97 @@ func TestCredentialRotationLifecycle(t *testing.T) {
 	fresh, err := repository.RequestRotation(ctx, identity.AgentID, "127.0.0.1", actor())
 	if err != nil || fresh.RotationRequestedID == "" || fresh.RotationRequestedID == requested.RotationRequestedID {
 		t.Fatalf("a committed rotation must allow a fresh request: %+v %v", fresh, err)
+	}
+}
+
+func TestLeaseLifecycle(t *testing.T) {
+	ctx := context.Background()
+	repository, database := newAgentRepository(t)
+	enrollment, err := repository.CreateEnrollment(ctx, "Leased VPS", "127.0.0.1", actor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, digest := deviceCredential(t)
+	identity, err := repository.ConsumeEnrollment(ctx, auth.DigestToken(enrollment.Token), digest, "request-1", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := repository.BeginConnection(ctx, identity, digest, 1, "agent-v0.0.0-test", "[]", rotationPermissions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation := lease.Identity.ConnectionGeneration
+
+	if _, err := repository.AcceptHeartbeat(ctx, identity, generation, 0, time.Hour, nil); !errors.Is(err, agents.ErrStaleConnection) {
+		t.Fatalf("heartbeat sequence 0 was accepted: %v", err)
+	}
+	if _, err := repository.AcceptHeartbeat(ctx, identity, generation+1, 1, time.Hour, nil); !errors.Is(err, agents.ErrStaleConnection) {
+		t.Fatalf("heartbeat with a foreign generation was accepted: %v", err)
+	}
+	if _, err := repository.AcceptHeartbeat(ctx, identity, generation, 1, time.Hour, []string{"files.v1"}); err != nil {
+		t.Fatalf("first heartbeat: %v", err)
+	}
+	if _, err := repository.AcceptHeartbeat(ctx, identity, generation, 1, time.Hour, nil); !errors.Is(err, agents.ErrStaleConnection) {
+		t.Fatal("replayed heartbeat sequence was accepted")
+	}
+	if _, err := repository.AcceptHeartbeat(ctx, identity, generation, 2, time.Hour, nil); err != nil {
+		t.Fatalf("monotonic heartbeat: %v", err)
+	}
+	if _, active, err := repository.ActiveLeaseLastSeen(ctx, identity.NodeID, generation); err != nil || !active {
+		t.Fatalf("active lease lookup: %v %v", active, err)
+	}
+
+	// Backdate the lease past the offline window and sweep it.
+	if _, err := database.ExecContext(ctx, `UPDATE nodes SET last_seen_at=1 WHERE id=?`, identity.NodeID); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := repository.MarkExpiredLeases(ctx, time.Hour)
+	if err != nil || len(stale) != 1 || stale[0].NodeID != identity.NodeID || stale[0].Generation != generation {
+		t.Fatalf("expired lease sweep: %+v %v", stale, err)
+	}
+	if _, active, err := repository.ActiveLeaseLastSeen(ctx, identity.NodeID, generation); err != nil || active {
+		t.Fatalf("expired lease still active: %v %v", active, err)
+	}
+	if _, err := repository.AcceptHeartbeat(ctx, identity, generation, 3, time.Hour, nil); !errors.Is(err, agents.ErrStaleConnection) {
+		t.Fatal("heartbeat after expiry was accepted")
+	}
+}
+
+func TestExpireLeaseExactDeadline(t *testing.T) {
+	ctx := context.Background()
+	repository, database := newAgentRepository(t)
+	enrollment, err := repository.CreateEnrollment(ctx, "Deadline VPS", "127.0.0.1", actor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, digest := deviceCredential(t)
+	identity, err := repository.ConsumeEnrollment(ctx, auth.DigestToken(enrollment.Token), digest, "request-1", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := repository.BeginConnection(ctx, identity, digest, 1, "agent-v0.0.0-test", "[]", rotationPermissions())
+	if err != nil {
+		t.Fatal(err)
+	}
+	generation := lease.Identity.ConnectionGeneration
+	if _, err := repository.AcceptHeartbeat(ctx, identity, generation, 1, time.Hour, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ExpireLease(ctx, identity.NodeID, generation, -time.Hour); !errors.Is(err, agents.ErrStaleConnection) {
+		t.Fatalf("non-positive offline window: %v", err)
+	}
+	if _, err := repository.ExpireLease(ctx, identity.NodeID, generation, time.Hour); err != nil {
+		t.Fatalf("fresh lease must not expire: %v", err)
+	}
+	if _, err := database.ExecContext(ctx, `UPDATE nodes SET last_seen_at=1 WHERE id=?`, identity.NodeID); err != nil {
+		t.Fatal(err)
+	}
+	expired, err := repository.ExpireLease(ctx, identity.NodeID, generation, time.Hour)
+	if err != nil || !expired {
+		t.Fatalf("expire backdated lease: %v %v", expired, err)
+	}
+	expired, err = repository.ExpireLease(ctx, identity.NodeID, generation, time.Hour)
+	if err != nil || expired {
+		t.Fatalf("double expiry must be a no-op: %v %v", expired, err)
 	}
 }
