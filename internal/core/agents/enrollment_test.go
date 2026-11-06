@@ -12,6 +12,7 @@ import (
 	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	"github.com/CST-Cat/NodeDance/internal/core/auth"
 	"github.com/CST-Cat/NodeDance/internal/core/storage"
+	"github.com/CST-Cat/NodeDance/internal/protocol"
 )
 
 func newAgentRepository(t *testing.T) *agents.Repository {
@@ -127,4 +128,78 @@ func digestOf(t *testing.T, name string) []byte {
 
 func actor() sql.NullInt64 {
 	return sql.NullInt64{Int64: 1, Valid: true}
+}
+
+func rotationPermissions() protocol.RuntimePermissions {
+	return protocol.RuntimePermissions{OS: "linux", Architecture: "arm64"}
+}
+
+func TestCredentialRotationLifecycle(t *testing.T) {
+	ctx := context.Background()
+	repository := newAgentRepository(t)
+	enrollment, err := repository.CreateEnrollment(ctx, "Rotating VPS", "127.0.0.1", actor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRaw, oldDigest := deviceCredential(t)
+	_ = oldRaw
+	identity, err := repository.ConsumeEnrollment(ctx, auth.DigestToken(enrollment.Token), oldDigest, "request-1", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease, err := repository.BeginConnection(ctx, identity, oldDigest, 1, "agent-v0.0.0-test", "[]", rotationPermissions())
+	if err != nil || lease.Identity.Status != "online" {
+		t.Fatalf("begin connection: %+v %v", lease, err)
+	}
+	generation := lease.Identity.ConnectionGeneration
+	if generation == 0 {
+		t.Fatal("connection generation was not advanced")
+	}
+
+	requested, err := repository.RequestRotation(ctx, identity.AgentID, "127.0.0.1", actor())
+	if err != nil || requested.RotationRequestedID == "" {
+		t.Fatalf("request rotation: %+v %v", requested, err)
+	}
+	repeated, err := repository.RequestRotation(ctx, identity.AgentID, "127.0.0.1", actor())
+	if err != nil || repeated.RotationRequestedID != requested.RotationRequestedID {
+		t.Fatalf("rotation request must be idempotent: %+v vs %+v %v", repeated, requested, err)
+	}
+
+	newRaw, newDigest := deviceCredential(t)
+	_ = newRaw
+	if err := repository.PrepareRotation(ctx, identity, generation, "wrong-id", newDigest); !errors.Is(err, agents.ErrConflict) {
+		t.Fatalf("prepare with foreign rotation id: %v", err)
+	}
+	if err := repository.PrepareRotation(ctx, identity, generation, requested.RotationRequestedID, oldDigest); !errors.Is(err, agents.ErrConflict) {
+		t.Fatalf("prepare with the current credential digest: %v", err)
+	}
+	if err := repository.PrepareRotation(ctx, identity, generation+1, requested.RotationRequestedID, newDigest); !errors.Is(err, agents.ErrStaleConnection) {
+		t.Fatalf("prepare with a stale generation: %v", err)
+	}
+	if err := repository.PrepareRotation(ctx, identity, generation, requested.RotationRequestedID, newDigest); err != nil {
+		t.Fatalf("prepare rotation: %v", err)
+	}
+	if err := repository.PrepareRotation(ctx, identity, generation, requested.RotationRequestedID, newDigest); err != nil {
+		t.Fatalf("prepare rotation replay must be idempotent: %v", err)
+	}
+	pending, err := repository.IdentityByCredential(ctx, newDigest)
+	if err != nil || !pending.CredentialIsPending || pending.CredentialRotationID != requested.RotationRequestedID {
+		t.Fatalf("pending credential state: %+v %v", pending, err)
+	}
+
+	committed, err := repository.BeginConnection(ctx, identity, newDigest, 1, "agent-v0.0.0-test", "[]", rotationPermissions())
+	if err != nil || !committed.RotationCommitted {
+		t.Fatalf("commit rotation through connection: %+v %v", committed, err)
+	}
+	if _, err := repository.IdentityByCredential(ctx, oldDigest); !errors.Is(err, agents.ErrUnauthorized) {
+		t.Fatal("retired credential still authenticates")
+	}
+	active, err := repository.IdentityByCredential(ctx, newDigest)
+	if err != nil || active.CredentialIsPending {
+		t.Fatalf("promoted credential state: %+v %v", active, err)
+	}
+	fresh, err := repository.RequestRotation(ctx, identity.AgentID, "127.0.0.1", actor())
+	if err != nil || fresh.RotationRequestedID == "" || fresh.RotationRequestedID == requested.RotationRequestedID {
+		t.Fatalf("a committed rotation must allow a fresh request: %+v %v", fresh, err)
+	}
 }
