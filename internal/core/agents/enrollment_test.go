@@ -349,3 +349,73 @@ func TestDeleteNodeRemovesAllCoreState(t *testing.T) {
 		t.Fatalf("second delete must be ErrNotFound: %v", err)
 	}
 }
+
+func TestEnrollmentIPUsesConsumptionAuditOnly(t *testing.T) {
+	ctx := context.Background()
+	repository, _ := newAgentRepository(t)
+	enrollment, err := repository.CreateEnrollment(ctx, "Traced VPS", "127.0.0.1", actor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, digest := deviceCredential(t)
+	identity, err := repository.ConsumeEnrollment(ctx, auth.DigestToken(enrollment.Token), digest, "request-1", "203.0.113.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ip := repository.EnrollmentIP(ctx, identity.AgentID); ip != "203.0.113.9" {
+		t.Fatalf("enrollment IP must come from the consume audit record, got %q", ip)
+	}
+	if ip := repository.EnrollmentIP(ctx, ""); ip != "" {
+		t.Fatalf("empty agent id must yield an empty ip, got %q", ip)
+	}
+}
+
+func TestListNodesAndAgentChannel(t *testing.T) {
+	ctx := context.Background()
+	repository, _ := newAgentRepository(t)
+	if nodes, err := repository.ListNodes(ctx); err != nil || len(nodes) != 0 {
+		t.Fatalf("empty node list: %v %d", err, len(nodes))
+	}
+	enrollment, err := repository.CreateEnrollment(ctx, "Listed VPS", "127.0.0.1", actor())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A pending node without a device lists with no AgentID.
+	nodes, err := repository.ListNodes(ctx)
+	if err != nil || len(nodes) != 1 || nodes[0].AgentID != "" || nodes[0].Status != "pending" {
+		t.Fatalf("pending node list: %+v %v", nodes, err)
+	}
+	if _, ok, err := repository.AgentChannel(ctx, "missing"); !errors.Is(err, agents.ErrNotFound) || ok {
+		t.Fatalf("unknown agent channel: %v %v", ok, err)
+	}
+	_, digest := deviceCredential(t)
+	identity, err := repository.ConsumeEnrollment(ctx, auth.DigestToken(enrollment.Token), digest, "request-1", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.BeginConnection(ctx, identity, digest, 1, "agent-v0.0.0-test", `["files.v1"]`, rotationPermissions()); err != nil {
+		t.Fatal(err)
+	}
+	nodes, err = repository.ListNodes(ctx)
+	if err != nil || len(nodes) != 1 {
+		t.Fatal(err)
+	}
+	node := nodes[0]
+	if node.AgentID != identity.AgentID || node.Status != "online" || !node.HasLastSeen {
+		t.Fatalf("connected node projection: %+v", node)
+	}
+	if node.Protocol != 1 || node.AgentVersion != "agent-v0.0.0-test" || len(node.Capabilities) != 1 || node.Capabilities[0] != "files.v1" {
+		t.Fatalf("runtime projection: %+v", node)
+	}
+	if node.Permissions.OS != "linux" || node.Permissions.Architecture != "arm64" {
+		t.Fatalf("permission projection: %+v", node.Permissions)
+	}
+	// A connected agent without rotation state reports no pending channel work.
+	channel, pending, err := repository.AgentChannel(ctx, identity.AgentID)
+	if err != nil || pending {
+		t.Fatalf("connected agent without rotation must report no pending work: %+v pending=%v err=%v", channel, pending, err)
+	}
+	if channel.NodeID != identity.NodeID {
+		t.Fatalf("channel identity: %+v", channel)
+	}
+}
