@@ -81,12 +81,15 @@ type fakeJournal struct {
 	status          taskstate.Status
 	evidence        taskstate.Evidence
 	result          taskjournal.Result
+	phase           taskjournal.ExecutionPhase
+	baseline        *taskjournal.ExecutionBaseline
 	beginError      error
 	prepareError    error
 	finished        []taskstate.Status
 	unknowns        int
 	baselines       []taskjournal.ExecutionBaseline
 	enqueuedActions []string
+	getSnapshot     *taskjournal.Snapshot
 }
 
 func (j *fakeJournal) Enqueue(_ context.Context, identity taskstate.Identity) (taskjournal.EnqueueResult, error) {
@@ -123,6 +126,13 @@ func (j *fakeJournal) MarkUnknown(context.Context, string) error {
 	return nil
 }
 func (j *fakeJournal) Get(context.Context, string) (taskjournal.Snapshot, error) {
+	if j.getSnapshot != nil {
+		merged := *j.getSnapshot
+		if len(j.finished) > 0 {
+			merged.Status, merged.Evidence, merged.Result = j.status, j.evidence, j.result
+		}
+		return merged, nil
+	}
 	return taskjournal.Snapshot{TaskID: "task-1", Status: j.status, Evidence: j.evidence, Result: j.result}, nil
 }
 
@@ -271,5 +281,71 @@ func TestContainerActionsUnverifiedMutationStaysUnknown(t *testing.T) {
 	}
 	if len(journal.finished) != 0 {
 		t.Fatalf("an unknown outcome must not be finished: %v", journal.finished)
+	}
+}
+
+func TestContainerActionsReconcileRequiresVerifiedBaseline(t *testing.T) {
+	bootID := "11111111-1111-1111-1111-111111111111"
+	baselineStartedAt := "2026-11-06T11:00:00Z"
+	baseline := taskjournal.ExecutionBaseline{TargetID: containerID, Action: "restart", HostBootID: bootID,
+		StartedAt: baselineStartedAt, RestartCount: 0, Running: true}
+	unknown := &taskjournal.Snapshot{
+		TaskID: "task-1", TargetID: containerID, Action: "restart", Status: taskstate.Unknown,
+		ExecutionPhase: taskjournal.ExecutionPhaseMutationMayHaveStarted, Baseline: &baseline,
+		Evidence: taskstate.Evidence{ExecutionAttempted: true},
+	}
+
+	engine := &fakeEngine{containers: map[string]agentactions.Container{containerID: {
+		ID: containerID, Name: "/web", Running: true, StartedAt: "2026-11-06T12:00:00Z", RestartCount: 0}}}
+	journal := &fakeJournal{getSnapshot: unknown}
+	executor, _ := agentactions.New(engine, journal, agentactions.Options{BootIDSource: func(context.Context) (string, error) {
+		return bootID, nil
+	}})
+
+	// A terminal task is never reconciled again.
+	finished := *unknown
+	finished.Status = taskstate.Succeeded
+	journal.getSnapshot = &finished
+	if _, err := executor.Reconcile(context.Background(), "task-1"); !errors.Is(err, agentactions.ErrTaskNotReconcileable) {
+		t.Fatalf("finished task reconcile: %v", err)
+	}
+
+	// A verified post-baseline restart-like change resolves the unknown task.
+	journal.getSnapshot = unknown
+	result, err := executor.Reconcile(context.Background(), "task-1")
+	if err != nil || result.Status != taskstate.Succeeded {
+		t.Fatalf("verified reconcile: %+v %v", result, err)
+	}
+	if result.Result.ResourceRevision != "reconciled_started_at_change" {
+		t.Fatalf("reconcile revision: %+v", result.Result)
+	}
+
+	// A different host boot invalidates the durable baseline.
+	otherBoot := &taskjournal.Snapshot{
+		TaskID: "task-1", TargetID: containerID, Action: "restart", Status: taskstate.Unknown,
+		ExecutionPhase: taskjournal.ExecutionPhaseMutationMayHaveStarted, Baseline: &baseline,
+	}
+	otherBoot.Baseline = &baseline
+	otherBootJournal := &fakeJournal{getSnapshot: otherBoot}
+	otherBootExecutor, _ := agentactions.New(engine, otherBootJournal, agentactions.Options{BootIDSource: func(context.Context) (string, error) {
+		return "22222222-2222-2222-2222-222222222222", nil
+	}})
+	if _, err := otherBootExecutor.Reconcile(context.Background(), "task-1"); !errors.Is(err, agentactions.ErrBaselineUnverifiable) {
+		t.Fatalf("reconcile across boots: %v", err)
+	}
+
+	// An unchanged observation proves nothing.
+	unchanged := &taskjournal.Snapshot{
+		TaskID: "task-1", TargetID: containerID, Action: "restart", Status: taskstate.Unknown,
+		ExecutionPhase: taskjournal.ExecutionPhaseMutationMayHaveStarted, Baseline: &baseline,
+	}
+	unchangedEngine := &fakeEngine{containers: map[string]agentactions.Container{containerID: {
+		ID: containerID, Name: "/web", Running: true, StartedAt: baselineStartedAt, RestartCount: 0}}}
+	unchangedJournal := &fakeJournal{getSnapshot: unchanged}
+	unchangedExecutor, _ := agentactions.New(unchangedEngine, unchangedJournal, agentactions.Options{BootIDSource: func(context.Context) (string, error) {
+		return bootID, nil
+	}})
+	if _, err := unchangedExecutor.Reconcile(context.Background(), "task-1"); !errors.Is(err, agentactions.ErrBaselineUnverifiable) {
+		t.Fatalf("reconcile without observed change: %v", err)
 	}
 }
