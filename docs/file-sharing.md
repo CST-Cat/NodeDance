@@ -6,7 +6,7 @@ NodeDance embeds file sharing in its existing file manager and Core. The shared 
 
 ## Source reference / 参考源码
 
-The upstream repository was cloned to `/home/ubuntu/codex-use/Gokapi` from `https://github.com/Forceu/Gokapi.git`, revision `0142d4c318ca67e076dc44ba35ff49e05c84790e`. The behavior reference is `docs/usage.rst`, `internal/models/FileList.go`, `internal/models/FileRequest.go` and `openapi.json`. NodeDance's implementation is written for its own authenticated Core/root Agent flow and installed shadcn components; upstream source and Bootstrap UI are not copied into the product. The upstream AGPL-3.0 license remains in the local reference checkout. QR generation uses the MIT-licensed `qrcode` package and its locked dependency notices.
+The upstream behavior reference is `https://github.com/Forceu/Gokapi.git` at revision `0142d4c318ca67e076dc44ba35ff49e05c84790e`, specifically `docs/usage.rst`, `internal/models/FileList.go`, `internal/models/FileRequest.go` and `openapi.json`. NodeDance's implementation is written for its own authenticated Core/root Agent flow and installed shadcn components; upstream source and Bootstrap UI are not copied into the product, and upstream remains licensed AGPL-3.0. QR generation uses the MIT-licensed `qrcode` package and its locked dependency notices.
 
 This implements the sharing and collection workflow within NodeDance. Gokapi's independent user/role/API-key administration, OIDC, Redis/S3 backends, encryption configuration and custom CSS/JavaScript administration are not implemented by this change. This is not a claim of complete Gokapi product parity.
 

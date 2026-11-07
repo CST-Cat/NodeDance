@@ -20,6 +20,8 @@ curl -fsSL https://github.com/CST-Cat/NodeDance/releases/latest/download/install
 
 该命令安装 Core 程序并自动创建、启用和启动 root `nodedance.service`，监听 `0.0.0.0:8180`，数据保存在 `/var/lib/nodedance`。首次无终端启动会自动生成账号和密码，写入私有数据目录内 `0600` 权限的 `initial-admin.json`，首次登录成功后删除。生产环境还需配置 HTTPS 反向代理，详见[部署指南](docs/installation.en.md#run-the-core)。
 
+首次交互式启动时输入用户名和密码，或按回车安全生成其中之一；无终端启动则自动生成两者并写入私有 `initial-admin.json` 文件，首次登录成功后删除。
+
 ### Agent
 
 登录 Core 后进入 **添加 Agent**，填写节点名称并生成安装命令。选择左右排列的直接安装或 Docker 部署，复制完整命令到目标 Linux 主机运行即可，无需再次输入 Token。命令执行时自动解析最新稳定 Agent release；Agent 以 root 运行；单次注册 Token 不设时间限制，注册成功或重新生成后失效。
