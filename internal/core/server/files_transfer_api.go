@@ -219,6 +219,7 @@ func (s *Server) transferFile(ctx context.Context, current *session, sourceNodeI
 	}
 	if !ready {
 		if readyTask.Status == taskstate.Succeeded {
+			result.Transport = readyTask.Result.ObservedState
 			return result, nil
 		}
 		return fileTransferResult{}, errors.New("target upload task did not become ready: " + string(readyTask.Status))
