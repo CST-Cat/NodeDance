@@ -135,5 +135,5 @@ func (s *Server) seedNodeLineType(ctx context.Context, node, lineType string) {
 		return
 	}
 	raw, _ := json.Marshal(asset)
-	_, _ = s.store.DB.ExecContext(ctx, `INSERT INTO node_assets(node_id,settings_json,updated_at) VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at`, node, string(raw), s.now().Unix())
+	_, _ = s.store.DB.ExecContext(ctx, `INSERT INTO node_assets(node_id,settings_json,updated_at) VALUES(?,?,?) ON CONFLICT(node_id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at WHERE IFNULL(json_extract(node_assets.settings_json,'$.lineType'),'')=''`, node, string(raw), s.now().Unix())
 }
