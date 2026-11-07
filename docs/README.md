@@ -6,7 +6,7 @@ These guides describe the current implementation. Discover request schemas and p
 
 | 主题 / Topic | 文档 / Guide |
 | --- | --- |
-| 安装与运行 | [Installation](installation.en.md)、[Docker Agent](docker.md) |
+| 安装与运行 | [Installation](installation.md)、[Docker Agent](docker.md) |
 | 命令、通道与恢复 | [CLI/TUI](cli.md)、[Stable/Dev updates and rollback](updates.md)、[Releases and rehearsal](releases.md) |
 | 架构与能力 | [Architecture](architecture.md)、[Generated interface coverage](interface-coverage.md)、[Shared capability coverage](core-convergence-audit.md)、[Agent capabilities](agent-capabilities.md) |
 | 文件 | [File manager](file-manager.md)、[Strict direct / Core relay transfers](file-transfers.md)、[Sharing](file-sharing.md)、[Bundled rsync](bundled-rsync.md) |

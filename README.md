@@ -18,7 +18,7 @@ Web、CLI、TUI 共用 Core 操作契约；CLI 与 TUI 完整覆盖同一终端�
 curl -fsSL https://github.com/CST-Cat/NodeDance/releases/latest/download/install-core.sh | sudo bash
 ```
 
-该命令安装 Core 程序并自动创建、启用和启动 root `nodedance.service`，监听 `0.0.0.0:8180`，数据保存在 `/var/lib/nodedance`。首次无终端启动会自动生成账号和密码，写入私有数据目录内 `0600` 权限的 `initial-admin.json`，首次登录成功后删除。生产环境还需配置 HTTPS 反向代理，详见[部署指南](docs/installation.en.md#run-the-core)。
+该命令安装 Core 程序并自动创建、启用和启动 root `nodedance.service`，监听 `0.0.0.0:8180`，数据保存在 `/var/lib/nodedance`。首次无终端启动会自动生成账号和密码，写入私有数据目录内 `0600` 权限的 `initial-admin.json`，首次登录成功后删除。生产环境还需配置 HTTPS 反向代理，详见[部署指南](docs/installation.md#run-the-core)。
 
 首次交互式启动时输入用户名和密码，或按回车安全生成其中之一；无终端启动则自动生成两者并写入私有 `initial-admin.json` 文件，首次登录成功后删除。
 
@@ -46,7 +46,7 @@ Agent 注册、恢复、运行、文件服务和 systemd 服务均要求 root �
 
 [完整文档索引](docs/README.md)
 
-- [详细部署与运维指南](docs/installation.en.md)
+- [详细部署与运维指南](docs/installation.md)
 - [命令行与终端界面](docs/cli.md)
 - [节点总览、主机信息与备忘录](docs/overview.md)
 - [架构说明](docs/architecture.md)

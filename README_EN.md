@@ -16,7 +16,7 @@ Run this on a Linux x86_64 or ARM64 server. The installer selects the latest sta
 curl -fsSL https://github.com/CST-Cat/NodeDance/releases/latest/download/install-core.sh | sudo bash
 ```
 
-This installs the Core binary and automatically creates, enables, and starts the root-owned `nodedance.service`, bound to `0.0.0.0:8180` with data under `/var/lib/nodedance`. On first unattended startup, Core creates credentials in a private `0600` `initial-admin.json` file and removes it after the first successful login. Production deployments also need an HTTPS reverse proxy; see the [deployment guide](docs/installation.en.md#run-the-core).
+This installs the Core binary and automatically creates, enables, and starts the root-owned `nodedance.service`, bound to `0.0.0.0:8180` with data under `/var/lib/nodedance`. On first unattended startup, Core creates credentials in a private `0600` `initial-admin.json` file and removes it after the first successful login. Production deployments also need an HTTPS reverse proxy; see the [deployment guide](docs/installation.md#run-the-core).
 
 On first interactive start, enter a username and password or press Enter to generate either securely. Unattended starts generate both in the private `initial-admin.json` file, removed after the first successful login.
 
@@ -44,7 +44,7 @@ Agent enrollment, recovery, runtime, file service, and systemd service require r
 
 [Complete documentation index](docs/README.md)
 
-- [Detailed setup and operations](docs/installation.en.md)
+- [Detailed setup and operations](docs/installation.md)
 - [CLI and terminal UI](docs/cli.md)
 - [Node overview, host information and memo](docs/overview.md)
 - [Agent capabilities and Komari comparison](docs/agent-capabilities.md)
