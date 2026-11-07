@@ -4,6 +4,7 @@ umask 077
 
 readonly RELEASE_BASE="https://github.com/CST-Cat/NodeDance/releases/download"
 readonly LATEST_VERSION_URL="https://raw.githubusercontent.com/CST-Cat/NodeDance/main/agent-latest.txt"
+readonly LATEST_DIGESTS_URL="https://raw.githubusercontent.com/CST-Cat/NodeDance/main/agent-image-digests.txt"
 readonly STATE_DIR="/var/lib/nodedance-agent"
 readonly CONFIG_PATH="${STATE_DIR}/agent.json"
 readonly BIN_DIR="/usr/local/bin"
@@ -218,8 +219,24 @@ prepare_state() {
 }
 
 if [[ "$mode" == docker ]]; then
-  image="ghcr.io/cst-cat/nodedance-agent:$release_tag"
-  docker pull "$image" || fail 'cannot pull the pinned Agent image'
+  image_repo="ghcr.io/cst-cat/nodedance-agent"
+  image="$image_repo:$release_tag"
+  # Pin the image to the digest the release workflow recorded for this tag so
+  # a re-pushed tag cannot change the bytes. Releases published before the
+  # digest file existed fall back to the tag itself.
+  digest_status=$(curl --silent --show-error --location --proto '=https' --proto-redir '=https' --tlsv1.2 --output "$tmp_dir/agent-image-digests.txt" --write-out '%{http_code}' "$LATEST_DIGESTS_URL" 2>/dev/null || true)
+  pinned_digest=""
+  if [[ "$digest_status" == 200 ]]; then
+    candidate=$(awk -v tag="$release_tag" '$1 == tag { print $2 }' "$tmp_dir/agent-image-digests.txt")
+    [[ "$candidate" =~ ^sha256:[0-9a-f]{64}$ ]] && pinned_digest="$candidate"
+  fi
+  if [[ -n "$pinned_digest" ]]; then
+    docker pull "$image_repo@$pinned_digest" || fail 'cannot pull the pinned Agent image by digest'
+    docker tag "$image_repo@$pinned_digest" "$image" || fail 'cannot tag the pinned Agent image'
+  else
+    printf 'No recorded image digest for %s; pulling the release tag without digest pinning.\n' "$release_tag"
+    docker pull "$image" || fail 'cannot pull the pinned Agent image'
+  fi
   prepare_state
   docker_host_args=(--user=0:0 --privileged --pid=host --network=host --mount type=bind,src=/,dst=/host,readonly --mount "type=bind,src=$STATE_DIR,dst=$STATE_DIR")
   enroll_args=(enroll --server "$server_url" --token-stdin --config "$CONFIG_PATH")
