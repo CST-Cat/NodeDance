@@ -135,7 +135,7 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-deadline.C:
-			return errors.New("update wait expired; observe with --status --job-id " + accepted.ID)
+			return fmt.Errorf("update wait expired; observe with --status --job-id %s", accepted.ID)
 		case <-ticker.C:
 		}
 		response, err = call("status", "")
@@ -154,7 +154,7 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 				return err
 			}
 			if current.Status != "succeeded" {
-				return errors.New("update finished with " + current.Status + ": " + current.Error)
+				return fmt.Errorf("update finished with %s: %s", current.Status, current.Error)
 			}
 			return nil
 		}
