@@ -413,7 +413,7 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 			}
 		}
 		requestCtx, cancel := context.WithCancel(ctx)
-		if *connection.timeout > 0 {
+		if *connection.timeout > 0 && (defaultTimeoutApplies(o, o.Transport == "terminal" && !terminalJSONL, wait) || connection.timeoutExplicit()) {
 			cancel()
 			requestCtx, cancel = context.WithTimeout(ctx, *connection.timeout)
 		}

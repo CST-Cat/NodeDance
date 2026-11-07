@@ -39,9 +39,33 @@ func addConnectionFlags(f *flag.FlagSet, lookup LookupEnv) connectionFlags {
 		server:   f.String("server", lookupValue(lookup, "NODEDANCE_SERVER"), i18n.TextFor(stderr, "Core HTTPS origin")),
 		origin:   f.String("origin", lookupValue(lookup, "NODEDANCE_ORIGIN"), i18n.TextFor(stderr, "public Core origin when connecting through another address")),
 		stateDir: f.String("state-dir", firstNonEmpty(lookupValue(lookup, "NODEDANCE_CLIENT_STATE_DIR"), filepath.Join(configHome, "nodedance-client")), i18n.TextFor(stderr, "private CLI session directory (0700)")),
-		caFile:   f.String("ca-file", "", i18n.TextFor(stderr, "private CA PEM file")), dev: f.Bool("dev", false, i18n.TextFor(stderr, "allow HTTP only to literal loopback")), timeout: f.Duration("timeout", 60*time.Second, i18n.TextFor(stderr, "request/stream timeout; 0 disables deadline")),
+		caFile:   f.String("ca-file", "", i18n.TextFor(stderr, "private CA PEM file")), dev: f.Bool("dev", false, i18n.TextFor(stderr, "allow HTTP only to literal loopback")), timeout: f.Duration("timeout", 60*time.Second, i18n.TextFor(stderr, "request timeout; 0 disables deadline; streams and interactive sessions are not bounded by default")),
 	}
 }
+
+// timeoutExplicit reports whether the user set --timeout on this invocation;
+// an explicit value also bounds interactive and streaming operations.
+func (f connectionFlags) timeoutExplicit() bool {
+	explicit := false
+	f.flags.Visit(func(flag *flag.Flag) {
+		if flag.Name == "timeout" {
+			explicit = true
+		}
+	})
+	return explicit
+}
+
+// defaultTimeoutApplies reports whether the default connection timeout bounds
+// this execution: only finite JSON request/response exchanges. Interactive
+// terminals, JSONL and websocket streams, transfers and completion observation
+// legitimately outlive it and are bounded only by an explicit --timeout.
+func defaultTimeoutApplies(o control.Operation, interactive, wait bool) bool {
+	if interactive || wait {
+		return false
+	}
+	return o.Transport == "json" || o.Transport == "local"
+}
+
 func (f connectionFlags) client() (*control.Client, error) {
 	explicit := map[string]bool{}
 	f.flags.Visit(func(flag *flag.Flag) { explicit[flag.Name] = true })
@@ -264,18 +288,24 @@ func runControl(ctx context.Context, name string, args []string, lookup LookupEn
 	defer client.Close()
 	requestCtx, cancel := signal.NotifyContext(ctx, os.Interrupt)
 	defer cancel()
+	catalogCtx := requestCtx
 	if *connection.timeout > 0 {
-		var stop context.CancelFunc
-		requestCtx, stop = context.WithTimeout(requestCtx, *connection.timeout)
+		bounded, stop := context.WithTimeout(requestCtx, *connection.timeout)
 		defer stop()
+		catalogCtx = bounded
 	}
-	catalog, err := client.Catalog(requestCtx)
+	catalog, err := client.Catalog(catalogCtx)
 	if err != nil {
 		return err
 	}
 	o, err := control.FindIn(catalog, name)
 	if err != nil {
 		return err
+	}
+	if *connection.timeout > 0 && (defaultTimeoutApplies(o, *interactive, *wait) || connection.timeoutExplicit()) {
+		bounded, stop := context.WithTimeout(requestCtx, *connection.timeout)
+		defer stop()
+		requestCtx = bounded
 	}
 	b, err := readOperationValue(*body, stdin, o.MaxBodyBytes)
 	if err != nil {

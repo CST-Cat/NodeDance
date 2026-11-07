@@ -43,7 +43,7 @@ Connection flags are available after the operation:
 | `--state-dir` / `NODEDANCE_CLIENT_STATE_DIR` | Private client session directory; defaults to the user's config directory under `nodedance-client` |
 | `--ca-file` | Additional private CA certificates; system trust remains enabled |
 | `--dev` | Allow HTTP only for a literal loopback address |
-| `--timeout` | Request/stream deadline; default `60s`, `0` disables it |
+| `--timeout` | Request deadline; default `60s`, `0` disables it. The default bounds only finite JSON request/response exchanges — interactive terminals, JSONL/websocket streams, transfers and `--wait` observation run unbounded unless `--timeout` is set explicitly. / 请求时限；默认 `60s`，`0` 关闭。默认只约束有限的 JSON 请求/响应——交互终端、JSONL/WebSocket 流、传输与 `--wait` 观察默认不限时，显式设置 `--timeout` 才生效 |
 
 The client stores a server-bound session in an owner-owned `0700` directory and `0600` regular file, rejects symlink sessions, verifies TLS, and refuses HTTP redirects. Use different state directories for different Core servers. CLI/TUI request the discovered `persistent` session policy at login, setup and account switch. These sessions do not expire from inactivity, including after restarting the client; logout, revocation, account changes, disable and password changes still invalidate them. Browser sign-in retains its idle timeout. / CLI/TUI 登录态不设闲置过期，重启客户端后继续有效；退出、撤销、账号变更、停用和密码变更仍会使其失效。
 
