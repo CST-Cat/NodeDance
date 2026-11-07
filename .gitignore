@@ -17,3 +17,6 @@ __pycache__/
 .references/
 design-study/
 .hallmark/
+
+# Agent session state
+.zcode/
