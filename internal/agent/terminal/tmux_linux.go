@@ -212,6 +212,18 @@ func (e *tmuxEndpoint) Close() error {
 	command.Env = e.env
 	// An exited shell may already have removed its server.
 	_ = command.Run()
+	// A failed or timed-out kill-server leaves the socket file behind even
+	// when no server answers on it anymore. Unlink it only on the definitive
+	// has-session exit code so a live server never loses its socket.
+	probeCtx, probeCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer probeCancel()
+	probe := exec.CommandContext(probeCtx, e.binary, "-S", e.socket, "has-session", "-t", "main")
+	probe.Env = e.env
+	if runErr := probe.Run(); runErr != nil {
+		if exitErr, ok := runErr.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			_ = os.Remove(e.socket)
+		}
+	}
 	_ = os.Remove(e.config)
 	if client != nil {
 		return client.Close()
