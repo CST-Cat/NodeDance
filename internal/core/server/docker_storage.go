@@ -43,21 +43,49 @@ func persistDockerNode(ctx context.Context, db *sql.DB, saved coredocker.Persist
 		saved.Identity.NodeID, saved.Identity.AgentID, int64(saved.Generation), healthJSON, healthAt, saved.StaleReason, now.UnixNano()); err != nil {
 		return fmt.Errorf("persist Docker node state: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM docker_containers WHERE node_id=?`, saved.Identity.NodeID); err != nil {
-		return fmt.Errorf("replace Docker container inventory: %w", err)
-	}
-	statement, err := tx.PrepareContext(ctx, `INSERT INTO docker_containers(node_id, container_id, record_json) VALUES(?, ?, ?)`)
+	// Incremental frames arrive far more often than containers change; diff
+	// against the stored inventory and write only the delta instead of
+	// rewriting every row per accepted frame.
+	stored := make(map[string]string, len(saved.Containers))
+	rows, err := tx.QueryContext(ctx, `SELECT container_id, record_json FROM docker_containers WHERE node_id=?`, saved.Identity.NodeID)
 	if err != nil {
-		return fmt.Errorf("prepare Docker inventory persistence: %w", err)
+		return fmt.Errorf("read Docker inventory for persistence: %w", err)
 	}
-	defer statement.Close()
+	for rows.Next() {
+		var id, encoded string
+		if err := rows.Scan(&id, &encoded); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan Docker inventory for persistence: %w", err)
+		}
+		stored[id] = encoded
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("scan Docker inventory for persistence: %w", err)
+	}
+	rows.Close()
+	current := make(map[string]struct{}, len(saved.Containers))
 	for _, record := range saved.Containers {
 		encoded, err := json.Marshal(record)
 		if err != nil {
 			return fmt.Errorf("encode Docker container record: %w", err)
 		}
-		if _, err := statement.ExecContext(ctx, saved.Identity.NodeID, record.Container.ID, string(encoded)); err != nil {
+		current[record.Container.ID] = struct{}{}
+		if previous, ok := stored[record.Container.ID]; ok && previous == string(encoded) {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO docker_containers(node_id, container_id, record_json) VALUES(?, ?, ?)
+			ON CONFLICT(node_id, container_id) DO UPDATE SET record_json=excluded.record_json`,
+			saved.Identity.NodeID, record.Container.ID, string(encoded)); err != nil {
 			return fmt.Errorf("persist Docker container record: %w", err)
+		}
+	}
+	for id := range stored {
+		if _, ok := current[id]; ok {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM docker_containers WHERE node_id=? AND container_id=?`, saved.Identity.NodeID, id); err != nil {
+			return fmt.Errorf("remove stale Docker container record: %w", err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
