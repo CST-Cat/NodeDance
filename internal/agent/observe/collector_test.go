@@ -53,7 +53,6 @@ func BenchmarkFastDiagnostics(b *testing.B) {
 	}
 }
 
-
 func TestProcessNameNeverExpandsCommandArguments(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOST_PROC", dir)

@@ -1,6 +1,9 @@
 package agent
 
-import "testing"
+import (
+	"net/netip"
+	"testing"
+)
 
 func TestClassifyLineType(t *testing.T) {
 	for _, tt := range []struct {
@@ -34,6 +37,31 @@ func TestClassifyLineType(t *testing.T) {
 func TestDetectLineTypeRuns(t *testing.T) {
 	if got := DetectLineType(); !validDetectResult(got) {
 		t.Fatalf("DetectLineType returned %q", got)
+	}
+}
+
+func TestIsDedicatedLineAddress(t *testing.T) {
+	for _, tt := range []struct {
+		address string
+		want    bool
+	}{
+		{address: "203.0.113.5", want: true},
+		{address: "100.128.0.1", want: true},
+		{address: "2606:4700::1111", want: true},
+		{address: "10.0.0.5", want: false},
+		{address: "172.16.5.5", want: false},
+		{address: "192.168.1.1", want: false},
+		{address: "100.64.0.1", want: false},
+		{address: "100.127.255.254", want: false},
+		{address: "127.0.0.1", want: false},
+		{address: "169.254.3.7", want: false},
+		{address: "fe80::1", want: false},
+		{address: "fc00::1", want: false},
+		{address: "ff02::1", want: false},
+	} {
+		if got := isDedicatedLineAddress(netip.MustParseAddr(tt.address)); got != tt.want {
+			t.Fatalf("isDedicatedLineAddress(%s) = %t, want %t", tt.address, got, tt.want)
+		}
 	}
 }
 

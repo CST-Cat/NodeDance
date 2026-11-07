@@ -169,6 +169,9 @@ func TestBuiltInStateStaysOutsideBackupAndHasNoGlobalDeploymentRegistry(t *testi
 }
 
 func TestCoreDockerDeploymentIsRejected(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("Core update controller requires root")
+	}
 	data := filepath.Join(t.TempDir(), "data")
 	if err := os.Mkdir(data, 0700); err != nil {
 		t.Fatal(err)

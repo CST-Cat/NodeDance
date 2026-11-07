@@ -97,6 +97,9 @@ func TestPrepareSystemdStateRejectsSymlinkPathsWithoutChangingTargets(t *testing
 }
 
 func TestPrepareSystemdStateCreatesNewAndPreservesValidConfig(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("Agent credential access requires a root test process")
+	}
 	serviceUID, serviceGID := os.Geteuid(), os.Getegid()
 	root := t.TempDir()
 

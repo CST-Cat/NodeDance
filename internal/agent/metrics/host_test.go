@@ -230,4 +230,3 @@ func TestAMDDriverMetricsFromSysfs(t *testing.T) {
 		t.Fatal("AMD device metrics", devices, err)
 	}
 }
-

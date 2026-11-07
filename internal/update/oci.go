@@ -17,32 +17,32 @@ import (
 
 const (
 	devBinaryRepository = "cst-cat/nodedance-agent-binaries"
-	devImageRepository = "cst-cat/nodedance-agent"
-	devArtifactType = "application/vnd.nodedance.agent.dev.v1"
-	devBinaryMediaType = "application/vnd.nodedance.agent.binary.v1"
-	ociManifestType = "application/vnd.oci.image.manifest.v1+json"
-	ociIndexType = "application/vnd.oci.image.index.v1+json"
-	dockerIndexType = "application/vnd.docker.distribution.manifest.list.v2+json"
+	devImageRepository  = "cst-cat/nodedance-agent"
+	devArtifactType     = "application/vnd.nodedance.agent.dev.v1"
+	devBinaryMediaType  = "application/vnd.nodedance.agent.binary.v1"
+	ociManifestType     = "application/vnd.oci.image.manifest.v1+json"
+	ociIndexType        = "application/vnd.oci.image.index.v1+json"
+	dockerIndexType     = "application/vnd.docker.distribution.manifest.list.v2+json"
 )
 
 type ociDescriptor struct {
-	MediaType string `json:"mediaType"`
-	Digest string `json:"digest"`
-	Size int64 `json:"size"`
+	MediaType   string            `json:"mediaType"`
+	Digest      string            `json:"digest"`
+	Size        int64             `json:"size"`
 	Annotations map[string]string `json:"annotations"`
-	Platform *struct {
-		OS string `json:"os"`
+	Platform    *struct {
+		OS           string `json:"os"`
 		Architecture string `json:"architecture"`
 	} `json:"platform"`
 }
 
 type ociManifest struct {
-	SchemaVersion int `json:"schemaVersion"`
-	MediaType string `json:"mediaType"`
-	ArtifactType string `json:"artifactType"`
-	Annotations map[string]string `json:"annotations"`
-	Layers []ociDescriptor `json:"layers"`
-	Manifests []ociDescriptor `json:"manifests"`
+	SchemaVersion int               `json:"schemaVersion"`
+	MediaType     string            `json:"mediaType"`
+	ArtifactType  string            `json:"artifactType"`
+	Annotations   map[string]string `json:"annotations"`
+	Layers        []ociDescriptor   `json:"layers"`
+	Manifests     []ociDescriptor   `json:"manifests"`
 }
 
 func ociDigest(value string) bool {
@@ -62,7 +62,7 @@ func (g *GitHub) registryGet(ctx context.Context, repository, resource, accept s
 		return nil, fmt.Errorf("GHCR public pull token unavailable (check package visibility): %w", err)
 	}
 	var token struct {
-		Token string `json:"token"`
+		Token       string `json:"token"`
 		AccessToken string `json:"access_token"`
 	}
 	if err := json.Unmarshal(raw, &token); err != nil {
@@ -113,7 +113,7 @@ func (g *GitHub) registryManifest(ctx context.Context, repository, reference, ac
 		return nil, manifest, "", errors.New("unexpected OCI schema")
 	}
 	sum := sha256.Sum256(raw)
-	digest := "sha256:"+hex.EncodeToString(sum[:])
+	digest := "sha256:" + hex.EncodeToString(sum[:])
 	if serverDigest := response.Header.Get("Docker-Content-Digest"); serverDigest != "" && serverDigest != digest {
 		return nil, manifest, "", errors.New("OCI manifest digest does not match registry response")
 	}
@@ -133,7 +133,7 @@ func (g *GitHub) resolveDev(ctx context.Context, version string) (Release, error
 		return Release{}, errors.New("unexpected Agent Dev OCI artifact")
 	}
 	revision := manifest.Annotations["org.opencontainers.image.revision"]
-	resolvedVersion := "agent-dev-"+revision
+	resolvedVersion := "agent-dev-" + revision
 	if !ValidDevVersion(resolvedVersion) || ValidDevVersion(version) && version != resolvedVersion {
 		return Release{}, errors.New("invalid or mismatched Agent Dev commit")
 	}
@@ -178,12 +178,12 @@ func (g *GitHub) resolveDev(ctx context.Context, version string) (Release, error
 		return Release{}, errors.New("Agent Dev Docker image is missing amd64 or arm64")
 	}
 	return Release{
-		Component: "agent",
-		Version: resolvedVersion,
-		URL: "https://github.com/"+Repository+"/commit/"+revision,
+		Component:    "agent",
+		Version:      resolvedVersion,
+		URL:          "https://github.com/" + Repository + "/commit/" + revision,
 		BinaryDigest: binaryDigest,
-		BinarySize: binarySize,
-		ImageDigest: imageDigest,
+		BinarySize:   binarySize,
+		ImageDigest:  imageDigest,
 	}, nil
 }
 

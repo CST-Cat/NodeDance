@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/control"
+	"github.com/CST-Cat/NodeDance/internal/i18n"
 	"github.com/CST-Cat/NodeDance/internal/update"
 )
 
@@ -144,7 +145,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	}
 	request.JobID = *rollback
 	if *rollback != "" && !*yes {
-		fmt.Fprint(stderr, "Roll back to the previous version and restore its data? [y/N] ")
+		fmt.Fprint(stderr, i18n.TextFor(stderr, "Roll back to the previous version and restore its data? [y/N] "))
 		line, err := bufio.NewReader(stdin).ReadString('\n')
 		if err != nil || !strings.EqualFold(strings.TrimSpace(line), "y") {
 			return errors.New("rollback cancelled")
@@ -157,7 +158,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 		}
 		*key = hex.EncodeToString(raw[:])
 	}
-	fmt.Fprintln(stderr, "Idempotency-Key:", *key)
+	fmt.Fprintln(stderr, i18n.TextFor(stderr, "Idempotency-Key:"), *key)
 	action := "apply"
 	if *rollback != "" {
 		action = "rollback"
@@ -198,7 +199,7 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 			return err
 		}
 		if job.Stage != last {
-			fmt.Fprintln(stderr, "Update:", job.Stage)
+			fmt.Fprintln(stderr, i18n.TextFor(stderr, "Update:"), job.Stage)
 			last = job.Stage
 		}
 		if job.Finished != nil {
