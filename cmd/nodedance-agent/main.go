@@ -263,6 +263,10 @@ func runRecover(ctx context.Context, args []string, stdout, stderr io.Writer) er
 	if err != nil {
 		return err
 	}
+	if config.PendingCredential != "" {
+		fmt.Fprintf(stdout, i18n.TextFor(stdout, "Agent identity recovered: node=%s agent=%s (credential rotation is still pending; the saved credential remains in use)\n"), config.NodeID, config.AgentID)
+		return nil
+	}
 	fmt.Fprintf(stdout, i18n.TextFor(stdout, "Agent identity recovered: node=%s agent=%s\n"), config.NodeID, config.AgentID)
 	return nil
 }

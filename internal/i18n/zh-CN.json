@@ -89,6 +89,7 @@
   "Paste the one-time enrollment token, press Enter, then press Ctrl-D on a blank line (Linux/macOS) or Ctrl-Z followed by Enter (Windows) to finish stdin.": "粘贴一次性注册令牌，按 Enter，然后在空行按 Ctrl-D（Linux/macOS）或 Ctrl-Z 后按 Enter（Windows）结束输入。",
   "Agent enrolled: node=%s agent=%s config=%s\n": "Agent 已注册：node=%s agent=%s config=%s\n",
   "Agent identity recovered: node=%s agent=%s\n": "Agent 身份已恢复：node=%s agent=%s\n",
+  "Agent identity recovered: node=%s agent=%s (credential rotation is still pending; the saved credential remains in use)\n": "Agent 身份已恢复：node=%s agent=%s（凭据轮换仍待提升，继续使用已保存的凭据）\n",
   "Installed %s\n": "已安装 %s\n",
   "Enable and start with: systemctl enable --now nodedance-agent.service": "启用并启动：systemctl enable --now nodedance-agent.service",
   "Host file access is disabled by the systemd Agent unit.": "systemd Agent 单元已禁用主机文件访问。",
