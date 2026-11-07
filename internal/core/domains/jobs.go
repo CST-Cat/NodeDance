@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/CST-Cat/NodeDance/internal/core/audit"
@@ -413,6 +414,9 @@ func (s *Store) maintain(ctx context.Context, notify func(context.Context, strin
 			Next time.Time       `json:"next"`
 		}{Sent: map[string]bool{}}
 		if previous != "" && json.Unmarshal([]byte(previous), &state) != nil {
+			// A corrupt bucket must not silently disable expiry notifications
+			// forever; the next successful send overwrites it.
+			log.Printf("NodeDance certificate %s has an unreadable notification bucket; skipping its notifications this cycle", c.ID)
 			continue
 		}
 		day := s.now().UTC().Format("2006-01-02")
