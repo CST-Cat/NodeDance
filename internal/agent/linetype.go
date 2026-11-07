@@ -127,14 +127,26 @@ func hasPublicInterfaceAddress() bool {
 	return false
 }
 
+// dedicatedLineExclusions are non-global ranges the generic unicast checks
+// above do not cover: shared CGNAT, benchmarking and the documentation blocks.
+// Addresses from these ranges never prove a dedicated line.
+var dedicatedLineExclusions = []netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("2001:db8::/32"),
+}
+
 // isDedicatedLineAddress reports whether the address proves a dedicated line:
-// global unicast outside private, shared CGNAT and other non-global ranges.
+// global unicast outside the private, shared-CGNAT and documentation ranges.
 func isDedicatedLineAddress(ip netip.Addr) bool {
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
 		return false
 	}
-	if ip.Is4() {
-		if octets := ip.As4(); octets[0] == 100 && octets[1] >= 64 && octets[1] <= 127 {
+	for _, excluded := range dedicatedLineExclusions {
+		if excluded.Contains(ip) {
 			return false
 		}
 	}

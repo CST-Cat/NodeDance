@@ -45,7 +45,12 @@ func TestIsDedicatedLineAddress(t *testing.T) {
 		address string
 		want    bool
 	}{
-		{address: "203.0.113.5", want: true},
+		{address: "203.0.113.5", want: false},
+		{address: "192.0.2.9", want: false},
+		{address: "198.51.100.7", want: false},
+		{address: "198.19.0.1", want: false},
+		{address: "198.20.0.1", want: true},
+		{address: "2001:db8::5", want: false},
 		{address: "100.128.0.1", want: true},
 		{address: "2606:4700::1111", want: true},
 		{address: "10.0.0.5", want: false},

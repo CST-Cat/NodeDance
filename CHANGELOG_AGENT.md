@@ -4,12 +4,12 @@
 
 ### English
 
-- Agents detect their node line type at installation — homelab from desktop chassis or wireless interfaces, nat from container virtualization, kvm only when an interface holds a public address — and report it during enrollment; machines behind provider NAT or shared CGNAT ranges (100.64/10) stay unlabeled rather than guessing, and the label is editable in node settings.
+- Agents detect their node line type at installation — homelab from desktop chassis or wireless interfaces, nat from container virtualization, kvm only when an interface holds a public address — and report it during enrollment; machines behind provider NAT or on shared CGNAT (100.64/10), benchmarking (198.18/15) or documentation (192.0.2/24, 198.51.100/24, 203.0.113/24, 2001:db8::/32) ranges stay unlabeled rather than guessing, and the label is editable in node settings.
 - Support automatic bounded tar.gz packaging and validated atomic extraction for directory peer transfers; regular files stream unchanged. Unify transfer bandwidth as decimal MB/s across the contract and clients.
 
 ### 简体中文
 
-- Agent 安装时识别节点线路类型——桌面机箱或无线为 `homelab`，容器虚拟化为 `nat`，仅网卡直接持有公网地址才判 `kvm`，其余不猜测保持未标注——并在注册时上报；运营商 NAT 或共享 CGNAT 网段（100.64/10）后面的机器保持未标注，标签可在节点设置中修改。
+- Agent 安装时识别节点线路类型——桌面机箱或无线为 `homelab`，容器虚拟化为 `nat`，仅网卡直接持有公网地址才判 `kvm`，其余不猜测保持未标注——并在注册时上报；运营商 NAT 后面的机器，以及共享 CGNAT（100.64/10）、基准测试（198.18/15）或文档（192.0.2/24、198.51.100/24、203.0.113/24、2001:db8::/32）网段内的地址均不视为公网，保持未标注，标签可在节点设置中修改。
 - 文件夹对传自动进行有界 tar.gz 打包、校验和原子解包，普通文件保持原始传输；契约与客户端统一使用可带小数的 MB/s 限速。
 
 ## [0.1.34]
