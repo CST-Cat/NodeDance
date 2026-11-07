@@ -13,7 +13,6 @@ import (
 )
 
 func (s *Server) alertEvaluationScheduler() {
-	defer s.agentWait.Done()
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -206,7 +205,6 @@ func alertSampleKey(node, kind, subject string) string {
 }
 
 func (s *Server) alertDeliveryScheduler() {
-	defer s.agentWait.Done()
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {

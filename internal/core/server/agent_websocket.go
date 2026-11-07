@@ -264,7 +264,6 @@ func (c *agentConnection) noteHeartbeat(acceptedAt time.Time) {
 }
 
 func (s *Server) agentOfflineSweeper() {
-	defer s.agentWait.Done()
 	ticker := time.NewTicker(s.agentSweepInterval)
 	defer ticker.Stop()
 	for {

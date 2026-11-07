@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -392,8 +393,7 @@ func New(version string, options Options) (*Server, error) {
 	s.shareLimiter = newLoginLimiter(10, 10*time.Minute, s.now)
 	s.startShareCleanup()
 	s.agentWait.Add(1)
-	go func() {
-		defer s.agentWait.Done()
+	go s.runBackgroundWorker("domains", func() {
 		s.domains.Run(s.agentContext, func(ctx context.Context, id, payload string) error {
 			if s.alerts == nil || s.alertSender == nil {
 				return errors.New("notifications are unavailable")
@@ -409,12 +409,11 @@ func New(version string, options Options) (*Server, error) {
 			_, e = s.alertSender.Send(ctx, c, secret, string(raw))
 			return e
 		})
-	}()
+	})
 
 	if s.feeds != nil {
 		s.agentWait.Add(1)
-		go func() {
-			defer s.agentWait.Done()
+		go s.runBackgroundWorker("feeds", func() {
 			s.feeds.Run(s.agentContext, func(ctx context.Context, id, payload string) error {
 				if s.alerts == nil || s.alertSender == nil {
 					return errors.New("notifications are unavailable")
@@ -426,25 +425,37 @@ func New(version string, options Options) (*Server, error) {
 				_, e = s.alertSender.Send(ctx, c, secret, payload)
 				return e
 			})
-		}()
+		})
 	}
 	s.agentWait.Add(1)
-	go s.agentOfflineSweeper()
+	go s.runBackgroundWorker("agent-offline-sweeper", s.agentOfflineSweeper)
 	s.agentWait.Add(1)
-	go s.historyRetentionWorker()
+	go s.runBackgroundWorker("history-retention", s.historyRetentionWorker)
 	s.agentWait.Add(1)
-	go s.serviceProbeScheduler()
+	go s.runBackgroundWorker("service-probes", s.serviceProbeScheduler)
 	if s.alerts != nil {
 		s.agentWait.Add(1)
-		go s.alertEvaluationScheduler()
+		go s.runBackgroundWorker("alert-evaluation", s.alertEvaluationScheduler)
 		s.agentWait.Add(1)
-		go s.alertDeliveryScheduler()
+		go s.runBackgroundWorker("alert-delivery", s.alertDeliveryScheduler)
 	}
 	return s, nil
 }
 
-func (s *Server) historyRetentionWorker() {
+// runBackgroundWorker contains a background loop failure: a panic in one worker
+// must not crash the whole Core process, and each loop owns exactly one
+// agentWait count that this wrapper releases.
+func (s *Server) runBackgroundWorker(name string, loop func()) {
 	defer s.agentWait.Done()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			log.Printf("NodeDance background worker %s panicked: %v\n%s", name, recovered, debug.Stack())
+		}
+	}()
+	loop()
+}
+
+func (s *Server) historyRetentionWorker() {
 	ticker := time.NewTicker(s.historyRetentionInterval)
 	defer ticker.Stop()
 	for {
@@ -743,7 +754,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serviceProbeScheduler() {
-	defer s.agentWait.Done()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {

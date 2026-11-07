@@ -398,8 +398,7 @@ func (w shareContentWriter) WriteHeader(status int) {
 }
 func (s *Server) startShareCleanup() {
 	s.agentWait.Add(1)
-	go func() {
-		defer s.agentWait.Done()
+	go s.runBackgroundWorker("share-cleanup", func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
@@ -414,7 +413,7 @@ func (s *Server) startShareCleanup() {
 				s.shareMu.Unlock()
 			}
 		}
-	}()
+	})
 }
 
 func (s *Server) handleShareUpload(w http.ResponseWriter, r *http.Request, current *session) {
