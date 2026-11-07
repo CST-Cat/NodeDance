@@ -220,6 +220,7 @@ CREATE TABLE IF NOT EXISTS metrics_minute (
 );
 
 CREATE INDEX IF NOT EXISTS metrics_minute_retention ON metrics_minute(bucket_at);
+CREATE INDEX IF NOT EXISTS metrics_minute_node_time ON metrics_minute(node_id,bucket_at,metric_key);
 
 CREATE TABLE IF NOT EXISTS metrics_hour (
 	node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
