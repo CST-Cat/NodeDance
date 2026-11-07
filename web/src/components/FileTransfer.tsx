@@ -58,6 +58,8 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
     return () => { controller.abort(); pending.current?.abort(); };
   }, [sourceNodeId]);
   const targetNode = nodes.find(node => node.nodeId === targetId);
+  const bandwidthValue = bandwidth.trim() === "" ? 0 : Number(bandwidth);
+  const bandwidthValid = Number.isFinite(bandwidthValue) && bandwidthValue >= 0;
   const [lineTypes, setLineTypes] = useState<{ source: string; target: string }>({ source: "", target: "" });
   useEffect(() => {
     const controller = new AbortController();
@@ -74,7 +76,7 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
     pending.current = controller;
     setBusy(true); setError(""); setStarted(true); setProgress({}); samples.current.clear();
     try {
-      const result = await manager.transfer(targetId, files.map(file => file.path), targetPath, controller.signal, Number(bandwidth || 0), mode, updateProgress);
+      const result = await manager.transfer(targetId, files.map(file => file.path), targetPath, controller.signal, bandwidthValue, mode, updateProgress);
       setProgress(previous => {
         const next = { ...previous };
         result.transferred.forEach(file => { const index = files.findIndex(item => item.path === file.sourcePath); if (index >= 0) next[index] = { completed: file.size, total: file.size, rate: 0, phase: "completed" }; });
@@ -118,7 +120,7 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
         </div>
         <div className="file-transfer-field">
           <span className="file-transfer-label">{x("bandwidth")}</span>
-          <Input label="" aria-label={x("bandwidth")} type="number" step="any" value={bandwidth} disabled={busy || done} onChange={event => setBandwidth(event.target.value)} />
+          <Input label="" aria-label={x("bandwidth")} type="number" step="any" value={bandwidth} disabled={busy || done} aria-invalid={!bandwidthValid || undefined} onChange={event => setBandwidth(event.target.value)} />
         </div>
       </div>
       <div>
@@ -139,7 +141,7 @@ export default function FileTransfer({ sourceNodeId, files, manager, container, 
       <div className="file-transfer-actions">
         {done && <span role="status">{x(transport === "rsync_direct" ? "direct" : transport === "rsync_relay" ? "relay" : transport === "chunk_relay" ? "chunks" : "completed")}</span>}
         {busy && !done && <Button variant="secondary" onClick={() => pending.current?.abort()}>{t("dialog.cancel")}</Button>}
-        <Button onClick={done ? onClose : () => void start()} disabled={!done && (busy || !targetNode || !targetPath.trim())} loading={busy && !done} aria-label={done ? t("dialog.confirm") : undefined}>{done ? <Check size={18} /> : x("start")}</Button>
+        <Button onClick={done ? onClose : () => void start()} disabled={!done && (busy || !targetNode || !targetPath.trim() || !bandwidthValid)} loading={busy && !done} aria-label={done ? t("dialog.confirm") : undefined}>{done ? <Check size={18} /> : x("start")}</Button>
       </div>
     </div>
     {picker && targetNode && <NodeFiles nodeId={targetNode.nodeId} nodeName={targetNode.displayName} path="/" directoryPicker dialog onClose={() => setPicker(false)} onChoose={chosen => { setTargetPath(chosen); setPicker(false); }} />}
