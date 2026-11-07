@@ -381,7 +381,16 @@ func New(version string, options Options) (*Server, error) {
 			}
 		}
 	}
-	s.domains = domains.New(store.DB, s.now, options.CertificateIssuer)
+	certificateKey, err := loadOrCreateCertificateEncryptionKey(store.Dir)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
+	s.domains, err = domains.New(store.DB, s.now, options.CertificateIssuer, certificateKey)
+	if err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	if err := s.domains.Recover(context.Background()); err != nil {
 		_ = store.Close()
 		return nil, err

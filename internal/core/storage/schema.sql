@@ -538,7 +538,9 @@ CREATE TABLE IF NOT EXISTS observation_epoch (
  started_at INTEGER NOT NULL
 );
 
--- Private keys and DNS tokens never appear in inventory JSON. The enclosing
+-- Private keys and DNS tokens never appear in inventory JSON. DNS provider
+-- tokens, certificate private keys and ACME account keys are sealed at rest
+-- with AES-GCM under the certificate-encryption.key file; the enclosing
 -- SQLite database and backups are owner-protected (0600, state directory 0700).
 CREATE TABLE IF NOT EXISTS managed_domains (
  id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, label TEXT NOT NULL, notes TEXT NOT NULL,

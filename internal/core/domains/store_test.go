@@ -1,6 +1,7 @@
 package domains
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -29,7 +30,11 @@ func testStore(t *testing.T) *Store {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { db.Close() })
-	return New(db.DB, time.Now, nil)
+	store, e := New(db.DB, time.Now, nil, bytes.Repeat([]byte{7}, 32))
+	if e != nil {
+		t.Fatal(e)
+	}
+	return store
 }
 func event() audit.Event { return audit.Event{RemoteAddr: "unknown", OccurredAt: time.Now()} }
 func pair(t *testing.T, names []string, end time.Time) ([]byte, []byte) {
@@ -104,8 +109,11 @@ func TestDomainsAndProtectedMaterial(t *testing.T) {
 		t.Fatal(accounts, e)
 	}
 	var secret []byte
-	if e = s.db.QueryRowContext(ctx, `SELECT key_pem FROM certificate_accounts WHERE id=?`, account.ID).Scan(&secret); e != nil || !strings.Contains(string(secret), "PRIVATE KEY") {
+	if e = s.db.QueryRowContext(ctx, `SELECT key_pem FROM certificate_accounts WHERE id=?`, account.ID).Scan(&secret); e != nil {
 		t.Fatal(e)
+	}
+	if strings.Contains(string(secret), "PRIVATE KEY") {
+		t.Fatal("stored ACME account key is not encrypted at rest")
 	}
 	provider, e := s.SaveProvider(ctx, "", ProviderInput{Name: "DNS", Kind: "cloudflare", ZoneID: strings.Repeat("a", 32), APIToken: "NEVER-RETURN-THIS-SECRET"}, event())
 	if e != nil {
@@ -116,13 +124,18 @@ func TestDomainsAndProtectedMaterial(t *testing.T) {
 	if strings.Contains(string(raw), "NEVER-RETURN") {
 		t.Fatal("provider token leaked")
 	}
+	var tokenBefore []byte
+	s.db.QueryRowContext(ctx, `SELECT token FROM certificate_dns_providers WHERE id=?`, provider.ID).Scan(&tokenBefore)
+	if strings.Contains(string(tokenBefore), "NEVER-RETURN-THIS-SECRET") {
+		t.Fatal("stored DNS token is not encrypted at rest")
+	}
 	_, e = s.SaveProvider(ctx, provider.ID, ProviderInput{Name: "Updated", Kind: "cloudflare", ZoneID: provider.ZoneID, Revision: provider.Revision}, event())
 	if e != nil {
 		t.Fatal(e)
 	}
 	var token []byte
 	s.db.QueryRowContext(ctx, `SELECT token FROM certificate_dns_providers WHERE id=?`, provider.ID).Scan(&token)
-	if string(token) != "NEVER-RETURN-THIS-SECRET" {
+	if !bytes.Equal(token, tokenBefore) {
 		t.Fatal("blank update discarded token")
 	}
 	var database string

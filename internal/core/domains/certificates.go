@@ -99,7 +99,13 @@ func (s *Store) Certificates(ctx context.Context) ([]Certificate, error) {
 func (s *Store) Material(ctx context.Context, id string) ([]byte, []byte, error) {
 	var cert, key []byte
 	e := s.db.QueryRowContext(ctx, `SELECT certificate_pem,key_pem FROM managed_certificates WHERE id=?`, id).Scan(&cert, &key)
-	return cert, key, e
+	if e != nil {
+		return nil, nil, e
+	}
+	if key, e = s.open(aadCertificateKey, key); e != nil {
+		return nil, nil, e
+	}
+	return cert, key, nil
 }
 func (s *Store) validateCoverage(ctx context.Context, c Certificate, certPEM, keyPEM []byte) error {
 	names, e := s.Names(ctx, c.DomainIDs)
@@ -173,7 +179,11 @@ func (s *Store) Import(ctx context.Context, in ImportInput, event audit.Event) (
 	c.Revision = 1
 	raw, _ := json.Marshal(c)
 	now := s.now().Unix()
-	if _, e = tx.ExecContext(ctx, `INSERT INTO managed_certificates(id,metadata_json,certificate_pem,key_pem,revision,created_at,updated_at) VALUES(?,?,?,?,1,?,?)`, c.ID, string(raw), []byte(in.CertificatePEM), []byte(in.PrivateKeyPEM), now, now); e != nil {
+	sealedKey, sealErr := s.seal(aadCertificateKey, []byte(in.PrivateKeyPEM))
+	if sealErr != nil {
+		return c, sealErr
+	}
+	if _, e = tx.ExecContext(ctx, `INSERT INTO managed_certificates(id,metadata_json,certificate_pem,key_pem,revision,created_at,updated_at) VALUES(?,?,?,?,1,?,?)`, c.ID, string(raw), []byte(in.CertificatePEM), sealedKey, now, now); e != nil {
 		return c, e
 	}
 	if e = record(ctx, tx, event, "certificate_import", audit.TargetCertificate, c.ID); e != nil {
@@ -429,6 +439,9 @@ func (s *Store) Export(ctx context.Context, id string, in ConfirmInput, event au
 	var revision int64
 	var cert, key []byte
 	if e = tx.QueryRowContext(ctx, `SELECT revision,certificate_pem,key_pem FROM managed_certificates WHERE id=?`, id).Scan(&revision, &cert, &key); e != nil {
+		return nil, nil, e
+	}
+	if key, e = s.open(aadCertificateKey, key); e != nil {
 		return nil, nil, e
 	}
 	if revision != in.Revision {

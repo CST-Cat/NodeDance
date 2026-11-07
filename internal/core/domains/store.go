@@ -1,8 +1,11 @@
 package domains
 
 import (
+	"bytes"
 	"context"
 	"crypto"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -43,21 +46,150 @@ type Store struct {
 	db         *sql.DB
 	now        func() time.Time
 	issuer     Issuer
+	aead       cipher.AEAD
 	mu         sync.Mutex
 	active     map[string]context.CancelFunc
 	challenges map[string]challenge
 }
 
-func New(db *sql.DB, now func() time.Time, issuer Issuer) *Store {
+// Secret at rest is sealed with AES-GCM; the additional data binds each
+// ciphertext to its purpose so values cannot be swapped between columns.
+const (
+	aadDNSProviderToken = "nodedance-dns-provider-token-v1"
+	aadCertificateKey   = "nodedance-certificate-private-key-v1"
+	aadACMEAccountKey   = "nodedance-acme-account-key-v1"
+)
+
+func New(db *sql.DB, now func() time.Time, issuer Issuer, secretKey []byte) (*Store, error) {
 	if now == nil {
 		now = time.Now
 	}
-	s := &Store{db: db, now: now, active: map[string]context.CancelFunc{}, challenges: map[string]challenge{}}
+	if len(secretKey) != 32 {
+		return nil, errors.New("certificate store requires a 32-byte encryption key")
+	}
+	block, err := aes.NewCipher(secretKey)
+	if err != nil {
+		return nil, err
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	s := &Store{db: db, now: now, aead: aead, active: map[string]context.CancelFunc{}, challenges: map[string]challenge{}}
 	s.issuer = issuer
 	if s.issuer == nil {
 		s.issuer = &acmeIssuer{store: s}
 	}
-	return s
+	if err := s.migrateSecrets(); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
+// seal encrypts a secret at rest; empty values stay empty.
+func (s *Store) seal(aad string, plain []byte) ([]byte, error) {
+	if len(plain) == 0 {
+		return nil, nil
+	}
+	nonce := make([]byte, s.aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, err
+	}
+	sealed := append(nonce, s.aead.Seal(nil, nonce, plain, []byte(aad))...)
+	return append([]byte(sealedPrefix), sealed...), nil
+}
+
+// sealedPrefix marks values already encrypted at rest, so a startup with a
+// missing or mismatched key fails loudly instead of re-encrypting ciphertext
+// as if it were legacy plaintext.
+const sealedPrefix = "nd1:"
+
+// open decrypts a sealed value. Values without the sealed prefix are legacy
+// plaintext from before encryption at rest existed; reads expect the startup
+// migration to have sealed them already.
+func (s *Store) open(aad string, sealed []byte) ([]byte, error) {
+	if len(sealed) == 0 {
+		return nil, nil
+	}
+	if !bytes.HasPrefix(sealed, []byte(sealedPrefix)) {
+		return nil, errors.New("secret is not encrypted at rest; the startup migration did not run")
+	}
+	body := sealed[len(sealedPrefix):]
+	if len(body) < s.aead.NonceSize() {
+		return nil, errors.New("encrypted secret is too short")
+	}
+	plain, err := s.aead.Open(nil, body[:s.aead.NonceSize()], body[s.aead.NonceSize():], []byte(aad))
+	if err != nil {
+		return nil, errors.New("secret cannot be decrypted with the certificate encryption key")
+	}
+	return plain, nil
+}
+
+// migrateSecrets encrypts values written before encryption at rest existed.
+// Values already carrying the sealed prefix are left untouched; a sealed value
+// that fails to open means the key does not match and startup must stop
+// instead of guessing.
+func (s *Store) migrateSecrets() error {
+	migrations := []struct {
+		query  string
+		update string
+		aad    string
+	}{
+		{
+			query:  `SELECT id, token FROM certificate_dns_providers`,
+			update: `UPDATE certificate_dns_providers SET token=? WHERE id=?`,
+			aad:    aadDNSProviderToken,
+		},
+		{
+			query:  `SELECT id, key_pem FROM managed_certificates`,
+			update: `UPDATE managed_certificates SET key_pem=? WHERE id=?`,
+			aad:    aadCertificateKey,
+		},
+		{
+			query:  `SELECT id, key_pem FROM certificate_accounts`,
+			update: `UPDATE certificate_accounts SET key_pem=? WHERE id=?`,
+			aad:    aadACMEAccountKey,
+		},
+	}
+	for _, m := range migrations {
+		rows, err := s.db.Query(m.query)
+		if err != nil {
+			return err
+		}
+		type pending struct {
+			id    string
+			value []byte
+		}
+		var batch []pending
+		for rows.Next() {
+			var id string
+			var value []byte
+			if err := rows.Scan(&id, &value); err != nil {
+				rows.Close()
+				return err
+			}
+			if len(value) == 0 || bytes.HasPrefix(value, []byte(sealedPrefix)) {
+				continue
+			}
+			sealed, err := s.seal(m.aad, value)
+			if err != nil {
+				rows.Close()
+				return err
+			}
+			batch = append(batch, pending{id: id, value: sealed})
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+		for _, item := range batch {
+			if _, err := s.db.Exec(m.update, item.value, item.id); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 func NormalizeName(name string) (string, error) {
 	name = strings.TrimSuffix(strings.TrimSpace(name), ".")
@@ -294,7 +426,11 @@ func (s *Store) SaveAccount(ctx context.Context, in AccountInput, event audit.Ev
 	if count >= 500 {
 		return Account{}, errors.New("ACME account limit is 500")
 	}
-	if _, e = tx.ExecContext(ctx, `INSERT INTO certificate_accounts(id,config_json,key_pem,revision) VALUES(?,?,?,1)`, id, string(raw), key); e != nil {
+	sealedAccountKey, sealErr := s.seal(aadACMEAccountKey, key)
+	if sealErr != nil {
+		return Account{}, sealErr
+	}
+	if _, e = tx.ExecContext(ctx, `INSERT INTO certificate_accounts(id,config_json,key_pem,revision) VALUES(?,?,?,1)`, id, string(raw), sealedAccountKey); e != nil {
 		return Account{}, e
 	}
 	if e = record(ctx, tx, event, "certificate_account_create", audit.TargetCertificateAccount, id); e != nil {
@@ -346,7 +482,11 @@ func (s *Store) SaveProvider(ctx context.Context, id string, in ProviderInput, e
 			return Provider{}, errors.New("API token is required")
 		}
 		id = uuid.NewString()
-		_, e = tx.ExecContext(ctx, `INSERT INTO certificate_dns_providers VALUES(?,?,?,?,?,1)`, id, in.Name, in.Kind, strings.ToLower(in.ZoneID), []byte(in.APIToken))
+		sealedToken, sealErr := s.seal(aadDNSProviderToken, []byte(in.APIToken))
+		if sealErr != nil {
+			return Provider{}, sealErr
+		}
+		_, e = tx.ExecContext(ctx, `INSERT INTO certificate_dns_providers VALUES(?,?,?,?,?,1)`, id, in.Name, in.Kind, strings.ToLower(in.ZoneID), sealedToken)
 	} else {
 		var busy int
 		if e = tx.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM certificate_dns_challenges WHERE provider_id=?) + (SELECT COUNT(*) FROM certificate_jobs WHERE status IN ('queued','running') AND json_extract(input_json,'$.providerId')=?)`, id, id).Scan(&busy); e != nil {
@@ -364,7 +504,11 @@ func (s *Store) SaveProvider(ctx context.Context, id string, in ProviderInput, e
 			return Provider{}, ErrConflict
 		}
 		if in.APIToken != "" {
-			token = []byte(in.APIToken)
+			sealed, sealErr := s.seal(aadDNSProviderToken, []byte(in.APIToken))
+			if sealErr != nil {
+				return Provider{}, sealErr
+			}
+			token = sealed
 		}
 		revision = rev + 1
 		_, e = tx.ExecContext(ctx, `UPDATE certificate_dns_providers SET name=?,kind=?,zone_id=?,token=?,revision=? WHERE id=?`, in.Name, in.Kind, strings.ToLower(in.ZoneID), token, revision, id)

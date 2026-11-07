@@ -363,10 +363,18 @@ func (s *Store) commitJob(ctx context.Context, j Job, in jobRequest, certPEM, ke
 		c.ID = id
 		raw, _ := json.Marshal(c)
 		if j.Kind == "issue" {
-			_, e = tx.ExecContext(ctx, `INSERT INTO managed_certificates(id,metadata_json,certificate_pem,key_pem,revision,created_at,updated_at) VALUES(?,?,?,?,1,?,?)`, id, string(raw), certPEM, keyPEM, now, now)
+			sealedKey, sealErr := s.seal(aadCertificateKey, keyPEM)
+			if sealErr != nil {
+				return e
+			}
+			_, e = tx.ExecContext(ctx, `INSERT INTO managed_certificates(id,metadata_json,certificate_pem,key_pem,revision,created_at,updated_at) VALUES(?,?,?,?,1,?,?)`, id, string(raw), certPEM, sealedKey, now, now)
 		} else {
+			sealedKey, sealErr := s.seal(aadCertificateKey, keyPEM)
+			if sealErr != nil {
+				return e
+			}
 			var result sql.Result
-			result, e = tx.ExecContext(ctx, `UPDATE managed_certificates SET metadata_json=?,certificate_pem=?,key_pem=?,revision=revision+1,updated_at=?,notification_bucket='',notification_error='' WHERE id=? AND revision=?`, string(raw), certPEM, keyPEM, now, id, in.TargetRevision)
+			result, e = tx.ExecContext(ctx, `UPDATE managed_certificates SET metadata_json=?,certificate_pem=?,key_pem=?,revision=revision+1,updated_at=?,notification_bucket='',notification_error='' WHERE id=? AND revision=?`, string(raw), certPEM, sealedKey, now, id, in.TargetRevision)
 			if e == nil {
 				n, _ := result.RowsAffected()
 				if n != 1 {

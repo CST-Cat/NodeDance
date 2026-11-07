@@ -23,21 +23,22 @@ import (
 )
 
 const (
-	archiveFormat    = "nodedance-core-backup"
-	archiveVersion   = 1
-	manifestName     = "nodedance-backup.json"
-	databaseName     = "nodedance.sqlite"
-	alertKeyName     = "alert-channel-encryption.key"
-	csrfKeyName      = "csrf-signing.key"
-	setupName        = "setup-credential.txt"
-	initialAdminName = "initial-admin.json"
-	tailscaleName    = "tailscale-deployments.json"
-	maxManifest      = 1 << 20
-	maxFileSize      = 1 << 40
+	archiveFormat      = "nodedance-core-backup"
+	archiveVersion     = 1
+	manifestName       = "nodedance-backup.json"
+	databaseName       = "nodedance.sqlite"
+	alertKeyName       = "alert-channel-encryption.key"
+	csrfKeyName        = "csrf-signing.key"
+	certificateKeyName = "certificate-encryption.key"
+	setupName          = "setup-credential.txt"
+	initialAdminName   = "initial-admin.json"
+	tailscaleName      = "tailscale-deployments.json"
+	maxManifest        = 1 << 20
+	maxFileSize        = 1 << 40
 )
 
 var requiredFiles = []string{databaseName, alertKeyName, csrfKeyName}
-var optionalFiles = []string{setupName, initialAdminName, tailscaleName}
+var optionalFiles = []string{certificateKeyName, setupName, initialAdminName, tailscaleName}
 
 type manifest struct {
 	Format  string         `json:"format"`
@@ -572,7 +573,7 @@ func validArchivePath(name string) bool {
 }
 
 func allowedPath(name string) bool {
-	if name == databaseName || name == alertKeyName || name == csrfKeyName {
+	if name == databaseName || name == alertKeyName || name == csrfKeyName || name == certificateKeyName {
 		return true
 	}
 	return name == setupName || name == initialAdminName || name == tailscaleName
@@ -580,7 +581,7 @@ func allowedPath(name string) bool {
 
 func maxFileSizeFor(name string) int64 {
 	switch name {
-	case alertKeyName, csrfKeyName:
+	case alertKeyName, csrfKeyName, certificateKeyName:
 		return 32
 	case setupName:
 		return 1024

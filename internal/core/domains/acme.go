@@ -80,6 +80,11 @@ func (a *acmeIssuer) account(ctx context.Context, id string) (*acme.Client, erro
 	if e := a.store.db.QueryRowContext(ctx, `SELECT config_json,key_pem,account_url FROM certificate_accounts WHERE id=?`, id).Scan(&raw, &key, &uri); e != nil {
 		return nil, e
 	}
+	plainKey, openErr := a.store.open(aadACMEAccountKey, key)
+	if openErr != nil {
+		return nil, openErr
+	}
+	key = plainKey
 	var in AccountInput
 	if e := json.Unmarshal([]byte(raw), &in); e != nil {
 		return nil, e
@@ -266,6 +271,11 @@ func (a *acmeIssuer) cf(ctx context.Context, providerID, method, path string, in
 	if e := a.store.db.QueryRowContext(ctx, `SELECT zone_id,token FROM certificate_dns_providers WHERE id=?`, providerID).Scan(&zone, &token); e != nil {
 		return e
 	}
+	plainToken, openErr := a.store.open(aadDNSProviderToken, token)
+	if openErr != nil {
+		return openErr
+	}
+	token = plainToken
 	base := a.cloudflareBase
 	if base == "" {
 		base = "https://api.cloudflare.com/client/v4"
