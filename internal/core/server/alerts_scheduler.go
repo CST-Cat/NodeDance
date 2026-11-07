@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/CST-Cat/NodeDance/internal/core/agents"
 	corealerts "github.com/CST-Cat/NodeDance/internal/core/alerts"
 	coreprobes "github.com/CST-Cat/NodeDance/internal/core/probes"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -50,81 +51,15 @@ func (s *Server) evaluateAlerts(ctx context.Context) error {
 		if node.Status == "pending" || node.Status == "revoked" || node.NodeID == "" {
 			continue
 		}
-		if err := s.alerts.EnsureDefaultRules(ctx, node.NodeID); err != nil {
-			return err
-		}
-		state, lease, err := s.currentMetricsState(ctx, node.NodeID)
+		nodeSamples, err := s.collectNodeAlertSamples(ctx, node, probesByNode, now, online)
 		if err != nil {
-			return err
-		}
-		samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindNodeOffline, Known: true, State: map[bool]string{true: "online", false: "offline"}[state.Status == "online"], ObservedAt: now})
-		asset, err := s.nodeAsset(ctx, node.NodeID)
-		if err != nil {
-			return err
-		}
-		samples = append(samples, assetSamples(node.NodeID, node.DisplayName, asset, nil, now)[0])
-		if state.Status != "online" || lease == nil {
+			if ctx.Err() != nil {
+				return err
+			}
+			log.Printf("NodeDance alert samples for node %s failed; skipping it this tick: %v", node.NodeID, err)
 			continue
 		}
-		online[node.NodeID] = true
-		metricView, ok := s.metrics.SnapshotAt(node.NodeID, lease, now)
-		if ok {
-			samples = append(samples, assetSamples(node.NodeID, node.DisplayName, asset, metricView.Metrics.Host, now)[1])
-			received := metricView.ReceivedAt
-			for key, m := range protocol.HostNumericMetrics(metricView.Metrics.Host) {
-				samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindMetric, SubjectID: key, Known: m.Status == protocol.MetricKnown && m.Value != nil, Value: m.Value, ObservedAt: sampleObserved(m.SampledAt, received)})
-			}
-			cpu := metricView.Metrics.CPU.UsagePercent
-			samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindCPU, Known: cpu.Status == protocol.MetricKnown && cpu.Value != nil, Value: cpu.Value, ObservedAt: sampleObserved(cpu.SampledAt, received)})
-			memory := metricView.Metrics.Memory
-			var memoryValue *float64
-			if memory.Value != nil {
-				v := memory.Value.UsedPercent
-				memoryValue = &v
-			}
-			samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindMemory, Known: memory.Status == protocol.MetricKnown && memoryValue != nil, Value: memoryValue, ObservedAt: sampleObserved(memory.SampledAt, received)})
-			disk := metricView.Metrics.Disk
-			var highest *float64
-			if disk.Status == protocol.MetricKnown {
-				for _, mount := range disk.Mounts {
-					if mount.Usage.Status != protocol.MetricKnown || mount.Usage.Value == nil {
-						continue
-					}
-					v := mount.Usage.Value.UsedPercent
-					if highest == nil || v > *highest {
-						highest = &v
-					}
-					samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindDisk, SubjectID: mount.Mountpoint, Known: true, Value: &v, ObservedAt: sampleObserved(mount.Usage.SampledAt, received)})
-				}
-			}
-			samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindDisk, Known: disk.Status == protocol.MetricKnown && highest != nil, Value: highest, ObservedAt: sampleObserved(disk.SampledAt, received)})
-		}
-		_, dockerView, _, err := s.dockerViewStateForNode(ctx, node.NodeID)
-		if err != nil {
-			return err
-		}
-		if dockerView.AgentOnline && dockerView.Health != nil && now.Sub(dockerView.Health.ObservedAt) <= 30*time.Second {
-			state := "available"
-			if dockerView.DockerAvailability == protocol.DockerAvailabilityUnavailable {
-				state = "unavailable"
-			}
-			samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindDockerUnavailable, Known: dockerView.DockerAvailability != protocol.DockerAvailabilityUnknown, State: state, ObservedAt: dockerView.Health.ObservedAt})
-		}
-		if !dockerView.DataStale && dockerView.AgentOnline {
-			for _, record := range dockerView.Containers {
-				container := record.Container
-				state := "stopped"
-				if container.Running {
-					state = "running"
-				}
-				health := string(container.Health)
-				if !container.HealthcheckConfigured {
-					health = "none"
-				}
-				samples = append(samples, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindContainerState, SubjectID: container.ID, Known: true, State: state, Health: health, ObservedAt: sampleObserved(container.ObservedAt, now)})
-			}
-		}
-		samples = append(samples, alertProbeSamples(node.NodeID, node.DisplayName, probesByNode[node.NodeID], now)...)
+		samples = append(samples, nodeSamples...)
 	}
 	rules, err := s.alerts.ListRules(ctx, "")
 	if err != nil {
@@ -161,6 +96,85 @@ func (s *Server) evaluateAlerts(ctx context.Context) error {
 		}
 	}
 	return s.alerts.Evaluate(ctx, samples)
+}
+
+func (s *Server) collectNodeAlertSamples(ctx context.Context, node agents.Node, probesByNode map[string][]coreprobes.Config, now time.Time, online map[string]bool) ([]corealerts.Sample, error) {
+	collected := make([]corealerts.Sample, 0, 8)
+	if err := s.alerts.EnsureDefaultRules(ctx, node.NodeID); err != nil {
+		return nil, err
+	}
+	state, lease, err := s.currentMetricsState(ctx, node.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	collected = append(collected, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindNodeOffline, Known: true, State: map[bool]string{true: "online", false: "offline"}[state.Status == "online"], ObservedAt: now})
+	asset, err := s.nodeAsset(ctx, node.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	collected = append(collected, assetSamples(node.NodeID, node.DisplayName, asset, nil, now)[0])
+	if state.Status != "online" || lease == nil {
+		return collected, nil
+	}
+	online[node.NodeID] = true
+	metricView, ok := s.metrics.SnapshotAt(node.NodeID, lease, now)
+	if ok {
+		collected = append(collected, assetSamples(node.NodeID, node.DisplayName, asset, metricView.Metrics.Host, now)[1])
+		received := metricView.ReceivedAt
+		for key, m := range protocol.HostNumericMetrics(metricView.Metrics.Host) {
+			collected = append(collected, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindMetric, SubjectID: key, Known: m.Status == protocol.MetricKnown && m.Value != nil, Value: m.Value, ObservedAt: sampleObserved(m.SampledAt, received)})
+		}
+		cpu := metricView.Metrics.CPU.UsagePercent
+		collected = append(collected, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindCPU, Known: cpu.Status == protocol.MetricKnown && cpu.Value != nil, Value: cpu.Value, ObservedAt: sampleObserved(cpu.SampledAt, received)})
+		memory := metricView.Metrics.Memory
+		var memoryValue *float64
+		if memory.Value != nil {
+			v := memory.Value.UsedPercent
+			memoryValue = &v
+		}
+		collected = append(collected, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindMemory, Known: memory.Status == protocol.MetricKnown && memoryValue != nil, Value: memoryValue, ObservedAt: sampleObserved(memory.SampledAt, received)})
+		disk := metricView.Metrics.Disk
+		var highest *float64
+		if disk.Status == protocol.MetricKnown {
+			for _, mount := range disk.Mounts {
+				if mount.Usage.Status != protocol.MetricKnown || mount.Usage.Value == nil {
+					continue
+				}
+				v := mount.Usage.Value.UsedPercent
+				if highest == nil || v > *highest {
+					highest = &v
+				}
+				collected = append(collected, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindDisk, SubjectID: mount.Mountpoint, Known: true, Value: &v, ObservedAt: sampleObserved(mount.Usage.SampledAt, received)})
+			}
+		}
+		collected = append(collected, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindDisk, Known: disk.Status == protocol.MetricKnown && highest != nil, Value: highest, ObservedAt: sampleObserved(disk.SampledAt, received)})
+	}
+	_, dockerView, _, err := s.dockerViewStateForNode(ctx, node.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	if dockerView.AgentOnline && dockerView.Health != nil && now.Sub(dockerView.Health.ObservedAt) <= 30*time.Second {
+		state := "available"
+		if dockerView.DockerAvailability == protocol.DockerAvailabilityUnavailable {
+			state = "unavailable"
+		}
+		collected = append(collected, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindDockerUnavailable, Known: dockerView.DockerAvailability != protocol.DockerAvailabilityUnknown, State: state, ObservedAt: dockerView.Health.ObservedAt})
+	}
+	if !dockerView.DataStale && dockerView.AgentOnline {
+		for _, record := range dockerView.Containers {
+			container := record.Container
+			state := "stopped"
+			if container.Running {
+				state = "running"
+			}
+			health := string(container.Health)
+			if !container.HealthcheckConfigured {
+				health = "none"
+			}
+			collected = append(collected, corealerts.Sample{NodeID: node.NodeID, NodeName: node.DisplayName, Kind: corealerts.KindContainerState, SubjectID: container.ID, Known: true, State: state, Health: health, ObservedAt: sampleObserved(container.ObservedAt, now)})
+		}
+	}
+	return append(collected, alertProbeSamples(node.NodeID, node.DisplayName, probesByNode[node.NodeID], now)...), nil
 }
 
 func groupAlertProbeConfigsByNode(configs []coreprobes.Config) map[string][]coreprobes.Config {
