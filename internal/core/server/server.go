@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -98,6 +99,7 @@ type Server struct {
 	websocketCheckInterval     time.Duration
 	now                        func() time.Time
 	csrfKey                    []byte
+	guestIDKey                 []byte
 	loginVerifiedHook          func()
 	passwordChangeVerifiedHook func()
 	hashSetupPassword          func(string) ([]byte, []byte, error)
@@ -338,6 +340,9 @@ func New(version string, options Options) (*Server, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	guestKey := hmac.New(sha256.New, s.csrfKey)
+	guestKey.Write([]byte("NodeDance guest pseudonym key"))
+	s.guestIDKey = guestKey.Sum(nil)
 	if err := s.ensureSetupState(); err != nil {
 		_ = store.Close()
 		return nil, err

@@ -141,7 +141,7 @@ func (s *Server) handleGuestSettings(w http.ResponseWriter, r *http.Request) boo
 	return true
 }
 func (s *Server) guestID(kind, id string) string {
-	hash := hmac.New(sha256.New, s.csrfKey)
+	hash := hmac.New(sha256.New, s.guestIDKey)
 	hash.Write([]byte("guest:" + kind + ":" + id))
 	return hex.EncodeToString(hash.Sum(nil)[:16])
 }
