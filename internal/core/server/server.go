@@ -77,6 +77,7 @@ type Server struct {
 	feeds                      *feeds.Store
 	guestMu                    sync.Mutex
 	guestSlots                 chan struct{}
+	guestLimiter               *guestLimiter
 	guestCache                 *guestDisplay
 	guestPolicy                guest.Settings
 	requestSlots               chan struct{}
@@ -266,6 +267,7 @@ func New(version string, options Options) (*Server, error) {
 	}
 	s := &Server{
 		guestSlots:   make(chan struct{}, 4),
+		guestLimiter: newGuestLimiter(options.Now),
 		version:      version,
 		updateInvoke: options.UpdateInvoke,
 		assets:       newAssetHandler(files),

@@ -33,6 +33,11 @@ func (s *Server) handleGuestPublic(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "guest queries are not supported", 400)
 		return
 	}
+	if !s.guestLimiter.allow(s.effectiveRemoteAddr(r)) {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "guest display busy", 503)
+		return
+	}
 	select {
 	case s.guestSlots <- struct{}{}:
 		defer func() { <-s.guestSlots }()

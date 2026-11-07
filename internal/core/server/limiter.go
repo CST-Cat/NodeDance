@@ -66,6 +66,61 @@ func (l *loginLimiter) succeeded(key string) {
 	l.mu.Unlock()
 }
 
+// guestLimiter is a per-client token bucket over the public guest endpoints.
+// The global guest slots bound total concurrency; this keeps one address from
+// holding every slot while other visitors still see the display.
+type guestLimiter struct {
+	mu       sync.Mutex
+	entries  map[string]*guestRate
+	rate     float64
+	burst    float64
+	capacity int
+	now      func() time.Time
+}
+
+type guestRate struct {
+	tokens float64
+	last   time.Time
+}
+
+func newGuestLimiter(now func() time.Time) *guestLimiter {
+	return &guestLimiter{entries: make(map[string]*guestRate), rate: 2, burst: 8, capacity: 4096, now: now}
+}
+
+func (l *guestLimiter) allow(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	entry, exists := l.entries[key]
+	if !exists {
+		if len(l.entries) >= l.capacity {
+			l.gc(now)
+		}
+		if len(l.entries) >= l.capacity {
+			return false
+		}
+		entry = &guestRate{tokens: l.burst, last: now}
+		l.entries[key] = entry
+	}
+	if elapsed := now.Sub(entry.last).Seconds(); elapsed > 0 {
+		entry.tokens = min(l.burst, entry.tokens+elapsed*l.rate)
+		entry.last = now
+	}
+	if entry.tokens < 1 {
+		return false
+	}
+	entry.tokens--
+	return true
+}
+
+func (l *guestLimiter) gc(now time.Time) {
+	for address, entry := range l.entries {
+		if now.Sub(entry.last) > 10*time.Minute {
+			delete(l.entries, address)
+		}
+	}
+}
+
 func (s *Server) acquirePasswordSlot() bool {
 	select {
 	case s.passwordSlots <- struct{}{}:
