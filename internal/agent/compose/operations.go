@@ -636,7 +636,7 @@ func (m *Manager) ExecuteProject(ctx context.Context, ref protocol.ComposeProjec
 	if action == protocol.TaskComposeDeploy && !allInstancesReplaced(before, after) {
 		return "unknown", ErrOperationUncertain
 	}
-	if action == protocol.TaskComposeRestart && !allInstancesRestarted(before, after) {
+	if action == protocol.TaskComposeRestart && len(before) > 0 && !allInstancesRestarted(before, after) {
 		return "unknown", ErrOperationUncertain
 	}
 	return expected, nil
