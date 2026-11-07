@@ -4,7 +4,7 @@
 
 ### English
 
-- Node line types (`kvm`, `nat`, `homelab`) are detected by the Agent at installation — homelab from desktop chassis or wireless, nat from container virtualization, kvm only with a public address on an interface, otherwise unlabeled — and editable in node settings; direct transfers prune the attempt chain by the pair of labels — unlabeled or `kvm ↔ kvm` pairs keep the full order, `nat` pairs without a declared port and any `homelab` side start at TCP punch, and `nat ↔ homelab` or `homelab ↔ homelab` pairs are pointed at Core relay.
+- Node line types (`kvm`, `nat`, `homelab`) are detected by the Agent at installation — homelab from desktop chassis or wireless, nat from container virtualization, kvm only with a public address on an interface, otherwise unlabeled — and editable in node settings; direct transfers prune the attempt chain by the pair of labels — unlabeled or `kvm ↔ kvm` pairs keep the full order, `nat` pairs without a declared port and any `homelab` side start at TCP punch, and Core relay is recommended for `nat ↔ homelab` or `homelab ↔ homelab` pairs.
 - Support automatic bounded tar.gz packaging and validated atomic extraction for directory peer transfers; regular files stream unchanged. Unify transfer bandwidth as decimal MB/s across the contract and clients.
 - Replace the transfer mode dropdown with existing selection buttons beside bandwidth; show task-backed progress bars, completed/total bytes and sampled actual rates through the shared `files.transfer-status` operation.
 
