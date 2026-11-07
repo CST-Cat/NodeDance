@@ -172,12 +172,15 @@ func (p *Peer) Connect(ctx context.Context, addresses []string, authenticate fun
 	for _, address := range addresses {
 		peer, err := netip.ParseAddrPort(address)
 		if err != nil || peer.Port() == 0 || peer.Addr().IsUnspecified() || peer.Addr().IsMulticast() || peer.Addr().IsLinkLocalUnicast() || peer.Addr().Zone() != "" {
-			return nil, errors.New("invalid TCP punch address")
+			continue
 		}
 		if !seen[peer] {
 			peers = append(peers, peer)
 			seen[peer] = true
 		}
+	}
+	if len(peers) == 0 {
+		return nil, errors.New("no usable TCP punch address")
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

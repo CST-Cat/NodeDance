@@ -111,6 +111,31 @@ func TestDiscoveryRejectsUnboundOrOversizedSTUNResponses(t *testing.T) {
 	}
 }
 
+func TestConnectSkipsUnusablePeerAddresses(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	p, err := Discover(ctx, []string{testutil.STUNServer(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if _, err := p.Connect(ctx, []string{"169.254.10.10:9", "[fe80::1%eth0]:9"}, func(ctx context.Context, conn net.Conn) (net.Conn, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}); err == nil || err.Error() != "no usable TCP punch address" {
+		t.Fatal("unusable punch addresses did not fail cleanly", err)
+	}
+	attempt, stop := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer stop()
+	_, err = p.Connect(attempt, []string{"169.254.10.10:9", p.mappings[0].local.String()}, func(ctx context.Context, conn net.Conn) (net.Conn, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("one unusable address aborted the punch attempt", err)
+	}
+}
+
 func TestCanceledPunchClosesMappingAndListener(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
