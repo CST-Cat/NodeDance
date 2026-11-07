@@ -1099,7 +1099,10 @@ func ValidateTaskReconcile(envelope Envelope, request TaskReconcileRequest, node
 }
 
 func validTaskIdentityFields(taskID, nodeID, journalID, targetID, key string) bool {
-	if taskID == "" || len(taskID) > taskstate.MaxIdentityBytes || nodeID == "" || len(nodeID) > taskstate.MaxIdentityBytes ||
+	// Core generates every task identity in the file-task grammar, so path
+	// syntax can never reach identifiers that Agent code interpolates into
+	// derived stage names.
+	if !validFileTaskID(taskID) || nodeID == "" || len(nodeID) > taskstate.MaxIdentityBytes ||
 		journalID == "" || len(journalID) != 64 || !(IsFullContainerID(targetID) || validContainerCreateTarget(targetID)) || key == "" || len(key) > taskstate.MaxIdempotencyKeyBytes {
 		return false
 	}
