@@ -288,6 +288,16 @@ func runTUI(ctx context.Context, args []string, lookup LookupEnv, stdin io.Reade
 				if e != nil {
 					return e
 				}
+				if value == "-" {
+					// The TUI owns the terminal in raw mode, so stdin is not
+					// readable here; say so instead of silently sending an
+					// empty body.
+					write("- (stdin) is not available in the TUI; use @private-file or paste the JSON body\n")
+					if _, err := prompt("Enter to return", false); err != nil {
+						return err
+					}
+					continue
+				}
 				raw, e = readOperationValue(value, strings.NewReader(""), o.MaxBodyBytes)
 				if e != nil {
 					write(e.Error() + "\n")
