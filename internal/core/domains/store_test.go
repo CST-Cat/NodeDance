@@ -58,6 +58,9 @@ func TestDomainsAndProtectedMaterial(t *testing.T) {
 	if _, e = s.SaveDomain(ctx, d.ID, DomainInput{Name: d.Name, Revision: 99}, event()); !errors.Is(e, ErrConflict) {
 		t.Fatal(e)
 	}
+	if _, e = s.SaveDomain(ctx, "", DomainInput{Name: "BÜCHER.example."}, event()); !errors.Is(e, ErrInvalid) || !strings.Contains(e.Error(), "name must be unique") {
+		t.Fatalf("duplicate name must stay an invalid-input rejection, got %v", e)
+	}
 	input := BulkDomains{Domains: []DomainInput{{Name: "one.example"}, {Name: "two.example"}}}
 	created, e := s.BulkDomains(ctx, input, event())
 	if e != nil {

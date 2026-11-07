@@ -148,12 +148,22 @@ func (s *Store) SaveDomain(ctx context.Context, id string, in DomainInput, event
 		if count >= 5000 {
 			return Domain{}, errors.New("domain inventory limit is 5000")
 		}
+		var taken int
+		if e = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM managed_domains WHERE name=?`, in.Name).Scan(&taken); e != nil {
+			return Domain{}, e
+		}
+		if taken > 0 {
+			return Domain{}, fmt.Errorf("domain save failed (name must be unique): %w", ErrInvalid)
+		}
 		id = uuid.NewString()
 		_, e = tx.ExecContext(ctx, `INSERT INTO managed_domains VALUES(?,?,?,?,1,?,?)`, id, in.Name, in.Label, in.Notes, now, now)
 	} else {
 		var currentName string
 		if e = tx.QueryRowContext(ctx, `SELECT name FROM managed_domains WHERE id=? AND revision=?`, id, in.Revision).Scan(&currentName); e != nil {
-			return Domain{}, ErrConflict
+			if errors.Is(e, sql.ErrNoRows) {
+				return Domain{}, ErrConflict
+			}
+			return Domain{}, e
 		}
 		if currentName != in.Name {
 			return Domain{}, errors.New("domain name is immutable; create a separate domain")
@@ -168,7 +178,7 @@ func (s *Store) SaveDomain(ctx context.Context, id string, in DomainInput, event
 		}
 	}
 	if e != nil {
-		return Domain{}, fmt.Errorf("domain save failed (name must be unique): %w", ErrInvalid)
+		return Domain{}, e
 	}
 	if e = record(ctx, tx, event, "domain_save", audit.TargetDomain, id); e != nil {
 		return Domain{}, e
