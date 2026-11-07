@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/CST-Cat/NodeDance/internal/i18n"
 )
 
 // Local is the product's local maintenance presentation over the same requests and
@@ -89,7 +91,7 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 	}
 	if *rollback != "" {
 		if !*yes {
-			fmt.Fprint(stderr, "Roll back to the previous version and restore its data? [y/N] ")
+			fmt.Fprint(stderr, i18n.TextFor(stderr, "Roll back to the previous version and restore its data? [y/N] "))
 			line, err := bufio.NewReader(stdin).ReadString('\n')
 			if err != nil || !strings.EqualFold(strings.TrimSpace(line), "y") {
 				return errors.New("rollback cancelled")
@@ -106,7 +108,7 @@ func local(ctx context.Context, component, dataDir string, args []string, stdin 
 		*key = hex.EncodeToString(nonce[:])
 	}
 	// Emit the retry identity before submission, exactly as the terminal Core workflow does.
-	if _, err = io.WriteString(stderr, "Idempotency-Key: "+*key+"\n"); err != nil {
+	if _, err = fmt.Fprintln(stderr, i18n.TextFor(stderr, "Idempotency-Key:"), *key); err != nil {
 		return err
 	}
 	response, err = call(action, *key)

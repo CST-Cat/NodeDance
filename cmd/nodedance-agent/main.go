@@ -102,7 +102,7 @@ func printUsage(output io.Writer) {
 	fmt.Fprintln(output, i18n.TextFor(output, "NodeDance Agent - outbound-only Linux host management agent"))
 	fmt.Fprintln(output, i18n.TextFor(output, "Global language: --lang en|zh-CN (or NODEDANCE_LANG)"))
 	fmt.Fprintln(output, i18n.TextFor(output, "Usage:"))
-	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance agent update [--check | --status]  # local root Agent maintenance"))
+	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance agent update [--check | --status | --rollback JOB]  # local root Agent maintenance"))
 	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent enroll --server https://core.example --token-stdin [--ca-file path] [--config path]"))
 	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent recover [--config path]"))
 	fmt.Fprintln(output, i18n.TextFor(output, "  nodedance-agent run [--config path]"))

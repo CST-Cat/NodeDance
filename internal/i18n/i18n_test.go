@@ -33,6 +33,24 @@ func TestLanguagePrecedenceAndOpaqueArguments(t *testing.T) {
 		t.Fatal("accepted missing language")
 	}
 }
+func TestUpdateMaintenanceStringsTranslate(t *testing.T) {
+	var stderr strings.Builder
+	w := Writer(&stderr, SimplifiedChinese)
+	if TextFor(w, "Roll back to the previous version and restore its data? [y/N] ") != "回滚到上一版本并恢复其数据？[y/N] " {
+		t.Fatal("rollback prompt untranslated")
+	}
+	original := errors.New("update wait expired; use nodedance update --node 节点 2 --status --job-id abc123")
+	localized := SimplifiedChinese.Error(original)
+	if !errors.Is(localized, original) || !strings.Contains(localized.Error(), "更新等待超时") || !strings.Contains(localized.Error(), "--node 节点 2 --status --job-id abc123") {
+		t.Fatal(localized)
+	}
+	if text := SimplifiedChinese.ErrorText("update wait expired; observe with --status --job-id job9"); text != "更新等待超时；使用 --status --job-id job9 观察任务" {
+		t.Fatal(text)
+	}
+	if text := SimplifiedChinese.ErrorText("update finished with failed: digest mismatch"); text != "更新以 failed 结束：digest mismatch" {
+		t.Fatal(text)
+	}
+}
 func TestMessagesPreserveFormatSlotsAndErrorCause(t *testing.T) {
 	for en, zh := range chinese {
 		if strings.Count(en, "%") != strings.Count(zh, "%") {

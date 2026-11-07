@@ -185,7 +185,15 @@ func runUpdate(ctx context.Context, args []string, lookup LookupEnv, stdin io.Re
 	for {
 		select {
 		case <-waitCtx.Done():
-			return errors.New("update wait expired; use nodedance update --status --job-id " + job.ID)
+			target := *nodeName
+			if target == "" {
+				target = *node
+			}
+			hint := "update wait expired; use nodedance update"
+			if target != "" {
+				hint += " --node " + target
+			}
+			return errors.New(hint + " --status --job-id " + job.ID)
 		case <-time.After(2 * time.Second):
 		}
 		result, err = invoke(waitCtx, "status", request, "")
