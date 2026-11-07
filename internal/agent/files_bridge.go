@@ -12,6 +12,7 @@ import (
 	"os"
 	"reflect"
 	"sync"
+	"time"
 
 	agentfiles "github.com/CST-Cat/NodeDance/internal/agent/files"
 	"github.com/CST-Cat/NodeDance/internal/protocol"
@@ -63,10 +64,15 @@ func newAgentFileBridge(service *agentfiles.Service, generation uint64, writer f
 
 func (b *agentFileBridge) run(ctx context.Context, messages <-chan protocol.Envelope) error {
 	defer b.closeAll()
+	sweep := time.NewTicker(15 * time.Second)
+	defer sweep.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
+		case <-sweep.C:
+			b.sweepRsyncSessions()
+			continue
 		case envelope, ok := <-messages:
 			if !ok {
 				return errors.New("file control channel closed")

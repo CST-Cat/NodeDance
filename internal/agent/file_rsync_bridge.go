@@ -49,6 +49,35 @@ type agentRsyncSession struct {
 	signal   chan protocol.FileRsyncRequest
 }
 
+// sweepRsyncSessions reaps attempts that can never serve another stream: a
+// prepare session whose one-use grant expired without ever accepting, and a
+// send session whose grant expired without ever receiving its start signal.
+// Core aborts every attempt in the ordinary flow, so this only bounds the
+// table when Core dies before it can abort; in-flight streams are left alone.
+func (b *agentFileBridge) sweepRsyncSessions() {
+	now := time.Now()
+	b.mu.Lock()
+	for key, session := range b.rsyncSessions {
+		if session.request.Grant.ExpiresAt.After(now) {
+			continue
+		}
+		session.mu.Lock()
+		var spent bool
+		if strings.HasPrefix(key, "prepare/") {
+			spent = session.used || session.received
+		} else {
+			spent = session.signaled
+		}
+		session.mu.Unlock()
+		if spent {
+			continue
+		}
+		session.cancel()
+		delete(b.rsyncSessions, key)
+	}
+	b.mu.Unlock()
+}
+
 func (b *agentFileBridge) respondRsync(ctx context.Context, id string, response protocol.FileRsyncResponse) {
 	_ = b.writer.send(ctx, protocol.Envelope{Version: protocol.CurrentVersion, Type: protocol.TypeFileRsyncResponse, Generation: b.generation, RequestID: id, Payload: encodePayload(response)})
 }
