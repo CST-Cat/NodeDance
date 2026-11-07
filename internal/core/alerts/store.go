@@ -123,6 +123,13 @@ func (s *Store) SaveRule(ctx context.Context, ruleID string, in RuleInput) (Rule
 		}
 	}
 	if ruleID == "" {
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_rules WHERE deleted_at IS NULL`).Scan(&count); err != nil {
+			return Rule{}, err
+		}
+		if count >= 5000 {
+			return Rule{}, errors.New("alert rule inventory limit is 5000")
+		}
 		ruleID = id()
 		_, err = tx.ExecContext(ctx, `INSERT INTO alert_rules(id,name,kind,node_id,subject_id,severity,threshold,duration_seconds,cooldown_seconds,expected_state,channel_ids_json,enabled,revision,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)`,
 			ruleID, strings.TrimSpace(in.Name), in.Kind, in.NodeID, in.SubjectID, in.Severity, nullableFloat(in.Threshold), in.DurationSeconds, in.CooldownSeconds, in.ExpectedState, string(channels), boolInt(in.Enabled), stamp(now), stamp(now))
@@ -292,6 +299,13 @@ func (s *Store) SaveChannel(ctx context.Context, channelID string, in ChannelInp
 	defer tx.Rollback()
 	credentials := channelCredentials{}
 	if channelID == "" {
+		var count int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM alert_channels WHERE deleted_at IS NULL`).Scan(&count); err != nil {
+			return Channel{}, err
+		}
+		if count >= 200 {
+			return Channel{}, errors.New("notification channel inventory limit is 200")
+		}
 		channelID = id()
 		_, err = tx.ExecContext(ctx, `INSERT INTO alert_channels(id,name,kind,config_json,secret_ciphertext,enabled,revision,created_at,updated_at) VALUES(?,?,?,?,?,?,1,?,?)`, channelID, strings.TrimSpace(in.Name), in.Kind, string(configJSON), nilIfEmpty(sealed), boolInt(in.Enabled), now, now)
 	} else {

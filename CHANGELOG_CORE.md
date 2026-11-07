@@ -9,6 +9,7 @@
 - Replace the transfer mode dropdown with existing selection buttons beside bandwidth; show task-backed progress bars, completed/total bytes and sampled actual rates through the shared `files.transfer-status` operation.
 
 - Unify Core and Agent development updates under `dev` across Web, CLI and TUI. Core builds from `origin/main`; Agent installs its published Dev artifact. Preserve update verification and rollback.
+- Cap the Alert Center inventories at 5000 rules and 200 notification channels, matching the other managed resources.
 - Preserve manual file-tree collapse when directory responses arrive or listings refresh; toggling the current folder no longer reloads it or adds navigation history.
 - Complete Chinese translations for CLI/TUI usage lines, update prompts and the devweb maintenance entry.
 
@@ -19,6 +20,7 @@
 - 对传模式复用选择按钮并与限速并排，通过统一 `files.transfer-status` 操作显示真实任务进度条、已传／总大小与采样实际速率。
 
 - Web、CLI、TUI 的 Core 与 Agent 开发更新通道统一为 `dev`：Core 从 `origin/main` 构建，Agent 安装已发布 Dev 构建，保留更新核验与回滚。
+- 告警中心的规则与通知渠道清单分别设置 5000 与 200 的上限，与其他受管资源一致。
 - 文件目录树手动折叠后，不再被迟到的目录响应或列表刷新重新展开；切换当前文件夹的展开状态不重复加载或追加导航历史。
 - 补全 CLI/TUI 用法行、更新提示与 devweb 维护入口的中文翻译。
 
