@@ -1586,37 +1586,17 @@ func readBoundedFile(path string, limit int64) ([]byte, error) {
 }
 
 func writeComposeCandidate(originalPath string, content []byte) (string, error) {
-	info, err := os.Stat(originalPath)
-	if err != nil || !info.Mode().IsRegular() {
+	directory, base := filepath.Dir(originalPath), filepath.Base(originalPath)
+	root, err := openSafeWorkingRoot(directory)
+	if err != nil {
 		return "", ErrConfigUnsafe
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(originalPath), ".nodedance-compose-*.tmp")
+	defer root.Close()
+	name, err := writeComposeCandidateAt(root, base, content)
 	if err != nil {
 		return "", err
 	}
-	name := temporary.Name()
-	cleanup := func(err error) (string, error) { _ = temporary.Close(); _ = os.Remove(name); return "", err }
-	if err := temporary.Chmod(info.Mode().Perm()); err != nil {
-		return cleanup(err)
-	}
-	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-		if stat.Uid != uint32(os.Geteuid()) || stat.Gid != uint32(os.Getegid()) {
-			if err := temporary.Chown(int(stat.Uid), int(stat.Gid)); err != nil {
-				return cleanup(err)
-			}
-		}
-	}
-	if _, err := temporary.Write(content); err != nil {
-		return cleanup(err)
-	}
-	if err := temporary.Sync(); err != nil {
-		return cleanup(err)
-	}
-	if err := temporary.Close(); err != nil {
-		_ = os.Remove(name)
-		return "", err
-	}
-	return name, nil
+	return filepath.Join(directory, name), nil
 }
 
 type boundedOutput struct {
