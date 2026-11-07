@@ -214,7 +214,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   const populatedHeight=(await fileList.boundingBox()).height;
   const itemCountHeight=await fileList.getByRole('table').evaluate(element=>element.closest('[class*="_wrapper_"]').querySelector('[class*="_footer_"]').getBoundingClientRect().height);
   await directoryTree.getByRole('treeitem',{name:'many',exact:true}).click();await file('entry-000.txt').waitFor();
-  await page.waitForFunction(expected=>Math.abs(window.scrollY-expected)<2,directoryScroll,{timeout:5000},'Sidebar directory navigation preserves page scroll');
+  await page.waitForFunction(expected=>Math.abs(window.scrollY-expected)<2,directoryScroll,{timeout:5000}).catch(error=>{throw new Error('Sidebar directory navigation preserves page scroll: '+error.message);});
   assert.ok(Math.abs((await fileList.boundingBox()).height-populatedHeight)<2,'Large directories retain file pane height');
   const fileViewport=fileList.getByRole('region',{name:'File manager',exact:true});
   assert.equal(await fileViewport.evaluate(element=>getComputedStyle(element).scrollbarWidth),'none','Scroll Area hides native scrollbar chrome');
@@ -225,7 +225,7 @@ async function stop(p){if(!p||p.exitCode!==null)return;p.kill('SIGTERM');await P
   assert.equal(await fileList.locator('[data-file-name]').count(),0,'Empty directory is actually loaded');
   assert.ok(Math.abs((await fileList.boundingBox()).height-populatedHeight)<2,'Empty directories retain file pane height');
   const emptyCountBounds=await fileList.getByRole('table').evaluate(element=>{const wrapper=element.closest('[class*="_wrapper_"]'),footer=wrapper.querySelector('[class*="_footer_"]').getBoundingClientRect(),frame=wrapper.getBoundingClientRect();return {height:footer.height,bottom:frame.bottom-footer.bottom}});assert.ok(Math.abs(emptyCountBounds.height-itemCountHeight)<1&&emptyCountBounds.bottom<2,'Empty directory keeps item count bar at its original height and at the bottom');
-  await page.waitForFunction(expected=>Math.abs(window.scrollY-expected)<2,directoryScroll,{timeout:5000},'Sidebar directory navigation preserves page scroll');
+  await page.waitForFunction(expected=>Math.abs(window.scrollY-expected)<2,directoryScroll,{timeout:5000}).catch(error=>{throw new Error('Sidebar directory navigation preserves page scroll: '+error.message);});
   await toolbar.getByRole('button',{name:'Parent directory',exact:true}).click();await file('browser.txt').waitFor();await page.setViewportSize({width:1440,height:1000});
   await file('single').click();await file('only.txt').waitFor();
   const singleRow=await file('only.txt').evaluate(element=>{const row=element.closest('tr').getBoundingClientRect(),table=element.closest('table'),scroller=table.parentElement,frame=element.closest('[class*="_wrapper_"]');return{row:row.height,table:table.getBoundingClientRect().height,scroller:scroller.getBoundingClientRect().height,frame:frame.getBoundingClientRect().height}});
