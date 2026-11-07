@@ -31,6 +31,10 @@ const (
 	MaxTerminalColumns   = 500
 )
 
+// ErrTerminalBackpressure marks a saturated bounded terminal lane: the writer
+// is healthy and keeps draining, so lifecycle frames may wait for space.
+var ErrTerminalBackpressure = errors.New("terminal output queue is full")
+
 // TerminalFrame is a deliberately small interactive terminal contract. Open
 // selects only a fixed host shell or Docker Exec; no shell command is accepted.
 type TerminalFrame struct {

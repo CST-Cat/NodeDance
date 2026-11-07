@@ -204,7 +204,10 @@ func (m *Manager) readOutput(current *session) {
 		if count > 0 {
 			payload := append([]byte(nil), buffer[:count]...)
 			if emitErr := current.emit(protocol.TerminalFrame{StreamID: current.id, Action: protocol.TerminalActionOutput, Data: payload}); emitErr != nil {
-				m.close(current, false)
+				// The lane keeps draining while the queue is saturated; report the
+				// session closed instead of letting the browser freeze on a dead
+				// stream.
+				m.close(current, true)
 				return
 			}
 		}
@@ -308,9 +311,24 @@ func (m *Manager) close(current *session, notify bool) {
 			_ = endpoint.Close()
 		}
 		if notify {
-			_ = current.emit(protocol.TerminalFrame{StreamID: current.id, Action: protocol.TerminalActionClosed})
+			m.notifyClosed(current)
 		}
 	})
+}
+
+// notifyClosed delivers the closed frame through the bounded terminal lane.
+// Backpressure means the writer is healthy but saturated and keeps draining,
+// so the frame may briefly wait for space; other failures mean the writer is
+// gone and no retry can help.
+func (m *Manager) notifyClosed(current *session) {
+	frame := protocol.TerminalFrame{StreamID: current.id, Action: protocol.TerminalActionClosed}
+	for attempt := 0; attempt < 25; attempt++ {
+		err := current.emit(frame)
+		if err == nil || !errors.Is(err, protocol.ErrTerminalBackpressure) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 func (m *Manager) remove(current *session) {

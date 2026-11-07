@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -24,7 +25,7 @@ var (
 	errDockerWriterQueueFull   = errors.New("Agent Docker frame queue is full")
 	errStreamWriterQueueFull   = errors.New("Agent container stream queue is full")
 	errStreamWriterUnavailable = errors.New("Agent container stream writer is unavailable")
-	errTerminalWriterQueueFull = errors.New("Agent terminal output queue is full")
+	errTerminalWriterQueueFull = fmt.Errorf("Agent %w", protocol.ErrTerminalBackpressure)
 )
 
 type envelopeWrite struct {

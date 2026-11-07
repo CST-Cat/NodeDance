@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"sync"
 	"testing"
@@ -103,6 +104,29 @@ func (e *blockedInputEndpoint) Write([]byte) (int, error) {
 	<-e.closed
 	return 0, io.ErrClosedPipe
 }
+
+type saturatedOutputEndpoint struct {
+	closed   chan struct{}
+	once     sync.Once
+	produced bool
+}
+
+func (e *saturatedOutputEndpoint) Read([]byte) (int, error) {
+	if !e.produced {
+		e.produced = true
+		return 3, nil
+	}
+	<-e.closed
+	return 0, io.EOF
+}
+func (e *saturatedOutputEndpoint) Write([]byte) (int, error) { return 0, nil }
+func (e *saturatedOutputEndpoint) Close() error              { e.once.Do(func() { close(e.closed) }); return nil }
+func (e *saturatedOutputEndpoint) Resize(uint16, uint16) error {
+	return nil
+}
+func (e *saturatedOutputEndpoint) ExitCode() *int { return nil }
+func (e *saturatedOutputEndpoint) Attach() error  { return nil }
+func (e *saturatedOutputEndpoint) Detach() error  { return nil }
 func TestCloseInterruptsBlockedTerminalInput(t *testing.T) {
 	e := &blockedInputEndpoint{managedTestEndpoint: managedTestEndpoint{closed: make(chan struct{})}, writing: make(chan struct{})}
 	m := NewManager(managerTestProvider{e})
@@ -125,4 +149,45 @@ func TestCloseInterruptsBlockedTerminalInput(t *testing.T) {
 		t.Error("CloseAll blocked behind terminal input mutex")
 	}
 	<-written
+}
+
+func TestSaturatedTerminalLaneStillReportsClosed(t *testing.T) {
+	e := &saturatedOutputEndpoint{closed: make(chan struct{})}
+	m := NewManager(managerTestProvider{e})
+	defer m.CloseAll()
+	var mu sync.Mutex
+	closedAttempts, closedFrames := 0, 0
+	emit := func(frame protocol.TerminalFrame) error {
+		mu.Lock()
+		defer mu.Unlock()
+		switch frame.Action {
+		case protocol.TerminalActionOutput:
+			return fmt.Errorf("Agent %w", protocol.ErrTerminalBackpressure)
+		case protocol.TerminalActionClosed:
+			closedAttempts++
+			if closedAttempts < 2 {
+				return fmt.Errorf("Agent %w", protocol.ErrTerminalBackpressure)
+			}
+			closedFrames++
+			return nil
+		}
+		return nil
+	}
+	if err := m.open(context.Background(), protocol.TerminalFrame{StreamID: "saturated"}, emit); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.After(3 * time.Second)
+	for {
+		mu.Lock()
+		delivered, removed := closedFrames == 1, m.Count() == 0
+		mu.Unlock()
+		if delivered && removed {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("closed frame delivered=%v session removed=%v attempts=%d", delivered, removed, closedAttempts)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
