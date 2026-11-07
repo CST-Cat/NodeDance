@@ -14,8 +14,8 @@ func TestSweepRsyncSessionsReapsOnlyExpiredDeadAttempts(t *testing.T) {
 	add := func(key string, expiresAt time.Time, used, received, signaled bool) *agentRsyncSession {
 		ctx, cancel := context.WithCancel(context.Background())
 		session := &agentRsyncSession{
-			request:  protocol.FileRsyncRequest{Grant: protocol.FileStreamGrant{ExpiresAt: expiresAt}},
-			ctx:      ctx, cancel: cancel,
+			request: protocol.FileRsyncRequest{Grant: protocol.FileStreamGrant{ExpiresAt: expiresAt}},
+			ctx:     ctx, cancel: cancel,
 			done: make(chan struct{}), signal: make(chan protocol.FileRsyncRequest, 1),
 			used: used, received: received, signaled: signaled,
 		}
